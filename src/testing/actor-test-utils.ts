@@ -8,7 +8,7 @@ import { vi } from 'vitest';
 import type { AnyStateMachine, EventObject } from 'xstate';
 import type { ActorRef, ActorRefOptions } from '../core/actors/actor-ref';
 import type { ActorSnapshot, SupervisionStrategy } from '../core/actors/types';
-import type { Observable, Observer, Subscription } from '../core/observables/observable';
+import type { Observable, Observer } from '../core/observables/observable';
 
 /**
  * Mock ActorRef for testing
