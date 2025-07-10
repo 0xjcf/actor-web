@@ -133,7 +133,7 @@ class UnifiedActorRef<
 
     try {
       this.actor.send(event as EventObject);
-      this.options.metrics?.onMessage?.(event);
+      this.options.metrics?.onMessage?.(event); // [actor-web] TODO: Implement comprehensive message metrics
     } catch (error) {
       this.options.metrics?.onError?.(error as Error);
       this.handleError(error as Error);
@@ -287,7 +287,7 @@ class UnifiedActorRef<
     }
 
     // Notify metrics
-    this.options.metrics?.onRestart?.(1); // TODO: track attempt count properly
+    this.options.metrics?.onRestart?.(1); // [actor-web] TODO: track restart attempt count properly
   }
 
   // ========================================================================================
@@ -347,10 +347,16 @@ class UnifiedActorRef<
     return snapshot.matches ? snapshot.matches(statePath) : false;
   }
 
-  accepts(_eventType: string): boolean {
-    // Basic implementation - check if machine has transitions for this event
-    // In a more sophisticated implementation, this would check current state transitions
-    return true; // TODO: Implement proper event acceptance checking
+  accepts(eventType: string): boolean {
+    // [actor-web] TODO: Implement proper event acceptance checking
+    // Should check if the current state has transitions for this event type
+    // Currently using basic string validation as placeholder
+    try {
+      // This is a simplified check - a full implementation would check current state transitions
+      return typeof eventType === 'string' && eventType.length > 0;
+    } catch {
+      return false;
+    }
   }
 
   // ========================================================================================
@@ -381,7 +387,7 @@ class UnifiedActorRef<
 
     this.supervisor = new Supervisor({
       strategy: this._supervision,
-      maxRestarts: 3,
+      maxRestarts: 3, // [actor-web] TODO: Make supervision limits configurable
       restartWindow: 60000, // 1 minute
       restartDelay: 1000, // 1 second
       onRestart: (_actorRef, _error, attempt) => {
@@ -430,6 +436,7 @@ class UnifiedActorRef<
 
         // NOTE: We don't delete pendingResponses here as that would mutate the context
         // The machine should clear its own pendingResponses in an action if needed
+        // [actor-web] TODO: Consider implementing automatic cleanup of processed responses
       }
     }
   }
