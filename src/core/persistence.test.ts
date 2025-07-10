@@ -182,10 +182,17 @@ describe('Persistence Services', () => {
 
     describe('Data Integrity', () => {
       it.skip('generates and verifies checksums', () => {
+        const service = createStorageService();
+        const mockSendBack = vi.fn();
+
+        const cleanup = service({
+          sendBack: mockSendBack,
+          input: {
             operation: 'SET',
             key: 'checksum-test',
-            data: value: 'important data' ,
-            config: keyPrefix: 'test' ,,
+            data: { value: 'important data' },
+            config: { keyPrefix: 'test' },
+          },
           receive: vi.fn(),
         });
 
