@@ -1,103 +1,238 @@
 /**
  * @module framework/core/messaging/request-response
- * @description Request/response pattern implementation with correlation IDs
- * @author Agent A - 2025-01-10
+ * @description Enhanced request/response pattern implementation with correlation IDs
+ * @author Agent A (Tech Lead) - 2025-07-10
  */
 
-import { TimeoutError } from '../actors/actor-ref.js';
-import type { Query, RequestEnvelope, ResponseEnvelope } from './message-types.js';
+import { 
+  TimeoutError, 
+  ActorError, 
+  generateCorrelationId,
+  type QueryEvent,
+  type ResponseEvent,
+  type EventMetadata,
+  type AskOptions
+} from '../actors/actor-ref.js';
+
+// ========================================================================================
+// REQUEST CONTEXT & MANAGEMENT
+// ========================================================================================
 
 /**
- * Manages request/response correlation for the ask pattern
+ * Context for a pending request with timeout and retry logic
+ */
+export interface RequestContext<TResponse> {
+  readonly correlationId: string;
+  readonly queryEvent: QueryEvent;
+  readonly promise: Promise<TResponse>;
+  readonly createdAt: number;
+  readonly timeout: number;
+  readonly retries: number;
+  readonly currentAttempt: number;
+}
+
+/**
+ * Internal tracking for pending requests
+ */
+interface PendingRequest<TResponse = unknown> {
+  resolve: (value: TResponse) => void;
+  reject: (error: Error) => void;
+  timeoutId: NodeJS.Timeout;
+  retryTimeoutId?: NodeJS.Timeout;
+  startTime: number;
+  attempt: number;
+  maxRetries: number;
+  retryDelay: number;
+  metadata: EventMetadata;
+}
+
+/**
+ * Statistics about request/response operations
+ */
+export interface RequestResponseStats {
+  pendingCount: number;
+  totalRequests: number;
+  completedRequests: number;
+  timeoutRequests: number;
+  errorRequests: number;
+  averageResponseTime: number;
+  requests: Array<{
+    id: string;
+    duration: number;
+    attempt: number;
+    status: 'pending' | 'completed' | 'timeout' | 'error';
+  }>;
+}
+
+// ========================================================================================
+// REQUEST/RESPONSE MANAGER
+// ========================================================================================
+
+/**
+ * Manages request/response correlation for the ask pattern with advanced features
  */
 export class RequestResponseManager {
-  private pendingRequests = new Map<string, PendingRequest>();
-  private defaultTimeout: number;
+  private pendingRequests = new Map<string, PendingRequest<unknown>>();
+  private requestStats = {
+    total: 0,
+    completed: 0,
+    timeout: 0,
+    error: 0,
+    totalResponseTime: 0,
+  };
+  private readonly defaultTimeout: number;
+  private readonly defaultRetries: number;
+  private readonly defaultRetryDelay: number;
 
-  constructor(defaultTimeout = 5000) {
-    this.defaultTimeout = defaultTimeout;
+  constructor(options: RequestResponseManagerOptions = {}) {
+    this.defaultTimeout = options.defaultTimeout ?? 5000;
+    this.defaultRetries = options.defaultRetries ?? 0;
+    this.defaultRetryDelay = options.defaultRetryDelay ?? 1000;
   }
 
   /**
-   * Create a request and return a promise that resolves with the response
+   * Create a request with correlation ID and return promise
    * @param query - The query to send
-   * @param timeout - Optional timeout override
-   * @returns Promise resolving to the response
+   * @param options - Request options including timeout and retries
+   * @returns Request context with query event and promise
    */
-  createRequest<TRequest, TResponse>(
-    query: Query<TRequest, TResponse>,
-    timeout?: number
-  ): { envelope: RequestEnvelope<TRequest>; promise: Promise<TResponse> } {
-    const id = generateCorrelationId();
-    const requestTimeout = timeout ?? this.defaultTimeout;
+  createRequest<TQuery, TResponse>(
+    query: TQuery,
+    options: AskOptions = {}
+  ): RequestContext<TResponse> {
+    const correlationId = options.correlationId ?? generateCorrelationId();
+    const timeout = options.timeout ?? this.defaultTimeout;
+    const retries = options.retries ?? this.defaultRetries;
+    const retryDelay = options.retryDelay ?? this.defaultRetryDelay;
 
-    const envelope: RequestEnvelope<TRequest> = {
-      id,
-      query,
+    // Create metadata with correlation tracking
+    const metadata: EventMetadata = {
+      correlationId,
       timestamp: Date.now(),
-      timeout: requestTimeout,
+      ...options.metadata,
     };
 
-    const promise = new Promise<TResponse>((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        this.pendingRequests.delete(id);
-        reject(
-          new TimeoutError(`Request ${id} timed out after ${requestTimeout}ms`, requestTimeout)
-        );
-      }, requestTimeout);
+    // Create query event
+    const queryEvent: QueryEvent<TQuery> = {
+      type: 'query',
+      request: this.extractRequestType(query),
+      params: query,
+      correlationId,
+      timeout,
+      metadata,
+    };
 
-      this.pendingRequests.set(id, {
-        resolve,
-        reject,
-        timeoutId,
-        startTime: Date.now(),
-      });
+    // Create promise with retry logic
+    const promise = new Promise<TResponse>((resolve, reject) => {
+      this.requestStats.total++;
+      
+      const executeRequest = (attempt: number): void => {
+        const timeoutId = setTimeout(() => {
+          this.pendingRequests.delete(correlationId);
+          
+          if (attempt < retries) {
+            // Retry with exponential backoff
+            const delay = this.calculateRetryDelay(retryDelay, attempt);
+            const retryTimeoutId = setTimeout(() => executeRequest(attempt + 1), delay);
+            
+            this.pendingRequests.set(correlationId, {
+              resolve: resolve as (value: unknown) => void,
+              reject,
+              timeoutId,
+              retryTimeoutId,
+              startTime: Date.now(),
+              attempt: attempt + 1,
+              maxRetries: retries,
+              retryDelay,
+              metadata,
+            });
+          } else {
+            // Final timeout
+            this.requestStats.timeout++;
+            reject(new TimeoutError(
+              `Request ${correlationId} timed out after ${timeout}ms (${retries + 1} attempts)`,
+              timeout,
+              correlationId
+            ));
+          }
+        }, timeout);
+
+        this.pendingRequests.set(correlationId, {
+          resolve: resolve as (value: unknown) => void,
+          reject,
+          timeoutId,
+          startTime: Date.now(),
+          attempt,
+          maxRetries: retries,
+          retryDelay,
+          metadata,
+        });
+      };
+
+      executeRequest(0);
     });
 
-    return { envelope, promise };
+    return {
+      correlationId,
+      queryEvent,
+      promise,
+      createdAt: Date.now(),
+      timeout,
+      retries,
+      currentAttempt: 0,
+    };
   }
 
   /**
    * Handle a response for a pending request
    * @param response - The response envelope
    */
-  handleResponse<TResponse>(response: ResponseEnvelope<TResponse>): void {
-    const pending = this.pendingRequests.get(response.id);
+  handleResponse<TResponse>(response: ResponseEvent<TResponse>): void {
+    const pending = this.pendingRequests.get(response.correlationId);
     if (!pending) {
       // Response for unknown or already completed request
+      console.warn(`Received response for unknown request: ${response.correlationId}`);
       return;
     }
 
-    this.pendingRequests.delete(response.id);
-    clearTimeout(pending.timeoutId);
+    this.pendingRequests.delete(response.correlationId);
+    this.clearTimeouts(pending);
+
+    // Update stats
+    const responseTime = Date.now() - pending.startTime;
+    this.requestStats.totalResponseTime += responseTime;
 
     if (response.error) {
+      this.requestStats.error++;
       pending.reject(response.error);
     } else {
+      this.requestStats.completed++;
       pending.resolve(response.result as TResponse);
     }
   }
 
   /**
    * Cancel a pending request
-   * @param id - The request correlation ID
+   * @param correlationId - The request correlation ID
+   * @param reason - Optional cancellation reason
    */
-  cancelRequest(id: string): void {
-    const pending = this.pendingRequests.get(id);
+  cancelRequest(correlationId: string, reason = 'Request cancelled'): void {
+    const pending = this.pendingRequests.get(correlationId);
     if (pending) {
-      this.pendingRequests.delete(id);
-      clearTimeout(pending.timeoutId);
-      pending.reject(new Error(`Request ${id} was cancelled`));
+      this.pendingRequests.delete(correlationId);
+      this.clearTimeouts(pending);
+      pending.reject(new Error(`${reason}: ${correlationId}`));
     }
   }
 
   /**
-   * Clean up all pending requests
+   * Cancel all pending requests (typically during cleanup)
+   * @param reason - Cancellation reason
    */
-  cleanup(): void {
-    for (const [id, pending] of this.pendingRequests) {
-      clearTimeout(pending.timeoutId);
-      pending.reject(new Error(`Request ${id} cancelled due to cleanup`));
+  cancelAllRequests(reason = 'Manager cleanup'): void {
+    for (const [correlationId, pending] of this.pendingRequests) {
+      this.clearTimeouts(pending);
+      pending.reject(new Error(`${reason}: ${correlationId}`));
     }
     this.pendingRequests.clear();
   }
@@ -110,53 +245,88 @@ export class RequestResponseManager {
   }
 
   /**
-   * Get statistics about pending requests
+   * Get comprehensive statistics about request/response operations
    */
-  getStats(): RequestStats {
+  getStats(): RequestResponseStats {
     const now = Date.now();
     const pendingRequests = Array.from(this.pendingRequests.entries()).map(([id, req]) => ({
       id,
       duration: now - req.startTime,
+      attempt: req.attempt,
+      status: 'pending' as const,
     }));
+
+    const averageResponseTime = this.requestStats.completed > 0 
+      ? this.requestStats.totalResponseTime / this.requestStats.completed 
+      : 0;
 
     return {
       pendingCount: pendingRequests.length,
+      totalRequests: this.requestStats.total,
+      completedRequests: this.requestStats.completed,
+      timeoutRequests: this.requestStats.timeout,
+      errorRequests: this.requestStats.error,
+      averageResponseTime,
       requests: pendingRequests,
-      oldestDuration:
-        pendingRequests.length > 0 ? Math.max(...pendingRequests.map((r) => r.duration)) : 0,
     };
+  }
+
+  /**
+   * Clean up manager resources
+   */
+  cleanup(): void {
+    this.cancelAllRequests('Manager cleanup');
+  }
+
+  // ========================================================================================
+  // PRIVATE HELPER METHODS
+  // ========================================================================================
+
+  private extractRequestType<TQuery>(query: TQuery): string {
+    if (typeof query === 'string') {
+      return query;
+    }
+    if (typeof query === 'object' && query !== null && 'type' in query) {
+      return String((query as { type: unknown }).type);
+    }
+    return 'unknown';
+  }
+
+  private calculateRetryDelay(baseDelay: number, attempt: number): number {
+    // Exponential backoff with jitter
+    const exponentialDelay = baseDelay * Math.pow(2, attempt);
+    const jitter = Math.random() * 0.3; // ±15% jitter
+    return Math.floor(exponentialDelay * (1 + jitter));
+  }
+
+  private clearTimeouts(pending: PendingRequest<unknown>): void {
+    clearTimeout(pending.timeoutId);
+    if (pending.retryTimeoutId) {
+      clearTimeout(pending.retryTimeoutId);
+    }
   }
 }
 
+// ========================================================================================
+// FACTORY FUNCTIONS
+// ========================================================================================
+
 /**
- * Generate a unique correlation ID using UUID v4
+ * Configuration options for RequestResponseManager
  */
-function generateCorrelationId(): string {
-  // UUID v4 implementation
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+export interface RequestResponseManagerOptions {
+  defaultTimeout?: number;
+  defaultRetries?: number;
+  defaultRetryDelay?: number;
 }
 
 /**
- * Internal type for tracking pending requests
+ * Create a new RequestResponseManager instance
  */
-interface PendingRequest {
-  resolve: (value: any) => void;
-  reject: (error: Error) => void;
-  timeoutId: NodeJS.Timeout;
-  startTime: number;
-}
-
-/**
- * Statistics about pending requests
- */
-export interface RequestStats {
-  pendingCount: number;
-  requests: Array<{ id: string; duration: number }>;
-  oldestDuration: number;
+export function createRequestResponseManager(
+  options?: RequestResponseManagerOptions
+): RequestResponseManager {
+  return new RequestResponseManager(options);
 }
 
 /**
@@ -164,11 +334,72 @@ export interface RequestStats {
  */
 export function createQuery<TRequest, TResponse>(
   request: string,
-  params?: TRequest
-): Query<TRequest, TResponse> {
+  params?: TRequest,
+  metadata?: EventMetadata
+): QueryEvent<TRequest> {
   return {
     type: 'query',
     request,
     params,
+    correlationId: generateCorrelationId(),
+    metadata: {
+      timestamp: Date.now(),
+      ...metadata,
+    },
   };
+}
+
+/**
+ * Create a response object with proper typing
+ */
+export function createResponse<TResult>(
+  correlationId: string,
+  result?: TResult,
+  error?: Error,
+  metadata?: EventMetadata
+): ResponseEvent<TResult> {
+  return {
+    type: 'response',
+    correlationId,
+    result,
+    error,
+    metadata: {
+      timestamp: Date.now(),
+      ...metadata,
+    },
+  };
+}
+
+// ========================================================================================
+// UTILITY FUNCTIONS
+// ========================================================================================
+
+/**
+ * Check if a request has timed out based on its creation time
+ */
+export function isRequestTimedOut(
+  requestContext: RequestContext<unknown>,
+  currentTime = Date.now()
+): boolean {
+  return (currentTime - requestContext.createdAt) > requestContext.timeout;
+}
+
+/**
+ * Calculate the remaining timeout for a request
+ */
+export function getRemainingTimeout(
+  requestContext: RequestContext<unknown>,
+  currentTime = Date.now()
+): number {
+  const elapsed = currentTime - requestContext.createdAt;
+  return Math.max(0, requestContext.timeout - elapsed);
+}
+
+/**
+ * Validate that a correlation ID is well-formed
+ */
+export function isValidCorrelationId(correlationId: string): boolean {
+  return typeof correlationId === 'string' && 
+         correlationId.length > 0 && 
+         /^[a-f0-9-]{36}$/.test(correlationId);
 }
