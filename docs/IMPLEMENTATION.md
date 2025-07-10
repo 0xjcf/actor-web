@@ -2,87 +2,130 @@
 
 > **Test-Driven Development with Three-Agent Team**
 
-## 🚀 STEP 1: Essential Branching Strategy Setup
+## 🚀 STEP 1: Essential Git Worktree Setup
 
-**⚠️ CRITICAL FIRST STEP**: Before any development work begins, all agents MUST implement this branching strategy to ensure seamless parallel development and prevent conflicts.
+**⚠️ CRITICAL FIRST STEP**: Before any development work begins, all agents MUST set up separate Git worktrees to prevent branch conflicts and enable truly parallel development.
 
-### 🌿 Optimal 3-Agent Branching Strategy
+### 🌿 Git Worktree Strategy (SOLVES BRANCH JUMPING)
+
+**Problem**: Multiple agents sharing one Git working directory causes branch conflicts when anyone runs `git checkout`.
+
+**Solution**: Each agent gets their own isolated working directory with shared Git history.
 
 ```
-main (production-ready)
-└── feature/actor-ref-integration (central coordination hub)
-    ├── feature/agent-a-architecture (Agent A: Tech Lead)
-    ├── feature/agent-b-implementation (Agent B: Senior Dev)  
-    └── feature/agent-c-testing (Agent C: Junior Dev)
+actor-web/                     # Main repository (integration work)
+├── .git/                      # Shared Git database
+└── docs/, src/, ...
+
+../actor-web-architecture/     # Agent A workspace  
+├── .git -> ../actor-web/.git   # Symlink to shared Git
+└── docs/, src/, ...           # Independent working files
+
+../actor-web-implementation/   # Agent B workspace
+../actor-web-tests/            # Agent C workspace
 ```
 
-### 📋 Implementation Commands
+### 📋 One-Time Setup Commands
 
-#### Agent A (Tech Lead) - Creates Integration Hub
+#### 🚀 Quick Setup (RECOMMENDED)
 ```bash
-# 1. Create central integration branch (PROTECTED)
-git checkout main
-git pull origin main
-git checkout -b feature/actor-ref-integration
-git push -u origin feature/actor-ref-integration
-
-# 2. Create Agent A architecture branch
-git checkout -b feature/agent-a-architecture
-git push -u origin feature/agent-a-architecture
+# Run the automated setup script (from main repository)
+./scripts/setup-agent-worktrees.sh
 ```
 
-#### Agent B (Senior Developer) - Implementation Branch
+#### 🛠️ Manual Setup (if needed)
 ```bash
-# 1. Start from integration branch
-git checkout feature/actor-ref-integration
-git pull origin feature/actor-ref-integration
+# 1. From main repository, create agent worktrees
+cd actor-web
 
-# 2. Create Agent B implementation branch
-git checkout -b feature/agent-b-implementation
-git push -u origin feature/agent-b-implementation
+# Agent A - Architecture worktree
+git worktree add ../actor-web-architecture feature/actor-ref-architecture
+
+# Agent B - Implementation worktree  
+git worktree add ../actor-web-implementation feature/actor-ref-implementation
+
+# Agent C - Testing worktree
+git worktree add ../actor-web-tests feature/actor-ref-tests
+
+# Configure automatic push tracking
+git config --global worktree.guessRemote true
 ```
 
-#### Agent C (Junior Developer) - Testing Branch
-```bash
-# 1. Start from integration branch
-git checkout feature/actor-ref-integration
-git pull origin feature/actor-ref-integration
+### 🎯 Agent-Specific Working Directories
 
-# 2. Create Agent C testing branch
-git checkout -b feature/agent-c-testing
-git push -u origin feature/agent-c-testing
+#### Agent A (Tech Lead) - Architecture
+```bash
+# Always work from the architecture directory
+cd ../actor-web-architecture
+
+# Verify you're on the right branch
+git status  # Should show: feature/actor-ref-architecture
+
+# Open Cursor IDE in this directory
+code .  # or open Cursor here
+```
+
+#### Agent B (Senior Developer) - Implementation  
+```bash
+# Always work from the implementation directory
+cd ../actor-web-implementation
+
+# Verify you're on the right branch
+git status  # Should show: feature/actor-ref-implementation
+
+# All your implementation work happens here
+```
+
+#### Agent C (Junior Developer) - Testing
+```bash
+# Always work from the testing directory
+cd ../actor-web-tests
+
+# Verify you're on the right branch  
+git status  # Should show: feature/actor-ref-tests
+
+# All your testing work happens here
 ```
 
 ### 🔄 Daily Workflow (ALL AGENTS)
 
 ```bash
-# Morning sync (MANDATORY - before any work)
-git checkout feature/actor-ref-integration
-git pull origin feature/actor-ref-integration
-git checkout feature/agent-[your-letter]-[your-area]
-git merge feature/actor-ref-integration
+# 1. Navigate to YOUR agent directory
+cd ../actor-web-[architecture|implementation|tests]
 
-# When ready to merge work
-git checkout feature/agent-[your-letter]-[your-area]
-git push origin feature/agent-[your-letter]-[your-area]
-# Create PR: your-branch → feature/actor-ref-integration
+# 2. Daily sync with integration (MANDATORY - before any work)
+git pull origin feature/actor-ref-[your-branch]
+git fetch origin feature/actor-ref-integration
+git merge origin/feature/actor-ref-integration
+
+# 3. Work normally (no branch switching needed!)
+git add .
+git commit -m "feat: your changes"
+git push origin feature/actor-ref-[your-branch]
 ```
 
-### 🛡️ Branch Protection Rules
+### 🛡️ Worktree Benefits
 
-- **`feature/actor-ref-integration`** (PROTECTED):
-  - Requires PR reviews from at least one other agent
-  - All tests must pass
-  - No direct commits (PR only)
-  - Linear history enforced
+1. **✅ No Branch Jumping**: Each agent locked to their branch
+2. **✅ IDE Independence**: Cursor, terminals work separately  
+3. **✅ Shared Git History**: Minimal disk usage
+4. **✅ Parallel Development**: True concurrent work
+5. **✅ Automated Setup**: One script configures everything
 
-### 🎯 Key Benefits
+### ⚠️ Migration for Existing Work
 
-1. **Parallel Development**: Each agent works independently
-2. **Conflict Prevention**: Central integration point prevents cross-agent conflicts
-3. **Quality Control**: All work reviewed before integration
-4. **Clean History**: Linear progression easy to track
-5. **Emergency Rollback**: Can revert individual agent work without affecting others
+If you have existing work in the main repository:
+```bash
+# 1. Stash your current work
+git stash
+
+# 2. Run the setup script
+./scripts/setup-agent-worktrees.sh
+
+# 3. Move to your agent directory and restore work
+cd ../actor-web-[your-agent-area]
+git stash pop
+```
 
 ---
 
@@ -101,9 +144,15 @@ git push origin feature/agent-[your-letter]-[your-area]
 
 ## 🌿 Git Setup & Branching
 
-### Centralized Integration Strategy
+### Multi-Worktree Strategy (RECOMMENDED)
 
-**CRITICAL**: All agents work from and merge into the central integration branch `feature/actor-ref-integration` to ensure seamless coordination and prevent blocking dependencies.
+**PROBLEM SOLVED**: Previously, all agents shared one Git working directory, causing branch conflicts when any agent switched branches. The `git worktree` solution gives each agent their own isolated working directory.
+
+#### Why This Approach?
+- **No More Branch Jumping**: Each agent works in their own directory, locked to their branch
+- **Shared Git History**: All worktrees share the same `.git` folder and objects
+- **Minimal Disk Usage**: Only working files are duplicated, not the entire Git history
+- **IDE Independence**: Each tool (Cursor, terminals) operates in its own space
 
 #### Step 1: Create Central Integration Branch (Agent A - Day 0)
 ```bash
@@ -117,79 +166,135 @@ git push -u origin feature/actor-ref-integration
 # This becomes the single source of truth for all actor-ref work
 ```
 
-#### Step 2: All Agents Branch from Integration Branch
+#### Step 2: Setup Agent Worktrees (CRITICAL - Do This Once)
 ```bash
-# ALL AGENTS start from the central integration branch
-git checkout feature/actor-ref-integration
-git pull origin feature/actor-ref-integration
+# From the main repo directory, create separate worktrees for each agent
+cd actor-web  # Main repository
 
-# Agent A - Architecture Branch
-git checkout -b feature/actor-ref-architecture
-git push -u origin feature/actor-ref-architecture
+# Agent A - Architecture worktree
+git worktree add ../actor-web-architecture feature/actor-ref-architecture
 
-# Agent B - Implementation Branch  
-git checkout feature/actor-ref-integration
-git checkout -b feature/actor-ref-implementation
-git push -u origin feature/actor-ref-implementation
+# Agent B - Implementation worktree  
+git worktree add ../actor-web-implementation feature/actor-ref-implementation
 
-# Agent C - Testing Branch
-git checkout feature/actor-ref-integration
-git checkout -b feature/actor-ref-tests
-git push -u origin feature/actor-ref-tests
+# Agent C - Testing worktree
+git worktree add ../actor-web-tests feature/actor-ref-tests
+
+# Configure automatic push tracking
+git config --global worktree.guessRemote true
 ```
 
-#### Step 3: Feature-Specific Sub-branches
+#### Step 3: Agent Working Directories
 ```bash
-# Each agent creates feature branches from their main agent branch
-# Agent A examples:
-git checkout feature/actor-ref-architecture
-git checkout -b feature/actor-ref-architecture/interface-design
-git checkout -b feature/actor-ref-architecture/supervision
+# Directory structure after setup:
+actor-web/                    # Main repository (integration work)
+├── .git/                     # Shared Git database
+├── docs/
+├── src/
+└── ...
 
-# Agent B examples:
-git checkout feature/actor-ref-implementation
-git checkout -b feature/actor-ref-implementation/mailbox
-git checkout -b feature/actor-ref-implementation/observables
-git checkout -b feature/actor-ref-implementation/event-bus
+../actor-web-architecture/   # Agent A workspace
+├── .git -> ../actor-web/.git # Symlink to shared Git
+├── docs/
+├── src/
+└── ...
 
-# Agent C examples:
-git checkout feature/actor-ref-tests
-git checkout -b feature/actor-ref-tests/utilities
-git checkout -b feature/actor-ref-tests/integration
+../actor-web-implementation/ # Agent B workspace
+../actor-web-tests/          # Agent C workspace
+```
+
+#### Step 4: Agent-Specific Setup Commands
+
+**Agent A (Tech Lead) Setup:**
+```bash
+# Open Cursor IDE in the architecture directory
+cd ../actor-web-architecture
+git status  # Shows: feature/actor-ref-architecture
+git pull origin feature/actor-ref-architecture
+```
+
+**Agent B (Senior Dev) Setup:**
+```bash
+# Navigate to implementation directory
+cd ../actor-web-implementation  
+git status  # Shows: feature/actor-ref-implementation
+git pull origin feature/actor-ref-implementation
+```
+
+**Agent C (Junior Dev) Setup:**
+```bash
+# Navigate to testing directory
+cd ../actor-web-tests
+git status  # Shows: feature/actor-ref-tests  
+git pull origin feature/actor-ref-tests
 ```
 
 ### Integration & Merge Strategy
 
 #### Daily Integration Process (MANDATORY)
 ```bash
-# 1. EVERY AGENT syncs with integration branch daily (morning)
-git checkout feature/actor-ref-integration
-git pull origin feature/actor-ref-integration
+# Each agent works in their own worktree - no branch conflicts!
 
-# 2. Update your agent branch with latest integration
-git checkout feature/actor-ref-[your-agent-branch]
-git merge feature/actor-ref-integration
+# Agent A daily sync (from ../actor-web-architecture/)
+cd ../actor-web-architecture
+git pull origin feature/actor-ref-architecture
+git fetch origin feature/actor-ref-integration
+git merge origin/feature/actor-ref-integration  # Merge latest integration changes
 
-# 3. Handle any conflicts immediately
-git add . && git commit -m "merge: sync with integration branch"
+# Agent B daily sync (from ../actor-web-implementation/)  
+cd ../actor-web-implementation
+git pull origin feature/actor-ref-implementation
+git fetch origin feature/actor-ref-integration
+git merge origin/feature/actor-ref-integration
+
+# Agent C daily sync (from ../actor-web-tests/)
+cd ../actor-web-tests
+git pull origin feature/actor-ref-tests
+git fetch origin feature/actor-ref-integration
+git merge origin/feature/actor-ref-integration
 ```
 
 #### Merge-to-Integration Process
 ```bash
 # When a feature is complete and tested:
 
-# 1. Create PR from agent branch to integration branch
-git checkout feature/actor-ref-[your-agent-branch]
-git push origin feature/actor-ref-[your-agent-branch]
-# Create PR: agent-branch → feature/actor-ref-integration
+# 1. From your agent worktree, push your branch
+cd ../actor-web-[your-worktree]  # architecture/implementation/tests
+git add .
+git commit -m "feat: [your feature description]"
+git push origin feature/actor-ref-[your-branch]
 
-# 2. Get review from at least one other agent
-# 3. Merge only after tests pass and conflicts resolved
-# 4. Update your branch immediately after merge
+# 2. Switch to main repo for integration (or use GitHub PR)
+cd ../actor-web  # Main repository
 git checkout feature/actor-ref-integration
 git pull origin feature/actor-ref-integration
-git checkout feature/actor-ref-[your-agent-branch]
-git merge feature/actor-ref-integration
+git merge feature/actor-ref-[your-branch]
+git push origin feature/actor-ref-integration
+
+# 3. All other agents pull the integration changes in their next daily sync
+```
+
+#### Automated Setup Script
+```bash
+# Create scripts/setup-agent-worktrees.sh for easy onboarding
+#!/usr/bin/env bash
+declare -A branches=(
+  ["architecture"]="feature/actor-ref-architecture"
+  ["implementation"]="feature/actor-ref-implementation"  
+  ["tests"]="feature/actor-ref-tests"
+)
+
+for dir in "${!branches[@]}"; do
+  branch="${branches[$dir]}"
+  echo "Setting up worktree: ../actor-web-${dir} -> ${branch}"
+  git worktree add -B "$branch" "../actor-web-${dir}" origin/"$branch" 2>/dev/null \
+    || git worktree add "../actor-web-${dir}" -b "$branch"
+done
+
+echo "✅ Worktrees ready! Each agent can now work independently."
+echo "Agent A: cd ../actor-web-architecture"
+echo "Agent B: cd ../actor-web-implementation"  
+echo "Agent C: cd ../actor-web-tests"
 ```
 
 ### Branch Protection Rules
@@ -205,6 +310,23 @@ git merge feature/actor-ref-integration
 2. **Fast Conflict Resolution**: If conflicts arise, resolve within 4 hours or rollback
 3. **Integration Branch Priority**: Always prioritize keeping integration branch stable
 4. **Cross-Agent Dependencies**: Merge dependent changes in correct order
+5. **Worktree Independence**: Each agent's worktree is independent - no more branch jumping!
+6. **Daily Sync Protocol**: Pull integration changes into your worktree daily (see commands above)
+
+### Worktree Management Commands
+```bash
+# List all worktrees
+git worktree list
+
+# Remove a worktree (when no longer needed)
+git worktree remove ../actor-web-architecture
+
+# Prune worktrees (cleanup deleted ones)
+git worktree prune
+
+# Add new worktree for feature branch
+git worktree add ../feature-branch-name feature/new-feature
+```
 
 ---
 
