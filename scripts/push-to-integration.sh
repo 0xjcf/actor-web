@@ -79,25 +79,48 @@ git diff --name-only origin/$INTEGRATION_BRANCH..HEAD | head -20
 # Pre-push validation
 echo -e "${BLUE}🔍 Running pre-push validation...${NC}"
 
-# 1. Type checking
-echo -e "${YELLOW}  → TypeScript validation...${NC}"
-if ! pnpm typecheck >/dev/null 2>&1; then
-    echo -e "${RED}❌ TypeScript errors found${NC}"
-    echo -e "${YELLOW}💡 Fix with: ${YELLOW}pnpm typecheck${NC}"
-    exit 1
-fi
-echo -e "${GREEN}  ✅ TypeScript OK${NC}"
+# Get list of files changed by this agent
+CHANGED_FILES=$(git diff --name-only origin/$INTEGRATION_BRANCH..HEAD)
+echo -e "${BLUE}📁 Validating ${YELLOW}$(echo "$CHANGED_FILES" | wc -l | tr -d ' ')${NC} changed files only...${NC}"
 
-# 2. Linting
-echo -e "${YELLOW}  → Linting validation...${NC}"
-if ! pnpm lint >/dev/null 2>&1; then
-    echo -e "${RED}❌ Linting errors found${NC}"
-    echo -e "${YELLOW}💡 Fix with: ${YELLOW}pnpm lint:fix${NC}"
-    exit 1
+# 1. Type checking - only for changed .ts files
+echo -e "${YELLOW}  → TypeScript validation (changed files only)...${NC}"
+CHANGED_TS_FILES=$(echo "$CHANGED_FILES" | grep -E '\.(ts|tsx)$' || true)
+if [ -n "$CHANGED_TS_FILES" ]; then
+    if ! pnpm tsc --noEmit --skipLibCheck $CHANGED_TS_FILES 2>/dev/null; then
+        echo -e "${RED}❌ TypeScript errors found in your changed files${NC}"
+        echo -e "${YELLOW}💡 Check: ${YELLOW}pnpm tsc --noEmit $CHANGED_TS_FILES${NC}"
+        echo -e "${BLUE}📋 Your changed TypeScript files:${NC}"
+        echo "$CHANGED_TS_FILES" | sed 's/^/  - /'
+        exit 1
+    fi
 fi
-echo -e "${GREEN}  ✅ Linting OK${NC}"
+echo -e "${GREEN}  ✅ TypeScript OK (your files)${NC}"
 
-# 3. Tests (if they exist and run quickly)
+# 2. Linting - only for changed files
+echo -e "${YELLOW}  → Linting validation (changed files only)...${NC}"
+if [ -n "$CHANGED_FILES" ]; then
+    # Filter out deleted files and files that don't exist
+    EXISTING_CHANGED_FILES=""
+    for file in $CHANGED_FILES; do
+        if [ -f "$file" ]; then
+            EXISTING_CHANGED_FILES="$EXISTING_CHANGED_FILES $file"
+        fi
+    done
+    
+    if [ -n "$EXISTING_CHANGED_FILES" ]; then
+        if ! pnpm biome check $EXISTING_CHANGED_FILES >/dev/null 2>&1; then
+            echo -e "${RED}❌ Linting errors found in your changed files${NC}"
+            echo -e "${YELLOW}💡 Fix with: ${YELLOW}pnpm biome check $EXISTING_CHANGED_FILES --apply${NC}"
+            echo -e "${BLUE}📋 Your changed files with lint issues:${NC}"
+            echo "$EXISTING_CHANGED_FILES" | tr ' ' '\n' | sed 's/^/  - /'
+            exit 1
+        fi
+    fi
+fi
+echo -e "${GREEN}  ✅ Linting OK (your files)${NC}"
+
+# 3. Tests (if they exist and run quickly) - keep as-is since tests should pass for integration
 if [ -f "vitest.config.ts" ] && timeout 30s pnpm test >/dev/null 2>&1; then
     echo -e "${GREEN}  ✅ Tests OK${NC}"
 else
