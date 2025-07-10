@@ -127,9 +127,9 @@ git stash pop  # If you had stashed changes
 
 ```
 feature/actor-ref-integration (Central hub)
-├── feature/agent-a-architecture (Tech Lead)
-├── feature/agent-b-implementation (Senior Dev)
-└── feature/agent-c-testing (Junior Dev - YOU)
+├── feature/actor-ref-architecture (Tech Lead - Agent A)
+├── feature/actor-ref-implementation (Senior Dev - Agent B)
+└── feature/actor-ref-tests (Junior Dev - Agent C)
 ```
 
 ## Troubleshooting

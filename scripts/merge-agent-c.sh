@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-AGENT_C_BRANCH="feature/agent-c-testing"
+AGENT_C_BRANCH="feature/actor-ref-tests"
 INTEGRATION_BRANCH="feature/actor-ref-integration"
 
 echo -e "${BLUE}🔄 Agent C Merge Script${NC}"
