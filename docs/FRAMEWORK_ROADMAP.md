@@ -1,323 +1,302 @@
-# Actor-SPA Framework Roadmap
+# 🗺️ ROADMAP — Actor‑Web Pure Actor Model
 
-## 🏆 **Current Status: Unified API Complete + Mobile Navigation Complete**
-
-✅ **Phase 1 Complete:** Unified API Implementation
-- ✅ Extended `ComponentConfig` interface with accessibility, keyboard, and gestures options
-- ✅ Updated `createComponent()` to automatically choose between basic and enhanced components
-- ✅ Backward compatibility maintained for existing code
-- ✅ Smart feature detection for progressive enhancement
-- ✅ Comprehensive test suite for unified API validation
-
-✅ **Phase 2 Complete:** Mobile Navigation Integration
-- ✅ Mobile navigation fully integrated into unified API
-- ✅ Touch gesture support implemented
-- ✅ Responsive breakpoints and adaptive layout
-- ✅ SPA routing with page content updates working
-- ✅ All page components properly registered globally
+> **Vision**  
+> Deliver a universal web runtime whose state, side‑effects, and cross‑component communication are managed **exclusively** through message‑passing actors.  
+> Benefits: isolation, fault‑tolerance, scalability (including Web Workers / remote actors), host‑agnostic deployment, and a clear mental model.
+> 
+> **Host‑Agnostic Design**: Once the pure actor refactor is complete, the runtime supports SPAs, MPAs, SSR, micro‑front‑ends, PWAs, and edge/desktop environments through consistent message‑passing APIs.
 
 ---
 
-## 🎯 **Next Development Priorities**
+## 0 🌱 Current Baseline (Hybrid Controllers)
 
-### **Priority 1: Mobile Navigation Integration** 
-**Status:** ✅ COMPLETE  
-**Estimated Effort:** 2-3 days (COMPLETED)  
-**Impact:** High - Completes the unified API vision
-
-**Goal:** Integrate existing mobile navigation system into the unified `createComponent` API
-
-**Implementation Plan:**
-```typescript
-// Target API Design
-const MobileComponent = createComponent({
-  machine: mobileMachine,
-  template: mobileTemplate,
-  mobile: {
-    enabled: true,
-    navigation: {
-      type: 'drawer' | 'bottom-sheet' | 'tabs' | 'stack',
-      gestures: { swipe: true, pinch: true, drag: true }
-    },
-    responsive: {
-      breakpoints: { mobile: 768, tablet: 1024 },
-      adaptiveLayout: true
-    }
-  }
-});
-```
-
-**Tasks:**
-- [x] Extend `ComponentConfig` interface with mobile options
-- [x] Update `createComponent` feature detection for mobile
-- [x] Integrate existing mobile navigation components
-- [x] Add touch gesture support to unified API
-- [x] Create mobile-specific template helpers
-- [x] Update documentation with mobile examples
-
-**Dependencies:** 
-- Existing mobile navigation system (`src/components/ui/mobile-nav/`)
-- Touch gesture detection utilities
+| Status | Item | Owner | Notes |
+| ------ | ---- | ----- | ----- |
+| ✅ | `createActorController` (general) | Core team | Controller returns `{ state, send, subscribe, … }`. |
+| ✅ | Specialized controllers (`State`, `Event`, `Lifecycle`) | Core team | Convenience wrappers; still expose direct state. |
+| 🟡 | Component samples / docs | DevRel | Show basic counter, auth, form. |
 
 ---
 
-### **Priority 2: Comprehensive Testing Suite**
-**Status:** 🟡 Partially Complete  
-**Estimated Effort:** 3-4 days  
-**Impact:** High - Framework reliability and confidence
+## 1 🚀 Introduce **ActorRef** API _(MVP)_
 
-**Goal:** Create robust testing infrastructure covering all unified API features
+> _Goal:_ Ship a **minimal yet functional** reference abstraction that hides internal actor state.
 
-**Testing Categories:**
+- [ ] **1.1** API spec frozen (`ActorRef<TEvent, TEmit>`)  
+  - `send(event)` – fire‑and‑forget  
+  - `ask(query) → Promise<T>` – request/response, unique `responseId` generated internally  
+  - `observe(selector) → Observable<U>` – reactive state slices  
+  - `spawn(machine) → ActorRef` – child actors  
+  - `start/stop/restart` lifecycle  
+  **Exit criteria:** Type‑safe signatures in `@actor-web/core`.
 
-#### **Unit Tests**
-- [ ] Core `createComponent` function with all configurations
-- [ ] Feature detection logic (accessibility, keyboard, mobile)
-- [ ] Template rendering with different feature sets
-- [ ] Event handling across all component types
-- [ ] State management integration tests
+- [ ] **1.2** XState interpreter wrapper implements `ActorRef`  
+  _Owner:_ Runtime team
 
-#### **Integration Tests**
-- [ ] Multi-component applications
-- [ ] Complex accessibility scenarios
-- [ ] Keyboard navigation workflows
-- [ ] Mobile gesture interactions
-- [ ] Performance under load
+- [ ] **1.3** Dev ergonomics  
+  - Auto‑unsubscribe helper (`useActorRef`, `withActorRef` for plain Web Components)  
+  - Default `observe()` → RxJS OR minimal custom observable  
+  _Owner:_ DX team
 
-#### **Accessibility Compliance**
-- [ ] WCAG 2.1 AA compliance verification
-- [ ] Screen reader testing automation
-- [ ] Keyboard navigation validation
-- [ ] Color contrast and visual accessibility
-- [ ] ARIA attribute correctness
-
-#### **Cross-Browser Compatibility**
-- [ ] Chrome, Firefox, Safari, Edge testing
-- [ ] Mobile browser testing (iOS Safari, Chrome Mobile)
-- [ ] Legacy browser support validation
-- [ ] Progressive enhancement verification
-
-#### **Performance Benchmarks**
-- [ ] Component creation overhead measurement
-- [ ] Memory usage across feature sets
-- [ ] Bundle size impact analysis
-- [ ] Runtime performance profiling
-
-**Tools & Infrastructure:**
-- Vitest for unit/integration tests
-- Playwright for E2E testing
-- Lighthouse CI for accessibility/performance
-- Bundle analyzer for size optimization
+- [ ] **1.4** Docs & code samples ("CounterRef", "AuthRef")  
+  _Owner:_ DevRel
 
 ---
 
-### **Priority 3: Real-World Examples & Demos**
-**Status:** 🔴 Not Started  
-**Estimated Effort:** 2-3 days  
-**Impact:** Medium-High - Developer adoption and learning
+## 2 🔁 Reactive View Binding
 
-**Goal:** Demonstrate practical usage patterns and architectural best practices
+> _Goal:_ Make UI updates **feel** as simple as state reads while retaining encapsulation.
 
-#### **Demo Applications**
-
-**E-Commerce Product Page**
-- [ ] Accessible product forms with validation
-- [ ] Image gallery with keyboard navigation
-- [ ] Mobile-optimized checkout flow
-- [ ] Screen reader optimized product details
-
-**Admin Dashboard**
-- [ ] Data tables with keyboard navigation
-- [ ] Modal dialogs with focus management
-- [ ] Responsive sidebar navigation
-- [ ] Real-time data updates with accessibility
-
-**Mobile-First App**
-- [ ] Touch gesture navigation
-- [ ] Bottom sheet components
-- [ ] Swipe-to-delete interactions
-- [ ] Progressive Web App features
-
-**Complex Form Wizard**
-- [ ] Multi-step validation
-- [ ] Dynamic field dependencies
-- [ ] Accessibility error handling
-- [ ] Mobile-responsive layout
-
-#### **Architecture Patterns**
-- [ ] Component composition strategies
-- [ ] State management between components
-- [ ] Event communication patterns
-- [ ] Performance optimization techniques
+- [ ] **2.1** Template helpers accept observables (`${state$}` or `bind(state$, fn)` pattern).  
+- [ ] **2.2** Auto‑unsubscribe on component disconnect.  
+- [ ] **2.3** Demo: live counter, auth badge, form validation indicators.  
+  _Owner:_ View/Template team
 
 ---
 
-### **Priority 4: Developer Experience Enhancements**
-**Status:** 🟡 Partially Complete  
-**Estimated Effort:** 3-4 days  
-**Impact:** Medium - Developer productivity and adoption
+## 3 🧹 Controller→ActorRef Migration
 
-**Goal:** Improve developer tools and development workflow
+> _Goal:_ All first‑party components stop reading controller `.state.context`.
 
-#### **VS Code Extension Updates**
-- [ ] Intellisense for new unified API options
-- [ ] Code snippets for common patterns
-- [ ] Accessibility linting integration
-- [ ] Real-time validation of component configs
+- [ ] **3.1** Shield direct context access behind `observe()` / selectors.  
+- [ ] **3.2** Provide codemod (`npx actor-web-migrate`) that:  
+  - Rewrites `createStateController` → `createActorRef`  
+  - Replaces `controller.state.context.foo` with `await actor.ask({ ... })` or `observe`.  
+  - Flags unsafe patterns.
 
-#### **TypeScript Improvements**
-- [ ] Better type inference for conditional features
-- [ ] Template literal type checking
-- [ ] Event payload validation
-- [ ] Configuration option autocomplete
-
-#### **Runtime Validation**
-- [ ] Helpful error messages for misconfigurations
-- [ ] Development-time warnings for accessibility issues
-- [ ] Performance monitoring in dev mode
-- [ ] Configuration validation utilities
-
-#### **Documentation Enhancements**
-- [ ] Interactive examples in documentation
-- [ ] Migration guides for existing projects
-- [ ] Best practices and patterns guide
-- [ ] Troubleshooting and FAQ section
+- [ ] **3.3** Deprecation banner in docs; announce removal schedule.  
+  _Owner:_ Migration squad
 
 ---
 
-### **Priority 5: Performance Optimization**
-**Status:** 🔴 Not Started  
-**Estimated Effort:** 2-3 days  
-**Impact:** Medium - Production readiness
+## 4 🛡️ Supervision & Fault Handling
 
-**Goal:** Optimize framework performance for production applications
+> _Goal:_ Match backend actor robustness (restart strategies, escalation).
 
-#### **Bundle Size Optimization**
-- [ ] Lazy-load enhanced features only when needed
-- [ ] Tree-shaking optimization for unused features
-- [ ] Dynamic imports for heavy components
-- [ ] Bundle splitting strategies
-
-#### **Runtime Performance**
-- [ ] Component initialization optimization
-- [ ] Template rendering performance
-- [ ] Event handling efficiency
-- [ ] Memory leak prevention
-
-#### **Monitoring & Analytics**
-- [ ] Performance metrics collection
-- [ ] Usage pattern analytics
-- [ ] Error tracking integration
-- [ ] Performance regression detection
+- [ ] **4.1** `SupervisorRef` implementation (`one-for-one`, `all-for-one`).  
+- [ ] **4.2** Configurable restart strategy on `spawn(machine, { supervision })`.  
+- [ ] **4.3** Logging / dev‑mode overlay shows actor restarts.  
+  _Owner:_ Runtime team
 
 ---
 
-## 📊 **Success Metrics**
+## 5 📨 Distributed / Worker Actors
 
-### **Technical Metrics**
-- [ ] 100% test coverage for core API
-- [ ] < 50ms component initialization time
-- [ ] < 15KB gzipped bundle size for basic components
-- [ ] WCAG 2.1 AA compliance score: 100%
-- [ ] Cross-browser compatibility: 98%+
+> _Goal:_ Allow actors to live off the main thread, in other processes, or on remote hosts.
 
-### **Developer Experience Metrics**
-- [ ] API documentation completeness: 100%
-- [ ] Example coverage for common use cases: 90%+
-- [ ] Developer onboarding time: < 30 minutes
-- [ ] Community issue resolution time: < 48 hours
-
-### **Adoption Metrics**
-- [ ] Framework usage in production applications
-- [ ] Community contributions and feedback
-- [ ] Performance benchmark improvements
-- [ ] Developer satisfaction surveys
+- [ ] **5.1** `WebWorkerActorHost` – serialize events with `structuredClone`.  
+- [ ] **5.2** Transport‑agnostic adapter (`postMessage`, WebSocket, IPC).  
+- [ ] **5.3** Demo: sort‑10k‑rows actor runs in worker, UI stays responsive.  
+  _Owner:_ Concurrency squad
 
 ---
 
-## 🗓 **Timeline & Milestones**
+## 5b 🌍 Host‑Integration (MPA & SSR)
 
-### **Week 1-2: Mobile Navigation Integration**
-- Complete mobile API integration
-- Update documentation
-- Create mobile examples
+> _Goal:_ Enable actor runtime to work seamlessly across different web architectures and deployment modes.
 
-### **Week 3-4: Testing Infrastructure**
-- Set up comprehensive test suites
-- Implement CI/CD pipeline
-- Performance benchmarking
+- [ ] **5b.1** Multi‑page application support  
+  - Browser ↔ Service‑Worker transport adapter (BroadcastChannel)  
+  - IndexedDB mailbox for cross‑page actor persistence  
+  - Bootstrap contract for actor system discovery/reinstantiation  
 
-### **Week 5-6: Examples & Documentation**
-- Build demo applications
-- Complete developer guides
-- Community feedback integration
+- [ ] **5b.2** Server‑side rendering helpers  
+  - `renderToString(actorRef, templateFn)` for stable state snapshots  
+  - `hydrate(actorRef, snapshot)` for client‑side resumption  
+  - Serialization adapters for actor context data  
 
-### **Week 7-8: Developer Experience & Performance**
-- VS Code extension updates
-- Runtime optimizations
-- Production readiness validation
+- [ ] **5b.3** Cross‑deployment transport examples  
+  - Islands / Micro‑front‑ends via postMessage  
+  - Electron / Tauri via IPC  
+  - Edge / Workers (Cloudflare, Deno) via RemoteActorRef  
 
----
-
-## 🔄 **Continuous Improvements**
-
-### **Community Engagement**
-- [ ] Regular community feedback sessions
-- [ ] Open source contribution guidelines
-- [ ] Issue triage and resolution process
-- [ ] Feature request evaluation framework
-
-### **Framework Evolution**
-- [ ] Regular API review and refinement
-- [ ] Emerging web standards integration
-- [ ] Performance monitoring and optimization
-- [ ] Security updates and best practices
+- [ ] **5b.4** Example repositories  
+  - Multi‑page site sharing login actor  
+  - SSR‑hydrated e‑commerce with cart persistence  
+  - Micro‑front‑end dashboard with shared state  
+  _Owner:_ Host Integration squad
 
 ---
 
-## 📋 **Decision Points**
+## 6 ⚡ Performance & Back‑pressure
 
-### **Mobile Navigation Approach**
-**Options:**
-1. **Full Integration:** Complete mobile navigation in unified API
-2. **Gradual Migration:** Phase mobile features into unified API
-3. **Parallel Development:** Maintain separate mobile system
-
-**Recommendation:** Full Integration - maintains API consistency
-
-### **Testing Strategy**
-**Options:**
-1. **Manual Testing Focus:** Prioritize manual accessibility testing
-2. **Automated Testing Focus:** Emphasize automated test coverage
-3. **Hybrid Approach:** Balance manual and automated testing
-
-**Recommendation:** Hybrid Approach - automated for regression, manual for UX
-
-### **Performance vs Features**
-**Options:**
-1. **Performance First:** Optimize bundle size, limit features
-2. **Feature Complete:** Include all features, optimize later
-3. **Configurable:** Let developers choose their trade-offs
-
-**Recommendation:** Configurable - matches framework philosophy
+- [ ] **6.1** Benchmarks: event throughput, memory footprint, GC.  
+- [ ] **6.2** Configurable mailbox size + overflow strategy (`drop`, `park`, `fail`).  
+- [ ] **6.3** Micro‑tasks batching for high‑frequency UI events.  
+  _Owner:_ Perf team
 
 ---
 
-## 🎯 **Next Action Items**
+## 7 🛠️ Tooling & Dev UX
 
-1. **Immediate (This Week):**
-   - [ ] Start mobile navigation integration
-   - [ ] Set up testing infrastructure planning
-   - [ ] Update todo list with roadmap priorities
+- [ ] **7.1** Browser DevTools extension  
+  - Actor tree, message timeline, state snapshots.  
+- [ ] **7.2** Time‑travel replay via stored message log.  
+- [ ] **7.3** VS Code code‑gen snippets for `ask`, `observe`, `spawn`.  
+  _Owner:_ DX team
 
-2. **Short Term (Next 2 Weeks):**
-   - [ ] Complete mobile API integration
-   - [ ] Begin comprehensive testing implementation
-   - [ ] Start example application development
+---
 
-3. **Medium Term (Next Month):**
-   - [ ] Complete all testing suites
-   - [ ] Finish demo applications
-   - [ ] Performance optimization implementation
+## 8 📚 Documentation & Learning Path
 
-This roadmap provides a clear path forward while maintaining flexibility for community feedback and emerging requirements. 
+- [ ] **8.1** "Why Actors?" explainer with diagrams.  
+- [ ] **8.2** Migration guide: controllers → ActorRefs.  
+- [ ] **8.3** Cookbook recipes (infinite scrolling, optimistic updates, offline cache).  
+- [ ] **8.4** Host‑specific deployment guides (SPA, MPA, SSR, Edge).  
+  _Owner:_ DevRel
+
+---
+
+## 9 🎉 v1.0 GA — Pure Actor Web Runtime
+
+| Release Gate | Success Metric |
+|--------------|----------------|
+| 🔒 **Zero** first‑party code reads actor state directly. | Type‑level check & static analysis. |
+| 🛡️ All critical actors protected by a supervisor. | Chaos tests: random failures auto‑recovered. |
+| ⚙️ CI runs **benchmarks** under target thresholds (CPU < X ms/frame, memory < Y MB). | Perf dashboards green. |
+| 🌍 **Host‑agnostic** deployment verified across SPA, MPA, SSR, Worker environments. | Integration tests pass in all target hosts. |
+| 📖 Docs include full tutorial path ("TodoMVC" to distributed chat to SSR e‑commerce). | Community feedback > 90 % positive. |
+
+Once these gates are green we can tag **`@actor-web/core@1.0.0`** and begin the 1.x feature cadence.
+
+---
+
+## 10 🔮 Enhanced Architecture & Testing _(Research-Driven Improvements)_
+
+> _Goal:_ Incorporate research-validated improvements for a truly universal actor system.
+
+### 10.1 🎯 Unified Actor Registry & Addressing
+
+- [ ] **10.1.1** Actor Registry Service
+  - Central registry for actor discovery by address/pattern
+  - Location-transparent routing (local, worker, remote)
+  - Dynamic actor discovery API
+  
+- [ ] **10.1.2** Actor Addressing Scheme
+  - Hierarchical addresses: `system://parent/child/grandchild`
+  - Pattern-based discovery: `system://auth/*`
+  - Migration-safe addressing (actors can move locations)
+
+### 10.2 🧪 Actor Testing Framework
+
+- [ ] **10.2.1** Test Harness & Utilities
+  - `ActorTestHarness` for scenario-based testing
+  - Deterministic message replay
+  - State assertion helpers
+  - Mock supervisor & mailbox implementations
+  
+- [ ] **10.2.2** Testing Patterns Documentation
+  - Unit testing individual actors
+  - Integration testing actor hierarchies
+  - Property-based testing for message flows
+  - Chaos testing with failure injection
+
+### 10.3 📦 Minimal Core Architecture
+
+- [ ] **10.3.1** Package Separation
+  - `@actor-web/core` - Zero DOM dependencies
+  - `@actor-web/dom` - Browser-specific bindings
+  - `@actor-web/node` - Node.js adapters
+  - `@actor-web/embedded` - Minimal footprint build
+  
+- [ ] **10.3.2** Platform Abstraction Layer
+  - Pluggable timer implementation
+  - Pluggable I/O abstractions
+  - Memory-constrained mode (no observables)
+
+### 10.4 🛡️ Security & Error Patterns
+
+- [ ] **10.4.1** Message Security
+  - Message validation/sanitization framework
+  - Trust boundary enforcement
+  - Encrypted actor communication option
+  
+- [ ] **10.4.2** Error Handling Cookbook
+  - Supervision hierarchy patterns
+  - Error escalation strategies
+  - Circuit breaker implementation
+  - Dead letter queue pattern
+
+### 10.5 📊 Performance Monitoring
+
+- [ ] **10.5.1** Built-in Metrics
+  - Message throughput tracking
+  - Mailbox depth monitoring
+  - Actor lifecycle timing
+  - Memory usage per actor
+  
+- [ ] **10.5.2** Performance Best Practices
+  - Actor granularity guidelines
+  - Message batching strategies
+  - Back-pressure patterns
+  - Hot-path optimization guide
+
+_Owner:_ Architecture team  
+_Timeline:_ Q4 '26 - Q1 '27
+
+---
+
+## Deployment Mode Support Matrix
+
+| Mode | Status | Phase | Notes |
+|------|--------|-------|-------|
+| **Classic SPA** | ✅ Native | 1-4 | Single HTML shell, client routing |
+| **Multi-Page App** | 🔄 Planned | 5b | Shared actors via Service Worker/BroadcastChannel |
+| **SSR / Hydration** | 🔄 Planned | 5b | Server snapshots, client resumption |
+| **Islands / Micro-frontends** | 🔄 Planned | 5b | Cross-island messaging via event bus |
+| **PWA / Offline** | 🔄 Planned | 5b | Service Worker actor persistence |
+| **Electron / Tauri** | 🔄 Planned | 5b | Main process actors, renderer ActorRefs |
+| **Edge / Workers** | 🔄 Planned | 5b | Serverless isolates, RemoteActorRef |
+
+---
+
+## Timeline Snapshot *(tentative)*
+
+| Quarter | Milestone |
+|---------|-----------|
+| **Q3 '25** | Phases 1‑2 complete, early adopters testing ActorRefs |
+| **Q4 '25** | Phase 3 migration finished, supervisor beta |
+| **Q1 '26** | Worker actors, host‑integration (Phase 5b) |
+| **Q2 '26** | Perf/back‑pressure tuning, DevTools |
+| **Q3 '26** | Docs polish, multi‑deployment validation, **v1.0 GA** |
+| **Q4 '26** | Enhanced architecture (Phase 10) begins |
+| **Q1 '27** | Complete testing framework & security patterns |
+
+> _Adjustments made monthly based on community feedback and internal velocity._
+
+---
+
+## Branding Evolution
+
+### Current State
+- **Project Name**: Actor-SPA  
+- **Package Scope**: `@actor-spa/core`  
+- **Community**: #actor-spa on Discord  
+
+### Future State (Post-v1.0)
+- **Project Name**: Actor-Web *(or Actor-UI)*  
+- **Package Scope**: `@actor-web/core`  
+- **Tagline**: "Pure‑actor web runtime"  
+- **Community**: #actor-web on Discord  
+
+> **Migration Strategy**: Maintain `@actor-spa/*` packages as aliases during v1.x for backward compatibility. Announce branding transition 6 months before v2.0.
+
+---
+
+## Governance
+
+- **Product Owner:** 0xjcf  
+- **Steering Group:** Runtime Lead, DX Lead, Perf Lead, DevRel, Host Integration Lead  
+- **Community Sync:** #actor-spa on Discord, every second Thursday (16:00 UTC)  
+- **RFC Process:** Propose → 7‑day comment → Accepted / Need‑More‑Work  
+
+---
+
+### Contributing
+
+1. Check open roadmap item labels: `good first issue`, `help wanted`, `RFC`.  
+2. Submit PRs targeting the **next** milestone branch (e.g. `phase-1-actorref`).  
+3. Add your change to `CHANGELOG.md` under `Unreleased`.  
+4. Pass CI (`npm test`, `npm run lint`, `npm run benchmark`).  
+
+Let's build the most resilient, scalable, **host‑agnostic** actor runtime for the web! 🌟 
