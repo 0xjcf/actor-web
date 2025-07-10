@@ -89,6 +89,28 @@ git status  # Should show: feature/actor-ref-tests
 
 ### 🔄 Daily Workflow (ALL AGENTS)
 
+#### Using the New Merge Scripts (RECOMMENDED)
+
+```bash
+# 1. Navigate to YOUR agent directory
+cd ../actor-web-[architecture|implementation|tests]
+
+# 2. Daily sync with integration (MANDATORY - before any work)
+pnpm sync  # Automatically fetches and merges from integration branch
+
+# 3. Optional: Pull specific agent changes if needed
+pnpm merge-a  # Architecture changes from Agent A
+pnpm merge-b  # Implementation changes from Agent B  
+pnpm merge-c  # Test updates from Agent C
+
+# 4. Work normally (no branch switching needed!)
+git add .
+git commit -m "feat: your changes"
+git push origin feature/actor-ref-[your-branch]
+```
+
+#### Manual Method (if scripts unavailable)
+
 ```bash
 # 1. Navigate to YOUR agent directory
 cd ../actor-web-[architecture|implementation|tests]
@@ -103,6 +125,8 @@ git add .
 git commit -m "feat: your changes"
 git push origin feature/actor-ref-[your-branch]
 ```
+
+📝 **See [scripts/MERGE-WORKFLOW.md](../scripts/MERGE-WORKFLOW.md) for detailed merge script documentation.**
 
 ### 🛡️ Worktree Benefits
 
@@ -232,9 +256,22 @@ git pull origin feature/actor-ref-tests
 ### Integration & Merge Strategy
 
 #### Daily Integration Process (MANDATORY)
+
+##### Using Merge Scripts (RECOMMENDED)
 ```bash
 # Each agent works in their own worktree - no branch conflicts!
 
+# All agents run the same command from their worktree:
+pnpm sync  # Automatically syncs with integration branch
+
+# Optional: Pull specific changes from other agents
+pnpm merge-a  # Get latest architecture changes
+pnpm merge-b  # Get latest implementation changes
+pnpm merge-c  # Get latest test updates
+```
+
+##### Manual Method
+```bash
 # Agent A daily sync (from ../actor-web-architecture/)
 cd ../actor-web-architecture
 git pull origin feature/actor-ref-architecture
