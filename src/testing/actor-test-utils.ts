@@ -8,7 +8,7 @@ import { vi } from 'vitest';
 import type { AnyStateMachine, EventObject } from 'xstate';
 import type { ActorRef, ActorRefOptions } from '../core/actors/actor-ref';
 import type { ActorSnapshot, SupervisionStrategy } from '../core/actors/types';
-import type { Observable, Observer } from '../core/observables/observable';
+import type { Observable, Observer, Subscription } from '../core/observables/observable';
 
 /**
  * Mock ActorRef for testing
@@ -21,6 +21,8 @@ export interface MockActorRef<TEvent extends EventObject = EventObject>
   getSpawnedChildren: () => MockActorRef<EventObject>[];
   simulateStateChange: (snapshot: Partial<ActorSnapshot>) => void;
   simulateError: (error: Error) => void;
+  // Make status mutable for testing
+  status: 'idle' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error';
 }
 
 /**
@@ -39,7 +41,7 @@ export function createMockActorRef<T extends EventObject = EventObject>(
     status: 'active',
     error: undefined,
   };
-  let status: 'active' | 'stopped' | 'error' = 'active';
+  let status: 'idle' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error' = 'running';
 
   const mockRef: MockActorRef<T> = {
     id,
@@ -52,19 +54,25 @@ export function createMockActorRef<T extends EventObject = EventObject>(
       options?.metrics?.onMessage?.(event);
     }),
 
-    ask: vi.fn(async (query: unknown) => {
+    ask: vi.fn<[unknown], Promise<unknown>>(async (query: unknown) => {
       return new Promise((resolve, _reject) => {
         setTimeout(() => {
           resolve({ type: 'RESPONSE', data: query });
         }, 50);
       });
-    }),
+    }) as any,
 
     observe: vi.fn(<TSelected>(selector: (snapshot: ActorSnapshot) => TSelected) => {
       const mockObservable: Observable<TSelected> = {
-        subscribe: (observerOrNext: Observer<TSelected> | ((value: TSelected) => void)) => {
-          const observer =
-            typeof observerOrNext === 'function' ? { next: observerOrNext } : observerOrNext;
+        subscribe: (
+          observerOrNext: Observer<TSelected> | ((value: TSelected) => void),
+          error?: (error: Error) => void,
+          complete?: () => void
+        ) => {
+          const observer: Observer<TSelected> =
+            typeof observerOrNext === 'function'
+              ? { next: observerOrNext, error, complete }
+              : observerOrNext;
 
           observers.add(observer);
 
@@ -76,16 +84,20 @@ export function createMockActorRef<T extends EventObject = EventObject>(
             observer.error?.(error as Error);
           }
 
-          // Return unsubscribe function
+          // Return subscription with closed property
           return {
+            closed: false,
             unsubscribe: () => {
               observers.delete(observer);
             },
           };
         },
+        [Symbol.observable]: function () {
+          return this;
+        },
       };
       return mockObservable;
-    }),
+    }) as any,
 
     spawn: vi.fn(
       (
@@ -103,7 +115,7 @@ export function createMockActorRef<T extends EventObject = EventObject>(
     ),
 
     start: vi.fn(() => {
-      status = 'active';
+      status = 'running';
       mockRef.status = status;
     }),
 
@@ -177,7 +189,7 @@ export function createTestEnvironment(): TestEnvironment {
     cleanup: () => {
       // Stop all actors
       actors.forEach((actor) => {
-        if (actor.status === 'active') {
+        if (actor.status === 'running') {
           actor.stop();
         }
       });
@@ -311,17 +323,27 @@ export function createTestObservable<T>(): {
   const observers = new Set<Observer<T>>();
 
   const observable: Observable<T> = {
-    subscribe: (observerOrNext: Observer<T> | ((value: T) => void)) => {
-      const observer =
-        typeof observerOrNext === 'function' ? { next: observerOrNext } : observerOrNext;
+    subscribe: (
+      observerOrNext: Observer<T> | ((value: T) => void),
+      error?: (error: Error) => void,
+      complete?: () => void
+    ) => {
+      const observer: Observer<T> =
+        typeof observerOrNext === 'function'
+          ? { next: observerOrNext, error, complete }
+          : observerOrNext;
 
       observers.add(observer);
 
       return {
+        closed: false,
         unsubscribe: () => {
           observers.delete(observer);
         },
       };
+    },
+    [Symbol.observable]: function () {
+      return this;
     },
   };
 
