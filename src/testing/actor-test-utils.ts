@@ -54,13 +54,13 @@ export function createMockActorRef<T extends EventObject = EventObject>(
       options?.metrics?.onMessage?.(event);
     }),
 
-    ask: vi.fn<[unknown], Promise<unknown>>(async (query: unknown) => {
+    ask: vi.fn(async (query: unknown) => {
       return new Promise((resolve, _reject) => {
         setTimeout(() => {
           resolve({ type: 'RESPONSE', data: query });
         }, 50);
       });
-    }) as any,
+    }) as <TQuery, TResponse>(query: TQuery, options?: unknown) => Promise<TResponse>,
 
     observe: vi.fn(<TSelected>(selector: (snapshot: ActorSnapshot) => TSelected) => {
       const mockObservable: Observable<TSelected> = {
@@ -97,7 +97,7 @@ export function createMockActorRef<T extends EventObject = EventObject>(
         },
       };
       return mockObservable;
-    }) as any,
+    }) as <TSelected>(selector: (snapshot: ActorSnapshot) => TSelected) => Observable<TSelected>,
 
     spawn: vi.fn(
       (
@@ -113,6 +113,33 @@ export function createMockActorRef<T extends EventObject = EventObject>(
         return childRef as MockActorRef<EventObject>;
       }
     ),
+
+    // New required methods from ActorRef interface
+    stopChild: vi.fn(async (childId: string) => {
+      const childIndex = spawnedChildren.findIndex((child) => child.id === childId);
+      if (childIndex !== -1) {
+        await spawnedChildren[childIndex].stop();
+        spawnedChildren.splice(childIndex, 1);
+      }
+    }),
+
+    getChildren: vi.fn(() => {
+      const childrenMap = new Map<string, MockActorRef<EventObject>>();
+      for (const child of spawnedChildren) {
+        childrenMap.set(child.id, child);
+      }
+      return childrenMap as ReadonlyMap<string, ActorRef<EventObject, unknown>>;
+    }),
+
+    matches: vi.fn((statePath: string) => {
+      // Simple mock implementation - always returns false for now
+      return false;
+    }),
+
+    accepts: vi.fn((eventType: string) => {
+      // Simple mock implementation - accepts any non-empty string
+      return typeof eventType === 'string' && eventType.length > 0;
+    }),
 
     start: vi.fn(() => {
       status = 'running';
