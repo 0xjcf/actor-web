@@ -4,6 +4,13 @@
  * @author Agent B - 2024-01-15
  */
 
+// Type declaration for Symbol.observable
+declare global {
+  interface SymbolConstructor {
+    readonly observable: symbol;
+  }
+}
+
 /**
  * Observer interface - matches RxJS Observer pattern
  */

@@ -133,8 +133,8 @@ describe('JSON Utilities', () => {
 
     describe('Error handling', () => {
       it('throws DeserializationError for non-string input', () => {
-        expect(() => safeDeserialize(123 as any)).toThrow(DeserializationError);
-        expect(() => safeDeserialize(123 as any)).toThrow('Input must be a string');
+        expect(() => safeDeserialize(123 as unknown as string)).toThrow(DeserializationError);
+        expect(() => safeDeserialize(123 as unknown as string)).toThrow('Input must be a string');
       });
 
       it('throws DeserializationError for invalid JSON', () => {
@@ -302,8 +302,11 @@ describe('JSON Utilities', () => {
           value: number;
         }
 
-        const isTestData = (obj: any): obj is TestData =>
-          typeof obj?.id === 'string' && typeof obj?.value === 'number';
+        const isTestData = (obj: unknown): obj is TestData =>
+          typeof obj === 'object' &&
+          obj !== null &&
+          typeof (obj as Record<string, unknown>).id === 'string' &&
+          typeof (obj as Record<string, unknown>).value === 'number';
 
         const testSerializer = createTypedSerializer(isTestData, 'TestData');
         const data: TestData = { id: 'test-1', value: 42 };
@@ -315,16 +318,24 @@ describe('JSON Utilities', () => {
       });
 
       it('throws error when serializing invalid data structure', () => {
-        const isTestData = (obj: any): obj is { id: string } => typeof obj?.id === 'string';
+        const isTestData = (obj: unknown): obj is { id: string } =>
+          typeof obj === 'object' &&
+          obj !== null &&
+          typeof (obj as Record<string, unknown>).id === 'string';
 
         const testSerializer = createTypedSerializer(isTestData, 'TestData');
         const invalidData = { name: 'test' }; // Missing 'id'
 
-        expect(() => testSerializer.serialize(invalidData as any)).toThrow(SerializationError);
+        expect(() => testSerializer.serialize(invalidData as unknown as { id: string })).toThrow(
+          SerializationError
+        );
       });
 
       it('throws error when deserializing invalid JSON structure', () => {
-        const isTestData = (obj: any): obj is { id: string } => typeof obj?.id === 'string';
+        const isTestData = (obj: unknown): obj is { id: string } =>
+          typeof obj === 'object' &&
+          obj !== null &&
+          typeof (obj as Record<string, unknown>).id === 'string';
 
         const testSerializer = createTypedSerializer(isTestData, 'TestData');
         const invalidJson = '{"name":"test"}'; // Missing 'id'
@@ -494,9 +505,11 @@ describe('JSON Utilities', () => {
       it('throws error for invalid user data', () => {
         const invalidUser = { id: '123', name: 'Alice' }; // Missing email
 
-        expect(() => frameworkSerializers.user.serialize(invalidUser as any)).toThrow(
-          SerializationError
-        );
+        expect(() =>
+          frameworkSerializers.user.serialize(
+            invalidUser as unknown as { id: string; name: string; email: string }
+          )
+        ).toThrow(SerializationError);
       });
     });
 

@@ -371,11 +371,15 @@ describe('XStateActorRefAdapter', () => {
         parent.spawn(childMachine),
       ];
 
-      children.forEach((child) => expect(child.status).toBe('running'));
+      for (const child of children) {
+        expect(child.status).toBe('running');
+      }
 
       await parent.stop();
 
-      children.forEach((child) => expect(child.status).toBe('stopped'));
+      for (const child of children) {
+        expect(child.status).toBe('stopped');
+      }
     });
   });
 
@@ -448,12 +452,14 @@ describe('XStateActorRefAdapter', () => {
         { type: 'RESET' },
       ];
 
-      events.forEach((event) => actorRef.send(event));
+      for (const event of events) {
+        actorRef.send(event);
+      }
 
       expect(onMessage).toHaveBeenCalledTimes(4);
-      events.forEach((event, index) => {
-        expect(onMessage).toHaveBeenNthCalledWith(index + 1, event);
-      });
+      for (let i = 0; i < events.length; i++) {
+        expect(onMessage).toHaveBeenNthCalledWith(i + 1, events[i]);
+      }
     });
 
     it('should track state change metrics', () => {
@@ -740,9 +746,9 @@ describe('XStateActorRefAdapter', () => {
 
       // Each should get the actual value as response
       expect(results).toHaveLength(3);
-      results.forEach((result) => {
+      for (const result of results) {
         expect(result).toEqual({ name: 'Test', id: 123 });
-      });
+      }
     });
 
     it('should timeout on unresponsive asks', async () => {

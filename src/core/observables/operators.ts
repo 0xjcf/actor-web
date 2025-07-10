@@ -148,10 +148,11 @@ export const observableUtils = {
    */
   toObservable<T>(value: T | Observable<T>): Observable<T> {
     if (this.isObservable(value)) {
-      return value;
+      return value as Observable<T>;
     }
+    // TypeScript now knows this is the non-observable case
     return new CustomObservable<T>((observer) => {
-      observer.next(value);
+      observer.next(value as T);
       if (observer.complete) {
         observer.complete();
       }
