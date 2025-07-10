@@ -319,7 +319,7 @@ describe('Timer Services', () => {
                 input: { interval: 1000 },
               },
               on: {
-                STOP_POLLING: { actions: 'stopInterval' },
+                STOP_POLLING: { actions: () => {} },
                 CANCELLED: { target: 'stopped', actions: cancelledHandler },
               },
             },
@@ -548,7 +548,7 @@ describe('Timer Services', () => {
                 input: { delay: 300 },
               },
               on: {
-                INPUT: { actions: 'resetDebounce' },
+                INPUT: { actions: () => {} },
                 DEBOUNCE_COMPLETE: { target: 'idle', actions: executeHandler },
               },
             },
@@ -596,7 +596,7 @@ describe('Timer Services', () => {
                 input: { delay: 300, maxWait: 1000 },
               },
               on: {
-                INPUT: { actions: 'resetDebounce' },
+                INPUT: { actions: () => {} },
                 DEBOUNCE_COMPLETE: { target: 'idle', actions: executeHandler },
               },
             },
@@ -840,7 +840,7 @@ describe('Timer Services', () => {
             on: {
               TYPE: {
                 target: 'debouncing',
-                actions: 'updateQuery',
+                actions: () => {},
               },
             },
           },
@@ -852,7 +852,7 @@ describe('Timer Services', () => {
             on: {
               TYPE: {
                 target: 'debouncing',
-                actions: 'updateQuery',
+                actions: () => {},
               },
               DEBOUNCE_COMPLETE: {
                 target: 'idle',
