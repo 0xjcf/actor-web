@@ -79,10 +79,7 @@ export const childMachine = setup({
     active: {
       on: {
         SEND_TO_PARENT: {
-          actions: [
-            assign({ messageCount: ({ context }) => context.messageCount + 1 }),
-            'sendToParent',
-          ],
+          actions: [assign({ messageCount: ({ context }) => context.messageCount + 1 })],
         },
         INCREMENT_COUNT: {
           actions: assign({ messageCount: ({ context }) => context.messageCount + 1 }),
@@ -170,6 +167,7 @@ export const errorProneMachine = createMachine({
 });
 
 // Machine with complex event handling for testing ask pattern
+// This machine demonstrates the proper way to handle the framework's ask pattern
 export const queryMachine = setup({
   types: {
     context: {} as {
@@ -182,9 +180,14 @@ export const queryMachine = setup({
       }>;
     },
     events: {} as
-      | { type: 'query'; request: string; params?: { key: string }; correlationId: string }
-      | { type: 'SET'; key: string; value: unknown }
-      | { type: 'response'; correlationId: string; result: unknown; timestamp: number },
+      | {
+          type: 'query';
+          request: string;
+          params?: unknown;
+          correlationId: string;
+          timeout?: number;
+        }
+      | { type: 'SET'; key: string; value: unknown },
   },
 }).createMachine({
   id: 'query',
@@ -199,19 +202,28 @@ export const queryMachine = setup({
         query: {
           actions: assign({
             pendingResponses: ({ context, event }) => {
-              // For testing purposes, the response includes the original query
+              // Handle different query types based on the request field
+              let result: unknown = null;
+
+              if (event.request === 'get' && event.params) {
+                // When using ask() with { type: 'get', key: 'name' },
+                // the framework extracts 'get' as the request and puts the whole object in params
+                const params = event.params as { type?: string; key?: string };
+                if (params.key) {
+                  result = context.data[params.key] || null;
+                }
+              } else if (event.request === 'get-all') {
+                // Return all data
+                result = context.data;
+              }
+
               const response = {
                 type: 'response' as const,
                 correlationId: event.correlationId,
-                result: {
-                  type: 'QUERY',
-                  key: event.params?.key,
-                  value: event.params?.key ? context.data[event.params.key] : null,
-                },
+                result,
                 timestamp: Date.now(),
               };
 
-              // Add response to pending list
               return [...context.pendingResponses, response];
             },
           }),

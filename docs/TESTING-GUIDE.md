@@ -5,12 +5,14 @@
 ## 📋 Table of Contents
 1. [Testing Philosophy](#testing-philosophy)
 2. [Test Organization](#test-organization)
-3. [Writing Behavior Tests](#writing-behavior-tests)
-4. [Test Utilities](#test-utilities)
-5. [Common Patterns](#common-patterns)
-6. [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
-7. [Performance Testing](#performance-testing)
-8. [Integration Testing](#integration-testing)
+3. [Framework API Usage](#framework-api-usage)
+4. [Writing Behavior Tests](#writing-behavior-tests)
+5. [Test Utilities](#test-utilities)
+6. [Common Patterns](#common-patterns)
+7. [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
+8. [Performance Testing](#performance-testing)
+9. [Integration Testing](#integration-testing)
+10. [Key Testing Insights](#key-testing-insights)
 
 ---
 
@@ -23,7 +25,12 @@
    - Tests should survive refactoring of the implementation
    - Use the public API, avoid testing private methods
 
-2. **Follow AAA Pattern**
+2. **Use Framework APIs Correctly**
+   - Always use the framework's intended API patterns
+   - Don't add implementation details to test fixtures
+   - Let the framework handle internal message structure
+
+3. **Follow AAA Pattern**
    ```typescript
    it('should handle events correctly', () => {
      // Arrange - Set up test data and environment
@@ -37,7 +44,7 @@
    });
    ```
 
-3. **Test Names Describe Behavior**
+4. **Test Names Describe Behavior**
    ```typescript
    // ✅ GOOD: Describes the expected behavior
    it('should transition to error state when receiving error event')
@@ -94,6 +101,153 @@ describe('[Module Name]', () => {
     it('should [expected behavior]', () => {
       // Test implementation
     });
+  });
+});
+```
+
+---
+
+## 🔧 Framework API Usage
+
+### Core Principle: Use the Framework's Public API
+
+**Always rely on the framework's intended APIs rather than adding implementation details to your tests.**
+
+#### ✅ Correct Ask Pattern Usage
+
+```typescript
+describe('Ask Pattern - Correct Usage', () => {
+  it('should handle queries using framework API', async () => {
+    const actor = createXStateQueryActor(queryMachine);
+    actor.start();
+    
+    // Set up data
+    actor.send({ type: 'SET', key: 'user', value: 'John' });
+    
+    // ✅ CORRECT: Use query structure with type field
+    // The framework extracts 'get' as request type and wraps in QueryEvent
+    const response = await actor.ask(
+      { type: 'get', key: 'user' }, 
+      { timeout: 1000 }
+    );
+    
+    // ✅ CORRECT: ask() returns the result value directly
+    expect(response).toBe('John');
+  });
+  
+  it('should handle stopped actors correctly', async () => {
+    // ✅ CORRECT: Be explicit about autoStart for lifecycle tests
+    const actor = createXStateQueryActor(queryMachine, { autoStart: false });
+    
+    await expect(
+      actor.ask({ type: 'get', key: 'test' }, { timeout: 100 })
+    ).rejects.toThrow(ActorStoppedError);
+  });
+});
+```
+
+#### ❌ Incorrect Approaches
+
+```typescript
+// ❌ WRONG: Adding framework internals to test machines
+export const badQueryMachine = setup({
+  // Don't design machines around internal message structure
+  events: {} as { type: 'query'; request: string; params?: { request?: string } }
+}).createMachine({
+  // Don't handle framework-specific wrapping in test machines
+});
+
+// ❌ WRONG: Expecting internal message structure
+const response = await actor.ask(
+  { request: 'get', params: { key: 'user' } }, // Framework doesn't expect this
+  { timeout: 1000 }
+);
+
+// ❌ WRONG: Expecting full response envelope
+expect(response.type).toBe('response'); // ask() returns result, not envelope
+expect(response.result).toBe('John');
+```
+
+### Query Structure Guidelines
+
+#### How the Framework Handles Queries
+
+1. **Your Query**: `{ type: 'get', key: 'user' }`
+2. **Framework Wraps**: 
+   ```typescript
+   {
+     type: 'query',
+     request: 'get',           // Extracted from query.type
+     params: { type: 'get', key: 'user' }, // Your entire query
+     correlationId: 'uuid',
+     timeout: 1000
+   }
+   ```
+3. **Your Machine Receives**: The wrapped QueryEvent structure
+
+#### Test Machine Design
+
+```typescript
+// ✅ CORRECT: Design machines that handle framework's QueryEvent naturally
+export const queryMachine = setup({
+  types: {
+    events: {} as
+      | { type: 'query'; request: string; params?: unknown; correlationId: string }
+      | { type: 'SET'; key: string; value: unknown }
+  },
+}).createMachine({
+  states: {
+    ready: {
+      on: {
+        query: {
+          actions: assign({
+            pendingResponses: ({ context, event }) => {
+              let result: unknown = null;
+              
+              // Handle the framework's query structure
+              if (event.request === 'get' && event.params) {
+                const params = event.params as { key?: string };
+                if (params.key) {
+                  result = context.data[params.key] || null;
+                }
+              }
+              
+              return [...context.pendingResponses, {
+                type: 'response',
+                correlationId: event.correlationId,
+                result,
+                timestamp: Date.now(),
+              }];
+            },
+          }),
+        },
+      },
+    },
+  },
+});
+```
+
+### Factory Function Selection
+
+```typescript
+// ✅ CORRECT: Choose appropriate factory for test scenarios
+describe('Factory Function Usage', () => {
+  it('should use query factory for ask pattern tests', () => {
+    // Extended timeout and supervision for query tests
+    const actor = createXStateQueryActor(queryMachine);
+    expect(actor.supervision).toBe('restart-on-failure');
+  });
+  
+  it('should control lifecycle explicitly when needed', () => {
+    // Disable autoStart for lifecycle tests
+    const actor = createXStateActorRef(machine, { autoStart: false });
+    expect(actor.status).toBe('idle');
+  });
+  
+  it('should use service factory for long-running tests', () => {
+    // No autoStart, longer timeouts
+    const service = createXStateServiceActor(machine);
+    expect(service.status).toBe('idle');
   });
 });
 ```
@@ -203,45 +357,64 @@ describe('Observable Pattern', () => {
 
 ```typescript
 describe('Ask Pattern', () => {
-  it('should respond to queries within timeout', async () => {
-    const actor = createActorRef(queryMachine);
+  it('should handle queries using framework API', async () => {
+    const actor = createXStateQueryActor(queryMachine);
     actor.start();
     
-    // Set up the actor to handle queries
-    actor.send({ type: 'ENABLE_QUERY_HANDLING' });
+    // Set up test data
+    actor.send({ type: 'SET', key: 'user', value: { name: 'John', id: 123 } });
     
+    // ✅ CORRECT: Use query with type field for proper request extraction
     const response = await actor.ask(
-      { type: 'GET_DATA', key: 'user' },
+      { type: 'get', key: 'user' },
       { timeout: 1000 }
     );
     
-    expect(response.type).toBe('DATA_RESPONSE');
-    expect(response.data).toBeDefined();
+    // ✅ CORRECT: ask() returns the result value directly, not wrapped
+    expect(response).toEqual({ name: 'John', id: 123 });
   });
   
-  it('should timeout when no response received', async () => {
-    const actor = createActorRef(machine);
+  it('should handle multiple concurrent queries with correlation IDs', async () => {
+    const actor = createXStateQueryActor(queryMachine);
+    actor.start();
+    
+    // Set up test data
+    actor.send({ type: 'SET', key: 'item', value: 'test-value' });
+    
+    // Multiple concurrent asks should work with proper correlation
+    const queries = Promise.all([
+      actor.ask({ type: 'get', key: 'item' }, { timeout: 1000 }),
+      actor.ask({ type: 'get', key: 'item' }, { timeout: 1000 }),
+      actor.ask({ type: 'get', key: 'item' }, { timeout: 1000 }),
+    ]);
+    
+    const results = await queries;
+    
+    // Each query should get the same result
+    expect(results).toHaveLength(3);
+    results.forEach(result => {
+      expect(result).toBe('test-value');
+    });
+  });
+  
+  it('should reject queries when actor is stopped', async () => {
+    // ✅ IMPORTANT: Disable autoStart for lifecycle tests
+    const actor = createXStateQueryActor(queryMachine, { autoStart: false });
+    
+    // Actor should throw when not running
+    await expect(
+      actor.ask({ type: 'get', key: 'test' }, { timeout: 100 })
+    ).rejects.toThrow(ActorStoppedError);
+  });
+  
+  it('should timeout when machine does not respond', async () => {
+    // Use a machine that doesn't handle queries
+    const actor = createXStateActorRef(counterMachine, { askTimeout: 100 });
     actor.start();
     
     await expect(
-      actor.ask({ type: 'QUERY' }, { timeout: 100 })
+      actor.ask({ type: 'UNKNOWN_QUERY' }, { timeout: 100 })
     ).rejects.toThrow(TimeoutError);
-  });
-  
-  it('should handle concurrent queries with correlation IDs', async () => {
-    const actor = createActorRef(queryMachine);
-    actor.start();
-    
-    const queries = Array.from({ length: 3 }, (_, i) => 
-      actor.ask({ type: 'QUERY', id: i }, { timeout: 1000 })
-    );
-    
-    const responses = await Promise.all(queries);
-    
-    // Each response should have correct correlation
-    responses.forEach((response, i) => {
-      expect(response.queryId).toBe(i);
-    });
   });
 });
 ```
@@ -418,6 +591,135 @@ it('should process events', () => {
 });
 ```
 
+### ❌ Framework API Misuse
+
+```typescript
+// BAD: Wrong query structure for ask pattern
+it('should handle queries', async () => {
+  const actor = createXStateQueryActor(queryMachine);
+  actor.start();
+  
+  // Wrong: Framework doesn't expect nested request/params structure
+  const response = await actor.ask({
+    request: 'get',
+    params: { key: 'user' }
+  });
+  
+  // Wrong: ask() returns result directly, not response envelope
+  expect(response.type).toBe('response');
+  expect(response.result).toBe('data');
+});
+
+// GOOD: Correct query structure and expectations
+it('should handle queries', async () => {
+  const actor = createXStateQueryActor(queryMachine);
+  actor.start();
+  
+  actor.send({ type: 'SET', key: 'user', value: 'John' });
+  
+  // Correct: Use type field for request extraction
+  const response = await actor.ask({ type: 'get', key: 'user' });
+  
+  // Correct: ask() returns the result value directly
+  expect(response).toBe('John');
+});
+```
+
+### ❌ Test Machine Implementation Details
+
+```typescript
+// BAD: Adding framework internals to test machines
+export const badQueryMachine = setup({
+  types: {
+    events: {} as {
+      type: 'query';
+      request: string;
+      params?: { request?: string; params?: { key: string } }; // Framework-specific
+    }
+  }
+}).createMachine({
+  states: {
+    ready: {
+      on: {
+        query: {
+          actions: assign({
+            pendingResponses: ({ context, event }) => {
+              // BAD: Handling framework's internal message wrapping
+              if (event.params?.request === 'get' && event.params?.params?.key) {
+                // This is implementation detail knowledge
+              }
+            }
+          })
+        }
+      }
+    }
+  }
+});
+
+// GOOD: Natural machine design that works with framework
+export const goodQueryMachine = setup({
+  types: {
+    events: {} as
+      | { type: 'query'; request: string; params?: unknown; correlationId: string }
+      | { type: 'SET'; key: string; value: unknown }
+  }
+}).createMachine({
+  states: {
+    ready: {
+      on: {
+        query: {
+          actions: assign({
+            pendingResponses: ({ context, event }) => {
+              // GOOD: Handle framework's QueryEvent structure naturally
+              let result = null;
+              if (event.request === 'get' && event.params) {
+                const params = event.params as { key?: string };
+                if (params.key) {
+                  result = context.data[params.key];
+                }
+              }
+              
+              return [...context.pendingResponses, {
+                type: 'response',
+                correlationId: event.correlationId,
+                result,
+                timestamp: Date.now(),
+              }];
+            }
+          })
+        }
+      }
+    }
+  }
+});
+```
+
+### ❌ Ignoring Actor Lifecycle
+
+```typescript
+// BAD: Not considering autoStart behavior
+it('should reject queries on stopped actor', async () => {
+  // This creates a started actor due to autoStart: true default!
+  const actor = createXStateQueryActor(queryMachine);
+  
+  // This test will fail because actor is actually running
+  await expect(
+    actor.ask({ type: 'get', key: 'test' })
+  ).rejects.toThrow(); // Will not throw!
+});
+
+// GOOD: Explicit lifecycle control
+it('should reject queries on stopped actor', async () => {
+  // Explicitly disable autoStart for lifecycle tests
+  const actor = createXStateQueryActor(queryMachine, { autoStart: false });
+  
+  // Now the test works as expected
+  await expect(
+    actor.ask({ type: 'get', key: 'test' })
+  ).rejects.toThrow(ActorStoppedError);
+});
+```
+
 ### ❌ Timing-Dependent Tests
 
 ```typescript
@@ -558,6 +860,72 @@ Always document:
  */
 describe('Ask Pattern', () => {
   // Tests...
+});
+```
+
+---
+
+## 📚 Key Testing Insights
+
+### Ask Pattern Testing Summary
+
+Based on debugging and testing the Actor-Web framework, here are the critical points:
+
+1. **Query Structure**: Use `{ type: 'requestType', ...data }` - the framework extracts the `type` as the request identifier
+2. **Response Handling**: `ask()` returns the result value directly, not a response envelope
+3. **Lifecycle Control**: Be explicit about `autoStart: false` when testing stopped actors
+4. **Factory Selection**: Use `createXStateQueryActor()` for ask pattern tests (extended timeouts, supervision)
+5. **Machine Design**: Design test machines to handle the framework's `QueryEvent` structure naturally
+
+### Quick Reference
+
+```typescript
+// ✅ Correct ask pattern test
+const actor = createXStateQueryActor(queryMachine);
+actor.start();
+actor.send({ type: 'SET', key: 'user', value: 'data' });
+
+const result = await actor.ask({ type: 'get', key: 'user' }, { timeout: 1000 });
+expect(result).toBe('data'); // Direct value, not wrapped
+
+// ✅ Correct lifecycle test
+const actor = createXStateQueryActor(queryMachine, { autoStart: false });
+await expect(
+  actor.ask({ type: 'get', key: 'test' })
+).rejects.toThrow(ActorStoppedError);
+
+// ✅ Correct machine design for queries
+export const queryMachine = setup({
+  types: {
+    events: {} as 
+      | { type: 'query'; request: string; params?: unknown; correlationId: string }
+      | { type: 'SET'; key: string; value: unknown }
+  }
+}).createMachine({
+  states: {
+    ready: {
+      on: {
+        query: {
+          actions: assign({
+            pendingResponses: ({ context, event }) => {
+              let result = null;
+              if (event.request === 'get' && event.params) {
+                const params = event.params as { key?: string };
+                result = params.key ? context.data[params.key] : null;
+              }
+              
+              return [...context.pendingResponses, {
+                type: 'response',
+                correlationId: event.correlationId,
+                result,
+                timestamp: Date.now(),
+              }];
+            }
+          })
+        }
+      }
+    }
+  }
 });
 ```
 
