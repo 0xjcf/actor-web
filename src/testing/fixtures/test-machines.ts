@@ -172,9 +172,9 @@ export const errorProneMachine = createMachine({
 // Machine with complex event handling for testing ask pattern
 export const queryMachine = setup({
   types: {
-    context: {} as { data: Record<string, unknown> },
+    context: {} as { data: Record<string, unknown>; pendingResponses: unknown[] },
     events: {} as
-      | { type: 'QUERY'; key: string; correlationId: string }
+      | { type: 'query'; request: string; params?: { key: string }; correlationId: string }
       | { type: 'SET'; key: string; value: unknown }
       | { type: 'QUERY_RESPONSE'; correlationId: string; value: unknown },
   },
@@ -183,16 +183,28 @@ export const queryMachine = setup({
   initial: 'ready',
   context: {
     data: {},
+    pendingResponses: [],
   },
   states: {
     ready: {
       on: {
-        QUERY: {
-          actions: (_context, _event) => {
-            // In real implementation, would send response
-            // const value = context.context.data[event.key];
-            // Would send QUERY_RESPONSE with correlationId and value
-          },
+        query: {
+          actions: assign({
+            pendingResponses: ({ context, event }) => {
+              // Handle query and create response
+              const key = event.params?.key;
+              const value = key ? context.data[key] : null;
+
+              const response = {
+                type: 'response',
+                correlationId: event.correlationId,
+                result: value,
+                timestamp: Date.now(),
+              };
+
+              return [...context.pendingResponses, response];
+            },
+          }),
         },
         SET: {
           actions: assign({
