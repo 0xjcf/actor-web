@@ -364,13 +364,9 @@ class UnifiedActorRef<
   // ========================================================================================
 
   private adaptSnapshot(xstateSnapshot: SnapshotFrom<AnyStateMachine>): TSnapshot {
-    // Map comprehensive ActorStatus to simpler ActorSnapshot status
-    const simpleStatus: 'active' | 'stopped' | 'error' =
-      this._status === 'running' || this._status === 'starting'
-        ? 'active'
-        : this._status === 'error'
-          ? 'error'
-          : 'stopped';
+    // Map comprehensive ActorStatus to ActorSnapshot status
+    const simpleStatus: 'idle' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error' =
+      this._status;
 
     const baseSnapshot: ActorSnapshot = {
       context: xstateSnapshot.context || {},

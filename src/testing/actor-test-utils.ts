@@ -38,7 +38,7 @@ export function createMockActorRef<T extends EventObject = EventObject>(
   let currentSnapshot: ActorSnapshot = {
     context: {},
     value: 'idle',
-    status: 'active',
+    status: 'running',
     error: undefined,
   };
   let status: 'idle' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error' = 'running';
