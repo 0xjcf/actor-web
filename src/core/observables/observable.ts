@@ -43,6 +43,7 @@ export type SubscriberFunction<T> = (observer: Observer<T>) => TeardownLogic;
 
 /**
  * Teardown logic can be a function or void
+ * [actor-web] TODO: Consider adding more advanced teardown patterns (AbortController, etc)
  */
 export type TeardownLogic = (() => void) | undefined;
 
@@ -227,6 +228,7 @@ export const createObservable = {
       if (observer.complete) {
         observer.complete();
       }
+      return undefined; // No teardown needed for sync emission
     });
   },
 
@@ -241,6 +243,7 @@ export const createObservable = {
       if (observer.complete) {
         observer.complete();
       }
+      return undefined; // No teardown needed for sync emission
     });
   },
 
@@ -250,6 +253,7 @@ export const createObservable = {
   never<T>(): Observable<T> {
     return new CustomObservable<T>(() => {
       // Never calls next, error, or complete
+      return undefined; // No teardown needed for never-emitting observable
     });
   },
 
@@ -261,6 +265,7 @@ export const createObservable = {
       if (observer.error) {
         observer.error(error);
       }
+      return undefined; // No teardown needed for immediate error
     });
   },
 
@@ -281,6 +286,7 @@ export const createObservable = {
             observer.error(error);
           }
         });
+      return undefined; // No teardown needed for promise-based observable
     });
   },
 };

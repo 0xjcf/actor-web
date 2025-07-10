@@ -4,7 +4,7 @@
  * @author Agent C - [Date]
  */
 
-import type { EventObject, StateMachine } from 'xstate';
+import type { AnyStateMachine, EventObject } from 'xstate';
 
 // TODO: Agent C will define these types based on Agent A's specifications
 
@@ -37,9 +37,9 @@ export interface Mailbox<T> {
   isEmpty(): boolean;
 }
 
-export interface ActorBehavior<TEvent extends EventObject = EventObject> {
+export interface ActorBehavior<_TEvent extends EventObject = EventObject> {
   id: string;
-  createMachine(): StateMachine<unknown, unknown, TEvent>;
+  createMachine(): AnyStateMachine; // [actor-web] TODO: Use properly typed StateMachine when XState v5 types are stable
 }
 
 // Placeholder for ActorRef interface - Agent A will define

@@ -231,7 +231,9 @@ export class RequestResponseManager {
    * @param reason - Cancellation reason
    */
   cancelAllRequests(reason = 'Manager cleanup'): void {
-    for (const [correlationId, pending] of this.pendingRequests) {
+    // [actor-web] TODO: Consider adding callback hooks for request cancellation tracking
+    const entries = Array.from(this.pendingRequests.entries());
+    for (const [correlationId, pending] of entries) {
       this.clearTimeouts(pending);
       pending.reject(new Error(`${reason}: ${correlationId}`));
     }

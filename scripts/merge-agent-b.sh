@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-AGENT_B_BRANCH="feature/actor-ref-implementation"
+AGENT_B_BRANCH="feature/agent-b"
 INTEGRATION_BRANCH="feature/actor-ref-integration"
 
 echo -e "${BLUE}🔄 Agent B Merge Script${NC}"
