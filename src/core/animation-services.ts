@@ -499,14 +499,14 @@ export const createParallelService = () => {
       // Handle external control events
       receive((event) => {
         if (event.type === 'PAUSE_PARALLEL') {
-          for (const animations of activeAnimations) {
+          for (const animations of Array.from(activeAnimations.values())) {
             for (const anim of animations) {
               anim.pause();
             }
           }
           sendBack({ type: 'PARALLEL_PAUSED' });
         } else if (event.type === 'RESUME_PARALLEL') {
-          for (const animations of activeAnimations) {
+          for (const animations of Array.from(activeAnimations.values())) {
             for (const anim of animations) {
               anim.play();
             }
@@ -514,7 +514,7 @@ export const createParallelService = () => {
           sendBack({ type: 'PARALLEL_RESUMED' });
         } else if (event.type === 'CANCEL_PARALLEL') {
           isCancelled = true;
-          for (const animations of activeAnimations) {
+          for (const animations of Array.from(activeAnimations.values())) {
             for (const anim of animations) {
               anim.cancel();
             }
@@ -526,7 +526,7 @@ export const createParallelService = () => {
       // Cleanup function
       return () => {
         isCancelled = true;
-        for (const animations of activeAnimations) {
+        for (const animations of Array.from(activeAnimations.values())) {
           for (const anim of animations) {
             if (anim.playState !== 'finished') {
               anim.cancel();
