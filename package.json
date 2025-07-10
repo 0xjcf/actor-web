@@ -5,12 +5,7 @@
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
-  "files": [
-    "dist",
-    "src",
-    "README.md",
-    "CHANGELOG.md"
-  ],
+  "files": ["dist", "src", "README.md", "CHANGELOG.md"],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "build:watch": "pnpm build --watch",
