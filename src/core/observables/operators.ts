@@ -155,6 +155,7 @@ export const observableUtils = {
       if (observer.complete) {
         observer.complete();
       }
+      return undefined; // Explicit TeardownLogic return
     });
   },
 };

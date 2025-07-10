@@ -122,7 +122,7 @@ describe('JSON Utilities', () => {
       it('preserves data types accurately', () => {
         const json = '{"str":"text","num":123,"bool":true,"null":null}';
 
-        const result = safeDeserialize(json);
+        const result = safeDeserialize(json) as Record<string, unknown>;
 
         expect(typeof result.str).toBe('string');
         expect(typeof result.num).toBe('number');
@@ -157,8 +157,10 @@ describe('JSON Utilities', () => {
     describe('Validation functionality', () => {
       it('applies validator function to parsed data', () => {
         const json = '{"type":"user","name":"Alice"}';
-        const validator = (obj: unknown) =>
-          obj && typeof obj === 'object' && (obj as Record<string, unknown>).type === 'user';
+        const validator = (obj: unknown): boolean =>
+          Boolean(
+            obj && typeof obj === 'object' && (obj as Record<string, unknown>).type === 'user'
+          );
 
         const result = safeDeserialize(json, { validator });
 
@@ -167,8 +169,10 @@ describe('JSON Utilities', () => {
 
       it('throws DeserializationError when validation fails', () => {
         const json = '{"type":"admin","name":"Alice"}';
-        const validator = (obj: unknown) =>
-          obj && typeof obj === 'object' && (obj as Record<string, unknown>).type === 'user';
+        const validator = (obj: unknown): boolean =>
+          Boolean(
+            obj && typeof obj === 'object' && (obj as Record<string, unknown>).type === 'user'
+          );
 
         expect(() => safeDeserialize(json, { validator })).toThrow(DeserializationError);
         expect(() => safeDeserialize(json, { validator })).toThrow('Validation failed');
@@ -190,12 +194,15 @@ describe('JSON Utilities', () => {
     describe('Transformation functionality', () => {
       it('applies transformer function to modify parsed data', () => {
         const json = '{"name":"alice","age":25}';
-        const transformer = (obj: any) => ({
-          ...obj,
-          name: obj.name.toUpperCase(),
-        });
+        const transformer = (obj: unknown) => {
+          const typedObj = obj as Record<string, unknown>;
+          return {
+            ...typedObj,
+            name: (typedObj.name as string).toUpperCase(),
+          };
+        };
 
-        const result = safeDeserialize(json, { transformer });
+        const result = safeDeserialize(json, { transformer }) as Record<string, unknown>;
 
         expect(result.name).toBe('ALICE');
         expect(result.age).toBe(25);
@@ -239,10 +246,10 @@ describe('JSON Utilities', () => {
     it('deserializes valid event payloads safely', () => {
       const json = '{"type":"user-action","data":{"count":1}}';
 
-      const result = deserializeEventPayload(json);
+      const result = deserializeEventPayload(json) as Record<string, unknown>;
 
       expect(result.type).toBe('user-action');
-      expect(result.data.count).toBe(1);
+      expect((result.data as Record<string, unknown>).count).toBe(1);
     });
 
     it('prevents prototype pollution attacks', () => {
@@ -518,10 +525,12 @@ describe('JSON Utilities', () => {
       const serialized = safeSerialize(componentState);
 
       // Deserialize from storage
-      const deserialized = safeDeserialize(serialized);
+      const deserialized = safeDeserialize(serialized) as Record<string, unknown>;
 
-      expect(deserialized.user).toEqual(componentState.user);
-      expect(deserialized.preferences).toEqual(componentState.preferences);
+      expect(deserialized.user as Record<string, unknown>).toEqual(componentState.user);
+      expect(deserialized.preferences as Record<string, unknown>).toEqual(
+        componentState.preferences
+      );
       expect(deserialized.timestamp).toBe('2023-01-01T00:00:00.000Z');
     });
 
