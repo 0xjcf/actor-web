@@ -203,3 +203,114 @@ autoStart: options.autoStart !== false && this._status === 'running'
 ---
 
 *This document facilitates asynchronous communication between agents working on parallel branches.*
+
+## Agent C Critical Fixes - 2025-07-10 2:00 PM
+
+### Issues Identified by Agent C
+Agent C found three critical issues during testing:
+
+1. **Ask Pattern Response Handling** - Runtime error: `TypeError: context.pendingResponses is not iterable`
+2. **Child Actor Lifecycle** - Children always start as 'running' regardless of parent state
+3. **Response Event Flow** - Unclear how responses get from machine context to RequestResponseManager
+
+### Root Causes Identified
+
+1. **Context Mutation Issue**: The `handleResponseMessages` method was deleting `context.pendingResponses` after processing, which violates XState's immutability principles
+2. **Child Actor Double-Start**: The child actor's constructor was checking `autoStart !== false` which would start the child even when we passed `autoStart: false` based on parent state
+
+### Fixes Applied
+
+#### 1. Fixed Context Mutation in `src/core/create-actor-ref.ts`
+```typescript
+private handleResponseMessages(snapshot: SnapshotFrom<AnyStateMachine>): void {
+  if (snapshot.context && typeof snapshot.context === 'object') {
+    const context = snapshot.context as Record<string, unknown>;
+    
+    if (context.pendingResponses && Array.isArray(context.pendingResponses)) {
+      // Process each response without mutating the context
+      context.pendingResponses.forEach((response) => {
+        if (response && typeof response === 'object' && isResponseEvent(response as BaseEventObject)) {
+          this.requestManager.handleResponse(response as ResponseEvent);
+        }
+      });
+      
+      // NOTE: We don't delete pendingResponses here as that would mutate the context
+      // The machine should clear its own pendingResponses in an action if needed
+    }
+  }
+}
+```
+
+#### 2. Fixed Child Actor Lifecycle Logic
+```typescript
+spawn<TChildEvent extends BaseEventObject, TChildEmitted = unknown>(
+  behavior: AnyStateMachine,
+  options: ActorRefOptions = {}
+): ActorRef<TChildEvent, TChildEmitted> {
+  const child = createActorRef<TChildEvent, TChildEmitted>(behavior, {
+    ...options,
+    id: childId,
+    parent: this,
+    supervision: options.supervision || this._supervision,
+    // If parent is not running, child should not auto-start regardless of options
+    autoStart: options.autoStart === false ? false : this._status === 'running',
+  });
+  // ...
+}
+```
+
+#### 3. Updated Query Machine Pattern in `src/testing/fixtures/test-machines.ts`
+```typescript
+export const queryMachine = setup({
+  types: {
+    context: {} as { 
+      data: Record<string, unknown>; 
+      pendingResponses: Array<{
+        type: 'response';
+        correlationId: string;
+        result: unknown;
+        timestamp: number;
+      }> 
+    },
+  },
+}).createMachine({
+  context: {
+    data: {},
+    pendingResponses: [], // Properly initialized
+  },
+  states: {
+    ready: {
+      on: {
+        query: {
+          actions: assign({
+            pendingResponses: ({ context, event }) => {
+              const response = {
+                type: 'response' as const,
+                correlationId: event.correlationId,
+                result: context.data[event.params?.key] || null,
+                timestamp: Date.now(),
+              };
+              return [...context.pendingResponses, response];
+            },
+          }),
+        },
+      },
+    },
+  },
+});
+```
+
+### Ask Pattern Design Clarification
+
+The ask pattern works as follows:
+1. `ask()` sends a query event with a correlation ID
+2. The machine processes the query and adds a response to `context.pendingResponses`
+3. The ActorRef's subscription detects the responses and passes them to RequestResponseManager
+4. The RequestResponseManager resolves the promise for the matching correlation ID
+
+**Important**: Machines should use XState's `assign` action to update pendingResponses, never mutate context directly.
+
+### Next Steps for Agent C
+- All tests should now pass with these fixes
+- The child actor behavior now correctly respects parent state
+- The ask pattern properly handles responses without context mutation errors

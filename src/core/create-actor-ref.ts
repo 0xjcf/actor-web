@@ -311,7 +311,8 @@ class UnifiedActorRef<
       id: childId,
       parent: this,
       supervision: options.supervision || this._supervision,
-      autoStart: options.autoStart !== false && this._status === 'running',
+      // If parent is not running, child should not auto-start regardless of options
+      autoStart: options.autoStart === false ? false : this._status === 'running',
     });
 
     // Track child
@@ -421,6 +422,7 @@ class UnifiedActorRef<
 
       // Look for response messages (this is a convention - actors should put responses here)
       if (context.pendingResponses && Array.isArray(context.pendingResponses)) {
+        // Process each response without mutating the context
         context.pendingResponses.forEach((response) => {
           if (
             response &&
@@ -431,8 +433,8 @@ class UnifiedActorRef<
           }
         });
 
-        // Clear processed responses (actors should do this, but just in case)
-        delete context.pendingResponses;
+        // NOTE: We don't delete pendingResponses here as that would mutate the context
+        // The machine should clear its own pendingResponses in an action if needed
       }
     }
   }
