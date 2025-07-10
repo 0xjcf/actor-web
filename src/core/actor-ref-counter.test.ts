@@ -7,7 +7,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { assign, setup } from 'xstate';
-import type { ActorRef, BaseMessage } from './actor-ref.js';
+import type { ActorRef, BaseEventObject } from './create-actor-ref.js';
 import { createActorRef } from './create-actor-ref.js';
 
 // ============================================================================
@@ -24,7 +24,7 @@ type CounterEvent =
   | { type: 'DECREMENT' }
   | { type: 'SET'; value: number }
   | { type: 'RESET' }
-  | BaseMessage; // Include BaseMessage for query support
+  | BaseEventObject; // Include BaseEventObject for query support
 
 const counterMachine = setup({
   types: {
@@ -91,7 +91,7 @@ describe('Pure Actor Model - Counter Test', () => {
   describe('Basic Messaging', () => {
     it('should handle increment events', () => {
       // Initial state
-      expect(counterActor.getSnapshot().context.count).toBe(0);
+      expect((counterActor.getSnapshot().context as CounterContext).count).toBe(0);
 
       // Send increment event
       counterActor.send({ type: 'INCREMENT' });

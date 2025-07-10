@@ -1,4 +1,33 @@
 /**
+ * @deprecated This file is deprecated as of 2025-07-10
+ *
+ * ⚠️  DEPRECATION NOTICE ⚠️
+ *
+ * This legacy ActorRef interface has been superseded by the comprehensive
+ * implementation in `./actors/actor-ref.ts` and the unified factory in
+ * `./create-actor-ref.ts`.
+ *
+ * MIGRATION GUIDE:
+ * - Replace imports from './actor-ref.js' with './create-actor-ref.js'
+ * - Use createActorRef() factory function instead of manual instantiation
+ * - Update to the comprehensive BaseEventObject interface
+ * - Switch to the enhanced supervision and messaging patterns
+ *
+ * The new implementation provides:
+ * - ✅ Advanced supervision strategies
+ * - ✅ Comprehensive request/response patterns with correlation IDs
+ * - ✅ Performance monitoring and metrics
+ * - ✅ Agent B's Observable integration
+ * - ✅ Proper XState v5 support
+ *
+ * This file will be removed in a future version.
+ *
+ * @see ./create-actor-ref.ts - New unified factory implementation
+ * @see ./actors/actor-ref.ts - Comprehensive interface definition
+ * @see ./integration/xstate-adapter.ts - XState-specific factories
+ */
+
+/**
  * Pure Actor Model - ActorRef Interface
  *
  * Core interface for actor-based communication in the Actor-SPA framework.
