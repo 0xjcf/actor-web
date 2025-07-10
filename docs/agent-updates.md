@@ -509,7 +509,7 @@ Good luck with your testing! Let Agent A know if you find any other issues.
    - `feature/agent-c-testing` → `feature/actor-ref-tests`
 
 2. **Script Permissions**: Made all merge scripts executable
-3. **Documentation Update**: Updated MERGE-WORKFLOW.md with correct branch structure
+3. **Documentation Update**: Created IMPROVED-WORKFLOW.md with simplified integration commands
 
 #### **Integration Process**:
 - Followed IMPLEMENTATION.md 3-step worktree strategy
@@ -520,7 +520,7 @@ Good luck with your testing! Let Agent A know if you find any other issues.
 - `scripts/merge-agent-a.sh`
 - `scripts/merge-agent-b.sh` 
 - `scripts/merge-agent-c.sh`
-- `scripts/MERGE-WORKFLOW.md`
+- `scripts/IMPROVED-WORKFLOW.md`
 
 ---
 

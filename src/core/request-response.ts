@@ -79,7 +79,7 @@ export class RequestResponseManager {
    * Cancel all pending requests
    */
   cleanup(): void {
-    for (const [, request] of this.pendingRequests) {
+    for (const request of Array.from(this.pendingRequests.values())) {
       clearTimeout(request.timeoutId);
       request.reject(new Error('Request manager cleanup'));
     }

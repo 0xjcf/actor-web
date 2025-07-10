@@ -136,7 +136,7 @@ export class ComponentActorBridge<TEvent extends BaseEventObject = BaseEventObje
     this.config.component?.hooks?.onBeforeStop?.(this.actorRef);
 
     // Clean up all subscriptions
-    for (const subscription of this.subscriptions) {
+    for (const subscription of Array.from(this.subscriptions)) {
       subscription.unsubscribe();
     }
     this.subscriptions.clear();
@@ -357,6 +357,8 @@ export function createDebouncedEventHandler<TEvent extends BaseEventObject>(
 
       actorRef.send(actorEvent);
     }, delay);
+
+    return undefined;
   };
 }
 

@@ -82,7 +82,7 @@ export type SupervisionAction = 'restart' | 'stop' | 'escalate' | 'ignore';
  * message-only communication while hiding internal actor state.
  *
  * @template TEvent - The event types this actor can receive
- * @template TEmitted - The types of events this actor can emit
+ * @template _TEmitted - The types of events this actor can emit (reserved for future use)
  * @template TSnapshot - The snapshot type for this actor's state
  */
 export interface ActorRef<

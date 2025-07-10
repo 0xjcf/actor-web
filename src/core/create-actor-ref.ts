@@ -219,7 +219,7 @@ class UnifiedActorRef<
         this._status = 'running';
 
         // Start all children
-        for (const child of this.children.values()) {
+        for (const child of Array.from(this.children.values())) {
           child.start();
         }
       } catch (error) {
@@ -418,7 +418,7 @@ class UnifiedActorRef<
       // Look for response messages (this is a convention - actors should put responses here)
       if (context.pendingResponses && Array.isArray(context.pendingResponses)) {
         // Process each response without mutating the context
-        context.pendingResponses.forEach((response) => {
+        for (const response of context.pendingResponses) {
           if (
             response &&
             typeof response === 'object' &&
@@ -426,7 +426,7 @@ class UnifiedActorRef<
           ) {
             this.requestManager.handleResponse(response as ResponseEvent);
           }
-        });
+        }
 
         // NOTE: We don't delete pendingResponses here as that would mutate the context
         // The machine should clear its own pendingResponses in an action if needed

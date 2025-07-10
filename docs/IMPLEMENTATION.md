@@ -126,7 +126,7 @@ git commit -m "feat: your changes"
 git push origin feature/actor-ref-[your-branch]
 ```
 
-📝 **See [scripts/MERGE-WORKFLOW.md](../scripts/MERGE-WORKFLOW.md) for detailed merge script documentation.**
+📝 **See [scripts/IMPROVED-WORKFLOW.md](../scripts/IMPROVED-WORKFLOW.md) for the new simplified integration workflow with easy-to-remember commands.**
 
 ### 🛡️ Worktree Benefits
 
