@@ -1,4 +1,4 @@
-import { type TestEnvironment, createTestEnvironment, setupGlobalMocks } from '@/framework/testing';
+import { type TestEnvironment, createTestEnvironment, setupGlobalMocks } from '../testing/actor-test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createActor } from 'xstate';
 import {
@@ -723,7 +723,7 @@ describe('Keyboard Navigation Helper', () => {
         type: 'ACTIVATE_CURRENT_ELEMENT',
       });
 
-      keyboardActor.send.mockClear();
+      (keyboardActor.send as ReturnType<typeof vi.fn>).mockClear();
 
       const spaceEvent = new KeyboardEvent('keydown', { key: ' ' });
       helper.handleKeyboardEvent(spaceEvent);
@@ -881,7 +881,7 @@ describe('Factory Functions', () => {
     });
 
     it('provides all default configuration types', () => {
-      const types = ['menu', 'tablist', 'toolbar', 'grid', 'listbox'] as const;
+      const types = ['menu', 'tabs', 'toolbar', 'grid', 'listbox'] as const;
 
       types.forEach((type) => {
         const config = createKeyboardNavigationConfig(type);

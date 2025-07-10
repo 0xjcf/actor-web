@@ -7,7 +7,6 @@ import {
 } from '../testing/actor-test-utils';
 import {
   type MigrationFunction,
-  type PersistenceConfig,
   PersistenceServices,
   type StorageItem,
   StorageUtils,
@@ -91,33 +90,13 @@ describe('Persistence Services', () => {
   });
 
   // Helper function to invoke storage service
-  const invokeStorageService = (input: {
-    operation: 'GET' | 'SET' | 'DELETE' | 'CLEAR';
-    key?: string;
-    data?: unknown;
-    config?: PersistenceConfig;
-    migrations?: MigrationFunction[];
-  }) => {
+  const invokeStorageService = (input: Parameters<ReturnType<typeof createStorageService>>[0]['input']) => {
     const service = createStorageService();
     const mockSendBack = vi.fn();
     const mockReceive = vi.fn();
     
     // The service is a callback actor logic, we need to invoke it directly
-    const cleanup = (service as any)({ sendBack: mockSendBack, input, receive: mockReceive });
-    
-    return { mockSendBack, mockReceive, cleanup };
-  };
-
-  // Helper function to invoke sync service
-  const invokeSyncService = (input: {
-    keyPrefix?: string;
-    storageType?: 'localStorage' | 'sessionStorage';
-  }) => {
-    const service = createSyncService();
-    const mockSendBack = vi.fn();
-    const mockReceive = vi.fn();
-    
-    const cleanup = (service as any)({ sendBack: mockSendBack, input, receive: mockReceive });
+    const cleanup = service({ sendBack: mockSendBack, input, receive: mockReceive });
     
     return { mockSendBack, mockReceive, cleanup };
   };
@@ -143,7 +122,7 @@ describe('Persistence Services', () => {
         expect(mockLocalStorage.setItem).toHaveBeenCalledWith(prefixedKey, storageData);
 
         // Set up mock to return stored data
-        (mockLocalStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(storageData);
+        mockLocalStorage.getItem.mockReturnValue(storageData);
 
         // Retrieve and verify
         const retrieved = mockLocalStorage.getItem(prefixedKey);
@@ -159,7 +138,7 @@ describe('Persistence Services', () => {
         const prefixedKey = `test:${key}`;
 
         // Mock returns null for non-existent keys
-        (mockLocalStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
+        mockLocalStorage.getItem.mockReturnValue(null);
 
         const retrieved = mockLocalStorage.getItem(prefixedKey);
         expect(retrieved).toBeNull();
@@ -187,7 +166,7 @@ describe('Persistence Services', () => {
         expect(mockLocalStorage.removeItem).toHaveBeenCalledWith(prefixedKey);
 
         // Verify data is gone
-        (mockLocalStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
+        mockLocalStorage.getItem.mockReturnValue(null);
         expect(mockLocalStorage.getItem(prefixedKey)).toBeNull();
       });
 
@@ -233,6 +212,9 @@ describe('Persistence Services', () => {
       });
 
       it('detects corrupted data', () => {
+        const service = createStorageService();
+        const mockSendBack = vi.fn();
+
         // Store corrupted data
         const corruptedData: StorageItem = {
           data: { value: 'corrupted' },
@@ -243,10 +225,14 @@ describe('Persistence Services', () => {
 
         mockLocalStorage.getItem = vi.fn().mockReturnValue(JSON.stringify(corruptedData));
 
-        const { mockSendBack, cleanup } = invokeStorageService({
-          operation: 'GET',
-          key: 'corrupted-key',
-          config: { keyPrefix: 'test' },
+        const cleanup = service({
+          sendBack: mockSendBack,
+          input: {
+            operation: 'GET',
+            key: 'corrupted-key',
+            config: { keyPrefix: 'test' },
+          },
+          receive: vi.fn(),
         });
 
         expect(mockSendBack).toHaveBeenCalledWith({
@@ -297,14 +283,23 @@ describe('Persistence Services', () => {
       });
 
       it('sets expiration when maxAge is configured', () => {
-        const { mockSendBack, cleanup } = invokeStorageService({
-          operation: 'SET',
-          key: 'expiring-key',
-          data: { value: 'will expire' },
-          config: { keyPrefix: 'test', maxAge: 60000 }
+        const service = createStorageService();
+        const mockSendBack = vi.fn();
+
+        vi.setSystemTime(new Date('2024-01-01T00:00:00Z'));
+
+        const cleanup = service({
+          sendBack: mockSendBack,
+          input: {
+            operation: 'SET',
+            key: 'expiring-key',
+            data: { value: 'will expire' },
+            config: { keyPrefix: 'test', maxAge: 60000 }, // 60 seconds
+          },
+          receive: vi.fn(),
         });
 
-        const setCall = mockLocalStorage.setItem as ReturnType<typeof vi.fn>;
+        const setCall = mockLocalStorage.setItem as vi.Mock;
         const storedData = JSON.parse(setCall.mock.calls[0][1]);
 
         expect(storedData).toHaveProperty('expiresAt');
@@ -372,18 +367,25 @@ describe('Persistence Services', () => {
 
     describe('Encryption', () => {
       it('encrypts data when encryption is enabled', () => {
-        const { mockSendBack, cleanup } = invokeStorageService({
-          operation: 'SET',
-          key: 'encrypted-data',
-          data: { secret: 'confidential' },
-          config: {
-            keyPrefix: 'test',
-            enableEncryption: true,
-            encryptionKey: 'secret-key'
-          }
+        const service = createStorageService();
+        const mockSendBack = vi.fn();
+
+        const cleanup = service({
+          sendBack: mockSendBack,
+          input: {
+            operation: 'SET',
+            key: 'encrypted-data',
+            data: { secret: 'confidential' },
+            config: {
+              keyPrefix: 'test',
+              enableEncryption: true,
+              encryptionKey: 'secret-key',
+            },
+          },
+          receive: vi.fn(),
         });
 
-        const setCall = mockLocalStorage.setItem as ReturnType<typeof vi.fn>;
+        const setCall = mockLocalStorage.setItem as vi.Mock;
         const storedValue = setCall.mock.calls[0][1];
 
         // Should not contain the original data in plain text
@@ -463,10 +465,18 @@ describe('Persistence Services', () => {
       });
 
       it('handles cancellation requests', () => {
-        const { mockSendBack, mockReceive, cleanup } = invokeStorageService({
-          operation: 'SET',
-          key: 'test-key',
-          data: { test: 'data' }
+        const service = createStorageService();
+        const mockSendBack = vi.fn();
+        const mockReceive = vi.fn();
+
+        const cleanup = service({
+          sendBack: mockSendBack,
+          input: {
+            operation: 'SET',
+            key: 'test-key',
+            data: { test: 'data' },
+          },
+          receive: mockReceive,
         });
 
         const receiveHandler = mockReceive.mock.calls[0][0];
@@ -961,12 +971,19 @@ describe('Persistence Services', () => {
   describe('Performance Characteristics', () => {
     it('performs storage operations efficiently', async () => {
       await performanceTestUtils.expectPerformant(() => {
+        const service = createStorageService();
+        const mockSendBack = vi.fn();
+
         // Perform multiple operations
         for (let i = 0; i < 100; i++) {
-          const { cleanup } = invokeStorageService({
-            operation: 'SET',
-            key: `test-key-${i}`,
-            data: { index: i, value: `data-${i}` }
+          const cleanup = service({
+            sendBack: mockSendBack,
+            input: {
+              operation: 'SET',
+              key: `test-key-${i}`,
+              data: { index: i, value: `data-${i}` },
+            },
+            receive: vi.fn(),
           });
           cleanup();
         }

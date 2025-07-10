@@ -3,7 +3,7 @@ import {
   createTestEnvironment,
   performanceTestUtils,
   setupGlobalMocks,
-} from '@/framework/testing';
+} from '../testing/actor-test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type AnimationKeyframe,
@@ -83,12 +83,26 @@ describe('Animation Services', () => {
     vi.restoreAllMocks();
   });
 
+  // Helper function to invoke animation service
+  const invokeAnimationService = (input: {
+    element: Element;
+    keyframes: AnimationKeyframe[];
+    options?: AnimationOptions;
+  }) => {
+    const service = createAnimationService();
+    const mockSendBack = vi.fn();
+    const mockReceive = vi.fn();
+    
+    // Extract the service logic from the callback actor
+    const serviceLogic = (service as any).config.src;
+    const cleanup = serviceLogic({ sendBack: mockSendBack, input, receive: mockReceive });
+    
+    return { mockSendBack, mockReceive, cleanup };
+  };
+
   describe('Single Animation Service', () => {
     describe('Animation Creation', () => {
       it('creates animations with Web Animations API', () => {
-        const service = createAnimationService();
-        const mockSendBack = vi.fn();
-
         const keyframes: AnimationKeyframe[] = [{ opacity: 0 }, { opacity: 1 }];
 
         const options: AnimationOptions = {
@@ -96,12 +110,10 @@ describe('Animation Services', () => {
           easing: 'ease-out',
         };
 
-        // Call the service logic directly by extracting it
-        const serviceLogic = (service as any).config.src;
-        const cleanup = serviceLogic({
-          sendBack: mockSendBack,
-          input: { element: mockElement, keyframes, options },
-          receive: vi.fn(),
+        const { mockSendBack, cleanup } = invokeAnimationService({
+          element: mockElement,
+          keyframes,
+          options,
         });
 
         // Should create animation with correct parameters
@@ -126,15 +138,11 @@ describe('Animation Services', () => {
       });
 
       it('applies default animation options when not provided', () => {
-        const service = createAnimationService();
-        const mockSendBack = vi.fn();
-
         const keyframes: AnimationKeyframe[] = [{ transform: 'scale(1.1)' }];
 
-        const cleanup = service({
-          sendBack: mockSendBack,
-          input: { element: mockElement, keyframes },
-          receive: vi.fn(),
+        const { mockSendBack, cleanup } = invokeAnimationService({
+          element: mockElement,
+          keyframes,
         });
 
         expect(mockElement.animate).toHaveBeenCalledWith(keyframes, {

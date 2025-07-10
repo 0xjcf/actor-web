@@ -7,4 +7,4 @@
  * ```
  */
 
-export * from './testing/index.js';
+export * from './testing/actor-test-utils.js';

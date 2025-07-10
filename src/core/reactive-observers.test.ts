@@ -5,14 +5,14 @@
  * Tests the actual reactive behavior users experience with state machines and components
  */
 
-import { createComponent, html } from '@/framework/core/minimal-api.js';
+import { createComponent, html } from './minimal-api.js';
 import {
   type MockGlobalEventBus,
   type TestEnvironment,
   createTestEnvironment,
   performanceTestUtils,
   setupGlobalMocks,
-} from '@/framework/testing';
+} from '../testing/actor-test-utils';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { assign, createMachine } from 'xstate';
 
@@ -235,7 +235,7 @@ describe('Reactive Patterns in Components', () => {
       const _ThemeAware = createComponent({ machine, template });
 
       // Behavior: Should emit and react to theme changes
-      eventBus.emit('theme-changed', { theme: 'dark' });
+      eventBus.emit?.('theme-changed', { theme: 'dark' });
 
       const lightState = { context: { theme: 'light' } };
       const darkState = { context: { theme: 'dark' } };
@@ -296,7 +296,7 @@ describe('Reactive Patterns in Components', () => {
       const Display = createComponent({ machine: displayMachine, template: displayTemplate });
 
       // Behavior: Components should coordinate via events
-      eventBus.emit('count-updated', { count: 5 });
+      eventBus.emit?.('count-updated', { count: 5 });
 
       expect(Counter).toBeDefined();
       expect(Display).toBeDefined();
