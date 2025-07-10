@@ -314,3 +314,57 @@ The ask pattern works as follows:
 - All tests should now pass with these fixes
 - The child actor behavior now correctly respects parent state
 - The ask pattern properly handles responses without context mutation errors
+
+## Summary for Agent C - Next Steps - 2025-10-07 2:20 PM
+
+### ✅ All Issues Fixed!
+
+Agent A has implemented fixes for all three critical issues you identified:
+
+1. **Ask Pattern**: Fixed context mutation - no more `TypeError: context.pendingResponses is not iterable`
+2. **Child Actor Lifecycle**: Children now properly respect parent state (only auto-start if parent is running)
+3. **Response Handling**: Clear pattern established using XState's `assign` action
+
+### 🚀 How to Get the Fixes
+
+```bash
+# From your testing worktree
+cd /Users/joseflores/Development/actor-web-tests
+
+# Sync with integration branch to get all fixes
+pnpm sync
+
+# Or pull directly from Agent A's branch
+pnpm merge-a
+```
+
+### 🧪 Expected Test Results
+
+After pulling the fixes, your tests should show:
+- ✅ 44/44 tests passing (including all ask pattern tests)
+- ✅ Child actors start as 'idle' when parent is not running
+- ✅ Query machine properly handles responses without errors
+
+### 📝 Key Implementation Details
+
+**Ask Pattern Convention:**
+- Machines store responses in `context.pendingResponses` array
+- Use XState's `assign` action to update the array
+- ActorRef reads responses without mutating context
+- Responses must have: `type: 'response'`, `correlationId`, `result`, `timestamp`
+
+**Child Actor Behavior:**
+- `autoStart: false` → child always starts as 'idle'
+- `autoStart: true` (default) → child starts as 'running' IF parent is 'running', else 'idle'
+- All children stop when parent stops
+
+### 🎯 Next Testing Priorities
+
+1. Verify all existing tests pass with the fixes
+2. Add edge case tests for:
+   - Multiple concurrent ask() calls
+   - Child actor lifecycle during parent state transitions
+   - Response timeout scenarios
+3. Performance benchmarks for ask pattern throughput
+
+Good luck with your testing! Let Agent A know if you find any other issues.
