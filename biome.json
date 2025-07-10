@@ -1,5 +1,4 @@
 {
-  "root": true,
   "linter": {
     "enabled": true,
     "rules": {
@@ -29,8 +28,7 @@
       },
       "correctness": {
         "noUnusedVariables": "error",
-        "noUnusedImports": "error",
-        "noUnknownTypeSelector": "off"
+        "noUnusedImports": "error"
       }
     }
   },

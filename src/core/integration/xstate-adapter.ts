@@ -40,8 +40,11 @@ export class XStateActorRefAdapter implements ActorRef<EventObject, any, ActorSn
     this.machine = machine;
     this._id = options.id || `actor-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    // Create XState actor with simple configuration
-    this.actor = createActor(machine);
+    // Create XState actor with input configuration
+    this.actor = createActor(machine, {
+      input: options.input,
+      id: this._id,
+    });
 
     // Initialize request/response manager
     this.requestManager = new RequestResponseManager(options.askTimeout);
@@ -205,7 +208,10 @@ export class XStateActorRefAdapter implements ActorRef<EventObject, any, ActorSn
     this._status = 'stopped';
     
     // Recreate actor with same config
-    this.actor = createActor(this.machine);
+    this.actor = createActor(this.machine, {
+      input: this.options.input,
+      id: this._id,
+    });
 
     this.start();
   }
