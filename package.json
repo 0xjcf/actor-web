@@ -25,10 +25,15 @@
     "prepublishOnly": "pnpm clean && pnpm build",
     "examples:dev": "vite examples --config examples/vite.config.ts",
     "examples:build": "vite build examples --config examples/vite.config.ts",
+    "agent": "./scripts/agent-workflow.sh",
+    "sync": "./scripts/sync-integration.sh",
+    "push": "./scripts/push-to-integration.sh",
+    "validate": "./scripts/agent-workflow.sh validate",
+    "status": "./scripts/agent-workflow.sh status",
+    "setup": "./scripts/agent-workflow.sh setup",
     "merge-a": "./scripts/merge-agent-a.sh",
-    "merge-b": "./scripts/merge-agent-b.sh", 
-    "merge-c": "./scripts/merge-agent-c.sh",
-    "sync": "./scripts/sync-integration.sh"
+    "merge-b": "./scripts/merge-agent-b.sh",
+    "merge-c": "./scripts/merge-agent-c.sh"
   },
   "keywords": [
     "actor-model",
