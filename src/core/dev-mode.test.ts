@@ -69,10 +69,10 @@ describe('Development Mode', () => {
 
       const actorSPA = window.__actorSPA;
       expect(actorSPA).toBeDefined();
-      expect(actorSPA.inspectTemplate).toBeDefined();
-      expect(actorSPA.validateTemplate).toBeDefined();
-      expect(actorSPA.listMachines).toBeDefined();
-      expect(actorSPA.getMachine).toBeDefined();
+      expect(actorSPA?.inspectTemplate).toBeDefined();
+      expect(actorSPA?.validateTemplate).toBeDefined();
+      expect(actorSPA?.listMachines).toBeDefined();
+      expect(actorSPA?.getMachine).toBeDefined();
     });
 
     it('does not enable dev mode if window is undefined', () => {
@@ -110,8 +110,8 @@ describe('Development Mode', () => {
       registerMachine(machine);
 
       const actorSPA = window.__actorSPA;
-      expect(actorSPA.listMachines()).toContain('test-machine');
-      expect(actorSPA.getMachine('test-machine')).toBe(machine);
+      expect(actorSPA?.listMachines()).toContain('test-machine');
+      expect(actorSPA?.getMachine('test-machine')).toBe(machine);
     });
 
     it('does not register machine when dev mode is disabled', () => {
