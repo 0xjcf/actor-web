@@ -31,9 +31,12 @@
     "validate": "./scripts/agent-workflow.sh validate",
     "status": "./scripts/agent-workflow.sh status",
     "setup": "./scripts/agent-workflow.sh setup",
-    "merge-a": "./scripts/merge-agent-a.sh",
-    "merge-b": "./scripts/merge-agent-b.sh",
-    "merge-c": "./scripts/merge-agent-c.sh"
+    "agent-a:push": "git push origin feature/agent-a",
+    "agent-b:push": "git push origin feature/agent-b",
+    "agent-c:push": "git push origin feature/agent-c",
+    "agent-a:sync": "./scripts/merge-agent-a.sh",
+    "agent-b:sync": "./scripts/merge-agent-b.sh",
+    "agent-c:sync": "./scripts/merge-agent-c.sh"
   },
   "keywords": [
     "actor-model",
