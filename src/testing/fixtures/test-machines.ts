@@ -199,13 +199,15 @@ export const queryMachine = setup({
         query: {
           actions: assign({
             pendingResponses: ({ context, event }) => {
-              const key = event.params?.key;
-              const value = key ? context.data[key] : null;
-
+              // For testing purposes, the response includes the original query
               const response = {
                 type: 'response' as const,
                 correlationId: event.correlationId,
-                result: value,
+                result: {
+                  type: 'QUERY',
+                  key: event.params?.key,
+                  value: event.params?.key ? context.data[event.params.key] : null,
+                },
                 timestamp: Date.now(),
               };
 
