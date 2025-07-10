@@ -167,7 +167,7 @@ export function createMockActorRef<T extends EventObject = EventObject>(
 
     simulateStateChange: (snapshot: Partial<ActorSnapshot>) => {
       currentSnapshot = { ...currentSnapshot, ...snapshot };
-      observers.forEach((observer) => {
+      for (const observer of observers) {
         try {
           // Re-run selectors with new snapshot
           const selector = (s: ActorSnapshot) => s;
@@ -176,7 +176,7 @@ export function createMockActorRef<T extends EventObject = EventObject>(
         } catch (error) {
           observer.error?.(error as Error);
         }
-      });
+      }
       options?.metrics?.onStateChange?.(currentSnapshot);
     },
 
@@ -184,9 +184,9 @@ export function createMockActorRef<T extends EventObject = EventObject>(
       status = 'error';
       mockRef.status = status;
       currentSnapshot = { ...currentSnapshot, status: 'error', error };
-      observers.forEach((observer) => {
+      for (const observer of observers) {
         observer.error?.(error);
-      });
+      }
       options?.metrics?.onError?.(error);
     },
   };
@@ -215,11 +215,11 @@ export function createTestEnvironment(): TestEnvironment {
 
     cleanup: () => {
       // Stop all actors
-      actors.forEach((actor) => {
+      for (const actor of actors.values()) {
         if (actor.status === 'running') {
           actor.stop();
         }
-      });
+      }
       actors.clear();
     },
 
@@ -327,14 +327,14 @@ export function assertEventsReceived<T extends EventObject>(
       throw new Error(`Expected event at index ${index} but found none`);
     }
 
-    Object.entries(expected).forEach(([key, value]) => {
+    for (const [key, value] of Object.entries(expected)) {
       if ((actual as Record<string, unknown>)[key] !== value) {
         throw new Error(
           `Event mismatch at index ${index}: ` +
             `expected ${key}=${value}, got ${key}=${(actual as Record<string, unknown>)[key]}`
         );
       }
-    });
+    }
   });
 }
 
@@ -377,13 +377,19 @@ export function createTestObservable<T>(): {
   return {
     observable,
     emit: (value: T) => {
-      observers.forEach((observer) => observer.next?.(value));
+      for (const observer of observers) {
+        observer.next?.(value);
+      }
     },
     error: (error: Error) => {
-      observers.forEach((observer) => observer.error?.(error));
+      for (const observer of observers) {
+        observer.error?.(error);
+      }
     },
     complete: () => {
-      observers.forEach((observer) => observer.complete?.());
+      for (const observer of observers) {
+        observer.complete?.();
+      }
     },
   };
 }
