@@ -131,7 +131,7 @@ export function createMockActorRef<T extends EventObject = EventObject>(
       return childrenMap as ReadonlyMap<string, ActorRef<EventObject, unknown>>;
     }),
 
-    matches: vi.fn((statePath: string) => {
+    matches: vi.fn((_statePath: string) => {
       // Simple mock implementation - always returns false for now
       return false;
     }),
