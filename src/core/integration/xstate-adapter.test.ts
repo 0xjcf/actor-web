@@ -396,7 +396,7 @@ describe('XStateActorRefAdapter', () => {
       const parent = createXStateActorRef(parentMachine);
       parent.start();
 
-      const parentSendSpy = vi.spyOn(parent, 'send');
+      const _parentSendSpy = vi.spyOn(parent, 'send');
 
       const child = createXStateActorRef(errorProneMachine, {
         parent,

@@ -519,12 +519,12 @@ describe('Accessibility Utilities', () => {
         'EMPTY_LINK',
       ];
 
-      expectedErrors.forEach((errorType) => {
+      for (const errorType of expectedErrors) {
         expect(AccessibilityErrorMessages).toHaveProperty(errorType);
         expect(
           typeof AccessibilityErrorMessages[errorType as keyof typeof AccessibilityErrorMessages]
         ).toBe('string');
-      });
+      }
     });
   });
 

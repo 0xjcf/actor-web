@@ -54,7 +54,7 @@ describe('Minimal API', () => {
         </button>
       `;
 
-      const ToggleButton = createComponent({
+      const _ToggleButton = createComponent({
         machine: toggleMachine,
         template,
       });
@@ -114,7 +114,7 @@ describe('Minimal API', () => {
         </div>
       `;
 
-      const Counter = createComponent({
+      const _Counter = createComponent({
         machine: counterMachine,
         template,
       });
@@ -182,7 +182,7 @@ describe('Minimal API', () => {
         </div>
       `;
 
-      const StyledComponent = createComponent({
+      const _StyledComponent = createComponent({
         machine: styledMachine,
         template,
       });
@@ -241,7 +241,7 @@ describe('Minimal API', () => {
         }
       `;
 
-      const Modal = createComponent({
+      const _Modal = createComponent({
         machine: modalMachine,
         template,
       });
@@ -330,7 +330,7 @@ describe('Minimal API', () => {
         </ul>
       `;
 
-      const TodoList = createComponent({
+      const _TodoList = createComponent({
         machine: todoMachine,
         template,
       });
@@ -411,7 +411,7 @@ describe('Minimal API', () => {
         </form>
       `;
 
-      const EventForm = createComponent({
+      const _EventForm = createComponent({
         machine: formMachine,
         template,
       });
@@ -467,7 +467,7 @@ describe('Minimal API', () => {
         </div>
       `;
 
-      const Display = createComponent({
+      const _Display = createComponent({
         machine: displayMachine,
         template,
       });
@@ -504,7 +504,7 @@ describe('Minimal API', () => {
 
       const template = () => html`<div>Lifecycle Test</div>`;
 
-      const LifecycleComponent = createComponent({
+      const _LifecycleComponent = createComponent({
         machine: lifecycleMachine,
         template,
       });

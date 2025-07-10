@@ -296,7 +296,7 @@ export class RequestResponseManager {
 
   private calculateRetryDelay(baseDelay: number, attempt: number): number {
     // Exponential backoff with jitter
-    const exponentialDelay = baseDelay * Math.pow(2, attempt);
+    const exponentialDelay = baseDelay * 2 ** attempt;
     const jitter = Math.random() * 0.3; // ±15% jitter
     return Math.floor(exponentialDelay * (1 + jitter));
   }
@@ -334,7 +334,7 @@ export function createRequestResponseManager(
 /**
  * Create a query object with proper typing
  */
-export function createQuery<TRequest, TResponse>(
+export function createQuery<TRequest, _TResponse>(
   request: string,
   params?: TRequest,
   metadata?: EventMetadata

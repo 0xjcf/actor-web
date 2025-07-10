@@ -177,7 +177,7 @@ describe('Reactive Patterns in Components', () => {
         </div>
       `;
 
-      const Modal = createComponent({ machine, template });
+      const _Modal = createComponent({ machine, template });
 
       // Behavior: Template should render different content based on state
       const closedState = {
@@ -232,7 +232,7 @@ describe('Reactive Patterns in Components', () => {
         </div>
       `;
 
-      const ThemeAware = createComponent({ machine, template });
+      const _ThemeAware = createComponent({ machine, template });
 
       // Behavior: Should emit and react to theme changes
       eventBus.emit('theme-changed', { theme: 'dark' });
@@ -364,7 +364,7 @@ describe('Reactive Patterns in Components', () => {
         </div>
       `;
 
-      const TodoApp = createComponent({ machine, template });
+      const _TodoApp = createComponent({ machine, template });
 
       // Behavior: Should handle dynamic list rendering
       const emptyState = { context: { todos: [], newTodo: '' } };
@@ -443,7 +443,7 @@ describe('Reactive Patterns in Components', () => {
         </div>
       `;
 
-      const LiveData = createComponent({ machine, template });
+      const _LiveData = createComponent({ machine, template });
 
       // Behavior: Should handle different data states
       const loadingState = { matches: (s: string) => s === 'loading' };

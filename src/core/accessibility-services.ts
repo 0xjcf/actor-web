@@ -197,12 +197,12 @@ const accessibilityService = setup({
 export const createAriaAttributes = (attrs: AriaAttributes): Record<string, string> => {
   const result: Record<string, string> = {};
 
-  Object.entries(attrs).forEach(([key, value]) => {
+  for (const [key, value] of Object.entries(attrs)) {
     if (value !== undefined && value !== null) {
       const ariaKey = key === 'role' ? 'role' : `aria-${kebabCase(key)}`;
       result[ariaKey] = String(value);
     }
-  });
+  }
 
   return result;
 };

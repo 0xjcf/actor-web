@@ -989,7 +989,7 @@ describe('Animation Services', () => {
         });
 
         // Execute a frame
-        frameCallback!(0);
+        frameCallback?.(0);
 
         expect(mockSendBack).toHaveBeenCalledWith(
           expect.objectContaining({

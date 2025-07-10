@@ -142,7 +142,7 @@ describe('Global Event Bus Behavior', () => {
       const handlers = Array.from({ length: 50 }, () => vi.fn());
 
       // All components subscribe
-      handlers.forEach((handler, index) => {
+      handlers.forEach((handler, _index) => {
         eventBus.on('broadcast', handler);
       });
 

@@ -24,12 +24,12 @@ import {
 
 describe('Focus Management', () => {
   let testEnv: TestEnvironment;
-  let mockEventBus: MockGlobalEventBus;
+  let _mockEventBus: MockGlobalEventBus;
   let focusActor: FocusManagementActor;
 
   beforeEach(() => {
     testEnv = createTestEnvironment();
-    mockEventBus = setupGlobalMocks();
+    _mockEventBus = setupGlobalMocks();
     focusActor = createActor(focusManagementMachine);
     focusActor.start();
   });
