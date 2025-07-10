@@ -15,6 +15,13 @@ import type { Observable } from './observables/observable.js';
 // ========================================================================================
 
 /**
+ * Subscription interface for component cleanup
+ */
+interface ComponentSubscription {
+  unsubscribe(): void;
+}
+
+/**
  * Component configuration for actor integration
  */
 export interface ComponentActorConfig {
@@ -84,7 +91,7 @@ export type ComponentEventHandler<TEvent extends BaseEventObject = BaseEventObje
 export class ComponentActorBridge<TEvent extends BaseEventObject = BaseEventObject> {
   private actorRef: ActorRef<TEvent>;
   private config: ComponentActorConfig;
-  private subscriptions = new Set<{ unsubscribe(): void }>();
+  private subscriptions = new Set<ComponentSubscription>();
   private isConnected = false;
 
   constructor(config: ComponentActorConfig) {
@@ -220,7 +227,7 @@ export class ComponentActorBridge<TEvent extends BaseEventObject = BaseEventObje
   }
 
   private setupEventBinding(): void {
-    // Basic event binding implementation
+    // [actor-web] TODO: Implement comprehensive event binding system
     // Agent B can extend this with their specific event delegation system
     console.log('Auto event binding - Agent B to implement specific delegation logic');
   }
@@ -295,6 +302,7 @@ export function createFormComponentActor<TEvent extends BaseEventObject = BaseEv
       ...options?.component,
       hooks: {
         onError: (error) => {
+          // [actor-web] TODO: Implement comprehensive form validation error handling
           // Form-specific error handling
           console.warn('Form validation error:', error);
           options?.component?.hooks?.onError?.(error);
