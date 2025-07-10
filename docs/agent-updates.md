@@ -167,6 +167,72 @@ autoStart: options.autoStart !== false && this._status === 'running'
 
 ### 🔄 **STATUS UPDATE - ALL BLOCKERS RESOLVED**
 
+## 🚨 Agent C Follow-up - 2025-07-10 2:47 PM
+
+### 🔴 CRITICAL BUG FOUND - Root Cause Identified
+
+#### Ask Pattern Response Handling - Context Mutation Issue
+**Status**: CRITICAL IMPLEMENTATION BUG  
+**Impact**: All ask pattern tests failing  
+**Root Cause**: `UnifiedActorRef.handleResponseMessages()` is mutating XState actor context
+
+**CRITICAL FINDING**:
+The `UnifiedActorRef` implementation at line 435 in `create-actor-ref.ts` is **deleting** the `pendingResponses` property from the XState actor's context:
+
+```typescript
+// In handleResponseMessages() - line 435:
+delete context.pendingResponses;  // THIS IS THE BUG!
+```
+
+**Why This Causes the Error**:
+1. First query: XState machine adds response to `context.pendingResponses`
+2. UnifiedActorRef processes responses and then DELETES the property
+3. Second query: XState tries to spread `[...context.pendingResponses, response]`
+4. But `pendingResponses` is now `undefined`, causing "not iterable" error
+
+**Evidence from Debug Tests**:
+```typescript
+// Direct XState actor (works):
+{ data: { name: 'Direct' }, pendingResponses: [...] }
+
+// Through adapter (broken - pendingResponses missing):
+{ data: { name: 'Adapter' } }  // pendingResponses deleted!
+```
+
+**Impact**:
+- First ask() call might work (if timing allows)
+- All subsequent ask() calls fail with "not iterable" error
+- This breaks the entire ask pattern functionality
+
+**Tests Still Failing**:
+- `should handle ask queries` 
+- `should create query actor with extended timeout`
+- `should handle correlation IDs in ask pattern`
+
+### 🔧 RECOMMENDED FIX for Agent A/B
+
+**In `create-actor-ref.ts`, line 435 needs to be changed from:**
+```typescript
+// WRONG - This mutates the actor's context!
+delete context.pendingResponses;
+```
+
+**To one of these options:**
+```typescript
+// Option 1: Clear the array instead of deleting
+context.pendingResponses = [];
+
+// Option 2: Don't modify context at all (let the actor manage it)
+// Just remove the delete line entirely
+
+// Option 3: Create a flag to track processed responses
+context.processedResponses = true;
+```
+
+**Recommendation**: Option 2 is best - the XState actor should manage its own context. The framework should only read from it, not modify it.
+
+### 🔄 **STATUS UPDATE - ALL BLOCKERS RESOLVED**
+
 #### ~~1. Ask Pattern Implementation Issue~~ ✅ RESOLVED
 - **Root Cause**: Test machines didn't implement response handling
 - **Solution**: Updated `queryMachine` to put responses in `context.pendingResponses`
@@ -199,6 +265,14 @@ autoStart: options.autoStart !== false && this._status === 'running'
   - ✅ Status mapping confirmed working
   - ✅ Child lifecycle policy documented
   - ✅ All critical blockers resolved
+- **2025-07-10 1:30 PM**: Agent C follow-up after testing
+  - ⚠️ Ask pattern tests still failing with timeouts
+  - 🔍 Initial investigation: `context.pendingResponses is not iterable` error
+- **2025-07-10 2:47 PM**: Agent C root cause analysis
+  - 🔴 **CRITICAL BUG FOUND**: UnifiedActorRef deletes `pendingResponses` from context
+  - 📍 Location: `create-actor-ref.ts` line 435
+  - 💥 Impact: Mutates XState actor context, breaking subsequent queries
+  - ✅ Provided fix recommendations for Agent A/B
 
 ---
 
