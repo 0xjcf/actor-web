@@ -1,8 +1,5 @@
-import {
-  type TestEnvironment,
-  createTestEnvironment,
-} from '../testing/actor-test-utils.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { type TestEnvironment, createTestEnvironment } from '../testing/actor-test-utils.js';
 import {
   type AnimationKeyframe,
   type AnimationOptions,
@@ -361,7 +358,7 @@ describe('Animation Services', () => {
             element: mockElement,
             keyframes: null as unknown as AnimationKeyframe[],
           },
-          receive: vi.fn()
+          receive: vi.fn(),
         });
 
         expect(mockSendBack).toHaveBeenCalledWith({
@@ -410,7 +407,7 @@ describe('Animation Services', () => {
         const cleanup = serviceCallback({
           sendBack: mockSendBack,
           input: { steps },
-          receive: vi.fn()
+          receive: vi.fn(),
         });
 
         // First step should start immediately
@@ -469,7 +466,7 @@ describe('Animation Services', () => {
         const cleanup = serviceCallback({
           sendBack: mockSendBack,
           input: { steps },
-          receive: vi.fn()
+          receive: vi.fn(),
         });
 
         // Both steps should start immediately
@@ -497,7 +494,7 @@ describe('Animation Services', () => {
         const cleanup = serviceCallback({
           sendBack: mockSendBack,
           input: { steps },
-          receive: mockReceive
+          receive: mockReceive,
         });
 
         const receiveHandler = mockReceive.mock.calls[0][0];
@@ -532,7 +529,7 @@ describe('Animation Services', () => {
         const cleanup = serviceCallback({
           sendBack: mockSendBack,
           input: { steps },
-          receive: mockReceive
+          receive: mockReceive,
         });
 
         const receiveHandler = mockReceive.mock.calls[0][0];
@@ -558,7 +555,7 @@ describe('Animation Services', () => {
         const cleanup = serviceCallback({
           sendBack: vi.fn(),
           input: { steps },
-          receive: mockReceive
+          receive: mockReceive,
         });
 
         const receiveHandler = mockReceive.mock.calls[0][0];
@@ -579,7 +576,7 @@ describe('Animation Services', () => {
         const cleanup = serviceCallback({
           sendBack: mockSendBack,
           input: { steps: [] },
-          receive: vi.fn()
+          receive: vi.fn(),
         });
 
         expect(mockSendBack).toHaveBeenCalledWith({
@@ -606,7 +603,7 @@ describe('Animation Services', () => {
         const cleanup = serviceCallback({
           sendBack: mockSendBack,
           input: { steps },
-          receive: vi.fn()
+          receive: vi.fn(),
         });
 
         expect(mockSendBack).toHaveBeenCalledWith({
@@ -651,7 +648,7 @@ describe('Animation Services', () => {
         const cleanup = serviceCallback({
           sendBack: mockSendBack,
           input: { groups },
-          receive: vi.fn()
+          receive: vi.fn(),
         });
 
         // All elements should start animating
@@ -670,11 +667,11 @@ describe('Animation Services', () => {
 
       it('staggers animations within groups', () => {
         const service = createParallelService();
-        
+
         // Store mock animate functions
         const mockAnimateFn = vi.fn().mockReturnValue(mockAnimation);
         const thirdMockAnimateFn = vi.fn().mockReturnValue(thirdMockAnimation);
-        
+
         mockElement.animate = mockAnimateFn;
         thirdElement.animate = thirdMockAnimateFn;
 
@@ -690,7 +687,7 @@ describe('Animation Services', () => {
         const cleanup = serviceCallback({
           sendBack: vi.fn(),
           input: { groups },
-          receive: vi.fn()
+          receive: vi.fn(),
         });
 
         // Check that animations have staggered delays
@@ -721,7 +718,7 @@ describe('Animation Services', () => {
         const cleanup = serviceCallback({
           sendBack: mockSendBack,
           input: { groups },
-          receive: mockReceive
+          receive: mockReceive,
         });
 
         const receiveHandler = mockReceive.mock.calls[0][0];
@@ -761,7 +758,7 @@ describe('Animation Services', () => {
         const cleanup = serviceCallback({
           sendBack: mockSendBack,
           input: { groups },
-          receive: mockReceive
+          receive: mockReceive,
         });
 
         const receiveHandler = mockReceive.mock.calls[0][0];
@@ -787,7 +784,7 @@ describe('Animation Services', () => {
         const cleanup = serviceCallback({
           sendBack: mockSendBack,
           input: { groups: [] },
-          receive: vi.fn()
+          receive: vi.fn(),
         });
 
         expect(mockSendBack).toHaveBeenCalledWith({
@@ -814,7 +811,7 @@ describe('Animation Services', () => {
         const cleanup = serviceCallback({
           sendBack: mockSendBack,
           input: { groups },
-          receive: vi.fn()
+          receive: vi.fn(),
         });
 
         expect(mockSendBack).toHaveBeenCalledWith({
@@ -867,7 +864,7 @@ describe('Animation Services', () => {
         // Simulate transition end
         setTimeout(() => {
           const event = new TransitionEvent('transitionend', {
-            propertyName: 'opacity'
+            propertyName: 'opacity',
           });
           mockElement.dispatchEvent(event);
         }, 10);
@@ -909,7 +906,7 @@ describe('Animation Services', () => {
         // Simulate transition cancel
         setTimeout(() => {
           const event = new TransitionEvent('transitioncancel', {
-            propertyName: 'opacity'
+            propertyName: 'opacity',
           });
           mockElement.dispatchEvent(event);
         }, 10);
@@ -983,7 +980,7 @@ describe('Animation Services', () => {
             from: 0.8,
             to: 1,
           },
-          receive: vi.fn()
+          receive: vi.fn(),
         });
 
         // Should update transform property
@@ -1011,7 +1008,7 @@ describe('Animation Services', () => {
             from: 0,
             to: 1,
           },
-          receive: vi.fn()
+          receive: vi.fn(),
         });
 
         // Execute a frame
@@ -1045,7 +1042,7 @@ describe('Animation Services', () => {
             from: 0,
             to: 1,
           },
-          receive: mockReceive
+          receive: mockReceive,
         });
 
         const receiveHandler = mockReceive.mock.calls[0][0];
@@ -1076,7 +1073,7 @@ describe('Animation Services', () => {
             from: 0,
             to: 1,
           },
-          receive: vi.fn()
+          receive: vi.fn(),
         });
 
         expect(mockSendBack).toHaveBeenCalledWith({
@@ -1162,7 +1159,7 @@ describe('Animation Services', () => {
             keyframes: fadeIn.keyframes,
             options: fadeIn.options,
           },
-          receive: vi.fn()
+          receive: vi.fn(),
         });
 
         expect(mockElement.animate).toHaveBeenCalledWith(
@@ -1255,7 +1252,7 @@ describe('Animation Services', () => {
       const end = performance.now();
 
       expect(presets).toHaveLength(7);
-      
+
       // Should be fast (< 5ms)
       expect(end - start).toBeLessThan(5);
     });
