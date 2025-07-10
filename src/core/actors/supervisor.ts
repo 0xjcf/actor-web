@@ -5,7 +5,7 @@
  */
 
 import type { SystemMessage } from '../messaging/message-types.js';
-import type { ActorRef } from './actor-ref.js';
+import type { ActorRef, BaseEventObject } from './actor-ref.js';
 import type { SupervisionStrategy } from './types.js';
 
 /**
@@ -35,12 +35,12 @@ export interface SupervisorOptions {
   /**
    * Hook called before restarting an actor
    */
-  onRestart?: (actorRef: ActorRef<EventObject, unknown>, error: Error, attempt: number) => void;
+  onRestart?: (actorRef: ActorRef<BaseEventObject, unknown>, error: Error, attempt: number) => void;
 
   /**
    * Hook called when supervision fails
    */
-  onFailure?: (actorRef: ActorRef<EventObject, unknown>, error: Error) => void;
+  onFailure?: (actorRef: ActorRef<BaseEventObject, unknown>, error: Error) => void;
 }
 
 /**
@@ -65,7 +65,7 @@ export class Supervisor {
    * Start supervising an actor
    * @param actorRef - The actor to supervise
    */
-  supervise(actorRef: ActorRef<EventObject, unknown>): void {
+  supervise(actorRef: ActorRef<BaseEventObject, unknown>): void {
     if (this.supervisedActors.has(actorRef.id)) {
       return; // Already supervising
     }
@@ -96,7 +96,7 @@ export class Supervisor {
    * @param error - The error that occurred
    * @param actorRef - The actor that failed
    */
-  async handleFailure(error: Error, actorRef: ActorRef<EventObject, unknown>): Promise<void> {
+  async handleFailure(error: Error, actorRef: ActorRef<BaseEventObject, unknown>): Promise<void> {
     const supervised = this.supervisedActors.get(actorRef.id);
     if (!supervised || supervised.isRestarting) {
       return;
@@ -215,7 +215,8 @@ export class Supervisor {
     }
   }
 
-  private subscribeToActorEvents(actorRef: ActorRef<EventObject, unknown>): void {
+  private subscribeToActorEvents(actorRef: ActorRef<BaseEventObject, unknown>): void {
+    // [actor-web] TODO: Implement comprehensive actor lifecycle event monitoring
     // Subscribe to error states
     actorRef
       .observe((snapshot) => snapshot.status)
@@ -236,7 +237,7 @@ export class Supervisor {
  * Internal tracking for supervised actors
  */
 interface SupervisedActor {
-  actorRef: ActorRef<EventObject, unknown>;
+  actorRef: ActorRef<BaseEventObject, unknown>;
   restartCount: number;
   restartTimestamps: number[];
   isRestarting: boolean;
@@ -258,7 +259,7 @@ export interface SupervisionStats {
 /**
  * Create a supervised actor with a specific strategy
  */
-export function createSupervisedActor<TEvent, TEmitted>(
+export function createSupervisedActor<TEvent extends BaseEventObject, TEmitted = unknown>(
   actorRef: ActorRef<TEvent, TEmitted>,
   strategy: SupervisionStrategy = 'restart-on-failure',
   options?: Partial<SupervisorOptions>
@@ -268,7 +269,8 @@ export function createSupervisedActor<TEvent, TEmitted>(
     ...options,
   });
 
-  supervisor.supervise(actorRef);
+  // [actor-web] TODO: Implement type-safe supervision for strongly-typed actors
+  supervisor.supervise(actorRef as ActorRef<BaseEventObject, unknown>);
 
   return actorRef;
 }
