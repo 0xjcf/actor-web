@@ -167,7 +167,7 @@ export function createMockActorRef<T extends EventObject = EventObject>(
 
     simulateStateChange: (snapshot: Partial<ActorSnapshot>) => {
       currentSnapshot = { ...currentSnapshot, ...snapshot };
-      for (const observer of observers) {
+      for (const observer of Array.from(observers)) {
         try {
           // Re-run selectors with new snapshot
           const selector = (s: ActorSnapshot) => s;
@@ -184,7 +184,7 @@ export function createMockActorRef<T extends EventObject = EventObject>(
       status = 'error';
       mockRef.status = status;
       currentSnapshot = { ...currentSnapshot, status: 'error', error };
-      for (const observer of observers) {
+      for (const observer of Array.from(observers)) {
         observer.error?.(error);
       }
       options?.metrics?.onError?.(error);
@@ -215,7 +215,7 @@ export function createTestEnvironment(): TestEnvironment {
 
     cleanup: () => {
       // Stop all actors
-      for (const actor of actors.values()) {
+      for (const actor of Array.from(actors.values())) {
         if (actor.status === 'running') {
           actor.stop();
         }
@@ -377,17 +377,17 @@ export function createTestObservable<T>(): {
   return {
     observable,
     emit: (value: T) => {
-      for (const observer of observers) {
+      for (const observer of Array.from(observers)) {
         observer.next?.(value);
       }
     },
     error: (error: Error) => {
-      for (const observer of observers) {
+      for (const observer of Array.from(observers)) {
         observer.error?.(error);
       }
     },
     complete: () => {
-      for (const observer of observers) {
+      for (const observer of Array.from(observers)) {
         observer.complete?.();
       }
     },
