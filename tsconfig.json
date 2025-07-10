@@ -1,0 +1,60 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "module": "ES2022",
+        "moduleResolution": "bundler",
+        "allowSyntheticDefaultImports": true,
+        "esModuleInterop": true,
+        "allowJs": true,
+        "checkJs": false,
+        "strict": true,
+        "noEmit": false,
+        "outDir": "./dist",
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "plugins": [
+            {
+                "name": "ts-lit-plugin",
+                "htmlTemplateTags": ["html", "raw"],
+                "cssTemplateTags": ["css"]
+            }
+        ],
+        "lib": [
+            "DOM",
+            "DOM.Iterable",
+            "ES2022"
+        ],
+        "types": [],
+        "baseUrl": ".",
+        "paths": {
+            "@/*": [
+                "src/*"
+            ],
+            "@/components/*": [
+                "src/components/*"
+            ],
+            "@/styles/*": [
+                "src/styles/*"
+            ],
+            "@/scripts/*": [
+                "src/scripts/*"
+            ],
+            "@/framework/*": [
+                "src/framework/*"
+            ],
+            "@/app/*": [
+                "src/app/*"
+            ]
+        }
+    },
+    "include": [
+        "src/**/*",
+        "*.js",
+        "*.ts"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist",
+        "public"
+    ]
+}
