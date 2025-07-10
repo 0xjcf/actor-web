@@ -3,7 +3,7 @@
  * XState-based focus management that follows reactive patterns
  */
 
-import { type Actor, assign, type SnapshotFrom, setup } from 'xstate';
+import { type Actor, type SnapshotFrom, assign, setup } from 'xstate';
 import type { FocusOptions } from './accessibility-utilities.js';
 
 /**

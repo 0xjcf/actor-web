@@ -4,11 +4,11 @@
  * @author Agent A (Tech Lead) - 2025-07-10
  */
 
-import type { ActorRefOptions, ActorRef, BaseEventObject } from './actors/actor-ref.js';
-import type { ActorSnapshot } from './actors/types.js';
-import type { Observable } from './observables/observable.js';
-import { createActorRef } from './create-actor-ref.js';
 import type { AnyStateMachine } from 'xstate';
+import type { ActorRef, ActorRefOptions, BaseEventObject } from './actors/actor-ref.js';
+import type { ActorSnapshot } from './actors/types.js';
+import { createActorRef } from './create-actor-ref.js';
+import type { Observable } from './observables/observable.js';
 
 // ========================================================================================
 // COMPONENT INTEGRATION TYPES
@@ -71,7 +71,7 @@ export type ComponentStateSelector<TState> = (snapshot: ActorSnapshot) => TState
 export type ComponentEventHandler<TEvent extends BaseEventObject = BaseEventObject> = (
   event: Event,
   actorRef: ActorRef<TEvent>
-) => TEvent | void;
+) => TEvent | undefined;
 
 // ========================================================================================
 // COMPONENT ACTOR BRIDGE

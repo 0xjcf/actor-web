@@ -1,24 +1,23 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createActor } from 'xstate';
 import {
+  type TestEnvironment,
   createTestEnvironment,
   performanceTestUtils,
   setupGlobalMocks,
-  type TestEnvironment,
 } from '@/framework/testing';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type AnimationKeyframe,
   type AnimationOptions,
   AnimationPresets,
   AnimationServices,
+  type ParallelAnimationGroup,
+  type SequenceStep,
+  type TransitionConfig,
   createAnimationService,
   createParallelService,
   createSequenceService,
   createSpringService,
   createTransitionService,
-  type ParallelAnimationGroup,
-  type SequenceStep,
-  type TransitionConfig,
 } from './animation-services.js';
 
 // Mock Web Animations API
@@ -990,7 +989,7 @@ describe('Animation Services', () => {
         });
 
         // Execute a frame
-        frameCallback!(0);
+        frameCallback?.(0);
 
         expect(mockSendBack).toHaveBeenCalledWith(
           expect.objectContaining({

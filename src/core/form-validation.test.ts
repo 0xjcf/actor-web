@@ -1,11 +1,11 @@
+import { type TestEnvironment, createTestEnvironment, setupGlobalMocks } from '@/framework/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createActor } from 'xstate';
-import { createTestEnvironment, setupGlobalMocks, type TestEnvironment } from '@/framework/testing';
 import {
-  createFormValidationMachine,
   type FormValidationConfig,
   type ValidationRule,
   ValidationRules,
+  createFormValidationMachine,
 } from './form-validation.js';
 
 describe('Form Validation', () => {

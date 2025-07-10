@@ -7,33 +7,26 @@
  * See docs/agent-updates.md for details on blockers.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { EventObject } from 'xstate';
+import { collectEvents, createTestEnvironment, waitForState } from '../../testing/actor-test-utils';
 import {
-  createXStateActorRef,
-  createXStateRootActor,
-  createXStateQueryActor,
-  createXStateServiceActor,
-} from './xstate-adapter';
-import {
-  testMachines,
+  childMachine,
   counterMachine,
-  trafficLightMachine,
   delayedMachine,
   errorProneMachine,
   guardedMachine,
-  queryMachine,
-  childMachine,
   parentMachine,
+  queryMachine,
+  trafficLightMachine,
 } from '../../testing/fixtures/test-machines';
-import {
-  createTestEnvironment,
-  waitForState,
-  collectEvents,
-  assertEventsReceived,
-  createMockSupervisor,
-} from '../../testing/actor-test-utils';
 import type { ActorRef } from '../actors/actor-ref';
-import type { EventObject } from 'xstate';
+import {
+  createXStateActorRef,
+  createXStateQueryActor,
+  createXStateRootActor,
+  createXStateServiceActor,
+} from './xstate-adapter';
 
 describe('XStateActorRefAdapter', () => {
   let testEnv: ReturnType<typeof createTestEnvironment>;
@@ -403,7 +396,7 @@ describe('XStateActorRefAdapter', () => {
       const parent = createXStateActorRef(parentMachine);
       parent.start();
 
-      const parentSendSpy = vi.spyOn(parent, 'send');
+      const _parentSendSpy = vi.spyOn(parent, 'send');
 
       const child = createXStateActorRef(errorProneMachine, {
         parent,

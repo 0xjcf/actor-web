@@ -111,22 +111,22 @@ export class AriaStateManager {
 
     // Apply state-based attributes
     if (this.ariaConfig.stateMapping) {
-      Object.entries(this.ariaConfig.stateMapping).forEach(([stateName, attrs]) => {
+      for (const [stateName, attrs] of Object.entries(this.ariaConfig.stateMapping)) {
         if (this.currentState.matches(stateName)) {
           Object.assign(attributes, attrs);
         }
-      });
+      }
     }
 
     // Apply context-based attributes
     if (this.ariaConfig.contextMapping) {
-      Object.entries(this.ariaConfig.contextMapping).forEach(([contextKey, mapper]) => {
+      for (const [contextKey, mapper] of Object.entries(this.ariaConfig.contextMapping)) {
         const value = this.currentState.context[contextKey];
         if (value !== undefined) {
           const contextAttrs = mapper(value);
           Object.assign(attributes, contextAttrs);
         }
-      });
+      }
     }
 
     // Apply automatic attributes based on conventions
@@ -244,11 +244,11 @@ export class AriaStateManager {
     if (!this.ariaConfig.announcements) return;
 
     // Check for state changes that should trigger announcements
-    Object.entries(this.ariaConfig.announcements).forEach(([stateName, _config]) => {
+    for (const [stateName, _config] of Object.entries(this.ariaConfig.announcements)) {
       if (newState.matches(stateName) && !previousState.matches(stateName)) {
         this.announceStateChange(stateName);
       }
-    });
+    }
   }
 
   private applyConventionalAttributes(attributes: AriaAttributes): void {
@@ -309,12 +309,12 @@ export class AriaStateManager {
   private createAriaAttributeString(attributes: AriaAttributes): string {
     const validAttributes: string[] = [];
 
-    Object.entries(attributes).forEach(([key, value]) => {
+    for (const [key, value] of Object.entries(attributes)) {
       if (value !== undefined && value !== null && isValidAriaAttribute(key, value)) {
         const ariaKey = key === 'role' ? 'role' : `aria-${kebabCase(key)}`;
         validAttributes.push(`${ariaKey}="${String(value)}"`);
       }
-    });
+    }
 
     return validAttributes.join(' ');
   }

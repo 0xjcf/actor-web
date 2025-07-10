@@ -15,7 +15,7 @@ export function resetDevMode(): void {
   isDevModeEnabled = false;
   registeredMachines.clear();
   if (typeof window !== 'undefined' && (window as unknown as { __actorSPA?: unknown }).__actorSPA) {
-    delete (window as unknown as { __actorSPA?: unknown }).__actorSPA;
+    (window as unknown as { __actorSPA?: unknown }).__actorSPA = undefined;
   }
 }
 

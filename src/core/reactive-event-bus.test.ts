@@ -5,13 +5,13 @@
  * from a user perspective, following TESTING-GUIDE.md principles
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  createTestEnvironment,
   type MockGlobalEventBus,
-  setupGlobalMocks,
   type TestEnvironment,
+  createTestEnvironment,
+  setupGlobalMocks,
 } from '@/framework/testing';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('Global Event Bus Behavior', () => {
   let testEnv: TestEnvironment;
@@ -142,7 +142,7 @@ describe('Global Event Bus Behavior', () => {
       const handlers = Array.from({ length: 50 }, () => vi.fn());
 
       // All components subscribe
-      handlers.forEach((handler, index) => {
+      handlers.forEach((handler, _index) => {
         eventBus.on('broadcast', handler);
       });
 

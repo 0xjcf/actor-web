@@ -6,7 +6,7 @@
  * mobile nav event service but generalized for any component.
  */
 
-import { assign, createActor, type SnapshotFrom, setup } from 'xstate';
+import { type SnapshotFrom, assign, createActor, setup } from 'xstate';
 
 // Type definitions
 export interface GlobalEventListener {

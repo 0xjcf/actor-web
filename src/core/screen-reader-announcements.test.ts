@@ -5,13 +5,13 @@
  * Tests the screen reader announcement system directly
  */
 
+import { type TestEnvironment, createTestEnvironment, setupGlobalMocks } from '@/framework/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createActor, createMachine } from 'xstate';
-import { createTestEnvironment, setupGlobalMocks, type TestEnvironment } from '@/framework/testing';
+import { createActor } from 'xstate';
 import {
-  createScreenReaderAnnouncementHelper,
   type ScreenReaderAnnouncementActor,
   type ScreenReaderAnnouncementHelper,
+  createScreenReaderAnnouncementHelper,
   screenReaderAnnouncementMachine,
 } from './screen-reader-announcements.js';
 

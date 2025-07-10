@@ -1,18 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  type TestEnvironment,
   createTestEnvironment,
   performanceTestUtils,
   setupGlobalMocks,
-  type TestEnvironment,
-} from '@/framework/testing';
+} from '../testing/actor-test-utils';
 import {
-  createBatchService,
-  createStorageService,
-  createSyncService,
   type MigrationFunction,
   PersistenceServices,
   type StorageItem,
   StorageUtils,
+  createBatchService,
+  createStorageService,
+  createSyncService,
 } from './persistence.js';
 
 // Mock browser storage APIs
@@ -97,7 +97,7 @@ describe('Persistence Services', () => {
         const key = 'test-key';
         const data = { message: 'Hello World' };
         const prefixedKey = `test:${key}`;
-        
+
         // Store data
         const storageData = JSON.stringify({
           data,
@@ -108,14 +108,14 @@ describe('Persistence Services', () => {
 
         // Verify storage was called
         expect(mockLocalStorage.setItem).toHaveBeenCalledWith(prefixedKey, storageData);
-        
+
         // Set up mock to return stored data
         mockLocalStorage.getItem.mockReturnValue(storageData);
-        
+
         // Retrieve and verify
         const retrieved = mockLocalStorage.getItem(prefixedKey);
         expect(retrieved).toBe(storageData);
-        
+
         const parsed = JSON.parse(retrieved!);
         expect(parsed.data).toEqual(data);
       });
@@ -124,10 +124,10 @@ describe('Persistence Services', () => {
         // Behavior: Should return null for non-existent keys
         const key = 'non-existent';
         const prefixedKey = `test:${key}`;
-        
+
         // Mock returns null for non-existent keys
         mockLocalStorage.getItem.mockReturnValue(null);
-        
+
         const retrieved = mockLocalStorage.getItem(prefixedKey);
         expect(retrieved).toBeNull();
       });
@@ -136,7 +136,7 @@ describe('Persistence Services', () => {
         // Behavior: Should remove data from storage
         const key = 'delete-me';
         const prefixedKey = `test:${key}`;
-        
+
         // First set some data
         mockLocalStorage.setItem(
           prefixedKey,
@@ -149,10 +149,10 @@ describe('Persistence Services', () => {
 
         // Delete the data
         mockLocalStorage.removeItem(prefixedKey);
-        
+
         // Verify deletion
         expect(mockLocalStorage.removeItem).toHaveBeenCalledWith(prefixedKey);
-        
+
         // Verify data is gone
         mockLocalStorage.getItem.mockReturnValue(null);
         expect(mockLocalStorage.getItem(prefixedKey)).toBeNull();
@@ -161,18 +161,18 @@ describe('Persistence Services', () => {
       it('clears all prefixed data', () => {
         // Behavior: Should only remove items with matching prefix
         const mockKeys = ['test:key1', 'test:key2', 'other:key3'];
-        
+
         // Set up mock storage with multiple keys
-        mockKeys.forEach(key => {
+        mockKeys.forEach((key) => {
           mockLocalStorage.setItem(key, JSON.stringify({ data: 'test' }));
         });
-        
+
         // Clear only keys with 'test:' prefix
-        const testKeys = mockKeys.filter(k => k.startsWith('test:'));
-        testKeys.forEach(key => {
+        const testKeys = mockKeys.filter((k) => k.startsWith('test:'));
+        testKeys.forEach((key) => {
           mockLocalStorage.removeItem(key);
         });
-        
+
         // Verify only test: keys were removed
         expect(mockLocalStorage.removeItem).toHaveBeenCalledWith('test:key1');
         expect(mockLocalStorage.removeItem).toHaveBeenCalledWith('test:key2');

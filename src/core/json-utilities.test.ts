@@ -5,11 +5,11 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  createTypedSerializer,
   DeserializationError,
+  SerializationError,
+  createTypedSerializer,
   deserializeEventPayload,
   frameworkSerializers,
-  SerializationError,
   safeDeserialize,
   safeSerialize,
   serializeEventPayload,

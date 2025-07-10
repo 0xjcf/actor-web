@@ -1,12 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createActor } from 'xstate';
 import {
+  type TestEnvironment,
   createTestEnvironment,
   setupGlobalMocks,
-  type TestEnvironment,
   userInteractions,
   waitFor,
 } from '@/framework/testing';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createActor } from 'xstate';
 import {
   GlobalEventDelegation,
   type GlobalEventListener,

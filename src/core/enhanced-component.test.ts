@@ -5,15 +5,14 @@
  * Tests the automatic integration of ARIA, focus, keyboard, and screen reader support
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createActor, createMachine } from 'xstate';
 import {
+  type TestEnvironment,
   createTestEnvironment,
   setupGlobalMocks,
-  type TestEnvironment,
-  userInteractions,
   waitFor,
 } from '@/framework/testing';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createMachine } from 'xstate';
 import {
   createAccessibleButton,
   createAccessibleComponent,
@@ -22,7 +21,6 @@ import {
   createAccessibleMenu,
   createAccessibleModal,
   createEnhancedComponent,
-  type EnhancedComponentConfig,
 } from './enhanced-component.js';
 
 describe('Enhanced Component', () => {
@@ -46,7 +44,7 @@ describe('Enhanced Component', () => {
         states: { idle: {} },
       });
 
-      const template = (state: any, accessibility: any) => {
+      const template = (_state: any, accessibility: any) => {
         return `<div ${accessibility.getRootAttributes()}>Hello</div>`;
       };
 
@@ -67,7 +65,7 @@ describe('Enhanced Component', () => {
         states: { idle: {} },
       });
 
-      const ComponentClass = createEnhancedComponent({
+      const _ComponentClass = createEnhancedComponent({
         machine,
         template: () => '<div>Test</div>',
         tagName: 'my-custom-element',
@@ -84,9 +82,9 @@ describe('Enhanced Component', () => {
         states: { idle: {} },
       });
 
-      const ComponentClass = createEnhancedComponent({
+      const _ComponentClass = createEnhancedComponent({
         machine,
-        template: (state, accessibility) => {
+        template: (_state, accessibility) => {
           return `<button ${accessibility.getButtonAttributes()}>Click me</button>`;
         },
         accessibility: {
@@ -140,7 +138,7 @@ describe('Enhanced Component', () => {
         `;
       };
 
-      const ComponentClass = createEnhancedComponent({
+      const _ComponentClass = createEnhancedComponent({
         machine,
         template,
         accessibility: {
@@ -202,7 +200,7 @@ describe('Enhanced Component', () => {
       let isLoadingValue = false;
       let hasErrorValue = false;
 
-      const template = (state: any, accessibility: any) => {
+      const template = (_state: any, accessibility: any) => {
         isLoadingValue = accessibility.isLoading();
         hasErrorValue = accessibility.hasError();
         return `
@@ -213,7 +211,7 @@ describe('Enhanced Component', () => {
         `;
       };
 
-      const ComponentClass = createEnhancedComponent({
+      const _ComponentClass = createEnhancedComponent({
         machine,
         template,
       });
@@ -252,7 +250,7 @@ describe('Enhanced Component', () => {
 
       let mobileHelpers: any = null;
 
-      const template = (state: any, accessibility: any) => {
+      const template = (_state: any, accessibility: any) => {
         mobileHelpers = accessibility.mobile;
         return `
           <nav>
@@ -265,7 +263,7 @@ describe('Enhanced Component', () => {
         `;
       };
 
-      const ComponentClass = createEnhancedComponent({
+      const _ComponentClass = createEnhancedComponent({
         machine,
         template,
         mobile: {
@@ -309,9 +307,9 @@ describe('Enhanced Component', () => {
 
       const events: string[] = [];
 
-      const ComponentClass = createEnhancedComponent({
+      const _ComponentClass = createEnhancedComponent({
         machine,
-        template: (state, accessibility) => '<div>Mobile Nav</div>',
+        template: (_state, _accessibility) => '<div>Mobile Nav</div>',
         mobile: {
           navigation: 'bottom-sheet',
         },
@@ -355,7 +353,7 @@ describe('Enhanced Component', () => {
         },
       });
 
-      const ComponentClass = createAccessibleButton({
+      const _ComponentClass = createAccessibleButton({
         machine,
         template: (state, accessibility) =>
           `<button ${accessibility.getButtonAttributes()}>
@@ -379,9 +377,9 @@ describe('Enhanced Component', () => {
         },
       });
 
-      const ComponentClass = createAccessibleForm({
+      const _ComponentClass = createAccessibleForm({
         machine,
-        template: (state, accessibility) =>
+        template: (_state, accessibility) =>
           `<form ${accessibility.getFormAttributes()}>
             <input ${accessibility.getInputAttributes(false, true)} />
             <button type="submit">Submit</button>
@@ -400,7 +398,7 @@ describe('Enhanced Component', () => {
         states: { idle: {} },
       });
 
-      const ComponentClass = createAccessibleList({
+      const _ComponentClass = createAccessibleList({
         machine,
         template: (state, accessibility) =>
           `<ul ${accessibility.getListAttributes('vertical')}>
@@ -431,7 +429,7 @@ describe('Enhanced Component', () => {
         },
       });
 
-      const ComponentClass = createAccessibleModal({
+      const _ComponentClass = createAccessibleModal({
         machine,
         template: (state, accessibility) => {
           if (state.matches('open')) {
@@ -455,7 +453,7 @@ describe('Enhanced Component', () => {
         states: { idle: {} },
       });
 
-      const ComponentClass = createAccessibleMenu({
+      const _ComponentClass = createAccessibleMenu({
         machine,
         template: (state, accessibility) =>
           `<ul ${accessibility.getListAttributes('vertical')} role="menu">
@@ -481,9 +479,9 @@ describe('Enhanced Component', () => {
         states: { idle: {} },
       });
 
-      const ComponentClass = createAccessibleComponent({
+      const _ComponentClass = createAccessibleComponent({
         machine,
-        template: (state, ariaHelper) =>
+        template: (_state, ariaHelper) =>
           `<div ${ariaHelper.getRootAttributes()}>Legacy Component</div>`,
         ariaConfig: {
           role: 'region',
@@ -502,9 +500,9 @@ describe('Enhanced Component', () => {
         states: { idle: {} },
       });
 
-      const ComponentClass = createAccessibleComponent({
+      const _ComponentClass = createAccessibleComponent({
         machine,
-        template: (state, ariaHelper) =>
+        template: (_state, ariaHelper) =>
           `<button ${ariaHelper.getButtonAttributes()}>Legacy Button</button>`,
         accessibility: {
           preset: 'button',
@@ -575,7 +573,7 @@ describe('Enhanced Component', () => {
         `;
       };
 
-      const ComponentClass = createAccessibleForm({
+      const _ComponentClass = createAccessibleForm({
         machine,
         template,
       });
@@ -640,7 +638,7 @@ describe('Enhanced Component', () => {
         `;
       };
 
-      const ComponentClass = createAccessibleList({
+      const _ComponentClass = createAccessibleList({
         machine,
         template,
       });

@@ -2,14 +2,14 @@
  * Unit Tests for createComponent - Actor-SPA Framework
  */
 
+import {
+  type MockGlobalEventBus,
+  type TestEnvironment,
+  createTestEnvironment,
+  setupGlobalMocks,
+} from '@/framework/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { assign, createMachine } from 'xstate';
-import {
-  createTestEnvironment,
-  type MockGlobalEventBus,
-  setupGlobalMocks,
-  type TestEnvironment,
-} from '@/framework/testing';
 import { createComponent, html } from './minimal-api.js';
 
 // Mock interfaces for testing

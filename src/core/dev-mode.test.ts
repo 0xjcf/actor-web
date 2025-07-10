@@ -12,10 +12,22 @@ import {
   inspectTemplate,
   registerMachine,
   resetDevMode,
-  type ValidationIssue,
-  type ValidationResult,
   validateTemplate,
 } from './dev-mode.js';
+
+// Type definition for the dev mode API
+interface ActorSPADevMode {
+  inspectTemplate: typeof inspectTemplate;
+  validateTemplate: typeof validateTemplate;
+  listMachines: () => string[];
+  getMachine: (id: string) => unknown;
+}
+
+declare global {
+  interface Window {
+    __actorSPA?: ActorSPADevMode;
+  }
+}
 
 describe('Development Mode', () => {
   let originalWindow: typeof window;
@@ -55,7 +67,7 @@ describe('Development Mode', () => {
       // Behavior: Dev mode should add global helpers for template inspection
       enableDevMode();
 
-      const actorSPA = (window as any).__actorSPA;
+      const actorSPA = window.__actorSPA;
       expect(actorSPA).toBeDefined();
       expect(actorSPA.inspectTemplate).toBeDefined();
       expect(actorSPA.validateTemplate).toBeDefined();
@@ -65,20 +77,20 @@ describe('Development Mode', () => {
 
     it('does not enable dev mode if window is undefined', () => {
       // Behavior: Server-side rendering should not break
-      (global as any).window = undefined;
+      (global as typeof globalThis & { window?: Window }).window = undefined;
 
       enableDevMode();
 
-      expect((global as any).__actorSPA).toBeUndefined();
+      expect((global as typeof globalThis & { __actorSPA?: ActorSPADevMode }).__actorSPA).toBeUndefined();
     });
 
     it('only enables dev mode once', () => {
       // Behavior: Multiple calls should not reset state
       enableDevMode();
-      const firstInstance = (window as any).__actorSPA;
+      const firstInstance = window.__actorSPA;
 
       enableDevMode();
-      const secondInstance = (window as any).__actorSPA;
+      const secondInstance = window.__actorSPA;
 
       expect(firstInstance).toBe(secondInstance);
     });
@@ -97,7 +109,7 @@ describe('Development Mode', () => {
 
       registerMachine(machine);
 
-      const actorSPA = (window as any).__actorSPA;
+      const actorSPA = window.__actorSPA;
       expect(actorSPA.listMachines()).toContain('test-machine');
       expect(actorSPA.getMachine('test-machine')).toBe(machine);
     });
@@ -113,7 +125,7 @@ describe('Development Mode', () => {
       registerMachine(machine);
 
       // Dev mode not enabled, so no global helper
-      expect((window as any).__actorSPA).toBeUndefined();
+      expect(window.__actorSPA).toBeUndefined();
     });
   });
 

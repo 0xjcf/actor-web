@@ -4,14 +4,9 @@
  * @author Agent A (Tech Lead) - 2025-07-10
  */
 
-import type { EventObject, AnyStateMachine, SnapshotFrom } from 'xstate';
+import type { AnyStateMachine, EventObject } from 'xstate';
 import type { Observable } from '../observables/observable.js';
-import type { 
-  ActorBehavior, 
-  ActorSnapshot, 
-  SpawnOptions, 
-  SupervisionStrategy
-} from './types.js';
+import type { ActorBehavior, ActorSnapshot, SpawnOptions, SupervisionStrategy } from './types.js';
 
 // ========================================================================================
 // CORE EVENT TYPES
@@ -74,11 +69,7 @@ export interface SystemEvent extends BaseEventObject {
 /**
  * Actions that can be taken by a supervisor
  */
-export type SupervisionAction = 
-  | 'restart' 
-  | 'stop' 
-  | 'escalate' 
-  | 'ignore';
+export type SupervisionAction = 'restart' | 'stop' | 'escalate' | 'ignore';
 
 // ========================================================================================
 // ACTOR REFERENCE INTERFACE
@@ -96,13 +87,13 @@ export type SupervisionAction =
  */
 export interface ActorRef<
   TEvent extends BaseEventObject = BaseEventObject,
-  TEmitted = unknown,
+  _TEmitted = unknown,
   TSnapshot extends ActorSnapshot = ActorSnapshot,
 > {
   // ========================================================================================
   // IDENTITY & METADATA
   // ========================================================================================
-  
+
   /**
    * Unique identifier for this actor
    */
@@ -142,10 +133,7 @@ export interface ActorRef<
    * @throws {TimeoutError} if response not received within timeout
    * @throws {ActorStoppedError} if actor is stopped
    */
-  ask<TQuery, TResponse>(
-    query: TQuery,
-    options?: AskOptions
-  ): Promise<TResponse>;
+  ask<TQuery, TResponse>(query: TQuery, options?: AskOptions): Promise<TResponse>;
 
   // ========================================================================================
   // STATE OBSERVATION (REACTIVE PATTERNS)
@@ -156,9 +144,7 @@ export interface ActorRef<
    * @param selector - Function to select specific state slice
    * @returns Observable of selected state changes
    */
-  observe<TSelected>(
-    selector: (snapshot: TSnapshot) => TSelected
-  ): Observable<TSelected>;
+  observe<TSelected>(selector: (snapshot: TSnapshot) => TSelected): Observable<TSelected>;
 
   /**
    * Get the current snapshot of this actor's state (one-time read)
@@ -242,13 +228,13 @@ export interface ActorRef<
 /**
  * Actor lifecycle status
  */
-export type ActorStatus = 
-  | 'idle'       // Not started
-  | 'starting'   // In process of starting
-  | 'running'    // Active and processing messages
-  | 'stopping'   // In process of stopping
-  | 'stopped'    // Stopped and cleaned up
-  | 'error';     // Failed with unrecoverable error
+export type ActorStatus =
+  | 'idle' // Not started
+  | 'starting' // In process of starting
+  | 'running' // Active and processing messages
+  | 'stopping' // In process of stopping
+  | 'stopped' // Stopped and cleaned up
+  | 'error'; // Failed with unrecoverable error
 
 /**
  * Options for the ask operation
@@ -396,11 +382,7 @@ export class ActorStoppedError extends ActorError {
  * Error thrown when actor supervision fails
  */
 export class SupervisionError extends ActorError {
-  constructor(
-    actorId: string,
-    action: SupervisionAction,
-    cause: Error
-  ) {
+  constructor(actorId: string, action: SupervisionAction, cause: Error) {
     super(`Supervision action '${action}' failed for actor: ${actorId}`, actorId, cause);
     this.name = 'SupervisionError';
   }

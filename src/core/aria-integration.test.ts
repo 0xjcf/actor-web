@@ -5,21 +5,18 @@
  * Tests the automatic ARIA attribute management system
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createActor, createMachine } from 'xstate';
 import {
+  type TestEnvironment,
   createTestEnvironment,
   setupGlobalMocks,
-  type TestEnvironment,
-  waitFor,
-} from '@/framework/testing';
+} from '../testing/actor-test-utils';
 import {
   type AriaConfig,
-  AriaStateManager,
-  AriaTemplateHelper,
+  DefaultAriaConfigs,
   createAriaManager,
   createAriaTemplateHelper,
-  DefaultAriaConfigs,
 } from './aria-integration.js';
 
 describe('ARIA Integration', () => {
@@ -267,7 +264,7 @@ describe('ARIA Integration', () => {
       const actor = createActor(machine);
       actor.start();
       const manager = createAriaManager(mockElement, config, actor.getSnapshot());
-      const liveRegion = mockElement.querySelector('[aria-live]');
+      const _liveRegion = mockElement.querySelector('[aria-live]');
 
       // Transition to loading should trigger announcement
       actor.send({ type: 'LOAD' });

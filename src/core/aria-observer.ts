@@ -259,11 +259,11 @@ export class AriaObserver {
         if (mutation.type === 'attributes' && mutation.target instanceof Element) {
           this.updateAriaAttributes(mutation.target);
         } else if (mutation.type === 'childList') {
-          mutation.addedNodes.forEach((node) => {
+          for (const node of mutation.addedNodes) {
             if (node instanceof Element) {
               this.processElement(node);
             }
-          });
+          }
         }
       }
     });
@@ -280,10 +280,10 @@ export class AriaObserver {
     }
 
     // Process all descendants with data-state
-    element.querySelectorAll('[data-state]').forEach((child) => {
+    for (const child of element.querySelectorAll('[data-state]')) {
       this.updateAriaAttributes(child);
       this.observedElements.add(child);
-    });
+    }
   }
 
   /**

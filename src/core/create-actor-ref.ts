@@ -11,30 +11,25 @@ import { createActor } from 'xstate';
 import type {
   ActorRef,
   ActorRefOptions,
+  ActorStatus,
+  AskOptions,
   BaseEventObject,
   ResponseEvent,
-  AskOptions,
-  ActorStatus,
 } from './actors/actor-ref.js';
 
 // Import types from types.js
 import type { ActorSnapshot } from './actors/types.js';
 
-import {
-  ActorStoppedError,
-  TimeoutError,
-  generateActorId,
-  isResponseEvent,
-} from './actors/actor-ref.js';
+import { ActorStoppedError, generateActorId, isResponseEvent } from './actors/actor-ref.js';
 
 // Use Agent B's Observable implementation
 import type { Observable } from './observables/observable.js';
 import { CustomObservable } from './observables/observable.js';
 
-// Use my advanced messaging and supervision
-import { RequestResponseManager } from './messaging/request-response.js';
 import { Supervisor } from './actors/supervisor.js';
 import type { SupervisionStrategy } from './actors/types.js';
+// Use my advanced messaging and supervision
+import { RequestResponseManager } from './messaging/request-response.js';
 
 // ========================================================================================
 // UNIFIED ACTORREF IMPLEMENTATION
@@ -352,7 +347,7 @@ class UnifiedActorRef<
     return snapshot.matches ? snapshot.matches(statePath) : false;
   }
 
-  accepts(eventType: string): boolean {
+  accepts(_eventType: string): boolean {
     // Basic implementation - check if machine has transitions for this event
     // In a more sophisticated implementation, this would check current state transitions
     return true; // TODO: Implement proper event acceptance checking
@@ -389,10 +384,10 @@ class UnifiedActorRef<
       maxRestarts: 3,
       restartWindow: 60000, // 1 minute
       restartDelay: 1000, // 1 second
-      onRestart: (actorRef, error, attempt) => {
+      onRestart: (_actorRef, _error, attempt) => {
         this.options.metrics?.onRestart?.(attempt);
       },
-      onFailure: (actorRef, error) => {
+      onFailure: (_actorRef, error) => {
         this.options.metrics?.onError?.(error);
         this.handleError(error);
       },

@@ -53,7 +53,7 @@ export function createMockActorRef<T extends EventObject = EventObject>(
     }),
 
     ask: vi.fn(async (query: unknown) => {
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve, _reject) => {
         setTimeout(() => {
           resolve({ type: 'RESPONSE', data: query });
         }, 50);
@@ -87,15 +87,20 @@ export function createMockActorRef<T extends EventObject = EventObject>(
       return mockObservable;
     }),
 
-    spawn: vi.fn((behavior: AnyStateMachine, spawnOptions?: { id?: string; supervision?: SupervisionStrategy }) => {
-      const childId = spawnOptions?.id || `${id}.child-${spawnedChildren.length}`;
-      const childRef = createMockActorRef(childId, {
-        parent: mockRef as MockActorRef<EventObject>,
-        supervision: spawnOptions?.supervision || options?.supervision,
-      });
-      spawnedChildren.push(childRef);
-      return childRef as MockActorRef<EventObject>;
-    }),
+    spawn: vi.fn(
+      (
+        _behavior: AnyStateMachine,
+        spawnOptions?: { id?: string; supervision?: SupervisionStrategy }
+      ) => {
+        const childId = spawnOptions?.id || `${id}.child-${spawnedChildren.length}`;
+        const childRef = createMockActorRef(childId, {
+          parent: mockRef as MockActorRef<EventObject>,
+          supervision: spawnOptions?.supervision || options?.supervision,
+        });
+        spawnedChildren.push(childRef);
+        return childRef as MockActorRef<EventObject>;
+      }
+    ),
 
     start: vi.fn(() => {
       status = 'active';

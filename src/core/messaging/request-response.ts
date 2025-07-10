@@ -4,14 +4,13 @@
  * @author Agent A (Tech Lead) - 2025-07-10
  */
 
-import { 
-  TimeoutError, 
-  ActorError, 
-  generateCorrelationId,
+import {
+  type AskOptions,
+  type EventMetadata,
   type QueryEvent,
   type ResponseEvent,
-  type EventMetadata,
-  type AskOptions
+  TimeoutError,
+  generateCorrelationId,
 } from '../actors/actor-ref.js';
 
 // ========================================================================================
@@ -125,16 +124,16 @@ export class RequestResponseManager {
     // Create promise with retry logic
     const promise = new Promise<TResponse>((resolve, reject) => {
       this.requestStats.total++;
-      
+
       const executeRequest = (attempt: number): void => {
         const timeoutId = setTimeout(() => {
           this.pendingRequests.delete(correlationId);
-          
+
           if (attempt < retries) {
             // Retry with exponential backoff
             const delay = this.calculateRetryDelay(retryDelay, attempt);
             const retryTimeoutId = setTimeout(() => executeRequest(attempt + 1), delay);
-            
+
             this.pendingRequests.set(correlationId, {
               resolve: resolve as (value: unknown) => void,
               reject,
@@ -149,11 +148,13 @@ export class RequestResponseManager {
           } else {
             // Final timeout
             this.requestStats.timeout++;
-            reject(new TimeoutError(
-              `Request ${correlationId} timed out after ${timeout}ms (${retries + 1} attempts)`,
-              timeout,
-              correlationId
-            ));
+            reject(
+              new TimeoutError(
+                `Request ${correlationId} timed out after ${timeout}ms (${retries + 1} attempts)`,
+                timeout,
+                correlationId
+              )
+            );
           }
         }, timeout);
 
@@ -256,9 +257,10 @@ export class RequestResponseManager {
       status: 'pending' as const,
     }));
 
-    const averageResponseTime = this.requestStats.completed > 0 
-      ? this.requestStats.totalResponseTime / this.requestStats.completed 
-      : 0;
+    const averageResponseTime =
+      this.requestStats.completed > 0
+        ? this.requestStats.totalResponseTime / this.requestStats.completed
+        : 0;
 
     return {
       pendingCount: pendingRequests.length,
@@ -294,7 +296,7 @@ export class RequestResponseManager {
 
   private calculateRetryDelay(baseDelay: number, attempt: number): number {
     // Exponential backoff with jitter
-    const exponentialDelay = baseDelay * Math.pow(2, attempt);
+    const exponentialDelay = baseDelay * 2 ** attempt;
     const jitter = Math.random() * 0.3; // ±15% jitter
     return Math.floor(exponentialDelay * (1 + jitter));
   }
@@ -332,7 +334,7 @@ export function createRequestResponseManager(
 /**
  * Create a query object with proper typing
  */
-export function createQuery<TRequest, TResponse>(
+export function createQuery<TRequest, _TResponse>(
   request: string,
   params?: TRequest,
   metadata?: EventMetadata
@@ -381,7 +383,7 @@ export function isRequestTimedOut(
   requestContext: RequestContext<unknown>,
   currentTime = Date.now()
 ): boolean {
-  return (currentTime - requestContext.createdAt) > requestContext.timeout;
+  return currentTime - requestContext.createdAt > requestContext.timeout;
 }
 
 /**
@@ -399,7 +401,9 @@ export function getRemainingTimeout(
  * Validate that a correlation ID is well-formed
  */
 export function isValidCorrelationId(correlationId: string): boolean {
-  return typeof correlationId === 'string' && 
-         correlationId.length > 0 && 
-         /^[a-f0-9-]{36}$/.test(correlationId);
+  return (
+    typeof correlationId === 'string' &&
+    correlationId.length > 0 &&
+    /^[a-f0-9-]{36}$/.test(correlationId)
+  );
 }
