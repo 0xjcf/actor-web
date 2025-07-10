@@ -632,7 +632,10 @@ class ReactiveComponentController {
 
     // ✅ SECURITY: Check for prototype pollution attempts (only own properties, not inherited)
     const dangerousKeys = ['__proto__', 'constructor', 'prototype', 'valueOf', 'toString'];
-    return !dangerousKeys.some((key) => Object.hasOwn(obj, key));
+    // Use safer approach that avoids prototype builtin access
+    return !dangerousKeys.some(
+      (key) => key in obj && Object.getOwnPropertyDescriptor(obj, key) !== undefined
+    );
   }
 
   private isValidFieldName(name: string): boolean {

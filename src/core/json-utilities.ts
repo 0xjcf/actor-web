@@ -243,7 +243,7 @@ export function deserializeEventPayload<T = Record<string, unknown>>(json: strin
 export function serializeFormData(formData: FormData): string {
   const obj: Record<string, unknown> = {};
 
-  for (const [key, value] of formData.entries()) {
+  formData.forEach((value, key) => {
     // Handle multiple values for the same key
     if (key in obj) {
       const existing = obj[key];
@@ -255,7 +255,7 @@ export function serializeFormData(formData: FormData): string {
     } else {
       obj[key] = value;
     }
-  }
+  });
 
   return serializeEventPayload(obj);
 }

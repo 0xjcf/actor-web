@@ -219,7 +219,7 @@ class UnifiedActorRef<
         this._status = 'running';
 
         // Start all children
-        for (const child of this.children.values()) {
+        for (const child of Array.from(this.children.values())) {
           child.start();
         }
       } catch (error) {
