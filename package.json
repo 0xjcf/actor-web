@@ -5,12 +5,7 @@
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
-  "files": [
-    "dist",
-    "src",
-    "README.md",
-    "CHANGELOG.md"
-  ],
+  "files": ["dist", "src", "README.md", "CHANGELOG.md"],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "build:watch": "pnpm build --watch",
@@ -31,6 +26,9 @@
     "validate": "./scripts/agent-workflow.sh validate",
     "status": "./scripts/agent-workflow.sh status",
     "setup": "./scripts/agent-workflow.sh setup",
+    "commit": "./scripts/agent-workflow.sh commit",
+    "save": "./scripts/agent-workflow.sh save",
+    "ship": "./scripts/agent-workflow.sh ship",
     "agent-a:push": "git push origin feature/agent-a",
     "agent-b:push": "git push origin feature/agent-b",
     "agent-c:push": "git push origin feature/agent-c",

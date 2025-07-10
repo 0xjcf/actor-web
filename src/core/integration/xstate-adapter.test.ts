@@ -38,7 +38,7 @@ describe('XStateActorRefAdapter', () => {
   });
 
   afterEach(async () => {
-    if (actorRef?.status === 'active') {
+    if (actorRef?.status === 'running') {
       await actorRef.stop();
     }
     testEnv.cleanup();
@@ -84,12 +84,12 @@ describe('XStateActorRefAdapter', () => {
 
     it('should handle counter increment', () => {
       const snapshot1 = actorRef.getSnapshot();
-      expect(snapshot1.context.count).toBe(0);
+      expect((snapshot1.context as { count: number }).count).toBe(0);
 
       actorRef.send({ type: 'INCREMENT' });
 
       const snapshot2 = actorRef.getSnapshot();
-      expect(snapshot2.context.count).toBe(1);
+      expect((snapshot2.context as { count: number }).count).toBe(1);
     });
 
     it('should handle counter decrement', () => {
@@ -97,12 +97,12 @@ describe('XStateActorRefAdapter', () => {
       actorRef.send({ type: 'INCREMENT' });
 
       const snapshot1 = actorRef.getSnapshot();
-      expect(snapshot1.context.count).toBe(2);
+      expect((snapshot1.context as { count: number }).count).toBe(2);
 
       actorRef.send({ type: 'DECREMENT' });
 
       const snapshot2 = actorRef.getSnapshot();
-      expect(snapshot2.context.count).toBe(1);
+      expect((snapshot2.context as { count: number }).count).toBe(1);
     });
 
     it('should handle counter reset', () => {
@@ -113,14 +113,14 @@ describe('XStateActorRefAdapter', () => {
       actorRef.send({ type: 'RESET' });
 
       const snapshot = actorRef.getSnapshot();
-      expect(snapshot.context.count).toBe(0);
+      expect((snapshot.context as { count: number }).count).toBe(0);
     });
 
     it('should observe counter changes', () => {
       const counts: number[] = [];
 
       const subscription = actorRef
-        .observe((snapshot) => snapshot.context.count)
+        .observe((snapshot) => (snapshot.context as { count: number }).count)
         .subscribe((count) => counts.push(count));
 
       actorRef.send({ type: 'INCREMENT' });
@@ -211,7 +211,7 @@ describe('XStateActorRefAdapter', () => {
 
       actorRef.send({ type: 'ERROR' });
       expect(actorRef.getSnapshot().value).toBe('failed');
-      expect(actorRef.getSnapshot().context.errorCount).toBe(1);
+      expect((actorRef.getSnapshot().context as { errorCount: number }).errorCount).toBe(1);
     });
 
     it('should handle retry logic', () => {
@@ -220,7 +220,7 @@ describe('XStateActorRefAdapter', () => {
 
       actorRef.send({ type: 'RETRY' });
       expect(actorRef.getSnapshot().value).toBe('running');
-      expect(actorRef.getSnapshot().context.attempts).toBe(1);
+      expect((actorRef.getSnapshot().context as { attempts: number }).attempts).toBe(1);
     });
 
     it('should reset error state', () => {
@@ -230,15 +230,15 @@ describe('XStateActorRefAdapter', () => {
       actorRef.send({ type: 'ERROR' });
 
       const snapshot1 = actorRef.getSnapshot();
-      expect(snapshot1.context.errorCount).toBe(2);
-      expect(snapshot1.context.attempts).toBe(1);
+      expect((snapshot1.context as { errorCount: number; attempts: number }).errorCount).toBe(2);
+      expect((snapshot1.context as { errorCount: number; attempts: number }).attempts).toBe(1);
 
       actorRef.send({ type: 'RESET' });
 
       const snapshot2 = actorRef.getSnapshot();
       expect(snapshot2.value).toBe('idle');
-      expect(snapshot2.context.errorCount).toBe(0);
-      expect(snapshot2.context.attempts).toBe(0);
+      expect((snapshot2.context as { errorCount: number; attempts: number }).errorCount).toBe(0);
+      expect((snapshot2.context as { errorCount: number; attempts: number }).attempts).toBe(0);
     });
   });
 
@@ -250,13 +250,20 @@ describe('XStateActorRefAdapter', () => {
 
     it('should handle authentication flow', () => {
       expect(actorRef.getSnapshot().value).toBe('unauthenticated');
-      expect(actorRef.getSnapshot().context.isAuthenticated).toBe(false);
+      expect((actorRef.getSnapshot().context as { isAuthenticated: boolean }).isAuthenticated).toBe(
+        false
+      );
 
       actorRef.send({ type: 'LOGIN' });
 
       expect(actorRef.getSnapshot().value).toBe('authenticated');
-      expect(actorRef.getSnapshot().context.isAuthenticated).toBe(true);
-      expect(actorRef.getSnapshot().context.permissions).toEqual(['read', 'write']);
+      expect((actorRef.getSnapshot().context as { isAuthenticated: boolean }).isAuthenticated).toBe(
+        true
+      );
+      expect((actorRef.getSnapshot().context as { permissions: string[] }).permissions).toEqual([
+        'read',
+        'write',
+      ]);
     });
 
     it('should handle logout', () => {
@@ -264,22 +271,28 @@ describe('XStateActorRefAdapter', () => {
       actorRef.send({ type: 'LOGOUT' });
 
       expect(actorRef.getSnapshot().value).toBe('unauthenticated');
-      expect(actorRef.getSnapshot().context.isAuthenticated).toBe(false);
-      expect(actorRef.getSnapshot().context.permissions).toEqual([]);
+      expect((actorRef.getSnapshot().context as { isAuthenticated: boolean }).isAuthenticated).toBe(
+        false
+      );
+      expect((actorRef.getSnapshot().context as { permissions: string[] }).permissions).toEqual([]);
     });
 
     it('should handle guarded transitions', async () => {
       actorRef.send({ type: 'LOGIN' });
 
       // Access public resource (should be granted)
-      actorRef.send({ type: 'ACCESS_RESOURCE', resource: 'public' });
+      actorRef.send({ type: 'ACCESS_RESOURCE', resource: 'public' } as EventObject & {
+        resource: string;
+      });
       expect(actorRef.getSnapshot().value).toBe('accessGranted');
 
       // Wait for auto-transition back
       await waitForState(actorRef, 'authenticated', 1500);
 
       // Access private resource without admin (should be denied)
-      actorRef.send({ type: 'ACCESS_RESOURCE', resource: 'private' });
+      actorRef.send({ type: 'ACCESS_RESOURCE', resource: 'private' } as EventObject & {
+        resource: string;
+      });
       expect(actorRef.getSnapshot().value).toBe('accessDenied');
     });
   });
@@ -290,8 +303,14 @@ describe('XStateActorRefAdapter', () => {
       actorRef.start();
 
       // Set some data
-      actorRef.send({ type: 'SET', key: 'name', value: 'Actor-Web' });
-      actorRef.send({ type: 'SET', key: 'version', value: '1.0.0' });
+      actorRef.send({ type: 'SET', key: 'name', value: 'Actor-Web' } as EventObject & {
+        key: string;
+        value: unknown;
+      });
+      actorRef.send({ type: 'SET', key: 'version', value: '1.0.0' } as EventObject & {
+        key: string;
+        value: unknown;
+      });
 
       // Use ask with a query that has a type field for proper request extraction
       const response = await actorRef.ask({ type: 'get', key: 'name' }, { timeout: 1000 });
@@ -352,11 +371,15 @@ describe('XStateActorRefAdapter', () => {
         parent.spawn(childMachine),
       ];
 
-      children.forEach((child) => expect(child.status).toBe('running'));
+      for (const child of children) {
+        expect(child.status).toBe('running');
+      }
 
       await parent.stop();
 
-      children.forEach((child) => expect(child.status).toBe('stopped'));
+      for (const child of children) {
+        expect(child.status).toBe('stopped');
+      }
     });
   });
 
@@ -429,12 +452,14 @@ describe('XStateActorRefAdapter', () => {
         { type: 'RESET' },
       ];
 
-      events.forEach((event) => actorRef.send(event));
+      for (const event of events) {
+        actorRef.send(event);
+      }
 
       expect(onMessage).toHaveBeenCalledTimes(4);
-      events.forEach((event, index) => {
-        expect(onMessage).toHaveBeenNthCalledWith(index + 1, event);
-      });
+      for (let i = 0; i < events.length; i++) {
+        expect(onMessage).toHaveBeenNthCalledWith(i + 1, events[i]);
+      }
     });
 
     it('should track state change metrics', () => {
@@ -533,27 +558,39 @@ describe('XStateActorRefAdapter', () => {
       // Verify initial state
       const initialSnapshot = actorRef.getSnapshot();
       expect(initialSnapshot.value).toBe('ready');
-      expect(initialSnapshot.context.data).toEqual({});
+      expect((initialSnapshot.context as { data: Record<string, unknown> }).data).toEqual({});
 
       // Test setting and getting data
-      actorRef.send({ type: 'SET', key: 'name', value: 'Actor-Web' });
-      actorRef.send({ type: 'SET', key: 'version', value: '1.0.0' });
-      actorRef.send({ type: 'SET', key: 'author', value: 'Agent C' });
+      actorRef.send({ type: 'SET', key: 'name', value: 'Actor-Web' } as EventObject & {
+        key: string;
+        value: unknown;
+      });
+      actorRef.send({ type: 'SET', key: 'version', value: '1.0.0' } as EventObject & {
+        key: string;
+        value: unknown;
+      });
+      actorRef.send({ type: 'SET', key: 'author', value: 'Agent C' } as EventObject & {
+        key: string;
+        value: unknown;
+      });
 
       const snapshot = actorRef.getSnapshot();
-      expect(snapshot.context.data).toEqual({
+      expect((snapshot.context as { data: Record<string, unknown> }).data).toEqual({
         name: 'Actor-Web',
         version: '1.0.0',
         author: 'Agent C',
       });
 
       // Test observable pattern with complex machine
-      const dataChanges: Record<string, any>[] = [];
+      const dataChanges: Record<string, unknown>[] = [];
       const subscription = actorRef
-        .observe((snapshot) => snapshot.context.data)
+        .observe((snapshot) => (snapshot.context as { data: Record<string, unknown> }).data)
         .subscribe((data) => dataChanges.push({ ...data }));
 
-      actorRef.send({ type: 'SET', key: 'updated', value: true });
+      actorRef.send({ type: 'SET', key: 'updated', value: true } as EventObject & {
+        key: string;
+        value: unknown;
+      });
 
       expect(dataChanges).toHaveLength(2); // Initial + update
       expect(dataChanges[1]).toEqual({
@@ -576,7 +613,10 @@ describe('XStateActorRefAdapter', () => {
       queryActor.start();
 
       // Set some data
-      queryActor.send({ type: 'SET', key: 'test', value: 'value' });
+      queryActor.send({ type: 'SET', key: 'test', value: 'value' } as EventObject & {
+        key: string;
+        value: unknown;
+      });
 
       // Query should work with extended timeout
       const response = await queryActor.ask({ type: 'get', key: 'test' }, { timeout: 1000 });
@@ -597,7 +637,7 @@ describe('XStateActorRefAdapter', () => {
 
       // Service should handle operations
       service.send({ type: 'INCREMENT' });
-      expect(service.getSnapshot().context.count).toBe(1);
+      expect((service.getSnapshot().context as { count: number }).count).toBe(1);
     });
 
     it('should apply XState-specific defaults', () => {
@@ -629,12 +669,12 @@ describe('XStateActorRefAdapter', () => {
 
       // Test observable chaining
       const countSub = actorRef
-        .observe((snapshot) => snapshot.context.count)
+        .observe((snapshot) => (snapshot.context as { count: number }).count)
         .subscribe((count) => counts.push(count));
 
       // Test filtering
       const evenSub = actorRef
-        .observe((snapshot) => snapshot.context.count)
+        .observe((snapshot) => (snapshot.context as { count: number }).count)
         .subscribe((count) => {
           if (count % 2 === 0) evens.push(count);
         });
@@ -689,7 +729,11 @@ describe('XStateActorRefAdapter', () => {
       actorRef.start();
 
       // Set test data
-      actorRef.send({ type: 'SET', key: 'user', value: { name: 'Test', id: 123 } });
+      actorRef.send({
+        type: 'SET',
+        key: 'user',
+        value: { name: 'Test', id: 123 },
+      } as EventObject & { key: string; value: unknown });
 
       // Multiple concurrent asks should work with correlation IDs
       const asks = Promise.all([
@@ -702,9 +746,9 @@ describe('XStateActorRefAdapter', () => {
 
       // Each should get the actual value as response
       expect(results).toHaveLength(3);
-      results.forEach((result) => {
+      for (const result of results) {
         expect(result).toEqual({ name: 'Test', id: 123 });
-      });
+      }
     });
 
     it('should timeout on unresponsive asks', async () => {
@@ -740,16 +784,16 @@ describe('XStateActorRefAdapter', () => {
       // First error
       actorRef.send({ type: 'START' });
       actorRef.send({ type: 'ERROR' });
-      expect(actorRef.getSnapshot().context.errorCount).toBe(1);
+      expect((actorRef.getSnapshot().context as { errorCount: number }).errorCount).toBe(1);
 
       // Retry and error again
       actorRef.send({ type: 'RETRY' });
       actorRef.send({ type: 'ERROR' });
-      expect(actorRef.getSnapshot().context.errorCount).toBe(2);
+      expect((actorRef.getSnapshot().context as { errorCount: number }).errorCount).toBe(2);
 
       // Reset clears error count
       actorRef.send({ type: 'RESET' });
-      expect(actorRef.getSnapshot().context.errorCount).toBe(0);
+      expect((actorRef.getSnapshot().context as { errorCount: number }).errorCount).toBe(0);
     });
   });
 

@@ -21,6 +21,8 @@ export interface MockActorRef<TEvent extends EventObject = EventObject>
   getSpawnedChildren: () => MockActorRef<EventObject>[];
   simulateStateChange: (snapshot: Partial<ActorSnapshot>) => void;
   simulateError: (error: Error) => void;
+  // Make status mutable for testing
+  status: 'idle' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error';
 }
 
 /**
@@ -36,10 +38,10 @@ export function createMockActorRef<T extends EventObject = EventObject>(
   let currentSnapshot: ActorSnapshot = {
     context: {},
     value: 'idle',
-    status: 'active',
+    status: 'running',
     error: undefined,
   };
-  let status: 'active' | 'stopped' | 'error' = 'active';
+  let status: 'idle' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error' = 'running';
 
   const mockRef: MockActorRef<T> = {
     id,
@@ -58,13 +60,19 @@ export function createMockActorRef<T extends EventObject = EventObject>(
           resolve({ type: 'RESPONSE', data: query });
         }, 50);
       });
-    }),
+    }) as <TQuery, TResponse>(query: TQuery, options?: unknown) => Promise<TResponse>,
 
     observe: vi.fn(<TSelected>(selector: (snapshot: ActorSnapshot) => TSelected) => {
       const mockObservable: Observable<TSelected> = {
-        subscribe: (observerOrNext: Observer<TSelected> | ((value: TSelected) => void)) => {
-          const observer =
-            typeof observerOrNext === 'function' ? { next: observerOrNext } : observerOrNext;
+        subscribe: (
+          observerOrNext: Observer<TSelected> | ((value: TSelected) => void),
+          error?: (error: Error) => void,
+          complete?: () => void
+        ) => {
+          const observer: Observer<TSelected> =
+            typeof observerOrNext === 'function'
+              ? { next: observerOrNext, error, complete }
+              : observerOrNext;
 
           observers.add(observer);
 
@@ -76,16 +84,20 @@ export function createMockActorRef<T extends EventObject = EventObject>(
             observer.error?.(error as Error);
           }
 
-          // Return unsubscribe function
+          // Return subscription with closed property
           return {
+            closed: false,
             unsubscribe: () => {
               observers.delete(observer);
             },
           };
         },
+        [Symbol.observable]: function () {
+          return this;
+        },
       };
       return mockObservable;
-    }),
+    }) as <TSelected>(selector: (snapshot: ActorSnapshot) => TSelected) => Observable<TSelected>,
 
     spawn: vi.fn(
       (
@@ -102,8 +114,35 @@ export function createMockActorRef<T extends EventObject = EventObject>(
       }
     ),
 
+    // New required methods from ActorRef interface
+    stopChild: vi.fn(async (childId: string) => {
+      const childIndex = spawnedChildren.findIndex((child) => child.id === childId);
+      if (childIndex !== -1) {
+        await spawnedChildren[childIndex].stop();
+        spawnedChildren.splice(childIndex, 1);
+      }
+    }),
+
+    getChildren: vi.fn(() => {
+      const childrenMap = new Map<string, MockActorRef<EventObject>>();
+      for (const child of spawnedChildren) {
+        childrenMap.set(child.id, child);
+      }
+      return childrenMap as ReadonlyMap<string, ActorRef<EventObject, unknown>>;
+    }),
+
+    matches: vi.fn((_statePath: string) => {
+      // Simple mock implementation - always returns false for now
+      return false;
+    }),
+
+    accepts: vi.fn((eventType: string) => {
+      // Simple mock implementation - accepts any non-empty string
+      return typeof eventType === 'string' && eventType.length > 0;
+    }),
+
     start: vi.fn(() => {
-      status = 'active';
+      status = 'running';
       mockRef.status = status;
     }),
 
@@ -128,7 +167,7 @@ export function createMockActorRef<T extends EventObject = EventObject>(
 
     simulateStateChange: (snapshot: Partial<ActorSnapshot>) => {
       currentSnapshot = { ...currentSnapshot, ...snapshot };
-      observers.forEach((observer) => {
+      for (const observer of Array.from(observers)) {
         try {
           // Re-run selectors with new snapshot
           const selector = (s: ActorSnapshot) => s;
@@ -137,7 +176,7 @@ export function createMockActorRef<T extends EventObject = EventObject>(
         } catch (error) {
           observer.error?.(error as Error);
         }
-      });
+      }
       options?.metrics?.onStateChange?.(currentSnapshot);
     },
 
@@ -145,9 +184,9 @@ export function createMockActorRef<T extends EventObject = EventObject>(
       status = 'error';
       mockRef.status = status;
       currentSnapshot = { ...currentSnapshot, status: 'error', error };
-      observers.forEach((observer) => {
+      for (const observer of Array.from(observers)) {
         observer.error?.(error);
-      });
+      }
       options?.metrics?.onError?.(error);
     },
   };
@@ -176,11 +215,11 @@ export function createTestEnvironment(): TestEnvironment {
 
     cleanup: () => {
       // Stop all actors
-      actors.forEach((actor) => {
-        if (actor.status === 'active') {
+      for (const actor of Array.from(actors.values())) {
+        if (actor.status === 'running') {
           actor.stop();
         }
-      });
+      }
       actors.clear();
     },
 
@@ -288,14 +327,14 @@ export function assertEventsReceived<T extends EventObject>(
       throw new Error(`Expected event at index ${index} but found none`);
     }
 
-    Object.entries(expected).forEach(([key, value]) => {
+    for (const [key, value] of Object.entries(expected)) {
       if ((actual as Record<string, unknown>)[key] !== value) {
         throw new Error(
           `Event mismatch at index ${index}: ` +
             `expected ${key}=${value}, got ${key}=${(actual as Record<string, unknown>)[key]}`
         );
       }
-    });
+    }
   });
 }
 
@@ -311,30 +350,46 @@ export function createTestObservable<T>(): {
   const observers = new Set<Observer<T>>();
 
   const observable: Observable<T> = {
-    subscribe: (observerOrNext: Observer<T> | ((value: T) => void)) => {
-      const observer =
-        typeof observerOrNext === 'function' ? { next: observerOrNext } : observerOrNext;
+    subscribe: (
+      observerOrNext: Observer<T> | ((value: T) => void),
+      error?: (error: Error) => void,
+      complete?: () => void
+    ) => {
+      const observer: Observer<T> =
+        typeof observerOrNext === 'function'
+          ? { next: observerOrNext, error, complete }
+          : observerOrNext;
 
       observers.add(observer);
 
       return {
+        closed: false,
         unsubscribe: () => {
           observers.delete(observer);
         },
       };
+    },
+    [Symbol.observable]: function () {
+      return this;
     },
   };
 
   return {
     observable,
     emit: (value: T) => {
-      observers.forEach((observer) => observer.next?.(value));
+      for (const observer of Array.from(observers)) {
+        observer.next?.(value);
+      }
     },
     error: (error: Error) => {
-      observers.forEach((observer) => observer.error?.(error));
+      for (const observer of Array.from(observers)) {
+        observer.error?.(error);
+      }
     },
     complete: () => {
-      observers.forEach((observer) => observer.complete?.());
+      for (const observer of Array.from(observers)) {
+        observer.complete?.();
+      }
     },
   };
 }

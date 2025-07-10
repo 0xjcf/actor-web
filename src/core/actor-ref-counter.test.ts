@@ -97,30 +97,30 @@ describe('Pure Actor Model - Counter Test', () => {
       counterActor.send({ type: 'INCREMENT' });
 
       // Check updated state
-      expect(counterActor.getSnapshot().context.count).toBe(1);
+      expect((counterActor.getSnapshot().context as CounterContext).count).toBe(1);
     });
 
     it('should handle decrement events', () => {
       // Set initial value
       counterActor.send({ type: 'SET', value: 5 });
-      expect(counterActor.getSnapshot().context.count).toBe(5);
+      expect((counterActor.getSnapshot().context as CounterContext).count).toBe(5);
 
       // Send decrement event
       counterActor.send({ type: 'DECREMENT' });
 
       // Check updated state
-      expect(counterActor.getSnapshot().context.count).toBe(4);
+      expect((counterActor.getSnapshot().context as CounterContext).count).toBe(4);
     });
 
     it('should handle set events', () => {
       counterActor.send({ type: 'SET', value: 42 });
-      expect(counterActor.getSnapshot().context.count).toBe(42);
+      expect((counterActor.getSnapshot().context as CounterContext).count).toBe(42);
     });
 
     it('should handle reset events', () => {
       counterActor.send({ type: 'SET', value: 100 });
       counterActor.send({ type: 'RESET' });
-      expect(counterActor.getSnapshot().context.count).toBe(0);
+      expect((counterActor.getSnapshot().context as CounterContext).count).toBe(0);
     });
   });
 
@@ -133,7 +133,9 @@ describe('Pure Actor Model - Counter Test', () => {
       return new Promise<void>((resolve) => {
         let observationCount = 0;
 
-        const observable = counterActor.observe((snapshot) => snapshot.context.count);
+        const observable = counterActor.observe(
+          (snapshot) => (snapshot.context as CounterContext).count
+        );
 
         const subscription = observable.subscribe((count) => {
           observationCount++;
@@ -160,8 +162,8 @@ describe('Pure Actor Model - Counter Test', () => {
       counterActor.send({ type: 'SET', value: 99 });
 
       const snapshot = counterActor.getSnapshot();
-      expect(snapshot.context.count).toBe(99);
-      expect(snapshot.matches('active')).toBe(true);
+      expect((snapshot.context as CounterContext).count).toBe(99);
+      expect(counterActor.matches('active')).toBe(true);
     });
   });
 
@@ -188,7 +190,7 @@ describe('Pure Actor Model - Counter Test', () => {
 
       // Should work after restart
       counterActor.send({ type: 'SET', value: 5 });
-      expect(counterActor.getSnapshot().context.count).toBe(5);
+      expect((counterActor.getSnapshot().context as CounterContext).count).toBe(5);
     });
 
     it('should check state matches', () => {
@@ -204,7 +206,7 @@ describe('Pure Actor Model - Counter Test', () => {
   describe('Actor Supervision', () => {
     it('should spawn and manage child actors', () => {
       // Spawn a child counter
-      const child = counterActor.spawn(counterMachine, 'child-counter');
+      const child = counterActor.spawn(counterMachine, { id: 'child-counter' });
 
       expect(child.id).toBe('child-counter');
       expect(child.parent).toBe(counterActor);
@@ -216,25 +218,25 @@ describe('Pure Actor Model - Counter Test', () => {
       expect(children.has('child-counter')).toBe(true);
 
       // Child should work independently
-      child.send({ type: 'SET', value: 100 });
-      expect(child.getSnapshot().context.count).toBe(100);
-      expect(counterActor.getSnapshot().context.count).toBe(0);
+      child.send({ type: 'SET', value: 100 } as CounterEvent);
+      expect((child.getSnapshot().context as CounterContext).count).toBe(100);
+      expect((counterActor.getSnapshot().context as CounterContext).count).toBe(0);
     });
 
     it('should kill child actors', () => {
-      const child = counterActor.spawn(counterMachine, 'test-child');
+      const child = counterActor.spawn(counterMachine, { id: 'test-child' });
       expect(counterActor.getChildren().size).toBe(1);
 
-      // Kill the child
-      counterActor.kill('test-child');
+      // Stop the child (using stopChild instead of kill)
+      counterActor.stopChild('test-child');
 
       expect(counterActor.getChildren().size).toBe(0);
       expect(child.status).toBe('stopped');
     });
 
     it('should stop all children when parent stops', () => {
-      const child1 = counterActor.spawn(counterMachine, 'child1');
-      const child2 = counterActor.spawn(counterMachine, 'child2');
+      const child1 = counterActor.spawn(counterMachine, { id: 'child1' });
+      const child2 = counterActor.spawn(counterMachine, { id: 'child2' });
 
       expect(child1.status).toBe('running');
       expect(child2.status).toBe('running');
@@ -269,7 +271,7 @@ describe('Pure Actor Model - Counter Test', () => {
 
     it('should track parent-child relationships', () => {
       const parent = createActorRef(counterMachine, { id: 'parent' });
-      const child = parent.spawn(counterMachine, 'child');
+      const child = parent.spawn(counterMachine, { id: 'child' });
 
       expect(child.parent).toBe(parent);
       expect(parent.parent).toBeUndefined();
@@ -286,23 +288,20 @@ describe('Pure Actor Model - Integration Tests', () => {
     // Create root actor
     const root = createActorRef(counterMachine, {
       id: 'root',
-      supervisionStrategy: {
-        onChildFailure: () => 'restart',
-        maxRestarts: 3,
-      },
+      supervision: 'restart-on-failure',
     });
 
     // Create multiple children
-    const counter1 = root.spawn(counterMachine, 'counter1');
-    const counter2 = root.spawn(counterMachine, 'counter2');
+    const counter1 = root.spawn(counterMachine, { id: 'counter1' });
+    const counter2 = root.spawn(counterMachine, { id: 'counter2' });
 
     // Each counter works independently
-    counter1.send({ type: 'SET', value: 10 });
-    counter2.send({ type: 'SET', value: 20 });
+    counter1.send({ type: 'SET', value: 10 } as CounterEvent);
+    counter2.send({ type: 'SET', value: 20 } as CounterEvent);
 
-    expect(counter1.getSnapshot().context.count).toBe(10);
-    expect(counter2.getSnapshot().context.count).toBe(20);
-    expect(root.getSnapshot().context.count).toBe(0);
+    expect((counter1.getSnapshot().context as CounterContext).count).toBe(10);
+    expect((counter2.getSnapshot().context as CounterContext).count).toBe(20);
+    expect((root.getSnapshot().context as CounterContext).count).toBe(0);
 
     // Root manages both children
     expect(root.getChildren().size).toBe(2);
@@ -319,10 +318,10 @@ describe('Pure Actor Model - Integration Tests', () => {
     // Pure message-based interaction - no direct state access
     actor.send({ type: 'INCREMENT' });
     actor.send({ type: 'INCREMENT' });
-    actor.send({ type: 'SET', value: 100 });
+    actor.send({ type: 'SET', value: 100 } as CounterEvent);
 
     // State observation through reactive patterns
-    const currentCount = actor.getSnapshot().context.count;
+    const currentCount = (actor.getSnapshot().context as CounterContext).count;
     expect(currentCount).toBe(100);
 
     // This demonstrates the pure actor model:

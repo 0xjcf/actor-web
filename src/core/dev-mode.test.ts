@@ -77,11 +77,18 @@ describe('Development Mode', () => {
 
     it('does not enable dev mode if window is undefined', () => {
       // Behavior: Server-side rendering should not break
-      (global as typeof globalThis & { window?: Window }).window = undefined;
+      // TypeScript: Use Object.defineProperty for test scenario
+      Object.defineProperty(global, 'window', {
+        value: undefined,
+        writable: true,
+        configurable: true,
+      });
 
       enableDevMode();
 
-      expect((global as typeof globalThis & { __actorSPA?: ActorSPADevMode }).__actorSPA).toBeUndefined();
+      expect(
+        (global as typeof globalThis & { __actorSPA?: ActorSPADevMode }).__actorSPA
+      ).toBeUndefined();
     });
 
     it('only enables dev mode once', () => {

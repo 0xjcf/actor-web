@@ -24,7 +24,7 @@ export interface SpawnOptions extends ActorRefOptions {
 export interface ActorSnapshot<TContext = unknown> {
   context: TContext;
   value: unknown;
-  status: 'active' | 'stopped' | 'error';
+  status: 'idle' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error';
   error?: Error;
 }
 
