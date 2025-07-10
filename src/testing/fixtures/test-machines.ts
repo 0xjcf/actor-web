@@ -172,11 +172,19 @@ export const errorProneMachine = createMachine({
 // Machine with complex event handling for testing ask pattern
 export const queryMachine = setup({
   types: {
-    context: {} as { data: Record<string, unknown>; pendingResponses: unknown[] },
+    context: {} as {
+      data: Record<string, unknown>;
+      pendingResponses: Array<{
+        type: 'response';
+        correlationId: string;
+        result: unknown;
+        timestamp: number;
+      }>;
+    },
     events: {} as
       | { type: 'query'; request: string; params?: { key: string }; correlationId: string }
       | { type: 'SET'; key: string; value: unknown }
-      | { type: 'QUERY_RESPONSE'; correlationId: string; value: unknown },
+      | { type: 'response'; correlationId: string; result: unknown; timestamp: number },
   },
 }).createMachine({
   id: 'query',
@@ -191,17 +199,19 @@ export const queryMachine = setup({
         query: {
           actions: assign({
             pendingResponses: ({ context, event }) => {
-              // Handle query and create response
-              const key = event.params?.key;
-              const value = key ? context.data[key] : null;
-
+              // For testing purposes, the response includes the original query
               const response = {
-                type: 'response',
+                type: 'response' as const,
                 correlationId: event.correlationId,
-                result: value,
+                result: {
+                  type: 'QUERY',
+                  key: event.params?.key,
+                  value: event.params?.key ? context.data[event.params.key] : null,
+                },
                 timestamp: Date.now(),
               };
 
+              // Add response to pending list
               return [...context.pendingResponses, response];
             },
           }),
