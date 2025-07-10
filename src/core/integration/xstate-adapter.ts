@@ -7,7 +7,7 @@
 import type { AnyStateMachine } from 'xstate';
 import type { ActorRef, ActorRefOptions, BaseEventObject } from '../actors/actor-ref.js';
 import type { ActorSnapshot } from '../actors/types.js';
-import { createActorRef, createRootActor, createQueryableActorRef } from '../create-actor-ref.js';
+import { createActorRef, createQueryableActorRef, createRootActor } from '../create-actor-ref.js';
 
 // ========================================================================================
 // XSTATE-SPECIFIC FACTORY FUNCTIONS

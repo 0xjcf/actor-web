@@ -5,8 +5,8 @@
  * Updated to follow TESTING-GUIDE.md patterns with framework utilities
  */
 
+import { type TestEnvironment, a11yTestUtils, createTestEnvironment } from '@/framework/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { a11yTestUtils, createTestEnvironment, type TestEnvironment } from '@/framework/testing';
 import { AriaObserver } from './aria-observer.js';
 
 describe('AriaObserver', () => {

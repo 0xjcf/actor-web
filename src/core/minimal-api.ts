@@ -15,9 +15,9 @@ import {
   type ActorOptions,
   type AnyMachineSnapshot,
   type AnyStateMachine,
-  createActor,
   type SnapshotFrom,
   type Subscription,
+  createActor,
 } from 'xstate';
 import { AriaObserver } from './aria-observer.js';
 import { registerMachine } from './dev-mode.js';

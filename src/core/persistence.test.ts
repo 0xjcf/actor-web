@@ -1,18 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  type TestEnvironment,
   createTestEnvironment,
   performanceTestUtils,
   setupGlobalMocks,
-  type TestEnvironment,
 } from '@/framework/testing';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  createBatchService,
-  createStorageService,
-  createSyncService,
   type MigrationFunction,
   PersistenceServices,
   type StorageItem,
   StorageUtils,
+  createBatchService,
+  createStorageService,
+  createSyncService,
 } from './persistence.js';
 
 // Mock browser storage APIs

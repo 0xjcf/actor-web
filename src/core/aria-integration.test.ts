@@ -5,21 +5,14 @@
  * Tests the automatic ARIA attribute management system
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { type TestEnvironment, createTestEnvironment, setupGlobalMocks } from '@/framework/testing';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createActor, createMachine } from 'xstate';
 import {
-  createTestEnvironment,
-  setupGlobalMocks,
-  type TestEnvironment,
-  waitFor,
-} from '@/framework/testing';
-import {
   type AriaConfig,
-  AriaStateManager,
-  AriaTemplateHelper,
+  DefaultAriaConfigs,
   createAriaManager,
   createAriaTemplateHelper,
-  DefaultAriaConfigs,
 } from './aria-integration.js';
 
 describe('ARIA Integration', () => {

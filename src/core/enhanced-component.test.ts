@@ -5,15 +5,14 @@
  * Tests the automatic integration of ARIA, focus, keyboard, and screen reader support
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createActor, createMachine } from 'xstate';
 import {
+  type TestEnvironment,
   createTestEnvironment,
   setupGlobalMocks,
-  type TestEnvironment,
-  userInteractions,
   waitFor,
 } from '@/framework/testing';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createMachine } from 'xstate';
 import {
   createAccessibleButton,
   createAccessibleComponent,
@@ -22,7 +21,6 @@ import {
   createAccessibleMenu,
   createAccessibleModal,
   createEnhancedComponent,
-  type EnhancedComponentConfig,
 } from './enhanced-component.js';
 
 describe('Enhanced Component', () => {

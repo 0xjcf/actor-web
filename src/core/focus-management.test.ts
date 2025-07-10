@@ -3,15 +3,15 @@
  * Focus: Focus behaviors, keyboard navigation, and accessibility
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createActor } from 'xstate';
 import {
+  type MockGlobalEventBus,
+  type TestEnvironment,
   a11yTestUtils,
   createTestEnvironment,
-  type MockGlobalEventBus,
   setupGlobalMocks,
-  type TestEnvironment,
 } from '@/framework/testing';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createActor } from 'xstate';
 import {
   type FocusManagementActor,
   FocusManagementHelper,

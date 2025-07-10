@@ -5,13 +5,13 @@
  * from a user perspective, following TESTING-GUIDE.md principles
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  createTestEnvironment,
   type MockGlobalEventBus,
-  setupGlobalMocks,
   type TestEnvironment,
+  createTestEnvironment,
+  setupGlobalMocks,
 } from '@/framework/testing';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('Global Event Bus Behavior', () => {
   let testEnv: TestEnvironment;

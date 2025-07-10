@@ -3,39 +3,39 @@
  * Integrates ARIA management, focus management, keyboard navigation, and screen reader announcements
  */
 
-import { type AnyStateMachine, createActor, type SnapshotFrom } from 'xstate';
+import { type AnyStateMachine, type SnapshotFrom, createActor } from 'xstate';
 import {
   type AriaConfig,
   type AriaStateManager,
   type AriaTemplateHelper,
   type ComponentConfigWithAria,
+  type DefaultAriaConfigType,
+  DefaultAriaConfigs,
   createAriaManager,
   createAriaTemplateHelper,
-  DefaultAriaConfigs,
-  type DefaultAriaConfigType,
 } from './aria-integration.js';
 import {
-  createFocusManagementHelper,
-  DefaultFocusConfigs,
   type DefaultFocusConfigType,
+  DefaultFocusConfigs,
   type FocusManagementConfig,
   type FocusManagementHelper,
+  createFocusManagementHelper,
   focusManagementMachine,
 } from './focus-management.js';
 import {
-  createKeyboardNavigationHelper,
-  DefaultKeyboardConfigs,
   type DefaultKeyboardConfigType,
+  DefaultKeyboardConfigs,
   type KeyboardNavigationConfig,
   type KeyboardNavigationHelper,
+  createKeyboardNavigationHelper,
   keyboardNavigationMachine,
 } from './keyboard-navigation.js';
 import {
-  createScreenReaderAnnouncementHelper,
-  DefaultScreenReaderConfigs,
   type DefaultScreenReaderConfigType,
+  DefaultScreenReaderConfigs,
   type ScreenReaderAnnouncementHelper,
   type ScreenReaderConfig,
+  createScreenReaderAnnouncementHelper,
   screenReaderAnnouncementMachine,
 } from './screen-reader-announcements.js';
 

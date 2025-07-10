@@ -5,12 +5,12 @@
  * Updated to use framework testing utilities following TESTING-GUIDE.md
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  createTestEnvironment,
   type TestEnvironment,
+  createTestEnvironment,
   templateTestUtils,
 } from '@/framework/testing';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { css, html } from './template-renderer.js';
 
 describe('html template tag', () => {

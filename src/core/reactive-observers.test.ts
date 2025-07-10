@@ -5,16 +5,16 @@
  * Tests the actual reactive behavior users experience with state machines and components
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { assign, createMachine } from 'xstate';
 import { createComponent, html } from '@/framework/core/minimal-api.js';
 import {
-  createTestEnvironment,
   type MockGlobalEventBus,
+  type TestEnvironment,
+  createTestEnvironment,
   performanceTestUtils,
   setupGlobalMocks,
-  type TestEnvironment,
 } from '@/framework/testing';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { assign, createMachine } from 'xstate';
 
 describe('Reactive Patterns in Components', () => {
   let testEnv: TestEnvironment;

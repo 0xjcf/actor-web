@@ -5,16 +5,16 @@
  * Tests the actual component creation and lifecycle users experience
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { assign, createMachine } from 'xstate';
 import {
+  type TestEnvironment,
   componentUtils,
   createTestEnvironment,
   setupGlobalMocks,
-  type TestEnvironment,
   userInteractions,
   waitFor,
 } from '@/framework/testing';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { assign, createMachine } from 'xstate';
 import { createComponent, css, html } from './minimal-api.js';
 
 describe('Minimal API', () => {

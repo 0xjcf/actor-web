@@ -1,13 +1,13 @@
+import { type TestEnvironment, createTestEnvironment, setupGlobalMocks } from '@/framework/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createActor } from 'xstate';
-import { createTestEnvironment, setupGlobalMocks, type TestEnvironment } from '@/framework/testing';
 import {
+  type KeyboardNavigationActor,
+  KeyboardNavigationHelper,
   createKeyboardEventHandler,
   createKeyboardNavigationConfig,
   createKeyboardNavigationHelper,
   createKeyboardNavigationTemplateHelpers,
-  type KeyboardNavigationActor,
-  KeyboardNavigationHelper,
   keyboardNavigationMachine,
 } from './keyboard-navigation.js';
 

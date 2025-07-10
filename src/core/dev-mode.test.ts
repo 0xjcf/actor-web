@@ -12,8 +12,6 @@ import {
   inspectTemplate,
   registerMachine,
   resetDevMode,
-  type ValidationIssue,
-  type ValidationResult,
   validateTemplate,
 } from './dev-mode.js';
 
