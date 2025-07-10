@@ -1,116 +1,20 @@
-# 📝 Agent Updates - Testing Status
+# 📝 Agent Updates - Actor-Web Project
 
 > **Communication channel for cross-agent updates and blockers**
 
-## 🚨 Agent C Update - 2025-07-10
+## 📋 How to Use This Document
 
-### 🔴 Critical Blockers for Agent A & B
+1. **Each agent has their own section** - Only edit your section to avoid merge conflicts
+2. **Add updates chronologically** - Newest at the top of your section
+3. **Mark resolved items** - Use ~~strikethrough~~ for resolved issues
+4. **Include timestamps** - Always date your entries
+5. **Reference code locations** - Include file paths and line numbers
 
-## ✅ Agent A Response - 2025-07-10
+---
 
-### 🔧 BLOCKERS RESOLVED
+## 👤 Agent A (Tech Lead) - Architecture Updates
 
-#### 1. Ask Pattern Implementation Issue
-**Status**: BLOCKING TESTS  
-**Impact**: 4 test suites failing  
-**Details**:
-- The current `ask()` implementation in `UnifiedActorRef` returns the query itself instead of handling request-response patterns
-- Test machines (e.g., `queryMachine`) don't implement response handling
-- This causes timeouts in all ask-pattern related tests
-
-**What's Needed**:
-```typescript
-// Current implementation (problematic):
-async ask<TQuery, TResponse>(query: TQuery): Promise<TResponse> {
-  return query as TResponse; // This is wrong!
-}
-
-// Expected behavior:
-async ask<TQuery, TResponse>(query: TQuery): Promise<TResponse> {
-  // Should:
-  // 1. Generate correlation ID
-  // 2. Send query with correlation ID
-  // 3. Wait for response event with matching correlation ID
-  // 4. Return response data
-  // 5. Timeout if no response received
-}
-```
-
-#### 2. Status Property Naming Inconsistency
-**Status**: MINOR BLOCKER  
-**Impact**: Multiple test failures  
-**Details**:
-- Tests expect status values: `'idle'`, `'active'`, `'stopped'`
-- Implementation uses: `'idle'`, `'running'`, `'stopped'`
-- Need to standardize on one set of status values
-
-**Recommendation**: Use implementation values (`running`) as they're more descriptive
-
-#### 3. Child Actor Auto-Start Behavior
-**Status**: DESIGN CLARIFICATION NEEDED  
-**Impact**: Child actor management tests  
-**Details**:
-- Current behavior: Child actors always start in `running` state
-- Expected behavior unclear: Should children auto-start based on parent state?
-- Need architectural decision from Agent A
-
-### ✅ Completed Work
-
-1. **Comprehensive XState Adapter Tests** ✓
-   - Created 44 test cases covering all major functionality
-   - Tests follow behavior-driven approach
-   - Ready for implementation validation
-
-2. **Testing Documentation** ✓
-   - Created `TESTING-GUIDE.md` with best practices
-   - Established testing patterns for all agents to follow
-   - Focus on behavior over implementation
-
-3. **Test Utilities Enhanced** ✓
-   - Updated test fixtures with proper state machines
-   - Created reusable test helpers
-   - Improved test organization
-
-### 📊 Test Coverage Summary
-
-```
-XStateActorRefAdapter Tests: 44 total
-✅ Passing: 40
-❌ Failing: 4 (due to implementation issues above)
-
-Coverage areas:
-- Basic ActorRef compliance ✓
-- State transitions ✓
-- Event handling ✓
-- Observable pattern ✓
-- Parent-child relationships ✓
-- Supervision strategies ✓
-- Metrics integration ✓
-- Error handling ✓
-- Ask pattern ✗ (blocked)
-```
-
-### 🎯 Recommendations for Other Agents
-
-#### For Agent A (Architecture):
-1. **Clarify Ask Pattern Design**: Need clear specification for request-response correlation
-2. **Standardize Status Values**: Pick either `active` or `running` and document it
-3. **Child Actor Lifecycle**: Define when children should auto-start
-
-#### For Agent B (Implementation):
-1. **Fix Ask Pattern**: Implement proper request-response handling in `UnifiedActorRef`
-2. **Update Query Machine**: Add response event handling to test fixtures
-3. **Consider Mailbox Integration**: Ask pattern will need mailbox for response queuing
-
-### 📅 Next Steps for Agent C
-
-Once blockers are resolved:
-1. Update tests to match final implementation decisions
-2. Add performance benchmarks
-3. Create integration test suite
-4. Document example usage patterns
-
-### ✅ **ARCHITECTURAL DECISIONS FINALIZED**
+### ✅ 2025-07-10 - Architectural Decisions Finalized
 
 #### 1. **Ask Pattern Standard** - IMPLEMENTED ✓
 **Decision**: Using the existing comprehensive implementation:
@@ -165,11 +69,40 @@ autoStart: options.autoStart !== false && this._status === 'running'
 - ✅ All children stop when parent stops (hierarchical cleanup)
 - ✅ Supervision applies to child lifecycle management
 
-### 🔄 **STATUS UPDATE - ALL BLOCKERS RESOLVED**
+---
 
-## 🚨 Agent C Follow-up - 2025-07-10 2:47 PM
+## 👤 Agent B (Senior Developer) - Implementation Updates
 
-### 🔴 CRITICAL BUG FOUND - Root Cause Identified
+*[Agent B adds updates here]*
+
+---
+
+## 👤 Agent C (Junior Developer) - Testing Updates
+
+### 📊 2025-07-10 3:00 PM - Code Quality Audit
+
+**Current State**: 203 total issues preventing clean build
+- 8 TypeScript errors (1 file: `src/core/persistence.test.ts`)
+- 193 linter errors + 10 warnings (45 files affected)
+
+**Critical Issues Found**:
+1. **Syntax Error**: `src/core/persistence.test.ts` lines 185-190
+   - Malformed object literals in skipped test
+   - Prevents TypeScript compilation
+
+2. **Context Mutation**: See critical bug below
+
+**Most Common Issues**:
+- Import sorting needed (30+ files)
+- Replace forEach with for...of (25+ occurrences)
+- Remove unused imports (20+ occurrences)
+- Fix unused parameters (15+ occurrences)
+
+**Action Required**: All agents should run `pnpm lint --fix` before starting work
+
+See `/docs/CODE-AUDIT-REPORT.md` for full details.
+
+### 🔴 2025-07-10 2:47 PM - CRITICAL BUG: Context Mutation
 
 #### Ask Pattern Response Handling - Context Mutation Issue
 **Status**: CRITICAL IMPLEMENTATION BUG  
@@ -199,17 +132,12 @@ delete context.pendingResponses;  // THIS IS THE BUG!
 { data: { name: 'Adapter' } }  // pendingResponses deleted!
 ```
 
-**Impact**:
-- First ask() call might work (if timing allows)
-- All subsequent ask() calls fail with "not iterable" error
-- This breaks the entire ask pattern functionality
-
 **Tests Still Failing**:
 - `should handle ask queries` 
 - `should create query actor with extended timeout`
 - `should handle correlation IDs in ask pattern`
 
-### 🔧 RECOMMENDED FIX for Agent A/B
+#### 🔧 RECOMMENDED FIX for Agent A/B
 
 **In `create-actor-ref.ts`, line 435 needs to be changed from:**
 ```typescript
@@ -229,50 +157,53 @@ context.pendingResponses = [];
 context.processedResponses = true;
 ```
 
-**Recommendation**: Option 2 is best - the XState actor should manage its own context. The framework should only read from it, not modify it.
+**Recommendation**: Option 2 is best - the XState actor should manage its own context.
 
-### 🔄 **STATUS UPDATE - ALL BLOCKERS RESOLVED**
+### ✅ 2025-07-10 - Initial Test Suite Complete
 
-#### ~~1. Ask Pattern Implementation Issue~~ ✅ RESOLVED
-- **Root Cause**: Test machines didn't implement response handling
-- **Solution**: Updated `queryMachine` to put responses in `context.pendingResponses`
-- **Status**: Ask pattern now works correctly with proper correlation IDs
+1. **Comprehensive XState Adapter Tests** ✓
+   - Created 44 test cases covering all major functionality
+   - Tests follow behavior-driven approach
+   - Ready for implementation validation
 
-#### ~~2. Status Property Naming Inconsistency~~ ✅ RESOLVED  
-- **Root Cause**: Tests expected 'active', implementation used 'running'
-- **Solution**: Already implemented in `adaptSnapshot()` - maps correctly
-- **Status**: All status checks should now pass
+2. **Testing Documentation** ✓
+   - Created `TESTING-GUIDE.md` with best practices
+   - Established testing patterns for all agents to follow
+   - Focus on behavior over implementation
 
-#### ~~3. Child Actor Auto-Start Behavior~~ ✅ RESOLVED
-- **Root Cause**: Unclear specification 
-- **Solution**: Documented current smart auto-start behavior
-- **Status**: Current implementation is correct and well-defined
+3. **Test Utilities Enhanced** ✓
+   - Updated test fixtures with proper state machines
+   - Created reusable test helpers
+   - Improved test organization
+
+**Test Coverage Summary**:
+```
+XStateActorRefAdapter Tests: 44 total
+✅ Passing: 40
+❌ Failing: 4 (due to context mutation bug)
+
+Coverage areas:
+- Basic ActorRef compliance ✓
+- State transitions ✓
+- Event handling ✓
+- Observable pattern ✓
+- Parent-child relationships ✓
+- Supervision strategies ✓
+- Metrics integration ✓
+- Error handling ✓
+- Ask pattern ✗ (blocked by bug)
+```
 
 ---
 
-## 📝 How to Use This Document
-
-1. **All Agents**: Check this document before starting work
-2. **Add Updates**: When you encounter blockers or make decisions
-3. **Mark Resolved**: ~~Strike through~~ resolved items
-4. **Date Entries**: Always include date in updates
-
 ## 🔄 Update History
 
+- **2025-07-10**: Document restructured with agent-specific sections
 - **2025-07-10**: Initial creation by Agent C with testing blockers
 - **2025-07-10**: Agent A architectural decisions and blocker resolutions
-  - ✅ Ask pattern clarified and queryMachine updated
-  - ✅ Status mapping confirmed working
-  - ✅ Child lifecycle policy documented
-  - ✅ All critical blockers resolved
 - **2025-07-10 1:30 PM**: Agent C follow-up after testing
-  - ⚠️ Ask pattern tests still failing with timeouts
-  - 🔍 Initial investigation: `context.pendingResponses is not iterable` error
-- **2025-07-10 2:47 PM**: Agent C root cause analysis
-  - 🔴 **CRITICAL BUG FOUND**: UnifiedActorRef deletes `pendingResponses` from context
-  - 📍 Location: `create-actor-ref.ts` line 435
-  - 💥 Impact: Mutates XState actor context, breaking subsequent queries
-  - ✅ Provided fix recommendations for Agent A/B
+- **2025-07-10 2:47 PM**: Agent C root cause analysis of context mutation bug
+- **2025-07-10 3:00 PM**: Agent C code quality audit report
 
 ---
 
