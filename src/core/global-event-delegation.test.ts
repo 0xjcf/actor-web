@@ -22,7 +22,19 @@ describe('Global Event Delegation', () => {
     testEnv = createTestEnvironment();
     setupGlobalMocks();
 
+    // Mock DOM elements with proper methods for global event delegation
+    const createMockElement = (tagName = 'div') => {
+      const element = document.createElement(tagName);
+      element.matches = vi.fn().mockReturnValue(true);
+      element.dataset.special = 'true';
+      return element;
+    };
+
+    // Store original document for restoration
+    global.mockElement = createMockElement;
+
     // Reset singleton instance for testing
+    // biome-ignore lint/suspicious/noExplicitAny: Test setup requires any for accessing private singleton
     (GlobalEventDelegation as any).instance = null;
     eventDelegation = GlobalEventDelegation.getInstance();
   });

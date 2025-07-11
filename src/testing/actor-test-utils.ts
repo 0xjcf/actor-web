@@ -756,10 +756,11 @@ export const templateTestUtils = {
     }
   },
 
-  expectTemplateNotContains: (template: string, unexpectedContent: string) => {
-    if (template.includes(unexpectedContent)) {
+  expectTemplateNotContains: (template: string | { html: string }, unexpectedContent: string) => {
+    const templateString = typeof template === 'string' ? template : template.html;
+    if (templateString.includes(unexpectedContent)) {
       throw new Error(
-        `Expected template NOT to contain "${unexpectedContent}", but got: ${template}`
+        `Expected template NOT to contain "${unexpectedContent}", but got: ${templateString}`
       );
     }
   },

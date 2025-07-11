@@ -157,12 +157,34 @@ export const globalEventMachine = setup({
             break;
           }
 
-          case 'target':
-            result = (originalEvent.target as Element).matches(condition.value as string);
+          case 'target': {
+            // Safely check if target is an Element and has matches method
+            const target = originalEvent.target;
+            if (
+              target &&
+              typeof target === 'object' &&
+              'matches' in target &&
+              typeof target.matches === 'function'
+            ) {
+              try {
+                result = target.matches(condition.value as string);
+              } catch {
+                result = false;
+              }
+            } else {
+              result = false;
+            }
             break;
+          }
 
           case 'custom':
-            result = typeof condition.value === 'function' ? condition.value(originalEvent) : false;
+            // Safely execute custom condition functions with error handling
+            try {
+              result =
+                typeof condition.value === 'function' ? condition.value(originalEvent) : false;
+            } catch {
+              result = false;
+            }
             break;
 
           case 'state':
