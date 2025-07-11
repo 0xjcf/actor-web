@@ -354,7 +354,7 @@
 3. **Daily progress tracking** - Burndown chart for Phase 1 completion
 4. **Remove deprecated files** - Clean up `src/core/actor-ref.ts`
 
-### Agent-Workflow-CLI
+### Agent-Workflow-CLI  
 1. **Spike ConfigurationActor** - Prove pattern before other actors
 2. **ValidationActor prototype** - Demo parallel validation by next milestone [[memory:2987389]] [[memory:2895458]]
 3. **Document actor message schemas** - Before implementing WorkflowActor

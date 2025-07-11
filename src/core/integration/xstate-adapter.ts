@@ -1,7 +1,7 @@
 /**
  * @module framework/core/integration/xstate-adapter
  * @description XState v5 adapter using unified ActorRef implementation
- * @author Agent A - 2025-01-10
+ * @author Agent A - 2025-10-07
  */
 
 import type { AnyStateMachine } from 'xstate';
