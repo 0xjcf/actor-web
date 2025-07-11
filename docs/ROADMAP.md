@@ -1,225 +1,321 @@
-# 🗺️ ROADMAP — Actor‑Web Pure Actor Model
+# 🗺️ Actor-Web Framework & Agent-Workflow-CLI Roadmap
 
-> **Vision**  
-> Deliver a universal web runtime whose state, side‑effects, and cross‑component communication are managed **exclusively** through message‑passing actors.  
-> Benefits: isolation, fault‑tolerance, scalability (including Web Workers / remote actors), host‑agnostic deployment, and a clear mental model.
-> 
-> **Host‑Agnostic Design**: Once the pure actor refactor is complete, the runtime supports SPAs, MPAs, SSR, micro‑front‑ends, PWAs, and edge/desktop environments through consistent message‑passing APIs.
+> **Vision**: Deliver a complete actor-centric development ecosystem with a pure actor web runtime and a CLI tool implementing agent-based workflows for collaborative development.
 
----
+## 📋 Executive Summary
 
-## 0 🌱 Current Baseline (Hybrid Controllers)
-
-| Status | Item | Owner | Notes |
-| ------ | ---- | ----- | ----- |
-| ✅ | `createActorController` (general) | Core team | Controller returns `{ state, send, subscribe, … }`. |
-| ✅ | Specialized controllers (`State`, `Event`, `Lifecycle`) | Core team | Convenience wrappers; still expose direct state. |
-| 🟡 | Component samples / docs | DevRel | Show basic counter, auth, form. |
+| Track | Current Status | Next Phase | Target Date |
+|-------|---------------|------------|-------------|
+| **Actor-Web Framework** | Phase 1 - ActorRef API (40% complete) | Complete ActorRef implementation | Q1 2025 |
+| **Agent-Workflow-CLI** | v0.1.0-alpha (feature complete, needs actors) | Actor-based architecture | Q1 2025 |
 
 ---
 
-## 1 🚀 Introduce **ActorRef** API _(MVP)_
+## 🎯 Track 1: Actor-Web Framework
 
-> _Goal:_ Ship a **minimal yet functional** reference abstraction that hides internal actor state.
+### ✅ Phase 0: Foundation (COMPLETE)
 
-- [ ] **1.1** API spec frozen (`ActorRef<TEvent, TEmit>`)  
-  - `send(event)` – fire‑and‑forget  
-  - `ask(query) → Promise<T>` – request/response, unique `responseId` generated internally  
-  - `observe(selector) → Observable<U>` – reactive state slices  
-  - `spawn(machine) → ActorRef` – child actors  
-  - `start/stop/restart` lifecycle  
-  **Exit criteria:** Type‑safe signatures in `@actor-web/core`.
+| Component | Status | Description |
+|-----------|--------|-------------|
+| `createComponent` API | ✅ | Minimal API with machine + template |
+| XState v5 Integration | ✅ | Full integration with type safety |
+| Reactive Event Bus | ✅ | Event delegation and smart extraction |
+| Animation Services | ✅ | XState-based animation system |
+| Testing Infrastructure | ✅ | Vitest + actor test utilities |
+| Enhanced Components | ✅ | Accessibility, ARIA, keyboard navigation |
+| Documentation | ✅ | API.md, README.md, BEST_PRACTICES.md |
 
-- [ ] **1.2** XState interpreter wrapper implements `ActorRef`  
-  _Owner:_ Runtime team
+### 🚀 Phase 1: ActorRef API Implementation (IN PROGRESS - 40%)
 
-- [ ] **1.3** Dev ergonomics  
-  - Auto‑unsubscribe helper (`useActorRef`, `withActorRef` for plain Web Components)  
-  - Default `observe()` → RxJS OR minimal custom observable  
-  _Owner:_ DX team
+**Goal:** Complete the pure actor reference abstraction that hides internal state
 
-- [ ] **1.4** Docs & code samples ("CounterRef", "AuthRef")  
-  _Owner:_ DevRel
+#### 1.1 Core ActorRef Interface ✅ COMPLETE
+- ✅ Interface definition (`ActorRef<TEvent, TEmitted, TSnapshot>`)
+- ✅ Basic implementation in `create-actor-ref.ts`
+- ✅ Observable integration
+- ✅ XState adapter
 
----
+#### 1.2 Message Passing System (70% complete)
+- ✅ `send(event)` - fire-and-forget
+- ✅ `ask(query)` - request/response with promises
+- ✅ RequestResponseManager with correlation IDs
+- [ ] Event emission system (`TEmitted` support)
+- [ ] Message interceptors and middleware
 
-## 2 🔁 Reactive View Binding
+#### 1.3 Actor Lifecycle Management (60% complete)
+- ✅ `start()`, `stop()`, `restart()` methods
+- ✅ Status tracking (idle, running, stopped, error)
+- ✅ Basic error handling
+- [ ] Graceful shutdown with cleanup
+- [ ] Resource leak prevention
 
-> _Goal:_ Make UI updates **feel** as simple as state reads while retaining encapsulation.
+#### 1.4 Actor Supervision (30% complete)
+- ✅ Basic Supervisor class
+- ✅ `spawn()` child actors
+- [ ] Complete supervision strategies (restart, escalate, stop)
+- [ ] Supervision tree visualization
+- [ ] Dead letter handling
 
-- [ ] **2.1** Template helpers accept observables (`${state$}` or `bind(state$, fn)` pattern).  
-- [ ] **2.2** Auto‑unsubscribe on component disconnect.  
-- [ ] **2.3** Demo: live counter, auth badge, form validation indicators.  
-  _Owner:_ View/Template team
+#### 1.5 Developer Experience
+- [ ] Remove all `[actor-web] TODO` comments
+- [ ] Zero `any` types (currently has some)
+- [ ] Comprehensive error messages
+- [ ] Dev tools integration
+- [ ] Performance metrics
 
----
+### 📅 Phase 2: Reactive State Management (Q1-Q2 2025)
 
-## 3 🧹 Controller→ActorRef Migration
+**Goal:** Advanced reactive patterns for UI synchronization
 
-> _Goal:_ All first‑party components stop reading controller `.state.context`.
+#### 2.1 Enhanced Observables
+- [ ] Computed observables with memoization
+- [ ] Observable operators (map, filter, debounce)
+- [ ] Multi-actor state composition
+- [ ] Time-travel debugging
 
-- [ ] **3.1** Shield direct context access behind `observe()` / selectors.  
-- [ ] **3.2** Provide codemod (`npx actor-web-migrate`) that:  
-  - Rewrites `createStateController` → `createActorRef`  
-  - Replaces `controller.state.context.foo` with `await actor.ask({ ... })` or `observe`.  
-  - Flags unsafe patterns.
+#### 2.2 Component Integration
+- [ ] Two-way binding helpers
+- [ ] Form state management
+- [ ] Optimistic UI updates
+- [ ] Conflict resolution
 
-- [ ] **3.3** Deprecation banner in docs; announce removal schedule.  
-  _Owner:_ Migration squad
+#### 2.3 State Persistence
+- [ ] Local storage adapter
+- [ ] IndexedDB adapter
+- [ ] State hydration/dehydration
+- [ ] Migration strategies
 
----
+### 📅 Phase 3: Distributed Actor System (Q2-Q3 2025)
 
-## 4 🛡️ Supervision & Fault Handling
+**Goal:** Enable actor communication across boundaries
 
-> _Goal:_ Match backend actor robustness (restart strategies, escalation).
+#### 3.1 Remote Actors
+- [ ] WebSocket transport
+- [ ] WebRTC transport
+- [ ] Service worker actors
+- [ ] Cross-frame communication
 
-- [ ] **4.1** `SupervisorRef` implementation (`one-for-one`, `all-for-one`).  
-- [ ] **4.2** Configurable restart strategy on `spawn(machine, { supervision })`.  
-- [ ] **4.3** Logging / dev‑mode overlay shows actor restarts.  
-  _Owner:_ Runtime team
+#### 3.2 Actor Discovery
+- [ ] Actor registry service
+- [ ] Dynamic actor lookup
+- [ ] Load balancing
+- [ ] Health checks
 
----
+#### 3.3 Fault Tolerance
+- [ ] Circuit breakers
+- [ ] Retry strategies
+- [ ] Fallback actors
+- [ ] Distributed supervision
 
-## 5 📨 Distributed / Worker Actors
+### 📅 Phase 4: Performance & Optimization (Q3-Q4 2025)
 
-> _Goal:_ Allow actors to live off the main thread, in other processes, or on remote hosts.
+**Goal:** Production-ready performance
 
-- [ ] **5.1** `WebWorkerActorHost` – serialize events with `structuredClone`.  
-- [ ] **5.2** Transport‑agnostic adapter (`postMessage`, WebSocket, IPC).  
-- [ ] **5.3** Demo: sort‑10k‑rows actor runs in worker, UI stays responsive.  
-  _Owner:_ Concurrency squad
+#### 4.1 Runtime Optimization
+- [ ] Message batching
+- [ ] Actor pooling
+- [ ] Lazy actor creation
+- [ ] Memory management
 
----
+#### 4.2 Build-time Optimization
+- [ ] Dead code elimination
+- [ ] Actor tree shaking
+- [ ] Compile-time validation
+- [ ] Bundle size optimization
 
-## 5b 🌍 Host‑Integration (MPA & SSR)
+### 📅 Phase 5: Developer Tools (Q4 2025)
 
-> _Goal:_ Enable actor runtime to work seamlessly across different web architectures and deployment modes.
+**Goal:** Best-in-class developer experience
 
-- [ ] **5b.1** Multi‑page application support  
-  - Browser ↔ Service‑Worker transport adapter (BroadcastChannel)  
-  - IndexedDB mailbox for cross‑page actor persistence  
-  - Bootstrap contract for actor system discovery/reinstantiation  
+#### 5.1 Visual Tools
+- [ ] Actor hierarchy viewer
+- [ ] Message flow visualizer
+- [ ] State inspector
+- [ ] Performance profiler
 
-- [ ] **5b.2** Server‑side rendering helpers  
-  - `renderToString(actorRef, templateFn)` for stable state snapshots  
-  - `hydrate(actorRef, snapshot)` for client‑side resumption  
-  - Serialization adapters for actor context data  
+#### 5.2 CLI Tools
+- [ ] Actor scaffolding
+- [ ] Migration tools
+- [ ] Linting rules
+- [ ] Code generation
 
-- [ ] **5b.3** Cross‑deployment transport examples  
-  - Islands / Micro‑front‑ends via postMessage  
-  - Electron / Tauri via IPC  
-  - Edge / Workers (Cloudflare, Deno) via RemoteActorRef  
+### 📅 Phase 6: v1.0 General Availability (Q1 2026)
 
-- [ ] **5b.4** Example repositories  
-  - Multi‑page site sharing login actor  
-  - SSR‑hydrated e‑commerce with cart persistence  
-  - Micro‑front‑end dashboard with shared state  
-  _Owner:_ Host Integration squad
+**Goal:** Production-ready framework
 
----
-
-## 6 ⚡ Performance & Back‑pressure
-
-- [ ] **6.1** Benchmarks: event throughput, memory footprint, GC.  
-- [ ] **6.2** Configurable mailbox size + overflow strategy (`drop`, `park`, `fail`).  
-- [ ] **6.3** Micro‑tasks batching for high‑frequency UI events.  
-  _Owner:_ Perf team
-
----
-
-## 7 🛠️ Tooling & Dev UX
-
-- [ ] **7.1** Browser DevTools extension  
-  - Actor tree, message timeline, state snapshots.  
-- [ ] **7.2** Time‑travel replay via stored message log.  
-- [ ] **7.3** VS Code code‑gen snippets for `ask`, `observe`, `spawn`.  
-  _Owner:_ DX team
-
----
-
-## 8 📚 Documentation & Learning Path
-
-- [ ] **8.1** "Why Actors?" explainer with diagrams.  
-- [ ] **8.2** Migration guide: controllers → ActorRefs.  
-- [ ] **8.3** Cookbook recipes (infinite scrolling, optimistic updates, offline cache).  
-- [ ] **8.4** Host‑specific deployment guides (SPA, MPA, SSR, Edge).  
-  _Owner:_ DevRel
-
----
-
-## 9 🎉 v1.0 GA — Pure Actor Web Runtime
-
-| Release Gate | Success Metric |
-|--------------|----------------|
-| 🔒 **Zero** first‑party code reads actor state directly. | Type‑level check & static analysis. |
-| 🛡️ All critical actors protected by a supervisor. | Chaos tests: random failures auto‑recovered. |
-| ⚙️ CI runs **benchmarks** under target thresholds (CPU < X ms/frame, memory < Y MB). | Perf dashboards green. |
-| 🌍 **Host‑agnostic** deployment verified across SPA, MPA, SSR, Worker environments. | Integration tests pass in all target hosts. |
-| 📖 Docs include full tutorial path ("TodoMVC" to distributed chat to SSR e‑commerce). | Community feedback > 90 % positive. |
-
-Once these gates are green we can tag **`@actor-web/core@1.0.0`** and begin the 1.x feature cadence.
+- [ ] API stability guarantee
+- [ ] Migration guide from v0.x
+- [ ] Performance benchmarks
+- [ ] Security audit
+- [ ] Enterprise features
 
 ---
 
-## Deployment Mode Support Matrix
+## 🛠️ Track 2: Agent-Workflow-CLI
 
-| Mode | Status | Phase | Notes |
-|------|--------|-------|-------|
-| **Classic SPA** | ✅ Native | 1-4 | Single HTML shell, client routing |
-| **Multi-Page App** | 🔄 Planned | 5b | Shared actors via Service Worker/BroadcastChannel |
-| **SSR / Hydration** | 🔄 Planned | 5b | Server snapshots, client resumption |
-| **Islands / Micro-frontends** | 🔄 Planned | 5b | Cross-island messaging via event bus |
-| **PWA / Offline** | 🔄 Planned | 5b | Service Worker actor persistence |
-| **Electron / Tauri** | 🔄 Planned | 5b | Main process actors, renderer ActorRefs |
-| **Edge / Workers** | 🔄 Planned | 5b | Serverless isolates, RemoteActorRef |
+### ✅ Current Status: v0.1.0-alpha (Feature Complete)
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Git Worktree Management | ✅ | `pnpm aw:init` - Zero-conflict setup |
+| Agent Detection | ✅ | Automatic agent type detection |
+| Smart Validation | ✅ | Validate only changed files |
+| Integration Workflow | ✅ | Ship and sync commands |
+| Status Dashboard | ✅ | Rich CLI interface |
+| Performance | ✅ | 10x faster validation |
+
+### 🚀 Phase A: Actor-Based Architecture (WEEKS 1-4)
+
+**Goal:** Align CLI with framework's actor principles
+
+#### A.1 Actor Implementation _(Week 1-2)_
+- ✅ **GitActor** - XState v5 implementation complete
+- [ ] **ValidationActor** - Replace ValidationService class
+  - States: `idle` → `filtering` → `validating` → `reporting`
+  - Parallel TypeScript + Biome validation
+  - Progress event streaming
+- [ ] **WorkflowActor** - Orchestrate command workflows
+  - Coordinate GitActor ↔ ValidationActor
+  - Handle rollback scenarios
+  - Manage workflow state
+- [ ] **UIActor** - Centralize console output
+  - Replace scattered console.log calls
+  - Consistent chalk formatting
+  - Progress indicators
+- [ ] **ConfigurationActor** - Project validation
+  - Git repository detection
+  - Package.json validation
+  - Environment checks
+
+#### A.2 Message Passing _(Week 2-3)_
+- [ ] Define message schemas between actors
+- [ ] Implement event routing
+- [ ] Add error propagation
+- [ ] Create audit trail
+
+#### A.3 Testing & Polish _(Week 3-4)_
+- [ ] Unit tests for each actor
+- [ ] Integration tests for workflows
+- [ ] Performance benchmarks
+- [ ] Documentation updates
+
+### 📦 Phase B: Production Launch (WEEKS 5-6)
+
+**Goal:** Release v1.0.0 on npm
+
+#### B.1 Package Preparation
+- [ ] Production build configuration
+- [ ] Minification and optimization
+- [ ] Cross-platform testing
+- [ ] Security audit
+
+#### B.2 Documentation
+- [ ] Installation guide
+- [ ] Video tutorials
+- [ ] Migration guide
+- [ ] API reference
+
+#### B.3 Launch
+- [ ] npm publish
+- [ ] GitHub release
+- [ ] Community announcement
+- [ ] Support channels
+
+### 🚀 Phase C: Enhanced Features (WEEKS 7-10)
+
+**Goal:** Advanced workflow capabilities
+
+#### C.1 Plugin System
+- [ ] Plugin API design
+- [ ] Custom validation rules
+- [ ] Template system
+- [ ] Plugin registry
+
+#### C.2 Team Features
+- [ ] Conflict resolution UI
+- [ ] Real-time status sharing
+- [ ] Team dashboards
+- [ ] Notification system
+
+#### C.3 CI/CD Integration
+- [ ] GitHub Actions
+- [ ] GitLab CI
+- [ ] Pre-commit hooks
+- [ ] Automated validation
+
+### 🌐 Phase D: Cloud Integration (WEEKS 11-12)
+
+**Goal:** Enterprise features
+
+#### D.1 Hosted Service
+- [ ] Cloud coordination API
+- [ ] Team management
+- [ ] Analytics dashboard
+- [ ] SLA monitoring
+
+#### D.2 Framework Integration
+- [ ] Shared actor primitives
+- [ ] Unified message schemas
+- [ ] Common supervision patterns
+- [ ] Development workflow integration
 
 ---
 
-## Timeline Snapshot *(tentative)*
+## 📊 Success Metrics
 
-| Quarter | Milestone |
-|---------|-----------|
-| **Q3 '25** | Phases 1‑2 complete, early adopters testing ActorRefs |
-| **Q4 '25** | Phase 3 migration finished, supervisor beta |
-| **Q1 '26** | Worker actors, host‑integration (Phase 5b) |
-| **Q2 '26** | Perf/back‑pressure tuning, DevTools |
-| **Q3 '26** | Docs polish, multi‑deployment validation, **v1.0 GA** |
+### Actor-Web Framework
+- [ ] ActorRef API 100% complete (currently ~40%)
+- [ ] Zero TODO comments in production code
+- [ ] 100% type coverage (no `any` types)
+- [ ] <200ms actor spawn time
+- [ ] <5KB ActorRef runtime overhead
 
-> _Adjustments made monthly based on community feedback and internal velocity._
-
----
-
-## Branding Evolution
-
-### Current State
-- **Project Name**: Actor-SPA  
-- **Package Scope**: `@actor-spa/core`  
-- **Community**: #actor-spa on Discord  
-
-### Future State (Post-v1.0)
-- **Project Name**: Actor-Web *(or Actor-UI)*  
-- **Package Scope**: `@actor-web/core`  
-- **Tagline**: "Pure‑actor web runtime"  
-- **Community**: #actor-web on Discord  
-
-> **Migration Strategy**: Maintain `@actor-spa/*` packages as aliases during v1.x for backward compatibility. Announce branding transition 6 months before v2.0.
+### Agent-Workflow-CLI
+- [x] 10x faster validation ✅
+- [x] Zero-conflict git workflow ✅
+- [ ] <30s project setup time
+- [ ] 100+ weekly active users
+- [ ] 90%+ satisfaction score
 
 ---
 
-## Governance
+## 🎯 Immediate Next Steps
 
-- **Product Owner:** 0xjcf  
-- **Steering Group:** Runtime Lead, DX Lead, Perf Lead, DevRel, Host Integration Lead  
-- **Community Sync:** #actor-spa on Discord, every second Thursday (16:00 UTC)  
-- **RFC Process:** Propose → 7‑day comment → Accepted / Need‑More‑Work  
+### Actor-Web Framework (Priority Order)
+1. **Complete event emission system** - Add `TEmitted` support to ActorRef
+2. **Fix all TODO items** - Search for `[actor-web] TODO` and implement
+3. **Remove deprecated files** - Clean up `src/core/actor-ref.ts`
+4. **Complete supervision** - Implement all supervision strategies
+5. **Add actor lifecycle hooks** - Cleanup and resource management
+
+### Agent-Workflow-CLI (Priority Order)
+1. **Implement ValidationActor** [[memory:2987389]] [[memory:2895458]]
+2. **Implement WorkflowActor** - Orchestration layer
+3. **Implement UIActor** - Centralized output [[memory:2890251]]
+4. **Integration testing** - Full workflow tests
+5. **Prepare v1.0.0 release** - Production packaging
 
 ---
 
-### Contributing
+## 📅 Timeline Overview
 
-1. Check open roadmap item labels: `good first issue`, `help wanted`, `RFC`.  
-2. Submit PRs targeting the **next** milestone branch (e.g. `phase-1-actorref`).  
-3. Add your change to `CHANGELOG.md` under `Unreleased`.  
-4. Pass CI (`npm test`, `npm run lint`, `npm run benchmark`).  
+```
+Q1 2025: ActorRef completion + CLI v1.0 launch
+Q2 2025: Reactive state + CLI enhanced features  
+Q3 2025: Distributed actors + CLI cloud integration
+Q4 2025: Performance + Developer tools
+Q1 2026: Framework v1.0 GA
+```
 
-Let's build the most resilient, scalable, **host‑agnostic** actor runtime for the web! 🌟
+---
+
+## 🔗 Dependencies
+
+- **Framework → CLI**: CLI will use framework's actor primitives once stable
+- **CLI → Framework**: CLI provides real-world usage patterns to inform framework design
+- **Both**: Share supervision patterns, message schemas, and actor coordination strategies
+
+---
+
+_Last Updated: [Current Date]_
+_Status: Living Document - Updates weekly_
