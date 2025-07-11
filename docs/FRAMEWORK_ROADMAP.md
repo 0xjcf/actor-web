@@ -1,5 +1,19 @@
 # 🗺️ ROADMAP — Actor‑Web Pure Actor Model
 
+> ⚠️ **DEPRECATED**: This document has been superseded by the unified [ROADMAP.md](./ROADMAP.md)
+> 
+> The unified roadmap includes all content from this document plus:
+> - Agent-Workflow-CLI implementation track
+> - Execution-focused task breakdowns
+> - Risk register and success metrics
+> - Pure actor model principles
+> 
+> Please refer to [ROADMAP.md](./ROADMAP.md) for the current roadmap.
+
+---
+
+# 🗺️ ROADMAP — Actor‑Web Pure Actor Model
+
 > **Vision**  
 > Deliver a universal web runtime whose state, side‑effects, and cross‑component communication are managed **exclusively** through message‑passing actors.  
 > Benefits: isolation, fault‑tolerance, scalability (including Web Workers / remote actors), host‑agnostic deployment, and a clear mental model.

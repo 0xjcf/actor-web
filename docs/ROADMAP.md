@@ -1,6 +1,24 @@
 # 🗺️ Actor-Web Framework & Agent-Workflow-CLI Roadmap
 
-> **Vision**: Deliver a complete actor-centric development ecosystem with a pure actor web runtime and a CLI tool implementing agent-based workflows for collaborative development.
+> **Vision**: Deliver a universal actor-centric development ecosystem where state, side-effects, and all communication are managed **exclusively** through message-passing actors. Create a pure actor web runtime and CLI tooling that demonstrates these principles in practice.
+
+## 🎭 Pure Actor Model Principles
+
+### Core Tenets
+1. **Message-Only Communication**: No direct state access between actors
+2. **Location Transparency**: Actors can run anywhere (main thread, workers, remote)
+3. **Supervision & Fault Tolerance**: Hierarchical error handling and recovery
+4. **Event-Driven Architecture**: All interactions through typed events
+5. **Zero Shared State**: Complete isolation between actor boundaries
+
+### Benefits
+- **Isolation**: Actors cannot corrupt each other's state
+- **Scalability**: Seamless distribution across workers/networks
+- **Fault Tolerance**: Supervisor strategies for resilience
+- **Mental Model**: Clear, consistent programming model
+- **Host-Agnostic**: Deploy anywhere - SPA, MPA, SSR, Edge, Desktop
+
+---
 
 ## 📋 Executive Summary
 
@@ -73,6 +91,7 @@
 - Multi-actor state composition
 - Component two-way binding helpers
 - State persistence adapters (LocalStorage, IndexedDB)
+- Auto-unsubscribe helpers for Web Components
 
 ### 📅 Phase 3: Distributed Actor System
 
@@ -81,24 +100,100 @@
 
 #### Key Deliverables:
 - WebSocket/WebRTC transports
+- Service Worker actors with BroadcastChannel
+- WebWorker actors with structured clone
+- Cross-frame communication
 - Actor registry service
 - Circuit breakers and retry strategies
-- Cross-frame communication
 
-### 📅 Phase 4: Performance & Optimization
+### 📅 Phase 4: Host-Agnostic Runtime
 
-**Goal:** Production-ready performance  
-**Dependencies:** Phase 3 stable
+**Goal:** Support all deployment modes through pure actor patterns  
+**Dependencies:** Phase 3 complete
 
-### 📅 Phase 5: Developer Tools
+#### Key Deliverables:
+
+##### Multi-Page Application Support
+- Browser ↔ Service Worker transport adapter
+- IndexedDB mailbox for cross-page persistence
+- Actor system discovery/reinstantiation
+
+##### Server-Side Rendering
+- `renderToString(actorRef, templateFn)` for snapshots
+- `hydrate(actorRef, snapshot)` for resumption
+- Serialization adapters for actor context
+
+##### Cross-Deployment Examples
+- Islands/Micro-frontends via postMessage
+- Electron/Tauri via IPC
+- Edge Workers (Cloudflare, Deno) via RemoteActorRef
+
+### 📅 Phase 5: Performance & Optimization
+
+**Goal:** Production-ready performance with back-pressure handling  
+**Dependencies:** Phase 4 stable
+
+#### Key Deliverables:
+- Event throughput benchmarks
+- Configurable mailbox size + overflow strategy
+- Message batching for high-frequency events
+- Memory footprint optimization
+- Actor pooling and lazy creation
+- Compile-time optimizations
+
+### 📅 Phase 6: Developer Tools
 
 **Goal:** Best-in-class developer experience  
-**Dependencies:** Phase 4 complete
+**Dependencies:** Phase 5 complete
 
-### 📅 Phase 6: General Availability
+#### Key Deliverables:
+- Browser DevTools extension (actor tree, message timeline)
+- Time-travel replay via message log
+- VS Code snippets and generators
+- Actor hierarchy visualizer
+- Performance profiler
+- State inspector
+
+### 📅 Phase 7: Enhanced Architecture & Testing
+
+**Goal:** Enterprise-grade actor system with comprehensive testing  
+**Dependencies:** Phase 6 complete
+
+#### 7.1 Unified Actor Registry & Addressing
+- Central registry for actor discovery
+- Hierarchical addresses: `actor://system/parent/child`
+- Pattern-based discovery: `actor://auth/*`
+- Location-transparent routing
+
+#### 7.2 Actor Testing Framework
+- `ActorTestHarness` for scenario testing
+- Deterministic message replay
+- Property-based testing for message flows
+- Chaos testing with failure injection
+
+#### 7.3 Security & Error Patterns
+- Message validation/sanitization framework
+- Trust boundary enforcement
+- Encrypted actor communication
+- Dead letter queue patterns
+
+#### 7.4 Performance Monitoring
+- Built-in metrics collection
+- Message throughput tracking
+- Mailbox depth monitoring
+- Actor lifecycle timing
+
+### 📅 Phase 8: General Availability
 
 **Goal:** Production-ready framework with stability guarantees  
 **Dependencies:** All previous phases complete
+
+#### Release Gates:
+- 🔒 **Zero** direct state access in framework code
+- 🛡️ All critical actors protected by supervisors
+- ⚙️ Performance benchmarks meet targets
+- 🌍 Host-agnostic deployment verified
+- 📖 Complete documentation and tutorials
 
 ---
 
@@ -117,7 +212,7 @@
 
 ### 🚀 Phase A: Actor-Based Architecture (IN PROGRESS)
 
-**Goal:** Align CLI with framework's actor principles
+**Goal:** Demonstrate framework's actor principles in real-world CLI tool
 
 #### Implementation Sequence (⚠️ Order matters):
 
@@ -147,37 +242,52 @@
 
 ### 📦 Phase B: Production Launch
 
-**Goal:** Release v1.0.0 on npm  
+**Goal:** Release v1.0.0 on npm as showcase of actor patterns  
 **Dependencies:** Phase A complete
 
 #### Checklist:
 - [ ] Production build configuration
 - [ ] Cross-platform testing (Windows, Mac, Linux)
 - [ ] Security audit
-- [ ] Installation guide
-- [ ] Video tutorials
+- [ ] Installation guide with actor architecture explanation
+- [ ] Video tutorials showing actor coordination
 - [ ] npm publish
 
 ### 🚀 Phase C: Enhanced Features
 
-**Goal:** Advanced workflow capabilities  
+**Goal:** Advanced workflow capabilities using actor patterns  
 **Dependencies:** Phase B launched
 
 #### Deliverables:
-- Plugin API design
-- Custom validation rules
-- CI/CD integrations (GitHub Actions, GitLab CI)
-- Pre-commit hooks
+- Plugin system (plugins as supervised actors)
+- Custom validation rules via actor composition
+- CI/CD integrations with actor-based pipelines
+- Distributed team coordination actors
 
 ### 🌐 Phase D: Cloud Integration
 
-**Goal:** Enterprise features  
+**Goal:** Distributed actor coordination for teams  
 **Dependencies:** Framework Phase 3 (Distributed Actors) - **BLOCKED**
 
 #### Deliverables:
-- Cloud coordination API
-- Team dashboards
-- Real-time collaboration
+- Cloud actor coordination service
+- Real-time team dashboards
+- Cross-machine actor messaging
+- Shared state actors
+
+---
+
+## 🌍 Deployment Mode Support Matrix
+
+| Mode | Status | Phase | Actor Pattern Application |
+|------|--------|-------|--------------------------|
+| **Classic SPA** | ✅ Native | 1-4 | Single actor system in browser |
+| **Multi-Page App** | 🔄 Planned | 4 | Shared actors via Service Worker |
+| **SSR / Hydration** | 🔄 Planned | 4 | Server actors → client actors |
+| **Islands / Micro-frontends** | 🔄 Planned | 4 | Cross-island actor messaging |
+| **PWA / Offline** | 🔄 Planned | 4 | Persistent actor mailboxes |
+| **Electron / Tauri** | 🔄 Planned | 4 | Main process supervisor actors |
+| **Edge / Workers** | 🔄 Planned | 4 | Distributed actor mesh |
 
 ---
 
@@ -191,6 +301,7 @@
 | Type coverage | ~95% | 100% | No `any` in src/ |
 | Actor spawn time | Unknown | <200ms | Performance test suite |
 | Bundle overhead | Unknown | <5KB | Webpack analyzer |
+| Message throughput | Unknown | >10k/sec | Benchmark suite |
 
 ### Agent-Workflow-CLI
 | Metric | Current | Target | Measurement |
@@ -199,6 +310,7 @@
 | Setup time | Unknown | <30s | Fresh 2-core VM, cold npm cache |
 | Weekly active users | 0 | 100+ | npm stats + telemetry (opt-in) |
 | Satisfaction | Unknown | 90%+ | In-CLI NPS prompt (opt-in) |
+| Actor coordination | 20% | 100% | All OOP replaced with actors |
 
 ---
 
@@ -211,6 +323,26 @@
 | TypeScript 6.0 breaking changes | Low | High | Pin TS version; test against beta releases |
 | Framework/CLI dependency cycles | Medium | Medium | Clear API contracts; version pinning |
 | AI agent coordination conflicts | Low | Low | Clear ownership assignments in tasks |
+| Actor pattern learning curve | Medium | Medium | Extensive docs, examples, tutorials |
+
+---
+
+## 🏛️ Governance
+
+### Leadership
+- **Product Owner:** 0xjcf
+- **Steering Group:** Runtime Lead, DX Lead, Perf Lead, DevRel, Host Integration Lead
+
+### Decision Process
+- **RFC Process:** Propose → 7-day comment → Accepted/Needs-Work
+- **Community Sync:** Discord every second Thursday (16:00 UTC)
+- **Architecture Reviews:** Required for new actor patterns
+
+### Contributing
+1. Check roadmap labels: `good first issue`, `help wanted`, `RFC`
+2. Submit PRs targeting next milestone branch
+3. Add changes to CHANGELOG.md
+4. Pass CI: `npm test`, `npm run lint`, `npm run benchmark`
 
 ---
 
@@ -234,19 +366,36 @@
 
 ```mermaid
 graph TD
-    F1[Framework Phase 1] --> C1[CLI Phase A]
-    C1 --> C2[CLI Phase B Launch]
-    F2[Framework Phase 2] --> C3[CLI Phase C Features]
-    F3[Framework Phase 3] --> C4[CLI Phase D Cloud]
-    C2 --> F2[Feedback Loop]
+    F1[Framework Phase 1: ActorRef] --> C1[CLI Phase A: Actor Architecture]
+    C1 --> C2[CLI Phase B: Launch]
+    F2[Framework Phase 2: Reactive] --> C3[CLI Phase C: Features]
+    F3[Framework Phase 3: Distributed] --> C4[CLI Phase D: Cloud]
+    C2 --> F2[Real-world feedback]
+    
+    style F1 fill:#f9f,stroke:#333,stroke-width:2px
+    style C4 fill:#faa,stroke:#333,stroke-width:2px
 ```
 
 **Critical Dependencies:**
-- CLI cannot use ActorRef until Framework Phase 1 ships
-- CLI Phase D (Cloud) blocked by Framework Phase 3 (Distributed)
+- CLI demonstrates framework actor patterns in practice
+- CLI Phase D blocked until Framework Phase 3 ships
 - Framework benefits from CLI's real-world usage patterns
+- Both tracks validate pure actor model vision
+
+---
+
+## 🚀 Vision Success Criteria
+
+When complete, Actor-Web will enable:
+
+1. **Universal Deployment** - Same actor code runs everywhere
+2. **Fault Tolerance** - Supervision trees handle all failures
+3. **True Concurrency** - Actors distribute across cores/machines
+4. **Clean Architecture** - Message-only communication throughout
+5. **Developer Joy** - Intuitive mental model, great tooling
 
 ---
 
 _Status: Living Document - Review at each phase completion_  
 _Next Review: When Phase 1 reaches 60% or any blocking issue arises_
+_Governance: See contributing guidelines and RFC process above_
