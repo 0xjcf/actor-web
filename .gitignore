@@ -94,6 +94,12 @@ temp/
 .yarn/unplugged
 .yarn/build-state.yml
 .yarn/install-state.gz
-.pnp.* 
+.pnp.*
+
+# Git worktree artifacts and patterns
+worktree-*/
+.git/worktrees/*/logs/
+*.worktree
+
 CLAUDE.md
 .cursor/
