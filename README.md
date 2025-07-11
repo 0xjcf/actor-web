@@ -223,6 +223,7 @@ See [ROADMAP.md](./docs/ROADMAP.md) for detailed timeline.
 ## 📚 Documentation
 
 - [Implementation Guide](./IMPLEMENTATION.md)
+- [🤖 Agent Workflow Guide](./docs/AGENT-WORKFLOW-GUIDE.md) - **Complete guide to parallel agent development**
 - [Architecture Docs](./docs/architecture/)
 - [API Reference](./src/API.md)
 - [Examples](./examples/)
@@ -230,11 +231,10 @@ See [ROADMAP.md](./docs/ROADMAP.md) for detailed timeline.
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Follow the [Implementation Guide](./IMPLEMENTATION.md) for development workflow
-4. Commit changes: `git commit -m 'feat: add my feature'`
-5. Push to branch: `git push origin feature/my-feature`
-6. Submit a Pull Request
+2. Set up the agent workflow: `./scripts/setup-agent-worktrees.sh`
+3. Follow the [🤖 Agent Workflow Guide](./docs/AGENT-WORKFLOW-GUIDE.md) for parallel development
+4. Use agent scripts: `./scripts/agent-workflow.sh save` and `./scripts/agent-workflow.sh ship`
+5. Submit a Pull Request from your agent branch
 
 ### Development Setup
 
