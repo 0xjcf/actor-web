@@ -36,7 +36,15 @@
     "agent-c:push": "git push origin feature/agent-c",
     "agent-a:sync": "./scripts/merge-agent-a.sh",
     "agent-b:sync": "./scripts/merge-agent-b.sh",
-    "agent-c:sync": "./scripts/merge-agent-c.sh"
+    "agent-c:sync": "./scripts/merge-agent-c.sh",
+    "aw": "pnpm --filter @agent-workflow/cli dev",
+    "aw:help": "pnpm --filter @agent-workflow/cli dev --help",
+    "aw:init": "pnpm --filter @agent-workflow/cli dev init",
+    "aw:sync": "pnpm --filter @agent-workflow/cli dev sync",
+    "aw:validate": "pnpm --filter @agent-workflow/cli dev validate",
+    "aw:ship": "pnpm --filter @agent-workflow/cli dev ship",
+    "aw:save": "pnpm --filter @agent-workflow/cli dev save",
+    "aw:status": "pnpm --filter @agent-workflow/cli dev status"
   },
   "keywords": [
     "actor-model",

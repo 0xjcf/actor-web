@@ -15,7 +15,7 @@ export async function syncCommand() {
     }
 
     const integrationBranch = 'feature/actor-ref-integration';
-    const currentBranch = await git.getCurrentBranch();
+    const _currentBranch = await git.getCurrentBranch();
 
     // Check for uncommitted changes
     if (await git.hasUncommittedChanges()) {

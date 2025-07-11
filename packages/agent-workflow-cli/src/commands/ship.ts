@@ -25,7 +25,7 @@ export async function shipCommand() {
         await git.getGit().add('.');
 
         // Auto-commit with agent context
-        const currentBranch = await git.getCurrentBranch();
+        const _currentBranch = await git.getCurrentBranch();
         const agentType = await git.detectAgentType();
         const message = `[${agentType}] Auto-save: ${new Date().toISOString().split('T')[0]}`;
 

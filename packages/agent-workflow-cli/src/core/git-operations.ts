@@ -58,6 +58,7 @@ export class GitOperations {
    * Create agent worktrees based on setup-agent-worktrees.sh logic
    */
   async setupAgentWorktrees(agentCount = 3): Promise<AgentWorktreeConfig[]> {
+    // [aw] TODO: we should allow the user to customize the configs
     const configs = [
       {
         agentId: 'agent-a',

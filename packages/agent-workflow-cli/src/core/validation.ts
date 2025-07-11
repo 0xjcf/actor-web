@@ -85,13 +85,14 @@ export class ValidationService {
         warnings: [],
         filesChecked: tsFiles.length,
       };
-    } catch (error: any) {
-      const output = error.stdout?.toString() || error.message;
+    } catch (error: unknown) {
+      const errorOutput = error as { stdout?: Buffer | string; message?: string };
+      const output = errorOutput.stdout?.toString() || errorOutput.message || 'Unknown error';
 
       // Filter errors to only include files we're validating
       const relevantErrors = output
         .split('\n')
-        .filter((line: string) => tsFiles.some((file) => line.startsWith(file + ':')))
+        .filter((line: string) => tsFiles.some((file) => line.startsWith(`${file}:`)))
         .slice(0, 10); // Limit to first 10 errors
 
       return {
@@ -129,7 +130,7 @@ export class ValidationService {
         warnings: [],
         filesChecked: lintableFiles.length,
       };
-    } catch (error: any) {
+    } catch (_error: unknown) {
       return {
         success: false,
         errors: [`Linting errors found in ${lintableFiles.length} files`],
@@ -151,10 +152,14 @@ export class ValidationService {
 
     if (files.length <= 10) {
       console.log('Changed files:');
-      files.forEach((file) => console.log(`  - ${file}`));
+      for (const file of files) {
+        console.log(`  - ${file}`);
+      }
     } else {
       console.log('Changed files:');
-      files.slice(0, 10).forEach((file) => console.log(`  - ${file}`));
+      for (const file of files.slice(0, 10)) {
+        console.log(`  - ${file}`);
+      }
       console.log(`  ... and ${files.length - 10} more`);
     }
 
@@ -168,7 +173,9 @@ export class ValidationService {
       console.log(`    ✅ TypeScript OK (${typescript.filesChecked} files)`);
     } else {
       console.log(`    ❌ TypeScript errors in ${typescript.filesChecked} files:`);
-      typescript.errors.forEach((error) => console.log(`      ${error}`));
+      for (const error of typescript.errors) {
+        console.log(`      ${error}`);
+      }
     }
 
     // Biome validation

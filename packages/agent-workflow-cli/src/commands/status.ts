@@ -38,22 +38,22 @@ export async function statusCommand() {
 
       if (integrationStatus.behind > 0) {
         console.log(
-          chalk.yellow(`⬇️  Behind integration:`) + ` ${integrationStatus.behind} commits`
+          `${chalk.yellow('⬇️  Behind integration:')} ${integrationStatus.behind} commits`
         );
         console.log(chalk.blue('💡 Run:') + chalk.yellow(' pnpm aw:sync'));
       } else {
-        console.log(chalk.green(`⬇️  Behind integration:`) + ' 0 commits');
+        console.log(`${chalk.green('⬇️  Behind integration:')} 0 commits`);
       }
 
       if (integrationStatus.ahead > 0) {
         console.log(
-          chalk.yellow(`⬆️  Ahead of integration:`) + ` ${integrationStatus.ahead} commits`
+          `${chalk.yellow('⬆️  Ahead of integration:')} ${integrationStatus.ahead} commits`
         );
         console.log(chalk.blue('💡 Run:') + chalk.yellow(' pnpm aw:ship'));
       } else {
-        console.log(chalk.green(`⬆️  Ahead of integration:`) + ' 0 commits');
+        console.log(`${chalk.green('⬆️  Ahead of integration:')} 0 commits`);
       }
-    } catch (error) {
+    } catch (_error) {
       console.log(chalk.yellow('⚠️  Could not check integration status'));
     }
 
@@ -102,7 +102,7 @@ export async function statusCommand() {
           console.log(chalk.green('  ✅ No lintable files (docs/configs ignored)'));
         }
       }
-    } catch (error) {
+    } catch (_error) {
       console.log(chalk.yellow('  ⚠️  Could not analyze changed files'));
     }
 

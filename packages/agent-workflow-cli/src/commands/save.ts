@@ -27,7 +27,7 @@ export async function saveCommand() {
       await git.getGit().add('.');
 
       // Auto-commit with agent context
-      const currentBranch = await git.getCurrentBranch();
+      const _currentBranch = await git.getCurrentBranch();
       const agentType = await git.detectAgentType();
       const timestamp = new Date().toISOString().split('T')[0];
       const message = `[${agentType}] WIP: ${timestamp}`;
@@ -37,7 +37,7 @@ export async function saveCommand() {
       console.log(chalk.green('✅ Work saved successfully!'));
       console.log(chalk.gray(`   Commit: ${message}`));
       console.log(chalk.blue('💡 Next steps:'));
-      console.log(`   • Continue working: make more changes`);
+      console.log('   • Continue working: make more changes');
       console.log(`   • Ship when ready: ${chalk.yellow('pnpm aw:ship')}`);
       console.log(`   • Check status: ${chalk.yellow('pnpm aw:status')}`);
     } catch (error) {
