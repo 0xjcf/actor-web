@@ -1,16 +1,11 @@
 import { type SimpleGit, simpleGit } from 'simple-git';
-import { assign, setup } from 'xstate';
+import { assign, createActor, setup } from 'xstate';
 import { fromPromise } from 'xstate';
 
-// [actor-web] TODO: Import from main framework once ActorRef is available
-// import type { ActorRef } from '@actor-web/core';
-
-// Temporary interface until main framework ActorRef is ready
-interface ActorRef<TEvent, TResponse> {
-  send(event: TEvent): void;
-  ask<T = TResponse>(query: TEvent): Promise<T>;
-  observe<TState>(selector: (snapshot: unknown) => TState): unknown;
-  getSnapshot(): unknown;
+// CLI-specific GitActor interface (simplified for CLI use)
+interface GitActor {
+  send(event: GitEvent): void;
+  getSnapshot(): { context: GitContext };
   start(): void;
   stop(): void;
 }
@@ -27,7 +22,10 @@ export type GitEvent =
   | { type: 'CHECK_UNCOMMITTED_CHANGES' }
   | { type: 'GET_INTEGRATION_STATUS'; integrationBranch?: string }
   | { type: 'COMMIT_CHANGES'; message: string }
-  | { type: 'PUSH_CHANGES'; branch: string };
+  | { type: 'PUSH_CHANGES'; branch: string }
+  | { type: 'GENERATE_COMMIT_MESSAGE' } // New: Generate smart commit message
+  | { type: 'VALIDATE_DATES'; filePaths: string[] } // New: Validate dates in files
+  | { type: 'COMMIT_WITH_CONVENTION'; customMessage?: string }; // New: Commit with conventional format
 
 export type GitResponse =
   | { type: 'WORKTREES_SETUP'; worktrees: AgentWorktreeConfig[] }
@@ -38,11 +36,31 @@ export type GitResponse =
   | { type: 'INTEGRATION_STATUS'; ahead: number; behind: number }
   | { type: 'CHANGES_COMMITTED'; commitHash: string }
   | { type: 'CHANGES_PUSHED'; success: boolean }
-  | { type: 'GIT_ERROR'; error: string };
+  | { type: 'GIT_ERROR'; error: string }
+  | { type: 'COMMIT_MESSAGE_GENERATED'; message: string; scope: string; commitType: string } // New
+  | { type: 'DATES_VALIDATED'; issues: DateIssue[] } // New
+  | { type: 'CONVENTIONAL_COMMIT_COMPLETE'; commitHash: string; message: string }; // New
 
 // ============================================================================
 // GIT ACTOR CONTEXT
 // ============================================================================
+
+interface DateIssue {
+  file: string;
+  line: number;
+  date: string;
+  issue: 'future' | 'past' | 'invalid';
+  context: string;
+}
+
+interface CommitMessageConfig {
+  projectTag?: string;
+  agentType?: string;
+  scope?: string;
+  type?: string;
+  description?: string;
+  workCategory?: string;
+}
 
 export interface GitContext {
   git: SimpleGit;
@@ -51,6 +69,9 @@ export interface GitContext {
   uncommittedChanges?: boolean;
   lastError?: string;
   worktrees: AgentWorktreeConfig[];
+  lastCommitMessage?: string; // New: Store generated commit message
+  commitConfig?: CommitMessageConfig; // New: Store commit configuration
+  dateIssues?: DateIssue[]; // New: Store date validation results
 }
 
 export interface AgentWorktreeConfig {
@@ -274,6 +295,189 @@ export const gitActorMachine = setup({
         return false;
       }
     }),
+
+    generateCommitMessage: fromPromise(async ({ input }: { input: { git: SimpleGit } }) => {
+      const { git } = input;
+
+      // Get changed files
+      const changedFiles = await git.raw(['diff', '--cached', '--name-only']).catch(() => '');
+      const files = changedFiles
+        .trim()
+        .split('\n')
+        .filter((f) => f.length > 0);
+
+      // Detect agent type
+      const status = await git.status();
+      const currentBranch = status.current || '';
+      let agentType = 'Unknown Agent';
+      if (currentBranch.includes('agent-a') || currentBranch.includes('architecture')) {
+        agentType = 'Agent A (Architecture)';
+      } else if (currentBranch.includes('agent-b') || currentBranch.includes('implementation')) {
+        agentType = 'Agent B (Implementation)';
+      } else if (currentBranch.includes('agent-c') || currentBranch.includes('test')) {
+        agentType = 'Agent C (Testing/Cleanup)';
+      }
+
+      // Smart commit type detection
+      let commitType = 'feat';
+      let scope = 'core';
+      let description = 'update implementation';
+      let workCategory = 'implementation';
+
+      // Analyze files for commit type
+      const testFiles = files.filter((f) => f.includes('.test.') || f.includes('.spec.'));
+      const docFiles = files.filter((f) => f.endsWith('.md') || f.startsWith('docs/'));
+      const configFiles = files.filter((f) => f.includes('.json') || f.includes('.config.'));
+
+      if (testFiles.length > 0 && testFiles.length === files.length) {
+        commitType = 'test';
+        scope = 'tests';
+        description = 'expand test coverage';
+        workCategory = 'test coverage';
+      } else if (docFiles.length > 0 && docFiles.length === files.length) {
+        commitType = 'docs';
+        scope = 'docs';
+        description = 'update documentation';
+        workCategory = 'documentation';
+      } else if (configFiles.length > 0 && configFiles.length === files.length) {
+        commitType = 'build';
+        scope = 'config';
+        description = 'update configuration';
+        workCategory = 'configuration';
+      }
+
+      // Determine scope based on file patterns
+      if (files.some((f) => f.includes('actor-ref'))) {
+        scope = 'actor-ref';
+        description = 'enhance actor reference system';
+      } else if (files.some((f) => f.includes('cli') || f.includes('command'))) {
+        scope = 'cli';
+        description = 'improve CLI functionality';
+      } else if (files.some((f) => f.includes('git-operations'))) {
+        scope = 'git-operations';
+        description = 'improve git operations';
+      }
+
+      // Detect project tag based on current directory
+      const currentDir = process.cwd();
+      let projectTag = 'actor-web';
+      if (currentDir.includes('agent-workflow-cli')) {
+        projectTag = 'actor-workflow-cli';
+      }
+
+      // Generate conventional commit message
+      const message = `${commitType}(${scope}): ${description}
+
+Agent: ${agentType}
+Files: ${files.slice(0, 5).join(', ')}${files.length > 5 ? '...' : ''}
+Context: Modified ${files.length} files to ${description} for ${workCategory}
+
+[${projectTag}] ${agentType} - ${workCategory}`;
+
+      return { message, scope, commitType, workCategory };
+    }),
+
+    validateDates: fromPromise(
+      async ({ input }: { input: { filePaths: string[]; git: SimpleGit } }) => {
+        const { filePaths } = input;
+        const issues: DateIssue[] = [];
+
+        for (const filePath of filePaths) {
+          try {
+            const content = await import('node:fs').then((fs) =>
+              fs.promises.readFile(filePath, 'utf8')
+            );
+            const lines = content.split('\n');
+
+            lines.forEach((line, index) => {
+              const dateMatch = line.match(/202[0-9]-[0-9]{2}-[0-9]{2}/);
+              if (dateMatch) {
+                const date = dateMatch[0];
+                const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+                  .toISOString()
+                  .split('T')[0];
+                const sevenDaysFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+                  .toISOString()
+                  .split('T')[0];
+
+                // Check for problematic dates
+                if (date < sevenDaysAgo && line.includes('@author')) {
+                  issues.push({
+                    file: filePath,
+                    line: index + 1,
+                    date,
+                    issue: 'past',
+                    context: line.trim(),
+                  });
+                } else if (date > sevenDaysFromNow) {
+                  issues.push({
+                    file: filePath,
+                    line: index + 1,
+                    date,
+                    issue: 'future',
+                    context: line.trim(),
+                  });
+                }
+              }
+            });
+          } catch {
+            // Skip files that can't be read
+          }
+        }
+
+        return issues;
+      }
+    ),
+
+    commitWithConvention: fromPromise(
+      async ({ input }: { input: { customMessage?: string; git: SimpleGit } }) => {
+        const { customMessage, git } = input;
+
+        // Stage all changes
+        await git.add('.');
+
+        let commitMessage = customMessage;
+        if (!commitMessage) {
+          // Generate smart commit message
+          const changedFiles = await git.raw(['diff', '--cached', '--name-only']).catch(() => '');
+          const files = changedFiles
+            .trim()
+            .split('\n')
+            .filter((f) => f.length > 0);
+
+          // Use the same logic as generateCommitMessage
+          const status = await git.status();
+          const currentBranch = status.current || '';
+          let agentType = 'Unknown Agent';
+          if (currentBranch.includes('agent-a') || currentBranch.includes('architecture')) {
+            agentType = 'Agent A (Architecture)';
+          } else if (
+            currentBranch.includes('agent-b') ||
+            currentBranch.includes('implementation')
+          ) {
+            agentType = 'Agent B (Implementation)';
+          } else if (currentBranch.includes('agent-c') || currentBranch.includes('test')) {
+            agentType = 'Agent C (Testing/Cleanup)';
+          }
+
+          const projectTag = process.cwd().includes('agent-workflow-cli')
+            ? 'actor-workflow-cli'
+            : 'actor-web';
+
+          commitMessage = `feat(core): update implementation
+
+Agent: ${agentType}
+Files: ${files.slice(0, 5).join(', ')}${files.length > 5 ? '...' : ''}
+Context: Modified ${files.length} files for implementation work
+
+[${projectTag}] ${agentType} - implementation`;
+        }
+
+        // Commit with the message
+        const result = await git.commit(commitMessage);
+        return { commitHash: result.commit, message: commitMessage };
+      }
+    ),
   },
 }).createMachine({
   id: 'git-actor',
@@ -311,6 +515,15 @@ export const gitActorMachine = setup({
         },
         PUSH_CHANGES: {
           target: 'pushingChanges',
+        },
+        GENERATE_COMMIT_MESSAGE: {
+          target: 'generatingCommitMessage',
+        },
+        VALIDATE_DATES: {
+          target: 'validatingDates',
+        },
+        COMMIT_WITH_CONVENTION: {
+          target: 'committingWithConvention',
         },
       },
     },
@@ -492,6 +705,76 @@ export const gitActorMachine = setup({
         },
       },
     },
+
+    generatingCommitMessage: {
+      invoke: {
+        src: 'generateCommitMessage',
+        input: ({ context }) => ({
+          git: context.git,
+        }),
+        onDone: {
+          target: 'idle',
+          actions: assign({
+            lastCommitMessage: ({ event }) => event.output.message,
+            commitConfig: ({ event }) => ({
+              scope: event.output.scope,
+              type: event.output.commitType,
+              workCategory: event.output.workCategory,
+            }),
+          }),
+        },
+        onError: {
+          target: 'idle',
+          actions: assign({
+            lastError: () => 'Commit message generation failed',
+          }),
+        },
+      },
+    },
+
+    validatingDates: {
+      invoke: {
+        src: 'validateDates',
+        input: ({ event, context }) => ({
+          filePaths: (event as { filePaths: string[] }).filePaths,
+          git: context.git,
+        }),
+        onDone: {
+          target: 'idle',
+          actions: assign({
+            dateIssues: ({ event }) => event.output,
+          }),
+        },
+        onError: {
+          target: 'idle',
+          actions: assign({
+            lastError: () => 'Date validation failed',
+          }),
+        },
+      },
+    },
+
+    committingWithConvention: {
+      invoke: {
+        src: 'commitWithConvention',
+        input: ({ event, context }) => ({
+          customMessage: (event as { customMessage?: string }).customMessage,
+          git: context.git,
+        }),
+        onDone: {
+          target: 'idle',
+          actions: assign({
+            lastCommitMessage: ({ event }) => event.output.message,
+          }),
+        },
+        onError: {
+          target: 'idle',
+          actions: assign({
+            lastError: () => 'Conventional commit failed',
+          }),
+        },
+      },
+    },
   },
 });
 
@@ -500,11 +783,18 @@ export const gitActorMachine = setup({
 // ============================================================================
 
 /**
- * Create a GitActor instance using the actor-web framework
- * [actor-web] TODO: Use createActorRef from main framework once available
+ * Create a GitActor instance using XState directly for CLI use
+ * Ready for production use with enhanced commit and date functionality
  */
-export function createGitActor(_baseDir?: string): ActorRef<GitEvent, GitResponse> {
-  // This will be replaced with proper ActorRef creation once the main framework's
-  // ActorRef implementation is complete
-  throw new Error('[actor-web] TODO: Implement createGitActor using ActorRef from main framework');
+export function createGitActor(baseDir?: string): GitActor {
+  const actor = createActor(gitActorMachine, {
+    input: { baseDir },
+  });
+
+  return {
+    send: (event: GitEvent) => actor.send(event),
+    getSnapshot: () => actor.getSnapshot(),
+    start: () => actor.start(),
+    stop: () => actor.stop(),
+  };
 }

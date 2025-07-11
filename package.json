@@ -44,7 +44,18 @@
     "aw:validate": "pnpm --filter @agent-workflow/cli dev validate",
     "aw:ship": "pnpm --filter @agent-workflow/cli dev ship",
     "aw:save": "pnpm --filter @agent-workflow/cli dev save",
-    "aw:status": "pnpm --filter @agent-workflow/cli dev status"
+    "aw:status": "pnpm --filter @agent-workflow/cli dev status",
+    "date": "./scripts/date-utils.sh current",
+    "date:scan": "./scripts/date-utils.sh scan",
+    "date:fix-all": "./scripts/date-utils.sh fix-all",
+    "commit:config": "./scripts/commit-config.sh validate",
+    "commit:sample": "./scripts/commit-config.sh create-sample",
+    "bridge:status": "./scripts/actor-bridge.sh status",
+    "bridge:commit": "./scripts/actor-bridge.sh commit",
+    "bridge:generate": "./scripts/actor-bridge.sh generate-message",
+    "actor:commit": "pnpm --filter @agent-workflow/cli dev commit",
+    "actor:generate": "pnpm --filter @agent-workflow/cli dev generate-message",
+    "actor:validate-dates": "pnpm --filter @agent-workflow/cli dev validate-dates"
   },
   "keywords": [
     "actor-model",

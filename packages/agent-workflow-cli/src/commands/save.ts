@@ -29,11 +29,20 @@ export async function saveCommand() {
       // Stage all changes
       await git.getGit().add('.');
 
-      // Auto-commit with agent context
+      // Auto-commit with enhanced conventional commit message
       const _currentBranch = await git.getCurrentBranch();
       const agentType = await git.detectAgentType();
-      const timestamp = new Date().toISOString().split('T')[0];
-      const message = `[${agentType}] WIP: ${timestamp}`;
+
+      // Use the enhanced commit message generation from the shell script
+      // For now, fall back to a basic conventional commit format
+      const currentDate = new Date().toISOString().split('T')[0];
+      const message = `feat(save): quick save work in progress
+
+Agent: ${agentType}
+Context: Automated save of work in progress
+Date: ${currentDate}
+
+[actor-web] ${agentType} - quick save`;
 
       await git.getGit().commit(message);
 

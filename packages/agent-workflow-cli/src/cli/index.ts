@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { version } from '../../package.json' assert { type: 'json' };
+import {
+  commitEnhancedCommand,
+  generateCommitMessageCommand,
+  validateDatesCommand,
+} from '../commands/commit-enhanced.js';
 import { initCommand } from '../commands/init.js';
 import { saveCommand } from '../commands/save.js';
 import { shipCommand } from '../commands/ship.js';
@@ -40,6 +45,27 @@ program
   .action(saveCommand);
 
 program.command('status').description('Show agent status and suggestions').action(statusCommand);
+
+// Enhanced actor-based commands
+program
+  .command('commit-enhanced')
+  .alias('commit')
+  .description('🎭 Enhanced conventional commit using actor system')
+  .option('-m, --message <message>', 'custom commit message')
+  .action((options) => commitEnhancedCommand(options.message));
+
+program
+  .command('generate-message')
+  .alias('genmsg')
+  .description('🧠 Generate smart conventional commit message')
+  .action(generateCommitMessageCommand);
+
+program
+  .command('validate-dates')
+  .alias('dates')
+  .description('📅 Validate dates in documentation files')
+  .option('-f, --files <files...>', 'specific files to check')
+  .action((options) => validateDatesCommand(options.files));
 
 // Parse CLI arguments
 program.parse();

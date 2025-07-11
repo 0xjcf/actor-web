@@ -167,45 +167,171 @@ generate_smart_commit_message() {
     local changed_files=$(git diff --cached --name-only 2>/dev/null || git diff --name-only)
     local agent_type=$(get_agent_type)
     local branch=$(get_current_branch)
+    local current_date=$(date +"%Y-%m-%d")
     
-    # Analyze changed files to determine commit type
+    # Load commit configuration
+    source "${BASH_SOURCE%/*}/commit-config.sh"
+    
+    # Count files
+    local file_count=$(echo "$changed_files" | grep -v '^$' | wc -l | tr -d ' ')
+    
+    if [ "$file_count" -eq 0 ]; then
+        echo "chore: no changes detected"
+        return
+    fi
+    
+    # Analyze changed files to determine commit type and scope
     local commit_type="feat"
     local scope=""
     local description=""
+    local work_category="implementation"
     
-    # Determine scope and type based on changed files
-    if echo "$changed_files" | grep -q "\.test\.ts"; then
+    # Advanced file analysis for commit type
+    local has_tests=$(echo "$changed_files" | grep -c "\.test\.ts$\|\.spec\.ts$" || echo "0")
+    local has_docs=$(echo "$changed_files" | grep -c "\.md$\|docs/" || echo "0") 
+    local has_configs=$(echo "$changed_files" | grep -c "\.json$\|\.config\.\|biome\.json\|package\.json\|tsconfig\.json" || echo "0")
+    local has_source=$(echo "$changed_files" | grep -c "\.ts$\|\.tsx$" | awk '{print $1 - 0}')
+    local has_fixes=$(git diff --cached | grep -c "fix\|Fix\|FIX\|bug\|Bug\|BUG" || echo "0")
+    
+    # Determine primary commit type
+    if [ "$has_tests" -gt 0 ] && [ "$has_source" -eq "$has_tests" ]; then
         commit_type="test"
-        scope="tests"
-        description="update test files"
-    elif echo "$changed_files" | grep -q "observables/"; then
-        scope="observables"
-        description="update observable implementation"
-    elif echo "$changed_files" | grep -q "actor-ref"; then
-        scope="actor-ref"
-        description="update actor reference implementation"
-    elif echo "$changed_files" | grep -q "integration/"; then
-        scope="integration"
-        description="update integration adapters"
-    elif echo "$changed_files" | grep -q "core/"; then
-        scope="core"
-        description="update core functionality"
+        work_category="test coverage"
+    elif [ "$has_docs" -gt 0 ] && [ "$has_source" -eq 0 ]; then
+        commit_type="docs" 
+        work_category="documentation"
+    elif [ "$has_configs" -gt 0 ] && [ "$has_source" -eq 0 ]; then
+        commit_type="build"
+        work_category="configuration"
+    elif [ "$has_fixes" -gt 3 ]; then
+        commit_type="fix"
+        work_category="bug fix"
+    elif echo "$changed_files" | grep -q "performance\|perf\|optimization"; then
+        commit_type="perf"
+        work_category="performance optimization"
+    elif git diff --cached | grep -q "refactor\|Refactor\|REFACTOR"; then
+        commit_type="refactor"
+        work_category="code refactoring"
     else
-        scope="general"
-        description="update implementation"
+        commit_type="feat"
+        work_category="implementation"
     fi
     
-    # Count files
-    local file_count=$(echo "$changed_files" | wc -l | tr -d ' ')
+    # Determine scope using configurable scope suggestions
+    scope=$(suggest_commit_scope "$changed_files")
     
-    # Generate final message
+    # Generate description based on scope and commit type
+    case "$scope" in
+        "actor-ref")
+            description="enhance actor reference system"
+            ;;
+        "observables")
+            description="improve observable implementation"
+            ;;
+        "animation")
+            description="update animation services"
+            ;;
+        "accessibility")
+            description="improve accessibility features"
+            ;;
+        "integration")
+            description="update framework integrations"
+            ;;
+        "tests")
+            description="expand test coverage"
+            ;;
+        "docs")
+            description="update documentation"
+            ;;
+        "core")
+            description="enhance core functionality"
+            ;;
+        "services")
+            description="improve service implementations"
+            ;;
+        "components")
+            description="update component implementations"
+            ;;
+        "types")
+            description="update type definitions"
+            ;;
+        "deps")
+            description="update dependencies"
+            ;;
+        "config")
+            description="update configuration"
+            ;;
+        "cli")
+            description="improve CLI functionality"
+            ;;
+        "commands")
+            description="enhance command implementations"
+            ;;
+        "git-operations")
+            description="improve git operations"
+            ;;
+        "validation")
+            description="enhance validation logic"
+            ;;
+        *)
+            # Fallback to agent-specific default descriptions
+            case "$agent_type" in
+                "Agent A (Architecture)")
+                    description="improve system architecture"
+                    ;;
+                "Agent B (Implementation)")
+                    description="enhance feature implementation"
+                    ;;
+                "Agent C (Testing)")
+                    description="improve code validation"
+                    ;;
+                *)
+                    description="update implementation"
+                    ;;
+            esac
+            ;;
+    esac
+    
+    # Generate smart description based on file patterns
+    if [ "$commit_type" = "feat" ]; then
+        if echo "$changed_files" | grep -q "machine\|actor"; then
+            description="implement actor-based functionality"
+        elif echo "$changed_files" | grep -q "service"; then
+            description="add new service capabilities"
+        elif echo "$changed_files" | grep -q "component"; then
+            description="create new component features"
+        fi
+    elif [ "$commit_type" = "fix" ]; then
+        if echo "$changed_files" | grep -q "test"; then
+            description="resolve test failures"
+        elif echo "$changed_files" | grep -q "type"; then
+            description="fix type errors"
+        else
+            description="resolve implementation issues"
+        fi
+    elif [ "$commit_type" = "refactor" ]; then
+        description="improve code structure and readability"
+    fi
+    
+    # Create file summary (max 5 files)
+    local files_summary
+    if [ "$file_count" -le 5 ]; then
+        files_summary=$(echo "$changed_files" | tr '\n' ', ' | sed 's/,$//')
+    else
+        files_summary=$(echo "$changed_files" | head -5 | tr '\n' ', ' | sed 's/,$//'; echo "... +$((file_count - 5)) more")
+    fi
+    
+    # Generate conventional commit message following our standards
+    # Use configurable project tag
+    local project_footer=$(get_commit_footer "$agent_type" "$work_category")
+    
     echo "${commit_type}(${scope}): ${description}
 
-- Updated ${file_count} files for ${agent_type}
-- Branch: ${branch}
-- Files: $(echo "$changed_files" | head -5 | tr '\n' ' ')$([ $file_count -gt 5 ] && echo "...")
+Agent: ${agent_type}
+Files: ${files_summary}
+Context: Modified ${file_count} files to ${description} for ${work_category}
 
-[actor-web] ${agent_type} - automated commit"
+${project_footer}"
 }
 
 auto_commit_changes() {

@@ -27,10 +27,18 @@ export async function shipCommand() {
         // Stage all changes
         await git.getGit().add('.');
 
-        // Auto-commit with agent context
+        // Auto-commit with enhanced conventional commit message
         const _currentBranch = await git.getCurrentBranch();
         const agentType = await git.detectAgentType();
-        const message = `[${agentType}] Auto-save: ${new Date().toISOString().split('T')[0]}`;
+        const currentDate = new Date().toISOString().split('T')[0];
+
+        const message = `feat(ship): auto-save before shipping
+
+Agent: ${agentType}
+Context: Automated commit before shipping to integration
+Date: ${currentDate}
+
+[actor-web] ${agentType} - pre-ship save`;
 
         await git.getGit().commit(message);
         console.log(chalk.green(`✅ Committed changes: ${message}`));
