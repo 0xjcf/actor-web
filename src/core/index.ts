@@ -25,8 +25,14 @@ export { AnimationPresets, AnimationServices } from './animation-services.js';
 export type { AriaMapping, AriaObserverOptions } from './aria-observer.js';
 // ♿ Accessibility Features
 export { AriaObserver } from './aria-observer.js';
-// 🛠️ Development Tools
-export { enableDevMode, inspectTemplate, registerMachine } from './dev-mode.js';
+// 🛠️ Development Tools & Logger
+export {
+  enableDevMode,
+  inspectTemplate,
+  registerMachine,
+  Logger,
+  type ScopedLogger,
+} from './dev-mode.js';
 export type {
   FieldValidationConfig,
   FormValidationConfig,
@@ -113,3 +119,24 @@ export type {
 // ⏱️ Timer Services
 export { TimerMachines, TimerServices } from './timer-services.js';
 // export * from './types.js'; // File doesn't exist yet
+
+// ===== NAMESPACE SYSTEM =====
+export {
+  NAMESPACES,
+  TIMER_NAMESPACES,
+  EVENT_NAMESPACES,
+  COMPONENT_NAMESPACES,
+  STATE_NAMESPACES,
+  UTILITY_NAMESPACES,
+  API_NAMESPACES,
+  TEST_NAMESPACES,
+  DEV_NAMESPACES,
+  USER_NAMESPACES,
+  UI_NAMESPACES,
+  NAMESPACE_PATTERNS,
+  getAllNamespaceValues,
+  isValidNamespace,
+  createCustomNamespace,
+  type NamespaceValue,
+  type NamespaceParam,
+} from './namespace-constants.js';

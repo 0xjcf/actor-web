@@ -222,7 +222,23 @@ See [ROADMAP.md](./docs/ROADMAP.md) for detailed timeline.
 
 ## 📚 Documentation
 
-- [Implementation Guide](./IMPLEMENTATION.md)
+### **Getting Started**
+- [Testing Guide](docs/TESTING-GUIDE.md) - Comprehensive testing patterns and best practices
+- [Implementation Plan](docs/AGENT-A-IMPLEMENTATION-PLAN.md) - Current development status and next steps
+
+### **Development & Debugging** *(New!)*
+- [🐛 Debugging Guide](docs/DEBUGGING-GUIDE.md) - **Essential debugging techniques and Logger infrastructure**
+- [🎉 Timer Services Knowledge Share](docs/KNOWLEDGE-SHARE-TIMER-SERVICES.md) - **Major breakthrough documentation**
+
+### **Architecture**
+- [Component Bridge Design](docs/architecture/component-bridge-design.md)
+- [Actor Registry Design](docs/architecture/actor-registry-design.md)
+- [Supervision Patterns](docs/architecture/supervision-patterns.md)
+
+### **Framework Roadmap**
+- [Framework Roadmap](docs/FRAMEWORK_ROADMAP.md) - Long-term vision and milestones
+- [Next Actions](docs/AGENT-A-NEXT-ACTIONS.md) - Immediate development priorities
+
 - [🤖 Agent Workflow Guide](./docs/AGENT-WORKFLOW-GUIDE.md) - **Complete guide to parallel agent development**
 - [Architecture Docs](./docs/architecture/)
 - [API Reference](./src/API.md)

@@ -4,7 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createActor, setup } from 'xstate';
+import { createActor, sendTo, setup } from 'xstate';
 import {
   createAnimationFrameService,
   createDebounceService,
@@ -322,9 +322,12 @@ describe('Timer Services', () => {
               invoke: {
                 src: 'interval',
                 input: { interval: 1000 },
+                id: 'intervalService',
               },
               on: {
-                STOP_POLLING: { actions: () => {} },
+                STOP_POLLING: {
+                  actions: sendTo('intervalService', { type: 'STOP' }),
+                },
                 CANCELLED: { target: 'stopped', actions: cancelledHandler },
               },
             },
@@ -556,9 +559,12 @@ describe('Timer Services', () => {
               invoke: {
                 src: 'debounce',
                 input: { delay: 300 },
+                id: 'debounceService',
               },
               on: {
-                INPUT: { actions: () => {} },
+                INPUT: {
+                  actions: sendTo('debounceService', { type: 'RESET' }),
+                },
                 DEBOUNCE_COMPLETE: { target: 'idle', actions: executeHandler },
               },
             },
@@ -580,7 +586,7 @@ describe('Timer Services', () => {
         expect(executeHandler).not.toHaveBeenCalled();
 
         // Should execute after second delay
-        vi.advanceTimersByTime(100); // 300ms from second input
+        vi.advanceTimersByTime(200); // 300ms from second input (200ms + 200ms = 500ms total)
         expect(executeHandler).toHaveBeenCalled();
       });
     });
@@ -647,12 +653,16 @@ describe('Timer Services', () => {
               },
             },
             throttling: {
+              entry: sendTo('throttleService', { type: 'TRIGGER' }),
               invoke: {
                 src: 'throttle',
                 input: { interval: 100, leading: true, trailing: true },
+                id: 'throttleService',
               },
               on: {
-                TRIGGER: 'throttling',
+                TRIGGER: {
+                  actions: sendTo('throttleService', { type: 'TRIGGER' }),
+                },
                 THROTTLE_EXECUTE: { actions: executeHandler },
                 THROTTLE_COMPLETE: 'ready',
               },
@@ -692,12 +702,16 @@ describe('Timer Services', () => {
               },
             },
             throttling: {
+              entry: sendTo('throttleService', { type: 'TRIGGER' }),
               invoke: {
                 src: 'throttle',
                 input: { interval: 200, leading: false, trailing: true },
+                id: 'throttleService',
               },
               on: {
-                TRIGGER: 'throttling',
+                TRIGGER: {
+                  actions: sendTo('throttleService', { type: 'TRIGGER' }),
+                },
                 THROTTLE_EXECUTE: { actions: executeHandler },
                 THROTTLE_COMPLETE: 'ready',
               },
@@ -719,7 +733,7 @@ describe('Timer Services', () => {
     });
 
     describe('Multiple triggers behavior', () => {
-      it('handles rapid succession of triggers correctly', () => {
+      it('handles rapid succession of triggers correctly', async () => {
         const throttleService = createThrottleService();
         const executeHandler = vi.fn();
 
@@ -734,12 +748,16 @@ describe('Timer Services', () => {
               },
             },
             throttling: {
+              entry: sendTo('throttleService', { type: 'TRIGGER' }),
               invoke: {
                 src: 'throttle',
                 input: { interval: 300, leading: true, trailing: true },
+                id: 'throttleService',
               },
               on: {
-                TRIGGER: 'throttling',
+                TRIGGER: {
+                  actions: sendTo('throttleService', { type: 'TRIGGER' }),
+                },
                 THROTTLE_EXECUTE: { actions: executeHandler },
                 THROTTLE_COMPLETE: 'ready',
               },
@@ -767,6 +785,10 @@ describe('Timer Services', () => {
 
         // Trailing execution after interval
         vi.advanceTimersByTime(150); // Complete the 300ms interval
+
+        // Wait for microtasks to process (for queueMicrotask in throttle service)
+        await vi.runAllTimersAsync();
+
         expect(executeHandler).toHaveBeenCalledTimes(2);
       });
     });
@@ -776,18 +798,20 @@ describe('Timer Services', () => {
     describe('Cleanup behavior', () => {
       it('cleans up timers when actor is stopped', () => {
         const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
-        const delayService = createDelayService();
+        const debounceService = createDebounceService();
 
         const machine = setup({
-          actors: { delay: delayService },
+          actors: { debounce: debounceService },
         }).createMachine({
           initial: 'waiting',
           states: {
             waiting: {
               invoke: {
-                src: 'delay',
+                src: 'debounce',
                 input: { delay: 1000 },
-                onDone: 'completed',
+              },
+              on: {
+                DEBOUNCE_COMPLETE: 'completed',
               },
             },
             completed: { type: 'final' },
@@ -797,7 +821,7 @@ describe('Timer Services', () => {
         const actor = createActor(machine);
         actor.start();
 
-        // Stop actor before delay completes
+        // Stop actor before debounce completes
         actor.stop();
 
         // Verify cleanup occurred
@@ -909,9 +933,12 @@ describe('Timer Services', () => {
             invoke: {
               src: 'throttle',
               input: { interval: 5000, leading: false, trailing: true },
+              id: 'throttleService',
             },
             on: {
-              CONTENT_CHANGE: 'saving',
+              CONTENT_CHANGE: {
+                actions: sendTo('throttleService', { type: 'TRIGGER' }),
+              },
               THROTTLE_EXECUTE: {
                 target: 'editing',
                 actions: saveHandler,

@@ -3,9 +3,8 @@
  * Provides better DX with runtime validation and enhanced error messages
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any, unicorn/prefer-for-of */
-
 import type { AnyStateMachine } from 'xstate';
+import type { NamespaceParam } from './namespace-constants.js';
 
 let isDevModeEnabled = false;
 const registeredMachines = new Map<string, AnyStateMachine>();
@@ -393,6 +392,104 @@ export interface ActorPatterns {
   ariaAttributes: string[];
   payloads: string[];
 }
+
+// ===== LOGGER UTILITY =====
+
+/**
+ * Scoped logger interface for a specific namespace
+ */
+export interface ScopedLogger {
+  debug: (message: string, data?: unknown) => void;
+  info: (message: string, data?: unknown) => void;
+  warn: (message: string, data?: unknown) => void;
+  error: (message: string, error?: unknown) => void;
+  group: (title: string) => void;
+  groupEnd: () => void;
+}
+
+/**
+ * Simple logger utility for development debugging
+ *
+ * Supports both namespace constants and custom strings:
+ * ```typescript
+ * import { NAMESPACES } from './namespace-constants';
+ *
+ * // Using constants (recommended)
+ * Logger.debug(NAMESPACES.TIMER.THROTTLE, 'Processing', data);
+ *
+ * // Using custom strings (still supported)
+ * Logger.debug('CUSTOM_SERVICE', 'Processing', data);
+ * ```
+ */
+export const Logger = {
+  debug: (namespace: NamespaceParam, message: string, data?: unknown) => {
+    if (isDevModeEnabled && typeof console !== 'undefined') {
+      console.log(`🐛 [${namespace}] ${message}`, data ? data : '');
+    }
+  },
+
+  info: (namespace: NamespaceParam, message: string, data?: unknown) => {
+    if (typeof console !== 'undefined') {
+      console.log(`ℹ️  [${namespace}] ${message}`, data ? data : '');
+    }
+  },
+
+  warn: (namespace: NamespaceParam, message: string, data?: unknown) => {
+    if (typeof console !== 'undefined') {
+      console.warn(`⚠️  [${namespace}] ${message}`, data ? data : '');
+    }
+  },
+
+  error: (namespace: NamespaceParam, message: string, error?: unknown) => {
+    if (typeof console !== 'undefined') {
+      console.error(`❌ [${namespace}] ${message}`, error ? error : '');
+    }
+  },
+
+  group: (namespace: NamespaceParam, title: string) => {
+    if (isDevModeEnabled && typeof console !== 'undefined') {
+      console.group(`🔍 [${namespace}] ${title}`);
+    }
+  },
+
+  groupEnd: () => {
+    if (isDevModeEnabled && typeof console !== 'undefined') {
+      console.groupEnd();
+    }
+  },
+
+  /**
+   * Create a scoped logger for a specific namespace
+   * @param namespace - The namespace to use for all log messages (constant or custom string)
+   * @returns A scoped logger that doesn't require passing namespace each time
+   *
+   * @example
+   * ```typescript
+   * import { NAMESPACES } from './namespace-constants';
+   *
+   * // Using constants (recommended)
+   * const log = Logger.namespace(NAMESPACES.TIMER.THROTTLE);
+   *
+   * // Using custom strings (still supported)
+   * const log = Logger.namespace('CUSTOM_SERVICE');
+   *
+   * // Usage is identical
+   * log.debug('Service created', { interval: 100 });
+   * log.warn('Unexpected state', { state: 'invalid' });
+   * log.group('Complex Operation');
+   * log.debug('Step 1 complete');
+   * log.groupEnd();
+   * ```
+   */
+  namespace: (namespace: NamespaceParam): ScopedLogger => ({
+    debug: (message: string, data?: unknown) => Logger.debug(namespace, message, data),
+    info: (message: string, data?: unknown) => Logger.info(namespace, message, data),
+    warn: (message: string, data?: unknown) => Logger.warn(namespace, message, data),
+    error: (message: string, error?: unknown) => Logger.error(namespace, message, error),
+    group: (title: string) => Logger.group(namespace, title),
+    groupEnd: () => Logger.groupEnd(),
+  }),
+};
 
 // Development mode detection
 if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {

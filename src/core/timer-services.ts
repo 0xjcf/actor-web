@@ -7,8 +7,9 @@
  * Part of Phase 0.7 Reactive Infrastructure
  */
 
-import type { AnyEventObject } from 'xstate';
-import { fromCallback, fromPromise, setup } from 'xstate';
+import { type AnyEventObject, fromCallback, fromPromise, setup } from 'xstate';
+import { Logger } from './dev-mode.js';
+import { NAMESPACES } from './namespace-constants.js';
 
 // ===== TYPE DEFINITIONS =====
 
@@ -59,7 +60,7 @@ export interface ThrottleOptions {
 
 /**
  * Create a delay service for state machines
- * Replaces setTimeout with XState delay
+ * Replaces setTimeout with XState promise service
  *
  * @example
  * ```typescript
@@ -72,8 +73,10 @@ export interface ThrottleOptions {
  *     waiting: {
  *       invoke: {
  *         src: 'delay',
- *         input: { delay: 1000 },
- *         onDone: 'completed'
+ *         input: { duration: 1000, data: { reason: 'cooldown' } }
+ *       },
+ *       on: {
+ *         DELAY_COMPLETE: 'ready'
  *       }
  *     }
  *   }
@@ -81,10 +84,16 @@ export interface ThrottleOptions {
  * ```
  */
 export const createDelayService = () => {
-  return fromPromise<void, DelayOptions>(async ({ input }) => {
-    return new Promise<void>((resolve) => {
-      setTimeout(() => resolve(), input.delay);
-    });
+  return fromPromise<{ type: 'DELAY_COMPLETE'; data: unknown }, DelayOptions>(async ({ input }) => {
+    const { delay, data } = input;
+
+    const log = Logger.namespace(NAMESPACES.TIMER.DELAY);
+    log.debug('Service created', { delay, data });
+
+    await new Promise((resolve) => setTimeout(resolve, delay));
+
+    log.debug('Delay complete', { delay, data });
+    return { type: 'DELAY_COMPLETE', data: data || null };
   });
 };
 
@@ -121,8 +130,12 @@ export const createIntervalService = () => {
     let tickCount = 0;
     const { interval, immediate, maxTicks, data } = input;
 
+    const log = Logger.namespace(NAMESPACES.TIMER.INTERVAL);
+    log.debug('Service created', { interval, immediate, maxTicks, data });
+
     // Send immediate tick if requested
     if (immediate) {
+      log.debug('Sending immediate tick', { tickCount });
       sendBack({
         type: 'TICK',
         count: tickCount++,
@@ -131,12 +144,15 @@ export const createIntervalService = () => {
 
       // Check if we've reached max ticks
       if (maxTicks && tickCount >= maxTicks) {
+        log.debug('Max ticks reached on immediate', { tickCount, maxTicks });
         sendBack({ type: 'COMPLETE', totalTicks: tickCount });
         return;
       }
     }
 
+    log.debug('Starting interval', { interval });
     const intervalId = setInterval(() => {
+      log.debug('Interval tick', { tickCount, maxTicks });
       sendBack({
         type: 'TICK',
         count: tickCount++,
@@ -145,6 +161,7 @@ export const createIntervalService = () => {
 
       // Check if we've reached max ticks
       if (maxTicks && tickCount >= maxTicks) {
+        log.debug('Max ticks reached, stopping', { tickCount, maxTicks });
         clearInterval(intervalId);
         sendBack({ type: 'COMPLETE', totalTicks: tickCount });
       }
@@ -152,7 +169,9 @@ export const createIntervalService = () => {
 
     // Handle stop events
     receive((event) => {
+      log.debug('Received event', { type: event.type });
       if (event.type === 'STOP' || event.type === 'CANCEL') {
+        log.debug('Stopping interval', { tickCount });
         clearInterval(intervalId);
         sendBack({ type: 'CANCELLED', totalTicks: tickCount });
       }
@@ -160,6 +179,7 @@ export const createIntervalService = () => {
 
     // Cleanup function
     return () => {
+      log.debug('Cleanup called', { tickCount });
       clearInterval(intervalId);
     };
   });
@@ -204,11 +224,18 @@ export const createAnimationFrameService = () => {
     let rafId: number;
     let stopped = false;
 
+    const log = Logger.namespace(NAMESPACES.TIMER.ANIMATION_FRAME);
+    log.debug('Service created', { maxDuration, targetFPS, frameInterval });
+
     const animate = (currentTime: number) => {
-      if (stopped) return;
+      if (stopped) {
+        log.debug('Animation stopped, exiting');
+        return;
+      }
 
       if (!startTime) {
         startTime = currentTime;
+        log.debug('Animation started', { startTime });
       }
 
       const elapsed = currentTime - startTime;
@@ -217,6 +244,7 @@ export const createAnimationFrameService = () => {
       // Throttle to target FPS
       if (deltaTime >= frameInterval) {
         frameCount++;
+        log.debug('Frame rendered', { frameCount, elapsed, deltaTime });
 
         sendBack({
           type: 'FRAME',
@@ -232,6 +260,11 @@ export const createAnimationFrameService = () => {
 
       // Check if we've reached max duration
       if (maxDuration && elapsed >= maxDuration) {
+        log.debug('Max duration reached', {
+          elapsed,
+          maxDuration,
+          frameCount,
+        });
         sendBack({
           type: 'ANIMATION_COMPLETE',
           totalFrames: frameCount,
@@ -244,11 +277,14 @@ export const createAnimationFrameService = () => {
     };
 
     // Start animation
+    log.debug('Starting animation loop');
     rafId = requestAnimationFrame(animate);
 
     // Handle stop events
     receive((event) => {
+      log.debug('Received event', { type: event.type });
       if (event.type === 'STOP' || event.type === 'CANCEL') {
+        log.debug('Stopping animation', { frameCount });
         stopped = true;
         cancelAnimationFrame(rafId);
         sendBack({
@@ -261,6 +297,7 @@ export const createAnimationFrameService = () => {
 
     // Cleanup function
     return () => {
+      log.debug('Cleanup called', { frameCount, stopped });
       stopped = true;
       cancelAnimationFrame(rafId);
     };
@@ -307,15 +344,21 @@ export const createDebounceService = () => {
     let maxWaitTimeoutId: ReturnType<typeof setTimeout> | undefined;
     let startTime = Date.now();
 
+    const log = Logger.namespace(NAMESPACES.TIMER.DEBOUNCE);
+    log.debug('Service created', { delay, maxWait });
+
     const execute = () => {
+      const waitTime = Date.now() - startTime;
+      log.debug('Executing', { waitTime });
       if (maxWaitTimeoutId) {
         clearTimeout(maxWaitTimeoutId);
       }
-      sendBack({ type: 'DEBOUNCE_COMPLETE', waitTime: Date.now() - startTime });
+      sendBack({ type: 'DEBOUNCE_COMPLETE', waitTime });
     };
 
     const scheduleExecution = () => {
       clearTimeout(timeoutId);
+      log.debug('Scheduling execution', { delay });
       timeoutId = setTimeout(execute, delay);
     };
 
@@ -324,21 +367,26 @@ export const createDebounceService = () => {
 
     // Set max wait timeout if specified
     if (maxWait) {
+      log.debug('Setting max wait timeout', { maxWait });
       maxWaitTimeoutId = setTimeout(execute, maxWait);
     }
 
     // Handle reset events
     receive((event) => {
+      log.debug('Received event', { type: event.type });
       if (event.type === 'RESET') {
         startTime = Date.now();
+        log.debug('Resetting debounce timer', { startTime });
         scheduleExecution();
 
         // Reset max wait timeout
         if (maxWait) {
           if (maxWaitTimeoutId) clearTimeout(maxWaitTimeoutId);
           maxWaitTimeoutId = setTimeout(execute, maxWait);
+          log.debug('Reset max wait timeout', { maxWait });
         }
       } else if (event.type === 'CANCEL') {
+        log.debug('Cancelling debounce');
         clearTimeout(timeoutId);
         if (maxWaitTimeoutId) clearTimeout(maxWaitTimeoutId);
         sendBack({ type: 'DEBOUNCE_CANCELLED' });
@@ -347,6 +395,7 @@ export const createDebounceService = () => {
 
     // Cleanup function
     return () => {
+      log.debug('Cleanup called');
       clearTimeout(timeoutId);
       if (maxWaitTimeoutId) clearTimeout(maxWaitTimeoutId);
     };
@@ -394,46 +443,80 @@ export const createThrottleService = () => {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     let pendingExecution = false;
 
+    const log = Logger.namespace(NAMESPACES.TIMER.THROTTLE);
+    log.debug('Service created', { interval, leading, trailing });
+
     const execute = () => {
-      lastExecutionTime = Date.now();
+      lastExecutionTime = performance.now();
       pendingExecution = false;
+      log.debug('Executing', { lastExecutionTime, pendingExecution });
+      log.debug('Sending THROTTLE_EXECUTE');
       sendBack({ type: 'THROTTLE_EXECUTE' });
     };
 
     const scheduleTrailingExecution = () => {
-      if (trailing && !timeoutId) {
-        const timeToWait = interval - (Date.now() - lastExecutionTime);
+      if (trailing && !timeoutId && pendingExecution) {
+        const timeToWait = interval - (performance.now() - lastExecutionTime);
+        log.debug('Scheduling trailing execution', { timeToWait, interval });
         timeoutId = setTimeout(
           () => {
             timeoutId = undefined;
+            log.debug('Trailing timeout fired', { pendingExecution });
             if (pendingExecution) {
               execute();
-              sendBack({ type: 'THROTTLE_COMPLETE' });
+              // Defer THROTTLE_COMPLETE to let THROTTLE_EXECUTE action process first
+              log.debug('Deferring THROTTLE_COMPLETE to avoid race condition');
+              queueMicrotask(() => {
+                log.debug('Sending deferred THROTTLE_COMPLETE');
+                sendBack({ type: 'THROTTLE_COMPLETE' });
+              });
             }
           },
           Math.max(0, timeToWait)
         );
+      } else {
+        log.debug('Not scheduling trailing', {
+          trailing,
+          hasTimeout: !!timeoutId,
+          pendingExecution,
+        });
       }
     };
 
     // Handle trigger events
     receive((event) => {
+      log.debug('Received event', { type: event.type });
       if (event.type === 'TRIGGER') {
-        const now = Date.now();
+        const now = performance.now();
         const timeSinceLastExecution = now - lastExecutionTime;
 
-        if (timeSinceLastExecution >= interval) {
-          // Can execute immediately
+        log.debug('Processing TRIGGER', {
+          now,
+          lastExecutionTime,
+          timeSinceLastExecution,
+          interval,
+          canExecute: timeSinceLastExecution >= interval || lastExecutionTime === 0,
+        });
+
+        if (timeSinceLastExecution >= interval || lastExecutionTime === 0) {
+          // Can execute immediately (leading edge or first execution)
           if (leading) {
+            log.debug('Executing immediately (leading=true)');
             execute();
+          } else {
+            // If leading is false, mark pending for trailing execution
+            log.debug('Marking pending for trailing (leading=false)');
+            pendingExecution = true;
           }
           scheduleTrailingExecution();
         } else {
           // Mark that we have a pending execution
+          log.debug('Marking pending execution (within throttle window)');
           pendingExecution = true;
           scheduleTrailingExecution();
         }
       } else if (event.type === 'CANCEL') {
+        log.debug('Cancelling throttle');
         if (timeoutId) {
           clearTimeout(timeoutId);
           timeoutId = undefined;
@@ -443,13 +526,9 @@ export const createThrottleService = () => {
       }
     });
 
-    // Initial leading execution if configured
-    if (leading) {
-      execute();
-    }
-
     // Cleanup function
     return () => {
+      log.debug('Cleanup called');
       if (timeoutId) {
         clearTimeout(timeoutId);
       }

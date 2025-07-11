@@ -63,6 +63,15 @@ export {
 // Testing Utilities
 export * from './testing.js';
 
+// Development & Debugging
+export {
+  enableDevMode,
+  inspectTemplate,
+  validateTemplate,
+  Logger,
+  type ScopedLogger,
+} from './core/dev-mode.js';
+
 // Re-export commonly used XState types for convenience
 export type {
   EventObject,

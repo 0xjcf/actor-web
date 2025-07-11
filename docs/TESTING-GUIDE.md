@@ -932,3 +932,219 @@ export const queryMachine = setup({
 ---
 
 *Remember: Good tests enable refactoring with confidence. Focus on behavior, not implementation!*
+
+## 🐛 **Debugging and Logging**
+
+### **Logger Infrastructure**
+
+The Actor-Web framework provides a production-ready logging system for debugging tests and runtime issues.
+
+#### **Basic Logger Usage**
+
+```typescript
+import { Logger } from '@actor-web/core';
+
+// Basic logging with namespace
+Logger.debug('COMPONENT', 'Component initialized', { props });
+Logger.info('SERVICE', 'Processing request', { requestId });
+Logger.warn('VALIDATION', 'Invalid input detected', { field: 'email' });
+Logger.error('API', 'Request failed', error);
+```
+
+#### **Scoped Logger (Recommended)**
+
+For cleaner code, create a scoped logger for your component/service:
+
+```typescript
+import { Logger } from '@actor-web/core';
+
+// Create a scoped logger
+const log = Logger.namespace('THROTTLE_SERVICE');
+
+// Use without repeating namespace
+log.debug('Service created', { interval: 100 });
+log.debug('Processing trigger', { timeSinceLastExecution });
+log.warn('Throttle window exceeded');
+log.error('Service failed', error);
+
+// Grouped logging for complex operations
+log.group('Complex Operation');
+log.debug('Step 1 complete');
+log.debug('Step 2 complete');
+log.groupEnd();
+```
+
+#### **Development Mode Integration**
+
+```typescript
+import { enableDevMode, Logger } from '@actor-web/core';
+
+// In test files, enable dev mode for debug logging
+enableDevMode();
+
+// In production, only info/warn/error logs show
+// In development, debug logs also show
+
+const log = Logger.namespace('MY_COMPONENT');
+log.debug('This only shows in dev mode');
+log.info('This always shows');
+```
+
+### **Debugging Test Failures**
+
+#### **Timer Services Example**
+
+```typescript
+// ❌ Before: Hard to debug
+it('throttle should work', () => {
+  const service = createThrottleService();
+  // ... test logic
+  expect(handler).toHaveBeenCalledTimes(2); // Fails - why?
+});
+
+// ✅ After: Easy to debug with scoped logging
+it('throttle should work', async () => {
+  const service = createThrottleService(); // Logs: "Service created"
+  
+  actor.send({ type: 'TRIGGER' }); // Logs: "Received event", "Executing"
+  
+  vi.advanceTimersByTime(300); // Logs: "Trailing timeout fired"
+  await vi.runAllTimersAsync(); // Wait for microtasks
+  
+  expect(handler).toHaveBeenCalledTimes(2);
+});
+```
+
+#### **Async Test Patterns**
+
+```typescript
+// ✅ Handle microtasks properly
+it('should handle async operations', async () => {
+  // ... trigger async operation
+  
+  // Wait for microtasks (queueMicrotask, Promise.resolve, etc.)
+  await vi.runAllTimersAsync();
+  
+  // Or wait for specific conditions
+  await vi.waitFor(() => {
+    expect(handler).toHaveBeenCalled();
+  });
+});
+```
+
+#### **Race Condition Debugging**
+
+```typescript
+// ✅ Debug XState event race conditions
+const machine = setup({
+  actors: { service }
+}).createMachine({
+  states: {
+    active: {
+      on: {
+        // ❌ This creates a race condition
+        EVENT: { 
+          actions: [doAction, sendEvent] 
+        }
+        
+        // ✅ This defers the event properly
+        EVENT: { 
+          actions: doAction
+        },
+        // Handle completion separately
+        COMPLETE: 'nextState'
+      }
+    }
+  }
+});
+```
+
+### **Common Debugging Scenarios**
+
+#### **Service Not Receiving Events**
+
+```typescript
+// Debug service communication
+const log = Logger.namespace('SERVICE');
+
+receive((event) => {
+  log.debug('Received event', { type: event.type, data: event });
+  // ... handle event
+});
+
+// In test machine
+on: {
+  TRIGGER: {
+    actions: [
+      sendTo('service', { type: 'TRIGGER' }),
+      () => log.debug('Sent TRIGGER to service')
+    ]
+  }
+}
+```
+
+#### **Timing Issues**
+
+```typescript
+// ❌ Don't rely on exact timing
+expect(handler).toHaveBeenCalledAt(100); // Brittle
+
+// ✅ Test the behavior, not timing
+vi.advanceTimersByTime(100);
+await vi.runAllTimersAsync();
+expect(handler).toHaveBeenCalled(); // Robust
+```
+
+#### **State Machine Debugging**
+
+```typescript
+// Add logging to actions
+const machine = setup({
+  actions: {
+    logTransition: ({ context, event }) => {
+      log.debug('State transition', { 
+        from: context.previousState,
+        event: event.type,
+        to: context.currentState 
+      });
+    }
+  }
+}).createMachine({
+  on: {
+    '*': { actions: 'logTransition' }
+  }
+});
+```
+
+### **Production Debugging**
+
+#### **Conditional Logging**
+
+```typescript
+// Only log in specific environments
+const log = Logger.namespace('PRODUCTION_SERVICE');
+
+if (process.env.NODE_ENV === 'development') {
+  log.debug('Detailed debug info', complexObject);
+}
+
+// Always log important events
+log.info('User action', { userId, action });
+log.error('Critical failure', error);
+```
+
+#### **Performance Monitoring**
+
+```typescript
+const log = Logger.namespace('PERFORMANCE');
+
+const start = performance.now();
+await heavyOperation();
+const duration = performance.now() - start;
+
+log.info('Operation completed', { duration, operationType: 'heavy' });
+
+if (duration > 1000) {
+  log.warn('Slow operation detected', { duration });
+}
+```
