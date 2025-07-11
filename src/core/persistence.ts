@@ -358,7 +358,9 @@ export const createStorageService = () => {
             }
           }
 
-          keysToRemove.forEach((storageKey) => storage.removeItem(storageKey));
+          for (const storageKey of keysToRemove) {
+            storage.removeItem(storageKey);
+          }
 
           sendBack({
             type: 'STORAGE_SUCCESS',
@@ -716,7 +718,7 @@ export const StorageUtils = {
    * Get available storage quota information
    */
   async getQuota(): Promise<{ usage: number; quota: number; percentage: number }> {
-    if ('storage' in navigator && 'estimate' in navigator.storage) {
+    if ('storage' in navigator && navigator.storage && 'estimate' in navigator.storage) {
       const estimate = await navigator.storage.estimate();
       const usage = estimate.usage || 0;
       const quota = estimate.quota || 0;
@@ -772,10 +774,10 @@ export const StorageUtils = {
       }
     }
 
-    keysToRemove.forEach((key) => {
+    for (const key of keysToRemove) {
       localStorage.removeItem(key);
       cleanedCount++;
-    });
+    }
 
     return cleanedCount;
   },

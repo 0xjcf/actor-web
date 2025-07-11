@@ -172,7 +172,8 @@ describe('Timer Services', () => {
               count: 0,
               data: 'test-data',
             }),
-          })
+          }),
+          undefined
         );
 
         vi.advanceTimersByTime(500);
@@ -184,7 +185,8 @@ describe('Timer Services', () => {
               count: 1,
               data: 'test-data',
             }),
-          })
+          }),
+          undefined
         );
       });
     });
@@ -222,7 +224,8 @@ describe('Timer Services', () => {
               type: 'TICK',
               count: 0,
             }),
-          })
+          }),
+          undefined
         );
       });
     });
@@ -262,7 +265,8 @@ describe('Timer Services', () => {
               type: 'COMPLETE',
               totalTicks: 3,
             }),
-          })
+          }),
+          undefined
         );
       });
 
@@ -298,7 +302,8 @@ describe('Timer Services', () => {
               type: 'COMPLETE',
               totalTicks: 1,
             }),
-          })
+          }),
+          undefined
         );
       });
     });
@@ -338,7 +343,8 @@ describe('Timer Services', () => {
             event: expect.objectContaining({
               type: 'CANCELLED',
             }),
-          })
+          }),
+          undefined
         );
       });
     });
@@ -394,7 +400,8 @@ describe('Timer Services', () => {
               elapsed: expect.any(Number),
               deltaTime: expect.any(Number),
             }),
-          })
+          }),
+          undefined
         );
       });
 
@@ -430,7 +437,8 @@ describe('Timer Services', () => {
             event: expect.objectContaining({
               data: 'animation-data',
             }),
-          })
+          }),
+          undefined
         );
       });
     });
@@ -471,7 +479,8 @@ describe('Timer Services', () => {
               totalFrames: expect.any(Number),
               totalTime: expect.any(Number),
             }),
-          })
+          }),
+          undefined
         );
       });
     });
@@ -524,7 +533,8 @@ describe('Timer Services', () => {
               type: 'DEBOUNCE_COMPLETE',
               waitTime: expect.any(Number),
             }),
-          })
+          }),
+          undefined
         );
       });
 

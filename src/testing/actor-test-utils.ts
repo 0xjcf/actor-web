@@ -747,10 +747,11 @@ export const templateTestUtils = {
     }
   },
 
-  expectTemplateContains: (template: string, expectedParts: string[]) => {
+  expectTemplateContains: (template: string | { html: string }, expectedParts: string[]) => {
+    const templateString = typeof template === 'string' ? template : template.html;
     for (const part of expectedParts) {
-      if (!template.includes(part)) {
-        throw new Error(`Expected template to contain "${part}", but got: ${template}`);
+      if (!templateString.includes(part)) {
+        throw new Error(`Expected template to contain "${part}", but got: ${templateString}`);
       }
     }
   },
@@ -763,7 +764,8 @@ export const templateTestUtils = {
     }
   },
 
-  expectEscaped: (template: string, originalContent: string) => {
+  expectEscaped: (template: string | { html: string }, originalContent: string) => {
+    const templateString = typeof template === 'string' ? template : template.html;
     // Check that dangerous content is properly escaped
     const escapedContent = originalContent
       .replace(/&/g, '&amp;')
@@ -772,7 +774,7 @@ export const templateTestUtils = {
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
 
-    if (!template.includes(escapedContent) && template.includes(originalContent)) {
+    if (!templateString.includes(escapedContent) && templateString.includes(originalContent)) {
       throw new Error(
         `Expected "${originalContent}" to be escaped in template, but found unescaped content`
       );
