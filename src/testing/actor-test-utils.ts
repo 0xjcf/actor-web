@@ -195,23 +195,343 @@ export function createMockActorRef<T extends EventObject = EventObject>(
 }
 
 /**
- * Test environment for actor tests
+ * Setup global mocks for testing environment
+ */
+export function setupGlobalMocks(): MockGlobalEventBus {
+  // Mock DOM APIs that are commonly used in tests
+  if (typeof global !== 'undefined') {
+    // Mock localStorage
+    const localStorageMock = {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+      clear: vi.fn(),
+      length: 0,
+      key: vi.fn((_index: number) => null),
+    };
+    Object.defineProperty(global, 'localStorage', { value: localStorageMock });
+
+    // Mock sessionStorage
+    Object.defineProperty(global, 'sessionStorage', { value: localStorageMock });
+
+    // Mock requestAnimationFrame
+    global.requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
+      return setTimeout(() => callback(Date.now()), 16);
+    });
+
+    // Mock cancelAnimationFrame
+    global.cancelAnimationFrame = vi.fn((id: number) => {
+      clearTimeout(id);
+    });
+
+    // Mock IntersectionObserver
+    global.IntersectionObserver = vi.fn(() => ({
+      observe: vi.fn(),
+      disconnect: vi.fn(),
+      unobserve: vi.fn(),
+    })) as any;
+
+    // Mock ResizeObserver
+    global.ResizeObserver = vi.fn(() => ({
+      observe: vi.fn(),
+      disconnect: vi.fn(),
+      unobserve: vi.fn(),
+    })) as any;
+  }
+
+  // Return a mock global event bus
+  return {
+    emit: vi.fn(),
+    on: vi.fn(),
+    off: vi.fn(),
+    once: vi.fn(),
+    clear: vi.fn(),
+  };
+}
+
+/**
+ * Performance testing utilities
+ */
+export const performanceTestUtils = {
+  measureExecutionTime: async (fn: () => void | Promise<void>): Promise<number> => {
+    const start = performance.now();
+    await fn();
+    return performance.now() - start;
+  },
+
+  expectToCompleteWithin: (timeMs: number) => ({
+    toCompleteWithin: async (fn: () => void | Promise<void>) => {
+      const executionTime = await performanceTestUtils.measureExecutionTime(fn);
+      if (executionTime > timeMs) {
+        throw new Error(
+          `Expected function to complete within ${timeMs}ms, but took ${executionTime}ms`
+        );
+      }
+    },
+  }),
+
+  expectPerformant: async (fn: () => void | Promise<void>, maxTimeMs = 100): Promise<void> => {
+    const executionTime = await performanceTestUtils.measureExecutionTime(fn);
+    if (executionTime > maxTimeMs) {
+      throw new Error(
+        `Expected function to be performant (within ${maxTimeMs}ms), but took ${executionTime}ms`
+      );
+    }
+  },
+
+  measureRenderTime: async (
+    fn: () => void | Promise<void>
+  ): Promise<{
+    executionTime: number;
+    renderTime: number;
+    totalTime: number;
+  }> => {
+    const startTime = performance.now();
+    await fn();
+    const executionTime = performance.now() - startTime;
+
+    // Wait for next frame to measure render time
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const renderTime = performance.now() - startTime - executionTime;
+
+    return {
+      executionTime,
+      renderTime,
+      totalTime: executionTime + renderTime,
+    };
+  },
+};
+
+/**
+ * Accessibility testing utilities
+ */
+export const a11yTestUtils = {
+  expectAriaLabel: (element: Element, expectedLabel: string) => {
+    const ariaLabel = element.getAttribute('aria-label');
+    if (ariaLabel !== expectedLabel) {
+      throw new Error(`Expected aria-label="${expectedLabel}", got "${ariaLabel}"`);
+    }
+  },
+
+  expectRole: (element: Element, expectedRole: string) => {
+    const role = element.getAttribute('role');
+    if (role !== expectedRole) {
+      throw new Error(`Expected role="${expectedRole}", got "${role}"`);
+    }
+  },
+
+  expectFocusable: (element: Element) => {
+    const tabIndex = element.getAttribute('tabindex');
+    const isFocusable = tabIndex !== null && tabIndex !== '-1';
+    if (!isFocusable) {
+      throw new Error(`Expected element to be focusable, but tabindex="${tabIndex}"`);
+    }
+  },
+
+  expectAccessible: (element: Element, expectedAttributes?: Record<string, string>) => {
+    if (expectedAttributes) {
+      // Check specific attributes if provided
+      for (const [key, expectedValue] of Object.entries(expectedAttributes)) {
+        // Convert camelCase to kebab-case for attributes
+        const attributeName = key.replace(/([A-Z])/g, '-$1').toLowerCase();
+        // Handle aria-* attributes properly
+        const ariaAttributeName = attributeName.startsWith('aria')
+          ? attributeName.replace(/^aria/, 'aria-')
+          : attributeName;
+
+        const actualValue = element.getAttribute(ariaAttributeName);
+        if (actualValue !== expectedValue) {
+          throw new Error(`Expected ${ariaAttributeName}="${expectedValue}", got "${actualValue}"`);
+        }
+      }
+    } else {
+      // Check that element has some accessibility attributes
+      const hasAriaLabel = element.getAttribute('aria-label') !== null;
+      const hasAriaLabelledBy = element.getAttribute('aria-labelledby') !== null;
+      const hasTitle = element.getAttribute('title') !== null;
+      const hasRole = element.getAttribute('role') !== null;
+
+      if (!hasAriaLabel && !hasAriaLabelledBy && !hasTitle && !hasRole) {
+        throw new Error(
+          'Expected element to have accessibility attributes (aria-label, aria-labelledby, title, or role)'
+        );
+      }
+    }
+  },
+
+  expectKeyboardAccessible: (element: Element, _options?: { checkTabIndex?: boolean }) => {
+    // Check that element is keyboard accessible
+    const tabIndex = element.getAttribute('tabindex');
+    const tagName = element.tagName.toLowerCase();
+    const isInteractiveElement = ['button', 'input', 'select', 'textarea', 'a'].includes(tagName);
+    const hasTabIndex = tabIndex !== null && tabIndex !== '-1';
+
+    if (!isInteractiveElement && !hasTabIndex) {
+      throw new Error(
+        `Expected element to be keyboard accessible (interactive element or proper tabindex), but got ${tagName} with tabindex="${tabIndex}"`
+      );
+    }
+  },
+
+  expectLabelled: (element: Element, expectedLabel?: string) => {
+    const ariaLabel = element.getAttribute('aria-label');
+    const ariaLabelledBy = element.getAttribute('aria-labelledby');
+    const title = element.getAttribute('title');
+
+    const hasLabel = ariaLabel || ariaLabelledBy || title;
+    if (!hasLabel) {
+      throw new Error('Expected element to have a label (aria-label, aria-labelledby, or title)');
+    }
+
+    if (expectedLabel && ariaLabel !== expectedLabel) {
+      throw new Error(`Expected label "${expectedLabel}", got "${ariaLabel}"`);
+    }
+  },
+};
+
+/**
+ * Mock global event bus interface
+ */
+export interface MockGlobalEventBus {
+  emit: ReturnType<typeof vi.fn>;
+  on: ReturnType<typeof vi.fn>;
+  off: ReturnType<typeof vi.fn>;
+  once: ReturnType<typeof vi.fn>;
+  clear: ReturnType<typeof vi.fn>;
+}
+
+/**
+ * Component testing utilities for shadow DOM
+ */
+export const componentUtils = {
+  getShadowContent: (element: Element): ShadowRoot | null => {
+    if ('shadowRoot' in element) {
+      return element.shadowRoot as ShadowRoot;
+    }
+    return null;
+  },
+
+  queryInShadow: (element: Element, selector: string): Element | null => {
+    const shadowRoot = componentUtils.getShadowContent(element);
+    if (shadowRoot) {
+      return shadowRoot.querySelector(selector);
+    }
+    return null;
+  },
+
+  queryAllInShadow: (element: Element, selector: string): Element[] => {
+    const shadowRoot = componentUtils.getShadowContent(element);
+    if (shadowRoot) {
+      return Array.from(shadowRoot.querySelectorAll(selector));
+    }
+    return [];
+  },
+};
+
+/**
+ * User interaction utilities for testing (enhanced)
+ */
+export const userInteractions = {
+  click: (element: Element) => {
+    const event = new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+    });
+    element.dispatchEvent(event);
+  },
+
+  input: (element: Element, value: string) => {
+    if ('value' in element) {
+      (element as HTMLInputElement).value = value;
+    }
+    const event = new Event('input', {
+      bubbles: true,
+      cancelable: true,
+    });
+    element.dispatchEvent(event);
+  },
+
+  keyDown: (element: Element, key: string) => {
+    const event = new KeyboardEvent('keydown', {
+      key,
+      bubbles: true,
+      cancelable: true,
+    });
+    element.dispatchEvent(event);
+  },
+
+  // Alias for compatibility
+  keydown: (element: Element, key: string) => {
+    userInteractions.keyDown(element, key);
+  },
+
+  focus: (element: Element) => {
+    if ('focus' in element && typeof element.focus === 'function') {
+      element.focus();
+    }
+    const event = new FocusEvent('focus', {
+      bubbles: true,
+    });
+    element.dispatchEvent(event);
+  },
+
+  blur: (element: Element) => {
+    if ('blur' in element && typeof element.blur === 'function') {
+      element.blur();
+    }
+    const event = new FocusEvent('blur', {
+      bubbles: true,
+    });
+    element.dispatchEvent(event);
+  },
+};
+
+/**
+ * Wait for a condition to be true or timeout
+ */
+export async function waitFor(
+  condition: () => boolean | Promise<boolean>,
+  timeoutMs = 1000,
+  intervalMs = 10
+): Promise<void> {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeoutMs) {
+    if (await condition()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+
+  throw new Error(`Condition not met within ${timeoutMs}ms`);
+}
+
+/**
+ * Enhanced TestEnvironment with additional properties that tests expect
  */
 export interface TestEnvironment {
   actors: Map<string, MockActorRef>;
   cleanup: () => void;
   getActor: (id: string) => MockActorRef | undefined;
   getAllActors: () => MockActorRef[];
+  // Additional properties that some tests expect
+  container: HTMLElement;
 }
 
 /**
- * Create a test environment for managing multiple actors
+ * Create enhanced test environment with container element
  */
 export function createTestEnvironment(): TestEnvironment {
   const actors = new Map<string, MockActorRef>();
 
+  // Create a mock container element
+  const container = document.createElement('div');
+  container.id = 'test-container';
+  document.body.appendChild(container);
+
   return {
     actors,
+    container,
 
     cleanup: () => {
       // Stop all actors
@@ -221,6 +541,11 @@ export function createTestEnvironment(): TestEnvironment {
         }
       }
       actors.clear();
+
+      // Clean up container
+      if (container.parentNode) {
+        container.parentNode.removeChild(container);
+      }
     },
 
     getActor: (id: string) => actors.get(id),
@@ -393,3 +718,64 @@ export function createTestObservable<T>(): {
     },
   };
 }
+
+/**
+ * Template testing utilities for HTML template testing
+ */
+export const templateTestUtils = {
+  expectTemplateContent: (template: string, expectedContent: string) => {
+    if (!template.includes(expectedContent)) {
+      throw new Error(`Expected template to contain "${expectedContent}", but got: ${template}`);
+    }
+  },
+
+  expectTemplateStructure: (template: string, expectedTags: string[]) => {
+    for (const tag of expectedTags) {
+      const tagPattern = new RegExp(`<${tag}[^>]*>`, 'i');
+      if (!tagPattern.test(template)) {
+        throw new Error(`Expected template to contain <${tag}> tag, but got: ${template}`);
+      }
+    }
+  },
+
+  expectTemplateAttributes: (template: string, expectedAttributes: Record<string, string>) => {
+    for (const [attr, value] of Object.entries(expectedAttributes)) {
+      const attrPattern = new RegExp(`${attr}\\s*=\\s*["']${value}["']`, 'i');
+      if (!attrPattern.test(template)) {
+        throw new Error(`Expected template to contain ${attr}="${value}", but got: ${template}`);
+      }
+    }
+  },
+
+  expectTemplateContains: (template: string, expectedParts: string[]) => {
+    for (const part of expectedParts) {
+      if (!template.includes(part)) {
+        throw new Error(`Expected template to contain "${part}", but got: ${template}`);
+      }
+    }
+  },
+
+  expectTemplateNotContains: (template: string, unexpectedContent: string) => {
+    if (template.includes(unexpectedContent)) {
+      throw new Error(
+        `Expected template NOT to contain "${unexpectedContent}", but got: ${template}`
+      );
+    }
+  },
+
+  expectEscaped: (template: string, originalContent: string) => {
+    // Check that dangerous content is properly escaped
+    const escapedContent = originalContent
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+    if (!template.includes(escapedContent) && template.includes(originalContent)) {
+      throw new Error(
+        `Expected "${originalContent}" to be escaped in template, but found unescaped content`
+      );
+    }
+  },
+};

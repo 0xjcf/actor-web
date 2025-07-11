@@ -1,4 +1,4 @@
-import { assign, type SnapshotFrom, setup } from 'xstate';
+import { type SnapshotFrom, assign, setup } from 'xstate';
 import type { RawHTML } from '../../../framework/core/index.js';
 import { createComponent, css, html } from '../../../framework/core/index.js';
 

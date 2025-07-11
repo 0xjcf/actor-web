@@ -4,7 +4,7 @@ import {
   setupGlobalMocks,
   userInteractions,
   waitFor,
-} from '@/framework/testing';
+} from '@/testing/actor-test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createActor } from 'xstate';
 import {
@@ -968,7 +968,7 @@ describe('Integration with Browser Events', () => {
     });
 
     // Simulate real user interaction
-    userInteractions.keydown(document, 'Enter');
+    userInteractions.keydown(document.body, 'Enter');
 
     // Wait for event processing
     await waitFor(() => {

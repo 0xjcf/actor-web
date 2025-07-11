@@ -9,7 +9,7 @@ import {
   type TestEnvironment,
   createTestEnvironment,
   templateTestUtils,
-} from '@/framework/testing';
+} from '@/testing/actor-test-utils';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { css, html } from './template-renderer.js';
 

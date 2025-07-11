@@ -1,10 +1,11 @@
 /**
- * Testing entry point for Actor-SPA Framework
- *
- * Import testing utilities directly:
- * ```typescript
- * import { createTestEnvironment, userInteractions } from '@/framework/testing';
- * ```
+ * @module framework/testing
+ * @description Testing utilities and fixtures for the Actor-SPA framework
+ * @author Agent C - 2025-01-10
  */
 
-export * from './testing/index.js';
+// Export all testing utilities
+export * from './testing/actor-test-utils.js';
+
+// Export test fixtures
+export * from './testing/fixtures/index.js';

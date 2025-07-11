@@ -1,6 +1,6 @@
 // BaristaActorUI refactored to use Actor-SPA Framework API
-import { assign, type SnapshotFrom, setup } from 'xstate';
-import { createComponent, html, type RawHTML } from '../../../framework/core/index.js';
+import { type SnapshotFrom, assign, setup } from 'xstate';
+import { type RawHTML, createComponent, html } from '../../../framework/core/index.js';
 import '../../ui/loading-state.js';
 
 // ✅ Type-safe interfaces following framework patterns

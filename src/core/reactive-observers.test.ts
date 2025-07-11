@@ -5,14 +5,14 @@
  * Tests the actual reactive behavior users experience with state machines and components
  */
 
-import { createComponent, html } from '@/framework/core/minimal-api.js';
+import { createComponent, html } from '@/core/minimal-api.js';
 import {
   type MockGlobalEventBus,
   type TestEnvironment,
   createTestEnvironment,
   performanceTestUtils,
   setupGlobalMocks,
-} from '@/framework/testing';
+} from '@/testing/actor-test-utils';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { assign, createMachine } from 'xstate';
 
