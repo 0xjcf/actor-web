@@ -166,6 +166,14 @@ export class GitOperations {
   async detectAgentType(): Promise<string> {
     const currentBranch = await this.getCurrentBranch();
 
+    // Check for integration branch first
+    if (
+      currentBranch.includes('integration') ||
+      currentBranch === 'feature/actor-ref-integration'
+    ) {
+      return 'Integration Hub';
+    }
+
     if (currentBranch.includes('agent-a') || currentBranch.includes('architecture')) {
       return 'Agent A (Architecture)';
     }
@@ -179,6 +187,12 @@ export class GitOperations {
     ) {
       return 'Agent C (Testing/Cleanup)';
     }
+
+    // Check for main branch
+    if (currentBranch === 'main' || currentBranch === 'master') {
+      return 'Main Branch';
+    }
+
     return 'Unknown Agent';
   }
 
