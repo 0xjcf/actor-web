@@ -73,7 +73,7 @@
   - [x] No type guards needed - issue was Map iteration
 
 - [x] **`src/core/animation-services.test.ts`** (39 errors) ✅
-  - [x] Fixed @/framework/testing import paths → relative paths
+  - [x] Fixed ../testing/actor-test-utils import paths → relative paths
   - [x] Resolved CallbackActorLogic invocation patterns for XState v5
   - [x] Fixed mock function type assertions for vitest compatibility
 
@@ -102,7 +102,7 @@
   - [ ] Fix Observable subscription type issues
   - [ ] Fix readonly property assignment errors
 
-#### Test Files with @/framework/testing Import Issues:
+#### Test Files with ../testing/actor-test-utils Import Issues:
 - [ ] **`src/core/aria-observer.test.ts`** (1 error)
 - [ ] **`src/core/createComponent.test.ts`** (1 error)
 - [ ] **`src/core/enhanced-component.test.ts`** (1 error)  

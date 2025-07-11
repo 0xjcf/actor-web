@@ -10,7 +10,7 @@ import {
   createTestEnvironment,
   setupGlobalMocks,
   waitFor,
-} from '@/framework/testing';
+} from '@/testing/actor-test-utils';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createMachine } from 'xstate';
 import {

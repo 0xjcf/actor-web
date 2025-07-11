@@ -106,28 +106,44 @@ validate_branch_changes() {
     fi
     echo -e "${GREEN}    ✅ TypeScript OK (your files)${NC}"
     
-    # 2. Linting validation - only for changed files
+    # 2. Linting validation - only for changed files that biome should process
     echo -e "${YELLOW}  → Linting validation (your files only)...${NC}"
     if [ -n "$changed_files" ]; then
-        # Filter out deleted files and files that don't exist
-        local existing_changed_files=""
+        # Filter for files that exist and should be linted by biome
+        local lintable_files=""
         while IFS= read -r file; do
             if [ -f "$file" ]; then
-                existing_changed_files="$existing_changed_files $file"
+                # Skip files that match biome ignore patterns
+                if [[ "$file" == *.md ]] || \
+                   [[ "$file" == docs/* ]] || \
+                   [[ "$file" == scripts/*.sh ]] || \
+                   [[ "$file" == ".gitignore" ]] || \
+                   [[ "$file" == "pnpm-lock.yaml" ]] || \
+                   [[ "$file" == "yarn.lock" ]] || \
+                   [[ "$file" == "package-lock.json" ]] || \
+                   [[ "$file" == "package.json" ]] || \
+                   [[ "$file" == "tsconfig.json" ]] || \
+                   [[ "$file" == "biome.json" ]] || \
+                   [[ "$file" == *".css" ]]; then
+                    continue  # Skip files that biome ignores
+                fi
+                lintable_files="$lintable_files $file"
             fi
         done <<< "$changed_files"
         
-        if [ -n "$existing_changed_files" ]; then
-            local lint_file_count=$(echo "$existing_changed_files" | wc -w)
+        if [ -n "$lintable_files" ] && [ "$lintable_files" != " " ]; then
+            local lint_file_count=$(echo "$lintable_files" | wc -w)
             echo -e "${BLUE}    Checking ${lint_file_count} files for linting issues...${NC}"
             
-            if ! pnpm biome check $existing_changed_files >/dev/null 2>&1; then
+            if ! pnpm biome check $lintable_files >/dev/null 2>&1; then
                 echo -e "${RED}❌ Linting errors found in your changed files${NC}"
-                echo -e "${YELLOW}💡 Fix with: ${YELLOW}pnpm biome check $existing_changed_files --apply${NC}"
+                echo -e "${YELLOW}💡 Fix with: ${YELLOW}pnpm biome check $lintable_files --write${NC}"
                 echo -e "${BLUE}Files with lint issues:${NC}"
-                echo "$existing_changed_files" | tr ' ' '\n' | sed 's/^/  - /'
+                echo "$lintable_files" | tr ' ' '\n' | sed 's/^/  - /'
                 return 1
             fi
+        else
+            echo -e "${BLUE}    No files need biome linting (docs, configs, etc. are ignored)${NC}"
         fi
     fi
     echo -e "${GREEN}    ✅ Linting OK (your files)${NC}"
@@ -421,22 +437,36 @@ case "${1:-}" in
                 echo -e "${GREEN}  ✅ No TypeScript files to check${NC}"
             fi
             
-            # Quick linting check for changed files only
-            existing_changed_files=""
+            # Quick linting check for changed files only (respecting biome ignore patterns)
+            lintable_files=""
             while IFS= read -r file; do
                 if [ -f "$file" ]; then
-                    existing_changed_files="$existing_changed_files $file"
+                    # Skip files that match biome ignore patterns
+                    if [[ "$file" == *.md ]] || \
+                       [[ "$file" == docs/* ]] || \
+                       [[ "$file" == scripts/*.sh ]] || \
+                       [[ "$file" == ".gitignore" ]] || \
+                       [[ "$file" == "pnpm-lock.yaml" ]] || \
+                       [[ "$file" == "yarn.lock" ]] || \
+                       [[ "$file" == "package-lock.json" ]] || \
+                       [[ "$file" == "package.json" ]] || \
+                       [[ "$file" == "tsconfig.json" ]] || \
+                       [[ "$file" == "biome.json" ]] || \
+                       [[ "$file" == *".css" ]]; then
+                        continue  # Skip files that biome ignores
+                    fi
+                    lintable_files="$lintable_files $file"
                 fi
             done <<< "$changed_files"
             
-            if [ -n "$existing_changed_files" ]; then
-                if pnpm biome check $existing_changed_files >/dev/null 2>&1; then
+            if [ -n "$lintable_files" ] && [ "$lintable_files" != " " ]; then
+                if pnpm biome check $lintable_files >/dev/null 2>&1; then
                     echo -e "${GREEN}  ✅ Linting OK (your files)${NC}"
                 else
                     echo -e "${RED}  ❌ Linting errors (your files)${NC}"
                 fi
             else
-                echo -e "${GREEN}  ✅ No files to lint${NC}"
+                echo -e "${GREEN}  ✅ No lintable files (docs/configs ignored)${NC}"
             fi
         fi
         

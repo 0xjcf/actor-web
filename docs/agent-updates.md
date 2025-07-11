@@ -143,7 +143,7 @@ autoStart: options.autoStart !== false && this._status === 'running'
 
 **Service-Related Test Files (100% Complete):**
 - ✅ **`src/core/animation-services.test.ts`** (39 errors → 0 errors)
-  - Fixed import paths from '@/framework/testing' to relative paths
+  - Fixed import paths from '../testing/actor-test-utils' to relative paths
   - Resolved CallbackActorLogic invocation patterns for XState v5
   - Fixed mock function type assertions for vitest compatibility
   - Handled stagger animation test mock access patterns
@@ -158,7 +158,7 @@ autoStart: options.autoStart !== false && this._status === 'running'
 #### **🔧 FIXES IMPLEMENTED**:
 - Map iteration: Added `.values()` to 4 locations in animation-services.ts
 - XState v5 patterns: Extracted callbacks using `(service as any).config`
-- Test imports: Changed all '@/framework/testing' to '../testing/actor-test-utils.js'
+- Test imports: Changed all '../testing/actor-test-utils' to '../testing/actor-test-utils.js'
 - Mock assertions: Stored mock functions separately to avoid type issues
 - Action syntax: Replaced string actions with arrow functions
 
@@ -194,18 +194,18 @@ autoStart: options.autoStart !== false && this._status === 'running'
 - **`src/testing/actor-test-utils.ts`** (11 errors) - Mock type definitions
 
 **Test Files with Framework Import Issues:**
-- **`src/core/aria-observer.test.ts`** (1 error) - @/framework/testing import
-- **`src/core/createComponent.test.ts`** (1 error) - @/framework/testing import  
-- **`src/core/enhanced-component.test.ts`** (1 error) - @/framework/testing import
-- **`src/core/focus-management.test.ts`** (1 error) - @/framework/testing import
-- **`src/core/form-validation.test.ts`** (1 error) - @/framework/testing import
-- **`src/core/global-event-delegation.test.ts`** (1 error) - @/framework/testing import
+- **`src/core/aria-observer.test.ts`** (1 error) - ../testing/actor-test-utils import
+- **`src/core/createComponent.test.ts`** (1 error) - ../testing/actor-test-utils import  
+- **`src/core/enhanced-component.test.ts`** (1 error) - ../testing/actor-test-utils import
+- **`src/core/focus-management.test.ts`** (1 error) - ../testing/actor-test-utils import
+- **`src/core/form-validation.test.ts`** (1 error) - ../testing/actor-test-utils import
+- **`src/core/global-event-delegation.test.ts`** (1 error) - ../testing/actor-test-utils import
 - **`src/core/keyboard-navigation.test.ts`** (3 errors) - Import + mock issues
-- **`src/core/minimal-api.test.ts`** (1 error) - @/framework/testing import
-- **`src/core/reactive-event-bus.test.ts`** (1 error) - @/framework/testing import
+- **`src/core/minimal-api.test.ts`** (1 error) - ../testing/actor-test-utils import
+- **`src/core/reactive-event-bus.test.ts`** (1 error) - ../testing/actor-test-utils import
 - **`src/core/reactive-observers.test.ts`** (2 errors) - Import path issues
-- **`src/core/screen-reader-announcements.test.ts`** (1 error) - @/framework/testing import
-- **`src/core/template-renderer.test.ts`** (1 error) - @/framework/testing import
+- **`src/core/screen-reader-announcements.test.ts`** (1 error) - ../testing/actor-test-utils import
+- **`src/core/template-renderer.test.ts`** (1 error) - ../testing/actor-test-utils import
 
 **Complex Test Files:**
 - **`src/core/persistence.test.ts`** (39 errors) - Service calls, mock framework, type issues
@@ -215,7 +215,7 @@ autoStart: options.autoStart !== false && this._status === 'running'
 
 #### **🔧 WORK FOCUS**:
 1. **Testing Utilities**: Fix mock type definitions in actor-test-utils.ts
-2. **Import Path Issues**: Resolve @/framework/testing import problems  
+2. **Import Path Issues**: Resolve ../testing/actor-test-utils import problems  
 3. **Persistence Tests**: Fix service call syntax and mock framework issues
 4. **ARIA Tests**: Fix test environment setup issues
 
@@ -228,7 +228,7 @@ autoStart: options.autoStart !== false && this._status === 'running'
 #### **Next Steps**:
 1. Run `pnpm sync` to get latest Agent A architecture fixes
 2. Start with `src/testing/actor-test-utils.ts` type definitions
-3. Fix @/framework/testing import path issues
+3. Fix ../testing/actor-test-utils import path issues
 4. Update persistence.test.ts with corrected service syntax
 
 *[Agent C adds progress updates here as work continues]*

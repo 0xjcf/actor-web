@@ -2,6 +2,21 @@
 
 > **Test-Driven Development with Three-Agent Team**
 
+## 🚨 NEW: Comprehensive Agent Workflow Guide Available!
+
+**📖 For the complete, up-to-date workflow guide, see: [🤖 Agent Workflow Guide](./AGENT-WORKFLOW-GUIDE.md)**
+
+The new guide includes:
+- ✅ Complete script documentation  
+- ✅ Troubleshooting guide
+- ✅ Best practices & guardrails
+- ✅ Daily workflow examples
+- ✅ Emergency procedures
+
+**This document remains for reference, but use the [Agent Workflow Guide](./AGENT-WORKFLOW-GUIDE.md) for current practices.**
+
+---
+
 ## 🚀 STEP 1: Essential Git Worktree Setup
 
 **⚠️ CRITICAL FIRST STEP**: Before any development work begins, all agents MUST set up separate Git worktrees to prevent branch conflicts and enable truly parallel development.

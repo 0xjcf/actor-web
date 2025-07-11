@@ -1,4 +1,4 @@
-import { type TestEnvironment, createTestEnvironment, setupGlobalMocks } from '@/framework/testing';
+import { type TestEnvironment, createTestEnvironment } from '@/testing/actor-test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createActor } from 'xstate';
 import {
@@ -13,7 +13,7 @@ describe('Form Validation', () => {
 
   beforeEach(() => {
     testEnv = createTestEnvironment();
-    setupGlobalMocks();
+    // setupGlobalMocks(); // [actor-web] TODO: Fix event bus integration
   });
 
   afterEach(() => {
