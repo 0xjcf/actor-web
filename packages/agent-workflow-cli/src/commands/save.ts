@@ -1,3 +1,4 @@
+import path from 'node:path';
 import chalk from 'chalk';
 import { GitOperations } from '../core/git-operations.js';
 
@@ -5,7 +6,9 @@ export async function saveCommand() {
   console.log(chalk.blue('💾 Quick Save'));
   console.log(chalk.blue('==========================================='));
 
-  const git = new GitOperations();
+  // Navigate to repository root (two levels up from CLI package)
+  const repoRoot = path.resolve(process.cwd(), '../..');
+  const git = new GitOperations(repoRoot);
 
   try {
     // Check if we're in a git repo
