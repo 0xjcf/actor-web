@@ -987,7 +987,7 @@ class ReactiveComponent extends HTMLElement {
  */
 export function createComponent<TMachine extends AnyStateMachine>(
   config: ComponentConfig<TMachine>
-): typeof ReactiveComponent {
+) {
   // Auto-generate tag name from machine id
   const tagName = config.tagName || `${config.machine.id}-component`;
 
@@ -1015,7 +1015,7 @@ export function createComponent<TMachine extends AnyStateMachine>(
     registerMachine(config.machine);
   }
 
-  let ComponentClass: typeof ReactiveComponent;
+  let ComponentClass: unknown;
 
   if (needsEnhancedFeatures) {
     // Create enhanced component with accessibility features
@@ -1062,13 +1062,23 @@ export function createComponent<TMachine extends AnyStateMachine>(
     };
 
     class EnhancedAutoComponent extends EnhancedReactiveComponent<TMachine> {
-      constructor() {
-        super(enhancedConfig);
+      constructor(configOverrides?: Record<string, unknown>) {
+        // For enhanced components, use the original config with simple property override
+        let mergedConfig = enhancedConfig;
+
+        if (configOverrides && Object.keys(configOverrides).length > 0) {
+          // Simple property merge for common overrides like styles, tagName, etc.
+          mergedConfig = {
+            ...enhancedConfig,
+            ...(configOverrides as Partial<EnhancedComponentConfig<TMachine>>),
+          };
+        }
+
+        super(mergedConfig);
       }
     }
 
-    // Use a compatible return type
-    ComponentClass = EnhancedAutoComponent as unknown as typeof ReactiveComponent;
+    ComponentClass = EnhancedAutoComponent;
   } else {
     // Create regular component with basic integration
     const basicConfig: ComponentConfig<TMachine> = {
@@ -1081,8 +1091,18 @@ export function createComponent<TMachine extends AnyStateMachine>(
     };
 
     class BasicAutoComponent extends ReactiveComponent {
-      constructor() {
-        super(basicConfig);
+      constructor(configOverrides?: Record<string, unknown>) {
+        // Merge original config with any overrides
+        let mergedConfig = basicConfig;
+
+        if (configOverrides && Object.keys(configOverrides).length > 0) {
+          mergedConfig = {
+            ...basicConfig,
+            ...(configOverrides as Partial<ComponentConfig<TMachine>>),
+          };
+        }
+
+        super(mergedConfig as ComponentConfig<AnyStateMachine>);
       }
     }
 
@@ -1092,11 +1112,13 @@ export function createComponent<TMachine extends AnyStateMachine>(
   // Auto-register component
   if (typeof window !== 'undefined' && typeof customElements !== 'undefined') {
     if (!customElements.get(tagName)) {
-      customElements.define(tagName, ComponentClass);
+      customElements.define(tagName, ComponentClass as CustomElementConstructor);
     }
   }
 
-  return ComponentClass;
+  return ComponentClass as new (
+    configOverrides?: Record<string, unknown>
+  ) => ReactiveComponent;
 }
 
 // 🎯 API simplified! Only one way to create components - with full integration by default.
@@ -1153,30 +1175,6 @@ export function renderToString<TMachine extends AnyStateMachine>(
 
   // Safe value access - all snapshots have value property
   return `<${tagName} data-state="${String(state.value)}">${styles}${html}</${tagName}>`;
-}
-
-/**
- * Research Article 2: "Migration Utilities"
- * Helper to convert from old BaseActor pattern
- */
-export function fromLegacyActor(
-  ActorClass: new () => { machine?: AnyStateMachine; getMachine?: () => AnyStateMachine },
-  template: TemplateFunction<AnyMachineSnapshot>,
-  options?: Partial<ComponentConfig>
-): typeof ReactiveComponent {
-  // Create instance to extract machine
-  const actorInstance = new ActorClass();
-  const machine = actorInstance.machine || actorInstance.getMachine?.();
-
-  if (!machine) {
-    throw new Error('Legacy actor must have either a machine property or getMachine method');
-  }
-
-  return createComponent({
-    machine,
-    template,
-    ...options,
-  });
 }
 
 /**

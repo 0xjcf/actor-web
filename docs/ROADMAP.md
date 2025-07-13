@@ -1,6 +1,6 @@
 # 🗺️ Actor-Web Framework & Agent-Workflow-CLI Roadmap
 
-> **Vision**: Deliver a universal actor-centric development ecosystem where state, side-effects, and all communication are managed **exclusively** through message-passing actors. Create a pure actor web runtime and CLI tooling that demonstrates these principles in practice.
+> **Vision**: Deliver a universal actor-centric development ecosystem where state, side-effects, and all communication are managed **exclusively** through message-passing actors. Create a pure actor web runtime, CLI tooling, and **autonomous agentic workflow system** that demonstrates these principles in practice.
 
 ## 🎭 Pure Actor Model Principles
 
@@ -10,6 +10,7 @@
 3. **Supervision & Fault Tolerance**: Hierarchical error handling and recovery
 4. **Event-Driven Architecture**: All interactions through typed events
 5. **Zero Shared State**: Complete isolation between actor boundaries
+6. **🆕 Autonomous Behavior**: AI-driven actors with memory, planning, and tool usage
 
 ### Benefits
 - **Isolation**: Actors cannot corrupt each other's state
@@ -17,6 +18,7 @@
 - **Fault Tolerance**: Supervisor strategies for resilience
 - **Mental Model**: Clear, consistent programming model
 - **Host-Agnostic**: Deploy anywhere - SPA, MPA, SSR, Edge, Desktop
+- **🆕 Intelligence**: Self-improving workflows with persistent memory
 
 ---
 
@@ -26,6 +28,7 @@
 |-------|---------------|------------|----------|
 | **Actor-Web Framework** | Phase 1 - ActorRef API | Complete core implementation | 40% |
 | **Agent-Workflow-CLI** | Phase A - Actor Architecture | Complete actor migration | 20% |
+| **🆕 Agentic Workflow System** | Research Complete | Begin Foundation Phase | 0% |
 
 ---
 
@@ -277,6 +280,106 @@
 
 ---
 
+## 🤖 Track 3: Agentic Workflow System
+
+> **🆕 NEW TRACK**: Based on comprehensive research findings from three independent studies
+
+### 🔬 Research Phase (COMPLETE)
+
+**Goal:** Establish technical foundation for autonomous agentic behavior  
+**Status:** ✅ Complete - Three comprehensive research reports delivered
+
+#### Key Findings:
+- **Tool Actor Protocol**: Standardized JSON message schemas for CLI command wrapping
+- **LLM Integration**: Hybrid local/cloud strategy with vLLM and Ollama
+- **Memory Architecture**: Vector databases (SQLite-VSS → Chroma → Pinecone scaling path)
+- **Safety Framework**: Human-in-the-loop patterns and behavioral constraints
+- **Performance**: Maintain 10K+ msg/sec with optimized planning loops
+- **Implementation Path**: 3-phase approach over 6-12 months
+
+### 🚀 Phase 1: Foundation (Months 1-3)
+
+**Goal:** Actor-ize current commands and implement basic agentic loops  
+**Dependencies:** CLI Phase A complete
+
+#### 1.1 Tool Actor Protocol
+| Task | Status | Owner | Blocking | Done Criteria |
+|------|--------|-------|----------|---------------|
+| Tool Actor base class | ⬜ | TBD | None | Message schema standardized |
+| GitActor tool wrapper | ⬜ | TBD | Base class | All git operations as messages |
+| ValidationActor tool wrapper | ⬜ | TBD | Base class | Validation as tool invocation |
+| TestActor implementation | ⬜ | TBD | Base class | Test execution via messages |
+| Tool discovery registry | ⬜ | TBD | All tools | Dynamic tool registration |
+
+#### 1.2 LLM Integration
+| Task | Status | Owner | Blocking | Done Criteria |
+|------|--------|-------|----------|---------------|
+| LLM client abstraction | ⬜ | TBD | None | OpenAI/Anthropic/Ollama support |
+| PlannerActor implementation | ⬜ | TBD | LLM client | Goal → action plans |
+| Prompt engineering templates | ⬜ | TBD | PlannerActor | Git/dev workflows optimized |
+| Token budget management | ⬜ | TBD | PlannerActor | Cost controls implemented |
+| Local model integration (Ollama) | ⬜ | TBD | None | Privacy-first option |
+
+#### 1.3 Memory Architecture
+| Task | Status | Owner | Blocking | Done Criteria |
+|------|--------|-------|----------|---------------|
+| Vector store abstraction | ⬜ | TBD | None | SQLite-VSS/Chroma/Pinecone |
+| MemoryActor implementation | ⬜ | TBD | Vector store | Episodic memory storage |
+| Embedding generation | ⬜ | TBD | MemoryActor | Code/commit context vectors |
+| Memory query optimization | ⬜ | TBD | Embedding | <50ms similarity search |
+| Memory pruning strategies | ⬜ | TBD | Query optimization | Growth management |
+
+#### 1.4 Safety Framework
+| Task | Status | Owner | Blocking | Done Criteria |
+|------|--------|-------|----------|---------------|
+| Safety supervisor extension | ⬜ | TBD | None | Behavioral constraints |
+| Command allow/deny lists | ⬜ | TBD | Safety supervisor | Risk categorization |
+| Human-in-the-loop patterns | ⬜ | TBD | Allow/deny | Approval workflows |
+| Audit logging system | ⬜ | TBD | None | Compliance tracking |
+| Rollback mechanisms | ⬜ | TBD | Audit logging | Safe failure recovery |
+
+### 📅 Phase 2: Autonomous Behavior (Months 4-6)
+
+**Goal:** Implement autonomous planning and execution capabilities  
+**Dependencies:** Phase 1 complete
+
+#### 2.1 Goal-Oriented Planning
+- Goal Actor implementation (high-level objectives)
+- Plan Actor implementation (task decomposition)
+- Planning Supervisor with behavioral monitoring
+- Multi-step workflow execution
+
+#### 2.2 Learning & Adaptation
+- Episodic memory integration with planning
+- User feedback incorporation
+- Pattern recognition for repeated tasks
+- Continuous improvement mechanisms
+
+#### 2.3 Advanced Tool Integration
+- CI/CD pipeline actors
+- VS Code extension integration
+- Plugin architecture for custom tools
+- Cross-system communication
+
+### 📅 Phase 3: Production Deployment (Months 7-12)
+
+**Goal:** Production-ready autonomous development workflows  
+**Dependencies:** Phase 2 stable
+
+#### 3.1 Enterprise Features
+- Advanced security and compliance
+- Team coordination capabilities
+- Performance monitoring and optimization
+- Scalability improvements
+
+#### 3.2 Ecosystem Integration
+- GitHub Actions integration
+- IDE plugin ecosystem
+- Third-party tool connectors
+- Migration tooling and guides
+
+---
+
 ## 🌍 Deployment Mode Support Matrix
 
 | Mode | Status | Phase | Actor Pattern Application |
@@ -288,6 +391,24 @@
 | **PWA / Offline** | 🔄 Planned | 4 | Persistent actor mailboxes |
 | **Electron / Tauri** | 🔄 Planned | 4 | Main process supervisor actors |
 | **Edge / Workers** | 🔄 Planned | 4 | Distributed actor mesh |
+| **🆕 Agentic CLI** | 🔄 Planned | Agentic 1-3 | Autonomous development actors |
+
+---
+
+## 🛠️ Technology Stack
+
+### Core Framework
+- **Runtime**: Actor-Web Framework with XState v5
+- **Language**: TypeScript with zero `any` types
+- **Testing**: Vitest with actor test utilities
+- **Formatting**: Biome (not Prettier) [[memory:2987393]]
+
+### 🆕 Agentic Infrastructure
+- **LLM Integration**: OpenAI/Anthropic APIs + Ollama for local
+- **Vector Database**: SQLite-VSS → Chroma → Pinecone (scaling path)
+- **Memory Storage**: Event-sourced actor state
+- **Safety**: Extended supervision with behavioral constraints
+- **Performance**: vLLM for high-throughput local inference
 
 ---
 
@@ -312,10 +433,21 @@
 | Satisfaction | Unknown | 90%+ | In-CLI NPS prompt (opt-in) |
 | Actor coordination | 20% | 100% | All OOP replaced with actors |
 
+### 🆕 Agentic Workflow System
+| Metric | Current | Target | Measurement |
+|--------|---------|--------|-------------|
+| Task completion rate | 0% | 80%+ | Autonomous goal achievement |
+| Planning efficiency | N/A | <500ms | Goal → action plan time |
+| Memory recall accuracy | N/A | 90%+ | Relevant context retrieval |
+| Safety compliance | N/A | 100% | Zero unauthorized actions |
+| Token efficiency | N/A | <1000/task | Average LLM tokens per task |
+| User trust score | N/A | 85%+ | Post-task satisfaction survey |
+
 ---
 
 ## ⚠️ Risk Register
 
+### Existing Risks
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
 | ActorRef complexity stalls | Medium | High | Time-box design; defer middleware to Phase 2 |
@@ -325,6 +457,17 @@
 | AI agent coordination conflicts | Low | Low | Clear ownership assignments in tasks |
 | Actor pattern learning curve | Medium | Medium | Extensive docs, examples, tutorials |
 
+### 🆕 Agentic Risks
+| Risk | Likelihood | Impact | Mitigation |
+|------|------------|--------|------------|
+| **LLM API costs spiral** | Medium | High | Token budgets, local model fallbacks |
+| **Agent performs destructive actions** | Low | Critical | Strict allow/deny lists, human approval |
+| **Memory system performance degradation** | Medium | Medium | Vector DB optimization, pruning strategies |
+| **Privacy concerns with cloud LLMs** | High | High | Local-first options, data anonymization |
+| **Agent hallucination leads to errors** | Medium | Medium | Validation layers, confidence scoring |
+| **Infinite planning loops** | Low | Medium | Iteration limits, timeout mechanisms |
+| **User over-reliance on agent** | Medium | Low | Transparency, manual override options |
+
 ---
 
 ## 🏛️ Governance
@@ -332,17 +475,20 @@
 ### Leadership
 - **Product Owner:** 0xjcf
 - **Steering Group:** Runtime Lead, DX Lead, Perf Lead, DevRel, Host Integration Lead
+- **🆕 AI Safety Lead:** TBD (responsible for agentic system governance)
 
 ### Decision Process
 - **RFC Process:** Propose → 7-day comment → Accepted/Needs-Work
 - **Community Sync:** Discord every second Thursday (16:00 UTC)
 - **Architecture Reviews:** Required for new actor patterns
+- **🆕 AI Safety Reviews:** Required for all agentic capabilities
 
 ### Contributing
 1. Check roadmap labels: `good first issue`, `help wanted`, `RFC`
 2. Submit PRs targeting next milestone branch
 3. Add changes to CHANGELOG.md
 4. Pass CI: `npm test`, `npm run lint`, `npm run benchmark`
+5. **🆕 AI Safety Review:** Required for agentic features
 
 ---
 
@@ -356,9 +502,15 @@
 
 ### Agent-Workflow-CLI  
 1. **Spike ConfigurationActor** - Prove pattern before other actors
-2. **ValidationActor prototype** - Demo parallel validation by next milestone [[memory:2987389]] [[memory:2895458]]
+2. **ValidationActor prototype** - Demo parallel validation by next milestone
 3. **Document actor message schemas** - Before implementing WorkflowActor
-4. **Beta release** - v0.2.0-beta once 2+ actors complete [[memory:2890251]]
+4. **Beta release** - v0.2.0-beta once 2+ actors complete
+
+### 🆕 Agentic Workflow System
+1. **Assign research leads** - Map research findings to implementation owners
+2. **Set up prototype environment** - Isolated testing for agentic features
+3. **LLM integration spike** - Prove PlannerActor with Ollama locally
+4. **Safety framework design** - Implement basic allow/deny lists
 
 ---
 
@@ -368,19 +520,25 @@
 graph TD
     F1[Framework Phase 1: ActorRef] --> C1[CLI Phase A: Actor Architecture]
     C1 --> C2[CLI Phase B: Launch]
+    C2 --> A1[Agentic Phase 1: Foundation]
     F2[Framework Phase 2: Reactive] --> C3[CLI Phase C: Features]
     F3[Framework Phase 3: Distributed] --> C4[CLI Phase D: Cloud]
+    A1 --> A2[Agentic Phase 2: Autonomous]
+    A2 --> A3[Agentic Phase 3: Production]
     C2 --> F2[Real-world feedback]
+    A3 --> F3[Advanced actor patterns]
     
     style F1 fill:#f9f,stroke:#333,stroke-width:2px
-    style C4 fill:#faa,stroke:#333,stroke-width:2px
+    style A1 fill:#9f9,stroke:#333,stroke-width:2px
+    style A3 fill:#ff9,stroke:#333,stroke-width:2px
 ```
 
 **Critical Dependencies:**
 - CLI demonstrates framework actor patterns in practice
-- CLI Phase D blocked until Framework Phase 3 ships
-- Framework benefits from CLI's real-world usage patterns
-- Both tracks validate pure actor model vision
+- Agentic system requires mature Tool Actor protocol from CLI
+- Framework benefits from CLI's real-world usage patterns  
+- Agentic capabilities validate autonomous actor behavior
+- All tracks validate pure actor model vision
 
 ---
 
@@ -393,9 +551,12 @@ When complete, Actor-Web will enable:
 3. **True Concurrency** - Actors distribute across cores/machines
 4. **Clean Architecture** - Message-only communication throughout
 5. **Developer Joy** - Intuitive mental model, great tooling
+6. **🆕 Autonomous Intelligence** - Self-improving workflows with persistent memory
+7. **🆕 Safe AI Integration** - Human-controlled AI assistants for development
+8. **🆕 Ecosystem Integration** - Seamless connection to existing dev tools
 
 ---
 
-_Status: Living Document - Review at each phase completion_  
-_Next Review: When Phase 1 reaches 60% or any blocking issue arises_
+_Status: Living Document - Updated with agentic workflow research findings_  
+_Next Review: Begin Agentic Phase 1 planning and resource allocation_  
 _Governance: See contributing guidelines and RFC process above_

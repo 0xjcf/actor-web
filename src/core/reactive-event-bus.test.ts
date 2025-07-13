@@ -1,277 +1,322 @@
 /**
- * Behavior Tests for Global Event Bus - Actor-SPA Framework
+ * Behavior Tests for Reactive Event Bus - Actor-Web Framework
  *
- * These tests focus on the behavior of a simple global event communication system
- * from a user perspective, following TESTING-GUIDE.md principles
+ * These tests focus on testing the actual ReactiveEventBus framework API
+ * following TESTING-GUIDE.md principles: behavior over implementation
  */
 
-import {
-  type MockGlobalEventBus,
-  type TestEnvironment,
-  createTestEnvironment,
-  setupGlobalMocks,
-} from '@/testing/actor-test-utils';
+import { Logger } from '@/core/dev-mode';
+import { ReactiveEventBus } from '@/core/reactive-event-bus';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-describe('Global Event Bus Behavior', () => {
-  let testEnv: TestEnvironment;
-  let eventBus: MockGlobalEventBus;
+// Use scoped logger as recommended in Testing Guide
+const log = Logger.namespace('REACTIVE_EVENT_BUS_TEST');
+
+// Proper typing for components with controllers
+interface ComponentWithController extends HTMLElement {
+  controller?: {
+    receiveEvent: (eventData: Record<string, unknown>) => void;
+  };
+}
+
+describe('Reactive Event Bus - Framework API', () => {
+  let eventBus: ReactiveEventBus;
+  let container: HTMLElement;
+  const mockController = {
+    receiveEvent: vi.fn(),
+  };
 
   beforeEach(() => {
-    testEnv = createTestEnvironment();
-    eventBus = setupGlobalMocks();
+    // ✅ CORRECT: Test the real framework API, not mocks
+    eventBus = ReactiveEventBus.getInstance();
+
+    // Create test container with proper DOM structure
+    container = document.createElement('div');
+    container.id = 'test-container';
+    document.body.appendChild(container);
+
+    log.debug('Test environment set up', { containerExists: !!container });
   });
 
   afterEach(() => {
-    testEnv.cleanup();
+    // Clean up DOM and event listeners
+    if (container.parentNode) {
+      container.parentNode.removeChild(container);
+    }
+
+    // Reset any component bindings
+    const componentElements = document.querySelectorAll('[data-component-id]');
+    for (const el of componentElements) {
+      const componentId = el.getAttribute('data-component-id');
+      if (componentId) {
+        eventBus.unbindEvents(componentId);
+      }
+    }
+
+    log.debug('Test environment cleaned up');
   });
 
-  describe('Event Communication', () => {
-    it('allows components to communicate via events', () => {
-      // Behavior: Components should be able to send and receive messages
-      const handler = vi.fn();
+  describe('Component Event Binding', () => {
+    it('should bind click events to component elements', () => {
+      // Arrange: Create a component with controller
+      const componentId = ReactiveEventBus.generateComponentId('test');
+      const button = document.createElement('button') as ComponentWithController;
+      button.textContent = 'Click me';
+      button.setAttribute('data-component-id', componentId);
 
-      // Component A subscribes to user events
-      eventBus.on('user-login', handler);
+      // ✅ CORRECT: Add controller to component (framework pattern)
+      button.controller = mockController;
+      container.appendChild(button);
 
-      // Component B emits a user event
-      eventBus.emit('user-login', { userId: '123', username: 'john' });
+      // Act: Bind events using framework API
+      eventBus.bindEvents(componentId, {
+        click: 'BUTTON_CLICKED',
+      });
 
-      // Component A should receive the event
-      expect(handler).toHaveBeenCalledWith({ userId: '123', username: 'john' });
+      // Trigger DOM event
+      button.click();
+
+      // Assert: Controller should receive the event
+      expect(mockController.receiveEvent).toHaveBeenCalledWith({
+        type: 'BUTTON_CLICKED',
+      });
+
+      log.debug('Click event binding test completed', {
+        callCount: mockController.receiveEvent.mock.calls.length,
+      });
     });
 
-    it('supports multiple components listening to the same event', () => {
-      // Behavior: Multiple components can react to the same system event
-      const headerHandler = vi.fn();
-      const sidebarHandler = vi.fn();
-      const dashboardHandler = vi.fn();
+    it('should handle selector-based event binding', () => {
+      // Arrange: Component with multiple buttons
+      const componentId = ReactiveEventBus.generateComponentId('test');
+      const componentDiv = document.createElement('div') as ComponentWithController;
+      componentDiv.setAttribute('data-component-id', componentId);
+      componentDiv.controller = mockController;
 
-      // Multiple components subscribe to theme changes
-      eventBus.on('theme-changed', headerHandler);
-      eventBus.on('theme-changed', sidebarHandler);
-      eventBus.on('theme-changed', dashboardHandler);
+      const submitButton = document.createElement('button');
+      submitButton.className = 'submit-btn';
+      submitButton.textContent = 'Submit';
 
-      // System emits theme change
-      eventBus.emit('theme-changed', { theme: 'dark' });
+      const cancelButton = document.createElement('button');
+      cancelButton.className = 'cancel-btn';
+      cancelButton.textContent = 'Cancel';
 
-      // All components should update
-      expect(headerHandler).toHaveBeenCalledWith({ theme: 'dark' });
-      expect(sidebarHandler).toHaveBeenCalledWith({ theme: 'dark' });
-      expect(dashboardHandler).toHaveBeenCalledWith({ theme: 'dark' });
+      componentDiv.appendChild(submitButton);
+      componentDiv.appendChild(cancelButton);
+      container.appendChild(componentDiv);
+
+      // Act: Bind events with CSS selectors
+      eventBus.bindEvents(componentId, {
+        'click .submit-btn': 'SUBMIT_CLICKED',
+        'click .cancel-btn': 'CANCEL_CLICKED',
+      });
+
+      // Trigger different button clicks
+      submitButton.click();
+      cancelButton.click();
+
+      // Assert: Correct events received
+      expect(mockController.receiveEvent).toHaveBeenCalledWith({
+        type: 'SUBMIT_CLICKED',
+      });
+      expect(mockController.receiveEvent).toHaveBeenCalledWith({
+        type: 'CANCEL_CLICKED',
+      });
+      expect(mockController.receiveEvent).toHaveBeenCalledTimes(2);
+
+      log.debug('Selector-based binding test completed');
     });
 
-    it('isolates different event types', () => {
-      // Behavior: Events should not interfere with each other
-      const loginHandler = vi.fn();
-      const logoutHandler = vi.fn();
+    it('should handle form submission events', () => {
+      // Arrange: Form component
+      const componentId = ReactiveEventBus.generateComponentId('form');
+      const form = document.createElement('form') as ComponentWithController;
+      form.setAttribute('data-component-id', componentId);
+      form.controller = mockController;
 
-      eventBus.on('user-login', loginHandler);
-      eventBus.on('user-logout', logoutHandler);
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = 'test data';
 
-      // Only trigger login
-      eventBus.emit('user-login', { user: 'alice' });
+      const submitBtn = document.createElement('button');
+      submitBtn.type = 'submit';
+      submitBtn.textContent = 'Submit';
 
-      expect(loginHandler).toHaveBeenCalledWith({ user: 'alice' });
-      expect(logoutHandler).not.toHaveBeenCalled();
-    });
-  });
+      form.appendChild(input);
+      form.appendChild(submitBtn);
+      container.appendChild(form);
 
-  describe('Data Integrity', () => {
-    it('preserves event data without modification', () => {
-      // Behavior: Event data should pass through unchanged
-      const handler = vi.fn();
-      const complexData = {
-        user: { id: 1, name: 'Alice', preferences: { theme: 'dark' } },
-        actions: ['read', 'write'],
-        timestamp: Date.now(),
-      };
+      // Act: Bind form submission
+      eventBus.bindEvents(componentId, {
+        submit: 'FORM_SUBMITTED',
+      });
 
-      eventBus.on('data-event', handler);
-      eventBus.emit('data-event', complexData);
+      // Trigger form submission
+      const submitEvent = new Event('submit', {
+        bubbles: true,
+        cancelable: true,
+      });
+      form.dispatchEvent(submitEvent);
 
-      expect(handler).toHaveBeenCalledWith(complexData);
-      expect(handler.mock.calls[0][0]).toBe(complexData); // Same reference
-    });
+      // Assert: Form submission handled
+      expect(mockController.receiveEvent).toHaveBeenCalledWith({
+        type: 'FORM_SUBMITTED',
+      });
 
-    it('handles different data types correctly', () => {
-      // Behavior: Should work with various data types
-      const handler = vi.fn();
-      eventBus.on('flexible-event', handler);
-
-      // Test different data types
-      eventBus.emit('flexible-event', 'string');
-      expect(handler).toHaveBeenLastCalledWith('string');
-
-      eventBus.emit('flexible-event', 42);
-      expect(handler).toHaveBeenLastCalledWith(42);
-
-      eventBus.emit('flexible-event', true);
-      expect(handler).toHaveBeenLastCalledWith(true);
-
-      eventBus.emit('flexible-event', null);
-      expect(handler).toHaveBeenLastCalledWith(null);
-
-      eventBus.emit('flexible-event', [1, 2, 3]);
-      expect(handler).toHaveBeenLastCalledWith([1, 2, 3]);
+      log.debug('Form submission test completed');
     });
   });
 
   describe('Component Lifecycle', () => {
-    it('allows components to unsubscribe when unmounting', () => {
-      // Behavior: Components should clean up their subscriptions
-      const handler = vi.fn();
+    it('should unbind events when component is removed', () => {
+      // Arrange: Component with events
+      const componentId = ReactiveEventBus.generateComponentId('test');
+      const button = document.createElement('button') as ComponentWithController;
+      button.setAttribute('data-component-id', componentId);
+      button.controller = mockController;
+      container.appendChild(button);
 
-      // Component subscribes
-      eventBus.on('update', handler);
+      eventBus.bindEvents(componentId, {
+        click: 'BUTTON_CLICKED',
+      });
 
-      // Verify it receives events
-      eventBus.emit('update', { version: 1 });
-      expect(handler).toHaveBeenCalledTimes(1);
+      // Verify binding works
+      button.click();
+      expect(mockController.receiveEvent).toHaveBeenCalledTimes(1);
 
-      // Component unsubscribes (simulated by clearing)
-      eventBus.clear();
+      // Act: Unbind events
+      eventBus.unbindEvents(componentId);
 
-      // Should not receive new events
-      eventBus.emit('update', { version: 2 });
-      expect(handler).toHaveBeenCalledTimes(1); // Still only called once
+      // Click again after unbinding
+      button.click();
+
+      // Assert: No additional events received
+      expect(mockController.receiveEvent).toHaveBeenCalledTimes(1);
+
+      log.debug('Unbind test completed');
     });
 
-    it('handles multiple subscribers safely', () => {
-      // Behavior: System should handle many components efficiently
-      const handlers = Array.from({ length: 50 }, () => vi.fn());
+    it('should generate unique component IDs', () => {
+      // Act: Generate multiple IDs
+      const id1 = ReactiveEventBus.generateComponentId('test');
+      const id2 = ReactiveEventBus.generateComponentId('test');
+      const id3 = ReactiveEventBus.generateComponentId('other');
 
-      // All components subscribe
-      handlers.forEach((handler, _index) => {
-        eventBus.on('broadcast', handler);
+      // Assert: All IDs are unique
+      expect(id1).not.toBe(id2);
+      expect(id2).not.toBe(id3);
+      expect(id1).not.toBe(id3);
+
+      // All should start with prefix
+      expect(id1).toMatch(/^test-/);
+      expect(id2).toMatch(/^test-/);
+      expect(id3).toMatch(/^other-/);
+
+      log.debug('ID generation test completed', { id1, id2, id3 });
+    });
+  });
+
+  describe('Event Propagation', () => {
+    it('should handle bubbling events correctly', () => {
+      // Arrange: Nested elements
+      const componentId = ReactiveEventBus.generateComponentId('nested');
+      const outerDiv = document.createElement('div') as ComponentWithController;
+      outerDiv.setAttribute('data-component-id', componentId);
+      outerDiv.controller = mockController;
+
+      const innerButton = document.createElement('button');
+      innerButton.className = 'inner-btn';
+      innerButton.textContent = 'Inner';
+
+      outerDiv.appendChild(innerButton);
+      container.appendChild(outerDiv);
+
+      // Act: Bind to outer div but target inner button
+      eventBus.bindEvents(componentId, {
+        'click .inner-btn': 'INNER_CLICKED',
       });
 
-      // Single broadcast
-      eventBus.emit('broadcast', { message: 'Hello everyone!' });
+      // Click inner button (event bubbles to outer div)
+      innerButton.click();
 
-      // All components should receive it
-      handlers.forEach((handler) => {
-        expect(handler).toHaveBeenCalledWith({ message: 'Hello everyone!' });
+      // Assert: Event received via bubbling
+      expect(mockController.receiveEvent).toHaveBeenCalledWith({
+        type: 'INNER_CLICKED',
       });
+
+      log.debug('Event bubbling test completed');
     });
   });
 
   describe('Error Handling', () => {
-    it('gracefully handles invalid events', () => {
-      // Behavior: System should be robust to edge cases
-      const handler = vi.fn();
-      eventBus.on('test', handler);
+    it('should handle missing controller gracefully', () => {
+      // Arrange: Component without controller
+      const componentId = ReactiveEventBus.generateComponentId('no-controller');
+      const button = document.createElement('button');
+      button.setAttribute('data-component-id', componentId);
+      // No controller attached!
+      container.appendChild(button);
 
-      // Should not crash with undefined data
+      // Act & Assert: Should not throw
       expect(() => {
-        eventBus.emit('test', undefined);
+        eventBus.bindEvents(componentId, {
+          click: 'BUTTON_CLICKED',
+        });
+        button.click();
       }).not.toThrow();
 
-      expect(handler).toHaveBeenCalledWith(undefined);
+      log.debug('Missing controller test completed');
     });
 
-    it('continues working if a handler throws an error', () => {
-      // Behavior: One broken component shouldn't break others
-      const workingHandler = vi.fn();
-      const brokenHandler = vi.fn(() => {
-        throw new Error('Component error');
-      });
-      const anotherWorkingHandler = vi.fn();
-
-      eventBus.on('error-test', workingHandler);
-      eventBus.on('error-test', brokenHandler);
-      eventBus.on('error-test', anotherWorkingHandler);
-
-      // Should not crash the whole system
+    it('should handle missing component element gracefully', () => {
+      // Act & Assert: Should not throw when binding to non-existent component
       expect(() => {
-        eventBus.emit('error-test', 'data');
+        eventBus.bindEvents('non-existent-component', {
+          click: 'BUTTON_CLICKED',
+        });
       }).not.toThrow();
 
-      // Working handlers should still be called
-      expect(workingHandler).toHaveBeenCalledWith('data');
-      expect(anotherWorkingHandler).toHaveBeenCalledWith('data');
+      log.debug('Missing element test completed');
     });
   });
 
-  describe('Real-world Use Cases', () => {
-    it('supports form validation communication', () => {
-      // Behavior: Form components can communicate validation state
-      const formHandler = vi.fn();
-      const submitButtonHandler = vi.fn();
+  describe('Advanced Features', () => {
+    it('should support refreshing bindings', () => {
+      // Arrange: Component with initial binding
+      const componentId = ReactiveEventBus.generateComponentId('refresh');
+      const button = document.createElement('button') as ComponentWithController;
+      button.setAttribute('data-component-id', componentId);
+      button.controller = mockController;
+      container.appendChild(button);
 
-      eventBus.on('field-validation', formHandler);
-      eventBus.on('field-validation', submitButtonHandler);
-
-      // Field validation fails
-      eventBus.emit('field-validation', {
-        field: 'email',
-        valid: false,
-        error: 'Invalid email format',
+      eventBus.bindEvents(componentId, {
+        click: 'INITIAL_CLICK',
       });
 
-      expect(formHandler).toHaveBeenCalledWith({
-        field: 'email',
-        valid: false,
-        error: 'Invalid email format',
+      // Act: Refresh bindings (simulates DOM updates)
+      eventBus.refreshBindings();
+
+      // Click button
+      button.click();
+
+      // Assert: Still works after refresh
+      expect(mockController.receiveEvent).toHaveBeenCalledWith({
+        type: 'INITIAL_CLICK',
       });
-      expect(submitButtonHandler).toHaveBeenCalledWith({
-        field: 'email',
-        valid: false,
-        error: 'Invalid email format',
-      });
+
+      log.debug('Refresh bindings test completed');
     });
 
-    it('supports navigation state updates', () => {
-      // Behavior: Navigation changes can notify multiple components
-      const headerHandler = vi.fn();
-      const breadcrumbHandler = vi.fn();
-      const sidebarHandler = vi.fn();
+    it('should maintain singleton behavior', () => {
+      // Act: Get multiple instances
+      const instance1 = ReactiveEventBus.getInstance();
+      const instance2 = ReactiveEventBus.getInstance();
 
-      eventBus.on('route-changed', headerHandler);
-      eventBus.on('route-changed', breadcrumbHandler);
-      eventBus.on('route-changed', sidebarHandler);
+      // Assert: Same instance returned
+      expect(instance1).toBe(instance2);
+      expect(instance1).toBe(eventBus);
 
-      // Router emits navigation change
-      eventBus.emit('route-changed', {
-        from: '/dashboard',
-        to: '/settings',
-        params: { tab: 'profile' },
-      });
-
-      const expectedData = {
-        from: '/dashboard',
-        to: '/settings',
-        params: { tab: 'profile' },
-      };
-
-      expect(headerHandler).toHaveBeenCalledWith(expectedData);
-      expect(breadcrumbHandler).toHaveBeenCalledWith(expectedData);
-      expect(sidebarHandler).toHaveBeenCalledWith(expectedData);
-    });
-
-    it('supports user session management', () => {
-      // Behavior: Authentication events can update entire app state
-      const appHandler = vi.fn();
-      const menuHandler = vi.fn();
-
-      eventBus.on('session-changed', appHandler);
-      eventBus.on('session-changed', menuHandler);
-
-      // User logs in
-      eventBus.emit('session-changed', {
-        type: 'login',
-        user: { id: '123', name: 'Alice', role: 'admin' },
-        token: 'jwt-token-here',
-      });
-
-      const expectedSessionData = {
-        type: 'login',
-        user: { id: '123', name: 'Alice', role: 'admin' },
-        token: 'jwt-token-here',
-      };
-
-      expect(appHandler).toHaveBeenCalledWith(expectedSessionData);
-      expect(menuHandler).toHaveBeenCalledWith(expectedSessionData);
+      log.debug('Singleton test completed');
     });
   });
 });
