@@ -37,11 +37,32 @@ export async function saveCommand(customMessage?: string) {
       let message: string;
 
       if (customMessage) {
+        // Generate helpful context based on git status and changes
+        const changedFiles = await git.getGit().diff(['--name-only', '--cached']);
+        const files = changedFiles.trim() ? changedFiles.trim().split('\n') : [];
+
+        // Analyze changed files to provide meaningful context
+        const testFiles = files.filter((f) => f.includes('.test.') || f.includes('.spec.')).length;
+        const srcFiles = files.filter((f) => f.includes('src/') && !f.includes('.test.')).length;
+        const docsFiles = files.filter((f) => f.includes('docs/') || f.endsWith('.md')).length;
+        const configFiles = files.filter(
+          (f) => f.includes('package.json') || f.includes('tsconfig')
+        ).length;
+
+        const contextParts = [];
+        if (srcFiles > 0) contextParts.push(`${srcFiles} implementation files`);
+        if (testFiles > 0) contextParts.push(`${testFiles} test files`);
+        if (docsFiles > 0) contextParts.push(`${docsFiles} documentation files`);
+        if (configFiles > 0) contextParts.push(`${configFiles} config files`);
+
+        const contextText =
+          contextParts.length > 0 ? contextParts.join(', ') : `${files.length} files modified`;
+
         // Use descriptive commit format when custom message is provided
         message = `feat(${agentType.toLowerCase()}): ${customMessage}
 
 Agent: ${agentType}
-Context: ${customMessage}
+Context: ${contextText}
 Date: ${currentDate}
 Branch: ${currentBranch}
 
