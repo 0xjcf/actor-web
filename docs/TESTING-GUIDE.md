@@ -669,6 +669,135 @@ async function waitForComponent(element: Element): Promise<void> {
 
 ---
 
+## Testing Event Emission Systems
+
+### Overview
+Event emission testing focuses on verifying actor-to-actor communication patterns while maintaining proper lifecycle management and type safety.
+
+### Pattern: Real Framework API Testing
+
+```typescript
+import { ActorEventBus } from '@/core/actor-event-bus';
+import { createActorRef } from '@/core/create-actor-ref';
+
+describe('Event Emission Tests', () => {
+  let eventBus: ActorEventBus<TestEvent>;
+  let testActors: Array<ReturnType<typeof createActorRef>> = [];
+
+  beforeEach(() => {
+    // ✅ CORRECT: Test real framework API
+    eventBus = new ActorEventBus<TestEvent>();
+    testActors = [];
+  });
+
+  afterEach(async () => {
+    // ✅ CORRECT: Proper cleanup prevents memory leaks
+    if (!eventBus.destroyed) {
+      eventBus.destroy();
+    }
+    await Promise.all(testActors.map(actor => actor.stop()));
+    testActors = [];
+  });
+});
+```
+
+### Pattern: Type-Safe Event Testing
+
+```typescript
+interface UserEvent {
+  type: 'USER_LOGGED_IN' | 'USER_LOGGED_OUT';
+  userId: string;
+  timestamp: number;
+}
+
+it('should handle type-safe actor events', () => {
+  const actor = createActorRef<InputEvent, UserEvent>(machine);
+  testActors.push(actor);
+  
+  const listener = vi.fn();
+  actor.subscribe(listener);
+  
+  const event: UserEvent = {
+    type: 'USER_LOGGED_IN',
+    userId: 'test-user',
+    timestamp: Date.now()
+  };
+  
+  actor.emit(event);
+  expect(listener).toHaveBeenCalledWith(event);
+});
+```
+
+### Pattern: Performance Testing
+
+```typescript
+it('should handle high-frequency events efficiently', () => {
+  const actor = createActorRef<InputEvent, SystemEvent>(machine);
+  const listener = vi.fn();
+  actor.subscribe(listener);
+
+  const eventCount = 1000;
+  const startTime = performance.now();
+  
+  for (let i = 0; i < eventCount; i++) {
+    actor.emit({ type: 'BATCH_EVENT', data: `Event ${i}` });
+  }
+  
+  const endTime = performance.now();
+  
+  // Assert performance requirement
+  expect(endTime - startTime).toBeLessThan(100); // <100ms
+  expect(listener).toHaveBeenCalledTimes(eventCount);
+});
+```
+
+### Pattern: Error Handling Testing
+
+```typescript
+it('should handle listener errors gracefully', () => {
+  const errorListener = vi.fn(() => {
+    throw new Error('Listener error');
+  });
+  const goodListener = vi.fn();
+
+  eventBus.subscribe(errorListener);
+  eventBus.subscribe(goodListener);
+
+  const event = { type: 'TEST_ERROR', data: 'test' };
+
+  // Should not throw despite error in one listener
+  expect(() => eventBus.emit(event)).not.toThrow();
+
+  // Both listeners should have been called
+  expect(errorListener).toHaveBeenCalledWith(event);
+  expect(goodListener).toHaveBeenCalledWith(event);
+});
+```
+
+### Pattern: Lifecycle Integration Testing
+
+```typescript
+it('should clean up event emissions when actor stops', async () => {
+  const actor = createActorRef<InputEvent, UserEvent>(machine);
+  testActors.push(actor);
+
+  const listener = vi.fn();
+  actor.subscribe(listener);
+  
+  const event = { type: 'USER_LOGGED_IN', userId: 'test' };
+  actor.emit(event);
+  expect(listener).toHaveBeenCalledTimes(1);
+
+  // Stop the actor
+  await actor.stop();
+
+  // Try to emit after stopping (should throw)
+  expect(() => actor.emit(event)).toThrow();
+});
+```
+
+---
+
 ## ⚠️ Anti-Patterns to Avoid
 
 ### ❌ Testing Implementation Details
