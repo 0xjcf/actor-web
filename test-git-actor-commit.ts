@@ -1,69 +1,64 @@
 #!/usr/bin/env tsx
 
 /**
- * Test git-actor by actually committing our migration changes using GitActorIntegration
+ * Test GitActorIntegration for committing changes
  */
 
 import { GitActorIntegration } from './packages/agent-workflow-cli/src/core/git-actor-integration.js';
+import { enableDevMode, Logger } from './src/core/dev-mode.js';
 
-async function commitWithGitActor() {
-  console.log('🚀 Committing Changes with Git Actor Integration');
-  console.log('=================================================');
+// Enable debug logging to see event flow
+enableDevMode();
 
-  const git = new GitActorIntegration(process.cwd());
+const log = Logger.namespace('GIT_ACTOR_INTEGRATION_TEST');
+
+async function testGitActorCommit() {
+  log.debug('🚀 Committing Changes with Git Actor Integration');
+  log.debug('=================================================');
+
+  const git = new GitActorIntegration();
 
   try {
-    console.log('✅ Testing repository check...');
+    // Test basic repository operations
+    log.debug('✅ Testing repository check...');
     const isGitRepo = await git.isGitRepo();
-    console.log(`📁 Is Git Repository: ${isGitRepo}`);
+    log.debug('📁 Is Git Repository:', { isGitRepo });
 
-    if (!isGitRepo) {
-      console.log('❌ Not in a git repository');
-      return;
-    }
-
-    console.log('\n✅ Checking status...');
+    log.debug('✅ Checking status...');
     const currentBranch = await git.getCurrentBranch();
-    console.log(`🌿 Current Branch: ${currentBranch}`);
+    log.debug('🌿 Current Branch:', { currentBranch });
 
-    console.log('\n✅ Detecting agent type...');
+    log.debug('✅ Detecting agent type...');
     const agentType = await git.detectAgentType();
-    console.log(`🤖 Agent Type: ${agentType}`);
+    log.debug('🤖 Agent Type:', { agentType });
 
-    console.log('\n✅ Checking for uncommitted changes...');
+    log.debug('✅ Checking for uncommitted changes...');
     const hasChanges = await git.hasUncommittedChanges();
-    console.log(`📝 Has Changes: ${hasChanges}`);
+    log.debug('📝 Has Changes:', { hasChanges });
 
     if (hasChanges) {
-      console.log('\n💾 Committing changes with git-actor...');
-      const commitMessage = `feat(agent-a): Fix git-actor event emission visibility
-
-- Enhanced GitActorIntegration with proper context monitoring
-- Fixed event emission by monitoring state machine context changes  
-- Added comprehensive logging to track git operations
-- Successfully validates git-actor event-driven architecture
-
-Testing: All git operations now use proper actor model
-[actor-web] ${agentType} - Event Emission Fix Complete`;
-
-      const commitHash = await git.stageAndCommit(commitMessage);
-      console.log(`✅ Committed successfully! Hash: ${commitHash}`);
-    } else {
-      console.log('✅ No changes to commit');
+      log.debug('💾 Committing changes with git-actor...');
+      const commitHash = await git.stageAndCommit(
+        'feat(agent-a): Fix git-actor event emission visibility'
+      );
+      log.debug('✅ Committed successfully! Hash:', { commitHash });
     }
 
-    console.log('\n🎉 Git Actor Integration test completed successfully!');
-    console.log('🏆 All git operations worked using the actor model with proper event emission.');
+    log.debug('🎉 Git Actor Integration test completed successfully!');
+    log.debug('🏆 All git operations worked using the actor model with proper event emission.');
   } catch (error) {
-    console.error('❌ Git Actor Integration test failed:', error);
+    log.error('❌ Git Actor Integration test failed:', error);
     if (error instanceof Error) {
-      console.error('Stack trace:', error.stack);
+      log.debug('Stack trace:', { stack: error.stack });
     }
   } finally {
+    log.debug('🧹 Git Actor Integration stopped');
     await git.stop();
-    console.log('\n🧹 Git Actor Integration stopped');
   }
 }
 
 // Run the test
-commitWithGitActor().catch(console.error);
+testGitActorCommit().catch((error) => {
+  const log = Logger.namespace('GIT_ACTOR_INTEGRATION_TEST');
+  log.error('Unhandled error in test:', error);
+});
