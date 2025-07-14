@@ -6,8 +6,8 @@
  * Uses proper event subscription with framework's ActorRef system
  */
 
-// Import directly from source files to avoid testing utilities
-import { Logger } from '../../../../src/core/dev-mode.js';
+// Import from framework dependency
+import { Logger } from '@actor-web/core';
 import {
   createGitActor,
   type GitActor,
