@@ -1,6 +1,9 @@
-import { type ActorRef, type ActorSnapshot, createActorRef } from '@actor-web/core';
+import { type ActorRef, type ActorSnapshot, createActorRef, Logger } from '@actor-web/core';
 import { type SimpleGit, simpleGit } from 'simple-git';
 import { assign, fromPromise, setup } from 'xstate';
+
+// Use scoped logger for git-actor internal operations
+const log = Logger.namespace('GIT_ACTOR');
 
 /**
  * GitActor-specific snapshot that includes state value for CLI operations
@@ -97,6 +100,7 @@ export interface GitContext {
   fetchResults?: { lastFetched?: boolean }; // CLI Migration: Simplified fetch result
   mergeResults?: { lastMerged?: { success: boolean; commitHash?: string } }; // CLI Migration: Simplified merge result
   lastEventParams?: { [key: string]: unknown }; // CLI Migration: Store event params for actions
+  emit?: (response: GitResponse) => void; // CLI Migration: Event emission function
 }
 
 export interface AgentWorktreeConfig {
@@ -264,19 +268,30 @@ export const gitActorMachine = setup({
 
     detectAgentType: fromPromise(async ({ input }: { input: { git: SimpleGit } }) => {
       const { git } = input;
-      const status = await git.status();
-      const currentBranch = status.current || '';
+      log.debug('Starting agent type detection');
 
-      if (currentBranch.includes('agent-a') || currentBranch.includes('architecture')) {
-        return 'Agent A (Architecture)';
+      try {
+        const status = await git.status();
+        const currentBranch = status.current || '';
+        log.debug('Got git status', { currentBranch });
+
+        let agentType: string;
+        if (currentBranch.includes('agent-a') || currentBranch.includes('architecture')) {
+          agentType = 'Agent A (Architecture)';
+        } else if (currentBranch.includes('agent-b') || currentBranch.includes('implementation')) {
+          agentType = 'Agent B (Implementation)';
+        } else if (currentBranch.includes('agent-c') || currentBranch.includes('test')) {
+          agentType = 'Agent C (Testing/Cleanup)';
+        } else {
+          agentType = 'Unknown Agent';
+        }
+
+        log.debug('Agent type detected', { agentType, currentBranch });
+        return agentType;
+      } catch (error) {
+        log.error('Error detecting agent type', { error });
+        throw error;
       }
-      if (currentBranch.includes('agent-b') || currentBranch.includes('implementation')) {
-        return 'Agent B (Implementation)';
-      }
-      if (currentBranch.includes('agent-c') || currentBranch.includes('test')) {
-        return 'Agent C (Testing/Cleanup)';
-      }
-      return 'Unknown Agent';
     }),
 
     checkUncommittedChanges: fromPromise(async ({ input }: { input: { git: SimpleGit } }) => {
@@ -572,6 +587,9 @@ Context: Modified ${files.length} files for implementation work
 
   states: {
     idle: {
+      entry: () => {
+        log.debug('Git actor entered idle state');
+      },
       on: {
         SETUP_WORKTREES: {
           target: 'settingUpWorktrees',
@@ -583,6 +601,9 @@ Context: Modified ${files.length} files for implementation work
           target: 'gettingChangedFiles',
         },
         DETECT_AGENT_TYPE: {
+          actions: () => {
+            log.debug('Received DETECT_AGENT_TYPE event, transitioning to detectingAgentType');
+          },
           target: 'detectingAgentType',
         },
         CHECK_UNCOMMITTED_CHANGES: {
@@ -719,6 +740,9 @@ Context: Modified ${files.length} files for implementation work
     },
 
     detectingAgentType: {
+      entry: () => {
+        log.debug('Entering detectingAgentType state');
+      },
       invoke: {
         src: 'detectAgentType',
         input: ({ context }) => ({
@@ -731,12 +755,17 @@ Context: Modified ${files.length} files for implementation work
               agentType: ({ event }) => event.output,
             }),
             // Emit response event
-            ({ event, self }) => {
-              if (self && 'emit' in self) {
-                (self as { emit: (event: GitResponse) => void }).emit({
+            ({ event, context }) => {
+              log.debug('detectAgentType completed successfully', { agentType: event.output });
+              if (context.emit) {
+                const response = {
                   type: 'AGENT_TYPE_DETECTED',
                   agentType: event.output,
-                });
+                } as const;
+                log.debug('Emitting AGENT_TYPE_DETECTED response', response);
+                context.emit(response);
+              } else {
+                log.error('Emit function not available in context');
               }
             },
           ],
@@ -748,12 +777,17 @@ Context: Modified ${files.length} files for implementation work
               lastError: () => 'Agent type detection failed',
             }),
             // Emit error event
-            ({ self }) => {
-              if (self && 'emit' in self) {
-                (self as { emit: (event: GitResponse) => void }).emit({
+            ({ context, event }) => {
+              log.error('detectAgentType failed', { error: event.error });
+              if (context.emit) {
+                const response = {
                   type: 'GIT_ERROR',
                   error: 'Agent type detection failed',
-                });
+                } as const;
+                log.debug('Emitting GIT_ERROR response', response);
+                context.emit(response);
+              } else {
+                log.error('Emit function not available in context for error handling');
               }
             },
           ],

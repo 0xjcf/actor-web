@@ -11,6 +11,7 @@ import { Logger } from '../../../../src/core/dev-mode.js';
 import {
   createGitActor,
   type GitActor,
+  type GitContext,
   type GitEvent,
   type GitResponse,
 } from '../actors/git-actor.js';
@@ -37,7 +38,33 @@ export class GitActorIntegration {
   constructor(baseDir?: string) {
     log.debug('Initializing GitActorIntegration', { baseDir });
     this.actor = createGitActor(baseDir);
+
+    // Add debug logging for actor state
+    log.debug('Git actor created, starting actor', {
+      actorId: this.actor.id,
+      actorStatus: this.actor.status,
+    });
+
     this.actor.start();
+
+    // Inject our handleResponse method into the git-actor context
+    const snapshot = this.actor.getSnapshot();
+    if (snapshot.context) {
+      (snapshot.context as GitContext).emit = (response: GitResponse) => {
+        log.debug('Git-actor emitted response', response);
+        this.handleResponse(response);
+      };
+      log.debug('Injected handleResponse into git-actor context');
+    }
+
+    // Check actor state after start
+    const updatedSnapshot = this.actor.getSnapshot();
+    log.debug('Git actor started', {
+      actorId: this.actor.id,
+      actorStatus: this.actor.status,
+      currentState: updatedSnapshot.value,
+      hasEmitFunction: !!updatedSnapshot.context?.emit,
+    });
 
     // Set up event subscription for responses
     this.setupEventHandling();
@@ -316,10 +343,22 @@ export class GitActorIntegration {
 
       // Send the event to the actor
       if (typeof event === 'string') {
-        this.actor.send({ type: event } as GitEvent);
+        const eventObj = { type: event } as GitEvent;
+        log.debug('Sending string event to git-actor', { requestId, eventType, eventObj });
+        this.actor.send(eventObj);
       } else {
+        log.debug('Sending event object to git-actor', { requestId, eventType, event });
         this.actor.send(event);
       }
+
+      // Log actor state after sending event
+      const snapshot = this.actor.getSnapshot();
+      log.debug('Actor state after sending event', {
+        requestId,
+        eventType,
+        currentState: snapshot.value,
+        actorStatus: this.actor.status,
+      });
 
       log.debug('Event sent to git-actor', { requestId, eventType });
     });
