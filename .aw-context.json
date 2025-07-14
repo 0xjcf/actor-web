@@ -20,25 +20,30 @@
       "displayName": "Hierarchy Management",
       "priority": 4
     },
+    "cli-tools": {
+      "filePatterns": ["**/agent-workflow-cli/**"],
+      "displayName": "CLI Tools",
+      "priority": 5
+    },
     "core-framework": {
       "filePatterns": ["**/core/**", "!**/actors/**", "!**/test*"],
       "displayName": "Core Framework",
-      "priority": 5
+      "priority": 6
     },
     "tests": {
       "filePatterns": ["**/*.test.*", "**/test/**"],
       "displayName": "Tests",
-      "priority": 6
-    },
-    "cli-tools": {
-      "filePatterns": ["**/agent-workflow-cli/**", "**/commands/**"],
-      "displayName": "CLI Tools",
       "priority": 7
     },
     "documentation": {
       "filePatterns": ["**/docs/**", "**/*.md", "**/GUIDE*"],
       "displayName": "Documentation",
       "priority": 8
+    },
+    "configuration": {
+      "filePatterns": ["**/.aw-context.json", "**/package.json", "**/tsconfig*", "**/.env*"],
+      "displayName": "Configuration",
+      "priority": 9
     }
   },
   "analysis": {

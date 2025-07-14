@@ -84,10 +84,20 @@ function loadContextConfig(repoRoot: string): ContextConfig {
 
 // Simple glob pattern matching
 function matchesPattern(filePath: string, pattern: string): boolean {
-  // Convert glob pattern to regex (simplified)
-  const regexPattern = pattern.replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*').replace(/\./g, '\\.');
+  // Handle negation patterns (starting with !)
+  if (pattern.startsWith('!')) {
+    return !matchesPattern(filePath, pattern.slice(1));
+  }
 
-  return new RegExp(regexPattern).test(filePath);
+  // Convert glob pattern to regex (improved)
+  const regexPattern = pattern
+    .replace(/\*\*/g, '.*') // ** matches any number of directories
+    .replace(/\*/g, '[^/]*') // * matches anything except /
+    .replace(/\./g, '\\.') // Escape dots
+    .replace(/\?/g, '[^/]'); // ? matches single character except /
+
+  const regex = new RegExp(`^${regexPattern}$`);
+  return regex.test(filePath);
 }
 
 // Analyze files using configuration
