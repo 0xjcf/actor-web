@@ -1,6 +1,6 @@
 import path from 'node:path';
 import chalk from 'chalk';
-import { GitOperations } from '../core/git-operations.js';
+import { GitActorIntegration } from '../core/git-actor-integration.js';
 import { ValidationService } from '../core/validation.js';
 
 export async function validateCommand() {
@@ -9,7 +9,7 @@ export async function validateCommand() {
 
   // Navigate to repository root (two levels up from CLI package)
   const repoRoot = path.resolve(process.cwd(), '../..');
-  const git = new GitOperations(repoRoot);
+  const git = new GitActorIntegration(repoRoot);
   const validator = new ValidationService();
 
   try {

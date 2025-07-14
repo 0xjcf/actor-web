@@ -148,6 +148,179 @@ export class GitActorIntegration {
   }
 
   /**
+   * Get commits ahead/behind integration
+   * Replaces: git.getIntegrationStatus()
+   */
+  async getIntegrationStatus(
+    integrationBranch = 'feature/actor-ref-integration'
+  ): Promise<{ ahead: number; behind: number }> {
+    log.debug('Getting integration status', { integrationBranch });
+    return this.createRequest<{ ahead: number; behind: number }>(
+      { type: 'GET_INTEGRATION_STATUS', integrationBranch },
+      (response) => {
+        if (response.type === 'INTEGRATION_STATUS') {
+          log.debug('Integration status retrieved', {
+            ahead: response.ahead,
+            behind: response.behind,
+          });
+          return { ahead: response.ahead, behind: response.behind };
+        }
+        return undefined;
+      }
+    );
+  }
+
+  /**
+   * Stage all changes (git add .)
+   * Replaces: git.getGit().add('.')
+   */
+  async addAll(): Promise<void> {
+    log.debug('Staging all changes using git-actor');
+    return this.createRequest<void>('ADD_ALL', (response) => {
+      if (response.type === 'ALL_STAGED' && response.success) {
+        log.debug('All changes staged successfully');
+        return undefined;
+      }
+      return undefined;
+    });
+  }
+
+  /**
+   * Commit with message
+   * Replaces: git.getGit().commit(message)
+   */
+  async commit(message: string): Promise<void> {
+    log.debug('Committing changes', { message });
+    return this.createRequest<void>({ type: 'COMMIT_CHANGES', message }, (response) => {
+      if (response.type === 'CHANGES_COMMITTED') {
+        log.debug('Changes committed successfully', { commitHash: response.commitHash });
+        return undefined;
+      }
+      return undefined;
+    });
+  }
+
+  /**
+   * Fetch from origin
+   * Replaces: git.getGit().fetch(['origin', branch])
+   */
+  async fetch(branch?: string): Promise<void> {
+    log.debug('Fetching from origin', { branch });
+    return this.createRequest<void>(
+      { type: 'FETCH_REMOTE', branch: branch || 'origin' },
+      (response) => {
+        if (response.type === 'REMOTE_FETCHED') {
+          log.debug('Remote fetched successfully', { branch: response.branch });
+          return undefined;
+        }
+        return undefined;
+      }
+    );
+  }
+
+  /**
+   * Merge branch
+   * Replaces: git.getGit().merge([branch])
+   */
+  async merge(branch: string): Promise<void> {
+    log.debug('Merging branch', { branch });
+    return this.createRequest<void>({ type: 'MERGE_BRANCH', branch }, (response) => {
+      if (response.type === 'BRANCH_MERGED') {
+        log.debug('Branch merged successfully', { branch: response.branch });
+        return undefined;
+      }
+      return undefined;
+    });
+  }
+
+  /**
+   * Push to origin
+   * Replaces: git.getGit().push(['origin', branch])
+   */
+  async push(branch?: string): Promise<void> {
+    log.debug('Pushing to origin', { branch });
+    return this.createRequest<void>(
+      { type: 'PUSH_CHANGES', branch: branch || 'HEAD' },
+      (response) => {
+        if (response.type === 'CHANGES_PUSHED' && response.success) {
+          log.debug('Changes pushed successfully');
+          return undefined;
+        }
+        return undefined;
+      }
+    );
+  }
+
+  /**
+   * Create and checkout new branch
+   * Replaces: git.getGit().checkout(['-b', branchName])
+   */
+  async createBranch(branchName: string): Promise<void> {
+    log.debug('Creating and checking out branch using git-actor', { branchName });
+    return this.createRequest<void>({ type: 'CREATE_BRANCH', branchName }, (response) => {
+      if (response.type === 'BRANCH_CREATED' && response.success) {
+        log.debug('Branch created and checked out successfully', {
+          branchName: response.branchName,
+        });
+        return undefined;
+      }
+      return undefined;
+    });
+  }
+
+  /**
+   * Check if remote branch exists
+   * Replaces: git.getGit().raw(['show-ref', '--verify', '--quiet', ...])
+   */
+  async checkBranchExists(branch: string): Promise<boolean> {
+    log.debug('Checking if remote branch exists', { branch });
+    return this.createRequest<boolean>(
+      { type: 'CHECK_WORKTREE', path: `refs/remotes/origin/${branch}` },
+      (response) => {
+        if (response.type === 'WORKTREE_CHECKED') {
+          log.debug('Branch existence checked', { branch, exists: response.exists });
+          return response.exists;
+        }
+        return undefined;
+      }
+    );
+  }
+
+  /**
+   * Get last commit info
+   * Replaces: git.getGit().raw(['log', '--oneline', '-1'])
+   */
+  async getLastCommit(): Promise<string> {
+    log.debug('Getting last commit info using git-actor');
+    return this.createRequest<string>('GET_LAST_COMMIT', (response) => {
+      if (response.type === 'LAST_COMMIT') {
+        log.debug('Last commit retrieved', { commit: response.commit });
+        return response.commit;
+      }
+      return undefined;
+    });
+  }
+
+  /**
+   * Setup agent worktrees
+   * Replaces: git.setupAgentWorktrees(agentCount)
+   */
+  async setupAgentWorktrees(
+    agentCount: number
+  ): Promise<Array<{ agentId: string; branch: string; path: string; role: string }>> {
+    log.debug('Setting up agent worktrees', { agentCount });
+    return this.createRequest<
+      Array<{ agentId: string; branch: string; path: string; role: string }>
+    >({ type: 'SETUP_WORKTREES', agentCount }, (response) => {
+      if (response.type === 'WORKTREES_SETUP') {
+        log.debug('Worktrees setup completed', { worktrees: response.worktrees });
+        return response.worktrees;
+      }
+      return undefined;
+    });
+  }
+
+  /**
    * Get changed files synchronously using git status (for testing)
    * This bypasses the actor system for immediate results
    */

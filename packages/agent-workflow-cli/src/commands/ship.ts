@@ -1,6 +1,6 @@
 import path from 'node:path';
 import chalk from 'chalk';
-import { GitOperations } from '../core/git-operations.js';
+import { GitActorIntegration } from '../core/git-actor-integration.js';
 import { ValidationService } from '../core/validation.js';
 
 export async function shipCommand() {
@@ -9,7 +9,7 @@ export async function shipCommand() {
 
   // Navigate to repository root (two levels up from CLI package)
   const repoRoot = path.resolve(process.cwd(), '../..');
-  const git = new GitOperations(repoRoot);
+  const git = new GitActorIntegration(repoRoot);
   const validator = new ValidationService();
 
   try {
@@ -25,7 +25,7 @@ export async function shipCommand() {
 
       try {
         // Stage all changes
-        await git.getGit().add('.');
+        await git.addAll();
 
         // Auto-commit with enhanced conventional commit message
         const _currentBranch = await git.getCurrentBranch();
@@ -40,7 +40,7 @@ Date: ${currentDate}
 
 [actor-web] ${agentType} - pre-ship save`;
 
-        await git.getGit().commit(message);
+        await git.commit(message);
         console.log(chalk.green(`✅ Committed changes: ${message}`));
       } catch (error) {
         console.error(chalk.red('❌ Failed to commit changes:'), error);
@@ -72,11 +72,11 @@ Date: ${currentDate}
 
     try {
       // Ensure we have the latest integration branch
-      await git.getGit().fetch(['origin', integrationBranch]);
+      await git.fetch(integrationBranch);
 
       // Push current branch to integration
       const currentBranch = await git.getCurrentBranch();
-      await git.getGit().push(['origin', `${currentBranch}:${integrationBranch}`]);
+      await git.push(`${currentBranch}:${integrationBranch}`);
 
       console.log(chalk.green('✅ Successfully shipped to integration branch!'));
       console.log(chalk.blue('📈 Other agents can now sync your changes'));

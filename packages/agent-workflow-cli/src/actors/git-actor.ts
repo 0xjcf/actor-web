@@ -44,7 +44,10 @@ export type GitEvent =
   | { type: 'CHECK_REPO' } // CLI Migration: Replace isGitRepo()
   | { type: 'CHECK_WORKTREE'; path: string } // CLI Migration: Replace worktreeExists()
   | { type: 'FETCH_REMOTE'; branch: string } // CLI Migration: Common git fetch operation
-  | { type: 'MERGE_BRANCH'; branch: string }; // CLI Migration: Common git merge operation
+  | { type: 'MERGE_BRANCH'; branch: string } // CLI Migration: Common git merge operation
+  | { type: 'ADD_ALL' } // CLI Migration: Stage all changes (git add .)
+  | { type: 'CREATE_BRANCH'; branchName: string } // CLI Migration: Create and checkout branch
+  | { type: 'GET_LAST_COMMIT' }; // CLI Migration: Get last commit info
 
 export type GitResponse =
   | { type: 'WORKTREES_SETUP'; worktrees: AgentWorktreeConfig[] }
@@ -62,7 +65,10 @@ export type GitResponse =
   | { type: 'REPO_CHECKED'; isGitRepo: boolean } // CLI Migration: Repository validation result
   | { type: 'WORKTREE_CHECKED'; exists: boolean; path: string } // CLI Migration: Worktree existence check
   | { type: 'REMOTE_FETCHED'; branch: string; success: boolean } // CLI Migration: Fetch operation result
-  | { type: 'BRANCH_MERGED'; branch: string; success: boolean; commitHash?: string }; // CLI Migration: Merge operation result
+  | { type: 'BRANCH_MERGED'; branch: string; success: boolean; commitHash?: string } // CLI Migration: Merge operation result
+  | { type: 'ALL_STAGED'; success: boolean } // CLI Migration: Stage all changes result
+  | { type: 'BRANCH_CREATED'; branchName: string; success: boolean } // CLI Migration: Branch creation result
+  | { type: 'LAST_COMMIT'; commit: string }; // CLI Migration: Last commit info result
 
 // ============================================================================
 // GIT ACTOR CONTEXT
@@ -99,6 +105,9 @@ export interface GitContext {
   worktreeChecks?: { lastChecked?: boolean }; // CLI Migration: Simplified worktree check result
   fetchResults?: { lastFetched?: boolean }; // CLI Migration: Simplified fetch result
   mergeResults?: { lastMerged?: { success: boolean; commitHash?: string } }; // CLI Migration: Simplified merge result
+  stagingResults?: { lastStaged?: boolean }; // CLI Migration: Staging operation results
+  branchResults?: { lastCreated?: string }; // CLI Migration: Branch creation results
+  lastCommitInfo?: string; // CLI Migration: Last commit information
   lastEventParams?: { [key: string]: unknown }; // CLI Migration: Store event params for actions
   emit?: (response: GitResponse) => void; // CLI Migration: Event emission function
 }
@@ -139,6 +148,12 @@ function _isFetchRemoteEvent(event: GitEvent): event is { type: 'FETCH_REMOTE'; 
 
 function _isMergeBranchEvent(event: GitEvent): event is { type: 'MERGE_BRANCH'; branch: string } {
   return event.type === 'MERGE_BRANCH';
+}
+
+function _isCreateBranchEvent(
+  event: GitEvent
+): event is { type: 'CREATE_BRANCH'; branchName: string } {
+  return event.type === 'CREATE_BRANCH';
 }
 
 // ============================================================================
@@ -594,6 +609,42 @@ Context: Modified ${files.length} files for implementation work
         };
       }
     }),
+
+    stageAll: fromPromise(async ({ input }: { input: { git: SimpleGit } }) => {
+      const { git } = input;
+      try {
+        await git.add('.');
+        return {
+          success: true,
+        };
+      } catch {
+        return {
+          success: false,
+        };
+      }
+    }),
+
+    createBranch: fromPromise(
+      async ({ input }: { input: { branchName: string; git: SimpleGit } }) => {
+        const { branchName, git } = input;
+        try {
+          await git.checkout(['-b', branchName]);
+          return branchName;
+        } catch {
+          throw new Error(`Failed to create branch: ${branchName}`);
+        }
+      }
+    ),
+
+    getLastCommit: fromPromise(async ({ input }: { input: { git: SimpleGit } }) => {
+      const { git } = input;
+      try {
+        const result = await git.raw(['log', '--oneline', '-1']);
+        return result.trim();
+      } catch {
+        return 'No commits found';
+      }
+    }),
   },
 }).createMachine({
   id: 'git-actor',
@@ -658,6 +709,15 @@ Context: Modified ${files.length} files for implementation work
         },
         MERGE_BRANCH: {
           target: 'mergingBranch',
+        },
+        ADD_ALL: {
+          target: 'stagingAll',
+        },
+        CREATE_BRANCH: {
+          target: 'creatingBranch',
+        },
+        GET_LAST_COMMIT: {
+          target: 'gettingLastCommit',
         },
       },
     },
@@ -1215,6 +1275,160 @@ Context: Modified ${files.length} files for implementation work
           actions: assign({
             lastError: () => 'Branch merge failed',
           }),
+        },
+      },
+    },
+
+    stagingAll: {
+      invoke: {
+        src: 'stageAll',
+        input: ({ context }) => ({
+          git: context.git,
+        }),
+        onDone: {
+          target: 'idle',
+          actions: [
+            assign({
+              stagingResults: () => ({ lastStaged: true }),
+            }),
+            // Emit response event
+            ({ context }) => {
+              log.debug('Stage all completed successfully');
+              if (context.emit) {
+                const response = {
+                  type: 'ALL_STAGED',
+                  success: true,
+                } as const;
+                log.debug('Emitting ALL_STAGED response', response);
+                context.emit(response);
+              }
+            },
+          ],
+        },
+        onError: {
+          target: 'idle',
+          actions: [
+            assign({
+              lastError: () => 'Stage all failed',
+            }),
+            // Emit error event
+            ({ context }) => {
+              log.error('Stage all failed');
+              if (context.emit) {
+                const response = {
+                  type: 'GIT_ERROR',
+                  error: 'Stage all failed',
+                } as const;
+                context.emit(response);
+              }
+            },
+          ],
+        },
+      },
+    },
+
+    creatingBranch: {
+      invoke: {
+        src: 'createBranch',
+        input: ({ event, context }) => {
+          if (!_isCreateBranchEvent(event)) {
+            throw new Error('Invalid event type for createBranch');
+          }
+          return {
+            branchName: event.branchName,
+            git: context.git,
+          };
+        },
+        onDone: {
+          target: 'idle',
+          actions: [
+            assign({
+              branchResults: ({ context, event }) => ({
+                ...context.branchResults,
+                lastCreated: event.output,
+              }),
+            }),
+            // Emit response event
+            ({ event, context }) => {
+              log.debug('Branch creation completed successfully', { branchName: event.output });
+              if (context.emit) {
+                const response = {
+                  type: 'BRANCH_CREATED',
+                  branchName: event.output,
+                  success: true,
+                } as const;
+                log.debug('Emitting BRANCH_CREATED response', response);
+                context.emit(response);
+              }
+            },
+          ],
+        },
+        onError: {
+          target: 'idle',
+          actions: [
+            assign({
+              lastError: () => 'Branch creation failed',
+            }),
+            // Emit error event
+            ({ context }) => {
+              log.error('Branch creation failed');
+              if (context.emit) {
+                const response = {
+                  type: 'GIT_ERROR',
+                  error: 'Branch creation failed',
+                } as const;
+                context.emit(response);
+              }
+            },
+          ],
+        },
+      },
+    },
+
+    gettingLastCommit: {
+      invoke: {
+        src: 'getLastCommit',
+        input: ({ context }) => ({
+          git: context.git,
+        }),
+        onDone: {
+          target: 'idle',
+          actions: [
+            assign({
+              lastCommitInfo: ({ event }) => event.output,
+            }),
+            // Emit response event
+            ({ event, context }) => {
+              log.debug('Last commit retrieval completed successfully', { commit: event.output });
+              if (context.emit) {
+                const response = {
+                  type: 'LAST_COMMIT',
+                  commit: event.output,
+                } as const;
+                log.debug('Emitting LAST_COMMIT response', response);
+                context.emit(response);
+              }
+            },
+          ],
+        },
+        onError: {
+          target: 'idle',
+          actions: [
+            assign({
+              lastError: () => 'Get last commit failed',
+            }),
+            // Emit error event
+            ({ context }) => {
+              log.error('Get last commit failed');
+              if (context.emit) {
+                const response = {
+                  type: 'GIT_ERROR',
+                  error: 'Get last commit failed',
+                } as const;
+                context.emit(response);
+              }
+            },
+          ],
         },
       },
     },
