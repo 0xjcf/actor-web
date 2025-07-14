@@ -61,7 +61,7 @@ const DEFAULT_CONTEXT_CONFIG: ContextConfig = {
 };
 
 // Load context configuration from project
-function loadContextConfig(repoRoot: string): ContextConfig {
+function _loadContextConfig(repoRoot: string): ContextConfig {
   const configPath = path.join(repoRoot, '.aw-context.json');
 
   try {
@@ -101,7 +101,7 @@ function matchesPattern(filePath: string, pattern: string): boolean {
 }
 
 // Analyze files using configuration
-function analyzeChangedFiles(files: string[], config: ContextConfig): string {
+function _analyzeChangedFiles(files: string[], config: ContextConfig): string {
   const categorizedFiles = new Map<string, string[]>();
 
   console.log(chalk.gray(`🔍 Debug: Analyzing ${files.length} files with patterns`));
@@ -214,53 +214,18 @@ export async function saveCommand(customMessage?: string) {
 
     try {
       // Generate commit message based on whether custom message is provided
-      const currentBranch = await git.getCurrentBranch();
-      const agentType = await git.detectAgentType();
-      const currentDate = new Date().toISOString().split('T')[0];
-
-      let message: string;
-
       if (customMessage) {
-        // Load context configuration
-        const _contextConfig = loadContextConfig(repoRoot);
-
-        // [actor-web] TODO: Get actual changed files from git-actor
-        // For now, using placeholder context
-        const contextText = 'CLI migration: Updated save command to use git-actor pattern';
-
-        // Use descriptive commit format when custom message is provided
-        message = `feat(${agentType.toLowerCase()}): ${customMessage}
-
-Agent: ${agentType}
-Context: ${contextText}
-Date: ${currentDate}
-Branch: ${currentBranch}
-
-[actor-web] ${agentType} - ${customMessage}`;
+        // Use conventional commit with custom description
+        await git.commitWithConvention(customMessage);
+        console.log(chalk.green('✅ Work saved successfully!'));
+        console.log(chalk.gray(`   Commit: feat: ${customMessage}`));
       } else {
-        // Generate intelligent message when no custom message provided
-        const contextConfig = loadContextConfig(repoRoot);
-
-        // [actor-web] TODO: Get actual changed files from git-actor
-        // For now, using placeholder
-        const files = ['src/commands/save.ts', 'src/core/git-actor-integration.ts'];
-        const contextText = analyzeChangedFiles(files, contextConfig);
-
-        message = `feat(${agentType.toLowerCase()}): Auto-save with ${files.length} file${files.length !== 1 ? 's' : ''} updated
-
-Agent: ${agentType}
-Context: ${contextText}
-Date: ${currentDate}
-Branch: ${currentBranch}
-
-[actor-web] ${agentType} - Auto-save with ${files.length} file${files.length !== 1 ? 's' : ''} updated`;
+        // Use conventional commit with auto-generated description
+        await git.commitWithConvention('auto-save with updated files');
+        console.log(chalk.green('✅ Work saved successfully!'));
+        console.log(chalk.gray('   Commit: feat: auto-save with updated files'));
       }
 
-      // Use git-actor to stage and commit
-      await git.stageAndCommit(message);
-
-      console.log(chalk.green('✅ Work saved successfully!'));
-      console.log(chalk.gray(`   Commit: ${message.split('\n')[0]}`));
       console.log(chalk.blue('💡 Next steps:'));
       console.log('   • Continue working: make more changes');
       console.log(`   • Ship when ready: ${chalk.yellow('pnpm aw:ship')}`);
