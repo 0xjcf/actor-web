@@ -112,9 +112,36 @@ function analyzeChangedFiles(files: string[], config: ContextConfig): string {
     console.log(chalk.gray(`  📁 Analyzing: ${file}`));
 
     for (const [category, categoryConfig] of Object.entries(config.patterns)) {
-      for (const pattern of categoryConfig.filePatterns) {
+      // Separate positive and negative patterns
+      const positivePatterns = categoryConfig.filePatterns.filter((p) => !p.startsWith('!'));
+      const negativePatterns = categoryConfig.filePatterns.filter((p) => p.startsWith('!'));
+
+      // First check if file matches any positive patterns
+      let matchesPositive = false;
+      for (const pattern of positivePatterns) {
         if (matchesPattern(file, pattern)) {
-          console.log(chalk.gray(`    ✅ Matched "${pattern}" → ${category}`));
+          console.log(chalk.gray(`    ✅ Positive match "${pattern}"`));
+          matchesPositive = true;
+          break;
+        }
+        console.log(chalk.gray(`    ❌ No match "${pattern}"`));
+      }
+
+      // If it matches positive patterns, check negative patterns for exclusions
+      if (matchesPositive) {
+        let excludedByNegative = false;
+        for (const negPattern of negativePatterns) {
+          const pattern = negPattern.slice(1); // Remove the '!' prefix
+          if (matchesPattern(file, pattern)) {
+            console.log(chalk.gray(`    ❌ Excluded by "${negPattern}"`));
+            excludedByNegative = true;
+            break;
+          }
+        }
+
+        // Only categorize if positive match and not excluded
+        if (!excludedByNegative) {
+          console.log(chalk.gray(`    ✅ Final match → ${category}`));
           if (!categorizedFiles.has(category)) {
             categorizedFiles.set(category, []);
           }
@@ -122,9 +149,8 @@ function analyzeChangedFiles(files: string[], config: ContextConfig): string {
           categorized = true;
           break;
         }
-        console.log(chalk.gray(`    ❌ No match "${pattern}"`));
+        console.log(chalk.gray(`    ❌ Excluded from ${category}`));
       }
-      if (categorized) break;
     }
 
     if (!categorized) {
