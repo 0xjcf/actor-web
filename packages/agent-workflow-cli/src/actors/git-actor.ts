@@ -913,6 +913,9 @@ Context: Modified ${files.length} files for implementation work
     },
 
     committingChanges: {
+      entry: () => {
+        log.debug('Entering committingChanges state');
+      },
       invoke: {
         src: 'commitChanges',
         input: ({ event, context }) => {
@@ -926,12 +929,44 @@ Context: Modified ${files.length} files for implementation work
         },
         onDone: {
           target: 'idle',
+          actions: [
+            // Emit response event
+            ({ event, context }) => {
+              log.debug('commitChanges completed successfully', { commitHash: event.output });
+              if (context.emit) {
+                const response = {
+                  type: 'CHANGES_COMMITTED',
+                  commitHash: event.output,
+                } as const;
+                log.debug('Emitting CHANGES_COMMITTED response', response);
+                context.emit(response);
+              } else {
+                log.error('Emit function not available in context for commitChanges');
+              }
+            },
+          ],
         },
         onError: {
           target: 'idle',
-          actions: assign({
-            lastError: () => 'Committing changes failed',
-          }),
+          actions: [
+            assign({
+              lastError: () => 'Committing changes failed',
+            }),
+            // Emit error event
+            ({ context, event }) => {
+              log.error('commitChanges failed', { error: event.error });
+              if (context.emit) {
+                const response = {
+                  type: 'GIT_ERROR',
+                  error: 'Committing changes failed',
+                } as const;
+                log.debug('Emitting GIT_ERROR response', response);
+                context.emit(response);
+              } else {
+                log.error('Emit function not available in context for error handling');
+              }
+            },
+          ],
         },
       },
     },
