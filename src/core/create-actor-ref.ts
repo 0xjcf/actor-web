@@ -6,7 +6,8 @@
 
 import type { Actor, AnyStateMachine, EventObject, SnapshotFrom } from 'xstate';
 import { createActor } from 'xstate';
-
+// Event emission system
+import { ActorEventBus } from './actor-event-bus.js';
 // Use my comprehensive ActorRef interface as primary
 import type {
   ActorRef,
@@ -37,6 +38,7 @@ import { CustomObservable } from './observables/observable.js';
  * - My advanced RequestResponseManager
  * - My Supervisor with fault tolerance
  * - Proper XState v5 integration
+ * - Event emission system for actor-to-actor communication
  */
 class UnifiedActorRef<
   TEvent extends BaseEventObject = BaseEventObject,
@@ -51,6 +53,9 @@ class UnifiedActorRef<
   // Advanced messaging and supervision
   private requestManager: RequestResponseManager;
   private supervisor?: Supervisor;
+
+  // Event emission system
+  private eventBus: ActorEventBus<TEmitted>;
 
   // Actor hierarchy
   private children = new Map<string, ActorRef<BaseEventObject, unknown>>();
@@ -82,6 +87,9 @@ class UnifiedActorRef<
       defaultRetries: 0,
       defaultRetryDelay: 1000,
     });
+
+    // Initialize event emission system
+    this.eventBus = new ActorEventBus<TEmitted>();
 
     // Set up supervision if specified
     if (this._supervision) {
@@ -153,6 +161,32 @@ class UnifiedActorRef<
       this.options.metrics?.onError?.(error as Error);
       throw error;
     }
+  }
+
+  // ========================================================================================
+  // EVENT EMISSION SYSTEM (ACTOR-TO-ACTOR COMMUNICATION)
+  // ========================================================================================
+
+  emit(event: TEmitted): void {
+    if (this._status === 'stopped') {
+      throw new ActorStoppedError(this._id);
+    }
+
+    try {
+      this.eventBus.emit(event);
+      this.options.metrics?.onMessage?.(event as BaseEventObject); // Track emission as message metric
+    } catch (error) {
+      this.options.metrics?.onError?.(error as Error);
+      this.handleError(error as Error);
+    }
+  }
+
+  subscribe(listener: (event: TEmitted) => void): () => void {
+    if (this._status === 'stopped') {
+      throw new ActorStoppedError(this._id);
+    }
+
+    return this.eventBus.subscribe(listener);
   }
 
   // ========================================================================================
@@ -250,6 +284,9 @@ class UnifiedActorRef<
 
       // Clear children
       this.children.clear();
+
+      // Cleanup event bus to prevent memory leaks
+      this.eventBus.destroy();
     } catch (error) {
       this._status = 'error';
       this.handleError(error as Error);
@@ -267,6 +304,9 @@ class UnifiedActorRef<
       input: this.options.input,
       id: this._id,
     });
+
+    // Reinitialize event bus for fresh start
+    this.eventBus = new ActorEventBus<TEmitted>();
 
     // Re-subscribe to lifecycle
     this.subscribeToLifecycle();

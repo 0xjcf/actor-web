@@ -108,8 +108,8 @@ class MockObservable<T> implements Observable<T> {
 /**
  * Mock ActorRef for testing
  */
-export interface MockActorRef<TEvent extends EventObject = EventObject>
-  extends ActorRef<TEvent, unknown, ActorSnapshot> {
+export interface MockActorRef<TEvent extends EventObject = EventObject, TEmitted = unknown>
+  extends ActorRef<TEvent, TEmitted, ActorSnapshot> {
   // Test helpers
   getSentEvents: () => TEvent[];
   getObserverCount: () => number;
@@ -123,12 +123,14 @@ export interface MockActorRef<TEvent extends EventObject = EventObject>
 /**
  * Create a mock ActorRef for testing
  */
-export function createMockActorRef<T extends EventObject = EventObject>(
+export function createMockActorRef<T extends EventObject = EventObject, TEmitted = unknown>(
   id = 'test-actor',
   options?: Partial<ActorRefOptions>
-): MockActorRef<T> {
+): MockActorRef<T, TEmitted> {
   const sentEvents: T[] = [];
   const spawnedChildren: MockActorRef<EventObject>[] = [];
+  const emittedEvents: TEmitted[] = [];
+  const subscribers = new Set<(event: TEmitted) => void>();
   let currentSnapshot: ActorSnapshot = {
     context: {},
     value: 'idle',
@@ -191,20 +193,43 @@ export function createMockActorRef<T extends EventObject = EventObject>(
     }) as <TQuery, TResponse>(query: TQuery, options?: unknown) => Promise<TResponse>,
     observe: vi.fn(observeImpl) as ObserveFn,
 
+    // Event emission system methods
+    emit: vi.fn((event: TEmitted) => {
+      emittedEvents.push(event);
+      // Notify all subscribers
+      for (const subscriber of subscribers) {
+        try {
+          subscriber(event);
+        } catch (_error) {
+          // Ignore subscriber errors in tests
+        }
+      }
+    }),
+
+    subscribe: vi.fn((listener: (event: TEmitted) => void) => {
+      subscribers.add(listener);
+      return () => {
+        subscribers.delete(listener);
+      };
+    }),
+
     spawn: vi.fn(
-      (
+      <TChildEvent extends EventObject, TChildEmitted = unknown>(
         _behavior: AnyStateMachine,
         spawnOptions?: { id?: string; supervision?: SupervisionStrategy }
-      ) => {
+      ): ActorRef<TChildEvent, TChildEmitted> => {
         const childId = spawnOptions?.id || `${id}.child-${spawnedChildren.length}`;
-        const childRef = createMockActorRef(childId, {
+        const childRef = createMockActorRef<TChildEvent, TChildEmitted>(childId, {
           parent: mockRef as MockActorRef<EventObject>,
           supervision: spawnOptions?.supervision || options?.supervision,
         });
-        spawnedChildren.push(childRef);
-        return childRef as MockActorRef<EventObject>;
+        spawnedChildren.push(childRef as MockActorRef<EventObject>);
+        return childRef as ActorRef<TChildEvent, TChildEmitted>;
       }
-    ),
+    ) as <TChildEvent extends EventObject, TChildEmitted = unknown>(
+      behavior: AnyStateMachine,
+      options?: ActorRefOptions
+    ) => ActorRef<TChildEvent, TChildEmitted>,
 
     // New required methods from ActorRef interface
     stopChild: vi.fn(async (childId: string) => {
@@ -256,7 +281,7 @@ export function createMockActorRef<T extends EventObject = EventObject>(
     },
   };
 
-  return mockRef;
+  return mockRef as MockActorRef<T, TEmitted>;
 }
 
 /**

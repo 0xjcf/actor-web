@@ -87,7 +87,7 @@ export type SupervisionAction = 'restart' | 'stop' | 'escalate' | 'ignore';
  */
 export interface ActorRef<
   TEvent extends BaseEventObject = BaseEventObject,
-  _TEmitted = unknown, // [actor-web] TODO: Implement event emission system for actors
+  TEmitted = unknown, // Event emission system for actor-to-actor communication
   TSnapshot extends ActorSnapshot = ActorSnapshot,
 > {
   // ========================================================================================
@@ -134,6 +134,24 @@ export interface ActorRef<
    * @throws {ActorStoppedError} if actor is stopped
    */
   ask<TQuery, TResponse>(query: TQuery, options?: AskOptions): Promise<TResponse>;
+
+  // ========================================================================================
+  // EVENT EMISSION SYSTEM (ACTOR-TO-ACTOR COMMUNICATION)
+  // ========================================================================================
+
+  /**
+   * Emit an event to all subscribers of this actor
+   * @param event - The event to emit
+   * @throws {ActorStoppedError} if actor is stopped
+   */
+  emit(event: TEmitted): void;
+
+  /**
+   * Subscribe to events emitted by this actor
+   * @param listener - Function to call when events are emitted
+   * @returns Unsubscribe function to stop receiving events
+   */
+  subscribe(listener: (event: TEmitted) => void): () => void;
 
   // ========================================================================================
   // STATE OBSERVATION (REACTIVE PATTERNS)
