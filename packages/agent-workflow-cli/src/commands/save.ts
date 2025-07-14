@@ -1,6 +1,143 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import chalk from 'chalk';
 import { GitOperations } from '../core/git-operations.js';
+
+// Context analysis configuration interface
+interface ContextConfig {
+  patterns: {
+    [category: string]: {
+      filePatterns: string[];
+      displayName: string;
+      priority: number;
+    };
+  };
+  analysis: {
+    maxModules: number;
+    separator: string;
+    fallbackMessage: string;
+  };
+}
+
+// Default configuration for projects without custom config
+const DEFAULT_CONTEXT_CONFIG: ContextConfig = {
+  patterns: {
+    tests: {
+      filePatterns: ['**/*.test.*', '**/*.spec.*', '**/test/**', '**/tests/**'],
+      displayName: 'Tests',
+      priority: 1,
+    },
+    components: {
+      filePatterns: ['**/components/**', '**/src/components/**'],
+      displayName: 'Components',
+      priority: 2,
+    },
+    core: {
+      filePatterns: ['**/core/**', '**/src/core/**'],
+      displayName: 'Core',
+      priority: 3,
+    },
+    utils: {
+      filePatterns: ['**/utils/**', '**/utilities/**', '**/helpers/**'],
+      displayName: 'Utilities',
+      priority: 4,
+    },
+    docs: {
+      filePatterns: ['**/*.md', '**/docs/**', '**/documentation/**'],
+      displayName: 'Documentation',
+      priority: 5,
+    },
+    config: {
+      filePatterns: ['**/package.json', '**/tsconfig*', '**/.env*', '**/config/**'],
+      displayName: 'Configuration',
+      priority: 6,
+    },
+  },
+  analysis: {
+    maxModules: 3,
+    separator: ' | ',
+    fallbackMessage: 'files modified across codebase',
+  },
+};
+
+// Load context configuration from project
+function loadContextConfig(repoRoot: string): ContextConfig {
+  const configPath = path.join(repoRoot, '.aw-context.json');
+
+  try {
+    if (fs.existsSync(configPath)) {
+      const configContent = fs.readFileSync(configPath, 'utf-8');
+      const userConfig = JSON.parse(configContent) as Partial<ContextConfig>;
+
+      // Merge with defaults
+      return {
+        patterns: { ...DEFAULT_CONTEXT_CONFIG.patterns, ...userConfig.patterns },
+        analysis: { ...DEFAULT_CONTEXT_CONFIG.analysis, ...userConfig.analysis },
+      };
+    }
+  } catch (_error) {
+    console.log(chalk.yellow('⚠️  Failed to load .aw-context.json, using defaults'));
+  }
+
+  return DEFAULT_CONTEXT_CONFIG;
+}
+
+// Simple glob pattern matching
+function matchesPattern(filePath: string, pattern: string): boolean {
+  // Convert glob pattern to regex (simplified)
+  const regexPattern = pattern.replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*').replace(/\./g, '\\.');
+
+  return new RegExp(regexPattern).test(filePath);
+}
+
+// Analyze files using configuration
+function analyzeChangedFiles(files: string[], config: ContextConfig): string {
+  const categorizedFiles = new Map<string, string[]>();
+
+  // Categorize files based on patterns
+  for (const file of files) {
+    let categorized = false;
+
+    for (const [category, categoryConfig] of Object.entries(config.patterns)) {
+      for (const pattern of categoryConfig.filePatterns) {
+        if (matchesPattern(file, pattern)) {
+          if (!categorizedFiles.has(category)) {
+            categorizedFiles.set(category, []);
+          }
+          categorizedFiles.get(category)?.push(file);
+          categorized = true;
+          break;
+        }
+      }
+      if (categorized) break;
+    }
+  }
+
+  // Build context based on categories found
+  const contextParts: string[] = [];
+
+  // Sort categories by priority
+  const sortedCategories = Array.from(categorizedFiles.entries())
+    .sort(([a], [b]) => {
+      const priorityA = config.patterns[a]?.priority ?? 999;
+      const priorityB = config.patterns[b]?.priority ?? 999;
+      return priorityA - priorityB;
+    })
+    .slice(0, config.analysis.maxModules);
+
+  for (const [category, categoryFiles] of sortedCategories) {
+    const categoryConfig = config.patterns[category];
+    if (categoryConfig) {
+      const count = categoryFiles.length;
+      const plural = count > 1 ? 's' : '';
+      contextParts.push(`${categoryConfig.displayName}: ${count} file${plural}`);
+    }
+  }
+
+  return contextParts.length > 0
+    ? contextParts.join(config.analysis.separator)
+    : `${files.length} ${config.analysis.fallbackMessage}`;
+}
 
 export async function saveCommand(customMessage?: string) {
   console.log(chalk.blue('💾 Quick Save'));
@@ -37,26 +174,15 @@ export async function saveCommand(customMessage?: string) {
       let message: string;
 
       if (customMessage) {
-        // Generate helpful context based on git status and changes
+        // Load context configuration
+        const contextConfig = loadContextConfig(repoRoot);
+
+        // Generate helpful context based on git status and configuration
         const changedFiles = await git.getGit().diff(['--name-only', '--cached']);
         const files = changedFiles.trim() ? changedFiles.trim().split('\n') : [];
 
-        // Analyze changed files to provide meaningful context
-        const testFiles = files.filter((f) => f.includes('.test.') || f.includes('.spec.')).length;
-        const srcFiles = files.filter((f) => f.includes('src/') && !f.includes('.test.')).length;
-        const docsFiles = files.filter((f) => f.includes('docs/') || f.endsWith('.md')).length;
-        const configFiles = files.filter(
-          (f) => f.includes('package.json') || f.includes('tsconfig')
-        ).length;
-
-        const contextParts = [];
-        if (srcFiles > 0) contextParts.push(`${srcFiles} implementation files`);
-        if (testFiles > 0) contextParts.push(`${testFiles} test files`);
-        if (docsFiles > 0) contextParts.push(`${docsFiles} documentation files`);
-        if (configFiles > 0) contextParts.push(`${configFiles} config files`);
-
-        const contextText =
-          contextParts.length > 0 ? contextParts.join(', ') : `${files.length} files modified`;
+        // Analyze files using configuration
+        const contextText = analyzeChangedFiles(files, contextConfig);
 
         // Use descriptive commit format when custom message is provided
         message = `feat(${agentType.toLowerCase()}): ${customMessage}

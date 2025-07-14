@@ -1,217 +1,164 @@
-# Agent Workflow CLI 🤖
+# Agent Workflow CLI
 
-A powerful CLI tool that implements the agent-centric development workflow using Git worktrees. Extracted from the proven bash scripts and enhanced with smart validation.
+Agent-centric development workflow automation for modern software teams.
 
-## Quick Start
+## Installation
 
 ```bash
-# Use the short name "aw" for all commands
-pnpm aw:status      # Check your agent status
-pnpm aw:save        # Quick save your work
-pnpm aw:ship        # Ship to integration branch
-pnpm aw:sync        # Daily sync with other agents
-pnpm aw:validate    # Smart validation (your files only)
-pnpm aw:init        # Set up agent worktrees
+# Install dependencies
+pnpm install
+
+# Build the CLI
+pnpm build
+
+# Link for global usage
+pnpm link --global
 ```
 
-## Features ✨
+## Commands
 
-### 🔍 **Smart Validation**
-- Only validates files YOU changed (not entire codebase)
-- Filters out docs, configs, CSS (matches biome ignore patterns)
-- TypeScript + Biome linting focused on your work
-- Fast feedback loop for developers
+### Core Workflow
 
-### 🚀 **Agent-Aware Operations**
-- Auto-detects agent type from branch name
-- Context-aware commit messages: `[Agent A (Architecture)] WIP: 2025-01-11`
-- Agent-specific status dashboard
-- Intelligent suggestions based on current state
+- `aw save [message]` - Save current work with intelligent context analysis
+- `aw ship` - Ship work to integration branch with validation
+- `aw sync` - Sync with integration branch
+- `aw status` - Check current workflow status
+- `aw validate` - Validate current work using smart analysis
 
-### 🌿 **Git Worktree Management**
-- Set up 3 independent agent workspaces
-- No more branch-jumping conflicts
-- Shared Git history with isolated working directories
-- Automatic push tracking configuration
+### Agent Coordination
 
-### 📊 **Rich Status Dashboard**
-```
-📊 Agent Status Dashboard
-📍 Current branch: feature/agent-a
-👤 Agent type: Agent A (Architecture)
-📝 Uncommitted changes: Yes
-⬇️ Behind integration: 0 commits
-⬆️ Ahead of integration: 2 commits
-🔍 Quick validation (your files only):
-  ✅ TypeScript OK (your files)
-  ✅ Linting OK (your files)
-💡 Suggested next actions:
-  • pnpm aw:ship - Share your work with other agents
-```
+- `aw agents:status` - Check status across all agent branches
+- `aw agents:sync` - Sync changes between agents
+- `aw agents:conflicts` - Detect and resolve conflicts
 
-## Command Reference 📖
+### Advanced Git Operations
 
-### `pnpm aw:status`
-**Show agent status and suggestions**
-- Current branch and agent type detection
-- Uncommitted changes check  
-- Integration branch sync status
-- Quick validation preview
-- Suggested next actions
+- `aw actor:create` - Create new actor worktree
+- `aw actor:status` - Check actor worktree status
+- `aw actor:worktrees` - Manage actor worktrees
 
-### `pnpm aw:save`
-**Quick save your work (commit without shipping)**
-- Stages all changes
-- Auto-commits with agent context
-- Perfect for work-in-progress saves
-- Keeps you in flow state
+## Context Analysis Configuration
 
-### `pnpm aw:validate`
-**Smart validation (your files only)**
-- Filters to only files YOU changed
-- Ignores docs, configs, markdown, CSS
-- TypeScript type checking
-- Biome linting
-- Fast and focused feedback
+The CLI provides intelligent commit message context generation that can be customized for your project.
 
-### `pnpm aw:ship`
-**Complete workflow: validate + commit + push to integration**
-- Auto-commits any uncommitted changes
-- Validates your changes
-- Pushes to shared integration branch
-- Shows what was shipped
-- Notifies other agents
+### Configuration File: `.aw-context.json`
 
-### `pnpm aw:sync`
-**Daily sync with integration branch**
-- Fetches latest from other agents
-- Handles merge conflicts gracefully
-- Shows what changed
-- Prevents conflicts before they happen
+Create a `.aw-context.json` file in your project root to customize how the CLI analyzes and categorizes your changes:
 
-### `pnpm aw:init`
-**Initialize agent-centric workflow**
-- Sets up Git worktrees for 3 agents
-- Creates independent workspaces
-- Configures automatic push tracking
-- One-time setup per project
-
-## Architecture 🏗️
-
-### Core Modules
-
-**`GitOperations`** - Git worktree and branch management
-- Worktree creation and validation
-- Agent type detection from branch names
-- Changed files analysis vs integration branch
-- Integration status (ahead/behind commits)
-
-**`ValidationService`** - Smart file validation
-- Filters files based on biome ignore patterns
-- TypeScript validation for .ts/.tsx files
-- Biome linting for code files only
-- Performance-optimized (only your changes)
-
-**`Commands`** - CLI command implementations
-- Each command is a focused module
-- Rich console output with colors and emojis
-- Error handling with helpful suggestions
-- Exit codes for CI integration
-
-### Design Principles
-
-1. **Developer Experience First**
-   - Short command names (`aw` vs `agent-workflow`)
-   - Rich visual feedback
-   - Intelligent defaults
-   - Helpful error messages
-
-2. **Performance Optimized**
-   - Only validate files you changed
-   - Parallel Git operations where possible
-   - Minimal disk space (worktrees share .git)
-   - Fast status checks
-
-3. **Agent-Centric**
-   - Auto-detects agent context from branch
-   - Agent-specific commit messages
-   - Role-based suggestions
-   - Context-aware operations
-
-## Integration 🔗
-
-### Package.json Scripts
 ```json
 {
-  "scripts": {
-    "aw": "pnpm --filter @agent-workflow/cli dev",
-    "aw:init": "pnpm --filter @agent-workflow/cli dev init",
-    "aw:sync": "pnpm --filter @agent-workflow/cli dev sync", 
-    "aw:validate": "pnpm --filter @agent-workflow/cli dev validate",
-    "aw:ship": "pnpm --filter @agent-workflow/cli dev ship",
-    "aw:save": "pnpm --filter @agent-workflow/cli dev save",
-    "aw:status": "pnpm --filter @agent-workflow/cli dev status"
+  "patterns": {
+    "components": {
+      "filePatterns": ["**/components/**", "**/src/components/**"],
+      "displayName": "UI Components",
+      "priority": 1
+    },
+    "api": {
+      "filePatterns": ["**/api/**", "**/backend/**", "**/server/**"],
+      "displayName": "API Layer",
+      "priority": 2
+    },
+    "database": {
+      "filePatterns": ["**/migrations/**", "**/schemas/**", "**/models/**"],
+      "displayName": "Database",
+      "priority": 3
+    },
+    "tests": {
+      "filePatterns": ["**/*.test.*", "**/*.spec.*", "**/test/**"],
+      "displayName": "Tests",
+      "priority": 4
+    },
+    "docs": {
+      "filePatterns": ["**/*.md", "**/docs/**"],
+      "displayName": "Documentation",
+      "priority": 5
+    }
+  },
+  "analysis": {
+    "maxModules": 3,
+    "separator": " | ",
+    "fallbackMessage": "files across project"
   }
 }
 ```
 
-### Dependencies
-- **simple-git**: Git operations
-- **commander**: CLI framework
-- **chalk**: Terminal colors
-- **inquirer**: Interactive prompts
+### Configuration Options
 
-## Comparison: CLI vs Bash Scripts 📊
+#### `patterns`
+Define categories of files and how to identify them:
 
-| Feature | Bash Scripts | CLI Tool |
-|---------|-------------|----------|
-| **Setup** | Manual worktree creation | `pnpm aw:init` |
-| **Status** | Basic git status | Rich agent dashboard |
-| **Validation** | All files (slow) | Your files only (fast) |
-| **Commits** | Manual messages | Agent-aware auto-commit |
-| **Error Handling** | Basic | Rich suggestions |
-| **Agent Detection** | Manual | Auto from branch |
-| **Performance** | Variable | Optimized |
-| **Developer UX** | Command-line heavy | Rich interactive |
+- **`filePatterns`**: Array of glob patterns to match files
+- **`displayName`**: Human-readable name for the category
+- **`priority`**: Lower numbers appear first in context (1 = highest priority)
 
-## Development 🛠️
+#### `analysis`
+Control how the analysis is presented:
 
-```bash
-# Development
-cd packages/agent-workflow-cli
-pnpm dev --help
+- **`maxModules`**: Maximum number of categories to show in context
+- **`separator`**: String to separate different categories  
+- **`fallbackMessage`**: Message when no patterns match
 
-# Build
-pnpm build
+### Example Output
 
-# Test commands
-pnpm dev status
-pnpm dev save
-pnpm dev validate
+With proper configuration, your commit messages will have meaningful context:
+
+```
+feat(frontend): Add user authentication with JWT tokens
+
+Agent: Agent B (Frontend)  
+Context: UI Components: 3 files | API Layer: 2 files | Tests: 4 files
+Date: 2025-07-14
+Branch: feature/agent-b
+
+[actor-web] Agent B (Frontend) - Add user authentication with JWT tokens
 ```
 
-## Future Enhancements 🚀
+### Default Patterns
 
-- [ ] **Conflict Resolution Assistant** - Interactive merge conflict resolution
-- [ ] **Team Dashboard** - Web UI showing all agent statuses
-- [ ] **Plugin System** - Custom validation rules per project
-- [ ] **CI Integration** - GitHub Actions integration
-- [ ] **Metrics** - Agent productivity analytics
-- [ ] **Templates** - Project-specific workflow templates
+If no configuration file is provided, the CLI uses sensible defaults:
 
-## Success Metrics 📈
+- **Tests**: `**/*.test.*`, `**/*.spec.*`, `**/test/**`, `**/tests/**`
+- **Components**: `**/components/**`, `**/src/components/**`  
+- **Core**: `**/core/**`, `**/src/core/**`
+- **Utilities**: `**/utils/**`, `**/utilities/**`, `**/helpers/**`
+- **Documentation**: `**/*.md`, `**/docs/**`, `**/documentation/**`
+- **Configuration**: `**/package.json`, `**/tsconfig*`, `**/.env*`, `**/config/**`
 
-✅ **Achieved:**
-- Short command names (`aw` prefix)
-- Smart validation (10x faster than full validation)
-- Agent-aware commit messages
-- Rich status dashboard
-- Zero-conflict worktree setup
-- Extracted from proven bash scripts
+## Usage Examples
 
-✅ **Benefits:**
-- Faster development cycle
-- Reduced merge conflicts
-- Better developer experience
-- Consistent workflow across agents
-- Performance-optimized validation 
+### Basic Save
+```bash
+# Uses intelligent context analysis with generic message
+aw save
+
+# Provides specific description with analyzed context  
+aw save "Add user authentication system"
+```
+
+### Ship to Integration
+```bash
+# Validates and ships to integration branch
+aw ship
+```
+
+### Check Status
+```bash
+# Shows current agent status and pending changes
+aw status
+```
+
+## Development
+
+```bash
+# Install dependencies
+pnpm install
+
+# Development mode with hot reload
+pnpm dev
+
+# Run tests
+pnpm test
+
+# Build for production
+pnpm build
+``` 
