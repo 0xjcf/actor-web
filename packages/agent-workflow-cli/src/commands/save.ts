@@ -104,13 +104,17 @@ function matchesPattern(filePath: string, pattern: string): boolean {
 function analyzeChangedFiles(files: string[], config: ContextConfig): string {
   const categorizedFiles = new Map<string, string[]>();
 
+  console.log(chalk.gray(`🔍 Debug: Analyzing ${files.length} files with patterns`));
+
   // Categorize files based on patterns
   for (const file of files) {
     let categorized = false;
+    console.log(chalk.gray(`  📁 Analyzing: ${file}`));
 
     for (const [category, categoryConfig] of Object.entries(config.patterns)) {
       for (const pattern of categoryConfig.filePatterns) {
         if (matchesPattern(file, pattern)) {
+          console.log(chalk.gray(`    ✅ Matched "${pattern}" → ${category}`));
           if (!categorizedFiles.has(category)) {
             categorizedFiles.set(category, []);
           }
@@ -118,11 +122,17 @@ function analyzeChangedFiles(files: string[], config: ContextConfig): string {
           categorized = true;
           break;
         }
+        console.log(chalk.gray(`    ❌ No match "${pattern}"`));
       }
       if (categorized) break;
     }
+
+    if (!categorized) {
+      console.log(chalk.gray(`    ⚠️  No category matched for: ${file}`));
+    }
   }
 
+  console.log(chalk.gray('🎯 Categories found:'), categorizedFiles);
   // Build context based on categories found
   const contextParts: string[] = [];
 
@@ -144,9 +154,13 @@ function analyzeChangedFiles(files: string[], config: ContextConfig): string {
     }
   }
 
-  return contextParts.length > 0
-    ? contextParts.join(config.analysis.separator)
-    : `${files.length} ${config.analysis.fallbackMessage}`;
+  const result =
+    contextParts.length > 0
+      ? contextParts.join(config.analysis.separator)
+      : `${files.length} ${config.analysis.fallbackMessage}`;
+
+  console.log(chalk.gray(`📋 Final context: "${result}"`));
+  return result;
 }
 
 export async function saveCommand(customMessage?: string) {
