@@ -378,6 +378,39 @@ auto_commit_changes() {
     else
         git commit -m "$commit_message"
     fi
+}
+
+# Streamlined save function that auto-stages and accepts custom messages
+streamlined_save_commit() {
+    local custom_message="$1"
+    
+    echo -e "${BLUE}🔍 Checking for uncommitted changes...${NC}"
+    
+    if git diff --quiet && git diff --cached --quiet; then
+        echo -e "${GREEN}✅ No changes to commit${NC}"
+        return 0
+    fi
+    
+    # Show what will be committed
+    echo -e "${YELLOW}📝 Found uncommitted changes:${NC}"
+    git status --porcelain | head -10
+    
+    # Auto-stage all changes
+    echo -e "${BLUE}📦 Auto-staging all changes...${NC}"
+    git add .
+    
+    # Use custom message if provided, otherwise generate smart message
+    if [ -n "$custom_message" ]; then
+        echo -e "${BLUE}📝 Using custom commit message:${NC}"
+        echo -e "${YELLOW}${custom_message}${NC}"
+        git commit -m "$custom_message"
+    else
+        # Generate and use smart commit message
+        local commit_message=$(generate_smart_commit_message)
+        echo -e "${BLUE}📝 Generated commit message:${NC}"
+        echo -e "${YELLOW}${commit_message}${NC}"
+        git commit -m "$commit_message"
+    fi
     
     echo -e "${GREEN}✅ Changes committed successfully${NC}"
     return 0
@@ -456,7 +489,8 @@ case "${1:-}" in
         ;;
     "save")
         echo -e "${BLUE}💾 Starting save workflow (commit + push to branch)...${NC}"
-        if auto_commit_changes; then
+        # Use streamlined save with custom message if provided
+        if streamlined_save_commit "$2"; then
             auto_push_branch
             echo -e "${GREEN}✨ Save workflow complete!${NC}"
             echo -e "${BLUE}💡 Your work is now saved and backed up${NC}"
