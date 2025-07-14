@@ -22,19 +22,30 @@ export function resetDevMode(): void {
  * Enable development mode with enhanced template validation
  */
 export function enableDevMode(): void {
-  if (typeof window === 'undefined' || isDevModeEnabled) {
+  if (isDevModeEnabled) {
     return;
   }
 
   isDevModeEnabled = true;
 
-  // Add global helper for inspecting templates
-  (window as unknown as { __actorSPA?: unknown }).__actorSPA = {
-    inspectTemplate,
-    validateTemplate,
-    listMachines: () => Array.from(registeredMachines.keys()),
-    getMachine: (id: string) => registeredMachines.get(id),
-  };
+  // Browser-specific enhancements (only when window exists)
+  if (typeof window !== 'undefined') {
+    // Add global helper for inspecting templates
+    (window as unknown as { __actorSPA?: unknown }).__actorSPA = {
+      inspectTemplate,
+      validateTemplate,
+      listMachines: () => Array.from(registeredMachines.keys()),
+      getMachine: (id: string) => registeredMachines.get(id),
+    };
+  }
+}
+
+/**
+ * Force enable development mode for CLI/Node.js environments
+ * This bypasses browser checks and enables logging
+ */
+export function enableDevModeForCLI(): void {
+  isDevModeEnabled = true;
 }
 
 /**
