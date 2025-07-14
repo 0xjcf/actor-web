@@ -76,7 +76,7 @@ describe('ARIA Integration', () => {
         },
       };
       log.debug('ARIA state mapping config created', {
-        states: Object.keys(config.stateMapping!),
+        states: config.stateMapping ? Object.keys(config.stateMapping) : [],
         mappings: config.stateMapping,
       });
 

@@ -84,8 +84,16 @@ export const screenReaderAnnouncementMachine = setup({
     },
     shouldInterrupt: ({ context, event }) => {
       if (!context.currentMessage) return false;
-      if (event.type !== 'ANNOUNCE') return false;
-      const priority = event.priority || 'polite';
+
+      let priority: 'polite' | 'assertive';
+      if (event.type === 'ANNOUNCE') {
+        priority = event.priority || 'polite';
+      } else if (event.type === 'ANNOUNCE_ERROR') {
+        priority = 'assertive'; // Error announcements are always assertive
+      } else {
+        return false;
+      }
+
       return priority === 'assertive' && context.currentMessage.priority === 'polite';
     },
     isProcessing: ({ context }) => context.isProcessing,
@@ -323,6 +331,29 @@ export const screenReaderAnnouncementMachine = setup({
       },
     }),
 
+    interruptAnnouncementAction: assign({
+      currentMessage: ({ context }) => {
+        // Move the current message to history when interrupted
+        if (context.currentMessage) {
+          context.announcementHistory.unshift(context.currentMessage);
+          if (context.announcementHistory.length > context.maxHistorySize) {
+            context.announcementHistory = context.announcementHistory.slice(
+              0,
+              context.maxHistorySize
+            );
+          }
+        }
+        return null;
+      },
+      announcementHistory: ({ context }) => {
+        if (context.currentMessage) {
+          const newHistory = [context.currentMessage, ...context.announcementHistory];
+          return newHistory.slice(0, context.maxHistorySize);
+        }
+        return context.announcementHistory;
+      },
+    }),
+
     finishAnnouncementAction: assign({
       currentMessage: null,
       isProcessing: false,
@@ -453,6 +484,14 @@ export const screenReaderAnnouncementMachine = setup({
           },
         ],
         ANNOUNCE_ERROR: [
+          {
+            guard: 'shouldInterrupt',
+            actions: [
+              'interruptAnnouncementAction',
+              'queueErrorAnnouncementAction',
+              'processQueueAction',
+            ],
+          },
           {
             guard: 'isEnabled',
             actions: 'queueErrorAnnouncementAction',

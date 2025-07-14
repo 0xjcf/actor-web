@@ -429,19 +429,37 @@ export const Logger = {
   },
 
   info: (namespace: NamespaceParam, message: string, data?: unknown) => {
-    if (typeof console !== 'undefined') {
+    // Respect debug mode and check for test environment
+    const isTestEnv =
+      typeof process !== 'undefined' &&
+      (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true');
+    const debugEnabled = isDevModeEnabled || (isTestEnv && process.env.DEBUG_TESTS === 'true');
+
+    if (debugEnabled && typeof console !== 'undefined') {
       console.log(`ℹ️  [${namespace}] ${message}`, data ? data : '');
     }
   },
 
   warn: (namespace: NamespaceParam, message: string, data?: unknown) => {
-    if (typeof console !== 'undefined') {
+    // Keep warnings visible unless specifically silenced in tests
+    const isTestEnv =
+      typeof process !== 'undefined' &&
+      (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true');
+    const shouldLog = !isTestEnv || process.env.DEBUG_TESTS === 'true' || isDevModeEnabled;
+
+    if (shouldLog && typeof console !== 'undefined') {
       console.warn(`⚠️  [${namespace}] ${message}`, data ? data : '');
     }
   },
 
   error: (namespace: NamespaceParam, message: string, error?: unknown) => {
-    if (typeof console !== 'undefined') {
+    // Always show errors, but allow silencing in tests
+    const isTestEnv =
+      typeof process !== 'undefined' &&
+      (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true');
+    const shouldLog = !isTestEnv || process.env.DEBUG_TESTS === 'true' || isDevModeEnabled;
+
+    if (shouldLog && typeof console !== 'undefined') {
       console.error(`❌ [${namespace}] ${message}`, error ? error : '');
     }
   },

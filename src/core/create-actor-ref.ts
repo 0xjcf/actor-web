@@ -363,14 +363,21 @@ class UnifiedActorRef<
     const simpleStatus: 'idle' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error' =
       this._status;
 
-    const baseSnapshot: ActorSnapshot = {
-      context: xstateSnapshot.context || {},
-      value: xstateSnapshot.value,
+    // Preserve XState's native functionality while adding framework features
+    // This avoids type casting and allows proper TypeScript inference
+    const enhancedSnapshot = {
+      ...xstateSnapshot,
       status: simpleStatus,
       error: this._status === 'error' ? new Error('Actor in error state') : undefined,
+
+      // Ensure XState methods are preserved and properly typed
+      matches: xstateSnapshot.matches.bind(xstateSnapshot),
+      can: xstateSnapshot.can.bind(xstateSnapshot),
+      hasTag: xstateSnapshot.hasTag?.bind(xstateSnapshot) || (() => false),
+      toJSON: xstateSnapshot.toJSON.bind(xstateSnapshot),
     };
 
-    return baseSnapshot as TSnapshot;
+    return enhancedSnapshot as unknown as TSnapshot;
   }
 
   private setupSupervision(): void {

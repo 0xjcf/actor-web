@@ -208,7 +208,11 @@ export class ReactiveEventBus {
   // Refresh bindings for components that might have been added to DOM after initial binding
   refreshBindings(): void {
     const context = this.actor.getSnapshot().context;
-    context.bindings.forEach((mappings, componentId) => {
+
+    // Create a snapshot of bindings to avoid concurrent modification during iteration
+    const bindingsSnapshot = new Map(context.bindings);
+
+    bindingsSnapshot.forEach((mappings, componentId) => {
       // Unbind first, then rebind to ensure fresh listeners
       this.unbindEvents(componentId);
       const mappingObject: Record<string, string> = {};

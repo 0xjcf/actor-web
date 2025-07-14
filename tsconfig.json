@@ -12,6 +12,10 @@
     "outDir": "./dist",
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    "downlevelIteration": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "useDefineForClassFields": false,
     "plugins": [
       {
         "name": "ts-lit-plugin",

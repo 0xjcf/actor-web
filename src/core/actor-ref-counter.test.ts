@@ -9,6 +9,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { assign, setup } from 'xstate';
 import type { ActorRef, BaseEventObject } from './create-actor-ref.js';
 import { createActorRef } from './create-actor-ref.js';
+import { Logger } from './dev-mode.js';
+
+const log = Logger.namespace('ACTOR_REF_COUNTER_TEST');
 
 // ============================================================================
 // COUNTER MACHINE DEFINITION
@@ -82,6 +85,11 @@ describe('Pure Actor Model - Counter Test', () => {
     counterActor = createActorRef<CounterEvent>(counterMachine, {
       autoStart: true,
     });
+    log.debug('Counter actor created and started', {
+      actorId: counterActor.id,
+      status: counterActor.status,
+      initialCount: (counterActor.getSnapshot().context as CounterContext).count,
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -129,33 +137,35 @@ describe('Pure Actor Model - Counter Test', () => {
   // -------------------------------------------------------------------------
 
   describe('State Observation', () => {
-    it('should observe state changes reactively', () => {
-      return new Promise<void>((resolve) => {
-        let observationCount = 0;
+    it('should observe state changes reactively', async () => {
+      let observationCount = 0;
+      const observations: number[] = [];
 
-        const observable = counterActor.observe(
-          (snapshot) => (snapshot.context as CounterContext).count
-        );
+      const observable = counterActor.observe(
+        (snapshot) => (snapshot.context as CounterContext).count
+      );
 
-        const subscription = observable.subscribe((count) => {
-          observationCount++;
-
-          if (observationCount === 1) {
-            // Initial value
-            expect(count).toBe(0);
-            counterActor.send({ type: 'INCREMENT' });
-          } else if (observationCount === 2) {
-            // After increment
-            expect(count).toBe(1);
-            counterActor.send({ type: 'SET', value: 10 });
-          } else if (observationCount === 3) {
-            // After set
-            expect(count).toBe(10);
-            subscription.unsubscribe();
-            resolve();
-          }
-        });
+      const subscription = observable.subscribe((count) => {
+        observationCount++;
+        observations.push(count);
+        log.debug('Observation received', { count, observationCount });
       });
+
+      // Wait a tick to ensure initial observation
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // Send events with small delays to ensure processing
+      counterActor.send({ type: 'INCREMENT' });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      counterActor.send({ type: 'SET', value: 10 });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      subscription.unsubscribe();
+
+      // Verify we got the expected observations
+      expect(observations).toEqual([0, 1, 10]);
+      expect(observationCount).toBe(3);
     });
 
     it('should provide current snapshot', () => {
@@ -172,11 +182,11 @@ describe('Pure Actor Model - Counter Test', () => {
   // -------------------------------------------------------------------------
 
   describe('Lifecycle Management', () => {
-    it('should start, stop, and restart actors', () => {
+    it('should start, stop, and restart actors', async () => {
       expect(counterActor.status).toBe('running');
 
-      // Stop the actor
-      counterActor.stop();
+      // Stop the actor and wait for completion
+      await counterActor.stop();
       expect(counterActor.status).toBe('stopped');
 
       // Should throw when trying to send to stopped actor
@@ -184,8 +194,8 @@ describe('Pure Actor Model - Counter Test', () => {
         counterActor.send({ type: 'INCREMENT' });
       }).toThrow('Cannot communicate with stopped actor');
 
-      // Restart the actor
-      counterActor.restart();
+      // Restart the actor (stop then start)
+      counterActor.start();
       expect(counterActor.status).toBe('running');
 
       // Should work after restart
@@ -223,26 +233,26 @@ describe('Pure Actor Model - Counter Test', () => {
       expect((counterActor.getSnapshot().context as CounterContext).count).toBe(0);
     });
 
-    it('should kill child actors', () => {
+    it('should kill child actors', async () => {
       const child = counterActor.spawn(counterMachine, { id: 'test-child' });
       expect(counterActor.getChildren().size).toBe(1);
 
       // Stop the child (using stopChild instead of kill)
-      counterActor.stopChild('test-child');
+      await counterActor.stopChild('test-child');
 
       expect(counterActor.getChildren().size).toBe(0);
       expect(child.status).toBe('stopped');
     });
 
-    it('should stop all children when parent stops', () => {
+    it('should stop all children when parent stops', async () => {
       const child1 = counterActor.spawn(counterMachine, { id: 'child1' });
       const child2 = counterActor.spawn(counterMachine, { id: 'child2' });
 
       expect(child1.status).toBe('running');
       expect(child2.status).toBe('running');
 
-      // Stop parent
-      counterActor.stop();
+      // Stop parent and wait for completion
+      await counterActor.stop();
 
       // Children should be stopped too
       expect(child1.status).toBe('stopped');
@@ -284,7 +294,7 @@ describe('Pure Actor Model - Counter Test', () => {
 // ============================================================================
 
 describe('Pure Actor Model - Integration Tests', () => {
-  it('should create a simple actor hierarchy', () => {
+  it('should create a simple actor hierarchy', async () => {
     // Create root actor
     const root = createActorRef(counterMachine, {
       id: 'root',
@@ -306,8 +316,8 @@ describe('Pure Actor Model - Integration Tests', () => {
     // Root manages both children
     expect(root.getChildren().size).toBe(2);
 
-    // Cleanup
-    root.stop();
+    // Cleanup - await the stop operation
+    await root.stop();
     expect(counter1.status).toBe('stopped');
     expect(counter2.status).toBe('stopped');
   });

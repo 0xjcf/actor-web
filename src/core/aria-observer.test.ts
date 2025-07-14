@@ -10,8 +10,11 @@ import {
   a11yTestUtils,
   createTestEnvironment,
   type TestEnvironment,
-} from '@/testing/actor-test-utils';
+} from '../testing/actor-test-utils.js';
 import { AriaObserver } from './aria-observer.js';
+import { Logger } from './dev-mode.js';
+
+const log = Logger.namespace('ARIA_OBSERVER_TEST');
 
 describe('AriaObserver', () => {
   let observer: AriaObserver;
@@ -23,11 +26,13 @@ describe('AriaObserver', () => {
     observer = new AriaObserver();
     testElement = document.createElement('div');
     testEnv.container.appendChild(testElement);
+    log.debug('Test environment initialized', { elementType: testElement.tagName });
   });
 
   afterEach(() => {
     testEnv.cleanup();
     observer.disconnect();
+    log.debug('Test environment cleaned up');
   });
 
   describe('Observing elements', () => {

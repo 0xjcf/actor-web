@@ -17,6 +17,12 @@
     "dev": "vitest --watch",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest --watch",
+    "test:ui": "vitest --ui",
+    "test:debug": "DEBUG_TESTS=true vitest run",
+    "wallaby-replacement": "echo '🚀 Starting Vitest UI (Better than Wallaby!)' && pnpm vitest --ui",
+    "deps:check": "pnpm list tinypool && pnpm why tinypool",
+    "deps:clean": "pnpm store prune && rm -rf node_modules pnpm-lock.yaml && pnpm install",
     "lint": "biome check .",
     "lint:fix": "biome check . --write",
     "format": "biome format . --write",
@@ -122,5 +128,11 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "pnpm": {
+    "overrides": {
+      "tinypool": "^1.1.1",
+      "vitest": "^2.1.4"
+    }
   }
 }

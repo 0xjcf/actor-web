@@ -53,12 +53,35 @@ describe('Global Event Delegation', () => {
 
   afterEach(() => {
     testEnv.cleanup();
-    // Ensure debug mode is disabled for next test (before resetting instance)
+
+    // Clean up all listeners to ensure test isolation between ALL tests
     if (eventDelegation) {
+      const snapshot = eventDelegation.getSnapshot();
+      log.debug(
+        'Global afterEach cleanup - Current listeners:',
+        Array.from(snapshot.context.listeners.keys())
+      );
+
+      // Clean up all listeners to ensure test isolation
+      for (const listenerId of snapshot.context.listeners.keys()) {
+        eventDelegation.unsubscribe(listenerId);
+        log.debug('Unsubscribed listener:', listenerId);
+      }
+
+      // Verify cleanup
+      const cleanSnapshot = eventDelegation.getSnapshot();
+      log.debug(
+        'Global afterEach cleanup - Remaining listeners:',
+        cleanSnapshot.context.listeners.size
+      );
+
+      // Ensure debug mode is disabled for next test
       eventDelegation.setDebugMode(false);
     }
+
     // Reset singleton for next test using proper interface
     (GlobalEventDelegation as unknown as TestableGlobalEventDelegation).instance = null;
+
     // Restore all mocks including window.dispatchEvent
     vi.restoreAllMocks();
     log.debug('Test environment cleaned up, singleton reset');
@@ -491,23 +514,6 @@ describe('Global Event Delegation', () => {
     });
 
     afterEach(() => {
-      // Debug: Log current listeners before cleanup
-      const snapshot = eventDelegation.getSnapshot();
-      log.debug(
-        'AfterEach cleanup - Current listeners:',
-        Array.from(snapshot.context.listeners.keys())
-      );
-
-      // Clean up all listeners to ensure test isolation
-      for (const listenerId of snapshot.context.listeners.keys()) {
-        eventDelegation.unsubscribe(listenerId);
-        log.debug('Unsubscribed listener:', listenerId);
-      }
-
-      // Verify cleanup
-      const cleanSnapshot = eventDelegation.getSnapshot();
-      log.debug('AfterEach cleanup - Remaining listeners:', cleanSnapshot.context.listeners.size);
-
       // Clear spy call history using vitest spy methods
       if (vi.isMockFunction(window.dispatchEvent)) {
         vi.mocked(window.dispatchEvent).mockClear();

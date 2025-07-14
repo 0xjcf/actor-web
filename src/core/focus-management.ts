@@ -117,16 +117,12 @@ export const focusManagementMachine = setup({
         }
         return context.restoreTarget;
       },
-      focusHistory: ({ context }) => {
-        if (context.focusHistory.length > 0) {
-          return context.focusHistory.slice(0, -1);
-        }
-        return context.focusHistory;
+      focusHistory: () => {
+        // Clear the entire focus history after restoration
+        return [];
       },
-      restoreTarget: ({ context }) => {
-        if (context.focusHistory.length > 1) {
-          return context.focusHistory[context.focusHistory.length - 2];
-        }
+      restoreTarget: () => {
+        // Reset restore target after restoration
         return null;
       },
     }),
@@ -364,7 +360,14 @@ export type FocusManagementSnapshot = SnapshotFrom<typeof focusManagementMachine
  */
 
 export function isFocusable(element: HTMLElement): boolean {
-  if (!element || element.offsetParent === null) return false;
+  if (!element) return false;
+
+  // Check if element is connected to the document
+  if (!element.isConnected) return false;
+
+  // Check if element is hidden (offsetParent null for hidden elements)
+  if (element.offsetParent === null) return false;
+
   if (element.hasAttribute('disabled')) return false;
   if (element.getAttribute('aria-hidden') === 'true') return false;
   if (element.tabIndex < 0) return false;

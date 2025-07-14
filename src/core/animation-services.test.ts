@@ -14,6 +14,9 @@ import {
   type SequenceStep,
   type TransitionConfig,
 } from './animation-services.js';
+import { Logger } from './dev-mode.js';
+
+const log = Logger.namespace('ANIMATION_SERVICES_TEST');
 
 // Mock Web Animations API
 interface MockAnimation {
@@ -103,6 +106,7 @@ describe('Animation Services', () => {
 
   beforeEach(() => {
     testEnv = createTestEnvironment();
+    log.debug('Animation services test environment initialized', { testEnvExists: !!testEnv });
 
     // Create mock element
     mockElement = document.createElement('div');
@@ -124,11 +128,17 @@ describe('Animation Services', () => {
 
     // Mock performance.now for consistent timing
     vi.spyOn(performance, 'now').mockReturnValue(0);
+    log.debug('Animation mocks and test element set up', {
+      elementTag: mockElement.tagName,
+      hasAnimateMock: !!mockElement.animate,
+      hasRAFMock: !!global.requestAnimationFrame,
+    });
   });
 
   afterEach(() => {
     testEnv.cleanup();
     vi.restoreAllMocks();
+    log.debug('Animation services test environment cleaned up');
   });
 
   describe('Single Animation Service', () => {
@@ -139,9 +149,15 @@ describe('Animation Services', () => {
           keyframes: [{ opacity: 0 }, { opacity: 1 }],
           options: { duration: 300, easing: 'ease-out' },
         });
+        log.debug('Web Animations API test started', {
+          keyframes: [{ opacity: 0 }, { opacity: 1 }],
+          duration: 300,
+          easing: 'ease-out',
+        });
 
         const actor = createActor(machine);
         actor.start();
+        log.debug('Animation actor started', { actorExists: !!actor });
 
         // Should create animation with correct parameters
         expect(mockElement.animate).toHaveBeenCalledWith([{ opacity: 0 }, { opacity: 1 }], {
@@ -755,12 +771,12 @@ describe('Animation Services', () => {
       // Mock CSS transition events
       global.TransitionEvent = class extends Event {
         propertyName: string;
-        target: Element;
 
-        constructor(type: string, init: { propertyName: string; target: Element }) {
+        constructor(type: string, init: { propertyName: string; target?: Element }) {
           super(type);
           this.propertyName = init.propertyName;
-          this.target = init.target;
+          // Note: Don't set target here as it's read-only in Event
+          // The target will be set by the DOM when the event is dispatched
         }
       } as never;
     });
@@ -865,9 +881,20 @@ describe('Animation Services', () => {
           to: 1,
           config: { stiffness: 200, damping: 20 },
         });
+        log.debug('Spring animation test started', {
+          property: 'transform',
+          from: 0.8,
+          to: 1,
+          stiffness: 200,
+          damping: 20,
+        });
 
         const actor = createActor(machine);
         actor.start();
+        log.debug('Spring animation actor started', {
+          actorExists: !!actor,
+          expectedEventType: 'SPRING_STARTED',
+        });
 
         expect(events).toContainEqual(
           expect.objectContaining({
@@ -876,6 +903,10 @@ describe('Animation Services', () => {
             to: 1,
           })
         );
+        log.debug('Spring animation event verification completed', {
+          eventsReceived: events.length,
+          hasSpringStartedEvent: events.some((e) => e.type === 'SPRING_STARTED'),
+        });
 
         // Should start animation loop
         expect(global.requestAnimationFrame).toHaveBeenCalled();

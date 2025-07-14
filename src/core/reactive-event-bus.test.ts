@@ -30,6 +30,9 @@ describe('Reactive Event Bus - Framework API', () => {
     // ✅ CORRECT: Test the real framework API, not mocks
     eventBus = ReactiveEventBus.getInstance();
 
+    // ✅ CORRECT: Reset mock between tests to avoid state leakage
+    vi.clearAllMocks();
+
     // Create test container with proper DOM structure
     container = document.createElement('div');
     container.id = 'test-container';

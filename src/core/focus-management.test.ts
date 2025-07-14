@@ -11,7 +11,8 @@ import {
   type MockGlobalEventBus,
   setupGlobalMocks,
   type TestEnvironment,
-} from '@/testing/actor-test-utils';
+} from '../testing/actor-test-utils';
+import { Logger } from './dev-mode.js';
 import {
   type FocusManagementActor,
   FocusManagementHelper,
@@ -21,6 +22,8 @@ import {
   getLastFocusableElement,
   isFocusable,
 } from './focus-management.js';
+
+const log = Logger.namespace('FOCUS_MANAGEMENT_TEST');
 
 describe('Focus Management', () => {
   let testEnv: TestEnvironment;
@@ -32,11 +35,16 @@ describe('Focus Management', () => {
     _mockEventBus = setupGlobalMocks();
     focusActor = createActor(focusManagementMachine);
     focusActor.start();
+    log.debug('Focus management test environment initialized', {
+      testEnvExists: !!testEnv,
+      focusActorStarted: !!focusActor && focusActor.getSnapshot().status === 'active',
+    });
   });
 
   afterEach(() => {
     testEnv.cleanup();
     focusActor.stop();
+    log.debug('Focus management test environment cleaned up');
   });
 
   describe('Focus Utility Functions', () => {
@@ -270,14 +278,24 @@ describe('Focus Management', () => {
           <input type="text">
         `;
         testEnv.container.appendChild(container);
+        log.debug('Focus trap test started', {
+          containerHTML: container.innerHTML,
+          focusableElementsExpected: 3,
+        });
 
         focusActor.send({ type: 'TRAP_FOCUS', container });
+        log.debug('TRAP_FOCUS event sent to focus actor', { container: !!container });
 
         const snapshot = focusActor.getSnapshot();
         expect(snapshot.value).toBe('trapped');
         expect(snapshot.context.isTrapped).toBe(true);
         expect(snapshot.context.trapContainer).toBe(container);
         expect(snapshot.context.focusableElements).toHaveLength(3);
+        log.debug('Focus trap state verification completed', {
+          state: snapshot.value,
+          isTrapped: snapshot.context.isTrapped,
+          focusableElementsFound: snapshot.context.focusableElements?.length,
+        });
       });
 
       it('releases focus trap and returns to focused state', () => {
@@ -570,7 +588,13 @@ describe('Focus Management', () => {
       });
 
       it('generates keyboard navigation attributes', () => {
+        log.debug('Keyboard navigation attributes test started', { orientation: 'horizontal' });
+
         const attributes = helper.getKeyboardNavigationAttributes('horizontal');
+        log.debug('Keyboard navigation attributes generated', {
+          attributes,
+          includesOrientation: attributes.includes('data-keyboard-orientation="horizontal"'),
+        });
 
         expect(attributes).toContain('data-keyboard-orientation="horizontal"');
       });

@@ -9,7 +9,6 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EventObject } from 'xstate';
-import { Logger } from '@/core/dev-mode.js';
 import { collectEvents, createTestEnvironment, waitForState } from '../../testing/actor-test-utils';
 import {
   childMachine,
@@ -22,6 +21,7 @@ import {
   trafficLightMachine,
 } from '../../testing/fixtures/test-machines';
 import type { ActorRef } from '../actors/actor-ref';
+import { Logger } from '../dev-mode.js';
 import {
   createXStateActorRef,
   createXStateQueryActor,

@@ -4,7 +4,7 @@
  * @author Agent C - [Date]
  */
 
-import type { AnyStateMachine, EventObject } from 'xstate';
+import type { AnyStateMachine, EventObject, SnapshotFrom } from 'xstate';
 
 // TODO: Agent C will define these types based on Agent A's specifications
 
@@ -21,12 +21,31 @@ export interface SpawnOptions extends ActorRefOptions {
   sync?: boolean;
 }
 
+/**
+ * Enhanced ActorSnapshot that preserves XState functionality while adding framework features
+ * This allows proper TypeScript inference without type casting
+ */
 export interface ActorSnapshot<TContext = unknown> {
   context: TContext;
   value: unknown;
   status: 'idle' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error';
   error?: Error;
+
+  // XState native methods for proper compatibility
+  matches(state: string): boolean;
+  can(event: EventObject | string): boolean;
+  hasTag(tag: string): boolean;
+  toJSON(): object;
 }
+
+/**
+ * XState-compatible snapshot that extends native XState snapshots with framework features
+ * This provides the best of both worlds: XState functionality + framework enhancements
+ */
+export type FrameworkSnapshot<TMachine extends AnyStateMachine> = SnapshotFrom<TMachine> & {
+  status: 'idle' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error';
+  error?: Error;
+};
 
 export interface Mailbox<T> {
   enqueue(message: T): boolean;

@@ -10,32 +10,41 @@ import {
   createTestEnvironment,
   type TestEnvironment,
   templateTestUtils,
-} from '@/testing/actor-test-utils';
+} from '../testing/actor-test-utils';
+import { Logger } from './dev-mode.js';
 import { css, html } from './template-renderer.js';
+
+const log = Logger.namespace('TEMPLATE_RENDERER_TEST');
 
 describe('html template tag', () => {
   let testEnv: TestEnvironment;
 
   beforeEach(() => {
     testEnv = createTestEnvironment();
+    log.debug('Test environment initialized for template renderer testing');
   });
 
   afterEach(() => {
     testEnv.cleanup();
+    log.debug('Test environment cleaned up');
   });
+
   it('renders text content', () => {
     const result = html`Hello World`;
+    log.debug('Rendered basic text template', { result: result.html });
     expect(result.html).toBe('Hello World');
   });
 
   it('renders HTML elements', () => {
     const result = html`<button>Click me</button>`;
+    log.debug('Rendered HTML element template', { result: result.html });
     expect(result.html).toBe('<button>Click me</button>');
   });
 
   it('includes dynamic values in output', () => {
     const name = 'Alice';
     const result = html`Hello ${name}`;
+    log.debug('Rendered template with dynamic values', { name, result: result.html });
     expect(result.html).toBe('Hello Alice');
   });
 
@@ -61,6 +70,7 @@ describe('html template tag', () => {
   it('renders lists', () => {
     const items = ['A', 'B', 'C'];
     const result = html`${items.map((item) => html`<li>${item}</li>`)}`;
+    log.debug('Rendered list template', { itemCount: items.length, result: result.html });
     expect(result.html).toBe('<li>A</li><li>B</li><li>C</li>');
   });
 
@@ -79,6 +89,10 @@ describe('html template tag', () => {
   it('escapes user input by default', () => {
     const userInput = '<script>alert("xss")</script>';
     const result = html`${userInput}`;
+    log.debug('Testing XSS protection with malicious input', {
+      userInput,
+      escaped: result.html,
+    });
 
     // Use framework utilities for XSS protection testing
     templateTestUtils.expectEscaped(result, userInput);
@@ -117,6 +131,7 @@ describe('html template tag', () => {
 describe('css template tag', () => {
   it('renders CSS rules', () => {
     const result = css`.button { color: blue; }`;
+    log.debug('Rendered CSS template', { result: result.css });
     expect(result.css).toBe('.button { color: blue; }');
   });
 
@@ -156,6 +171,11 @@ describe('Real-world usage patterns', () => {
       </div>
     `;
 
+    log.debug('Rendered complete component template', {
+      state,
+      templateSize: template.html.length,
+    });
+
     // Use framework utilities for template content validation
     templateTestUtils.expectTemplateContains(template, [
       'Count: 5',
@@ -173,9 +193,14 @@ describe('Real-world usage patterns', () => {
 
     const template = html`
       <ul>
-        ${todos.map((todo) => `<li class="${todo.done && 'done'}">${todo.text}</li>`)}
+        ${todos.map((todo) => `<li class="${todo.done ? 'done' : ''}">${todo.text}</li>`)}
       </ul>
     `;
+
+    log.debug('Rendered todo list template', {
+      todoCount: todos.length,
+      completedCount: todos.filter((t) => t.done).length,
+    });
 
     // Use framework utilities for comprehensive template validation
     templateTestUtils.expectTemplateContains(template, [
@@ -227,6 +252,11 @@ describe('Security and Safety', () => {
     const maliciousScript = '<script>alert("hack")</script>';
     const template = html`<div>${maliciousScript}</div>`;
 
+    log.debug('Testing XSS prevention with script tags', {
+      maliciousScript,
+      escaped: template.html,
+    });
+
     templateTestUtils.expectEscaped(template, maliciousScript);
     templateTestUtils.expectTemplateNotContains(template, '<script>');
   });
@@ -234,6 +264,11 @@ describe('Security and Safety', () => {
   it('prevents XSS with malicious image tags', () => {
     const maliciousImg = '<img src="x" onerror="alert(1)">';
     const template = html`<div>${maliciousImg}</div>`;
+
+    log.debug('Testing XSS prevention with image tags', {
+      maliciousImg,
+      escaped: template.html,
+    });
 
     templateTestUtils.expectEscaped(template, maliciousImg);
     // Verify that the onerror attribute is escaped, not executable
@@ -248,6 +283,11 @@ describe('Security and Safety', () => {
   it('prevents XSS with malicious link tags', () => {
     const maliciousLink = '<a href="javascript:alert(1)">click</a>';
     const template = html`<div>${maliciousLink}</div>`;
+
+    log.debug('Testing XSS prevention with link tags', {
+      maliciousLink,
+      escaped: template.html,
+    });
 
     templateTestUtils.expectEscaped(template, maliciousLink);
     // Verify that the javascript: protocol is escaped, not executable

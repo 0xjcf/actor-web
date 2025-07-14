@@ -14,7 +14,10 @@ import {
   setupGlobalMocks,
   type TestEnvironment,
 } from '../testing/actor-test-utils';
+import { Logger } from './dev-mode.js';
 import { type StorageItem, StorageUtils } from './persistence.js';
+
+const log = Logger.namespace('PERSISTENCE_TEST');
 
 // ✅ DEMONSTRATION: This shows how we SHOULD test persistence
 // Following the testing guide patterns:
@@ -52,6 +55,7 @@ describe('Persistence Services', () => {
   beforeEach(() => {
     testEnv = createTestEnvironment();
     setupGlobalMocks();
+    log.debug('Persistence test environment initialized', { testEnvExists: !!testEnv });
 
     // Mock storage
     mockLocalStorage = createMockStorage();
@@ -92,12 +96,18 @@ describe('Persistence Services', () => {
     global.atob = vi.fn((str: string) => Buffer.from(str, 'base64').toString());
 
     vi.useFakeTimers();
+    log.debug('Persistence mocks and storage APIs set up', {
+      hasLocalStorageMock: !!mockLocalStorage,
+      hasSessionStorageMock: !!mockSessionStorage,
+      hasBroadcastChannelMock: !!global.BroadcastChannel,
+    });
   });
 
   afterEach(() => {
     testEnv.cleanup();
     vi.useRealTimers();
     vi.restoreAllMocks();
+    log.debug('Persistence test environment cleaned up');
   });
 
   // ✅ GOOD: Testing behavior through utility functions (framework API)
@@ -106,15 +116,29 @@ describe('Persistence Services', () => {
     describe('Storage Quota Management', () => {
       it('should retrieve storage quota information', async () => {
         // Arrange - Already set up in beforeEach with mock navigator.storage
+        log.debug('Storage quota test started', {
+          hasNavigatorStorage: !!navigator.storage,
+          mockUsage: 1024 * 1024,
+          mockQuota: 5 * 1024 * 1024,
+        });
 
         // Act
         const quota = await StorageUtils.getQuota();
+        log.debug('Storage quota retrieved', {
+          quota,
+          expectedPercentage: 20,
+        });
 
         // Assert
         expect(quota).toEqual({
           usage: 1024 * 1024, // 1MB
           quota: 5 * 1024 * 1024, // 5MB
           percentage: 20, // 1MB / 5MB = 20%
+        });
+        log.debug('Storage quota verification completed', {
+          usageMatches: quota.usage === 1024 * 1024,
+          quotaMatches: quota.quota === 5 * 1024 * 1024,
+          percentageCorrect: quota.percentage === 20,
         });
       });
 
@@ -153,6 +177,10 @@ describe('Persistence Services', () => {
         // Arrange
         const now = Date.now();
         const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+        log.debug('Storage cleanup test started', {
+          maxAge: `${maxAge / (60 * 60 * 1000)} hours`,
+          currentTime: now,
+        });
 
         // Mock old data
         const oldData: StorageItem = {
@@ -180,13 +208,29 @@ describe('Persistence Services', () => {
           .mockReturnValueOnce(JSON.stringify(oldData))
           .mockReturnValueOnce(JSON.stringify(recentData));
 
+        log.debug('Mock storage data prepared', {
+          oldDataAge: `${(now - oldData.timestamp) / (60 * 60 * 1000)} hours`,
+          recentDataAge: `${(now - recentData.timestamp) / (60 * 60 * 1000)} hours`,
+          shouldRemoveOld: true,
+          shouldKeepRecent: true,
+        });
+
         // Act
         const cleanedCount = StorageUtils.cleanup('test', maxAge);
+        log.debug('Storage cleanup completed', {
+          cleanedCount,
+          expectedCleanedCount: 1,
+        });
 
         // Assert
         expect(cleanedCount).toBe(1);
         expect(mockLocalStorage.removeItem).toHaveBeenCalledWith('test:old-key');
         expect(mockLocalStorage.removeItem).not.toHaveBeenCalledWith('test:recent-key');
+        log.debug('Storage cleanup verification completed', {
+          cleanedCountMatches: cleanedCount === 1,
+          removeItemCallCount: (mockLocalStorage.removeItem as ReturnType<typeof vi.fn>).mock.calls
+            .length,
+        });
       });
 
       it('should remove invalid data during cleanup', () => {
