@@ -157,12 +157,117 @@ export class GitActorIntegration {
    */
   private setupEventHandling(): void {
     log.debug('Setting up event handling subscription');
-    // Subscribe to all events from the git-actor
-    this.actor.subscribe((response: GitResponse) => {
-      log.debug('Received git-actor response', { responseType: response.type });
-      // Handle the response for any pending requests
-      this.handleResponse(response);
-    });
+
+    // Monitor context changes to emit events
+    const lastContext: Partial<{
+      isGitRepo: boolean;
+      uncommittedChanges: boolean;
+      currentBranch: string;
+      agentType: string;
+      agentTypeOnly: string;
+      lastCommitMessage: string;
+      lastError: string;
+    }> = {};
+
+    // Poll for context changes and emit events accordingly
+    const checkContextChanges = () => {
+      try {
+        const snapshot = this.actor.getSnapshot();
+        const context = snapshot.context;
+
+        // Check for repo status change
+        if (context.isGitRepo !== undefined && context.isGitRepo !== lastContext.isGitRepo) {
+          const response: GitResponse = { type: 'REPO_CHECKED', isGitRepo: context.isGitRepo };
+          log.debug('Emitting REPO_CHECKED event', response);
+          this.handleResponse(response);
+          lastContext.isGitRepo = context.isGitRepo;
+        }
+
+        // Check for uncommitted changes status
+        if (
+          context.uncommittedChanges !== undefined &&
+          context.uncommittedChanges !== lastContext.uncommittedChanges
+        ) {
+          const response: GitResponse = {
+            type: 'UNCOMMITTED_STATUS',
+            hasChanges: context.uncommittedChanges,
+          };
+          log.debug('Emitting UNCOMMITTED_STATUS event', response);
+          this.handleResponse(response);
+          lastContext.uncommittedChanges = context.uncommittedChanges;
+        }
+
+        // Check for branch/agent type changes
+        if (
+          context.currentBranch &&
+          context.agentType &&
+          (context.currentBranch !== lastContext.currentBranch ||
+            context.agentType !== lastContext.agentType)
+        ) {
+          const response: GitResponse = {
+            type: 'STATUS_CHECKED',
+            currentBranch: context.currentBranch,
+            agentType: context.agentType,
+          };
+          log.debug('Emitting STATUS_CHECKED event', response);
+          this.handleResponse(response);
+          lastContext.currentBranch = context.currentBranch;
+          lastContext.agentType = context.agentType;
+        }
+
+        // Check for agent type detection
+        if (context.agentType && context.agentType !== lastContext.agentTypeOnly) {
+          const response: GitResponse = {
+            type: 'AGENT_TYPE_DETECTED',
+            agentType: context.agentType,
+          };
+          log.debug('Emitting AGENT_TYPE_DETECTED event', response);
+          this.handleResponse(response);
+          lastContext.agentTypeOnly = context.agentType;
+        }
+
+        // Check for commit completion
+        if (
+          context.lastCommitMessage &&
+          context.lastCommitMessage !== lastContext.lastCommitMessage
+        ) {
+          const response: GitResponse = {
+            type: 'CONVENTIONAL_COMMIT_COMPLETE',
+            commitHash: 'commit-hash-placeholder', // TODO: Get real hash from context
+            message: context.lastCommitMessage,
+          };
+          log.debug('Emitting CONVENTIONAL_COMMIT_COMPLETE event', response);
+          this.handleResponse(response);
+          lastContext.lastCommitMessage = context.lastCommitMessage;
+        }
+
+        // Check for errors
+        if (context.lastError && context.lastError !== lastContext.lastError) {
+          const response: GitResponse = { type: 'GIT_ERROR', error: context.lastError };
+          log.debug('Emitting GIT_ERROR event', response);
+          this.handleResponse(response);
+          lastContext.lastError = context.lastError;
+        }
+
+        // Continue monitoring if we have pending requests
+        if (this.pendingRequests.size > 0) {
+          setTimeout(checkContextChanges, 100);
+        }
+      } catch (error) {
+        log.error('Error in context monitoring:', error);
+      }
+    };
+
+    // Start monitoring when we have pending requests
+    const originalSet = this.pendingRequests.set.bind(this.pendingRequests);
+    this.pendingRequests.set = (key, value) => {
+      const result = originalSet(key, value);
+      if (this.pendingRequests.size === 1) {
+        // Start monitoring when first request is added
+        setTimeout(checkContextChanges, 50);
+      }
+      return result;
+    };
   }
 
   /**
