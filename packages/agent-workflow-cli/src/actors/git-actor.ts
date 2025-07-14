@@ -1,6 +1,5 @@
 import { type SimpleGit, simpleGit } from 'simple-git';
-import { assign, createActor, setup } from 'xstate';
-import { fromPromise } from 'xstate';
+import { assign, createActor, fromPromise, setup } from 'xstate';
 
 // CLI-specific GitActor interface (simplified for CLI use)
 interface GitActor {

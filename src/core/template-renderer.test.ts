@@ -5,12 +5,12 @@
  * Updated to use framework testing utilities following TESTING-GUIDE.md
  */
 
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  type TestEnvironment,
   createTestEnvironment,
+  type TestEnvironment,
   templateTestUtils,
 } from '@/testing/actor-test-utils';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { css, html } from './template-renderer.js';
 
 describe('html template tag', () => {
@@ -173,13 +173,7 @@ describe('Real-world usage patterns', () => {
 
     const template = html`
       <ul>
-        ${todos.map(
-          (todo) => html`
-          <li class="${todo.done ? 'done' : ''}">
-            ${todo.text}
-          </li>
-        `
-        )}
+        ${todos.map((todo) => `<li class="${todo.done && 'done'}">${todo.text}</li>`)}
       </ul>
     `;
 

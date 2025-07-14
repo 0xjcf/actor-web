@@ -53,60 +53,78 @@ export function safeSerialize(value: unknown, options: SerializationOptions = {}
   try {
     // Check for circular references and depth
     const seen = new WeakSet();
-    let depth = 0;
 
-    const serializer = (key: string, val: unknown): unknown => {
-      // Check depth limit
-      if (depth > maxDepth) {
+    const serializer = (key: string, val: unknown, currentDepth = 0): unknown => {
+      // Check depth limit BEFORE processing
+      if (currentDepth > maxDepth) {
         throw new SerializationError(`Maximum depth of ${maxDepth} exceeded`);
       }
 
       // Handle null
       if (val === null) return null;
 
-      // Check allowed types
-      const type = typeof val;
+      // Apply replacer FIRST (this allows filtering out unwanted types)
+      const transformedVal = replacer ? replacer(key, val) : val;
+
+      // If replacer returned undefined, let JSON.stringify handle it (removes the property)
+      if (transformedVal === undefined) {
+        return undefined;
+      }
+
+      // Now check allowed types on the transformed value
+      const type = typeof transformedVal;
       if (!allowedTypes.includes(type)) {
         throw new SerializationError(`Type '${type}' is not allowed for serialization`);
       }
 
       // Handle primitives
       if (type !== 'object') {
-        return replacer ? replacer(key, val) : val;
+        return transformedVal;
       }
 
       // Handle objects and arrays
-      if (val && typeof val === 'object') {
+      if (transformedVal && typeof transformedVal === 'object') {
         // Check for circular references
-        if (seen.has(val)) {
+        if (seen.has(transformedVal)) {
           throw new SerializationError('Circular reference detected');
         }
-        seen.add(val);
-        depth++;
+        seen.add(transformedVal);
 
         // Handle special objects
-        if (val instanceof Date) {
-          return val.toISOString();
+        if (transformedVal instanceof Date) {
+          return transformedVal.toISOString();
         }
 
-        if (val instanceof Error) {
+        if (transformedVal instanceof Error) {
           return {
-            name: val.name,
-            message: val.message,
-            stack: val.stack,
+            name: transformedVal.name,
+            message: transformedVal.message,
+            stack: transformedVal.stack,
           };
         }
 
-        // Handle regular objects and arrays
-        const result = replacer ? replacer(key, val) : val;
-        depth--;
+        // For regular objects and arrays, we need to recursively process with increased depth
+        if (Array.isArray(transformedVal)) {
+          return transformedVal.map((item, index) =>
+            serializer(String(index), item, currentDepth + 1)
+          );
+        }
+        const result: Record<string, unknown> = {};
+        for (const [objKey, objValue] of Object.entries(
+          transformedVal as Record<string, unknown>
+        )) {
+          const processedValue = serializer(objKey, objValue, currentDepth + 1);
+          if (processedValue !== undefined) {
+            result[objKey] = processedValue;
+          }
+        }
         return result;
       }
 
-      return replacer ? replacer(key, val) : val;
+      return transformedVal;
     };
 
-    return JSON.stringify(value, serializer, pretty ? space : undefined);
+    return JSON.stringify(serializer('', value), undefined, pretty ? space : undefined);
   } catch (error) {
     if (error instanceof SerializationError) {
       throw error;

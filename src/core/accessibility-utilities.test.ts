@@ -4,6 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Logger } from '@/core/dev-mode.js';
 import {
   AccessibilityErrorMessages,
   type AriaAttributes,
@@ -20,6 +21,8 @@ import {
   prefersReducedMotion,
   throttle,
 } from './accessibility-utilities.js';
+
+const _log = Logger.namespace('ACCESSIBILITY_UTILITIES_TEST');
 
 describe('Accessibility Utilities', () => {
   describe('User Preference Detection', () => {
@@ -652,6 +655,15 @@ describe('Accessibility Utilities', () => {
     });
 
     describe('Performance optimization', () => {
+      beforeEach(() => {
+        vi.useFakeTimers();
+      });
+
+      afterEach(() => {
+        vi.runOnlyPendingTimers();
+        vi.useRealTimers();
+      });
+
       it('debounces rapid accessibility checks', async () => {
         const accessibilityCheck = vi.fn();
         const debouncedCheck = debounce(accessibilityCheck, 250);

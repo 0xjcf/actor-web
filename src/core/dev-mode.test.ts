@@ -10,10 +10,13 @@ import { createMachine } from 'xstate';
 import {
   enableDevMode,
   inspectTemplate,
+  Logger,
   registerMachine,
   resetDevMode,
   validateTemplate,
 } from './dev-mode.js';
+
+const log = Logger.namespace('DEV_MODE_TEST');
 
 // Type definition for the dev mode API
 interface ActorSPADevMode {
@@ -42,12 +45,14 @@ describe('Development Mode', () => {
 
     // Reset dev mode state
     resetDevMode();
+    log.debug('Dev mode test environment initialized', { devModeReset: true });
 
     // Mock console methods
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     consoleGroupSpy = vi.spyOn(console, 'group').mockImplementation(() => {});
     consoleGroupEndSpy = vi.spyOn(console, 'groupEnd').mockImplementation(() => {});
+    log.debug('Console spies set up for dev mode testing');
   });
 
   afterEach(() => {
@@ -56,8 +61,9 @@ describe('Development Mode', () => {
 
     // Reset dev mode
     resetDevMode();
+    log.debug('Dev mode test environment cleaned up', { windowRestored: true });
 
-    // Clear all mocks
+    // Restore console methods
     vi.clearAllMocks();
     vi.restoreAllMocks();
   });
@@ -107,6 +113,7 @@ describe('Development Mode', () => {
     it('registers machine when dev mode is enabled', () => {
       // Behavior: Machines should be available for validation
       enableDevMode();
+      log.debug('Dev mode enabled for machine registration test');
 
       const machine = createMachine({
         id: 'test-machine',
@@ -115,10 +122,15 @@ describe('Development Mode', () => {
       });
 
       registerMachine(machine);
+      log.debug('Machine registered in dev mode', { machineId: 'test-machine' });
 
       const actorSPA = window.__actorSPA;
       expect(actorSPA?.listMachines()).toContain('test-machine');
       expect(actorSPA?.getMachine('test-machine')).toBe(machine);
+      log.debug('Machine registration verified', {
+        registeredMachines: actorSPA?.listMachines(),
+        machineFound: !!actorSPA?.getMachine('test-machine'),
+      });
     });
 
     it('does not register machine when dev mode is disabled', () => {
@@ -357,8 +369,14 @@ describe('Development Mode', () => {
     it('logs validation results for templates', () => {
       // Behavior: Should provide helpful console output for debugging
       const template = { html: '<button send="CLICK">Click</button>' };
+      log.debug('Starting template inspection test', { templateHtml: template.html });
 
       inspectTemplate(template);
+      log.debug('Template inspection completed', {
+        consoleGroupCalled: consoleGroupSpy.mock.calls.length,
+        consoleLogCalled: consoleLogSpy.mock.calls.length,
+        consoleGroupEndCalled: consoleGroupEndSpy.mock.calls.length,
+      });
 
       expect(consoleGroupSpy).toHaveBeenCalled();
       expect(consoleLogSpy).toHaveBeenCalled();

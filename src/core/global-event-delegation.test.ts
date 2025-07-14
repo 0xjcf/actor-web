@@ -1,18 +1,26 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createActor } from 'xstate';
+import { Logger } from '@/core/dev-mode.js';
 import {
-  type TestEnvironment,
   createTestEnvironment,
   setupGlobalMocks,
+  type TestEnvironment,
   userInteractions,
   waitFor,
 } from '@/testing/actor-test-utils';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createActor } from 'xstate';
 import {
   GlobalEventDelegation,
   type GlobalEventListener,
   generateEventListenerId,
   globalEventMachine,
 } from './global-event-delegation.js';
+
+const log = Logger.namespace('GLOBAL_EVENT_DELEGATION_TEST');
+
+// Interface for testing that exposes the private instance property
+interface TestableGlobalEventDelegation {
+  instance: GlobalEventDelegation | null;
+}
 
 describe('Global Event Delegation', () => {
   let testEnv: TestEnvironment;
@@ -21,6 +29,10 @@ describe('Global Event Delegation', () => {
   beforeEach(() => {
     testEnv = createTestEnvironment();
     setupGlobalMocks();
+    log.debug('Test environment initialized with global event delegation setup');
+
+    // Setup spy for window.dispatchEvent used across multiple test blocks
+    vi.spyOn(window, 'dispatchEvent');
 
     // Mock DOM elements with proper methods for global event delegation
     const createMockElement = (tagName = 'div') => {
@@ -30,19 +42,26 @@ describe('Global Event Delegation', () => {
       return element;
     };
 
-    // Store original document for restoration
-    global.mockElement = createMockElement;
+    // Store mock function for test cleanup - using proper typing
+    (global as unknown as { mockElement: typeof createMockElement }).mockElement =
+      createMockElement;
 
     // Reset singleton instance for testing
-    // biome-ignore lint/suspicious/noExplicitAny: Test setup requires any for accessing private singleton
-    (GlobalEventDelegation as any).instance = null;
+    (GlobalEventDelegation as unknown as TestableGlobalEventDelegation).instance = null;
     eventDelegation = GlobalEventDelegation.getInstance();
   });
 
   afterEach(() => {
     testEnv.cleanup();
-    // Reset singleton for next test
-    (GlobalEventDelegation as any).instance = null;
+    // Ensure debug mode is disabled for next test (before resetting instance)
+    if (eventDelegation) {
+      eventDelegation.setDebugMode(false);
+    }
+    // Reset singleton for next test using proper interface
+    (GlobalEventDelegation as unknown as TestableGlobalEventDelegation).instance = null;
+    // Restore all mocks including window.dispatchEvent
+    vi.restoreAllMocks();
+    log.debug('Test environment cleaned up, singleton reset');
   });
 
   describe('Singleton Pattern', () => {
@@ -469,7 +488,31 @@ describe('Global Event Delegation', () => {
 
     beforeEach(() => {
       callback = vi.fn();
-      vi.spyOn(window, 'dispatchEvent');
+    });
+
+    afterEach(() => {
+      // Debug: Log current listeners before cleanup
+      const snapshot = eventDelegation.getSnapshot();
+      log.debug(
+        'AfterEach cleanup - Current listeners:',
+        Array.from(snapshot.context.listeners.keys())
+      );
+
+      // Clean up all listeners to ensure test isolation
+      for (const listenerId of snapshot.context.listeners.keys()) {
+        eventDelegation.unsubscribe(listenerId);
+        log.debug('Unsubscribed listener:', listenerId);
+      }
+
+      // Verify cleanup
+      const cleanSnapshot = eventDelegation.getSnapshot();
+      log.debug('AfterEach cleanup - Remaining listeners:', cleanSnapshot.context.listeners.size);
+
+      // Clear spy call history using vitest spy methods
+      if (vi.isMockFunction(window.dispatchEvent)) {
+        vi.mocked(window.dispatchEvent).mockClear();
+      }
+      log.debug('Event handling test cleanup completed');
     });
 
     describe('Basic Event Triggering', () => {
@@ -503,6 +546,13 @@ describe('Global Event Delegation', () => {
       });
 
       it('does not trigger events for disabled listeners', () => {
+        // Debug: Check initial state
+        const initialSnapshot = eventDelegation.getSnapshot();
+        log.debug(
+          'Test start - Initial listeners:',
+          Array.from(initialSnapshot.context.listeners.keys())
+        );
+
         eventDelegation.subscribe(
           {
             id: 'disabled-test',
@@ -514,8 +564,42 @@ describe('Global Event Delegation', () => {
           callback
         );
 
+        // Debug: Check after subscription
+        const afterSubscribeSnapshot = eventDelegation.getSnapshot();
+        log.debug(
+          'After subscribe - All listeners:',
+          Array.from(afterSubscribeSnapshot.context.listeners.entries()).map(([id, listener]) => ({
+            id,
+            enabled: listener.enabled,
+            action: listener.action,
+          }))
+        );
+
+        // Debug: Clear spy history and track calls
+        if (vi.isMockFunction(window.dispatchEvent)) {
+          vi.mocked(window.dispatchEvent).mockClear();
+        }
+        log.debug(
+          'Cleared window.dispatchEvent spy, call count:',
+          vi.mocked(window.dispatchEvent).mock.calls.length
+        );
+
         const clickEvent = new MouseEvent('click', { bubbles: true });
+        log.debug('Dispatching click event...');
         document.dispatchEvent(clickEvent);
+
+        // Debug: Check final state
+        log.debug('Callback call count:', callback.mock.calls.length);
+        log.debug(
+          'window.dispatchEvent call count:',
+          vi.mocked(window.dispatchEvent).mock.calls.length
+        );
+        if (vi.mocked(window.dispatchEvent).mock.calls.length > 0) {
+          log.debug(
+            'window.dispatchEvent calls:',
+            vi.mocked(window.dispatchEvent).mock.calls.map((call) => call[0]?.type)
+          );
+        }
 
         expect(callback).not.toHaveBeenCalled();
         expect(window.dispatchEvent).not.toHaveBeenCalledWith(
@@ -732,6 +816,12 @@ describe('Global Event Delegation', () => {
         vi.spyOn(console, 'log').mockImplementation(() => {});
       });
 
+      afterEach(() => {
+        vi.restoreAllMocks();
+        // Ensure debug mode is reset for subsequent tests
+        eventDelegation.setDebugMode(false);
+      });
+
       it('logs events when debug mode is enabled', () => {
         eventDelegation.setDebugMode(true);
 
@@ -846,6 +936,64 @@ describe('Global Event Delegation', () => {
       }).not.toThrow();
     });
   });
+
+  describe('Test Guard Against Regressions', () => {
+    it('should prevent the bugs we fixed from returning', () => {
+      log.debug('Running regression prevention tests...');
+
+      // 1. Ensure singleton cleanup works
+      expect(eventDelegation).toBeDefined();
+
+      // 2. Ensure callback system works for listeners without componentId
+      const callbackWithoutComponent = vi.fn();
+      const listenerId = eventDelegation.subscribe(
+        {
+          id: 'regression-test-no-component',
+          eventType: 'click',
+          target: 'document',
+          action: 'REGRESSION_TEST',
+        },
+        callbackWithoutComponent
+      );
+
+      const clickEvent = new MouseEvent('click', { bubbles: true });
+      document.dispatchEvent(clickEvent);
+
+      expect(callbackWithoutComponent).toHaveBeenCalledWith('REGRESSION_TEST', clickEvent);
+
+      // Clean up
+      eventDelegation.unsubscribe(listenerId);
+
+      // 3. Ensure disabled listeners don't trigger callbacks or global events
+      const disabledCallback = vi.fn();
+      if (vi.isMockFunction(window.dispatchEvent)) {
+        vi.mocked(window.dispatchEvent).mockClear();
+      }
+
+      const disabledListenerId = eventDelegation.subscribe(
+        {
+          id: 'regression-test-disabled',
+          eventType: 'click',
+          target: 'document',
+          action: 'DISABLED_REGRESSION_TEST',
+          enabled: false,
+        },
+        disabledCallback
+      );
+
+      document.dispatchEvent(clickEvent);
+
+      expect(disabledCallback).not.toHaveBeenCalled();
+      expect(window.dispatchEvent).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'global-action' })
+      );
+
+      // Clean up
+      eventDelegation.unsubscribe(disabledListenerId);
+
+      log.debug('Regression prevention tests passed ✅');
+    });
+  });
 });
 
 describe('State Machine', () => {
@@ -933,21 +1081,21 @@ describe('Utility Functions', () => {
       const id1 = generateEventListenerId('test');
       const id2 = generateEventListenerId('test');
 
-      expect(id1).toMatch(/^test-\d+$/);
-      expect(id2).toMatch(/^test-\d+$/);
+      expect(id1).toMatch(/^test-global-\d+-[a-z0-9]+$/);
+      expect(id2).toMatch(/^test-global-\d+-[a-z0-9]+$/);
       expect(id1).not.toBe(id2); // Should be unique
     });
 
     it('includes component ID when provided', () => {
       const id = generateEventListenerId('test', 'my-component');
 
-      expect(id).toMatch(/^test-my-component-\d+$/);
+      expect(id).toMatch(/^test-my-component-\d+-[a-z0-9]+$/);
     });
 
     it('handles missing component ID gracefully', () => {
       const id = generateEventListenerId('test', undefined);
 
-      expect(id).toMatch(/^test-\d+$/);
+      expect(id).toMatch(/^test-global-\d+-[a-z0-9]+$/);
     });
   });
 });
@@ -959,14 +1107,16 @@ describe('Integration with Browser Events', () => {
   beforeEach(() => {
     testEnv = createTestEnvironment();
     setupGlobalMocks();
+    log.debug('Test environment initialized with global event delegation setup');
 
-    (GlobalEventDelegation as any).instance = null;
+    (GlobalEventDelegation as unknown as TestableGlobalEventDelegation).instance = null;
     eventDelegation = GlobalEventDelegation.getInstance();
   });
 
   afterEach(() => {
     testEnv.cleanup();
-    (GlobalEventDelegation as any).instance = null;
+    (GlobalEventDelegation as unknown as TestableGlobalEventDelegation).instance = null;
+    log.debug('Test environment cleaned up, singleton reset');
   });
 
   it('integrates with real DOM events', async () => {

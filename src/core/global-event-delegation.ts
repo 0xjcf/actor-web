@@ -6,7 +6,7 @@
  * mobile nav event service but generalized for any component.
  */
 
-import { type SnapshotFrom, assign, createActor, setup } from 'xstate';
+import { assign, createActor, type SnapshotFrom, setup } from 'xstate';
 
 // Type definitions
 export interface GlobalEventListener {
@@ -127,48 +127,77 @@ export const globalEventMachine = setup({
       });
     },
     // Combined guard for XState v5 migration - combines isListenerEnabled and meetsConditions
-    canHandleGlobalEvent: ({ event }) => {
+    canHandleGlobalEvent: ({ event, context }) => {
+      // Type guard for event
       if (event.type !== 'GLOBAL_EVENT_TRIGGERED') return false;
 
-      // Check if listener is enabled
+      // Check if listener is enabled - this is the key check for disabled listeners
       const isEnabled = event.listener.enabled !== false;
-      if (!isEnabled) return false;
 
-      // Check if conditions are met
-      const { listener, originalEvent } = event;
-      if (!listener.conditions?.length) return true;
+      // Debug logging for test environment
+      if (process.env.NODE_ENV === 'test' || context.debugMode) {
+        console.log('[GlobalEventDelegation] Guard check:', {
+          listenerId: event.listener.id,
+          enabled: event.listener.enabled,
+          isEnabled,
+          willProcess: isEnabled,
+          action: event.listener.action,
+        });
+      }
 
-      return listener.conditions.every((condition) => {
+      if (!isEnabled) {
+        return false;
+      }
+
+      // If no conditions, allow the event
+      if (!event.listener.conditions || event.listener.conditions.length === 0) {
+        return true;
+      }
+
+      // Evaluate all conditions (AND logic)
+      return event.listener.conditions.every((condition) => {
         let result = false;
 
         switch (condition.type) {
-          case 'key':
-            result = (originalEvent as KeyboardEvent).key === condition.value;
-            break;
-
-          case 'modifier': {
-            const modifierMap = {
-              ctrl: (originalEvent as KeyboardEvent).ctrlKey,
-              meta: (originalEvent as KeyboardEvent).metaKey,
-              shift: (originalEvent as KeyboardEvent).shiftKey,
-              alt: (originalEvent as KeyboardEvent).altKey,
-            };
-            result = modifierMap[condition.value as keyof typeof modifierMap] || false;
+          case 'key': {
+            const keyboardEvent = event.originalEvent as KeyboardEvent;
+            result = keyboardEvent.key === condition.value;
             break;
           }
-
+          case 'modifier': {
+            const keyboardEvent = event.originalEvent as KeyboardEvent;
+            switch (condition.value) {
+              case 'ctrl':
+                result = keyboardEvent.ctrlKey;
+                break;
+              case 'meta':
+                result = keyboardEvent.metaKey;
+                break;
+              case 'shift':
+                result = keyboardEvent.shiftKey;
+                break;
+              case 'alt':
+                result = keyboardEvent.altKey;
+                break;
+              default:
+                result = false;
+            }
+            break;
+          }
           case 'target': {
-            // Safely check if target is an Element and has matches method
-            const target = originalEvent.target;
-            if (
-              target &&
-              typeof target === 'object' &&
-              'matches' in target &&
-              typeof target.matches === 'function'
-            ) {
+            const target = event.originalEvent.target as Element;
+            if (target && typeof target.matches === 'function') {
               try {
                 result = target.matches(condition.value as string);
-              } catch {
+              } catch (error) {
+                // Log safely for debugging
+                if (process.env.NODE_ENV === 'test' || context.debugMode) {
+                  console.log('[GlobalEventDelegation] Target condition error:', {
+                    error: error instanceof Error ? error.message : 'Unknown error',
+                    selector: condition.value,
+                    targetType: typeof target,
+                  });
+                }
                 result = false;
               }
             } else {
@@ -176,28 +205,30 @@ export const globalEventMachine = setup({
             }
             break;
           }
-
-          case 'custom':
-            // Safely execute custom condition functions with error handling
-            try {
-              result =
-                typeof condition.value === 'function' ? condition.value(originalEvent) : false;
-            } catch {
+          case 'custom': {
+            if (typeof condition.value === 'function') {
+              try {
+                result = condition.value(event.originalEvent);
+              } catch (error) {
+                // Log safely for debugging
+                if (process.env.NODE_ENV === 'test' || context.debugMode) {
+                  console.log('[GlobalEventDelegation] Custom condition error:', {
+                    error: error instanceof Error ? error.message : 'Unknown error',
+                    functionName: condition.value.name || 'anonymous',
+                  });
+                }
+                result = false;
+              }
+            } else {
               result = false;
             }
             break;
-
-          case 'state':
-            // Allow components to provide state-based conditions
-            if (typeof condition.value === 'function') {
-              result = condition.value(originalEvent);
-            }
-            break;
-
+          }
           default:
-            result = true;
+            result = false;
         }
 
+        // Apply negation if specified
         return condition.negate ? !result : result;
       });
     },
@@ -216,9 +247,9 @@ export const globalEventMachine = setup({
           return context.componentCallbacks;
 
         const newCallbacks = new Map(context.componentCallbacks);
-        if (event.listener.componentId) {
-          newCallbacks.set(event.listener.componentId, event.callback);
-        }
+        // Store callback by componentId if available, otherwise by listener ID
+        const key = event.listener.componentId || event.listener.id;
+        newCallbacks.set(key, event.callback);
         return newCallbacks;
       },
     }),
@@ -242,6 +273,19 @@ export const globalEventMachine = setup({
         const newSubscriptions = new Map(context.activeSubscriptions);
         newSubscriptions.delete(event.id);
         return newSubscriptions;
+      },
+      componentCallbacks: ({ context, event }) => {
+        if (event.type !== 'UNREGISTER_LISTENER') return context.componentCallbacks;
+
+        // Get the listener to determine callback key
+        const listener = context.listeners.get(event.id);
+        if (!listener) return context.componentCallbacks;
+
+        const newCallbacks = new Map(context.componentCallbacks);
+        // Remove callback using the same key logic as registration
+        const callbackKey = listener.componentId || listener.id;
+        newCallbacks.delete(callbackKey);
+        return newCallbacks;
       },
     }),
 
@@ -327,11 +371,11 @@ export const globalEventMachine = setup({
       }
 
       // Send to component callback if available
-      if (listener.componentId) {
-        const callback = context.componentCallbacks.get(listener.componentId);
-        if (callback) {
-          callback(listener.action, originalEvent);
-        }
+      // Try componentId first, then fallback to listener ID
+      const callbackKey = listener.componentId || listener.id;
+      const callback = context.componentCallbacks.get(callbackKey);
+      if (callback) {
+        callback(listener.action, originalEvent);
       }
 
       // Send to global custom event system for components that don't use callbacks
@@ -583,18 +627,47 @@ export class GlobalEventDelegation {
     const handler = (originalEvent: Event) => {
       const context = this.actor.getSnapshot().context;
 
+      // Debug logging
+      if (context.debugMode) {
+        console.log('[GlobalEventDelegation] Handler triggered:', {
+          eventType,
+          event: originalEvent.type,
+        });
+      }
+
       // Find all listeners for this event type
+      const matchingListeners = [];
       for (const [id, listener] of context.listeners.entries()) {
         if (listener.eventType !== eventType) continue;
+        matchingListeners.push({ id, enabled: listener.enabled, action: listener.action });
 
         // Apply debouncing/throttling if configured
         if (this.shouldSkipDueToPerformance(id, listener)) continue;
+
+        // Debug: Log before sending to machine
+        if (context.debugMode) {
+          console.log('[GlobalEventDelegation] Sending to machine:', {
+            listenerId: id,
+            enabled: listener.enabled,
+            action: listener.action,
+          });
+        }
 
         // Send to machine for processing
         this.actor.send({
           type: 'GLOBAL_EVENT_TRIGGERED',
           listener,
           originalEvent,
+        });
+      }
+
+      // Debug: Always log listener summary in tests
+      if (process.env.NODE_ENV === 'test' || context.debugMode) {
+        console.log('[GlobalEventDelegation] Event processed:', {
+          eventType,
+          totalListeners: context.listeners.size,
+          matchingListeners: matchingListeners.length,
+          listeners: matchingListeners,
         });
       }
     };

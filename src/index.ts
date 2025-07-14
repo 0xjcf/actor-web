@@ -6,6 +6,13 @@
  * @author 0xjcf
  */
 
+// Re-export commonly used XState types for convenience
+export type {
+  ActorOptions as XStateActorOptions,
+  EventObject,
+  SnapshotFrom,
+  StateMachine,
+} from 'xstate';
 // Core Actor System
 export {
   ActorError,
@@ -25,25 +32,31 @@ export {
   createQueryableActorRef,
   createRootActor,
 } from './core/create-actor-ref.js';
-
+// Development & Debugging
+export {
+  enableDevMode,
+  inspectTemplate,
+  Logger,
+  type ScopedLogger,
+  validateTemplate,
+} from './core/dev-mode.js';
 // Messaging System
 export {
   BoundedMailbox,
   createMailbox,
-  MailboxError,
-  OverflowStrategy,
   type Mailbox,
   type MailboxConfig,
+  MailboxError,
   type MailboxStatistics,
   type MessageEnvelope,
+  OverflowStrategy,
 } from './core/messaging/mailbox.js';
 export * from './core/messaging/message-types.js';
 export * from './core/messaging/request-response.js';
-
 // Observable System
 export {
-  createObservable,
   CustomObservable as Observable,
+  createObservable,
   type Observer,
   type SubscriberFunction,
   type Subscription,
@@ -51,31 +64,13 @@ export {
 } from './core/observables/observable.js';
 export {
   filter,
+  type MonadOperatorFunction,
   map,
+  type OperatorFunction,
   observableUtils,
+  type PredicateFunction,
   pipe,
   tap,
-  type MonadOperatorFunction,
-  type OperatorFunction,
-  type PredicateFunction,
 } from './core/observables/operators.js';
-
 // Testing Utilities
 export * from './testing.js';
-
-// Development & Debugging
-export {
-  enableDevMode,
-  inspectTemplate,
-  validateTemplate,
-  Logger,
-  type ScopedLogger,
-} from './core/dev-mode.js';
-
-// Re-export commonly used XState types for convenience
-export type {
-  EventObject,
-  SnapshotFrom,
-  StateMachine,
-  ActorOptions as XStateActorOptions,
-} from 'xstate';

@@ -1,19 +1,22 @@
-import {
-  type TestEnvironment,
-  createTestEnvironment,
-  setupGlobalMocks,
-} from '@/testing/actor-test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createActor } from 'xstate';
+import { Logger } from '@/core/dev-mode.js';
 import {
-  type KeyboardNavigationActor,
-  KeyboardNavigationHelper,
+  createTestEnvironment,
+  setupGlobalMocks,
+  type TestEnvironment,
+} from '@/testing/actor-test-utils';
+import {
   createKeyboardEventHandler,
   createKeyboardNavigationConfig,
   createKeyboardNavigationHelper,
   createKeyboardNavigationTemplateHelpers,
+  type KeyboardNavigationActor,
+  KeyboardNavigationHelper,
   keyboardNavigationMachine,
 } from './keyboard-navigation.js';
+
+const _log = Logger.namespace('KEYBOARD_NAVIGATION_TEST');
 
 // Mock focus management actor for testing
 const createMockFocusActor = () => ({
@@ -866,10 +869,11 @@ describe('Factory Functions', () => {
       expect(menuConfig).toEqual({
         orientation: 'vertical',
         wrap: true,
-        activateOnFocus: false,
+        activateOnFocus: true,
         rovingTabIndex: true,
         homeEndEnabled: true,
         typeaheadEnabled: true,
+        preventDefaultKeys: ['ArrowUp', 'ArrowDown', 'Home', 'End', 'Enter', ' '],
       });
     });
 
@@ -1084,7 +1088,7 @@ describe('Accessibility Compliance', () => {
       { key: ' ', description: 'Space' },
     ];
 
-    keyEventsToTest.forEach(({ key, description }) => {
+    keyEventsToTest.forEach(({ key }) => {
       const keyEvent = new KeyboardEvent('keydown', { key });
 
       expect(() => {

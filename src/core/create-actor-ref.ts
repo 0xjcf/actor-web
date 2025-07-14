@@ -16,20 +16,15 @@ import type {
   BaseEventObject,
   ResponseEvent,
 } from './actors/actor-ref.js';
-
-// Import types from types.js
-import type { ActorSnapshot } from './actors/types.js';
-
 import { ActorStoppedError, generateActorId, isResponseEvent } from './actors/actor-ref.js';
-
+import { Supervisor } from './actors/supervisor.js';
+// Import types from types.js
+import type { ActorSnapshot, SupervisionStrategy } from './actors/types.js';
+// Use my advanced messaging and supervision
+import { RequestResponseManager } from './messaging/request-response.js';
 // Use Agent B's Observable implementation
 import type { Observable } from './observables/observable.js';
 import { CustomObservable } from './observables/observable.js';
-
-import { Supervisor } from './actors/supervisor.js';
-import type { SupervisionStrategy } from './actors/types.js';
-// Use my advanced messaging and supervision
-import { RequestResponseManager } from './messaging/request-response.js';
 
 // ========================================================================================
 // UNIFIED ACTORREF IMPLEMENTATION
@@ -531,19 +526,17 @@ export function createQueryableActorRef<
 export type {
   ActorRef,
   ActorRefOptions,
+  ActorStatus,
+  AskOptions,
   BaseEventObject,
   QueryEvent,
   ResponseEvent,
-  AskOptions,
-  ActorStatus,
 } from './actors/actor-ref.js';
-
-export type { ActorSnapshot, SpawnOptions } from './actors/types.js';
-
 export {
   ActorError,
   ActorStoppedError,
-  TimeoutError,
   generateActorId,
   generateCorrelationId,
+  TimeoutError,
 } from './actors/actor-ref.js';
+export type { ActorSnapshot, SpawnOptions } from './actors/types.js';

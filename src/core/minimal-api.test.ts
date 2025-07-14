@@ -5,10 +5,10 @@
  * following TESTING-GUIDE.md principles: behavior over implementation
  */
 
-import { Logger } from '@/core/dev-mode';
-import { createComponent, css, html } from '@/core/minimal-api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { assign, createMachine } from 'xstate';
+import { Logger } from '@/core/dev-mode';
+import { createComponent, css, html } from '@/core/minimal-api';
 
 // Use scoped logger as recommended in Testing Guide
 const log = Logger.namespace('MINIMAL_API_TEST');
@@ -271,9 +271,7 @@ describe('Minimal API - Framework Behavior', () => {
         },
       });
 
-      const template = (state: {
-        context: { clickCount: number };
-      }) => html`
+      const template = (state: { context: { clickCount: number } }) => html`
         <button send="CLICK">
           Clicked ${state.context.clickCount} times
         </button>
@@ -306,9 +304,7 @@ describe('Minimal API - Framework Behavior', () => {
         states: { showing: {} },
       });
 
-      const template = (state: {
-        context: { userInput: string };
-      }) => html`
+      const template = (state: { context: { userInput: string } }) => html`
         <div class="user-content">
           ${state.context.userInput}
         </div>

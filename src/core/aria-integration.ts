@@ -10,6 +10,7 @@ import {
   isValidAriaAttribute,
   kebabCase,
 } from './accessibility-utilities.js';
+import type { RawHTML } from './template-renderer.js';
 
 /**
  * ARIA Configuration for Components
@@ -415,7 +416,7 @@ export function createAriaTemplateHelper(manager: AriaStateManager): AriaTemplat
 
 export interface ComponentConfigWithAria<TMachine extends AnyStateMachine> {
   machine: TMachine;
-  template: (state: SnapshotFrom<TMachine>, aria: AriaTemplateHelper) => string;
+  template: (state: SnapshotFrom<TMachine>, aria: AriaTemplateHelper) => string | RawHTML;
   tagName?: string;
   styles?: string;
   ariaConfig?: AriaConfig;

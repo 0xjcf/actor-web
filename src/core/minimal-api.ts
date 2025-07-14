@@ -15,9 +15,9 @@ import {
   type ActorOptions,
   type AnyMachineSnapshot,
   type AnyStateMachine,
+  createActor,
   type SnapshotFrom,
   type Subscription,
-  createActor,
 } from 'xstate';
 import { AriaObserver } from './aria-observer.js';
 import { registerMachine } from './dev-mode.js';
@@ -27,7 +27,7 @@ import {
   EnhancedReactiveComponent,
 } from './enhanced-component.js';
 import { ReactiveEventBus } from './reactive-event-bus.js';
-import type { TemplateFunction } from './template-renderer.js';
+import type { RawCSS, TemplateFunction } from './template-renderer.js';
 
 // Re-export development tools
 export { enableDevMode, inspectTemplate } from './dev-mode.js';
@@ -209,8 +209,8 @@ export interface ComponentConfig<TMachine extends AnyStateMachine = AnyStateMach
   /** Optional: Custom tag name (defaults to kebab-case of machine id) */
   tagName?: string;
 
-  /** Optional: Custom styles injected into shadow DOM */
-  styles?: string;
+  /** Optional: Custom styles injected into shadow DOM - now supports css`` directly! */
+  styles?: string | RawCSS;
 
   /** Optional: Custom event mappings (auto-inferred from data-action by default) */
   eventMappings?: Record<string, string>;
@@ -1027,7 +1027,13 @@ export function createComponent<TMachine extends AnyStateMachine>(
         return typeof basicResult === 'string' ? basicResult : basicResult.html;
       },
       tagName: config.tagName,
-      styles: config.styles,
+      // Convert RawCSS to string if needed
+      styles:
+        typeof config.styles === 'string'
+          ? config.styles
+          : config.styles
+            ? String(config.styles)
+            : undefined,
       accessibility: {
         presets: config.accessibility?.preset as AccessibilityPreset | undefined,
         autoInit: config.accessibility?.enabled !== false,

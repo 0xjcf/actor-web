@@ -4,12 +4,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Logger } from './dev-mode.js';
 import {
-  DeserializationError,
-  SerializationError,
   createTypedSerializer,
+  DeserializationError,
   deserializeEventPayload,
   frameworkSerializers,
+  SerializationError,
   safeDeserialize,
   safeSerialize,
   serializeEventPayload,
@@ -18,7 +19,17 @@ import {
   validators,
 } from './json-utilities.js';
 
+const log = Logger.namespace('JSON_UTILITIES_TEST');
+
 describe('JSON Utilities', () => {
+  beforeEach(() => {
+    log.debug('JSON utilities test environment initialized');
+  });
+
+  afterEach(() => {
+    log.debug('JSON utilities test environment cleaned up');
+  });
+
   describe('Safe Serialization', () => {
     describe('Basic serialization behavior', () => {
       it('serializes simple data structures correctly', () => {
@@ -51,9 +62,14 @@ describe('JSON Utilities', () => {
       it('throws SerializationError for circular references', () => {
         const obj: { name: string; circular?: unknown } = { name: 'test' };
         obj.circular = obj; // Create circular reference
+        log.debug('Testing circular reference detection', {
+          objectName: obj.name,
+          hasCircularRef: true,
+        });
 
         expect(() => safeSerialize(obj)).toThrow(SerializationError);
         expect(() => safeSerialize(obj)).toThrow('Circular reference detected');
+        log.debug('Circular reference correctly detected and threw SerializationError');
       });
 
       it('throws SerializationError when depth limit exceeded', () => {
@@ -217,9 +233,20 @@ describe('JSON Utilities', () => {
         data: { element: 'button', timestamp: new Date('2023-01-01') },
         meta: { source: 'ui' },
       };
+      log.debug('Testing event payload serialization', {
+        eventType: payload.type,
+        hasData: !!payload.data,
+        hasMeta: !!payload.meta,
+        timestampType: typeof payload.data.timestamp,
+      });
 
       const result = serializeEventPayload(payload);
       const parsed = JSON.parse(result);
+      log.debug('Event payload serialization completed', {
+        serializedLength: result.length,
+        parsedType: parsed.type,
+        timestampSerialized: parsed.data.timestamp,
+      });
 
       expect(parsed.type).toBe('user-click');
       expect(parsed.data.timestamp).toBe('2023-01-01T00:00:00.000Z');

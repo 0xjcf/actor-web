@@ -1,23 +1,28 @@
-import { type TestEnvironment, createTestEnvironment } from '@/testing/actor-test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createActor } from 'xstate';
+import { Logger } from '@/core/dev-mode.js';
+import { createTestEnvironment, type TestEnvironment } from '@/testing/actor-test-utils';
 import {
+  createFormValidationMachine,
   type FormValidationConfig,
   type ValidationRule,
   ValidationRules,
-  createFormValidationMachine,
 } from './form-validation.js';
+
+const log = Logger.namespace('FORM_VALIDATION_TEST');
 
 describe('Form Validation', () => {
   let testEnv: TestEnvironment;
 
   beforeEach(() => {
     testEnv = createTestEnvironment();
+    log.debug('Test environment initialized');
     // setupGlobalMocks(); // [actor-web] TODO: Fix event bus integration
   });
 
   afterEach(() => {
     testEnv.cleanup();
+    log.debug('Test environment cleaned up');
   });
 
   describe('Built-in Validation Rules', () => {
@@ -239,8 +244,8 @@ describe('Form Validation', () => {
         const actor = createActor(machine);
 
         expect(actor).toBeDefined();
-        // In XState v5, actors don't have status until started
-        expect(actor.getSnapshot().status).toBe('stopped');
+        // In XState v5, actors are active immediately when created
+        expect(actor.getSnapshot().status).toBe('active');
 
         actor.start();
         expect(actor.getSnapshot().status).toBe('active');

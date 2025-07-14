@@ -3,7 +3,7 @@
  * XState-based screen reader announcements that follow reactive patterns
  */
 
-import { type Actor, type SnapshotFrom, assign, setup } from 'xstate';
+import { type Actor, assign, type SnapshotFrom, setup } from 'xstate';
 
 /**
  * Screen Reader Announcement Types

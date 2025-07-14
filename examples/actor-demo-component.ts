@@ -1,6 +1,6 @@
 // Actor Demo Component - Following Framework Best Practices with Web Components
-import { type SnapshotFrom, assign, setup } from 'xstate';
-import { type RawHTML, createComponent, html } from '../../framework/core/index.js';
+import { assign, type SnapshotFrom, setup } from 'xstate';
+import { createComponent, html, type RawHTML } from '../../framework/core/index.js';
 
 // 1. Define proper types following avoid-any-type rule
 interface DemoActorContext {

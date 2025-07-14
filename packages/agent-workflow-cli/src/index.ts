@@ -12,12 +12,12 @@
 
 // Core Git Actor with enhanced commit and date validation
 export {
+  type AgentWorktreeConfig,
   createGitActor,
-  gitActorMachine,
+  type GitContext,
   type GitEvent,
   type GitResponse,
-  type GitContext,
-  type AgentWorktreeConfig,
+  gitActorMachine,
 } from './actors/git-actor.js';
 
 // ============================================================================
@@ -37,9 +37,9 @@ export {
 
 // Advanced git actor operations
 export {
+  actorCreateCommand,
   actorStatusCommand,
   actorWorktreesCommand,
-  actorCreateCommand,
 } from './commands/advanced-git.js';
 
 // ============================================================================
@@ -48,9 +48,9 @@ export {
 
 // Multi-agent coordination and management
 export {
+  agentsConflictsCommand,
   agentsStatusCommand,
   agentsSyncCommand,
-  agentsConflictsCommand,
 } from './commands/agent-coordination.js';
 
 // ============================================================================
@@ -262,7 +262,7 @@ export async function runWorkflowCommand(
 // VERSION & METADATA
 // ============================================================================
 
-export { version } from '../package.json' assert { type: 'json' };
+export { version } from '../package.json' with { type: 'json' };
 
 /**
  * Get CLI package information

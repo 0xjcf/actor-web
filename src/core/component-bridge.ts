@@ -377,8 +377,8 @@ export function createDebouncedEventHandler<TEvent extends BaseEventObject>(
 // Re-export core types that Agent B will need
 export type {
   ActorRef,
-  BaseEventObject,
   ActorRefOptions,
+  BaseEventObject,
 } from './actors/actor-ref.js';
 
 export type { ActorSnapshot } from './actors/types.js';

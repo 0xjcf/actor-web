@@ -139,7 +139,10 @@ export function throttle<T extends (...args: unknown[]) => unknown>(
  */
 
 export function kebabCase(str: string): string {
-  return str.replace(/([a-z0-9]|(?=[A-Z]))([A-Z])/g, '$1-$2').toLowerCase();
+  return str
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1-$2')
+    .toLowerCase();
 }
 
 export function generateId(prefix: string): string {
@@ -291,12 +294,20 @@ export function isValidAriaAttribute(key: string, value: unknown): boolean {
 export function createAriaAttributeString(attributes: AriaAttributes): string {
   const validAttributes: string[] = [];
 
-  Object.entries(attributes).forEach(([key, value]) => {
+  for (const [key, value] of Object.entries(attributes)) {
     if (value !== undefined && value !== null && isValidAriaAttribute(key, value)) {
-      const ariaKey = key === 'role' ? 'role' : `aria-${kebabCase(key)}`;
+      let ariaKey: string;
+      if (key === 'role') {
+        ariaKey = 'role';
+      } else if (key === 'hasPopup') {
+        // Special case: hasPopup should become aria-haspopup (no hyphen)
+        ariaKey = 'aria-haspopup';
+      } else {
+        ariaKey = `aria-${kebabCase(key)}`;
+      }
       validAttributes.push(`${ariaKey}="${String(value)}"`);
     }
-  });
+  }
 
   return validAttributes.join(' ');
 }

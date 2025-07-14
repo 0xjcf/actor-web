@@ -29,8 +29,8 @@ export { AriaObserver } from './aria-observer.js';
 export {
   enableDevMode,
   inspectTemplate,
-  registerMachine,
   Logger,
+  registerMachine,
   type ScopedLogger,
 } from './dev-mode.js';
 export type {
@@ -122,21 +122,21 @@ export { TimerMachines, TimerServices } from './timer-services.js';
 
 // ===== NAMESPACE SYSTEM =====
 export {
-  NAMESPACES,
-  TIMER_NAMESPACES,
-  EVENT_NAMESPACES,
-  COMPONENT_NAMESPACES,
-  STATE_NAMESPACES,
-  UTILITY_NAMESPACES,
   API_NAMESPACES,
-  TEST_NAMESPACES,
+  COMPONENT_NAMESPACES,
+  createCustomNamespace,
   DEV_NAMESPACES,
-  USER_NAMESPACES,
-  UI_NAMESPACES,
-  NAMESPACE_PATTERNS,
+  EVENT_NAMESPACES,
   getAllNamespaceValues,
   isValidNamespace,
-  createCustomNamespace,
-  type NamespaceValue,
+  NAMESPACE_PATTERNS,
+  NAMESPACES,
   type NamespaceParam,
+  type NamespaceValue,
+  STATE_NAMESPACES,
+  TEST_NAMESPACES,
+  TIMER_NAMESPACES,
+  UI_NAMESPACES,
+  USER_NAMESPACES,
+  UTILITY_NAMESPACES,
 } from './namespace-constants.js';

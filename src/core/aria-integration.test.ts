@@ -8,16 +8,19 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createActor, createMachine } from 'xstate';
 import {
-  type TestEnvironment,
   createTestEnvironment,
   setupGlobalMocks,
+  type TestEnvironment,
 } from '../testing/actor-test-utils';
 import {
   type AriaConfig,
-  DefaultAriaConfigs,
   createAriaManager,
   createAriaTemplateHelper,
+  DefaultAriaConfigs,
 } from './aria-integration.js';
+import { Logger } from './dev-mode.js';
+
+const log = Logger.namespace('ARIA_INTEGRATION_TEST');
 
 describe('ARIA Integration', () => {
   let testEnv: TestEnvironment;
@@ -28,10 +31,15 @@ describe('ARIA Integration', () => {
     setupGlobalMocks();
     mockElement = document.createElement('div');
     testEnv.container.appendChild(mockElement);
+    log.debug('ARIA integration test environment initialized', {
+      elementTag: mockElement.tagName,
+      containerExists: !!testEnv.container,
+    });
   });
 
   afterEach(() => {
     testEnv.cleanup();
+    log.debug('ARIA integration test environment cleaned up');
   });
 
   describe('AriaStateManager', () => {
@@ -67,6 +75,10 @@ describe('ARIA Integration', () => {
           error: { invalid: true },
         },
       };
+      log.debug('ARIA state mapping config created', {
+        states: Object.keys(config.stateMapping!),
+        mappings: config.stateMapping,
+      });
 
       const machine = createMachine({
         id: 'test',
@@ -407,6 +419,10 @@ describe('ARIA Integration', () => {
           isPressed: (value: unknown) => ({ pressed: value as boolean }),
         },
       };
+      log.debug('Toggle button ARIA config created', {
+        hasButtonDefaults: !!DefaultAriaConfigs.button,
+        contextMappingKeys: Object.keys(config.contextMapping || {}),
+      });
 
       const machine = createMachine({
         id: 'toggle-button',

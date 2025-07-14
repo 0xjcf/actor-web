@@ -5,7 +5,12 @@
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
-  "files": ["dist", "src", "README.md", "CHANGELOG.md"],
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "build:watch": "pnpm build --watch",
@@ -83,7 +88,7 @@
     "xstate": "^5.19.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
+    "@biomejs/biome": "^2.1.1",
     "@types/node": "^20.0.0",
     "@vitest/coverage-v8": "^2.1.4",
     "happy-dom": "^18.0.1",

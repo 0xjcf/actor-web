@@ -100,16 +100,14 @@ export function createXStateServiceActor<
 // CONVENIENCE RE-EXPORTS
 // ========================================================================================
 
-// Re-export the unified factory functions for convenience
-export { createActorRef, createRootActor, createQueryableActorRef } from '../create-actor-ref.js';
-
 // Re-export essential types
 export type {
   ActorRef,
   ActorRefOptions,
-  BaseEventObject,
   ActorStatus,
   AskOptions,
+  BaseEventObject,
 } from '../actors/actor-ref.js';
-
 export type { ActorSnapshot } from '../actors/types.js';
+// Re-export the unified factory functions for convenience
+export { createActorRef, createQueryableActorRef, createRootActor } from '../create-actor-ref.js';

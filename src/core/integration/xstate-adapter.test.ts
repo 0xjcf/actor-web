@@ -9,6 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EventObject } from 'xstate';
+import { Logger } from '@/core/dev-mode.js';
 import { collectEvents, createTestEnvironment, waitForState } from '../../testing/actor-test-utils';
 import {
   childMachine,
@@ -28,6 +29,8 @@ import {
   createXStateServiceActor,
 } from './xstate-adapter';
 
+const log = Logger.namespace('XSTATE_ADAPTER_TEST');
+
 describe('XStateActorRefAdapter', () => {
   let testEnv: ReturnType<typeof createTestEnvironment>;
   let actorRef: ActorRef<EventObject>;
@@ -35,13 +38,16 @@ describe('XStateActorRefAdapter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     testEnv = createTestEnvironment();
+    log.debug('XState adapter test environment initialized', { testEnvExists: !!testEnv });
   });
 
   afterEach(async () => {
-    if (actorRef?.status === 'running') {
+    if (actorRef && actorRef.status !== 'stopped') {
       await actorRef.stop();
+      log.debug('Actor stopped during cleanup', { actorId: actorRef.id });
     }
     testEnv.cleanup();
+    log.debug('XState adapter test environment cleaned up');
   });
 
   describe('Basic ActorRef Compliance', () => {
@@ -301,6 +307,7 @@ describe('XStateActorRefAdapter', () => {
     it('should handle ask queries', async () => {
       actorRef = createXStateQueryActor(queryMachine);
       actorRef.start();
+      log.debug('Query actor created and started for ask pattern test');
 
       // Set some data
       actorRef.send({ type: 'SET', key: 'name', value: 'Actor-Web' } as EventObject & {
@@ -311,9 +318,11 @@ describe('XStateActorRefAdapter', () => {
         key: string;
         value: unknown;
       });
+      log.debug('Test data set in query actor', { name: 'Actor-Web', version: '1.0.0' });
 
       // Use ask with a query that has a type field for proper request extraction
       const response = await actorRef.ask({ type: 'get', key: 'name' }, { timeout: 1000 });
+      log.debug('Ask pattern query completed', { response, expectedValue: 'Actor-Web' });
 
       // Should get the actual value as response
       expect(response).toBe('Actor-Web');
@@ -399,12 +408,22 @@ describe('XStateActorRefAdapter', () => {
         supervision: 'restart-on-failure',
         metrics: { onError },
       });
+      log.debug('Supervised actor created with restart-on-failure strategy', {
+        supervision: 'restart-on-failure',
+      });
 
       actorRef.start();
       actorRef.send({ type: 'START' });
+      log.debug('Actor started and START event sent', {
+        initialState: actorRef.getSnapshot().value,
+      });
 
       // Send error event to trigger error handling
       actorRef.send({ type: 'ERROR' });
+      log.debug('ERROR event sent to trigger supervision behavior', {
+        currentState: actorRef.getSnapshot().value,
+        errorCallCount: onError.mock.calls.length,
+      });
 
       // Verify the actor is in failed state
       expect(actorRef.getSnapshot().value).toBe('failed');
@@ -554,11 +573,13 @@ describe('XStateActorRefAdapter', () => {
       // Use our query machine which has complex interactions
       actorRef = createXStateQueryActor(queryMachine, { id: 'query-actor' });
       actorRef.start();
+      log.debug('Complex query machine initialized', { id: 'query-actor' });
 
       // Verify initial state
       const initialSnapshot = actorRef.getSnapshot();
       expect(initialSnapshot.value).toBe('ready');
       expect((initialSnapshot.context as { data: Record<string, unknown> }).data).toEqual({});
+      log.debug('Initial state verified', { state: initialSnapshot.value, hasEmptyData: true });
 
       // Test setting and getting data
       actorRef.send({ type: 'SET', key: 'name', value: 'Actor-Web' } as EventObject & {
@@ -572,6 +593,10 @@ describe('XStateActorRefAdapter', () => {
       actorRef.send({ type: 'SET', key: 'author', value: 'Agent C' } as EventObject & {
         key: string;
         value: unknown;
+      });
+      log.debug('Complex test data sent to machine', {
+        dataKeys: ['name', 'version', 'author'],
+        values: ['Actor-Web', '1.0.0', 'Agent C'],
       });
 
       const snapshot = actorRef.getSnapshot();

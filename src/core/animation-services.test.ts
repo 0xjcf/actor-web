@@ -1,18 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createActor, sendTo, setup } from 'xstate';
-import { type TestEnvironment, createTestEnvironment } from '../testing/actor-test-utils.js';
+import { createTestEnvironment, type TestEnvironment } from '../testing/actor-test-utils.js';
 import {
   type AnimationKeyframe,
   AnimationPresets,
   AnimationServices,
-  type ParallelAnimationGroup,
-  type SequenceStep,
-  type TransitionConfig,
   createAnimationService,
   createParallelService,
   createSequenceService,
   createSpringService,
   createTransitionService,
+  type ParallelAnimationGroup,
+  type SequenceStep,
+  type TransitionConfig,
 } from './animation-services.js';
 
 // Mock Web Animations API

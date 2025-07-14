@@ -5,16 +5,20 @@
  * Tests the actual reactive behavior users experience with state machines and components
  */
 
-import { createComponent, html } from '@/core/minimal-api.js';
-import {
-  type MockGlobalEventBus,
-  type TestEnvironment,
-  createTestEnvironment,
-  performanceTestUtils,
-  setupGlobalMocks,
-} from '@/testing/actor-test-utils';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { AnyStateMachine, SnapshotFrom } from 'xstate';
 import { assign, createMachine } from 'xstate';
+import { Logger } from '@/core/dev-mode.js';
+import { createComponent, html } from '@/core/minimal-api.js';
+import type { RawHTML } from '@/core/template-renderer.js';
+import {
+  createTestEnvironment,
+  type MockGlobalEventBus,
+  setupGlobalMocks,
+  type TestEnvironment,
+} from '@/testing/actor-test-utils';
+
+const _log = Logger.namespace('REACTIVE_OBSERVERS_TEST');
 
 describe('Reactive Patterns in Components', () => {
   let testEnv: TestEnvironment;
@@ -50,7 +54,7 @@ describe('Reactive Patterns in Components', () => {
         },
       });
 
-      const template = (state: any) => html`
+      const template = (state: SnapshotFrom<AnyStateMachine>): RawHTML => html`
         <div class="counter">
           <span class="count">${state.context.count}</span>
           <button class="increment" send="INCREMENT">+</button>
@@ -101,26 +105,14 @@ describe('Reactive Patterns in Components', () => {
         },
       });
 
-      const template = (state: any) => html`
-        <form class="reactive-form">
-          <input 
-            type="email" 
-            value="${state.context.email}" 
-            send:input="UPDATE_EMAIL"
-          />
-          <input 
-            type="password" 
-            value="${state.context.password}" 
-            send:input="UPDATE_PASSWORD"
-          />
-          <button 
-            type="submit" 
-            disabled="${!state.context.isValid}"
-            class="${state.context.isValid ? 'valid' : 'invalid'}"
-          >
-            Submit
-          </button>
-        </form>
+      const template = (state: SnapshotFrom<typeof machine>): RawHTML => html`
+        <div class="form-container">
+          <form>
+            <input type="text" placeholder="Enter value" />
+            <button type="submit">Submit</button>
+          </form>
+          <div class="status">${state.context.status}</div>
+        </div>
       `;
 
       const Form = createComponent({ machine, template });
@@ -162,7 +154,7 @@ describe('Reactive Patterns in Components', () => {
         },
       });
 
-      const template = (state: any) => html`
+      const template = (state: SnapshotFrom<AnyStateMachine>): RawHTML => html`
         <div class="modal-container">
           ${
             state.matches('closed')
@@ -225,7 +217,7 @@ describe('Reactive Patterns in Components', () => {
         },
       });
 
-      const template = (state: any) => html`
+      const template = (state: SnapshotFrom<AnyStateMachine>): RawHTML => html`
         <div class="theme-aware ${state.context.theme}">
           <h1>Current theme: ${state.context.theme}</h1>
           <button send="THEME_CHANGED">Toggle Theme</button>
@@ -279,14 +271,14 @@ describe('Reactive Patterns in Components', () => {
         },
       });
 
-      const counterTemplate = (state: any) => html`
+      const counterTemplate = (state: SnapshotFrom<AnyStateMachine>): RawHTML => html`
         <div class="counter">
           <span>Count: ${state.context.count}</span>
           <button send="INCREMENT">+</button>
         </div>
       `;
 
-      const displayTemplate = (state: any) => html`
+      const displayTemplate = (state: SnapshotFrom<AnyStateMachine>): RawHTML => html`
         <div class="display">
           <span>Last recorded: ${state.context.lastCount}</span>
         </div>
@@ -344,11 +336,11 @@ describe('Reactive Patterns in Components', () => {
         },
       });
 
-      const template = (state: any) => html`
+      const template = (state: SnapshotFrom<AnyStateMachine>): RawHTML => html`
         <div class="todo-app">
           <ul class="todo-list">
             ${state.context.todos.map(
-              (todo: any) => html`
+              (todo: { id: number; text: string; done: boolean }) => html`
               <li class="${todo.done ? 'done' : 'pending'}">
                 <span>${todo.text}</span>
                 <button send="TOGGLE_TODO" data-id="${todo.id}">
@@ -421,7 +413,7 @@ describe('Reactive Patterns in Components', () => {
         },
       });
 
-      const template = (state: any) => html`
+      const template = (state: SnapshotFrom<AnyStateMachine>): RawHTML => html`
         <div class="live-data">
           ${
             state.matches('loading')
@@ -484,7 +476,7 @@ describe('Reactive Patterns in Components', () => {
         },
       });
 
-      const template = (state: any) => html`
+      const template = (state: SnapshotFrom<AnyStateMachine>): RawHTML => html`
         <div class="performance-test">
           <div class="value">Value: ${state.context.value}</div>
           <div class="updates">Updates: ${state.context.updates}</div>
@@ -510,7 +502,7 @@ describe('Reactive Patterns in Components', () => {
 
     it('measures render time across iterations', async () => {
       // Behavior: Template rendering should be consistently performant
-      const template = (state: any) => html`
+      const template = (state: SnapshotFrom<AnyStateMachine>): RawHTML => html`
         <div class="complex-template">
           <h1>Value: ${state.context.value}</h1>
           <ul>

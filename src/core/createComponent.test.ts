@@ -1,16 +1,22 @@
 /**
- * Unit Tests for createComponent - Actor-SPA Framework
+ * Behavior Tests for createComponent - Actor-SPA Framework
+ *
+ * Focus: Testing component creation behavior and real framework API integration
+ * Following Testing Guide principles: real APIs, behavior-focused, proper types
  */
 
-import {
-  type MockGlobalEventBus,
-  type TestEnvironment,
-  createTestEnvironment,
-  setupGlobalMocks,
-} from '@/testing/actor-test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { assign, createMachine } from 'xstate';
+import { Logger } from '@/core/dev-mode.js';
+import { ReactiveEventBus } from '@/core/reactive-event-bus.js';
+import {
+  createTestEnvironment,
+  setupGlobalMocks,
+  type TestEnvironment,
+} from '@/testing/actor-test-utils';
 import { createComponent, html } from './minimal-api.js';
+
+const log = Logger.namespace('CREATE_COMPONENT_TEST');
 
 // Mock interfaces for testing
 interface MockState {
@@ -24,15 +30,21 @@ interface MockState {
 
 describe('createComponent', () => {
   let testEnv: TestEnvironment;
-  let _mockEventBus: MockGlobalEventBus;
+  let eventBus: ReactiveEventBus;
 
   beforeEach(() => {
     testEnv = createTestEnvironment();
-    _mockEventBus = setupGlobalMocks();
+    setupGlobalMocks();
+
+    // Use real ReactiveEventBus instead of mocks
+    eventBus = ReactiveEventBus.getInstance();
+    log.debug('Test environment initialized with real ReactiveEventBus');
+    log.debug('EventBus instance ready:', { hasInstance: !!eventBus });
   });
 
   afterEach(() => {
     testEnv.cleanup();
+    log.debug('Test environment cleaned up');
   });
 
   describe('Basic Component Creation', () => {

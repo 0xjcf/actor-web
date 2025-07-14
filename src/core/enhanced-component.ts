@@ -3,41 +3,42 @@
  * Integrates ARIA management, focus management, keyboard navigation, and screen reader announcements
  */
 
-import { type AnyStateMachine, type SnapshotFrom, createActor } from 'xstate';
+import { type AnyStateMachine, createActor, type SnapshotFrom } from 'xstate';
 import {
   type AriaConfig,
   type AriaStateManager,
   type AriaTemplateHelper,
   type ComponentConfigWithAria,
-  type DefaultAriaConfigType,
-  DefaultAriaConfigs,
   createAriaManager,
   createAriaTemplateHelper,
+  DefaultAriaConfigs,
+  type DefaultAriaConfigType,
 } from './aria-integration.js';
 import {
-  type DefaultFocusConfigType,
+  createFocusManagementHelper,
   DefaultFocusConfigs,
+  type DefaultFocusConfigType,
   type FocusManagementConfig,
   type FocusManagementHelper,
-  createFocusManagementHelper,
   focusManagementMachine,
 } from './focus-management.js';
 import {
-  type DefaultKeyboardConfigType,
+  createKeyboardNavigationHelper,
   DefaultKeyboardConfigs,
+  type DefaultKeyboardConfigType,
   type KeyboardNavigationConfig,
   type KeyboardNavigationHelper,
-  createKeyboardNavigationHelper,
   keyboardNavigationMachine,
 } from './keyboard-navigation.js';
 import {
-  type DefaultScreenReaderConfigType,
+  createScreenReaderAnnouncementHelper,
   DefaultScreenReaderConfigs,
+  type DefaultScreenReaderConfigType,
   type ScreenReaderAnnouncementHelper,
   type ScreenReaderConfig,
-  createScreenReaderAnnouncementHelper,
   screenReaderAnnouncementMachine,
 } from './screen-reader-announcements.js';
+import type { RawCSS, RawHTML } from './template-renderer.js';
 
 /**
  * Enhanced Component Configuration
@@ -46,9 +47,12 @@ import {
 
 export interface EnhancedComponentConfig<TMachine extends AnyStateMachine> {
   machine: TMachine;
-  template: (state: SnapshotFrom<TMachine>, accessibility: AccessibilityHelpers) => string;
+  template: (
+    state: SnapshotFrom<TMachine>,
+    accessibility: AccessibilityHelpers
+  ) => string | RawHTML;
   tagName?: string;
-  styles?: string;
+  styles?: string | RawCSS;
 
   // Accessibility configurations
   accessibility?: {
@@ -221,7 +225,10 @@ const AccessibilityPresets: Record<
 
 export class EnhancedReactiveComponent<TMachine extends AnyStateMachine> extends HTMLElement {
   private machine: TMachine;
-  private template: (state: SnapshotFrom<TMachine>, accessibility: AccessibilityHelpers) => string;
+  private template: (
+    state: SnapshotFrom<TMachine>,
+    accessibility: AccessibilityHelpers
+  ) => string | RawHTML;
   private actor: ReturnType<typeof createActor<TMachine>>;
   private ariaManager: AriaStateManager;
   private focusActor: ReturnType<typeof createActor<typeof focusManagementMachine>>;
@@ -244,7 +251,13 @@ export class EnhancedReactiveComponent<TMachine extends AnyStateMachine> extends
 
     this.machine = config.machine;
     this.template = config.template;
-    this.styles = config.styles;
+    // Convert RawCSS to string if needed
+    this.styles =
+      typeof config.styles === 'string'
+        ? config.styles
+        : config.styles
+          ? String(config.styles)
+          : undefined;
     this.mobileConfig = config.mobile;
 
     // Initialize mobile navigation if enabled
@@ -522,11 +535,11 @@ export class EnhancedReactiveComponent<TMachine extends AnyStateMachine> extends
         enableGestures: (gestures: string[]) => {
           const nav = this.mobileNavigation;
           if (nav) {
-            gestures.forEach((gesture) => {
+            for (const gesture of gestures) {
               if (gesture in nav.gestures) {
                 nav.gestures[gesture] = true;
               }
-            });
+            }
           }
         },
       };
@@ -559,7 +572,10 @@ export class EnhancedReactiveComponent<TMachine extends AnyStateMachine> extends
     this.ariaManager.updateState(state);
 
     // Render template with accessibility helpers
-    const html = this.template(state, this.accessibilityHelpers);
+    const templateResult = this.template(state, this.accessibilityHelpers);
+
+    // Convert to string - RawHTML objects are implicitly convertible to string
+    const html = typeof templateResult === 'string' ? templateResult : String(templateResult);
 
     // Update DOM
     const container = this.shadowRoot || this;
@@ -579,10 +595,10 @@ export class EnhancedReactiveComponent<TMachine extends AnyStateMachine> extends
     // Apply ARIA attributes to root element
     const ariaAttributes = this.ariaManager.getAriaAttributeString();
     if (ariaAttributes) {
-      ariaAttributes.split(' ').forEach((attr) => {
+      for (const attr of ariaAttributes.split(' ')) {
         const [name, value] = attr.split('=');
         this.setAttribute(name, value.replace(/"/g, ''));
-      });
+      }
     }
   }
 
@@ -671,8 +687,9 @@ export function createAccessibleComponent<TMachine extends AnyStateMachine>(
   // Convert to enhanced config format
   const enhancedConfig: EnhancedComponentConfig<TMachine> = {
     machine: config.machine,
-    template: (state, accessibility) => {
+    template: (state, accessibility): string | RawHTML => {
       // Provide aria helper for backward compatibility
+      // Legacy templates can now return string | RawHTML directly
       return config.template(state, accessibility.aria);
     },
     tagName: config.tagName,

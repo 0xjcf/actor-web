@@ -5,8 +5,6 @@
  * Part of Phase 0.7 Reactive Infrastructure.
  */
 
-import { safeSerialize } from './json-utilities.js';
-
 export type TemplateFunction<T = unknown> = (state: T) => RawHTML;
 
 export interface RenderOptions {
@@ -181,26 +179,91 @@ export function clear(): void {
 }
 
 /**
- * CSS template literal tag for styles (most editors highlight this automatically)
+ * HTML marker interface for template system output
+ * Now implicitly convertible to string for better ergonomics!
  */
-export function css(strings: TemplateStringsArray, ...values: unknown[]): { css: string } {
+export interface RawHTML {
+  html: string;
+  isRawHTML: true;
+  toString(): string;
+  valueOf(): string;
+}
+
+/**
+ * CSS marker interface for template system output
+ * Now implicitly convertible to string for better ergonomics!
+ */
+export interface RawCSS {
+  css: string;
+  isRawCSS: true;
+  toString(): string;
+  valueOf(): string;
+}
+
+/**
+ * Escape HTML to prevent XSS
+ */
+export function escapeHtml(unsafe: string): string {
+  return unsafe
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+/**
+ * Safe JSON serialization with fallback
+ */
+function safeSerialize(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch (_error) {
+    return String(value);
+  }
+}
+
+/**
+ * Detect if we're in an unquoted attribute context
+ */
+function detectUnquotedAttributeContext(beforeString: string, afterString: string): boolean {
+  // Look for attribute assignment without quotes
+  const attributePattern = /\s+\w+\s*=\s*$/;
+  const hasAttributeAssignment = attributePattern.test(beforeString);
+  const nextCharIsSpace = afterString.trim().startsWith(' ') || afterString.trim().startsWith('>');
+
+  return hasAttributeAssignment && nextCharIsSpace;
+}
+
+/**
+ * CSS template literal tag for styles (most editors highlight this automatically)
+ * Now returns a string-convertible object for better ergonomics!
+ */
+export function css(strings: TemplateStringsArray, ...values: unknown[]): RawCSS {
   const cssString = strings.reduce((result, str, i) => {
     const value = values[i];
     return result + str + (value ?? '');
   }, '');
 
-  return { css: cssString };
+  return {
+    css: cssString,
+    isRawCSS: true,
+    toString: () => cssString,
+    valueOf: () => cssString,
+  };
 }
 
 /**
  * Template literal tag with automatic HTML escaping for security
  * Enhanced to automatically handle arrays - no more .join('') needed!
  * Enhanced to automatically serialize objects to JSON for attributes!
- * Returns RawHTML so nested html`` calls preserve HTML
+ * Returns RawHTML that's implicitly convertible to string - no more .html needed!
  *
  * @example
  * ```typescript
  * const template = html`<div class="example">${content}</div>`;
+ * // Can be used directly - no .html needed!
+ * const templateStr: string = template;
  * // Objects automatically serialized:
  * const template = html`<button payload=${{ id: 123, name: "John" }}>Click</button>`;
  * ```
@@ -279,51 +342,12 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): RawHT
     return result + str + escapedValue;
   }, '');
 
-  return { html: htmlString, isRawHTML: true };
-}
-
-/**
- * Detect if we're in an unquoted attribute context
- * Examples:
- * - "attr=" + value + " next" → true (unquoted attribute)
- * - "attr=\"" + value + "\" next" → false (quoted attribute)
- * - "text " + value + " more" → false (content context)
- */
-function detectUnquotedAttributeContext(beforeString: string, afterString: string): boolean {
-  // Check if the before string ends with an attribute assignment
-  const beforeTrimmed = beforeString.trim();
-  const endsWithAttributeAssignment = /[\w-]+=\s*$/.test(beforeTrimmed);
-
-  if (!endsWithAttributeAssignment) {
-    return false;
-  }
-
-  // Check if the after string starts with something that would complete an unquoted attribute
-  const afterTrimmed = afterString.trim();
-  const startsWithAttributeEnd =
-    /^[\s>]/.test(afterString) || afterTrimmed.startsWith(' ') || afterTrimmed === '';
-
-  return startsWithAttributeEnd;
-}
-
-/**
- * HTML marker interface for template system output
- */
-export interface RawHTML {
-  html: string;
-  isRawHTML: true;
-}
-
-/**
- * Escape HTML to prevent XSS
- */
-export function escapeHtml(unsafe: string): string {
-  return unsafe
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+  return {
+    html: htmlString,
+    isRawHTML: true,
+    toString: () => htmlString,
+    valueOf: () => htmlString,
+  };
 }
 
 // Example templates for common patterns

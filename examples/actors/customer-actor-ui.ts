@@ -1,6 +1,6 @@
 // CustomerActorUI refactored to use Actor-SPA Framework API
-import { type SnapshotFrom, assign, setup } from 'xstate';
-import { type RawHTML, createComponent, css, html } from '../../../framework/core/index.js';
+import { assign, type SnapshotFrom, setup } from 'xstate';
+import { createComponent, css, html, type RawHTML } from '../../../framework/core/index.js';
 import '../../ui/loading-state.js';
 
 // ✅ Type-safe interfaces following framework patterns

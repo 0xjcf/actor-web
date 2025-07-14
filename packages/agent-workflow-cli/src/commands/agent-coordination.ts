@@ -125,11 +125,14 @@ async function getAgentWorktreeStatus(agent: AgentInfo): Promise<AgentInfo> {
     return agent;
   }
 
+  // Capture the path in a local variable after null check for type safety
+  const agentPath = agent.path;
+
   try {
     // Check if path exists and is accessible
     const pathExists = await import('node:fs').then((fs) =>
       fs.promises
-        .access(agent.path!, fs.constants.F_OK)
+        .access(agentPath, fs.constants.F_OK)
         .then(() => true)
         .catch(() => false)
     );
@@ -139,7 +142,7 @@ async function getAgentWorktreeStatus(agent: AgentInfo): Promise<AgentInfo> {
     }
 
     // Get git status for this worktree
-    const status = await getAgentStatus(agent.path);
+    const status = await getAgentStatus(agentPath);
 
     return {
       ...agent,
@@ -149,8 +152,8 @@ async function getAgentWorktreeStatus(agent: AgentInfo): Promise<AgentInfo> {
       uncommittedChanges: status.uncommittedChanges,
     };
   } catch (error) {
-    console.error(chalk.gray(`    Warning: Could not get status for ${agent.id}: ${error}`));
-    return agent;
+    console.error(`Error getting status for ${agent.id}:`, error);
+    return { ...agent, status: 'unknown' };
   }
 }
 

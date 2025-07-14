@@ -55,19 +55,20 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "ignore": [
-      "**/*.md",
-      "docs/**",
-      "scripts/**/*.sh",
-      ".gitignore",
-      "**/*.gitignore",
-      "pnpm-lock.yaml",
-      "yarn.lock",
-      "package-lock.json",
-      "**/node_modules/**",
-      "**/dist/**",
-      "**/build/**",
-      "**/.git/**"
+    "includes": [
+      "**",
+      "!**/*.md",
+      "!**/docs/**",
+      "!**/scripts/**/*.sh",
+      "!**/.gitignore",
+      "!**/*.gitignore",
+      "!**/pnpm-lock.yaml",
+      "!**/yarn.lock",
+      "!**/package-lock.json",
+      "!**/node_modules/**",
+      "!**/dist/**",
+      "!**/build/**",
+      "!**/.git/**"
     ]
   }
 }

@@ -5,9 +5,9 @@
  * following TESTING-GUIDE.md principles: behavior over implementation
  */
 
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Logger } from '@/core/dev-mode';
 import { ReactiveEventBus } from '@/core/reactive-event-bus';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Use scoped logger as recommended in Testing Guide
 const log = Logger.namespace('REACTIVE_EVENT_BUS_TEST');

@@ -7,10 +7,10 @@
 import {
   type AskOptions,
   type EventMetadata,
+  generateCorrelationId,
   type QueryEvent,
   type ResponseEvent,
   TimeoutError,
-  generateCorrelationId,
 } from '../actors/actor-ref.js';
 
 // ========================================================================================

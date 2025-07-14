@@ -3,7 +3,7 @@
  * XState-based keyboard navigation that integrates with focus management
  */
 
-import { type Actor, type SnapshotFrom, assign, setup } from 'xstate';
+import { type Actor, assign, type SnapshotFrom, setup } from 'xstate';
 import type { FocusManagementActor, FocusManagementSnapshot } from './focus-management.js';
 
 /**

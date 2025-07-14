@@ -5,6 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createActor, sendTo, setup } from 'xstate';
+import { Logger } from '@/core/dev-mode.js';
 import {
   createAnimationFrameService,
   createDebounceService,
@@ -14,14 +15,18 @@ import {
   createThrottleService,
 } from './timer-services.js';
 
+const log = Logger.namespace('TIMER_SERVICES_TEST');
+
 describe('Timer Services', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    log.debug('Test environment initialized with fake timers');
   });
 
   afterEach(() => {
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
+    log.debug('Test environment cleaned up, real timers restored');
   });
 
   describe('Delay Service', () => {

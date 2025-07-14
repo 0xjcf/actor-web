@@ -229,14 +229,14 @@ export function setupGlobalMocks(): MockGlobalEventBus {
       observe: vi.fn(),
       disconnect: vi.fn(),
       unobserve: vi.fn(),
-    })) as any;
+    })) as unknown as typeof IntersectionObserver;
 
     // Mock ResizeObserver
     global.ResizeObserver = vi.fn(() => ({
       observe: vi.fn(),
       disconnect: vi.fn(),
       unobserve: vi.fn(),
-    })) as any;
+    })) as unknown as typeof ResizeObserver;
   }
 
   // Return a mock global event bus

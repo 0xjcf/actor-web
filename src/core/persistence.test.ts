@@ -10,9 +10,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  type TestEnvironment,
   createTestEnvironment,
   setupGlobalMocks,
+  type TestEnvironment,
 } from '../testing/actor-test-utils';
 import { type StorageItem, StorageUtils } from './persistence.js';
 
