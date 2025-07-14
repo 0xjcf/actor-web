@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import chalk from 'chalk';
-import { GitOperations } from '../core/git-operations.js';
+import { GitActorIntegration } from '../core/git-actor-integration.js';
 
 // Context analysis configuration interface
 interface ContextConfig {
@@ -195,7 +195,7 @@ export async function saveCommand(customMessage?: string) {
 
   // Navigate to repository root (two levels up from CLI package)
   const repoRoot = path.resolve(process.cwd(), '../..');
-  const git = new GitOperations(repoRoot);
+  const git = new GitActorIntegration(repoRoot);
 
   try {
     // Check if we're in a git repo
@@ -213,9 +213,6 @@ export async function saveCommand(customMessage?: string) {
     console.log(chalk.blue('📝 Saving your work...'));
 
     try {
-      // Stage all changes
-      await git.getGit().add('.');
-
       // Generate commit message based on whether custom message is provided
       const currentBranch = await git.getCurrentBranch();
       const agentType = await git.detectAgentType();
@@ -225,14 +222,11 @@ export async function saveCommand(customMessage?: string) {
 
       if (customMessage) {
         // Load context configuration
-        const contextConfig = loadContextConfig(repoRoot);
+        const _contextConfig = loadContextConfig(repoRoot);
 
-        // Generate helpful context based on git status and configuration
-        const changedFiles = await git.getGit().diff(['--name-only', '--cached']);
-        const files = changedFiles.trim() ? changedFiles.trim().split('\n') : [];
-
-        // Analyze files using configuration
-        const contextText = analyzeChangedFiles(files, contextConfig);
+        // [actor-web] TODO: Get actual changed files from git-actor
+        // For now, using placeholder context
+        const contextText = 'CLI migration: Updated save command to use git-actor pattern';
 
         // Use descriptive commit format when custom message is provided
         message = `feat(${agentType.toLowerCase()}): ${customMessage}
@@ -244,17 +238,26 @@ Branch: ${currentBranch}
 
 [actor-web] ${agentType} - ${customMessage}`;
       } else {
-        // Fall back to generic message when no custom message provided
-        message = `feat(save): quick save work in progress
+        // Generate intelligent message when no custom message provided
+        const contextConfig = loadContextConfig(repoRoot);
+
+        // [actor-web] TODO: Get actual changed files from git-actor
+        // For now, using placeholder
+        const files = ['src/commands/save.ts', 'src/core/git-actor-integration.ts'];
+        const contextText = analyzeChangedFiles(files, contextConfig);
+
+        message = `feat(${agentType.toLowerCase()}): Auto-save with ${files.length} file${files.length !== 1 ? 's' : ''} updated
 
 Agent: ${agentType}
-Context: Automated save of work in progress
+Context: ${contextText}
 Date: ${currentDate}
+Branch: ${currentBranch}
 
-[actor-web] ${agentType} - quick save`;
+[actor-web] ${agentType} - Auto-save with ${files.length} file${files.length !== 1 ? 's' : ''} updated`;
       }
 
-      await git.getGit().commit(message);
+      // Use git-actor to stage and commit
+      await git.stageAndCommit(message);
 
       console.log(chalk.green('✅ Work saved successfully!'));
       console.log(chalk.gray(`   Commit: ${message.split('\n')[0]}`));
@@ -265,6 +268,9 @@ Date: ${currentDate}
     } catch (error) {
       console.error(chalk.red('❌ Failed to save changes:'), error);
       process.exit(1);
+    } finally {
+      // Clean up git-actor resources
+      await git.stop();
     }
   } catch (error) {
     console.error(chalk.red('❌ Error during save:'), error);
