@@ -6,11 +6,46 @@
 
 import type { AnyStateMachine, EventObject, SnapshotFrom } from 'xstate';
 
-// TODO: Agent C will define these types based on Agent A's specifications
+// ========================================================================================
+// BASE ACTOR CONTRACT - ALL ACTORS MUST IMPLEMENT
+// ========================================================================================
+
+/**
+ * Base Actor interface that ALL actors in the framework must implement
+ * This ensures consistent behavior and type safety across the entire system
+ */
+export interface BaseActor<TEvent extends EventObject = EventObject> {
+  /** Unique identifier for this actor */
+  readonly id: string;
+
+  /** Current lifecycle status */
+  readonly status: ActorStatus;
+
+  /** Send a message to this actor */
+  send(event: TEvent): void;
+
+  /** Start the actor */
+  start(): void;
+
+  /** Stop the actor gracefully */
+  stop(): Promise<void> | void;
+
+  /** Get current actor snapshot */
+  getSnapshot(): ActorSnapshot;
+}
+
+/**
+ * Actor lifecycle status
+ */
+export type ActorStatus = 'idle' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error';
+
+// ========================================================================================
+// FRAMEWORK-SPECIFIC TYPES
+// ========================================================================================
 
 export interface ActorRefOptions {
   id?: string;
-  parent?: ActorRef<EventObject>;
+  parent?: BaseActor<EventObject>;
   supervision?: SupervisionStrategy;
 }
 
@@ -28,7 +63,7 @@ export interface SpawnOptions extends ActorRefOptions {
 export interface ActorSnapshot<TContext = unknown> {
   context: TContext;
   value: unknown;
-  status: 'idle' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error';
+  status: ActorStatus;
   error?: Error;
 
   // XState native methods for proper compatibility
@@ -43,7 +78,7 @@ export interface ActorSnapshot<TContext = unknown> {
  * This provides the best of both worlds: XState functionality + framework enhancements
  */
 export type FrameworkSnapshot<TMachine extends AnyStateMachine> = SnapshotFrom<TMachine> & {
-  status: 'idle' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error';
+  status: ActorStatus;
   error?: Error;
 };
 
@@ -61,9 +96,58 @@ export interface ActorBehavior<_TEvent extends EventObject = EventObject> {
   createMachine(): AnyStateMachine; // [actor-web] TODO: Use properly typed StateMachine when XState v5 types are stable
 }
 
-// Placeholder for ActorRef interface - Agent A will define
-export interface ActorRef<TEvent extends EventObject = EventObject, _TEmitted = unknown> {
-  // TODO: Agent A will define the complete interface
-  readonly id: string;
-  send(event: TEvent): void;
+/**
+ * Full ActorRef interface that extends BaseActor with comprehensive framework features
+ * This is the complete interface that framework actors should implement
+ */
+export interface ActorRef<TEvent extends EventObject = EventObject, TEmitted = unknown>
+  extends BaseActor<TEvent> {
+  /** Parent actor reference (if this is a child actor) */
+  readonly parent?: BaseActor<EventObject>;
+
+  /** Supervision strategy applied to this actor */
+  readonly supervision?: SupervisionStrategy;
+
+  /** Request/response pattern */
+  ask<TResponse>(query: TEvent, options?: { timeout?: number }): Promise<TResponse>;
+
+  /** Event emission for actor-to-actor communication */
+  emit(event: TEmitted): void;
+
+  /** Subscribe to events emitted by this actor */
+  subscribe(listener: (event: TEmitted) => void): () => void;
+
+  /** Restart this actor */
+  restart(): Promise<void>;
+
+  /** Spawn child actors */
+  spawn<TChildEvent extends EventObject>(
+    behavior: ActorBehavior<TChildEvent>,
+    options?: SpawnOptions
+  ): ActorRef<TChildEvent>;
 }
+
+// ========================================================================================
+// TYPE GUARDS AND UTILITIES
+// ========================================================================================
+
+/**
+ * Type guard to ensure an object implements the BaseActor interface
+ */
+export function isActor(obj: unknown): obj is BaseActor {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    'id' in obj &&
+    'status' in obj &&
+    'send' in obj &&
+    'start' in obj &&
+    'stop' in obj &&
+    'getSnapshot' in obj
+  );
+}
+
+/**
+ * Type constraint helper - use this in generics to ensure T extends BaseActor
+ */
+export type ActorConstraint<T> = T extends BaseActor ? T : never;

@@ -1,14 +1,14 @@
 import path from 'node:path';
 import chalk from 'chalk';
-import { GitOperations } from '../core/git-operations.js';
+import { GitActorIntegration } from '../core/git-actor-integration.js';
 
-export async function saveCommand() {
+export async function saveCommand(customMessage?: string) {
   console.log(chalk.blue('💾 Quick Save'));
   console.log(chalk.blue('==========================================='));
 
   // Navigate to repository root (two levels up from CLI package)
   const repoRoot = path.resolve(process.cwd(), '../..');
-  const git = new GitOperations(repoRoot);
+  const git = new GitActorIntegration(repoRoot);
 
   try {
     // Check if we're in a git repo
@@ -26,28 +26,19 @@ export async function saveCommand() {
     console.log(chalk.blue('📝 Saving your work...'));
 
     try {
-      // Stage all changes
-      await git.getGit().add('.');
+      // Generate commit message based on whether custom message is provided
+      if (customMessage) {
+        // Use conventional commit with custom description
+        await git.commitWithConvention(customMessage);
+        console.log(chalk.green('✅ Work saved successfully!'));
+        console.log(chalk.gray(`   Commit: feat: ${customMessage}`));
+      } else {
+        // Use conventional commit with auto-generated description
+        await git.commitWithConvention('auto-save with updated files');
+        console.log(chalk.green('✅ Work saved successfully!'));
+        console.log(chalk.gray('   Commit: feat: auto-save with updated files'));
+      }
 
-      // Auto-commit with enhanced conventional commit message
-      const _currentBranch = await git.getCurrentBranch();
-      const agentType = await git.detectAgentType();
-
-      // Use the enhanced commit message generation from the shell script
-      // For now, fall back to a basic conventional commit format
-      const currentDate = new Date().toISOString().split('T')[0];
-      const message = `feat(save): quick save work in progress
-
-Agent: ${agentType}
-Context: Automated save of work in progress
-Date: ${currentDate}
-
-[actor-web] ${agentType} - quick save`;
-
-      await git.getGit().commit(message);
-
-      console.log(chalk.green('✅ Work saved successfully!'));
-      console.log(chalk.gray(`   Commit: ${message}`));
       console.log(chalk.blue('💡 Next steps:'));
       console.log('   • Continue working: make more changes');
       console.log(`   • Ship when ready: ${chalk.yellow('pnpm aw:ship')}`);
@@ -55,6 +46,9 @@ Date: ${currentDate}
     } catch (error) {
       console.error(chalk.red('❌ Failed to save changes:'), error);
       process.exit(1);
+    } finally {
+      // Clean up git-actor resources
+      await git.stop();
     }
   } catch (error) {
     console.error(chalk.red('❌ Error during save:'), error);

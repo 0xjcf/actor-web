@@ -24,6 +24,8 @@ export * from './core/actors/supervisor.js';
 export {
   ActorBehavior,
   ActorSnapshot,
+  ActorStatus,
+  BaseActor,
   SpawnOptions,
   SupervisionStrategy,
 } from './core/actors/types.js';
@@ -72,5 +74,22 @@ export {
   pipe,
   tap,
 } from './core/observables/operators.js';
-// Testing Utilities
-export * from './testing.js';
+// Timer Services
+export {
+  type AnimationFrameOptions,
+  createAnimationFrameService,
+  createDebounceService,
+  createDelayMachine,
+  createDelayService,
+  createIntervalMachine,
+  createIntervalService,
+  createThrottleService,
+  type DebounceOptions,
+  type DelayOptions,
+  type IntervalOptions,
+  type ThrottleOptions,
+  TimerMachines,
+  TimerServices,
+} from './core/timer-services.js';
+// Testing Utilities - Temporarily disabled to avoid vitest imports in CLI
+// export * from './testing.js';

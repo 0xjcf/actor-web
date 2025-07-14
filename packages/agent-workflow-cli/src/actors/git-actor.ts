@@ -1,12 +1,28 @@
+import { type ActorRef, type ActorSnapshot, createActorRef, Logger } from '@actor-web/core';
 import { type SimpleGit, simpleGit } from 'simple-git';
-import { assign, createActor, fromPromise, setup } from 'xstate';
+import { assign, fromPromise, setup } from 'xstate';
 
-// CLI-specific GitActor interface (simplified for CLI use)
-interface GitActor {
-  send(event: GitEvent): void;
-  getSnapshot(): { context: GitContext };
-  start(): void;
-  stop(): void;
+// Use scoped logger for git-actor internal operations
+const log = Logger.namespace('GIT_ACTOR');
+
+/**
+ * GitActor-specific snapshot that includes state value for CLI operations
+ */
+export interface GitActorSnapshot extends ActorSnapshot<GitContext> {
+  value: string; // XState machine state value
+}
+
+// ============================================================================
+// CLI GIT ACTOR INTERFACE - ENFORCES FRAMEWORK CONTRACT
+// ============================================================================
+
+/**
+ * GitActor interface that properly implements the framework BaseActor contract
+ * while providing CLI-specific functionality and event emission
+ */
+export interface GitActor extends ActorRef<GitEvent, GitResponse> {
+  /** CLI-specific snapshot with both context and state value */
+  getSnapshot(): GitActorSnapshot;
 }
 
 // ============================================================================
@@ -24,7 +40,14 @@ export type GitEvent =
   | { type: 'PUSH_CHANGES'; branch: string }
   | { type: 'GENERATE_COMMIT_MESSAGE' } // New: Generate smart commit message
   | { type: 'VALIDATE_DATES'; filePaths: string[] } // New: Validate dates in files
-  | { type: 'COMMIT_WITH_CONVENTION'; customMessage?: string }; // New: Commit with conventional format
+  | { type: 'COMMIT_WITH_CONVENTION'; customMessage?: string } // New: Commit with conventional format
+  | { type: 'CHECK_REPO' } // CLI Migration: Replace isGitRepo()
+  | { type: 'CHECK_WORKTREE'; path: string } // CLI Migration: Replace worktreeExists()
+  | { type: 'FETCH_REMOTE'; branch: string } // CLI Migration: Common git fetch operation
+  | { type: 'MERGE_BRANCH'; branch: string } // CLI Migration: Common git merge operation
+  | { type: 'ADD_ALL' } // CLI Migration: Stage all changes (git add .)
+  | { type: 'CREATE_BRANCH'; branchName: string } // CLI Migration: Create and checkout branch
+  | { type: 'GET_LAST_COMMIT' }; // CLI Migration: Get last commit info
 
 export type GitResponse =
   | { type: 'WORKTREES_SETUP'; worktrees: AgentWorktreeConfig[] }
@@ -38,7 +61,14 @@ export type GitResponse =
   | { type: 'GIT_ERROR'; error: string }
   | { type: 'COMMIT_MESSAGE_GENERATED'; message: string; scope: string; commitType: string } // New
   | { type: 'DATES_VALIDATED'; issues: DateIssue[] } // New
-  | { type: 'CONVENTIONAL_COMMIT_COMPLETE'; commitHash: string; message: string }; // New
+  | { type: 'CONVENTIONAL_COMMIT_COMPLETE'; commitHash: string; message: string } // New
+  | { type: 'REPO_CHECKED'; isGitRepo: boolean } // CLI Migration: Repository validation result
+  | { type: 'WORKTREE_CHECKED'; exists: boolean; path: string } // CLI Migration: Worktree existence check
+  | { type: 'REMOTE_FETCHED'; branch: string; success: boolean } // CLI Migration: Fetch operation result
+  | { type: 'BRANCH_MERGED'; branch: string; success: boolean; commitHash?: string } // CLI Migration: Merge operation result
+  | { type: 'ALL_STAGED'; success: boolean } // CLI Migration: Stage all changes result
+  | { type: 'BRANCH_CREATED'; branchName: string; success: boolean } // CLI Migration: Branch creation result
+  | { type: 'LAST_COMMIT'; commit: string }; // CLI Migration: Last commit info result
 
 // ============================================================================
 // GIT ACTOR CONTEXT
@@ -71,6 +101,15 @@ export interface GitContext {
   lastCommitMessage?: string; // New: Store generated commit message
   commitConfig?: CommitMessageConfig; // New: Store commit configuration
   dateIssues?: DateIssue[]; // New: Store date validation results
+  isGitRepo?: boolean; // CLI Migration: Repository validation result
+  worktreeChecks?: { lastChecked?: boolean }; // CLI Migration: Simplified worktree check result
+  fetchResults?: { lastFetched?: boolean }; // CLI Migration: Simplified fetch result
+  mergeResults?: { lastMerged?: { success: boolean; commitHash?: string } }; // CLI Migration: Simplified merge result
+  stagingResults?: { lastStaged?: boolean }; // CLI Migration: Staging operation results
+  branchResults?: { lastCreated?: string }; // CLI Migration: Branch creation results
+  lastCommitInfo?: string; // CLI Migration: Last commit information
+  lastEventParams?: { [key: string]: unknown }; // CLI Migration: Store event params for actions
+  emit?: (response: GitResponse) => void; // CLI Migration: Event emission function
 }
 
 export interface AgentWorktreeConfig {
@@ -97,6 +136,24 @@ function isCommitChangesEvent(
   event: GitEvent
 ): event is { type: 'COMMIT_CHANGES'; message: string } {
   return event.type === 'COMMIT_CHANGES';
+}
+
+function _isCheckWorktreeEvent(event: GitEvent): event is { type: 'CHECK_WORKTREE'; path: string } {
+  return event.type === 'CHECK_WORKTREE';
+}
+
+function _isFetchRemoteEvent(event: GitEvent): event is { type: 'FETCH_REMOTE'; branch: string } {
+  return event.type === 'FETCH_REMOTE';
+}
+
+function _isMergeBranchEvent(event: GitEvent): event is { type: 'MERGE_BRANCH'; branch: string } {
+  return event.type === 'MERGE_BRANCH';
+}
+
+function _isCreateBranchEvent(
+  event: GitEvent
+): event is { type: 'CREATE_BRANCH'; branchName: string } {
+  return event.type === 'CREATE_BRANCH';
 }
 
 // ============================================================================
@@ -200,45 +257,76 @@ export const gitActorMachine = setup({
 
     getChangedFiles: fromPromise(
       async ({ input }: { input: { integrationBranch?: string; git: SimpleGit } }) => {
-        const { integrationBranch = 'feature/actor-ref-integration', git } = input;
+        const { git } = input;
+
+        log.debug('Getting changed files (uncommitted changes)');
 
         try {
-          await git.fetch(['origin', integrationBranch]);
-          const diff = await git.raw(['diff', '--name-only', `origin/${integrationBranch}..HEAD`]);
-          return diff
-            .trim()
-            .split('\n')
-            .filter((line) => line.length > 0);
-        } catch {
-          // Fallback to comparing with HEAD~1
-          try {
-            const diff = await git.raw(['diff', '--name-only', 'HEAD~1..HEAD']);
-            return diff
-              .trim()
-              .split('\n')
-              .filter((line) => line.length > 0);
-          } catch {
-            return [];
+          // Get status to see all changed files (staged and unstaged)
+          const status = await git.status();
+          const changedFiles: string[] = [];
+
+          // Add staged files
+          for (const file of status.staged) {
+            changedFiles.push(file);
           }
+
+          // Add modified files (unstaged)
+          for (const file of status.modified) {
+            if (!changedFiles.includes(file)) {
+              changedFiles.push(file);
+            }
+          }
+
+          // Add new files
+          for (const file of status.not_added) {
+            if (!changedFiles.includes(file)) {
+              changedFiles.push(file);
+            }
+          }
+
+          log.debug('Found changed files', {
+            count: changedFiles.length,
+            files: changedFiles,
+            staged: status.staged,
+            modified: status.modified,
+            notAdded: status.not_added,
+          });
+
+          return changedFiles;
+        } catch (error) {
+          log.error('Error getting changed files', { error });
+          return [];
         }
       }
     ),
 
     detectAgentType: fromPromise(async ({ input }: { input: { git: SimpleGit } }) => {
       const { git } = input;
-      const status = await git.status();
-      const currentBranch = status.current || '';
+      log.debug('Starting agent type detection');
 
-      if (currentBranch.includes('agent-a') || currentBranch.includes('architecture')) {
-        return 'Agent A (Architecture)';
+      try {
+        const status = await git.status();
+        const currentBranch = status.current || '';
+        log.debug('Got git status', { currentBranch });
+
+        let agentType: string;
+        if (currentBranch.includes('agent-a') || currentBranch.includes('architecture')) {
+          agentType = 'Agent A (Architecture)';
+        } else if (currentBranch.includes('agent-b') || currentBranch.includes('implementation')) {
+          agentType = 'Agent B (Implementation)';
+        } else if (currentBranch.includes('agent-c') || currentBranch.includes('test')) {
+          agentType = 'Agent C (Testing/Cleanup)';
+        } else {
+          agentType = 'Unknown Agent';
+        }
+
+        log.debug('Agent type detected', { agentType, currentBranch });
+        return agentType;
+      } catch (error) {
+        log.error('Error detecting agent type', { error });
+        throw error;
       }
-      if (currentBranch.includes('agent-b') || currentBranch.includes('implementation')) {
-        return 'Agent B (Implementation)';
-      }
-      if (currentBranch.includes('agent-c') || currentBranch.includes('test')) {
-        return 'Agent C (Testing/Cleanup)';
-      }
-      return 'Unknown Agent';
     }),
 
     checkUncommittedChanges: fromPromise(async ({ input }: { input: { git: SimpleGit } }) => {
@@ -477,6 +565,86 @@ Context: Modified ${files.length} files for implementation work
         return { commitHash: result.commit, message: commitMessage };
       }
     ),
+
+    checkRepo: fromPromise(async ({ input }: { input: { git: SimpleGit } }) => {
+      const { git } = input;
+      try {
+        await git.status();
+        return true;
+      } catch {
+        return false;
+      }
+    }),
+
+    checkWorktree: fromPromise(async ({ input }: { input: { path: string; git: SimpleGit } }) => {
+      const { path, git } = input;
+      try {
+        const worktreeList = await git.raw(['worktree', 'list', '--porcelain']);
+        return worktreeList.includes(`worktree ${path}`);
+      } catch {
+        return false;
+      }
+    }),
+
+    fetchRemote: fromPromise(async ({ input }: { input: { branch: string; git: SimpleGit } }) => {
+      const { branch, git } = input;
+      try {
+        await git.fetch(['origin', branch]);
+        return true;
+      } catch {
+        return false;
+      }
+    }),
+
+    mergeBranch: fromPromise(async ({ input }: { input: { branch: string; git: SimpleGit } }) => {
+      const { branch, git } = input;
+      try {
+        await git.merge([branch]);
+        return {
+          success: true,
+        };
+      } catch {
+        return {
+          success: false,
+        };
+      }
+    }),
+
+    stageAll: fromPromise(async ({ input }: { input: { git: SimpleGit } }) => {
+      const { git } = input;
+      try {
+        await git.add('.');
+        return {
+          success: true,
+        };
+      } catch {
+        return {
+          success: false,
+        };
+      }
+    }),
+
+    createBranch: fromPromise(
+      async ({ input }: { input: { branchName: string; git: SimpleGit } }) => {
+        const { branchName, git } = input;
+        try {
+          await git.checkout(['-b', branchName]);
+          return branchName;
+        } catch {
+          throw new Error(`Failed to create branch: ${branchName}`);
+        }
+      }
+    ),
+
+    getLastCommit: fromPromise(async ({ input }: { input: { git: SimpleGit } }) => {
+      const { git } = input;
+      try {
+        const result = await git.raw(['log', '--oneline', '-1']);
+        return result.trim();
+      } catch {
+        return 'No commits found';
+      }
+    }),
   },
 }).createMachine({
   id: 'git-actor',
@@ -490,6 +658,9 @@ Context: Modified ${files.length} files for implementation work
 
   states: {
     idle: {
+      entry: () => {
+        log.debug('Git actor entered idle state');
+      },
       on: {
         SETUP_WORKTREES: {
           target: 'settingUpWorktrees',
@@ -501,6 +672,9 @@ Context: Modified ${files.length} files for implementation work
           target: 'gettingChangedFiles',
         },
         DETECT_AGENT_TYPE: {
+          actions: () => {
+            log.debug('Received DETECT_AGENT_TYPE event, transitioning to detectingAgentType');
+          },
           target: 'detectingAgentType',
         },
         CHECK_UNCOMMITTED_CHANGES: {
@@ -523,6 +697,27 @@ Context: Modified ${files.length} files for implementation work
         },
         COMMIT_WITH_CONVENTION: {
           target: 'committingWithConvention',
+        },
+        CHECK_REPO: {
+          target: 'checkingRepo',
+        },
+        CHECK_WORKTREE: {
+          target: 'checkingWorktree',
+        },
+        FETCH_REMOTE: {
+          target: 'fetchingRemote',
+        },
+        MERGE_BRANCH: {
+          target: 'mergingBranch',
+        },
+        ADD_ALL: {
+          target: 'stagingAll',
+        },
+        CREATE_BRANCH: {
+          target: 'creatingBranch',
+        },
+        GET_LAST_COMMIT: {
+          target: 'gettingLastCommit',
         },
       },
     },
@@ -563,21 +758,47 @@ Context: Modified ${files.length} files for implementation work
         }),
         onDone: {
           target: 'idle',
-          actions: assign({
-            currentBranch: ({ event }) => event.output.currentBranch,
-            agentType: ({ event }) => event.output.agentType,
-          }),
+          actions: [
+            assign({
+              currentBranch: ({ event }) => event.output.currentBranch,
+              agentType: ({ event }) => event.output.agentType,
+            }),
+            // Emit response event
+            ({ event, self }) => {
+              if (self && 'emit' in self) {
+                (self as { emit: (event: GitResponse) => void }).emit({
+                  type: 'STATUS_CHECKED',
+                  currentBranch: event.output.currentBranch,
+                  agentType: event.output.agentType,
+                });
+              }
+            },
+          ],
         },
         onError: {
           target: 'idle',
-          actions: assign({
-            lastError: () => 'Status check failed',
-          }),
+          actions: [
+            assign({
+              lastError: () => 'Status check failed',
+            }),
+            // Emit error event
+            ({ self }) => {
+              if (self && 'emit' in self) {
+                (self as { emit: (event: GitResponse) => void }).emit({
+                  type: 'GIT_ERROR',
+                  error: 'Status check failed',
+                });
+              }
+            },
+          ],
         },
       },
     },
 
     gettingChangedFiles: {
+      entry: () => {
+        log.debug('Entering gettingChangedFiles state');
+      },
       invoke: {
         src: 'getChangedFiles',
         input: ({ event, context }) => {
@@ -591,17 +812,52 @@ Context: Modified ${files.length} files for implementation work
         },
         onDone: {
           target: 'idle',
+          actions: [
+            // Emit response event
+            ({ event, context }) => {
+              log.debug('getChangedFiles completed successfully', { files: event.output });
+              if (context.emit) {
+                const response = {
+                  type: 'CHANGED_FILES',
+                  files: event.output,
+                } as const;
+                log.debug('Emitting CHANGED_FILES response', response);
+                context.emit(response);
+              } else {
+                log.error('Emit function not available in context for getChangedFiles');
+              }
+            },
+          ],
         },
         onError: {
           target: 'idle',
-          actions: assign({
-            lastError: () => 'Getting changed files failed',
-          }),
+          actions: [
+            assign({
+              lastError: () => 'Getting changed files failed',
+            }),
+            // Emit error event
+            ({ context, event }) => {
+              log.error('getChangedFiles failed', { error: event.error });
+              if (context.emit) {
+                const response = {
+                  type: 'GIT_ERROR',
+                  error: 'Getting changed files failed',
+                } as const;
+                log.debug('Emitting GIT_ERROR response', response);
+                context.emit(response);
+              } else {
+                log.error('Emit function not available in context for error handling');
+              }
+            },
+          ],
         },
       },
     },
 
     detectingAgentType: {
+      entry: () => {
+        log.debug('Entering detectingAgentType state');
+      },
       invoke: {
         src: 'detectAgentType',
         input: ({ context }) => ({
@@ -609,15 +865,47 @@ Context: Modified ${files.length} files for implementation work
         }),
         onDone: {
           target: 'idle',
-          actions: assign({
-            agentType: ({ event }) => event.output,
-          }),
+          actions: [
+            assign({
+              agentType: ({ event }) => event.output,
+            }),
+            // Emit response event
+            ({ event, context }) => {
+              log.debug('detectAgentType completed successfully', { agentType: event.output });
+              if (context.emit) {
+                const response = {
+                  type: 'AGENT_TYPE_DETECTED',
+                  agentType: event.output,
+                } as const;
+                log.debug('Emitting AGENT_TYPE_DETECTED response', response);
+                context.emit(response);
+              } else {
+                log.error('Emit function not available in context');
+              }
+            },
+          ],
         },
         onError: {
           target: 'idle',
-          actions: assign({
-            lastError: () => 'Agent type detection failed',
-          }),
+          actions: [
+            assign({
+              lastError: () => 'Agent type detection failed',
+            }),
+            // Emit error event
+            ({ context, event }) => {
+              log.error('detectAgentType failed', { error: event.error });
+              if (context.emit) {
+                const response = {
+                  type: 'GIT_ERROR',
+                  error: 'Agent type detection failed',
+                } as const;
+                log.debug('Emitting GIT_ERROR response', response);
+                context.emit(response);
+              } else {
+                log.error('Emit function not available in context for error handling');
+              }
+            },
+          ],
         },
       },
     },
@@ -630,15 +918,37 @@ Context: Modified ${files.length} files for implementation work
         }),
         onDone: {
           target: 'idle',
-          actions: assign({
-            uncommittedChanges: ({ event }) => event.output,
-          }),
+          actions: [
+            assign({
+              uncommittedChanges: ({ event }) => event.output,
+            }),
+            // Emit response event
+            ({ event, self }) => {
+              if (self && 'emit' in self) {
+                (self as { emit: (event: GitResponse) => void }).emit({
+                  type: 'UNCOMMITTED_STATUS',
+                  hasChanges: event.output,
+                });
+              }
+            },
+          ],
         },
         onError: {
           target: 'idle',
-          actions: assign({
-            lastError: () => 'Checking uncommitted changes failed',
-          }),
+          actions: [
+            assign({
+              lastError: () => 'Checking uncommitted changes failed',
+            }),
+            // Emit error event
+            ({ self }) => {
+              if (self && 'emit' in self) {
+                (self as { emit: (event: GitResponse) => void }).emit({
+                  type: 'GIT_ERROR',
+                  error: 'Checking uncommitted changes failed',
+                });
+              }
+            },
+          ],
         },
       },
     },
@@ -663,6 +973,9 @@ Context: Modified ${files.length} files for implementation work
     },
 
     committingChanges: {
+      entry: () => {
+        log.debug('Entering committingChanges state');
+      },
       invoke: {
         src: 'commitChanges',
         input: ({ event, context }) => {
@@ -676,12 +989,44 @@ Context: Modified ${files.length} files for implementation work
         },
         onDone: {
           target: 'idle',
+          actions: [
+            // Emit response event
+            ({ event, context }) => {
+              log.debug('commitChanges completed successfully', { commitHash: event.output });
+              if (context.emit) {
+                const response = {
+                  type: 'CHANGES_COMMITTED',
+                  commitHash: event.output,
+                } as const;
+                log.debug('Emitting CHANGES_COMMITTED response', response);
+                context.emit(response);
+              } else {
+                log.error('Emit function not available in context for commitChanges');
+              }
+            },
+          ],
         },
         onError: {
           target: 'idle',
-          actions: assign({
-            lastError: () => 'Committing changes failed',
-          }),
+          actions: [
+            assign({
+              lastError: () => 'Committing changes failed',
+            }),
+            // Emit error event
+            ({ context, event }) => {
+              log.error('commitChanges failed', { error: event.error });
+              if (context.emit) {
+                const response = {
+                  type: 'GIT_ERROR',
+                  error: 'Committing changes failed',
+                } as const;
+                log.debug('Emitting GIT_ERROR response', response);
+                context.emit(response);
+              } else {
+                log.error('Emit function not available in context for error handling');
+              }
+            },
+          ],
         },
       },
     },
@@ -762,15 +1107,328 @@ Context: Modified ${files.length} files for implementation work
         }),
         onDone: {
           target: 'idle',
+          actions: [
+            assign({
+              lastCommitMessage: ({ event }) => event.output.message,
+            }),
+            // Emit response event
+            ({ event, self }) => {
+              if (self && 'emit' in self) {
+                (self as { emit: (event: GitResponse) => void }).emit({
+                  type: 'CONVENTIONAL_COMMIT_COMPLETE',
+                  commitHash: event.output.commitHash,
+                  message: event.output.message,
+                });
+              }
+            },
+          ],
+        },
+        onError: {
+          target: 'idle',
+          actions: [
+            assign({
+              lastError: () => 'Conventional commit failed',
+            }),
+            // Emit error event
+            ({ self }) => {
+              if (self && 'emit' in self) {
+                (self as { emit: (event: GitResponse) => void }).emit({
+                  type: 'GIT_ERROR',
+                  error: 'Conventional commit failed',
+                });
+              }
+            },
+          ],
+        },
+      },
+    },
+
+    checkingRepo: {
+      invoke: {
+        src: 'checkRepo',
+        input: ({ context }) => ({
+          git: context.git,
+        }),
+        onDone: {
+          target: 'idle',
+          actions: [
+            assign({
+              isGitRepo: ({ event }) => event.output,
+            }),
+            // Emit response event
+            ({ event, self }) => {
+              if (self && 'emit' in self) {
+                (self as { emit: (event: GitResponse) => void }).emit({
+                  type: 'REPO_CHECKED',
+                  isGitRepo: event.output,
+                });
+              }
+            },
+          ],
+        },
+        onError: {
+          target: 'idle',
+          actions: [
+            assign({
+              lastError: () => 'Repository check failed',
+            }),
+            // Emit error event
+            ({ self }) => {
+              if (self && 'emit' in self) {
+                (self as { emit: (event: GitResponse) => void }).emit({
+                  type: 'GIT_ERROR',
+                  error: 'Repository check failed',
+                });
+              }
+            },
+          ],
+        },
+      },
+    },
+
+    checkingWorktree: {
+      invoke: {
+        src: 'checkWorktree',
+        input: ({ event, context }) => {
+          if (!_isCheckWorktreeEvent(event)) {
+            throw new Error('Invalid event type for checkWorktree');
+          }
+          return {
+            path: event.path,
+            git: context.git,
+          };
+        },
+        onDone: {
+          target: 'idle',
           actions: assign({
-            lastCommitMessage: ({ event }) => event.output.message,
+            worktreeChecks: ({ context, event }) => ({
+              ...context.worktreeChecks,
+              // Use a simple key since we can't easily access the original path
+              lastChecked: event.output,
+            }),
           }),
         },
         onError: {
           target: 'idle',
           actions: assign({
-            lastError: () => 'Conventional commit failed',
+            lastError: () => 'Worktree check failed',
           }),
+        },
+      },
+    },
+
+    fetchingRemote: {
+      invoke: {
+        src: 'fetchRemote',
+        input: ({ event, context }) => {
+          if (!_isFetchRemoteEvent(event)) {
+            throw new Error('Invalid event type for fetchRemote');
+          }
+          return {
+            branch: event.branch,
+            git: context.git,
+          };
+        },
+        onDone: {
+          target: 'idle',
+          actions: assign({
+            fetchResults: ({ context, event }) => ({
+              ...context.fetchResults,
+              // Use a simple key since we can't easily access the original branch
+              lastFetched: event.output,
+            }),
+          }),
+        },
+        onError: {
+          target: 'idle',
+          actions: assign({
+            lastError: () => 'Remote fetch failed',
+          }),
+        },
+      },
+    },
+
+    mergingBranch: {
+      invoke: {
+        src: 'mergeBranch',
+        input: ({ event, context }) => {
+          if (!_isMergeBranchEvent(event)) {
+            throw new Error('Invalid event type for mergeBranch');
+          }
+          return {
+            branch: event.branch,
+            git: context.git,
+          };
+        },
+        onDone: {
+          target: 'idle',
+          actions: assign({
+            mergeResults: ({ context, event }) => ({
+              ...context.mergeResults,
+              // Use a simple key since we can't easily access the original branch
+              lastMerged: event.output,
+            }),
+          }),
+        },
+        onError: {
+          target: 'idle',
+          actions: assign({
+            lastError: () => 'Branch merge failed',
+          }),
+        },
+      },
+    },
+
+    stagingAll: {
+      invoke: {
+        src: 'stageAll',
+        input: ({ context }) => ({
+          git: context.git,
+        }),
+        onDone: {
+          target: 'idle',
+          actions: [
+            assign({
+              stagingResults: () => ({ lastStaged: true }),
+            }),
+            // Emit response event
+            ({ context }) => {
+              log.debug('Stage all completed successfully');
+              if (context.emit) {
+                const response = {
+                  type: 'ALL_STAGED',
+                  success: true,
+                } as const;
+                log.debug('Emitting ALL_STAGED response', response);
+                context.emit(response);
+              }
+            },
+          ],
+        },
+        onError: {
+          target: 'idle',
+          actions: [
+            assign({
+              lastError: () => 'Stage all failed',
+            }),
+            // Emit error event
+            ({ context }) => {
+              log.error('Stage all failed');
+              if (context.emit) {
+                const response = {
+                  type: 'GIT_ERROR',
+                  error: 'Stage all failed',
+                } as const;
+                context.emit(response);
+              }
+            },
+          ],
+        },
+      },
+    },
+
+    creatingBranch: {
+      invoke: {
+        src: 'createBranch',
+        input: ({ event, context }) => {
+          if (!_isCreateBranchEvent(event)) {
+            throw new Error('Invalid event type for createBranch');
+          }
+          return {
+            branchName: event.branchName,
+            git: context.git,
+          };
+        },
+        onDone: {
+          target: 'idle',
+          actions: [
+            assign({
+              branchResults: ({ context, event }) => ({
+                ...context.branchResults,
+                lastCreated: event.output,
+              }),
+            }),
+            // Emit response event
+            ({ event, context }) => {
+              log.debug('Branch creation completed successfully', { branchName: event.output });
+              if (context.emit) {
+                const response = {
+                  type: 'BRANCH_CREATED',
+                  branchName: event.output,
+                  success: true,
+                } as const;
+                log.debug('Emitting BRANCH_CREATED response', response);
+                context.emit(response);
+              }
+            },
+          ],
+        },
+        onError: {
+          target: 'idle',
+          actions: [
+            assign({
+              lastError: () => 'Branch creation failed',
+            }),
+            // Emit error event
+            ({ context }) => {
+              log.error('Branch creation failed');
+              if (context.emit) {
+                const response = {
+                  type: 'GIT_ERROR',
+                  error: 'Branch creation failed',
+                } as const;
+                context.emit(response);
+              }
+            },
+          ],
+        },
+      },
+    },
+
+    gettingLastCommit: {
+      invoke: {
+        src: 'getLastCommit',
+        input: ({ context }) => ({
+          git: context.git,
+        }),
+        onDone: {
+          target: 'idle',
+          actions: [
+            assign({
+              lastCommitInfo: ({ event }) => event.output,
+            }),
+            // Emit response event
+            ({ event, context }) => {
+              log.debug('Last commit retrieval completed successfully', { commit: event.output });
+              if (context.emit) {
+                const response = {
+                  type: 'LAST_COMMIT',
+                  commit: event.output,
+                } as const;
+                log.debug('Emitting LAST_COMMIT response', response);
+                context.emit(response);
+              }
+            },
+          ],
+        },
+        onError: {
+          target: 'idle',
+          actions: [
+            assign({
+              lastError: () => 'Get last commit failed',
+            }),
+            // Emit error event
+            ({ context }) => {
+              log.error('Get last commit failed');
+              if (context.emit) {
+                const response = {
+                  type: 'GIT_ERROR',
+                  error: 'Get last commit failed',
+                } as const;
+                context.emit(response);
+              }
+            },
+          ],
         },
       },
     },
@@ -782,18 +1440,40 @@ Context: Modified ${files.length} files for implementation work
 // ============================================================================
 
 /**
- * Create a GitActor instance using XState directly for CLI use
- * Ready for production use with enhanced commit and date functionality
+ * Create a GitActor instance using the framework's createActorRef
+ * This provides proper event emission and subscription capabilities
  */
 export function createGitActor(baseDir?: string): GitActor {
-  const actor = createActor(gitActorMachine, {
+  // Use framework's createActorRef to get proper event emission
+  const actorRef = createActorRef<GitEvent, GitResponse>(gitActorMachine, {
+    id: `git-actor-${Date.now()}`,
     input: { baseDir },
   });
 
-  return {
-    send: (event: GitEvent) => actor.send(event),
-    getSnapshot: () => actor.getSnapshot(),
-    start: () => actor.start(),
-    stop: () => actor.stop(),
-  };
+  // Start the actor immediately
+  actorRef.start();
+
+  // Store reference to original getSnapshot to avoid recursion
+  const originalGetSnapshot = actorRef.getSnapshot.bind(actorRef);
+
+  // Create the GitActor by extending the actorRef with CLI-specific methods
+  const gitActor = Object.assign(actorRef, {
+    // Override getSnapshot with CLI-specific implementation
+    getSnapshot: (): GitActorSnapshot => {
+      const snapshot = originalGetSnapshot();
+      return {
+        context: snapshot.context as GitContext,
+        value: 'idle', // Simplified for CLI use
+        status: snapshot.status,
+        error: snapshot.error,
+        // XState compatibility methods - delegated to framework
+        matches: (state: string) => state === 'idle',
+        can: () => true,
+        hasTag: () => false,
+        toJSON: () => ({ context: snapshot.context }),
+      };
+    },
+  }) as GitActor;
+
+  return gitActor;
 }

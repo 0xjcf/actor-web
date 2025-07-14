@@ -259,10 +259,16 @@ export async function runWorkflowCommand(
 }
 
 // ============================================================================
-// VERSION & METADATA
+// PACKAGE METADATA
 // ============================================================================
 
-export { version } from '../package.json' with { type: 'json' };
+// Import package.json for version info
+import packageJson from '../package.json' with { type: 'json' };
+
+/**
+ * CLI Package version
+ */
+export const version = packageJson.version;
 
 /**
  * Get CLI package information

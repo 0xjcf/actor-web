@@ -1,7 +1,7 @@
 /**
  * @module framework/testing
  * @description Testing utilities and fixtures for the Actor-SPA framework
- * @author Agent C - 2025-01-10
+ * @author Agent C - 2025-07-14
  */
 
 // Export all testing utilities
