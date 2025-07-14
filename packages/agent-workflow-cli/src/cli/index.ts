@@ -47,7 +47,10 @@ program
   .description('Validate current work using smart analysis')
   .action(validateCommand);
 
-program.command('save').description('Save current work to agent branch').action(saveCommand);
+program
+  .command('save [message]')
+  .description('Save current work to agent branch with optional commit message')
+  .action(saveCommand);
 
 program.command('ship').description('Ship work to integration branch').action(shipCommand);
 
