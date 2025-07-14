@@ -137,9 +137,44 @@ export class GitActorIntegration {
    * Note: This is a simplified version for save.ts context analysis
    */
   async getChangedFiles(): Promise<string[]> {
-    // For save.ts, we need staged files for commit
-    // This is a placeholder - we'll use git.diff in the actor
-    return [];
+    log.debug('Getting changed files for commit analysis');
+    return this.createRequest<string[]>('GET_CHANGED_FILES', (response) => {
+      if (response.type === 'CHANGED_FILES') {
+        log.debug('Changed files retrieved', { files: response.files });
+        return response.files;
+      }
+      return undefined;
+    });
+  }
+
+  /**
+   * Get changed files synchronously using git status (for testing)
+   * This bypasses the actor system for immediate results
+   */
+  private async getChangedFilesSync(): Promise<string[]> {
+    try {
+      // Use simple git to get status directly
+      const { simpleGit } = await import('simple-git');
+      const git = simpleGit(process.cwd());
+
+      const status = await git.status();
+      const changedFiles: string[] = [];
+
+      // Add all changed files
+      changedFiles.push(...status.staged);
+      changedFiles.push(...status.modified.filter((file) => !changedFiles.includes(file)));
+      changedFiles.push(...status.not_added.filter((file) => !changedFiles.includes(file)));
+
+      log.debug('Got changed files synchronously', {
+        count: changedFiles.length,
+        files: changedFiles,
+      });
+
+      return changedFiles;
+    } catch (error) {
+      log.error('Error getting changed files synchronously', { error });
+      return [];
+    }
   }
 
   /**
@@ -161,6 +196,174 @@ export class GitActorIntegration {
         return undefined;
       }
     );
+  }
+
+  /**
+   * Commit with conventional commit format following project standards
+   * Automatically detects type, scope, and generates proper commit message
+   */
+  async commitWithConvention(customDescription?: string): Promise<string> {
+    log.debug('Creating conventional commit', { customDescription });
+
+    // Get current context for commit analysis
+    const [agentType, changedFiles] = await Promise.all([
+      this.detectAgentType(),
+      this.getChangedFilesSync(), // Use sync version for now
+    ]);
+
+    // Detect commit type and scope based on changed files
+    const commitAnalysis = this.analyzeChangesForCommit(changedFiles);
+
+    // Generate conventional commit message
+    const commitMessage = this.generateConventionalCommitMessage({
+      type: commitAnalysis.type,
+      scope: commitAnalysis.scope,
+      description: customDescription || commitAnalysis.description,
+      agentType,
+      changedFiles,
+      workCategory: commitAnalysis.workCategory,
+    });
+
+    log.debug('Generated conventional commit message', { commitMessage });
+
+    return this.createRequest<string>(
+      { type: 'COMMIT_CHANGES', message: commitMessage },
+      (response) => {
+        if (response.type === 'CHANGES_COMMITTED') {
+          log.debug('Conventional commit completed successfully', {
+            commitHash: response.commitHash,
+          });
+          return response.commitHash;
+        }
+        return undefined;
+      }
+    );
+  }
+
+  /**
+   * Analyze changed files to determine commit type and scope
+   */
+  private analyzeChangesForCommit(changedFiles: string[]): {
+    type: string;
+    scope: string;
+    description: string;
+    workCategory: string;
+  } {
+    // Default values
+    let type = 'feat';
+    let scope = 'core';
+    let description = 'update implementation';
+    let workCategory = 'implementation';
+
+    // Analyze file patterns to determine commit characteristics
+    const fileAnalysis = {
+      hasTests: changedFiles.some((file) => file.includes('.test.') || file.includes('/test/')),
+      hasDocs: changedFiles.some((file) => file.endsWith('.md') || file.includes('/docs/')),
+      hasCore: changedFiles.some((file) => file.includes('/core/')),
+      hasActorRef: changedFiles.some(
+        (file) => file.includes('actor-ref') || file.includes('create-actor-ref')
+      ),
+      hasIntegration: changedFiles.some(
+        (file) => file.includes('integration') || file.includes('xstate')
+      ),
+      hasTypes: changedFiles.some((file) => file.includes('types.ts') || file.includes('/types/')),
+      hasArchitecture: changedFiles.some(
+        (file) => file.includes('architecture') || file.includes('design')
+      ),
+      hasCLI: changedFiles.some((file) => file.includes('agent-workflow-cli')),
+      hasGitActor: changedFiles.some((file) => file.includes('git-actor')),
+    };
+
+    // Determine commit type
+    if (fileAnalysis.hasTests && !fileAnalysis.hasCore) {
+      type = 'test';
+      workCategory = 'testing';
+    } else if (fileAnalysis.hasDocs && !fileAnalysis.hasCore) {
+      type = 'docs';
+      workCategory = 'documentation';
+    } else if (changedFiles.some((file) => file.includes('fix') || file.includes('bug'))) {
+      type = 'fix';
+      workCategory = 'bug fix';
+    } else {
+      type = 'feat';
+      workCategory = 'implementation';
+    }
+
+    // Determine scope based on Agent A patterns
+    if (fileAnalysis.hasActorRef) {
+      scope = 'actor-ref';
+      description = 'enhance actor reference system';
+    } else if (fileAnalysis.hasIntegration) {
+      scope = 'integration';
+      description = 'improve framework integration';
+    } else if (fileAnalysis.hasTypes) {
+      scope = 'types';
+      description = 'update type definitions';
+    } else if (fileAnalysis.hasArchitecture) {
+      scope = 'architecture';
+      description = 'refine system architecture';
+    } else if (fileAnalysis.hasCLI || fileAnalysis.hasGitActor) {
+      scope = 'cli';
+      description = 'enhance CLI actor integration';
+      workCategory = 'cli development';
+    } else if (fileAnalysis.hasCore) {
+      scope = 'core';
+      description = 'update core implementation';
+    }
+
+    // Handle test-specific descriptions
+    if (type === 'test') {
+      if (fileAnalysis.hasActorRef) {
+        description = 'add actor reference tests';
+      } else if (fileAnalysis.hasCore) {
+        description = 'enhance core test suite';
+      } else {
+        description = 'improve test coverage';
+      }
+    }
+
+    // Handle documentation descriptions
+    if (type === 'docs') {
+      if (fileAnalysis.hasArchitecture) {
+        description = 'update architecture documentation';
+      } else {
+        description = 'improve documentation';
+      }
+    }
+
+    return { type, scope, description, workCategory };
+  }
+
+  /**
+   * Generate conventional commit message following project standards
+   */
+  private generateConventionalCommitMessage(options: {
+    type: string;
+    scope: string;
+    description: string;
+    agentType: string;
+    changedFiles: string[];
+    workCategory: string;
+  }): string {
+    const { type, scope, description, agentType, changedFiles, workCategory } = options;
+
+    // Format changed files summary (max 5 files, then "...")
+    const filesPreview =
+      changedFiles.length > 5
+        ? `${changedFiles.slice(0, 5).join(', ')}...`
+        : changedFiles.join(', ');
+
+    // Generate the conventional commit message
+    const subject = `${type}(${scope}): ${description}`;
+
+    const body = `
+Agent: ${agentType}
+Files: ${filesPreview}
+Context: ${description} across ${changedFiles.length} files
+
+[actor-web] ${agentType} - ${workCategory}`.trim();
+
+    return `${subject}\n\n${body}`;
   }
 
   /**

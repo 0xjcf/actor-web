@@ -242,26 +242,46 @@ export const gitActorMachine = setup({
 
     getChangedFiles: fromPromise(
       async ({ input }: { input: { integrationBranch?: string; git: SimpleGit } }) => {
-        const { integrationBranch = 'feature/actor-ref-integration', git } = input;
+        const { git } = input;
+
+        log.debug('Getting changed files (uncommitted changes)');
 
         try {
-          await git.fetch(['origin', integrationBranch]);
-          const diff = await git.raw(['diff', '--name-only', `origin/${integrationBranch}..HEAD`]);
-          return diff
-            .trim()
-            .split('\n')
-            .filter((line) => line.length > 0);
-        } catch {
-          // Fallback to comparing with HEAD~1
-          try {
-            const diff = await git.raw(['diff', '--name-only', 'HEAD~1..HEAD']);
-            return diff
-              .trim()
-              .split('\n')
-              .filter((line) => line.length > 0);
-          } catch {
-            return [];
+          // Get status to see all changed files (staged and unstaged)
+          const status = await git.status();
+          const changedFiles: string[] = [];
+
+          // Add staged files
+          for (const file of status.staged) {
+            changedFiles.push(file);
           }
+
+          // Add modified files (unstaged)
+          for (const file of status.modified) {
+            if (!changedFiles.includes(file)) {
+              changedFiles.push(file);
+            }
+          }
+
+          // Add new files
+          for (const file of status.not_added) {
+            if (!changedFiles.includes(file)) {
+              changedFiles.push(file);
+            }
+          }
+
+          log.debug('Found changed files', {
+            count: changedFiles.length,
+            files: changedFiles,
+            staged: status.staged,
+            modified: status.modified,
+            notAdded: status.not_added,
+          });
+
+          return changedFiles;
+        } catch (error) {
+          log.error('Error getting changed files', { error });
+          return [];
         }
       }
     ),
@@ -716,6 +736,9 @@ Context: Modified ${files.length} files for implementation work
     },
 
     gettingChangedFiles: {
+      entry: () => {
+        log.debug('Entering gettingChangedFiles state');
+      },
       invoke: {
         src: 'getChangedFiles',
         input: ({ event, context }) => {
@@ -729,12 +752,44 @@ Context: Modified ${files.length} files for implementation work
         },
         onDone: {
           target: 'idle',
+          actions: [
+            // Emit response event
+            ({ event, context }) => {
+              log.debug('getChangedFiles completed successfully', { files: event.output });
+              if (context.emit) {
+                const response = {
+                  type: 'CHANGED_FILES',
+                  files: event.output,
+                } as const;
+                log.debug('Emitting CHANGED_FILES response', response);
+                context.emit(response);
+              } else {
+                log.error('Emit function not available in context for getChangedFiles');
+              }
+            },
+          ],
         },
         onError: {
           target: 'idle',
-          actions: assign({
-            lastError: () => 'Getting changed files failed',
-          }),
+          actions: [
+            assign({
+              lastError: () => 'Getting changed files failed',
+            }),
+            // Emit error event
+            ({ context, event }) => {
+              log.error('getChangedFiles failed', { error: event.error });
+              if (context.emit) {
+                const response = {
+                  type: 'GIT_ERROR',
+                  error: 'Getting changed files failed',
+                } as const;
+                log.debug('Emitting GIT_ERROR response', response);
+                context.emit(response);
+              } else {
+                log.error('Emit function not available in context for error handling');
+              }
+            },
+          ],
         },
       },
     },
