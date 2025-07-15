@@ -144,17 +144,16 @@ class StateBasedWorkflowHandler {
         break;
 
       case 'integrationStatusChecked': {
-        // Use observe to reactively get integration status
-        const integrationObserver = this.actor
-          .observe((snapshot) => snapshot.context.integrationStatus)
-          .subscribe((integrationStatus) => {
-            if (!integrationStatus) {
-              reject(new Error('No integration status received'));
-              return;
-            }
-            this.handleIntegrationStatus(integrationStatus);
-            integrationObserver.unsubscribe();
-          });
+        // Directly get integration status from current context instead of creating an observer
+        const currentSnapshot = this.actor.getSnapshot();
+        const integrationStatus = (currentSnapshot.context as GitContext).integrationStatus;
+
+        if (!integrationStatus) {
+          reject(new Error('No integration status received'));
+          return;
+        }
+
+        this.handleIntegrationStatus(integrationStatus);
         break;
       }
 
@@ -174,15 +173,12 @@ class StateBasedWorkflowHandler {
       case 'integrationStatusError':
       case 'fetchError':
       case 'pushError': {
-        // Use observe to reactively get error message
-        const errorObserver = this.actor
-          .observe((snapshot) => snapshot.context.lastError)
-          .subscribe((lastError) => {
-            const errorMsg = lastError || `Error in ${stateStr}`;
-            console.error(chalk.red('❌ Error:'), errorMsg);
-            reject(new Error(errorMsg));
-            errorObserver.unsubscribe();
-          });
+        // Directly get error from current context instead of creating an observer
+        const currentSnapshot = this.actor.getSnapshot();
+        const lastError = (currentSnapshot.context as GitContext).lastError;
+        const errorMsg = lastError || `Error in ${stateStr}`;
+        console.error(chalk.red('❌ Error:'), errorMsg);
+        reject(new Error(errorMsg));
         break;
       }
 
@@ -245,15 +241,17 @@ class StateBasedWorkflowHandler {
       console.log(chalk.yellow('📥 Fetching latest integration changes...'));
       this.sendMessage({ type: 'FETCH_REMOTE', branch: 'feature/actor-ref-integration' });
     } else {
-      console.log(chalk.yellow('📤 Pushing to integration branch...'));
-      this.sendMessage({ type: 'PUSH_CHANGES', branch: 'feature/actor-ref-integration' });
+      console.log(chalk.yellow('📤 Pushing current branch to origin...'));
+      // Push the current branch, not the integration branch
+      this.sendMessage({ type: 'PUSH_CHANGES', branch: this.currentBranch || 'HEAD' });
     }
   }
 
   private handleFetchComplete(): void {
     console.log(chalk.green('✅ Latest changes fetched'));
-    console.log(chalk.yellow('📤 Pushing to integration branch...'));
-    this.sendMessage({ type: 'PUSH_CHANGES', branch: 'feature/actor-ref-integration' });
+    console.log(chalk.yellow('📤 Pushing current branch to origin...'));
+    // Push the current branch, not the integration branch
+    this.sendMessage({ type: 'PUSH_CHANGES', branch: this.currentBranch || 'HEAD' });
   }
 
   private handlePushComplete(): void {
