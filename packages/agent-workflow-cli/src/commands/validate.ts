@@ -5,7 +5,7 @@ import { findRepoRoot } from '../core/repo-root-finder.js';
 import { ValidationService } from '../core/validation.js';
 
 export async function validateCommand() {
-  console.log(chalk.blue('🔍 Validation'));
+  console.log(chalk.blue('🔍 Validation Check'));
   console.log(chalk.blue('==========================================='));
 
   const repoRoot = await findRepoRoot();
@@ -16,9 +16,9 @@ export async function validateCommand() {
     // Start the actor
     gitActor.start();
 
-    // Create validation workflow handler
-    const validateWorkflow = new ValidateWorkflowHandler(gitActor, validator);
-    await validateWorkflow.executeValidation();
+    // Create workflow handler
+    const workflow = new ValidateWorkflowHandler(gitActor, validator);
+    await workflow.executeValidation();
   } catch (error) {
     console.error(chalk.red('❌ Validation failed:'), error);
     process.exit(1);
@@ -28,13 +28,11 @@ export async function validateCommand() {
 }
 
 /**
- * State-based validation workflow handler
+ * Validation workflow handler using completion state architecture
  */
 class ValidateWorkflowHandler {
   private actor: GitActor;
   private validator: ValidationService;
-  private workflowState: 'checking_repo' | 'getting_files' | 'validating' | 'complete' =
-    'checking_repo';
   private changedFiles: string[] = [];
 
   constructor(actor: GitActor, validator: ValidationService) {
@@ -46,25 +44,13 @@ class ValidateWorkflowHandler {
     console.log(chalk.blue('📋 Starting validation...'));
 
     return new Promise((resolve, reject) => {
-      // Observe repo status
-      const repoObserver = this.actor
-        .observe((snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).isGitRepo)
-        .subscribe((isGitRepo) => {
-          if (isGitRepo !== undefined) {
-            this.handleRepoStatus(isGitRepo);
-          }
-        });
-
-      // Observe changed files
-      const filesObserver = this.actor
+      // Observe all state changes and handle workflow progression
+      const stateObserver = this.actor
         .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).changedFiles
+          (snapshot: ActorSnapshot<unknown>) => (snapshot as ActorSnapshot<GitContext>).value
         )
-        .subscribe((files) => {
-          if (files) {
-            this.changedFiles = files;
-            this.handleChangedFiles(files);
-          }
+        .subscribe((state) => {
+          this.handleStateChange(state, resolve, reject);
         });
 
       // Observe errors
@@ -79,7 +65,7 @@ class ValidateWorkflowHandler {
         });
 
       // Store observers for cleanup
-      this.observers = [repoObserver, filesObserver, errorObserver];
+      this.observers = [stateObserver, errorObserver];
 
       // Success handler
       this.onSuccess = () => {
@@ -88,7 +74,6 @@ class ValidateWorkflowHandler {
       };
 
       // Start the workflow
-      this.workflowState = 'checking_repo';
       this.actor.send({ type: 'CHECK_REPO' });
     });
   }
@@ -101,33 +86,59 @@ class ValidateWorkflowHandler {
     this.observers = [];
   }
 
-  private handleRepoStatus(isGitRepo: boolean): void {
-    if (this.workflowState !== 'checking_repo') return;
+  private handleStateChange(
+    state: unknown,
+    _resolve: () => void,
+    reject: (error: Error) => void
+  ): void {
+    const snapshot = this.actor.getSnapshot();
+    const context = snapshot.context as GitContext;
+    const stateStr = state as string;
 
-    if (!isGitRepo) {
-      console.log(chalk.red('❌ Not in a Git repository'));
-      this.workflowState = 'complete';
-      this.onSuccess?.();
-      return;
+    switch (stateStr) {
+      case 'repoChecked':
+        if (!context.isGitRepo) {
+          console.log(chalk.red('❌ Not in a Git repository'));
+          this.onSuccess?.();
+          return;
+        }
+        console.log(chalk.green('✅ Git repository detected'));
+        this.actor.send({ type: 'GET_CHANGED_FILES' });
+        break;
+
+      case 'changedFilesChecked':
+        this.changedFiles = context.changedFiles || [];
+        this.handleChangedFiles(this.changedFiles);
+        break;
+
+      // Error states
+      case 'repoError':
+      case 'changedFilesError': {
+        const errorMsg = context.lastError || `Error in ${stateStr}`;
+        console.error(chalk.red('❌ Error:'), errorMsg);
+        reject(new Error(errorMsg));
+        break;
+      }
+
+      // Timeout states
+      case 'repoTimeout':
+      case 'changedFilesTimeout': {
+        const timeoutMsg = `Operation timed out in ${stateStr}`;
+        console.error(chalk.red('⏱️ Timeout:'), timeoutMsg);
+        reject(new Error(timeoutMsg));
+        break;
+      }
     }
-
-    console.log(chalk.green('✅ Git repository detected'));
-    this.workflowState = 'getting_files';
-    this.actor.send({ type: 'GET_CHANGED_FILES' });
   }
 
   private async handleChangedFiles(files: string[]): Promise<void> {
-    if (this.workflowState !== 'getting_files') return;
-
     if (files.length === 0) {
       console.log(chalk.green('✅ No changed files to validate'));
-      this.workflowState = 'complete';
       this.onSuccess?.();
       return;
     }
 
     console.log(chalk.blue(`📁 Found ${files.length} changed files`));
-    this.workflowState = 'validating';
 
     // Run validation asynchronously
     await this.runValidation(files);
@@ -197,11 +208,9 @@ class ValidateWorkflowHandler {
         console.log(chalk.blue('💡 Fix the issues above before shipping'));
       }
 
-      this.workflowState = 'complete';
       this.onSuccess?.();
     } catch (error) {
       console.error(chalk.red('❌ Validation error:'), error);
-      this.workflowState = 'complete';
       this.onSuccess?.();
     }
   }

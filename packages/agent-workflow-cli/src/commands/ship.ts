@@ -39,105 +39,26 @@ export async function shipCommand() {
  */
 class StateBasedWorkflowHandler {
   private actor: GitActor;
-  private workflowState:
-    | 'init'
-    | 'checking_changes'
-    | 'staging'
-    | 'committing'
-    | 'checking_status'
-    | 'fetching'
-    | 'pushing'
-    | 'complete'
-    | 'error' = 'init';
+  private currentBranch?: string;
 
   constructor(actor: GitActor) {
     this.actor = actor;
   }
 
   /**
-   * Execute ship workflow using state-based observation
+   * Execute ship workflow using completion state observation
    */
   async executeShipWorkflow(): Promise<void> {
     console.log(chalk.blue('📋 Starting ship workflow...'));
 
     return new Promise((resolve, reject) => {
-      // Observe current branch status
-      const statusObserver = this.actor
+      // Observe all state changes and handle workflow progression
+      const stateObserver = this.actor
         .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).currentBranch
+          (snapshot: ActorSnapshot<unknown>) => (snapshot as ActorSnapshot<GitContext>).value
         )
-        .subscribe((currentBranch) => {
-          if (currentBranch && this.workflowState === 'init') {
-            console.log(chalk.blue(`📋 Current branch: ${currentBranch}`));
-            this.workflowState = 'checking_changes';
-            this.sendMessage({ type: 'CHECK_UNCOMMITTED_CHANGES' });
-          }
-        });
-
-      // Observe uncommitted changes state
-      const uncommittedChangesObserver = this.actor
-        .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).uncommittedChanges
-        )
-        .subscribe((uncommittedChanges) => {
-          if (uncommittedChanges !== undefined && this.workflowState === 'checking_changes') {
-            this.handleUncommittedChanges(uncommittedChanges);
-          }
-        });
-
-      // Observe staging completion
-      const stagingObserver = this.actor
-        .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).lastOperation
-        )
-        .subscribe((lastOperation) => {
-          if (lastOperation === 'STAGING_ALL_DONE' && this.workflowState === 'staging') {
-            this.handleStagingComplete();
-          }
-        });
-
-      // Observe commit completion
-      const commitObserver = this.actor
-        .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).lastOperation
-        )
-        .subscribe((lastOperation) => {
-          if (lastOperation === 'COMMIT_CHANGES_DONE' && this.workflowState === 'committing') {
-            this.handleCommitComplete();
-          }
-        });
-
-      // Observe integration status
-      const integrationObserver = this.actor
-        .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).integrationStatus
-        )
-        .subscribe((integrationStatus) => {
-          if (integrationStatus && this.workflowState === 'checking_status') {
-            this.handleIntegrationStatus(integrationStatus);
-          }
-        });
-
-      // Observe fetch completion
-      const fetchObserver = this.actor
-        .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).lastOperation
-        )
-        .subscribe((lastOperation) => {
-          if (lastOperation === 'FETCH_REMOTE_DONE' && this.workflowState === 'fetching') {
-            this.handleFetchComplete();
-          }
-        });
-
-      // Observe push completion
-      const pushObserver = this.actor
-        .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).lastOperation
-        )
-        .subscribe((lastOperation) => {
-          if (lastOperation === 'PUSH_CHANGES_DONE' && this.workflowState === 'pushing') {
-            this.handlePushComplete();
-          }
+        .subscribe((state) => {
+          this.handleStateChange(state, resolve, reject);
         });
 
       // Observe errors
@@ -152,16 +73,7 @@ class StateBasedWorkflowHandler {
         });
 
       // Store observers for cleanup
-      this.observers = [
-        statusObserver,
-        uncommittedChangesObserver,
-        stagingObserver,
-        commitObserver,
-        integrationObserver,
-        fetchObserver,
-        pushObserver,
-        errorObserver,
-      ];
+      this.observers = [stateObserver, errorObserver];
 
       // Success handler
       this.onSuccess = () => {
@@ -169,9 +81,8 @@ class StateBasedWorkflowHandler {
         resolve();
       };
 
-      // Start the workflow by checking status first
-      this.workflowState = 'init';
-      this.sendMessage({ type: 'CHECK_STATUS' });
+      // Start the workflow
+      this.actor.send({ type: 'CHECK_STATUS' });
     });
   }
 
@@ -183,107 +94,154 @@ class StateBasedWorkflowHandler {
     this.observers = [];
   }
 
-  private handleUncommittedChanges(hasChanges: boolean): void {
-    if (this.workflowState !== 'checking_changes') return;
+  private sendMessage(message: GitEvent): void {
+    console.log(chalk.blue(`📤 Sending message: ${message.type}`));
+    this.actor.send(message);
+  }
 
-    if (hasChanges) {
+  private handleStateChange(
+    state: unknown,
+    _resolve: () => void,
+    reject: (error: Error) => void
+  ): void {
+    const snapshot = this.actor.getSnapshot();
+    const context = snapshot.context as GitContext;
+    const stateStr = state as string;
+
+    switch (stateStr) {
+      case 'statusChecked':
+        this.currentBranch = context.currentBranch;
+        if (this.currentBranch) {
+          console.log(chalk.blue(`📋 Current branch: ${this.currentBranch}`));
+          this.sendMessage({ type: 'CHECK_UNCOMMITTED_CHANGES' });
+        } else {
+          reject(new Error('Could not determine current branch'));
+        }
+        break;
+
+      case 'uncommittedChangesChecked':
+        this.handleUncommittedChanges(context.uncommittedChanges);
+        break;
+
+      case 'stagingCompleted':
+        this.handleStagingComplete();
+        break;
+
+      case 'commitCompleted':
+        this.handleCommitComplete();
+        break;
+
+      case 'integrationStatusChecked':
+        if (!context.integrationStatus) {
+          reject(new Error('No integration status received'));
+          return;
+        }
+        this.handleIntegrationStatus(context.integrationStatus);
+        break;
+
+      case 'fetchCompleted':
+        this.handleFetchComplete();
+        break;
+
+      case 'pushCompleted':
+        this.handlePushComplete();
+        break;
+
+      // Error states
+      case 'statusError':
+      case 'uncommittedChangesError':
+      case 'stagingError':
+      case 'commitError':
+      case 'integrationStatusError':
+      case 'fetchError':
+      case 'pushError': {
+        const errorMsg = context.lastError || `Error in ${stateStr}`;
+        console.error(chalk.red('❌ Error:'), errorMsg);
+        reject(new Error(errorMsg));
+        break;
+      }
+
+      // Timeout states
+      case 'statusTimeout':
+      case 'uncommittedChangesTimeout':
+      case 'stagingTimeout':
+      case 'commitTimeout':
+      case 'integrationStatusTimeout':
+      case 'fetchTimeout':
+      case 'pushTimeout': {
+        const timeoutMsg = `Operation timed out in ${stateStr}`;
+        console.error(chalk.red('⏱️ Timeout:'), timeoutMsg);
+        reject(new Error(timeoutMsg));
+        break;
+      }
+    }
+  }
+
+  private handleUncommittedChanges(uncommittedChanges?: boolean): void {
+    if (uncommittedChanges) {
       console.log(chalk.yellow('📝 Uncommitted changes detected, staging...'));
-      this.workflowState = 'staging';
       this.sendMessage({ type: 'ADD_ALL' });
     } else {
       console.log(chalk.green('✅ No uncommitted changes'));
-      this.workflowState = 'checking_status';
-      // Get current branch dynamically
-      const _currentBranch = this.actor.getSnapshot().context.currentBranch;
-      this.sendMessage({
-        type: 'GET_INTEGRATION_STATUS',
-        integrationBranch: undefined, // Let the actor determine dynamically
-      });
+      this.sendMessage({ type: 'GET_INTEGRATION_STATUS', integrationBranch: 'integration' });
     }
   }
 
   private handleStagingComplete(): void {
-    if (this.workflowState !== 'staging') return;
-
     console.log(chalk.green('✅ All changes staged'));
+    console.log(chalk.yellow('📝 Committing changes...'));
 
-    const message = `feat(ship): auto-save before shipping
-
-Agent: Agent A (Architecture)
-Context: Automated commit before shipping to integration
-Date: ${new Date().toISOString().split('T')[0]}
-
-[actor-web] Agent A (Architecture) - pre-ship save`;
-
-    this.workflowState = 'committing';
-    this.sendMessage({ type: 'COMMIT_CHANGES', message });
+    const commitMessage = this.generateAutoCommitMessage();
+    this.sendMessage({ type: 'COMMIT_CHANGES', message: commitMessage });
   }
 
   private handleCommitComplete(): void {
-    if (this.workflowState !== 'committing') return;
-
     console.log(chalk.green('✅ Changes committed'));
-    this.workflowState = 'checking_status';
-    // Get current branch dynamically
-    const _currentBranch = this.actor.getSnapshot().context.currentBranch;
-    this.sendMessage({
-      type: 'GET_INTEGRATION_STATUS',
-      integrationBranch: undefined, // Let the actor determine dynamically
-    });
+    console.log(chalk.blue('📊 Checking integration status...'));
+    this.sendMessage({ type: 'GET_INTEGRATION_STATUS', integrationBranch: 'integration' });
   }
 
-  private handleIntegrationStatus(status: {
-    ahead: number;
-    behind: number;
-    integrationBranch?: string;
-    sourceBranch?: string;
-  }): void {
-    if (status.ahead === 0) {
-      console.log(chalk.yellow('⚠️  No changes to ship'));
-      this.workflowState = 'complete';
-      this.onSuccess?.();
+  private handleIntegrationStatus(integrationStatus?: { ahead: number; behind: number }): void {
+    if (!integrationStatus) {
+      console.error(chalk.red('❌ No integration status received'));
       return;
     }
 
-    const integrationBranch = status.integrationBranch || 'feature/actor-ref-integration';
-    const _sourceBranch = status.sourceBranch || 'HEAD';
+    const { ahead, behind } = integrationStatus;
+    console.log(chalk.blue(`📊 Integration status: ${ahead} ahead, ${behind} behind`));
 
-    console.log(chalk.blue(`📦 Found ${status.ahead} commits to ship`));
-    console.log(chalk.blue(`🔄 Fetching latest integration branch: ${integrationBranch}...`));
-    this.workflowState = 'fetching';
-    this.sendMessage({ type: 'FETCH_REMOTE', branch: integrationBranch });
+    if (behind > 0) {
+      console.log(chalk.yellow('📥 Fetching latest integration changes...'));
+      this.sendMessage({ type: 'FETCH_REMOTE', branch: 'integration' });
+    } else {
+      console.log(chalk.yellow('📤 Pushing to integration branch...'));
+      this.sendMessage({ type: 'PUSH_CHANGES', branch: 'integration' });
+    }
   }
 
   private handleFetchComplete(): void {
-    if (this.workflowState !== 'fetching') return;
-
-    const snapshot = this.actor.getSnapshot().context;
-    const fetchResult = snapshot.fetchResult as { branch?: string } | undefined;
-    const integrationBranch = fetchResult?.branch || 'feature/actor-ref-integration';
-    const sourceBranch = snapshot.currentBranch || 'HEAD';
-
-    console.log(chalk.green('✅ Integration branch fetched'));
-    console.log(
-      chalk.blue(`🚀 Pushing changes to integration: ${sourceBranch} → ${integrationBranch}...`)
-    );
-    this.workflowState = 'pushing';
-    this.sendMessage({
-      type: 'PUSH_CHANGES',
-      branch: `${sourceBranch}:${integrationBranch}`,
-    });
+    console.log(chalk.green('✅ Latest changes fetched'));
+    console.log(chalk.yellow('📤 Pushing to integration branch...'));
+    this.sendMessage({ type: 'PUSH_CHANGES', branch: 'integration' });
   }
 
   private handlePushComplete(): void {
-    if (this.workflowState !== 'pushing') return;
-
-    console.log(chalk.green('✅ Successfully shipped to integration branch!'));
-    console.log(chalk.blue('📈 Other agents can now sync your changes'));
-    this.workflowState = 'complete';
+    console.log(chalk.green('✅ Successfully pushed to integration branch'));
+    console.log(chalk.blue('🚀 Ship workflow completed successfully!'));
+    console.log(chalk.gray('💡 Your changes are now in the integration environment'));
     this.onSuccess?.();
   }
 
-  private sendMessage(event: GitEvent): void {
-    console.log(chalk.blue(`📤 Sending message: ${event.type}`));
-    this.actor.send(event);
+  private generateAutoCommitMessage(): string {
+    const currentDate = new Date().toISOString().split('T')[0];
+    const branch = this.currentBranch || 'unknown';
+
+    return `ship: auto-commit for integration deployment
+
+Branch: ${branch}
+Date: ${currentDate}
+Context: Automatic commit created by ship workflow
+
+[actor-web] Ship workflow - auto-commit for integration`;
   }
 }

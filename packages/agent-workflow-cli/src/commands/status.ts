@@ -14,9 +14,9 @@ export async function statusCommand() {
     // Start the actor
     gitActor.start();
 
-    // Create status workflow handler
-    const statusWorkflow = new StatusWorkflowHandler(gitActor);
-    await statusWorkflow.executeStatus();
+    // Create workflow handler
+    const workflow = new StatusWorkflowHandler(gitActor);
+    await workflow.executeStatus();
   } catch (error) {
     console.error(chalk.red('❌ Status check failed:'), error);
     process.exit(1);
@@ -26,16 +26,10 @@ export async function statusCommand() {
 }
 
 /**
- * State-based status workflow handler
+ * Status workflow handler using completion state architecture
  */
 class StatusWorkflowHandler {
   private actor: GitActor;
-  private workflowState:
-    | 'checking_repo'
-    | 'checking_status'
-    | 'checking_changes'
-    | 'checking_integration'
-    | 'complete' = 'checking_repo';
   private statusData: {
     isGitRepo?: boolean;
     currentBranch?: string;
@@ -52,56 +46,13 @@ class StatusWorkflowHandler {
     console.log(chalk.blue('📋 Starting status check...'));
 
     return new Promise((resolve, reject) => {
-      // Observe all status-related state changes
-      const repoObserver = this.actor
-        .observe((snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).isGitRepo)
-        .subscribe((isGitRepo) => {
-          if (isGitRepo !== undefined) {
-            this.statusData.isGitRepo = isGitRepo;
-            this.handleRepoStatus(isGitRepo);
-          }
-        });
-
-      const branchObserver = this.actor
+      // Observe all state changes and handle workflow progression
+      const stateObserver = this.actor
         .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).currentBranch
+          (snapshot: ActorSnapshot<unknown>) => (snapshot as ActorSnapshot<GitContext>).value
         )
-        .subscribe((currentBranch) => {
-          if (currentBranch) {
-            this.statusData.currentBranch = currentBranch;
-            this.checkNextStep();
-          }
-        });
-
-      const agentObserver = this.actor
-        .observe((snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).agentType)
-        .subscribe((agentType) => {
-          if (agentType) {
-            this.statusData.agentType = agentType;
-            this.checkNextStep();
-          }
-        });
-
-      const changesObserver = this.actor
-        .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).uncommittedChanges
-        )
-        .subscribe((uncommittedChanges) => {
-          if (uncommittedChanges !== undefined) {
-            this.statusData.uncommittedChanges = uncommittedChanges;
-            this.checkNextStep();
-          }
-        });
-
-      const integrationObserver = this.actor
-        .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).integrationStatus
-        )
-        .subscribe((integrationStatus) => {
-          if (integrationStatus) {
-            this.statusData.integrationStatus = integrationStatus;
-            this.checkNextStep();
-          }
+        .subscribe((state) => {
+          this.handleStateChange(state, resolve, reject);
         });
 
       // Observe errors
@@ -116,24 +67,15 @@ class StatusWorkflowHandler {
         });
 
       // Store observers for cleanup
-      this.observers = [
-        repoObserver,
-        branchObserver,
-        agentObserver,
-        changesObserver,
-        integrationObserver,
-        errorObserver,
-      ];
+      this.observers = [stateObserver, errorObserver];
 
       // Success handler
       this.onSuccess = () => {
-        this.displayStatus();
         this.cleanupObservers();
         resolve();
       };
 
       // Start the workflow
-      this.workflowState = 'checking_repo';
       this.actor.send({ type: 'CHECK_REPO' });
     });
   }
@@ -146,40 +88,68 @@ class StatusWorkflowHandler {
     this.observers = [];
   }
 
-  private handleRepoStatus(isGitRepo: boolean): void {
-    if (this.workflowState !== 'checking_repo') return;
+  private handleStateChange(
+    state: unknown,
+    _resolve: () => void,
+    reject: (error: Error) => void
+  ): void {
+    const snapshot = this.actor.getSnapshot();
+    const context = snapshot.context as GitContext;
+    const stateStr = state as string;
 
-    if (!isGitRepo) {
-      console.log(chalk.red('❌ Not in a Git repository'));
-      this.workflowState = 'complete';
-      this.onSuccess?.();
-      return;
-    }
+    switch (stateStr) {
+      case 'repoChecked':
+        this.statusData.isGitRepo = context.isGitRepo;
+        if (!context.isGitRepo) {
+          console.log(chalk.red('❌ Not in a Git repository'));
+          this.displayStatus();
+          this.onSuccess?.();
+          return;
+        }
+        this.actor.send({ type: 'CHECK_STATUS' });
+        break;
 
-    this.workflowState = 'checking_status';
-    this.actor.send({ type: 'CHECK_STATUS' });
-  }
+      case 'statusChecked':
+        this.statusData.currentBranch = context.currentBranch;
+        this.statusData.agentType = context.agentType;
+        this.actor.send({ type: 'CHECK_UNCOMMITTED_CHANGES' });
+        break;
 
-  private checkNextStep(): void {
-    if (
-      this.workflowState === 'checking_status' &&
-      this.statusData.currentBranch &&
-      this.statusData.agentType
-    ) {
-      this.workflowState = 'checking_changes';
-      this.actor.send({ type: 'CHECK_UNCOMMITTED_CHANGES' });
-    } else if (
-      this.workflowState === 'checking_changes' &&
-      this.statusData.uncommittedChanges !== undefined
-    ) {
-      this.workflowState = 'checking_integration';
-      this.actor.send({
-        type: 'GET_INTEGRATION_STATUS',
-        integrationBranch: 'feature/actor-ref-integration',
-      });
-    } else if (this.workflowState === 'checking_integration' && this.statusData.integrationStatus) {
-      this.workflowState = 'complete';
-      this.onSuccess?.();
+      case 'uncommittedChangesChecked':
+        this.statusData.uncommittedChanges = context.uncommittedChanges;
+        this.actor.send({
+          type: 'GET_INTEGRATION_STATUS',
+          integrationBranch: 'integration',
+        });
+        break;
+
+      case 'integrationStatusChecked':
+        this.statusData.integrationStatus = context.integrationStatus;
+        this.displayStatus();
+        this.onSuccess?.();
+        break;
+
+      // Error states
+      case 'repoError':
+      case 'statusError':
+      case 'uncommittedChangesError':
+      case 'integrationStatusError': {
+        const errorMsg = context.lastError || `Error in ${stateStr}`;
+        console.error(chalk.red('❌ Error:'), errorMsg);
+        reject(new Error(errorMsg));
+        break;
+      }
+
+      // Timeout states
+      case 'repoTimeout':
+      case 'statusTimeout':
+      case 'uncommittedChangesTimeout':
+      case 'integrationStatusTimeout': {
+        const timeoutMsg = `Operation timed out in ${stateStr}`;
+        console.error(chalk.red('⏱️ Timeout:'), timeoutMsg);
+        reject(new Error(timeoutMsg));
+        break;
+      }
     }
   }
 
