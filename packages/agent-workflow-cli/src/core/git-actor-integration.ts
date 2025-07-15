@@ -246,6 +246,20 @@ export class GitActorIntegration {
    */
   async fetch(branch?: string): Promise<void> {
     log.debug('Fetching from origin', { branch });
+
+    // Try bypass first for performance
+    try {
+      return await this.bypassActorForSimpleOperation('FETCH_REMOTE', async () => {
+        const { simpleGit } = await import('simple-git');
+        const git = simpleGit(process.cwd());
+        await git.fetch(['origin', branch || 'origin']);
+        log.debug('Remote fetched successfully (bypass)', { branch });
+      });
+    } catch (_bypassError) {
+      log.debug('Bypass not available, using actor system');
+    }
+
+    // Use actor system
     return this.createRequest<void>(
       { type: 'FETCH_REMOTE', branch: branch || 'origin' },
       (response) => {
@@ -279,6 +293,20 @@ export class GitActorIntegration {
    */
   async push(branch?: string): Promise<void> {
     log.debug('Pushing to origin', { branch });
+
+    // Try bypass first for performance
+    try {
+      return await this.bypassActorForSimpleOperation('PUSH_CHANGES', async () => {
+        const { simpleGit } = await import('simple-git');
+        const git = simpleGit(process.cwd());
+        await git.push(['origin', branch || 'HEAD']);
+        log.debug('Changes pushed successfully (bypass)', { branch });
+      });
+    } catch (_bypassError) {
+      log.debug('Bypass not available, using actor system');
+    }
+
+    // Use actor system
     return this.createRequest<void>(
       { type: 'PUSH_CHANGES', branch: branch || 'HEAD' },
       (response) => {
