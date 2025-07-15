@@ -956,13 +956,16 @@ describe('Timer Services', () => {
       const actor = createActor(autoSaveMachine);
       actor.start();
 
-      // Simulate rapid content changes
+      // Simulate rapid content changes (without advancing time between them)
       for (let i = 0; i < 10; i++) {
         actor.send({ type: 'CONTENT_CHANGE' });
-        vi.advanceTimersByTime(500);
       }
 
-      // Should only save once after throttle interval
+      // Should not save during rapid changes
+      expect(saveHandler).not.toHaveBeenCalled();
+
+      // Should save once after throttle interval
+      vi.advanceTimersByTime(5000);
       expect(saveHandler).toHaveBeenCalledTimes(1);
     });
   });
