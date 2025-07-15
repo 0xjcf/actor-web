@@ -6,6 +6,12 @@ import { GitOperations } from '../core/git-operations.js';
 export interface InitOptions {
   agents: string;
   template: string;
+  configPath?: string;
+  agentAPath?: string;
+  agentBPath?: string;
+  agentCPath?: string;
+  baseDir?: string;
+  integrationBranch?: string;
 }
 
 export async function initCommand(options: InitOptions) {
@@ -51,7 +57,20 @@ export async function initCommand(options: InitOptions) {
 
     // Setup agent worktrees
     const agentCount = Number.parseInt(options.agents);
-    const worktrees = await git.setupAgentWorktrees(agentCount);
+
+    // Build configuration options from CLI parameters
+    const configOptions = {
+      configPath: options.configPath,
+      agentPaths: {
+        ...(options.agentAPath && { 'agent-a': options.agentAPath }),
+        ...(options.agentBPath && { 'agent-b': options.agentBPath }),
+        ...(options.agentCPath && { 'agent-c': options.agentCPath }),
+      },
+      baseDir: options.baseDir,
+      integrationBranch: options.integrationBranch,
+    };
+
+    const worktrees = await git.setupAgentWorktrees(agentCount, configOptions);
 
     if (worktrees.length === 0) {
       console.log(chalk.red('❌ Failed to set up any worktrees'));

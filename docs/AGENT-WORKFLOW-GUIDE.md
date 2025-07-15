@@ -84,6 +84,8 @@ actor-web/                     # Main repo (integration)
 ../actor-web-tests/            # Agent C workspace
 ```
 
+> **💡 Pro Tip**: The agent workspace paths are fully customizable! See the [Configuration](#configuration) section below to learn how to override the default paths.
+
 ### 🏗️ Directory Structure
 
 ```
@@ -116,6 +118,133 @@ actor-web/                     # Main repo (integration)
 3. **No Branch Conflicts**: Agents can't interfere with each other
 4. **Minimal Disk Usage**: Only working files are duplicated, not Git history
 5. **Tool Compatibility**: IDEs, terminals work independently
+
+---
+
+## ⚙️ Configuration
+
+### 🎛️ Customizing Agent Workspace Paths
+
+The agent workflow system supports flexible configuration of workspace paths through multiple methods:
+
+#### 1. Configuration File (Recommended)
+
+Create a configuration file in your project root:
+
+```javascript
+// agent-workflow.config.js
+module.exports = {
+  agents: [
+    {
+      agentId: 'agent-a',
+      branch: 'feature/agent-a',
+      path: '../my-project-architecture',  // Custom path
+      role: 'Architecture',
+    },
+    {
+      agentId: 'agent-b',
+      branch: 'feature/agent-b',
+      path: '../my-project-implementation',  // Custom path
+      role: 'Implementation',
+    },
+    {
+      agentId: 'agent-c',
+      branch: 'feature/agent-c',
+      path: '../my-project-tests',  // Custom path
+      role: 'Testing',
+    },
+  ],
+  baseDir: process.cwd(),  // Base directory for relative paths
+  integrationBranch: 'main',  // Integration branch name
+};
+```
+
+**Supported config file names:**
+- `agent-workflow.config.js`
+- `agent-workflow.config.json`
+- `.awconfig.js`
+- `.awconfig.json`
+
+#### 2. Environment Variables
+
+```bash
+export AW_BASE_DIR="/path/to/your/workspaces"
+export AW_AGENT_A_PATH="../custom-architecture"
+export AW_AGENT_B_PATH="../custom-implementation"
+export AW_AGENT_C_PATH="../custom-tests"
+export AW_INTEGRATION_BRANCH="main"
+```
+
+#### 3. CLI Options
+
+```bash
+# Initialize with custom paths
+pnpm aw init \
+  --agent-a-path "../my-architecture" \
+  --agent-b-path "../my-implementation" \
+  --agent-c-path "../my-tests" \
+  --base-dir "/path/to/workspaces" \
+  --integration-branch "main"
+
+# Use a specific config file
+pnpm aw init --config-path "./my-config.js"
+```
+
+#### 4. Configuration Precedence
+
+Configuration sources are applied in order of precedence (highest to lowest):
+
+1. **CLI Options** (highest precedence)
+2. **Environment Variables**
+3. **Configuration File**
+4. **Default Values** (lowest precedence)
+
+### 🔧 Advanced Configuration
+
+#### Custom Directory Structures
+
+```javascript
+// Support for deeply nested structures
+module.exports = {
+  agents: [
+    {
+      agentId: 'agent-a',
+      branch: 'feature/agent-a',
+      path: '/Users/dev/projects/my-project/agents/architecture',
+      role: 'Architecture',
+    },
+    {
+      agentId: 'agent-b',
+      branch: 'feature/agent-b',
+      path: '/Users/dev/projects/my-project/agents/implementation',
+      role: 'Implementation',
+    },
+  ],
+  baseDir: '/Users/dev/projects/my-project',
+  integrationBranch: 'develop',
+};
+```
+
+#### Team-Specific Configurations
+
+```javascript
+// Different configs for different team members
+const os = require('os');
+const username = os.userInfo().username;
+
+const teamConfigs = {
+  'john': {
+    baseDir: '/Users/john/dev',
+    agents: [/* John's preferred paths */],
+  },
+  'jane': {
+    baseDir: '/Users/jane/projects',
+    agents: [/* Jane's preferred paths */],
+  },
+};
+
+module.exports = teamConfigs[username] || /* default config */;
+```
 
 ---
 

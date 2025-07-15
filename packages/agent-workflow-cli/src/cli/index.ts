@@ -38,6 +38,12 @@ program
   .description('Initialize agent workflow environment')
   .option('--agents <count>', 'Number of agents to set up', '3')
   .option('--template <name>', 'Template to use', 'default')
+  .option('--config-path <path>', 'Path to agent configuration file')
+  .option('--agent-a-path <path>', 'Custom path for Agent A workspace')
+  .option('--agent-b-path <path>', 'Custom path for Agent B workspace')
+  .option('--agent-c-path <path>', 'Custom path for Agent C workspace')
+  .option('--base-dir <path>', 'Base directory for relative paths')
+  .option('--integration-branch <branch>', 'Integration branch name')
   .action(initCommand);
 
 program.command('sync').description('Sync with integration branch').action(syncCommand);
