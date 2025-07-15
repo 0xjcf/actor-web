@@ -1,12 +1,16 @@
 /**
  * @module actor-core/runtime/create-actor-ref
- * @description Basic ActorRef factory implementation for the runtime package
+ * @description Unified ActorRef implementation with proper XState event bridging
  */
 
 import type { Actor, AnyStateMachine } from 'xstate';
 import { createActor } from 'xstate';
-import { type ActorRef, ActorStoppedError, generateActorId, TimeoutError } from './actor-ref.js';
+// Import the new components
+import { ActorEventBus } from './actor-event-bus.js';
+import { type ActorRef, ActorStoppedError, generateActorId } from './actor-ref.js';
+import { Supervisor } from './actors/supervisor.js';
 import { Logger } from './logger.js';
+import { RequestResponseManager } from './messaging/request-response.js';
 import { CustomObservable } from './observable.js';
 import type {
   ActorBehavior,
@@ -21,30 +25,36 @@ import type {
 } from './types.js';
 
 /**
- * Basic ActorRef implementation for the runtime package
+ * Unified ActorRef implementation with proper event bridging
+ *
+ * This implementation fixes the fundamental design flaw where XState emit()
+ * actions were not properly bridged to the ActorRef event system.
  */
-class BasicActorRef<
+class UnifiedActorRef<
   TEvent extends BaseEventObject = BaseEventObject,
   TEmitted = unknown,
   TSnapshot extends ActorSnapshot = ActorSnapshot,
 > implements ActorRef<TEvent, TEmitted, TSnapshot>
 {
+  // Core XState actor
   private actor: Actor<AnyStateMachine>;
   private machine: AnyStateMachine;
+
+  // Advanced messaging and supervision
+  private requestManager: RequestResponseManager;
+  private supervisor?: Supervisor;
+
+  // Event emission system - THIS IS THE FIX!
+  private eventBus: ActorEventBus<TEmitted>;
+
+  // Actor hierarchy
+  private children = new Map<string, ActorRef<BaseEventObject, unknown>>();
+  private _parent?: ActorRef<BaseEventObject, unknown>;
+
+  // Lifecycle and metadata
   private _id: string;
   private _status: ActorStatus = 'idle';
-  private _parent?: ActorRef<BaseEventObject, unknown>;
   private _supervision?: SupervisionStrategy;
-  private children = new Map<string, ActorRef<BaseEventObject, unknown>>();
-  private eventListeners = new Set<(event: TEmitted) => void>();
-  private pendingRequests = new Map<
-    string,
-    {
-      resolve: (value: unknown) => void;
-      reject: (error: Error) => void;
-      timeout: NodeJS.Timeout;
-    }
-  >();
   private logger = Logger.namespace('ACTOR_REF');
 
   constructor(
@@ -56,35 +66,36 @@ class BasicActorRef<
     this._parent = options.parent as ActorRef<BaseEventObject, unknown> | undefined;
     this._supervision = options.supervision;
 
-    // Create XState actor
+    // Create XState actor with proper configuration
     this.actor = createActor(machine, {
       input: options.input,
       id: this._id,
     });
 
-    // Set up actor lifecycle listeners
-    this.actor.subscribe({
-      next: (snapshot) => {
-        this.logger.debug('State changed', { state: snapshot.value, context: snapshot.context });
-      },
-      error: (error) => {
-        this.logger.error('Actor error', error);
-        this._status = 'error';
-      },
-      complete: () => {
-        this.logger.debug('Actor completed');
-        this._status = 'stopped';
-      },
+    // Initialize advanced messaging system
+    this.requestManager = new RequestResponseManager({
+      defaultTimeout: options.askTimeout || 5000,
+      defaultRetries: 0,
+      defaultRetryDelay: 1000,
     });
 
-    // Auto-start if enabled (default: true)
-    if (options.autoStart !== false) {
-      this.start();
+    // Initialize event emission system - THE KEY FIX!
+    this.eventBus = new ActorEventBus<TEmitted>();
+
+    // Set up supervision if specified
+    if (this._supervision) {
+      this.setupSupervision();
     }
+
+    // Subscribe to lifecycle events - INCLUDING XState EVENT BRIDGING!
+    this.subscribeToLifecycle();
+
+    // 🚨 CRITICAL FIX: Set up XState event bridge using actor.on('*', handler)
+    this.setupXStateEventBridge();
   }
 
   // ========================================================================================
-  // IDENTITY & METADATA
+  // ACTORREF INTERFACE IMPLEMENTATION
   // ========================================================================================
 
   get id(): string {
@@ -103,155 +114,68 @@ class BasicActorRef<
     return this._supervision;
   }
 
-  // ========================================================================================
-  // MESSAGE PASSING
-  // ========================================================================================
+  getSnapshot(): TSnapshot {
+    // Safe conversion from XState snapshot to framework snapshot
+    const xstateSnapshot = this.actor.getSnapshot();
+    return {
+      value: xstateSnapshot.value,
+      context: xstateSnapshot.context,
+      status: this._status,
+      error: xstateSnapshot.error,
+      matches: xstateSnapshot.matches.bind(xstateSnapshot),
+      can: xstateSnapshot.can.bind(xstateSnapshot),
+      hasTag: xstateSnapshot.hasTag.bind(xstateSnapshot),
+      toJSON: xstateSnapshot.toJSON.bind(xstateSnapshot),
+    } as unknown as TSnapshot;
+  }
 
   send(event: TEvent): void {
     if (this._status === 'stopped') {
-      throw new ActorStoppedError(this._id, 'send');
+      throw new ActorStoppedError(this.id, 'send message');
     }
 
-    this.logger.debug('Sending event', { event: event.type, data: event });
+    this.logger.debug('Sending event', { event, actorId: this.id });
     this.actor.send(event);
   }
 
-  async ask<TQuery, TResponse>(query: TQuery, options?: AskOptions): Promise<TResponse> {
-    if (this._status === 'stopped') {
-      throw new ActorStoppedError(this._id, 'ask');
-    }
-
-    const requestId = generateActorId('req');
-    const timeout = options?.timeout || 5000;
-
-    return new Promise<TResponse>((resolve, reject) => {
-      const timeoutHandle = setTimeout(() => {
-        this.pendingRequests.delete(requestId);
-        reject(new TimeoutError(timeout, 'ask'));
-      }, timeout);
-
-      this.pendingRequests.set(requestId, {
-        resolve: resolve as (value: unknown) => void,
-        reject,
-        timeout: timeoutHandle,
-      });
-
-      // Send query with request ID
-      this.send({
-        ...query,
-        _requestId: requestId,
-      } as unknown as TEvent);
-    });
-  }
-
-  // ========================================================================================
-  // EVENT EMISSION SYSTEM
-  // ========================================================================================
-
-  emit(event: TEmitted): void {
-    if (this._status === 'stopped') {
-      throw new ActorStoppedError(this._id, 'emit');
-    }
-
-    this.logger.debug('Emitting event', { event });
-    this.eventListeners.forEach((listener) => {
-      try {
-        listener(event);
-      } catch (error) {
-        this.logger.error('Error in event listener', error);
-      }
-    });
-  }
-
-  subscribe(listener: (event: TEmitted) => void): () => void {
-    this.eventListeners.add(listener);
-    return () => {
-      this.eventListeners.delete(listener);
-    };
-  }
-
-  // ========================================================================================
-  // STATE OBSERVATION
-  // ========================================================================================
-
-  observe<TSelected>(selector: (snapshot: TSnapshot) => TSelected): Observable<TSelected> {
-    return new CustomObservable<TSelected>((observer) => {
-      let lastValue: TSelected | undefined;
-      let hasEmitted = false;
-
-      const subscription = this.actor.subscribe({
-        next: (snapshot) => {
-          try {
-            const selected = selector(snapshot as unknown as TSnapshot);
-
-            if (!hasEmitted || selected !== lastValue) {
-              lastValue = selected;
-              hasEmitted = true;
-              observer.next(selected);
-            }
-          } catch (error) {
-            observer.error?.(error as Error);
-          }
-        },
-        error: (error) => {
-          observer.error?.(error as Error);
-        },
-        complete: () => {
-          observer.complete?.();
-        },
-      });
-
-      return () => {
-        subscription.unsubscribe();
-      };
-    });
-  }
-
-  getSnapshot(): TSnapshot {
-    return this.actor.getSnapshot() as unknown as TSnapshot;
-  }
-
-  // ========================================================================================
-  // ACTOR LIFECYCLE
-  // ========================================================================================
-
   start(): void {
-    if (this._status === 'running') {
+    if (this._status !== 'idle') {
+      this.logger.warn('Actor already started', { actorId: this.id, status: this._status });
       return;
     }
 
-    this.logger.debug('Starting actor');
     this._status = 'starting';
+    this.logger.debug('Starting actor', { actorId: this.id });
     this.actor.start();
     this._status = 'running';
   }
 
-  async stop(): Promise<void> {
+  stop(): Promise<void> {
     if (this._status === 'stopped') {
-      return;
+      return Promise.resolve();
     }
 
-    this.logger.debug('Stopping actor');
     this._status = 'stopping';
+    this.logger.debug('Stopping actor', { actorId: this.id });
 
     // Stop all children first
     const childStopPromises = Array.from(this.children.values()).map((child) => child.stop());
-    await Promise.all(childStopPromises);
 
-    // Clear pending requests
-    this.pendingRequests.forEach(({ reject, timeout }) => {
-      clearTimeout(timeout);
-      reject(new ActorStoppedError(this._id, 'stop'));
-    });
-    this.pendingRequests.clear();
+    // Cleanup advanced features
+    this.requestManager.cleanup();
+    this.eventBus.destroy();
+    if (this.supervisor) {
+      this.supervisor.cleanup();
+    }
 
-    // Stop the actor
     this.actor.stop();
     this._status = 'stopped';
+
+    return Promise.all(childStopPromises).then(() => {});
   }
 
   async restart(): Promise<void> {
-    this.logger.debug('Restarting actor');
+    this.logger.debug('Restarting actor', { actorId: this.id });
     await this.stop();
 
     // Recreate the actor
@@ -260,31 +184,105 @@ class BasicActorRef<
       id: this._id,
     });
 
+    // Re-setup all systems
+    this.subscribeToLifecycle();
+    this.setupXStateEventBridge();
+
     this.start();
   }
 
   // ========================================================================================
-  // ACTOR SUPERVISION (BASIC IMPLEMENTATION)
+  // EVENT SYSTEM - THE MAIN FIX!
+  // ========================================================================================
+
+  emit(event: TEmitted): void {
+    if (this._status === 'stopped') {
+      throw new ActorStoppedError(this.id, 'emit event');
+    }
+
+    this.logger.debug('Emitting event', { event, actorId: this.id });
+    this.eventBus.emit(event);
+  }
+
+  subscribe(listener: (event: TEmitted) => void): () => void {
+    this.logger.debug('Adding event subscriber', { actorId: this.id });
+    return this.eventBus.subscribe(listener);
+  }
+
+  on(listener: (event: TEmitted) => void): () => void {
+    this.logger.debug('Adding event listener', { actorId: this.id });
+    return this.eventBus.subscribe(listener);
+  }
+
+  // ========================================================================================
+  // ASK PATTERN WITH PROPER REQUEST/RESPONSE MANAGEMENT
+  // ========================================================================================
+
+  async ask<TQuery, TResponse>(query: TQuery, options?: AskOptions): Promise<TResponse> {
+    if (this._status !== 'running') {
+      throw new ActorStoppedError(this.id, 'ask query');
+    }
+
+    this.logger.debug('Creating ask request', { query, actorId: this.id });
+    const request = this.requestManager.createRequest<TQuery, TResponse>(query, options);
+
+    // Send the query event to the actor - safe casting since QueryEvent extends BaseEventObject
+    this.send(request.queryEvent as unknown as TEvent);
+
+    return request.promise;
+  }
+
+  // ========================================================================================
+  // OBSERVABLES SUPPORT
+  // ========================================================================================
+
+  observe<TObserved>(selector: (snapshot: TSnapshot) => TObserved): Observable<TObserved> {
+    return new CustomObservable<TObserved>((observer) => {
+      const unsubscribe = this.actor.subscribe({
+        next: (snapshot) => {
+          try {
+            // Convert XState snapshot to framework snapshot
+            const frameworkSnapshot = this.convertSnapshot(snapshot);
+            const selected = selector(frameworkSnapshot);
+            observer.next(selected);
+          } catch (error) {
+            observer.error?.(error as Error);
+          }
+        },
+        error: (error) => observer.error?.(error as Error),
+        complete: () => observer.complete?.(),
+      });
+
+      return () => unsubscribe.unsubscribe();
+    });
+  }
+
+  // ========================================================================================
+  // HIERARCHY MANAGEMENT
   // ========================================================================================
 
   spawn<TChildEvent extends BaseEventObject, TChildEmitted = unknown>(
     behavior: ActorBehavior<TChildEvent> | AnyStateMachine,
     options?: SpawnOptions
   ): ActorRef<TChildEvent, TChildEmitted> {
-    const childMachine =
-      typeof behavior === 'object' && 'createMachine' in behavior
-        ? behavior.createMachine()
-        : (behavior as AnyStateMachine);
-
     const childId = options?.id || generateActorId('child');
-    const childRef = new BasicActorRef<TChildEvent, TChildEmitted>(childMachine, {
+
+    // Handle both behavior and machine types
+    if (typeof behavior === 'function') {
+      // For behavior functions, we need to create a machine
+      throw new Error('Behavior functions not yet supported, use AnyStateMachine instead');
+    }
+    const machine = behavior as AnyStateMachine;
+
+    const childRef = createActorRef<TChildEvent, TChildEmitted>(machine, {
       ...options,
       id: childId,
       parent: this,
-      supervision: options?.supervision || this._supervision,
     });
 
-    this.children.set(childId, childRef);
+    this.children.set(childId, childRef as ActorRef<BaseEventObject, unknown>);
+    this.logger.debug('Spawned child actor', { childId, parentId: this.id });
+
     return childRef;
   }
 
@@ -293,11 +291,12 @@ class BasicActorRef<
     if (child) {
       await child.stop();
       this.children.delete(childId);
+      this.logger.debug('Stopped child actor', { childId, parentId: this.id });
     }
   }
 
   getChildren(): ReadonlyMap<string, ActorRef<BaseEventObject, unknown>> {
-    return new Map(this.children);
+    return this.children;
   }
 
   // ========================================================================================
@@ -305,13 +304,129 @@ class BasicActorRef<
   // ========================================================================================
 
   matches(statePath: string): boolean {
-    const snapshot = this.getSnapshot();
+    const snapshot = this.actor.getSnapshot();
     return snapshot.matches(statePath);
   }
 
   accepts(eventType: string): boolean {
-    const snapshot = this.getSnapshot();
-    return snapshot.can(eventType);
+    const snapshot = this.actor.getSnapshot();
+    // Check if the actor can handle this event type in its current state
+    return snapshot.can({ type: eventType });
+  }
+
+  // ========================================================================================
+  // SUPERVISION SETUP
+  // ========================================================================================
+
+  private setupSupervision(): void {
+    if (!this._supervision) return;
+
+    this.supervisor = new Supervisor({
+      strategy: this._supervision,
+      onRestart: (actorRef, error, attempt) => {
+        this.logger.warn('Actor restart', { actorId: actorRef.id, error, attempt });
+      },
+      onFailure: (actorRef, error) => {
+        this.logger.error('Actor supervision failure', { actorId: actorRef.id, error });
+      },
+    });
+
+    this.supervisor.supervise(this as ActorRef<BaseEventObject, unknown>);
+  }
+
+  // ========================================================================================
+  // LIFECYCLE SUBSCRIPTION - THE CRITICAL FIX!
+  // ========================================================================================
+
+  private subscribeToLifecycle(): void {
+    this.actor.subscribe({
+      next: (snapshot) => {
+        this.logger.debug('State changed', {
+          state: snapshot.value,
+          context: snapshot.context,
+          actorId: this.id,
+        });
+
+        // Handle response messages for ask pattern
+        this.handleResponseMessages(snapshot);
+      },
+      error: (error) => {
+        this.logger.error('Actor error', { error, actorId: this.id });
+        this._status = 'error';
+
+        // Handle supervision
+        if (this.supervisor) {
+          this.supervisor.handleFailure(error as Error, this as ActorRef<BaseEventObject, unknown>);
+        }
+      },
+      complete: () => {
+        this.logger.debug('Actor completed', { actorId: this.id });
+        this._status = 'stopped';
+      },
+    });
+  }
+
+  private handleResponseMessages(snapshot: ReturnType<typeof this.actor.getSnapshot>): void {
+    // Handle ask pattern responses
+    const snapshotData = snapshot as {
+      event?: { _response?: boolean; _requestId?: string; error?: Error; payload?: unknown };
+    };
+    if (snapshotData.event?._response) {
+      const correlationId = snapshotData.event._requestId;
+      if (correlationId) {
+        if (snapshotData.event.error) {
+          this.requestManager.handleError(correlationId, snapshotData.event.error);
+        } else {
+          this.requestManager.handleResponse(correlationId, snapshotData.event.payload);
+        }
+      }
+    }
+  }
+
+  // ✅ CRITICAL FIX: Set up XState event bridge using actor.on('*', handler)
+  private setupXStateEventBridge(): void {
+    this.logger.debug('🔧 Setting up XState event bridge', { actorId: this.id });
+
+    try {
+      // Use XState v5's actor.on('*', handler) to capture ALL emitted events
+      // This is the proper way to bridge XState emit() actions to the framework
+      this.actor.on('*', (emittedEvent: TEmitted) => {
+        this.logger.debug('🎯 XState event captured and forwarding to ActorEventBus', {
+          actorId: this.id,
+          event: emittedEvent,
+          eventType:
+            typeof emittedEvent === 'object' && emittedEvent !== null && 'type' in emittedEvent
+              ? String((emittedEvent as { type: unknown }).type)
+              : 'unknown',
+        });
+
+        // Forward the XState emitted event to the framework's ActorEventBus
+        this.eventBus.emit(emittedEvent);
+
+        this.logger.debug('✅ Event forwarded to ActorEventBus', { actorId: this.id });
+      });
+
+      this.logger.debug('✅ XState event bridge established', { actorId: this.id });
+    } catch (error) {
+      this.logger.error('❌ Failed to set up XState event bridge', { actorId: this.id, error });
+    }
+  }
+
+  // ========================================================================================
+  // HELPER METHODS
+  // ========================================================================================
+
+  private convertSnapshot(snapshot: ReturnType<typeof this.actor.getSnapshot>): TSnapshot {
+    return {
+      value: snapshot.value,
+      context: snapshot.context,
+      status: this._status,
+      error: snapshot.error,
+      matches: snapshot.matches.bind(snapshot),
+      can: snapshot.can.bind(snapshot),
+      hasTag: snapshot.hasTag.bind(snapshot),
+      toJSON: snapshot.toJSON.bind(snapshot),
+    } as unknown as TSnapshot;
   }
 }
 
@@ -320,16 +435,12 @@ class BasicActorRef<
 // ========================================================================================
 
 /**
- * Create a new ActorRef instance
- *
- * @param machine - XState machine definition
- * @param options - Configuration options
- * @returns ActorRef instance
+ * Create a new ActorRef instance using the unified implementation
  */
 export function createActorRef<
   TEvent extends BaseEventObject = BaseEventObject,
   TEmitted = unknown,
   TSnapshot extends ActorSnapshot = ActorSnapshot,
 >(machine: AnyStateMachine, options?: ActorRefOptions): ActorRef<TEvent, TEmitted, TSnapshot> {
-  return new BasicActorRef<TEvent, TEmitted, TSnapshot>(machine, options);
+  return new UnifiedActorRef<TEvent, TEmitted, TSnapshot>(machine, options);
 }

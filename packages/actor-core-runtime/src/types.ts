@@ -123,6 +123,23 @@ export interface AskOptions {
   timeout?: number;
   retries?: number;
   retryDelay?: number;
+  correlationId?: string;
+  metadata?: EventMetadata;
+}
+
+export interface EventMetadata {
+  correlationId: string;
+  timestamp: number;
+  [key: string]: unknown;
+}
+
+export interface QueryEvent<TParams = unknown> extends BaseEventObject {
+  type: 'query';
+  request: string;
+  params: TParams;
+  correlationId: string;
+  timeout: number;
+  metadata: EventMetadata;
 }
 
 // ========================================================================================

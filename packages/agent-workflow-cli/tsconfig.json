@@ -12,6 +12,18 @@
     "resolveJsonModule": true,
     "composite": true
   },
-  "include": ["src/**/*", "../../src/core/actors/types.ts", "package.json"],
+  "include": [
+    "src/**/*",
+    "../../src/core/actors/types.ts",
+    "../../src/core/create-actor-ref.ts",
+    "../../src/core/actor-event-bus.ts",
+    "../../src/core/messaging/request-response.ts",
+    "../../src/core/observables/observable.ts",
+    "../../src/core/actors/actor-ref.ts",
+    "../../src/core/actors/supervisor.ts",
+    "../../src/core/namespace-constants.ts",
+    "../../src/core/dev-mode.ts",
+    "package.json"
+  ],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.test.tsx"]
 }

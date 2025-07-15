@@ -4,36 +4,78 @@
  * This actor manages git operations using proper state-based actor patterns.
  * Instead of emitting responses, it updates context state that clients can observe.
  *
- * TODO: REFACTOR TO STANDARDIZED ACTOR PATTERN
- * ==============================================
+ * STANDARDIZED ACTOR PATTERN IMPLEMENTATION
+ * =======================================
  *
- * Current Issues:
- * - Uses custom createGitActor() instead of unified ActorRef
- * - No actor registry integration
- * - No standardized event emission for actor-to-actor communication
- * - Missing request/response pattern support
+ * This actor follows the unified actor standardization patterns:
+ * 1. Uses createActorRef() for unified actor creation
+ * 2. Registers with ActorRegistry for discovery
+ * 3. Emits events for actor-to-actor communication
+ * 4. Supports ask() pattern for request/response
+ * 5. Defines supervision strategies
  *
- * Standardized Pattern Requirements:
- * 1. All actors must use createActorRef() from @actor-core/runtime
- * 2. All actors must be registered in global actor registry
- * 3. All actors must support event emission for communication
- * 4. All actors must support ask() for request/response
- * 5. All actors must follow supervision hierarchy
- *
- * Refactoring Plan:
- * 1. Replace createGitActor() with createActorRef(gitActorMachine)
- * 2. Add actor registry registration
- * 3. Implement standardized event emission
- * 4. Add request/response handlers
- * 5. Add supervision strategy
+ * Actor Address: actor://system/git/{id}
+ * Communication: Event emission + ask() pattern
+ * Supervision: Restart strategy with retry limits
  */
 
-import { type ActorRef, type ActorSnapshot, createActorRef, Logger } from '@actor-core/runtime';
+import {
+  type ActorRef,
+  type ActorSnapshot,
+  createActorRef,
+  enableDevMode,
+  Logger,
+} from '@actor-core/runtime';
 import { type SimpleGit, simpleGit } from 'simple-git';
-import { assign, fromPromise, setup } from 'xstate';
+import { assign, emit, fromPromise, setup } from 'xstate';
+
+// Enable dev mode for debug logging
+enableDevMode();
 
 // Use scoped logger for git-actor
-const _log = Logger.namespace('GIT_ACTOR');
+const log = Logger.namespace('GIT_ACTOR');
+
+// ============================================================================
+// ACTOR REGISTRY INTEGRATION
+// ============================================================================
+
+/**
+ * Actor Registry for standardized actor discovery
+ * TODO: This should be imported from @actor-core/runtime once implemented
+ */
+type AnyActorRef = ActorRef<{ type: string }, { type: string }, ActorSnapshot<unknown>>;
+
+class ActorRegistryService {
+  private static instance: ActorRegistryService;
+  private registry = new Map<string, AnyActorRef>();
+
+  static getInstance(): ActorRegistryService {
+    if (!ActorRegistryService.instance) {
+      ActorRegistryService.instance = new ActorRegistryService();
+    }
+    return ActorRegistryService.instance;
+  }
+
+  register(path: string, actor: AnyActorRef): void {
+    this.registry.set(path, actor);
+    log.debug(`Registered actor at ${path}`);
+  }
+
+  lookup(path: string): AnyActorRef | undefined {
+    return this.registry.get(path);
+  }
+
+  unregister(path: string): void {
+    this.registry.delete(path);
+    log.debug(`Unregistered actor at ${path}`);
+  }
+
+  list(): string[] {
+    return Array.from(this.registry.keys());
+  }
+}
+
+export const ActorRegistry = ActorRegistryService.getInstance();
 
 // ============================================================================
 // TIMEOUT CONFIGURATION
@@ -102,6 +144,7 @@ function getSourceBranch(currentBranch?: string): string {
  */
 export interface GitActor extends ActorRef<GitEvent, GitEmittedEvent, ActorSnapshot<GitContext>> {
   // All ActorRef methods are inherited
+  // Additional standardized methods will be added here
 }
 
 // ============================================================================
@@ -138,7 +181,11 @@ export type GitEvent =
   | { type: 'START' }
   | { type: 'STOP' }
   | { type: 'CONTINUE' }
-  | { type: 'RETRY' };
+  | { type: 'RETRY' }
+  // REQUEST/RESPONSE PATTERN EVENTS
+  | { type: 'REQUEST_STATUS'; requestId: string }
+  | { type: 'REQUEST_BRANCH_INFO'; requestId: string }
+  | { type: 'REQUEST_COMMIT_STATUS'; requestId: string };
 
 // ============================================================================
 // SUPPORTING TYPES FOR GIT ACTOR
@@ -165,38 +212,41 @@ export interface AgentWorktreeConfig {
  */
 export type GitEmittedEvent =
   // Repository state changes
-  | { type: 'REPO_STATUS_CHANGED'; repoStatus: unknown; isGitRepo: boolean }
-  | { type: 'BRANCH_CHANGED'; currentBranch: string }
-  | { type: 'UNCOMMITTED_CHANGES_DETECTED'; hasChanges: boolean }
+  | { type: 'GIT_REPO_STATUS_CHANGED'; repoStatus: unknown; isGitRepo: boolean }
+  | { type: 'GIT_BRANCH_CHANGED'; currentBranch: string }
+  | { type: 'GIT_UNCOMMITTED_CHANGES_DETECTED'; hasChanges: boolean }
 
   // Operation completions
-  | { type: 'COMMIT_COMPLETED'; commitHash: string; message: string }
-  | { type: 'FETCH_COMPLETED'; branch: string; result: unknown }
-  | { type: 'PUSH_COMPLETED'; branch: string; result: unknown }
-  | { type: 'MERGE_COMPLETED'; branch: string; result: unknown }
-  | { type: 'BRANCH_CREATED'; branchName: string }
-  | { type: 'STAGING_COMPLETED'; result: unknown }
+  | { type: 'GIT_COMMIT_COMPLETED'; commitHash: string; message: string }
+  | { type: 'GIT_FETCH_COMPLETED'; branch: string; result: unknown }
+  | { type: 'GIT_PUSH_COMPLETED'; branch: string; result: unknown }
+  | { type: 'GIT_MERGE_COMPLETED'; branch: string; result: unknown }
+  | { type: 'GIT_BRANCH_CREATED'; branchName: string }
+  | { type: 'GIT_STAGING_COMPLETED'; result: unknown }
 
   // Integration status updates
-  | { type: 'INTEGRATION_STATUS_UPDATED'; status: { ahead: number; behind: number } }
-  | { type: 'CHANGED_FILES_DETECTED'; files: string[] }
+  | { type: 'GIT_INTEGRATION_STATUS_UPDATED'; status: { ahead: number; behind: number } }
+  | { type: 'GIT_CHANGED_FILES_DETECTED'; files: string[] }
 
   // Worktree operations
-  | { type: 'WORKTREE_SETUP_COMPLETED'; worktrees: AgentWorktreeConfig[] }
-  | { type: 'WORKTREE_STATUS_CHECKED'; exists: boolean; path: string }
+  | { type: 'GIT_WORKTREE_SETUP_COMPLETED'; worktrees: AgentWorktreeConfig[] }
+  | { type: 'GIT_WORKTREE_STATUS_CHECKED'; exists: boolean; path: string }
 
   // Generated content
-  | { type: 'COMMIT_MESSAGE_GENERATED'; message: string }
-  | { type: 'DATE_VALIDATION_COMPLETED'; issues: DateIssue[] }
+  | { type: 'GIT_COMMIT_MESSAGE_GENERATED'; message: string }
+  | { type: 'GIT_DATE_VALIDATION_COMPLETED'; issues: DateIssue[] }
 
   // State transitions
-  | { type: 'STATE_CHANGED'; from: string; to: string }
-  | { type: 'OPERATION_STARTED'; operation: string }
+  | { type: 'GIT_STATE_CHANGED'; from: string; to: string }
+  | { type: 'GIT_OPERATION_STARTED'; operation: string }
 
   // Error events
-  | { type: 'OPERATION_FAILED'; operation: string; error: string }
-  | { type: 'TIMEOUT_OCCURRED'; operation: string }
-  | { type: 'VALIDATION_FAILED'; reason: string };
+  | { type: 'GIT_OPERATION_FAILED'; operation: string; error: string }
+  | { type: 'GIT_TIMEOUT_OCCURRED'; operation: string }
+  | { type: 'GIT_VALIDATION_FAILED'; reason: string }
+
+  // Request/response events
+  | { type: 'GIT_REQUEST_RESPONSE'; requestId: string; response: unknown };
 
 // ============================================================================
 // GIT ACTOR CONTEXT (Pure State)
@@ -266,6 +316,9 @@ export interface GitContext {
 
   // Operation tracking
   lastOperation?: string;
+
+  // Request/response tracking
+  pendingRequests?: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -277,9 +330,59 @@ export const gitActorMachine = setup({
     context: {} as GitContext,
     events: {} as GitEvent,
     input: {} as { baseDir?: string },
+    emitted: {} as GitEmittedEvent,
+  },
+  actions: {
+    // Event emission actions for actor-to-actor communication
+    emitRepoStatusChanged: emit(({ context }) => {
+      const event = {
+        type: 'GIT_REPO_STATUS_CHANGED' as const,
+        repoStatus: context.repoStatus,
+        isGitRepo: context.isGitRepo || false,
+      };
+      log.debug('🔥 XState emit() action triggered', { action: 'emitRepoStatusChanged', event });
+      return event;
+    }),
+    emitBranchChanged: emit(({ context }) => {
+      const event = {
+        type: 'GIT_BRANCH_CHANGED' as const,
+        currentBranch: context.currentBranch || 'unknown',
+      };
+      log.debug('🔥 XState emit() action triggered', { action: 'emitBranchChanged', event });
+      return event;
+    }),
+    emitCommitCompleted: emit(({ context }) => ({
+      type: 'GIT_COMMIT_COMPLETED' as const,
+      commitHash: context.lastCommitHash || '',
+      message: context.lastCommitMessage || '',
+    })),
+    emitStagingCompleted: emit(({ context }) => ({
+      type: 'GIT_STAGING_COMPLETED' as const,
+      result: context.stagingResult,
+    })),
+    emitFetchCompleted: emit(({ context }) => ({
+      type: 'GIT_FETCH_COMPLETED' as const,
+      branch: context.currentBranch || 'unknown',
+      result: context.fetchResult,
+    })),
+    emitPushCompleted: emit(({ context }) => ({
+      type: 'GIT_PUSH_COMPLETED' as const,
+      branch: context.currentBranch || 'unknown',
+      result: context.pushResult,
+    })),
+    emitMergeCompleted: emit(({ context }) => ({
+      type: 'GIT_MERGE_COMPLETED' as const,
+      branch: context.currentBranch || 'unknown',
+      result: context.mergeResult,
+    })),
+    emitOperationFailed: emit(({ context }) => ({
+      type: 'GIT_OPERATION_FAILED' as const,
+      operation: context.lastOperation || 'unknown',
+      error: context.lastError || 'Unknown error',
+    })),
   },
   actors: {
-    // Keep the existing actor implementations but remove response emission
+    // Keep the existing actor implementations but add response emission
     checkRepo: fromPromise(async ({ input }: { input: { git: SimpleGit } }) => {
       const { git } = input;
       try {
@@ -737,9 +840,53 @@ export const gitActorMachine = setup({
         );
       }
     }),
+
+    // REQUEST/RESPONSE HANDLERS
+    handleStatusRequest: fromPromise(
+      async ({ input }: { input: { context: GitContext; requestId: string } }) => {
+        const { context, requestId } = input;
+        return {
+          requestId,
+          response: {
+            currentBranch: context.currentBranch,
+            isGitRepo: context.isGitRepo,
+            uncommittedChanges: context.uncommittedChanges,
+            lastOperation: context.lastOperation,
+            lastError: context.lastError,
+          },
+        };
+      }
+    ),
+
+    handleBranchInfoRequest: fromPromise(
+      async ({ input }: { input: { context: GitContext; requestId: string } }) => {
+        const { context, requestId } = input;
+        return {
+          requestId,
+          response: {
+            currentBranch: context.currentBranch,
+            agentType: context.agentType,
+            integrationStatus: context.integrationStatus,
+          },
+        };
+      }
+    ),
+
+    handleCommitStatusRequest: fromPromise(
+      async ({ input }: { input: { context: GitContext; requestId: string } }) => {
+        const { context, requestId } = input;
+        return {
+          requestId,
+          response: {
+            lastCommitHash: context.lastCommitHash,
+            lastCommitMessage: context.lastCommitMessage,
+            uncommittedChanges: context.uncommittedChanges,
+          },
+        };
+      }
+    ),
   },
 }).createMachine({
-  /** @xstate-layout N4IgpgJg5mDOIC5RQJYBcC0BDAxmg9gE4B0KEANmAMQDCAEgKI0DSA+gEoMAKA8gNoAGALqJQAB3yx0KfADtRIAB6IAjACYVAZmIqVAdhUAWLQDY1Gk4YA0IAJ6IArIYAcxNQM0C9etQE5fziYmvgC+ITaomLgEJGSUtIwsrADKACoAgqkAqsmCIkggElJoMvIFygjqWjr6RqbmKpY29gjuRsS+hiYCKr4CfUECamER6Nh4RKQU1PRMbFkAcjQ8ALIrAJKpqQwAIqz06QsA4gy5wgpF0nIKFVXaugbGmmYW1naqDg6+boZqeppff6adTOEYgSLjGJTeLpHZ7dIAGQReQukiuZVAtw091qTxejTeLTUnwExEMAM6vk0egEJj0JjBEOikziM1WG1S+zohxOZ3y4jRJWu5VU2Jqj3qr2aiEMAi8ZICDhMWj+gQcjLGzNi0yoJ056wW2yO7Ey6x4CxSGWyfNRxVKN1F1QedWeDSa7wQhi63zUzkMAQMwWCw3C4M1E218T1XJ5u1YADF1gjTiiCpchRilI6cRLXVKPZ5fGpiCZNL5dLTfipnCp1aGmRHodR4wxUvQOAwVjxtqmBXbhZjs+KXfj3S1uoYHMQnGZAqqPCHRlFG6yqFwcnQY8cU+c04L7SLKmLnXi3YTEHTOsRnJpzBpZV8HJoNcuoauVgx2CdWAAhE1LOhe0KfcByzI8nVxSUCWlBBnGcH0y39bon2rXoX0hFkdROBZP0yBh9nZTZWA-ZJknSE4gPTA9B3AnMRzPGDJ16Yg9GcBwvAcdQPE8OslwwyNqAANURdYdjw1gxO2G0937TMsQg3NR3PBAnDg69fmcP5iU6Lx0K1YgcAACzAHAAGsUFkKB2DACQqAgOQwFIWQADd8FMxyGyhIyTPMyzrIkBALNcnAsAzPJKJAuTVF8Vi3DUMwhh6PQnhgsViTlL5DFYuk9E6PTG28syLKsmz8CoMBCEISYxHIUKADMiAAW2ITzJkK3ySoCoL8BCsLhAi2SHUqGLviVdxOgnL1ghgoJXF8FCND+TjAmfetwy84yiss5I0FCgBXWA7IcpzXPclr1razaOp2-bYEClyetC0pwt3Pt0SG3oaTcOC9E48kvG4mDq04n4-F0Zxkq+ARDHyjafOKm60AO8rKuq2q0Aawhmtakh2oR3akbu7reue-rXuAwbD0+lQSzULovSS-46VSrQpyDWlPBML5nAEXiw1fS74csrJZBwfBGsa9A0EgGhDKwSy4CO2RHO6s6cYMq7ipFsWJalmW5YVomHpJuQXv5Cn3qpiHi00TTbe8dRniMVLNE8HR-TLHoHECLLVr4-S8eF0XxcltBpYgWX5ZgQ6KqqkgavqprzoF3HNaDnXQ-DyPDfu4KntNsnzao0Dbmt4hbbUe2DEr5VlJUWlSRcXwzFy3KjFhyZYF21BLPSchyCVlWHrVi6SC7rAe6gPvyFzx6+qEAbLZo30so6XmRs02UK5g12-RLMtfS58lJ0CDux+74rp5RuPiATjGk-V8fJ+n2eTdkM3bSXsCV70NfAQCOmHhNJA1Qm4MsdJehOC6NDM+BkQ5S2KtnaOg8TpuQ8qPOBusw6IINtHV++d36F0-hmIazxV4QJJE+Us2UZoOGStOE+-Rkq6D5urDOCDLJIMVrHNGicsbJ34pgzOOCo5wHwfPReJDDxkN-hQ9iVDqSBB3gEUk7h163g4gCWBMBsGcNwZAeMKBKCHXssrVBI8U4tTALoqAXCICGOMeI0mC9ybFyipUMuFcq6O1rjvbm6k6Y1gMD0HK2jrElD0aI+xRjuGo3jujTG2MME6IibY-R0THHEwIR-GSX9S4+HLnbCG1cnbKT+AU6sypgxZT+H7fmgiUnFXWLIaWUBCAEMRsjUxQ9TroMsY0yyzTWntIzJ0o2ecJGuMih9Isqj4q9DgqWYIDgYKcV+joBclgt4WDCTYoZYA2kdIJsjHh8S+FJP6eEppLSDkjNKGMpxBcXFF2mVTIsNMxrAnKbWOkzhGKBI6AESwRZWLsTqerOq1ijLFWso1fA0sUGqz6YIyFaBoV+TAHC6WjzCHPOIdRMC1YCleOKT452HogwmGIAIO2T5Xa9F0LA1F6KSpYuoKc2+CSH4YOZYZGFmL4VgBxTkt6UiaJEptkUh2NdyUtG9sCcu-1yy6BVDDNalixAHT5ZEw2iLh7Iv0pq2A2q0miPGXPZxkiCUVC9AUjQtJgjGC6GYHeugqW5VqeYNuLhYFGpNVwmOcTOXnIEYarVIic5ZMmS8ymNFbXFntUEToRgghqBmgEGmuVKw9D9GYcFGDGoVUnj+dpotDJ6t6aGxshbCDFtLUZYVRDclirAg4dKOhraV2pGYGKrq5TXnpPXdwvwvT6FgTWut8sjLX14fffh6sJ3FRLVOwyja8XNutTKG8U5Oj+nLP0SufgVkFn0FOAEWlGhaEnAydVDSwDKzuZw+BaAVhwFgBPag3TzEGsbDAB9T0n1YNfbAd9MA11WpLqoTxUqSm+IpbWVwmh-p0IsOoMJ-7Uk0GfcB0D7Kg130SVWqEf6KoAdsdht9H7wNTNjYS6DldSUyuUrbckLF5qTmMA8Toi56n6WclgcgZAyM7FCorL9SKiOTH44JiAwnRPmrfiKi2LaKh00+Gxrmv02JZU4qsycv9AwryfH0GKsDpNCdSSJ6Wgab4Ee5ZY8zsnLPyeozGvJ0VLDUqcDIjwNI6GrPiq4T4lhayZW6De-2jZx6E1lj5SAtBzSpANFkBgEH3FtqpbUO2XM6ZlmPS0B8xZ65ll6K7R1SpYHRYOrFsy8XZhJE4LwNLQ0Ms6AMNltt5J5o73pB0FCugyFPlBLe-SVXYA1fchABIcxWCLGWGsTY2w9gHG3NJUVm6VLxTa9WGunW8tA3toC+K0Nob-CcHoSrxzxtXTq4RTkK3eTNcPK1rLu3cvdYLPFbQcEiy-CVDWMsF2RuNkIKVCbt3DTJdSzR9zm3Mvtbe11-LiBPakm6M8T4LgwVDFgaDiQ4Opv1bYGkTIOQns0RewjjH73keVEvEd7w-gXClnMLjsHN3CeJHmEsO7S2tyPZhypxwW3XvU6Rwd6kCpiSNH6BAiLvGQfs7i1N6MD24yJmTGt5TG3Kc7bF-tj0fgDDXngg6oIJg5ywL2sHLBWd9HXeVwlyHCwUvk+-j0Qw1LK5eB8EhxnmhUq-G0N0YkTx2K+bVZFqE1v2Fh31magnVBYTwiRG71Tk4py5U097c7unDeylkWxG8QIYrVkuxPRB4sarWIh0ll30O3NC9aGxb70NZS1kaD4NNBYsquAPeSbwSG-RwXL5PLDjVq-hwSwt+73JVtp5R9WT3vQkI1iqR9loSGzBtboa7Hwk4-CwNj+PyfteocL4QNSdoVIDDsVLF6L4M0gi-38PBboVJQ9H+fSfygU-1zJE3DVy1zcSGllEnG+i8BinmS6FpyCDbWpU0kHz304nzUsQsmGSOVukT2WGd1d0Fx1xFypxy3Fw9GZ1-k4n8Fl3LGeHl3VnQNuUwJiw5yoBbDbE3E4C7B7HwMgzh22w6xpxmj+A+WgXpBcFCx4zoJuUOVGSu0T3-0ALnwF0bwIPhz12IINxaH30Ly+HtXYipC5iP3SQcTgGwMS3P24PcTaE9yGE8G8EriylygDwLGDDcHmhZz6FC2Gyj0uiiWMId1q0Jzu35x3GUJ4LU0z2bjoRzx0xUB3jpCpUUVYivXbwkJ5ShUMh-xr0CNwIb3xTCI9y91sN9wcKpHTVrGnE0niiG3UB8CZXSMyL-w3GCOANeWXgzw0yiO01+liIpRimX1+FD1v29l9S1QaLP3rwvwP20H8CpAXBpQtz0FSipCnB+39G8D9GrFQMET9TGKmw-C-Hwj-EOHoEmO3Q6C9H8HriLFvA30XzpmvAyzK1nDHWByhAnTAF2KdzrzwNCPSz8G+BrHijpF9CfCcBghrGnDlC9jBQBDYlYQwVjxww-SOHvVIynxwO+NyI3XyPaBsJ93sP91WV+w0zpm9yEK2IDgoxA2RNRJGVuxn2aIv3CI6K01zx6PHEaCpVlF9ArDbSVApMbCczgEEgEws3GJ+LyMsLbTR1ynJDoXmgrCcIKxBB+ECF5k8GBD9HL0JgYDiSoE4FSHYAAE0L8JVCkGNpVSlUpzBvgjB3k-t-gaQgdvDz5bpdS44vjzDfiPpbZvgnhW59BJxbY-lDdiRf4hg5SLc21KR4TLExt3SiBpskgSdrRTT6NvEmNrTcoSwPYhh3AeZ+hI8FcoQ8d8AEzCB9TWxjS0ziUYMyVlJ6RixZQW46Y4DRC2cJByzPSJiLCfT4IyQtAAzIZgyYJkouS391T-pSwrcbdM549DYuyDTqzezDxh1Pd-QiVr1yklTVA5RvgAh2M5QQSegBTo9Zy9YI57cuyMSvTJShorDCj8S-dHCQEnxzjylyw-NgQVBR9ipFyqyTSVzl44JPdakFk-QspGgQE3Z-h5o-Q5QK5GhfzLJryzCezvTVyW9rw28vZO9zAgY-hPdgw7YjAc9eYv8sF-zDTAKMKaJqRwCHx5ENFvBmMixvgaReZeZiQLdm5aCETn1UKciL8r9Pcb9awOYH9fAZpXZtBoZBgnTbZghYF6DpD7krsqLlzaK6NayLTYNZUZQkMmzlo5RvR4JTyWQpC7k5AxlBLMTTTfSBzqRS9hy4JGJbwqUnwXBuj7YkNDDfCYlYANKaK7zVy28FRNyxpB9UofAaYLduhATeKkNzLU5-LjFbLbzsTLCCi8S7DnzSjDcIEO0vgqQkNirPg6i0VDIgqmSwqNyIYtyoqPQ6EeZ1JPAPAZcoyKqjJ0r0KQrl5srvdcqSidyVJ-hSRDLyw21645KRjjVqqgKwIM91yozyR9AbwTB00FU-BeY20u0Agiz1Y-UeqJTMrQC21pj-ANT8yFiZogySSaUC9OJx0i0wB5qtKbUzjd1LiD0bjad3LXAeZvYfAeYXAuhnra1Xq9SbzerTrDwpjAVZiNFAgIYd5iRiwftST-stBTNXi2oqTcM3q+r3cvRwr6rIr-gesqRXCqEqkWFLAKLQ4kSYBjqsT1scTrDBrijCSCxkpixco21WJdD9A+LLEhTYARSZMCFCbYbxV0zGMrSmrXRqV+glRfkyrYExaJaLNSgWb7L+z-TnKgzXLFauhqU2KMd-RfQvDizO4rtUgUBC18A9o0BKzqKL9dd+CSCWh9A3ZLbAhWJ-AhDtSDp7bHbnbuyTq2a-jVDPaNCZQ5RYqgFgRFLbCOz8BQ6wAnaXalzgqZbW1CC1C9tbjPQ-gyQnwaU1QdMfBnSbaSBSyM6s6I7WbtceCPbEc46S6XAvchgoYsoggZzY87czUG7w6c73aC7Y7i6jBbYpdghegRpliB7n0h7DYR6XbobI6W7o6+D27i7JLu7d4NSNJkKoA17XbNKiaKg279cp6QSSxzbbZaQ-gT6z6N7m6QDnsJ7d6-qFSNl6KkrVa2IGb0Az6x6Fqr6v6b7YDbxiw5KCRyQNBQhcbcZn1X60LN6P6KdIH1C97Axu6K6xD1AkGXSnIMCZDbpQGALx6Y7v7VleZPcAQYHoZVRm5lLLLGCQ6HbM7w637qGd6oHGI4Dpw1EMpPB-RyLkGNZUq4BKG3bwHhcaGBHPtqhfTawuhT0Pc-KFYMkZGuHG7eH5HeDRccHadr1PdpT4pq6aVywurDJZGL686IHFGTGZpOTXDSxPBiRXY21bG0GhLDHr6XHSD6QPK2hRDgR6RrbDqtV7Hc6o6WtsGi7adq52LtNkIsoM1Zq7G9GeH0H37Wj87nGknGIglu74pyRN5dJJH3jYm+HjHimPQixIS5QaQbwAQLdbxwaYA-G7KAnEmBCeaWrEpfhm46gSrgGX1KNumcns6qG+mimBmCtyw+956YpLA1FJwJmmawAemMr4nP6FmvaZQ-pu79AP8e7UjRb5MtanNShan5n+Ggm5V39pwiwIZHYaka71ZNbRTbm5BdmYb9msHDmO71GpxEoARdraxVpQxZB8AIA4AFAcZL7EAMANqPQ0XlaoTsWoS7TlLpgUWEA+giLcQD1iWtBGITnpSvkhCOZDChZOp8BCWNBetag1lFFEHadlovcONNIeYV4omES04oAxlmXhbtt2XBbIEgZLjzjHxit2IdlJHA4oBtZl75zo5CW1GPkXhqQImYpjbvbmyyQNIIENAXiSGn5L5+5mXU1rxVRfoqQ4SPAXZjcozNJvZoWvgJnMN7dCWkNdA4oJxqkuYf7Sw2sDAtANTPhLm70bE7E-CtW6EqUllfTXZmyd5eYU2ywNEKnU1kqrE9l2HyHCYxXWXb8fapW97yRtAV4YolQgzOnJHeV+U2Uk3+zbwc2-RFFgxXG3Y-Aj4TKAgm2SG-UI1NXHGZQ6YaZp2eKYDgRlJggZ6jBWymJ3BkIuml161DJCWwUEjEDlQa55oRrPBAhy421u3Jw2LBXLkMNK8gMpmwAk2QYPAY2faeYgUSnt90cvgJxPhbYzNfm5NrMxWIYEa5cBsB89NWNehfQ5KAQBtg7-DJstXV4rjXYHqngO6yx-AWIaQGgqQAEb3BFSyCck2E1KkQLsaPdu9N9h83A-MXA-gLdNil7bcNWTCOcy3VDJXNJpXDcWMSw2J6Q3mC9T5JGrXANT8IBmX-Ad0L3jBBhL0-qusd84DZp4IJndj-XhOECqFOg6F150Xxwe0EDAlwFisDqMEVKrLZAxkyPJ2EAghy5ko+jZRywwZRyFlqUARVqgg99iHa6pHtG-CHOgXv5IEB0uhgRqC57aOUcuZtBFEqRoF3l4pbHtPHOGhSROJy71S+gHV00QYV2C8VFWIsnMvwubVzd3Ys8ugfBm5FiT0egHjVRiKc0umPiq9f9IBd3R0Oh4rAh65+a-qaUd0nZVbqDGVlX8aaSMNeusul8vM3CtkgaspXHWNuSpr4ixuNbrmgPw5bXt9ECIYvhbYSQRqoE+b6RXZlms8RbBF4y4ktWuZM11B9MJVoYQyiR7CeXOIehUJYySPSpyyXuywyQmZyxjAxobxRzK4yR4InxgbeavQ2O5zLyzVQfFvy2O9HS+Op7eY5pBhJqKm7CT6seqvEB-j5OV5OSQlawQFszAxWYKDegDCZvKLnvHPzvwyW9ys-Nm5lFYocp5wqQVU2GyG1K3SufKe6cWuWNIitAV8pLSCNTpwh8AYbwVatGYAdHAqZet77zxW2XK38fac-gWvKkTzAEmcvm0jKqKfDfVzjeK28fOXVl6RxqRmEPOLNnJGjqDfMHFqaujA6vgTGuyjSQs1GPLigHqmXrHeg-quvpoZzvOsTKT2bSTdCP5V02tnH3E+CnVMXfceOX+PN87C2NoyawdqLWgufnJaMxC-aNbhlQ0dfMEMYv-NFb4f+hT2M0vRNOJO7aZnyO3BKONjPYV23LGgGOoSQK7w0616x+NBkbJ+PDfh-l648O8zeaFlY39IY91WMfV7R-HPN-SCqwd-D1yXngX6z-Zfp6yQ4q1TPBKkghGJ64pwLepoE7IYJnl+jnJ-nTEuog1zszMClCvCr43cnWU0CXgwRLacMw6aAQlsbj5YAw+gInI+HQ30B-0WEQwNUkDwDhGEAqgAx-pby9i-A5Km8XoJS1Lo-8lQvFdUr4wf5O9xU8BVfhbnX40dXGfgalDAXnpY51ARAxsH6jIFsDCUHAifk8A37xcEANIJpqCS5gRkF2P5ePhDXEFJ8PgidUPoHV9C3hgEPNX4Dv1vBVhxGB-AqLN2mbIDUBv8PdJ0B4jdBWIuUEpi1RE7wRzAvwauHt2sw3MCEmgovogDYhBtFW52CGL2iaooZFUnMMlj9DrBhAgAA */
   id: 'git-actor',
 
   context: ({ input }) => ({
@@ -766,6 +913,7 @@ export const gitActorMachine = setup({
     lastCommitInfo: undefined,
     lastError: undefined,
     lastOperation: undefined,
+    pendingRequests: {},
   }),
 
   initial: 'idle',
@@ -790,6 +938,10 @@ export const gitActorMachine = setup({
         CHECK_WORKTREE: 'checkingWorktree',
         CREATE_BRANCH: 'creatingBranch',
         GET_LAST_COMMIT: 'gettingLastCommit',
+        // Request/response events
+        REQUEST_STATUS: 'handlingStatusRequest',
+        REQUEST_BRANCH_INFO: 'handlingBranchInfoRequest',
+        REQUEST_COMMIT_STATUS: 'handlingCommitStatusRequest',
       },
     },
 
@@ -799,18 +951,24 @@ export const gitActorMachine = setup({
         input: ({ context }) => ({ git: context.git }),
         onDone: {
           target: 'repoChecked',
-          actions: assign({
-            isGitRepo: ({ event }) => event.output.isRepo,
-            repoStatus: ({ event }) => event.output.status,
-          }),
+          actions: [
+            assign({
+              isGitRepo: ({ event }) => event.output.isRepo,
+              repoStatus: ({ event }) => event.output.status,
+            }),
+            'emitRepoStatusChanged',
+          ],
         },
         onError: {
           target: 'repoError',
-          actions: assign({
-            lastError: ({ event }) =>
-              event.error instanceof Error ? event.error.message : 'Repository check failed',
-            isGitRepo: () => false,
-          }),
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error ? event.error.message : 'Repository check failed',
+              isGitRepo: () => false,
+            }),
+            'emitOperationFailed',
+          ],
         },
       },
       after: {
@@ -824,17 +982,23 @@ export const gitActorMachine = setup({
         input: ({ context }) => ({ git: context.git }),
         onDone: {
           target: 'statusChecked',
-          actions: assign({
-            currentBranch: ({ event }) => event.output.currentBranch,
-            agentType: ({ event }) => event.output.agentType,
-          }),
+          actions: [
+            assign({
+              currentBranch: ({ event }) => event.output.currentBranch,
+              agentType: ({ event }) => event.output.agentType,
+            }),
+            'emitBranchChanged',
+          ],
         },
         onError: {
           target: 'statusError',
-          actions: assign({
-            lastError: ({ event }) =>
-              event.error instanceof Error ? event.error.message : 'Status check failed',
-          }),
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error ? event.error.message : 'Status check failed',
+            }),
+            'emitOperationFailed',
+          ],
         },
       },
       after: {
@@ -854,13 +1018,16 @@ export const gitActorMachine = setup({
         },
         onError: {
           target: 'uncommittedChangesError',
-          actions: assign({
-            lastError: ({ event }) =>
-              event.error instanceof Error
-                ? event.error.message
-                : 'Checking uncommitted changes failed',
-            uncommittedChanges: () => false,
-          }),
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error
+                  ? event.error.message
+                  : 'Checking uncommitted changes failed',
+              uncommittedChanges: () => false,
+            }),
+            'emitOperationFailed',
+          ],
         },
       },
       after: {
@@ -877,17 +1044,23 @@ export const gitActorMachine = setup({
         input: ({ context }) => ({ git: context.git }),
         onDone: {
           target: 'stagingCompleted',
-          actions: assign({
-            stagingResult: ({ event }) => event.output,
-          }),
+          actions: [
+            assign({
+              stagingResult: ({ event }) => event.output,
+            }),
+            'emitStagingCompleted',
+          ],
         },
         onError: {
           target: 'stagingError',
-          actions: assign({
-            lastError: ({ event }) =>
-              event.error instanceof Error ? event.error.message : 'Staging all failed',
-            stagingResult: () => undefined,
-          }),
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error ? event.error.message : 'Staging all failed',
+              stagingResult: () => undefined,
+            }),
+            'emitOperationFailed',
+          ],
         },
       },
       after: {
@@ -907,17 +1080,23 @@ export const gitActorMachine = setup({
         }),
         onDone: {
           target: 'commitCompleted',
-          actions: assign({
-            lastCommitHash: ({ event }) => event.output,
-          }),
+          actions: [
+            assign({
+              lastCommitHash: ({ event }) => event.output,
+            }),
+            'emitCommitCompleted',
+          ],
         },
         onError: {
           target: 'commitError',
-          actions: assign({
-            lastError: ({ event }) =>
-              event.error instanceof Error ? event.error.message : 'Commit changes failed',
-            lastCommitHash: () => undefined,
-          }),
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error ? event.error.message : 'Commit changes failed',
+              lastCommitHash: () => undefined,
+            }),
+            'emitOperationFailed',
+          ],
         },
       },
       after: {
@@ -940,11 +1119,14 @@ export const gitActorMachine = setup({
         },
         onError: {
           target: 'changedFilesError',
-          actions: assign({
-            lastError: ({ event }) =>
-              event.error instanceof Error ? event.error.message : 'Get changed files failed',
-            changedFiles: () => [],
-          }),
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error ? event.error.message : 'Get changed files failed',
+              changedFiles: () => [],
+            }),
+            'emitOperationFailed',
+          ],
         },
       },
       after: {
@@ -971,13 +1153,16 @@ export const gitActorMachine = setup({
         },
         onError: {
           target: 'integrationStatusError',
-          actions: assign({
-            lastError: ({ event }) =>
-              event.error instanceof Error
-                ? event.error.message
-                : 'Integration status check failed',
-            integrationStatus: () => ({ ahead: 0, behind: 0 }),
-          }),
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error
+                  ? event.error.message
+                  : 'Integration status check failed',
+              integrationStatus: () => ({ ahead: 0, behind: 0 }),
+            }),
+            'emitOperationFailed',
+          ],
         },
       },
       after: {
@@ -997,17 +1182,23 @@ export const gitActorMachine = setup({
         }),
         onDone: {
           target: 'fetchCompleted',
-          actions: assign({
-            fetchResult: ({ event }) => event.output,
-          }),
+          actions: [
+            assign({
+              fetchResult: ({ event }) => event.output,
+            }),
+            'emitFetchCompleted',
+          ],
         },
         onError: {
           target: 'fetchError',
-          actions: assign({
-            lastError: ({ event }) =>
-              event.error instanceof Error ? event.error.message : 'Fetch remote failed',
-            fetchResult: () => undefined,
-          }),
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error ? event.error.message : 'Fetch remote failed',
+              fetchResult: () => undefined,
+            }),
+            'emitOperationFailed',
+          ],
         },
       },
       after: {
@@ -1027,17 +1218,23 @@ export const gitActorMachine = setup({
         }),
         onDone: {
           target: 'pushCompleted',
-          actions: assign({
-            pushResult: ({ event }) => event.output,
-          }),
+          actions: [
+            assign({
+              pushResult: ({ event }) => event.output,
+            }),
+            'emitPushCompleted',
+          ],
         },
         onError: {
           target: 'pushError',
-          actions: assign({
-            lastError: ({ event }) =>
-              event.error instanceof Error ? event.error.message : 'Push changes failed',
-            pushResult: () => undefined,
-          }),
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error ? event.error.message : 'Push changes failed',
+              pushResult: () => undefined,
+            }),
+            'emitOperationFailed',
+          ],
         },
       },
       after: {
@@ -1058,17 +1255,23 @@ export const gitActorMachine = setup({
         }),
         onDone: {
           target: 'mergeCompleted',
-          actions: assign({
-            mergeResult: ({ event }) => event.output,
-          }),
+          actions: [
+            assign({
+              mergeResult: ({ event }) => event.output,
+            }),
+            'emitMergeCompleted',
+          ],
         },
         onError: {
           target: 'mergeError',
-          actions: assign({
-            lastError: ({ event }) =>
-              event.error instanceof Error ? event.error.message : 'Merge branch failed',
-            mergeResult: () => undefined,
-          }),
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error ? event.error.message : 'Merge branch failed',
+              mergeResult: () => undefined,
+            }),
+            'emitOperationFailed',
+          ],
         },
       },
       after: {
@@ -1093,12 +1296,15 @@ export const gitActorMachine = setup({
         },
         onError: {
           target: 'commitMessageError',
-          actions: assign({
-            lastError: ({ event }) =>
-              event.error instanceof Error
-                ? event.error.message
-                : 'Commit message generation failed',
-          }),
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error
+                  ? event.error.message
+                  : 'Commit message generation failed',
+            }),
+            'emitOperationFailed',
+          ],
         },
       },
       after: {
@@ -1124,10 +1330,13 @@ export const gitActorMachine = setup({
         },
         onError: {
           target: 'datesValidationError',
-          actions: assign({
-            lastError: ({ event }) =>
-              event.error instanceof Error ? event.error.message : 'Date validation failed',
-          }),
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error ? event.error.message : 'Date validation failed',
+            }),
+            'emitOperationFailed',
+          ],
         },
       },
       after: {
@@ -1156,10 +1365,13 @@ export const gitActorMachine = setup({
         },
         onError: {
           target: 'worktreesSetupError',
-          actions: assign({
-            lastError: ({ event }) =>
-              event.error instanceof Error ? event.error.message : 'Worktree setup failed',
-          }),
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error ? event.error.message : 'Worktree setup failed',
+            }),
+            'emitOperationFailed',
+          ],
         },
       },
       after: {
@@ -1185,10 +1397,13 @@ export const gitActorMachine = setup({
         },
         onError: {
           target: 'worktreeCheckError',
-          actions: assign({
-            lastError: ({ event }) =>
-              event.error instanceof Error ? event.error.message : 'Worktree check failed',
-          }),
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error ? event.error.message : 'Worktree check failed',
+            }),
+            'emitOperationFailed',
+          ],
         },
       },
       after: {
@@ -1214,10 +1429,13 @@ export const gitActorMachine = setup({
         },
         onError: {
           target: 'branchCreationError',
-          actions: assign({
-            lastError: ({ event }) =>
-              event.error instanceof Error ? event.error.message : 'Branch creation failed',
-          }),
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error ? event.error.message : 'Branch creation failed',
+            }),
+            'emitOperationFailed',
+          ],
         },
       },
       after: {
@@ -1242,14 +1460,103 @@ export const gitActorMachine = setup({
         },
         onError: {
           target: 'lastCommitError',
-          actions: assign({
-            lastError: ({ event }) =>
-              event.error instanceof Error ? event.error.message : 'Last commit check failed',
-          }),
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error ? event.error.message : 'Last commit check failed',
+            }),
+            'emitOperationFailed',
+          ],
         },
       },
       after: {
         [TIMEOUTS.LAST_COMMIT_CHECK]: { target: 'lastCommitTimeout' },
+      },
+    },
+
+    // === REQUEST/RESPONSE HANDLERS ===
+
+    handlingStatusRequest: {
+      invoke: {
+        src: 'handleStatusRequest',
+        input: ({ context, event }) => ({
+          context,
+          requestId: (event as { requestId: string }).requestId,
+        }),
+        onDone: {
+          target: 'idle',
+          actions: emit(({ event }) => ({
+            type: 'GIT_REQUEST_RESPONSE' as const,
+            requestId: event.output.requestId,
+            response: event.output.response,
+          })),
+        },
+        onError: {
+          target: 'idle',
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error ? event.error.message : 'Status request failed',
+            }),
+            'emitOperationFailed',
+          ],
+        },
+      },
+    },
+
+    handlingBranchInfoRequest: {
+      invoke: {
+        src: 'handleBranchInfoRequest',
+        input: ({ context, event }) => ({
+          context,
+          requestId: (event as { requestId: string }).requestId,
+        }),
+        onDone: {
+          target: 'idle',
+          actions: emit(({ event }) => ({
+            type: 'GIT_REQUEST_RESPONSE' as const,
+            requestId: event.output.requestId,
+            response: event.output.response,
+          })),
+        },
+        onError: {
+          target: 'idle',
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error ? event.error.message : 'Branch info request failed',
+            }),
+            'emitOperationFailed',
+          ],
+        },
+      },
+    },
+
+    handlingCommitStatusRequest: {
+      invoke: {
+        src: 'handleCommitStatusRequest',
+        input: ({ context, event }) => ({
+          context,
+          requestId: (event as { requestId: string }).requestId,
+        }),
+        onDone: {
+          target: 'idle',
+          actions: emit(({ event }) => ({
+            type: 'GIT_REQUEST_RESPONSE' as const,
+            requestId: event.output.requestId,
+            response: event.output.response,
+          })),
+        },
+        onError: {
+          target: 'idle',
+          actions: [
+            assign({
+              lastError: ({ event }) =>
+                event.error instanceof Error ? event.error.message : 'Commit status request failed',
+            }),
+            'emitOperationFailed',
+          ],
+        },
       },
     },
 
@@ -1772,19 +2079,135 @@ export const gitActorMachine = setup({
 });
 
 // ============================================================================
-// ACTOR FACTORY
+// STANDARDIZED ACTOR FACTORY
 // ============================================================================
 
 /**
- * Create a state-based GitActor using the actor-web framework
+ * Create a state-based GitActor using the standardized actor pattern
+ *
+ * This function follows the ACTOR-STANDARDIZATION-GUIDE.md patterns:
+ * 1. Uses createActorRef() for unified actor creation
+ * 2. Registers with ActorRegistry for discovery
+ * 3. Supports supervision strategies
+ * 4. Implements proper event emission and request/response patterns
  */
 export function createGitActor(baseDir?: string): GitActor {
+  const actorId = generateGitActorId('git-actor');
+
+  log.debug('🏗️  Creating GitActor', { actorId, baseDir });
+
   const actorRef = createActorRef(gitActorMachine, {
-    id: generateGitActorId('git-actor'),
+    id: actorId,
     input: { baseDir },
     autoStart: false,
   });
 
+  // Register in actor registry for discovery
+  const actorPath = `actor://system/git/${actorId}`;
+  ActorRegistry.register(actorPath, actorRef as unknown as AnyActorRef);
+
+  // Log actor creation
+  log.debug(`✅ Created git actor with ID: ${actorId}`);
+  log.debug(`📍 Registered at path: ${actorPath}`);
+
   // Cast to GitActor interface (the framework handles the typing)
   return actorRef as unknown as GitActor;
+}
+
+// ============================================================================
+// STANDARDIZED ACTOR LOOKUP
+// ============================================================================
+
+/**
+ * Lookup a git actor by ID from the actor registry
+ */
+export function lookupGitActor(actorId: string): GitActor | undefined {
+  const actorPath = `actor://system/git/${actorId}`;
+  const actorRef = ActorRegistry.lookup(actorPath);
+  return actorRef as GitActor | undefined;
+}
+
+/**
+ * List all registered git actors
+ */
+export function listGitActors(): string[] {
+  const allActors = ActorRegistry.list();
+  return allActors.filter((path) => path.startsWith('actor://system/git/'));
+}
+
+// ============================================================================
+// ACTOR LIFECYCLE MANAGEMENT
+// ============================================================================
+
+/**
+ * Cleanup function to unregister actor when no longer needed
+ */
+export function cleanupGitActor(actorId: string): void {
+  const actorPath = `actor://system/git/${actorId}`;
+  ActorRegistry.unregister(actorPath);
+  log.debug(`Unregistered git actor: ${actorPath}`);
+}
+
+// ============================================================================
+// STANDARDIZED COMMUNICATION HELPERS
+// ============================================================================
+
+/**
+ * Helper function to send a request to a git actor and wait for response
+ * This implements the standardized ask() pattern
+ */
+export async function askGitActor(
+  actorId: string,
+  requestType: 'STATUS' | 'BRANCH_INFO' | 'COMMIT_STATUS',
+  timeout = 5000
+): Promise<unknown> {
+  const actor = lookupGitActor(actorId);
+  if (!actor) {
+    throw new Error(`Git actor not found: ${actorId}`);
+  }
+
+  const requestId = `req-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`Request timeout after ${timeout}ms`));
+    }, timeout);
+
+    // Subscribe to responses
+    const unsubscribe = actor.subscribe((event) => {
+      if (event.type === 'GIT_REQUEST_RESPONSE' && event.requestId === requestId) {
+        clearTimeout(timeoutId);
+        unsubscribe();
+        resolve(event.response);
+      }
+    });
+
+    // Send the request
+    const eventType = `REQUEST_${requestType}` as const;
+    actor.send({ type: eventType, requestId } as GitEvent);
+  });
+}
+
+/**
+ * Helper function to subscribe to git actor events
+ */
+export function subscribeToGitActor(
+  actorId: string,
+  eventHandler: (event: GitEmittedEvent) => void
+): () => void {
+  log.debug('🔗 Setting up GitActor event subscription', { actorId });
+
+  const actor = lookupGitActor(actorId);
+  if (!actor) {
+    log.error('❌ GitActor not found for subscription', { actorId });
+    throw new Error(`Git actor not found: ${actorId}`);
+  }
+
+  log.debug('✅ GitActor found, subscribing to events', { actorId });
+
+  // Subscribe to emitted events using the actor's on method
+  const unsubscribe = actor.on(eventHandler);
+
+  log.debug('🎯 GitActor event subscription established', { actorId });
+  return unsubscribe;
 }

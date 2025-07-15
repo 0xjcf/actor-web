@@ -4,21 +4,23 @@
 
 ## 🎭 Pure Actor Model Principles
 
-### Core Tenets
-1. **Message-Only Communication**: No direct state access between actors
-2. **Location Transparency**: Actors can run anywhere (main thread, workers, remote)
-3. **Supervision & Fault Tolerance**: Hierarchical error handling and recovery
-4. **Event-Driven Architecture**: All interactions through typed events
-5. **Zero Shared State**: Complete isolation between actor boundaries
-6. **🆕 Autonomous Behavior**: AI-driven actors with memory, planning, and tool usage
+### Core Tenets (Updated from Research)
+1. **Message-Only Communication**: No direct state access between actors - all interactions via async message passing
+2. **Location Transparency**: Actors can run anywhere (main thread, workers, remote) with identical APIs
+3. **Supervision & Fault Tolerance**: Hierarchical "let it crash" philosophy with configurable restart strategies
+4. **Event-Driven Architecture**: All interactions through typed events with proper serialization
+5. **Zero Shared State**: Complete isolation between actor boundaries - no singleton registries
+6. **Virtual Actor System**: Actors exist logically, instantiated on-demand like Orleans grains
+7. **🆕 Autonomous Behavior**: AI-driven actors with memory, planning, and tool usage
 
 ### Benefits
-- **Isolation**: Actors cannot corrupt each other's state
-- **Scalability**: Seamless distribution across workers/networks
-- **Fault Tolerance**: Supervisor strategies for resilience
-- **Mental Model**: Clear, consistent programming model
+- **Isolation**: Actors cannot corrupt each other's state (no shared memory)
+- **Scalability**: Seamless distribution across workers/networks (10,000+ messages/sec)
+- **Fault Tolerance**: Supervisor strategies for resilience ("let it crash" philosophy)
+- **Mental Model**: Clear, consistent programming model (no hidden state)
 - **Host-Agnostic**: Deploy anywhere - SPA, MPA, SSR, Edge, Desktop
 - **🆕 Intelligence**: Self-improving workflows with persistent memory
+- **🆕 True Distribution**: Actors can span processes, machines, and networks transparently
 
 ---
 
@@ -46,7 +48,35 @@
 | Enhanced Components | ✅ | Accessibility, ARIA, keyboard navigation |
 | Documentation | ✅ | API.md, README.md, BEST_PRACTICES.md |
 
-### 🚀 Phase 1: ActorRef API Implementation (IN PROGRESS)
+### 🚀 Phase 0.5: Pure Actor Model Migration (URGENT)
+
+**Goal:** Migrate from current hybrid model to pure actor model based on research findings
+
+#### 0.5.1 Current Architecture Issues (Research-Validated)
+| Issue | Status | Owner | Blocking | Done Criteria |
+|-------|--------|-------|----------|---------------|
+| Singleton ActorRegistry violates distribution | ⬜ | TBD | None | Registry replaced with distributed directory |
+| Direct function calls (askGitActor, lookupGitActor) | ⬜ | TBD | None | All interactions via message passing |
+| Local event systems can't span processes | ⬜ | TBD | None | WebSocket/Worker Thread transport |
+| Hard-coded actor addresses | ⬜ | TBD | None | Location-transparent addressing |
+
+#### 0.5.2 Message-Based Communication
+| Task | Status | Owner | Blocking | Done Criteria |
+|------|--------|-------|----------|---------------|
+| Replace direct function calls with messages | ⬜ | TBD | None | No direct actor.method() calls |
+| Implement message serialization (JSON→MessagePack) | ⬜ | TBD | None | Cross-process message passing |
+| Add message correlation IDs | ⬜ | TBD | None | Request/response tracking |
+| Type-safe message protocols | ⬜ | TBD | None | Discriminated unions for all messages |
+
+#### 0.5.3 Location Transparency
+| Task | Status | Owner | Blocking | Done Criteria |
+|------|--------|-------|----------|---------------|
+| Distributed actor directory (Orleans-style) | ⬜ | TBD | None | 90%+ cache hit rate for actor lookup |
+| WebSocket transport for cross-machine | ⬜ | TBD | None | Actors can run on different machines |
+| Worker Thread transport for parallelism | ⬜ | TBD | None | CPU-intensive actors in separate threads |
+| Actor addressing scheme (actor://system/id) | ⬜ | TBD | None | Location-independent actor references |
+
+### 🚀 Phase 1: ActorRef API Implementation (BLOCKED - awaiting Phase 0.5)
 
 **Goal:** Complete the pure actor reference abstraction that hides internal state
 
@@ -55,7 +85,7 @@
 #### 1.2 Message Passing System
 | Task | Status | Owner | Blocking | Done Criteria |
 |------|--------|-------|----------|---------------|
-| Event emission (`TEmitted` support) | ⬜ | TBD | None | All actors can emit typed events |
+| Event emission (`TEmitted` support) | ⬜ | TBD | Phase 0.5 | All actors can emit typed events |
 | Message interceptors | ⬜ | TBD | Event emission | Middleware chain tested |
 | Correlation ID tracking | ✅ | Complete | - | - |
 | Request/Response patterns | ✅ | Complete | - | - |
@@ -67,14 +97,16 @@
 | Cleanup hooks | ⬜ | TBD | Graceful shutdown | All subscriptions cleaned |
 | Resource tracking | ⬜ | TBD | Cleanup hooks | Memory profiler shows flat line |
 
-#### 1.4 Actor Supervision
+#### 1.4 Actor Supervision (Erlang/OTP Style)
 | Task | Status | Owner | Blocking | Done Criteria |
 |------|--------|-------|----------|---------------|
-| Restart strategy | ⬜ | TBD | None | Unit tests pass for restart scenarios |
-| Escalate strategy | ⬜ | TBD | None | Parent notified on child failure |
-| Stop strategy | ⬜ | TBD | None | Clean termination verified |
+| "Let it crash" restart strategy | ⬜ | TBD | Phase 0.5 | Unit tests pass for restart scenarios |
+| Escalate strategy (bubble up failures) | ⬜ | TBD | Phase 0.5 | Parent notified on child failure |
+| Stop strategy (permanent termination) | ⬜ | TBD | Phase 0.5 | Clean termination verified |
+| Resume strategy (ignore error) | ⬜ | TBD | Phase 0.5 | Error handling without restart |
 | Supervision tree visualizer | ⬜ | TBD | All strategies | D3.js tree rendering |
 | Dead letter queue | ⬜ | TBD | All strategies | Undelivered messages captured |
+| Backoff supervisors | ⬜ | TBD | All strategies | Exponential backoff for failing actors |
 
 #### 1.5 Code Quality
 | Task | Status | Owner | Done Criteria |
@@ -96,18 +128,20 @@
 - State persistence adapters (LocalStorage, IndexedDB)
 - Auto-unsubscribe helpers for Web Components
 
-### 📅 Phase 3: Distributed Actor System
+### 📅 Phase 3: Distributed Actor System (Research-Driven)
 
-**Goal:** Enable actor communication across boundaries  
+**Goal:** Enable actor communication across boundaries following pure actor model  
 **Dependencies:** Phase 2 complete
 
-#### Key Deliverables:
-- WebSocket/WebRTC transports
-- Service Worker actors with BroadcastChannel
-- WebWorker actors with structured clone
-- Cross-frame communication
-- Actor registry service
-- Circuit breakers and retry strategies
+#### Key Deliverables (Based on Research):
+- **WebSocket transport** (primary for cross-machine communication)
+- **Worker Thread transport** (for CPU-intensive actors)
+- **Distributed Actor Directory** (Orleans-style with 90%+ cache hit rate)
+- **Message serialization** (JSON initial, MessagePack for optimization)
+- **Location-transparent addressing** (actor://system/id format)
+- **Cross-process actor spawning** (actors can run anywhere)
+- **Circuit breakers and retry strategies** (fault tolerance)
+- **Event sourcing + snapshots** (for persistent actor state)
 
 ### 📅 Phase 4: Host-Agnostic Runtime
 
@@ -191,12 +225,16 @@
 **Goal:** Production-ready framework with stability guarantees  
 **Dependencies:** All previous phases complete
 
-#### Release Gates:
+#### Release Gates (Pure Actor Model):
 - 🔒 **Zero** direct state access in framework code
-- 🛡️ All critical actors protected by supervisors
-- ⚙️ Performance benchmarks meet targets
-- 🌍 Host-agnostic deployment verified
+- 📨 **Zero** direct function calls between actors (message-only communication)
+- 🌐 **Location transparency** verified (actors can run anywhere)
+- 📊 **Distributed actor directory** with 90%+ cache hit rate
+- 🛡️ All critical actors protected by supervisors ("let it crash" philosophy)
+- ⚙️ Performance benchmarks meet targets (10,000+ messages/sec)
+- 🌍 Host-agnostic deployment verified across all target environments
 - 📖 Complete documentation and tutorials
+- 🧪 Pure actor model compliance verified by comprehensive tests
 
 ---
 
@@ -213,18 +251,42 @@
 | Status Dashboard | ✅ | Rich CLI interface |
 | Performance | ✅ | 10x faster validation |
 
-### 🚀 Phase A: Actor-Based Architecture (IN PROGRESS)
+### 🚀 Phase A: Pure Actor Model Migration (URGENT)
 
-**Goal:** Demonstrate framework's actor principles in real-world CLI tool
+**Goal:** Migrate CLI from hybrid to pure actor model based on research findings
+
+#### A.1 Current Architecture Issues (Research-Validated)
+| Issue | Status | Owner | Blocking | Done Criteria |
+|-------|--------|-------|----------|---------------|
+| GitActor uses singleton ActorRegistry | ⬜ | TBD | None | Distributed directory implemented |
+| Direct function calls (askGitActor, lookupGitActor) | ⬜ | TBD | None | All interactions via message passing |
+| subscribeToGitActor violates message-only rule | ⬜ | TBD | None | Subscription via actor messaging |
+| Hard-coded actor addresses in CLI | ⬜ | TBD | None | Location-transparent addressing |
+
+#### A.2 Message-Based CLI Architecture
+| Task | Status | Owner | Blocking | Done Criteria |
+|------|--------|-------|----------|---------------|
+| Replace CLI direct calls with actor messages | ⬜ | TBD | None | No direct actor.method() calls |
+| Implement CLI → Actor message protocols | ⬜ | TBD | None | Type-safe message interfaces |
+| Add actor-to-actor communication | ⬜ | TBD | None | Actors communicate via messages only |
+| Message serialization for CLI actors | ⬜ | TBD | None | CLI can run actors in separate processes |
+
+#### A.3 Distributed CLI Actors
+| Task | Status | Owner | Blocking | Done Criteria |
+|------|--------|-------|----------|---------------|
+| Implement distributed actor directory | ⬜ | TBD | None | Actors can be discovered across processes |
+| CLI actor location transparency | ⬜ | TBD | None | CLI commands work regardless of actor location |
+| Worker Thread support for heavy operations | ⬜ | TBD | None | Git operations can run in parallel |
+| Actor supervision for CLI fault tolerance | ⬜ | TBD | None | Failed actors restart automatically |
 
 #### Implementation Sequence (⚠️ Order matters):
 
-0. **GitActor** ✅ COMPLETE
-   - XState v5 implementation with `fromPromise` actors
-   - Zero `any` types, full type safety
+0. **GitActor** ⚠️ NEEDS PURE ACTOR MIGRATION
+   - Current: Uses singleton registry and direct function calls
+   - Target: Pure message-based with location transparency
 
 1. **ConfigurationActor** ⬜
-   - **Blocking:** None (must be first)
+   - **Blocking:** GitActor pure actor migration
    - **Done Criteria:** Project detection works in all environments
    - States: `detecting` → `validating` → `ready`
 
@@ -423,6 +485,10 @@
 | Actor spawn time | Unknown | <200ms | Performance test suite |
 | Bundle overhead | Unknown | <5KB | Webpack analyzer |
 | Message throughput | Unknown | >10k/sec | Benchmark suite |
+| **🆕 Pure Actor Model Compliance** | **20%** | **100%** | **Zero direct function calls between actors** |
+| **🆕 Location Transparency** | **0%** | **100%** | **Actors can run anywhere without code changes** |
+| **🆕 Message-Only Communication** | **30%** | **100%** | **All interactions via async message passing** |
+| **🆕 Distributed Directory Hit Rate** | **N/A** | **90%+** | **Actor lookup cache efficiency** |
 
 ### Agent-Workflow-CLI
 | Metric | Current | Target | Measurement |
@@ -432,6 +498,10 @@
 | Weekly active users | 0 | 100+ | npm stats + telemetry (opt-in) |
 | Satisfaction | Unknown | 90%+ | In-CLI NPS prompt (opt-in) |
 | Actor coordination | 20% | 100% | All OOP replaced with actors |
+| **🆕 Pure Actor Model Compliance** | **10%** | **100%** | **Zero direct function calls (askGitActor, etc.)** |
+| **🆕 Message-Based CLI** | **15%** | **100%** | **All CLI operations via actor messages** |
+| **🆕 Location Transparency** | **0%** | **100%** | **CLI actors can run in separate processes** |
+| **🆕 Fault Tolerance** | **0%** | **100%** | **Actor supervision and restart strategies** |
 
 ### 🆕 Agentic Workflow System
 | Metric | Current | Target | Measurement |
@@ -456,6 +526,10 @@
 | Framework/CLI dependency cycles | Medium | Medium | Clear API contracts; version pinning |
 | AI agent coordination conflicts | Low | Low | Clear ownership assignments in tasks |
 | Actor pattern learning curve | Medium | Medium | Extensive docs, examples, tutorials |
+| **🆕 Pure Actor Model Migration** | **High** | **Critical** | **Research-driven phased approach** |
+| **🆕 Message serialization performance** | **Medium** | **High** | **JSON → MessagePack optimization path** |
+| **🆕 Distributed directory complexity** | **Medium** | **High** | **Orleans-style caching, 90%+ hit rate** |
+| **🆕 Location transparency breaks existing code** | **High** | **Medium** | **Incremental migration with compatibility layer** |
 
 ### 🆕 Agentic Risks
 | Risk | Likelihood | Impact | Mitigation |
@@ -495,16 +569,18 @@
 ## 🎯 Immediate Actions
 
 ### Actor-Web Framework
-1. **Lock ActorRef scope** - Focus only on `TEmitted` + graceful shutdown
-2. **Assign owners** - Each 1.x task needs a responsible party
-3. **Daily progress tracking** - Burndown chart for Phase 1 completion
-4. **Remove deprecated files** - Clean up `src/core/actor-ref.ts`
+1. **🚨 PRIORITY: Pure Actor Model Migration** - Address singleton registry and direct function calls
+2. **Research-driven architecture** - Follow Orleans/Akka/Erlang patterns for distribution
+3. **Message-only communication** - Replace all direct function calls with message passing
+4. **Location transparency** - Implement distributed actor directory with caching
+5. **Assign owners** - Each Phase 0.5 task needs a responsible party
 
 ### Agent-Workflow-CLI  
-1. **Spike ConfigurationActor** - Prove pattern before other actors
-2. **ValidationActor prototype** - Demo parallel validation by next milestone
-3. **Document actor message schemas** - Before implementing WorkflowActor
-4. **Beta release** - v0.2.0-beta once 2+ actors complete
+1. **🚨 PRIORITY: Fix GitActor violations** - Remove askGitActor, lookupGitActor, subscribeToGitActor
+2. **Implement message-based CLI** - All CLI operations via actor messages
+3. **Add distributed actor directory** - Enable CLI actors to run in separate processes
+4. **Implement actor supervision** - Fault tolerance with restart strategies
+5. **Document pure actor patterns** - Before implementing other actors
 
 ### 🆕 Agentic Workflow System
 1. **Assign research leads** - Map research findings to implementation owners

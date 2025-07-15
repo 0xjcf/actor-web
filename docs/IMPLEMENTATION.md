@@ -2,7 +2,15 @@
 
 > **Test-Driven Development with Three-Agent Team**
 
-## 🚨 NEW: Comprehensive Agent Workflow Guide Available!
+## 🚨 CRITICAL: Pure Actor Model Architecture Required!
+
+**📖 URGENT ARCHITECTURAL CHANGE**: Research shows our current implementation violates pure actor model principles.
+
+**🚨 IMMEDIATE ACTIONS REQUIRED**:
+- ❌ **Remove all direct function calls between actors**
+- ❌ **Replace singleton registries with distributed directories**
+- ❌ **Implement message-only communication patterns**
+- ❌ **Add location transparency for distributed actors**
 
 **📖 For the complete, up-to-date workflow guide, see: [🤖 Agent Workflow Guide](./AGENT-WORKFLOW-GUIDE.md)**
 
@@ -403,24 +411,32 @@ git worktree add ../feature-branch-name feature/new-feature
 
 ## 🎯 Agent Responsibilities
 
-### Agent A (Tech Lead) - Complex Systems & Architecture
+### Agent A (Tech Lead) - Pure Actor Model Architecture
 
-#### Scope of Work
+#### Scope of Work (URGENT MIGRATION)
 ```typescript
-// Primary Responsibilities
+// Primary Responsibilities - PURE ACTOR MODEL MIGRATION
+- 🚨 Remove singleton ActorRegistry (replace with distributed directory)
+- 🚨 Eliminate direct function calls (askGitActor, lookupGitActor, etc.)
+- 🚨 Design message-only communication patterns
+- 🚨 Implement location transparency (actors can run anywhere)
+- 🚨 Design distributed actor directory (Orleans-style with caching)
 - ActorRef core interface design
 - Request/response pattern with correlation IDs
-- Supervision strategies and fault tolerance
+- Supervision strategies and fault tolerance ("let it crash")
 - Complex state machine integrations
 - Architecture decision records (ADRs)
 - Code review for all PRs
 ```
 
-#### Deliverables
-- [ ] `src/framework/core/actors/actor-ref.ts`
-- [ ] `src/framework/core/actors/supervisor.ts`
+#### Deliverables (UPDATED FOR PURE ACTOR MODEL)
+- [ ] `src/framework/core/actors/distributed-actor-directory.ts`
+- [ ] `src/framework/core/actors/location-transparent-actor-ref.ts`
+- [ ] `src/framework/core/messaging/message-based-communication.ts`
+- [ ] `src/framework/core/actors/supervisor.ts` (Erlang-style)
 - [ ] `src/framework/core/messaging/request-response.ts`
-- [ ] `docs/architecture/actor-ref-design.md`
+- [ ] `docs/architecture/pure-actor-model-design.md`
+- [ ] `docs/architecture/distributed-actor-directory.md`
 - [ ] `docs/architecture/supervision-patterns.md`
 
 #### Key Patterns
@@ -439,20 +455,28 @@ export interface ActorRef<TEvent extends EventObject, TEmitted = any> {
 }
 ```
 
-### Agent B (Senior Developer) - Core Implementations
+### Agent B (Senior Developer) - Message Transport & Serialization
 
-#### Scope of Work
+#### Scope of Work (UPDATED FOR PURE ACTOR MODEL)
 ```typescript
-// Primary Responsibilities
+// Primary Responsibilities - MESSAGE TRANSPORT & SERIALIZATION
+- 🚨 Implement message serialization (JSON → MessagePack optimization)
+- 🚨 WebSocket transport for cross-machine communication
+- 🚨 Worker Thread transport for CPU-intensive actors
+- 🚨 Message correlation and routing system
 - Mailbox implementation with backpressure
-- Observable pattern (RxJS-compatible)
+- Observable pattern (framework-compatible, no external RxJS)
 - Event bus enhancements for actors
 - XState v5 adapter implementation
-- Performance optimizations
+- Performance optimizations (10,000+ messages/sec)
 - Integration with existing framework
 ```
 
-#### Deliverables
+#### Deliverables (UPDATED FOR PURE ACTOR MODEL)
+- [ ] `src/framework/core/transport/message-serialization.ts`
+- [ ] `src/framework/core/transport/websocket-transport.ts`
+- [ ] `src/framework/core/transport/worker-thread-transport.ts`
+- [ ] `src/framework/core/messaging/message-router.ts`
 - [ ] `src/framework/core/actors/mailbox.ts`
 - [ ] `src/framework/core/observables/observable.ts`
 - [ ] `src/framework/core/observables/operators.ts`
@@ -481,11 +505,16 @@ export class BoundedMailbox<T> implements Mailbox<T> {
 }
 ```
 
-### Agent C (Junior Developer) - Testing & Documentation
+### Agent C (Junior Developer) - Pure Actor Model Testing
 
-#### Scope of Work
+#### Scope of Work (UPDATED FOR PURE ACTOR MODEL)
 ```typescript
-// Primary Responsibilities
+// Primary Responsibilities - PURE ACTOR MODEL TESTING
+- 🚨 Write comprehensive tests for message-only communication
+- 🚨 Test location transparency (actors running on different threads/processes)
+- 🚨 Test distributed actor directory functionality
+- 🚨 Test actor supervision and fault tolerance
+- 🚨 Performance tests for 10,000+ messages/sec
 - Write ALL test files following TDD
 - Create test utilities and fixtures
 - Simple type definitions and interfaces
@@ -494,14 +523,17 @@ export class BoundedMailbox<T> implements Mailbox<T> {
 - Performance benchmark harnesses
 ```
 
-#### Deliverables
+#### Deliverables (UPDATED FOR PURE ACTOR MODEL)
 - [ ] All `*.test.ts` files for Agent A & B's code
-- [ ] `src/framework/testing/actor-test-utils.ts`
+- [ ] `src/framework/testing/pure-actor-model-test-utils.ts`
+- [ ] `src/framework/testing/distributed-actor-test-harness.ts`
+- [ ] `src/framework/testing/location-transparency-tests.ts`
 - [ ] `src/framework/testing/fixtures/`
 - [ ] `src/framework/core/actors/types.ts`
 - [ ] `src/framework/core/messaging/message-types.ts`
-- [ ] `docs/examples/` (usage examples)
-- [ ] `benchmarks/` (performance tests)
+- [ ] `docs/examples/` (pure actor model examples)
+- [ ] `benchmarks/` (performance tests including message throughput)
+- [ ] `docs/pure-actor-model-testing-guide.md`
 
 #### Key Patterns
 ```typescript

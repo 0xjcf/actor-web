@@ -22,13 +22,22 @@
 
 ---
 
-## 0 🌱 Current Baseline (Hybrid Controllers)
+## 0 🌱 Current Baseline (Hybrid Controllers) - DEPRECATED
+
+⚠️ **CRITICAL ARCHITECTURAL ISSUE IDENTIFIED**: Research shows our current hybrid approach violates pure actor model principles.
 
 | Status | Item | Owner | Notes |
 | ------ | ---- | ----- | ----- |
-| ✅ | `createActorController` (general) | Core team | Controller returns `{ state, send, subscribe, … }`. |
-| ✅ | Specialized controllers (`State`, `Event`, `Lifecycle`) | Core team | Convenience wrappers; still expose direct state. |
-| 🟡 | Component samples / docs | DevRel | Show basic counter, auth, form. |
+| ⚠️ | `createActorController` (general) | Core team | **VIOLATES**: Direct state access, not message-based |
+| ⚠️ | Specialized controllers (`State`, `Event`, `Lifecycle`) | Core team | **VIOLATES**: Expose direct state, not location-transparent |
+| 🟡 | Component samples / docs | DevRel | **NEEDS**: Pure actor model examples |
+
+### 🚨 **URGENT MIGRATION REQUIRED**
+Based on comprehensive research into pure actor model systems (Erlang/OTP, Akka, Orleans), our current implementation has critical violations:
+- ❌ Direct state access (not message-only)
+- ❌ Singleton registries (not distributed)
+- ❌ Direct function calls (not location-transparent)
+- ❌ Local event systems (can't span processes)
 
 ---
 

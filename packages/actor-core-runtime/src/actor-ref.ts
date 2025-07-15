@@ -97,6 +97,13 @@ export interface ActorRef<
    */
   subscribe(listener: (event: TEmitted) => void): () => void;
 
+  /**
+   * Subscribe to events emitted by this actor (alias for subscribe)
+   * @param listener - Function to call when events are emitted
+   * @returns Unsubscribe function to stop receiving events
+   */
+  on(listener: (event: TEmitted) => void): () => void;
+
   // ========================================================================================
   // STATE OBSERVATION (REACTIVE PATTERNS)
   // ========================================================================================
@@ -212,6 +219,13 @@ export class TimeoutError extends Error {
  */
 export function generateActorId(prefix = 'actor'): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+/**
+ * Generate a unique correlation ID for request/response tracking
+ */
+export function generateCorrelationId(): string {
+  return `corr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
 /**

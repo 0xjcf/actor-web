@@ -9,9 +9,17 @@ export default function (_wallaby) {
       'vitest.config.ts',
       'tsconfig.json',
       'package.json',
+      'packages/**/*.ts',
+      '!packages/**/*.{test,spec}.ts',
+      // Include package.json files from packages for proper module resolution
+      'packages/*/package.json',
+      'packages/*/tsconfig.json',
     ],
 
-    tests: ['src/**/*.{test,spec}.ts'],
+    tests: [
+      'src/**/*.{test,spec}.ts',
+      'packages/**/*.{test,spec}.ts', // Add tests from packages
+    ],
 
     env: {
       type: 'node',

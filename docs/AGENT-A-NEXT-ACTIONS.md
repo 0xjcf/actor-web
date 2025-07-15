@@ -1,209 +1,517 @@
-# 🎉 Agent A - PHASE 1 EVENT EMISSION SYSTEM COMPLETED! ALL TESTS PASSING!
+# 🚨 Agent A - CRITICAL ARCHITECTURAL OVERHAUL: PURE ACTOR MODEL MIGRATION
 
-> **Status**: **BREAKTHROUGH ACHIEVED** 🚀→✅→🎯→🎊  
-> **Progress**: **100% TESTS PASSING** | **609/609 Tests** | **23/23 Files**  
-> **Achievement**: **Event Emission System Mastery** → **Phase 1 Complete** → **Ready for Phase 2**
-> **🆕 Strategic Context**: **Production-Ready Event System** enables **Phase 2: Advanced Actor Patterns**
+> **Status**: **COMPREHENSIVE RESEARCH COMPLETED** 📋→🔬→⚠️→🏗️→🚨  
+> **Issue**: **Current implementation violates pure actor model principles**  
+> **Research**: **Comprehensive analysis of Erlang/OTP, Akka, Orleans patterns**  
+> **Root Cause**: **Singleton registries, direct function calls, local event systems**  
+> **Priority**: **URGENT ARCHITECTURAL MIGRATION** - Framework-wide changes required
 
-## 🚀 **MAJOR BREAKTHROUGH COMPLETED: EVENT EMISSION SYSTEM**
+## 🔬 **COMPREHENSIVE RESEARCH REVEALS FUNDAMENTAL ARCHITECTURAL ISSUES**
 
-### ✅ **PHASE 1 COMPLETE**: Event Emission System Implementation
-- **📊 PERFECT SCORE**: **609/609 tests passing** across **23 test files** ✅
-- **🎊 EVENT EMISSION MASTERY**: Full actor-to-actor communication system implemented
-- **🔧 TYPE-SAFE IMPLEMENTATION**: Complete TypeScript support with proper generics
-- **🚀 PRODUCTION READY**: Comprehensive testing with performance validation
+### ❌ **Critical Violations of Pure Actor Model (Research-Validated):**
 
-### ✅ **EVENT EMISSION SYSTEM FEATURES IMPLEMENTED**
-- **ActorEventBus**: Core event emission infrastructure with proper lifecycle management
-- **ActorRef Extensions**: `emit()` and `subscribe()` methods with type-safe generics
-- **Comprehensive Testing**: 21 tests covering all scenarios (12 unit + 9 integration)
-- **Performance Optimized**: <100ms for 1000+ subscribers, concurrent modification safe
-- **Error Handling**: Graceful degradation, proper cleanup, lifecycle integration
-
-### ✅ **TECHNICAL ACHIEVEMENTS**
-
-#### **1. ActorEventBus Implementation** *(src/core/actor-event-bus.ts)*
+#### 1. **Singleton Actor Registry** 
 ```typescript
-export class ActorEventBus<TEvent = unknown> {
-  // ✅ Type-safe event emission with proper error handling
-  emit(event: TEvent): void
-  // ✅ Subscription management with unsubscribe function  
-  subscribe(listener: EventListener<TEvent>): Unsubscribe
-  // ✅ Lifecycle management and memory leak prevention
-  destroy(): void
+// ❌ VIOLATION: Only works in single process
+class ActorRegistryService {
+  private static instance: ActorRegistryService;
+  private registry = new Map<string, AnyActorRef>();
 }
 ```
 
-#### **2. ActorRef Interface Extensions** *(src/core/actors/actor-ref.ts)*
+#### 2. **Direct Function Calls**
 ```typescript
-export interface ActorRef<
-  TEvent extends BaseEventObject = BaseEventObject,
-  TEmitted = unknown, // ✅ Now actively used for event emission
-  TSnapshot extends ActorSnapshot = ActorSnapshot,
-> {
-  // ✅ Event emission system for actor-to-actor communication
-  emit(event: TEmitted): void;
-  subscribe(listener: (event: TEmitted) => void): () => void;
-}
+// ❌ VIOLATION: Direct function calls bypass message passing
+export function askGitActor(actorId: string, requestType: string): Promise<unknown>
+export function lookupGitActor(actorId: string): GitActor | undefined
+export function subscribeToGitActor(actorId: string, handler: Function): () => void
 ```
 
-#### **3. UnifiedActorRef Integration** *(src/core/create-actor-ref.ts)*
+#### 3. **Local Event Systems**
 ```typescript
-class UnifiedActorRef<TEvent, TEmitted, TSnapshot> 
-  implements ActorRef<TEvent, TEmitted, TSnapshot> {
+// ❌ VIOLATION: Cannot span processes or machines
+const eventObserver = subscribeToGitActor(actorId, (event) => {
+  // This breaks location transparency
+});
+```
+
+#### 4. **Hard-coded Actor Addresses**
+```typescript
+// ❌ VIOLATION: Prevents location transparency
+const actorPath = `actor://system/git/${actorId}`;
+```
+
+### ✅ **Research-Validated Solutions from Mature Systems:**
+
+#### **Orleans Pattern**: Virtual Actors with Distributed Directory
+- **90%+ cache hit rate** for actor lookups
+- **On-demand activation** of actors
+- **Location transparency** across cluster nodes
+
+#### **Akka Pattern**: Cluster Sharding with Supervision
+- **Hierarchical supervision** ("let it crash" philosophy)
+- **Message-only communication** with at-most-once delivery
+- **Consistent hashing** for actor placement
+
+#### **Erlang/OTP Pattern**: Lightweight Processes with Fault Tolerance
+- **Millions of actors** per node
+- **Supervisor trees** for fault isolation
+- **Location transparency** across distributed nodes
+
+### 🏗️ **ARCHITECTURE ANALYSIS**
+
+**Current (Broken) Implementation**:
+```typescript
+// ❌ GitActor uses @actor-core/runtime  
+import { createActorRef } from '@actor-core/runtime';
+
+// ❌ Uses BasicActorRef with broken bridge
+const actorRef = createActorRef(gitActorMachine); // Never forwards XState events
+```
+
+**Proper Framework Implementation**:
+```typescript
+// ✅ Should use main framework
+import { createActorRef } from 'src/core/create-actor-ref.ts';
+
+// ✅ Uses UnifiedActorRef with proper ActorEventBus integration
+const actorRef = createActorRef(gitActorMachine); // Forwards XState events correctly
+```
+
+## ✅ **FRAMEWORK COMPONENTS ARE WORKING**
+
+Investigation confirms we **have excellent working components**:
+
+### 🎯 **ActorEventBus** - Proven Event System
+- **✅ 609/609 tests passing** - All functionality works
+- **✅ Type-safe event handling** - Full TypeScript support  
+- **✅ Performance optimized** - <100ms for 1000+ subscribers
+- **✅ Proper cleanup** - Memory management works correctly
+
+### 🎯 **UnifiedActorRef** - Framework Integration
+- **✅ Uses ActorEventBus** - Proper event forwarding
+- **✅ XState integration** - State machine support
+- **✅ Request/response patterns** - Ask/tell functionality
+- **✅ Supervision strategies** - Fault tolerance
+
+### 🎯 **ReactiveEventBus** - DOM Event Management
+- **✅ Efficient event delegation** - Performance optimized
+- **✅ Clean event handling** - Automatic cleanup
+- **✅ TypeScript support** - Full type safety
+
+## 📋 **DETAILED IMPLEMENTATION PLAN - AGENT A**
+
+### 🎯 **PHASE 1: IMPLEMENT DISTRIBUTED ACTOR DIRECTORY**
+
+#### 1.1 Create Distributed Actor Directory Implementation
+**File**: `packages/actor-core-runtime/src/distributed-actor-directory.ts`
+
+```typescript
+// ✅ Implement ActorDirectory interface from actor-system.ts
+export class DistributedActorDirectory implements ActorDirectory {
+  private cache = new Map<ActorAddress, string>(); // Local cache
+  private subscribers = new Set<Observer<DirectoryEvent>>();
   
-  // ✅ Event bus integration with proper lifecycle management
-  private eventBus: ActorEventBus<TEmitted>;
-  
-  // ✅ Type-safe emission with error handling
-  emit(event: TEmitted): void
-  // ✅ Subscription management integrated with actor lifecycle  
-  subscribe(listener: (event: TEmitted) => void): () => void
-}
-```
-
-### ✅ **COMPREHENSIVE TEST COVERAGE**
-
-#### **ActorEventBus Tests** *(12 tests)*
-- ✅ Event emission to single and multiple subscribers
-- ✅ Type-safe event handling with different event types
-- ✅ Subscription lifecycle (subscribe/unsubscribe/count tracking)
-- ✅ Error handling (listener errors, destroyed bus operations)
-- ✅ Performance testing (1000 subscribers <100ms)
-- ✅ Concurrent modification safety
-
-#### **ActorRef Integration Tests** *(9 tests)*
-- ✅ Actor-to-actor event emission and subscription
-- ✅ Type-safe event emission with generics
-- ✅ Multiple subscribers and unsubscribe during emission
-- ✅ Lifecycle integration (cleanup on stop/restart)
-- ✅ Error handling and edge cases
-- ✅ High-frequency event performance (1000 events <100ms)
-
-### ✅ **TESTING EXCELLENCE MAINTAINED**
-- **✅ 609/609 tests passing** (100% success rate maintained)
-- **✅ 23/23 test files** operational  
-- **✅ Zero regressions** - all existing functionality preserved
-- **✅ TypeScript validation** - full type safety maintained
-- **✅ TESTING-GUIDE.md compliance** - proper framework API testing
-
----
-
-## 🎯 **READY FOR PHASE 2: ADVANCED ACTOR PATTERNS**
-
-### **Phase 1 Completion Status: ACHIEVED** ✅
-
-With the Event Emission System successfully implemented, we now have a **complete foundation** for advanced actor patterns. Our implementation provides:
-
-- ✅ **Type-safe event emission** between actors
-- ✅ **Performance-optimized** event broadcasting  
-- ✅ **Lifecycle-integrated** cleanup and management
-- ✅ **Production-ready** error handling and edge cases
-- ✅ **Comprehensive testing** with 100% test pass rate
-
-### **Phase 2 Objectives: Advanced Actor Patterns Implementation**
-
-#### **2.1: Actor Supervision Enhancements** *(High Confidence Implementation)*
-```typescript
-// Building on our proven event emission system
-export class SupervisorActor<TEvents, TEmitted> {
-  // Supervision strategy with event-driven fault tolerance
-  async handleChildFailure(childRef: ActorRef<TEvents, TEmitted>): Promise<void> {
-    // Emit supervision events to notify other actors
-    this.emit({ type: 'CHILD_FAILED', childId: childRef.id, timestamp: Date.now() });
+  // Target: 90%+ cache hit rate like Orleans
+  async lookup(address: ActorAddress): Promise<string | undefined> {
+    // Check local cache first
+    if (this.cache.has(address)) {
+      return this.cache.get(address);
+    }
     
-    // Apply supervision strategy (restart, escalate, ignore)
-    await this.applySupervisionStrategy(childRef);
-  }
-}
-```
-
-#### **2.2: Actor Hierarchy Management** *(Low Risk)*
-```typescript
-// Enhanced parent-child relationships with event propagation
-interface HierarchicalActor<TEvents, TEmitted> extends ActorRef<TEvents, TEmitted> {
-  // Event propagation up the hierarchy
-  emitToParent(event: TEmitted): void;
-  // Event broadcasting down the hierarchy  
-  emitToChildren(event: TEmitted): void;
-  // Subscribe to child events
-  subscribeToChild(childId: string, listener: (event: unknown) => void): Unsubscribe;
-}
-```
-
-#### **2.3: Actor Discovery and Registry** *(Using Our Proven Patterns)*
-```typescript
-// Actor registry with event-driven discovery
-export class ActorRegistry {
-  // Register actors with event emission
-  register<TEvents, TEmitted>(actor: ActorRef<TEvents, TEmitted>): void {
-    this.actors.set(actor.id, actor);
-    this.emit({ type: 'ACTOR_REGISTERED', actorId: actor.id });
+    // If not in cache, broadcast lookup request
+    const location = await this.broadcastLookup(address);
+    if (location) {
+      this.cache.set(address, location);
+    }
+    return location;
   }
   
-  // Event-driven actor lookup
-  findByType(type: string): ActorRef<unknown, unknown>[] {
-    // Use our proven event emission patterns
+  async register(address: ActorAddress, location: string): Promise<void> {
+    this.cache.set(address, location);
+    await this.broadcastRegister(address, location);
+    this.notifySubscribers({ type: 'registered', address, location });
+  }
+  
+  // ... implement remaining methods
+}
+```
+
+#### 1.2 Update ActorSystem to Use Distributed Directory
+**File**: `packages/actor-core-runtime/src/actor-system-impl.ts`
+
+```typescript
+export class ActorSystemImpl implements ActorSystem {
+  private directory: DistributedActorDirectory;
+  
+  constructor() {
+    this.directory = new DistributedActorDirectory();
+  }
+  
+  async spawn<T>(behavior: ActorBehavior<T>, options?: SpawnOptions): Promise<ActorPID> {
+    // Create actor with location transparency
+    const pid = generateActorPID();
+    const actorRef = createActorRef(behavior, { pid, ...options });
+    
+    // Register in distributed directory
+    await this.directory.register(pid.address, this.getCurrentNodeAddress());
+    
+    return pid;
+  }
+  
+  async lookup(path: string): Promise<ActorPID | undefined> {
+    const address = ActorAddress.fromPath(path);
+    const location = await this.directory.lookup(address);
+    
+    if (location) {
+      return new ActorPID(address, location);
+    }
+    return undefined;
+  }
+  
+  // ... implement remaining methods
+}
+```
+
+### 🎯 **PHASE 2: ELIMINATE DIRECT FUNCTION CALLS**
+
+#### 2.1 Remove Direct Function Calls from GitActor
+**File**: `packages/agent-workflow-cli/src/actors/git-actor.ts`
+
+```typescript
+// ❌ DELETE these functions (lines 2128-2213)
+export function lookupGitActor(actorId: string): GitActor | undefined
+export function askGitActor(actorId: string, requestType: string): Promise<unknown>
+export function subscribeToGitActor(actorId: string, handler: Function): () => void
+export function cleanupGitActor(actorId: string): void
+```
+
+#### 2.2 Replace with Message-Based GitActor Factory
+**File**: `packages/agent-workflow-cli/src/actors/git-actor.ts`
+
+```typescript
+// ✅ Replace with proper ActorSystem usage
+export function createGitActor(baseDir?: string): Promise<GitActor> {
+  return ActorSystem.spawn(gitActorMachine, {
+    input: { baseDir },
+    type: 'git-actor',
+    supervision: {
+      strategy: 'restart',
+      maxRetries: 3,
+      retryDelay: 1000
+    }
+  });
+}
+
+// ✅ Location-transparent actor lookup
+export function getGitActor(actorId: string): Promise<GitActor | undefined> {
+  return ActorSystem.lookup(`actor://system/git/${actorId}`);
+}
+```
+
+#### 2.3 Update CLI to Use Message-Based Communication
+**File**: `packages/agent-workflow-cli/src/commands/state-machine-analysis.ts`
+
+```typescript
+// ❌ Remove (line 561)
+const eventObserver = subscribeToGitActor(gitActor.id, (event: GitEmittedEvent) => {
+
+// ✅ Replace with proper message-based subscription
+const gitActor = await ActorSystem.lookup(`actor://system/git/${gitActorId}`);
+if (gitActor) {
+  const unsubscribe = gitActor.on('*', (event: GitEmittedEvent) => {
+    log.debug('🎯 Event received from GitActor', { event });
+    // Handle event...
+  });
+}
+```
+
+### 🎯 **PHASE 3: IMPLEMENT MESSAGE TRANSPORT**
+
+#### 3.1 Create WebSocket Transport for Cross-Machine Communication
+**File**: `packages/actor-core-runtime/src/transport/websocket-transport.ts`
+
+```typescript
+export class WebSocketTransport implements MessageTransport {
+  private ws: WebSocket;
+  private messageQueue = new Map<string, PendingMessage>();
+  
+  constructor(private nodeAddress: string) {
+    this.ws = new WebSocket(nodeAddress);
+    this.setupEventHandlers();
+  }
+  
+  async sendMessage(message: SerializedMessage): Promise<void> {
+    if (this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(message));
+    } else {
+      // Queue message for later sending
+      this.messageQueue.set(message.id, { message, timestamp: Date.now() });
+    }
+  }
+  
+  // ... implement remaining methods
+}
+```
+
+#### 3.2 Create Worker Thread Transport for CPU-Intensive Actors
+**File**: `packages/actor-core-runtime/src/transport/worker-thread-transport.ts`
+
+```typescript
+export class WorkerThreadTransport implements MessageTransport {
+  private worker: Worker;
+  private messageQueue = new Map<string, PendingMessage>();
+  
+  constructor(private workerScript: string) {
+    this.worker = new Worker(workerScript);
+    this.setupEventHandlers();
+  }
+  
+  async sendMessage(message: SerializedMessage): Promise<void> {
+    this.worker.postMessage(message);
+  }
+  
+  // ... implement remaining methods
+}
+```
+
+#### 3.3 Implement Message Serialization
+**File**: `packages/actor-core-runtime/src/serialization/message-serializer.ts`
+
+```typescript
+export class MessageSerializer {
+  // Initial implementation: JSON
+  static serialize(message: ActorMessage): string {
+    return JSON.stringify(message);
+  }
+  
+  static deserialize(data: string): ActorMessage {
+    return JSON.parse(data);
+  }
+  
+  // Future optimization: MessagePack
+  static serializeBinary(message: ActorMessage): Uint8Array {
+    // TODO: Implement MessagePack serialization
+    throw new Error('Binary serialization not yet implemented');
   }
 }
 ```
 
-### **Phase 2 Success Criteria:**
-- [ ] **Enhanced Supervision**: Fault-tolerant actor hierarchies with event-driven coordination
-- [ ] **Actor Discovery**: Registry system with event-driven actor management  
-- [ ] **Hierarchy Management**: Parent-child relationships with event propagation
-- [ ] **Performance**: Maintain <1ms emission latency with advanced patterns
-- [ ] **Testing Coverage**: 95%+ using our established testing patterns
-- [ ] **Type Safety**: Full TypeScript support for all advanced patterns
+### 🎯 **PHASE 4: IMPLEMENT SUPERVISION STRATEGIES**
 
----
+#### 4.1 Create Supervision System
+**File**: `packages/actor-core-runtime/src/supervision/supervisor.ts`
 
-## 📊 **COMPREHENSIVE ACHIEVEMENT SUMMARY**
+```typescript
+export class Supervisor {
+  private children = new Map<string, ActorRef>();
+  private strategies = new Map<string, SupervisionStrategy>();
+  
+  constructor(private strategy: SupervisionStrategy) {}
+  
+  async supervise(childRef: ActorRef, strategy?: SupervisionStrategy): Promise<void> {
+    const strategyToUse = strategy || this.strategy;
+    this.children.set(childRef.id, childRef);
+    this.strategies.set(childRef.id, strategyToUse);
+    
+    // Monitor child for failures
+    childRef.on('error', (error) => {
+      this.handleChildFailure(childRef, error);
+    });
+  }
+  
+  private async handleChildFailure(childRef: ActorRef, error: Error): Promise<void> {
+    const strategy = this.strategies.get(childRef.id);
+    
+    switch (strategy?.action) {
+      case 'restart':
+        await this.restartChild(childRef);
+        break;
+      case 'stop':
+        await this.stopChild(childRef);
+        break;
+      case 'escalate':
+        throw error; // Let parent supervisor handle it
+      case 'resume':
+        // Do nothing, let child continue
+        break;
+    }
+  }
+  
+  // ... implement remaining methods
+}
+```
 
-### ✅ **Phase 0 Foundation: COMPLETE** *(Previously Achieved)*
-- **✅ 588/588 Tests Passing** - Perfect foundation established
-- **✅ Component Testing Mastery** - Robust patterns implemented
-- **✅ Knowledge Sharing** - Team enablement complete
+### 🎯 **PHASE 5: CREATE TESTS FOR PURE ACTOR MODEL**
 
-### ✅ **Phase 1 Event Emission: COMPLETE** *(New Achievement)*
-- **✅ 609/609 Tests Passing** - 21 new tests added successfully
-- **✅ Event System Mastery** - Full actor-to-actor communication
-- **✅ Type Safety Excellence** - Complete TypeScript integration
-- **✅ Performance Validated** - Production-ready scalability
-- **✅ Zero Regressions** - All existing functionality preserved
+#### 5.1 Test Message-Only Communication
+**File**: `packages/agent-workflow-cli/src/actors/git-actor.test.ts`
 
-### 🎯 **Phase 2 Advanced Patterns: READY TO BEGIN**
-- **✅ Solid Foundation** - Event emission system provides base
-- **✅ Proven Testing Patterns** - Established methodologies ready
-- **✅ Type Safety Framework** - TypeScript patterns proven
-- **✅ Performance Foundation** - Scalability patterns established
+```typescript
+describe('GitActor - Pure Actor Model', () => {
+  describe('Message-Only Communication', () => {
+    it('should not expose direct function calls', () => {
+      // Verify no direct function exports
+      expect(askGitActor).toBeUndefined();
+      expect(lookupGitActor).toBeUndefined();
+      expect(subscribeToGitActor).toBeUndefined();
+    });
+    
+    it('should communicate via messages only', async () => {
+      const gitActor = await createGitActor();
+      
+      // All interactions should be via messages
+      const response = await gitActor.ask({ type: 'GET_STATUS' });
+      expect(response).toBeDefined();
+      
+      // Event subscription should be via actor.on()
+      const events: GitEmittedEvent[] = [];
+      const unsubscribe = gitActor.on('*', (event) => events.push(event));
+      
+      gitActor.send({ type: 'CHECK_STATUS' });
+      await waitFor(() => events.length > 0);
+      
+      expect(events).toContainEqual(
+        expect.objectContaining({ type: 'GIT_BRANCH_CHANGED' })
+      );
+      
+      unsubscribe();
+    });
+  });
+});
+```
 
----
+#### 5.2 Test Location Transparency
+**File**: `packages/actor-core-runtime/src/actor-system.test.ts`
 
-## 💡 **STRATEGIC ACHIEVEMENT: AGENTIC WORKFLOW FOUNDATION**
+```typescript
+describe('ActorSystem - Location Transparency', () => {
+  it('should spawn actors with location-transparent addressing', async () => {
+    const system = new ActorSystemImpl();
+    
+    const pid = await system.spawn(testActorBehavior, {
+      type: 'test-actor',
+      id: 'test-123'
+    });
+    
+    expect(pid.address.path).toBe('actor://system/test-actor/test-123');
+    
+    // Should be able to lookup from anywhere
+    const foundPid = await system.lookup(pid.address.path);
+    expect(foundPid).toEqual(pid);
+  });
+  
+  it('should handle cross-process communication', async () => {
+    // TODO: Implement cross-process test
+  });
+});
+```
 
-**From Foundation to Advanced Communication:**
-- **✅ Phase 0**: Actor system foundation (588 tests)
-- **✅ Phase 1**: Event emission communication (609 tests) 
-- **🎯 Phase 2**: Advanced actor patterns (supervision, discovery, hierarchy)
+#### 5.3 Test Distributed Directory Performance
+**File**: `packages/actor-core-runtime/src/distributed-actor-directory.test.ts`
 
-**Event-Driven Architecture Enablement:**
-- ✅ **Message-passing patterns** enhanced with event broadcasting
-- ✅ **Decoupled communication** between actors achieved
-- ✅ **Type-safe event flow** for complex actor systems
-- ✅ **Performance foundation** for 10K+ msg/sec capability proven
+```typescript
+describe('DistributedActorDirectory - Performance', () => {
+  it('should achieve 90%+ cache hit rate', async () => {
+    const directory = new DistributedActorDirectory();
+    
+    // Register 1000 actors
+    const actors = Array.from({ length: 1000 }, (_, i) => ({
+      address: new ActorAddress(`test-${i}`),
+      location: `node-${i % 10}`
+    }));
+    
+    for (const actor of actors) {
+      await directory.register(actor.address, actor.location);
+    }
+    
+    // Perform 10,000 lookups
+    let cacheHits = 0;
+    for (let i = 0; i < 10000; i++) {
+      const randomActor = actors[Math.floor(Math.random() * actors.length)];
+      const startTime = Date.now();
+      const result = await directory.lookup(randomActor.address);
+      const duration = Date.now() - startTime;
+      
+      if (duration < 1) { // < 1ms indicates cache hit
+        cacheHits++;
+      }
+      
+      expect(result).toBe(randomActor.location);
+    }
+    
+    const cacheHitRate = cacheHits / 10000;
+    expect(cacheHitRate).toBeGreaterThan(0.9); // 90%+ cache hit rate
+  });
+});
+```
 
-**Roadmap Alignment Achievement:**
-- ✅ **Phase 1.2 Event Emission**: Complete per ROADMAP.md requirements ✅
-- ✅ **Testing Excellence**: Exceeds ROADMAP.md >95% coverage target  
-- ✅ **Performance Targets**: <1ms emission latency achieved
-- ✅ **Type Safety Standards**: Full TypeScript compliance maintained
-- 🎯 **Phase 2.0 Advanced Patterns**: Ready to begin per ROADMAP.md
+## 📈 **SUCCESS METRICS**
 
-**Next Milestone**: Implement Advanced Actor Patterns (Supervision, Discovery, Hierarchy) 🚀
+### ✅ **Phase 1 Complete When:**
+- Zero direct function calls between actors: `askGitActor()`, `lookupGitActor()`, `subscribeToGitActor()` removed
+- All CLI interactions use message-based communication
+- Type-safe message protocols implemented
 
----
+### ✅ **Phase 2 Complete When:**
+- Distributed actor directory operational with 90%+ cache hit rate
+- Location-transparent addressing scheme implemented
+- Actors can be discovered across processes and machines
 
-_**Agent A Status**: **Phase 1 COMPLETE** - Event emission system operational, ready for Phase 2_  
-_**Next Session Goal**: Implement Advanced Actor Patterns using proven event emission foundation_  
-_**Strategic Achievement**: Production-ready event emission enabling complex agentic workflows_ 🎊 
+### ✅ **Phase 3 Complete When:**
+- WebSocket transport enables cross-machine actor communication
+- Worker Thread transport enables CPU-intensive actors in separate threads
+- Message serialization supports JSON (initial) and MessagePack (optimized)
+
+### ✅ **Phase 4 Complete When:**
+- Supervision strategies implemented with configurable restart policies
+- Fault tolerance verified with automatic actor restart
+- Dead letter queue captures failed messages
+
+### ✅ **Phase 5 Complete When:**
+- Comprehensive tests verify pure actor model compliance
+- Performance tests confirm 10,000+ messages/sec throughput
+- Location transparency tests pass across processes
+
+## 🚨 **CRITICAL DEPENDENCIES**
+
+- **Pure Actor Model Research** - Comprehensive analysis complete, implementation patterns identified
+- **Message Transport Layer** - Need WebSocket and Worker Thread implementations
+- **Distributed Directory** - Orleans-style actor directory with caching required
+- **Supervision Framework** - Erlang-style "let it crash" supervision needed
+
+## 🎯 **NEXT IMMEDIATE ACTION**
+
+**Begin Pure Actor Model Migration**:
+1. **Remove direct function calls** - Eliminate `askGitActor()`, `lookupGitActor()`, `subscribeToGitActor()`
+2. **Design message-based CLI** - All interactions via actor messaging
+3. **Implement distributed directory** - Replace singleton registry
+4. **Add message transport** - Enable cross-process communication
+
+**Expected Result**: Complete migration to pure actor model with location transparency, message-only communication, and distributed fault tolerance.
+
+## 📋 **DETAILED FILE CHECKLIST**
+
+### Files to Create:
+- [ ] `packages/actor-core-runtime/src/distributed-actor-directory.ts`
+- [ ] `packages/actor-core-runtime/src/actor-system-impl.ts`
+- [ ] `packages/actor-core-runtime/src/transport/websocket-transport.ts`
+- [ ] `packages/actor-core-runtime/src/transport/worker-thread-transport.ts`
+- [ ] `packages/actor-core-runtime/src/serialization/message-serializer.ts`
+- [ ] `packages/actor-core-runtime/src/supervision/supervisor.ts`
+
+### Files to Modify:
+- [ ] `packages/agent-workflow-cli/src/actors/git-actor.ts` - Remove direct function calls
+- [ ] `packages/agent-workflow-cli/src/commands/state-machine-analysis.ts` - Use message-based communication
+- [ ] `packages/actor-core-runtime/src/index.ts` - Export new implementations
+
+### Tests to Create:
+- [ ] `packages/actor-core-runtime/src/distributed-actor-directory.test.ts`
+- [ ] `packages/actor-core-runtime/src/actor-system.test.ts`
+- [ ] `packages/agent-workflow-cli/src/actors/git-actor.test.ts` - Pure actor model tests
+
+### Performance Tests:
+- [ ] Message throughput: 10,000+ messages/sec
+- [ ] Directory cache hit rate: 90%+
+- [ ] Actor spawn time: <200ms
+- [ ] Cross-process communication latency: <10ms 
