@@ -88,6 +88,7 @@ class StateBasedWorkflowHandler {
 
   private observers: Array<{ unsubscribe(): void }> = [];
   private onSuccess?: () => void;
+  private lastHandledState: string | null = null; // Track the last handled state
 
   private cleanupObservers(): void {
     this.observers.forEach((observer) => observer.unsubscribe());
@@ -105,6 +106,14 @@ class StateBasedWorkflowHandler {
     reject: (error: Error) => void
   ): void {
     const stateStr = state as string;
+
+    // Prevent duplicate processing of the same state
+    if (this.lastHandledState === stateStr) {
+      console.log(chalk.gray(`🔍 DEBUG: Skipping duplicate state: ${stateStr}`));
+      return;
+    }
+
+    this.lastHandledState = stateStr;
     console.log(chalk.gray(`🔄 State changed to: ${stateStr}`));
 
     switch (stateStr) {
