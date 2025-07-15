@@ -7,22 +7,22 @@
 ### 🚀 Essential Commands
 ```bash
 # One-time setup
-./scripts/setup-agent-worktrees.sh
+pnpm aw init
 
 # Daily routine
 cd ../actor-web-[your-area]                    # Go to your workspace
-./scripts/agent-workflow.sh sync               # Get latest changes (MANDATORY)
-./scripts/agent-workflow.sh status             # Check your status
+pnpm aw sync                                   # Get latest changes (MANDATORY)
+pnpm aw status                                 # Check your status
 
 # During development
-./scripts/agent-workflow.sh save               # Quick save (commit + push)
-./scripts/agent-workflow.sh validate           # Check only your files
+pnpm aw save                                   # Quick save (commit + push)
+pnpm aw validate                               # Check only your files
 
 # Feature completion
-./scripts/agent-workflow.sh ship               # Full workflow to integration
+pnpm aw ship                                   # Full workflow to integration
 
 # Maintenance
-./scripts/worktree-maintenance.sh check        # Health check
+pnpm aw actor:worktrees --cleanup              # Health check and cleanup
 ```
 
 ### 🎭 Agent Workspaces
@@ -291,9 +291,9 @@ graph TD
 
 | Script | Purpose | When to Use | Example |
 |--------|---------|-------------|---------|
-| `setup-agent-worktrees.sh` | One-time worktree setup | Initial project setup | `./scripts/setup-agent-worktrees.sh` |
-| `agent-workflow.sh` | Core workflow automation | Daily development | `./scripts/agent-workflow.sh sync` |
-| `worktree-maintenance.sh` | Health monitoring & cleanup | Weekly maintenance | `./scripts/worktree-maintenance.sh check` |
+| `pnpm aw init` | One-time worktree setup | Initial project setup | `pnpm aw init` |
+| `pnpm aw [command]` | Core workflow automation | Daily development | `pnpm aw sync` |
+| `pnpm aw actor:*` | Health monitoring & cleanup | Weekly maintenance | `pnpm aw actor:worktrees --cleanup` |
 | `sync-integration.sh` | Pull integration changes | Morning routine | Called by `agent-workflow.sh sync` |
 | `push-to-integration.sh` | Push to integration branch | Feature completion | Called by `agent-workflow.sh ship` |
 
@@ -303,7 +303,7 @@ This is your primary interface for agent coordination:
 
 #### 📊 Status Command
 ```bash
-./scripts/agent-workflow.sh status
+pnpm aw status
 ```
 **What it shows:**
 - Current branch and agent type
@@ -314,7 +314,7 @@ This is your primary interface for agent coordination:
 
 #### 🔄 Sync Command
 ```bash
-./scripts/agent-workflow.sh sync
+pnpm aw sync
 ```
 **What it does:**
 - Pulls latest integration changes
@@ -324,7 +324,7 @@ This is your primary interface for agent coordination:
 
 #### 💾 Save Command
 ```bash
-./scripts/agent-workflow.sh save
+pnpm aw save
 ```
 **What it does:**
 - Auto-commits with smart message generation
@@ -333,7 +333,7 @@ This is your primary interface for agent coordination:
 
 #### 🚢 Ship Command
 ```bash
-./scripts/agent-workflow.sh ship
+pnpm aw ship
 ```
 **What it does:**
 - Validates only your changed files
@@ -344,7 +344,7 @@ This is your primary interface for agent coordination:
 
 #### 🔍 Validate Command
 ```bash
-./scripts/agent-workflow.sh validate
+pnpm aw validate
 ```
 **What it does:**
 - **Smart validation**: Only checks files you actually changed
@@ -356,13 +356,13 @@ This is your primary interface for agent coordination:
 
 #### 🔍 Health Check
 ```bash
-./scripts/worktree-maintenance.sh check
+pnpm aw actor:worktrees --cleanup
 ```
 Shows active worktrees, expected vs actual, orphaned worktrees
 
 #### 🛡️ Safety Check
 ```bash
-./scripts/worktree-maintenance.sh safety-check
+pnpm aw actor:status
 ```
 Comprehensive audit of:
 - Git configuration
@@ -373,7 +373,7 @@ Comprehensive audit of:
 
 #### 🚮 Cleanup
 ```bash
-./scripts/worktree-maintenance.sh prune
+pnpm aw actor:worktrees --cleanup
 ```
 Safely removes orphaned worktrees
 
@@ -452,10 +452,10 @@ worktree-*/
 cd ../actor-web-[architecture|implementation|tests]
 
 # 2. Check your status
-./scripts/agent-workflow.sh status
+pnpm aw status
 
 # 3. Sync with integration (MANDATORY)
-./scripts/agent-workflow.sh sync
+pnpm aw sync
 
 # 4. Start working!
 ```
@@ -467,7 +467,7 @@ cd ../actor-web-[architecture|implementation|tests]
 vim src/core/my-feature.ts
 
 # Quick save (commit + push to your branch)
-./scripts/agent-workflow.sh save
+pnpm aw save
 
 # Continue working...
 ```
@@ -476,7 +476,7 @@ vim src/core/my-feature.ts
 
 ```bash
 # When feature is ready:
-./scripts/agent-workflow.sh ship
+pnpm aw ship
 
 # This will:
 # ✅ Validate your changes
@@ -490,17 +490,17 @@ vim src/core/my-feature.ts
 
 ```bash
 # Ensure your work is saved and shared
-./scripts/agent-workflow.sh save
+pnpm aw save
 
 # Check overall health
-./scripts/worktree-maintenance.sh safety-check
+pnpm aw actor:status
 ```
 
 ### 📅 Weekly Maintenance
 
 ```bash
 # Clean up any orphaned worktrees
-./scripts/worktree-maintenance.sh all
+pnpm aw actor:worktrees --cleanup
 
 # Update dependencies (rotate among agents)
 pnpm update
@@ -529,7 +529,7 @@ cd ../actor-web-[your-agent-area]
 **Solution**: Use the conflict resolution tools
 ```bash
 # 1. Check which agent owns the conflicting area
-./scripts/agent-workflow.sh status
+pnpm aw status
 
 # 2. Use smart merge:
 git mergetool
@@ -542,10 +542,10 @@ git mergetool
 **Solution**: Our validation is file-specific!
 ```bash
 # This only validates YOUR changed files:
-./scripts/agent-workflow.sh validate
+pnpm aw validate
 
 # See what files are being validated:
-./scripts/agent-workflow.sh status
+pnpm aw status
 ```
 
 #### 🔥 "Can't find my work after sync"
@@ -561,13 +561,13 @@ git stash pop  # Restore most recent stash
 **Solution**: Use maintenance tools
 ```bash
 # Check health:
-./scripts/worktree-maintenance.sh check
+pnpm aw actor:worktrees --cleanup
 
 # Clean up:
-./scripts/worktree-maintenance.sh prune
+pnpm aw actor:worktrees --cleanup
 
 # Recreate if needed:
-./scripts/setup-agent-worktrees.sh
+pnpm aw init
 ```
 
 ### 🆘 Emergency Procedures
@@ -611,7 +611,7 @@ git worktree add ../actor-web-[area] feature/agent-[a|b|c]
 2. **Sync Daily**
    ```bash
    # Every morning, before starting work:
-   ./scripts/agent-workflow.sh sync
+   pnpm aw sync
    ```
 
 3. **Keep Commits Focused**
@@ -623,7 +623,7 @@ git worktree add ../actor-web-[area] feature/agent-[a|b|c]
 4. **Test Before Shipping**
    ```bash
    # Always validate before pushing to integration:
-   ./scripts/agent-workflow.sh validate
+   pnpm aw validate
    ```
 
 ### 🔧 Technical Best Practices
@@ -637,13 +637,13 @@ git worktree add ../actor-web-[area] feature/agent-[a|b|c]
 2. **Use Agent Scripts**
    ```bash
    # Don't use raw git commands - use our scripts:
-   ./scripts/agent-workflow.sh save  # ✅ Better than git add/commit/push
+   pnpm aw save  # ✅ Better than git add/commit/push
    ```
 
 3. **Regular Health Checks**
    ```bash
    # Weekly:
-   ./scripts/worktree-maintenance.sh safety-check
+   pnpm aw actor:status
    ```
 
 4. **Respect Agent Boundaries**
@@ -661,7 +661,7 @@ git worktree add ../actor-web-[area] feature/agent-[a|b|c]
 2. **Prune Regularly**
    ```bash
    # Monthly:
-   ./scripts/worktree-maintenance.sh prune
+   pnpm aw actor:worktrees --cleanup
    ```
 
 3. **Monitor Disk Usage**
@@ -688,17 +688,17 @@ This agent-centric workflow gives you:
 
 ```bash
 # 1. One-time setup:
-./scripts/setup-agent-worktrees.sh
+pnpm aw init
 
 # 2. Daily routine:
 cd ../actor-web-[your-area]
-./scripts/agent-workflow.sh sync
+pnpm aw sync
 
 # 3. Save your work:
-./scripts/agent-workflow.sh save
+pnpm aw save
 
 # 4. Ship features:
-./scripts/agent-workflow.sh ship
+pnpm aw ship
 ```
 
 **Happy coding! 🎭 Your agent workspace is ready for parallel development.** 
