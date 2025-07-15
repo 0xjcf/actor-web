@@ -105,6 +105,7 @@ class StateBasedWorkflowHandler {
     reject: (error: Error) => void
   ): void {
     const stateStr = state as string;
+    console.log(chalk.gray(`🔄 State changed to: ${stateStr}`));
 
     switch (stateStr) {
       case 'statusChecked': {
@@ -222,6 +223,7 @@ class StateBasedWorkflowHandler {
   private handleCommitComplete(): void {
     console.log(chalk.green('✅ Changes committed'));
     console.log(chalk.blue('📊 Checking integration status...'));
+    console.log(chalk.gray('🔍 DEBUG: handleCommitComplete() called'));
     this.sendMessage({
       type: 'GET_INTEGRATION_STATUS',
       integrationBranch: 'feature/actor-ref-integration',
@@ -229,6 +231,7 @@ class StateBasedWorkflowHandler {
   }
 
   private handleIntegrationStatus(integrationStatus?: { ahead: number; behind: number }): void {
+    console.log(chalk.gray('🔍 DEBUG: handleIntegrationStatus() called'));
     if (!integrationStatus) {
       console.error(chalk.red('❌ No integration status received'));
       return;
@@ -242,6 +245,7 @@ class StateBasedWorkflowHandler {
       this.sendMessage({ type: 'FETCH_REMOTE', branch: 'feature/actor-ref-integration' });
     } else {
       console.log(chalk.yellow('📤 Pushing current branch to origin...'));
+      console.log(chalk.gray(`🔍 DEBUG: About to push branch: ${this.currentBranch || 'HEAD'}`));
       // Push the current branch, not the integration branch
       this.sendMessage({ type: 'PUSH_CHANGES', branch: this.currentBranch || 'HEAD' });
     }
