@@ -183,7 +183,10 @@ class StateBasedWorkflowHandler {
       this.sendMessage({ type: 'ADD_ALL' });
     } else {
       console.log(chalk.green('✅ No uncommitted changes'));
-      this.sendMessage({ type: 'GET_INTEGRATION_STATUS', integrationBranch: 'integration' });
+      this.sendMessage({
+        type: 'GET_INTEGRATION_STATUS',
+        integrationBranch: 'feature/actor-ref-integration',
+      });
     }
   }
 
@@ -198,7 +201,10 @@ class StateBasedWorkflowHandler {
   private handleCommitComplete(): void {
     console.log(chalk.green('✅ Changes committed'));
     console.log(chalk.blue('📊 Checking integration status...'));
-    this.sendMessage({ type: 'GET_INTEGRATION_STATUS', integrationBranch: 'integration' });
+    this.sendMessage({
+      type: 'GET_INTEGRATION_STATUS',
+      integrationBranch: 'feature/actor-ref-integration',
+    });
   }
 
   private handleIntegrationStatus(integrationStatus?: { ahead: number; behind: number }): void {
@@ -212,17 +218,17 @@ class StateBasedWorkflowHandler {
 
     if (behind > 0) {
       console.log(chalk.yellow('📥 Fetching latest integration changes...'));
-      this.sendMessage({ type: 'FETCH_REMOTE', branch: 'integration' });
+      this.sendMessage({ type: 'FETCH_REMOTE', branch: 'feature/actor-ref-integration' });
     } else {
       console.log(chalk.yellow('📤 Pushing to integration branch...'));
-      this.sendMessage({ type: 'PUSH_CHANGES', branch: 'integration' });
+      this.sendMessage({ type: 'PUSH_CHANGES', branch: 'feature/actor-ref-integration' });
     }
   }
 
   private handleFetchComplete(): void {
     console.log(chalk.green('✅ Latest changes fetched'));
     console.log(chalk.yellow('📤 Pushing to integration branch...'));
-    this.sendMessage({ type: 'PUSH_CHANGES', branch: 'integration' });
+    this.sendMessage({ type: 'PUSH_CHANGES', branch: 'feature/actor-ref-integration' });
   }
 
   private handlePushComplete(): void {
