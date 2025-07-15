@@ -9,3 +9,6 @@ export * from './testing/actor-test-utils.js';
 
 // Export test fixtures
 export * from './testing/fixtures/index.js';
+
+// Export state machine analysis utilities
+export * from './testing/state-machine-analysis.js';

@@ -90,7 +90,6 @@ export type GitEvent =
   | { type: 'CHECK_REPO' }
   | { type: 'CHECK_STATUS' }
   | { type: 'CHECK_UNCOMMITTED_CHANGES' }
-  | { type: 'DETECT_AGENT_TYPE' }
   | { type: 'GET_INTEGRATION_STATUS'; integrationBranch?: string }
   | { type: 'GET_CHANGED_FILES'; integrationBranch?: string }
   | { type: 'ADD_ALL' }
@@ -477,8 +476,186 @@ export const gitActorMachine = setup({
         }
       }
     ),
+
+    // === MISSING ACTOR IMPLEMENTATIONS ===
+
+    setupWorktrees: fromPromise(
+      async ({
+        input,
+      }: {
+        input: { agentCount: number; configOptions?: Record<string, unknown>; git: SimpleGit };
+      }) => {
+        const { agentCount, configOptions: _configOptions, git } = input;
+        try {
+          const worktrees: Array<{
+            agentId: string;
+            branch: string;
+            path: string;
+            role: string;
+          }> = [];
+
+          // Basic worktree setup logic
+          for (let i = 1; i <= agentCount; i++) {
+            const agentId = `agent-${String.fromCharCode(96 + i)}`; // a, b, c, etc.
+            const branch = `feature/${agentId}`;
+            const path = `../${agentId}-workspace`;
+
+            let role = 'Implementation';
+            if (i === 1) role = 'Architecture';
+            else if (i === 3) role = 'Testing/Cleanup';
+
+            try {
+              // Check if worktree already exists
+              const existingWorktrees = await git.raw(['worktree', 'list', '--porcelain']);
+              if (!existingWorktrees.includes(path)) {
+                // Create branch if it doesn't exist
+                try {
+                  await git.checkout(['-b', branch]);
+                } catch {
+                  // Branch might already exist, try to checkout
+                  try {
+                    await git.checkout([branch]);
+                  } catch {
+                    // Skip if branch operations fail
+                  }
+                }
+
+                // Create worktree
+                await git.raw(['worktree', 'add', path, branch]);
+              }
+
+              worktrees.push({
+                agentId,
+                branch,
+                path,
+                role,
+              });
+            } catch (error) {
+              // Continue with other worktrees even if one fails
+              console.warn(`Failed to create worktree for ${agentId}:`, error);
+            }
+          }
+
+          return worktrees;
+        } catch (error) {
+          throw new Error(
+            `Failed to setup worktrees: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
+        }
+      }
+    ),
+
+    checkWorktree: fromPromise(async ({ input }: { input: { path: string; git: SimpleGit } }) => {
+      const { path, git } = input;
+      try {
+        const worktreeList = await git.raw(['worktree', 'list', '--porcelain']);
+        const exists = worktreeList.includes(`worktree ${path}`);
+
+        if (exists) {
+          // Get more details about the worktree
+          const lines = worktreeList.split('\n');
+          let branch = '';
+          let head = '';
+
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i] === `worktree ${path}`) {
+              // Look for branch and head in following lines
+              if (lines[i + 1] && lines[i + 1].startsWith('HEAD ')) {
+                head = lines[i + 1].substring(5);
+              }
+              if (lines[i + 2] && lines[i + 2].startsWith('branch ')) {
+                branch = lines[i + 2].substring(7);
+              }
+              break;
+            }
+          }
+
+          return {
+            exists: true,
+            path,
+            branch,
+            head,
+          };
+        }
+
+        return {
+          exists: false,
+          path,
+          branch: '',
+          head: '',
+        };
+      } catch (error) {
+        throw new Error(
+          `Failed to check worktree: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      }
+    }),
+
+    createBranch: fromPromise(
+      async ({ input }: { input: { branchName: string; git: SimpleGit } }) => {
+        const { branchName, git } = input;
+        try {
+          // Check if branch already exists
+          const branches = await git.branch();
+          const branchExists = branches.all.includes(branchName);
+
+          if (branchExists) {
+            return {
+              success: true,
+              branchName,
+              existed: true,
+              message: `Branch ${branchName} already exists`,
+            };
+          }
+
+          // Create and checkout the new branch
+          await git.checkout(['-b', branchName]);
+
+          return {
+            success: true,
+            branchName,
+            existed: false,
+            message: `Created and switched to branch ${branchName}`,
+          };
+        } catch (error) {
+          throw new Error(
+            `Failed to create branch: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
+        }
+      }
+    ),
+
+    getLastCommit: fromPromise(async ({ input }: { input: { git: SimpleGit } }) => {
+      const { git } = input;
+      try {
+        const log = await git.log(['-1']); // Get the last commit
+
+        if (log.latest) {
+          return {
+            hash: log.latest.hash,
+            message: log.latest.message,
+            author: log.latest.author_name,
+            email: log.latest.author_email,
+            date: log.latest.date,
+          };
+        }
+
+        return {
+          hash: '',
+          message: 'No commits found',
+          author: '',
+          email: '',
+          date: '',
+        };
+      } catch (error) {
+        throw new Error(
+          `Failed to get last commit: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      }
+    }),
   },
 }).createMachine({
+  /** @xstate-layout N4IgpgJg5mDOIC5RQJYBcC0BDAxmg9gE4B0KEANmAMQDCAEgKI0DSA+gEoMAKA8gNoAGALqJQAB3yx0KfADtRIAB6IAjACYVAZmIqVAdhUAWLQDY1Gk4YA0IAJ6IArIYAcxNQM0C9etQE5fziYmvgC+ITaomLgEJGSUtIwsrADKACoAgqkAqsmCIkggElJoMvIFygjqWjr6RqbmKpY29gjuRsS+hiYCKr4CfUECamER6Nh4RKQU1PRMbFkAcjQ8ALIrAJKpqQwAIqz06QsA4gy5wgpF0nIKFVXaugbGmmYW1naqDg6+boZqeppff6adTOEYgSLjGJTeLpHZ7dIAGQReQukiuZVAtw091qTxejTeLTUnwExEMAM6vk0egEJj0JjBEOikziM1WG1S+zohxOZ3y4jRJWu5VU2Jqj3qr2aiEMAi8ZICDhMWj+gQcjLGzNi0yoJ056wW2yO7Ey6x4CxSGWyfNRxVKN1F1QedWeDSa7wQhi63zUzkMAQMwWCw3C4M1E218T1XJ5u1YADF1gjTiiCpchRilI6cRLXVKPZ5fGpiCZNL5dLTfipnCp1aGmRHodR4wxUvQOAwVjxtqmBXbhZjs+KXfj3S1uoYHMQnGZAqqPCHRlFG6yqFwcnQY8cU+c04L7SLKmLnXi3YTEHTOsRnJpzBpZV8HJoNcuoauVgx2CdWAAhE1LOhe0KfcByzI8nVxSUCWlBBnGcH0y39bon2rXoX0hFkdROBZP0yBh9nZTZWA-ZJknSE4gPTA9B3AnMRzPGDJ16Yg9GcBwvAcdQPE8OslwwyNqAANURdYdjw1gxO2G0937TMsQg3NR3PBAnDg69fmcP5iU6Lx0K1YgcAACzAHAAGsUFkKB2DACQqAgOQwFIWQADd8FMxyGyhIyTPMyzrIkBALNcnAsAzPJKJAuTVF8Vi3DUMwhh6PQnhgsViTlL5DFYuk9E6PTG28syLKsmz8CoMBCEISYxHIUKADMiAAW2ITzJkK3ySoCoL8BCsLhAi2SHUqGLviVdxOgnL1ghgoJXF8FCND+TjAmfetwy84yiss5I0FCgBXWA7IcpzXPclr1razaOp2-bYEClyetC0pwt3Pt0SG3oaTcOC9E48kvG4mDq04n4-F0Zxkq+ARDHyjafOKm60AO8rKuq2q0Aawhmtakh2oR3akbu7reue-rXuAwbD0+lQSzULovSS-46VSrQpyDWlPBML5nAEXiw1fS74csrJZBwfBGsa9A0EgGhDKwSy4CO2RHO6s6cYMq7ipFsWJalmW5YVomHpJuQXv5Cn3qpiHi00TTbe8dRniMVLNE8HR-TLHoHECLLVr4-S8eF0XxcltBpYgWX5ZgQ6KqqkgavqprzoF3HNaDnXQ-DyPDfu4KntNsnzao0Dbmt4hbbUe2DEr5VlJUWlSRcXwzFy3KjFhyZYF21BLPSchyCVlWHrVi6SC7rAe6gPvyFzx6+qEAbLZo30so6XmRs02UK5g12-RLMtfS58lJ0CDux+74rp5RuPiATjGk-V8fJ+n2eTdkM3bSXsCV70NfAQCOmHhNJA1Qm4MsdJehOC6NDM+BkQ5S2KtnaOg8TpuQ8qPOBusw6IINtHV++d36F0-hmIazxV4QJJE+Us2UZoOGStOE+-Rkq6D5urDOCDLJIMVrHNGicsbJ34pgzOOCo5wHwfPReJDDxkN-hQ9iVDqSBB3gEUk7h163g4gCWBMBsGcNwZAeMKBKCHXssrVBI8U4tTALoqAXCICGOMeI0mC9ybFyipUMuFcq6O1rjvbm6k6Y1gMD0HK2jrElD0aI+xRjuGo3jujTG2MME6IibY-R0THHEwIR-GSX9S4+HLnbCG1cnbKT+AU6sypgxZT+H7fmgiUnFXWLIaWUBCAEMRsjUxQ9TroMsY0yyzTWntIzJ0o2ecJGuMih9Isqj4q9DgqWYIDgYKcV+joBclgt4WDCTYoZYA2kdIJsjHh8S+FJP6eEppLSDkjNKGMpxBcXFF2mVTIsNMxrAnKbWOkzhGKBI6AESwRZWLsTqerOq1ijLFWso1fA0sUGqz6YIyFaBoV+TAHC6WjzCHPOIdRMC1YCleOKT452HogwmGIAIO2T5Xa9F0LA1F6KSpYuoKc2+CSH4YOZYZGFmL4VgBxTkt6UiaJEptkUh2NdyUtG9sCcu-1yy6BVDDNalixAHT5ZEw2iLh7Iv0pq2A2q0miPGXPZxkiCUVC9AUjQtJgjGC6GYHeugqW5VqeYNuLhYFGpNVwmOcTOXnIEYarVIic5ZMmS8ymNFbXFntUEToRgghqBmgEGmuVKw9D9GYcFGDGoVUnj+dpotDJ6t6aGxshbCDFtLUZYVRDclirAg4dKOhraV2pGYGKrq5TXnpPXdwvwvT6FgTWut8sjLX14fffh6sJ3FRLVOwyja8XNutTKG8U5Oj+nLP0SufgVkFn0FOAEWlGhaEnAydVDSwDKzuZw+BaAVhwFgBPag3TzEGsbDAB9T0n1YNfbAd9MA11WpLqoTxUqSm+IpbWVwmh-p0IsOoMJ-7Uk0GfcB0D7Kg130SVWqEf6KoAdsdht9H7wNTNjYS6DldSUyuUrbckLF5qTmMA8Toi56n6WclgcgZAyM7FCorL9SKiOTH44JiAwnRPmrfiKi2LaKh00+Gxrmv02JZU4qsycv9AwryfH0GKsDpNCdSSJ6Wgab4Ee5ZY8zsnLPyeozGvJ0VLDUqcDIjwNI6GrPiq4T4lhayZW6De-2jZx6E1lj5SAtBzSpANFkBgEH3FtqpbUO2XM6ZlmPS0B8xZ65ll6K7R1SpYHRYOrFsy8XZhJE4LwNLQ0Ms6AMNltt5J5o73pB0FCugyFPlBLe-SVXYA1fchABIcxWCLGWGsTY2w9gHG3NJUVm6VLxTa9WGunW8tA3toC+K0Nob-CcHoSrxzxtXTq4RTkK3eTNcPK1rLu3cvdYLPFbQcEiy-CVDWMsF2RuNkIKVCbt3DTJdSzR9zm3Mvtbe11-LiBPakm6M8T4LgwVDFgaDiQ4Opv1bYGkTIOQns0RewjjH73keVEvEd7w-gXClnMLjsHN3CeJHmEsO7S2tyPZhypxwW3XvU6Rwd6kCpiSNH6BAiLvGQfs7i1N6MD24yJmTGt5TG3Kc7bF-tj0fgDDXngg6oIJg5ywL2sHLBWd9HXeVwlyHCwUvk+-j0Qw1LK5eB8EhxnmhUq-G0N0YkTx2K+bVZFqE1v2Fh31magnVBYTwiRG71Tk4py5U097c7unDeylkWxG8QIYrVkuxPRB4sarWIh0ll30O3NC9aGxb70NZS1kaD4NNBYsquAPeSbwSG-RwXL5PLDjVq-hwSwt+73JVtp5R9WT3vQkI1iqR9loSGzBtboa7Hwk4-CwNj+PyfteocL4QNSdoVIDDsVLF6L4M0gi-38PBboVJQ9H+fSfygU-1zJE3DVy1zcSGllEnG+i8BinmS6FpyCDbWpU0kHz304nzUsQsmGSOVukT2WGd1d0Fx1xFypxy3Fw9GZ1-k4n8Fl3LGeHl3VnQNuUwJiw5yoBbDbE3E4C7B7HwMgzh22w6xpxmj+A+WgXpBcFCx4zoJuUOVGSu0T3-0ALnwF0bwIPhz12IINxaH30Ly+HtXYipC5iP3SQcTgGwMS3P24PcTaE9yGE8G8EriylygDwLGDDcHmhZz6FC2Gyj0uiiWMId1q0Jzu35x3GUJ4LU0z2bjoRzx0xUB3jpCpUUVYivXbwkJ5ShUMh-xr0CNwIb3xTCI9y91sN9wcKpHTVrGnE0niiG3UB8CZXSMyL-w3GCOANeWXgzw0yiO01+liIpRimX1+FD1v29l9S1QaLP3rwvwP20H8CpAXBpQtz0FSipCnB+39G8D9GrFQMET9TGKmw-C-Hwj-EOHoEmO3Q6C9H8HriLFvA30XzpmvAyzK1nDHWByhAnTAF2KdzrzwNCPSz8G+BrHijpF9CfCcBghrGnDlC9jBQBDYlYQwVjxww-SOHvVIynxwO+NyI3XyPaBsJ93sP91WV+w0zpm9yEK2IDgoxA2RNRJGVuxn2aIv3CI6K01zx6PHEaCpVlF9ArDbSVApMbCczgEEgEws3GJ+LyMsLbTR1ynJDoXmgrCcIKxBB+ECF5k8GBD9HL0JgYDiSoE4FSHYAAE0L8JVCkGNpVSlUpzBvgjB3k-t-gaQgdvDz5bpdS44vjzDfiPpbZvgnhW59BJxbY-lDdiRf4hg5SLc21KR4TLExt3SiBpskgSdrRTT6NvEmNrTcoSwPYhh3AeZ+hI8FcoQ8d8AEzCB9TWxjS0ziUYMyVlJ6RixZQW46Y4DRC2cJByzPSJiLCfT4IyQtAAzIZgyYJkouS391T-pSwrcbdM549DYuyDTqzezDxh1Pd-QiVr1yklTVA5RvgAh2M5QQSegBTo9Zy9YI57cuyMSvTJShorDCj8S-dHCQEnxzjylyw-NgQVBR9ipFyqyTSVzl44JPdakFk-QspGgQE3Z-h5o-Q5QK5GhfzLJryzCezvTVyW9rw28vZO9zAgY-hPdgw7YjAc9eYv8sF-zDTAKMKaJqRwCHx5ENFvBmMixvgaReZeZiQLdm5aCETn1UKciL8r9Pcb9awOYH9fAZpXZtBoZBgnTbZghYF6DpD7krsqLlzaK6NayLTYNZUZQkMmzlo5RvR4JTyWQpC7k5AxlBLMTTTfSBzqRS9hy4JGJbwqUnwXBuj7YkNDDfCYlYANKaK7zVy28FRNyxpB9UofAaYLduhATeKkNzLU5-LjFbLbzsTLCCi8S7DnzSjDcIEO0vgqQkNirPg6i0VDIgqmSwqNyIYtyoqPQ6EeZ1JPAPAZcoyKqjJ0r0KQrl5srvdcqSidyVJ-hSRDLyw21645KRjjVqqgKwIM91yozyR9AbwTB00FU-BeY20u0Agiz1Y-UeqJTMrQC21pj-ANT8yFiZogySSaUC9OJx0i0wB5qtKbUzjd1LiD0bjad3LXAeZvYfAeYXAuhnra1Xq9SbzerTrDwpjAVZiNFAgIYd5iRiwftST-stBTNXi2oqTcM3q+r3cvRwr6rIr-gesqRXCqEqkWFLAKLQ4kSYBjqsT1scTrDBrijCSCxkpixco21WJdD9A+LLEhTYARSZMCFCbYbxV0zGMrSmrXRqV+glRfkyrYExaJaLNSgWb7L+z-TnKgzXLFauhqU2KMd-RfQvDizO4rtUgUBC18A9o0BKzqKL9dd+CSCWh9A3ZLbAhWJ-AhDtSDp7bHbnbuyTq2a-jVDPaNCZQ5RYqgFgRFLbCOz8BQ6wAnaXalzgqZbW1CC1C9tbjPQ-gyQnwaU1QdMfBnSbaSBSyM6s6I7WbtceCPbEc46S6XAvchgoYsoggZzY87czUG7w6c73aC7Y7i6jBbYpdghegRpliB7n0h7DYR6XbobI6W7o6+D27i7JLu7d4NSNJkKoA17XbNKiaKg279cp6QSSxzbbZaQ-gT6z6N7m6QDnsJ7d6-qFSNl6KkrVa2IGb0Az6x6Fqr6v6b7YDbxiw5KCRyQNBQhcbcZn1X60LN6P6KdIH1C97Axu6K6xD1AkGXSnIMCZDbpQGALx6Y7v7VleZPcAQYHoZVRm5lLLLGCQ6HbM7w637qGd6oHGI4Dpw1EMpPB-RyLkGNZUq4BKG3bwHhcaGBHPtqhfTawuhT0Pc-KFYMkZGuHG7eH5HeDRccHadr1PdpT4pq6aVywurDJZGL686IHFGTGZpOTXDSxPBiRXY21bG0GhLDHr6XHSD6QPK2hRDgR6RrbDqtV7Hc6o6WtsGi7adq52LtNkIsoM1Zq7G9GeH0H37Wj87nGknGIglu74pyRN5dJJH3jYm+HjHimPQixIS5QaQbwAQLdbxwaYA-G7KAnEmBCeaWrEpfhm46gSrgGX1KNumcns6qG+mimBmCtyw+956YpLA1FJwJmmawAemMr4nP6FmvaZQ-pu79AP8e7UjRb5MtanNShan5n+Ggm5V39pwiwIZHYaka71ZNbRTbm5BdmYb9msHDmO71GpxEoARdraxVpQxZB8AIA4AFAcZL7EAMANqPQ0XlaoTsWoS7TlLpgUWEA+giLcQD1iWtBGITnpSvkhCOZDChZOp8BCWNBetag1lFFEHadlovcONNIeYV4omES04oAxlmXhbtt2XBbIEgZLjzjHxit2IdlJHA4oBtZl75zo5CW1GPkXhqQImYpjbvbmyyQNIIENAXiSGn5L5+5mXU1rxVRfoqQ4SPAXZjcozNJvZoWvgJnMN7dCWkNdA4oJxqkuYf7Sw2sDAtANTPhLm70bE7E-CtW6EqUllfTXZmyd5eYU2ywNEKnU1kqrE9l2HyHCYxXWXb8fapW97yRtAV4YolQgzOnJHeV+U2Uk3+zbwc2-RFFgxXG3Y-Aj4TKAgm2SG-UI1NXHGZQ6YaZp2eKYDgRlJggZ6jBWymJ3BkIuml161DJCWwUEjEDlQa55oRrPBAhy421u3Jw2LBXLkMNK8gMpmwAk2QYPAY2faeYgUSnt90cvgJxPhbYzNfm5NrMxWIYEa5cBsB89NWNehfQ5KAQBtg7-DJstXV4rjXYHqngO6yx-AWIaQGgqQAEb3BFSyCck2E1KkQLsaPdu9N9h83A-MXA-gLdNil7bcNWTCOcy3VDJXNJpXDcWMSw2J6Q3mC9T5JGrXANT8IBmX-Ad0L3jBBhL0-qusd84DZp4IJndj-XhOECqFOg6F150Xxwe0EDAlwFisDqMEVKrLZAxkyPJ2EAghy5ko+jZRywwZRyFlqUARVqgg99iHa6pHtG-CHOgXv5IEB0uhgRqC57aOUcuZtBFEqRoF3l4pbHtPHOGhSROJy71S+gHV00QYV2C8VFWIsnMvwubVzd3Ys8ugfBm5FiT0egHjVRiKc0umPiq9f9IBd3R0Oh4rAh65+a-qaUd0nZVbqDGVlX8aaSMNeusul8vM3CtkgaspXHWNuSpr4ixuNbrmgPw5bXt9ECIYvhbYSQRqoE+b6RXZlms8RbBF4y4ktWuZM11B9MJVoYQyiR7CeXOIehUJYySPSpyyXuywyQmZyxjAxobxRzK4yR4InxgbeavQ2O5zLyzVQfFvy2O9HS+Op7eY5pBhJqKm7CT6seqvEB-j5OV5OSQlawQFszAxWYKDegDCZvKLnvHPzvwyW9ys-Nm5lFYocp5wqQVU2GyG1K3SufKe6cWuWNIitAV8pLSCNTpwh8AYbwVatGYAdHAqZet77zxW2XK38fac-gWvKkTzAEmcvm0jKqKfDfVzjeK28fOXVl6RxqRmEPOLNnJGjqDfMHFqaujA6vgTGuyjSQs1GPLigHqmXrHeg-quvpoZzvOsTKT2bSTdCP5V02tnH3E+CnVMXfceOX+PN87C2NoyawdqLWgufnJaMxC-aNbhlQ0dfMEMYv-NFb4f+hT2M0vRNOJO7aZnyO3BKONjPYV23LGgGOoSQK7w0616x+NBkbJ+PDfh-l648O8zeaFlY39IY91WMfV7R-HPN-SCqwd-D1yXngX6z-Zfp6yQ4q1TPBKkghGJ64pwLepoE7IYJnl+jnJ-nTEuog1zszMClCvCr43cnWU0CXgwRLacMw6aAQlsbj5YAw+gInI+HQ30B-0WEQwNUkDwDhGEAqgAx-pby9i-A5Km8XoJS1Lo-8lQvFdUr4wf5O9xU8BVfhbnX40dXGfgalDAXnpY51ARAxsH6jIFsDCUHAifk8A37xcEANIJpqCS5gRkF2P5ePhDXEFJ8PgidUPoHV9C3hgEPNX4Dv1vBVhxGB-AqLN2mbIDUBv8PdJ0B4jdBWIuUEpi1RE7wRzAvwauHt2sw3MCEmgovogDYhBtFW52CGL2iaooZFUnMMlj9DrBhAgAA */
   id: 'git-actor',
 
   context: ({ input }) => ({
@@ -524,7 +701,11 @@ export const gitActorMachine = setup({
         MERGE_BRANCH: 'mergingBranch',
         GENERATE_COMMIT_MESSAGE: 'generatingCommitMessage',
         VALIDATE_DATES: 'validatingDates',
-        // Add other events...
+        // Newly wired up events
+        SETUP_WORKTREES: 'settingUpWorktrees',
+        CHECK_WORKTREE: 'checkingWorktree',
+        CREATE_BRANCH: 'creatingBranch',
+        GET_LAST_COMMIT: 'gettingLastCommit',
       },
     },
 
@@ -870,6 +1051,124 @@ export const gitActorMachine = setup({
       },
     },
 
+    // === NEWLY ADDED ACTIVE STATES ===
+
+    settingUpWorktrees: {
+      entry: assign({
+        lastOperation: () => 'SETTING_UP_WORKTREES',
+      }),
+      invoke: {
+        src: 'setupWorktrees',
+        input: ({ context, event }) => ({
+          git: context.git,
+          agentCount: (event as { agentCount: number }).agentCount,
+          configOptions: (event as { configOptions?: Record<string, unknown> }).configOptions,
+        }),
+        onDone: {
+          target: 'worktreesSetup',
+          actions: assign({
+            worktrees: ({ event }) => event.output,
+          }),
+        },
+        onError: {
+          target: 'worktreesSetupError',
+          actions: assign({
+            lastError: ({ event }) =>
+              event.error instanceof Error ? event.error.message : 'Worktree setup failed',
+          }),
+        },
+      },
+      after: {
+        [TIMEOUTS.WORKTREE_SETUP]: { target: 'worktreesSetupTimeout' },
+      },
+    },
+
+    checkingWorktree: {
+      entry: assign({
+        lastOperation: () => 'CHECKING_WORKTREE',
+      }),
+      invoke: {
+        src: 'checkWorktree',
+        input: ({ context, event }) => ({
+          git: context.git,
+          path: (event as { path: string }).path,
+        }),
+        onDone: {
+          target: 'worktreeChecked',
+          actions: assign({
+            worktreeExists: ({ event }) => event.output.exists,
+          }),
+        },
+        onError: {
+          target: 'worktreeCheckError',
+          actions: assign({
+            lastError: ({ event }) =>
+              event.error instanceof Error ? event.error.message : 'Worktree check failed',
+          }),
+        },
+      },
+      after: {
+        [TIMEOUTS.WORKTREE_CHECK]: { target: 'worktreeCheckTimeout' },
+      },
+    },
+
+    creatingBranch: {
+      entry: assign({
+        lastOperation: () => 'CREATING_BRANCH',
+      }),
+      invoke: {
+        src: 'createBranch',
+        input: ({ context, event }) => ({
+          git: context.git,
+          branchName: (event as { branchName: string }).branchName,
+        }),
+        onDone: {
+          target: 'branchCreated',
+          actions: assign({
+            currentBranch: ({ event }) => event.output.branchName,
+          }),
+        },
+        onError: {
+          target: 'branchCreationError',
+          actions: assign({
+            lastError: ({ event }) =>
+              event.error instanceof Error ? event.error.message : 'Branch creation failed',
+          }),
+        },
+      },
+      after: {
+        [TIMEOUTS.BRANCH_CREATION]: { target: 'branchCreationTimeout' },
+      },
+    },
+
+    gettingLastCommit: {
+      entry: assign({
+        lastOperation: () => 'GETTING_LAST_COMMIT',
+      }),
+      invoke: {
+        src: 'getLastCommit',
+        input: ({ context }) => ({
+          git: context.git,
+        }),
+        onDone: {
+          target: 'lastCommitChecked',
+          actions: assign({
+            lastCommitInfo: ({ event }) => event.output.hash,
+          }),
+        },
+        onError: {
+          target: 'lastCommitError',
+          actions: assign({
+            lastError: ({ event }) =>
+              event.error instanceof Error ? event.error.message : 'Last commit check failed',
+          }),
+        },
+      },
+      after: {
+        [TIMEOUTS.LAST_COMMIT_CHECK]: { target: 'lastCommitTimeout' },
+      },
+    },
+
     // ============================================================================
     // COMPLETION STATES
     // ============================================================================
@@ -881,6 +1180,7 @@ export const gitActorMachine = setup({
       on: {
         CONTINUE: 'idle',
         CHECK_REPO: 'checkingRepo',
+        CHECK_UNCOMMITTED_CHANGES: 'checkingUncommittedChanges',
         COMMIT_CHANGES: 'committingChanges',
       },
     },
@@ -893,6 +1193,7 @@ export const gitActorMachine = setup({
         CONTINUE: 'idle',
         CHECK_STATUS: 'checkingStatus',
         CHECK_UNCOMMITTED_CHANGES: 'checkingUncommittedChanges',
+        GET_CHANGED_FILES: 'gettingChangedFiles',
       },
     },
 
@@ -933,6 +1234,7 @@ export const gitActorMachine = setup({
       on: {
         CONTINUE: 'idle',
         FETCH_REMOTE: 'fetchingRemote',
+        PUSH_CHANGES: 'pushingChanges',
       },
     },
 
@@ -988,6 +1290,45 @@ export const gitActorMachine = setup({
     datesValidated: {
       entry: assign({
         lastOperation: () => 'DATES_VALIDATED',
+      }),
+      on: {
+        CONTINUE: 'idle',
+      },
+    },
+
+    // === NEWLY ADDED COMPLETION STATES ===
+
+    worktreesSetup: {
+      entry: assign({
+        lastOperation: () => 'WORKTREES_SETUP',
+      }),
+      on: {
+        CONTINUE: 'idle',
+      },
+    },
+
+    worktreeChecked: {
+      entry: assign({
+        lastOperation: () => 'WORKTREE_CHECKED',
+      }),
+      on: {
+        CONTINUE: 'idle',
+        SETUP_WORKTREES: 'settingUpWorktrees',
+      },
+    },
+
+    branchCreated: {
+      entry: assign({
+        lastOperation: () => 'BRANCH_CREATED',
+      }),
+      on: {
+        CONTINUE: 'idle',
+      },
+    },
+
+    lastCommitChecked: {
+      entry: assign({
+        lastOperation: () => 'LAST_COMMIT_CHECKED',
       }),
       on: {
         CONTINUE: 'idle',
@@ -1115,6 +1456,48 @@ export const gitActorMachine = setup({
       }),
       on: {
         RETRY: 'validatingDates',
+        CONTINUE: 'idle',
+      },
+    },
+
+    // === NEWLY ADDED ERROR STATES ===
+
+    worktreesSetupError: {
+      entry: assign({
+        lastOperation: () => 'WORKTREES_SETUP_ERROR',
+      }),
+      on: {
+        RETRY: 'settingUpWorktrees',
+        CONTINUE: 'idle',
+      },
+    },
+
+    worktreeCheckError: {
+      entry: assign({
+        lastOperation: () => 'WORKTREE_CHECK_ERROR',
+      }),
+      on: {
+        RETRY: 'checkingWorktree',
+        CONTINUE: 'idle',
+      },
+    },
+
+    branchCreationError: {
+      entry: assign({
+        lastOperation: () => 'BRANCH_CREATION_ERROR',
+      }),
+      on: {
+        RETRY: 'creatingBranch',
+        CONTINUE: 'idle',
+      },
+    },
+
+    lastCommitError: {
+      entry: assign({
+        lastOperation: () => 'LAST_COMMIT_ERROR',
+      }),
+      on: {
+        RETRY: 'gettingLastCommit',
         CONTINUE: 'idle',
       },
     },
@@ -1251,6 +1634,52 @@ export const gitActorMachine = setup({
       }),
       on: {
         RETRY: 'validatingDates',
+        CONTINUE: 'idle',
+      },
+    },
+
+    // === NEWLY ADDED TIMEOUT STATES ===
+
+    worktreesSetupTimeout: {
+      entry: assign({
+        lastError: () => 'Worktrees setup timed out',
+        lastOperation: () => 'WORKTREES_SETUP_TIMEOUT',
+      }),
+      on: {
+        RETRY: 'settingUpWorktrees',
+        CONTINUE: 'idle',
+      },
+    },
+
+    worktreeCheckTimeout: {
+      entry: assign({
+        lastError: () => 'Worktree check timed out',
+        lastOperation: () => 'WORKTREE_CHECK_TIMEOUT',
+      }),
+      on: {
+        RETRY: 'checkingWorktree',
+        CONTINUE: 'idle',
+      },
+    },
+
+    branchCreationTimeout: {
+      entry: assign({
+        lastError: () => 'Branch creation timed out',
+        lastOperation: () => 'BRANCH_CREATION_TIMEOUT',
+      }),
+      on: {
+        RETRY: 'creatingBranch',
+        CONTINUE: 'idle',
+      },
+    },
+
+    lastCommitTimeout: {
+      entry: assign({
+        lastError: () => 'Last commit check timed out',
+        lastOperation: () => 'LAST_COMMIT_TIMEOUT',
+      }),
+      on: {
+        RETRY: 'gettingLastCommit',
         CONTINUE: 'idle',
       },
     },

@@ -20,6 +20,7 @@ import {
 import { initCommand } from '../commands/init.js';
 import { saveCommand } from '../commands/save.js';
 import { shipCommand } from '../commands/ship.js';
+import { analyzeCommand } from '../commands/state-machine-analysis.js';
 import { statusCommand } from '../commands/status.js';
 import { syncCommand } from '../commands/sync.js';
 import { validateCommand } from '../commands/validate.js';
@@ -118,6 +119,18 @@ program
   .action(actorCreateCommand);
 
 // ============================================================================
+// STATE MACHINE ANALYSIS COMMANDS
+// ============================================================================
+
+program
+  .command('analyze')
+  .description('Analyze state machines for unreachable states')
+  .option('--target <target>', 'Target machine to analyze', 'git-actor')
+  .option('--verbose', 'Show detailed analysis output')
+  .option('--assert', 'Run assertion test and exit with error if unreachable states found')
+  .action(analyzeCommand);
+
+// ============================================================================
 // AGENT COORDINATION COMMANDS
 // ============================================================================
 
@@ -169,6 +182,12 @@ program
     console.log(chalk.gray('  aw actor:create   - Create custom actor'));
     console.log();
 
+    console.log(chalk.yellow('🔍 Analysis Tools:'));
+    console.log(chalk.gray('  aw analyze        - Analyze state machines'));
+    console.log(chalk.gray('  aw analyze --verbose - Detailed analysis output'));
+    console.log(chalk.gray('  aw analyze --assert  - Assert no unreachable states'));
+    console.log();
+
     console.log(chalk.yellow('🤝 Agent Coordination:'));
     console.log(chalk.gray('  aw agents:status  - Multi-agent status dashboard'));
     console.log(chalk.gray('  aw agents:sync    - Sync with all agents'));
@@ -179,6 +198,7 @@ program
     console.log(chalk.gray('  aw init --agents 3'));
     console.log(chalk.gray('  aw commit --message "feat: add new feature"'));
     console.log(chalk.gray('  aw actor:worktrees --count 5'));
+    console.log(chalk.gray('  aw analyze --target git-actor --verbose'));
     console.log(chalk.gray('  aw validate-dates --files "docs/*.md"'));
   });
 
