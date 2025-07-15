@@ -162,9 +162,17 @@ class StateBasedWorkflowHandler {
         break;
 
       case 'integrationStatusChecked': {
+        console.log(chalk.gray('🔍 DEBUG: integrationStatusChecked case reached'));
+
         // Directly get integration status from current context instead of creating an observer
         const currentSnapshot = this.actor.getSnapshot();
         const integrationStatus = (currentSnapshot.context as GitContext).integrationStatus;
+
+        console.log(
+          chalk.gray(
+            `🔍 DEBUG: integrationStatus from context = ${JSON.stringify(integrationStatus)}`
+          )
+        );
 
         if (!integrationStatus) {
           reject(new Error('No integration status received'));
@@ -249,6 +257,8 @@ class StateBasedWorkflowHandler {
 
   private handleIntegrationStatus(integrationStatus?: { ahead: number; behind: number }): void {
     console.log(chalk.gray('🔍 DEBUG: handleIntegrationStatus() called'));
+    console.log(chalk.gray(`🔍 DEBUG: integrationStatus = ${JSON.stringify(integrationStatus)}`));
+
     if (!integrationStatus) {
       console.error(chalk.red('❌ No integration status received'));
       return;
