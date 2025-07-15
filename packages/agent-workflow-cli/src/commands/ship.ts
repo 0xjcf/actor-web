@@ -109,30 +109,29 @@ class StateBasedWorkflowHandler {
 
     switch (stateStr) {
       case 'statusChecked': {
-        // Use observe to reactively get current branch
-        const statusObserver = this.actor
-          .observe((snapshot) => snapshot.context.currentBranch)
-          .subscribe((currentBranch) => {
-            this.currentBranch = currentBranch;
-            if (this.currentBranch) {
-              console.log(chalk.blue(`📋 Current branch: ${this.currentBranch}`));
-              this.sendMessage({ type: 'CHECK_UNCOMMITTED_CHANGES' });
-            } else {
-              reject(new Error('Could not determine current branch'));
-            }
-            statusObserver.unsubscribe();
-          });
+        // Directly get current branch from context instead of creating an observer
+        const currentSnapshot = this.actor.getSnapshot();
+        const currentBranch = (currentSnapshot.context as GitContext).currentBranch;
+
+        this.currentBranch = currentBranch;
+        if (this.currentBranch) {
+          console.log(chalk.blue(`📋 Current branch: ${this.currentBranch}`));
+          this.sendMessage({ type: 'CHECK_UNCOMMITTED_CHANGES' });
+        } else {
+          reject(new Error('Could not determine current branch'));
+        }
         break;
       }
 
       case 'uncommittedChangesChecked': {
-        // Use observe to reactively get uncommitted changes
-        const changesObserver = this.actor
-          .observe((snapshot) => snapshot.context.uncommittedChanges)
-          .subscribe((uncommittedChanges) => {
-            this.handleUncommittedChanges(uncommittedChanges);
-            changesObserver.unsubscribe();
-          });
+        // Directly get uncommitted changes from current context instead of creating an observer
+        const currentSnapshot = this.actor.getSnapshot();
+        const uncommittedChanges = (currentSnapshot.context as GitContext).uncommittedChanges;
+
+        console.log(chalk.gray('🔍 DEBUG: uncommittedChangesChecked state handler called'));
+        console.log(chalk.gray(`🔍 DEBUG: uncommittedChanges = ${uncommittedChanges}`));
+
+        this.handleUncommittedChanges(uncommittedChanges);
         break;
       }
 
