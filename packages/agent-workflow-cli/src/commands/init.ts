@@ -1,6 +1,7 @@
 import path from 'node:path';
 import chalk from 'chalk';
 import inquirer from 'inquirer';
+import type { AgentWorktreeConfig } from '../core/agent-config.js';
 import { GitOperations } from '../core/git-operations.js';
 import { findRepoRootWithOptions } from '../core/repo-root-finder.js';
 
@@ -23,6 +24,15 @@ export async function initCommand(options: InitOptions) {
   console.log('');
 
   try {
+    // Validate agent count input
+    const agentCount = Number.parseInt(options.agents);
+    if (Number.isNaN(agentCount) || agentCount <= 0 || agentCount > 10) {
+      console.log(chalk.red('❌ Error: Invalid agent count'));
+      console.log(chalk.blue('💡 Agent count must be a positive integer between 1 and 10'));
+      console.log(chalk.gray(`   Received: "${options.agents}"`));
+      process.exit(1);
+    }
+
     // Dynamically find repository root using multiple strategies
     const repoRoot = await findRepoRootWithOptions({
       root: options.root,
@@ -63,9 +73,6 @@ export async function initCommand(options: InitOptions) {
     console.log(chalk.blue('🌿 Setting up Agent Worktrees...'));
     console.log('');
 
-    // Setup agent worktrees
-    const agentCount = Number.parseInt(options.agents);
-
     // Build configuration options from CLI parameters
     const configOptions = {
       configPath: options.configPath,
@@ -78,10 +85,35 @@ export async function initCommand(options: InitOptions) {
       integrationBranch: options.integrationBranch,
     };
 
-    const worktrees = await git.setupAgentWorktrees(agentCount, configOptions);
+    let worktrees: AgentWorktreeConfig[];
+    try {
+      worktrees = await git.setupAgentWorktrees(agentCount, configOptions);
+    } catch (setupError: unknown) {
+      console.error(chalk.red('❌ Error setting up agent worktrees:'));
+      if (setupError instanceof Error) {
+        console.error(chalk.gray(`   ${setupError.message}`));
+
+        // Provide specific guidance based on common error patterns
+        if (setupError.message.includes('already exists')) {
+          console.log(chalk.blue('💡 Some worktrees or branches already exist'));
+          console.log(chalk.gray('   Try cleaning up existing worktrees first:'));
+          console.log(chalk.gray('   pnpm aw actor:worktrees --cleanup'));
+        } else if (setupError.message.includes('permission')) {
+          console.log(chalk.blue('💡 Permission denied'));
+          console.log(chalk.gray('   Check file permissions and try again'));
+        } else if (setupError.message.includes('not found')) {
+          console.log(chalk.blue('💡 Path not found'));
+          console.log(chalk.gray('   Check that the specified paths exist'));
+        }
+      } else {
+        console.error(chalk.gray(`   ${String(setupError)}`));
+      }
+      process.exit(1);
+    }
 
     if (worktrees.length === 0) {
       console.log(chalk.red('❌ Failed to set up any worktrees'));
+      console.log(chalk.blue('💡 Check the logs above for specific error details'));
       return;
     }
 
@@ -110,9 +142,25 @@ export async function initCommand(options: InitOptions) {
     console.log(chalk.green('✅ Agent workflow initialization complete!'));
     console.log(chalk.blue('💡 Next: Run `pnpm aw status` in each agent workspace'));
   } catch (error) {
-    console.error(chalk.red('❌ Error during initialization:'), error);
-    console.log(chalk.blue('💡 Try specifying the repository root explicitly:'));
-    console.log(chalk.gray('   pnpm aw init --root /path/to/your/repo'));
+    console.error(chalk.red('❌ Error during initialization:'));
+
+    if (error instanceof Error) {
+      console.error(chalk.gray(`   ${error.message}`));
+
+      // Provide contextual help based on error type
+      if (error.message.includes('repository root')) {
+        console.log(chalk.blue('💡 Try specifying the repository root explicitly:'));
+        console.log(chalk.gray('   pnpm aw init --root /path/to/your/repo'));
+      } else if (error.message.includes('not a git repository')) {
+        console.log(chalk.blue('💡 Initialize a Git repository first:'));
+        console.log(chalk.gray('   git init'));
+      } else if (error.message.includes('permission')) {
+        console.log(chalk.blue('💡 Check file permissions and try again'));
+      }
+    } else {
+      console.error(chalk.gray(`   ${String(error)}`));
+    }
+
     process.exit(1);
   }
 }
