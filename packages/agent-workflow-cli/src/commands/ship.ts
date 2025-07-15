@@ -260,6 +260,10 @@ class StateBasedWorkflowHandler {
     console.log(chalk.green('✅ Successfully pushed to integration branch'));
     console.log(chalk.blue('🚀 Ship workflow completed successfully!'));
     console.log(chalk.gray('💡 Your changes are now in the integration environment'));
+
+    // Send CONTINUE event to properly transition actor back to idle state
+    this.sendMessage({ type: 'CONTINUE' });
+
     this.onSuccess?.();
   }
 

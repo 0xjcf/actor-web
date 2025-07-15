@@ -130,6 +130,16 @@ program
   .option('--debug', 'Show detailed debugging information about state transitions')
   .option('--subscribe', 'Subscribe to live state transitions for debugging')
   .option('--validate', 'Run comprehensive validation checks for workflow consistency')
+  .option(
+    '--events <events>',
+    'Comma-separated list of events to send in sequence (e.g., "CHECK_STATUS,PUSH_CHANGES")'
+  )
+  .option('--event-delay <ms>', 'Delay between events in milliseconds (default: 1000)', '1000')
+  .option(
+    '--event-data <json>',
+    'JSON data for events that need parameters (e.g., \'{"branch":"feature/agent-a"}\')'
+  )
+  .option('--auto-run', 'Run events automatically without interactive mode')
   .action(async (options) => {
     const { analyzeCommand } = await import('../commands/state-machine-analysis.js');
     await analyzeCommand(options);

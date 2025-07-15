@@ -5,6 +5,7 @@
  * and generate coverage reports.
  */
 
+import readline from 'node:readline';
 import type { ActorSnapshot } from '@actor-core/runtime';
 import {
   analyzeStateMachine,
@@ -13,7 +14,7 @@ import {
 } from '@actor-core/testing';
 import chalk from 'chalk';
 import type { AnyStateMachine } from 'xstate';
-import { createGitActor, gitActorMachine } from '../actors/git-actor';
+import { createGitActor, type GitEvent, gitActorMachine } from '../actors/git-actor';
 import { findRepoRoot } from '../core/repo-root-finder';
 
 // Full implementation with @xstate/graph
@@ -98,7 +99,7 @@ function extractAvailableEvents(machine: AnyStateMachine, currentState: string):
   return Array.from(events).sort();
 }
 
-async function subscribeToStateMachine(target: string, _machineName: string): Promise<void> {
+async function _subscribeToStateMachine(target: string, _machineName: string): Promise<void> {
   if (target !== 'git-actor') {
     console.log(chalk.red('❌ Live monitoring only supported for git-actor'));
     return;
@@ -181,7 +182,6 @@ async function subscribeToStateMachine(target: string, _machineName: string): Pr
     process.stdin.resume();
     process.stdin.setEncoding('utf8');
 
-    const readline = require('node:readline');
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
@@ -271,6 +271,266 @@ async function subscribeToStateMachine(target: string, _machineName: string): Pr
 
     // Keep the process alive
     await new Promise(() => {});
+  } catch (error) {
+    console.error(chalk.red('❌ Error setting up state monitoring:'), error);
+    process.exit(1);
+  }
+}
+
+// Function to create properly typed events
+function createEventFromString(eventName: string, eventData: Record<string, unknown>): GitEvent {
+  // Handle events that need parameters
+  if (eventName === 'GET_INTEGRATION_STATUS') {
+    return {
+      type: 'GET_INTEGRATION_STATUS' as const,
+      integrationBranch: (eventData.integrationBranch as string) || 'feature/actor-ref-integration',
+    };
+  }
+
+  if (eventName === 'COMMIT_CHANGES') {
+    return {
+      type: 'COMMIT_CHANGES' as const,
+      message: (eventData.message as string) || 'Interactive test commit',
+    };
+  }
+
+  if (eventName === 'FETCH_REMOTE') {
+    return {
+      type: 'FETCH_REMOTE' as const,
+      branch: (eventData.branch as string) || 'feature/actor-ref-integration',
+    };
+  }
+
+  if (eventName === 'PUSH_CHANGES') {
+    return {
+      type: 'PUSH_CHANGES' as const,
+      branch: (eventData.branch as string) || 'feature/actor-ref-integration',
+    };
+  }
+
+  if (eventName === 'MERGE_BRANCH') {
+    return {
+      type: 'MERGE_BRANCH' as const,
+      branch: (eventData.branch as string) || 'feature/actor-ref-integration',
+      strategy: (eventData.strategy as 'merge' | 'rebase') || 'merge',
+    };
+  }
+
+  if (eventName === 'VALIDATE_DATES') {
+    return {
+      type: 'VALIDATE_DATES' as const,
+      filePaths: (eventData.filePaths as string[]) || ['docs/README.md'],
+    };
+  }
+
+  if (eventName === 'SETUP_WORKTREES') {
+    return {
+      type: 'SETUP_WORKTREES' as const,
+      agentCount: (eventData.agentCount as number) || 3,
+      configOptions: eventData.configOptions as Record<string, unknown> | undefined,
+    };
+  }
+
+  if (eventName === 'CHECK_WORKTREE') {
+    return {
+      type: 'CHECK_WORKTREE' as const,
+      path: (eventData.path as string) || '../agent-workspace',
+    };
+  }
+
+  if (eventName === 'CREATE_BRANCH') {
+    return {
+      type: 'CREATE_BRANCH' as const,
+      branchName: (eventData.branchName as string) || 'feature/test-branch',
+    };
+  }
+
+  // For simple events without parameters, cast to GitEvent
+  return { type: eventName } as GitEvent;
+}
+
+async function subscribeToStateMachineWithEvents(
+  target: string,
+  _machineName: string,
+  eventsToSend: string[],
+  eventDelay: number,
+  eventData: Record<string, unknown>,
+  autoRun: boolean
+): Promise<void> {
+  if (target !== 'git-actor') {
+    console.log(chalk.red('❌ Live monitoring only supported for git-actor'));
+    return;
+  }
+
+  try {
+    const repoRoot = await findRepoRoot();
+    const gitActor = createGitActor(repoRoot);
+
+    // Use the real machine definition - no more simplified copy!
+    const machine = gitActorMachine;
+    const allEvents = extractAllEvents(machine);
+
+    console.log(chalk.blue('🚀 Starting Git Actor...'));
+    gitActor.start();
+
+    let currentState = 'idle';
+    const startTime = Date.now();
+
+    // Subscribe to state changes
+    const stateObserver = gitActor
+      .observe((snapshot: ActorSnapshot<unknown>) => snapshot.value)
+      .subscribe((state) => {
+        currentState = String(state);
+        const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+        const _elapsed = Date.now() - startTime;
+
+        console.log(chalk.green(`[${timestamp}] State: ${chalk.bold(currentState)}`));
+
+        // Show available events for current state
+        const availableEvents = extractAvailableEvents(machine, currentState);
+        if (availableEvents.length > 0) {
+          console.log(chalk.gray(`  Available events: ${availableEvents.join(', ')}`));
+        }
+      });
+
+    // Subscribe to context changes for additional debugging
+    const contextObserver = gitActor
+      .observe((snapshot: ActorSnapshot<unknown>) => snapshot.context)
+      .subscribe((context) => {
+        const ctx = context as Record<string, unknown>;
+        if (ctx.lastError) {
+          console.log(chalk.red(`  🚨 Error: ${ctx.lastError}`));
+        }
+        if (ctx.lastOperation) {
+          console.log(chalk.blue(`  🔄 Operation: ${ctx.lastOperation}`));
+        }
+        if (ctx.integrationStatus) {
+          console.log(
+            chalk.green(`  📊 Integration Status: ${JSON.stringify(ctx.integrationStatus)}`)
+          );
+        }
+        if (ctx.currentBranch) {
+          console.log(chalk.cyan(`  🌿 Current Branch: ${ctx.currentBranch}`));
+        }
+      });
+
+    console.log(chalk.yellow('📍 Initial state check...'));
+    gitActor.send({ type: 'CHECK_STATUS' });
+
+    // Send events in sequence if autoRun is true
+    if (autoRun) {
+      console.log(chalk.yellow('🚀 Auto-running events...'));
+      for (const eventName of eventsToSend) {
+        if (allEvents.includes(eventName)) {
+          const availableEvents = extractAvailableEvents(machine, currentState);
+          if (availableEvents.includes(eventName)) {
+            console.log(chalk.cyan(`🔄 Triggering event: ${eventName}`));
+            const event = createEventFromString(eventName, eventData);
+            gitActor.send(event);
+            await new Promise((resolve) => setTimeout(resolve, eventDelay));
+          } else {
+            console.log(
+              chalk.red(`❌ Event "${eventName}" not available in current state "${currentState}"`)
+            );
+            console.log(chalk.gray(`Available events: ${availableEvents.join(', ')}`));
+          }
+        } else {
+          console.log(chalk.red(`❌ Unknown event: ${eventName}`));
+          console.log(chalk.gray('Type "events" to see all available events'));
+        }
+      }
+      console.log(chalk.green('✅ Auto-run complete.'));
+    } else {
+      // Show interactive help
+      console.log(chalk.gray(''));
+      console.log(chalk.gray('Interactive State Machine Simulator:'));
+      console.log(chalk.gray('  Type any event name to trigger it'));
+      console.log(chalk.gray('  Special commands:'));
+      console.log(chalk.gray('    help - Show available events'));
+      console.log(chalk.gray('    state - Show current state'));
+      console.log(chalk.gray('    events - Show all events'));
+      console.log(chalk.gray('    q - Quit'));
+      console.log(chalk.gray(''));
+
+      // Set up stdin for interactive commands
+      process.stdin.setRawMode(false); // Use line mode for better input handling
+      process.stdin.resume();
+      process.stdin.setEncoding('utf8');
+
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        prompt: chalk.blue('> '),
+      });
+
+      rl.prompt();
+
+      rl.on('line', (input: string) => {
+        const command = input.trim();
+
+        if (command === 'q' || command === 'quit') {
+          console.log(chalk.yellow('🛑 Stopping state monitoring...'));
+          rl.close();
+          stateObserver.unsubscribe();
+          contextObserver.unsubscribe();
+          gitActor.stop();
+          process.exit(0);
+        } else if (command === 'help') {
+          const availableEvents = extractAvailableEvents(machine, currentState);
+          console.log(chalk.cyan(`Available events for state "${currentState}":`));
+          availableEvents.forEach((event: string) => {
+            console.log(chalk.gray(`  - ${event}`));
+          });
+        } else if (command === 'state') {
+          console.log(chalk.cyan(`Current state: ${currentState}`));
+          const availableEvents = extractAvailableEvents(machine, currentState);
+          console.log(chalk.gray(`Available events: ${availableEvents.join(', ')}`));
+        } else if (command === 'events') {
+          console.log(chalk.cyan('All available events:'));
+          allEvents.forEach((event: string) => {
+            console.log(chalk.gray(`  - ${event}`));
+          });
+        } else if (command.length > 0) {
+          // Try to send as an event
+          const eventName = command.toUpperCase();
+
+          if (allEvents.includes(eventName)) {
+            const availableEvents = extractAvailableEvents(machine, currentState);
+
+            if (availableEvents.includes(eventName)) {
+              console.log(chalk.cyan(`🔄 Triggering event: ${eventName}`));
+              const event = createEventFromString(eventName, eventData);
+              gitActor.send(event);
+            } else {
+              console.log(
+                chalk.red(
+                  `❌ Event "${eventName}" not available in current state "${currentState}"`
+                )
+              );
+              console.log(chalk.gray(`Available events: ${availableEvents.join(', ')}`));
+            }
+          } else {
+            console.log(chalk.red(`❌ Unknown event: ${eventName}`));
+            console.log(chalk.gray('Type "events" to see all available events'));
+          }
+        }
+
+        rl.prompt();
+      });
+
+      // Set up cleanup on exit
+      process.on('SIGINT', () => {
+        console.log(chalk.yellow('\n🛑 Stopping state monitoring...'));
+        rl.close();
+        stateObserver.unsubscribe();
+        contextObserver.unsubscribe();
+        gitActor.stop();
+        process.exit(0);
+      });
+
+      // Keep the process alive
+      await new Promise(() => {});
+    }
   } catch (error) {
     console.error(chalk.red('❌ Error setting up state monitoring:'), error);
     process.exit(1);
@@ -411,6 +671,10 @@ export async function analyzeCommand(options: {
   debug?: boolean;
   subscribe?: boolean;
   validate?: boolean;
+  events?: string;
+  eventDelay?: string;
+  eventData?: string;
+  autoRun?: boolean;
 }) {
   console.log(chalk.blue('🔍 State Machine Analysis'));
   console.log(chalk.blue('='.repeat(60)));
@@ -421,6 +685,10 @@ export async function analyzeCommand(options: {
   const debug = options.debug || false;
   const subscribe = options.subscribe || false;
   const validate = options.validate || false;
+  const eventsToSend = options.events ? options.events.split(',').map((e) => e.trim()) : [];
+  const eventDelay = Number.parseInt(options.eventDelay || '1000', 10);
+  const eventData = options.eventData ? JSON.parse(options.eventData) : {};
+  const autoRun = options.autoRun || false;
 
   try {
     let machine: AnyStateMachine;
@@ -442,12 +710,26 @@ export async function analyzeCommand(options: {
     console.log(chalk.yellow(`🎯 Analyzing: ${machineName}`));
     console.log('');
 
-    // Handle live subscription mode
-    if (subscribe) {
+    // Handle automated event sending or live subscription mode
+    if (subscribe || eventsToSend.length > 0) {
       console.log(chalk.cyan('🔔 Live State Monitoring Mode'));
       console.log(chalk.gray('Press Ctrl+C to stop monitoring'));
       console.log('');
-      await subscribeToStateMachine(target, machineName);
+
+      if (eventsToSend.length > 0) {
+        console.log(chalk.yellow(`🎯 Automated Event Sequence: ${eventsToSend.join(' → ')}`));
+        console.log(chalk.gray(`⏱️  Event Delay: ${eventDelay}ms`));
+        console.log('');
+      }
+
+      await subscribeToStateMachineWithEvents(
+        target,
+        machineName,
+        eventsToSend,
+        eventDelay,
+        eventData,
+        autoRun
+      );
       return;
     }
 

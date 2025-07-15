@@ -135,6 +135,10 @@ class SaveWorkflowHandler {
       case 'commitCompleted':
         console.log(chalk.green('✅ Changes committed successfully'));
         console.log(chalk.blue('💡 Use pnpm aw:ship to push to integration branch'));
+
+        // Send CONTINUE event to properly transition actor back to idle state
+        this.actor.send({ type: 'CONTINUE' });
+
         this.onSuccess?.();
         break;
 
