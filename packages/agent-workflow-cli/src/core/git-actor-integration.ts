@@ -171,11 +171,51 @@ export class GitActorIntegration {
   }
 
   /**
+   * Bypass the actor system for simple git operations to improve performance
+   */
+  private async bypassActorForSimpleOperation<T>(
+    operation: string,
+    gitOperation: () => Promise<T>
+  ): Promise<T> {
+    const useBypass =
+      process.env.AW_BYPASS_ACTOR === 'true' || process.env.NODE_ENV === 'development';
+
+    if (useBypass) {
+      log.debug(`Bypassing actor system for ${operation} (performance optimization)`);
+      try {
+        const result = await gitOperation();
+        log.debug('Direct git operation completed successfully', { operation });
+        return result;
+      } catch (error) {
+        log.error('Direct git operation failed', { operation, error });
+        throw error;
+      }
+    }
+
+    // Fallback to actor system
+    throw new Error('Actor system required for this operation');
+  }
+
+  /**
    * Stage all changes (git add .)
    * Replaces: git.getGit().add('.')
    */
   async addAll(): Promise<void> {
     log.debug('Staging all changes using git-actor');
+
+    // Try bypass first for performance
+    try {
+      return await this.bypassActorForSimpleOperation('ADD_ALL', async () => {
+        const { simpleGit } = await import('simple-git');
+        const git = simpleGit(process.cwd());
+        await git.add('.');
+        log.debug('All changes staged successfully (bypass)');
+      });
+    } catch (_bypassError) {
+      log.debug('Bypass not available, using actor system');
+    }
+
+    // Use actor system
     return this.createRequest<void>('ADD_ALL', (response) => {
       if (response.type === 'ALL_STAGED' && response.success) {
         log.debug('All changes staged successfully');
@@ -685,7 +725,9 @@ Context: ${description} across ${changedFiles.length} files
 
         // Continue monitoring if we have pending requests
         if (this.pendingRequests.size > 0) {
-          setTimeout(checkContextChanges, 100);
+          // Use adaptive polling - slower for long operations
+          const nextPollDelay = this.getAdaptivePollingDelay();
+          setTimeout(checkContextChanges, nextPollDelay);
         }
       } catch (error) {
         log.error('Error in context monitoring:', error);
@@ -697,23 +739,90 @@ Context: ${description} across ${changedFiles.length} files
     this.pendingRequests.set = (key, value) => {
       const result = originalSet(key, value);
       if (this.pendingRequests.size === 1) {
-        // Start monitoring when first request is added
-        setTimeout(checkContextChanges, 50);
+        // Start monitoring when first request is added, with faster initial polling
+        this.lastPollingStart = Date.now();
+        setTimeout(checkContextChanges, 25);
       }
       return result;
     };
   }
 
   /**
-   * Create a request with proper event subscription and timeout
+   * Get adaptive polling delay based on how long we've been polling
+   */
+  private getAdaptivePollingDelay(): number {
+    // Start with fast polling (50ms) for the first 5 seconds, then slow down
+    const timeElapsed = this.lastPollingStart ? Date.now() - this.lastPollingStart : 0;
+    if (timeElapsed < 5000) {
+      return 50; // Fast polling for first 5 seconds
+    }
+    if (timeElapsed < 15000) {
+      return 200; // Medium polling for next 10 seconds
+    }
+    return 500; // Slow polling for long operations
+  }
+
+  private lastPollingStart: number | null = null;
+
+  /**
+   * Operation-specific timeout configurations
+   */
+  private static readonly OPERATION_TIMEOUTS = {
+    // Status and quick operations
+    CHECK_REPO: 5000,
+    CHECK_STATUS: 10000,
+    CHECK_UNCOMMITTED_CHANGES: 5000,
+    DETECT_AGENT_TYPE: 5000,
+    GET_LAST_COMMIT: 10000,
+
+    // File operations that might be slow
+    ADD_ALL: 30000, // git add . can be slow on large repos
+    GET_CHANGED_FILES: 15000,
+
+    // Network operations
+    FETCH_REMOTE: 45000, // Network operations can be slow
+    PUSH_CHANGES: 60000, // Push can be very slow
+    GET_INTEGRATION_STATUS: 20000,
+
+    // Branch operations
+    CREATE_BRANCH: 15000,
+    MERGE_BRANCH: 30000,
+
+    // Commit operations
+    COMMIT_CHANGES: 20000,
+    COMMIT_WITH_CONVENTION: 25000,
+    GENERATE_COMMIT_MESSAGE: 15000,
+
+    // Complex operations
+    SETUP_WORKTREES: 60000,
+    VALIDATE_DATES: 30000,
+
+    // Worktree operations
+    CHECK_WORKTREE: 10000,
+  } as const;
+
+  /**
+   * Get appropriate timeout for a given operation
+   */
+  private getOperationTimeout(eventType: string): number {
+    const timeout =
+      GitActorIntegration.OPERATION_TIMEOUTS[
+        eventType as keyof typeof GitActorIntegration.OPERATION_TIMEOUTS
+      ];
+    return timeout || 15000; // Default 15 seconds for unknown operations
+  }
+
+  /**
+   * Create a request with proper event subscription and operation-specific timeout
    */
   private async createRequest<T>(
     event: GitEvent | string,
     responseHandler: (response: GitResponse) => T | undefined,
-    timeoutMs = 5000
+    customTimeoutMs?: number
   ): Promise<T> {
     const requestId = this.generateRequestId();
     const eventType = typeof event === 'string' ? event : event.type;
+    const timeoutMs = customTimeoutMs || this.getOperationTimeout(eventType);
 
     log.debug('Creating git-actor request', { requestId, eventType, timeoutMs });
 
@@ -724,8 +833,18 @@ Context: ${description} across ${changedFiles.length} files
         if (request) {
           request.unsubscribe();
           this.pendingRequests.delete(requestId);
-          log.warn('Request timed out', { requestId, eventType, timeoutMs });
-          reject(new Error(`Request ${requestId} timed out after ${timeoutMs}ms`));
+          log.error('Git operation timed out', {
+            requestId,
+            eventType,
+            timeoutMs,
+            operationDuration: `${timeoutMs}ms`,
+            suggestion: this.getTimeoutSuggestion(eventType),
+          });
+          reject(
+            new Error(
+              `Git operation '${eventType}' timed out after ${timeoutMs}ms. ${this.getTimeoutSuggestion(eventType)}`
+            )
+          );
         }
       }, timeoutMs);
 
@@ -733,12 +852,12 @@ Context: ${description} across ${changedFiles.length} files
       this.pendingRequests.set(requestId, {
         resolve: (value: unknown) => {
           clearTimeout(timeoutId);
-          log.debug('Request resolved successfully', { requestId, eventType });
+          log.debug('Git operation completed successfully', { requestId, eventType, timeoutMs });
           resolve(value as T);
         },
         reject: (error: Error) => {
           clearTimeout(timeoutId);
-          log.error('Request rejected with error', { requestId, eventType, error: error.message });
+          log.error('Git operation failed', { requestId, eventType, error: error.message });
           reject(error);
         },
         unsubscribe: () => {
@@ -751,16 +870,16 @@ Context: ${description} across ${changedFiles.length} files
       // Send the event to the actor
       if (typeof event === 'string') {
         const eventObj = { type: event } as GitEvent;
-        log.debug('Sending string event to git-actor', { requestId, eventType, eventObj });
+        log.debug('Sending git operation request', { requestId, eventType, eventObj });
         this.actor.send(eventObj);
       } else {
-        log.debug('Sending event object to git-actor', { requestId, eventType, event });
+        log.debug('Sending git operation request', { requestId, eventType, event });
         this.actor.send(event);
       }
 
       // Log actor state after sending event
       const snapshot = this.actor.getSnapshot();
-      log.debug('Actor state after sending event', {
+      log.debug('Git actor state after request', {
         requestId,
         eventType,
         currentState: snapshot.value,
@@ -768,9 +887,26 @@ Context: ${description} across ${changedFiles.length} files
         contextIntegrationStatus: snapshot.context.integrationStatus,
         contextKeys: Object.keys(snapshot.context),
       });
-
-      log.debug('Event sent to git-actor', { requestId, eventType });
     });
+  }
+
+  /**
+   * Provide helpful suggestions for different types of timeouts
+   */
+  private getTimeoutSuggestion(eventType: string): string {
+    switch (eventType) {
+      case 'ADD_ALL':
+        return 'This can happen with large repositories. Consider using .gitignore to exclude large files or directories.';
+      case 'FETCH_REMOTE':
+      case 'PUSH_CHANGES':
+        return 'Network operations can be slow. Check your internet connection and try again.';
+      case 'COMMIT_CHANGES':
+        return 'Commit operations are usually fast. Check if there are any git hooks causing delays.';
+      case 'SETUP_WORKTREES':
+        return 'Worktree setup can be slow with large repositories. This is normal for first-time setup.';
+      default:
+        return 'Try running the operation again. If it continues to fail, check your git repository status.';
+    }
   }
 
   /**
