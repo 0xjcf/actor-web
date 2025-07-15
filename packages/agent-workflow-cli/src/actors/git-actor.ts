@@ -3,6 +3,29 @@
  *
  * This actor manages git operations using proper state-based actor patterns.
  * Instead of emitting responses, it updates context state that clients can observe.
+ *
+ * TODO: REFACTOR TO STANDARDIZED ACTOR PATTERN
+ * ==============================================
+ *
+ * Current Issues:
+ * - Uses custom createGitActor() instead of unified ActorRef
+ * - No actor registry integration
+ * - No standardized event emission for actor-to-actor communication
+ * - Missing request/response pattern support
+ *
+ * Standardized Pattern Requirements:
+ * 1. All actors must use createActorRef() from @actor-core/runtime
+ * 2. All actors must be registered in global actor registry
+ * 3. All actors must support event emission for communication
+ * 4. All actors must support ask() for request/response
+ * 5. All actors must follow supervision hierarchy
+ *
+ * Refactoring Plan:
+ * 1. Replace createGitActor() with createActorRef(gitActorMachine)
+ * 2. Add actor registry registration
+ * 3. Implement standardized event emission
+ * 4. Add request/response handlers
+ * 5. Add supervision strategy
  */
 
 import { type ActorRef, type ActorSnapshot, createActorRef, Logger } from '@actor-core/runtime';

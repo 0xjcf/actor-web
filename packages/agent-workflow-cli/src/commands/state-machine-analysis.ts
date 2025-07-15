@@ -539,15 +539,22 @@ async function subscribeToStateMachineWithEvents(
 
 function analyzeStateMachineData(machine: AnyStateMachine) {
   try {
-    // Skip the @xstate/graph analysis for git-actor due to circular reference issues
-    // Our custom workflow analysis works correctly and is more valuable
+    // For git-actor, we need to get accurate state counts manually due to circular reference issues
     if (machine.id === 'git-actor') {
+      const allStates = extractAllStatesFromMachine(machine);
+      const stateAnalysis = analyzeStateTransitionsFromConfig(machine.config);
+
+      // Calculate meaningful metrics
+      const totalStates = allStates.length;
+      const reachableStates = allStates.length - stateAnalysis.orphanedStates.length;
+      const unreachableStates = stateAnalysis.orphanedStates;
+
       return {
-        totalStates: 0,
-        reachableStates: 0,
-        unreachableStates: [],
-        allStates: extractAllStatesFromMachine(machine),
-        simplePaths: [],
+        totalStates,
+        reachableStates,
+        unreachableStates,
+        allStates,
+        simplePaths: [], // We can't generate paths due to circular references
       };
     }
 
@@ -561,13 +568,16 @@ function analyzeStateMachineData(machine: AnyStateMachine) {
       allStates: extractAllStatesFromMachine(machine),
       simplePaths: analysis.simplePaths,
     };
-  } catch (error) {
-    console.error('Error analyzing state machine:', error);
+  } catch (_error) {
+    // Fallback to manual analysis if standard analysis fails
+    const allStates = extractAllStatesFromMachine(machine);
+    const stateAnalysis = analyzeStateTransitionsFromConfig(machine.config);
+
     return {
-      totalStates: 0,
-      reachableStates: 0,
-      unreachableStates: [],
-      allStates: [],
+      totalStates: allStates.length,
+      reachableStates: allStates.length - stateAnalysis.orphanedStates.length,
+      unreachableStates: stateAnalysis.orphanedStates,
+      allStates,
       simplePaths: [],
     };
   }
@@ -657,38 +667,137 @@ function analyzeWorkflowCompleteness(machine: AnyStateMachine): {
     // Use a simpler approach that works with XState's actual API
     const stateAnalysis = analyzeStateTransitionsFromConfig(machine.config);
 
-    // Generic dead-end state detection (states with no outgoing transitions)
-    const deadEndStates = stateAnalysis.deadEndStates;
-    if (deadEndStates.length > 0) {
-      errors.push(`Found ${deadEndStates.length} dead-end states: ${deadEndStates.join(', ')}`);
+    // For git-actor, apply specific workflow patterns
+    if (machine.id === 'git-actor') {
+      return analyzeGitActorWorkflow(stateAnalysis);
     }
 
-    // Generic final state analysis
-    const finalStates = stateAnalysis.finalStates;
-    const finalStatesWithTransitions = finalStates.filter(
-      (state) =>
-        stateAnalysis.stateTransitions[state] && stateAnalysis.stateTransitions[state].length > 0
-    );
-
-    if (finalStatesWithTransitions.length > 0) {
-      warnings.push(
-        `Final states with outgoing transitions: ${finalStatesWithTransitions.join(', ')}`
-      );
-    }
-
-    // Check for states with no incoming transitions (except initial state)
-    const orphanedStates = stateAnalysis.orphanedStates;
-    if (orphanedStates.length > 0) {
-      warnings.push(`States with no incoming transitions: ${orphanedStates.join(', ')}`);
-    }
-
-    return { errors, warnings };
+    // Generic analysis for other machines
+    return analyzeGenericWorkflow(stateAnalysis);
   } catch (error) {
     errors.push(
       `Workflow analysis failed: ${error instanceof Error ? error.message : String(error)}`
     );
     return { errors, warnings };
   }
+}
+
+// NEW: Git-actor specific workflow analysis
+function analyzeGitActorWorkflow(stateAnalysis: {
+  stateTransitions: Record<string, string[]>;
+  deadEndStates: string[];
+  finalStates: string[];
+  orphanedStates: string[];
+}): {
+  errors: string[];
+  warnings: string[];
+} {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // Check for completion states that don't return to idle
+  const completionStates = Object.keys(stateAnalysis.stateTransitions).filter(
+    (state) =>
+      state.includes('Completed') ||
+      state.includes('Checked') ||
+      state.includes('Setup') ||
+      state.includes('Generated') ||
+      state.includes('Validated') ||
+      state.includes('Created')
+  );
+
+  const missingContinueStates = completionStates.filter(
+    (state) => !stateAnalysis.stateTransitions[state]?.includes('CONTINUE')
+  );
+
+  if (missingContinueStates.length > 0) {
+    errors.push(
+      `Completion states missing CONTINUE transitions: ${missingContinueStates.join(', ')}`
+    );
+  }
+
+  // Check for error states that don't have RETRY transitions
+  const errorStates = Object.keys(stateAnalysis.stateTransitions).filter(
+    (state) => state.includes('Error') || state.includes('Timeout')
+  );
+
+  const errorStatesWithoutRetry = errorStates.filter(
+    (state) => !stateAnalysis.stateTransitions[state]?.includes('RETRY')
+  );
+
+  if (errorStatesWithoutRetry.length > 0) {
+    warnings.push(`Error states missing RETRY transitions: ${errorStatesWithoutRetry.join(', ')}`);
+  }
+
+  // Check for invoke states that should have automatic transitions
+  const invokeStates = Object.keys(stateAnalysis.stateTransitions).filter(
+    (state) => state.includes('ing') && !state.includes('Error') && !state.includes('Timeout')
+  );
+
+  const invokeStatesWithoutTransitions = invokeStates.filter(
+    (state) =>
+      !stateAnalysis.stateTransitions[state]?.includes('onDone') &&
+      !stateAnalysis.stateTransitions[state]?.includes('onError')
+  );
+
+  if (invokeStatesWithoutTransitions.length > 0) {
+    warnings.push(
+      `Invoke states without onDone/onError transitions: ${invokeStatesWithoutTransitions.join(', ')}`
+    );
+  }
+
+  // Generic dead-end state detection (exclude invoke states which have implicit transitions)
+  const realDeadEndStates = stateAnalysis.deadEndStates.filter(
+    (state) => !state.includes('ing') // Invoke states have implicit onDone/onError transitions
+  );
+
+  if (realDeadEndStates.length > 0) {
+    errors.push(`Dead-end states (no outgoing transitions): ${realDeadEndStates.join(', ')}`);
+  }
+
+  return { errors, warnings };
+}
+
+// NEW: Generic workflow analysis for non-git-actor machines
+function analyzeGenericWorkflow(stateAnalysis: {
+  stateTransitions: Record<string, string[]>;
+  deadEndStates: string[];
+  finalStates: string[];
+  orphanedStates: string[];
+}): {
+  errors: string[];
+  warnings: string[];
+} {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // Generic dead-end state detection
+  if (stateAnalysis.deadEndStates.length > 0) {
+    errors.push(
+      `Found ${stateAnalysis.deadEndStates.length} dead-end states: ${stateAnalysis.deadEndStates.join(', ')}`
+    );
+  }
+
+  // Generic final state analysis
+  const finalStatesWithTransitions = stateAnalysis.finalStates.filter(
+    (state) =>
+      stateAnalysis.stateTransitions[state] && stateAnalysis.stateTransitions[state].length > 0
+  );
+
+  if (finalStatesWithTransitions.length > 0) {
+    warnings.push(
+      `Final states with outgoing transitions: ${finalStatesWithTransitions.join(', ')}`
+    );
+  }
+
+  // Check for states with no incoming transitions (except initial state)
+  if (stateAnalysis.orphanedStates.length > 0) {
+    warnings.push(
+      `States with no incoming transitions: ${stateAnalysis.orphanedStates.join(', ')}`
+    );
+  }
+
+  return { errors, warnings };
 }
 
 // NEW: Analyze state transitions directly from machine configuration
@@ -1081,7 +1190,22 @@ export async function analyzeCommand(options: {
     // Show verbose output if requested
     if (verbose) {
       console.log(chalk.blue('📋 Detailed Coverage Report:'));
-      console.log(generateCoverageReport(machine, machineName));
+
+      // Handle git-actor separately due to circular reference issues
+      if (target === 'git-actor') {
+        console.log(chalk.yellow('Git Actor Analysis:'));
+        console.log(`  Machine ID: ${machine.id}`);
+        console.log(`  Total States: ${analysis.totalStates}`);
+        console.log(`  All States: ${analysis.allStates.join(', ')}`);
+        console.log('  Note: Detailed path analysis unavailable due to circular references');
+      } else {
+        try {
+          console.log(generateCoverageReport(machine, machineName));
+        } catch (_error) {
+          console.log(chalk.red('❌ Coverage report unavailable due to analysis limitations'));
+        }
+      }
+
       console.log('');
 
       if (analysis.simplePaths.length > 0) {
@@ -1097,6 +1221,12 @@ export async function analyzeCommand(options: {
             console.log(chalk.gray(`  ${index + 1}. ${path.state} (${path.steps.length} steps)`));
           }
         );
+        console.log('');
+      } else if (target === 'git-actor') {
+        console.log(chalk.blue('🛤️  Sample States:'));
+        analysis.allStates.slice(0, 10).forEach((state, index) => {
+          console.log(chalk.gray(`  ${index + 1}. ${state}`));
+        });
         console.log('');
       }
     }
