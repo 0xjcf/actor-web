@@ -18,7 +18,9 @@ export {
   isResponseEvent,
   TimeoutError,
 } from './actor-ref.js';
+export type { ActorSystem } from './actor-system.js';
 export type { ActorSystemConfig } from './actor-system-impl.js';
+export { createActorSystem } from './actor-system-impl.js';
 export type { SupervisorOptions } from './actors/supervisor.js';
 // Supervision
 export { Supervisor } from './actors/supervisor.js';

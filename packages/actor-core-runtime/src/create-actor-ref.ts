@@ -343,7 +343,7 @@ class UnifiedActorRef<
       next: (snapshot) => {
         this.logger.debug('State changed', {
           state: snapshot.value,
-          context: snapshot.context,
+          context: this.summarizeContext(snapshot.context),
           actorId: this.id,
         });
 
@@ -427,6 +427,39 @@ class UnifiedActorRef<
       hasTag: snapshot.hasTag.bind(snapshot),
       toJSON: snapshot.toJSON.bind(snapshot),
     } as unknown as TSnapshot;
+  }
+
+  private summarizeContext(context: unknown): Record<string, unknown> {
+    if (typeof context === 'object' && context !== null) {
+      const ctx = context as Record<string, unknown>;
+      const relevant: Record<string, unknown> = {};
+
+      // Only include relevant fields that CLI users care about
+      const relevantFields = [
+        'currentBranch',
+        'isGitRepo',
+        'uncommittedChanges',
+        'lastOperation',
+        'lastError',
+        'agentType',
+        'integrationStatus',
+        'changedFiles',
+      ];
+
+      for (const field of relevantFields) {
+        if (ctx[field] !== undefined) {
+          let value = ctx[field];
+          // Format arrays more readably
+          if (Array.isArray(value)) {
+            value = value.length > 0 ? `[${value.length} items]` : '[]';
+          }
+          relevant[field] = value;
+        }
+      }
+
+      return relevant;
+    }
+    return {};
   }
 }
 

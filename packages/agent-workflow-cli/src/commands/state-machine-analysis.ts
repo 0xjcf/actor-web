@@ -24,7 +24,6 @@
 
 import readline from 'node:readline';
 import type { ActorSnapshot } from '@actor-core/runtime';
-// Enable dev mode for debug logging
 import { enableDevMode, Logger } from '@actor-core/runtime';
 import {
   analyzeStateMachine,
@@ -34,19 +33,15 @@ import {
 import chalk from 'chalk';
 import type { AnyStateMachine } from 'xstate';
 
-enableDevMode();
-
 // Create scoped logger for state machine analysis
 const log = Logger.namespace('STATE_MACHINE_ANALYSIS');
 
 import {
-  cleanupGitActor,
   createGitActor,
   type GitEmittedEvent,
   type GitEvent,
   gitActorMachine,
   listGitActors,
-  subscribeToGitActor,
 } from '../actors/git-actor';
 import { findRepoRoot } from '../core/repo-root-finder';
 
@@ -559,7 +554,7 @@ async function subscribeToStateMachineWithEvents(
       });
 
     // Subscribe to standardized event emissions
-    const eventObserver = subscribeToGitActor(gitActor.id, (event: GitEmittedEvent) => {
+    const eventObserver = gitActor.on((event: GitEmittedEvent) => {
       log.debug('🎯 Event received from GitActor', {
         event: event.type,
         actorId: gitActor.id,
@@ -721,8 +716,23 @@ async function subscribeToStateMachineWithEvents(
       contextObserver.unsubscribe();
       eventObserver();
       gitActor.stop();
-      cleanupGitActor(gitActor.id);
+      // NOTE: Actor cleanup is now handled by the actor system
     } else {
+      // Add cleanup flag to prevent duplicate cleanup
+      let cleanupExecuted = false;
+
+      const performCleanup = () => {
+        if (cleanupExecuted) return;
+        cleanupExecuted = true;
+
+        console.log(chalk.yellow('🛑 Stopping state monitoring...'));
+        stateObserver.unsubscribe();
+        contextObserver.unsubscribe();
+        eventObserver();
+        gitActor.stop();
+        // NOTE: Actor cleanup is now handled by the actor system
+      };
+
       // Show enhanced interactive help
       console.log(chalk.gray(''));
       console.log(chalk.green('🎯 Enhanced Actor State Machine Simulator'));
@@ -756,13 +766,7 @@ async function subscribeToStateMachineWithEvents(
           const command = input.trim();
 
           if (command === 'q' || command === 'quit' || command === 'exit') {
-            console.log(chalk.yellow('🛑 Stopping state monitoring...'));
-            enhancedRl?.close();
-            stateObserver.unsubscribe();
-            contextObserver.unsubscribe();
-            eventObserver();
-            gitActor.stop();
-            cleanupGitActor(gitActor.id);
+            performCleanup();
             process.exit(0);
           } else if (command === 'help') {
             const availableEvents = extractAvailableEvents(machine, currentState);
@@ -843,12 +847,7 @@ async function subscribeToStateMachineWithEvents(
           }
         },
         () => {
-          console.log(chalk.yellow('\n🛑 Stopping state monitoring...'));
-          stateObserver.unsubscribe();
-          contextObserver.unsubscribe();
-          eventObserver();
-          gitActor.stop();
-          cleanupGitActor(gitActor.id);
+          performCleanup();
           process.exit(0);
         }
       );
@@ -857,13 +856,7 @@ async function subscribeToStateMachineWithEvents(
 
       // Set up cleanup on exit
       process.on('SIGINT', () => {
-        console.log(chalk.yellow('\n🛑 Stopping state monitoring...'));
-        enhancedRl?.close();
-        stateObserver.unsubscribe();
-        contextObserver.unsubscribe();
-        eventObserver();
-        gitActor.stop();
-        cleanupGitActor(gitActor.id);
+        performCleanup();
         process.exit(0);
       });
 
@@ -1422,6 +1415,11 @@ export async function analyzeCommand(options: {
   eventData?: string;
   autoRun?: boolean;
 }) {
+  // Only enable dev mode when debug is explicitly requested
+  if (options.debug) {
+    enableDevMode();
+  }
+
   console.log(chalk.blue('🔍 State Machine Analysis'));
   console.log(chalk.blue('='.repeat(60)));
 

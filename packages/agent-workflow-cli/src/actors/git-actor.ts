@@ -19,18 +19,9 @@
  * Supervision: Restart strategy with retry limits
  */
 
-import {
-  type ActorRef,
-  type ActorSnapshot,
-  createActorRef,
-  enableDevMode,
-  Logger,
-} from '@actor-core/runtime';
+import { type ActorRef, type ActorSnapshot, createActorRef, Logger } from '@actor-core/runtime';
 import { type SimpleGit, simpleGit } from 'simple-git';
 import { assign, emit, fromPromise, setup } from 'xstate';
-
-// Enable dev mode for debug logging
-enableDevMode();
 
 // Use scoped logger for git-actor
 const log = Logger.namespace('GIT_ACTOR');
@@ -2090,6 +2081,9 @@ export const gitActorMachine = setup({
  * 2. Registers with ActorRegistry for discovery
  * 3. Supports supervision strategies
  * 4. Implements proper event emission and request/response patterns
+ *
+ * NOTE: This function is in transition for Phase 2 - Pure Actor Model
+ * Future versions will use ActorSystem.spawn() instead of direct createActorRef()
  */
 export function createGitActor(baseDir?: string): GitActor {
   const actorId = generateGitActorId('git-actor');
@@ -2114,18 +2108,24 @@ export function createGitActor(baseDir?: string): GitActor {
   return actorRef as unknown as GitActor;
 }
 
+/**
+ * Create a GitActor behavior for use with ActorSystem.spawn()
+ * This is the preferred method for Phase 2 - Pure Actor Model
+ */
+export function createGitActorBehavior(baseDir?: string) {
+  return {
+    machine: gitActorMachine,
+    input: { baseDir },
+    options: {
+      type: 'git-actor',
+      autoStart: false,
+    },
+  };
+}
+
 // ============================================================================
 // STANDARDIZED ACTOR LOOKUP
 // ============================================================================
-
-/**
- * Lookup a git actor by ID from the actor registry
- */
-export function lookupGitActor(actorId: string): GitActor | undefined {
-  const actorPath = `actor://system/git/${actorId}`;
-  const actorRef = ActorRegistry.lookup(actorPath);
-  return actorRef as GitActor | undefined;
-}
 
 /**
  * List all registered git actors
@@ -2139,75 +2139,28 @@ export function listGitActors(): string[] {
 // ACTOR LIFECYCLE MANAGEMENT
 // ============================================================================
 
-/**
- * Cleanup function to unregister actor when no longer needed
- */
-export function cleanupGitActor(actorId: string): void {
-  const actorPath = `actor://system/git/${actorId}`;
-  ActorRegistry.unregister(actorPath);
-  log.debug(`Unregistered git actor: ${actorPath}`);
-}
+// NOTE: Direct function calls removed for Phase 2 - Pure Actor Model
+// Use ActorSystem.spawn(), ActorSystem.lookup(), and message-based communication instead
 
 // ============================================================================
-// STANDARDIZED COMMUNICATION HELPERS
+// MIGRATION GUIDE FOR PHASE 2
 // ============================================================================
 
-/**
- * Helper function to send a request to a git actor and wait for response
- * This implements the standardized ask() pattern
- */
-export async function askGitActor(
-  actorId: string,
-  requestType: 'STATUS' | 'BRANCH_INFO' | 'COMMIT_STATUS',
-  timeout = 5000
-): Promise<unknown> {
-  const actor = lookupGitActor(actorId);
-  if (!actor) {
-    throw new Error(`Git actor not found: ${actorId}`);
-  }
+/*
+PHASE 2 MIGRATION GUIDE:
 
-  const requestId = `req-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+OLD PATTERN (Direct Function Calls):
+  const gitActor = createGitActor(baseDir);
+  const result = await askGitActor(gitActor.id, 'STATUS');
+  const unsubscribe = subscribeToGitActor(gitActor.id, handler);
+  cleanupGitActor(gitActor.id);
 
-  return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      reject(new Error(`Request timeout after ${timeout}ms`));
-    }, timeout);
+NEW PATTERN (Message-Based Communication):
+  const actorSystem = createActorSystem();
+  const gitActor = await actorSystem.spawn(gitActorBehavior, { id: 'git-actor' });
+  const result = await gitActor.ask({ type: 'REQUEST_STATUS' });
+  const unsubscribe = gitActor.on('*', handler);
+  await actorSystem.stop(gitActor);
 
-    // Subscribe to responses
-    const unsubscribe = actor.subscribe((event) => {
-      if (event.type === 'GIT_REQUEST_RESPONSE' && event.requestId === requestId) {
-        clearTimeout(timeoutId);
-        unsubscribe();
-        resolve(event.response);
-      }
-    });
-
-    // Send the request
-    const eventType = `REQUEST_${requestType}` as const;
-    actor.send({ type: eventType, requestId } as GitEvent);
-  });
-}
-
-/**
- * Helper function to subscribe to git actor events
- */
-export function subscribeToGitActor(
-  actorId: string,
-  eventHandler: (event: GitEmittedEvent) => void
-): () => void {
-  log.debug('🔗 Setting up GitActor event subscription', { actorId });
-
-  const actor = lookupGitActor(actorId);
-  if (!actor) {
-    log.error('❌ GitActor not found for subscription', { actorId });
-    throw new Error(`Git actor not found: ${actorId}`);
-  }
-
-  log.debug('✅ GitActor found, subscribing to events', { actorId });
-
-  // Subscribe to emitted events using the actor's on method
-  const unsubscribe = actor.on(eventHandler);
-
-  log.debug('🎯 GitActor event subscription established', { actorId });
-  return unsubscribe;
-}
+This ensures pure actor model compliance and location transparency.
+*/
