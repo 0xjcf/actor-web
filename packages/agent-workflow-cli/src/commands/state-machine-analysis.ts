@@ -498,18 +498,128 @@ async function subscribeToStateMachineWithEvents(
     let currentState = 'idle';
     const startTime = Date.now();
 
+    // Loop detection and safety mechanisms
+    const stateTransitionHistory: Array<{ state: string; timestamp: number }> = [];
+    const _maxStateTransitions = 100;
+    const loopDetectionWindow = 10; // Number of recent transitions to check
+    const stateTimeoutThreshold = 30000; // 30 seconds
+    const stateLastChanged = new Map<string, number>();
+
     // Create enhanced readline interface variable
     let enhancedRl: EnhancedReadline | null = null;
 
+    // Declare observers for cleanup function
+    let stateObserver: { unsubscribe(): void };
+    let contextObserver: { unsubscribe(): void };
+    let eventObserver: () => void;
+
+    // Add cleanup flag to prevent duplicate cleanup
+    let cleanupExecuted = false;
+
+    const performCleanup = () => {
+      if (cleanupExecuted) return;
+      cleanupExecuted = true;
+
+      console.log(chalk.yellow('🛑 Stopping state monitoring...'));
+      stateObserver.unsubscribe();
+      contextObserver.unsubscribe();
+      eventObserver();
+      gitActor.stop();
+      // NOTE: Actor cleanup is now handled by the actor system
+    };
+
+    // Loop detection function
+    function detectInfiniteLoop(): boolean {
+      if (stateTransitionHistory.length < loopDetectionWindow) {
+        return false;
+      }
+
+      const recentTransitions = stateTransitionHistory.slice(-loopDetectionWindow);
+      const stateCount = new Map<string, number>();
+
+      for (const transition of recentTransitions) {
+        const count = stateCount.get(transition.state) || 0;
+        stateCount.set(transition.state, count + 1);
+
+        // If we've seen the same state more than 3 times in recent history, it's likely a loop
+        if (count >= 3) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    // State timeout detection
+    function detectStateTimeout(): boolean {
+      const now = Date.now();
+      const lastChange = stateLastChanged.get(currentState);
+
+      if (lastChange && now - lastChange > stateTimeoutThreshold) {
+        return true;
+      }
+
+      return false;
+    }
+
     // Subscribe to state changes using standardized actor pattern
-    const stateObserver = gitActor
+    stateObserver = gitActor
       .observe((snapshot: ActorSnapshot<unknown>) => snapshot.value)
       .subscribe((state) => {
-        currentState = String(state);
+        const stateStr = String(state);
+
+        // Safety check: prevent excessive state transitions
+        if (stateTransitionHistory.length >= _maxStateTransitions) {
+          console.error(chalk.red('🚨 SAFETY: Maximum state transitions reached!'));
+          console.error(chalk.red('   This indicates a potential infinite loop.'));
+          console.error(chalk.red('   Stopping monitoring for safety.'));
+          performCleanup();
+          process.exit(1);
+        }
+
+        // Update state transition history
+        const now = Date.now();
+        stateTransitionHistory.push({ state: stateStr, timestamp: now });
+        stateLastChanged.set(stateStr, now);
+
+        // Check for infinite loop
+        if (detectInfiniteLoop()) {
+          console.error(chalk.red('🔄 INFINITE LOOP DETECTED!'));
+          console.error(chalk.yellow('   Recent state transitions:'));
+          const recentStates = stateTransitionHistory.slice(-loopDetectionWindow);
+          recentStates.forEach((entry, index) => {
+            const elapsed = (entry.timestamp - startTime) / 1000;
+            console.error(
+              chalk.gray(`   ${index + 1}. ${entry.state} (at ${elapsed.toFixed(1)}s)`)
+            );
+          });
+          console.error(chalk.red('   Stopping monitoring to prevent system overload.'));
+          performCleanup();
+          process.exit(1);
+        }
+
+        // Check for state timeout
+        if (detectStateTimeout()) {
+          console.warn(chalk.yellow('⏰ STATE TIMEOUT WARNING!'));
+          console.warn(
+            chalk.yellow(
+              `   State "${stateStr}" has been active for more than ${stateTimeoutThreshold / 1000}s`
+            )
+          );
+          console.warn(chalk.yellow('   This may indicate a stuck state machine.'));
+        }
+
+        // Update current state
+        currentState = stateStr;
         const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
-        const _elapsed = Date.now() - startTime;
+        const _elapsed = now - startTime;
 
         console.log(chalk.green(`[${timestamp}] State: ${chalk.bold(currentState)}`));
+
+        // Show transition count for debugging
+        if (stateTransitionHistory.length > 5) {
+          console.log(chalk.gray(`  (${stateTransitionHistory.length} transitions so far)`));
+        }
 
         // Show available events for current state
         const availableEvents = extractAvailableEvents(machine, currentState);
@@ -533,7 +643,7 @@ async function subscribeToStateMachineWithEvents(
       });
 
     // Subscribe to context changes for additional debugging
-    const contextObserver = gitActor
+    contextObserver = gitActor
       .observe((snapshot: ActorSnapshot<unknown>) => snapshot.context)
       .subscribe((context) => {
         const ctx = context as Record<string, unknown>;
@@ -554,7 +664,7 @@ async function subscribeToStateMachineWithEvents(
       });
 
     // Subscribe to standardized event emissions
-    const eventObserver = gitActor.on((event: GitEmittedEvent) => {
+    eventObserver = gitActor.on((event: GitEmittedEvent) => {
       log.debug('🎯 Event received from GitActor', {
         event: event.type,
         actorId: gitActor.id,
@@ -718,21 +828,6 @@ async function subscribeToStateMachineWithEvents(
       gitActor.stop();
       // NOTE: Actor cleanup is now handled by the actor system
     } else {
-      // Add cleanup flag to prevent duplicate cleanup
-      let cleanupExecuted = false;
-
-      const performCleanup = () => {
-        if (cleanupExecuted) return;
-        cleanupExecuted = true;
-
-        console.log(chalk.yellow('🛑 Stopping state monitoring...'));
-        stateObserver.unsubscribe();
-        contextObserver.unsubscribe();
-        eventObserver();
-        gitActor.stop();
-        // NOTE: Actor cleanup is now handled by the actor system
-      };
-
       // Show enhanced interactive help
       console.log(chalk.gray(''));
       console.log(chalk.green('🎯 Enhanced Actor State Machine Simulator'));
