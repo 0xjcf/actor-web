@@ -48,26 +48,35 @@ Date: ${currentDate}
       }
     }
 
-    // Get changed files for validation
-    const changedFiles = await git.getChangedFiles();
+    // Check if we're ahead of integration
+    const integrationBranch = 'feature/actor-ref-integration';
+    const integrationStatus = await git.getIntegrationStatus(integrationBranch);
 
-    if (changedFiles.length === 0) {
+    if (integrationStatus.ahead === 0) {
       console.log(chalk.yellow('⚠️  No changes to ship'));
       return;
     }
 
-    // Run validation
-    console.log(chalk.blue('🔍 Validating changes...'));
-    const results = await validator.validateFiles(changedFiles);
+    console.log(chalk.blue(`📦 Found ${integrationStatus.ahead} commits to ship`));
 
-    if (!results.overall) {
-      console.log(chalk.red('❌ Cannot ship: validation failed'));
-      console.log(chalk.blue('💡 Fix issues and try again, or use pnpm aw:save for quick commit'));
-      process.exit(1);
+    // Get changed files for validation from the commits ahead
+    const changedFiles = await git.getChangedFiles();
+
+    // Run validation on changed files (if any)
+    if (changedFiles.length > 0) {
+      console.log(chalk.blue('🔍 Validating changes...'));
+      const results = await validator.validateFiles(changedFiles);
+
+      if (!results.overall) {
+        console.log(chalk.red('❌ Cannot ship: validation failed'));
+        console.log(
+          chalk.blue('💡 Fix issues and try again, or use pnpm aw:save for quick commit')
+        );
+        process.exit(1);
+      }
     }
 
     // Push to integration branch
-    const integrationBranch = 'feature/actor-ref-integration';
     console.log(chalk.blue(`🔄 Shipping to ${integrationBranch}...`));
 
     try {
@@ -82,12 +91,15 @@ Date: ${currentDate}
       console.log(chalk.blue('📈 Other agents can now sync your changes'));
 
       // Show what was shipped
-      console.log(chalk.blue(`📦 Shipped ${changedFiles.length} files:`));
-      for (const file of changedFiles.slice(0, 5)) {
-        console.log(`   - ${file}`);
-      }
-      if (changedFiles.length > 5) {
-        console.log(`   ... and ${changedFiles.length - 5} more`);
+      console.log(chalk.blue(`📦 Shipped ${integrationStatus.ahead} commits to integration`));
+      if (changedFiles.length > 0) {
+        console.log(chalk.blue(`📝 Modified ${changedFiles.length} files:`));
+        for (const file of changedFiles.slice(0, 5)) {
+          console.log(`   - ${file}`);
+        }
+        if (changedFiles.length > 5) {
+          console.log(`   ... and ${changedFiles.length - 5} more`);
+        }
       }
     } catch (error) {
       console.error(chalk.red('❌ Failed to push to integration:'), error);
