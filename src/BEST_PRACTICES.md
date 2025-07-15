@@ -3,12 +3,13 @@
 ## Table of Contents
 1. [Event Handling Patterns](#event-handling-patterns)
 2. [State Machine Design](#state-machine-design)
-3. [Template Organization](#template-organization)
-4. [Performance Optimization](#performance-optimization)
-5. [Testing Strategies](#testing-strategies)
-6. [Common Pitfalls](#common-pitfalls)
-7. [Accessibility Guidelines](#accessibility-guidelines)
-8. [Type Safety Best Practices](#type-safety-best-practices)
+3. [Pure Actor Model](#pure-actor-model)
+4. [Template Organization](#template-organization)
+5. [Performance Optimization](#performance-optimization)
+6. [Testing Strategies](#testing-strategies)
+7. [Common Pitfalls](#common-pitfalls)
+8. [Accessibility Guidelines](#accessibility-guidelines)
+9. [Type Safety Best Practices](#type-safety-best-practices)
 
 ## Event Handling Patterns
 
@@ -76,6 +77,239 @@ const userSessionMachine = setup({
 // ❌ AVOID: God machines that do everything
 const everythingMachine = setup({
   // Don't mix authentication, document editing, navigation, etc.
+});
+```
+
+## Pure Actor Model
+
+The Actor-SPA Framework supports both XState-based actors and pure message-passing actors. Pure actors follow the classic actor model principles for backend services and CLI applications.
+
+### 🎯 **Pure Actor Implementation**
+
+Pure actors implement message-passing communication without state machines:
+
+```typescript
+import { Logger } from '@actor-core/runtime';
+
+// Define message types
+export type GitMessageType = 
+  | 'CHECK_STATUS'
+  | 'COMMIT_CHANGES'
+  | 'PUSH_CHANGES';
+
+export interface GitMessage {
+  type: GitMessageType;
+  payload?: Record<string, unknown>;
+  timestamp: number;
+  correlationId?: string;
+}
+
+// Define actor state
+export interface GitActorState {
+  currentBranch?: string;
+  uncommittedChanges?: boolean;
+  lastError?: string;
+  lastOperation?: string;
+}
+
+// ✅ GOOD: Pure actor with message-passing
+export class PureGitActor {
+  private state: GitActorState = {};
+  private messageQueue: GitMessage[] = [];
+  private isProcessing = false;
+
+  async send(message: GitMessage): Promise<void> {
+    this.messageQueue.push(message);
+    
+    if (!this.isProcessing) {
+      await this.processMessages();
+    }
+  }
+
+  getState(): GitActorState {
+    return { ...this.state };
+  }
+
+  private async processMessages(): Promise<void> {
+    this.isProcessing = true;
+    
+    while (this.messageQueue.length > 0) {
+      const message = this.messageQueue.shift();
+      if (message) {
+        await this.handleMessage(message);
+      }
+    }
+    
+    this.isProcessing = false;
+  }
+
+  private async handleMessage(message: GitMessage): Promise<void> {
+    switch (message.type) {
+      case 'CHECK_STATUS':
+        await this.handleCheckStatus();
+        break;
+      case 'COMMIT_CHANGES':
+        await this.handleCommitChanges(message.payload);
+        break;
+      case 'PUSH_CHANGES':
+        await this.handlePushChanges(message.payload);
+        break;
+    }
+  }
+
+  private async handleCheckStatus(): Promise<void> {
+    // Implementation details...
+    this.state = {
+      ...this.state,
+      lastOperation: 'CHECK_STATUS',
+      lastError: undefined,
+    };
+  }
+
+  private async handleCommitChanges(payload: unknown): Promise<void> {
+    // Implementation details...
+    this.state = {
+      ...this.state,
+      lastOperation: 'COMMIT_CHANGES',
+      lastError: undefined,
+    };
+  }
+
+  private async handlePushChanges(payload: unknown): Promise<void> {
+    // Implementation details...
+    this.state = {
+      ...this.state,
+      lastOperation: 'PUSH_CHANGES',
+      lastError: undefined,
+    };
+  }
+}
+```
+
+### 🏗️ **Actor Factory Pattern**
+
+Use factory functions for actor creation:
+
+```typescript
+// ✅ GOOD: Factory function for actor creation
+export function createGitActor(baseDir?: string): PureGitActor {
+  return new PureGitActor(baseDir || process.cwd());
+}
+
+// ✅ GOOD: Message factory for type safety
+export function createGitMessage<T extends GitMessageType>(
+  type: T,
+  payload?: Record<string, unknown>,
+  correlationId?: string
+): GitMessage {
+  return {
+    type,
+    payload: payload || {},
+    timestamp: Date.now(),
+    correlationId: correlationId || generateId(),
+  };
+}
+```
+
+### 🔄 **Message-Passing Best Practices**
+
+**Immutable State Updates:**
+```typescript
+// ✅ GOOD: Immutable state updates
+this.state = {
+  ...this.state,
+  currentBranch: newBranch,
+  lastOperation: 'CHECKOUT',
+};
+
+// ❌ BAD: Mutating state directly
+this.state.currentBranch = newBranch;
+```
+
+**Async Message Processing:**
+```typescript
+// ✅ GOOD: Queue-based message processing
+async send(message: GitMessage): Promise<void> {
+  this.messageQueue.push(message);
+  await this.processMessages();
+}
+
+// ❌ BAD: Direct synchronous processing
+send(message: GitMessage): void {
+  this.handleMessage(message); // Blocks execution
+}
+```
+
+### 🧪 **Testing Pure Actors**
+
+Test actors through message passing:
+
+```typescript
+describe('PureGitActor', () => {
+  let actor: PureGitActor;
+
+  beforeEach(() => {
+    actor = createGitActor('/test/repo');
+  });
+
+  it('should handle check status message', async () => {
+    const message = createGitMessage('CHECK_STATUS');
+    
+    await actor.send(message);
+    
+    const state = actor.getState();
+    expect(state.lastOperation).toBe('CHECK_STATUS');
+    expect(state.lastError).toBeUndefined();
+  });
+
+  it('should handle commit changes message', async () => {
+    const message = createGitMessage('COMMIT_CHANGES', { 
+      message: 'test commit' 
+    });
+    
+    await actor.send(message);
+    
+    const state = actor.getState();
+    expect(state.lastOperation).toBe('COMMIT_CHANGES');
+  });
+});
+```
+
+### 📨 **When to Use Pure Actors vs State Machines**
+
+**Use Pure Actors for:**
+- CLI applications and backend services
+- Simple request/response patterns
+- Integration with external systems
+- When you need maximum control over message flow
+
+**Use State Machines for:**
+- Complex UI interactions
+- Multi-step workflows with branching
+- When you need visual state representation
+- Event-driven frontend components
+
+```typescript
+// ✅ GOOD: Pure actor for CLI operations
+const gitActor = createPureGitActor();
+await gitActor.send(createGitMessage('PUSH_CHANGES', { branch: 'main' }));
+
+// ✅ GOOD: State machine for UI workflow
+const userMachine = setup({
+  types: {
+    events: {} as { type: 'LOGIN' } | { type: 'LOGOUT' }
+  }
+}).createMachine({
+  id: 'user',
+  initial: 'loggedOut',
+  states: {
+    loggedOut: {
+      on: { LOGIN: 'loggedIn' }
+    },
+    loggedIn: {
+      on: { LOGOUT: 'loggedOut' }
+    }
+  }
 });
 ```
 

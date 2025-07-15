@@ -149,6 +149,154 @@ clusterEvents.subscribe(event => {
 });
 ```
 
+## 🎭 Pure Actor Model
+
+The Actor-Web Framework supports both XState-based actors and pure message-passing actors. Pure actors are ideal for CLI applications, backend services, and systems requiring maximum control over message flow.
+
+### Message-Passing Actors
+
+```typescript
+import { createPureGitActor, createGitMessage } from '@agent-workflow/cli';
+
+// Create a pure actor
+const gitActor = createPureGitActor('/path/to/repo');
+
+// Start the actor
+await gitActor.start();
+
+// Send messages
+await gitActor.send(createGitMessage('CHECK_STATUS'));
+await gitActor.send(createGitMessage('COMMIT_CHANGES', { 
+  message: 'feat: implement pure actor model' 
+}));
+await gitActor.send(createGitMessage('PUSH_CHANGES', { 
+  branch: 'main' 
+}));
+
+// Get actor state
+const state = gitActor.getState();
+console.log('Current branch:', state.currentBranch);
+console.log('Last operation:', state.lastOperation);
+
+// Stop the actor
+await gitActor.stop();
+```
+
+### Custom Pure Actor Implementation
+
+```typescript
+// Define message types
+export type CustomMessageType = 
+  | 'PROCESS_DATA'
+  | 'SAVE_RESULT'
+  | 'CLEANUP';
+
+export interface CustomMessage {
+  type: CustomMessageType;
+  payload?: Record<string, unknown>;
+  timestamp: number;
+  correlationId?: string;
+}
+
+// Define actor state
+export interface CustomActorState {
+  data?: unknown;
+  processed?: boolean;
+  lastError?: string;
+  lastOperation?: string;
+}
+
+// Pure actor implementation
+export class CustomActor {
+  private state: CustomActorState = {};
+  private messageQueue: CustomMessage[] = [];
+  private isProcessing = false;
+
+  async send(message: CustomMessage): Promise<void> {
+    this.messageQueue.push(message);
+    
+    if (!this.isProcessing) {
+      await this.processMessages();
+    }
+  }
+
+  getState(): CustomActorState {
+    return { ...this.state };
+  }
+
+  private async processMessages(): Promise<void> {
+    this.isProcessing = true;
+    
+    while (this.messageQueue.length > 0) {
+      const message = this.messageQueue.shift();
+      if (message) {
+        await this.handleMessage(message);
+      }
+    }
+    
+    this.isProcessing = false;
+  }
+
+  private async handleMessage(message: CustomMessage): Promise<void> {
+    switch (message.type) {
+      case 'PROCESS_DATA':
+        await this.processData(message.payload);
+        break;
+      case 'SAVE_RESULT':
+        await this.saveResult(message.payload);
+        break;
+      case 'CLEANUP':
+        await this.cleanup();
+        break;
+    }
+  }
+
+  private async processData(payload: unknown): Promise<void> {
+    // Implementation details...
+    this.state = {
+      ...this.state,
+      data: payload,
+      processed: true,
+      lastOperation: 'PROCESS_DATA',
+      lastError: undefined,
+    };
+  }
+
+  private async saveResult(payload: unknown): Promise<void> {
+    // Implementation details...
+    this.state = {
+      ...this.state,
+      lastOperation: 'SAVE_RESULT',
+      lastError: undefined,
+    };
+  }
+
+  private async cleanup(): Promise<void> {
+    // Implementation details...
+    this.state = {
+      data: undefined,
+      processed: false,
+      lastOperation: 'CLEANUP',
+      lastError: undefined,
+    };
+  }
+}
+```
+
+### When to Use Pure Actors vs State Machines
+
+**Use Pure Actors for:**
+- CLI applications and backend services
+- Simple request/response patterns
+- Integration with external systems
+- When you need maximum control over message flow
+
+**Use State Machines for:**
+- Complex UI interactions
+- Multi-step workflows with branching
+- When you need visual state representation
+- Event-driven frontend components
+
 ## 🛠️ CLI Tools
 
 ### Agent Workflow CLI

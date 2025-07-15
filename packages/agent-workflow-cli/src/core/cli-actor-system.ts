@@ -11,7 +11,7 @@ import {
   createActorSystem,
   Logger,
 } from '@actor-core/runtime';
-import { createGitActor, type GitActor } from '../actors/git-actor.js';
+import { createPureGitActor, type PureGitActor } from '../actors/pure-git-actor.js';
 
 // Create scoped logger for CLI actor system
 const log = Logger.namespace('CLI_ACTOR_SYSTEM');
@@ -72,22 +72,26 @@ class CLIActorSystem {
   }
 
   /**
-   * Create a GitActor using the current implementation
-   * TODO: Integrate properly with ActorSystem once XState machine support is added
+   * Create a GitActor using XState-based actor pattern
+   *
+   * Note: XState actors use createActorRef() pattern, not ActorSystem.spawn().
+   * This is the correct approach for state machine-based actors.
    */
-  async createGitActor(baseDir?: string): Promise<GitActor> {
+  async createGitActor(baseDir?: string): Promise<PureGitActor> {
     // Ensure system is initialized
     if (!this.isInitialized) {
       await this.initialize();
     }
 
-    log.debug('📦 Creating GitActor with CLI system management', { baseDir });
+    log.debug('📦 Creating Pure GitActor with CLI system management', { baseDir });
 
-    // Use the existing createGitActor function for now
-    // TODO: Replace with proper ActorSystem.spawn() once XState support is added
-    const gitActor = createGitActor(baseDir);
+    // Use pure message-passing GitActor
+    const gitActor = createPureGitActor(baseDir);
 
-    log.debug('✅ GitActor created successfully');
+    // Start the actor
+    await gitActor.start();
+
+    log.debug('✅ Pure GitActor created and started successfully');
 
     return gitActor;
   }
