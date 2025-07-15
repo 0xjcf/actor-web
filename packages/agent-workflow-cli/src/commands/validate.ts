@@ -1,21 +1,33 @@
-import path from 'node:path';
 import chalk from 'chalk';
 import { GitActorIntegration } from '../core/git-actor-integration.js';
+import { findRepoRootWithOptions } from '../core/repo-root-finder.js';
 import { ValidationService } from '../core/validation.js';
 
-export async function validateCommand() {
+interface ValidateOptions {
+  root?: string;
+  cwd?: string;
+}
+
+export async function validateCommand(options: ValidateOptions = {}) {
   console.log(chalk.blue('🔍 Smart File Validation'));
   console.log(chalk.blue('==========================================='));
 
-  // Navigate to repository root (two levels up from CLI package)
-  const repoRoot = path.resolve(process.cwd(), '../..');
-  const git = new GitActorIntegration(repoRoot);
-  const validator = new ValidationService();
-
   try {
+    // Dynamically find repository root using multiple strategies
+    const repoRoot = await findRepoRootWithOptions({
+      root: options.root,
+      cwd: options.cwd || process.cwd(),
+    });
+
+    console.log(chalk.gray(`📁 Repository root: ${repoRoot}`));
+
+    const git = new GitActorIntegration(repoRoot);
+    const validator = new ValidationService();
+
     // Check if we're in a git repo
     if (!(await git.isGitRepo())) {
       console.log(chalk.red('❌ Not in a Git repository'));
+      console.log(chalk.yellow('💡 Make sure you are in a git repository or specify --root'));
       return;
     }
 
@@ -26,6 +38,8 @@ export async function validateCommand() {
       console.log(chalk.green('✅ No files to validate (no changes detected)'));
       return;
     }
+
+    console.log(chalk.gray(`🔍 Validating ${changedFiles.length} changed files...`));
 
     // Run validation
     const results = await validator.validateFiles(changedFiles);
@@ -40,6 +54,7 @@ export async function validateCommand() {
     }
   } catch (error) {
     console.error(chalk.red('❌ Error during validation:'), error);
+    console.log(chalk.yellow('💡 Try specifying the repository root with --root <path>'));
     process.exit(1);
   }
 }

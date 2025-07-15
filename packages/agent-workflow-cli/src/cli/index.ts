@@ -45,6 +45,7 @@ program.command('sync').description('Sync with integration branch').action(syncC
 program
   .command('validate')
   .description('Validate current work using smart analysis')
+  .option('--root <path>', 'Specify repository root path explicitly')
   .action(validateCommand);
 
 program
