@@ -4,7 +4,7 @@ import { createGitActor, type GitActor, type GitContext } from '../actors/git-ac
 import { findRepoRoot } from '../core/repo-root-finder.js';
 
 export async function saveCommand(customMessage?: string) {
-  console.log(chalk.blue('💾 State-Based Quick Save'));
+  console.log(chalk.blue('💾 Quick Save'));
   console.log(chalk.blue('==========================================='));
 
   const repoRoot = await findRepoRoot();
@@ -45,7 +45,7 @@ class SaveWorkflowHandler {
 
   async executeSave(customMessage?: string): Promise<void> {
     this.customMessage = customMessage;
-    console.log(chalk.blue('📋 Starting state-based save workflow...'));
+    console.log(chalk.blue('📋 Starting save workflow...'));
 
     return new Promise((resolve, reject) => {
       // Observe repo status

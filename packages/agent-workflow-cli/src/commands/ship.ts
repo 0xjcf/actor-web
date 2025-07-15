@@ -13,7 +13,7 @@ import { findRepoRoot } from '../core/repo-root-finder.js';
  * Uses proper actor-web framework patterns with observe
  */
 export async function shipCommand() {
-  console.log(chalk.blue('🚀 State-Based Ship Workflow'));
+  console.log(chalk.blue('🚀 Ship Workflow'));
   console.log(chalk.blue('==========================================='));
 
   const repoRoot = await findRepoRoot();
@@ -58,7 +58,7 @@ class StateBasedWorkflowHandler {
    * Execute ship workflow using state-based observation
    */
   async executeShipWorkflow(): Promise<void> {
-    console.log(chalk.blue('📋 Starting state-based ship workflow...'));
+    console.log(chalk.blue('📋 Starting ship workflow...'));
 
     return new Promise((resolve, reject) => {
       // Observe uncommitted changes state

@@ -4,7 +4,7 @@ import { createGitActor, type GitActor, type GitContext } from '../actors/git-ac
 import { findRepoRoot } from '../core/repo-root-finder.js';
 
 export async function statusCommand() {
-  console.log(chalk.blue('📊 State-Based Status Check'));
+  console.log(chalk.blue('📊 Status Check'));
   console.log(chalk.blue('==========================================='));
 
   const repoRoot = await findRepoRoot();
@@ -49,7 +49,7 @@ class StatusWorkflowHandler {
   }
 
   async executeStatus(): Promise<void> {
-    console.log(chalk.blue('📋 Starting state-based status check...'));
+    console.log(chalk.blue('📋 Starting status check...'));
 
     return new Promise((resolve, reject) => {
       // Observe all status-related state changes

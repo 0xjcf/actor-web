@@ -5,7 +5,7 @@ import { findRepoRoot } from '../core/repo-root-finder.js';
 import { ValidationService } from '../core/validation.js';
 
 export async function validateCommand() {
-  console.log(chalk.blue('🔍 State-Based Validation'));
+  console.log(chalk.blue('🔍 Validation'));
   console.log(chalk.blue('==========================================='));
 
   const repoRoot = await findRepoRoot();
@@ -43,7 +43,7 @@ class ValidateWorkflowHandler {
   }
 
   async executeValidation(): Promise<void> {
-    console.log(chalk.blue('📋 Starting state-based validation...'));
+    console.log(chalk.blue('📋 Starting validation...'));
 
     return new Promise((resolve, reject) => {
       // Observe repo status
