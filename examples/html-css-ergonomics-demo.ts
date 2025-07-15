@@ -10,7 +10,7 @@
  * ✅ styles: css`body { color: red; }`
  */
 
-import { createMachine } from 'xstate';
+import { assign, createMachine } from 'xstate';
 import { createEnhancedComponent } from '../src/core/enhanced-component.js';
 import { createComponent, css, html } from '../src/core/index.js';
 
@@ -23,9 +23,9 @@ const regularMachine = createMachine({
     greeting: {
       on: {
         CHANGE_NAME: {
-          actions: ({ context, event }) => {
-            context.name = event.name;
-          },
+          actions: assign({
+            name: ({ event }) => event.name,
+          }),
         },
       },
     },
@@ -80,14 +80,14 @@ const enhancedMachine = createMachine({
     idle: {
       on: {
         INCREMENT: {
-          actions: ({ context }) => {
-            context.count++;
-          },
+          actions: assign({
+            count: ({ context }) => context.count + 1,
+          }),
         },
         DECREMENT: {
-          actions: ({ context }) => {
-            context.count--;
-          },
+          actions: assign({
+            count: ({ context }) => context.count - 1,
+          }),
         },
       },
     },
