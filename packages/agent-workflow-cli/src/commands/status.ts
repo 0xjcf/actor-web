@@ -1,176 +1,218 @@
+import type { ActorSnapshot } from '@actor-web/core';
 import chalk from 'chalk';
-import { GitActorIntegration } from '../core/git-actor-integration.js';
-import { findRepoRootWithOptions } from '../core/repo-root-finder.js';
-import { ValidationService } from '../core/validation.js';
+import { createGitActor, type GitActor, type GitContext } from '../actors/git-actor.js';
+import { findRepoRoot } from '../core/repo-root-finder.js';
 
-interface StatusOptions {
-  root?: string;
-  cwd?: string;
-}
-
-export async function statusCommand(options: StatusOptions = {}) {
-  console.log(chalk.blue('📊 Agent Status Dashboard'));
+export async function statusCommand() {
+  console.log(chalk.blue('📊 State-Based Status Check'));
   console.log(chalk.blue('==========================================='));
 
+  const repoRoot = await findRepoRoot();
+  const gitActor = createGitActor(repoRoot);
+
   try {
-    // Dynamically find repository root using multiple strategies
-    const repoRoot = await findRepoRootWithOptions({
-      root: options.root,
-      cwd: options.cwd || process.cwd(),
+    // Start the actor
+    gitActor.start();
+
+    // Create status workflow handler
+    const statusWorkflow = new StatusWorkflowHandler(gitActor);
+    await statusWorkflow.executeStatus();
+  } catch (error) {
+    console.error(chalk.red('❌ Status check failed:'), error);
+    process.exit(1);
+  } finally {
+    await gitActor.stop();
+  }
+}
+
+/**
+ * State-based status workflow handler
+ */
+class StatusWorkflowHandler {
+  private actor: GitActor;
+  private workflowState:
+    | 'checking_repo'
+    | 'checking_status'
+    | 'checking_changes'
+    | 'checking_integration'
+    | 'complete' = 'checking_repo';
+  private statusData: {
+    isGitRepo?: boolean;
+    currentBranch?: string;
+    agentType?: string;
+    uncommittedChanges?: boolean;
+    integrationStatus?: { ahead: number; behind: number };
+  } = {};
+
+  constructor(actor: GitActor) {
+    this.actor = actor;
+  }
+
+  async executeStatus(): Promise<void> {
+    console.log(chalk.blue('📋 Starting state-based status check...'));
+
+    return new Promise((resolve, reject) => {
+      // Observe all status-related state changes
+      const repoObserver = this.actor
+        .observe((snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).isGitRepo)
+        .subscribe((isGitRepo) => {
+          if (isGitRepo !== undefined) {
+            this.statusData.isGitRepo = isGitRepo;
+            this.handleRepoStatus(isGitRepo);
+          }
+        });
+
+      const branchObserver = this.actor
+        .observe(
+          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).currentBranch
+        )
+        .subscribe((currentBranch) => {
+          if (currentBranch) {
+            this.statusData.currentBranch = currentBranch;
+            this.checkNextStep();
+          }
+        });
+
+      const agentObserver = this.actor
+        .observe((snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).agentType)
+        .subscribe((agentType) => {
+          if (agentType) {
+            this.statusData.agentType = agentType;
+            this.checkNextStep();
+          }
+        });
+
+      const changesObserver = this.actor
+        .observe(
+          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).uncommittedChanges
+        )
+        .subscribe((uncommittedChanges) => {
+          if (uncommittedChanges !== undefined) {
+            this.statusData.uncommittedChanges = uncommittedChanges;
+            this.checkNextStep();
+          }
+        });
+
+      const integrationObserver = this.actor
+        .observe(
+          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).integrationStatus
+        )
+        .subscribe((integrationStatus) => {
+          if (integrationStatus) {
+            this.statusData.integrationStatus = integrationStatus;
+            this.checkNextStep();
+          }
+        });
+
+      // Observe errors
+      const errorObserver = this.actor
+        .observe((snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).lastError)
+        .subscribe((error) => {
+          if (error) {
+            console.error(chalk.red('❌ Error:'), error);
+            this.cleanupObservers();
+            reject(new Error(error));
+          }
+        });
+
+      // Store observers for cleanup
+      this.observers = [
+        repoObserver,
+        branchObserver,
+        agentObserver,
+        changesObserver,
+        integrationObserver,
+        errorObserver,
+      ];
+
+      // Success handler
+      this.onSuccess = () => {
+        this.displayStatus();
+        this.cleanupObservers();
+        resolve();
+      };
+
+      // Start the workflow
+      this.workflowState = 'checking_repo';
+      this.actor.send({ type: 'CHECK_REPO' });
     });
+  }
 
-    console.log(chalk.gray(`📂 Repository root: ${repoRoot}`));
+  private observers: Array<{ unsubscribe(): void }> = [];
+  private onSuccess?: () => void;
 
-    const git = new GitActorIntegration(repoRoot);
-    const validator = new ValidationService();
+  private cleanupObservers(): void {
+    this.observers.forEach((observer) => observer.unsubscribe());
+    this.observers = [];
+  }
 
-    // Check if we're in a git repo
-    if (!(await git.isGitRepo())) {
+  private handleRepoStatus(isGitRepo: boolean): void {
+    if (this.workflowState !== 'checking_repo') return;
+
+    if (!isGitRepo) {
       console.log(chalk.red('❌ Not in a Git repository'));
+      this.workflowState = 'complete';
+      this.onSuccess?.();
       return;
     }
 
-    // Current branch and agent type
-    const currentBranch = await git.getCurrentBranch();
-    const agentType = await git.detectAgentType();
+    this.workflowState = 'checking_status';
+    this.actor.send({ type: 'CHECK_STATUS' });
+  }
 
-    console.log(`${chalk.green('📍 Current branch:')} ${currentBranch}`);
-    console.log(`${chalk.green('👤 Agent type:')} ${agentType}`);
-
-    // Uncommitted changes
-    const hasChanges = await git.hasUncommittedChanges();
-    if (hasChanges) {
-      console.log(`${chalk.yellow('📝 Uncommitted changes:')} Yes`);
-      console.log(`${chalk.blue('💡 Quick fix:')}${chalk.yellow(' pnpm aw:save')}`);
-    } else {
-      console.log(`${chalk.green('📝 Uncommitted changes:')} None`);
+  private checkNextStep(): void {
+    if (
+      this.workflowState === 'checking_status' &&
+      this.statusData.currentBranch &&
+      this.statusData.agentType
+    ) {
+      this.workflowState = 'checking_changes';
+      this.actor.send({ type: 'CHECK_UNCOMMITTED_CHANGES' });
+    } else if (
+      this.workflowState === 'checking_changes' &&
+      this.statusData.uncommittedChanges !== undefined
+    ) {
+      this.workflowState = 'checking_integration';
+      this.actor.send({
+        type: 'GET_INTEGRATION_STATUS',
+        integrationBranch: 'feature/actor-ref-integration',
+      });
+    } else if (this.workflowState === 'checking_integration' && this.statusData.integrationStatus) {
+      this.workflowState = 'complete';
+      this.onSuccess?.();
     }
+  }
 
-    // Cache integration status to avoid redundant API calls
-    let integrationStatus: { ahead: number; behind: number } | null = null;
+  private displayStatus(): void {
+    console.log(chalk.green('\n✅ Repository Status:'));
+    console.log(
+      `   📁 Repository: ${this.statusData.isGitRepo ? 'Valid Git repo' : 'Not a Git repo'}`
+    );
+    console.log(`   🌿 Branch: ${this.statusData.currentBranch || 'unknown'}`);
+    console.log(`   🤖 Agent: ${this.statusData.agentType || 'unknown'}`);
+    console.log(
+      `   📝 Changes: ${this.statusData.uncommittedChanges ? 'Uncommitted changes present' : 'Working tree clean'}`
+    );
 
-    // Integration status
-    try {
-      integrationStatus = await git.getIntegrationStatus();
+    if (this.statusData.integrationStatus) {
+      const { ahead, behind } = this.statusData.integrationStatus;
+      console.log(`   📈 Integration: ${ahead} ahead, ${behind} behind`);
 
-      if (integrationStatus.behind > 0) {
-        console.log(
-          `${chalk.yellow('⬇️  Behind integration:')} ${integrationStatus.behind} commits`
-        );
-        console.log(chalk.blue('💡 Run:') + chalk.yellow(' pnpm aw:sync'));
-      } else {
-        console.log(`${chalk.green('⬇️  Behind integration:')} 0 commits`);
+      if (ahead > 0) {
+        console.log(chalk.yellow(`   💡 ${ahead} commits ready to ship`));
       }
-
-      if (integrationStatus.ahead > 0) {
-        console.log(
-          `${chalk.yellow('⬆️  Ahead of integration:')} ${integrationStatus.ahead} commits`
-        );
-        console.log(chalk.blue('💡 Run:') + chalk.yellow(' pnpm aw:ship'));
-      } else {
-        console.log(`${chalk.green('⬆️  Ahead of integration:')} 0 commits`);
-      }
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.log(chalk.yellow('⚠️  Could not check integration status'));
-      console.log(chalk.gray(`   Error: ${errorMessage}`));
-    }
-
-    // Quick validation status
-    console.log(chalk.blue('🔍 Quick validation (your files only):'));
-
-    try {
-      const changedFiles = await git.getChangedFiles();
-
-      if (changedFiles.length === 0) {
-        console.log(chalk.green('  ✅ No files to validate'));
-      } else {
-        console.log(chalk.blue(`  📁 ${changedFiles.length} files changed by your branch`));
-
-        // Quick TypeScript check
-        const tsFiles = changedFiles.filter((f) => f.match(/\.(ts|tsx)$/));
-        if (tsFiles.length > 0) {
-          try {
-            const tsResult = await validator.validateTypeScript(changedFiles);
-            if (tsResult.success) {
-              console.log(chalk.green(`  ✅ TypeScript OK (${tsFiles.length} files)`));
-            } else {
-              console.log(chalk.red(`  ❌ TypeScript errors (${tsResult.errors.length} issues)`));
-            }
-          } catch (error: unknown) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            console.log(chalk.yellow('  ⚠️  Could not check TypeScript'));
-            console.log(chalk.gray(`     Error: ${errorMessage}`));
-          }
-        } else {
-          console.log(chalk.green('  ✅ No TypeScript files to check'));
-        }
-
-        // Quick linting check
-        const lintableFiles = validator.filterLintableFiles(changedFiles);
-        if (lintableFiles.length > 0) {
-          try {
-            const biomeResult = await validator.validateBiome(changedFiles);
-            if (biomeResult.success) {
-              console.log(chalk.green('  ✅ Linting OK (your files)'));
-            } else {
-              console.log(chalk.red('  ❌ Linting errors (your files)'));
-            }
-          } catch (error: unknown) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            console.log(chalk.yellow('  ⚠️  Could not check linting'));
-            console.log(chalk.gray(`     Error: ${errorMessage}`));
-          }
-        } else {
-          console.log(chalk.green('  ✅ No lintable files (docs/configs ignored)'));
-        }
-      }
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.log(chalk.yellow('  ⚠️  Could not analyze changed files'));
-      console.log(chalk.gray(`     Error: ${errorMessage}`));
-    }
-
-    // Suggested next actions
-    console.log(chalk.blue('💡 Suggested next actions:'));
-
-    if (hasChanges) {
-      console.log(`  • ${chalk.yellow('pnpm aw:save')} - Quick save your work`);
-      console.log(`  • ${chalk.yellow('pnpm aw:ship')} - Full workflow to integration`);
-    } else {
-      // Use cached integration status to avoid redundant API call
-      if (integrationStatus) {
-        if (integrationStatus.ahead > 0) {
-          console.log(`  • ${chalk.yellow('pnpm aw:ship')} - Share your work with other agents`);
-        } else if (integrationStatus.behind > 0) {
-          console.log(`  • ${chalk.yellow('pnpm aw:sync')} - Get latest changes from other agents`);
-        } else {
-          console.log(`  • ${chalk.green('All caught up!')} Ready for new work`);
-        }
-      } else {
-        console.log(`  • ${chalk.yellow('pnpm aw:sync')} - Get latest changes from other agents`);
-        console.log(`  • ${chalk.yellow('pnpm aw:ship')} - Share your work with other agents`);
+      if (behind > 0) {
+        console.log(chalk.blue(`   ⬇️  ${behind} commits behind integration`));
       }
     }
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorStack = error instanceof Error ? error.stack : undefined;
 
-    console.error(chalk.red('❌ Error running status check:'), errorMessage);
-    if (errorStack) {
-      console.error(chalk.gray('Stack trace:'), errorStack);
+    console.log(chalk.blue('\n💡 Next steps:'));
+    if (this.statusData.uncommittedChanges) {
+      console.log(`   • Save changes: ${chalk.yellow('pnpm aw:save')}`);
     }
-
-    // Provide helpful guidance based on error type
-    if (errorMessage.includes('not found') || errorMessage.includes('ENOENT')) {
-      console.log(chalk.blue('💡 Try specifying repository root explicitly:'));
-      console.log(chalk.yellow('   pnpm aw:status --root /path/to/repo'));
-    } else if (errorMessage.includes('permission') || errorMessage.includes('EACCES')) {
-      console.log(chalk.blue('💡 Check file permissions and try again'));
-    } else if (errorMessage.includes('git')) {
-      console.log(chalk.blue('💡 Ensure you are in a valid git repository'));
+    if (this.statusData.integrationStatus?.ahead && this.statusData.integrationStatus.ahead > 0) {
+      console.log(`   • Ship to integration: ${chalk.yellow('pnpm aw:ship')}`);
     }
-
-    process.exit(1);
+    console.log(`   • Sync with integration: ${chalk.yellow('pnpm aw:sync')}`);
   }
 }

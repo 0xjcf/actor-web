@@ -225,6 +225,37 @@ export const gitActorMachine = setup({
       }
     ),
 
+    getChangedFiles: fromPromise(async ({ input }: { input: { git: SimpleGit } }) => {
+      const { git } = input;
+
+      try {
+        // Get status to see all changed files (staged and unstaged)
+        const status = await git.status();
+        const changedFiles: string[] = [];
+
+        // Add staged files
+        changedFiles.push(...status.staged);
+
+        // Add modified files (unstaged)
+        for (const file of status.modified) {
+          if (!changedFiles.includes(file)) {
+            changedFiles.push(file);
+          }
+        }
+
+        // Add new files
+        for (const file of status.not_added) {
+          if (!changedFiles.includes(file)) {
+            changedFiles.push(file);
+          }
+        }
+
+        return changedFiles;
+      } catch {
+        return [];
+      }
+    }),
+
     // Add other necessary actors...
   },
 }).createMachine({
@@ -271,6 +302,7 @@ export const gitActorMachine = setup({
         ADD_ALL: 'stagingAll',
         COMMIT_CHANGES: 'committingChanges',
         GET_INTEGRATION_STATUS: 'gettingIntegrationStatus',
+        GET_CHANGED_FILES: 'gettingChangedFiles',
         // Add other events...
       },
     },
@@ -391,6 +423,27 @@ export const gitActorMachine = setup({
             lastError: () => 'Commit failed',
             commitInProgress: () => false,
             commitComplete: () => false,
+          }),
+        },
+      },
+    },
+
+    gettingChangedFiles: {
+      invoke: {
+        src: 'getChangedFiles',
+        input: ({ context }) => ({ git: context.git }),
+        onDone: {
+          target: 'idle',
+          actions: assign({
+            changedFiles: ({ event }) => event.output,
+            lastOperation: () => 'GET_CHANGED_FILES',
+          }),
+        },
+        onError: {
+          target: 'idle',
+          actions: assign({
+            lastError: () => 'Getting changed files failed',
+            changedFiles: () => [],
           }),
         },
       },
