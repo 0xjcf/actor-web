@@ -2,6 +2,7 @@
   "name": "@actor-core/testing",
   "version": "0.1.0",
   "description": "Testing utilities for actor-core applications including state machine analysis",
+  "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",

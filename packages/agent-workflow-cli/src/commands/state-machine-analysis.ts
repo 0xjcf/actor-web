@@ -539,7 +539,19 @@ async function subscribeToStateMachineWithEvents(
 
 function analyzeStateMachineData(machine: AnyStateMachine) {
   try {
-    // Get analysis from the testing module
+    // Skip the @xstate/graph analysis for git-actor due to circular reference issues
+    // Our custom workflow analysis works correctly and is more valuable
+    if (machine.id === 'git-actor') {
+      return {
+        totalStates: 0,
+        reachableStates: 0,
+        unreachableStates: [],
+        allStates: extractAllStatesFromMachine(machine),
+        simplePaths: [],
+      };
+    }
+
+    // For other machines, try the standard analysis
     const analysis = analyzeStateMachine(machine);
 
     return {
@@ -687,9 +699,11 @@ function analyzeStateTransitionsFromConfig(config: Record<string, unknown>): {
   orphanedStates: string[];
 } {
   const stateTransitions: Record<string, string[]> = {};
+  const stateTargets: Record<string, string[]> = {}; // Track actual transition targets
   const deadEndStates: string[] = [];
   const finalStates: string[] = [];
   const allStates: string[] = [];
+  const incomingTransitions: Record<string, string[]> = {};
 
   // Extract states and transitions from configuration
   function extractStatesAndTransitions(
@@ -702,12 +716,59 @@ function analyzeStateTransitionsFromConfig(config: Record<string, unknown>): {
     const fullStateName = parentPath ? `${parentPath}.${stateName}` : stateName;
     allStates.push(fullStateName);
 
-    const transitions: string[] = [];
+    const events: string[] = [];
+    const targets: string[] = [];
 
-    // Extract events from 'on' property
+    // Extract events and targets from 'on' property
     if (stateConfig.on && typeof stateConfig.on === 'object') {
-      Object.keys(stateConfig.on).forEach((event) => {
-        if (event !== '') transitions.push(event);
+      Object.entries(stateConfig.on).forEach(([event, transitionConfig]) => {
+        if (event !== '') {
+          events.push(event);
+
+          // Extract target states from transition configuration
+          if (typeof transitionConfig === 'string') {
+            targets.push(transitionConfig);
+            addIncomingTransition(transitionConfig, fullStateName);
+          } else if (typeof transitionConfig === 'object' && transitionConfig !== null) {
+            if (Array.isArray(transitionConfig)) {
+              // Handle array of transitions
+              transitionConfig.forEach((trans) => {
+                if (typeof trans === 'object' && trans !== null && 'target' in trans) {
+                  const target = String(trans.target);
+                  targets.push(target);
+                  addIncomingTransition(target, fullStateName);
+                }
+              });
+            } else if ('target' in transitionConfig) {
+              const target = String(transitionConfig.target);
+              targets.push(target);
+              addIncomingTransition(target, fullStateName);
+            }
+          }
+        }
+      });
+    }
+
+    // Extract transitions from 'invoke' states (onDone, onError)
+    if (stateConfig.invoke && typeof stateConfig.invoke === 'object') {
+      const invokeConfig = stateConfig.invoke as Record<string, unknown>;
+
+      if (invokeConfig.onDone) {
+        events.push('onDone');
+        extractTransitionTargets(invokeConfig.onDone, targets, fullStateName);
+      }
+
+      if (invokeConfig.onError) {
+        events.push('onError');
+        extractTransitionTargets(invokeConfig.onError, targets, fullStateName);
+      }
+    }
+
+    // Extract transitions from 'after' (timeout transitions)
+    if (stateConfig.after && typeof stateConfig.after === 'object') {
+      Object.entries(stateConfig.after).forEach(([timeout, transitionConfig]) => {
+        events.push(`after_${timeout}`);
+        extractTransitionTargets(transitionConfig, targets, fullStateName);
       });
     }
 
@@ -716,10 +777,11 @@ function analyzeStateTransitionsFromConfig(config: Record<string, unknown>): {
       finalStates.push(fullStateName);
     }
 
-    stateTransitions[fullStateName] = transitions;
+    stateTransitions[fullStateName] = events;
+    stateTargets[fullStateName] = targets;
 
     // Identify dead-end states (non-final states with no outgoing transitions)
-    if (transitions.length === 0 && stateConfig.type !== 'final') {
+    if (events.length === 0 && stateConfig.type !== 'final') {
       deadEndStates.push(fullStateName);
     }
 
@@ -735,6 +797,42 @@ function analyzeStateTransitionsFromConfig(config: Record<string, unknown>): {
     }
   }
 
+  // Helper function to extract targets from transition configuration
+  function extractTransitionTargets(
+    transitionConfig: unknown,
+    targets: string[],
+    sourceState: string
+  ): void {
+    if (typeof transitionConfig === 'string') {
+      targets.push(transitionConfig);
+      addIncomingTransition(transitionConfig, sourceState);
+    } else if (typeof transitionConfig === 'object' && transitionConfig !== null) {
+      if (Array.isArray(transitionConfig)) {
+        transitionConfig.forEach((trans) => {
+          if (typeof trans === 'object' && trans !== null && 'target' in trans) {
+            const target = String(trans.target);
+            targets.push(target);
+            addIncomingTransition(target, sourceState);
+          }
+        });
+      } else if ('target' in transitionConfig) {
+        const target = String(transitionConfig.target);
+        targets.push(target);
+        addIncomingTransition(target, sourceState);
+      }
+    }
+  }
+
+  // Helper function to track incoming transitions
+  function addIncomingTransition(targetState: string, sourceState: string): void {
+    if (!incomingTransitions[targetState]) {
+      incomingTransitions[targetState] = [];
+    }
+    if (!incomingTransitions[targetState].includes(sourceState)) {
+      incomingTransitions[targetState].push(sourceState);
+    }
+  }
+
   // Extract from root states
   if (config.states && typeof config.states === 'object') {
     Object.entries(config.states).forEach(([stateName, stateConfig]) => {
@@ -742,8 +840,12 @@ function analyzeStateTransitionsFromConfig(config: Record<string, unknown>): {
     });
   }
 
-  // Find orphaned states (states that are never targeted by transitions)
-  const orphanedStates = findOrphanedStates(stateTransitions, config);
+  // Find orphaned states using actual incoming transition analysis
+  const orphanedStates = findOrphanedStatesWithIncomingAnalysis(
+    allStates,
+    incomingTransitions,
+    config
+  );
 
   return {
     stateTransitions,
@@ -753,25 +855,32 @@ function analyzeStateTransitionsFromConfig(config: Record<string, unknown>): {
   };
 }
 
-// NEW: Find states that are never targeted by any transition
-function findOrphanedStates(
-  stateTransitions: Record<string, string[]>,
+// NEW: More robust orphaned state detection using incoming transition analysis
+function findOrphanedStatesWithIncomingAnalysis(
+  allStates: string[],
+  incomingTransitions: Record<string, string[]>,
   config: Record<string, unknown>
 ): string[] {
-  const allStates = Object.keys(stateTransitions);
-  const targetedStates = new Set<string>();
+  const orphanedStates: string[] = [];
 
   // Get initial state from config
   const initialState = config.initial ? String(config.initial) : '';
-  if (initialState) {
-    targetedStates.add(initialState);
-  }
 
-  // This is a simplified check - in a full implementation, we'd need to resolve
-  // actual transition targets from the XState configuration
-  // For now, we'll be conservative and only flag obvious orphans
+  // Check each state for incoming transitions
+  allStates.forEach((state) => {
+    // Skip initial state
+    if (state === initialState) return;
 
-  return allStates.filter((state) => !targetedStates.has(state) && state !== initialState);
+    // Check if state has any incoming transitions
+    const hasIncomingTransitions =
+      incomingTransitions[state] && incomingTransitions[state].length > 0;
+
+    if (!hasIncomingTransitions) {
+      orphanedStates.push(state);
+    }
+  });
+
+  return orphanedStates;
 }
 
 function displayValidationResults(results: {

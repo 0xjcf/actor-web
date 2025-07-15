@@ -2,6 +2,7 @@
   "name": "@actor-core/runtime",
   "version": "0.1.0",
   "description": "Core actor model runtime for universal actor-based applications",
+  "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
