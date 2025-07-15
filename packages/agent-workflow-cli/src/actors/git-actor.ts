@@ -19,6 +19,29 @@ function generateGitActorId(prefix: string): string {
   return `${prefix}-${timestamp}-${random}`;
 }
 
+// Dynamic branch detection for multiple agents
+function getIntegrationBranch(currentBranch?: string): string {
+  // Default integration branch
+  const defaultIntegration = 'feature/actor-ref-integration';
+
+  if (!currentBranch) {
+    return defaultIntegration;
+  }
+
+  // For multiple agents, we can customize the integration branch
+  // For now, keep the default but this can be expanded
+  return defaultIntegration;
+}
+
+function getSourceBranch(currentBranch?: string): string {
+  if (!currentBranch) {
+    return 'HEAD';
+  }
+
+  // Return the current branch for pushing
+  return currentBranch;
+}
+
 // ============================================================================
 // ACTOR INTERFACES
 // ============================================================================
@@ -47,7 +70,7 @@ export type GitEvent =
   | { type: 'COMMIT_CHANGES'; message: string }
   | { type: 'FETCH_REMOTE'; branch: string }
   | { type: 'PUSH_CHANGES'; branch: string }
-  | { type: 'MERGE_BRANCH'; branch: string }
+  | { type: 'MERGE_BRANCH'; branch: string; strategy?: 'merge' | 'rebase' }
   | { type: 'CREATE_BRANCH'; branchName: string }
   | { type: 'GET_LAST_COMMIT' }
   | { type: 'CHECK_WORKTREE'; path: string }
@@ -93,6 +116,7 @@ export interface GitContext {
 
   // Repository state
   isGitRepo?: boolean;
+  repoStatus?: unknown;
   currentBranch?: string;
   uncommittedChanges?: boolean;
 
@@ -109,15 +133,11 @@ export interface GitContext {
   lastCommitMessage?: string;
   lastCommitHash?: string;
 
-  // Operation state
-  stagingInProgress?: boolean;
-  stagingComplete?: boolean;
-  commitInProgress?: boolean;
-  commitComplete?: boolean;
-  fetchInProgress?: boolean;
-  fetchComplete?: boolean;
-  pushInProgress?: boolean;
-  pushComplete?: boolean;
+  // Operation results (no more boolean flags!)
+  stagingResult?: unknown;
+  fetchResult?: unknown;
+  pushResult?: unknown;
+  mergeResult?: unknown;
 
   // Worktree state
   worktrees: AgentWorktreeConfig[];
@@ -136,7 +156,6 @@ export interface GitContext {
 
   // Operation tracking
   lastOperation?: string;
-  operationInProgress?: boolean;
 }
 
 import type { AgentWorktreeConfig } from '../core/agent-config.js';
@@ -156,10 +175,10 @@ export const gitActorMachine = setup({
     checkRepo: fromPromise(async ({ input }: { input: { git: SimpleGit } }) => {
       const { git } = input;
       try {
-        await git.status();
-        return true;
-      } catch {
-        return false;
+        const status = await git.status();
+        return { isRepo: true, status };
+      } catch (error) {
+        return { isRepo: false, error: error instanceof Error ? error.message : 'Unknown error' };
       }
     }),
 
@@ -189,8 +208,8 @@ export const gitActorMachine = setup({
 
     addAll: fromPromise(async ({ input }: { input: { git: SimpleGit } }) => {
       const { git } = input;
-      await git.add('.');
-      return true;
+      const result = await git.add('.');
+      return { success: true, result };
     }),
 
     commitChanges: fromPromise(
@@ -202,25 +221,36 @@ export const gitActorMachine = setup({
     ),
 
     getIntegrationStatus: fromPromise(
-      async ({ input }: { input: { integrationBranch?: string; git: SimpleGit } }) => {
-        const { integrationBranch = 'feature/actor-ref-integration', git } = input;
+      async ({
+        input,
+      }: {
+        input: { integrationBranch?: string; currentBranch?: string; git: SimpleGit };
+      }) => {
+        const { integrationBranch, currentBranch, git } = input;
+
+        // Use dynamic branch detection if not provided
+        const targetBranch = integrationBranch || getIntegrationBranch(currentBranch);
 
         try {
-          await git.fetch(['origin', integrationBranch]);
+          await git.fetch(['origin', targetBranch]);
 
-          const ahead = await git.raw(['rev-list', '--count', `origin/${integrationBranch}..HEAD`]);
-          const behind = await git.raw([
-            'rev-list',
-            '--count',
-            `HEAD..origin/${integrationBranch}`,
-          ]);
+          const ahead = await git.raw(['rev-list', '--count', `origin/${targetBranch}..HEAD`]);
+          const behind = await git.raw(['rev-list', '--count', `HEAD..origin/${targetBranch}`]);
 
           return {
             ahead: Number.parseInt(ahead.trim()) || 0,
             behind: Number.parseInt(behind.trim()) || 0,
+            integrationBranch: targetBranch,
+            sourceBranch: getSourceBranch(currentBranch),
           };
-        } catch {
-          return { ahead: 0, behind: 0 };
+        } catch (error) {
+          return {
+            ahead: 0,
+            behind: 0,
+            integrationBranch: targetBranch,
+            sourceBranch: getSourceBranch(currentBranch),
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
         }
       }
     ),
@@ -256,6 +286,73 @@ export const gitActorMachine = setup({
       }
     }),
 
+    fetchRemote: fromPromise(async ({ input }: { input: { branch: string; git: SimpleGit } }) => {
+      const { branch, git } = input;
+      try {
+        const result = await git.fetch(['origin', branch]);
+        return { success: true, branch, result };
+      } catch (error) {
+        return {
+          success: false,
+          branch,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    }),
+
+    pushChanges: fromPromise(async ({ input }: { input: { branch: string; git: SimpleGit } }) => {
+      const { branch, git } = input;
+      try {
+        const result = await git.push(['origin', branch]);
+        return { success: true, branch, result };
+      } catch (error) {
+        return {
+          success: false,
+          branch,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    }),
+
+    mergeBranch: fromPromise(
+      async ({
+        input,
+      }: {
+        input: { branch: string; strategy?: 'merge' | 'rebase'; git: SimpleGit };
+      }) => {
+        const { branch, strategy = 'merge', git } = input;
+        try {
+          let result: unknown;
+          if (strategy === 'rebase') {
+            result = await git.rebase([branch]);
+          } else {
+            result = await git.merge([branch]);
+          }
+
+          // Extract commit hash if available
+          let commitHash: string | undefined;
+          if (result && typeof result === 'object' && 'commit' in result) {
+            commitHash = (result as { commit?: string }).commit;
+          }
+
+          return {
+            success: true,
+            branch,
+            strategy,
+            result,
+            commitHash,
+          };
+        } catch (error) {
+          return {
+            success: false,
+            branch,
+            strategy,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      }
+    ),
+
     // Add other necessary actors...
   },
 }).createMachine({
@@ -266,6 +363,7 @@ export const gitActorMachine = setup({
     baseDir: input?.baseDir || process.cwd(),
     worktrees: [],
     isGitRepo: undefined,
+    repoStatus: undefined,
     currentBranch: undefined,
     uncommittedChanges: undefined,
     agentType: undefined,
@@ -273,14 +371,10 @@ export const gitActorMachine = setup({
     changedFiles: undefined,
     lastCommitMessage: undefined,
     lastCommitHash: undefined,
-    stagingInProgress: false,
-    stagingComplete: false,
-    commitInProgress: false,
-    commitComplete: false,
-    fetchInProgress: false,
-    fetchComplete: false,
-    pushInProgress: false,
-    pushComplete: false,
+    stagingResult: undefined,
+    fetchResult: undefined,
+    pushResult: undefined,
+    mergeResult: undefined,
     worktreeExists: undefined,
     generatedCommitMessage: undefined,
     commitConfig: undefined,
@@ -288,7 +382,6 @@ export const gitActorMachine = setup({
     lastCommitInfo: undefined,
     lastError: undefined,
     lastOperation: undefined,
-    operationInProgress: false,
   }),
 
   initial: 'idle',
@@ -303,6 +396,9 @@ export const gitActorMachine = setup({
         COMMIT_CHANGES: 'committingChanges',
         GET_INTEGRATION_STATUS: 'gettingIntegrationStatus',
         GET_CHANGED_FILES: 'gettingChangedFiles',
+        FETCH_REMOTE: 'fetchingRemote',
+        PUSH_CHANGES: 'pushingChanges',
+        MERGE_BRANCH: 'mergingBranch',
         // Add other events...
       },
     },
@@ -314,7 +410,8 @@ export const gitActorMachine = setup({
         onDone: {
           target: 'idle',
           actions: assign({
-            isGitRepo: ({ event }) => event.output,
+            isGitRepo: ({ event }) => event.output.isRepo,
+            repoStatus: ({ event }) => event.output.status,
             lastOperation: () => 'CHECK_REPO',
           }),
         },
@@ -372,8 +469,7 @@ export const gitActorMachine = setup({
 
     stagingAll: {
       entry: assign({
-        stagingInProgress: () => true,
-        stagingComplete: () => false,
+        lastOperation: () => 'STAGING_ALL',
       }),
       invoke: {
         src: 'addAll',
@@ -381,17 +477,15 @@ export const gitActorMachine = setup({
         onDone: {
           target: 'idle',
           actions: assign({
-            stagingInProgress: () => false,
-            stagingComplete: () => true,
-            lastOperation: () => 'ADD_ALL',
+            stagingResult: ({ event }) => event.output.result,
+            lastOperation: () => 'STAGING_ALL_DONE',
           }),
         },
         onError: {
           target: 'idle',
           actions: assign({
             lastError: () => 'Staging failed',
-            stagingInProgress: () => false,
-            stagingComplete: () => false,
+            stagingResult: () => undefined,
           }),
         },
       },
@@ -399,8 +493,7 @@ export const gitActorMachine = setup({
 
     committingChanges: {
       entry: assign({
-        commitInProgress: () => true,
-        commitComplete: () => false,
+        lastOperation: () => 'COMMIT_CHANGES',
       }),
       invoke: {
         src: 'commitChanges',
@@ -412,23 +505,23 @@ export const gitActorMachine = setup({
           target: 'idle',
           actions: assign({
             lastCommitHash: ({ event }) => event.output,
-            commitInProgress: () => false,
-            commitComplete: () => true,
-            lastOperation: () => 'COMMIT_CHANGES',
+            lastOperation: () => 'COMMIT_CHANGES_DONE',
           }),
         },
         onError: {
           target: 'idle',
           actions: assign({
             lastError: () => 'Commit failed',
-            commitInProgress: () => false,
-            commitComplete: () => false,
+            lastCommitHash: () => undefined,
           }),
         },
       },
     },
 
     gettingChangedFiles: {
+      entry: assign({
+        lastOperation: () => 'GET_CHANGED_FILES',
+      }),
       invoke: {
         src: 'getChangedFiles',
         input: ({ context }) => ({ git: context.git }),
@@ -436,7 +529,7 @@ export const gitActorMachine = setup({
           target: 'idle',
           actions: assign({
             changedFiles: ({ event }) => event.output,
-            lastOperation: () => 'GET_CHANGED_FILES',
+            lastOperation: () => 'GET_CHANGED_FILES_DONE',
           }),
         },
         onError: {
@@ -450,17 +543,21 @@ export const gitActorMachine = setup({
     },
 
     gettingIntegrationStatus: {
+      entry: assign({
+        lastOperation: () => 'GET_INTEGRATION_STATUS',
+      }),
       invoke: {
         src: 'getIntegrationStatus',
         input: ({ context, event }) => ({
           git: context.git,
           integrationBranch: (event as { integrationBranch?: string }).integrationBranch,
+          currentBranch: context.currentBranch,
         }),
         onDone: {
           target: 'idle',
           actions: assign({
             integrationStatus: ({ event }) => event.output,
-            lastOperation: () => 'GET_INTEGRATION_STATUS',
+            lastOperation: () => 'GET_INTEGRATION_STATUS_DONE',
           }),
         },
         onError: {
@@ -468,6 +565,88 @@ export const gitActorMachine = setup({
           actions: assign({
             lastError: () => 'Integration status check failed',
             integrationStatus: () => ({ ahead: 0, behind: 0 }),
+          }),
+        },
+      },
+    },
+
+    fetchingRemote: {
+      entry: assign({
+        lastOperation: () => 'FETCH_REMOTE',
+      }),
+      invoke: {
+        src: 'fetchRemote',
+        input: ({ context, event }) => ({
+          git: context.git,
+          branch: (event as { branch: string }).branch,
+        }),
+        onDone: {
+          target: 'idle',
+          actions: assign({
+            fetchResult: ({ event }) => event.output,
+            lastOperation: () => 'FETCH_REMOTE_DONE',
+          }),
+        },
+        onError: {
+          target: 'idle',
+          actions: assign({
+            lastError: () => 'Fetch remote failed',
+            fetchResult: () => undefined,
+          }),
+        },
+      },
+    },
+
+    pushingChanges: {
+      entry: assign({
+        lastOperation: () => 'PUSH_CHANGES',
+      }),
+      invoke: {
+        src: 'pushChanges',
+        input: ({ context, event }) => ({
+          git: context.git,
+          branch: (event as { branch: string }).branch,
+        }),
+        onDone: {
+          target: 'idle',
+          actions: assign({
+            pushResult: ({ event }) => event.output,
+            lastOperation: () => 'PUSH_CHANGES_DONE',
+          }),
+        },
+        onError: {
+          target: 'idle',
+          actions: assign({
+            lastError: () => 'Push changes failed',
+            pushResult: () => undefined,
+          }),
+        },
+      },
+    },
+
+    mergingBranch: {
+      entry: assign({
+        lastOperation: () => 'MERGE_BRANCH',
+      }),
+      invoke: {
+        src: 'mergeBranch',
+        input: ({ context, event }) => ({
+          git: context.git,
+          branch: (event as { branch: string; strategy?: 'merge' | 'rebase' }).branch,
+          strategy: (event as { branch: string; strategy?: 'merge' | 'rebase' }).strategy,
+        }),
+        onDone: {
+          target: 'idle',
+          actions: assign({
+            mergeResult: ({ event }) => event.output,
+            lastOperation: () => 'MERGE_BRANCH_DONE',
+          }),
+        },
+        onError: {
+          target: 'idle',
+          actions: assign({
+            lastError: () => 'Merge branch failed',
+            mergeResult: () => undefined,
           }),
         },
       },

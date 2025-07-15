@@ -61,13 +61,26 @@ class StateBasedWorkflowHandler {
     console.log(chalk.blue('📋 Starting ship workflow...'));
 
     return new Promise((resolve, reject) => {
+      // Observe current branch status
+      const statusObserver = this.actor
+        .observe(
+          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).currentBranch
+        )
+        .subscribe((currentBranch) => {
+          if (currentBranch && this.workflowState === 'init') {
+            console.log(chalk.blue(`📋 Current branch: ${currentBranch}`));
+            this.workflowState = 'checking_changes';
+            this.sendMessage({ type: 'CHECK_UNCOMMITTED_CHANGES' });
+          }
+        });
+
       // Observe uncommitted changes state
       const uncommittedChangesObserver = this.actor
         .observe(
           (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).uncommittedChanges
         )
         .subscribe((uncommittedChanges) => {
-          if (uncommittedChanges !== undefined) {
+          if (uncommittedChanges !== undefined && this.workflowState === 'checking_changes') {
             this.handleUncommittedChanges(uncommittedChanges);
           }
         });
@@ -75,10 +88,10 @@ class StateBasedWorkflowHandler {
       // Observe staging completion
       const stagingObserver = this.actor
         .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).stagingComplete
+          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).lastOperation
         )
-        .subscribe((stagingComplete) => {
-          if (stagingComplete === true) {
+        .subscribe((lastOperation) => {
+          if (lastOperation === 'STAGING_ALL_DONE' && this.workflowState === 'staging') {
             this.handleStagingComplete();
           }
         });
@@ -86,10 +99,10 @@ class StateBasedWorkflowHandler {
       // Observe commit completion
       const commitObserver = this.actor
         .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).commitComplete
+          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).lastOperation
         )
-        .subscribe((commitComplete) => {
-          if (commitComplete === true) {
+        .subscribe((lastOperation) => {
+          if (lastOperation === 'COMMIT_CHANGES_DONE' && this.workflowState === 'committing') {
             this.handleCommitComplete();
           }
         });
@@ -102,6 +115,28 @@ class StateBasedWorkflowHandler {
         .subscribe((integrationStatus) => {
           if (integrationStatus && this.workflowState === 'checking_status') {
             this.handleIntegrationStatus(integrationStatus);
+          }
+        });
+
+      // Observe fetch completion
+      const fetchObserver = this.actor
+        .observe(
+          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).lastOperation
+        )
+        .subscribe((lastOperation) => {
+          if (lastOperation === 'FETCH_REMOTE_DONE' && this.workflowState === 'fetching') {
+            this.handleFetchComplete();
+          }
+        });
+
+      // Observe push completion
+      const pushObserver = this.actor
+        .observe(
+          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).lastOperation
+        )
+        .subscribe((lastOperation) => {
+          if (lastOperation === 'PUSH_CHANGES_DONE' && this.workflowState === 'pushing') {
+            this.handlePushComplete();
           }
         });
 
@@ -118,10 +153,13 @@ class StateBasedWorkflowHandler {
 
       // Store observers for cleanup
       this.observers = [
+        statusObserver,
         uncommittedChangesObserver,
         stagingObserver,
         commitObserver,
         integrationObserver,
+        fetchObserver,
+        pushObserver,
         errorObserver,
       ];
 
@@ -131,9 +169,9 @@ class StateBasedWorkflowHandler {
         resolve();
       };
 
-      // Start the workflow
-      this.workflowState = 'checking_changes';
-      this.sendMessage({ type: 'CHECK_UNCOMMITTED_CHANGES' });
+      // Start the workflow by checking status first
+      this.workflowState = 'init';
+      this.sendMessage({ type: 'CHECK_STATUS' });
     });
   }
 
@@ -155,9 +193,11 @@ class StateBasedWorkflowHandler {
     } else {
       console.log(chalk.green('✅ No uncommitted changes'));
       this.workflowState = 'checking_status';
+      // Get current branch dynamically
+      const _currentBranch = this.actor.getSnapshot().context.currentBranch;
       this.sendMessage({
         type: 'GET_INTEGRATION_STATUS',
-        integrationBranch: 'feature/actor-ref-integration',
+        integrationBranch: undefined, // Let the actor determine dynamically
       });
     }
   }
@@ -184,13 +224,20 @@ Date: ${new Date().toISOString().split('T')[0]}
 
     console.log(chalk.green('✅ Changes committed'));
     this.workflowState = 'checking_status';
+    // Get current branch dynamically
+    const _currentBranch = this.actor.getSnapshot().context.currentBranch;
     this.sendMessage({
       type: 'GET_INTEGRATION_STATUS',
-      integrationBranch: 'feature/actor-ref-integration',
+      integrationBranch: undefined, // Let the actor determine dynamically
     });
   }
 
-  private handleIntegrationStatus(status: { ahead: number; behind: number }): void {
+  private handleIntegrationStatus(status: {
+    ahead: number;
+    behind: number;
+    integrationBranch?: string;
+    sourceBranch?: string;
+  }): void {
     if (status.ahead === 0) {
       console.log(chalk.yellow('⚠️  No changes to ship'));
       this.workflowState = 'complete';
@@ -198,10 +245,39 @@ Date: ${new Date().toISOString().split('T')[0]}
       return;
     }
 
+    const integrationBranch = status.integrationBranch || 'feature/actor-ref-integration';
+    const _sourceBranch = status.sourceBranch || 'HEAD';
+
     console.log(chalk.blue(`📦 Found ${status.ahead} commits to ship`));
+    console.log(chalk.blue(`🔄 Fetching latest integration branch: ${integrationBranch}...`));
+    this.workflowState = 'fetching';
+    this.sendMessage({ type: 'FETCH_REMOTE', branch: integrationBranch });
+  }
+
+  private handleFetchComplete(): void {
+    if (this.workflowState !== 'fetching') return;
+
+    const snapshot = this.actor.getSnapshot().context;
+    const fetchResult = snapshot.fetchResult as { branch?: string } | undefined;
+    const integrationBranch = fetchResult?.branch || 'feature/actor-ref-integration';
+    const sourceBranch = snapshot.currentBranch || 'HEAD';
+
+    console.log(chalk.green('✅ Integration branch fetched'));
+    console.log(
+      chalk.blue(`🚀 Pushing changes to integration: ${sourceBranch} → ${integrationBranch}...`)
+    );
+    this.workflowState = 'pushing';
+    this.sendMessage({
+      type: 'PUSH_CHANGES',
+      branch: `${sourceBranch}:${integrationBranch}`,
+    });
+  }
+
+  private handlePushComplete(): void {
+    if (this.workflowState !== 'pushing') return;
+
     console.log(chalk.green('✅ Successfully shipped to integration branch!'));
     console.log(chalk.blue('📈 Other agents can now sync your changes'));
-
     this.workflowState = 'complete';
     this.onSuccess?.();
   }

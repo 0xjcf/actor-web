@@ -15,7 +15,6 @@ export {
   createGitActor,
   type GitContext,
   type GitEvent,
-  type GitResponse,
   gitActorMachine,
 } from './actors/git-actor.js';
 

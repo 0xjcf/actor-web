@@ -71,10 +71,10 @@ class SaveWorkflowHandler {
       // Observe staging completion
       const stagingObserver = this.actor
         .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).stagingComplete
+          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).lastOperation
         )
-        .subscribe((stagingComplete) => {
-          if (stagingComplete === true) {
+        .subscribe((lastOperation) => {
+          if (lastOperation === 'STAGING_ALL_DONE' && this.workflowState === 'staging') {
             this.handleStagingComplete();
           }
         });
@@ -82,10 +82,10 @@ class SaveWorkflowHandler {
       // Observe commit completion
       const commitObserver = this.actor
         .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).commitComplete
+          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).lastOperation
         )
-        .subscribe((commitComplete) => {
-          if (commitComplete === true) {
+        .subscribe((lastOperation) => {
+          if (lastOperation === 'COMMIT_CHANGES_DONE' && this.workflowState === 'committing') {
             this.handleCommitComplete();
           }
         });

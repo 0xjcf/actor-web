@@ -157,15 +157,15 @@ export function getLastCommitMessage(gitActor: GitActor): string | undefined {
  */
 export function getWorktreeCheckResult(gitActor: GitActor): boolean | undefined {
   const snapshot = gitActor.getSnapshot();
-  return snapshot.context.worktreeChecks?.lastChecked;
+  return snapshot.context.worktreeExists;
 }
 
 /**
  * Get fetch result
  */
-export function getFetchResult(gitActor: GitActor): boolean | undefined {
+export function getFetchResult(gitActor: GitActor): unknown | undefined {
   const snapshot = gitActor.getSnapshot();
-  return snapshot.context.fetchResults?.lastFetched;
+  return snapshot.context.fetchResult;
 }
 
 /**
@@ -173,9 +173,85 @@ export function getFetchResult(gitActor: GitActor): boolean | undefined {
  */
 export function getMergeResult(
   gitActor: GitActor
-): { success: boolean; commitHash?: string } | undefined {
+):
+  | { success: boolean; branch: string; strategy: 'merge' | 'rebase'; commitHash?: string }
+  | undefined {
   const snapshot = gitActor.getSnapshot();
-  return snapshot.context.mergeResults?.lastMerged;
+  const result = snapshot.context.mergeResult;
+
+  if (result && typeof result === 'object' && 'success' in result) {
+    return result as {
+      success: boolean;
+      branch: string;
+      strategy: 'merge' | 'rebase';
+      commitHash?: string;
+    };
+  }
+
+  return undefined;
+}
+
+// ============================================================================
+// STATE CHECKING HELPERS
+// ============================================================================
+
+/**
+ * Check if actor is currently performing an operation
+ */
+export function isActorBusy(gitActor: GitActor): boolean {
+  const snapshot = gitActor.getSnapshot();
+  return snapshot.value !== 'idle';
+}
+
+/**
+ * Get current operation state
+ */
+export function getCurrentOperation(gitActor: GitActor): string {
+  const snapshot = gitActor.getSnapshot();
+  return typeof snapshot.value === 'string' ? snapshot.value : 'unknown';
+}
+
+/**
+ * Check if specific operation is in progress
+ */
+export function isOperationInProgress(gitActor: GitActor, operation: string): boolean {
+  const snapshot = gitActor.getSnapshot();
+  return snapshot.value === operation;
+}
+
+/**
+ * Check if staging is in progress
+ */
+export function isStagingInProgress(gitActor: GitActor): boolean {
+  return isOperationInProgress(gitActor, 'stagingAll');
+}
+
+/**
+ * Check if commit is in progress
+ */
+export function isCommitInProgress(gitActor: GitActor): boolean {
+  return isOperationInProgress(gitActor, 'committingChanges');
+}
+
+/**
+ * Check if fetch is in progress
+ */
+export function isFetchInProgress(gitActor: GitActor): boolean {
+  return isOperationInProgress(gitActor, 'fetchingRemote');
+}
+
+/**
+ * Check if push is in progress
+ */
+export function isPushInProgress(gitActor: GitActor): boolean {
+  return isOperationInProgress(gitActor, 'pushingChanges');
+}
+
+/**
+ * Check if merge is in progress
+ */
+export function isMergeInProgress(gitActor: GitActor): boolean {
+  return isOperationInProgress(gitActor, 'mergingBranch');
 }
 
 // ============================================================================
