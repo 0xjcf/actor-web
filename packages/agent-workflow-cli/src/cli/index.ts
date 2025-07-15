@@ -65,6 +65,7 @@ program.command('ship').description('Ship work to integration branch').action(sh
 program
   .command('status')
   .description('Show current agent and repository status')
+  .option('--root <path>', 'Specify repository root path explicitly')
   .action(statusCommand);
 
 // ============================================================================

@@ -576,6 +576,7 @@ Context: ${description} across ${changedFiles.length} files
       agentTypeOnly: string;
       lastCommitMessage: string;
       lastError: string;
+      integrationStatus: { ahead: number; behind: number };
     }> = {};
 
     // Poll for context changes and emit events accordingly
@@ -583,6 +584,13 @@ Context: ${description} across ${changedFiles.length} files
       try {
         const snapshot = this.actor.getSnapshot();
         const context = snapshot.context;
+
+        log.debug('Checking context changes', {
+          currentState: snapshot.value,
+          hasIntegrationStatus: !!context.integrationStatus,
+          integrationStatus: context.integrationStatus,
+          pendingRequests: this.pendingRequests.size,
+        });
 
         // Check for repo status change
         if (context.isGitRepo !== undefined && context.isGitRepo !== lastContext.isGitRepo) {
@@ -633,6 +641,23 @@ Context: ${description} across ${changedFiles.length} files
           log.debug('Emitting AGENT_TYPE_DETECTED event', response);
           this.handleResponse(response);
           lastContext.agentTypeOnly = context.agentType;
+        }
+
+        // Check for integration status changes
+        if (
+          context.integrationStatus &&
+          (!lastContext.integrationStatus ||
+            context.integrationStatus.ahead !== lastContext.integrationStatus.ahead ||
+            context.integrationStatus.behind !== lastContext.integrationStatus.behind)
+        ) {
+          const response: GitResponse = {
+            type: 'INTEGRATION_STATUS',
+            ahead: context.integrationStatus.ahead,
+            behind: context.integrationStatus.behind,
+          };
+          log.debug('Emitting INTEGRATION_STATUS event', response);
+          this.handleResponse(response);
+          lastContext.integrationStatus = { ...context.integrationStatus };
         }
 
         // Check for commit completion
@@ -740,6 +765,8 @@ Context: ${description} across ${changedFiles.length} files
         eventType,
         currentState: snapshot.value,
         actorStatus: this.actor.status,
+        contextIntegrationStatus: snapshot.context.integrationStatus,
+        contextKeys: Object.keys(snapshot.context),
       });
 
       log.debug('Event sent to git-actor', { requestId, eventType });

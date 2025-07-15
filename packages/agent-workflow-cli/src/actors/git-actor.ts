@@ -118,15 +118,14 @@ export interface GitContext {
   branchResults?: { lastCreated?: string }; // CLI Migration: Branch creation results
   lastCommitInfo?: string; // CLI Migration: Last commit information
   lastEventParams?: { [key: string]: unknown }; // CLI Migration: Store event params for actions
+  integrationStatus?: { ahead: number; behind: number }; // CLI Migration: Integration status result
   emit?: (response: GitResponse) => void; // CLI Migration: Event emission function
 }
 
 import type { AgentWorktreeConfig } from '../core/agent-config.js';
 
 // Type guards for event discrimination
-function isSetupWorktreesEvent(
-  event: GitEvent
-): event is {
+function isSetupWorktreesEvent(event: GitEvent): event is {
   type: 'SETUP_WORKTREES';
   agentCount: number;
   configOptions?: {
@@ -972,12 +971,42 @@ Context: Modified ${files.length} files for implementation work
         }),
         onDone: {
           target: 'idle',
+          actions: [
+            // Store integration status in context for polling
+            assign({
+              integrationStatus: ({ event }) => ({
+                ahead: event.output.ahead,
+                behind: event.output.behind,
+              }),
+            }),
+            // Emit response event
+            ({ event, self }) => {
+              if (self && 'emit' in self) {
+                (self as { emit: (event: GitResponse) => void }).emit({
+                  type: 'INTEGRATION_STATUS',
+                  ahead: event.output.ahead,
+                  behind: event.output.behind,
+                });
+              }
+            },
+          ],
         },
         onError: {
           target: 'idle',
-          actions: assign({
-            lastError: () => 'Getting integration status failed',
-          }),
+          actions: [
+            assign({
+              lastError: () => 'Getting integration status failed',
+            }),
+            // Emit error event
+            ({ self }) => {
+              if (self && 'emit' in self) {
+                (self as { emit: (event: GitResponse) => void }).emit({
+                  type: 'GIT_ERROR',
+                  error: 'Getting integration status failed',
+                });
+              }
+            },
+          ],
         },
       },
     },
