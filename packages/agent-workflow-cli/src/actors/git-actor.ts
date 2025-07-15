@@ -1624,6 +1624,7 @@ export const gitActorMachine = setup({
       on: {
         CONTINUE: 'idle',
         PUSH_CHANGES: 'pushingChanges',
+        GET_INTEGRATION_STATUS: 'gettingIntegrationStatus',
       },
     },
 
