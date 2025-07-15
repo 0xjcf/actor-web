@@ -1,6 +1,14 @@
 import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 
+/**
+ * Safely escape a file path for shell usage
+ */
+function escapeShellArg(arg: string): string {
+  // Use JSON.stringify to properly escape quotes and special characters
+  return JSON.stringify(arg);
+}
+
 export interface ValidationResult {
   success: boolean;
   errors: string[];
@@ -76,8 +84,10 @@ export class ValidationService {
     }
 
     try {
-      // Run TypeScript check
-      execSync('pnpm tsc --noEmit', { stdio: 'pipe' });
+      // Run TypeScript check on specific files with proper escaping
+      const escapedFiles = tsFiles.map((f) => escapeShellArg(f));
+      const args = ['tsc', '--noEmit', ...escapedFiles];
+      execSync(`pnpm ${args.join(' ')}`, { stdio: 'pipe' });
 
       return {
         success: true,
@@ -89,15 +99,15 @@ export class ValidationService {
       const errorOutput = error as { stdout?: Buffer | string; message?: string };
       const output = errorOutput.stdout?.toString() || errorOutput.message || 'Unknown error';
 
-      // Filter errors to only include files we're validating
-      const relevantErrors = output
+      // Since we're only checking specific files, no need to filter errors
+      const errors = output
         .split('\n')
-        .filter((line: string) => tsFiles.some((file) => line.startsWith(`${file}:`)))
+        .filter((line: string) => line.trim() && !line.startsWith('error TS'))
         .slice(0, 10); // Limit to first 10 errors
 
       return {
         success: false,
-        errors: relevantErrors,
+        errors: errors,
         warnings: [],
         filesChecked: tsFiles.length,
       };
@@ -120,9 +130,10 @@ export class ValidationService {
     }
 
     try {
-      // Run biome check on specific files
-      const fileList = lintableFiles.join(' ');
-      execSync(`pnpm biome check ${fileList}`, { stdio: 'pipe' });
+      // Run biome check on specific files with proper escaping
+      const escapedFiles = lintableFiles.map((f) => escapeShellArg(f));
+      const args = ['biome', 'check', ...escapedFiles];
+      execSync(`pnpm ${args.join(' ')}`, { stdio: 'pipe' });
 
       return {
         success: true,
@@ -131,10 +142,11 @@ export class ValidationService {
         filesChecked: lintableFiles.length,
       };
     } catch (_error: unknown) {
+      const escapedFiles = lintableFiles.map((f) => escapeShellArg(f)).join(' ');
       return {
         success: false,
         errors: [`Linting errors found in ${lintableFiles.length} files`],
-        warnings: [`Fix with: pnpm biome check ${lintableFiles.join(' ')} --write`],
+        warnings: [`Fix with: pnpm biome check ${escapedFiles} --write`],
         filesChecked: lintableFiles.length,
       };
     }
