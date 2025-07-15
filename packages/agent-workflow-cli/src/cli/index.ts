@@ -44,6 +44,7 @@ program
   .option('--agent-c-path <path>', 'Custom path for Agent C workspace')
   .option('--base-dir <path>', 'Base directory for relative paths')
   .option('--integration-branch <branch>', 'Integration branch name')
+  .option('--root <path>', 'Specify repository root path explicitly')
   .action(initCommand);
 
 program.command('sync').description('Sync with integration branch').action(syncCommand);

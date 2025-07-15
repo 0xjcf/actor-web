@@ -2,6 +2,7 @@ import path from 'node:path';
 import chalk from 'chalk';
 import inquirer from 'inquirer';
 import { GitOperations } from '../core/git-operations.js';
+import { findRepoRootWithOptions } from '../core/repo-root-finder.js';
 
 export interface InitOptions {
   agents: string;
@@ -12,6 +13,7 @@ export interface InitOptions {
   agentCPath?: string;
   baseDir?: string;
   integrationBranch?: string;
+  root?: string;
 }
 
 export async function initCommand(options: InitOptions) {
@@ -20,11 +22,16 @@ export async function initCommand(options: InitOptions) {
   console.log(chalk.gray(`  Template: ${options.template}`));
   console.log('');
 
-  // Navigate to repository root (two levels up from CLI package)
-  const repoRoot = path.resolve(process.cwd(), '../..');
-  const git = new GitOperations(repoRoot);
-
   try {
+    // Dynamically find repository root using multiple strategies
+    const repoRoot = await findRepoRootWithOptions({
+      root: options.root,
+      cwd: process.cwd(),
+    });
+
+    console.log(chalk.gray(`  Repository root: ${repoRoot}`));
+    const git = new GitOperations(repoRoot);
+
     // Check if we're in a git repo
     if (!(await git.isGitRepo())) {
       console.log(chalk.red('❌ Error: Not in a Git repository'));
@@ -34,8 +41,9 @@ export async function initCommand(options: InitOptions) {
 
     // Check if package.json exists (project root indicator)
     const fs = await import('node:fs');
-    if (!fs.existsSync('package.json')) {
-      console.log(chalk.yellow('⚠️  Warning: No package.json found'));
+    const packageJsonPath = path.join(repoRoot, 'package.json');
+    if (!fs.existsSync(packageJsonPath)) {
+      console.log(chalk.yellow('⚠️  Warning: No package.json found in repository root'));
 
       const { proceed } = await inquirer.prompt([
         {
@@ -96,31 +104,15 @@ export async function initCommand(options: InitOptions) {
     console.log('   - No more branch jumping conflicts');
     console.log('   - Shared Git history and objects');
     console.log('   - Minimal disk space usage');
+    console.log('   - Ready for parallel development');
     console.log('');
-    console.log(chalk.blue('🔄 Daily workflow:'));
-    console.log('   1. Work in your agent directory');
-    console.log(`   2. Save changes: ${chalk.yellow('pnpm aw:save')}`);
-    console.log(`   3. Ship features: ${chalk.yellow('pnpm aw:ship')}`);
-    console.log(`   4. Daily sync: ${chalk.yellow('pnpm aw:sync')}`);
-    console.log('');
-    console.log(chalk.blue('📖 See docs/AGENT-WORKFLOW-GUIDE.md for detailed instructions.'));
 
-    // Create basic integration branch if it doesn't exist
-    try {
-      await git.getGit().checkout(['-b', 'feature/actor-ref-integration']);
-      await git.getGit().push(['origin', 'feature/actor-ref-integration']);
-      console.log(chalk.green('✅ Created integration branch: feature/actor-ref-integration'));
-    } catch {
-      console.log(chalk.blue('ℹ️  Integration branch already exists or will be created later'));
-    }
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(chalk.red('❌ Error during initialization:'), errorMessage);
-    console.log('');
-    console.log(chalk.blue('💡 Troubleshooting:'));
-    console.log('   - Ensure you have Git installed');
-    console.log('   - Ensure you have write permissions');
-    console.log('   - Check that parent directories exist');
+    console.log(chalk.green('✅ Agent workflow initialization complete!'));
+    console.log(chalk.blue('💡 Next: Run `pnpm aw status` in each agent workspace'));
+  } catch (error) {
+    console.error(chalk.red('❌ Error during initialization:'), error);
+    console.log(chalk.blue('💡 Try specifying the repository root explicitly:'));
+    console.log(chalk.gray('   pnpm aw init --root /path/to/your/repo'));
     process.exit(1);
   }
 }

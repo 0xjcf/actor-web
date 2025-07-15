@@ -12,13 +12,21 @@
 
 // Core Git Actor with enhanced commit and date validation
 export {
-  type AgentWorktreeConfig,
   createGitActor,
   type GitContext,
   type GitEvent,
   type GitResponse,
   gitActorMachine,
 } from './actors/git-actor.js';
+
+// Agent Configuration
+export {
+  AgentConfigLoader,
+  type AgentWorkflowConfig,
+  type AgentWorktreeConfig,
+  DEFAULT_AGENT_CONFIG,
+  loadAgentConfig,
+} from './core/agent-config.js';
 
 // ============================================================================
 // ENHANCED COMMIT SYSTEM
@@ -78,13 +86,6 @@ export { ValidationService } from './core/validation.js';
 // ============================================================================
 
 // Common types for API consumers
-export interface AgentWorkflowConfig {
-  agentCount?: number;
-  template?: string;
-  baseDir?: string;
-  integrationBranch?: string;
-}
-
 export interface CommitAnalysis {
   type: string;
   scope: string;
