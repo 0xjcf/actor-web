@@ -91,5 +91,3 @@ export {
   TimerMachines,
   TimerServices,
 } from './core/timer-services.js';
-// Testing Utilities - Temporarily disabled to avoid vitest imports in CLI
-// export * from './testing.js';

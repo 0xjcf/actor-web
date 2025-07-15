@@ -5,6 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { waitForIdle } from '../test-utils';
 import { createGitActor, type GitActor } from './git-actor';
 
 // Mock simple-git to control git operations in tests
@@ -142,7 +143,7 @@ describe('GitActor - Framework Contract Compliance', () => {
         gitActor.send({ type: 'CHECK_STATUS' });
 
         // Wait for state machine to complete
-        await new Promise((resolve) => setTimeout(resolve, 10));
+        await waitForIdle(gitActor);
 
         // Assert: Context should be updated
         const snapshot = gitActor.getSnapshot();
@@ -267,7 +268,7 @@ describe('GitActor - Framework Contract Compliance', () => {
       gitActor.send({ type: 'CHECK_STATUS' });
 
       // Wait for operation to complete
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await waitForIdle(gitActor);
 
       // Assert: Should return to idle
       const snapshot = gitActor.getSnapshot();
@@ -308,7 +309,7 @@ describe('GitActor - Framework Contract Compliance', () => {
       gitActor.send({ type: 'CHECK_STATUS' });
 
       // Wait for error handling
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await waitForIdle(gitActor);
 
       // Assert: Should handle error and return to stable state
       const snapshot = gitActor.getSnapshot();
@@ -323,7 +324,7 @@ describe('GitActor - Framework Contract Compliance', () => {
       gitActor.send({ type: 'CHECK_STATUS' });
 
       // Wait for error handling
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await waitForIdle(gitActor);
 
       // Assert: Error should be stored in context
       const snapshot = gitActor.getSnapshot();
@@ -338,10 +339,10 @@ describe('GitActor - Framework Contract Compliance', () => {
 
       // Act: Send failing event, then successful event
       gitActor.send({ type: 'CHECK_STATUS' });
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await waitForIdle(gitActor);
 
       gitActor.send({ type: 'CHECK_STATUS' });
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await waitForIdle(gitActor);
 
       // Assert: Should recover and work normally
       const snapshot = gitActor.getSnapshot();
@@ -503,59 +504,3 @@ describe('GitActor - Framework Contract Compliance', () => {
     });
   });
 });
-
-// ============================================================================
-// HELPER FUNCTIONS FOR ASYNC TESTING
-// ============================================================================
-
-/**
- * Wait for actor to complete current operation and return to idle
- * Helper function for testing async operations
- */
-async function _waitForIdle(actor: GitActor, timeout = 1000): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      reject(new Error(`Timeout waiting for idle state after ${timeout}ms`));
-    }, timeout);
-
-    const checkIdle = () => {
-      const snapshot = actor.getSnapshot();
-      if (snapshot.value === 'idle') {
-        clearTimeout(timeoutId);
-        resolve();
-      } else {
-        setTimeout(checkIdle, 10);
-      }
-    };
-
-    checkIdle();
-  });
-}
-
-/**
- * Wait for actor to reach specific state
- * Helper function for testing state transitions
- */
-async function _waitForState(
-  actor: GitActor,
-  expectedState: string,
-  timeout = 1000
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      reject(new Error(`Timeout waiting for state: ${expectedState}`));
-    }, timeout);
-
-    const checkState = () => {
-      const snapshot = actor.getSnapshot();
-      if (snapshot.value === expectedState) {
-        clearTimeout(timeoutId);
-        resolve();
-      } else {
-        setTimeout(checkState, 10);
-      }
-    };
-
-    checkState();
-  });
-}

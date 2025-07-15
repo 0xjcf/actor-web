@@ -4,70 +4,24 @@
  * @author Agent A - CLI Actor Migration
  */
 
+import { waitForCompletion } from '../test-utils';
 import type { GitActor } from './git-actor';
 
 // ============================================================================
 // ACTOR LIFECYCLE HELPERS
 // ============================================================================
 
-/**
- * Wait for actor to return to idle state (operation complete)
- */
-export async function waitForCompletion(gitActor: GitActor): Promise<void> {
-  return new Promise((resolve) => {
-    const checkState = () => {
-      const snapshot = gitActor.getSnapshot();
-      if (snapshot.value === 'idle') {
-        resolve();
-      } else {
-        // Check every 10ms - fast polling for CLI responsiveness
-        setTimeout(checkState, 10);
-      }
-    };
-    checkState();
-  });
-}
-
-/**
- * Wait for actor to reach specific state
- */
-export async function waitForState(gitActor: GitActor, targetState: string): Promise<void> {
-  return new Promise((resolve) => {
-    const checkState = () => {
-      const snapshot = gitActor.getSnapshot();
-      if (snapshot.value === targetState) {
-        resolve();
-      } else {
-        setTimeout(checkState, 10);
-      }
-    };
-    checkState();
-  });
-}
+// Note: waitForCompletion and waitForState are now imported from ../test-utils
+// to avoid duplication and ensure consistency across the CLI package
 
 /**
  * Wait for completion with timeout
  */
 export async function waitForCompletionWithTimeout(
   gitActor: GitActor,
-  timeoutMs = 30000 // 30 second default
+  timeout = 5000
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error(`Git operation timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-
-    const checkState = () => {
-      const snapshot = gitActor.getSnapshot();
-      if (snapshot.value === 'idle') {
-        clearTimeout(timeout);
-        resolve();
-      } else {
-        setTimeout(checkState, 10);
-      }
-    };
-    checkState();
-  });
+  return waitForCompletion(gitActor, timeout);
 }
 
 // ============================================================================

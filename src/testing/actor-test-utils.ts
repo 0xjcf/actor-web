@@ -689,6 +689,13 @@ export async function waitForState(
 }
 
 /**
+ * Wait for an actor to reach idle state (common pattern)
+ */
+export async function waitForIdle(actorRef: ActorRef<EventObject>, timeout = 1000): Promise<void> {
+  return waitForState(actorRef, 'idle', timeout);
+}
+
+/**
  * Collect all events sent to an actor
  */
 export function collectEvents<T extends EventObject>(

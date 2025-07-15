@@ -2,6 +2,7 @@ import { execSync } from 'node:child_process';
 import path from 'node:path';
 import chalk from 'chalk';
 import { GitOperations } from '../core/git-operations.js';
+import { findRepoRoot } from '../core/repo-root-finder.js';
 import { getAgentStatus } from '../index.js';
 
 interface AgentInfo {
@@ -164,7 +165,7 @@ export async function agentsStatusCommand() {
   console.log(chalk.blue('🤖 Multi-Agent Status Dashboard'));
   console.log(chalk.blue('=================================='));
 
-  const repoRoot = path.resolve(process.cwd(), '../..');
+  const repoRoot = await findRepoRoot();
 
   try {
     // Get current agent info
@@ -291,7 +292,7 @@ export async function agentsSyncCommand() {
   console.log(chalk.blue('🔄 Multi-Agent Synchronization'));
   console.log(chalk.blue('================================'));
 
-  const repoRoot = path.resolve(process.cwd(), '../..');
+  const repoRoot = await findRepoRoot();
   const git = new GitOperations(repoRoot);
 
   try {
@@ -337,7 +338,7 @@ export async function agentsConflictsCommand() {
   console.log(chalk.blue('⚡ Agent Conflict Detection'));
   console.log(chalk.blue('============================'));
 
-  const repoRoot = path.resolve(process.cwd(), '../..');
+  const repoRoot = await findRepoRoot();
   const git = new GitOperations(repoRoot);
 
   try {
@@ -357,15 +358,18 @@ export async function agentsConflictsCommand() {
       }
     }
 
+    // TODO: PLACEHOLDER CONFLICT DETECTION LOGIC
+    // This is a simplified mock implementation that does not perform real conflict detection.
     // In a real implementation, this would:
     // 1. Fetch all agent branches
     // 2. Compare file changes between branches
     // 3. Identify overlapping file modifications
     // 4. Analyze git diff for actual conflicts
+    // 5. Use proper git merge-base analysis for conflict prediction
 
     console.log(chalk.yellow('🧠 Conflict Analysis:'));
 
-    // Mock conflict detection results
+    // MOCK: Simple filename pattern-based conflict detection
     const potentialConflicts = currentFiles.filter(
       (file) => file.includes('core/') || file.includes('shared') || file.includes('package.json')
     );
