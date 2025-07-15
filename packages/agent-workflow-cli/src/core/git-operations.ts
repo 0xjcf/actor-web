@@ -1,12 +1,6 @@
 import { execSync } from 'node:child_process';
 import { type SimpleGit, simpleGit } from 'simple-git';
-
-export interface AgentWorktreeConfig {
-  agentId: string;
-  branch: string;
-  path: string;
-  role: string;
-}
+import { type AgentWorktreeConfig, loadAgentConfig } from './agent-config.js';
 
 export class GitOperations {
   private git: SimpleGit;
@@ -57,28 +51,18 @@ export class GitOperations {
   /**
    * Create agent worktrees based on setup-agent-worktrees.sh logic
    */
-  async setupAgentWorktrees(agentCount = 3): Promise<AgentWorktreeConfig[]> {
-    // [aw] TODO: we should allow the user to customize the configs
-    const configs = [
-      {
-        agentId: 'agent-a',
-        branch: 'feature/agent-a',
-        path: '../actor-web-architecture',
-        role: 'Architecture',
-      },
-      {
-        agentId: 'agent-b',
-        branch: 'feature/agent-b',
-        path: '../actor-web-implementation',
-        role: 'Implementation',
-      },
-      {
-        agentId: 'agent-c',
-        branch: 'feature/agent-c',
-        path: '../actor-web-tests',
-        role: 'Testing',
-      },
-    ] satisfies AgentWorktreeConfig[];
+  async setupAgentWorktrees(
+    agentCount = 3,
+    configOptions?: {
+      configPath?: string;
+      agentPaths?: Record<string, string>;
+      baseDir?: string;
+      integrationBranch?: string;
+    }
+  ): Promise<AgentWorktreeConfig[]> {
+    // Load configuration from multiple sources (file, env, CLI options)
+    const agentConfig = await loadAgentConfig(configOptions);
+    const configs = agentConfig.agents;
 
     const results: AgentWorktreeConfig[] = [];
 

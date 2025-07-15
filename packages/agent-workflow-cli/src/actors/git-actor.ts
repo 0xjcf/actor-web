@@ -30,7 +30,16 @@ export interface GitActor extends ActorRef<GitEvent, GitResponse> {
 // ============================================================================
 
 export type GitEvent =
-  | { type: 'SETUP_WORKTREES'; agentCount: number }
+  | {
+      type: 'SETUP_WORKTREES';
+      agentCount: number;
+      configOptions?: {
+        configPath?: string;
+        agentPaths?: Record<string, string>;
+        baseDir?: string;
+        integrationBranch?: string;
+      };
+    }
   | { type: 'CHECK_STATUS' }
   | { type: 'GET_CHANGED_FILES'; integrationBranch?: string }
   | { type: 'DETECT_AGENT_TYPE' }
@@ -112,17 +121,21 @@ export interface GitContext {
   emit?: (response: GitResponse) => void; // CLI Migration: Event emission function
 }
 
-export interface AgentWorktreeConfig {
-  agentId: string;
-  branch: string;
-  path: string;
-  role: string;
-}
+import type { AgentWorktreeConfig } from '../core/agent-config.js';
 
 // Type guards for event discrimination
 function isSetupWorktreesEvent(
   event: GitEvent
-): event is { type: 'SETUP_WORKTREES'; agentCount: number } {
+): event is {
+  type: 'SETUP_WORKTREES';
+  agentCount: number;
+  configOptions?: {
+    configPath?: string;
+    agentPaths?: Record<string, string>;
+    baseDir?: string;
+    integrationBranch?: string;
+  };
+} {
   return event.type === 'SETUP_WORKTREES';
 }
 
@@ -169,30 +182,26 @@ export const gitActorMachine = setup({
 
   actors: {
     setupWorktrees: fromPromise(
-      async ({ input }: { input: { agentCount: number; git: SimpleGit } }) => {
-        const { agentCount, git } = input;
+      async ({
+        input,
+      }: {
+        input: {
+          agentCount: number;
+          git: SimpleGit;
+          configOptions?: {
+            configPath?: string;
+            agentPaths?: Record<string, string>;
+            baseDir?: string;
+            integrationBranch?: string;
+          };
+        };
+      }) => {
+        const { agentCount, git, configOptions } = input;
 
-        // [actor-web] TODO: Use the same configs as current GitOperations
-        const configs = [
-          {
-            agentId: 'agent-a',
-            branch: 'feature/agent-a',
-            path: '../actor-web-architecture',
-            role: 'Architecture',
-          },
-          {
-            agentId: 'agent-b',
-            branch: 'feature/agent-b',
-            path: '../actor-web-implementation',
-            role: 'Implementation',
-          },
-          {
-            agentId: 'agent-c',
-            branch: 'feature/agent-c',
-            path: '../actor-web-tests',
-            role: 'Testing',
-          },
-        ] satisfies AgentWorktreeConfig[];
+        // Load configuration from multiple sources (file, env, CLI options)
+        const { loadAgentConfig } = await import('../core/agent-config.js');
+        const agentConfig = await loadAgentConfig(configOptions);
+        const configs = agentConfig.agents;
 
         const results: AgentWorktreeConfig[] = [];
 
@@ -732,6 +741,7 @@ Context: Modified ${files.length} files for implementation work
           return {
             agentCount: event.agentCount,
             git: context.git,
+            configOptions: event.configOptions,
           };
         },
         onDone: {

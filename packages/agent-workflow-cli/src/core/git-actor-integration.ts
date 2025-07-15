@@ -306,12 +306,18 @@ export class GitActorIntegration {
    * Replaces: git.setupAgentWorktrees(agentCount)
    */
   async setupAgentWorktrees(
-    agentCount: number
+    agentCount: number,
+    configOptions?: {
+      configPath?: string;
+      agentPaths?: Record<string, string>;
+      baseDir?: string;
+      integrationBranch?: string;
+    }
   ): Promise<Array<{ agentId: string; branch: string; path: string; role: string }>> {
-    log.debug('Setting up agent worktrees', { agentCount });
+    log.debug('Setting up agent worktrees', { agentCount, configOptions });
     return this.createRequest<
       Array<{ agentId: string; branch: string; path: string; role: string }>
-    >({ type: 'SETUP_WORKTREES', agentCount }, (response) => {
+    >({ type: 'SETUP_WORKTREES', agentCount, configOptions }, (response) => {
       if (response.type === 'WORKTREES_SETUP') {
         log.debug('Worktrees setup completed', { worktrees: response.worktrees });
         return response.worktrees;
