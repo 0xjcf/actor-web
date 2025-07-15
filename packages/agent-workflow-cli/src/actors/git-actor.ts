@@ -201,6 +201,30 @@ export const gitActorMachine = setup({
       }
     ),
 
+    getIntegrationStatus: fromPromise(
+      async ({ input }: { input: { integrationBranch?: string; git: SimpleGit } }) => {
+        const { integrationBranch = 'feature/actor-ref-integration', git } = input;
+
+        try {
+          await git.fetch(['origin', integrationBranch]);
+
+          const ahead = await git.raw(['rev-list', '--count', `origin/${integrationBranch}..HEAD`]);
+          const behind = await git.raw([
+            'rev-list',
+            '--count',
+            `HEAD..origin/${integrationBranch}`,
+          ]);
+
+          return {
+            ahead: Number.parseInt(ahead.trim()) || 0,
+            behind: Number.parseInt(behind.trim()) || 0,
+          };
+        } catch {
+          return { ahead: 0, behind: 0 };
+        }
+      }
+    ),
+
     // Add other necessary actors...
   },
 }).createMachine({
@@ -246,6 +270,7 @@ export const gitActorMachine = setup({
         CHECK_UNCOMMITTED_CHANGES: 'checkingUncommittedChanges',
         ADD_ALL: 'stagingAll',
         COMMIT_CHANGES: 'committingChanges',
+        GET_INTEGRATION_STATUS: 'gettingIntegrationStatus',
         // Add other events...
       },
     },
@@ -366,6 +391,30 @@ export const gitActorMachine = setup({
             lastError: () => 'Commit failed',
             commitInProgress: () => false,
             commitComplete: () => false,
+          }),
+        },
+      },
+    },
+
+    gettingIntegrationStatus: {
+      invoke: {
+        src: 'getIntegrationStatus',
+        input: ({ context, event }) => ({
+          git: context.git,
+          integrationBranch: (event as { integrationBranch?: string }).integrationBranch,
+        }),
+        onDone: {
+          target: 'idle',
+          actions: assign({
+            integrationStatus: ({ event }) => event.output,
+            lastOperation: () => 'GET_INTEGRATION_STATUS',
+          }),
+        },
+        onError: {
+          target: 'idle',
+          actions: assign({
+            lastError: () => 'Integration status check failed',
+            integrationStatus: () => ({ ahead: 0, behind: 0 }),
           }),
         },
       },
