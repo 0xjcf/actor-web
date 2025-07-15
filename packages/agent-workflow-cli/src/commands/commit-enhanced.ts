@@ -1,13 +1,71 @@
-import path from 'node:path';
+import type { Interface } from 'node:readline';
 import chalk from 'chalk';
 import { createGitActor } from '../actors/git-actor.js';
+import { waitForCompletionWithTimeout } from '../actors/git-actor-helpers.js';
+import { findRepoRoot } from '../core/repo-root-finder.js';
+
+/**
+ * Validate that files parameter is a valid array of file path strings
+ */
+function validateFilesArray(files: unknown): string[] {
+  if (!Array.isArray(files)) {
+    throw new Error('Files parameter must be an array');
+  }
+
+  for (const file of files) {
+    if (typeof file !== 'string') {
+      throw new Error('All files must be valid file path strings');
+    }
+    if (file.trim() === '') {
+      throw new Error('File paths cannot be empty strings');
+    }
+  }
+
+  return files as string[];
+}
+
+/**
+ * Prompt user for confirmation with proper input validation
+ */
+async function promptForConfirmation(question: string): Promise<boolean> {
+  const readline = await import('node:readline');
+  const rl: Interface = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise<boolean>((resolve) => {
+    const askQuestion = () => {
+      rl.question(question, (answer: string) => {
+        const normalized = answer.trim().toLowerCase();
+
+        // Handle valid inputs
+        if (normalized === 'y' || normalized === 'yes' || normalized === '') {
+          rl.close();
+          resolve(true);
+        } else if (normalized === 'n' || normalized === 'no') {
+          rl.close();
+          resolve(false);
+        } else {
+          // Invalid input - ask again
+          console.log(
+            chalk.yellow('Please enter Y/y for yes, N/n for no, or press Enter for default (yes)')
+          );
+          askQuestion();
+        }
+      });
+    };
+
+    askQuestion();
+  });
+}
 
 export async function commitEnhancedCommand(customMessage?: string) {
   console.log(chalk.blue('🎭 Enhanced Commit (Actor-Based)'));
   console.log(chalk.blue('========================================='));
 
-  // Navigate to repository root (two levels up from CLI package)
-  const repoRoot = path.resolve(process.cwd(), '../..');
+  // Dynamically find repository root
+  const repoRoot = await findRepoRoot();
   const gitActor = createGitActor(repoRoot);
 
   try {
@@ -19,8 +77,8 @@ export async function commitEnhancedCommand(customMessage?: string) {
       // Use custom message with conventional format
       gitActor.send({ type: 'COMMIT_WITH_CONVENTION', customMessage });
 
-      // Wait for completion (simplified polling for CLI)
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Wait for completion with proper async waiting
+      await waitForCompletionWithTimeout(gitActor, 10000);
 
       const snapshot = gitActor.getSnapshot();
       if (snapshot.context.lastCommitMessage) {
@@ -33,8 +91,8 @@ export async function commitEnhancedCommand(customMessage?: string) {
       // Generate commit message first
       gitActor.send({ type: 'GENERATE_COMMIT_MESSAGE' });
 
-      // Wait for generation
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Wait for generation with proper async waiting
+      await waitForCompletionWithTimeout(gitActor, 10000);
 
       const snapshot = gitActor.getSnapshot();
       if (snapshot.context.lastCommitMessage) {
@@ -42,21 +100,10 @@ export async function commitEnhancedCommand(customMessage?: string) {
         console.log(chalk.gray(snapshot.context.lastCommitMessage));
         console.log();
 
-        // Ask for confirmation
-        const readline = await import('node:readline');
-        const rl = readline.createInterface({
-          input: process.stdin,
-          output: process.stdout,
-        });
+        // Ask for confirmation with proper validation
+        const useMessage = await promptForConfirmation('Use this commit message? (Y/n): ');
 
-        const useMessage = await new Promise<string>((resolve) => {
-          rl.question('Use this commit message? (Y/n): ', (answer) => {
-            rl.close();
-            resolve(answer);
-          });
-        });
-
-        if (useMessage.toLowerCase() === 'n') {
+        if (!useMessage) {
           console.log(chalk.yellow('❌ Commit cancelled'));
           return;
         }
@@ -64,8 +111,8 @@ export async function commitEnhancedCommand(customMessage?: string) {
         // Commit with generated message
         gitActor.send({ type: 'COMMIT_WITH_CONVENTION' });
 
-        // Wait for completion
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        // Wait for completion with proper async waiting
+        await waitForCompletionWithTimeout(gitActor, 10000);
 
         console.log(chalk.green('✅ Committed successfully!'));
       } else {
@@ -84,7 +131,8 @@ export async function generateCommitMessageCommand() {
   console.log(chalk.blue('🧠 Generate Commit Message (Actor-Based)'));
   console.log(chalk.blue('=========================================='));
 
-  const repoRoot = path.resolve(process.cwd(), '../..');
+  // Dynamically find repository root
+  const repoRoot = await findRepoRoot();
   const gitActor = createGitActor(repoRoot);
 
   try {
@@ -93,8 +141,8 @@ export async function generateCommitMessageCommand() {
     console.log(chalk.blue('🔍 Analyzing changes...'));
     gitActor.send({ type: 'GENERATE_COMMIT_MESSAGE' });
 
-    // Wait for generation
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Wait for generation with proper async waiting
+    await waitForCompletionWithTimeout(gitActor, 10000);
 
     const snapshot = gitActor.getSnapshot();
     if (snapshot.context.lastCommitMessage) {
@@ -123,20 +171,26 @@ export async function validateDatesCommand(files?: string[]) {
   console.log(chalk.blue('📅 Validate Dates (Actor-Based)'));
   console.log(chalk.blue('================================='));
 
-  const repoRoot = path.resolve(process.cwd(), '../..');
+  // Dynamically find repository root
+  const repoRoot = await findRepoRoot();
   const gitActor = createGitActor(repoRoot);
 
   try {
     gitActor.start();
 
-    // Default to common documentation files if none provided
-    const filesToCheck = files || ['docs/README.md', 'docs/agent-updates.md', 'src/**/*.ts'];
+    // Default to common documentation files if none provided, with input validation
+    let filesToCheck: string[];
+    if (files) {
+      filesToCheck = validateFilesArray(files);
+    } else {
+      filesToCheck = ['docs/README.md', 'docs/agent-updates.md', 'src/**/*.ts'];
+    }
 
     console.log(chalk.blue(`🔍 Checking ${filesToCheck.length} files for date issues...`));
     gitActor.send({ type: 'VALIDATE_DATES', filePaths: filesToCheck });
 
-    // Wait for validation
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Wait for validation with proper async waiting
+    await waitForCompletionWithTimeout(gitActor, 15000);
 
     const snapshot = gitActor.getSnapshot();
     if (snapshot.context.dateIssues) {

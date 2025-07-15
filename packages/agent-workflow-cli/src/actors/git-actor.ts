@@ -6,6 +6,15 @@ import { assign, fromPromise, setup } from 'xstate';
 const log = Logger.namespace('GIT_ACTOR');
 
 /**
+ * Generate a unique ID for git actors
+ */
+function generateGitActorId(prefix = 'git-actor'): string {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substring(2, 8);
+  return `${prefix}-${timestamp}-${random}`;
+}
+
+/**
  * GitActor-specific snapshot that includes state value for CLI operations
  */
 export interface GitActorSnapshot extends ActorSnapshot<GitContext> {
@@ -1485,12 +1494,10 @@ Context: Modified ${files.length} files for implementation work
 export function createGitActor(baseDir?: string): GitActor {
   // Use framework's createActorRef to get proper event emission
   const actorRef = createActorRef<GitEvent, GitResponse>(gitActorMachine, {
-    id: `git-actor-${Date.now()}`,
+    id: generateGitActorId('git-actor'),
     input: { baseDir },
+    autoStart: false, // Let the caller control when to start
   });
-
-  // Start the actor immediately
-  actorRef.start();
 
   // Store reference to original getSnapshot to avoid recursion
   const originalGetSnapshot = actorRef.getSnapshot.bind(actorRef);
