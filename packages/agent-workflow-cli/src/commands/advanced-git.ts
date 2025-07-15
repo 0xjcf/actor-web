@@ -2,6 +2,35 @@ import path from 'node:path';
 import chalk from 'chalk';
 import { createGitActor } from '../actors/git-actor.js';
 import { GitOperations } from '../core/git-operations.js';
+import { waitForState } from '../test-utils.js';
+
+/**
+ * Demo git actor workflow
+ */
+export async function demoGitActorCommand() {
+  console.log(chalk.blue('🎭 Git Actor Demo'));
+  console.log(chalk.blue('=================='));
+
+  const repoRoot = path.resolve(process.cwd(), '../..');
+  const gitActor = createGitActor(repoRoot);
+  gitActor.start();
+
+  console.log(chalk.green('✅ Git Actor: Initialized'));
+  console.log(chalk.blue('📊 Actor Machine: Running'));
+
+  // Get current status
+  gitActor.send({ type: 'CHECK_STATUS' });
+  await waitForState(gitActor, 'statusChecked', 5000);
+
+  const snapshot = gitActor.getSnapshot();
+  console.log(chalk.yellow('🔍 Current Context:'));
+  console.log(chalk.gray(`  Branch: ${snapshot.context.currentBranch || 'Unknown'}`));
+  console.log(chalk.gray(`  Agent: ${snapshot.context.agentType || 'Unknown'}`));
+  console.log(chalk.gray(`  Uncommitted: ${snapshot.context.uncommittedChanges ? 'Yes' : 'No'}`));
+
+  gitActor.stop();
+  console.log(chalk.green('✅ Git Actor: Stopped'));
+}
 
 /**
  * Show git actor system status
@@ -21,7 +50,7 @@ export async function actorStatusCommand() {
 
     // Get current status
     gitActor.send({ type: 'CHECK_STATUS' });
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await waitForState(gitActor, 'statusChecked', 5000);
 
     const snapshot = gitActor.getSnapshot();
     console.log(chalk.yellow('🔍 Current Context:'));
@@ -89,7 +118,7 @@ export async function actorWorktreesCommand(options: {
     gitActor.start();
 
     gitActor.send({ type: 'SETUP_WORKTREES', agentCount });
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await waitForState(gitActor, 'worktreesSetup', 2000);
 
     const snapshot = gitActor.getSnapshot();
     if (snapshot.context.worktrees.length > 0) {

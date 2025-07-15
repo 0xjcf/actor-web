@@ -31,13 +31,6 @@ export async function saveCommand(customMessage?: string) {
 class SaveWorkflowHandler {
   private actor: GitActor;
   private customMessage?: string;
-  private workflowState:
-    | 'checking_repo'
-    | 'checking_changes'
-    | 'staging'
-    | 'committing'
-    | 'complete'
-    | 'error' = 'checking_repo';
 
   constructor(actor: GitActor) {
     this.actor = actor;
@@ -48,46 +41,13 @@ class SaveWorkflowHandler {
     console.log(chalk.blue('📋 Starting save workflow...'));
 
     return new Promise((resolve, reject) => {
-      // Observe repo status
-      const repoObserver = this.actor
-        .observe((snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).isGitRepo)
-        .subscribe((isGitRepo) => {
-          if (isGitRepo !== undefined) {
-            this.handleRepoStatus(isGitRepo);
-          }
-        });
-
-      // Observe uncommitted changes
-      const changesObserver = this.actor
+      // Observe all state changes and handle workflow progression
+      const stateObserver = this.actor
         .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).uncommittedChanges
+          (snapshot: ActorSnapshot<unknown>) => (snapshot as ActorSnapshot<GitContext>).value
         )
-        .subscribe((hasChanges) => {
-          if (hasChanges !== undefined) {
-            this.handleUncommittedChanges(hasChanges);
-          }
-        });
-
-      // Observe staging completion
-      const stagingObserver = this.actor
-        .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).lastOperation
-        )
-        .subscribe((lastOperation) => {
-          if (lastOperation === 'STAGING_ALL_DONE' && this.workflowState === 'staging') {
-            this.handleStagingComplete();
-          }
-        });
-
-      // Observe commit completion
-      const commitObserver = this.actor
-        .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).lastOperation
-        )
-        .subscribe((lastOperation) => {
-          if (lastOperation === 'COMMIT_CHANGES_DONE' && this.workflowState === 'committing') {
-            this.handleCommitComplete();
-          }
+        .subscribe((state) => {
+          this.handleStateChange(state, resolve, reject);
         });
 
       // Observe errors
@@ -102,13 +62,7 @@ class SaveWorkflowHandler {
         });
 
       // Store observers for cleanup
-      this.observers = [
-        repoObserver,
-        changesObserver,
-        stagingObserver,
-        commitObserver,
-        errorObserver,
-      ];
+      this.observers = [stateObserver, errorObserver];
 
       // Success handler
       this.onSuccess = () => {
@@ -117,7 +71,6 @@ class SaveWorkflowHandler {
       };
 
       // Start the workflow
-      this.workflowState = 'checking_repo';
       this.actor.send({ type: 'CHECK_REPO' });
     });
   }
@@ -130,56 +83,60 @@ class SaveWorkflowHandler {
     this.observers = [];
   }
 
-  private handleRepoStatus(isGitRepo: boolean): void {
-    if (this.workflowState !== 'checking_repo') return;
+  private handleStateChange(
+    state: unknown,
+    _resolve: () => void,
+    reject: (error: Error) => void
+  ): void {
+    const snapshot = this.actor.getSnapshot();
+    const context = snapshot.context as GitContext;
+    const stateStr = state as string;
 
-    if (!isGitRepo) {
-      console.log(chalk.red('❌ Not in a Git repository'));
-      this.workflowState = 'error';
-      this.onSuccess?.(); // End workflow
-      return;
+    switch (stateStr) {
+      case 'repoChecked':
+        if (!context.isGitRepo) {
+          console.log(chalk.red('❌ Not in a Git repository'));
+          reject(new Error('Not in a Git repository'));
+          return;
+        }
+        console.log(chalk.green('✅ Git repository detected'));
+        this.actor.send({ type: 'CHECK_UNCOMMITTED_CHANGES' });
+        break;
+
+      case 'uncommittedChangesChecked':
+        if (!context.uncommittedChanges) {
+          console.log(chalk.yellow('⚠️  No changes to save'));
+          this.onSuccess?.();
+          return;
+        }
+        console.log(chalk.yellow('📝 Changes detected, staging...'));
+        this.actor.send({ type: 'ADD_ALL' });
+        break;
+
+      case 'stagingCompleted': {
+        console.log(chalk.green('✅ All changes staged'));
+        const commitMessage = this.customMessage || this.generateDefaultCommitMessage();
+        this.actor.send({ type: 'COMMIT_CHANGES', message: commitMessage });
+        break;
+      }
+
+      case 'commitCompleted':
+        console.log(chalk.green('✅ Changes committed successfully'));
+        console.log(chalk.blue('💡 Use pnpm aw:ship to push to integration branch'));
+        this.onSuccess?.();
+        break;
+
+      case 'repoError':
+      case 'statusError':
+      case 'uncommittedChangesError':
+      case 'stagingError':
+      case 'commitError': {
+        const errorMsg = context.lastError || `Error in ${stateStr}`;
+        console.error(chalk.red('❌ Error:'), errorMsg);
+        reject(new Error(errorMsg));
+        break;
+      }
     }
-
-    console.log(chalk.green('✅ Git repository detected'));
-    this.workflowState = 'checking_changes';
-    this.actor.send({ type: 'CHECK_UNCOMMITTED_CHANGES' });
-  }
-
-  private handleUncommittedChanges(hasChanges: boolean): void {
-    if (this.workflowState !== 'checking_changes') return;
-
-    if (!hasChanges) {
-      console.log(chalk.yellow('⚠️  No changes to save'));
-      this.workflowState = 'complete';
-      this.onSuccess?.();
-      return;
-    }
-
-    console.log(chalk.yellow('📝 Changes detected, staging...'));
-    this.workflowState = 'staging';
-    this.actor.send({ type: 'ADD_ALL' });
-  }
-
-  private handleStagingComplete(): void {
-    if (this.workflowState !== 'staging') return;
-
-    console.log(chalk.green('✅ All changes staged'));
-
-    // Generate commit message
-    const commitMessage = this.customMessage || this.generateDefaultCommitMessage();
-
-    this.workflowState = 'committing';
-    this.actor.send({ type: 'COMMIT_CHANGES', message: commitMessage });
-  }
-
-  private handleCommitComplete(): void {
-    if (this.workflowState !== 'committing') return;
-
-    console.log(chalk.green('✅ Changes committed successfully'));
-    console.log(chalk.blue('💡 Use pnpm aw:ship to push to integration branch'));
-
-    this.workflowState = 'complete';
-    this.onSuccess?.();
   }
 
   private generateDefaultCommitMessage(): string {

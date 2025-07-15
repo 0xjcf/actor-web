@@ -6,6 +6,7 @@ This directory contains Architecture Decision Records (ADRs) and design document
 
 - `actor-ref-design.md` - ActorRef API design (Agent A)
 - `supervision-patterns.md` - Supervision and fault tolerance (Agent A)
+- `adr-003-xstate-timeout-patterns.md` - XState timeout and completion patterns (Agent A)
 - `observable-architecture.md` - Reactive patterns (Agent B)
 - `performance-considerations.md` - Performance design choices (Agent B)
 

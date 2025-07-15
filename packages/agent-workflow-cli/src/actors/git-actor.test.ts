@@ -5,7 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { waitForIdle } from '../test-utils';
+import { waitForState } from '../test-utils';
 import { createGitActor, type GitActor } from './git-actor';
 
 // Mock simple-git to control git operations in tests
@@ -142,8 +142,8 @@ describe('GitActor - Framework Contract Compliance', () => {
         // Act: Send event and wait for completion
         gitActor.send({ type: 'CHECK_STATUS' });
 
-        // Wait for state machine to complete
-        await waitForIdle(gitActor);
+        // Wait for state machine to complete - use specific completion state
+        await waitForState(gitActor, 'statusChecked');
 
         // Assert: Context should be updated
         const snapshot = gitActor.getSnapshot();
@@ -267,12 +267,12 @@ describe('GitActor - Framework Contract Compliance', () => {
       // Act: Send event and wait for completion
       gitActor.send({ type: 'CHECK_STATUS' });
 
-      // Wait for operation to complete
-      await waitForIdle(gitActor);
+      // Wait for operation to complete - check for completion state first
+      await waitForState(gitActor, 'statusChecked');
 
-      // Assert: Should return to idle
+      // Assert: Should reach completion state
       const snapshot = gitActor.getSnapshot();
-      expect(snapshot.value).toBe('idle');
+      expect(snapshot.value).toBe('statusChecked');
     });
 
     it('should handle multiple events sequentially', () => {
@@ -308,12 +308,12 @@ describe('GitActor - Framework Contract Compliance', () => {
       // Act: Send event that will fail
       gitActor.send({ type: 'CHECK_STATUS' });
 
-      // Wait for error handling
-      await waitForIdle(gitActor);
+      // Wait for error handling - check for error state
+      await waitForState(gitActor, 'statusError');
 
-      // Assert: Should handle error and return to stable state
+      // Assert: Should handle error and reach error state
       const snapshot = gitActor.getSnapshot();
-      expect(['idle', 'error']).toContain(snapshot.value);
+      expect(snapshot.value).toBe('statusError');
     });
 
     it('should store error information in context', async () => {
@@ -323,8 +323,8 @@ describe('GitActor - Framework Contract Compliance', () => {
       // Act: Send event that will fail
       gitActor.send({ type: 'CHECK_STATUS' });
 
-      // Wait for error handling
-      await waitForIdle(gitActor);
+      // Wait for error handling - check for error state
+      await waitForState(gitActor, 'statusError');
 
       // Assert: Error should be stored in context
       const snapshot = gitActor.getSnapshot();
@@ -339,14 +339,14 @@ describe('GitActor - Framework Contract Compliance', () => {
 
       // Act: Send failing event, then successful event
       gitActor.send({ type: 'CHECK_STATUS' });
-      await waitForIdle(gitActor);
+      await waitForState(gitActor, 'statusError');
 
       gitActor.send({ type: 'CHECK_STATUS' });
-      await waitForIdle(gitActor);
+      await waitForState(gitActor, 'statusChecked');
 
       // Assert: Should recover and work normally
       const snapshot = gitActor.getSnapshot();
-      expect(snapshot.value).toBe('idle');
+      expect(snapshot.value).toBe('statusChecked');
     });
   });
 

@@ -14,16 +14,6 @@ import type { GitActor } from './git-actor';
 // Note: waitForCompletion and waitForState are now imported from ../test-utils
 // to avoid duplication and ensure consistency across the CLI package
 
-/**
- * Wait for completion with timeout
- */
-export async function waitForCompletionWithTimeout(
-  gitActor: GitActor,
-  timeout = 5000
-): Promise<void> {
-  return waitForCompletion(gitActor, timeout);
-}
-
 // ============================================================================
 // ERROR HANDLING UTILITIES
 // ============================================================================

@@ -6,6 +6,9 @@
  * @author Actor-Web Team
  */
 
+import type { ActorSnapshot } from '@actor-web/core';
+import { createGitActor, type GitContext } from './actors/git-actor.js';
+
 // ============================================================================
 // GIT ACTOR SYSTEM
 // ============================================================================
@@ -157,36 +160,45 @@ export async function getAgentStatus(baseDir?: string): Promise<AgentStatus> {
  * @returns Analyzed commit message with metadata
  */
 export async function generateIntelligentCommitMessage(baseDir?: string): Promise<CommitAnalysis> {
-  const gitActor = (await import('./actors/git-actor.js')).createGitActor(baseDir);
+  const gitActor = createGitActor(baseDir);
 
   return new Promise((resolve, reject) => {
-    gitActor.start();
+    const unsubscribe = gitActor.subscribe((event: unknown) => {
+      const snapshot = event as ActorSnapshot<GitContext>;
 
-    gitActor.send({ type: 'GENERATE_COMMIT_MESSAGE' });
-
-    // Poll for result (in production, this would use proper event handling)
-    const checkResult = () => {
-      const snapshot = gitActor.getSnapshot();
-      if (snapshot.context.lastCommitMessage && snapshot.context.commitConfig) {
+      // Check for successful completion
+      if (snapshot.value === 'commitMessageGenerated') {
+        unsubscribe();
         gitActor.stop();
         resolve({
-          type: snapshot.context.commitConfig.type || 'feat',
-          scope: snapshot.context.commitConfig.scope || 'core',
-          description: snapshot.context.commitConfig.description || 'update implementation',
-          workCategory: snapshot.context.commitConfig.workCategory || 'implementation',
-          agentType: snapshot.context.agentType || 'Unknown Agent',
+          type: snapshot.context?.commitConfig?.type || 'feat',
+          scope: snapshot.context?.commitConfig?.scope || 'core',
+          description: snapshot.context?.commitConfig?.description || 'update implementation',
+          workCategory: snapshot.context?.commitConfig?.workCategory || 'implementation',
+          agentType: snapshot.context?.agentType || 'Unknown Agent',
           files: [], // Would be populated from git diff
-          projectTag: snapshot.context.commitConfig.projectTag || 'actor-web',
+          projectTag: snapshot.context?.commitConfig?.projectTag || 'actor-web',
         });
-      } else if (snapshot.context.lastError) {
-        gitActor.stop();
-        reject(new Error(snapshot.context.lastError));
-      } else {
-        setTimeout(checkResult, 100);
       }
-    };
 
-    setTimeout(checkResult, 100);
+      // Check for error states
+      if (snapshot.value === 'commitMessageError') {
+        unsubscribe();
+        gitActor.stop();
+        reject(new Error(snapshot.context?.lastError || 'Commit message generation failed'));
+      }
+
+      // Check for timeout state
+      if (snapshot.value === 'commitMessageTimeout') {
+        unsubscribe();
+        gitActor.stop();
+        reject(new Error('Commit message generation timed out'));
+      }
+    });
+
+    // Start the actor and send the event
+    gitActor.start();
+    gitActor.send({ type: 'GENERATE_COMMIT_MESSAGE' });
   });
 }
 
@@ -200,33 +212,57 @@ export async function validateDocumentationDates(
   files: string[],
   baseDir?: string
 ): Promise<DateValidationResult[]> {
-  const gitActor = (await import('./actors/git-actor.js')).createGitActor(baseDir);
+  const gitActor = createGitActor(baseDir);
 
   return new Promise((resolve, reject) => {
-    gitActor.start();
+    const unsubscribe = gitActor.subscribe((event: unknown) => {
+      const snapshot = event as ActorSnapshot<GitContext>;
 
-    gitActor.send({ type: 'VALIDATE_DATES', filePaths: files });
-
-    const checkResult = () => {
-      const snapshot = gitActor.getSnapshot();
-      if (snapshot.context.dateIssues) {
+      // Check for successful completion
+      if (snapshot.value === 'datesValidated') {
+        unsubscribe();
         gitActor.stop();
-        resolve(snapshot.context.dateIssues);
-      } else if (snapshot.context.lastError) {
-        gitActor.stop();
-        reject(new Error(snapshot.context.lastError));
-      } else {
-        setTimeout(checkResult, 100);
+        resolve(snapshot.context?.dateIssues || []);
       }
-    };
 
-    setTimeout(checkResult, 100);
+      // Check for error states
+      if (snapshot.value === 'datesValidationError') {
+        unsubscribe();
+        gitActor.stop();
+        reject(new Error(snapshot.context?.lastError || 'Date validation failed'));
+      }
+
+      // Check for timeout state
+      if (snapshot.value === 'datesValidationTimeout') {
+        unsubscribe();
+        gitActor.stop();
+        reject(new Error('Date validation timed out'));
+      }
+    });
+
+    // Start the actor and send the event
+    gitActor.start();
+    gitActor.send({ type: 'VALIDATE_DATES', filePaths: files });
   });
 }
 
 // ============================================================================
 // CLI INTEGRATION HELPERS
 // ============================================================================
+
+/**
+ * Validate options object for init command
+ */
+function validateInitOptions(
+  options: Record<string, unknown>
+): options is { agents: string; template: string } {
+  return (
+    typeof options === 'object' &&
+    options !== null &&
+    typeof options.agents === 'string' &&
+    typeof options.template === 'string'
+  );
+}
 
 /**
  * Run workflow command programmatically
@@ -240,9 +276,13 @@ export async function runWorkflowCommand(
 ): Promise<void> {
   switch (command) {
     case 'init':
-      return (await import('./commands/init.js')).initCommand(
-        options as { agents: string; template: string }
-      );
+      // Add explicit runtime validation before calling initCommand
+      if (!validateInitOptions(options)) {
+        throw new Error(
+          'Invalid options for init command. Required properties: agents (string), template (string)'
+        );
+      }
+      return (await import('./commands/init.js')).initCommand(options);
     case 'save':
       return (await import('./commands/save.js')).saveCommand();
     case 'ship':

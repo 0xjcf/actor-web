@@ -1,7 +1,7 @@
 import type { Interface } from 'node:readline';
+import type { ActorSnapshot } from '@actor-web/core';
 import chalk from 'chalk';
-import { createGitActor } from '../actors/git-actor.js';
-import { waitForCompletionWithTimeout } from '../actors/git-actor-helpers.js';
+import { createGitActor, type GitActor, type GitContext } from '../actors/git-actor.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';
 
 /**
@@ -60,6 +60,33 @@ async function promptForConfirmation(question: string): Promise<boolean> {
   });
 }
 
+/**
+ * Wait for a specific state using proper XState state observation
+ */
+async function waitForState(
+  gitActor: GitActor,
+  targetStates: string[],
+  errorStates: string[] = [],
+  timeoutStates: string[] = []
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const unsubscribe = gitActor.subscribe((event: unknown) => {
+      const snapshot = event as ActorSnapshot<GitContext>;
+
+      if (targetStates.includes(snapshot.value as string)) {
+        unsubscribe();
+        resolve();
+      } else if (errorStates.includes(snapshot.value as string)) {
+        unsubscribe();
+        reject(new Error(snapshot.context?.lastError || 'Operation failed'));
+      } else if (timeoutStates.includes(snapshot.value as string)) {
+        unsubscribe();
+        reject(new Error('Operation timed out'));
+      }
+    });
+  });
+}
+
 export async function commitEnhancedCommand(customMessage?: string) {
   console.log(chalk.blue('🎭 Enhanced Commit (Actor-Based)'));
   console.log(chalk.blue('========================================='));
@@ -78,7 +105,7 @@ export async function commitEnhancedCommand(customMessage?: string) {
       gitActor.send({ type: 'COMMIT_WITH_CONVENTION', customMessage });
 
       // Wait for completion with proper async waiting
-      await waitForCompletionWithTimeout(gitActor, 10000);
+      await waitForState(gitActor, ['commitCompleted'], ['commitError'], ['commitTimeout']);
 
       const snapshot = gitActor.getSnapshot();
       if (snapshot.context.lastCommitMessage) {
@@ -92,7 +119,12 @@ export async function commitEnhancedCommand(customMessage?: string) {
       gitActor.send({ type: 'GENERATE_COMMIT_MESSAGE' });
 
       // Wait for generation with proper async waiting
-      await waitForCompletionWithTimeout(gitActor, 10000);
+      await waitForState(
+        gitActor,
+        ['commitMessageGenerated'],
+        ['commitMessageError'],
+        ['commitMessageTimeout']
+      );
 
       const snapshot = gitActor.getSnapshot();
       if (snapshot.context.lastCommitMessage) {
@@ -112,7 +144,7 @@ export async function commitEnhancedCommand(customMessage?: string) {
         gitActor.send({ type: 'COMMIT_WITH_CONVENTION' });
 
         // Wait for completion with proper async waiting
-        await waitForCompletionWithTimeout(gitActor, 10000);
+        await waitForState(gitActor, ['commitCompleted'], ['commitError'], ['commitTimeout']);
 
         console.log(chalk.green('✅ Committed successfully!'));
       } else {
@@ -142,7 +174,12 @@ export async function generateCommitMessageCommand() {
     gitActor.send({ type: 'GENERATE_COMMIT_MESSAGE' });
 
     // Wait for generation with proper async waiting
-    await waitForCompletionWithTimeout(gitActor, 10000);
+    await waitForState(
+      gitActor,
+      ['commitMessageGenerated'],
+      ['commitMessageError'],
+      ['commitMessageTimeout']
+    );
 
     const snapshot = gitActor.getSnapshot();
     if (snapshot.context.lastCommitMessage) {
@@ -190,7 +227,12 @@ export async function validateDatesCommand(files?: string[]) {
     gitActor.send({ type: 'VALIDATE_DATES', filePaths: filesToCheck });
 
     // Wait for validation with proper async waiting
-    await waitForCompletionWithTimeout(gitActor, 15000);
+    await waitForState(
+      gitActor,
+      ['datesValidated'],
+      ['datesValidationError'],
+      ['datesValidationTimeout']
+    );
 
     const snapshot = gitActor.getSnapshot();
     if (snapshot.context.dateIssues) {
