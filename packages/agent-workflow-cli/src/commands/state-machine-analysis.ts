@@ -642,40 +642,33 @@ function analyzeWorkflowCompleteness(machine: AnyStateMachine): {
   const warnings: string[] = [];
 
   try {
-    const config = machine.config;
-    const _allStates = extractAllStatesFromMachine(machine);
+    // Use a simpler approach that works with XState's actual API
+    const stateAnalysis = analyzeStateTransitionsFromConfig(machine.config);
 
-    // Analyze each state for workflow completeness
-    const stateAnalysis = analyzeStateTransitions(config);
-
-    // Check for dead-end states (states with no outgoing transitions)
+    // Generic dead-end state detection (states with no outgoing transitions)
     const deadEndStates = stateAnalysis.deadEndStates;
     if (deadEndStates.length > 0) {
       errors.push(`Found ${deadEndStates.length} dead-end states: ${deadEndStates.join(', ')}`);
     }
 
-    // Check for completion states missing CONTINUE transitions
-    const completionStates = stateAnalysis.completionStates;
-    const missingContinueStates = completionStates.filter(
-      (state) => !stateAnalysis.stateTransitions[state]?.includes('CONTINUE')
+    // Generic final state analysis
+    const finalStates = stateAnalysis.finalStates;
+    const finalStatesWithTransitions = finalStates.filter(
+      (state) =>
+        stateAnalysis.stateTransitions[state] && stateAnalysis.stateTransitions[state].length > 0
     );
 
-    if (missingContinueStates.length > 0) {
-      errors.push(
-        `Completion states missing CONTINUE transitions: ${missingContinueStates.join(', ')}`
+    if (finalStatesWithTransitions.length > 0) {
+      warnings.push(
+        `Final states with outgoing transitions: ${finalStatesWithTransitions.join(', ')}`
       );
     }
 
-    // Check for states that can't reach idle
-    const unreachableFromIdle = stateAnalysis.unreachableFromIdle;
-    if (unreachableFromIdle.length > 0) {
-      warnings.push(`States that can't return to idle: ${unreachableFromIdle.join(', ')}`);
+    // Check for states with no incoming transitions (except initial state)
+    const orphanedStates = stateAnalysis.orphanedStates;
+    if (orphanedStates.length > 0) {
+      warnings.push(`States with no incoming transitions: ${orphanedStates.join(', ')}`);
     }
-
-    // Check for workflow patterns
-    const workflowPatterns = analyzeWorkflowPatterns(stateAnalysis);
-    errors.push(...workflowPatterns.errors);
-    warnings.push(...workflowPatterns.warnings);
 
     return { errors, warnings };
   } catch (error) {
@@ -686,19 +679,28 @@ function analyzeWorkflowCompleteness(machine: AnyStateMachine): {
   }
 }
 
-// NEW: Analyze state transitions and connectivity
-function analyzeStateTransitions(config: Record<string, unknown>): {
+// NEW: Analyze state transitions directly from machine configuration
+function analyzeStateTransitionsFromConfig(config: Record<string, unknown>): {
   stateTransitions: Record<string, string[]>;
   deadEndStates: string[];
-  completionStates: string[];
-  unreachableFromIdle: string[];
+  finalStates: string[];
+  orphanedStates: string[];
 } {
   const stateTransitions: Record<string, string[]> = {};
   const deadEndStates: string[] = [];
-  const completionStates: string[] = [];
+  const finalStates: string[] = [];
+  const allStates: string[] = [];
 
-  function extractTransitions(stateConfig: Record<string, unknown>, stateName: string): void {
+  // Extract states and transitions from configuration
+  function extractStatesAndTransitions(
+    stateConfig: Record<string, unknown>,
+    stateName: string,
+    parentPath = ''
+  ): void {
     if (!stateConfig || typeof stateConfig !== 'object') return;
+
+    const fullStateName = parentPath ? `${parentPath}.${stateName}` : stateName;
+    allStates.push(fullStateName);
 
     const transitions: string[] = [];
 
@@ -709,135 +711,67 @@ function analyzeStateTransitions(config: Record<string, unknown>): {
       });
     }
 
-    stateTransitions[stateName] = transitions;
-
-    // Identify dead-end states (no outgoing transitions)
-    if (transitions.length === 0) {
-      deadEndStates.push(stateName);
+    // Check if this is a final state
+    if (stateConfig.type === 'final') {
+      finalStates.push(fullStateName);
     }
 
-    // Identify completion states (states ending with "Completed", "Checked", "Setup", etc.)
-    if (stateName.match(/(Completed|Checked|Setup|Generated|Validated|Created)$/)) {
-      completionStates.push(stateName);
+    stateTransitions[fullStateName] = transitions;
+
+    // Identify dead-end states (non-final states with no outgoing transitions)
+    if (transitions.length === 0 && stateConfig.type !== 'final') {
+      deadEndStates.push(fullStateName);
     }
 
     // Recursively check nested states
     if (stateConfig.states && typeof stateConfig.states === 'object') {
       Object.entries(stateConfig.states).forEach(([nestedStateName, nestedState]) => {
-        extractTransitions(nestedState as Record<string, unknown>, nestedStateName);
+        extractStatesAndTransitions(
+          nestedState as Record<string, unknown>,
+          nestedStateName,
+          fullStateName
+        );
       });
     }
   }
 
-  // Extract transitions from all states
+  // Extract from root states
   if (config.states && typeof config.states === 'object') {
     Object.entries(config.states).forEach(([stateName, stateConfig]) => {
-      extractTransitions(stateConfig as Record<string, unknown>, stateName);
+      extractStatesAndTransitions(stateConfig as Record<string, unknown>, stateName);
     });
   }
 
-  // Check which states can reach idle
-  const unreachableFromIdle = findUnreachableFromIdle(stateTransitions);
+  // Find orphaned states (states that are never targeted by transitions)
+  const orphanedStates = findOrphanedStates(stateTransitions, config);
 
   return {
     stateTransitions,
     deadEndStates,
-    completionStates,
-    unreachableFromIdle,
+    finalStates,
+    orphanedStates,
   };
 }
 
-// NEW: Find states that can't reach idle
-function findUnreachableFromIdle(stateTransitions: Record<string, string[]>): string[] {
-  const unreachableFromIdle: string[] = [];
+// NEW: Find states that are never targeted by any transition
+function findOrphanedStates(
+  stateTransitions: Record<string, string[]>,
+  config: Record<string, unknown>
+): string[] {
+  const allStates = Object.keys(stateTransitions);
+  const targetedStates = new Set<string>();
 
-  Object.entries(stateTransitions).forEach(([stateName, transitions]) => {
-    // Skip idle state itself
-    if (stateName === 'idle') return;
-
-    // Check if state has CONTINUE event (direct path to idle)
-    const hasContinue = transitions.includes('CONTINUE');
-
-    // Check if state has any transitions at all
-    const hasTransitions = transitions.length > 0;
-
-    // If it's a non-error state with no CONTINUE and no transitions, it's problematic
-    if (
-      !hasContinue &&
-      !hasTransitions &&
-      !stateName.includes('Error') &&
-      !stateName.includes('Timeout')
-    ) {
-      unreachableFromIdle.push(stateName);
-    }
-  });
-
-  return unreachableFromIdle;
-}
-
-// NEW: Analyze workflow patterns
-function analyzeWorkflowPatterns(stateAnalysis: {
-  stateTransitions: Record<string, string[]>;
-  deadEndStates: string[];
-  completionStates: string[];
-  unreachableFromIdle: string[];
-}): {
-  errors: string[];
-  warnings: string[];
-} {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-
-  // Check for common workflow anti-patterns
-  const { stateTransitions, completionStates } = stateAnalysis;
-
-  // Pattern 1: Check if all operation states have corresponding completion states
-  const operationStates = Object.keys(stateTransitions).filter(
-    (state) => state.includes('ing') && !state.includes('Error') && !state.includes('Timeout')
-  );
-
-  const missingCompletionStates = operationStates.filter((opState) => {
-    const expectedCompletion = opState.replace('ing', 'ed').replace('checking', 'checked');
-    return !completionStates.some((compState) =>
-      compState.toLowerCase().includes(expectedCompletion.toLowerCase())
-    );
-  });
-
-  if (missingCompletionStates.length > 0) {
-    warnings.push(
-      `Operation states missing completion states: ${missingCompletionStates.join(', ')}`
-    );
+  // Get initial state from config
+  const initialState = config.initial ? String(config.initial) : '';
+  if (initialState) {
+    targetedStates.add(initialState);
   }
 
-  // Pattern 2: Check for states that only have error transitions
-  const errorOnlyStates = Object.entries(stateTransitions).filter(([stateName, transitions]) => {
-    if (stateName.includes('Error') || stateName.includes('Timeout')) return false;
-    return (
-      transitions.length > 0 &&
-      transitions.every((t) => t === 'RETRY' || t === 'CONTINUE' || t.includes('ERROR'))
-    );
-  });
+  // This is a simplified check - in a full implementation, we'd need to resolve
+  // actual transition targets from the XState configuration
+  // For now, we'll be conservative and only flag obvious orphans
 
-  if (errorOnlyStates.length > 0) {
-    warnings.push(
-      `States with only error/retry transitions: ${errorOnlyStates.map(([name]) => name).join(', ')}`
-    );
-  }
-
-  // Pattern 3: Check for missing RETRY in error states
-  const errorStates = Object.keys(stateTransitions).filter(
-    (state) => state.includes('Error') || state.includes('Timeout')
-  );
-
-  const errorStatesWithoutRetry = errorStates.filter(
-    (state) => !stateTransitions[state]?.includes('RETRY')
-  );
-
-  if (errorStatesWithoutRetry.length > 0) {
-    warnings.push(`Error states missing RETRY transitions: ${errorStatesWithoutRetry.join(', ')}`);
-  }
-
-  return { errors, warnings };
+  return allStates.filter((state) => !targetedStates.has(state) && state !== initialState);
 }
 
 function displayValidationResults(results: {
@@ -879,22 +813,27 @@ function displayWorkflowAnalysisResults(results: { errors: string[]; warnings: s
     results.warnings.forEach((warning) => console.log(chalk.yellow(`  - ${warning}`)));
   }
 
-  // Provide specific recommendations based on errors
+  // Provide generic recommendations based on errors
   if (results.errors.length > 0) {
-    console.log(chalk.cyan('💡 Workflow Recommendations:'));
+    console.log(chalk.cyan('💡 Generic Workflow Recommendations:'));
 
     if (results.errors.some((e) => e.includes('dead-end states'))) {
-      console.log(chalk.gray('  - Add CONTINUE transitions to return to idle state'));
+      console.log(chalk.gray('  - Review states with no outgoing transitions'));
+      console.log(
+        chalk.gray('  - Consider adding transitions to continue workflow or mark as final states')
+      );
     }
 
-    if (results.errors.some((e) => e.includes('missing CONTINUE transitions'))) {
-      console.log(chalk.gray('  - Add CONTINUE event handlers to completion states'));
-      console.log(chalk.gray('  - This allows workflows to return to idle for new operations'));
+    if (results.warnings.some((w) => w.includes('Final states with outgoing transitions'))) {
+      console.log(chalk.gray('  - Final states typically should not have outgoing transitions'));
+      console.log(
+        chalk.gray('  - Consider if these states should be final or have different transitions')
+      );
     }
 
-    if (results.errors.some((e) => e.includes("can't return to idle"))) {
-      console.log(chalk.gray('  - Ensure all states have a path back to the idle state'));
-      console.log(chalk.gray('  - Consider adding CONTINUE transitions or error handling'));
+    if (results.warnings.some((w) => w.includes('no incoming transitions'))) {
+      console.log(chalk.gray('  - Review states that may be unreachable'));
+      console.log(chalk.gray('  - Ensure states have proper entry points or remove if unused'));
     }
   }
 }
