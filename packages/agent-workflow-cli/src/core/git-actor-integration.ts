@@ -231,6 +231,20 @@ export class GitActorIntegration {
    */
   async commit(message: string): Promise<void> {
     log.debug('Committing changes', { message });
+
+    // Try bypass first for performance
+    try {
+      return await this.bypassActorForSimpleOperation('COMMIT_CHANGES', async () => {
+        const { simpleGit } = await import('simple-git');
+        const git = simpleGit(process.cwd());
+        await git.commit(message);
+        log.debug('Changes committed successfully (bypass)', { message });
+      });
+    } catch (_bypassError) {
+      log.debug('Bypass not available, using actor system');
+    }
+
+    // Use actor system
     return this.createRequest<void>({ type: 'COMMIT_CHANGES', message }, (response) => {
       if (response.type === 'CHANGES_COMMITTED') {
         log.debug('Changes committed successfully', { commitHash: response.commitHash });
