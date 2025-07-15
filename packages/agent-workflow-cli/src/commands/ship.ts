@@ -1,11 +1,11 @@
 import type { ActorSnapshot } from '@actor-core/runtime';
 import chalk from 'chalk';
+import type { GitActor, GitContext, GitEvent } from '../actors/git-actor.js';
 import {
-  createGitActor,
-  type GitActor,
-  type GitContext,
-  type GitEvent,
-} from '../actors/git-actor.js';
+  cleanupCLIActorSystem,
+  createGitActorWithSystem,
+  initializeCLIActorSystem,
+} from '../core/cli-actor-system.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';
 
 /**
@@ -17,20 +17,29 @@ export async function shipCommand() {
   console.log(chalk.blue('==========================================='));
 
   const repoRoot = await findRepoRoot();
-  const gitActor = createGitActor(repoRoot);
 
   try {
+    // Initialize CLI actor system
+    await initializeCLIActorSystem();
+
+    // Create GitActor through the CLI actor system
+    const gitActor = await createGitActorWithSystem(repoRoot);
+
     // Start the actor
     gitActor.start();
 
     // Create workflow handler
     const workflow = new StateBasedWorkflowHandler(gitActor);
     await workflow.executeShipWorkflow();
+
+    // Stop the actor
+    await gitActor.stop();
   } catch (error) {
     console.error(chalk.red('❌ Ship failed:'), error);
     process.exit(1);
   } finally {
-    await gitActor.stop();
+    // Cleanup CLI actor system
+    await cleanupCLIActorSystem();
   }
 }
 
