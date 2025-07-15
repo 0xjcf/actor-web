@@ -433,19 +433,36 @@ export const gitActorMachine = setup({
         // Use dynamic branch detection if not provided
         const targetBranch = integrationBranch || getIntegrationBranch(currentBranch);
 
+        log.debug('🔍 getIntegrationStatus started', {
+          integrationBranch,
+          currentBranch,
+          targetBranch,
+        });
+
         try {
+          log.debug('🔍 Fetching remote branch', { targetBranch });
           await git.fetch(['origin', targetBranch]);
+          log.debug('✅ Fetch completed');
 
+          log.debug('🔍 Getting ahead count');
           const ahead = await git.raw(['rev-list', '--count', `origin/${targetBranch}..HEAD`]);
-          const behind = await git.raw(['rev-list', '--count', `HEAD..origin/${targetBranch}`]);
+          log.debug('✅ Ahead count received', { ahead: ahead.trim() });
 
-          return {
+          log.debug('🔍 Getting behind count');
+          const behind = await git.raw(['rev-list', '--count', `HEAD..origin/${targetBranch}`]);
+          log.debug('✅ Behind count received', { behind: behind.trim() });
+
+          const result = {
             ahead: Number.parseInt(ahead.trim()) || 0,
             behind: Number.parseInt(behind.trim()) || 0,
             integrationBranch: targetBranch,
             sourceBranch: getSourceBranch(currentBranch),
           };
+
+          log.debug('✅ getIntegrationStatus completed', result);
+          return result;
         } catch (error) {
+          log.error('❌ getIntegrationStatus failed', { error });
           return {
             ahead: 0,
             behind: 0,
