@@ -18,7 +18,7 @@
     "test": "vitest run",
     "lint": "biome check .",
     "format": "biome format . --write",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --build",
     "clean": "rm -rf dist",
     "prepublishOnly": "pnpm clean && pnpm build",
     "test:coverage": "vitest run --coverage",
@@ -47,16 +47,7 @@
     "utils:date-fix": "./scripts/date-utils.sh fix-all",
     "utils:commit-config": "./scripts/commit-config.sh validate",
     "utils:commit-sample": "./scripts/commit-config.sh create-sample",
-    "utils:validate-dates": "pnpm --filter @agent-workflow/cli dev validate-dates",
-    "legacy:agent": "./scripts/agent-workflow.sh",
-    "legacy:sync": "./scripts/sync-integration.sh",
-    "legacy:push": "./scripts/push-to-integration.sh",
-    "legacy:validate": "./scripts/agent-workflow.sh validate",
-    "legacy:status": "./scripts/agent-workflow.sh status",
-    "legacy:setup": "./scripts/agent-workflow.sh setup",
-    "legacy:commit": "./scripts/agent-workflow.sh commit",
-    "legacy:save": "./scripts/agent-workflow.sh save",
-    "legacy:ship": "./scripts/agent-workflow.sh ship"
+    "utils:validate-dates": "pnpm --filter @agent-workflow/cli dev validate-dates"
   },
   "keywords": [
     "actor-model",
@@ -81,6 +72,7 @@
   },
   "homepage": "https://github.com/0xjcf/actor-web#readme",
   "dependencies": {
+    "@actor-core/testing": "workspace:*",
     "xstate": "^5.19.0"
   },
   "devDependencies": {

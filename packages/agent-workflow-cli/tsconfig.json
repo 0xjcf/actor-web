@@ -9,8 +9,9 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": false,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "composite": true
   },
-  "include": ["src/**/*", "../../src/core/actors/types.ts"],
+  "include": ["src/**/*", "../../src/core/actors/types.ts", "package.json"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.test.tsx"]
 }

@@ -1,12 +1,11 @@
 /**
- * @module framework/testing/state-machine-analysis
+ * @module actor-core/testing/state-machine-analysis
  * @description Utilities for analyzing XState machines using @xstate/graph
- * @author Agent A - 2025-07-15
  */
 
+import { Logger } from '@actor-core/runtime';
 import { getShortestPaths, getSimplePaths } from '@xstate/graph';
 import type { AnyStateMachine } from 'xstate';
-import { Logger } from '../core/dev-mode.js';
 
 const log = Logger.namespace('STATE_MACHINE_ANALYSIS');
 

@@ -52,26 +52,11 @@ async function testGitActor() {
       console.log(Object.getOwnPropertyNames(gitUnknown.eventBus));
     }
 
-    // Try to use the methods we expect
-    if (typeof git.start === 'function') {
-      console.log('✅ start() method exists, calling it...');
-      git.start();
-    } else {
-      console.log('❌ start() method not found');
-    }
-
+    // Try to use the methods we expect (proper actor pattern)
     if (typeof git.send === 'function') {
       console.log('✅ send() method exists');
-    } else if (
-      gitUnknown &&
-      typeof gitUnknown === 'object' &&
-      'actor' in gitUnknown &&
-      gitUnknown.actor &&
-      typeof gitUnknown.actor === 'object' &&
-      'send' in gitUnknown.actor &&
-      typeof gitUnknown.actor.send === 'function'
-    ) {
-      console.log('✅ actor.send() method exists');
+      console.log('✅ Starting actor with START event...');
+      git.send({ type: 'START' });
     } else {
       console.log('❌ send() method not found');
     }
@@ -144,12 +129,12 @@ async function testGitActor() {
       console.error('Stack trace:', error.stack);
     }
   } finally {
-    // Try to clean up if possible
-    if (typeof git.stop === 'function') {
-      await git.stop();
-      console.log('\n🧹 Git Actor stopped');
+    // Try to clean up if possible (proper actor pattern)
+    if (typeof git.send === 'function') {
+      git.send({ type: 'STOP' });
+      console.log('\n🧹 Git Actor stopped via STOP event');
     } else {
-      console.log('\n🤷 No stop() method found');
+      console.log('\n🤷 No send() method found');
     }
   }
 }

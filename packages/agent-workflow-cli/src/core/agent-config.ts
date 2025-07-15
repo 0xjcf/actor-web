@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { Logger } from '@actor-web/core';
+import { Logger } from '@actor-core/runtime';
 
 const log = Logger.namespace('AGENT_CONFIG');
 

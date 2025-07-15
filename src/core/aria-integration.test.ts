@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createActor, createMachine } from 'xstate';
+import { assign, createActor, createMachine } from 'xstate';
 import {
   createTestEnvironment,
   setupGlobalMocks,
@@ -160,10 +160,10 @@ describe('ARIA Integration', () => {
       const actor = createActor(
         machine.provide({
           actions: {
-            updateProgress: ({ context }) => {
-              context.progress = 50;
-              context.label = 'Half complete';
-            },
+            updateProgress: assign({
+              progress: 50,
+              label: 'Half complete',
+            }),
           },
         })
       );
@@ -433,9 +433,9 @@ describe('ARIA Integration', () => {
             on: {
               TOGGLE: {
                 target: 'pressed',
-                actions: ({ context }) => {
-                  context.isPressed = true;
-                },
+                actions: assign({
+                  isPressed: true,
+                }),
               },
             },
           },
@@ -443,9 +443,9 @@ describe('ARIA Integration', () => {
             on: {
               TOGGLE: {
                 target: 'unpressed',
-                actions: ({ context }) => {
-                  context.isPressed = false;
-                },
+                actions: assign({
+                  isPressed: false,
+                }),
               },
             },
           },
@@ -495,9 +495,9 @@ describe('ARIA Integration', () => {
               SUCCESS: 'success',
               ERROR: {
                 target: 'invalid',
-                actions: ({ context }) => {
-                  context.errors = ['Email is required'];
-                },
+                actions: assign({
+                  errors: ['Email is required'],
+                }),
               },
             },
           },
@@ -557,10 +557,10 @@ describe('ARIA Integration', () => {
           idle: {
             on: {
               UPDATE: {
-                actions: ({ context, event }) => {
-                  context.progress = event.value;
-                  context.progressText = `${event.value}% complete`;
-                },
+                actions: assign({
+                  progress: ({ event }) => event.value,
+                  progressText: ({ event }) => `${event.value}% complete`,
+                }),
               },
             },
           },

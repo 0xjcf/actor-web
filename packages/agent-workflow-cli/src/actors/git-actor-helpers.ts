@@ -1,398 +1,402 @@
 /**
  * @module agent-workflow-cli/actors/git-actor-helpers
- * @description Helper functions for working with GitActor in CLI commands
- * @author Agent A - CLI Actor Migration
+ * @description Reactive helper utilities for working with GitActor in CLI commands
+ * @author Agent A - CLI Actor Migration (Actor Model Compliant)
  */
 
+import type { ActorSnapshot } from '@actor-core/runtime';
 import { waitForCompletion } from '../test-utils';
-import type { GitActor } from './git-actor';
+import type { GitActor, GitContext } from './git-actor';
 
 // ============================================================================
-// ACTOR LIFECYCLE HELPERS
-// ============================================================================
-
-// Note: waitForCompletion and waitForState are now imported from ../test-utils
-// to avoid duplication and ensure consistency across the CLI package
-
-// ============================================================================
-// ERROR HANDLING UTILITIES
+// REACTIVE STATE OBSERVATION UTILITIES
 // ============================================================================
 
 /**
- * Check if actor has error after operation
+ * Creates a reactive observer for actor state changes
+ * Returns a subscription that automatically cleans up
  */
-export function hasError(gitActor: GitActor): boolean {
-  const snapshot = gitActor.getSnapshot();
-  return !!snapshot.context.lastError;
+export function createStateObserver<T>(
+  actor: GitActor,
+  selector: (snapshot: ActorSnapshot<GitContext>) => T,
+  callback: (value: T) => void
+) {
+  return actor.observe(selector).subscribe(callback);
 }
 
 /**
- * Get error message from actor
+ * Creates a reactive observer for context changes
+ * Returns a subscription that automatically cleans up
  */
-export function getError(gitActor: GitActor): string | undefined {
-  const snapshot = gitActor.getSnapshot();
-  return snapshot.context.lastError;
+export function createContextObserver<T>(
+  actor: GitActor,
+  selector: (context: GitContext) => T,
+  callback: (value: T) => void
+) {
+  return actor.observe((snapshot) => selector(snapshot.context)).subscribe(callback);
 }
 
 /**
- * Throw error if actor has error, otherwise continue
+ * Creates a reactive observer for error state
+ * Automatically handles error notifications
  */
-export function throwIfError(gitActor: GitActor, operation: string): void {
-  const error = getError(gitActor);
-  if (error) {
-    throw new Error(`${operation} failed: ${error}`);
-  }
-}
-
-/**
- * Clear error from actor context
- */
-export function clearError(gitActor: GitActor): void {
-  // Send a harmless operation to reset the error state
-  gitActor.send({ type: 'CHECK_STATUS' });
-}
-
-// ============================================================================
-// RESULT EXTRACTION UTILITIES
-// ============================================================================
-
-/**
- * Get current branch from actor context
- */
-export function getCurrentBranch(gitActor: GitActor): string | undefined {
-  const snapshot = gitActor.getSnapshot();
-  return snapshot.context.currentBranch;
-}
-
-/**
- * Get agent type from actor context
- */
-export function getAgentType(gitActor: GitActor): string | undefined {
-  const snapshot = gitActor.getSnapshot();
-  return snapshot.context.agentType;
-}
-
-/**
- * Check if directory is git repository
- */
-export function isGitRepo(gitActor: GitActor): boolean | undefined {
-  const snapshot = gitActor.getSnapshot();
-  return snapshot.context.isGitRepo;
-}
-
-/**
- * Check if there are uncommitted changes
- */
-export function hasUncommittedChanges(gitActor: GitActor): boolean | undefined {
-  const snapshot = gitActor.getSnapshot();
-  return snapshot.context.uncommittedChanges;
-}
-
-/**
- * Get last commit message generated
- */
-export function getLastCommitMessage(gitActor: GitActor): string | undefined {
-  const snapshot = gitActor.getSnapshot();
-  return snapshot.context.lastCommitMessage;
-}
-
-/**
- * Get worktree check result
- */
-export function getWorktreeCheckResult(gitActor: GitActor): boolean | undefined {
-  const snapshot = gitActor.getSnapshot();
-  return snapshot.context.worktreeExists;
-}
-
-/**
- * Get fetch result
- */
-export function getFetchResult(gitActor: GitActor): unknown | undefined {
-  const snapshot = gitActor.getSnapshot();
-  return snapshot.context.fetchResult;
-}
-
-/**
- * Get merge result
- */
-export function getMergeResult(
-  gitActor: GitActor
-):
-  | { success: boolean; branch: string; strategy: 'merge' | 'rebase'; commitHash?: string }
-  | undefined {
-  const snapshot = gitActor.getSnapshot();
-  const result = snapshot.context.mergeResult;
-
-  if (result && typeof result === 'object' && 'success' in result) {
-    return result as {
-      success: boolean;
-      branch: string;
-      strategy: 'merge' | 'rebase';
-      commitHash?: string;
-    };
-  }
-
-  return undefined;
+export function createErrorObserver(actor: GitActor, onError: (error: string) => void) {
+  return createContextObserver(
+    actor,
+    (context) => context.lastError,
+    (error) => {
+      if (error) {
+        onError(error);
+      }
+    }
+  );
 }
 
 // ============================================================================
-// STATE CHECKING HELPERS
+// REACTIVE WORKFLOW HELPERS
 // ============================================================================
 
 /**
- * Check if actor is currently performing an operation
+ * Reactive workflow for checking repository status
+ * Uses message-based communication and state observation
  */
-export function isActorBusy(gitActor: GitActor): boolean {
-  const snapshot = gitActor.getSnapshot();
-  return snapshot.value !== 'idle';
-}
-
-/**
- * Get current operation state
- */
-export function getCurrentOperation(gitActor: GitActor): string {
-  const snapshot = gitActor.getSnapshot();
-  return typeof snapshot.value === 'string' ? snapshot.value : 'unknown';
-}
-
-/**
- * Check if specific operation is in progress
- */
-export function isOperationInProgress(gitActor: GitActor, operation: string): boolean {
-  const snapshot = gitActor.getSnapshot();
-  return snapshot.value === operation;
-}
-
-/**
- * Check if staging is in progress
- */
-export function isStagingInProgress(gitActor: GitActor): boolean {
-  return isOperationInProgress(gitActor, 'stagingAll');
-}
-
-/**
- * Check if commit is in progress
- */
-export function isCommitInProgress(gitActor: GitActor): boolean {
-  return isOperationInProgress(gitActor, 'committingChanges');
-}
-
-/**
- * Check if fetch is in progress
- */
-export function isFetchInProgress(gitActor: GitActor): boolean {
-  return isOperationInProgress(gitActor, 'fetchingRemote');
-}
-
-/**
- * Check if push is in progress
- */
-export function isPushInProgress(gitActor: GitActor): boolean {
-  return isOperationInProgress(gitActor, 'pushingChanges');
-}
-
-/**
- * Check if merge is in progress
- */
-export function isMergeInProgress(gitActor: GitActor): boolean {
-  return isOperationInProgress(gitActor, 'mergingBranch');
-}
-
-// ============================================================================
-// HIGH-LEVEL OPERATION HELPERS
-// ============================================================================
-
-/**
- * Perform git repository check with error handling
- */
-export async function checkGitRepository(gitActor: GitActor): Promise<boolean> {
-  gitActor.send({ type: 'CHECK_REPO' });
-  await waitForCompletion(gitActor);
-
-  if (hasError(gitActor)) {
-    return false; // Error means not a git repo
-  }
-
-  return isGitRepo(gitActor) ?? false;
-}
-
-/**
- * Get current status (branch + agent type) with error handling
- */
-export async function getGitStatus(gitActor: GitActor): Promise<{
-  currentBranch: string;
-  agentType: string;
-}> {
-  gitActor.send({ type: 'CHECK_STATUS' });
-  await waitForCompletion(gitActor);
-  throwIfError(gitActor, 'Check status');
-
-  const currentBranch = getCurrentBranch(gitActor);
-  const agentType = getAgentType(gitActor);
-
-  if (!currentBranch || !agentType) {
-    throw new Error('Failed to get complete git status');
-  }
-
-  return { currentBranch, agentType };
-}
-
-/**
- * Check for uncommitted changes with error handling
- */
-export async function checkUncommittedChanges(gitActor: GitActor): Promise<boolean> {
-  gitActor.send({ type: 'CHECK_UNCOMMITTED_CHANGES' });
-  await waitForCompletion(gitActor);
-  throwIfError(gitActor, 'Check uncommitted changes');
-
-  return hasUncommittedChanges(gitActor) ?? false;
-}
-
-/**
- * Commit changes with message
- */
-export async function commitChanges(gitActor: GitActor, message: string): Promise<void> {
-  gitActor.send({ type: 'COMMIT_CHANGES', message });
-  await waitForCompletion(gitActor);
-  throwIfError(gitActor, 'Commit changes');
-}
-
-/**
- * Generate and commit with smart message
- */
-export async function generateAndCommit(
-  gitActor: GitActor,
-  customMessage?: string
-): Promise<string> {
-  if (customMessage) {
-    await commitChanges(gitActor, customMessage);
-    return customMessage;
-  }
-
-  // Generate smart commit message
-  gitActor.send({ type: 'GENERATE_COMMIT_MESSAGE' });
-  await waitForCompletion(gitActor);
-  throwIfError(gitActor, 'Generate commit message');
-
-  const generatedMessage = getLastCommitMessage(gitActor);
-  if (!generatedMessage) {
-    throw new Error('Failed to generate commit message');
-  }
-
-  // Commit with generated message
-  await commitChanges(gitActor, generatedMessage);
-  return generatedMessage;
-}
-
-/**
- * Push changes to branch
- */
-export async function pushChanges(gitActor: GitActor, branch: string): Promise<void> {
-  gitActor.send({ type: 'PUSH_CHANGES', branch });
-  await waitForCompletion(gitActor);
-  throwIfError(gitActor, `Push to ${branch}`);
-}
-
-// ============================================================================
-// ACTOR LIFECYCLE MANAGEMENT
-// ============================================================================
-
-/**
- * Create and start git actor with proper error handling
- */
-export function createAndStartGitActor(baseDir?: string): GitActor {
-  const { createGitActor } = require('./git-actor');
-  const gitActor = createGitActor(baseDir);
-  gitActor.start();
-  return gitActor;
-}
-
-/**
- * Safely stop git actor
- */
-export function stopGitActor(gitActor: GitActor): void {
-  try {
-    gitActor.stop();
-  } catch (error) {
-    // Ignore stop errors - actor may already be stopped
-    console.warn('Warning: Error stopping git actor:', error);
-  }
-}
-
-/**
- * Execute git operation with automatic actor lifecycle management
- */
-export async function withGitActor<T>(
-  operation: (gitActor: GitActor) => Promise<T>,
-  baseDir?: string
-): Promise<T> {
-  const gitActor = createAndStartGitActor(baseDir);
-
-  try {
-    return await operation(gitActor);
-  } finally {
-    stopGitActor(gitActor);
-  }
-}
-
-// ============================================================================
-// CLI COMMAND PATTERNS
-// ============================================================================
-
-/**
- * Standard CLI validation pattern - check repo and get status
- */
-export async function validateCLIEnvironment(gitActor: GitActor): Promise<{
+export async function checkRepositoryStatus(actor: GitActor): Promise<{
   isGitRepo: boolean;
   currentBranch?: string;
   agentType?: string;
 }> {
-  // Check if git repository
-  const isRepo = await checkGitRepository(gitActor);
+  return new Promise((resolve, reject) => {
+    // Create error observer
+    const errorObserver = createErrorObserver(actor, (error) => {
+      cleanup();
+      reject(new Error(error));
+    });
 
-  if (!isRepo) {
-    return { isGitRepo: false };
-  }
+    // Create state observer for workflow progression
+    const stateObserver = createStateObserver(
+      actor,
+      (snapshot) => snapshot.value,
+      (state) => {
+        if (state === 'repoChecked') {
+          // Repository check completed, now check status
+          actor.send({ type: 'CHECK_STATUS' });
+        } else if (state === 'statusChecked') {
+          // Both checks completed, extract results
+          const contextObserver = createContextObserver(
+            actor,
+            (context) => ({
+              isGitRepo: context.isGitRepo,
+              currentBranch: context.currentBranch,
+              agentType: context.agentType,
+            }),
+            (result) => {
+              contextObserver.unsubscribe();
+              cleanup();
+              resolve({
+                isGitRepo: result.isGitRepo ?? false,
+                currentBranch: result.currentBranch,
+                agentType: result.agentType,
+              });
+            }
+          );
+        }
+      }
+    );
 
-  // Get git status
-  const { currentBranch, agentType } = await getGitStatus(gitActor);
+    const cleanup = () => {
+      errorObserver.unsubscribe();
+      stateObserver.unsubscribe();
+    };
 
-  return {
-    isGitRepo: true,
-    currentBranch,
-    agentType,
-  };
+    // Start the workflow
+    actor.send({ type: 'CHECK_REPO' });
+  });
 }
 
 /**
- * Full save workflow pattern - validate, check changes, commit, push
+ * Reactive workflow for staging and committing changes
+ * Uses message-based communication throughout
  */
-export async function performSaveWorkflow(
-  gitActor: GitActor,
-  customMessage?: string
-): Promise<{
-  committed: boolean;
-  commitMessage?: string;
-  branch?: string;
-}> {
-  // Validate environment
-  const env = await validateCLIEnvironment(gitActor);
-  if (!env.isGitRepo) {
-    throw new Error('Not in a Git repository');
-  }
+export async function stageAndCommit(actor: GitActor, message: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // Create error observer
+    const errorObserver = createErrorObserver(actor, (error) => {
+      cleanup();
+      reject(new Error(error));
+    });
 
-  // Check for changes
-  const hasChanges = await checkUncommittedChanges(gitActor);
-  if (!hasChanges) {
-    return { committed: false };
-  }
+    // Create state observer for workflow progression
+    const stateObserver = createStateObserver(
+      actor,
+      (snapshot) => snapshot.value,
+      (state) => {
+        if (state === 'stagingCompleted') {
+          // Staging completed, now commit
+          actor.send({ type: 'COMMIT_CHANGES', message });
+        } else if (state === 'commitCompleted') {
+          // Commit completed, extract hash
+          const contextObserver = createContextObserver(
+            actor,
+            (context) => context.lastCommitHash,
+            (hash) => {
+              if (hash) {
+                contextObserver.unsubscribe();
+                cleanup();
+                resolve(hash);
+              }
+            }
+          );
+        }
+      }
+    );
 
-  // Commit changes
-  const commitMessage = await generateAndCommit(gitActor, customMessage);
+    const cleanup = () => {
+      errorObserver.unsubscribe();
+      stateObserver.unsubscribe();
+    };
 
-  return {
-    committed: true,
-    commitMessage,
-    branch: env.currentBranch,
-  };
+    // Start the workflow
+    actor.send({ type: 'ADD_ALL' });
+  });
 }
+
+/**
+ * Reactive workflow for fetching and checking integration status
+ * Uses message-based communication and reactive state observation
+ */
+export async function checkIntegrationStatus(
+  actor: GitActor,
+  integrationBranch: string
+): Promise<{ ahead: number; behind: number }> {
+  return new Promise((resolve, reject) => {
+    // Create error observer
+    const errorObserver = createErrorObserver(actor, (error) => {
+      cleanup();
+      reject(new Error(error));
+    });
+
+    // Create state observer for workflow progression
+    const stateObserver = createStateObserver(
+      actor,
+      (snapshot) => snapshot.value,
+      (state) => {
+        if (state === 'integrationStatusChecked') {
+          // Integration status checked, extract results
+          const contextObserver = createContextObserver(
+            actor,
+            (context) => context.integrationStatus,
+            (status) => {
+              if (status) {
+                contextObserver.unsubscribe();
+                cleanup();
+                resolve({ ahead: status.ahead, behind: status.behind });
+              }
+            }
+          );
+        }
+      }
+    );
+
+    const cleanup = () => {
+      errorObserver.unsubscribe();
+      stateObserver.unsubscribe();
+    };
+
+    // Start the workflow
+    actor.send({ type: 'GET_INTEGRATION_STATUS', integrationBranch });
+  });
+}
+
+/**
+ * Reactive workflow for generating commit messages
+ * Uses message-based communication and reactive observation
+ */
+export async function generateCommitMessage(actor: GitActor): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // Create error observer
+    const errorObserver = createErrorObserver(actor, (error) => {
+      cleanup();
+      reject(new Error(error));
+    });
+
+    // Create state observer for workflow progression
+    const stateObserver = createStateObserver(
+      actor,
+      (snapshot) => snapshot.value,
+      (state) => {
+        if (state === 'commitMessageGenerated') {
+          // Message generated, extract result
+          const contextObserver = createContextObserver(
+            actor,
+            (context) => context.lastCommitMessage,
+            (message) => {
+              if (message) {
+                contextObserver.unsubscribe();
+                cleanup();
+                resolve(message);
+              }
+            }
+          );
+        }
+      }
+    );
+
+    const cleanup = () => {
+      errorObserver.unsubscribe();
+      stateObserver.unsubscribe();
+    };
+
+    // Start the workflow
+    actor.send({ type: 'GENERATE_COMMIT_MESSAGE' });
+  });
+}
+
+// ============================================================================
+// REACTIVE UTILITY FUNCTIONS
+// ============================================================================
+
+/**
+ * Wait for actor to complete current operation and return to idle
+ * Uses reactive observation instead of polling
+ */
+export async function waitForIdle(actor: GitActor, timeout = 5000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let isResolved = false;
+    let timeoutId: NodeJS.Timeout;
+
+    // Create timeout promise
+    const timeoutPromise = new Promise<never>((_, timeoutReject) => {
+      timeoutId = setTimeout(() => {
+        if (!isResolved) {
+          isResolved = true;
+          timeoutReject(new Error(`Actor did not return to idle within ${timeout}ms`));
+        }
+      }, timeout);
+    });
+
+    const subscription = createStateObserver(
+      actor,
+      (snapshot) => snapshot.value,
+      (state) => {
+        if (state === 'idle' && !isResolved) {
+          isResolved = true;
+          clearTimeout(timeoutId);
+          subscription.unsubscribe();
+          resolve();
+        }
+      }
+    );
+
+    // Race between state change and timeout
+    Promise.race([
+      new Promise<void>((stateResolve) => {
+        // This will resolve when state is reached (handled by observer above)
+        const checkResolved = () => {
+          if (isResolved) stateResolve();
+          else setTimeout(checkResolved, 10);
+        };
+        checkResolved();
+      }),
+      timeoutPromise,
+    ])
+      .then(resolve)
+      .catch(reject);
+  });
+}
+
+/**
+ * Wait for actor to reach any of the specified states
+ * Uses reactive observation instead of polling
+ */
+export async function waitForStates(
+  actor: GitActor,
+  targetStates: string[],
+  timeout = 5000
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let isResolved = false;
+    let resolvedState: string;
+    let timeoutId: NodeJS.Timeout;
+
+    // Create timeout promise
+    const timeoutPromise = new Promise<never>((_, timeoutReject) => {
+      timeoutId = setTimeout(() => {
+        if (!isResolved) {
+          isResolved = true;
+          timeoutReject(new Error(`Actor did not reach target states within ${timeout}ms`));
+        }
+      }, timeout);
+    });
+
+    const subscription = createStateObserver(
+      actor,
+      (snapshot) => snapshot.value,
+      (state) => {
+        if (targetStates.includes(state as string) && !isResolved) {
+          isResolved = true;
+          resolvedState = state as string;
+          clearTimeout(timeoutId);
+          subscription.unsubscribe();
+          resolve(resolvedState);
+        }
+      }
+    );
+
+    // Race between state change and timeout
+    Promise.race([
+      new Promise<string>((stateResolve) => {
+        // This will resolve when target state is reached (handled by observer above)
+        const checkResolved = () => {
+          if (isResolved) stateResolve(resolvedState);
+          else setTimeout(checkResolved, 10);
+        };
+        checkResolved();
+      }),
+      timeoutPromise,
+    ])
+      .then(resolve)
+      .catch(reject);
+  });
+}
+
+/**
+ * Check if actor is currently busy (not in idle state)
+ * Uses reactive observation for real-time status
+ */
+export function observeActorBusy(actor: GitActor, onBusyChange: (isBusy: boolean) => void) {
+  return createStateObserver(
+    actor,
+    (snapshot) => snapshot.value,
+    (state) => {
+      onBusyChange(state !== 'idle');
+    }
+  );
+}
+
+// ============================================================================
+// LEGACY COMPATIBILITY (DEPRECATED)
+// ============================================================================
+
+/**
+ * @deprecated Use checkRepositoryStatus() instead
+ * This function will be removed in next version
+ */
+export function getCurrentBranch(actor: GitActor): Promise<string | undefined> {
+  return checkRepositoryStatus(actor).then((result) => result.currentBranch);
+}
+
+/**
+ * @deprecated Use reactive error observer instead
+ * This function will be removed in next version
+ */
+export function hasError(actor: GitActor): Promise<boolean> {
+  return new Promise((resolve) => {
+    const subscription = createErrorObserver(actor, (error) => {
+      subscription.unsubscribe();
+      resolve(!!error);
+    });
+  });
+}
+
+// Re-export utilities from test-utils for backward compatibility
+export { waitForCompletion };

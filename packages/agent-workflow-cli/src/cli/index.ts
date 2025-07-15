@@ -129,6 +129,7 @@ program
   .option('--assert', 'Run assertion tests for unreachable states')
   .option('--debug', 'Show detailed debugging information about state transitions')
   .option('--subscribe', 'Subscribe to live state transitions for debugging')
+  .option('--validate', 'Run comprehensive validation checks for workflow consistency')
   .action(async (options) => {
     const { analyzeCommand } = await import('../commands/state-machine-analysis.js');
     await analyzeCommand(options);

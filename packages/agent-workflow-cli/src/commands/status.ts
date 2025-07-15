@@ -1,4 +1,4 @@
-import type { ActorSnapshot } from '@actor-web/core';
+import type { ActorSnapshot } from '@actor-core/runtime';
 import chalk from 'chalk';
 import { createGitActor, type GitActor, type GitContext } from '../actors/git-actor.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';
@@ -90,53 +90,88 @@ class StatusWorkflowHandler {
 
   private handleStateChange(
     state: unknown,
-    _resolve: () => void,
+    resolve: () => void,
     reject: (error: Error) => void
   ): void {
-    const snapshot = this.actor.getSnapshot();
-    const context = snapshot.context as GitContext;
     const stateStr = state as string;
 
     switch (stateStr) {
-      case 'repoChecked':
-        this.statusData.isGitRepo = context.isGitRepo;
-        if (!context.isGitRepo) {
-          console.log(chalk.red('❌ Not in a Git repository'));
-          this.displayStatus();
-          this.onSuccess?.();
-          return;
-        }
-        this.actor.send({ type: 'CHECK_STATUS' });
+      case 'repoChecked': {
+        // Use observe to reactively get repository status
+        const repoObserver = this.actor
+          .observe((snapshot) => snapshot.context.isGitRepo)
+          .subscribe((isGitRepo) => {
+            this.statusData.isGitRepo = isGitRepo;
+            if (!isGitRepo) {
+              console.log(chalk.red('❌ Not in a Git repository'));
+              this.displayStatus();
+              resolve();
+              return;
+            }
+            this.actor.send({ type: 'CHECK_STATUS' });
+            repoObserver.unsubscribe();
+          });
         break;
+      }
 
-      case 'statusChecked':
-        this.statusData.currentBranch = context.currentBranch;
-        this.statusData.agentType = context.agentType;
-        this.actor.send({ type: 'CHECK_UNCOMMITTED_CHANGES' });
+      case 'statusChecked': {
+        // Use observe to reactively get status data
+        const statusObserver = this.actor
+          .observe((snapshot) => ({
+            currentBranch: snapshot.context.currentBranch,
+            agentType: snapshot.context.agentType,
+          }))
+          .subscribe(({ currentBranch, agentType }) => {
+            this.statusData.currentBranch = currentBranch;
+            this.statusData.agentType = agentType;
+            this.actor.send({ type: 'CHECK_UNCOMMITTED_CHANGES' });
+            statusObserver.unsubscribe();
+          });
         break;
+      }
 
-      case 'uncommittedChangesChecked':
-        this.statusData.uncommittedChanges = context.uncommittedChanges;
-        this.actor.send({
-          type: 'GET_INTEGRATION_STATUS',
-          integrationBranch: 'integration',
-        });
+      case 'uncommittedChangesChecked': {
+        // Use observe to reactively get uncommitted changes
+        const changesObserver = this.actor
+          .observe((snapshot) => snapshot.context.uncommittedChanges)
+          .subscribe((uncommittedChanges) => {
+            this.statusData.uncommittedChanges = uncommittedChanges;
+            this.actor.send({
+              type: 'GET_INTEGRATION_STATUS',
+              integrationBranch: 'integration',
+            });
+            changesObserver.unsubscribe();
+          });
         break;
+      }
 
-      case 'integrationStatusChecked':
-        this.statusData.integrationStatus = context.integrationStatus;
-        this.displayStatus();
-        this.onSuccess?.();
+      case 'integrationStatusChecked': {
+        // Use observe to reactively get integration status
+        const integrationObserver = this.actor
+          .observe((snapshot) => snapshot.context.integrationStatus)
+          .subscribe((integrationStatus) => {
+            this.statusData.integrationStatus = integrationStatus;
+            this.displayStatus();
+            resolve();
+            integrationObserver.unsubscribe();
+          });
         break;
+      }
 
       // Error states
       case 'repoError':
       case 'statusError':
       case 'uncommittedChangesError':
       case 'integrationStatusError': {
-        const errorMsg = context.lastError || `Error in ${stateStr}`;
-        console.error(chalk.red('❌ Error:'), errorMsg);
-        reject(new Error(errorMsg));
+        // Use observe to reactively get error message
+        const errorObserver = this.actor
+          .observe((snapshot) => snapshot.context.lastError)
+          .subscribe((lastError) => {
+            const errorMsg = lastError || `Error in ${stateStr}`;
+            console.error(chalk.red('❌ Error:'), errorMsg);
+            reject(new Error(errorMsg));
+            errorObserver.unsubscribe();
+          });
         break;
       }
 

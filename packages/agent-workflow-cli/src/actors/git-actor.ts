@@ -5,7 +5,7 @@
  * Instead of emitting responses, it updates context state that clients can observe.
  */
 
-import { type ActorRef, type ActorSnapshot, createActorRef, Logger } from '@actor-web/core';
+import { type ActorRef, type ActorSnapshot, createActorRef, Logger } from '@actor-core/runtime';
 import { type SimpleGit, simpleGit } from 'simple-git';
 import { assign, fromPromise, setup } from 'xstate';
 
@@ -77,9 +77,8 @@ function getSourceBranch(currentBranch?: string): string {
  * State-based Git Actor Interface
  * Uses actor-web framework's existing observe pattern
  */
-export interface GitActor extends ActorRef<GitEvent, unknown> {
-  /** Get current snapshot of git actor state */
-  getSnapshot(): ActorSnapshot<GitContext>;
+export interface GitActor extends ActorRef<GitEvent, GitEmittedEvent, ActorSnapshot<GitContext>> {
+  // All ActorRef methods are inherited
 }
 
 // ============================================================================
@@ -113,8 +112,68 @@ export type GitEvent =
   | { type: 'GENERATE_COMMIT_MESSAGE' }
   | { type: 'VALIDATE_DATES'; filePaths: string[] }
   | { type: 'COMMIT_WITH_CONVENTION'; customMessage?: string }
+  | { type: 'START' }
+  | { type: 'STOP' }
   | { type: 'CONTINUE' }
   | { type: 'RETRY' };
+
+// ============================================================================
+// SUPPORTING TYPES FOR GIT ACTOR
+// ============================================================================
+
+/**
+ * Configuration for agent worktree setup
+ */
+export interface AgentWorktreeConfig {
+  agentId: string;
+  path: string;
+  branch: string;
+  role: string;
+  exists: boolean;
+}
+
+// ============================================================================
+// GIT ACTOR EMITTED EVENTS (OUTGOING NOTIFICATIONS)
+// ============================================================================
+
+/**
+ * Events that the GitActor can emit to notify other actors or subscribers
+ * about state changes, operation completions, and errors.
+ */
+export type GitEmittedEvent =
+  // Repository state changes
+  | { type: 'REPO_STATUS_CHANGED'; repoStatus: unknown; isGitRepo: boolean }
+  | { type: 'BRANCH_CHANGED'; currentBranch: string }
+  | { type: 'UNCOMMITTED_CHANGES_DETECTED'; hasChanges: boolean }
+
+  // Operation completions
+  | { type: 'COMMIT_COMPLETED'; commitHash: string; message: string }
+  | { type: 'FETCH_COMPLETED'; branch: string; result: unknown }
+  | { type: 'PUSH_COMPLETED'; branch: string; result: unknown }
+  | { type: 'MERGE_COMPLETED'; branch: string; result: unknown }
+  | { type: 'BRANCH_CREATED'; branchName: string }
+  | { type: 'STAGING_COMPLETED'; result: unknown }
+
+  // Integration status updates
+  | { type: 'INTEGRATION_STATUS_UPDATED'; status: { ahead: number; behind: number } }
+  | { type: 'CHANGED_FILES_DETECTED'; files: string[] }
+
+  // Worktree operations
+  | { type: 'WORKTREE_SETUP_COMPLETED'; worktrees: AgentWorktreeConfig[] }
+  | { type: 'WORKTREE_STATUS_CHECKED'; exists: boolean; path: string }
+
+  // Generated content
+  | { type: 'COMMIT_MESSAGE_GENERATED'; message: string }
+  | { type: 'DATE_VALIDATION_COMPLETED'; issues: DateIssue[] }
+
+  // State transitions
+  | { type: 'STATE_CHANGED'; from: string; to: string }
+  | { type: 'OPERATION_STARTED'; operation: string }
+
+  // Error events
+  | { type: 'OPERATION_FAILED'; operation: string; error: string }
+  | { type: 'TIMEOUT_OCCURRED'; operation: string }
+  | { type: 'VALIDATION_FAILED'; reason: string };
 
 // ============================================================================
 // GIT ACTOR CONTEXT (Pure State)
@@ -185,8 +244,6 @@ export interface GitContext {
   // Operation tracking
   lastOperation?: string;
 }
-
-import type { AgentWorktreeConfig } from '../core/agent-config.js';
 
 // ============================================================================
 // STATE MACHINE DEFINITION
@@ -492,6 +549,7 @@ export const gitActorMachine = setup({
             branch: string;
             path: string;
             role: string;
+            exists: boolean;
           }> = [];
 
           // Basic worktree setup logic
@@ -507,7 +565,9 @@ export const gitActorMachine = setup({
             try {
               // Check if worktree already exists
               const existingWorktrees = await git.raw(['worktree', 'list', '--porcelain']);
-              if (!existingWorktrees.includes(path)) {
+              const exists = existingWorktrees.includes(path);
+
+              if (!exists) {
                 // Create branch if it doesn't exist
                 try {
                   await git.checkout(['-b', branch]);
@@ -529,6 +589,7 @@ export const gitActorMachine = setup({
                 branch,
                 path,
                 role,
+                exists,
               });
             } catch (error) {
               // Continue with other worktrees even if one fails

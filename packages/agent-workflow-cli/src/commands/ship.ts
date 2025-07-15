@@ -1,4 +1,4 @@
-import type { ActorSnapshot } from '@actor-web/core';
+import type { ActorSnapshot } from '@actor-core/runtime';
 import chalk from 'chalk';
 import {
   createGitActor,
@@ -104,24 +104,36 @@ class StateBasedWorkflowHandler {
     _resolve: () => void,
     reject: (error: Error) => void
   ): void {
-    const snapshot = this.actor.getSnapshot();
-    const context = snapshot.context as GitContext;
     const stateStr = state as string;
 
     switch (stateStr) {
-      case 'statusChecked':
-        this.currentBranch = context.currentBranch;
-        if (this.currentBranch) {
-          console.log(chalk.blue(`📋 Current branch: ${this.currentBranch}`));
-          this.sendMessage({ type: 'CHECK_UNCOMMITTED_CHANGES' });
-        } else {
-          reject(new Error('Could not determine current branch'));
-        }
+      case 'statusChecked': {
+        // Use observe to reactively get current branch
+        const statusObserver = this.actor
+          .observe((snapshot) => snapshot.context.currentBranch)
+          .subscribe((currentBranch) => {
+            this.currentBranch = currentBranch;
+            if (this.currentBranch) {
+              console.log(chalk.blue(`📋 Current branch: ${this.currentBranch}`));
+              this.sendMessage({ type: 'CHECK_UNCOMMITTED_CHANGES' });
+            } else {
+              reject(new Error('Could not determine current branch'));
+            }
+            statusObserver.unsubscribe();
+          });
         break;
+      }
 
-      case 'uncommittedChangesChecked':
-        this.handleUncommittedChanges(context.uncommittedChanges);
+      case 'uncommittedChangesChecked': {
+        // Use observe to reactively get uncommitted changes
+        const changesObserver = this.actor
+          .observe((snapshot) => snapshot.context.uncommittedChanges)
+          .subscribe((uncommittedChanges) => {
+            this.handleUncommittedChanges(uncommittedChanges);
+            changesObserver.unsubscribe();
+          });
         break;
+      }
 
       case 'stagingCompleted':
         this.handleStagingComplete();
@@ -131,13 +143,20 @@ class StateBasedWorkflowHandler {
         this.handleCommitComplete();
         break;
 
-      case 'integrationStatusChecked':
-        if (!context.integrationStatus) {
-          reject(new Error('No integration status received'));
-          return;
-        }
-        this.handleIntegrationStatus(context.integrationStatus);
+      case 'integrationStatusChecked': {
+        // Use observe to reactively get integration status
+        const integrationObserver = this.actor
+          .observe((snapshot) => snapshot.context.integrationStatus)
+          .subscribe((integrationStatus) => {
+            if (!integrationStatus) {
+              reject(new Error('No integration status received'));
+              return;
+            }
+            this.handleIntegrationStatus(integrationStatus);
+            integrationObserver.unsubscribe();
+          });
         break;
+      }
 
       case 'fetchCompleted':
         this.handleFetchComplete();
@@ -155,9 +174,15 @@ class StateBasedWorkflowHandler {
       case 'integrationStatusError':
       case 'fetchError':
       case 'pushError': {
-        const errorMsg = context.lastError || `Error in ${stateStr}`;
-        console.error(chalk.red('❌ Error:'), errorMsg);
-        reject(new Error(errorMsg));
+        // Use observe to reactively get error message
+        const errorObserver = this.actor
+          .observe((snapshot) => snapshot.context.lastError)
+          .subscribe((lastError) => {
+            const errorMsg = lastError || `Error in ${stateStr}`;
+            console.error(chalk.red('❌ Error:'), errorMsg);
+            reject(new Error(errorMsg));
+            errorObserver.unsubscribe();
+          });
         break;
       }
 

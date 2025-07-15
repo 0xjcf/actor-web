@@ -1,67 +1,22 @@
-import type { Interface } from 'node:readline';
-import type { ActorSnapshot } from '@actor-web/core';
+/**
+ * Enhanced commit command with smart commit message generation
+ */
+
 import chalk from 'chalk';
 import { createGitActor, type GitActor, type GitContext } from '../actors/git-actor.js';
+import {
+  createContextObserver,
+  createErrorObserver,
+  createStateObserver,
+} from '../actors/git-actor-helpers.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';
 
-/**
- * Validate that files parameter is a valid array of file path strings
- */
-function validateFilesArray(files: unknown): string[] {
-  if (!Array.isArray(files)) {
-    throw new Error('Files parameter must be an array');
-  }
-
-  for (const file of files) {
-    if (typeof file !== 'string') {
-      throw new Error('All files must be valid file path strings');
-    }
-    if (file.trim() === '') {
-      throw new Error('File paths cannot be empty strings');
-    }
-  }
-
-  return files as string[];
-}
+// ============================================================================
+// REACTIVE UTILITIES
+// ============================================================================
 
 /**
- * Prompt user for confirmation with proper input validation
- */
-async function promptForConfirmation(question: string): Promise<boolean> {
-  const readline = await import('node:readline');
-  const rl: Interface = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise<boolean>((resolve) => {
-    const askQuestion = () => {
-      rl.question(question, (answer: string) => {
-        const normalized = answer.trim().toLowerCase();
-
-        // Handle valid inputs
-        if (normalized === 'y' || normalized === 'yes' || normalized === '') {
-          rl.close();
-          resolve(true);
-        } else if (normalized === 'n' || normalized === 'no') {
-          rl.close();
-          resolve(false);
-        } else {
-          // Invalid input - ask again
-          console.log(
-            chalk.yellow('Please enter Y/y for yes, N/n for no, or press Enter for default (yes)')
-          );
-          askQuestion();
-        }
-      });
-    };
-
-    askQuestion();
-  });
-}
-
-/**
- * Wait for a specific state using proper XState state observation
+ * Wait for a specific state using proper reactive observation
  */
 async function waitForState(
   gitActor: GitActor,
@@ -70,22 +25,53 @@ async function waitForState(
   timeoutStates: string[] = []
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const unsubscribe = gitActor.subscribe((event: unknown) => {
-      const snapshot = event as ActorSnapshot<GitContext>;
-
-      if (targetStates.includes(snapshot.value as string)) {
-        unsubscribe();
-        resolve();
-      } else if (errorStates.includes(snapshot.value as string)) {
-        unsubscribe();
-        reject(new Error(snapshot.context?.lastError || 'Operation failed'));
-      } else if (timeoutStates.includes(snapshot.value as string)) {
-        unsubscribe();
-        reject(new Error('Operation timed out'));
+    const stateObserver = createStateObserver(
+      gitActor,
+      (snapshot) => snapshot.value,
+      (state) => {
+        if (targetStates.includes(state as string)) {
+          cleanup();
+          resolve();
+        } else if (errorStates.includes(state as string)) {
+          cleanup();
+          reject(new Error('Operation failed'));
+        } else if (timeoutStates.includes(state as string)) {
+          cleanup();
+          reject(new Error('Operation timed out'));
+        }
       }
+    );
+
+    const errorObserver = createErrorObserver(gitActor, (error) => {
+      cleanup();
+      reject(new Error(error));
+    });
+
+    const cleanup = () => {
+      stateObserver.unsubscribe();
+      errorObserver.unsubscribe();
+    };
+  });
+}
+
+/**
+ * Get context value reactively after state completion
+ */
+async function getContextValue<T>(
+  gitActor: GitActor,
+  selector: (context: GitContext) => T
+): Promise<T | undefined> {
+  return new Promise((resolve) => {
+    const contextObserver = createContextObserver(gitActor, selector, (value) => {
+      contextObserver.unsubscribe();
+      resolve(value);
     });
   });
 }
+
+// ============================================================================
+// COMMAND IMPLEMENTATIONS
+// ============================================================================
 
 export async function commitEnhancedCommand(customMessage?: string) {
   console.log(chalk.blue('🎭 Enhanced Commit (Actor-Based)'));
@@ -107,10 +93,14 @@ export async function commitEnhancedCommand(customMessage?: string) {
       // Wait for completion with proper async waiting
       await waitForState(gitActor, ['commitCompleted'], ['commitError'], ['commitTimeout']);
 
-      const snapshot = gitActor.getSnapshot();
-      if (snapshot.context.lastCommitMessage) {
+      // Get result reactively
+      const lastCommitMessage = await getContextValue(
+        gitActor,
+        (context) => context.lastCommitMessage
+      );
+      if (lastCommitMessage) {
         console.log(chalk.green('✅ Committed with custom message:'));
-        console.log(chalk.gray(snapshot.context.lastCommitMessage));
+        console.log(chalk.gray(lastCommitMessage));
       }
     } else {
       console.log(chalk.blue('🧠 Generating smart commit message...'));
@@ -126,10 +116,14 @@ export async function commitEnhancedCommand(customMessage?: string) {
         ['commitMessageTimeout']
       );
 
-      const snapshot = gitActor.getSnapshot();
-      if (snapshot.context.lastCommitMessage) {
+      // Get generated message reactively
+      const lastCommitMessage = await getContextValue(
+        gitActor,
+        (context) => context.lastCommitMessage
+      );
+      if (lastCommitMessage) {
         console.log(chalk.yellow('📝 Generated commit message:'));
-        console.log(chalk.gray(snapshot.context.lastCommitMessage));
+        console.log(chalk.gray(lastCommitMessage));
         console.log();
 
         // Ask for confirmation with proper validation
@@ -181,18 +175,24 @@ export async function generateCommitMessageCommand() {
       ['commitMessageTimeout']
     );
 
-    const snapshot = gitActor.getSnapshot();
-    if (snapshot.context.lastCommitMessage) {
+    // Get results reactively
+    const lastCommitMessage = await getContextValue(
+      gitActor,
+      (context) => context.lastCommitMessage
+    );
+    const commitConfig = await getContextValue(gitActor, (context) => context.commitConfig);
+
+    if (lastCommitMessage) {
       console.log(chalk.green('✅ Generated commit message:'));
       console.log();
-      console.log(snapshot.context.lastCommitMessage);
+      console.log(lastCommitMessage);
       console.log();
 
-      if (snapshot.context.commitConfig) {
+      if (commitConfig) {
         console.log(chalk.blue('📊 Analysis:'));
-        console.log(chalk.gray(`  Type: ${snapshot.context.commitConfig.type}`));
-        console.log(chalk.gray(`  Scope: ${snapshot.context.commitConfig.scope}`));
-        console.log(chalk.gray(`  Category: ${snapshot.context.commitConfig.workCategory}`));
+        console.log(chalk.gray(`  Type: ${commitConfig.type}`));
+        console.log(chalk.gray(`  Scope: ${commitConfig.scope}`));
+        console.log(chalk.gray(`  Category: ${commitConfig.workCategory}`));
       }
     } else {
       console.log(chalk.red('❌ Failed to generate commit message'));
@@ -234,14 +234,29 @@ export async function validateDatesCommand(files?: string[]) {
       ['datesValidationTimeout']
     );
 
-    const snapshot = gitActor.getSnapshot();
-    if (snapshot.context.dateIssues) {
-      if (snapshot.context.dateIssues.length === 0) {
+    // Use reactive observation to get date issues instead of getSnapshot()
+    const dateIssues = await new Promise<Array<{
+      file: string;
+      line: number;
+      date: string;
+      issue: string;
+      context: string;
+    }> | null>((resolve) => {
+      const subscription = gitActor
+        .observe((snapshot) => snapshot.context.dateIssues)
+        .subscribe((issues) => {
+          subscription.unsubscribe();
+          resolve(issues || null);
+        });
+    });
+
+    if (dateIssues) {
+      if (dateIssues.length === 0) {
         console.log(chalk.green('✅ No date issues found!'));
       } else {
-        console.log(chalk.yellow(`⚠️  Found ${snapshot.context.dateIssues.length} date issues:`));
+        console.log(chalk.yellow(`⚠️  Found ${dateIssues.length} date issues:`));
 
-        for (const issue of snapshot.context.dateIssues) {
+        for (const issue of dateIssues) {
           console.log(chalk.red(`  ${issue.file}:${issue.line}`));
           console.log(chalk.gray(`    Date: ${issue.date} (${issue.issue})`));
           console.log(chalk.gray(`    Context: ${issue.context}`));
@@ -256,3 +271,51 @@ export async function validateDatesCommand(files?: string[]) {
     gitActor.stop();
   }
 }
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Validate that files parameter is a valid array of file path strings
+ */
+function validateFilesArray(files: unknown): string[] {
+  if (!Array.isArray(files)) {
+    throw new Error('Files parameter must be an array');
+  }
+
+  for (const file of files) {
+    if (typeof file !== 'string') {
+      throw new Error('All files must be valid file path strings');
+    }
+    if (file.trim() === '') {
+      throw new Error('File paths cannot be empty strings');
+    }
+  }
+
+  return files as string[];
+}
+
+/**
+ * Prompt for user confirmation with proper validation
+ */
+async function promptForConfirmation(prompt: string): Promise<boolean> {
+  process.stdout.write(prompt);
+
+  return new Promise((resolve) => {
+    const readline = require('node:readline');
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    rl.question('', (answer: string) => {
+      rl.close();
+      const normalized = answer.trim().toLowerCase();
+      resolve(normalized === '' || normalized === 'y' || normalized === 'yes');
+    });
+  });
+}
+
+// Re-export for backward compatibility
+export { waitForState };

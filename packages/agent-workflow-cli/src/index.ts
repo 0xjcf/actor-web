@@ -6,7 +6,7 @@
  * @author Actor-Web Team
  */
 
-import type { ActorSnapshot } from '@actor-web/core';
+import type { ActorSnapshot } from '@actor-core/runtime';
 import { createGitActor, type GitContext } from './actors/git-actor.js';
 
 // ============================================================================

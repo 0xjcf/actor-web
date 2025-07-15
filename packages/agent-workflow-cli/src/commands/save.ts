@@ -1,4 +1,4 @@
-import type { ActorSnapshot } from '@actor-web/core';
+import type { ActorSnapshot } from '@actor-core/runtime';
 import chalk from 'chalk';
 import { createGitActor, type GitActor, type GitContext } from '../actors/git-actor.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';
@@ -85,33 +85,45 @@ class SaveWorkflowHandler {
 
   private handleStateChange(
     state: unknown,
-    _resolve: () => void,
+    resolve: () => void,
     reject: (error: Error) => void
   ): void {
-    const snapshot = this.actor.getSnapshot();
-    const context = snapshot.context as GitContext;
     const stateStr = state as string;
 
     switch (stateStr) {
-      case 'repoChecked':
-        if (!context.isGitRepo) {
-          console.log(chalk.red('❌ Not in a Git repository'));
-          reject(new Error('Not in a Git repository'));
-          return;
-        }
-        console.log(chalk.green('✅ Git repository detected'));
-        this.actor.send({ type: 'CHECK_UNCOMMITTED_CHANGES' });
+      case 'repoChecked': {
+        // Use observe to reactively check if it's a git repo
+        const repoObserver = this.actor
+          .observe((snapshot) => snapshot.context.isGitRepo)
+          .subscribe((isGitRepo) => {
+            if (!isGitRepo) {
+              console.log(chalk.red('❌ Not in a Git repository'));
+              reject(new Error('Not in a Git repository'));
+              return;
+            }
+            console.log(chalk.green('✅ Git repository detected'));
+            this.actor.send({ type: 'CHECK_UNCOMMITTED_CHANGES' });
+            repoObserver.unsubscribe();
+          });
         break;
+      }
 
-      case 'uncommittedChangesChecked':
-        if (!context.uncommittedChanges) {
-          console.log(chalk.yellow('⚠️  No changes to save'));
-          this.onSuccess?.();
-          return;
-        }
-        console.log(chalk.yellow('📝 Changes detected, staging...'));
-        this.actor.send({ type: 'ADD_ALL' });
+      case 'uncommittedChangesChecked': {
+        // Use observe to reactively check for uncommitted changes
+        const changesObserver = this.actor
+          .observe((snapshot) => snapshot.context.uncommittedChanges)
+          .subscribe((uncommittedChanges) => {
+            if (!uncommittedChanges) {
+              console.log(chalk.yellow('⚠️  No changes to save'));
+              resolve();
+              return;
+            }
+            console.log(chalk.yellow('📝 Changes detected, staging...'));
+            this.actor.send({ type: 'ADD_ALL' });
+            changesObserver.unsubscribe();
+          });
         break;
+      }
 
       case 'stagingCompleted': {
         console.log(chalk.green('✅ All changes staged'));
@@ -131,9 +143,15 @@ class SaveWorkflowHandler {
       case 'uncommittedChangesError':
       case 'stagingError':
       case 'commitError': {
-        const errorMsg = context.lastError || `Error in ${stateStr}`;
-        console.error(chalk.red('❌ Error:'), errorMsg);
-        reject(new Error(errorMsg));
+        // Use observe to reactively get the error message
+        const errorObserver = this.actor
+          .observe((snapshot) => snapshot.context.lastError)
+          .subscribe((lastError) => {
+            const errorMsg = lastError || `Error in ${stateStr}`;
+            console.error(chalk.red('❌ Error:'), errorMsg);
+            reject(new Error(errorMsg));
+            errorObserver.unsubscribe();
+          });
         break;
       }
     }

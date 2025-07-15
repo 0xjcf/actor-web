@@ -1,7 +1,7 @@
 /**
  * @module framework/testing/actor-test-utils
  * @description Test utilities and helpers for testing ActorRef implementations
- * @author Agent C - 2025-01-10
+ * @author Agent C - 2025-07-15
  *
  * Note: This file provides type-safe Observable mocks using MockObservable<T> class
  * to handle function overloads and Observer<T> variance without compromising type safety.
@@ -9,7 +9,7 @@
 
 import { vi } from 'vitest';
 import type { AnyStateMachine, EventObject } from 'xstate';
-import type { ActorRef, ActorRefOptions } from '../core/actors/actor-ref';
+import type { ActorRef, ActorRefOptions, BaseEventObject } from '../core/actors/actor-ref';
 import type { ActorSnapshot, SupervisionStrategy } from '../core/actors/types';
 import type { Observable, Observer, Subscription } from '../core/observables/observable';
 
@@ -537,61 +537,132 @@ export const componentUtils = {
 };
 
 /**
- * User interaction utilities for testing (enhanced)
+ * Actor-based user interaction utilities for testing
+ * Uses proper actor messaging instead of direct DOM manipulation
+ */
+
+// Define proper event types that extend BaseEventObject
+interface InputEvent extends BaseEventObject {
+  type: 'INPUT';
+  value: string;
+}
+
+interface KeyDownEvent extends BaseEventObject {
+  type: 'KEY_DOWN';
+  key: string;
+}
+
+export const actorInteractions = {
+  /**
+   * Send a click message to a component actor
+   * @param component - Component with actor (should have getActor method)
+   */
+  click: (component: Element & { getActor?: () => ActorRef<BaseEventObject> }) => {
+    if (component.getActor) {
+      component.getActor().send({ type: 'CLICK' });
+    } else {
+      // Fallback: dispatch proper DOM event for components without direct actor access
+      const event = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+      });
+      component.dispatchEvent(event);
+    }
+  },
+
+  /**
+   * Send input message to a component actor
+   * @param component - Component with actor
+   * @param value - Input value
+   */
+  input: (component: Element & { getActor?: () => ActorRef<BaseEventObject> }, value: string) => {
+    if (component.getActor) {
+      const inputEvent: InputEvent = { type: 'INPUT', value };
+      component.getActor().send(inputEvent);
+    } else {
+      // Fallback: dispatch proper DOM event for components without direct actor access
+      const event = new Event('input', {
+        bubbles: true,
+        cancelable: true,
+      });
+      // Set value through proper DOM API without type casting
+      if (component instanceof HTMLInputElement) {
+        component.value = value;
+      }
+      component.dispatchEvent(event);
+    }
+  },
+
+  /**
+   * Send key event to a component actor
+   * @param component - Component with actor
+   * @param key - Key pressed
+   */
+  keyDown: (component: Element & { getActor?: () => ActorRef<BaseEventObject> }, key: string) => {
+    if (component.getActor) {
+      const keyEvent: KeyDownEvent = { type: 'KEY_DOWN', key };
+      component.getActor().send(keyEvent);
+    } else {
+      // Fallback: dispatch proper DOM event for components without direct actor access
+      const event = new KeyboardEvent('keydown', {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      component.dispatchEvent(event);
+    }
+  },
+
+  /**
+   * Send focus message to a component actor
+   * @param component - Component with actor
+   */
+  focus: (component: Element & { getActor?: () => ActorRef<BaseEventObject> }) => {
+    if (component.getActor) {
+      component.getActor().send({ type: 'FOCUS' });
+    } else {
+      // Fallback: use proper DOM API
+      if (component instanceof HTMLElement && 'focus' in component) {
+        component.focus();
+      }
+      const event = new FocusEvent('focus', {
+        bubbles: true,
+      });
+      component.dispatchEvent(event);
+    }
+  },
+
+  /**
+   * Send blur message to a component actor
+   * @param component - Component with actor
+   */
+  blur: (component: Element & { getActor?: () => ActorRef<BaseEventObject> }) => {
+    if (component.getActor) {
+      component.getActor().send({ type: 'BLUR' });
+    } else {
+      // Fallback: use proper DOM API
+      if (component instanceof HTMLElement && 'blur' in component) {
+        component.blur();
+      }
+      const event = new FocusEvent('blur', {
+        bubbles: true,
+      });
+      component.dispatchEvent(event);
+    }
+  },
+};
+
+/**
+ * @deprecated Use actorInteractions instead
+ * Legacy compatibility - will be removed in future version
  */
 export const userInteractions = {
-  click: (element: Element) => {
-    const event = new MouseEvent('click', {
-      bubbles: true,
-      cancelable: true,
-    });
-    element.dispatchEvent(event);
-  },
-
-  input: (element: Element, value: string) => {
-    if ('value' in element) {
-      (element as HTMLInputElement).value = value;
-    }
-    const event = new Event('input', {
-      bubbles: true,
-      cancelable: true,
-    });
-    element.dispatchEvent(event);
-  },
-
-  keyDown: (element: Element, key: string) => {
-    const event = new KeyboardEvent('keydown', {
-      key,
-      bubbles: true,
-      cancelable: true,
-    });
-    element.dispatchEvent(event);
-  },
-
-  // Alias for compatibility
-  keydown: (element: Element, key: string) => {
-    userInteractions.keyDown(element, key);
-  },
-
-  focus: (element: Element) => {
-    if ('focus' in element && typeof element.focus === 'function') {
-      element.focus();
-    }
-    const event = new FocusEvent('focus', {
-      bubbles: true,
-    });
-    element.dispatchEvent(event);
-  },
-
-  blur: (element: Element) => {
-    if ('blur' in element && typeof element.blur === 'function') {
-      element.blur();
-    }
-    const event = new FocusEvent('blur', {
-      bubbles: true,
-    });
-    element.dispatchEvent(event);
-  },
+  click: (element: Element) => actorInteractions.click(element),
+  input: (element: Element, value: string) => actorInteractions.input(element, value),
+  keyDown: (element: Element, key: string) => actorInteractions.keyDown(element, key),
+  keydown: (element: Element, key: string) => actorInteractions.keyDown(element, key),
+  focus: (element: Element) => actorInteractions.focus(element),
+  blur: (element: Element) => actorInteractions.blur(element),
 };
 
 /**

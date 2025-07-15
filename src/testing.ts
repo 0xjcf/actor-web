@@ -1,14 +1,13 @@
 /**
  * @module framework/testing
- * @description Testing utilities and fixtures for the Actor-SPA framework
- * @author Agent C - 2025-07-14
+ * @description Core testing utilities and helpers for the Actor-SPA framework
  */
 
-// Export all testing utilities
+// State machine analysis (use package version instead of local duplicate)
+export * from '@actor-core/testing';
+// Test utilities
 export * from './testing/actor-test-utils.js';
 
-// Export test fixtures
+// Fixtures
 export * from './testing/fixtures/index.js';
-
-// Export state machine analysis utilities
-export * from './testing/state-machine-analysis.js';
+export * from './testing/reactive-test-adapters.js';

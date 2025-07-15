@@ -37,5 +37,16 @@
     }
   },
   "include": ["src/**/*", "*.js", "*.ts"],
-  "exclude": ["node_modules", "dist", "public"]
+  "exclude": ["node_modules", "dist", "public"],
+  "references": [
+    {
+      "path": "./packages/actor-core-runtime"
+    },
+    {
+      "path": "./packages/actor-core-testing"
+    },
+    {
+      "path": "./packages/agent-workflow-cli"
+    }
+  ]
 }
