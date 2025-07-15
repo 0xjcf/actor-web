@@ -39,6 +39,15 @@ interface CacheEntry {
 }
 
 /**
+ * Registry entry for registered actors
+ */
+interface RegistryEntry {
+  location: string;
+  timestamp: number;
+  ttl: number; // Add TTL to registry entries
+}
+
+/**
  * Directory configuration options
  */
 export interface DirectoryConfig {
@@ -65,6 +74,7 @@ export interface DirectoryConfig {
  */
 export class DistributedActorDirectory implements ActorDirectory {
   private cache = new Map<string, CacheEntry>();
+  private registry = new Map<string, RegistryEntry>(); // Separate registry for registered actors
   private subscribers = new Set<(event: DirectoryEvent) => void>();
   private cleanupTimer: NodeJS.Timeout | undefined;
   private metricsTimer: NodeJS.Timeout | undefined;
@@ -97,21 +107,20 @@ export class DistributedActorDirectory implements ActorDirectory {
 
   /**
    * Register an actor in the distributed directory
+   * Note: This does NOT populate the cache - cache is only populated during lookup
    */
   async register(address: ActorAddress, location: string): Promise<void> {
     const key = this.getAddressKey(address);
     const now = Date.now();
 
-    // Update local cache
-    const entry: CacheEntry = {
+    // Store in registry (not cache) with TTL
+    const entry: RegistryEntry = {
       location,
       timestamp: now,
-      hits: 0,
-      lastAccessed: now,
-      ttl: now + this.config.cacheTtl,
+      ttl: now + this.config.cacheTtl, // Registry entries also have TTL
     };
 
-    this.cache.set(key, entry);
+    this.registry.set(key, entry);
 
     // Broadcast registration to other nodes
     await this.broadcastRegister(address, location);
@@ -127,6 +136,7 @@ export class DistributedActorDirectory implements ActorDirectory {
     log.debug('Actor registered in distributed directory', {
       address: address.path,
       location,
+      registrySize: this.registry.size,
       cacheSize: this.cache.size,
     });
   }
@@ -136,26 +146,26 @@ export class DistributedActorDirectory implements ActorDirectory {
    */
   async unregister(address: ActorAddress): Promise<void> {
     const key = this.getAddressKey(address);
-    const entry = this.cache.get(key);
 
-    if (entry) {
-      this.cache.delete(key);
+    // Remove from both registry and cache
+    this.registry.delete(key);
+    this.cache.delete(key);
 
-      // Broadcast unregistration to other nodes
-      await this.broadcastUnregister(address);
+    // Broadcast unregistration to other nodes
+    await this.broadcastUnregister(address);
 
-      // Notify subscribers
-      this.notifySubscribers({
-        type: 'unregistered',
-        address,
-        timestamp: Date.now(),
-      });
+    // Notify subscribers
+    this.notifySubscribers({
+      type: 'unregistered',
+      address,
+      timestamp: Date.now(),
+    });
 
-      log.debug('Actor unregistered from distributed directory', {
-        address: address.path,
-        cacheSize: this.cache.size,
-      });
-    }
+    log.debug('Actor unregistered from distributed directory', {
+      address: address.path,
+      registrySize: this.registry.size,
+      cacheSize: this.cache.size,
+    });
   }
 
   /**
@@ -166,48 +176,58 @@ export class DistributedActorDirectory implements ActorDirectory {
     const now = Date.now();
 
     // Check local cache first
-    const entry = this.cache.get(key);
-    if (entry && entry.ttl > now) {
+    const cacheEntry = this.cache.get(key);
+    if (cacheEntry && cacheEntry.ttl > now) {
       // Cache hit - update access statistics
-      entry.hits++;
-      entry.lastAccessed = now;
+      cacheEntry.hits++;
+      cacheEntry.lastAccessed = now;
       this.cacheHits++;
 
       log.debug('Cache hit for actor lookup', {
         address: address.path,
-        location: entry.location,
-        hits: entry.hits,
+        location: cacheEntry.location,
+        hits: cacheEntry.hits,
         hitRate: this.getCacheHitRate(),
       });
 
-      return entry.location;
+      return cacheEntry.location;
     }
 
-    // Cache miss - need to fetch from distributed directory
+    // Cache miss - check local registry first
     this.cacheMisses++;
 
-    log.debug('Cache miss for actor lookup', {
-      address: address.path,
-      hitRate: this.getCacheHitRate(),
-    });
+    const registryEntry = this.registry.get(key);
+    let location: string | undefined;
 
-    // Broadcast lookup request to other nodes
-    const location = await this.broadcastLookup(address);
+    if (registryEntry && registryEntry.ttl > now) {
+      location = registryEntry.location;
+      log.debug('Found in local registry', {
+        address: address.path,
+        location,
+      });
+    } else {
+      // Registry entry expired or not found - broadcast lookup request to other nodes
+      location = await this.broadcastLookup(address);
+      log.debug('Broadcasted lookup for actor', {
+        address: address.path,
+        location,
+      });
+    }
 
     if (location) {
+      // Ensure cache doesn't exceed maximum size BEFORE adding new entry
+      this.evictOldEntries();
+
       // Cache the result for future lookups
       const newEntry: CacheEntry = {
         location,
         timestamp: now,
-        hits: 1,
+        hits: 0, // First access doesn't count as a hit
         lastAccessed: now,
         ttl: now + this.config.cacheTtl,
       };
 
       this.cache.set(key, newEntry);
-
-      // Ensure cache doesn't exceed maximum size
-      this.evictOldEntries();
 
       log.debug('Cached actor lookup result', {
         address: address.path,
@@ -215,6 +235,12 @@ export class DistributedActorDirectory implements ActorDirectory {
         cacheSize: this.cache.size,
       });
     }
+
+    log.debug('Cache miss for actor lookup', {
+      address: address.path,
+      location,
+      hitRate: this.getCacheHitRate(),
+    });
 
     return location;
   }
@@ -224,19 +250,31 @@ export class DistributedActorDirectory implements ActorDirectory {
    */
   async listByType(type: string): Promise<ActorAddress[]> {
     const addresses: ActorAddress[] = [];
+    const now = Date.now();
 
-    // Check local cache first
+    // Check both registry and cache
+    const checkedKeys = new Set<string>();
+
+    // Check registry first
+    for (const [key, entry] of this.registry) {
+      if (entry.ttl > now) {
+        const address = this.parseAddressKey(key);
+        if (address?.type === type) {
+          addresses.push(address);
+          checkedKeys.add(key);
+        }
+      }
+    }
+
+    // Check cache for any additional entries
     for (const [key, entry] of this.cache) {
-      if (entry.ttl > Date.now()) {
+      if (!checkedKeys.has(key) && entry.ttl > now) {
         const address = this.parseAddressKey(key);
         if (address?.type === type) {
           addresses.push(address);
         }
       }
     }
-
-    // TODO: Broadcast request to other nodes for complete list
-    // For now, return local cache results
 
     log.debug('Listed actors by type', {
       type,
@@ -248,23 +286,30 @@ export class DistributedActorDirectory implements ActorDirectory {
 
   /**
    * Get all registered actors
+   * Returns a Map with string keys (actor paths) instead of ActorAddress objects
+   * to avoid reference comparison issues
    */
-  async getAll(): Promise<Map<ActorAddress, string>> {
-    const result = new Map<ActorAddress, string>();
+  async getAll(): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
     const now = Date.now();
 
-    // Get all valid cache entries
-    for (const [key, entry] of this.cache) {
+    // Get all valid registry entries first (these are the authoritative source)
+    for (const [key, entry] of this.registry) {
       if (entry.ttl > now) {
-        const address = this.parseAddressKey(key);
-        if (address) {
-          result.set(address, entry.location);
-        }
+        result.set(key, entry.location);
+      }
+    }
+
+    // Add any cache entries that aren't in registry (shouldn't happen in normal operation)
+    for (const [key, entry] of this.cache) {
+      if (entry.ttl > now && !result.has(key)) {
+        result.set(key, entry.location);
       }
     }
 
     log.debug('Retrieved all actors', {
       count: result.size,
+      registrySize: this.registry.size,
       cacheSize: this.cache.size,
     });
 
@@ -330,6 +375,7 @@ export class DistributedActorDirectory implements ActorDirectory {
     }
 
     this.cache.clear();
+    this.registry.clear();
     this.subscribers.clear();
 
     log.debug('DistributedActorDirectory cleaned up');
@@ -428,10 +474,13 @@ export class DistributedActorDirectory implements ActorDirectory {
   }
 
   /**
-   * Evict old entries when cache exceeds maximum size
+   * Evict old entries when cache would exceed maximum size
    */
   private evictOldEntries(): void {
-    if (this.cache.size <= this.config.maxCacheSize) {
+    // Only evict if we're at or near the limit
+    const entriesToEvict = Math.max(0, this.cache.size - this.config.maxCacheSize + 1);
+
+    if (entriesToEvict <= 0) {
       return;
     }
 
@@ -440,7 +489,7 @@ export class DistributedActorDirectory implements ActorDirectory {
       ([, a], [, b]) => a.lastAccessed - b.lastAccessed
     );
 
-    const toEvict = entries.slice(0, this.cache.size - this.config.maxCacheSize);
+    const toEvict = entries.slice(0, entriesToEvict);
 
     for (const [key] of toEvict) {
       this.cache.delete(key);
@@ -449,6 +498,7 @@ export class DistributedActorDirectory implements ActorDirectory {
     log.debug('Evicted old cache entries', {
       evicted: toEvict.length,
       cacheSize: this.cache.size,
+      maxSize: this.config.maxCacheSize,
     });
   }
 
@@ -471,23 +521,35 @@ export class DistributedActorDirectory implements ActorDirectory {
   }
 
   /**
-   * Clean up expired cache entries
+   * Clean up expired cache entries and registry entries
    */
   private cleanupExpiredEntries(): void {
     const now = Date.now();
-    let cleaned = 0;
+    let cacheEntriesCleaned = 0;
+    let registryEntriesCleaned = 0;
 
+    // Clean expired cache entries
     for (const [key, entry] of this.cache) {
       if (entry.ttl <= now) {
         this.cache.delete(key);
-        cleaned++;
+        cacheEntriesCleaned++;
       }
     }
 
-    if (cleaned > 0) {
-      log.debug('Cleaned up expired cache entries', {
-        cleaned,
+    // Clean expired registry entries
+    for (const [key, entry] of this.registry) {
+      if (entry.ttl <= now) {
+        this.registry.delete(key);
+        registryEntriesCleaned++;
+      }
+    }
+
+    if (cacheEntriesCleaned > 0 || registryEntriesCleaned > 0) {
+      log.debug('Cleaned up expired entries', {
+        cacheEntriesCleaned,
+        registryEntriesCleaned,
         cacheSize: this.cache.size,
+        registrySize: this.registry.size,
       });
     }
   }
@@ -502,6 +564,7 @@ export class DistributedActorDirectory implements ActorDirectory {
 
     log.debug('Directory performance metrics', {
       cacheSize: this.cache.size,
+      registrySize: this.registry.size,
       hitRate: Math.round(hitRate * 100) / 100,
       hits: this.cacheHits,
       misses: this.cacheMisses,

@@ -186,6 +186,10 @@ export interface ActorSystem {
    * Stop an actor
    */
   stop(pid: ActorPID): Promise<void>;
+  /**
+   * Stop the actor system
+   */
+  stop(): Promise<void>;
 
   /**
    * List all actors in the system
@@ -239,11 +243,6 @@ export interface ActorSystem {
   start(): Promise<void>;
 
   /**
-   * Stop the actor system
-   */
-  stop(): Promise<void>;
-
-  /**
    * Check if the system is running
    */
   isRunning(): boolean;
@@ -279,8 +278,10 @@ export interface ActorDirectory {
 
   /**
    * Get all registered actors
+   * Returns a Map with string keys (actor paths) instead of ActorAddress objects
+   * to avoid reference comparison issues
    */
-  getAll(): Promise<Map<ActorAddress, string>>;
+  getAll(): Promise<Map<string, string>>;
 
   /**
    * Subscribe to directory changes

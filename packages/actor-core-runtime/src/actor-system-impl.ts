@@ -144,7 +144,10 @@ export class ActorSystemImpl implements ActorSystem {
   /**
    * Spawn a new actor with location transparency
    */
-  async spawn<T>(behavior: ActorBehavior<T>, options: SpawnOptions = {}): Promise<ActorPID> {
+  async spawn<T = ActorMessage>(
+    behavior: ActorBehavior<T>,
+    options: SpawnOptions = {}
+  ): Promise<ActorPID> {
     if (!this.systemRunning) {
       throw new Error('Actor system is not running');
     }
@@ -158,7 +161,7 @@ export class ActorSystemImpl implements ActorSystem {
     const address = createActorAddress(id, 'actor', this.config.nodeAddress);
 
     // Store actor behavior locally
-    this.actors.set(address.path, behavior);
+    this.actors.set(address.path, behavior as ActorBehavior<ActorMessage>);
 
     // Initialize actor statistics
     this.actorStats.set(address.path, {
@@ -213,9 +216,19 @@ export class ActorSystemImpl implements ActorSystem {
   }
 
   /**
-   * Stop an actor
+   * Stop an actor or the entire system (overloaded method)
    */
-  async stop(pid: ActorPID): Promise<void> {
+  async stop(pid?: ActorPID): Promise<void> {
+    if (pid) {
+      return this.stopActor(pid);
+    }
+    return this.stopSystem();
+  }
+
+  /**
+   * Stop an actor (internal implementation)
+   */
+  private async stopActor(pid: ActorPID): Promise<void> {
     const address = pid.address;
 
     const behavior = this.actors.get(address.path);
@@ -246,7 +259,9 @@ export class ActorSystemImpl implements ActorSystem {
    */
   async listActors(): Promise<ActorAddress[]> {
     const allActors = await this.directory.getAll();
-    return Array.from(allActors.keys());
+    return Array.from(allActors.keys())
+      .map((path) => this.parseActorPath(path))
+      .filter((address): address is ActorAddress => address !== undefined);
   }
 
   /**
@@ -360,7 +375,7 @@ export class ActorSystemImpl implements ActorSystem {
   /**
    * Stop the actor system
    */
-  async stop(): Promise<void> {
+  async stopSystem(): Promise<void> {
     if (!this.systemRunning) {
       return;
     }
@@ -372,7 +387,7 @@ export class ActorSystemImpl implements ActorSystem {
       const address = this.parseActorPath(actorPath);
       if (address) {
         const pid = new ActorPIDImpl(address, this);
-        await this.stop(pid);
+        await this.stopActor(pid);
       }
     }
 

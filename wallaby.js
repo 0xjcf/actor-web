@@ -11,9 +11,6 @@ export default function (_wallaby) {
       'package.json',
       'packages/**/*.ts',
       '!packages/**/*.{test,spec}.ts',
-      // Include package.json files from packages for proper module resolution
-      'packages/*/package.json',
-      'packages/*/tsconfig.json',
     ],
 
     tests: [

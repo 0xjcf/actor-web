@@ -18,6 +18,7 @@
     "../../src/core/create-actor-ref.ts",
     "../../src/core/actor-event-bus.ts",
     "../../src/core/messaging/request-response.ts",
+    "../../src/core/messaging/message-types.ts",
     "../../src/core/observables/observable.ts",
     "../../src/core/actors/actor-ref.ts",
     "../../src/core/actors/supervisor.ts",
