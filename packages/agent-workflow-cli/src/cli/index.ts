@@ -131,6 +131,10 @@ program
   .option('--subscribe', 'Subscribe to live state transitions for debugging')
   .option('--validate', 'Run comprehensive validation checks for workflow consistency')
   .option(
+    '--workflow',
+    'Run enhanced workflow analysis to detect dead-end states and missing transitions'
+  )
+  .option(
     '--events <events>',
     'Comma-separated list of events to send in sequence (e.g., "CHECK_STATUS,PUSH_CHANGES")'
   )
@@ -201,6 +205,7 @@ program
     console.log(chalk.gray('  aw analyze        - Analyze state machines'));
     console.log(chalk.gray('  aw analyze --verbose - Detailed analysis output'));
     console.log(chalk.gray('  aw analyze --assert  - Assert no unreachable states'));
+    console.log(chalk.gray('  aw analyze --workflow - Enhanced workflow analysis'));
     console.log();
 
     console.log(chalk.yellow('🤝 Agent Coordination:'));

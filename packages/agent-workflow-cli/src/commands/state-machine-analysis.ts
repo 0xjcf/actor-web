@@ -613,6 +613,11 @@ function validateStateMachine(
       warnings.push('Machine has very few states - consider if this is intentional');
     }
 
+    // NEW: Enhanced workflow analysis
+    const workflowIssues = analyzeWorkflowCompleteness(machine);
+    errors.push(...workflowIssues.errors);
+    warnings.push(...workflowIssues.warnings);
+
     return {
       isValid: errors.length === 0,
       errors,
@@ -626,6 +631,213 @@ function validateStateMachine(
       warnings,
     };
   }
+}
+
+// NEW: Enhanced workflow analysis function
+function analyzeWorkflowCompleteness(machine: AnyStateMachine): {
+  errors: string[];
+  warnings: string[];
+} {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  try {
+    const config = machine.config;
+    const _allStates = extractAllStatesFromMachine(machine);
+
+    // Analyze each state for workflow completeness
+    const stateAnalysis = analyzeStateTransitions(config);
+
+    // Check for dead-end states (states with no outgoing transitions)
+    const deadEndStates = stateAnalysis.deadEndStates;
+    if (deadEndStates.length > 0) {
+      errors.push(`Found ${deadEndStates.length} dead-end states: ${deadEndStates.join(', ')}`);
+    }
+
+    // Check for completion states missing CONTINUE transitions
+    const completionStates = stateAnalysis.completionStates;
+    const missingContinueStates = completionStates.filter(
+      (state) => !stateAnalysis.stateTransitions[state]?.includes('CONTINUE')
+    );
+
+    if (missingContinueStates.length > 0) {
+      errors.push(
+        `Completion states missing CONTINUE transitions: ${missingContinueStates.join(', ')}`
+      );
+    }
+
+    // Check for states that can't reach idle
+    const unreachableFromIdle = stateAnalysis.unreachableFromIdle;
+    if (unreachableFromIdle.length > 0) {
+      warnings.push(`States that can't return to idle: ${unreachableFromIdle.join(', ')}`);
+    }
+
+    // Check for workflow patterns
+    const workflowPatterns = analyzeWorkflowPatterns(stateAnalysis);
+    errors.push(...workflowPatterns.errors);
+    warnings.push(...workflowPatterns.warnings);
+
+    return { errors, warnings };
+  } catch (error) {
+    errors.push(
+      `Workflow analysis failed: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return { errors, warnings };
+  }
+}
+
+// NEW: Analyze state transitions and connectivity
+function analyzeStateTransitions(config: Record<string, unknown>): {
+  stateTransitions: Record<string, string[]>;
+  deadEndStates: string[];
+  completionStates: string[];
+  unreachableFromIdle: string[];
+} {
+  const stateTransitions: Record<string, string[]> = {};
+  const deadEndStates: string[] = [];
+  const completionStates: string[] = [];
+
+  function extractTransitions(stateConfig: Record<string, unknown>, stateName: string): void {
+    if (!stateConfig || typeof stateConfig !== 'object') return;
+
+    const transitions: string[] = [];
+
+    // Extract events from 'on' property
+    if (stateConfig.on && typeof stateConfig.on === 'object') {
+      Object.keys(stateConfig.on).forEach((event) => {
+        if (event !== '') transitions.push(event);
+      });
+    }
+
+    stateTransitions[stateName] = transitions;
+
+    // Identify dead-end states (no outgoing transitions)
+    if (transitions.length === 0) {
+      deadEndStates.push(stateName);
+    }
+
+    // Identify completion states (states ending with "Completed", "Checked", "Setup", etc.)
+    if (stateName.match(/(Completed|Checked|Setup|Generated|Validated|Created)$/)) {
+      completionStates.push(stateName);
+    }
+
+    // Recursively check nested states
+    if (stateConfig.states && typeof stateConfig.states === 'object') {
+      Object.entries(stateConfig.states).forEach(([nestedStateName, nestedState]) => {
+        extractTransitions(nestedState as Record<string, unknown>, nestedStateName);
+      });
+    }
+  }
+
+  // Extract transitions from all states
+  if (config.states && typeof config.states === 'object') {
+    Object.entries(config.states).forEach(([stateName, stateConfig]) => {
+      extractTransitions(stateConfig as Record<string, unknown>, stateName);
+    });
+  }
+
+  // Check which states can reach idle
+  const unreachableFromIdle = findUnreachableFromIdle(stateTransitions);
+
+  return {
+    stateTransitions,
+    deadEndStates,
+    completionStates,
+    unreachableFromIdle,
+  };
+}
+
+// NEW: Find states that can't reach idle
+function findUnreachableFromIdle(stateTransitions: Record<string, string[]>): string[] {
+  const unreachableFromIdle: string[] = [];
+
+  Object.entries(stateTransitions).forEach(([stateName, transitions]) => {
+    // Skip idle state itself
+    if (stateName === 'idle') return;
+
+    // Check if state has CONTINUE event (direct path to idle)
+    const hasContinue = transitions.includes('CONTINUE');
+
+    // Check if state has any transitions at all
+    const hasTransitions = transitions.length > 0;
+
+    // If it's a non-error state with no CONTINUE and no transitions, it's problematic
+    if (
+      !hasContinue &&
+      !hasTransitions &&
+      !stateName.includes('Error') &&
+      !stateName.includes('Timeout')
+    ) {
+      unreachableFromIdle.push(stateName);
+    }
+  });
+
+  return unreachableFromIdle;
+}
+
+// NEW: Analyze workflow patterns
+function analyzeWorkflowPatterns(stateAnalysis: {
+  stateTransitions: Record<string, string[]>;
+  deadEndStates: string[];
+  completionStates: string[];
+  unreachableFromIdle: string[];
+}): {
+  errors: string[];
+  warnings: string[];
+} {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // Check for common workflow anti-patterns
+  const { stateTransitions, completionStates } = stateAnalysis;
+
+  // Pattern 1: Check if all operation states have corresponding completion states
+  const operationStates = Object.keys(stateTransitions).filter(
+    (state) => state.includes('ing') && !state.includes('Error') && !state.includes('Timeout')
+  );
+
+  const missingCompletionStates = operationStates.filter((opState) => {
+    const expectedCompletion = opState.replace('ing', 'ed').replace('checking', 'checked');
+    return !completionStates.some((compState) =>
+      compState.toLowerCase().includes(expectedCompletion.toLowerCase())
+    );
+  });
+
+  if (missingCompletionStates.length > 0) {
+    warnings.push(
+      `Operation states missing completion states: ${missingCompletionStates.join(', ')}`
+    );
+  }
+
+  // Pattern 2: Check for states that only have error transitions
+  const errorOnlyStates = Object.entries(stateTransitions).filter(([stateName, transitions]) => {
+    if (stateName.includes('Error') || stateName.includes('Timeout')) return false;
+    return (
+      transitions.length > 0 &&
+      transitions.every((t) => t === 'RETRY' || t === 'CONTINUE' || t.includes('ERROR'))
+    );
+  });
+
+  if (errorOnlyStates.length > 0) {
+    warnings.push(
+      `States with only error/retry transitions: ${errorOnlyStates.map(([name]) => name).join(', ')}`
+    );
+  }
+
+  // Pattern 3: Check for missing RETRY in error states
+  const errorStates = Object.keys(stateTransitions).filter(
+    (state) => state.includes('Error') || state.includes('Timeout')
+  );
+
+  const errorStatesWithoutRetry = errorStates.filter(
+    (state) => !stateTransitions[state]?.includes('RETRY')
+  );
+
+  if (errorStatesWithoutRetry.length > 0) {
+    warnings.push(`Error states missing RETRY transitions: ${errorStatesWithoutRetry.join(', ')}`);
+  }
+
+  return { errors, warnings };
 }
 
 function displayValidationResults(results: {
@@ -650,6 +862,43 @@ function displayValidationResults(results: {
   }
 }
 
+// NEW: Display workflow analysis results
+function displayWorkflowAnalysisResults(results: { errors: string[]; warnings: string[] }): void {
+  if (results.errors.length === 0 && results.warnings.length === 0) {
+    console.log(chalk.green('✅ Workflow analysis passed - no issues found!'));
+    return;
+  }
+
+  if (results.errors.length > 0) {
+    console.log(chalk.red('❌ Workflow Errors:'));
+    results.errors.forEach((error) => console.log(chalk.red(`  - ${error}`)));
+  }
+
+  if (results.warnings.length > 0) {
+    console.log(chalk.yellow('⚠️  Workflow Warnings:'));
+    results.warnings.forEach((warning) => console.log(chalk.yellow(`  - ${warning}`)));
+  }
+
+  // Provide specific recommendations based on errors
+  if (results.errors.length > 0) {
+    console.log(chalk.cyan('💡 Workflow Recommendations:'));
+
+    if (results.errors.some((e) => e.includes('dead-end states'))) {
+      console.log(chalk.gray('  - Add CONTINUE transitions to return to idle state'));
+    }
+
+    if (results.errors.some((e) => e.includes('missing CONTINUE transitions'))) {
+      console.log(chalk.gray('  - Add CONTINUE event handlers to completion states'));
+      console.log(chalk.gray('  - This allows workflows to return to idle for new operations'));
+    }
+
+    if (results.errors.some((e) => e.includes("can't return to idle"))) {
+      console.log(chalk.gray('  - Ensure all states have a path back to the idle state'));
+      console.log(chalk.gray('  - Consider adding CONTINUE transitions or error handling'));
+    }
+  }
+}
+
 function showDebugInfo(machine: AnyStateMachine, _machineName: string): void {
   console.log('');
 
@@ -671,6 +920,7 @@ export async function analyzeCommand(options: {
   debug?: boolean;
   subscribe?: boolean;
   validate?: boolean;
+  workflow?: boolean;
   events?: string;
   eventDelay?: string;
   eventData?: string;
@@ -685,6 +935,7 @@ export async function analyzeCommand(options: {
   const debug = options.debug || false;
   const subscribe = options.subscribe || false;
   const validate = options.validate || false;
+  const workflow = options.workflow || false;
   const eventsToSend = options.events ? options.events.split(',').map((e) => e.trim()) : [];
   const eventDelay = Number.parseInt(options.eventDelay || '1000', 10);
   const eventData = options.eventData ? JSON.parse(options.eventData) : {};
@@ -761,6 +1012,14 @@ export async function analyzeCommand(options: {
       console.log(chalk.blue('🔍 Comprehensive Validation:'));
       const validationResults = validateStateMachine(machine, machineName);
       displayValidationResults(validationResults);
+      console.log('');
+    }
+
+    // NEW: Run workflow analysis if requested
+    if (workflow) {
+      console.log(chalk.blue('⚙️  Workflow Analysis:'));
+      const workflowIssues = analyzeWorkflowCompleteness(machine);
+      displayWorkflowAnalysisResults(workflowIssues);
       console.log('');
     }
 
