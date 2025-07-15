@@ -107,4 +107,10 @@ The following scripts were removed during reorganization:
 2. Use namespaces for related functionality
 3. Consolidate similar scripts with parameters when possible
 4. Document deprecated scripts clearly
-5. Provide migration paths for legacy scripts 
+5. Provide migration paths for legacy scripts
+
+## Related Documentation
+
+- `PNPM_OVERRIDES.md` - Documentation for PNPM overrides and workarounds
+- `package.json` - Contains the npm scripts and configuration
+- `pnpm-workspace.yaml` - Monorepo configuration 
