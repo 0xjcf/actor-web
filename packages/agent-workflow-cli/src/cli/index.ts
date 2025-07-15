@@ -20,7 +20,6 @@ import {
 import { initCommand } from '../commands/init.js';
 import { saveCommand } from '../commands/save.js';
 import { shipCommand } from '../commands/ship.js';
-import { analyzeCommand } from '../commands/state-machine-analysis.js';
 import { statusCommand } from '../commands/status.js';
 import { syncCommand } from '../commands/sync.js';
 import { validateCommand } from '../commands/validate.js';
@@ -124,11 +123,16 @@ program
 
 program
   .command('analyze')
-  .description('Analyze state machines for unreachable states')
-  .option('--target <target>', 'Target machine to analyze', 'git-actor')
+  .description('Analyze state machine definitions for unreachable states')
+  .option('--target <target>', 'Target machine to analyze (default: git-actor)')
   .option('--verbose', 'Show detailed analysis output')
-  .option('--assert', 'Run assertion test and exit with error if unreachable states found')
-  .action(analyzeCommand);
+  .option('--assert', 'Run assertion tests for unreachable states')
+  .option('--debug', 'Show detailed debugging information about state transitions')
+  .option('--subscribe', 'Subscribe to live state transitions for debugging')
+  .action(async (options) => {
+    const { analyzeCommand } = await import('../commands/state-machine-analysis.js');
+    await analyzeCommand(options);
+  });
 
 // ============================================================================
 // AGENT COORDINATION COMMANDS

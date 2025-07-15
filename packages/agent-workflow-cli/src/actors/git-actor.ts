@@ -1182,6 +1182,7 @@ export const gitActorMachine = setup({
         CHECK_REPO: 'checkingRepo',
         CHECK_UNCOMMITTED_CHANGES: 'checkingUncommittedChanges',
         COMMIT_CHANGES: 'committingChanges',
+        GET_INTEGRATION_STATUS: 'gettingIntegrationStatus',
       },
     },
 

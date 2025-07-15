@@ -5,9 +5,12 @@
  * and generate coverage reports.
  */
 
+import type { ActorSnapshot } from '@actor-web/core';
 import { getShortestPaths, getSimplePaths } from '@xstate/graph';
 import chalk from 'chalk';
 import { type AnyStateMachine, createMachine } from 'xstate';
+import { createGitActor } from '../actors/git-actor.js';
+import { findRepoRoot } from '../core/repo-root-finder.js';
 
 // Full implementation with @xstate/graph
 interface StateAnalysisResult {
@@ -19,6 +22,113 @@ interface StateAnalysisResult {
     state: string;
     steps: Array<{ state: string; event: Record<string, unknown> }>;
   }>;
+}
+
+async function subscribeToStateMachine(target: string, _machineName: string): Promise<void> {
+  if (target !== 'git-actor') {
+    console.log(chalk.red('❌ Live monitoring only supported for git-actor'));
+    return;
+  }
+
+  try {
+    const repoRoot = await findRepoRoot();
+    const gitActor = createGitActor(repoRoot);
+
+    console.log(chalk.blue('🚀 Starting Git Actor...'));
+    gitActor.start();
+
+    let stateCount = 0;
+    const startTime = Date.now();
+
+    // Subscribe to state changes
+    const stateObserver = gitActor
+      .observe((snapshot: ActorSnapshot<unknown>) => snapshot.value)
+      .subscribe((state) => {
+        stateCount++;
+        const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+        const elapsed = Date.now() - startTime;
+
+        console.log(
+          chalk.green(
+            `[${timestamp}] State #${stateCount} (${elapsed}ms): ${chalk.bold(String(state))}`
+          )
+        );
+      });
+
+    // Subscribe to context changes for additional debugging
+    const contextObserver = gitActor
+      .observe((snapshot: ActorSnapshot<unknown>) => snapshot.context)
+      .subscribe((context) => {
+        const ctx = context as Record<string, unknown>;
+        if (ctx.lastError) {
+          console.log(chalk.red(`  🚨 Error: ${ctx.lastError}`));
+        }
+        if (ctx.lastOperation) {
+          console.log(chalk.blue(`  🔄 Operation: ${ctx.lastOperation}`));
+        }
+      });
+
+    console.log(chalk.yellow('📍 Initial state check...'));
+    gitActor.send({ type: 'CHECK_STATUS' });
+
+    // Add interactive commands
+    console.log(chalk.gray('Available commands:'));
+    console.log(chalk.gray('  i: Get integration status'));
+    console.log(chalk.gray('  s: Simulate ship workflow'));
+    console.log(chalk.gray('  q: Quit'));
+    console.log('');
+
+    // Set up stdin for interactive commands
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding('utf8');
+
+    process.stdin.on('data', (key) => {
+      const input = key.toString();
+
+      if (input === 'q' || input === '\u0003') {
+        // q or Ctrl+C
+        console.log(chalk.yellow('\n🛑 Stopping state monitoring...'));
+        stateObserver.unsubscribe();
+        contextObserver.unsubscribe();
+        gitActor.stop();
+        process.exit(0);
+      } else if (input === 'i') {
+        console.log(chalk.cyan('\n🔍 Triggering GET_INTEGRATION_STATUS...'));
+        gitActor.send({
+          type: 'GET_INTEGRATION_STATUS',
+          integrationBranch: 'feature/actor-ref-integration',
+        });
+      } else if (input === 's') {
+        console.log(chalk.cyan('\n🚀 Simulating ship workflow...'));
+        console.log(chalk.blue('Step 1: Check uncommitted changes'));
+        gitActor.send({ type: 'CHECK_UNCOMMITTED_CHANGES' });
+
+        setTimeout(() => {
+          console.log(chalk.blue('Step 2: Get integration status'));
+          gitActor.send({
+            type: 'GET_INTEGRATION_STATUS',
+            integrationBranch: 'feature/actor-ref-integration',
+          });
+        }, 1000);
+      }
+    });
+
+    // Set up cleanup on exit
+    process.on('SIGINT', () => {
+      console.log(chalk.yellow('\n🛑 Stopping state monitoring...'));
+      stateObserver.unsubscribe();
+      contextObserver.unsubscribe();
+      gitActor.stop();
+      process.exit(0);
+    });
+
+    // Keep the process alive
+    await new Promise(() => {});
+  } catch (error) {
+    console.error(chalk.red('❌ Error setting up state monitoring:'), error);
+    process.exit(1);
+  }
 }
 
 function extractAllStates(machine: AnyStateMachine): string[] {
@@ -147,10 +257,129 @@ ${
 }`;
 }
 
+function showDebugInfo(machine: AnyStateMachine, machineName: string): void {
+  console.log(chalk.cyan(`🔍 State Machine Debug Info: ${machineName}`));
+  console.log('');
+
+  const states = machine.config?.states || {};
+
+  // Show state transitions
+  console.log(chalk.yellow('📋 State Transitions:'));
+  const criticalStates = [
+    'idle',
+    'gettingIntegrationStatus',
+    'integrationStatusChecked',
+    'integrationStatusError',
+    'integrationStatusTimeout',
+    'fetchingRemote',
+    'fetchCompleted',
+    'fetchError',
+    'fetchTimeout',
+    'pushingChanges',
+    'pushCompleted',
+    'pushError',
+    'pushTimeout',
+  ];
+
+  for (const [stateName, stateConfig] of Object.entries(states)) {
+    if (criticalStates.includes(stateName)) {
+      console.log(chalk.blue(`  ${stateName}:`));
+
+      // Show transitions
+      const config = stateConfig as Record<string, unknown>;
+      if (config.on && typeof config.on === 'object') {
+        console.log(chalk.gray('    Events:'));
+        for (const [event, target] of Object.entries(config.on)) {
+          console.log(chalk.gray(`      ${event} → ${target}`));
+        }
+      }
+
+      // Show invoke actors
+      if (config.invoke && typeof config.invoke === 'object') {
+        const invoke = config.invoke as Record<string, unknown>;
+        console.log(chalk.gray(`    Invokes: ${invoke.src}`));
+        if (invoke.onDone && typeof invoke.onDone === 'object') {
+          const onDone = invoke.onDone as Record<string, unknown>;
+          console.log(chalk.gray(`      onDone → ${onDone.target}`));
+        }
+        if (invoke.onError && typeof invoke.onError === 'object') {
+          const onError = invoke.onError as Record<string, unknown>;
+          console.log(chalk.gray(`      onError → ${onError.target}`));
+        }
+      }
+
+      // Show timeouts
+      if (config.after && typeof config.after === 'object') {
+        console.log(chalk.gray('    Timeouts:'));
+        for (const [timeout, target] of Object.entries(config.after)) {
+          const targetObj = target as Record<string, unknown>;
+          console.log(chalk.gray(`      ${timeout}ms → ${targetObj.target}`));
+        }
+      }
+
+      console.log('');
+    }
+  }
+
+  // Show timeout configurations
+  console.log(chalk.yellow('⏱️  Timeout Configurations:'));
+  console.log(chalk.gray('  STATUS_CHECK: 10000ms'));
+  console.log(chalk.gray('  INTEGRATION_STATUS_CHECK: 10000ms'));
+  console.log(chalk.gray('  FETCH_REMOTE: 15000ms'));
+  console.log(chalk.gray('  PUSH_CHANGES: 20000ms'));
+  console.log('');
+
+  // Show error patterns
+  console.log(chalk.yellow('🚨 Error States:'));
+  const errorStates = Object.keys(states).filter(
+    (s) => s.includes('Error') || s.includes('Timeout')
+  );
+  errorStates.forEach((state) => {
+    const config = (states as Record<string, Record<string, unknown>>)[state];
+    console.log(chalk.red(`  ${state}`));
+    if (config.on && typeof config.on === 'object') {
+      for (const [event, target] of Object.entries(config.on)) {
+        console.log(chalk.gray(`    ${event} → ${target}`));
+      }
+    }
+  });
+  console.log('');
+
+  // Show invoke actors (potential hanging points)
+  console.log(chalk.yellow('🔧 Invoke Actors (Potential Hanging Points):'));
+  for (const [stateName, stateConfig] of Object.entries(states)) {
+    const config = stateConfig as Record<string, unknown>;
+    if (config.invoke && typeof config.invoke === 'object') {
+      const invoke = config.invoke as Record<string, unknown>;
+      console.log(chalk.blue(`  ${stateName}:`));
+      console.log(chalk.gray(`    Actor: ${invoke.src}`));
+      console.log(
+        chalk.gray(`    Timeout: ${config.after ? Object.keys(config.after)[0] : 'None'}ms`)
+      );
+
+      if (invoke.onDone && typeof invoke.onDone === 'object') {
+        const onDone = invoke.onDone as Record<string, unknown>;
+        console.log(chalk.gray(`    Success: ${onDone.target || 'None'}`));
+      } else {
+        console.log(chalk.gray('    Success: None'));
+      }
+
+      if (invoke.onError && typeof invoke.onError === 'object') {
+        const onError = invoke.onError as Record<string, unknown>;
+        console.log(chalk.gray(`    Error: ${onError.target || 'None'}`));
+      } else {
+        console.log(chalk.gray('    Error: None'));
+      }
+    }
+  }
+}
+
 export async function analyzeCommand(options: {
   target?: string;
   verbose?: boolean;
   assert?: boolean;
+  debug?: boolean;
+  subscribe?: boolean;
 }) {
   console.log(chalk.blue('🔍 State Machine Analysis'));
   console.log(chalk.blue('='.repeat(60)));
@@ -158,6 +387,8 @@ export async function analyzeCommand(options: {
   const target = options.target || 'git-actor';
   const verbose = options.verbose || false;
   const shouldAssert = options.assert || false;
+  const debug = options.debug || false;
+  const subscribe = options.subscribe || false;
 
   try {
     let machine: AnyStateMachine;
@@ -180,6 +411,15 @@ export async function analyzeCommand(options: {
     console.log(chalk.yellow(`🎯 Analyzing: ${machineName}`));
     console.log('');
 
+    // Handle live subscription mode
+    if (subscribe) {
+      console.log(chalk.cyan('🔔 Live State Monitoring Mode'));
+      console.log(chalk.gray('Press Ctrl+C to stop monitoring'));
+      console.log('');
+      await subscribeToStateMachine(target, machineName);
+      return;
+    }
+
     // Analyze the machine using the full @xstate/graph implementation
     const analysis = analyzeStateMachine(machine);
 
@@ -200,6 +440,13 @@ export async function analyzeCommand(options: {
       console.log('');
     } else {
       console.log(chalk.green('✅ All states are reachable!'));
+      console.log('');
+    }
+
+    // Show debug information if requested
+    if (debug) {
+      console.log(chalk.blue('🐛 Debug Information:'));
+      showDebugInfo(machine, machineName);
       console.log('');
     }
 
