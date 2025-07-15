@@ -521,10 +521,16 @@ export const gitActorMachine = setup({
 
     pushChanges: fromPromise(async ({ input }: { input: { branch: string; git: SimpleGit } }) => {
       const { branch, git } = input;
+
+      log.debug('🔍 pushChanges started', { branch });
+
       try {
+        log.debug('🔍 Pushing to remote', { branch });
         const result = await git.push(['origin', branch]);
+        log.debug('✅ Push completed successfully', { branch, result });
         return { success: true, branch, result };
       } catch (error) {
+        log.error('❌ Push failed', { branch, error });
         return {
           success: false,
           branch,

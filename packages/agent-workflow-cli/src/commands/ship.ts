@@ -98,6 +98,7 @@ class StateBasedWorkflowHandler {
   private observers: Array<{ unsubscribe(): void }> = [];
   private onSuccess?: () => void;
   private lastHandledState: string | null = null; // Track the last handled state
+  private commitCompletedHandled = false; // Track if commit completion was handled
 
   private cleanupObservers(): void {
     this.observers.forEach((observer) => observer.unsubscribe());
@@ -158,7 +159,11 @@ class StateBasedWorkflowHandler {
         break;
 
       case 'commitCompleted':
-        this.handleCommitComplete();
+        // Only handle this once per workflow
+        if (!this.commitCompletedHandled) {
+          this.commitCompletedHandled = true;
+          this.handleCommitComplete();
+        }
         break;
 
       case 'integrationStatusChecked': {
