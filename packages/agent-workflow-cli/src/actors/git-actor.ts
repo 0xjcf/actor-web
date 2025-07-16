@@ -27,46 +27,11 @@ import { assign, emit, fromPromise, setup } from 'xstate';
 const log = Logger.namespace('GIT_ACTOR');
 
 // ============================================================================
-// ACTOR REGISTRY INTEGRATION
+// ACTOR SYSTEM INTEGRATION (Pure Actor Model)
 // ============================================================================
 
-/**
- * Actor Registry for standardized actor discovery
- * TODO: This should be imported from @actor-core/runtime once implemented
- */
-type AnyActorRef = ActorRef<{ type: string }, { type: string }, ActorSnapshot<unknown>>;
-
-class ActorRegistryService {
-  private static instance: ActorRegistryService;
-  private registry = new Map<string, AnyActorRef>();
-
-  static getInstance(): ActorRegistryService {
-    if (!ActorRegistryService.instance) {
-      ActorRegistryService.instance = new ActorRegistryService();
-    }
-    return ActorRegistryService.instance;
-  }
-
-  register(path: string, actor: AnyActorRef): void {
-    this.registry.set(path, actor);
-    log.debug(`Registered actor at ${path}`);
-  }
-
-  lookup(path: string): AnyActorRef | undefined {
-    return this.registry.get(path);
-  }
-
-  unregister(path: string): void {
-    this.registry.delete(path);
-    log.debug(`Unregistered actor at ${path}`);
-  }
-
-  list(): string[] {
-    return Array.from(this.registry.keys());
-  }
-}
-
-export const ActorRegistry = ActorRegistryService.getInstance();
+// Import CLI actor system for proper distributed actor management
+import { getCLIActorSystem } from '../core/cli-actor-system.js';
 
 // ============================================================================
 // TIMEOUT CONFIGURATION
@@ -2112,21 +2077,19 @@ export const gitActorMachine = setup({
 export function createGitActor(baseDir?: string): GitActor {
   const actorId = generateGitActorId('git-actor');
 
-  log.debug('🏗️  Creating GitActor', { actorId, baseDir });
+  log.debug('🏗️  Creating GitActor with proper actor system', { actorId, baseDir });
 
+  // Use the framework's createActorRef with proper supervision
   const actorRef = createActorRef(gitActorMachine, {
     id: actorId,
     input: { baseDir },
     autoStart: false,
+    supervision: 'restart-on-failure', // Add supervision strategy
   });
 
-  // Register in actor registry for discovery
-  const actorPath = `actor://system/git/${actorId}`;
-  ActorRegistry.register(actorPath, actorRef as unknown as AnyActorRef);
-
-  // Log actor creation
+  // Log actor creation - no manual registry needed (actor system handles this)
   log.debug(`✅ Created git actor with ID: ${actorId}`);
-  log.debug(`📍 Registered at path: ${actorPath}`);
+  log.debug('🎯 Using distributed actor system for discovery');
 
   // Cast to GitActor interface (the framework handles the typing)
   return actorRef as unknown as GitActor;
@@ -2152,11 +2115,22 @@ export function createGitActorBehavior(baseDir?: string) {
 // ============================================================================
 
 /**
- * List all registered git actors
+ * List all registered git actors using the proper actor system
  */
-export function listGitActors(): string[] {
-  const allActors = ActorRegistry.list();
-  return allActors.filter((path) => path.startsWith('actor://system/git/'));
+export async function listGitActors(): Promise<string[]> {
+  try {
+    const cliSystem = getCLIActorSystem();
+    const actorSystem = cliSystem.getActorSystem();
+    const allActors = await actorSystem.listActors();
+
+    // Filter for git actors in the distributed directory
+    return allActors
+      .map((address) => address.path)
+      .filter((path) => path.includes('git-actor'));
+  } catch (error) {
+    log.error('Failed to list git actors', { error });
+    return [];
+  }
 }
 
 // ============================================================================

@@ -29,43 +29,12 @@ const log = Logger.namespace('INPUT_ACTOR');
 // ACTOR REGISTRY INTEGRATION
 // ============================================================================
 
-/**
- * Actor Registry for standardized actor discovery
- * TODO: This should be imported from @actor-core/runtime once implemented
- */
-type AnyActorRef = ActorRef<{ type: string }, { type: string }>;
+// ============================================================================
+// ACTOR SYSTEM INTEGRATION (Pure Actor Model)
+// ============================================================================
 
-class ActorRegistryService {
-  private static instance: ActorRegistryService;
-  private registry = new Map<string, AnyActorRef>();
-
-  static getInstance(): ActorRegistryService {
-    if (!ActorRegistryService.instance) {
-      ActorRegistryService.instance = new ActorRegistryService();
-    }
-    return ActorRegistryService.instance;
-  }
-
-  register(path: string, actor: AnyActorRef): void {
-    this.registry.set(path, actor);
-    log.debug(`Registered actor at ${path}`);
-  }
-
-  lookup(path: string): AnyActorRef | undefined {
-    return this.registry.get(path);
-  }
-
-  unregister(path: string): void {
-    this.registry.delete(path);
-    log.debug(`Unregistered actor at ${path}`);
-  }
-
-  list(): string[] {
-    return Array.from(this.registry.keys());
-  }
-}
-
-export const ActorRegistry = ActorRegistryService.getInstance();
+// Import CLI actor system for proper distributed actor management
+import { getCLIActorSystem } from '../core/cli-actor-system.js';
 
 // Generate unique actor IDs
 function generateInputActorId(prefix: string): string {
@@ -649,19 +618,18 @@ export function createInputActor(options?: {
   availableEvents?: string[];
 }): InputActor {
   const actorId = generateInputActorId('input-actor');
+
+  // Use framework's createActorRef with proper supervision
   const actorRef = createActorRef(inputActorMachine, {
     id: actorId,
     input: options,
     autoStart: false,
+    supervision: 'restart-on-failure', // Add supervision strategy
   });
 
-  // Register in actor registry for discovery
-  const actorPath = `actor://system/input/${actorId}`;
-  ActorRegistry.register(actorPath, actorRef as AnyActorRef);
-
-  // Log actor creation
-  log.debug(`Created input actor with ID: ${actorId}`);
-  log.debug(`Registered at path: ${actorPath}`);
+  // Log actor creation - no manual registry needed (actor system handles this)
+  log.debug(`✅ Created input actor with ID: ${actorId}`);
+  log.debug('🎯 Using distributed actor system for discovery');
 
   return actorRef as unknown as InputActor;
 }
@@ -670,25 +638,54 @@ export function createInputActor(options?: {
 // STANDARDIZED ACTOR LOOKUP
 // ============================================================================
 
-export function lookupInputActor(actorId: string): InputActor | undefined {
-  const actorPath = `actor://system/input/${actorId}`;
-  const actorRef = ActorRegistry.lookup(actorPath);
-  return actorRef as InputActor | undefined;
+export async function lookupInputActor(actorId: string): Promise<InputActor | undefined> {
+  try {
+    const cliSystem = getCLIActorSystem();
+    const actorSystem = cliSystem.getActorSystem();
+    const actorPID = await actorSystem.lookup(`input-actor-${actorId}`);
+    return actorPID as unknown as InputActor | undefined;
+  } catch (error) {
+    log.error('Failed to lookup input actor', { actorId, error });
+    return undefined;
+  }
 }
 
-export function listInputActors(): string[] {
-  const allActors = ActorRegistry.list();
-  return allActors.filter((path) => path.startsWith('actor://system/input/'));
+export async function listInputActors(): Promise<string[]> {
+  try {
+    const cliSystem = getCLIActorSystem();
+    const actorSystem = cliSystem.getActorSystem();
+    const allActors = await actorSystem.listActors();
+
+    // Filter for input actors in the distributed directory
+    return allActors
+      .map((address) => address.path)
+      .filter((path) => path.includes('input-actor'));
+  } catch (error) {
+    log.error('Failed to list input actors', { error });
+    return [];
+  }
 }
 
 // ============================================================================
 // ACTOR LIFECYCLE MANAGEMENT
 // ============================================================================
 
-export function cleanupInputActor(actorId: string): void {
-  const actorPath = `actor://system/input/${actorId}`;
-  ActorRegistry.unregister(actorPath);
-  log.debug(`Unregistered input actor: ${actorPath}`);
+export async function cleanupInputActor(actorId: string): Promise<void> {
+  try {
+    const cliSystem = getCLIActorSystem();
+    const actorSystem = cliSystem.getActorSystem();
+
+    // Stop the actor through the actor system (it handles unregistration)
+    const actorPID = await actorSystem.lookup(`input-actor-${actorId}`);
+    if (actorPID) {
+      await actorSystem.stop(actorPID);
+      log.debug(`✅ Stopped and unregistered input actor: ${actorId}`);
+    } else {
+      log.warn(`Input actor not found for cleanup: ${actorId}`);
+    }
+  } catch (error) {
+    log.error('Failed to cleanup input actor', { actorId, error });
+  }
 }
 
 // ============================================================================

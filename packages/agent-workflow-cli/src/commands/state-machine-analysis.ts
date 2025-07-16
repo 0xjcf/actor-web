@@ -23,7 +23,6 @@
  */
 
 import readline from 'node:readline';
-import type { ActorSnapshot } from '@actor-core/runtime';
 import { enableDevMode, Logger } from '@actor-core/runtime';
 import {
   analyzeStateMachine,
@@ -509,8 +508,8 @@ async function subscribeToStateMachineWithEvents(
     let enhancedRl: EnhancedReadline | null = null;
 
     // Declare observers for cleanup function
-    let stateObserver: { unsubscribe(): void };
-    let contextObserver: { unsubscribe(): void };
+    let stateObserver: () => void;
+    let contextObserver: () => void;
     let eventObserver: () => void;
 
     // Add cleanup flag to prevent duplicate cleanup
@@ -521,8 +520,8 @@ async function subscribeToStateMachineWithEvents(
       cleanupExecuted = true;
 
       console.log(chalk.yellow('🛑 Stopping state monitoring...'));
-      stateObserver.unsubscribe();
-      contextObserver.unsubscribe();
+      stateObserver();
+      contextObserver();
       eventObserver();
       gitActor.stop();
       // NOTE: Actor cleanup is now handled by the actor system
@@ -562,10 +561,11 @@ async function subscribeToStateMachineWithEvents(
       return false;
     }
 
-    // Subscribe to state changes using standardized actor pattern
-    stateObserver = gitActor
-      .observe((snapshot: ActorSnapshot<unknown>) => snapshot.value)
-      .subscribe((state) => {
+    // Subscribe to state changes using proper message-based communication
+    stateObserver = gitActor.subscribe((event: GitEmittedEvent) => {
+      // Handle emitted events instead of direct state observation
+      if (event.type === 'GIT_STATE_CHANGED') {
+        const state = event.to;
         const stateStr = String(state);
 
         // Safety check: prevent excessive state transitions
@@ -640,28 +640,17 @@ async function subscribeToStateMachineWithEvents(
         if (enhancedRl) {
           enhancedRl.updateAvailableEvents(availableEvents);
         }
-      });
+      }
+    });
 
-    // Subscribe to context changes for additional debugging
-    contextObserver = gitActor
-      .observe((snapshot: ActorSnapshot<unknown>) => snapshot.context)
-      .subscribe((context) => {
-        const ctx = context as Record<string, unknown>;
-        if (ctx.lastError) {
-          console.log(chalk.red(`  🚨 Error: ${ctx.lastError}`));
-        }
-        if (ctx.lastOperation) {
-          console.log(chalk.blue(`  🔄 Operation: ${ctx.lastOperation}`));
-        }
-        if (ctx.integrationStatus) {
-          console.log(
-            chalk.green(`  📊 Integration Status: ${JSON.stringify(ctx.integrationStatus)}`)
-          );
-        }
-        if (ctx.currentBranch) {
-          console.log(chalk.cyan(`  🌿 Current Branch: ${ctx.currentBranch}`));
-        }
-      });
+    // Subscribe to context changes via specific events
+    contextObserver = gitActor.subscribe((event: GitEmittedEvent) => {
+      // Handle specific context-related events
+      if (event.type === 'GIT_BRANCH_CHANGED') {
+        console.log(chalk.cyan(`  🌿 Current Branch: ${event.currentBranch}`));
+      }
+      // Additional event handling can be added here as needed
+    });
 
     // Subscribe to standardized event emissions
     eventObserver = gitActor.on((event: GitEmittedEvent) => {
@@ -822,8 +811,8 @@ async function subscribeToStateMachineWithEvents(
       console.log(chalk.green('✅ Auto-run complete.'));
 
       // Clean up and exit
-      stateObserver.unsubscribe();
-      contextObserver.unsubscribe();
+      stateObserver();
+      contextObserver();
       eventObserver();
       gitActor.stop();
       // NOTE: Actor cleanup is now handled by the actor system
@@ -918,7 +907,7 @@ async function subscribeToStateMachineWithEvents(
             }
           } else if (command === 'registry') {
             console.log(chalk.cyan('📋 Actor Registry:'));
-            const actors = listGitActors();
+            const actors = await listGitActors();
             if (actors.length === 0) {
               console.log(chalk.gray('  No git actors registered'));
             } else {
