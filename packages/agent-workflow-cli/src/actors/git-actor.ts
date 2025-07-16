@@ -2124,9 +2124,7 @@ export async function listGitActors(): Promise<string[]> {
     const allActors = await actorSystem.listActors();
 
     // Filter for git actors in the distributed directory
-    return allActors
-      .map((address) => address.path)
-      .filter((path) => path.includes('git-actor'));
+    return allActors.map((address) => address.path).filter((path) => path.includes('git-actor'));
   } catch (error) {
     log.error('Failed to list git actors', { error });
     return [];

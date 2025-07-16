@@ -657,9 +657,7 @@ export async function listInputActors(): Promise<string[]> {
     const allActors = await actorSystem.listActors();
 
     // Filter for input actors in the distributed directory
-    return allActors
-      .map((address) => address.path)
-      .filter((path) => path.includes('input-actor'));
+    return allActors.map((address) => address.path).filter((path) => path.includes('input-actor'));
   } catch (error) {
     log.error('Failed to list input actors', { error });
     return [];
