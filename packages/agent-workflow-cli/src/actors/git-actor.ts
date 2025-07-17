@@ -2079,17 +2079,21 @@ export function createGitActor(baseDir?: string): GitActor {
 
   log.debug('🏗️  Creating GitActor with proper actor system', { actorId, baseDir });
 
-  // Use the framework's createActorRef with proper supervision
+  // Determine if we're in a test environment
+  const isTest = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+
+  // Use the framework's createActorRef with conditional supervision
   const actorRef = createActorRef(gitActorMachine, {
     id: actorId,
     input: { baseDir },
     autoStart: false,
-    supervision: 'restart-on-failure', // Add supervision strategy
+    // Disable supervision in tests to prevent cleanup conflicts
+    supervision: isTest ? undefined : 'restart-on-failure',
   });
 
   // Log actor creation - no manual registry needed (actor system handles this)
   log.debug(`✅ Created git actor with ID: ${actorId}`);
-  log.debug('🎯 Using distributed actor system for discovery');
+  log.debug(`🎯 Using distributed actor system for discovery (test mode: ${isTest})`);
 
   // Cast to GitActor interface (the framework handles the typing)
   return actorRef as unknown as GitActor;

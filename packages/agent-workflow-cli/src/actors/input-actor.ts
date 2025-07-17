@@ -619,17 +619,21 @@ export function createInputActor(options?: {
 }): InputActor {
   const actorId = generateInputActorId('input-actor');
 
-  // Use framework's createActorRef with proper supervision
+  // Determine if we're in a test environment
+  const isTest = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+
+  // Use framework's createActorRef with conditional supervision
   const actorRef = createActorRef(inputActorMachine, {
     id: actorId,
     input: options,
     autoStart: false,
-    supervision: 'restart-on-failure', // Add supervision strategy
+    // Disable supervision in tests to prevent cleanup conflicts
+    supervision: isTest ? undefined : 'restart-on-failure',
   });
 
   // Log actor creation - no manual registry needed (actor system handles this)
   log.debug(`✅ Created input actor with ID: ${actorId}`);
-  log.debug('🎯 Using distributed actor system for discovery');
+  log.debug(`🎯 Using distributed actor system for discovery (test mode: ${isTest})`);
 
   return actorRef as unknown as InputActor;
 }
