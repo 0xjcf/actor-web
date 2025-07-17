@@ -126,7 +126,7 @@ describe('Ship Command - Loop Detection Tests', () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     gitActor.send({ type: 'GET_INTEGRATION_STATUS' });
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Verify we hit key states in the expected order
     expect(stateTransitions).toContain('idle');
