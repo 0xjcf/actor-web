@@ -4,7 +4,7 @@
  * @author Agent A (Tech Lead) - 2025-07-15
  */
 
-import { generateCorrelationId, TimeoutError } from '../actor-ref.js';
+import { TimeoutError, generateCorrelationId } from '../actor-ref.js';
 import type { AskOptions, EventMetadata, QueryEvent } from '../types.js';
 
 // ========================================================================================

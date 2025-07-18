@@ -18,12 +18,37 @@ export {
   isResponseEvent,
   TimeoutError,
 } from './actor-ref.js';
-export type { ActorSystem } from './actor-system.js';
+export type {
+  ActorSystem,
+  ActorDefinition,
+  ActorBehaviorResult,
+} from './actor-system.js';
 export type { ActorSystemConfig } from './actor-system-impl.js';
 export { createActorSystem } from './actor-system-impl.js';
 export type { SupervisorOptions } from './actors/supervisor.js';
 // Supervision
 export { Supervisor } from './actors/supervisor.js';
+export {
+  BackoffSupervisor,
+  type BackoffSupervisorOptions,
+  type BackoffStrategy,
+} from './actors/backoff-supervisor.js';
+
+// Messaging
+export {
+  DeadLetterQueue,
+  type DeadLetter,
+  type DeadLetterQueueConfig,
+} from './messaging/dead-letter-queue.js';
+export {
+  JsonSerializer,
+  MessagePackSerializer,
+  SerializationFactory,
+  TransportSerializer,
+  type MessageSerializer,
+  type SerializationFormat,
+  type MessageEnvelope,
+} from './messaging/serialization.js';
 // Factory function
 export { createActorRef } from './create-actor-ref.js';
 export type { DirectoryConfig } from './distributed-actor-directory.js';
@@ -69,3 +94,28 @@ export type {
   Subscription,
   SupervisionStrategy,
 } from './types.js';
+
+// Actor creation factory
+export {
+  createActor,
+  type CreateActorConfig,
+  type BehaviorActorConfig,
+  type XStateActorConfig,
+  type ActorMessageType,
+  type ActorContextType,
+  type ActorEmittedType,
+  type AvailableEventTypes,
+} from './create-actor.js';
+
+// Type helpers for better error messages
+export type {
+  ValidateEventType,
+  ValidateEvent,
+  ValidateEmittedEvent,
+  ShowAvailableEventTypes,
+  StrictEventValidation,
+  TypedEvent,
+  ExtractEventTypes,
+  EventWithType,
+  PrettyError,
+} from './type-helpers.js';

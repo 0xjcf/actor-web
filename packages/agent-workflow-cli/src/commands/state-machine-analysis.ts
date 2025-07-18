@@ -1,29 +1,16 @@
 /**
- * State Machine Analysis Command
+ * State Machine Analysis Command - Pure Actor Model Implementation
  *
  * CLI command for analyzing XState machines to detect unreachable states
- * and generate coverage reports.
+ * and generate coverage reports. Uses pure message-passing where possible.
  *
- * STANDARDIZED ACTOR PATTERN INTEGRATION
- * ====================================
- *
- * This command now uses the standardized actor patterns:
- * - Uses ActorRegistry for actor discovery
- * - Subscribes to standardized event emissions
- * - Implements proper actor lifecycle management
- * - Follows the ACTOR-STANDARDIZATION-GUIDE.md patterns
- *
- * ENHANCED INTERACTIVE FEATURES
- * ============================
- *
- * - Autocomplete for available events (Tab completion)
- * - Real-time color feedback (green for available, red for unavailable)
- * - Smart suggestions and fuzzy matching
- * - Enhanced developer experience
+ * Note: This is a development/analysis tool, so some direct state inspection
+ * is necessary for its analytical purposes, but we minimize direct access
+ * and use message-passing for actor communication.
  */
 
 import readline from 'node:readline';
-import { enableDevMode, Logger } from '@actor-core/runtime';
+import { enableDevMode, Logger, createActorRef } from '@actor-core/runtime';
 import {
   analyzeStateMachine,
   assertNoUnreachableStates,
@@ -36,11 +23,8 @@ import type { AnyStateMachine } from 'xstate';
 const log = Logger.namespace('STATE_MACHINE_ANALYSIS');
 
 import {
-  createGitActor,
-  type GitEmittedEvent,
-  type GitEvent,
   gitActorMachine,
-  listGitActors,
+  type GitActor,
 } from '../actors/git-actor';
 import { findRepoRoot } from '../core/repo-root-finder';
 
@@ -154,7 +138,6 @@ class EnhancedReadline {
       'state',
       'events',
       'status',
-      'registry',
       'completions',
       'q',
       'quit',
@@ -288,7 +271,7 @@ class EnhancedReadline {
       console.log(chalk.gray('\n💡 Available options:'));
       console.log(
         chalk.blue('  🔧 Special commands: ') +
-          chalk.gray('help, state, events, status, registry, q')
+          chalk.gray('help, state, events, status, q')
       );
       console.log(
         chalk.blue('  🎯 Available events: ') + chalk.green(this.availableEvents.join(', '))
@@ -349,7 +332,7 @@ class EnhancedReadline {
     } else {
       console.log(chalk.gray('💡 Available options:'));
       console.log(chalk.blue('  🔧 Special commands:'));
-      console.log(chalk.gray('     help, state, events, status, registry, q'));
+      console.log(chalk.gray('     help, state, events, status, q'));
       console.log(chalk.blue('  🎯 Available events:'));
       if (this.availableEvents.length > 0) {
         const eventList = this.availableEvents.join(', ');
@@ -398,81 +381,424 @@ class EnhancedReadline {
   }
 }
 
-// Function to create properly typed events
-function createEventFromString(eventName: string, eventData: Record<string, unknown>): GitEvent {
-  // Handle events that need parameters
-  if (eventName === 'GET_INTEGRATION_STATUS') {
-    return {
-      type: 'GET_INTEGRATION_STATUS' as const,
-      integrationBranch: (eventData.integrationBranch as string) || 'feature/actor-ref-integration',
-    };
+/**
+ * State machine monitoring workflow handler using pure message-passing
+ */
+class StateMachineMonitoringHandler {
+  private currentState = 'idle';
+  private stateTransitionHistory: Array<{ state: string; timestamp: number }> = [];
+  private stateLastChanged = new Map<string, number>();
+  private startTime = Date.now();
+  private enhancedRl: EnhancedReadline | null = null;
+  
+  // Configuration
+  private maxStateTransitions = 100;
+  private loopDetectionWindow = 10;
+  private stateTimeoutThreshold = 30000; // 30 seconds
+
+  constructor(
+    private actor: GitActor,
+    private machine: AnyStateMachine,
+    private eventData: Record<string, unknown>
+  ) {}
+
+  /**
+   * Monitor state machine with interactive mode
+   */
+  async monitorInteractive(): Promise<void> {
+    const allEvents = extractAllEvents(this.machine);
+    
+    console.log(chalk.yellow('📍 Initial state check...'));
+    
+    // Send initial status check
+    this.actor.send({ type: 'CHECK_STATUS' });
+    
+    // Wait briefly for initial state
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Get current state via ask pattern
+    const statusResponse = await this.actor.ask({ type: 'REQUEST_STATUS' });
+    if (statusResponse && typeof statusResponse === 'object' && 'currentState' in statusResponse) {
+      this.currentState = String(statusResponse.currentState) || 'idle';
+    }
+
+    // Show enhanced interactive help
+    console.log(chalk.gray(''));
+    console.log(chalk.green('🎯 Actor State Machine Simulator (Pure Message-Passing)'));
+    console.log(chalk.gray('  Type any event name to trigger it'));
+    console.log(chalk.gray('  ✨ Features:'));
+    console.log(chalk.gray('    • Tab completion for events'));
+    console.log(chalk.gray('    • Real-time color feedback'));
+    console.log(chalk.gray('    • Smart suggestions'));
+    console.log(chalk.gray(''));
+    console.log(chalk.gray('  Special commands:'));
+    console.log(chalk.gray('    help - Show available events'));
+    console.log(chalk.gray('    state - Show current state'));
+    console.log(chalk.gray('    events - Show all events'));
+    console.log(chalk.gray('    status - Get actor status via ask() pattern'));
+    console.log(chalk.gray('    q - Quit'));
+    console.log(chalk.gray(''));
+    console.log(
+      chalk.yellow('💡 Tip: Use Tab for autocomplete, available events are shown in green')
+    );
+    console.log(chalk.gray(''));
+
+    // Get initial available events
+    const initialAvailableEvents = extractAvailableEvents(this.machine, this.currentState);
+
+    // Create enhanced readline interface
+    this.enhancedRl = new EnhancedReadline(
+      allEvents,
+      initialAvailableEvents,
+      async (input: string) => {
+        await this.handleInput(input, allEvents);
+      },
+      () => {
+        console.log(chalk.yellow('🛑 Stopping state monitoring...'));
+        process.exit(0);
+      }
+    );
+
+    // Start periodic state monitoring
+    this.startStateMonitoring();
+
+    this.enhancedRl.prompt();
+
+    // Set up cleanup on exit
+    process.on('SIGINT', () => {
+      console.log(chalk.yellow('🛑 Stopping state monitoring...'));
+      process.exit(0);
+    });
+
+    // Keep the process alive
+    await new Promise(() => {});
   }
 
-  if (eventName === 'COMMIT_CHANGES') {
-    return {
-      type: 'COMMIT_CHANGES' as const,
-      message: (eventData.message as string) || 'Interactive test commit',
+  /**
+   * Monitor state changes periodically using ask pattern
+   */
+  private async startStateMonitoring(): Promise<void> {
+    const checkState = async () => {
+      try {
+        // Use ask pattern to get current state
+        const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+        
+        if (response && typeof response === 'object' && 'currentState' in response) {
+          const newState = String(response.currentState);
+          
+          if (newState !== this.currentState) {
+            this.handleStateChange(newState);
+          }
+        }
+      } catch (error) {
+        // Actor might be busy, ignore and try again
+      }
     };
+
+    // Check state every 100ms
+    setInterval(checkState, 100);
   }
 
-  if (eventName === 'FETCH_REMOTE') {
-    return {
-      type: 'FETCH_REMOTE' as const,
-      branch: (eventData.branch as string) || 'feature/actor-ref-integration',
-    };
+  /**
+   * Handle state changes
+   */
+  private handleStateChange(newState: string): void {
+    const now = Date.now();
+    const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    
+    // Safety check: prevent excessive state transitions
+    if (this.stateTransitionHistory.length >= this.maxStateTransitions) {
+      console.error(chalk.red('🚨 SAFETY: Maximum state transitions reached!'));
+      console.error(chalk.red('   This indicates a potential infinite loop.'));
+      console.error(chalk.red('   Stopping monitoring for safety.'));
+      process.exit(1);
+    }
+
+    // Update state transition history
+    this.stateTransitionHistory.push({ state: newState, timestamp: now });
+    this.stateLastChanged.set(newState, now);
+
+    // Check for infinite loop
+    if (this.detectInfiniteLoop()) {
+      console.error(chalk.red('🔄 INFINITE LOOP DETECTED!'));
+      console.error(chalk.yellow('   Recent state transitions:'));
+      const recentStates = this.stateTransitionHistory.slice(-this.loopDetectionWindow);
+      recentStates.forEach((entry, index) => {
+        const elapsed = (entry.timestamp - this.startTime) / 1000;
+        console.error(
+          chalk.gray(`   ${index + 1}. ${entry.state} (at ${elapsed.toFixed(1)}s)`)
+        );
+      });
+      console.error(chalk.red('   Stopping monitoring to prevent system overload.'));
+      process.exit(1);
+    }
+
+    // Check for state timeout
+    if (this.detectStateTimeout(newState)) {
+      console.warn(chalk.yellow('⏰ STATE TIMEOUT WARNING!'));
+      console.warn(
+        chalk.yellow(
+          `   State "${newState}" has been active for more than ${this.stateTimeoutThreshold / 1000}s`
+        )
+      );
+      console.warn(chalk.yellow('   This may indicate a stuck state machine.'));
+    }
+
+    // Update current state
+    this.currentState = newState;
+
+    console.log(chalk.green(`[${timestamp}] State: ${chalk.bold(this.currentState)}`));
+
+    // Show transition count for debugging
+    if (this.stateTransitionHistory.length > 5) {
+      console.log(chalk.gray(`  (${this.stateTransitionHistory.length} transitions so far)`));
+    }
+
+    // Show available events for current state
+    const availableEvents = extractAvailableEvents(this.machine, this.currentState);
+    if (availableEvents.length > 0) {
+      console.log(chalk.gray('  Available events:'));
+      // Format events in columns to avoid line wrapping
+      const eventColumns = [];
+      for (let i = 0; i < availableEvents.length; i += 3) {
+        eventColumns.push(availableEvents.slice(i, i + 3));
+      }
+      eventColumns.forEach((row) => {
+        const formattedRow = row.map((event) => event.padEnd(25)).join(' ');
+        console.log(chalk.green(`    ${formattedRow}`));
+      });
+    }
+
+    // Update enhanced readline with new available events
+    if (this.enhancedRl) {
+      this.enhancedRl.updateAvailableEvents(availableEvents);
+    }
   }
 
-  if (eventName === 'PUSH_CHANGES') {
-    return {
-      type: 'PUSH_CHANGES' as const,
-      branch: (eventData.branch as string) || 'feature/actor-ref-integration',
-    };
+  /**
+   * Handle user input
+   */
+  private async handleInput(input: string, allEvents: string[]): Promise<void> {
+    const command = input.trim();
+
+    if (command === 'q' || command === 'quit' || command === 'exit') {
+      process.exit(0);
+    } else if (command === 'help') {
+      const availableEvents = extractAvailableEvents(this.machine, this.currentState);
+      console.log(chalk.cyan(`📚 Available commands for state "${this.currentState}":`));
+      console.log(chalk.gray(''));
+      console.log(chalk.blue('🎯 Available Events (ready to trigger):'));
+      availableEvents.forEach((event: string) => {
+        console.log(chalk.green(`  ✓ ${event}`));
+      });
+      console.log(chalk.gray(''));
+      console.log(chalk.blue('🔧 Special Commands:'));
+      console.log(chalk.gray('  • help - Show this help'));
+      console.log(chalk.gray('  • state - Show current state'));
+      console.log(chalk.gray('  • events - Show all events'));
+      console.log(chalk.gray('  • status - Get actor status'));
+      console.log(chalk.gray('  • completions - Show completion hints'));
+      console.log(chalk.gray('  • q - Quit'));
+      console.log(chalk.gray(''));
+      console.log(chalk.yellow('💡 Pro tip: Use Tab key to autocomplete available events!'));
+    } else if (command === 'completions') {
+      this.enhancedRl?.showCompletionHints();
+    } else if (command === 'state') {
+      const availableEvents = extractAvailableEvents(this.machine, this.currentState);
+      console.log(chalk.cyan(`Current state: ${this.currentState}`));
+      console.log(chalk.gray(`Available events: ${availableEvents.join(', ')}`));
+    } else if (command === 'events') {
+      console.log(chalk.cyan('All available events:'));
+      const availableEvents = extractAvailableEvents(this.machine, this.currentState);
+      allEvents.forEach((event: string) => {
+        const isAvailable = availableEvents.includes(event);
+        const color = isAvailable ? chalk.green : chalk.gray;
+        const prefix = isAvailable ? '  ✓ ' : '    ';
+        console.log(color(`${prefix}${event}`));
+      });
+    } else if (command === 'status') {
+      try {
+        console.log(chalk.cyan('🔍 Getting current actor status...'));
+        const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+        
+        if (response && typeof response === 'object') {
+          const statusResponse = response as {
+            currentState?: string;
+            currentBranch?: string;
+            isGitRepo?: boolean;
+            uncommittedChanges?: boolean;
+            lastOperation?: string;
+            lastError?: string;
+          };
+          console.log(chalk.green('📊 Current Status:'));
+          console.log(chalk.blue(`  State: ${statusResponse.currentState || 'unknown'}`));
+          console.log(chalk.blue(`  Current Branch: ${statusResponse.currentBranch || 'unknown'}`));
+          console.log(chalk.blue(`  Is Git Repo: ${statusResponse.isGitRepo || 'unknown'}`));
+          console.log(
+            chalk.blue(`  Uncommitted Changes: ${statusResponse.uncommittedChanges || 'unknown'}`)
+          );
+          console.log(chalk.blue(`  Last Operation: ${statusResponse.lastOperation || 'none'}`));
+          if (statusResponse.lastError) {
+            console.log(chalk.red(`  Last Error: ${statusResponse.lastError}`));
+          }
+        }
+      } catch (error) {
+        console.log(chalk.red(`❌ Status request failed: ${error}`));
+      }
+    } else if (command.length > 0) {
+      // Validate and send event
+      const validation = this.enhancedRl?.validateInput(command);
+      if (validation?.isValid) {
+        const eventName = command.toUpperCase();
+        console.log(chalk.cyan(`🔄 Triggering event: ${eventName}`));
+        const event = this.createEventFromString(eventName);
+        this.actor.send(event);
+      } else {
+        // Show suggestions for invalid commands (validation feedback already shown)
+        this.enhancedRl?.showSuggestions();
+        console.log(chalk.gray('💡 Tip: Use Tab key to see available completions'));
+      }
+    }
   }
 
-  if (eventName === 'MERGE_BRANCH') {
-    return {
-      type: 'MERGE_BRANCH' as const,
-      branch: (eventData.branch as string) || 'feature/actor-ref-integration',
-      strategy: (eventData.strategy as 'merge' | 'rebase') || 'merge',
-    };
+  /**
+   * Create event from string
+   */
+  private createEventFromString(eventName: string): GitEvent {
+    // Handle events that need parameters
+    if (eventName === 'GET_INTEGRATION_STATUS') {
+      return {
+        type: 'GET_INTEGRATION_STATUS',
+        integrationBranch: (this.eventData.integrationBranch as string) || 'feature/actor-ref-integration',
+      };
+    }
+
+    if (eventName === 'COMMIT_CHANGES') {
+      return {
+        type: 'COMMIT_CHANGES',
+        message: (this.eventData.message as string) || 'Interactive test commit',
+      };
+    }
+
+    if (eventName === 'PUSH_CHANGES') {
+      return {
+        type: 'PUSH_CHANGES',
+        branch: (this.eventData.branch as string) || 'feature/actor-ref-integration',
+      };
+    }
+
+    if (eventName === 'VALIDATE_DATES') {
+      return {
+        type: 'VALIDATE_DATES',
+        filePaths: (this.eventData.filePaths as string[]) || ['docs/README.md'],
+      };
+    }
+
+    if (eventName === 'SETUP_WORKTREES') {
+      return {
+        type: 'SETUP_WORKTREES',
+        agentCount: (this.eventData.agentCount as number) || 3,
+      };
+    }
+
+    if (eventName === 'CREATE_BRANCH') {
+      return {
+        type: 'CREATE_BRANCH',
+        branchName: (this.eventData.branchName as string) || 'feature/test-branch',
+      };
+    }
+
+    // For simple events without parameters
+    return { type: eventName } as GitEvent;
   }
 
-  if (eventName === 'VALIDATE_DATES') {
-    return {
-      type: 'VALIDATE_DATES' as const,
-      filePaths: (eventData.filePaths as string[]) || ['docs/README.md'],
-    };
+  /**
+   * Detect infinite loops
+   */
+  private detectInfiniteLoop(): boolean {
+    if (this.stateTransitionHistory.length < this.loopDetectionWindow) {
+      return false;
+    }
+
+    const recentTransitions = this.stateTransitionHistory.slice(-this.loopDetectionWindow);
+    const stateCount = new Map<string, number>();
+
+    for (const transition of recentTransitions) {
+      const count = stateCount.get(transition.state) || 0;
+      stateCount.set(transition.state, count + 1);
+
+      // If we've seen the same state more than 3 times in recent history, it's likely a loop
+      if (count >= 3) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
-  if (eventName === 'SETUP_WORKTREES') {
-    return {
-      type: 'SETUP_WORKTREES' as const,
-      agentCount: (eventData.agentCount as number) || 3,
-      configOptions: eventData.configOptions as Record<string, unknown> | undefined,
-    };
+  /**
+   * Detect state timeout
+   */
+  private detectStateTimeout(state: string): boolean {
+    const now = Date.now();
+    const lastChange = this.stateLastChanged.get(state);
+
+    if (lastChange && now - lastChange > this.stateTimeoutThreshold) {
+      return true;
+    }
+
+    return false;
   }
 
-  if (eventName === 'CHECK_WORKTREE') {
-    return {
-      type: 'CHECK_WORKTREE' as const,
-      path: (eventData.path as string) || '../agent-workspace',
-    };
-  }
+  /**
+   * Monitor with automated events
+   */
+  async monitorWithEvents(
+    eventsToSend: string[],
+    eventDelay: number,
+    autoRun: boolean
+  ): Promise<void> {
+    const allEvents = extractAllEvents(this.machine);
+    
+    console.log(chalk.yellow('📍 Initial state check...'));
+    this.actor.send({ type: 'CHECK_STATUS' });
 
-  if (eventName === 'CREATE_BRANCH') {
-    return {
-      type: 'CREATE_BRANCH' as const,
-      branchName: (eventData.branchName as string) || 'feature/test-branch',
-    };
-  }
+    // Wait briefly for initial state
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
-  // For simple events without parameters, cast to GitEvent
-  return { type: eventName } as GitEvent;
+    // Send events in sequence if autoRun is true
+    if (autoRun) {
+      console.log(chalk.yellow('🚀 Auto-running events...'));
+      for (const eventName of eventsToSend) {
+        if (allEvents.includes(eventName)) {
+          const availableEvents = extractAvailableEvents(this.machine, this.currentState);
+          if (availableEvents.includes(eventName)) {
+            console.log(chalk.cyan(`🔄 Triggering event: ${eventName}`));
+            const event = this.createEventFromString(eventName);
+            this.actor.send(event);
+            await new Promise((resolve) => setTimeout(resolve, eventDelay));
+          } else {
+            console.log(
+              chalk.red(`❌ Event "${eventName}" not available in current state "${this.currentState}"`)
+            );
+            console.log(chalk.gray(`Available events: ${availableEvents.join(', ')}`));
+          }
+        } else {
+          console.log(chalk.red(`❌ Unknown event: ${eventName}`));
+          console.log(chalk.gray('Type "events" to see all available events'));
+        }
+      }
+      console.log(chalk.green('✅ Auto-run complete.'));
+    } else {
+      // Interactive mode
+      await this.monitorInteractive();
+    }
+  }
 }
 
 async function subscribeToStateMachineWithEvents(
   target: string,
-  _machineName: string,
+  machineName: string,
   eventsToSend: string[],
   eventDelay: number,
   eventData: Record<string, unknown>,
@@ -485,468 +811,29 @@ async function subscribeToStateMachineWithEvents(
 
   try {
     const repoRoot = await findRepoRoot();
-    const gitActor = createGitActor(repoRoot);
+    
+    // Create git actor using the pure runtime
+    const gitActor = createActorRef(gitActorMachine, {
+      id: 'analysis-git-actor',
+      input: { baseDir: repoRoot },
+    }) as GitActor;
 
-    // Use the real machine definition - no more simplified copy!
+    // Use the real machine definition
     const machine = gitActorMachine;
-    const allEvents = extractAllEvents(machine);
 
     console.log(chalk.blue('🚀 Starting Git Actor...'));
     gitActor.start();
 
-    let currentState = 'idle';
-    const startTime = Date.now();
+    // Create monitoring handler
+    const handler = new StateMachineMonitoringHandler(gitActor, machine, eventData);
 
-    // Loop detection and safety mechanisms
-    const stateTransitionHistory: Array<{ state: string; timestamp: number }> = [];
-    const _maxStateTransitions = 100;
-    const loopDetectionWindow = 10; // Number of recent transitions to check
-    const stateTimeoutThreshold = 30000; // 30 seconds
-    const stateLastChanged = new Map<string, number>();
-
-    // Create enhanced readline interface variable
-    let enhancedRl: EnhancedReadline | null = null;
-
-    // Declare observers for cleanup function
-    let stateObserver: () => void;
-    let contextObserver: () => void;
-    let eventObserver: () => void;
-
-    // Add cleanup flag to prevent duplicate cleanup
-    let cleanupExecuted = false;
-
-    const performCleanup = () => {
-      if (cleanupExecuted) return;
-      cleanupExecuted = true;
-
-      console.log(chalk.yellow('🛑 Stopping state monitoring...'));
-      stateObserver();
-      contextObserver();
-      eventObserver();
-      gitActor.stop();
-      // NOTE: Actor cleanup is now handled by the actor system
-    };
-
-    // Loop detection function
-    function detectInfiniteLoop(): boolean {
-      if (stateTransitionHistory.length < loopDetectionWindow) {
-        return false;
-      }
-
-      const recentTransitions = stateTransitionHistory.slice(-loopDetectionWindow);
-      const stateCount = new Map<string, number>();
-
-      for (const transition of recentTransitions) {
-        const count = stateCount.get(transition.state) || 0;
-        stateCount.set(transition.state, count + 1);
-
-        // If we've seen the same state more than 3 times in recent history, it's likely a loop
-        if (count >= 3) {
-          return true;
-        }
-      }
-
-      return false;
+    if (eventsToSend.length > 0) {
+      console.log(chalk.yellow(`🎯 Automated Event Sequence: ${eventsToSend.join(' → ')}`));
+      console.log(chalk.gray(`⏱️  Event Delay: ${eventDelay}ms`));
+      console.log('');
     }
 
-    // State timeout detection
-    function detectStateTimeout(): boolean {
-      const now = Date.now();
-      const lastChange = stateLastChanged.get(currentState);
-
-      if (lastChange && now - lastChange > stateTimeoutThreshold) {
-        return true;
-      }
-
-      return false;
-    }
-
-    // Subscribe to state changes using proper message-based communication
-    stateObserver = gitActor.subscribe((event: GitEmittedEvent) => {
-      // Handle emitted events instead of direct state observation
-      if (event.type === 'GIT_STATE_CHANGED') {
-        const state = event.to;
-        const stateStr = String(state);
-
-        // Safety check: prevent excessive state transitions
-        if (stateTransitionHistory.length >= _maxStateTransitions) {
-          console.error(chalk.red('🚨 SAFETY: Maximum state transitions reached!'));
-          console.error(chalk.red('   This indicates a potential infinite loop.'));
-          console.error(chalk.red('   Stopping monitoring for safety.'));
-          performCleanup();
-          process.exit(1);
-        }
-
-        // Update state transition history
-        const now = Date.now();
-        stateTransitionHistory.push({ state: stateStr, timestamp: now });
-        stateLastChanged.set(stateStr, now);
-
-        // Check for infinite loop
-        if (detectInfiniteLoop()) {
-          console.error(chalk.red('🔄 INFINITE LOOP DETECTED!'));
-          console.error(chalk.yellow('   Recent state transitions:'));
-          const recentStates = stateTransitionHistory.slice(-loopDetectionWindow);
-          recentStates.forEach((entry, index) => {
-            const elapsed = (entry.timestamp - startTime) / 1000;
-            console.error(
-              chalk.gray(`   ${index + 1}. ${entry.state} (at ${elapsed.toFixed(1)}s)`)
-            );
-          });
-          console.error(chalk.red('   Stopping monitoring to prevent system overload.'));
-          performCleanup();
-          process.exit(1);
-        }
-
-        // Check for state timeout
-        if (detectStateTimeout()) {
-          console.warn(chalk.yellow('⏰ STATE TIMEOUT WARNING!'));
-          console.warn(
-            chalk.yellow(
-              `   State "${stateStr}" has been active for more than ${stateTimeoutThreshold / 1000}s`
-            )
-          );
-          console.warn(chalk.yellow('   This may indicate a stuck state machine.'));
-        }
-
-        // Update current state
-        currentState = stateStr;
-        const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
-        const _elapsed = now - startTime;
-
-        console.log(chalk.green(`[${timestamp}] State: ${chalk.bold(currentState)}`));
-
-        // Show transition count for debugging
-        if (stateTransitionHistory.length > 5) {
-          console.log(chalk.gray(`  (${stateTransitionHistory.length} transitions so far)`));
-        }
-
-        // Show available events for current state
-        const availableEvents = extractAvailableEvents(machine, currentState);
-        if (availableEvents.length > 0) {
-          console.log(chalk.gray('  Available events:'));
-          // Format events in columns to avoid line wrapping
-          const eventColumns = [];
-          for (let i = 0; i < availableEvents.length; i += 3) {
-            eventColumns.push(availableEvents.slice(i, i + 3));
-          }
-          eventColumns.forEach((row) => {
-            const formattedRow = row.map((event) => event.padEnd(25)).join(' ');
-            console.log(chalk.green(`    ${formattedRow}`));
-          });
-        }
-
-        // Update enhanced readline with new available events
-        if (enhancedRl) {
-          enhancedRl.updateAvailableEvents(availableEvents);
-        }
-      }
-    });
-
-    // Subscribe to context changes via specific events
-    contextObserver = gitActor.subscribe((event: GitEmittedEvent) => {
-      // Handle specific context-related events
-      if (event.type === 'GIT_BRANCH_CHANGED') {
-        console.log(chalk.cyan(`  🌿 Current Branch: ${event.currentBranch}`));
-      }
-      // Additional event handling can be added here as needed
-    });
-
-    // Subscribe to standardized event emissions
-    eventObserver = gitActor.on((event: GitEmittedEvent) => {
-      log.debug('🎯 Event received from GitActor', {
-        event: event.type,
-        actorId: gitActor.id,
-        timestamp: new Date().toISOString(),
-      });
-      console.log('DEBUG: Received event:', event);
-      const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
-
-      switch (event.type) {
-        // Repository state changes
-        case 'GIT_REPO_STATUS_CHANGED':
-          console.log(
-            chalk.green(
-              `[${timestamp}] ✅ Repository status checked: ${event.isGitRepo ? 'Valid git repo' : 'Not a git repo'}`
-            )
-          );
-          break;
-        case 'GIT_BRANCH_CHANGED':
-          console.log(chalk.cyan(`[${timestamp}] 🌿 Branch changed: ${event.currentBranch}`));
-          break;
-        case 'GIT_UNCOMMITTED_CHANGES_DETECTED':
-          console.log(
-            chalk.yellow(
-              `[${timestamp}] 📝 Uncommitted changes: ${event.hasChanges ? 'Found' : 'None'}`
-            )
-          );
-          break;
-
-        // Operation completions
-        case 'GIT_COMMIT_COMPLETED':
-          console.log(chalk.green(`[${timestamp}] ✅ Commit completed: ${event.commitHash}`));
-          break;
-        case 'GIT_FETCH_COMPLETED':
-          console.log(chalk.green(`[${timestamp}] ✅ Fetch completed for branch: ${event.branch}`));
-          break;
-        case 'GIT_PUSH_COMPLETED':
-          console.log(chalk.green(`[${timestamp}] ✅ Push completed for branch: ${event.branch}`));
-          break;
-        case 'GIT_MERGE_COMPLETED':
-          console.log(chalk.green(`[${timestamp}] ✅ Merge completed for branch: ${event.branch}`));
-          break;
-        case 'GIT_BRANCH_CREATED':
-          console.log(chalk.green(`[${timestamp}] ✅ Branch created: ${event.branchName}`));
-          break;
-        case 'GIT_STAGING_COMPLETED':
-          console.log(chalk.green(`[${timestamp}] ✅ Staging completed`));
-          break;
-
-        // Integration status updates
-        case 'GIT_INTEGRATION_STATUS_UPDATED':
-          console.log(
-            chalk.blue(
-              `[${timestamp}] 📊 Integration status: ${event.status.ahead} ahead, ${event.status.behind} behind`
-            )
-          );
-          break;
-        case 'GIT_CHANGED_FILES_DETECTED':
-          console.log(
-            chalk.blue(`[${timestamp}] 📁 Changed files detected: ${event.files.length} files`)
-          );
-          if (event.files.length > 0) {
-            event.files.slice(0, 5).forEach((file) => {
-              console.log(chalk.gray(`    • ${file}`));
-            });
-            if (event.files.length > 5) {
-              console.log(chalk.gray(`    ... and ${event.files.length - 5} more`));
-            }
-          }
-          break;
-
-        // Worktree operations
-        case 'GIT_WORKTREE_SETUP_COMPLETED':
-          console.log(
-            chalk.green(
-              `[${timestamp}] ✅ Worktree setup completed: ${event.worktrees.length} worktrees`
-            )
-          );
-          break;
-        case 'GIT_WORKTREE_STATUS_CHECKED':
-          console.log(
-            chalk.blue(
-              `[${timestamp}] 📁 Worktree status: ${event.exists ? 'exists' : 'not found'} at ${event.path}`
-            )
-          );
-          break;
-
-        // Generated content
-        case 'GIT_COMMIT_MESSAGE_GENERATED':
-          console.log(chalk.blue(`[${timestamp}] 📝 Commit message generated: "${event.message}"`));
-          break;
-        case 'GIT_DATE_VALIDATION_COMPLETED':
-          console.log(
-            chalk.blue(
-              `[${timestamp}] 📅 Date validation completed: ${event.issues.length} issues found`
-            )
-          );
-          break;
-
-        // State transitions
-        case 'GIT_STATE_CHANGED':
-          console.log(chalk.gray(`[${timestamp}] 🔄 State changed: ${event.from} → ${event.to}`));
-          break;
-        case 'GIT_OPERATION_STARTED':
-          console.log(chalk.gray(`[${timestamp}] 🚀 Operation started: ${event.operation}`));
-          break;
-
-        // Error events
-        case 'GIT_OPERATION_FAILED':
-          console.log(
-            chalk.red(`[${timestamp}] ❌ Operation failed: ${event.operation} - ${event.error}`)
-          );
-          break;
-        case 'GIT_TIMEOUT_OCCURRED':
-          console.log(chalk.red(`[${timestamp}] ⏰ Operation timed out: ${event.operation}`));
-          break;
-        case 'GIT_VALIDATION_FAILED':
-          console.log(chalk.red(`[${timestamp}] ❌ Validation failed: ${event.reason}`));
-          break;
-
-        // Request/response events
-        case 'GIT_REQUEST_RESPONSE':
-          console.log(chalk.gray(`[${timestamp}] 📡 Request response: ${event.requestId}`));
-          break;
-
-        default:
-          console.log(chalk.gray(`[${timestamp}] 📡 Event: ${(event as { type: string }).type}`));
-      }
-    });
-
-    console.log(chalk.yellow('📍 Initial state check...'));
-    gitActor.send({ type: 'CHECK_STATUS' });
-
-    // Send events in sequence if autoRun is true
-    if (autoRun) {
-      console.log(chalk.yellow('🚀 Auto-running events...'));
-      for (const eventName of eventsToSend) {
-        if (allEvents.includes(eventName)) {
-          const availableEvents = extractAvailableEvents(machine, currentState);
-          if (availableEvents.includes(eventName)) {
-            console.log(chalk.cyan(`🔄 Triggering event: ${eventName}`));
-            const event = createEventFromString(eventName, eventData);
-            gitActor.send(event);
-            await new Promise((resolve) => setTimeout(resolve, eventDelay));
-          } else {
-            console.log(
-              chalk.red(`❌ Event "${eventName}" not available in current state "${currentState}"`)
-            );
-            console.log(chalk.gray(`Available events: ${availableEvents.join(', ')}`));
-          }
-        } else {
-          console.log(chalk.red(`❌ Unknown event: ${eventName}`));
-          console.log(chalk.gray('Type "events" to see all available events'));
-        }
-      }
-      console.log(chalk.green('✅ Auto-run complete.'));
-
-      // Clean up and exit
-      stateObserver();
-      contextObserver();
-      eventObserver();
-      gitActor.stop();
-      // NOTE: Actor cleanup is now handled by the actor system
-    } else {
-      // Show enhanced interactive help
-      console.log(chalk.gray(''));
-      console.log(chalk.green('🎯 Enhanced Actor State Machine Simulator'));
-      console.log(chalk.gray('  Type any event name to trigger it'));
-      console.log(chalk.gray('  ✨ Features:'));
-      console.log(chalk.gray('    • Tab completion for events'));
-      console.log(chalk.gray('    • Real-time color feedback'));
-      console.log(chalk.gray('    • Smart suggestions'));
-      console.log(chalk.gray(''));
-      console.log(chalk.gray('  Special commands:'));
-      console.log(chalk.gray('    help - Show available events'));
-      console.log(chalk.gray('    state - Show current state'));
-      console.log(chalk.gray('    events - Show all events'));
-      console.log(chalk.gray('    status - Get actor status via ask() pattern'));
-      console.log(chalk.gray('    registry - Show actor registry'));
-      console.log(chalk.gray('    q - Quit'));
-      console.log(chalk.gray(''));
-      console.log(
-        chalk.yellow('💡 Tip: Use Tab for autocomplete, available events are shown in green')
-      );
-      console.log(chalk.gray(''));
-
-      // Get initial available events
-      const initialAvailableEvents = extractAvailableEvents(machine, currentState);
-
-      // Create enhanced readline interface
-      enhancedRl = new EnhancedReadline(
-        allEvents,
-        initialAvailableEvents,
-        async (input: string) => {
-          const command = input.trim();
-
-          if (command === 'q' || command === 'quit' || command === 'exit') {
-            performCleanup();
-            process.exit(0);
-          } else if (command === 'help') {
-            const availableEvents = extractAvailableEvents(machine, currentState);
-            console.log(chalk.cyan(`📚 Available commands for state "${currentState}":`));
-            console.log(chalk.gray(''));
-            console.log(chalk.blue('🎯 Available Events (ready to trigger):'));
-            availableEvents.forEach((event: string) => {
-              console.log(chalk.green(`  ✓ ${event}`));
-            });
-            console.log(chalk.gray(''));
-            console.log(chalk.blue('🔧 Special Commands:'));
-            console.log(chalk.gray('  • help - Show this help'));
-            console.log(chalk.gray('  • state - Show current state'));
-            console.log(chalk.gray('  • events - Show all events'));
-            console.log(chalk.gray('  • status - Get actor status'));
-            console.log(chalk.gray('  • registry - Show actor registry'));
-            console.log(chalk.gray('  • completions - Show completion hints'));
-            console.log(chalk.gray('  • q - Quit'));
-            console.log(chalk.gray(''));
-            console.log(chalk.yellow('💡 Pro tip: Use Tab key to autocomplete available events!'));
-          } else if (command === 'completions') {
-            enhancedRl?.showCompletionHints();
-          } else if (command === 'state') {
-            console.log(chalk.cyan(`Current state: ${currentState}`));
-            const availableEvents = extractAvailableEvents(machine, currentState);
-            console.log(chalk.gray(`Available events: ${availableEvents.join(', ')}`));
-          } else if (command === 'events') {
-            console.log(chalk.cyan('All available events:'));
-            const availableEvents = extractAvailableEvents(machine, currentState);
-            allEvents.forEach((event: string) => {
-              const isAvailable = availableEvents.includes(event);
-              const color = isAvailable ? chalk.green : chalk.gray;
-              const prefix = isAvailable ? '  ✓ ' : '    ';
-              console.log(color(`${prefix}${event}`));
-            });
-          } else if (command === 'status') {
-            try {
-              console.log(chalk.cyan('🔍 Getting current actor status...'));
-              const snapshot = gitActor.getSnapshot();
-              const { context } = snapshot;
-              console.log(chalk.green('📊 Current Status:'));
-              console.log(chalk.blue(`  State: ${snapshot.value}`));
-              console.log(chalk.blue(`  Current Branch: ${context.currentBranch || 'unknown'}`));
-              console.log(chalk.blue(`  Is Git Repo: ${context.isGitRepo}`));
-              console.log(
-                chalk.blue(`  Uncommitted Changes: ${context.uncommittedChanges || 'unknown'}`)
-              );
-              console.log(chalk.blue(`  Last Operation: ${context.lastOperation || 'none'}`));
-              if (context.lastError) {
-                console.log(chalk.red(`  Last Error: ${context.lastError}`));
-              }
-            } catch (error) {
-              console.log(chalk.red(`❌ Status request failed: ${error}`));
-            }
-          } else if (command === 'registry') {
-            console.log(chalk.cyan('📋 Actor Registry:'));
-            const actors = await listGitActors();
-            if (actors.length === 0) {
-              console.log(chalk.gray('  No git actors registered'));
-            } else {
-              actors.forEach((path, index) => {
-                console.log(chalk.gray(`  ${index + 1}. ${path}`));
-              });
-            }
-          } else if (command.length > 0) {
-            // Validate and send event
-            const validation = enhancedRl?.validateInput(command);
-            if (validation?.isValid) {
-              const eventName = command.toUpperCase();
-              console.log(chalk.cyan(`🔄 Triggering event: ${eventName}`));
-              const event = createEventFromString(eventName, eventData);
-              gitActor.send(event);
-            } else {
-              // Show suggestions for invalid commands (validation feedback already shown)
-              enhancedRl?.showSuggestions();
-              console.log(chalk.gray('💡 Tip: Use Tab key to see available completions'));
-            }
-          }
-        },
-        () => {
-          performCleanup();
-          process.exit(0);
-        }
-      );
-
-      enhancedRl.prompt();
-
-      // Set up cleanup on exit
-      process.on('SIGINT', () => {
-        performCleanup();
-        process.exit(0);
-      });
-
-      // Keep the process alive
-      await new Promise(() => {});
-    }
+    await handler.monitorWithEvents(eventsToSend, eventDelay, autoRun);
   } catch (error) {
     console.error(chalk.red('❌ Error setting up state monitoring:'), error);
     process.exit(1);

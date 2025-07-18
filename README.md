@@ -2,6 +2,29 @@
 
 > Pure Actor Model framework for building resilient, scalable web applications with location-transparent message-passing architecture.
 
+## ⚠️ IMPORTANT: Framework Migration in Progress
+
+**The main framework (`/src/core`) is being deprecated in favor of `@actor-core/runtime`.**
+
+The current implementation violates pure actor model principles:
+- ❌ Uses singleton patterns (prevents distribution)
+- ❌ Allows direct state access via `getSnapshot()`
+- ❌ Contains shared global state
+
+**Use `@actor-core/runtime` for new projects:**
+- ✅ Pure message-passing communication
+- ✅ True location transparency
+- ✅ Distributed actor directory
+- ✅ No singleton dependencies
+
+```typescript
+// Migration:
+// Old: import { createActorRef } from '@actor-web/core';
+// New: import { createActorRef } from '@actor-core/runtime';
+```
+
+---
+
 [![npm version](https://badge.fury.io/js/%40actor-web%2Fcore.svg)](https://badge.fury.io/js/%40actor-web%2Fcore)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6+-blue.svg)](https://www.typescriptlang.org/)
 [![XState v5](https://img.shields.io/badge/XState-v5-orange.svg)](https://stately.ai/docs/xstate)
@@ -10,15 +33,35 @@
 
 ## 🚀 Features
 
-- **Pure Actor Model**: Message-passing only communication with location transparency
+### 🎭 **Pure Actor Model Architecture**
+- **Message-Only Communication**: Asynchronous message-passing with no shared state
+- **Location Transparency**: Actors work seamlessly across Node.js, Browser, and Web Workers
 - **Distributed Actor Directory**: Orleans-style caching with 90%+ hit rate
-- **Fault Tolerance**: Built-in supervision strategies for error recovery
-- **Type Safety**: Full TypeScript support with zero `any` types
-- **Location Transparency**: Actors can be addressed regardless of physical location
-- **XState Integration**: Seamless integration with XState v5 state machines
-- **High Performance**: 10,000+ messages/second throughput
-- **Orleans Architecture**: Distributed actor registry with automatic failover
-- **CLI & UI Packages**: Complete tooling for development and monitoring
+- **Fault Tolerance**: Supervision trees with "let it crash" philosophy
+
+### 🔒 **Advanced Security & Access Control**
+- **Capability Security**: Fine-grained permission-based actor access
+- **Virtual Actor System**: Orleans-style lifecycle with automatic activation/passivation
+- **Rate Limiting**: Built-in protection against message flooding
+- **Time-Limited Access**: Automatic capability expiration
+
+### 🚀 **Zero-Boilerplate APIs**
+- **One-Line Actor Creation**: `const { actor, proxy } = createProxyActor(machine, router)`
+- **Auto-Generated Type Safety**: Full IntelliSense without manual typing
+- **Instant Security**: `createCapabilitySecuredRef(actor, permissions)` 
+- **Smart Memory**: `memory.recall(query)` across cache + vectors + knowledge graph
+
+### 🧠 **AI Agent Patterns**
+- **Hierarchical Task Networks (HTN)**: Complex agent planning and decomposition
+- **Hybrid Memory Systems**: LRU cache + vector store + knowledge graph
+- **Pipeline Workflows**: Composable AI workflows with retry and error handling
+- **Event Sourcing**: Complete actor state replay and debugging
+
+### ⚡ **Performance & Scale**
+- **Sub-millisecond Lookup**: Actor directory with intelligent caching
+- **10,000+ Messages/Second**: High-throughput message processing
+- **Automatic Backpressure**: Bounded mailboxes with flow control
+- **XState Integration**: Seamless state machine integration
 
 ## 📦 Installation
 

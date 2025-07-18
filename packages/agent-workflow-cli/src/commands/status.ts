@@ -1,14 +1,25 @@
-import type { ActorSnapshot } from '@actor-core/runtime';
 import chalk from 'chalk';
-import { createGitActor, type GitActor, type GitContext } from '../actors/git-actor.js';
+import { createActorRef } from '@actor-core/runtime';
+import { gitActorMachine, type GitActor } from '../actors/git-actor.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';
 
+/**
+ * Status Command - Pure Actor Model Implementation
+ * 
+ * Displays repository status using pure message-passing.
+ * No state observation or direct access.
+ */
 export async function statusCommand() {
   console.log(chalk.blue('📊 Status Check'));
   console.log(chalk.blue('==========================================='));
 
   const repoRoot = await findRepoRoot();
-  const gitActor = createGitActor(repoRoot);
+  
+  // Create git actor using the pure runtime
+  const gitActor = createActorRef(gitActorMachine, {
+    id: 'status-git-actor',
+    input: { baseDir: repoRoot },
+  }) as GitActor;
 
   try {
     // Start the actor
@@ -26,198 +37,219 @@ export async function statusCommand() {
 }
 
 /**
- * Status workflow handler using completion state architecture
+ * Status workflow handler using pure message-passing
  */
 class StatusWorkflowHandler {
-  private actor: GitActor;
-  private statusData: {
-    isGitRepo?: boolean;
-    currentBranch?: string;
-    agentType?: string;
-    uncommittedChanges?: boolean;
-    integrationStatus?: { ahead: number; behind: number };
-  } = {};
-
-  constructor(actor: GitActor) {
-    this.actor = actor;
-  }
+  constructor(private actor: GitActor) {}
 
   async executeStatus(): Promise<void> {
     console.log(chalk.blue('📋 Starting status check...'));
 
-    return new Promise((resolve, reject) => {
-      // Observe all state changes and handle workflow progression
-      const stateObserver = this.actor
-        .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot as ActorSnapshot<GitContext>).value
-        )
-        .subscribe((state) => {
-          this.handleStateChange(state, resolve, reject);
-        });
+    try {
+      // Step 1: Check if it's a git repository
+      const isGitRepo = await this.checkGitRepository();
+      
+      if (!isGitRepo) {
+        console.log(chalk.red('❌ Not a git repository'));
+        return;
+      }
 
-      // Observe errors
-      const errorObserver = this.actor
-        .observe((snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).lastError)
-        .subscribe((error) => {
-          if (error) {
-            console.error(chalk.red('❌ Error:'), error);
-            this.cleanupObservers();
-            reject(new Error(error));
-          }
-        });
+      // Step 2: Get current branch and status
+      const status = await this.getBranchStatus();
 
-      // Store observers for cleanup
-      this.observers = [stateObserver, errorObserver];
+      // Step 3: Check uncommitted changes
+      const hasUncommittedChanges = await this.checkUncommittedChanges();
 
-      // Success handler
-      this.onSuccess = () => {
-        this.cleanupObservers();
-        resolve();
-      };
+      // Step 4: Get integration status
+      const integrationStatus = await this.getIntegrationStatus();
 
-      // Start the workflow
-      this.actor.send({ type: 'CHECK_REPO' });
+      // Step 5: Display status summary
+      this.displayStatusSummary({
+        ...status,
+        uncommittedChanges: hasUncommittedChanges,
+        integrationStatus,
+      });
+
+    } catch (error) {
+      console.error(chalk.red('Status check error:'), error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if directory is a git repository
+   */
+  private async checkGitRepository(): Promise<boolean> {
+    console.log(chalk.gray('🔍 Checking repository...'));
+
+    // Send CHECK_REPO message
+    this.actor.send({ type: 'CHECK_REPO' });
+
+    // Wait for check to complete
+    await this.waitForOperation('CHECK_REPO', async () => {
+      const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+      return response && typeof response === 'object' && 
+        'isGitRepo' in response && 
+        response.isGitRepo !== undefined;
     });
+
+    const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+    const status = response as { isGitRepo?: boolean };
+
+    return status.isGitRepo || false;
   }
 
-  private observers: Array<{ unsubscribe(): void }> = [];
-  private onSuccess?: () => void;
+  /**
+   * Get current branch and agent type
+   */
+  private async getBranchStatus(): Promise<{ 
+    currentBranch?: string; 
+    agentType?: string 
+  }> {
+    console.log(chalk.gray('🔍 Getting branch information...'));
 
-  private cleanupObservers(): void {
-    this.observers.forEach((observer) => observer.unsubscribe());
-    this.observers = [];
+    // Send CHECK_STATUS message
+    this.actor.send({ type: 'CHECK_STATUS' });
+
+    // Wait for status check to complete
+    await this.waitForOperation('CHECK_STATUS', async () => {
+      const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+      return response && typeof response === 'object' && 
+        'currentBranch' in response;
+    });
+
+    const response = await this.actor.ask({ type: 'REQUEST_BRANCH_INFO' });
+    const branchInfo = response as { 
+      currentBranch?: string; 
+      agentType?: string 
+    };
+
+    return {
+      currentBranch: branchInfo.currentBranch,
+      agentType: branchInfo.agentType,
+    };
   }
 
-  private handleStateChange(
-    state: unknown,
-    resolve: () => void,
-    reject: (error: Error) => void
-  ): void {
-    const stateStr = state as string;
+  /**
+   * Check for uncommitted changes
+   */
+  private async checkUncommittedChanges(): Promise<boolean> {
+    console.log(chalk.gray('🔍 Checking for uncommitted changes...'));
 
-    switch (stateStr) {
-      case 'repoChecked': {
-        // Use observe to reactively get repository status
-        const repoObserver = this.actor
-          .observe((snapshot) => snapshot.context.isGitRepo)
-          .subscribe((isGitRepo) => {
-            this.statusData.isGitRepo = isGitRepo;
-            if (!isGitRepo) {
-              console.log(chalk.red('❌ Not in a Git repository'));
-              this.displayStatus();
-              resolve();
-              return;
-            }
-            this.actor.send({ type: 'CHECK_STATUS' });
-            repoObserver.unsubscribe();
-          });
-        break;
-      }
+    // Send CHECK_UNCOMMITTED_CHANGES message
+    this.actor.send({ type: 'CHECK_UNCOMMITTED_CHANGES' });
 
-      case 'statusChecked': {
-        // Use observe to reactively get status data
-        const statusObserver = this.actor
-          .observe((snapshot) => ({
-            currentBranch: snapshot.context.currentBranch,
-            agentType: snapshot.context.agentType,
-          }))
-          .subscribe(({ currentBranch, agentType }) => {
-            this.statusData.currentBranch = currentBranch;
-            this.statusData.agentType = agentType;
-            this.actor.send({ type: 'CHECK_UNCOMMITTED_CHANGES' });
-            statusObserver.unsubscribe();
-          });
-        break;
-      }
+    // Wait for check to complete
+    await this.waitForOperation('CHECK_UNCOMMITTED_CHANGES', async () => {
+      const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+      return response && typeof response === 'object' && 
+        'uncommittedChanges' in response;
+    });
 
-      case 'uncommittedChangesChecked': {
-        // Use observe to reactively get uncommitted changes
-        const changesObserver = this.actor
-          .observe((snapshot) => snapshot.context.uncommittedChanges)
-          .subscribe((uncommittedChanges) => {
-            this.statusData.uncommittedChanges = uncommittedChanges;
-            this.actor.send({
-              type: 'GET_INTEGRATION_STATUS',
-              integrationBranch: 'integration',
-            });
-            changesObserver.unsubscribe();
-          });
-        break;
-      }
+    const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+    const status = response as { uncommittedChanges?: boolean };
 
-      case 'integrationStatusChecked': {
-        // Use observe to reactively get integration status
-        const integrationObserver = this.actor
-          .observe((snapshot) => snapshot.context.integrationStatus)
-          .subscribe((integrationStatus) => {
-            this.statusData.integrationStatus = integrationStatus;
-            this.displayStatus();
-            resolve();
-            integrationObserver.unsubscribe();
-          });
-        break;
-      }
-
-      // Error states
-      case 'repoError':
-      case 'statusError':
-      case 'uncommittedChangesError':
-      case 'integrationStatusError': {
-        // Use observe to reactively get error message
-        const errorObserver = this.actor
-          .observe((snapshot) => snapshot.context.lastError)
-          .subscribe((lastError) => {
-            const errorMsg = lastError || `Error in ${stateStr}`;
-            console.error(chalk.red('❌ Error:'), errorMsg);
-            reject(new Error(errorMsg));
-            errorObserver.unsubscribe();
-          });
-        break;
-      }
-
-      // Timeout states
-      case 'repoTimeout':
-      case 'statusTimeout':
-      case 'uncommittedChangesTimeout':
-      case 'integrationStatusTimeout': {
-        const timeoutMsg = `Operation timed out in ${stateStr}`;
-        console.error(chalk.red('⏱️ Timeout:'), timeoutMsg);
-        reject(new Error(timeoutMsg));
-        break;
-      }
-    }
+    return status.uncommittedChanges || false;
   }
 
-  private displayStatus(): void {
-    console.log(chalk.green('\n✅ Repository Status:'));
-    console.log(
-      `   📁 Repository: ${this.statusData.isGitRepo ? 'Valid Git repo' : 'Not a Git repo'}`
-    );
-    console.log(`   🌿 Branch: ${this.statusData.currentBranch || 'unknown'}`);
-    console.log(`   🤖 Agent: ${this.statusData.agentType || 'unknown'}`);
-    console.log(
-      `   📝 Changes: ${this.statusData.uncommittedChanges ? 'Uncommitted changes present' : 'Working tree clean'}`
-    );
+  /**
+   * Get integration status
+   */
+  private async getIntegrationStatus(): Promise<{ 
+    ahead: number; 
+    behind: number 
+  } | undefined> {
+    console.log(chalk.gray('🔍 Checking integration status...'));
 
-    if (this.statusData.integrationStatus) {
-      const { ahead, behind } = this.statusData.integrationStatus;
-      console.log(`   📈 Integration: ${ahead} ahead, ${behind} behind`);
+    // Send GET_INTEGRATION_STATUS message
+    this.actor.send({ type: 'GET_INTEGRATION_STATUS' });
 
-      if (ahead > 0) {
-        console.log(chalk.yellow(`   💡 ${ahead} commits ready to ship`));
+    // Wait for status check to complete
+    await this.waitForOperation('GET_INTEGRATION_STATUS', async () => {
+      const response = await this.actor.ask({ type: 'REQUEST_BRANCH_INFO' });
+      return response && typeof response === 'object' && 
+        'integrationStatus' in response;
+    });
+
+    const response = await this.actor.ask({ type: 'REQUEST_BRANCH_INFO' });
+    const branchInfo = response as { 
+      integrationStatus?: { ahead: number; behind: number } 
+    };
+
+    return branchInfo.integrationStatus;
+  }
+
+  /**
+   * Display status summary
+   */
+  private displayStatusSummary(status: {
+    currentBranch?: string;
+    agentType?: string;
+    uncommittedChanges?: boolean;
+    integrationStatus?: { ahead: number; behind: number };
+  }): void {
+    console.log(chalk.blue('\n📊 Repository Status'));
+    console.log(chalk.blue('==========================================='));
+
+    // Branch information
+    if (status.currentBranch) {
+      console.log(chalk.white(`📍 Current Branch: ${chalk.cyan(status.currentBranch)}`));
+    }
+
+    // Agent type
+    if (status.agentType) {
+      console.log(chalk.white(`🤖 Agent Type: ${chalk.yellow(status.agentType)}`));
+    }
+
+    // Uncommitted changes
+    if (status.uncommittedChanges) {
+      console.log(chalk.yellow('📝 Uncommitted changes present'));
+    } else {
+      console.log(chalk.green('✅ Working directory clean'));
+    }
+
+    // Integration status
+    if (status.integrationStatus) {
+      const { ahead, behind } = status.integrationStatus;
+      if (ahead > 0 || behind > 0) {
+        console.log(chalk.white(`🔄 Integration Status:`));
+        if (ahead > 0) {
+          console.log(chalk.green(`   ↑ ${ahead} commits ahead`));
+        }
+        if (behind > 0) {
+          console.log(chalk.yellow(`   ↓ ${behind} commits behind`));
+        }
+      } else {
+        console.log(chalk.green('✅ In sync with integration branch'));
       }
-      if (behind > 0) {
-        console.log(chalk.blue(`   ⬇️  ${behind} commits behind integration`));
-      }
     }
 
-    console.log(chalk.blue('\n💡 Next steps:'));
-    if (this.statusData.uncommittedChanges) {
-      console.log(`   • Save changes: ${chalk.yellow('pnpm aw:save')}`);
+    console.log(chalk.blue('==========================================='));
+  }
+
+  /**
+   * Wait for an operation to complete
+   */
+  private async waitForOperation(
+    operation: string, 
+    checkComplete: () => Promise<boolean>,
+    timeout: number = 10000
+  ): Promise<void> {
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < timeout) {
+      try {
+        if (await checkComplete()) {
+          return;
+        }
+      } catch (error) {
+        // Operation might still be in progress
+      }
+
+      // Wait a bit before checking again
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
-    if (this.statusData.integrationStatus?.ahead && this.statusData.integrationStatus.ahead > 0) {
-      console.log(`   • Ship to integration: ${chalk.yellow('pnpm aw:ship')}`);
-    }
-    console.log(`   • Sync with integration: ${chalk.yellow('pnpm aw:sync')}`);
+
+    throw new Error(`Operation ${operation} timed out after ${timeout}ms`);
   }
 }

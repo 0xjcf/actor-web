@@ -121,6 +121,9 @@ export class Supervisor {
         case 'escalate':
           await this.escalateFailure(supervised, error);
           break;
+        case 'resume':
+          await this.resumeActor(supervised, error);
+          break;
         default:
           console.warn('Unknown supervision strategy:', this.options.strategy);
           await this.stopActor(supervised, error);
@@ -218,6 +221,19 @@ export class Supervisor {
 
     this.unsupervise(supervised.actorRef.id);
     this.options.onFailure(supervised.actorRef, error);
+  }
+
+  /**
+   * Resume actor without restart (ignore the error)
+   */
+  private async resumeActor(supervised: SupervisedActor, error: Error): Promise<void> {
+    console.warn(`Resuming actor ${supervised.actorRef.id} after error:`, error.message);
+
+    // Log the error but don't take any action
+    this.options.onFailure(supervised.actorRef, error);
+
+    // Actor continues running without interruption
+    // This is useful for non-critical errors that can be safely ignored
   }
 
   /**

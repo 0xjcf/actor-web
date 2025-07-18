@@ -52,6 +52,18 @@ export interface ActorMessage {
 }
 
 /**
+ * Simplified message input for send/ask operations
+ * Optional fields will be populated with defaults
+ */
+export interface MessageInput {
+  readonly type: string;
+  readonly payload?: JsonValue;
+  readonly correlationId?: string;
+  readonly timestamp?: number;
+  readonly version?: string;
+}
+
+/**
  * Actor spawn options
  */
 export interface SpawnOptions {
@@ -82,13 +94,46 @@ export interface SupervisionStrategy {
 }
 
 /**
- * Actor behavior definition
+ * Actor behavior result with consistent shape for type safety
  */
-export interface ActorBehavior<TMessage = ActorMessage, TState = unknown> {
-  initialState?: TState;
-  onMessage(message: TMessage, state: TState): Promise<TState>;
-  onStart?(state: TState): Promise<TState>;
-  onStop?(state: TState): Promise<void>;
+export interface ActorBehaviorResult<TContext, TEmitted> {
+  readonly context: TContext;
+  readonly emit?: TEmitted | TEmitted[];
+}
+
+/**
+ * Actor definition with strict type-safe event emission
+ * This is the new preferred interface that ensures proper type checking
+ */
+export interface ActorDefinition<
+  TMessage = ActorMessage,
+  TContext = unknown,
+  TEmitted = ActorMessage,
+> {
+  context?: TContext;
+  onMessage(params: { message: TMessage; context: TContext }): Promise<
+    ActorBehaviorResult<TContext, TEmitted>
+  >;
+  onStart?(params: { context: TContext }): Promise<ActorBehaviorResult<TContext, TEmitted>>;
+  onStop?(params: { context: TContext }): Promise<void>;
+  supervisionStrategy?: SupervisionStrategy;
+}
+
+/**
+ * Legacy actor behavior definition (deprecated)
+ * @deprecated Use ActorDefinition or defineActor() for better type safety
+ */
+export interface ActorBehavior<
+  TMessage = ActorMessage,
+  TContext = unknown,
+  TEmitted = ActorMessage,
+> {
+  context?: TContext;
+  onMessage(params: { message: TMessage; context: TContext }): Promise<
+    TContext | { context: TContext; emit?: TEmitted | TEmitted[] }
+  >;
+  onStart?(params: { context: TContext }): Promise<TContext>;
+  onStop?(params: { context: TContext }): Promise<void>;
   supervisionStrategy?: SupervisionStrategy;
 }
 
@@ -128,12 +173,12 @@ export interface ActorPID {
   /**
    * Send a message to the actor (fire-and-forget)
    */
-  send(message: ActorMessage): Promise<void>;
+  send(message: MessageInput): Promise<void>;
 
   /**
    * Ask the actor a question and wait for a response
    */
-  ask<T = JsonValue>(message: ActorMessage, timeout?: number): Promise<T>;
+  ask<T = JsonValue>(message: MessageInput, timeout?: number): Promise<T>;
 
   /**
    * Stop the actor
@@ -173,9 +218,14 @@ export interface ActorPID {
  */
 export interface ActorSystem {
   /**
-   * Spawn a new actor with the given behavior
+   * Spawn a new actor with the given behavior or definition
    */
-  spawn<T>(behavior: ActorBehavior<T>, options?: SpawnOptions): Promise<ActorPID>;
+  spawn<TMessage = ActorMessage, TContext = unknown, TEmitted = never>(
+    behavior:
+      | ActorBehavior<TMessage, TContext, TEmitted>
+      | ActorDefinition<TMessage, TContext, TEmitted>,
+    options?: SpawnOptions
+  ): Promise<ActorPID>;
 
   /**
    * Look up an actor by its path
@@ -231,6 +281,19 @@ export interface ActorSystem {
   subscribeToClusterEvents(): Observable<{
     type: 'node-up' | 'node-down' | 'leader-changed';
     node: string;
+  }>;
+
+  /**
+   * Register a shutdown handler to be called when the system stops
+   */
+  onShutdown(handler: () => Promise<void>): void;
+
+  /**
+   * Subscribe to system lifecycle events
+   */
+  subscribeToSystemEvents(): Observable<{
+    type: string;
+    [key: string]: unknown;
   }>;
 
   // ============================================================================
@@ -390,6 +453,19 @@ export function createActorMessage(
 }
 
 /**
+ * Convert MessageInput to ActorMessage with defaults
+ */
+export function normalizeMessage(input: MessageInput): ActorMessage {
+  return {
+    type: input.type,
+    payload: input.payload ?? null,
+    correlationId: input.correlationId,
+    timestamp: input.timestamp ?? Date.now(),
+    version: input.version ?? '1.0.0',
+  };
+}
+
+/**
  * Create an actor address
  */
 export function createActorAddress(id: string, type: string, node?: string): ActorAddress {
@@ -427,6 +503,6 @@ export function isLocalAddress(address: ActorAddress): boolean {
  */
 export function generateActorId(prefix = 'actor'): string {
   const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substr(2, 9);
+  const random = Math.random().toString(36).substring(2, 11);
   return `${prefix}-${timestamp}-${random}`;
 }

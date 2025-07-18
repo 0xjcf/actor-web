@@ -1,71 +1,45 @@
+/**
+ * Advanced Git Commands - Pure Actor Model Implementation
+ * 
+ * Advanced git operations using pure message-passing.
+ * No state observation or direct access.
+ */
+
 import path from 'node:path';
 import chalk from 'chalk';
-import { createGitActor } from '../actors/git-actor.js';
-import { createContextObserver } from '../actors/git-actor-helpers.js';
+import { createActorRef } from '@actor-core/runtime';
+import { gitActorMachine, type GitActor } from '../actors/git-actor.js';
 import { GitOperations } from '../core/git-operations.js';
-import { waitForState } from '../test-utils.js';
 
 /**
- * Demo git actor workflow with reactive observation
+ * Demo git actor workflow with pure message-passing
  */
 export async function demoGitActorCommand() {
   console.log(chalk.blue('🎭 Git Actor Demo'));
   console.log(chalk.blue('=================='));
 
   const repoRoot = path.resolve(process.cwd(), '../..');
-  const gitActor = createGitActor(repoRoot);
-  gitActor.start();
-
-  console.log(chalk.green('✅ Git Actor: Initialized'));
-  console.log(chalk.blue('📊 Actor Machine: Running'));
+  
+  // Create git actor using the pure runtime
+  const gitActor = createActorRef(gitActorMachine, {
+    id: 'demo-git-actor',
+    input: { baseDir: repoRoot },
+  }) as GitActor;
 
   try {
-    // Get current status
-    gitActor.send({ type: 'CHECK_STATUS' });
-    await waitForState(gitActor, 'statusChecked', 5000);
+    // Start the actor
+    gitActor.start();
+    
+    console.log(chalk.green('✅ Git Actor: Initialized'));
+    console.log(chalk.blue('📊 Actor Machine: Running'));
 
-    // Get context values reactively
-    const currentBranch = await new Promise<string | undefined>((resolve) => {
-      const observer = createContextObserver(
-        gitActor,
-        (context) => context.currentBranch,
-        (value) => {
-          observer.unsubscribe();
-          resolve(value);
-        }
-      );
-    });
-
-    const agentType = await new Promise<string | undefined>((resolve) => {
-      const observer = createContextObserver(
-        gitActor,
-        (context) => context.agentType,
-        (value) => {
-          observer.unsubscribe();
-          resolve(value);
-        }
-      );
-    });
-
-    const uncommittedChanges = await new Promise<boolean | undefined>((resolve) => {
-      const observer = createContextObserver(
-        gitActor,
-        (context) => context.uncommittedChanges,
-        (value) => {
-          observer.unsubscribe();
-          resolve(value);
-        }
-      );
-    });
-
-    console.log(chalk.yellow('🔍 Current Context:'));
-    console.log(chalk.gray(`  Branch: ${currentBranch || 'Unknown'}`));
-    console.log(chalk.gray(`  Agent: ${agentType || 'Unknown'}`));
-    console.log(chalk.gray(`  Uncommitted: ${uncommittedChanges ? 'Yes' : 'No'}`));
+    // Create workflow handler
+    const workflow = new AdvancedGitWorkflowHandler(gitActor);
+    await workflow.showStatus();
   } catch (error) {
     console.error(chalk.red('❌ Demo failed:'), error);
   } finally {
-    gitActor.stop();
+    await gitActor.stop();
     console.log(chalk.green('✅ Git Actor: Stopped'));
   }
 }
@@ -78,60 +52,24 @@ export async function advancedGitOperationsCommand() {
   console.log(chalk.blue('=================================='));
 
   const repoRoot = path.resolve(process.cwd(), '../..');
-  const gitActor = createGitActor(repoRoot);
-  gitActor.start();
+  
+  // Create git actor using the pure runtime
+  const gitActor = createActorRef(gitActorMachine, {
+    id: 'advanced-ops-git-actor',
+    input: { baseDir: repoRoot },
+  }) as GitActor;
 
   try {
-    // Check repository status
-    gitActor.send({ type: 'CHECK_REPO' });
-    await waitForState(gitActor, 'repoChecked', 5000);
+    // Start the actor
+    gitActor.start();
 
-    const isGitRepo = await new Promise<boolean | undefined>((resolve) => {
-      const observer = createContextObserver(
-        gitActor,
-        (context) => context.isGitRepo,
-        (value) => {
-          observer.unsubscribe();
-          resolve(value);
-        }
-      );
-    });
-
-    if (isGitRepo) {
-      console.log(chalk.green('✅ Git repository detected'));
-
-      // Get integration status
-      gitActor.send({
-        type: 'GET_INTEGRATION_STATUS',
-        integrationBranch: 'feature/actor-ref-integration',
-      });
-      await waitForState(gitActor, 'integrationStatusChecked', 5000);
-
-      const integrationStatus = await new Promise<{ ahead: number; behind: number } | undefined>(
-        (resolve) => {
-          const observer = createContextObserver(
-            gitActor,
-            (context) => context.integrationStatus,
-            (value) => {
-              observer.unsubscribe();
-              resolve(value);
-            }
-          );
-        }
-      );
-
-      if (integrationStatus) {
-        console.log(chalk.blue('📊 Integration Status:'));
-        console.log(chalk.gray(`  Ahead: ${integrationStatus.ahead} commits`));
-        console.log(chalk.gray(`  Behind: ${integrationStatus.behind} commits`));
-      }
-    } else {
-      console.log(chalk.red('❌ Not a git repository'));
-    }
+    // Create workflow handler
+    const workflow = new AdvancedGitWorkflowHandler(gitActor);
+    await workflow.showAdvancedStatus();
   } catch (error) {
     console.error(chalk.red('❌ Advanced operations failed:'), error);
   } finally {
-    gitActor.stop();
+    await gitActor.stop();
     console.log(chalk.green('✅ Git Actor: Stopped'));
   }
 }
@@ -144,61 +82,29 @@ export async function actorStatusCommand() {
   console.log(chalk.blue('==============================='));
 
   const repoRoot = path.resolve(process.cwd(), '../..');
-  const gitActor = createGitActor(repoRoot);
+  
+  // Create git actor using the pure runtime
+  const gitActor = createActorRef(gitActorMachine, {
+    id: 'status-git-actor',
+    input: { baseDir: repoRoot },
+  }) as GitActor;
 
   try {
+    // Start the actor
     gitActor.start();
-
+    
     console.log(chalk.green('✅ Git Actor: Initialized'));
     console.log(chalk.blue('📊 Actor Machine: Running'));
 
-    // Get current status
-    gitActor.send({ type: 'CHECK_STATUS' });
-    await waitForState(gitActor, 'statusChecked', 5000);
-
-    // Use reactive observation to get status information instead of getSnapshot()
-    const statusInfo = await new Promise<{
-      currentBranch?: string;
-      agentType?: string;
-      uncommittedChanges?: boolean;
-      worktrees: Array<{
-        agentId: string;
-        branch: string;
-        role: string;
-        exists: boolean;
-        path: string;
-      }>;
-    }>((resolve) => {
-      const subscription = gitActor
-        .observe((snapshot) => ({
-          currentBranch: snapshot.context.currentBranch,
-          agentType: snapshot.context.agentType,
-          uncommittedChanges: snapshot.context.uncommittedChanges,
-          worktrees: snapshot.context.worktrees,
-        }))
-        .subscribe((info) => {
-          subscription.unsubscribe();
-          resolve(info);
-        });
-    });
-
-    console.log(chalk.yellow('🔍 Current Context:'));
-    console.log(chalk.gray(`  Branch: ${statusInfo.currentBranch || 'Unknown'}`));
-    console.log(chalk.gray(`  Agent: ${statusInfo.agentType || 'Unknown'}`));
-    console.log(chalk.gray(`  Uncommitted: ${statusInfo.uncommittedChanges ? 'Yes' : 'No'}`));
-
-    if (statusInfo.worktrees.length > 0) {
-      console.log(chalk.yellow('🌿 Worktrees:'));
-      for (const wt of statusInfo.worktrees) {
-        console.log(chalk.gray(`  • ${wt.agentId}: ${wt.branch} (${wt.role})`));
-      }
-    }
-
+    // Create workflow handler
+    const workflow = new AdvancedGitWorkflowHandler(gitActor);
+    await workflow.showFullStatus();
+    
     console.log(chalk.green('🚀 Actor system is operational'));
   } catch (error) {
     console.error(chalk.red('❌ Actor system error:'), error);
   } finally {
-    gitActor.stop();
+    await gitActor.stop();
   }
 }
 
@@ -243,34 +149,22 @@ export async function actorWorktreesCommand(options: {
     const agentCount = options.count || 3;
     console.log(chalk.blue(`🚀 Setting up ${agentCount} agent worktrees...`));
 
-    const gitActor = createGitActor(repoRoot);
-    gitActor.start();
+    // Create git actor using the pure runtime
+    const gitActor = createActorRef(gitActorMachine, {
+      id: 'worktrees-git-actor',
+      input: { baseDir: repoRoot },
+    }) as GitActor;
 
-    gitActor.send({ type: 'SETUP_WORKTREES', agentCount });
-    await waitForState(gitActor, 'worktreesSetup', 2000);
+    try {
+      // Start the actor
+      gitActor.start();
 
-    // Use reactive observation to get worktrees information instead of getSnapshot()
-    const worktrees = await new Promise<
-      Array<{ agentId: string; branch: string; role: string; exists: boolean; path: string }>
-    >((resolve) => {
-      const subscription = gitActor
-        .observe((snapshot) => snapshot.context.worktrees)
-        .subscribe((worktreesData) => {
-          subscription.unsubscribe();
-          resolve(worktreesData);
-        });
-    });
-
-    if (worktrees.length > 0) {
-      console.log(chalk.green(`✅ Created ${worktrees.length} worktrees:`));
-      for (const wt of worktrees) {
-        console.log(chalk.yellow(`  🎭 ${wt.agentId}: ${wt.role}`));
-      }
-    } else {
-      console.log(chalk.red('❌ Failed to create worktrees'));
+      // Create workflow handler
+      const workflow = new AdvancedGitWorkflowHandler(gitActor);
+      await workflow.setupWorktrees(agentCount);
+    } finally {
+      await gitActor.stop();
     }
-
-    gitActor.stop();
   } catch (error) {
     console.error(chalk.red('❌ Worktree management failed:'), error);
   }
@@ -287,9 +181,15 @@ export async function actorCreateCommand(options: { type?: string; config?: stri
   console.log(chalk.yellow(`🎭 Creating ${actorType} git actor...`));
 
   const repoRoot = path.resolve(process.cwd(), '../..');
-  const gitActor = createGitActor(repoRoot);
+  
+  // Create git actor using the pure runtime
+  const gitActor = createActorRef(gitActorMachine, {
+    id: `${actorType}-git-actor`,
+    input: { baseDir: repoRoot },
+  }) as GitActor;
 
   try {
+    // Start the actor
     gitActor.start();
 
     console.log(chalk.green('✅ Custom git actor created'));
@@ -301,14 +201,16 @@ export async function actorCreateCommand(options: { type?: string; config?: stri
     // Show available events
     console.log(chalk.yellow('⚡ Available Events:'));
     const events = [
-      'SETUP_WORKTREES',
-      'CHECK_STATUS',
+      'CHECK_REPO',
+      'CHECK_STATUS', 
+      'CHECK_UNCOMMITTED_CHANGES',
+      'GET_INTEGRATION_STATUS',
       'GET_CHANGED_FILES',
-      'DETECT_AGENT_TYPE',
+      'ADD_ALL',
       'COMMIT_CHANGES',
+      'PUSH_CHANGES',
       'GENERATE_COMMIT_MESSAGE',
       'VALIDATE_DATES',
-      'COMMIT_WITH_CONVENTION',
     ];
     for (const event of events) {
       console.log(chalk.gray(`  • ${event}`));
@@ -318,6 +220,185 @@ export async function actorCreateCommand(options: { type?: string; config?: stri
   } catch (error) {
     console.error(chalk.red('❌ Actor creation failed:'), error);
   } finally {
-    gitActor.stop();
+    await gitActor.stop();
+  }
+}
+
+/**
+ * Advanced git workflow handler using pure message-passing
+ */
+class AdvancedGitWorkflowHandler {
+  constructor(private actor: GitActor) {}
+
+  /**
+   * Show basic status
+   */
+  async showStatus(): Promise<void> {
+    // Get current status
+    this.actor.send({ type: 'CHECK_STATUS' });
+    
+    // Wait for status check to complete
+    await this.waitForOperation('CHECK_STATUS', async () => {
+      const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+      return Boolean(response && typeof response === 'object' && 
+        'currentBranch' in response);
+    });
+
+    const response = await this.actor.ask({ type: 'REQUEST_BRANCH_INFO' });
+    const branchInfo = response as { 
+      currentBranch?: string; 
+      agentType?: string;
+      uncommittedChanges?: boolean;
+    };
+
+    console.log(chalk.yellow('🔍 Current Context:'));
+    console.log(chalk.gray(`  Branch: ${branchInfo.currentBranch || 'Unknown'}`));
+    console.log(chalk.gray(`  Agent: ${branchInfo.agentType || 'Unknown'}`));
+    console.log(chalk.gray(`  Uncommitted: ${branchInfo.uncommittedChanges ? 'Yes' : 'No'}`));
+  }
+
+  /**
+   * Show advanced status with integration info
+   */
+  async showAdvancedStatus(): Promise<void> {
+    // Check repository status
+    this.actor.send({ type: 'CHECK_REPO' });
+    
+    await this.waitForOperation('CHECK_REPO', async () => {
+      const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+      return Boolean(response && typeof response === 'object' && 
+        'isGitRepo' in response);
+    });
+
+    const repoResponse = await this.actor.ask({ type: 'REQUEST_STATUS' });
+    const repoStatus = repoResponse as { isGitRepo?: boolean };
+
+    if (repoStatus.isGitRepo) {
+      console.log(chalk.green('✅ Git repository detected'));
+
+      // Get integration status
+      this.actor.send({ type: 'GET_INTEGRATION_STATUS' });
+      
+      await this.waitForOperation('GET_INTEGRATION_STATUS', async () => {
+        const response = await this.actor.ask({ type: 'REQUEST_BRANCH_INFO' });
+        return Boolean(response && typeof response === 'object' && 
+          'integrationStatus' in response);
+      });
+
+      const branchResponse = await this.actor.ask({ type: 'REQUEST_BRANCH_INFO' });
+      const branchInfo = branchResponse as { 
+        integrationStatus?: { ahead: number; behind: number } 
+      };
+
+      if (branchInfo.integrationStatus) {
+        console.log(chalk.blue('📊 Integration Status:'));
+        console.log(chalk.gray(`  Ahead: ${branchInfo.integrationStatus.ahead} commits`));
+        console.log(chalk.gray(`  Behind: ${branchInfo.integrationStatus.behind} commits`));
+      }
+    } else {
+      console.log(chalk.red('❌ Not a git repository'));
+    }
+  }
+
+  /**
+   * Show full status including worktrees
+   */
+  async showFullStatus(): Promise<void> {
+    // Get current status
+    this.actor.send({ type: 'CHECK_STATUS' });
+    
+    await this.waitForOperation('CHECK_STATUS', async () => {
+      const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+      return Boolean(response && typeof response === 'object' && 
+        'currentBranch' in response);
+    });
+
+    const statusResponse = await this.actor.ask({ type: 'REQUEST_BRANCH_INFO' });
+    const statusInfo = statusResponse as { 
+      currentBranch?: string;
+      agentType?: string;
+      uncommittedChanges?: boolean;
+      worktrees?: Array<{
+        agentId: string;
+        branch: string;
+        role: string;
+        exists: boolean;
+        path: string;
+      }>;
+    };
+
+    console.log(chalk.yellow('🔍 Current Context:'));
+    console.log(chalk.gray(`  Branch: ${statusInfo.currentBranch || 'Unknown'}`));
+    console.log(chalk.gray(`  Agent: ${statusInfo.agentType || 'Unknown'}`));
+    console.log(chalk.gray(`  Uncommitted: ${statusInfo.uncommittedChanges ? 'Yes' : 'No'}`));
+
+    if (statusInfo.worktrees && statusInfo.worktrees.length > 0) {
+      console.log(chalk.yellow('🌿 Worktrees:'));
+      for (const wt of statusInfo.worktrees) {
+        console.log(chalk.gray(`  • ${wt.agentId}: ${wt.branch} (${wt.role})`));
+      }
+    }
+  }
+
+  /**
+   * Setup worktrees
+   */
+  async setupWorktrees(agentCount: number): Promise<void> {
+    // Send SETUP_WORKTREES message
+    this.actor.send({ type: 'SETUP_WORKTREES', agentCount });
+    
+    await this.waitForOperation('SETUP_WORKTREES', async () => {
+      const response = await this.actor.ask({ type: 'REQUEST_WORKTREE_STATUS' });
+      return Boolean(response && typeof response === 'object' && 
+        'worktrees' in response);
+    });
+
+    const response = await this.actor.ask({ type: 'REQUEST_WORKTREE_STATUS' });
+    const worktreeInfo = response as { 
+      worktrees?: Array<{
+        agentId: string;
+        branch: string;
+        role: string;
+        exists: boolean;
+        path: string;
+      }>
+    };
+
+    const worktrees = worktreeInfo.worktrees || [];
+
+    if (worktrees.length > 0) {
+      console.log(chalk.green(`✅ Created ${worktrees.length} worktrees:`));
+      for (const wt of worktrees) {
+        console.log(chalk.yellow(`  🎭 ${wt.agentId}: ${wt.role}`));
+      }
+    } else {
+      console.log(chalk.red('❌ Failed to create worktrees'));
+    }
+  }
+
+  /**
+   * Wait for an operation to complete
+   */
+  private async waitForOperation(
+    operation: string, 
+    checkComplete: () => Promise<boolean>,
+    timeout: number = 10000
+  ): Promise<void> {
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < timeout) {
+      try {
+        if (await checkComplete()) {
+          return;
+        }
+      } catch (error) {
+        // Operation might still be in progress
+      }
+
+      // Wait a bit before checking again
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    throw new Error(`Operation ${operation} timed out after ${timeout}ms`);
   }
 }

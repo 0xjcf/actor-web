@@ -1,132 +1,144 @@
 /**
- * Enhanced commit command with smart commit message generation
+ * Enhanced Commit Command - Pure Actor Model Implementation
+ * 
+ * Smart commit message generation using pure message-passing.
+ * No state observation or direct access.
  */
 
 import chalk from 'chalk';
-import { createGitActor, type GitActor, type GitContext } from '../actors/git-actor.js';
-import {
-  createContextObserver,
-  createErrorObserver,
-  createStateObserver,
-} from '../actors/git-actor-helpers.js';
+import { createActorRef } from '@actor-core/runtime';
+import { gitActorMachine, type GitActor } from '../actors/git-actor.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';
-
-// ============================================================================
-// REACTIVE UTILITIES
-// ============================================================================
-
-/**
- * Wait for a specific state using proper reactive observation
- */
-async function waitForState(
-  gitActor: GitActor,
-  targetStates: string[],
-  errorStates: string[] = [],
-  timeoutStates: string[] = []
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const stateObserver = createStateObserver(
-      gitActor,
-      (snapshot) => snapshot.value,
-      (state) => {
-        if (targetStates.includes(state as string)) {
-          cleanup();
-          resolve();
-        } else if (errorStates.includes(state as string)) {
-          cleanup();
-          reject(new Error('Operation failed'));
-        } else if (timeoutStates.includes(state as string)) {
-          cleanup();
-          reject(new Error('Operation timed out'));
-        }
-      }
-    );
-
-    const errorObserver = createErrorObserver(gitActor, (error) => {
-      cleanup();
-      reject(new Error(error));
-    });
-
-    const cleanup = () => {
-      stateObserver.unsubscribe();
-      errorObserver.unsubscribe();
-    };
-  });
-}
-
-/**
- * Get context value reactively after state completion
- */
-async function getContextValue<T>(
-  gitActor: GitActor,
-  selector: (context: GitContext) => T
-): Promise<T | undefined> {
-  return new Promise((resolve) => {
-    const contextObserver = createContextObserver(gitActor, selector, (value) => {
-      contextObserver.unsubscribe();
-      resolve(value);
-    });
-  });
-}
 
 // ============================================================================
 // COMMAND IMPLEMENTATIONS
 // ============================================================================
 
 export async function commitEnhancedCommand(customMessage?: string) {
-  console.log(chalk.blue('🎭 Enhanced Commit (Actor-Based)'));
+  console.log(chalk.blue('🎭 Enhanced Commit'));
   console.log(chalk.blue('========================================='));
 
-  // Dynamically find repository root
   const repoRoot = await findRepoRoot();
-  const gitActor = createGitActor(repoRoot);
+  
+  // Create git actor using the pure runtime
+  const gitActor = createActorRef(gitActorMachine, {
+    id: 'commit-enhanced-git-actor',
+    input: { baseDir: repoRoot },
+  }) as GitActor;
 
   try {
+    // Start the actor
     gitActor.start();
 
+    // Create workflow handler
+    const workflow = new CommitEnhancedWorkflowHandler(gitActor);
+    await workflow.executeCommit(customMessage);
+  } catch (error) {
+    console.error(chalk.red('❌ Enhanced commit failed:'), error);
+    process.exit(1);
+  } finally {
+    await gitActor.stop();
+  }
+}
+
+export async function generateCommitMessageCommand() {
+  console.log(chalk.blue('🧠 Generate Commit Message'));
+  console.log(chalk.blue('=========================================='));
+
+  const repoRoot = await findRepoRoot();
+  
+  // Create git actor using the pure runtime
+  const gitActor = createActorRef(gitActorMachine, {
+    id: 'generate-message-git-actor',
+    input: { baseDir: repoRoot },
+  }) as GitActor;
+
+  try {
+    // Start the actor
+    gitActor.start();
+
+    // Create workflow handler
+    const workflow = new CommitEnhancedWorkflowHandler(gitActor);
+    const message = await workflow.generateMessage();
+    
+    if (message) {
+      console.log(chalk.green('✅ Generated commit message:'));
+      console.log();
+      console.log(message);
+      console.log();
+    } else {
+      console.log(chalk.red('❌ Failed to generate commit message'));
+    }
+  } catch (error) {
+    console.error(chalk.red('❌ Message generation failed:'), error);
+  } finally {
+    await gitActor.stop();
+  }
+}
+
+export async function validateDatesCommand(files?: string[]) {
+  console.log(chalk.blue('📅 Validate Dates'));
+  console.log(chalk.blue('================================='));
+
+  const repoRoot = await findRepoRoot();
+  
+  // Create git actor using the pure runtime
+  const gitActor = createActorRef(gitActorMachine, {
+    id: 'validate-dates-git-actor',
+    input: { baseDir: repoRoot },
+  }) as GitActor;
+
+  try {
+    // Start the actor
+    gitActor.start();
+
+    // Default to common documentation files if none provided
+    const filesToCheck = files ? validateFilesArray(files) : 
+      ['docs/README.md', 'docs/agent-updates.md', 'src/**/*.ts'];
+
+    // Create workflow handler
+    const workflow = new CommitEnhancedWorkflowHandler(gitActor);
+    await workflow.validateDates(filesToCheck);
+  } catch (error) {
+    console.error(chalk.red('❌ Date validation failed:'), error);
+  } finally {
+    await gitActor.stop();
+  }
+}
+
+// ============================================================================
+// WORKFLOW HANDLER
+// ============================================================================
+
+/**
+ * Commit enhanced workflow handler using pure message-passing
+ */
+class CommitEnhancedWorkflowHandler {
+  constructor(private actor: GitActor) {}
+
+  /**
+   * Execute commit with optional custom message
+   */
+  async executeCommit(customMessage?: string): Promise<void> {
     if (customMessage) {
       console.log(chalk.blue('📝 Using provided commit message...'));
-
-      // Use custom message with conventional format
-      gitActor.send({ type: 'COMMIT_WITH_CONVENTION', customMessage });
-
-      // Wait for completion with proper async waiting
-      await waitForState(gitActor, ['commitCompleted'], ['commitError'], ['commitTimeout']);
-
-      // Get result reactively
-      const lastCommitMessage = await getContextValue(
-        gitActor,
-        (context) => context.lastCommitMessage
-      );
-      if (lastCommitMessage) {
-        console.log(chalk.green('✅ Committed with custom message:'));
-        console.log(chalk.gray(lastCommitMessage));
-      }
+      
+      // Commit with custom message
+      await this.commitWithMessage(customMessage);
+      console.log(chalk.green('✅ Committed with custom message:'));
+      console.log(chalk.gray(customMessage));
     } else {
       console.log(chalk.blue('🧠 Generating smart commit message...'));
-
-      // Generate commit message first
-      gitActor.send({ type: 'GENERATE_COMMIT_MESSAGE' });
-
-      // Wait for generation with proper async waiting
-      await waitForState(
-        gitActor,
-        ['commitMessageGenerated'],
-        ['commitMessageError'],
-        ['commitMessageTimeout']
-      );
-
-      // Get generated message reactively
-      const lastCommitMessage = await getContextValue(
-        gitActor,
-        (context) => context.lastCommitMessage
-      );
-      if (lastCommitMessage) {
+      
+      // Generate commit message
+      const generatedMessage = await this.generateMessage();
+      
+      if (generatedMessage) {
         console.log(chalk.yellow('📝 Generated commit message:'));
-        console.log(chalk.gray(lastCommitMessage));
+        console.log(chalk.gray(generatedMessage));
         console.log();
 
-        // Ask for confirmation with proper validation
+        // Ask for confirmation
         const useMessage = await promptForConfirmation('Use this commit message? (Y/n): ');
 
         if (!useMessage) {
@@ -135,140 +147,130 @@ export async function commitEnhancedCommand(customMessage?: string) {
         }
 
         // Commit with generated message
-        gitActor.send({ type: 'COMMIT_WITH_CONVENTION' });
-
-        // Wait for completion with proper async waiting
-        await waitForState(gitActor, ['commitCompleted'], ['commitError'], ['commitTimeout']);
-
+        await this.commitWithMessage(generatedMessage);
         console.log(chalk.green('✅ Committed successfully!'));
       } else {
         console.log(chalk.red('❌ Failed to generate commit message'));
       }
     }
-  } catch (error) {
-    console.error(chalk.red('❌ Enhanced commit failed:'), error);
-    process.exit(1);
-  } finally {
-    gitActor.stop();
   }
-}
 
-export async function generateCommitMessageCommand() {
-  console.log(chalk.blue('🧠 Generate Commit Message (Actor-Based)'));
-  console.log(chalk.blue('=========================================='));
-
-  // Dynamically find repository root
-  const repoRoot = await findRepoRoot();
-  const gitActor = createGitActor(repoRoot);
-
-  try {
-    gitActor.start();
-
+  /**
+   * Generate commit message
+   */
+  async generateMessage(): Promise<string | undefined> {
     console.log(chalk.blue('🔍 Analyzing changes...'));
-    gitActor.send({ type: 'GENERATE_COMMIT_MESSAGE' });
 
-    // Wait for generation with proper async waiting
-    await waitForState(
-      gitActor,
-      ['commitMessageGenerated'],
-      ['commitMessageError'],
-      ['commitMessageTimeout']
-    );
+    // Send GENERATE_COMMIT_MESSAGE
+    this.actor.send({ type: 'GENERATE_COMMIT_MESSAGE' });
 
-    // Get results reactively
-    const lastCommitMessage = await getContextValue(
-      gitActor,
-      (context) => context.lastCommitMessage
-    );
-    const commitConfig = await getContextValue(gitActor, (context) => context.commitConfig);
-
-    if (lastCommitMessage) {
-      console.log(chalk.green('✅ Generated commit message:'));
-      console.log();
-      console.log(lastCommitMessage);
-      console.log();
-
-      if (commitConfig) {
-        console.log(chalk.blue('📊 Analysis:'));
-        console.log(chalk.gray(`  Type: ${commitConfig.type}`));
-        console.log(chalk.gray(`  Scope: ${commitConfig.scope}`));
-        console.log(chalk.gray(`  Category: ${commitConfig.workCategory}`));
-      }
-    } else {
-      console.log(chalk.red('❌ Failed to generate commit message'));
-    }
-  } catch (error) {
-    console.error(chalk.red('❌ Message generation failed:'), error);
-  } finally {
-    gitActor.stop();
-  }
-}
-
-export async function validateDatesCommand(files?: string[]) {
-  console.log(chalk.blue('📅 Validate Dates (Actor-Based)'));
-  console.log(chalk.blue('================================='));
-
-  // Dynamically find repository root
-  const repoRoot = await findRepoRoot();
-  const gitActor = createGitActor(repoRoot);
-
-  try {
-    gitActor.start();
-
-    // Default to common documentation files if none provided, with input validation
-    let filesToCheck: string[];
-    if (files) {
-      filesToCheck = validateFilesArray(files);
-    } else {
-      filesToCheck = ['docs/README.md', 'docs/agent-updates.md', 'src/**/*.ts'];
-    }
-
-    console.log(chalk.blue(`🔍 Checking ${filesToCheck.length} files for date issues...`));
-    gitActor.send({ type: 'VALIDATE_DATES', filePaths: filesToCheck });
-
-    // Wait for validation with proper async waiting
-    await waitForState(
-      gitActor,
-      ['datesValidated'],
-      ['datesValidationError'],
-      ['datesValidationTimeout']
-    );
-
-    // Use reactive observation to get date issues instead of getSnapshot()
-    const dateIssues = await new Promise<Array<{
-      file: string;
-      line: number;
-      date: string;
-      issue: string;
-      context: string;
-    }> | null>((resolve) => {
-      const subscription = gitActor
-        .observe((snapshot) => snapshot.context.dateIssues)
-        .subscribe((issues) => {
-          subscription.unsubscribe();
-          resolve(issues || null);
-        });
+    // Wait for generation to complete
+    await this.waitForOperation('GENERATE_COMMIT_MESSAGE', async () => {
+      const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+      return response && typeof response === 'object' && 
+        'lastCommitMessage' in response && 
+        response.lastCommitMessage;
     });
 
-    if (dateIssues) {
-      if (dateIssues.length === 0) {
-        console.log(chalk.green('✅ No date issues found!'));
-      } else {
-        console.log(chalk.yellow(`⚠️  Found ${dateIssues.length} date issues:`));
+    const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+    const status = response as { lastCommitMessage?: string };
 
-        for (const issue of dateIssues) {
-          console.log(chalk.red(`  ${issue.file}:${issue.line}`));
-          console.log(chalk.gray(`    Date: ${issue.date} (${issue.issue})`));
-          console.log(chalk.gray(`    Context: ${issue.context}`));
-        }
-      }
+    return status.lastCommitMessage;
+  }
+
+  /**
+   * Commit with message
+   */
+  private async commitWithMessage(message: string): Promise<void> {
+    // First stage all changes
+    this.actor.send({ type: 'ADD_ALL' });
+
+    // Wait for staging to complete
+    await this.waitForOperation('ADD_ALL', async () => {
+      const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+      return response && typeof response === 'object' && 
+        'lastOperation' in response && 
+        response.lastOperation === 'STAGING_COMPLETED';
+    });
+
+    // Then commit with message
+    this.actor.send({ type: 'COMMIT_CHANGES', message });
+
+    // Wait for commit to complete
+    await this.waitForOperation('COMMIT_CHANGES', async () => {
+      const response = await this.actor.ask({ type: 'REQUEST_COMMIT_STATUS' });
+      return response && typeof response === 'object' && 
+        'lastCommitHash' in response && 
+        response.lastCommitHash;
+    });
+  }
+
+  /**
+   * Validate dates in files
+   */
+  async validateDates(filesToCheck: string[]): Promise<void> {
+    console.log(chalk.blue(`🔍 Checking ${filesToCheck.length} files for date issues...`));
+    
+    // Send VALIDATE_DATES message
+    this.actor.send({ type: 'VALIDATE_DATES', filePaths: filesToCheck });
+
+    // Wait for validation to complete
+    await this.waitForOperation('VALIDATE_DATES', async () => {
+      const response = await this.actor.ask({ type: 'REQUEST_DATE_VALIDATION' });
+      return response && typeof response === 'object' && 
+        'dateIssues' in response;
+    });
+
+    const response = await this.actor.ask({ type: 'REQUEST_DATE_VALIDATION' });
+    const validation = response as { 
+      dateIssues?: Array<{
+        file: string;
+        line: number;
+        date: string;
+        issue: string;
+        context: string;
+      }> 
+    };
+
+    const dateIssues = validation.dateIssues || [];
+
+    if (dateIssues.length === 0) {
+      console.log(chalk.green('✅ No date issues found!'));
     } else {
-      console.log(chalk.red('❌ Date validation failed'));
+      console.log(chalk.yellow(`⚠️  Found ${dateIssues.length} date issues:`));
+
+      for (const issue of dateIssues) {
+        console.log(chalk.red(`  ${issue.file}:${issue.line}`));
+        console.log(chalk.gray(`    Date: ${issue.date} (${issue.issue})`));
+        console.log(chalk.gray(`    Context: ${issue.context}`));
+      }
     }
-  } catch (error) {
-    console.error(chalk.red('❌ Date validation failed:'), error);
-  } finally {
-    gitActor.stop();
+  }
+
+  /**
+   * Wait for an operation to complete
+   */
+  private async waitForOperation(
+    operation: string, 
+    checkComplete: () => Promise<boolean>,
+    timeout: number = 30000
+  ): Promise<void> {
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < timeout) {
+      try {
+        if (await checkComplete()) {
+          return;
+        }
+      } catch (error) {
+        // Operation might still be in progress
+      }
+
+      // Wait a bit before checking again
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    throw new Error(`Operation ${operation} timed out after ${timeout}ms`);
   }
 }
 
@@ -316,6 +318,3 @@ async function promptForConfirmation(prompt: string): Promise<boolean> {
     });
   });
 }
-
-// Re-export for backward compatibility
-export { waitForState };

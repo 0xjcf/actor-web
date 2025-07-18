@@ -33,7 +33,10 @@
       "@/components/*": ["src/components/*"],
       "@/styles/*": ["src/styles/*"],
       "@/scripts/*": ["src/scripts/*"],
-      "@/app/*": ["src/app/*"]
+      "@/app/*": ["src/app/*"],
+      "@actor-core/runtime": ["packages/actor-core-runtime/src/index.ts"],
+      "@actor-core/testing": ["packages/actor-core-testing/src/index.ts"],
+      "@agent-workflow/cli": ["packages/agent-workflow-cli/src/index.ts"]
     }
   },
   "include": ["src/**/*", "*.js", "*.ts"],

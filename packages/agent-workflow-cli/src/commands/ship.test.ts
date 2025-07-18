@@ -21,12 +21,38 @@ vi.mock('chalk', () => ({
   },
 }));
 
+// Mock simple-git to control git operations in tests
+const mockGitInstance = {
+  status: vi.fn().mockResolvedValue({
+    current: 'feature/test-branch',
+    files: [],
+    modified: [],
+    created: [],
+    deleted: [],
+    renamed: [],
+    staged: [],
+  }),
+  raw: vi.fn().mockResolvedValue('0'), // Default to 0 for ahead/behind counts
+  fetch: vi.fn().mockResolvedValue({}),
+  merge: vi.fn().mockResolvedValue({}),
+  add: vi.fn().mockResolvedValue({}),
+  commit: vi.fn().mockResolvedValue({ commit: 'abc123' }),
+  push: vi.fn().mockResolvedValue({}),
+};
+
+vi.mock('simple-git', () => ({
+  simpleGit: vi.fn(() => mockGitInstance),
+}));
+
 describe('Ship Command - Loop Detection Tests', () => {
   let gitActor: GitActor;
   let stateTransitions: string[] = [];
   let stateObserver: { unsubscribe(): void };
 
   beforeEach(() => {
+    // Reset all mocks before each test
+    vi.clearAllMocks();
+    
     // Create a fresh git actor for each test
     gitActor = createGitActor(process.cwd());
     stateTransitions = [];

@@ -51,7 +51,7 @@ export interface ActorRefOptions {
   autoStart?: boolean;
 }
 
-export type SupervisionStrategy = 'restart-on-failure' | 'stop-on-failure' | 'escalate';
+export type SupervisionStrategy = 'restart-on-failure' | 'stop-on-failure' | 'escalate' | 'resume';
 
 export interface SpawnOptions extends ActorRefOptions {
   name?: string;
@@ -160,3 +160,69 @@ export interface Observable<T> {
   subscribe(observer: Observer<T>): Subscription;
   subscribe(next: (value: T) => void): Subscription;
 }
+
+// ========================================================================================
+// STANDARD RESPONSE EVENT PATTERNS
+// ========================================================================================
+
+/**
+ * Standard response event pattern for ask pattern correlation.
+ * Actors can emit events following this pattern to respond to ask() calls.
+ *
+ * The runtime will automatically correlate responses that have:
+ * - A correlationId or requestId field matching a pending request
+ * - A response, data, or payload field containing the response data
+ */
+export interface StandardResponseEvent {
+  /** Correlation ID matching the original request */
+  correlationId: string;
+  /** Response data */
+  response: unknown;
+  /** Optional event type for logging/debugging */
+  type?: string;
+}
+
+/**
+ * Alternative response event pattern using requestId
+ */
+export interface RequestIdResponseEvent {
+  /** Request ID matching the original request */
+  requestId: string;
+  /** Response data */
+  response: unknown;
+  /** Optional event type for logging/debugging */
+  type?: string;
+}
+
+/**
+ * Alternative response event pattern using data field
+ */
+export interface DataResponseEvent {
+  /** Correlation ID or Request ID */
+  correlationId: string | { requestId: string };
+  /** Response data */
+  data: unknown;
+  /** Optional event type for logging/debugging */
+  type?: string;
+}
+
+/**
+ * Alternative response event pattern using payload field
+ */
+export interface PayloadResponseEvent {
+  /** Correlation ID or Request ID */
+  correlationId: string | { requestId: string };
+  /** Response payload */
+  payload: unknown;
+  /** Optional event type for logging/debugging */
+  type?: string;
+}
+
+/**
+ * Union type of all supported response event patterns
+ */
+export type ResponseEventPattern =
+  | StandardResponseEvent
+  | RequestIdResponseEvent
+  | DataResponseEvent
+  | PayloadResponseEvent;

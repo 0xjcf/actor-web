@@ -1,14 +1,25 @@
-import type { ActorSnapshot } from '@actor-core/runtime';
 import chalk from 'chalk';
-import { createGitActor, type GitActor, type GitContext } from '../actors/git-actor.js';
+import { createActorRef } from '@actor-core/runtime';
+import { gitActorMachine, type GitActor } from '../actors/git-actor.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';
 
+/**
+ * Save Command - Pure Actor Model Implementation
+ * 
+ * Quick save workflow using pure message-passing.
+ * No state observation or direct access.
+ */
 export async function saveCommand(customMessage?: string) {
   console.log(chalk.blue('💾 Quick Save'));
   console.log(chalk.blue('==========================================='));
 
   const repoRoot = await findRepoRoot();
-  const gitActor = createGitActor(repoRoot);
+  
+  // Create git actor using the pure runtime
+  const gitActor = createActorRef(gitActorMachine, {
+    id: 'save-git-actor',
+    input: { baseDir: repoRoot },
+  }) as GitActor;
 
   try {
     // Start the actor
@@ -17,6 +28,8 @@ export async function saveCommand(customMessage?: string) {
     // Create save workflow handler
     const saveWorkflow = new SaveWorkflowHandler(gitActor);
     await saveWorkflow.executeSave(customMessage);
+
+    console.log(chalk.green('✅ Save completed successfully!'));
   } catch (error) {
     console.error(chalk.red('❌ Save failed:'), error);
     process.exit(1);
@@ -26,149 +39,199 @@ export async function saveCommand(customMessage?: string) {
 }
 
 /**
- * State-based save workflow handler
+ * Save workflow handler using pure message-passing
  */
 class SaveWorkflowHandler {
-  private actor: GitActor;
-  private customMessage?: string;
-
-  constructor(actor: GitActor) {
-    this.actor = actor;
-  }
+  constructor(private actor: GitActor) {}
 
   async executeSave(customMessage?: string): Promise<void> {
-    this.customMessage = customMessage;
     console.log(chalk.blue('📋 Starting save workflow...'));
 
-    return new Promise((resolve, reject) => {
-      // Observe all state changes and handle workflow progression
-      const stateObserver = this.actor
-        .observe(
-          (snapshot: ActorSnapshot<unknown>) => (snapshot as ActorSnapshot<GitContext>).value
-        )
-        .subscribe((state) => {
-          this.handleStateChange(state, resolve, reject);
-        });
-
-      // Observe errors
-      const errorObserver = this.actor
-        .observe((snapshot: ActorSnapshot<unknown>) => (snapshot.context as GitContext).lastError)
-        .subscribe((error) => {
-          if (error) {
-            console.error(chalk.red('❌ Error:'), error);
-            this.cleanupObservers();
-            reject(new Error(error));
-          }
-        });
-
-      // Store observers for cleanup
-      this.observers = [stateObserver, errorObserver];
-
-      // Success handler
-      this.onSuccess = () => {
-        this.cleanupObservers();
-        resolve();
-      };
-
-      // Start the workflow
-      this.actor.send({ type: 'CHECK_REPO' });
-    });
-  }
-
-  private observers: Array<{ unsubscribe(): void }> = [];
-  private onSuccess?: () => void;
-
-  private cleanupObservers(): void {
-    this.observers.forEach((observer) => observer.unsubscribe());
-    this.observers = [];
-  }
-
-  private handleStateChange(
-    state: unknown,
-    resolve: () => void,
-    reject: (error: Error) => void
-  ): void {
-    const stateStr = state as string;
-
-    switch (stateStr) {
-      case 'repoChecked': {
-        // Use observe to reactively check if it's a git repo
-        const repoObserver = this.actor
-          .observe((snapshot) => snapshot.context.isGitRepo)
-          .subscribe((isGitRepo) => {
-            if (!isGitRepo) {
-              console.log(chalk.red('❌ Not in a Git repository'));
-              reject(new Error('Not in a Git repository'));
-              return;
-            }
-            console.log(chalk.green('✅ Git repository detected'));
-            this.actor.send({ type: 'CHECK_UNCOMMITTED_CHANGES' });
-            repoObserver.unsubscribe();
-          });
-        break;
+    try {
+      // Step 1: Check repository status
+      const status = await this.checkRepoStatus();
+      
+      if (!status.isGitRepo) {
+        throw new Error('Not a git repository');
       }
 
-      case 'uncommittedChangesChecked': {
-        // Use observe to reactively check for uncommitted changes
-        const changesObserver = this.actor
-          .observe((snapshot) => snapshot.context.uncommittedChanges)
-          .subscribe((uncommittedChanges) => {
-            if (!uncommittedChanges) {
-              console.log(chalk.yellow('⚠️  No changes to save'));
-              resolve();
-              return;
-            }
-            console.log(chalk.yellow('📝 Changes detected, staging...'));
-            this.actor.send({ type: 'ADD_ALL' });
-            changesObserver.unsubscribe();
-          });
-        break;
+      // Step 2: Check for uncommitted changes
+      const hasChanges = await this.checkUncommittedChanges();
+      
+      if (!hasChanges) {
+        console.log(chalk.yellow('⚠️  No changes to save'));
+        return;
       }
 
-      case 'stagingCompleted': {
-        console.log(chalk.green('✅ All changes staged'));
-        const commitMessage = this.customMessage || this.generateDefaultCommitMessage();
-        this.actor.send({ type: 'COMMIT_CHANGES', message: commitMessage });
-        break;
-      }
+      // Step 3: Stage all changes
+      await this.stageAllChanges();
 
-      case 'commitCompleted':
-        console.log(chalk.green('✅ Changes committed successfully'));
-        console.log(chalk.blue('💡 Use pnpm aw:ship to push to integration branch'));
+      // Step 4: Commit with message
+      await this.commitChanges(customMessage);
 
-        // Send CONTINUE event to properly transition actor back to idle state
-        this.actor.send({ type: 'CONTINUE' });
-
-        this.onSuccess?.();
-        break;
-
-      case 'repoError':
-      case 'statusError':
-      case 'uncommittedChangesError':
-      case 'stagingError':
-      case 'commitError': {
-        // Use observe to reactively get the error message
-        const errorObserver = this.actor
-          .observe((snapshot) => snapshot.context.lastError)
-          .subscribe((lastError) => {
-            const errorMsg = lastError || `Error in ${stateStr}`;
-            console.error(chalk.red('❌ Error:'), errorMsg);
-            reject(new Error(errorMsg));
-            errorObserver.unsubscribe();
-          });
-        break;
-      }
+    } catch (error) {
+      console.error(chalk.red('Save workflow error:'), error);
+      throw error;
     }
   }
 
-  private generateDefaultCommitMessage(): string {
-    const currentDate = new Date().toISOString().split('T')[0];
-    return `feat(save): quick save changes
+  /**
+   * Check repository status
+   */
+  private async checkRepoStatus(): Promise<{ isGitRepo: boolean; currentBranch?: string }> {
+    console.log(chalk.blue('🔍 Checking repository...'));
 
-Agent: Agent A (Architecture)
-Context: Quick save of current work progress
-Date: ${currentDate}
+    // Send CHECK_REPO message
+    this.actor.send({ type: 'CHECK_REPO' });
 
-[actor-web] Agent A (Architecture) - quick save`;
+    // Wait for repo check to complete
+    await this.waitForOperation('CHECK_REPO', async () => {
+      const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+      return response && typeof response === 'object' && 
+        'isGitRepo' in response && 
+        response.isGitRepo !== undefined;
+    });
+
+    const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+    const status = response as { isGitRepo?: boolean; currentBranch?: string };
+
+    if (status.isGitRepo) {
+      console.log(chalk.green('✅ Git repository confirmed'));
+      if (status.currentBranch) {
+        console.log(chalk.blue(`📋 Current branch: ${status.currentBranch}`));
+      }
+    }
+
+    return { 
+      isGitRepo: status.isGitRepo || false,
+      currentBranch: status.currentBranch 
+    };
+  }
+
+  /**
+   * Check for uncommitted changes
+   */
+  private async checkUncommittedChanges(): Promise<boolean> {
+    console.log(chalk.blue('🔍 Checking for uncommitted changes...'));
+
+    // Send CHECK_UNCOMMITTED_CHANGES message
+    this.actor.send({ type: 'CHECK_UNCOMMITTED_CHANGES' });
+
+    // Wait for check to complete
+    await this.waitForOperation('CHECK_UNCOMMITTED_CHANGES', async () => {
+      const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+      return response && typeof response === 'object' && 
+        'uncommittedChanges' in response;
+    });
+
+    const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+    const status = response as { uncommittedChanges?: boolean };
+
+    const hasChanges = status.uncommittedChanges || false;
+    
+    if (hasChanges) {
+      console.log(chalk.yellow('📝 Uncommitted changes detected'));
+    }
+
+    return hasChanges;
+  }
+
+  /**
+   * Stage all changes
+   */
+  private async stageAllChanges(): Promise<void> {
+    console.log(chalk.blue('📦 Staging all changes...'));
+
+    // Send ADD_ALL message
+    this.actor.send({ type: 'ADD_ALL' });
+
+    // Wait for staging to complete
+    await this.waitForOperation('ADD_ALL', async () => {
+      const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+      return response && typeof response === 'object' && 
+        'lastOperation' in response && 
+        response.lastOperation === 'STAGING_COMPLETED';
+    });
+
+    console.log(chalk.green('✅ All changes staged'));
+  }
+
+  /**
+   * Commit changes with message
+   */
+  private async commitChanges(customMessage?: string): Promise<void> {
+    console.log(chalk.blue('💾 Committing changes...'));
+
+    // Generate commit message
+    const commitMessage = customMessage || await this.generateCommitMessage();
+    
+    console.log(chalk.gray(`📝 Commit message: ${commitMessage.split('\n')[0]}`));
+
+    // Send COMMIT_CHANGES message
+    this.actor.send({ type: 'COMMIT_CHANGES', message: commitMessage });
+
+    // Wait for commit to complete
+    await this.waitForOperation('COMMIT_CHANGES', async () => {
+      const response = await this.actor.ask({ type: 'REQUEST_COMMIT_STATUS' });
+      return response && typeof response === 'object' && 
+        'lastCommitHash' in response && 
+        response.lastCommitHash;
+    });
+
+    const response = await this.actor.ask({ type: 'REQUEST_COMMIT_STATUS' });
+    const commitStatus = response as { lastCommitHash?: string };
+
+    if (commitStatus.lastCommitHash) {
+      console.log(chalk.green(`✅ Changes saved! Commit: ${commitStatus.lastCommitHash.substring(0, 7)}`));
+    }
+  }
+
+  /**
+   * Generate commit message
+   */
+  private async generateCommitMessage(): Promise<string> {
+    console.log(chalk.blue('🤖 Generating commit message...'));
+
+    // Send GENERATE_COMMIT_MESSAGE
+    this.actor.send({ type: 'GENERATE_COMMIT_MESSAGE' });
+
+    // Wait for generation to complete
+    await this.waitForOperation('GENERATE_COMMIT_MESSAGE', async () => {
+      const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+      return response && typeof response === 'object' && 
+        'lastCommitMessage' in response && 
+        response.lastCommitMessage;
+    });
+
+    const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
+    const status = response as { lastCommitMessage?: string };
+
+    return status.lastCommitMessage || 'save: quick save changes';
+  }
+
+  /**
+   * Wait for an operation to complete
+   */
+  private async waitForOperation(
+    operation: string, 
+    checkComplete: () => Promise<boolean>,
+    timeout: number = 30000
+  ): Promise<void> {
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < timeout) {
+      try {
+        if (await checkComplete()) {
+          return;
+        }
+      } catch (error) {
+        // Operation might still be in progress
+      }
+
+      // Wait a bit before checking again
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    throw new Error(`Operation ${operation} timed out after ${timeout}ms`);
   }
 }

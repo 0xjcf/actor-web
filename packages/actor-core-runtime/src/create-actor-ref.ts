@@ -150,7 +150,7 @@ class UnifiedActorRef<
     this._status = 'running';
   }
 
-  stop(): Promise<void> {
+  async stop(): Promise<void> {
     if (this._status === 'stopped') {
       return Promise.resolve();
     }
@@ -226,8 +226,33 @@ class UnifiedActorRef<
     this.logger.debug('Creating ask request', { query, actorId: this.id });
     const request = this.requestManager.createRequest<TQuery, TResponse>(query, options);
 
-    // Send the query event to the actor - safe casting since QueryEvent extends BaseEventObject
-    this.send(request.queryEvent as unknown as TEvent);
+    // For git-actor compatibility, transform the query into the expected format
+    // Git-actor expects events like { type: 'REQUEST_STATUS', requestId: string }
+    let eventToSend: TEvent;
+
+    if (typeof query === 'object' && query !== null && 'type' in query) {
+      // If the query already has the correct format, add the requestId
+      eventToSend = {
+        ...query,
+        requestId: request.correlationId,
+      } as unknown as TEvent;
+    } else {
+      // Otherwise, wrap it in the expected format
+      eventToSend = {
+        type: 'REQUEST',
+        requestId: request.correlationId,
+        payload: query,
+      } as unknown as TEvent;
+    }
+
+    this.logger.debug('Sending ask event', {
+      event: eventToSend,
+      correlationId: request.correlationId,
+      actorId: this.id,
+    });
+
+    // Send the event to the actor
+    this.send(eventToSend);
 
     return request.promise;
   }
@@ -366,21 +391,10 @@ class UnifiedActorRef<
     });
   }
 
-  private handleResponseMessages(snapshot: ReturnType<typeof this.actor.getSnapshot>): void {
-    // Handle ask pattern responses
-    const snapshotData = snapshot as {
-      event?: { _response?: boolean; _requestId?: string; error?: Error; payload?: unknown };
-    };
-    if (snapshotData.event?._response) {
-      const correlationId = snapshotData.event._requestId;
-      if (correlationId) {
-        if (snapshotData.event.error) {
-          this.requestManager.handleError(correlationId, snapshotData.event.error);
-        } else {
-          this.requestManager.handleResponse(correlationId, snapshotData.event.payload);
-        }
-      }
-    }
+  private handleResponseMessages(_snapshot: ReturnType<typeof this.actor.getSnapshot>): void {
+    // Handle ask pattern responses - this method is now deprecated
+    // Response handling is done through the XState event bridge (setupXStateEventBridge)
+    // which captures emitted events including GIT_REQUEST_RESPONSE events
   }
 
   // ✅ CRITICAL FIX: Set up XState event bridge using actor.on('*', handler)
@@ -402,6 +416,44 @@ class UnifiedActorRef<
 
         // Forward the XState emitted event to the framework's ActorEventBus
         this.eventBus.emit(emittedEvent);
+
+        // Handle ask pattern responses - generic approach
+        // Check if this event has the structure of a response (requestId/correlationId field)
+        if (
+          typeof emittedEvent === 'object' &&
+          emittedEvent !== null &&
+          ('requestId' in emittedEvent || 'correlationId' in emittedEvent)
+        ) {
+          // Type-safe event handling
+          const eventWithId = emittedEvent as Record<string, unknown>;
+
+          // Extract correlation ID (support both requestId and correlationId fields)
+          const correlationId =
+            (eventWithId.requestId as string) || (eventWithId.correlationId as string);
+
+          // Only process if we have response data
+          if ('response' in eventWithId || 'data' in eventWithId || 'payload' in eventWithId) {
+            const responseData = eventWithId.response || eventWithId.data || eventWithId.payload;
+
+            this.logger.debug('📨 Detected potential request/response event', {
+              actorId: this.id,
+              correlationId,
+              hasResponse: 'response' in eventWithId,
+              hasData: 'data' in eventWithId,
+              hasPayload: 'payload' in eventWithId,
+            });
+
+            // Handle the response through the RequestResponseManager
+            const handled = this.requestManager.handleResponse(correlationId, responseData);
+
+            if (handled) {
+              this.logger.debug('✅ Request/response correlation successful', {
+                actorId: this.id,
+                correlationId,
+              });
+            }
+          }
+        }
 
         this.logger.debug('✅ Event forwarded to ActorEventBus', { actorId: this.id });
       });
