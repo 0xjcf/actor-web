@@ -5,70 +5,123 @@
 The Actor-SPA Framework provides a **minimal, type-safe API** for building web components with XState v5 and the actor model. This guide consolidates all core patterns and best practices for AI agents and developers.
 
 **Framework Principles:**
-- **Minimal API**: Just `machine` + `template` - everything else is automatic
+- **Minimal API**: Just `machine` + `template` + `behavior` - everything else is automatic
 - **Type-Safe**: Full TypeScript support with zero `any` types
 - **Actor Model**: XState machines manage all business logic
 - **Reactive**: Event-driven architecture with smart payload extraction
 - **Secure**: Built-in XSS protection and input validation
+- **Unified**: Same `defineBehavior` API for actors and components
 
 ---
 
-## Core API
+## Core API - Unified Experience
 
-### `createComponent(config)` - The Primary Function
+### `defineBehavior(config)` - Universal Actor Definition
+
+Creates reusable actor behaviors for both standalone actors and web components:
 
 ```typescript
 import { setup, assign } from 'xstate';
+import { defineBehavior } from '@framework/core';
+
+// Standard actor behavior - works everywhere!
+const formBehavior = defineBehavior({
+  context: { lastSaveTime: null },
+  onMessage: ({ message, context }) => {
+    switch (message.type) {
+      case 'FORM_SAVE_REQUESTED':
+        return {
+          context: { ...context, lastSaveTime: Date.now() },
+          emit: { type: 'SAVE_ACKNOWLEDGED', timestamp: Date.now() }
+        };
+      case 'CLEAR_CACHE':
+        return { context: { ...context, lastSaveTime: null } };
+      default:
+        return { context };
+    }
+  }
+});
+```
+
+### `createComponent(config)` - Unified Component Creation
+
+```typescript
 import { createComponent, html } from '@framework/core';
 
-const counterMachine = setup({
+const formMachine = setup({
   types: {
-    context: {} as { count: number },
-    events: {} as { type: 'INCREMENT' } | { type: 'DECREMENT' }
+    context: {} as { formData: Record<string, string>, error: string | null },
+    events: {} as 
+      | { type: 'UPDATE_FIELD', field: string, value: string }
+      | { type: 'SUBMIT' }
+      | { type: 'SAVE_SUCCESS' }
+      | { type: 'SAVE_ERROR', error: string }
   },
   actions: {
-    increment: assign({ count: ({ context }) => context.count + 1 }),
-    decrement: assign({ count: ({ context }) => context.count - 1 })
+    updateField: assign(({ context, event }) => ({
+      formData: { ...context.formData, [event.field]: event.value }
+    })),
+    setError: assign(({ context, event }) => ({
+      error: event.error
+    }))
   }
 }).createMachine({
-  id: 'counter',
-  initial: 'idle',
-  context: { count: 0 },
+  id: 'form',
+  initial: 'editing',
+  context: { formData: {}, error: null },
   states: {
-    idle: {
-      on: {
-        INCREMENT: { actions: 'increment' },
-        DECREMENT: { actions: 'decrement' }
+    editing: {
+      on: { 
+        UPDATE_FIELD: { actions: 'updateField' },
+        SUBMIT: 'saving' 
       }
+    },
+    saving: {
+      on: { 
+        SAVE_SUCCESS: 'saved', 
+        SAVE_ERROR: { target: 'editing', actions: 'setError' }
+      }
+    },
+    saved: { 
+      after: { 2000: 'editing' } 
     }
   }
 });
 
-const template = (state) => html`
-  <div>
-    <h1>Count: ${state.context.count}</h1>
-    <button send="INCREMENT">+</button>
-    <button send="DECREMENT">-</button>
-  </div>
-`;
+const formTemplate = ({ context }) => html`
+  <form>
+    <input name="name" .value=${context.formData.name ?? ''} />
+    <button type="submit">Save</button>
+    ${context.error && html`<p class="error">${context.error}</p>`}
+  </form>`;
 
-// ✅ Auto-registers as <counter-component>
-const CounterComponent = createComponent({ 
-  machine: counterMachine, 
-  template 
+// ✅ Unified API - behavior + component properties
+const FormComponent = createComponent({
+  // Core component definition
+  machine: formMachine,
+  template: formTemplate,
+  behavior: formBehavior,  // ✅ Same behavior API as actors!
+  
+  // Component-specific configuration (clean & flat)
+  dependencies: {
+    backend: 'actor://system/backend',
+    storage: 'actor://system/storage'
+  },
+  mailbox: { capacity: 100, strategy: 'drop-oldest' },
+  supervision: { strategy: 'restart', maxRestarts: 3 }
 });
+
+// Auto-registers as <form-component>
+document.body.appendChild(FormComponent.create());
 ```
 
-### Configuration Options
+### Benefits of Unified API
 
-```typescript
-createComponent({
-  machine: myMachine,              // XState machine (required)
-  template: myTemplate,            // Template function (required)
-  tagName?: 'custom-name',         // Override auto-generated name
-  styles?: 'css styles'            // Shadow DOM styles
-})
-```
+1. **Single Learning Curve**: Learn `defineBehavior` once, use everywhere
+2. **Reusable Behaviors**: Same behavior can work with different machines/templates
+3. **Type Safety**: Full TypeScript support across all contexts
+4. **Separation of Concerns**: Actor logic separate from component configuration
+5. **Future-Proof**: Easy to add new behavior options
 
 ---
 
@@ -78,17 +131,21 @@ createComponent({
 
 ```typescript
 // ✅ BEST: Individual attributes create clean flat events
-html`<button send="UPDATE_USER" user-id=${user.id} role=${user.role}>
+html`
+<button send="UPDATE_USER" user-id=${user.id} role=${user.role}>
   Update User
-</button>`
+</button>
+`
 // Results in: { type: "UPDATE_USER", userId: "123", role: "admin" }
 
 // ✅ BEST: Form data extraction
-html`<form send="SUBMIT_REGISTRATION">
+html`
+<form send="SUBMIT_REGISTRATION">
   <input name="email" type="email" required />
   <input name="password" type="password" required />
   <button type="submit">Register</button>
-</form>`
+</form>
+`
 // Results in: { type: "SUBMIT_REGISTRATION", email: "...", password: "..." }
 ```
 
@@ -96,9 +153,11 @@ html`<form send="SUBMIT_REGISTRATION">
 
 ```typescript
 // ✅ NEW: Clean object literals (automatically serialized)
-html`<button send="UPDATE_USER" payload=${{ id: user.id, changes: { name: "John" } }}">
+html`
+<button send="UPDATE_USER" payload=${{ id: user.id, changes: { name: "John" } }}">
   Update User
-</button>`
+</button>
+`
 // Results in: { type: "UPDATE_USER", payload: { id: "123", changes: { name: "John" } } }
 
 // ✅ COMPLEX: Nested objects and arrays work seamlessly

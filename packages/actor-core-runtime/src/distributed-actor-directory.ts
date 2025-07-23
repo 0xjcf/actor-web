@@ -12,7 +12,7 @@
 
 import type { ActorAddress, ActorDirectory } from './actor-system.js';
 import { Logger } from './logger.js';
-import type { Observable } from './types.js';
+import { createActorInterval } from './pure-xstate-utilities.js';
 
 // Create scoped logger for distributed directory
 const log = Logger.namespace('DISTRIBUTED_ACTOR_DIRECTORY');
@@ -76,16 +76,14 @@ export class DistributedActorDirectory implements ActorDirectory {
   private cache = new Map<string, CacheEntry>();
   private registry = new Map<string, RegistryEntry>(); // Separate registry for registered actors
   private subscribers = new Set<(event: DirectoryEvent) => void>();
-  private cleanupTimer: NodeJS.Timeout | undefined;
-  private metricsTimer: NodeJS.Timeout | undefined;
+  private cleanupStopFn: (() => void) | null = null; // XState interval stop function
+  private metricsStopFn: (() => void) | null = null; // XState interval stop function
+  private readonly config: Required<DirectoryConfig>;
 
   // Performance metrics
   private cacheHits = 0;
   private cacheMisses = 0;
   private lastMetricsReset = Date.now();
-
-  // Configuration
-  private readonly config: Required<DirectoryConfig>;
 
   constructor(config: DirectoryConfig = {}) {
     this.config = {
@@ -96,6 +94,7 @@ export class DistributedActorDirectory implements ActorDirectory {
       nodeAddress: config.nodeAddress ?? 'local',
     };
 
+    // Start background timers using pure XState
     this.startCleanupTimer();
     this.startMetricsTimer();
 
@@ -319,28 +318,12 @@ export class DistributedActorDirectory implements ActorDirectory {
   /**
    * Subscribe to directory changes
    */
-  subscribeToChanges(): Observable<DirectoryEvent> {
-    return {
-      subscribe: (observerOrNext) => {
-        const handler = (event: DirectoryEvent) => {
-          if (typeof observerOrNext === 'function') {
-            // Called with next function directly
-            observerOrNext(event);
-          } else {
-            // Called with observer object
-            observerOrNext.next(event);
-          }
-        };
+  subscribeToChanges(listener: (event: DirectoryEvent) => void): () => void {
+    this.subscribers.add(listener);
 
-        this.subscribers.add(handler);
-
-        return {
-          unsubscribe: () => {
-            this.subscribers.delete(handler);
-          },
-        };
-      },
-    } as Observable<DirectoryEvent>;
+    return () => {
+      this.subscribers.delete(listener);
+    };
   }
 
   /**
@@ -366,13 +349,8 @@ export class DistributedActorDirectory implements ActorDirectory {
    * Cleanup resources
    */
   async cleanup(): Promise<void> {
-    if (this.cleanupTimer) {
-      clearInterval(this.cleanupTimer);
-    }
-
-    if (this.metricsTimer) {
-      clearInterval(this.metricsTimer);
-    }
+    this.stopCleanupTimer();
+    this.stopMetricsTimer();
 
     this.cache.clear();
     this.registry.clear();
@@ -503,21 +481,43 @@ export class DistributedActorDirectory implements ActorDirectory {
   }
 
   /**
-   * Start periodic cache cleanup
+   * Start periodic cache cleanup using pure XState
    */
   private startCleanupTimer(): void {
-    this.cleanupTimer = setInterval(() => {
+    // ✅ PURE ACTOR MODEL: Use XState interval instead of setInterval
+    this.cleanupStopFn = createActorInterval(() => {
       this.cleanupExpiredEntries();
     }, this.config.cleanupInterval);
   }
 
   /**
-   * Start periodic metrics logging
+   * Start periodic metrics logging using pure XState
    */
   private startMetricsTimer(): void {
-    this.metricsTimer = setInterval(() => {
+    // ✅ PURE ACTOR MODEL: Use XState interval instead of setInterval
+    this.metricsStopFn = createActorInterval(() => {
       this.logMetrics();
     }, this.config.metricsInterval);
+  }
+
+  /**
+   * Stop cleanup timer
+   */
+  private stopCleanupTimer(): void {
+    if (this.cleanupStopFn) {
+      this.cleanupStopFn();
+      this.cleanupStopFn = null;
+    }
+  }
+
+  /**
+   * Stop metrics timer
+   */
+  private stopMetricsTimer(): void {
+    if (this.metricsStopFn) {
+      this.metricsStopFn();
+      this.metricsStopFn = null;
+    }
   }
 
   /**

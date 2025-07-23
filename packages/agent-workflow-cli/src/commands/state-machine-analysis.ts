@@ -10,7 +10,7 @@
  */
 
 import readline from 'node:readline';
-import { enableDevMode, Logger, createActorRef } from '@actor-core/runtime';
+import { createActorRef, enableDevMode, Logger } from '@actor-core/runtime';
 import {
   analyzeStateMachine,
   assertNoUnreachableStates,
@@ -20,12 +20,9 @@ import chalk from 'chalk';
 import type { AnyStateMachine } from 'xstate';
 
 // Create scoped logger for state machine analysis
-const log = Logger.namespace('STATE_MACHINE_ANALYSIS');
+const _log = Logger.namespace('STATE_MACHINE_ANALYSIS');
 
-import {
-  gitActorMachine,
-  type GitActor,
-} from '../actors/git-actor';
+import { type GitActor, type GitEvent, gitActorMachine } from '../actors/git-actor';
 import { findRepoRoot } from '../core/repo-root-finder';
 
 // Full implementation with @xstate/graph
@@ -270,8 +267,7 @@ class EnhancedReadline {
     } else {
       console.log(chalk.gray('\n💡 Available options:'));
       console.log(
-        chalk.blue('  🔧 Special commands: ') +
-          chalk.gray('help, state, events, status, q')
+        chalk.blue('  🔧 Special commands: ') + chalk.gray('help, state, events, status, q')
       );
       console.log(
         chalk.blue('  🎯 Available events: ') + chalk.green(this.availableEvents.join(', '))
@@ -390,7 +386,7 @@ class StateMachineMonitoringHandler {
   private stateLastChanged = new Map<string, number>();
   private startTime = Date.now();
   private enhancedRl: EnhancedReadline | null = null;
-  
+
   // Configuration
   private maxStateTransitions = 100;
   private loopDetectionWindow = 10;
@@ -407,15 +403,15 @@ class StateMachineMonitoringHandler {
    */
   async monitorInteractive(): Promise<void> {
     const allEvents = extractAllEvents(this.machine);
-    
+
     console.log(chalk.yellow('📍 Initial state check...'));
-    
+
     // Send initial status check
     this.actor.send({ type: 'CHECK_STATUS' });
-    
+
     // Wait briefly for initial state
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
     // Get current state via ask pattern
     const statusResponse = await this.actor.ask({ type: 'REQUEST_STATUS' });
     if (statusResponse && typeof statusResponse === 'object' && 'currentState' in statusResponse) {
@@ -482,15 +478,15 @@ class StateMachineMonitoringHandler {
       try {
         // Use ask pattern to get current state
         const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
-        
+
         if (response && typeof response === 'object' && 'currentState' in response) {
           const newState = String(response.currentState);
-          
+
           if (newState !== this.currentState) {
             this.handleStateChange(newState);
           }
         }
-      } catch (error) {
+      } catch (_error) {
         // Actor might be busy, ignore and try again
       }
     };
@@ -505,7 +501,7 @@ class StateMachineMonitoringHandler {
   private handleStateChange(newState: string): void {
     const now = Date.now();
     const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    
+
     // Safety check: prevent excessive state transitions
     if (this.stateTransitionHistory.length >= this.maxStateTransitions) {
       console.error(chalk.red('🚨 SAFETY: Maximum state transitions reached!'));
@@ -525,9 +521,7 @@ class StateMachineMonitoringHandler {
       const recentStates = this.stateTransitionHistory.slice(-this.loopDetectionWindow);
       recentStates.forEach((entry, index) => {
         const elapsed = (entry.timestamp - this.startTime) / 1000;
-        console.error(
-          chalk.gray(`   ${index + 1}. ${entry.state} (at ${elapsed.toFixed(1)}s)`)
-        );
+        console.error(chalk.gray(`   ${index + 1}. ${entry.state} (at ${elapsed.toFixed(1)}s)`));
       });
       console.error(chalk.red('   Stopping monitoring to prevent system overload.'));
       process.exit(1);
@@ -620,7 +614,7 @@ class StateMachineMonitoringHandler {
       try {
         console.log(chalk.cyan('🔍 Getting current actor status...'));
         const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
-        
+
         if (response && typeof response === 'object') {
           const statusResponse = response as {
             currentState?: string;
@@ -669,7 +663,8 @@ class StateMachineMonitoringHandler {
     if (eventName === 'GET_INTEGRATION_STATUS') {
       return {
         type: 'GET_INTEGRATION_STATUS',
-        integrationBranch: (this.eventData.integrationBranch as string) || 'feature/actor-ref-integration',
+        integrationBranch:
+          (this.eventData.integrationBranch as string) || 'feature/actor-ref-integration',
       };
     }
 
@@ -759,12 +754,12 @@ class StateMachineMonitoringHandler {
     autoRun: boolean
   ): Promise<void> {
     const allEvents = extractAllEvents(this.machine);
-    
+
     console.log(chalk.yellow('📍 Initial state check...'));
     this.actor.send({ type: 'CHECK_STATUS' });
 
     // Wait briefly for initial state
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
     // Send events in sequence if autoRun is true
     if (autoRun) {
@@ -779,7 +774,9 @@ class StateMachineMonitoringHandler {
             await new Promise((resolve) => setTimeout(resolve, eventDelay));
           } else {
             console.log(
-              chalk.red(`❌ Event "${eventName}" not available in current state "${this.currentState}"`)
+              chalk.red(
+                `❌ Event "${eventName}" not available in current state "${this.currentState}"`
+              )
             );
             console.log(chalk.gray(`Available events: ${availableEvents.join(', ')}`));
           }
@@ -798,7 +795,7 @@ class StateMachineMonitoringHandler {
 
 async function subscribeToStateMachineWithEvents(
   target: string,
-  machineName: string,
+  _machineName: string,
   eventsToSend: string[],
   eventDelay: number,
   eventData: Record<string, unknown>,
@@ -811,7 +808,7 @@ async function subscribeToStateMachineWithEvents(
 
   try {
     const repoRoot = await findRepoRoot();
-    
+
     // Create git actor using the pure runtime
     const gitActor = createActorRef(gitActorMachine, {
       id: 'analysis-git-actor',

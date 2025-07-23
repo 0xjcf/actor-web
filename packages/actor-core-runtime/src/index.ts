@@ -18,39 +18,71 @@ export {
   isResponseEvent,
   TimeoutError,
 } from './actor-ref.js';
+// Core actor system types
 export type {
+  ActorAddress,
+  ActorBehavior,
+  ActorMessage,
+  ActorPID,
+  ActorStats,
   ActorSystem,
-  ActorDefinition,
-  ActorBehaviorResult,
+  ClusterState,
+  JsonValue,
+  MessageInput,
 } from './actor-system.js';
 export type { ActorSystemConfig } from './actor-system-impl.js';
 export { createActorSystem } from './actor-system-impl.js';
+export {
+  type BackoffStrategy,
+  BackoffSupervisor,
+  type BackoffSupervisorOptions,
+} from './actors/backoff-supervisor.js';
 export type { SupervisorOptions } from './actors/supervisor.js';
 // Supervision
 export { Supervisor } from './actors/supervisor.js';
 export {
-  BackoffSupervisor,
-  type BackoffSupervisorOptions,
-  type BackoffStrategy,
-} from './actors/backoff-supervisor.js';
-
-// Messaging
+  type ComponentActorConfig,
+  type ComponentActorMessage,
+  createComponentActorBehavior,
+  type TemplateFunction,
+} from './component-actor.js';
+// Component behavior types
 export {
-  DeadLetterQueue,
-  type DeadLetter,
-  type DeadLetterQueueConfig,
-} from './messaging/dead-letter-queue.js';
+  type ComponentBehaviorConfig,
+  type ComponentDependencies,
+  type ComponentMessageParams,
+  componentBehavior,
+  isComponentBehavior,
+  isJsonSerializable,
+  type SerializableEvent,
+  validateSerializableEvent,
+} from './component-behavior.js';
+// Actor creation factory
 export {
-  JsonSerializer,
-  MessagePackSerializer,
-  SerializationFactory,
-  TransportSerializer,
-  type MessageSerializer,
-  type SerializationFormat,
-  type MessageEnvelope,
-} from './messaging/serialization.js';
+  type ActorContextType,
+  type ActorEmittedType,
+  type ActorInstance,
+  type ActorMessageType,
+  type CreateActorConfig,
+  createActor,
+  createLegacyBehavior,
+  createSimpleBehavior,
+  defineBehavior,
+  type PureActorBehaviorConfig,
+  type PureMessageHandler,
+  spawnActor,
+  validateMessagePlan,
+  type XStateActorConfig,
+} from './create-actor.js';
 // Factory function
 export { createActorRef } from './create-actor-ref.js';
+export type {
+  ComponentActorElement,
+  ComponentClass,
+  CreateComponentConfig,
+} from './create-component.js';
+// Component system exports
+export { createComponent } from './create-component.js';
 export type { DirectoryConfig } from './distributed-actor-directory.js';
 // Phase 1: Distributed Actor Directory and System
 export { DistributedActorDirectory } from './distributed-actor-directory.js';
@@ -63,6 +95,12 @@ export {
   Logger,
   resetDevMode,
 } from './logger.js';
+// Messaging
+export {
+  type DeadLetter,
+  DeadLetterQueue,
+  type DeadLetterQueueConfig,
+} from './messaging/dead-letter-queue.js';
 export type {
   RequestContext,
   RequestResponseManagerOptions,
@@ -70,12 +108,30 @@ export type {
 } from './messaging/request-response.js';
 // Request/response messaging
 export { RequestResponseManager } from './messaging/request-response.js';
+export type { SerializationFormat } from './messaging/serialization.js';
+export {
+  getSerializer,
+  MessagePackSerializer,
+  type MessageSerializer,
+  TransportSerializer,
+} from './messaging/serialization.js';
 export type { SubscriberFunction, TeardownLogic } from './observable.js';
 // Observable implementation
 export { CustomObservable } from './observable.js';
+// Type helpers for better error messages
+export type {
+  EventWithType,
+  ExtractEventTypes,
+  PrettyError,
+  ShowAvailableEventTypes,
+  StrictEventValidation,
+  TypedEvent,
+  ValidateEmittedEvent,
+  ValidateEvent,
+  ValidateEventType,
+} from './type-helpers.js';
 // Core types
 export type {
-  ActorBehavior,
   ActorRefOptions,
   ActorSnapshot,
   ActorStatus,
@@ -94,28 +150,3 @@ export type {
   Subscription,
   SupervisionStrategy,
 } from './types.js';
-
-// Actor creation factory
-export {
-  createActor,
-  type CreateActorConfig,
-  type BehaviorActorConfig,
-  type XStateActorConfig,
-  type ActorMessageType,
-  type ActorContextType,
-  type ActorEmittedType,
-  type AvailableEventTypes,
-} from './create-actor.js';
-
-// Type helpers for better error messages
-export type {
-  ValidateEventType,
-  ValidateEvent,
-  ValidateEmittedEvent,
-  ShowAvailableEventTypes,
-  StrictEventValidation,
-  TypedEvent,
-  ExtractEventTypes,
-  EventWithType,
-  PrettyError,
-} from './type-helpers.js';

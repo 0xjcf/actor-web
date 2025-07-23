@@ -6,11 +6,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   type BaseEvent,
+  createEventStore,
   EventSourcingUtils,
   type EventStore,
   type InMemoryEventStore,
   UserAggregate,
-  createEventStore,
 } from '../event-sourcing.js';
 
 describe('Event Sourcing', () => {

@@ -10,24 +10,51 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setup } from 'xstate';
 import type { ActorRef } from '../actor-ref.js';
 import {
   type Capability,
   type CapabilityGrantRequest,
   type CapabilityRegistry,
+  createCapabilityRegistry,
+  createSecureActor,
+  createSecurityMiddleware,
   InMemoryCapabilityRegistry,
   PermissionDeniedError,
   SecureActorProxy,
   SecurityError,
   SecurityMiddleware,
   SecurityUtils,
-  createCapabilityRegistry,
-  createSecureActor,
-  createSecurityMiddleware,
 } from '../capability-security.js';
+import { createActorRef } from '../create-actor-ref.js';
 import type { BaseEventObject } from '../types.js';
+import { createVirtualActorSystem } from '../virtual-actor-system.js';
 
-// Mock actor for testing
+// ✅ CORRECT: Use real framework API with test machine
+const testActorMachine = setup({
+  types: {
+    context: {} as { id: string },
+    events: {} as { type: 'TEST_EVENT' },
+  },
+}).createMachine({
+  id: 'test-security-actor',
+  initial: 'active',
+  context: ({ input }) => ({ id: (input as { id: string })?.id || 'unknown' }),
+  states: {
+    active: {
+      on: {
+        TEST_EVENT: { target: 'active' },
+      },
+    },
+  },
+});
+
+// Helper to create real ActorRef for testing (behavior-focused)
+function _createTestActorRef(id: string): ActorRef<BaseEventObject> {
+  return createActorRef(testActorMachine, { id, input: { id } });
+}
+
+// Mock actor for legacy tests (gradually replace with real actors)
 function createMockActor(id: string): ActorRef<BaseEventObject> {
   return {
     id,
@@ -178,7 +205,7 @@ describe('Capability-Based Security Model', () => {
   });
 
   describe('SecureActorProxy', () => {
-    let secureProxy: SecureActorProxy<any>;
+    let secureProxy: SecureActorProxy<BaseEventObject>;
 
     beforeEach(() => {
       secureProxy = new SecureActorProxy('test-cap-1', mockActor, ['read', 'write.data'], {
@@ -264,17 +291,25 @@ describe('Capability-Based Security Model', () => {
     });
 
     it('should handle stopped actor subjects', async () => {
-      // Arrange
-      const stoppedActor = createMockActor('stopped-actor');
-      stoppedActor.status = 'stopped';
+      // ✅ CORRECT: Use real framework API - create and actually stop an actor
+      const realActor = _createTestActorRef('stopped-actor');
 
-      const proxy = new SecureActorProxy('test-cap-5', stoppedActor, ['read'], {
+      // Start the actor first (required before we can stop it)
+      realActor.start();
+      expect(realActor.status).toBe('running');
+
+      // Actually stop the actor using framework API
+      await realActor.stop();
+      expect(realActor.status).toBe('stopped');
+
+      // Now test the security behavior with the genuinely stopped actor
+      const proxy = new SecureActorProxy('test-cap-5', realActor, ['read'], {
         grantedBy: 'admin',
         grantedAt: Date.now(),
       });
       testCapabilities.push(proxy);
 
-      // Act & Assert
+      // Act & Assert - Test behavior: stopped actors should be invalid
       expect(proxy.isValid()).toBe(false);
       await expect(proxy.invoke('read')).rejects.toThrow(SecurityError);
     });
@@ -468,14 +503,18 @@ describe('Capability-Based Security Model', () => {
     });
 
     it('should create capability registry with virtual actor system', () => {
-      // Arrange
-      const mockVirtualActorSystem = {} as any;
+      // ✅ CORRECT: Use real framework API instead of complex mock
+      // Test the actual behavior: Can create registry with VirtualActorSystem
+      const realVirtualActorSystem = createVirtualActorSystem('test-node');
 
       // Act
-      const newRegistry = createCapabilityRegistry(mockVirtualActorSystem);
+      const newRegistry = createCapabilityRegistry(realVirtualActorSystem);
 
-      // Assert
+      // Assert - Test behavior, not implementation
       expect(newRegistry).toBeInstanceOf(InMemoryCapabilityRegistry);
+
+      // Cleanup
+      realVirtualActorSystem.cleanup();
     });
 
     it('should create security middleware', () => {

@@ -5,9 +5,15 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setup } from 'xstate';
+import type { ActorRef } from '../actor-ref.js';
+import { createActorRef } from '../create-actor-ref.js';
+import type { BaseEventObject } from '../types.js';
 import {
   ActorDirectory,
   ConsistentHashPlacementStrategy,
+  createConsistentHashVirtualActorSystem,
+  createLoadAwareVirtualActorSystem,
+  createVirtualActorSystem,
   LoadAwarePlacementStrategy,
   type NodeMetrics,
   RoundRobinPlacementStrategy,
@@ -15,53 +21,33 @@ import {
   type VirtualActorId,
   VirtualActorSystem,
   type VirtualActorSystemConfig,
-  createConsistentHashVirtualActorSystem,
-  createLoadAwareVirtualActorSystem,
-  createVirtualActorSystem,
 } from '../virtual-actor-system.js';
 
-// Mock actor machines for testing
-const testUserMachine = setup({
+// ✅ CORRECT: Use real framework API instead of complex mocks
+// Test machine for creating real ActorRef instances
+const testActorMachine = setup({
   types: {
-    context: {} as { userId: string; name?: string },
-    events: {} as
-      | { type: 'SET_NAME'; name: string }
-      | { type: 'GET_NAME' }
-      | { type: 'DELETE_USER' },
-  },
-  actions: {
-    setName: ({ context, event }) => {
-      if (event.type === 'SET_NAME') {
-        context.name = event.name;
-      }
-    },
-    getName: ({ context }) => {
-      console.log('Getting name:', context.name);
-    },
+    context: {} as { id: string },
+    events: {} as { type: 'TEST_EVENT' },
   },
 }).createMachine({
-  id: 'user-actor',
+  id: 'test-actor',
   initial: 'active',
-  context: { userId: 'test' },
+  context: ({ input }) => ({ id: (input as { id: string })?.id || 'unknown' }),
   states: {
     active: {
       on: {
-        SET_NAME: {
-          actions: ['setName'],
-        },
-        GET_NAME: {
-          actions: ['getName'],
-        },
-        DELETE_USER: {
-          target: 'deleted',
-        },
+        TEST_EVENT: { target: 'active' }, // Simple transition for testing
       },
-    },
-    deleted: {
-      type: 'final',
     },
   },
 });
+
+// ✅ Helper to create real ActorRef for testing (behavior-focused)
+function createTestActorRef(id: string): ActorRef<BaseEventObject> {
+  // Use real framework API - this is what the framework is designed for!
+  return createActorRef(testActorMachine, { id, input: { id } });
+}
 
 const testWorkflowMachine = setup({
   types: {
@@ -150,7 +136,7 @@ describe('Virtual Actor System', () => {
   describe('Actor Registration', () => {
     it('should register actor types', () => {
       expect(() => {
-        system.registerActorType('user', testUserMachine);
+        system.registerActorType('user', testActorMachine);
       }).not.toThrow();
     });
 
@@ -163,7 +149,7 @@ describe('Virtual Actor System', () => {
 
   describe('Actor Activation', () => {
     beforeEach(() => {
-      system.registerActorType('user', testUserMachine);
+      system.registerActorType('user', testActorMachine);
       system.registerActorType('workflow', testWorkflowMachine);
     });
 
@@ -202,7 +188,7 @@ describe('Virtual Actor System', () => {
 
   describe('Actor Deactivation', () => {
     beforeEach(() => {
-      system.registerActorType('user', testUserMachine);
+      system.registerActorType('user', testActorMachine);
     });
 
     it('should deactivate actor', async () => {
@@ -226,7 +212,7 @@ describe('Virtual Actor System', () => {
 
   describe('System Statistics', () => {
     beforeEach(() => {
-      system.registerActorType('user', testUserMachine);
+      system.registerActorType('user', testActorMachine);
     });
 
     it('should provide system statistics', () => {
@@ -257,7 +243,7 @@ describe('Virtual Actor System', () => {
 
   describe('Node Management', () => {
     beforeEach(() => {
-      system.registerActorType('user', testUserMachine);
+      system.registerActorType('user', testActorMachine);
     });
 
     it('should add nodes to cluster', () => {
@@ -288,7 +274,7 @@ describe('Virtual Actor System', () => {
 
   describe('Cleanup', () => {
     beforeEach(() => {
-      system.registerActorType('user', testUserMachine);
+      system.registerActorType('user', testActorMachine);
     });
 
     it('should cleanup system resources', async () => {
@@ -325,7 +311,7 @@ describe('ActorDirectory', () => {
     const virtualId: VirtualActorId = { type: 'user', id: 'user-123' };
     const entry: VirtualActorEntry = {
       virtualId,
-      physicalRef: {} as any,
+      physicalRef: createTestActorRef('user-123'),
       node: 'test-node',
       lastAccessed: Date.now(),
       activationCount: 1,
@@ -348,7 +334,7 @@ describe('ActorDirectory', () => {
       const virtualId: VirtualActorId = { type: 'user', id: `user-${i}` };
       const entry: VirtualActorEntry = {
         virtualId,
-        physicalRef: {} as any,
+        physicalRef: createTestActorRef(`user-${i}`),
         node: 'test-node',
         lastAccessed: Date.now(),
         activationCount: 1,
@@ -372,7 +358,7 @@ describe('ActorDirectory', () => {
     const virtualId: VirtualActorId = { type: 'user', id: 'user-123' };
     const entry: VirtualActorEntry = {
       virtualId,
-      physicalRef: {} as any,
+      physicalRef: createTestActorRef('user-123'),
       node: 'test-node',
       lastAccessed: Date.now(),
       activationCount: 1,
@@ -395,7 +381,7 @@ describe('ActorDirectory', () => {
   it('should filter by node', () => {
     const entry1: VirtualActorEntry = {
       virtualId: { type: 'user', id: 'user-1' },
-      physicalRef: {} as any,
+      physicalRef: createTestActorRef('user-1'),
       node: 'node-1',
       lastAccessed: Date.now(),
       activationCount: 1,
@@ -404,7 +390,7 @@ describe('ActorDirectory', () => {
 
     const entry2: VirtualActorEntry = {
       virtualId: { type: 'user', id: 'user-2' },
-      physicalRef: {} as any,
+      physicalRef: createTestActorRef('user-2'),
       node: 'node-2',
       lastAccessed: Date.now(),
       activationCount: 1,
@@ -426,7 +412,7 @@ describe('ActorDirectory', () => {
   it('should filter by actor type', () => {
     const userEntry: VirtualActorEntry = {
       virtualId: { type: 'user', id: 'user-1' },
-      physicalRef: {} as any,
+      physicalRef: createTestActorRef('user-1'),
       node: 'node-1',
       lastAccessed: Date.now(),
       activationCount: 1,
@@ -435,7 +421,7 @@ describe('ActorDirectory', () => {
 
     const workflowEntry: VirtualActorEntry = {
       virtualId: { type: 'workflow', id: 'workflow-1' },
-      physicalRef: {} as any,
+      physicalRef: createTestActorRef('workflow-1'),
       node: 'node-1',
       lastAccessed: Date.now(),
       activationCount: 1,
@@ -458,7 +444,7 @@ describe('ActorDirectory', () => {
     const virtualId: VirtualActorId = { type: 'user', id: 'user-123' };
     const entry: VirtualActorEntry = {
       virtualId,
-      physicalRef: {} as any,
+      physicalRef: createTestActorRef('user-123'),
       node: 'test-node',
       lastAccessed: Date.now() - 2000, // 2 seconds ago (older than maxIdleTime)
       activationCount: 1,
@@ -499,7 +485,7 @@ describe('Placement Strategies', () => {
       const strategy = new RoundRobinPlacementStrategy();
       const entry: VirtualActorEntry = {
         virtualId,
-        physicalRef: {} as any,
+        physicalRef: createTestActorRef('user-123'),
         node: 'node-1',
         lastAccessed: Date.now(),
         activationCount: 1,
@@ -547,7 +533,7 @@ describe('Placement Strategies', () => {
       const strategy = new ConsistentHashPlacementStrategy();
       const entry: VirtualActorEntry = {
         virtualId,
-        physicalRef: {} as any,
+        physicalRef: createTestActorRef('user-123'),
         node: 'node-1',
         lastAccessed: Date.now(),
         activationCount: 1,
@@ -579,7 +565,7 @@ describe('Placement Strategies', () => {
       const strategy = new LoadAwarePlacementStrategy();
       const entry: VirtualActorEntry = {
         virtualId,
-        physicalRef: {} as any,
+        physicalRef: createTestActorRef('user-123'),
         node: 'node-1',
         lastAccessed: Date.now(),
         activationCount: 1,

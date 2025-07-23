@@ -70,7 +70,7 @@ export type SimpleMessage<TType extends string> = TypedMessage<TType, null>;
  * }>;
  * ```
  */
-export type MessageUnion<T extends Record<string, any>> = {
+export type MessageUnion<T extends Record<string, unknown>> = {
   [K in keyof T]: T[K] extends undefined
     ? SimpleMessage<K & string>
     : TypedMessage<K & string, T[K]>;
@@ -113,10 +113,10 @@ export function createSimpleMessage<TType extends string>(
 }
 
 /**
- * Type guard to check if a message is of a specific type
+ * Type guard to check if a message has a specific type
  */
 export function isMessageType<TType extends string, TPayload>(
-  message: TypedMessage<string, any>,
+  message: TypedMessage<string, unknown>,
   type: TType
 ): message is TypedMessage<TType, TPayload> {
   return message.type === type;
@@ -125,7 +125,7 @@ export function isMessageType<TType extends string, TPayload>(
 /**
  * Extract message types from a union
  */
-export type MessageTypes<T> = T extends TypedMessage<infer TType, any> ? TType : never;
+export type MessageTypes<T> = T extends TypedMessage<infer TType, unknown> ? TType : never;
 
 /**
  * Extract payload type for a specific message type

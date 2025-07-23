@@ -5,6 +5,8 @@
  */
 
 import type { ActorRef } from '../actor-ref.js';
+import { Logger } from '../logger.js';
+import { createActorDelay } from '../pure-xstate-utilities.js';
 import type { BaseEventObject, SupervisionStrategy } from '../types.js';
 
 /**
@@ -58,10 +60,11 @@ interface SupervisedActor {
 export class Supervisor {
   private supervisedActors = new Map<string, SupervisedActor>();
   private readonly options: Required<SupervisorOptions>;
+  private readonly logger = Logger.namespace('SUPERVISOR');
 
   constructor(options: SupervisorOptions) {
     this.options = {
-      strategy: options.strategy,
+      strategy: options.strategy ?? 'restart-on-failure',
       maxRestarts: options.maxRestarts ?? 3,
       restartWindow: options.restartWindow ?? 60000, // 1 minute
       restartDelay: options.restartDelay ?? 1000, // 1 second
@@ -195,9 +198,10 @@ export class Supervisor {
       // Stop the actor
       await supervised.actorRef.stop();
 
-      // Wait before restarting
+      // Wait before restarting using pure XState
       if (this.options.restartDelay > 0) {
-        await new Promise((resolve) => setTimeout(resolve, this.options.restartDelay));
+        // ✅ PURE ACTOR MODEL: Use XState delay instead of setTimeout
+        await createActorDelay(this.options.restartDelay);
       }
 
       // Restart the actor

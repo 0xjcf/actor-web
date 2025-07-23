@@ -1,12 +1,12 @@
 import chalk from 'chalk';
-import { createActorRef } from '@actor-core/runtime';
-import { gitActorMachine, type GitActor } from '../actors/git-actor.js';
+import { createGitActor, type GitActor } from '../actors/git-actor.js';
+import { subscribeToEvent } from '../actors/git-actor-helpers.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';
 import { ValidationService } from '../core/validation.js';
 
 /**
  * Validate Command - Pure Actor Model Implementation
- * 
+ *
  * Validates changed files using pure message-passing.
  * No state observation or direct access.
  */
@@ -15,13 +15,10 @@ export async function validateCommand() {
   console.log(chalk.blue('==========================================='));
 
   const repoRoot = await findRepoRoot();
-  
-  // Create git actor using the pure runtime
-  const gitActor = createActorRef(gitActorMachine, {
-    id: 'validate-git-actor',
-    input: { baseDir: repoRoot },
-  }) as GitActor;
-  
+
+  // Create git actor using the proper factory function
+  const gitActor = createGitActor(repoRoot);
+
   const validator = new ValidationService();
 
   try {
@@ -43,7 +40,10 @@ export async function validateCommand() {
  * Validation workflow handler using pure message-passing
  */
 class ValidateWorkflowHandler {
-  constructor(private actor: GitActor, private validator: ValidationService) {}
+  constructor(
+    private actor: GitActor,
+    private validator: ValidationService
+  ) {}
 
   async executeValidation(): Promise<void> {
     console.log(chalk.blue('📋 Starting validation...'));
@@ -51,7 +51,7 @@ class ValidateWorkflowHandler {
     try {
       // Step 1: Check if it's a git repository
       const isGitRepo = await this.checkGitRepository();
-      
+
       if (!isGitRepo) {
         console.log(chalk.red('❌ Not in a Git repository'));
         return;
@@ -62,7 +62,6 @@ class ValidateWorkflowHandler {
 
       // Step 3: Run validation on changed files
       await this.runValidation(changedFiles);
-
     } catch (error) {
       console.error(chalk.red('❌ Validation error:'), error);
       throw error;
@@ -75,25 +74,25 @@ class ValidateWorkflowHandler {
   private async checkGitRepository(): Promise<boolean> {
     console.log(chalk.gray('🔍 Checking repository...'));
 
+    // Subscribe to repo status event
+    const repoStatusPromise = new Promise<boolean>((resolve) => {
+      const unsubscribe = subscribeToEvent(this.actor, 'GIT_REPO_STATUS_CHANGED', (event) => {
+        unsubscribe();
+        resolve(event.isGitRepo);
+      });
+    });
+
     // Send CHECK_REPO message
     this.actor.send({ type: 'CHECK_REPO' });
 
-    // Wait for check to complete
-    await this.waitForOperation('CHECK_REPO', async () => {
-      const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
-      return response && typeof response === 'object' && 
-        'isGitRepo' in response && 
-        response.isGitRepo !== undefined;
-    });
+    // Wait for event
+    const isGitRepo = await repoStatusPromise;
 
-    const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
-    const status = response as { isGitRepo?: boolean };
-
-    if (status.isGitRepo) {
+    if (isGitRepo) {
       console.log(chalk.green('✅ Git repository detected'));
     }
 
-    return status.isGitRepo || false;
+    return isGitRepo;
   }
 
   /**
@@ -102,21 +101,20 @@ class ValidateWorkflowHandler {
   private async getChangedFiles(): Promise<string[]> {
     console.log(chalk.gray('🔍 Getting changed files...'));
 
+    // Subscribe to changed files event
+    const changedFilesPromise = new Promise<string[]>((resolve) => {
+      const unsubscribe = subscribeToEvent(this.actor, 'GIT_CHANGED_FILES_DETECTED', (event) => {
+        unsubscribe();
+        resolve(event.files);
+      });
+    });
+
     // Send GET_CHANGED_FILES message
     this.actor.send({ type: 'GET_CHANGED_FILES' });
 
-    // Wait for operation to complete
-    await this.waitForOperation('GET_CHANGED_FILES', async () => {
-      const response = await this.actor.ask({ type: 'REQUEST_CHANGED_FILES' });
-      return response && typeof response === 'object' && 
-        'changedFiles' in response;
-    });
+    // Wait for event
+    const changedFiles = await changedFilesPromise;
 
-    const response = await this.actor.ask({ type: 'REQUEST_CHANGED_FILES' });
-    const filesInfo = response as { changedFiles?: string[] };
-
-    const changedFiles = filesInfo.changedFiles || [];
-    
     if (changedFiles.length === 0) {
       console.log(chalk.green('✅ No changed files to validate'));
     } else {
@@ -124,32 +122,6 @@ class ValidateWorkflowHandler {
     }
 
     return changedFiles;
-  }
-
-  /**
-   * Wait for an operation to complete
-   */
-  private async waitForOperation(
-    operation: string, 
-    checkComplete: () => Promise<boolean>,
-    timeout: number = 10000
-  ): Promise<void> {
-    const startTime = Date.now();
-    
-    while (Date.now() - startTime < timeout) {
-      try {
-        if (await checkComplete()) {
-          return;
-        }
-      } catch (error) {
-        // Operation might still be in progress
-      }
-
-      // Wait a bit before checking again
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-
-    throw new Error(`Operation ${operation} timed out after ${timeout}ms`);
   }
 
   private async runValidation(files: string[]): Promise<void> {

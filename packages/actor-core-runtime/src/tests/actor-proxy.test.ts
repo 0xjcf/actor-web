@@ -7,22 +7,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { assign, setup } from 'xstate';
 import {
-  type AIAgentClient,
   ActorProxyBuilder,
-  type CreateProxyClient,
-  type UserServiceClient,
+  type AIAgentClient,
   aiAgentRouter,
+  type CreateProxyClient,
   createActorProxyBuilder,
   createActorProxyClient,
   createProxyActor,
   procedures,
+  type UserServiceClient,
   userServiceRouter,
 } from '../actor-proxy.js';
 import { createActorRef } from '../create-actor-ref.js';
 import { Logger } from '../logger.js';
 
 // Enable debug logging for tests
-const log = Logger.namespace('ACTOR_PROXY_TESTS');
+const _log = Logger.namespace('ACTOR_PROXY_TESTS');
 
 // ========================================================================================
 // TEST FIXTURES
@@ -59,14 +59,16 @@ const userServiceMachine = setup({
           let result: unknown = null;
 
           switch (procedure) {
-            case 'getUser':
+            case 'getUser': {
               const { id } = input as { id: string };
               result = context.users.get(id) || null;
               break;
-            case 'profile.getProfile':
+            }
+            case 'profile.getProfile': {
               const { userId } = input as { userId: string };
               result = context.profiles.get(userId) || null;
               break;
+            }
             default:
               result = null;
           }
@@ -92,11 +94,12 @@ const userServiceMachine = setup({
           const newUsers = new Map(context.users);
 
           switch (procedure) {
-            case 'createUser':
+            case 'createUser': {
               const { name, email } = input as { name: string; email: string };
               const id = `user-${Date.now()}`;
               newUsers.set(id, { id, name, email });
               break;
+            }
           }
 
           return newUsers;
@@ -109,11 +112,12 @@ const userServiceMachine = setup({
           const newProfiles = new Map(context.profiles);
 
           switch (procedure) {
-            case 'profile.updateProfile':
+            case 'profile.updateProfile': {
               const { userId, bio } = input as { userId: string; bio: string };
               const existingProfile = newProfiles.get(userId) || { bio: '', avatar: '' };
               newProfiles.set(userId, { ...existingProfile, bio });
               break;
+            }
           }
 
           return newProfiles;
@@ -126,10 +130,11 @@ const userServiceMachine = setup({
           let result: unknown = null;
 
           switch (procedure) {
-            case 'createUser':
+            case 'createUser': {
               const { name } = input as { name: string };
-              result = { id: `user-${Date.now()}` };
+              result = { id: `user-${Date.now()}`, name };
               break;
+            }
             case 'profile.updateProfile':
               result = { success: true };
               break;
@@ -243,15 +248,17 @@ const aiAgentMachine = setup({
           let result: unknown = null;
 
           switch (procedure) {
-            case 'think':
+            case 'think': {
               const { prompt } = input as { prompt: string };
               result = { response: `Thinking about: ${prompt}`, confidence: 0.8 };
               break;
-            case 'memory.retrieve':
+            }
+            case 'memory.retrieve': {
               const { key } = input as { key: string };
               result = { value: context.memory.get(key) || null };
               break;
-            case 'learning.predict':
+            }
+            case 'learning.predict': {
               const { input: predInput, modelId } = input as { input: unknown; modelId: string };
               const model = context.models.get(modelId);
               result = {
@@ -259,6 +266,7 @@ const aiAgentMachine = setup({
                 confidence: model?.accuracy || 0.5,
               };
               break;
+            }
           }
 
           return [
@@ -298,7 +306,8 @@ const aiAgentMachine = setup({
           if (procedure === 'learning.train') {
             const { data, labels } = input as { data: unknown[]; labels: unknown[] };
             const modelId = `model-${Date.now()}`;
-            const accuracy = Math.min(0.9, 0.5 + data.length / 100);
+            // More realistic ML simulation using both data and labels
+            const accuracy = Math.min(0.9, 0.5 + (data.length + labels.length) / 200);
             newModels.set(modelId, { accuracy });
           }
 
@@ -312,19 +321,21 @@ const aiAgentMachine = setup({
           let result: unknown = null;
 
           switch (procedure) {
-            case 'act':
+            case 'act': {
               const { action, params } = input as { action: string; params: unknown };
-              result = { result: `Executed ${action}`, success: true };
+              result = { result: `Executed ${action} with params`, params, success: true };
               break;
+            }
             case 'memory.store':
               result = { stored: true };
               break;
-            case 'learning.train':
+            case 'learning.train': {
               const { data } = input as { data: unknown[] };
               const modelId = `model-${Date.now()}`;
               const accuracy = Math.min(0.9, 0.5 + data.length / 100);
               result = { modelId, accuracy };
               break;
+            }
           }
 
           return [
@@ -598,12 +609,17 @@ describe('Actor Proxy Implementation', () => {
     });
 
     it('should handle unknown procedures gracefully', async () => {
-      // This would be a compile-time error in real usage, but we test runtime behavior
+      // Test runtime behavior for unknown procedures
+      // Create a proxy with unknown method access for testing
+      const testProxy = userProxy as CreateProxyClient<typeof userServiceRouter> & {
+        unknownProcedure: (input: unknown) => Promise<unknown>;
+      };
+
       try {
-        await (userProxy as any).unknownProcedure({ test: 'data' });
+        await testProxy.unknownProcedure({ test: 'data' });
         expect(false).toBe(true); // Should not reach here
       } catch (error) {
-        // Expected to fail
+        // Expected to fail - testing error handling behavior
         expect(error).toBeDefined();
       }
     });

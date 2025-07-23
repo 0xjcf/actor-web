@@ -54,6 +54,14 @@
     }
   },
   "files": {
-    "ignoreUnknown": true
+    "ignoreUnknown": true,
+    "includes": [
+      "**",
+      "!**/coverage/**",
+      "!**/dist/**",
+      "!**/node_modules/**",
+      "!**/*.d.ts.map",
+      "!**/*.js.map"
+    ]
   }
 }

@@ -413,94 +413,122 @@ git worktree add ../feature-branch-name feature/new-feature
 
 ### Agent A (Tech Lead) - Pure Actor Model Architecture
 
-#### Scope of Work (URGENT MIGRATION)
+#### Scope of Work (MESSAGE PLAN DSL ARCHITECTURE)
 ```typescript
-// Primary Responsibilities - PURE ACTOR MODEL MIGRATION
-- 🚨 Remove singleton ActorRegistry (replace with distributed directory)
-- 🚨 Eliminate direct function calls (askGitActor, lookupGitActor, etc.)
-- 🚨 Design message-only communication patterns
-- 🚨 Implement location transparency (actors can run anywhere)
-- 🚨 Design distributed actor directory (Orleans-style with caching)
-- ActorRef core interface design
-- Request/response pattern with correlation IDs
-- Supervision strategies and fault tolerance ("let it crash")
-- Complex state machine integrations
+// Primary Responsibilities - DECLARATIVE MESSAGE ORCHESTRATION
+- 🚨 Design Message Plan DSL for unified communication patterns
+- 🚨 Implement declarative message instructions (Send, Ask, Broadcast)
+- 🚨 Design atomic transaction boundaries for message plans
+- 🚨 Create location-transparent ActorRef abstraction
+- 🚨 Define retry policies and circuit breaker patterns
+- Distributed actor directory with caching
+- Supervision strategies and fault tolerance
 - Architecture decision records (ADRs)
 - Code review for all PRs
 ```
 
-#### Deliverables (UPDATED FOR PURE ACTOR MODEL)
-- [ ] `src/framework/core/actors/distributed-actor-directory.ts`
+#### Deliverables (UPDATED FOR MESSAGE PLAN DSL)
+- [ ] `src/framework/core/actors/message-plan-dsl.ts`
+- [ ] `src/framework/core/actors/message-plan-interpreter.ts`
 - [ ] `src/framework/core/actors/location-transparent-actor-ref.ts`
-- [ ] `src/framework/core/messaging/message-based-communication.ts`
-- [ ] `src/framework/core/actors/supervisor.ts` (Erlang-style)
-- [ ] `src/framework/core/messaging/request-response.ts`
-- [ ] `docs/architecture/pure-actor-model-design.md`
-- [ ] `docs/architecture/distributed-actor-directory.md`
-- [ ] `docs/architecture/supervision-patterns.md`
+- [ ] `src/framework/core/actors/distributed-actor-directory.ts`
+- [ ] `src/framework/core/actors/supervisor.ts`
+- [ ] `src/framework/core/messaging/retry-policies.ts`
+- [ ] `docs/architecture/message-plan-dsl-design.md`
+- [ ] `docs/architecture/cross-actor-communication.md`
 
 #### Key Patterns
 ```typescript
-// Example: ActorRef Interface
-export interface ActorRef<TEvent extends EventObject, TEmitted = any> {
-  readonly id: string;
-  send(event: TEvent): void;
-  ask<TQuery, TResponse>(query: TQuery): Promise<TResponse>;
-  observe<TSelected>(selector: (snapshot: any) => TSelected): Observable<TSelected>;
-  spawn<TChildEvent extends EventObject>(
-    behavior: ActorBehavior<TChildEvent>,
-    options?: SpawnOptions
-  ): ActorRef<TChildEvent>;
-  stop(): Promise<void>;
+// Message Plan DSL Types
+export type MessagePlan =
+  | DomainEvent                                    // Fan-out broadcast
+  | SendInstruction                               // Point-to-point command
+  | AskInstruction                                // Request/response
+  | (DomainEvent | SendInstruction | AskInstruction)[];
+
+export interface SendInstruction {
+  to: ActorRef<any>;
+  msg: ActorMessage;
+  mode?: 'fireAndForget' | 'retry(3)' | 'circuitBreaker';
+}
+
+export interface AskInstruction<R = unknown> {
+  to: ActorRef<any>;
+  ask: ActorMessage;
+  onOk: DomainEvent | ((response: R) => DomainEvent);
+  onErr?: DomainEvent;
+  timeout?: number;
+}
+
+// Component behavior with Message Plan
+export interface ComponentBehaviorConfig<TMessage, TDomainEvent> {
+  onMessage: (params: {
+    message: TMessage;
+    machine: Actor<TMachine>;
+    dependencies: Record<string, ActorRef>;
+  }) => Promise<MessagePlan>;
 }
 ```
 
-### Agent B (Senior Developer) - Message Transport & Serialization
+### Agent B (Senior Developer) - Message Plan Runtime & Transport
 
-#### Scope of Work (UPDATED FOR PURE ACTOR MODEL)
+#### Scope of Work (MESSAGE PLAN EXECUTION ENGINE)
 ```typescript
-// Primary Responsibilities - MESSAGE TRANSPORT & SERIALIZATION
-- 🚨 Implement message serialization (JSON → MessagePack optimization)
-- 🚨 WebSocket transport for cross-machine communication
-- 🚨 Worker Thread transport for CPU-intensive actors
-- 🚨 Message correlation and routing system
-- Mailbox implementation with backpressure
-- Observable pattern (framework-compatible, no external RxJS)
-- Event bus enhancements for actors
-- XState v5 adapter implementation
+// Primary Responsibilities - RUNTIME INTERPRETER & TRANSPORT
+- 🚨 Implement Message Plan interpreter/executor
+- 🚨 Build atomic persistence for message plans
+- 🚨 Create instruction execution pipeline
+- 🚨 Implement retry and circuit breaker mechanisms
+- WebSocket transport for cross-machine communication
+- Worker Thread transport for CPU-intensive actors
+- Message correlation and routing system
 - Performance optimizations (10,000+ messages/sec)
-- Integration with existing framework
+- Integration with transactional outbox
 ```
 
-#### Deliverables (UPDATED FOR PURE ACTOR MODEL)
-- [ ] `src/framework/core/transport/message-serialization.ts`
+#### Deliverables (UPDATED FOR MESSAGE PLAN RUNTIME)
+- [ ] `src/framework/core/runtime/message-plan-executor.ts`
+- [ ] `src/framework/core/runtime/instruction-pipeline.ts`
+- [ ] `src/framework/core/runtime/retry-executor.ts`
+- [ ] `src/framework/core/runtime/circuit-breaker.ts`
 - [ ] `src/framework/core/transport/websocket-transport.ts`
 - [ ] `src/framework/core/transport/worker-thread-transport.ts`
-- [ ] `src/framework/core/messaging/message-router.ts`
-- [ ] `src/framework/core/actors/mailbox.ts`
-- [ ] `src/framework/core/observables/observable.ts`
-- [ ] `src/framework/core/observables/operators.ts`
-- [ ] `src/framework/core/messaging/actor-event-bus.ts`
-- [ ] `src/framework/core/integration/xstate-adapter.ts`
-- [ ] `src/framework/core/integration/component-bridge.ts`
+- [ ] `src/framework/core/persistence/message-plan-store.ts`
+- [ ] `src/framework/core/messaging/correlation-tracker.ts`
 
 #### Key Patterns
 ```typescript
-// Example: Mailbox with Bounded Queue
-export class BoundedMailbox<T> implements Mailbox<T> {
-  private queue: T[] = [];
-  private maxSize: number;
-  
-  constructor(maxSize = 1000) {
-    this.maxSize = maxSize;
+// Message Plan Executor
+export class MessagePlanExecutor {
+  async execute(plan: MessagePlan, context: ExecutionContext): Promise<void> {
+    // 1. Persist plan atomically with state
+    await this.store.transaction(async tx => {
+      await tx.saveState(context.actorId, context.state);
+      await tx.savePlan(context.planId, plan);
+    });
+    
+    // 2. Execute each instruction
+    const instructions = Array.isArray(plan) ? plan : [plan];
+    for (const instruction of instructions) {
+      await this.executeInstruction(instruction, context);
+    }
   }
   
-  enqueue(message: T): boolean {
-    if (this.queue.length >= this.maxSize) {
-      return false; // Apply backpressure
+  private async executeInstruction(
+    instruction: MessagePlan,
+    context: ExecutionContext
+  ): Promise<void> {
+    if (isDomainEvent(instruction)) {
+      // Fan-out: machine.send() + emit()
+      context.machine.send(instruction);
+      await context.emit(instruction);
+    } else if (isSendInstruction(instruction)) {
+      // Point-to-point with retry policy
+      await this.sendWithPolicy(instruction);
+    } else if (isAskInstruction(instruction)) {
+      // Request/response with timeout
+      await this.askWithCallback(instruction);
     }
-    this.queue.push(message);
-    return true;
   }
 }
 ```

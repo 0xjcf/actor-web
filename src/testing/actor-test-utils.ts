@@ -2,63 +2,80 @@
  * @module framework/testing/actor-test-utils
  * @description Test utilities and helpers for testing actor implementations
  * @author Agent C - 2025-07-15
- * 
+ *
  * Updated for v2.0.0 to use @actor-core/runtime
  */
 
-import { vi } from 'vitest';
-import type { EventObject, StateMachine } from 'xstate';
-import type { 
-  ActorRef, 
+import type {
+  ActorAddress,
+  ActorMessage,
+  ActorPID,
+  ActorStats,
   ActorSystem,
-  Message,
-  ActorStats 
+  ClusterState,
+  MessageInput,
+  Observable,
 } from '@actor-core/runtime';
 
 /**
  * Mock Actor implementation for testing
  */
-export class MockActor implements ActorRef {
-  public readonly id: string;
-  private messages: Message[] = [];
+export class MockActor implements ActorPID {
+  public readonly address: ActorAddress;
+  private messages: ActorMessage[] = [];
   private isAliveValue = true;
-  
+
   constructor(id: string) {
-    this.id = id;
+    this.address = { id, type: 'mock', path: `/mock/${id}` };
   }
-  
-  async send(message: Message): Promise<void> {
-    this.messages.push(message);
+
+  async send(message: MessageInput): Promise<void> {
+    this.messages.push(message as ActorMessage);
   }
-  
-  async ask<T>(message: Message): Promise<T> {
-    this.messages.push(message);
+
+  async ask<T>(message: MessageInput): Promise<T> {
+    this.messages.push(message as ActorMessage);
     // Return mock response
     return {} as T;
   }
-  
+
+  async stop(): Promise<void> {
+    this.isAliveValue = false;
+  }
+
+  subscribe(_eventType: string): Observable<ActorMessage> {
+    // Mock observable
+    return {
+      subscribe: () => ({ unsubscribe: () => {} }),
+    } as Observable<ActorMessage>;
+  }
+
+  unsubscribe(_eventType: string): void {
+    // Mock implementation
+  }
+
   async isAlive(): Promise<boolean> {
     return this.isAliveValue;
   }
-  
+
   async getStats(): Promise<ActorStats> {
     return {
       messagesProcessed: this.messages.length,
       messagesReceived: this.messages.length,
+      errors: 0,
       uptime: 1000,
-      lastMessageTime: Date.now()
     };
   }
-  
+
   // Test helpers
-  getMessages(): Message[] {
+  getMessages(): ActorMessage[] {
     return [...this.messages];
   }
-  
+
   clearMessages(): void {
     this.messages = [];
   }
-  
+
   setAlive(value: boolean): void {
     this.isAliveValue = value;
   }
@@ -69,39 +86,91 @@ export class MockActor implements ActorRef {
  */
 export class MockActorSystem implements ActorSystem {
   private actors = new Map<string, MockActor>();
-  
+
   async start(): Promise<void> {
     // No-op for mock
   }
-  
+
   async stop(): Promise<void> {
     // No-op for mock
   }
-  
-  async spawn(behavior: any, options?: { id?: string }): Promise<MockActor> {
+
+  async spawn(_behavior: unknown, options?: { id?: string }): Promise<MockActor> {
     const id = options?.id || `actor-${Date.now()}`;
     const actor = new MockActor(id);
     this.actors.set(id, actor);
     return actor;
   }
-  
-  async lookup(path: string): Promise<MockActor | null> {
+
+  async lookup(path: string): Promise<ActorPID | undefined> {
     // Simple lookup by ID for testing
     const id = path.split('/').pop() || '';
-    return this.actors.get(id) || null;
+    return this.actors.get(id) || undefined;
   }
-  
-  async listActors(): Promise<string[]> {
-    return Array.from(this.actors.keys());
+
+  async listActors(): Promise<ActorAddress[]> {
+    return Array.from(this.actors.values()).map((actor) => actor.address);
   }
-  
+
+  async getSystemStats(): Promise<{
+    totalActors: number;
+    messagesPerSecond: number;
+    uptime: number;
+    clusterState: ClusterState;
+  }> {
+    return {
+      totalActors: this.actors.size,
+      messagesPerSecond: 0,
+      uptime: 1000,
+      clusterState: { nodes: [], leader: undefined, status: 'up' as const },
+    };
+  }
+
+  async join(_nodes: string[]): Promise<void> {
+    // Mock implementation
+  }
+
+  async leave(): Promise<void> {
+    // Mock implementation
+  }
+
+  getClusterState(): ClusterState {
+    return { nodes: [], leader: undefined, status: 'up' as const };
+  }
+
+  subscribeToClusterEvents(): Observable<{
+    type: 'node-up' | 'node-down' | 'leader-changed';
+    node: string;
+  }> {
+    return {
+      subscribe: () => ({ unsubscribe: () => {} }),
+    } as Observable<{ type: 'node-up' | 'node-down' | 'leader-changed'; node: string }>;
+  }
+
+  onShutdown(_handler: () => Promise<void>): void {
+    // Mock implementation
+  }
+
+  subscribeToSystemEvents(): Observable<{
+    type: string;
+    [key: string]: unknown;
+  }> {
+    return {
+      subscribe: () => ({ unsubscribe: () => {} }),
+    } as Observable<{ type: string; [key: string]: unknown }>;
+  }
+
   // Test helpers
   getActor(id: string): MockActor | undefined {
     return this.actors.get(id);
   }
-  
+
   clearActors(): void {
     this.actors.clear();
+  }
+
+  isRunning(): boolean {
+    return true;
   }
 }
 
@@ -110,7 +179,7 @@ export class MockActorSystem implements ActorSystem {
  */
 export function createTestEnvironment() {
   const system = new MockActorSystem();
-  
+
   return {
     system,
     async createActor(id: string): Promise<MockActor> {
@@ -118,7 +187,7 @@ export function createTestEnvironment() {
     },
     cleanup() {
       system.clearActors();
-    }
+    },
   };
 }
 
@@ -134,19 +203,20 @@ export function createMockActorRef(id = 'test-actor'): MockActor {
  */
 export function assertMessageReceived(
   actor: MockActor,
-  expectedMessage: Partial<Message>
+  expectedMessage: Partial<ActorMessage>
 ): void {
   const messages = actor.getMessages();
-  const found = messages.some(msg => 
-    msg.type === expectedMessage.type &&
-    (expectedMessage.payload === undefined || 
-     JSON.stringify(msg.payload) === JSON.stringify(expectedMessage.payload))
+  const found = messages.some(
+    (msg) =>
+      msg.type === expectedMessage.type &&
+      (expectedMessage.payload === undefined ||
+        JSON.stringify(msg.payload) === JSON.stringify(expectedMessage.payload))
   );
-  
+
   if (!found) {
     throw new Error(
       `Expected actor to receive message ${expectedMessage.type}, ` +
-      `but got: ${messages.map(m => m.type).join(', ')}`
+        `but got: ${messages.map((m) => m.type).join(', ')}`
     );
   }
 }
@@ -158,16 +228,16 @@ export async function waitForMessage(
   actor: MockActor,
   messageType: string,
   timeout = 1000
-): Promise<Message> {
+): Promise<ActorMessage> {
   const start = Date.now();
-  
+
   while (Date.now() - start < timeout) {
     const messages = actor.getMessages();
-    const found = messages.find(m => m.type === messageType);
+    const found = messages.find((m) => m.type === messageType);
     if (found) return found;
-    
-    await new Promise(resolve => setTimeout(resolve, 10));
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  
+
   throw new Error(`Timeout waiting for message: ${messageType}`);
 }

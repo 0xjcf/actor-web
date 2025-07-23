@@ -11,7 +11,6 @@ import { type ActorRef, ActorStoppedError, generateActorId } from './actor-ref.j
 import { Supervisor } from './actors/supervisor.js';
 import { Logger } from './logger.js';
 import { RequestResponseManager } from './messaging/request-response.js';
-import { CustomObservable } from './observable.js';
 import type {
   ActorBehavior,
   ActorRefOptions,
@@ -19,7 +18,6 @@ import type {
   ActorStatus,
   AskOptions,
   BaseEventObject,
-  Observable,
   SpawnOptions,
   SupervisionStrategy,
 } from './types.js';
@@ -204,14 +202,21 @@ class UnifiedActorRef<
     this.eventBus.emit(event);
   }
 
-  subscribe(listener: (event: TEmitted) => void): () => void {
-    this.logger.debug('Adding event subscriber', { actorId: this.id });
-    return this.eventBus.subscribe(listener);
+  subscribe(eventType: string, listener: (event: TEmitted) => void): () => void {
+    this.logger.debug('Adding event subscriber', { actorId: this.id, eventType });
+
+    // For now, we'll filter events based on type
+    // In the future, we could optimize this with a more sophisticated event bus
+    return this.eventBus.subscribe((event) => {
+      // Check if event matches the requested type
+      if (this.eventMatchesType(event, eventType)) {
+        listener(event);
+      }
+    });
   }
 
-  on(listener: (event: TEmitted) => void): () => void {
-    this.logger.debug('Adding event listener', { actorId: this.id });
-    return this.eventBus.subscribe(listener);
+  on(eventType: string, listener: (event: TEmitted) => void): () => void {
+    return this.subscribe(eventType, listener);
   }
 
   // ========================================================================================
@@ -258,31 +263,6 @@ class UnifiedActorRef<
   }
 
   // ========================================================================================
-  // OBSERVABLES SUPPORT
-  // ========================================================================================
-
-  observe<TObserved>(selector: (snapshot: TSnapshot) => TObserved): Observable<TObserved> {
-    return new CustomObservable<TObserved>((observer) => {
-      const unsubscribe = this.actor.subscribe({
-        next: (snapshot) => {
-          try {
-            // Convert XState snapshot to framework snapshot
-            const frameworkSnapshot = this.convertSnapshot(snapshot);
-            const selected = selector(frameworkSnapshot);
-            observer.next(selected);
-          } catch (error) {
-            observer.error?.(error as Error);
-          }
-        },
-        error: (error) => observer.error?.(error as Error),
-        complete: () => observer.complete?.(),
-      });
-
-      return () => unsubscribe.unsubscribe();
-    });
-  }
-
-  // ========================================================================================
   // HIERARCHY MANAGEMENT
   // ========================================================================================
 
@@ -296,6 +276,11 @@ class UnifiedActorRef<
     if (typeof behavior === 'function') {
       // For behavior functions, we need to create a machine
       throw new Error('Behavior functions not yet supported, use AnyStateMachine instead');
+    }
+
+    // Type guard: if not a function, it must be AnyStateMachine
+    if (typeof behavior !== 'object' || behavior === null || !('id' in behavior)) {
+      throw new Error('Invalid behavior: expected AnyStateMachine');
     }
     const machine = behavior as AnyStateMachine;
 
@@ -327,6 +312,29 @@ class UnifiedActorRef<
   // ========================================================================================
   // UTILITY METHODS
   // ========================================================================================
+
+  /**
+   * Check if an event matches the requested event type
+   * Supports exact matches and wildcard patterns (e.g., 'user.*')
+   */
+  private eventMatchesType(event: TEmitted, eventType: string): boolean {
+    // If event has a type property, use it for matching
+    if (typeof event === 'object' && event !== null && 'type' in event) {
+      const eventTypeStr = String((event as { type: unknown }).type);
+
+      // Exact match
+      if (eventTypeStr === eventType) return true;
+
+      // Wildcard match (e.g., 'user.*' matches 'user.created', 'user.updated', etc.)
+      if (eventType.endsWith('*')) {
+        const prefix = eventType.slice(0, -1);
+        return eventTypeStr.startsWith(prefix);
+      }
+    }
+
+    // If no type property or no match, check if we're subscribing to all events
+    return eventType === '*';
+  }
 
   matches(statePath: string): boolean {
     const snapshot = this.actor.getSnapshot();
@@ -467,19 +475,6 @@ class UnifiedActorRef<
   // ========================================================================================
   // HELPER METHODS
   // ========================================================================================
-
-  private convertSnapshot(snapshot: ReturnType<typeof this.actor.getSnapshot>): TSnapshot {
-    return {
-      value: snapshot.value,
-      context: snapshot.context,
-      status: this._status,
-      error: snapshot.error,
-      matches: snapshot.matches.bind(snapshot),
-      can: snapshot.can.bind(snapshot),
-      hasTag: snapshot.hasTag.bind(snapshot),
-      toJSON: snapshot.toJSON.bind(snapshot),
-    } as unknown as TSnapshot;
-  }
 
   private summarizeContext(context: unknown): Record<string, unknown> {
     if (typeof context === 'object' && context !== null) {

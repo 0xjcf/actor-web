@@ -1,13 +1,13 @@
 /**
- * XState Integration Example - Shows how createActor can work with XState machines
+ * XState Integration Example - Shows how defineBehavior can work with XState machines
  *
- * This example demonstrates the unified createActor API that supports both
+ * This example demonstrates the unified defineBehavior API that supports both
  * behavior-based actors and XState state machines.
  */
 
 import { createMachine } from 'xstate';
 import type { ActorMessage } from '../actor-system.js';
-import { createActor } from '../create-actor.js';
+import { defineBehavior } from '../index.js';
 
 // Define a simple toggle machine using XState
 const toggleMachine = createMachine(
@@ -46,46 +46,50 @@ const toggleMachine = createMachine(
 );
 
 // Example 1: Behavior-based actor
-const behaviorActor = createActor<
+const behaviorActor = defineBehavior<
   ActorMessage,
   { isActive: boolean; count: number },
   { type: 'TOGGLED'; wasActive: boolean; count: number }
 >({
   context: { isActive: false, count: 0 },
-  behavior: {
-    onMessage: ({ message, context }) => {
-      if (message.type === 'TOGGLE') {
-        const wasActive = context.isActive;
-        const newCount = context.count + 1;
+  onMessage: ({
+    message,
+    context,
+  }: {
+    message: ActorMessage;
+    context: { isActive: boolean; count: number };
+  }) => {
+    if (message.type === 'TOGGLE') {
+      const wasActive = context.isActive;
+      const newCount = context.count + 1;
 
-        return {
-          context: {
-            isActive: !context.isActive,
-            count: newCount,
-          },
-          emit: {
-            type: 'TOGGLED',
-            wasActive,
-            count: newCount,
-          },
-        };
-      }
+      return {
+        context: {
+          isActive: !context.isActive,
+          count: newCount,
+        },
+        emit: {
+          type: 'TOGGLED',
+          wasActive,
+          count: newCount,
+        },
+      };
+    }
 
-      return { context };
-    },
+    return { context };
   },
 });
 
 // Example 2: XState machine actor (future implementation)
 // Note: This is a demonstration of the API. Full XState integration
 // would require bridging XState's actor system with our actor system.
-const xstateActor = createActor({
+const xstateActor = defineBehavior({
   machine: toggleMachine,
   input: { count: 0 },
 });
 
-// Example 3: Direct ActorDefinition
-const directActor = createActor({
+// Example 3: Direct ActorBehavior
+const directActor = defineBehavior({
   context: { value: 0 },
   onMessage: async ({ message, context }) => {
     if (message.type === 'INCREMENT') {

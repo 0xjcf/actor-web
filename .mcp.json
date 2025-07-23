@@ -2,15 +2,11 @@
   "mcpServers": {
     "console-ninja": {
       "command": "node",
-      "args": [
-        "${HOME}/.console-ninja/mcp/index.js"
-      ]
+      "args": ["${HOME}/.console-ninja/mcp/index.js"]
     },
     "wallaby": {
       "command": "node",
-      "args": [
-        "${HOME}/.wallaby/mcp/index.js"
-      ]
+      "args": ["${HOME}/.wallaby/mcp/index.js"]
     },
     "GraphRag": {
       "command": "${HOME}/.graph-rag/mcp/graph-rag-mcp",

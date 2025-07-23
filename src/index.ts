@@ -8,14 +8,14 @@
 
 /**
  * ⚠️ BREAKING CHANGE in v2.0.0
- * 
+ *
  * The old @actor-web/core implementation has been removed.
  * All exports now come from @actor-core/runtime which provides:
  * - Pure message-passing communication
- * - True location transparency  
+ * - True location transparency
  * - Distributed actor directory
  * - No singleton dependencies
- * 
+ *
  * See MIGRATION.md for upgrade instructions.
  */
 
@@ -40,7 +40,7 @@ export type {
 export const createComponent = () => {
   throw new Error(
     'createComponent has been removed in v2.0. ' +
-    'Components are being redesigned to work with the pure actor model. ' +
-    'For now, use framework-specific implementations.'
+      'Components are being redesigned to work with the pure actor model. ' +
+      'For now, use framework-specific implementations.'
   );
 };

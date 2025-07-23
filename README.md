@@ -1,6 +1,6 @@
 # 🎭 Actor-Web Framework
 
-> Pure Actor Model framework for building resilient, scalable web applications with location-transparent message-passing architecture.
+> **Erlang OTP for JavaScript/TypeScript** - Battle-tested telecom patterns for building resilient, fault-tolerant web applications.
 
 ## ⚠️ IMPORTANT: Framework Migration in Progress
 
@@ -25,19 +25,19 @@ The current implementation violates pure actor model principles:
 
 ---
 
-[![npm version](https://badge.fury.io/js/%40actor-web%2Fcore.svg)](https://badge.fury.io/js/%40actor-web%2Fcore)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6+-blue.svg)](https://www.typescriptlang.org/)
 [![XState v5](https://img.shields.io/badge/XState-v5-orange.svg)](https://stately.ai/docs/xstate)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/0xjcf/actor-web?utm_source=oss&utm_medium=github&utm_campaign=0xjcf%2Factor-web&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
 
 ## 🚀 Features
 
-### 🎭 **Pure Actor Model Architecture**
-- **Message-Only Communication**: Asynchronous message-passing with no shared state
-- **Location Transparency**: Actors work seamlessly across Node.js, Browser, and Web Workers
-- **Distributed Actor Directory**: Orleans-style caching with 90%+ hit rate
-- **Fault Tolerance**: Supervision trees with "let it crash" philosophy
+### 🎭 **Erlang OTP-Style Actor Model**
+- **Direct OTP Mapping**: XState replaces recursive state, Message Plans replace `Pid ! Reply`
+- **Battle-Tested Patterns**: 30+ years of telecom reliability patterns
+- **"Let It Crash" Philosophy**: Supervision trees with automatic restart strategies  
+- **Location Transparency**: Actors work seamlessly across different processes
+- **Distributed Actor Directory**: Orleans-style caching for high-performance lookups
 
 ### 🔒 **Advanced Security & Access Control**
 - **Capability Security**: Fine-grained permission-based actor access
@@ -45,11 +45,12 @@ The current implementation violates pure actor model principles:
 - **Rate Limiting**: Built-in protection against message flooding
 - **Time-Limited Access**: Automatic capability expiration
 
-### 🚀 **Zero-Boilerplate APIs**
+### Zero-Boilerplate APIs
+
 - **One-Line Actor Creation**: `const { actor, proxy } = createProxyActor(machine, router)`
 - **Auto-Generated Type Safety**: Full IntelliSense without manual typing
-- **Instant Security**: `createCapabilitySecuredRef(actor, permissions)` 
-- **Smart Memory**: `memory.recall(query)` across cache + vectors + knowledge graph
+- **Instant Security**: `createSecureActor(actor, permissions, grantedBy)`
+- **Smart Memory**: `await memory.recall(query)` across cache + vectors + knowledge graph
 
 ### 🧠 **AI Agent Patterns**
 - **Hierarchical Task Networks (HTN)**: Complex agent planning and decomposition
@@ -57,32 +58,116 @@ The current implementation violates pure actor model principles:
 - **Pipeline Workflows**: Composable AI workflows with retry and error handling
 - **Event Sourcing**: Complete actor state replay and debugging
 
-### ⚡ **Performance & Scale**
-- **Sub-millisecond Lookup**: Actor directory with intelligent caching
-- **10,000+ Messages/Second**: High-throughput message processing
-- **Automatic Backpressure**: Bounded mailboxes with flow control
+### ⚡ **Core Capabilities**
+- **Pure Message Passing**: No shared state between actors
+- **Supervision Strategies**: Automatic restart, escalation, and recovery
+- **Ask Pattern**: Request-response with automatic correlation
 - **XState Integration**: Seamless state machine integration
 
 ## 📦 Installation
 
+**Note**: The packages are currently in development and not yet published to npm. Clone the repository and use pnpm workspaces for now.
+
 ```bash
-# Core runtime
-pnpm add @actor-core/runtime
+# Clone the repository
+git clone https://github.com/0xjcf/actor-web.git
+cd actor-web
 
-# CLI tools
-pnpm add @agent-workflow/cli -D
+# Install dependencies
+pnpm install
 
-# Testing utilities
-pnpm add @actor-core/testing -D
-
-# Complete setup
-pnpm add @actor-core/runtime xstate
-pnpm add @agent-workflow/cli @actor-core/testing -D
+# For future npm installation (not yet available):
+# pnpm add @actor-core/runtime
+# pnpm add @agent-workflow/cli -D
+# pnpm add @actor-core/testing -D
 ```
 
 ## 🎯 Quick Start
 
-### Basic Actor System Usage
+### OTP-Style Counter Actor (Erlang → JS/TS)
+
+```typescript
+import { createActor, defineBehavior } from '@actor-core/runtime';
+import { createMachine, assign } from 'xstate';
+
+// 1. State machine (replaces Erlang's recursive counter(Count))
+const counterMachine = createMachine({
+  context: { count: 0 },
+  states: {
+    active: {
+      on: {
+        INCREMENT: { actions: assign({ count: ctx => ctx.count + 1 }) },
+        DECREMENT: { actions: assign({ count: ctx => ctx.count - 1 }) },
+        RESET: { actions: assign({ count: 0 }) }
+      }
+    }
+  }
+});
+
+// 2. Behavior (like OTP gen_server callbacks)
+const counterBehavior = defineBehavior({
+  context: { messageCount: 0 },
+  
+  onMessage({ message, context, machine }) {
+    const newContext = { messageCount: context.messageCount + 1 };
+    
+    // Handle ask pattern - respond with current count
+    if (message.type === 'GET_COUNT' && message.correlationId) {
+      return {
+        context: newContext,
+        emit: {
+          type: 'RESPONSE',
+          correlationId: message.correlationId,
+          payload: machine.getSnapshot().context.count,
+          timestamp: Date.now(),
+          version: '1.0.0'
+        }
+      };
+    }
+    
+    // Handle increment with domain event (auto fan-out)
+    if (message.type === 'INCREMENT') {
+      return {
+        context: newContext,
+        emit: {
+          type: 'COUNT_CHANGED',
+          oldValue: machine.getSnapshot().context.count,
+          newValue: machine.getSnapshot().context.count + 1
+        }
+      };
+    }
+    
+    return { context: newContext }; // Default: no emission
+  }
+});
+
+// 3. Spawn and use
+const counter = createActor({ machine: counterMachine, behavior: counterBehavior });
+counter.start();
+
+// Send messages
+counter.send(createMessage('INCREMENT'));
+
+// Ask for count (request-response)
+const count = await counter.ask(createMessage('GET_COUNT'), { timeout: 1000 });
+console.log('Count:', count); // Outputs: Count: 1
+```
+
+### Why OTP for Web?
+
+| Erlang OTP Challenge | Web Solution |
+|---------------------|--------------|
+| Learning OTP syntax | **Same patterns**, familiar JS/TS syntax |
+| Managing recursive state | **XState** handles state transitions visually |  
+| Manual machine.send() calls | **Fan-out** automatically updates state from returns |
+| Manual message correlation | **Ask pattern** with automatic correlation IDs |
+| Process supervision setup | **Built-in** supervision strategies |
+| Location transparency | **URI addressing**: `actor://worker/service` |
+| Hot code reloading | **Dynamic behaviors** with same actor identity |
+
+**The patterns you know from Erlang/Elixir, now with TypeScript safety and web-native APIs.**
+
+### Traditional Actor System Usage
 
 ```typescript
 import { createActorSystem, createActorRef } from '@actor-core/runtime';
@@ -427,7 +512,7 @@ console.log('Actor location:', location);
 
 // Get cache statistics
 const stats = directory.getCacheStats();
-console.log('Cache hit rate:', stats.hitRate); // Should be >90%
+console.log('Cache hit rate:', stats.hitRate);
 ```
 
 ### Event-Driven Architecture
@@ -483,14 +568,6 @@ describe('User Actor', () => {
 });
 ```
 
-## 📊 Performance
-
-- **Message Throughput**: 10,000+ messages/second
-- **Cache Hit Rate**: 90%+ with Orleans-style caching
-- **Memory Efficient**: Bounded mailboxes with TTL cleanup
-- **Concurrent Actors**: Handles 1,000+ concurrent actors
-- **Bundle Size**: < 20KB gzipped
-
 ## 🏛️ Architecture
 
 ```
@@ -527,7 +604,7 @@ describe('User Actor', () => {
 ## 📦 Package Structure
 
 ```
-actor-web-architecture/
+actor-web/
 ├── packages/
 │   ├── actor-core-runtime/        # Core actor system implementation
 │   │   ├── src/
@@ -558,15 +635,44 @@ actor-web-architecture/
 
 ## 🛣️ Roadmap
 
-- [x] **Phase 1**: Distributed Actor Directory with Orleans-style caching
-- [x] **Phase 2**: Location-transparent actor system
-- [x] **Phase 3**: CLI tools and state machine analysis
-- [ ] **Phase 4**: Web Worker support for true parallelism
-- [ ] **Phase 5**: Browser DevTools integration
-- [ ] **Phase 6**: Performance optimizations and monitoring
-- [ ] **Phase 7**: Multi-language bindings
+### Phase 1: Core Stabilization (Current)
+- [x] Distributed Actor Directory with Orleans-style caching
+- [x] Location-transparent actor system
+- [x] CLI tools and state machine analysis
+- [x] Virtual Actor System implementation
+- [x] Hierarchical Task Networks (HTN) for AI agents
+- [x] Hybrid Memory Systems (LRU + Vector + Knowledge Graph)
+- [x] Pipeline Workflows with retry and error handling
+- [x] Event Sourcing with time-travel debugging
+- [ ] Publish packages to npm registry
+- [ ] Comprehensive performance benchmarks
 
-See [ROADMAP.md](./docs/ROADMAP.md) for detailed timeline.
+### Phase 2: Platform Support (Q2 2025)
+- [ ] Web Worker support for true parallelism
+- [ ] Service Worker integration
+- [ ] Edge runtime compatibility
+- [ ] React/Vue/Svelte bindings
+
+### Phase 3: Developer Experience (Q3 2025)
+- [ ] Browser DevTools integration
+- [ ] Visual state machine editor
+- [ ] Real-time debugging tools
+- [ ] Performance monitoring dashboard
+
+### Phase 4: Enterprise Features (Q4 2025)
+- [ ] Multi-language bindings (Python, Go, Rust)
+- [ ] Kubernetes operators
+- [ ] Distributed tracing
+- [ ] Security audit tools
+- [ ] Commercial support
+
+### Phase 5: AI & ML Integration (2026)
+- [ ] Built-in ML model serving
+- [ ] Reinforcement learning actors
+- [ ] Natural language message routing
+- [ ] Auto-scaling based on load patterns
+
+See [docs/ROADMAP.md](./docs/ROADMAP.md) for detailed timeline and technical specifications.
 
 ## 📚 Documentation
 
@@ -600,8 +706,8 @@ See [ROADMAP.md](./docs/ROADMAP.md) for detailed timeline.
 
 ```bash
 # Clone the repository
-git clone https://github.com/0xjcf/actor-web-architecture.git
-cd actor-web-architecture
+git clone https://github.com/0xjcf/actor-web.git
+cd actor-web
 
 # Install dependencies
 pnpm install

@@ -16,6 +16,12 @@ import {
   BrowserStorage,
   BrowserTimer,
   BrowserTransport,
+  cleanupRuntime,
+  createRuntimeAdapter,
+  detectEnvironment,
+  getRuntimeCapabilities,
+  getRuntimeInfo,
+  initializeRuntime,
   NodeAdapter,
   NodeStorage,
   NodeTimer,
@@ -25,12 +31,6 @@ import {
   WorkerStorage,
   WorkerTimer,
   WorkerTransport,
-  cleanupRuntime,
-  createRuntimeAdapter,
-  detectEnvironment,
-  getRuntimeCapabilities,
-  getRuntimeInfo,
-  initializeRuntime,
 } from '../runtime-adapter.js';
 
 // Mock global objects for testing different environments
@@ -106,7 +106,7 @@ describe('Runtime Adapter Pattern', () => {
             return;
           }
           await adapter.cleanup();
-        } catch (error) {
+        } catch (_error) {
           // Ignore cleanup errors in tests - environment may not support all operations
         }
       })

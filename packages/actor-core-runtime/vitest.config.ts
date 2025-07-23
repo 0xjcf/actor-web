@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     environment: 'node', // Runtime package runs in Node environment
     globals: true,
-    // Note: No setupFiles needed for Node.js runtime tests
+    setupFiles: ['./tests/setup.ts'], // Disable debug mode by default
     include: ['src/**/*.{test,spec}.{js,ts}'],
     coverage: {
       provider: 'v8',

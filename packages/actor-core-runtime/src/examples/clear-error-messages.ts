@@ -2,11 +2,11 @@
  * Clear Error Messages Example - Demonstrates the improved type error experience
  *
  * This file shows how the enhanced type system provides clear, actionable error messages
- * for common mistakes when using createActor.
+ * for common mistakes when using defineBehavior.
  */
 
 import type { ActorMessage } from '../actor-system.js';
-import { type TypedEvent, createActor } from '../index.js';
+import { defineBehavior, type TypedEvent } from '../index.js';
 
 // Define events with clear type discrimination
 type TodoEvent =
@@ -21,7 +21,7 @@ type TodoContext = {
 
 // Example with a typo - uncomment to see the clear error message
 /*
-const todoActorWithTypo = createActor<ActorMessage, TodoContext, TodoEvent>({
+const todoActorWithTypo = defineBehavior<ActorMessage, TodoContext, TodoEvent>({
   context: { todos: [] },
   onMessage: ({ message, context }) => {
     if (message.type === 'ADD_TODO') {
@@ -40,7 +40,7 @@ const todoActorWithTypo = createActor<ActorMessage, TodoContext, TodoEvent>({
 
 // Example with wrong data structure - uncomment to see the error
 /*
-const todoActorWrongData = createActor<ActorMessage, TodoContext, TodoEvent>({
+const todoActorWrongData = defineBehavior<ActorMessage, TodoContext, TodoEvent>({
   context: { todos: [] },
   onMessage: ({ message, context }) => {
     if (message.type === 'TOGGLE_TODO') {
@@ -57,7 +57,7 @@ const todoActorWrongData = createActor<ActorMessage, TodoContext, TodoEvent>({
 
 // Example with missing required field - uncomment to see the error
 /*
-const todoActorMissingField = createActor<ActorMessage, TodoContext, TodoEvent>({
+const todoActorMissingField = defineBehavior<ActorMessage, TodoContext, TodoEvent>({
   context: { todos: [] },
   onMessage: ({ message, context }) => {
     if (message.type === 'ADD_TODO') {
@@ -92,7 +92,7 @@ const invalidEvent = createTodoEvent({
 */
 
 // Correct implementation with proper types
-const todoActor = createActor<ActorMessage, TodoContext, TodoEvent>({
+const todoActor = defineBehavior<ActorMessage, TodoContext, TodoEvent>({
   context: { todos: [] },
   onMessage: ({ message, context }) => {
     switch (message.type) {

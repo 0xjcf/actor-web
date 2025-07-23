@@ -1,20 +1,16 @@
 /**
- * @module actor-core/runtime/examples/hybrid-memory-example.test
- * @description Test file to run hybrid memory pattern examples
+ * Test file for Hybrid Memory Examples
  */
 
-import { beforeAll, describe, it } from 'vitest';
-import { enableDevMode } from '../logger.js';
+import { describe, expect, it } from 'vitest';
+// import { enableDevMode } from '../logger.js'; // Removed - use pnpm test:debug for verbose output
 import { runHybridMemoryExamples } from './hybrid-memory-example.js';
 
-describe('Hybrid Memory Pattern Examples', () => {
-  beforeAll(() => {
-    // Enable dev mode to see all debug logs including memory internals
-    enableDevMode();
-  });
+describe('Hybrid Memory Examples', () => {
+  // Removed enableDevMode() - tests run quietly by default
+  // Use `pnpm test:debug` for verbose output when needed
 
-  it('should run all hybrid memory pattern examples without errors', async () => {
-    // Run the examples
-    await runHybridMemoryExamples();
-  }, 60000); // 60 second timeout for all examples
+  it('should run all hybrid memory examples without errors', async () => {
+    await expect(runHybridMemoryExamples()).resolves.not.toThrow();
+  }, 10000); // 10 second timeout
 });

@@ -10,7 +10,6 @@ import type {
   ActorStatus,
   AskOptions,
   BaseEventObject,
-  Observable,
   SpawnOptions,
   SupervisionStrategy,
 } from './types.js';
@@ -91,18 +90,20 @@ export interface ActorRef<
   emit(event: TEmitted): void;
 
   /**
-   * Subscribe to events emitted by this actor
-   * @param listener - Function to call when events are emitted
+   * Subscribe to specific event types emitted by this actor
+   * @param eventType - The event type to subscribe to (supports wildcards like 'user.*')
+   * @param listener - Function to call when matching events are emitted
    * @returns Unsubscribe function to stop receiving events
    */
-  subscribe(listener: (event: TEmitted) => void): () => void;
+  subscribe(eventType: string, listener: (event: TEmitted) => void): () => void;
 
   /**
-   * Subscribe to events emitted by this actor (alias for subscribe)
-   * @param listener - Function to call when events are emitted
+   * Subscribe to specific event types emitted by this actor (alias for subscribe)
+   * @param eventType - The event type to subscribe to (supports wildcards like 'user.*')
+   * @param listener - Function to call when matching events are emitted
    * @returns Unsubscribe function to stop receiving events
    */
-  on(listener: (event: TEmitted) => void): () => void;
+  on(eventType: string, listener: (event: TEmitted) => void): () => void;
 
   // ========================================================================================
   // REQUEST/RESPONSE PATTERN (ASK)
@@ -122,15 +123,8 @@ export interface ActorRef<
   ): Promise<TResponse>;
 
   // ========================================================================================
-  // STATE OBSERVATION (REACTIVE PATTERNS)
+  // STATE ACCESS (PURE ACTOR MODEL)
   // ========================================================================================
-
-  /**
-   * Observe state changes with a selector function
-   * @param selector - Function to select specific state slice
-   * @returns Observable of selected state changes
-   */
-  observe<TSelected>(selector: (snapshot: TSnapshot) => TSelected): Observable<TSelected>;
 
   /**
    * Get the current snapshot of this actor's state (one-time read)

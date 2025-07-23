@@ -8,14 +8,77 @@
  * @author Agent A (Tech Lead) - 2025-07-18
  */
 
-import { createActorSystem } from '../actor-system-impl.js';
 import type { ActorBehavior, ActorMessage, ActorPID } from '../actor-system.js';
-import { Logger, enableDevModeForCLI } from '../logger.js';
+import { createActorSystem } from '../actor-system-impl.js';
+import { enableDevModeForCLI, Logger } from '../logger.js';
 
 // Enable logging for this example
 enableDevModeForCLI();
 
 const log = Logger.namespace('EVENT_EMISSION_EXAMPLE');
+
+// Define message payload types for type safety
+interface CreateOrderPayload {
+  orderId: string;
+  customerId: string;
+  items: Array<{ productId: string; quantity: number }>;
+}
+
+interface OrderActionPayload {
+  orderId: string;
+}
+
+interface UpdateStockPayload {
+  productId: string;
+  quantity: number;
+}
+
+interface ReserveStockPayload {
+  items: Array<{ productId: string; quantity: number }>;
+}
+
+// Type guards for payload validation
+function _isCreateOrderPayload(payload: unknown): payload is CreateOrderPayload {
+  return (
+    payload !== null &&
+    typeof payload === 'object' &&
+    'orderId' in payload &&
+    'customerId' in payload &&
+    'items' in payload &&
+    typeof (payload as CreateOrderPayload).orderId === 'string' &&
+    typeof (payload as CreateOrderPayload).customerId === 'string' &&
+    Array.isArray((payload as CreateOrderPayload).items)
+  );
+}
+
+function _isOrderActionPayload(payload: unknown): payload is OrderActionPayload {
+  return (
+    payload !== null &&
+    typeof payload === 'object' &&
+    'orderId' in payload &&
+    typeof (payload as OrderActionPayload).orderId === 'string'
+  );
+}
+
+function _isUpdateStockPayload(payload: unknown): payload is UpdateStockPayload {
+  return (
+    payload !== null &&
+    typeof payload === 'object' &&
+    'productId' in payload &&
+    'quantity' in payload &&
+    typeof (payload as UpdateStockPayload).productId === 'string' &&
+    typeof (payload as UpdateStockPayload).quantity === 'number'
+  );
+}
+
+function _isReserveStockPayload(payload: unknown): payload is ReserveStockPayload {
+  return (
+    payload !== null &&
+    typeof payload === 'object' &&
+    'items' in payload &&
+    Array.isArray((payload as ReserveStockPayload).items)
+  );
+}
 
 // Define our event types
 interface OrderEvent {
@@ -59,7 +122,12 @@ const createOrderActor = (): ActorBehavior<ActorMessage, OrderState, OrderEvent>
   onMessage: async ({ message, context }) => {
     switch (message.type) {
       case 'CREATE_ORDER': {
-        const { orderId, customerId, items } = message.payload as any;
+        if (!_isCreateOrderPayload(message.payload)) {
+          log.warn('Invalid CREATE_ORDER payload', { payload: message.payload });
+          return { context };
+        }
+
+        const { orderId, customerId, items } = message.payload;
         const newOrder = {
           id: orderId,
           customerId,
@@ -84,7 +152,12 @@ const createOrderActor = (): ActorBehavior<ActorMessage, OrderState, OrderEvent>
       }
 
       case 'SHIP_ORDER': {
-        const { orderId } = message.payload as any;
+        if (!_isOrderActionPayload(message.payload)) {
+          log.warn('Invalid SHIP_ORDER payload', { payload: message.payload });
+          return { context };
+        }
+
+        const { orderId } = message.payload;
         const order = context.orders.get(orderId);
 
         if (order && order.status === 'pending') {
@@ -103,11 +176,16 @@ const createOrderActor = (): ActorBehavior<ActorMessage, OrderState, OrderEvent>
           };
         }
 
-        return context;
+        return { context };
       }
 
       case 'DELIVER_ORDER': {
-        const { orderId } = message.payload as any;
+        if (!_isOrderActionPayload(message.payload)) {
+          log.warn('Invalid DELIVER_ORDER payload', { payload: message.payload });
+          return { context };
+        }
+
+        const { orderId } = message.payload;
         const order = context.orders.get(orderId);
 
         if (order && order.status === 'shipped') {
@@ -126,11 +204,11 @@ const createOrderActor = (): ActorBehavior<ActorMessage, OrderState, OrderEvent>
           };
         }
 
-        return context;
+        return { context };
       }
 
       default:
-        return context;
+        return { context };
     }
   },
 });
@@ -149,7 +227,12 @@ const createInventoryActor = (): ActorBehavior<ActorMessage, InventoryState, Inv
   onMessage: async ({ message, context }) => {
     switch (message.type) {
       case 'UPDATE_STOCK': {
-        const { productId, quantity } = message.payload as any;
+        if (!_isUpdateStockPayload(message.payload)) {
+          log.warn('Invalid UPDATE_STOCK payload', { payload: message.payload });
+          return { context };
+        }
+
+        const { productId, quantity } = message.payload;
         const currentStock = context.stock.get(productId) || 0;
         const newStock = currentStock + quantity;
 
@@ -177,7 +260,12 @@ const createInventoryActor = (): ActorBehavior<ActorMessage, InventoryState, Inv
       }
 
       case 'RESERVE_STOCK': {
-        const { items } = message.payload as any;
+        if (!_isReserveStockPayload(message.payload)) {
+          log.warn('Invalid RESERVE_STOCK payload', { payload: message.payload });
+          return { context };
+        }
+
+        const { items } = message.payload;
         const events: InventoryEvent[] = [];
 
         // Reserve stock for each item
@@ -210,7 +298,7 @@ const createInventoryActor = (): ActorBehavior<ActorMessage, InventoryState, Inv
       }
 
       default:
-        return context;
+        return { context };
     }
   },
 });
@@ -226,12 +314,12 @@ const createNotificationActor = (
     console.log('🔔 Notification Service Starting - Setting up subscriptions...');
 
     // Subscribe to order events
-    const orderSub = orderActor.subscribe('EMIT:*').subscribe((event) => {
+    const _orderSub = orderActor.subscribe('EMIT:*', (event) => {
       console.log('🔔📦 Notification received - Order Event:', event.type, event.payload);
     });
 
     // Subscribe to low stock alerts
-    const stockSub = inventoryActor.subscribe('EMIT:LOW_STOCK_ALERT').subscribe((event) => {
+    const _stockSub = inventoryActor.subscribe('EMIT:LOW_STOCK_ALERT', (event) => {
       console.log('🔔⚠️  Notification received - Low Stock Alert:', event.payload);
     });
 
@@ -240,7 +328,7 @@ const createNotificationActor = (
     return state;
   },
 
-  onMessage: async ({ context }) => context,
+  onMessage: async ({ context }) => ({ context }),
 });
 
 // Main example
@@ -279,13 +367,13 @@ async function runExample() {
 
     // Also subscribe directly to see all events
     const orderEvents: ActorMessage[] = [];
-    const orderSub = orderActor.subscribe('EMIT:*').subscribe((event) => {
+    const orderSub = orderActor.subscribe('EMIT:*', (event) => {
       orderEvents.push(event);
       console.log('📦 Direct Order Event:', event.type, event.payload);
     });
 
     // Subscribe to all inventory events for monitoring
-    const inventoryMonitor = inventoryActor.subscribe('EMIT:*').subscribe((event) => {
+    const inventoryMonitor = inventoryActor.subscribe('EMIT:*', (event) => {
       console.log('📊 Inventory Event:', event.type, '→', event.payload);
     });
 
@@ -348,8 +436,8 @@ async function runExample() {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     // Cleanup
-    inventoryMonitor.unsubscribe();
-    orderSub.unsubscribe();
+    inventoryMonitor();
+    orderSub();
 
     console.log('\n📊 Summary:');
     console.log(`- Order events received: ${orderEvents.length}`);

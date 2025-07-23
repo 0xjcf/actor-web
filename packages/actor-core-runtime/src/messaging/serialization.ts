@@ -56,66 +56,73 @@ export class JsonSerializer implements MessageSerializer {
  */
 export class MessagePackSerializer implements MessageSerializer {
   readonly format: SerializationFormat = 'msgpack';
-  private msgpack: any;
+  private msgpack: {
+    encode: (value: unknown) => Uint8Array;
+    decode: (data: Uint8Array) => unknown;
+  } | null;
 
   constructor() {
     // Lazy load msgpack if available
     try {
       this.msgpack = require('@msgpack/msgpack');
     } catch {
-      throw new Error('MessagePack serializer requires @msgpack/msgpack to be installed');
+      this.msgpack = null;
     }
   }
 
   async encode(message: ActorMessage): Promise<ArrayBuffer> {
-    return this.msgpack.encode(message);
+    if (!this.msgpack) {
+      throw new Error('MessagePack not available - install @msgpack/msgpack');
+    }
+    const encoded = this.msgpack.encode(message);
+    return encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength);
   }
 
   async decode(data: ArrayBuffer): Promise<ActorMessage> {
-    return this.msgpack.decode(data) as ActorMessage;
+    if (!this.msgpack) {
+      throw new Error('MessagePack not available - install @msgpack/msgpack');
+    }
+    const uint8Array = new Uint8Array(data);
+    return this.msgpack.decode(uint8Array) as ActorMessage;
   }
 }
 
 /**
- * Serialization factory
+ * Serialization registry
  */
-export class SerializationFactory {
-  private static serializers = new Map<SerializationFormat, MessageSerializer>();
+const serializers = new Map<SerializationFormat, MessageSerializer>();
 
-  static {
-    // Register default serializers
-    SerializationFactory.register(new JsonSerializer());
+// Register default serializers
+registerSerializer(new JsonSerializer());
+
+/**
+ * Register a serializer
+ */
+export function registerSerializer(serializer: MessageSerializer): void {
+  serializers.set(serializer.format, serializer);
+}
+
+/**
+ * Get a serializer by format
+ */
+export function getSerializer(format: SerializationFormat): MessageSerializer {
+  const serializer = serializers.get(format);
+  if (!serializer) {
+    throw new Error(`Unknown serialization format: ${format}`);
   }
+  return serializer;
+}
 
-  /**
-   * Register a serializer
-   */
-  static register(serializer: MessageSerializer): void {
-    this.serializers.set(serializer.format, serializer);
-  }
-
-  /**
-   * Get a serializer by format
-   */
-  static get(format: SerializationFormat): MessageSerializer {
-    const serializer = this.serializers.get(format);
-    if (!serializer) {
-      throw new Error(`Unknown serialization format: ${format}`);
-    }
+/**
+ * Create MessagePack serializer if available
+ */
+export function createMessagePackSerializer(): MessageSerializer | null {
+  try {
+    const serializer = new MessagePackSerializer();
+    registerSerializer(serializer);
     return serializer;
-  }
-
-  /**
-   * Create MessagePack serializer if available
-   */
-  static createMessagePackSerializer(): MessageSerializer | null {
-    try {
-      const serializer = new MessagePackSerializer();
-      this.register(serializer);
-      return serializer;
-    } catch {
-      return null;
-    }
+  } catch {
+    return null;
   }
 }
 
@@ -180,7 +187,7 @@ export class TransportSerializer {
    */
   async unpack(envelope: MessageEnvelope): Promise<ActorMessage> {
     // Get appropriate serializer
-    const serializer = SerializationFactory.get(envelope.format);
+    const serializer = getSerializer(envelope.format);
 
     // Decode the message
     return serializer.decode(envelope.data);

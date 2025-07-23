@@ -3,8 +3,8 @@
  * Shows both single emit and array emit functionality
  */
 
-import { createActorSystem } from '../actor-system-impl.js';
 import type { ActorBehavior, ActorMessage } from '../actor-system.js';
+import { createActorSystem } from '../actor-system-impl.js';
 
 interface CounterContext {
   count: number;

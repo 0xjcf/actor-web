@@ -52,7 +52,7 @@ describe('Ship Command - Loop Detection Tests', () => {
   beforeEach(() => {
     // Reset all mocks before each test
     vi.clearAllMocks();
-    
+
     // Create a fresh git actor for each test
     gitActor = createGitActor(process.cwd());
     stateTransitions = [];
@@ -159,18 +159,19 @@ describe('Ship Command - Loop Detection Tests', () => {
     expect(stateTransitions).toContain('checkingStatus');
     expect(stateTransitions).toContain('statusChecked');
     expect(stateTransitions).toContain('gettingIntegrationStatus');
-    
+
     // Integration status check might succeed or fail depending on git setup
     // In test environment, it's likely to fail due to missing remote
     console.log('Actual state transitions:', stateTransitions);
-    
-    const hasIntegrationResult = stateTransitions.includes('integrationStatusChecked') || 
-                                stateTransitions.includes('integrationStatusError');
-    
+
+    const hasIntegrationResult =
+      stateTransitions.includes('integrationStatusChecked') ||
+      stateTransitions.includes('integrationStatusError');
+
     if (!hasIntegrationResult) {
       console.log('Missing integration result. Last few states:', stateTransitions.slice(-5));
     }
-    
+
     expect(hasIntegrationResult).toBe(true);
 
     // Verify we don't stay in the same state for too long

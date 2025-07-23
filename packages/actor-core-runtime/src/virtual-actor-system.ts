@@ -7,6 +7,7 @@ import type { AnyStateMachine } from 'xstate';
 import type { ActorRef } from './actor-ref.js';
 import { createActorRef } from './create-actor-ref.js';
 import { Logger } from './logger.js';
+import { createActorInterval } from './pure-xstate-utilities.js';
 import type { ActorRefOptions, BaseEventObject } from './types.js';
 
 // ========================================================================================
@@ -175,11 +176,10 @@ export class ActorDirectory {
       };
       this.cache.set(key, updatedEntry);
       return updatedEntry;
-    } else {
-      this.missCount++;
-      this.logger.debug('Cache miss', { virtualId, hitRate: this.getHitRate() });
-      return undefined;
     }
+    this.missCount++;
+    this.logger.debug('Cache miss', { virtualId, hitRate: this.getHitRate() });
+    return undefined;
   }
 
   /**
@@ -274,6 +274,17 @@ export class ActorDirectory {
     };
   }
 
+  /**
+   * Get all entries in the cache
+   */
+  getAllEntries(): VirtualActorEntry[] {
+    const entries: VirtualActorEntry[] = [];
+    for (const [, entry] of this.cache.entries()) {
+      entries.push(entry);
+    }
+    return entries;
+  }
+
   private getKey(virtualId: VirtualActorId): string {
     return `${virtualId.type}:${virtualId.id}${virtualId.partition ? `:${virtualId.partition}` : ''}`;
   }
@@ -294,7 +305,7 @@ export class ActorDirectory {
 export class RoundRobinPlacementStrategy implements ActorPlacementStrategy {
   private currentIndex = 0;
 
-  selectNode(virtualId: VirtualActorId, availableNodes: string[]): string {
+  selectNode(_virtualId: VirtualActorId, availableNodes: string[]): string {
     if (availableNodes.length === 0) {
       throw new Error('No available nodes for actor placement');
     }
@@ -304,7 +315,7 @@ export class RoundRobinPlacementStrategy implements ActorPlacementStrategy {
     return node;
   }
 
-  shouldMigrate(entry: VirtualActorEntry, nodeMetrics: NodeMetrics): boolean {
+  shouldMigrate(_entry: VirtualActorEntry, nodeMetrics: NodeMetrics): boolean {
     // Simple strategy: migrate if node is unhealthy or overloaded
     return !nodeMetrics.isHealthy || nodeMetrics.cpuUsage > 80 || nodeMetrics.memoryUsage > 80;
   }
@@ -326,7 +337,7 @@ export class ConsistentHashPlacementStrategy implements ActorPlacementStrategy {
     return availableNodes[index];
   }
 
-  shouldMigrate(entry: VirtualActorEntry, nodeMetrics: NodeMetrics): boolean {
+  shouldMigrate(_entry: VirtualActorEntry, nodeMetrics: NodeMetrics): boolean {
     // More conservative migration policy
     return !nodeMetrics.isHealthy;
   }
@@ -346,7 +357,7 @@ export class ConsistentHashPlacementStrategy implements ActorPlacementStrategy {
  * Load-aware placement strategy
  */
 export class LoadAwarePlacementStrategy implements ActorPlacementStrategy {
-  selectNode(virtualId: VirtualActorId, availableNodes: string[]): string {
+  selectNode(_virtualId: VirtualActorId, availableNodes: string[]): string {
     if (availableNodes.length === 0) {
       throw new Error('No available nodes for actor placement');
     }
@@ -356,7 +367,7 @@ export class LoadAwarePlacementStrategy implements ActorPlacementStrategy {
     return availableNodes[0];
   }
 
-  shouldMigrate(entry: VirtualActorEntry, nodeMetrics: NodeMetrics): boolean {
+  shouldMigrate(_entry: VirtualActorEntry, nodeMetrics: NodeMetrics): boolean {
     // Migrate if node is overloaded
     return (
       !nodeMetrics.isHealthy ||
@@ -378,15 +389,16 @@ export class VirtualActorSystem {
   private directory: ActorDirectory;
   private machines = new Map<string, AnyStateMachine>();
   private logger = Logger.namespace('VIRTUAL_ACTOR_SYSTEM');
-  private cleanupInterval?: NodeJS.Timeout;
+  private cleanupStopFn: (() => void) | null = null; // XState interval stop function
   private availableNodes: string[] = [];
 
   constructor(private config: VirtualActorSystemConfig) {
     this.directory = new ActorDirectory(config);
     this.availableNodes = [config.nodeId]; // Start with current node
 
-    // Set up periodic cleanup
-    this.cleanupInterval = setInterval(() => {
+    // Set up periodic cleanup using pure XState
+    // ✅ PURE ACTOR MODEL: Use XState interval instead of setInterval
+    this.cleanupStopFn = createActorInterval(() => {
       this.directory.cleanup();
     }, config.healthCheckInterval);
   }
@@ -412,7 +424,7 @@ export class VirtualActorSystem {
     // Check directory first
     const entry = this.directory.get(virtualId);
 
-    if (entry && entry.isActive) {
+    if (entry?.isActive) {
       this.logger.debug('Using cached actor', { virtualId });
       return entry.physicalRef as ActorRef<TEvent>;
     }
@@ -562,16 +574,13 @@ export class VirtualActorSystem {
    * Cleanup resources
    */
   async cleanup(): Promise<void> {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
+    if (this.cleanupStopFn) {
+      this.cleanupStopFn();
+      this.cleanupStopFn = null;
     }
 
     // Deactivate all actors
-    const allEntries: VirtualActorEntry[] = [];
-    for (const [, entry] of this.directory['cache'].entries()) {
-      allEntries.push(entry);
-    }
-
+    const allEntries = this.directory.getAllEntries();
     for (const entry of allEntries) {
       await this.deactivateActor(entry.virtualId);
     }

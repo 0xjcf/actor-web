@@ -5,9 +5,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type ActorSystemConfig, createActorSystem } from '../actor-system-impl.js';
 import type { ActorMessage } from '../actor-system.js';
-import { createActor } from '../create-actor.js';
+import { type ActorSystemConfig, createActorSystem } from '../actor-system-impl.js';
+import { defineBehavior } from '../create-actor.js';
+import { createActorDelay } from '../pure-xstate-utilities.js';
 
 describe('Async Messaging with Mailboxes', () => {
   let system: ReturnType<typeof createActorSystem>;
@@ -31,14 +32,13 @@ describe('Async Messaging with Mailboxes', () => {
     const processedMessages: string[] = [];
     let slowMessageProcessed = false;
 
-    // Create an actor that processes messages slowly
-    const slowActor = createActor<ActorMessage, {}>({
-      context: {},
-      onMessage: async ({ message, context }) => {
+    // ✅ PURE ACTOR MODEL: Use machine-based state management
+    const slowActor = defineBehavior<ActorMessage>({
+      onMessage: async ({ message }) => {
         console.log(`Processing message: ${message.type} at ${Date.now()}`);
         if (message.type === 'SLOW') {
-          // Simulate slow processing
-          await new Promise((resolve) => setTimeout(resolve, 100));
+          // ✅ PURE ACTOR MODEL: Use XState delay instead of setTimeout
+          await createActorDelay(100);
           slowMessageProcessed = true;
           processedMessages.push('SLOW');
           console.log(`Finished SLOW at ${Date.now()}`);
@@ -46,7 +46,8 @@ describe('Async Messaging with Mailboxes', () => {
           processedMessages.push('FAST');
           console.log(`Finished FAST at ${Date.now()}`);
         }
-        return { context };
+        // ✅ PURE ACTOR MODEL: Return MessagePlan (void for no emission)
+        return undefined;
       },
     });
 
@@ -67,8 +68,8 @@ describe('Async Messaging with Mailboxes', () => {
     expect(slowMessageProcessed).toBe(false);
     expect(processedMessages).toEqual([]);
 
-    // Wait for all messages to be processed
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    // ✅ PURE ACTOR MODEL: Use XState delay instead of setTimeout
+    await createActorDelay(150);
 
     // Messages should be processed in order
     expect(processedMessages).toEqual(['SLOW', 'FAST']);
@@ -76,28 +77,29 @@ describe('Async Messaging with Mailboxes', () => {
   });
 
   it('should not block send() when mailbox is full', async () => {
+    let processedCount = 0;
+
     // Create a slow actor that will cause mailbox to fill up
-    const slowActor = createActor<ActorMessage, { processed: number }>({
-      context: { processed: 0 },
-      onMessage: async ({ message, context }) => {
+    const slowActor = defineBehavior<ActorMessage>({
+      onMessage: async ({ message }) => {
         if (message.type === 'SLOW_PROCESS') {
-          // Simulate slow processing to fill up mailbox
-          await new Promise((resolve) => setTimeout(resolve, 10));
-          return { context: { processed: context.processed + 1 } };
+          // ✅ PURE ACTOR MODEL: Use XState delay instead of setTimeout
+          await createActorDelay(10);
+          processedCount++;
+          return undefined;
         }
-        if (message.type === 'CHECK') {
+        // ✅ CORRECT: Check for correlationId for ask pattern
+        if (message.type === 'CHECK' && message.correlationId) {
+          // ✅ PURE ACTOR MODEL: Return MessagePlan for response
           return {
-            context,
-            emit: {
-              type: 'RESPONSE',
-              correlationId: message.correlationId,
-              payload: context.processed,
-              timestamp: Date.now(),
-              version: '1.0.0',
-            },
+            type: 'RESPONSE',
+            correlationId: message.correlationId,
+            payload: processedCount,
+            timestamp: Date.now(),
+            version: '1.0.0',
           };
         }
-        return { context };
+        return undefined;
       },
     });
 
@@ -112,12 +114,13 @@ describe('Async Messaging with Mailboxes', () => {
       sendPromises.push(actor.send({ type: 'SLOW_PROCESS' }));
     }
 
+    await Promise.all(sendPromises);
     const sendTime = Date.now() - startTime;
 
     // All sends should complete quickly (< 100ms) even though processing takes ~1s
     expect(sendTime).toBeLessThan(100);
 
-    // Verify some messages were processed
+    // ✅ PURE ACTOR MODEL: Use ask pattern for synchronization instead of arbitrary delay
     const processed = await actor.ask<number>({ type: 'CHECK' });
     expect(processed).toBeGreaterThan(0);
   });
@@ -125,13 +128,23 @@ describe('Async Messaging with Mailboxes', () => {
   it('should maintain message ordering within an actor', async () => {
     const receivedMessages: number[] = [];
 
-    const orderActor = createActor<ActorMessage, {}>({
-      context: {},
-      onMessage: async ({ message, context }) => {
+    const orderActor = defineBehavior<ActorMessage>({
+      onMessage: async ({ message }) => {
         if (message.type === 'NUMBER') {
           receivedMessages.push(message.payload as number);
         }
-        return { context };
+        // ✅ CORRECT: Check for correlationId for ask pattern
+        if (message.type === 'CHECK_ORDER' && message.correlationId) {
+          // ✅ PURE ACTOR MODEL: Return MessagePlan for response
+          return {
+            type: 'RESPONSE',
+            correlationId: message.correlationId,
+            payload: receivedMessages,
+            timestamp: Date.now(),
+            version: '1.0.0',
+          };
+        }
+        return undefined;
       },
     });
 
@@ -142,11 +155,11 @@ describe('Async Messaging with Mailboxes', () => {
       await actor.send({ type: 'NUMBER', payload: i });
     }
 
-    // Wait for processing
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // ✅ PURE ACTOR MODEL: Use ask pattern for synchronization instead of setTimeout
+    const finalOrder = await actor.ask<number[]>({ type: 'CHECK_ORDER' });
 
     // Messages should be received in the same order
-    expect(receivedMessages).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(finalOrder).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
   it('should allow multiple actors to process messages concurrently', async () => {
@@ -154,14 +167,25 @@ describe('Async Messaging with Mailboxes', () => {
     const actor2Messages: string[] = [];
 
     const createSlowActor = (messages: string[]) =>
-      createActor<ActorMessage, {}>({
-        context: {},
-        onMessage: async ({ message, context }) => {
+      defineBehavior<ActorMessage>({
+        onMessage: async ({ message }) => {
           if (message.type === 'PROCESS') {
-            await new Promise((resolve) => setTimeout(resolve, 50));
+            // ✅ PURE ACTOR MODEL: Use XState delay instead of setTimeout
+            await createActorDelay(50);
             messages.push(message.payload as string);
           }
-          return { context };
+          // ✅ CORRECT: Check for correlationId for ask pattern
+          if (message.type === 'CHECK_MESSAGES' && message.correlationId) {
+            // ✅ PURE ACTOR MODEL: Return MessagePlan for response
+            return {
+              type: 'RESPONSE',
+              correlationId: message.correlationId,
+              payload: messages,
+              timestamp: Date.now(),
+              version: '1.0.0',
+            };
+          }
+          return undefined;
         },
       });
 
@@ -181,11 +205,14 @@ describe('Async Messaging with Mailboxes', () => {
     // All sends should complete quickly
     expect(sendTime).toBeLessThan(50);
 
-    // Wait for processing
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    // ✅ PURE ACTOR MODEL: Use ask pattern for synchronization instead of setTimeout
+    const [actor1Results, actor2Results] = await Promise.all([
+      actor1.ask<string[]>({ type: 'CHECK_MESSAGES' }),
+      actor2.ask<string[]>({ type: 'CHECK_MESSAGES' }),
+    ]);
 
     // Both actors should have processed their messages
-    expect(actor1Messages).toEqual(['A1', 'B1']);
-    expect(actor2Messages).toEqual(['A2', 'B2']);
+    expect(actor1Results).toEqual(['A1', 'B1']);
+    expect(actor2Results).toEqual(['A2', 'B2']);
   });
 });

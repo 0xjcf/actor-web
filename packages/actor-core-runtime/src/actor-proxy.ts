@@ -278,11 +278,14 @@ export class ActorProxyClient<T extends ActorRouter> {
                   };
                   this.actorRef.send(subscriptionEvent);
 
-                  const subscription = this.actorRef.subscribe((event) => {
-                    if (this.isSubscriptionDataEvent(event) && event.procedure === name) {
-                      callback(event.data);
+                  const subscription = this.actorRef.subscribe(
+                    'PROXY_SUBSCRIPTION_DATA',
+                    (event) => {
+                      if (this.isSubscriptionDataEvent(event) && event.procedure === name) {
+                        callback(event.data);
+                      }
                     }
-                  });
+                  );
 
                   return {
                     unsubscribe: () => {

@@ -89,10 +89,11 @@ export class AIAgentHandler {
         return this.reset(message.preserveMemory);
 
       // TypeScript ensures all cases are handled
-      default:
+      default: {
         // This will cause a compile error if we miss a case
         const exhaustiveCheck: never = message;
         throw new Error(`Unhandled message type: ${JSON.stringify(exhaustiveCheck)}`);
+      }
     }
   }
 
@@ -153,9 +154,10 @@ export class GitHandler {
       case 'UNSTAGE':
         return this.unstage(message.files);
 
-      default:
+      default: {
         const exhaustiveCheck: never = message;
         throw new Error(`Unhandled git message: ${JSON.stringify(exhaustiveCheck)}`);
+      }
     }
   }
 
@@ -163,45 +165,44 @@ export class GitHandler {
     return { status: 'clean', requestId };
   }
 
-  private async commit(message: string, files?: string[]): Promise<{ hash: string }> {
+  private async commit(_message: string, _files?: string[]): Promise<{ hash: string }> {
     return { hash: 'abc123' };
   }
 
-  private async push(branch?: string, remote?: string): Promise<{ success: boolean }> {
+  private async push(_branch?: string, _remote?: string): Promise<{ success: boolean }> {
     return { success: true };
   }
 
-  private async pull(branch?: string, remote?: string): Promise<{ success: boolean }> {
+  private async pull(_branch?: string, _remote?: string): Promise<{ success: boolean }> {
     return { success: true };
   }
 
-  private async checkout(branch: string, create?: boolean): Promise<{ success: boolean }> {
+  private async checkout(_branch: string, _create?: boolean): Promise<{ success: boolean }> {
     return { success: true };
   }
 
   private async merge(
-    branch: string,
-    strategy?: 'merge' | 'rebase'
+    _branch: string,
+    _strategy?: 'merge' | 'rebase'
   ): Promise<{ success: boolean }> {
     return { success: true };
   }
 
-  private async stage(files?: string[]): Promise<{ success: boolean }> {
+  private async stage(_files?: string[]): Promise<{ success: boolean }> {
     return { success: true };
   }
 
-  private async unstage(files?: string[]): Promise<{ success: boolean }> {
+  private async unstage(_files?: string[]): Promise<{ success: boolean }> {
     return { success: true };
   }
 }
 
 /**
- * Workflow Handler
- * Orchestrates complex multi-step workflows
+ * Example workflow handler using discriminated messages
  */
 export class WorkflowHandler {
-  private currentStep?: string;
-  private workflowState: 'idle' | 'running' | 'paused' | 'stopped' = 'idle';
+  private _currentStep?: string;
+  private _workflowState: 'idle' | 'running' | 'paused' | 'stopped' = 'idle';
 
   async handle(message: WorkflowMessage): Promise<unknown> {
     switch (message.type) {
@@ -226,45 +227,46 @@ export class WorkflowHandler {
       case 'skip':
         return this.skip(message.stepId, message.reason);
 
-      default:
+      default: {
         const exhaustiveCheck: never = message;
         throw new Error(`Unhandled workflow message: ${JSON.stringify(exhaustiveCheck)}`);
+      }
     }
   }
 
-  private async start(workflow: string, input?: unknown): Promise<{ workflowId: string }> {
-    this.workflowState = 'running';
+  private async start(_workflow: string, _input?: unknown): Promise<{ workflowId: string }> {
+    this._workflowState = 'running';
     return { workflowId: `workflow-${Date.now()}` };
   }
 
-  private async pause(reason?: string): Promise<{ paused: boolean }> {
-    this.workflowState = 'paused';
+  private async pause(_reason?: string): Promise<{ paused: boolean }> {
+    this._workflowState = 'paused';
     return { paused: true };
   }
 
   private async resume(fromStep?: string): Promise<{ resumed: boolean }> {
-    this.workflowState = 'running';
+    this._workflowState = 'running';
     if (fromStep) {
-      this.currentStep = fromStep;
+      this._currentStep = fromStep;
     }
     return { resumed: true };
   }
 
-  private async stop(reason?: string): Promise<{ stopped: boolean }> {
-    this.workflowState = 'stopped';
+  private async stop(_reason?: string): Promise<{ stopped: boolean }> {
+    this._workflowState = 'stopped';
     return { stopped: true };
   }
 
   private async executeStep(stepId: string, input?: unknown): Promise<{ stepResult: unknown }> {
-    this.currentStep = stepId;
+    this._currentStep = stepId;
     return { stepResult: { stepId, input, executed: true } };
   }
 
-  private async retry(stepId: string, maxAttempts?: number): Promise<{ retried: boolean }> {
+  private async retry(_stepId: string, _maxAttempts?: number): Promise<{ retried: boolean }> {
     return { retried: true };
   }
 
-  private async skip(stepId: string, reason?: string): Promise<{ skipped: boolean }> {
+  private async skip(_stepId: string, _reason?: string): Promise<{ skipped: boolean }> {
     return { skipped: true };
   }
 }

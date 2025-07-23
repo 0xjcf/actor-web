@@ -1,13 +1,13 @@
 /**
  * Enhanced Commit Command - Pure Actor Model Implementation
- * 
+ *
  * Smart commit message generation using pure message-passing.
  * No state observation or direct access.
  */
 
 import chalk from 'chalk';
-import { createActorRef } from '@actor-core/runtime';
-import { gitActorMachine, type GitActor } from '../actors/git-actor.js';
+import { createGitActor, type GitActor } from '../actors/git-actor.js';
+import { subscribeToEvent } from '../actors/git-actor-helpers.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';
 
 // ============================================================================
@@ -19,12 +19,9 @@ export async function commitEnhancedCommand(customMessage?: string) {
   console.log(chalk.blue('========================================='));
 
   const repoRoot = await findRepoRoot();
-  
-  // Create git actor using the pure runtime
-  const gitActor = createActorRef(gitActorMachine, {
-    id: 'commit-enhanced-git-actor',
-    input: { baseDir: repoRoot },
-  }) as GitActor;
+
+  // Create git actor using the proper factory function
+  const gitActor = createGitActor(repoRoot);
 
   try {
     // Start the actor
@@ -46,12 +43,9 @@ export async function generateCommitMessageCommand() {
   console.log(chalk.blue('=========================================='));
 
   const repoRoot = await findRepoRoot();
-  
-  // Create git actor using the pure runtime
-  const gitActor = createActorRef(gitActorMachine, {
-    id: 'generate-message-git-actor',
-    input: { baseDir: repoRoot },
-  }) as GitActor;
+
+  // Create git actor using the proper factory function
+  const gitActor = createGitActor(repoRoot);
 
   try {
     // Start the actor
@@ -60,7 +54,7 @@ export async function generateCommitMessageCommand() {
     // Create workflow handler
     const workflow = new CommitEnhancedWorkflowHandler(gitActor);
     const message = await workflow.generateMessage();
-    
+
     if (message) {
       console.log(chalk.green('✅ Generated commit message:'));
       console.log();
@@ -81,20 +75,18 @@ export async function validateDatesCommand(files?: string[]) {
   console.log(chalk.blue('================================='));
 
   const repoRoot = await findRepoRoot();
-  
-  // Create git actor using the pure runtime
-  const gitActor = createActorRef(gitActorMachine, {
-    id: 'validate-dates-git-actor',
-    input: { baseDir: repoRoot },
-  }) as GitActor;
+
+  // Create git actor using the proper factory function
+  const gitActor = createGitActor(repoRoot);
 
   try {
     // Start the actor
     gitActor.start();
 
     // Default to common documentation files if none provided
-    const filesToCheck = files ? validateFilesArray(files) : 
-      ['docs/README.md', 'docs/agent-updates.md', 'src/**/*.ts'];
+    const filesToCheck = files
+      ? validateFilesArray(files)
+      : ['docs/README.md', 'docs/agent-updates.md', 'src/**/*.ts'];
 
     // Create workflow handler
     const workflow = new CommitEnhancedWorkflowHandler(gitActor);
@@ -122,17 +114,17 @@ class CommitEnhancedWorkflowHandler {
   async executeCommit(customMessage?: string): Promise<void> {
     if (customMessage) {
       console.log(chalk.blue('📝 Using provided commit message...'));
-      
+
       // Commit with custom message
       await this.commitWithMessage(customMessage);
       console.log(chalk.green('✅ Committed with custom message:'));
       console.log(chalk.gray(customMessage));
     } else {
       console.log(chalk.blue('🧠 Generating smart commit message...'));
-      
+
       // Generate commit message
       const generatedMessage = await this.generateMessage();
-      
+
       if (generatedMessage) {
         console.log(chalk.yellow('📝 Generated commit message:'));
         console.log(chalk.gray(generatedMessage));
@@ -161,48 +153,54 @@ class CommitEnhancedWorkflowHandler {
   async generateMessage(): Promise<string | undefined> {
     console.log(chalk.blue('🔍 Analyzing changes...'));
 
+    // Subscribe to commit message generated event
+    const messagePromise = new Promise<string>((resolve) => {
+      const unsubscribe = subscribeToEvent(this.actor, 'GIT_COMMIT_MESSAGE_GENERATED', (event) => {
+        unsubscribe();
+        resolve(event.message);
+      });
+    });
+
     // Send GENERATE_COMMIT_MESSAGE
     this.actor.send({ type: 'GENERATE_COMMIT_MESSAGE' });
 
-    // Wait for generation to complete
-    await this.waitForOperation('GENERATE_COMMIT_MESSAGE', async () => {
-      const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
-      return response && typeof response === 'object' && 
-        'lastCommitMessage' in response && 
-        response.lastCommitMessage;
-    });
+    // Wait for event
+    const message = await messagePromise;
 
-    const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
-    const status = response as { lastCommitMessage?: string };
-
-    return status.lastCommitMessage;
+    return message;
   }
 
   /**
    * Commit with message
    */
   private async commitWithMessage(message: string): Promise<void> {
+    // Subscribe to staging completed event
+    const stagingPromise = new Promise<void>((resolve) => {
+      const unsubscribe = subscribeToEvent(this.actor, 'GIT_STAGING_COMPLETED', () => {
+        unsubscribe();
+        resolve();
+      });
+    });
+
     // First stage all changes
     this.actor.send({ type: 'ADD_ALL' });
 
     // Wait for staging to complete
-    await this.waitForOperation('ADD_ALL', async () => {
-      const response = await this.actor.ask({ type: 'REQUEST_STATUS' });
-      return response && typeof response === 'object' && 
-        'lastOperation' in response && 
-        response.lastOperation === 'STAGING_COMPLETED';
+    await stagingPromise;
+
+    // Subscribe to commit completed event
+    const commitPromise = new Promise<void>((resolve) => {
+      const unsubscribe = subscribeToEvent(this.actor, 'GIT_COMMIT_COMPLETED', () => {
+        unsubscribe();
+        resolve();
+      });
     });
 
     // Then commit with message
-    this.actor.send({ type: 'COMMIT_CHANGES', message });
+    this.actor.send({ type: 'COMMIT_CHANGES', payload: { message } });
 
     // Wait for commit to complete
-    await this.waitForOperation('COMMIT_CHANGES', async () => {
-      const response = await this.actor.ask({ type: 'REQUEST_COMMIT_STATUS' });
-      return response && typeof response === 'object' && 
-        'lastCommitHash' in response && 
-        response.lastCommitHash;
-    });
+    await commitPromise;
   }
 
   /**
@@ -210,29 +208,28 @@ class CommitEnhancedWorkflowHandler {
    */
   async validateDates(filesToCheck: string[]): Promise<void> {
     console.log(chalk.blue(`🔍 Checking ${filesToCheck.length} files for date issues...`));
-    
-    // Send VALIDATE_DATES message
-    this.actor.send({ type: 'VALIDATE_DATES', filePaths: filesToCheck });
 
-    // Wait for validation to complete
-    await this.waitForOperation('VALIDATE_DATES', async () => {
-      const response = await this.actor.ask({ type: 'REQUEST_DATE_VALIDATION' });
-      return response && typeof response === 'object' && 
-        'dateIssues' in response;
-    });
-
-    const response = await this.actor.ask({ type: 'REQUEST_DATE_VALIDATION' });
-    const validation = response as { 
-      dateIssues?: Array<{
-        file: string;
-        line: number;
-        date: string;
-        issue: string;
-        context: string;
-      }> 
+    // Subscribe to date validation completed event
+    type DateIssue = {
+      file: string;
+      line: number;
+      date: string;
+      issue: 'future' | 'past' | 'invalid';
+      context: string;
     };
 
-    const dateIssues = validation.dateIssues || [];
+    const validationPromise = new Promise<DateIssue[]>((resolve) => {
+      const unsubscribe = subscribeToEvent(this.actor, 'GIT_DATE_VALIDATION_COMPLETED', (event) => {
+        unsubscribe();
+        resolve(event.issues);
+      });
+    });
+
+    // Send VALIDATE_DATES message
+    this.actor.send({ type: 'VALIDATE_DATES', payload: { filePaths: filesToCheck } });
+
+    // Wait for validation to complete
+    const dateIssues = await validationPromise;
 
     if (dateIssues.length === 0) {
       console.log(chalk.green('✅ No date issues found!'));
@@ -245,32 +242,6 @@ class CommitEnhancedWorkflowHandler {
         console.log(chalk.gray(`    Context: ${issue.context}`));
       }
     }
-  }
-
-  /**
-   * Wait for an operation to complete
-   */
-  private async waitForOperation(
-    operation: string, 
-    checkComplete: () => Promise<boolean>,
-    timeout: number = 30000
-  ): Promise<void> {
-    const startTime = Date.now();
-    
-    while (Date.now() - startTime < timeout) {
-      try {
-        if (await checkComplete()) {
-          return;
-        }
-      } catch (error) {
-        // Operation might still be in progress
-      }
-
-      // Wait a bit before checking again
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-
-    throw new Error(`Operation ${operation} timed out after ${timeout}ms`);
   }
 }
 

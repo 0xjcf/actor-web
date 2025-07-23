@@ -188,7 +188,7 @@ export namespace ECommerceExample {
           let result: unknown = null;
 
           switch (procedure) {
-            case 'products.list':
+            case 'products.list': {
               const { category, search } = input as { category?: string; search?: string };
               let filteredProducts = Array.from(context.products.values());
 
@@ -204,18 +204,21 @@ export namespace ECommerceExample {
 
               result = { products: filteredProducts, total: filteredProducts.length };
               break;
+            }
 
-            case 'products.get':
+            case 'products.get': {
               const { id: productId } = input as { id: string };
               result = context.products.get(productId) || null;
               break;
+            }
 
-            case 'orders.get':
+            case 'orders.get': {
               const { id: orderId } = input as { id: string };
               result = context.orders.get(orderId) || null;
               break;
+            }
 
-            case 'orders.list':
+            case 'orders.list': {
               const { userId } = input as { userId?: string };
               let orders = Array.from(context.orders.values());
 
@@ -225,13 +228,15 @@ export namespace ECommerceExample {
 
               result = { orders, total: orders.length };
               break;
+            }
 
-            case 'users.get':
+            case 'users.get': {
               const { id: userId2 } = input as { id: string };
               result = context.users.get(userId2) || null;
               break;
+            }
 
-            case 'analytics.sales':
+            case 'analytics.sales': {
               const { startDate, endDate } = input as { startDate: number; endDate: number };
               const salesOrders = Array.from(context.orders.values()).filter(
                 (o) => o.createdAt >= startDate && o.createdAt <= endDate
@@ -260,8 +265,9 @@ export namespace ECommerceExample {
 
               result = { totalSales, orderCount, topProducts };
               break;
+            }
 
-            case 'analytics.inventory':
+            case 'analytics.inventory': {
               const { lowStockOnly } = input as { lowStockOnly?: boolean };
               const products = Array.from(context.products.values());
 
@@ -274,6 +280,7 @@ export namespace ECommerceExample {
                 products: lowStockOnly ? inventory.filter((i) => i.stockLevel < 10) : inventory,
               };
               break;
+            }
 
             default:
               result = null;
@@ -297,24 +304,27 @@ export namespace ECommerceExample {
           const newProducts = new Map(context.products);
 
           switch (procedure) {
-            case 'products.create':
+            case 'products.create': {
               const productData = input as Omit<Product, 'id'>;
               const newProductId = `product-${Date.now()}`;
               newProducts.set(newProductId, { ...productData, id: newProductId });
               break;
+            }
 
-            case 'products.update':
+            case 'products.update': {
               const { id, updates } = input as { id: string; updates: Partial<Product> };
               const existingProduct = newProducts.get(id);
               if (existingProduct) {
                 newProducts.set(id, { ...existingProduct, ...updates });
               }
               break;
+            }
 
-            case 'products.delete':
+            case 'products.delete': {
               const { id: deleteId } = input as { id: string };
               newProducts.delete(deleteId);
               break;
+            }
           }
 
           return newProducts;
@@ -325,7 +335,7 @@ export namespace ECommerceExample {
           const newOrders = new Map(context.orders);
 
           switch (procedure) {
-            case 'orders.create':
+            case 'orders.create': {
               const { userId, products } = input as {
                 userId: string;
                 products: Array<{ productId: string; quantity: number }>;
@@ -346,14 +356,16 @@ export namespace ECommerceExample {
                 createdAt: Date.now(),
               });
               break;
+            }
 
-            case 'orders.updateStatus':
+            case 'orders.updateStatus': {
               const { id, status } = input as { id: string; status: Order['status'] };
               const existingOrder = newOrders.get(id);
               if (existingOrder) {
                 newOrders.set(id, { ...existingOrder, status });
               }
               break;
+            }
           }
 
           return newOrders;
@@ -364,19 +376,21 @@ export namespace ECommerceExample {
           const newUsers = new Map(context.users);
 
           switch (procedure) {
-            case 'users.register':
+            case 'users.register': {
               const userData = input as { name: string; email: string; address: string };
               const newUserId = `user-${Date.now()}`;
               newUsers.set(newUserId, { ...userData, id: newUserId });
               break;
+            }
 
-            case 'users.update':
+            case 'users.update': {
               const { id, updates } = input as { id: string; updates: Partial<User> };
               const existingUser = newUsers.get(id);
               if (existingUser) {
                 newUsers.set(id, { ...existingUser, ...updates });
               }
               break;
+            }
           }
 
           return newUsers;
@@ -387,7 +401,7 @@ export namespace ECommerceExample {
           let result: unknown = null;
 
           switch (procedure) {
-            case 'products.create':
+            case 'products.create': {
               const productData = input as Omit<Product, 'id'>;
               const newProductId = `product-${Date.now()}`;
               result = {
@@ -395,8 +409,9 @@ export namespace ECommerceExample {
                 success: true,
               };
               break;
+            }
 
-            case 'products.update':
+            case 'products.update': {
               const { id, updates } = input as { id: string; updates: Partial<Product> };
               const existingProduct = context.products.get(id);
               if (existingProduct) {
@@ -408,12 +423,13 @@ export namespace ECommerceExample {
                 result = { product: null, success: false };
               }
               break;
+            }
 
             case 'products.delete':
               result = { success: true };
               break;
 
-            case 'orders.create':
+            case 'orders.create': {
               const { userId, products } = input as {
                 userId: string;
                 products: Array<{ productId: string; quantity: number }>;
@@ -437,8 +453,9 @@ export namespace ECommerceExample {
                 success: true,
               };
               break;
+            }
 
-            case 'orders.updateStatus':
+            case 'orders.updateStatus': {
               const { id: orderId, status } = input as { id: string; status: Order['status'] };
               const existingOrder = context.orders.get(orderId);
               if (existingOrder) {
@@ -450,8 +467,9 @@ export namespace ECommerceExample {
                 result = { order: null, success: false };
               }
               break;
+            }
 
-            case 'users.register':
+            case 'users.register': {
               const userData = input as { name: string; email: string; address: string };
               const newUserId = `user-${Date.now()}`;
               result = {
@@ -459,8 +477,9 @@ export namespace ECommerceExample {
                 success: true,
               };
               break;
+            }
 
-            case 'users.update':
+            case 'users.update': {
               const { id: userId2, updates: userUpdates } = input as {
                 id: string;
                 updates: Partial<User>;
@@ -475,6 +494,7 @@ export namespace ECommerceExample {
                 result = { user: null, success: false };
               }
               break;
+            }
 
             default:
               result = { success: false };
@@ -852,7 +872,7 @@ export namespace AIAssistantExample {
             let result: unknown = null;
 
             switch (procedure) {
-              case 'knowledge.search':
+              case 'knowledge.search': {
                 const { query, limit = 10 } = input as { query: string; limit?: number };
                 const searchResults = Array.from(context.knowledge.values())
                   .filter((item) => item.content.toLowerCase().includes(query.toLowerCase()))
@@ -864,14 +884,16 @@ export namespace AIAssistantExample {
                   }));
                 result = { results: searchResults };
                 break;
+              }
 
-              case 'tools.list':
+              case 'tools.list': {
                 const { category } = input as { category?: string };
                 const tools = Array.from(context.tools.values());
                 result = { tools };
                 break;
+              }
 
-              case 'memory.retrieve':
+              case 'memory.retrieve': {
                 const { key } = input as { key: string };
                 const memoryItem = context.memory.get(key);
                 if (memoryItem) {
@@ -885,8 +907,9 @@ export namespace AIAssistantExample {
                   result = { value: null, exists: false };
                 }
                 break;
+              }
 
-              case 'analytics.usage':
+              case 'analytics.usage': {
                 const { timeframe } = input as { timeframe: 'hour' | 'day' | 'week' };
                 const avgResponseTime =
                   context.analytics.responseTime.length > 0
@@ -900,6 +923,7 @@ export namespace AIAssistantExample {
                   avgResponseTime,
                 };
                 break;
+              }
 
               default:
                 result = null;
@@ -988,7 +1012,7 @@ export namespace AIAssistantExample {
             let result: unknown = null;
 
             switch (procedure) {
-              case 'chat.send':
+              case 'chat.send': {
                 const { message, context: chatContext } = input as {
                   message: string;
                   context?: string;
@@ -1000,18 +1024,20 @@ export namespace AIAssistantExample {
                   tokens: Math.floor(tokens),
                 };
                 break;
+              }
 
-              case 'knowledge.add':
+              case 'knowledge.add': {
                 const { content } = input as { content: string };
                 const id = `knowledge-${Date.now()}`;
                 result = { id, success: true };
                 break;
+              }
 
               case 'knowledge.update':
                 result = { success: true };
                 break;
 
-              case 'tools.execute':
+              case 'tools.execute': {
                 const { tool, parameters } = input as {
                   tool: string;
                   parameters: Record<string, unknown>;
@@ -1035,12 +1061,13 @@ export namespace AIAssistantExample {
                   executionTime: Date.now() - startTime,
                 };
                 break;
+              }
 
               case 'memory.store':
                 result = { success: true };
                 break;
 
-              case 'memory.clear':
+              case 'memory.clear': {
                 const { pattern } = input as { pattern?: string };
                 let cleared = 0;
                 if (pattern) {
@@ -1054,6 +1081,7 @@ export namespace AIAssistantExample {
                 }
                 result = { cleared, success: true };
                 break;
+              }
 
               default:
                 result = { success: false };
@@ -1117,7 +1145,7 @@ export namespace AIAssistantExample {
         context: 'educational',
       });
       log.info('AI Response:', {
-        response: chatResponse.response.substring(0, 50) + '...',
+        response: `${chatResponse.response.substring(0, 50)}...`,
         confidence: chatResponse.confidence,
         tokens: chatResponse.tokens,
       });

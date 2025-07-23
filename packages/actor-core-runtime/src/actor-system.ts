@@ -12,7 +12,7 @@
  * 5. Supervision Hierarchy - Fault tolerance through actor supervision
  */
 
-import type { Observable } from './types.js';
+import type { Actor, AnyStateMachine } from 'xstate';
 
 // ============================================================================
 // CORE TYPES
@@ -28,6 +28,27 @@ export type JsonValue =
   | string
   | JsonValue[]
   | { [key: string]: JsonValue };
+
+/**
+ * Actor dependencies injected into behavior handlers
+ * Enhanced for pure actor model with machine + dependencies pattern
+ */
+export interface ActorDependencies {
+  readonly actorId: string;
+  readonly machine: unknown; // Actor<AnyStateMachine> - avoiding circular dependency
+  readonly emit: (event: unknown) => void;
+  readonly send: (to: unknown, message: ActorMessage) => Promise<void>;
+  readonly ask: <T>(to: unknown, message: ActorMessage, timeout?: number) => Promise<T>;
+  readonly logger: unknown; // Logger - avoiding circular dependency
+  readonly actorSystem?: unknown; // Will be properly typed when available
+  readonly correlationManager?: unknown; // Will be properly typed when available
+}
+
+/**
+ * Message Plan - The core DSL type that represents declarative communication intentions
+ * Re-exported here to avoid circular dependencies with message-plan.ts
+ */
+export type MessagePlan<_TDomainEvent = unknown> = unknown; // Will be properly typed with MessagePlan import
 
 /**
  * Actor address that uniquely identifies an actor in the system
@@ -94,47 +115,62 @@ export interface SupervisionStrategy {
 }
 
 /**
- * Actor behavior result with consistent shape for type safety
+ * Unified Actor Behavior Interface (Pure Actor Model)
+ *
+ * This is the single interface for defining actor behaviors following pure actor principles:
+ * - No shared context state (state lives in XState machine only)
+ * - Message-only communication via machine and dependencies
+ * - Returns MessagePlan for declarative communication intentions
+ *
+ * @template TMessage - The message type this actor handles
+ * @template TEmitted - The domain events this actor can emit
  */
-export interface ActorBehaviorResult<TContext, TEmitted> {
-  readonly context: TContext;
-  readonly emit?: TEmitted | TEmitted[];
-}
+export interface ActorBehavior<TMessage = ActorMessage, TEmitted = ActorMessage> {
+  /**
+   * Optional type definitions for compile-time validation
+   * Inherited from BehaviorActorConfig to support type checking
+   */
+  readonly types?: {
+    readonly message?: TMessage;
+    readonly emitted?: TEmitted;
+  };
 
-/**
- * Actor definition with strict type-safe event emission
- * This is the new preferred interface that ensures proper type checking
- */
-export interface ActorDefinition<
-  TMessage = ActorMessage,
-  TContext = unknown,
-  TEmitted = ActorMessage,
-> {
-  context?: TContext;
-  onMessage(params: { message: TMessage; context: TContext }): Promise<
-    ActorBehaviorResult<TContext, TEmitted>
-  >;
-  onStart?(params: { context: TContext }): Promise<ActorBehaviorResult<TContext, TEmitted>>;
-  onStop?(params: { context: TContext }): Promise<void>;
-  supervisionStrategy?: SupervisionStrategy;
-}
+  /**
+   * Message handler - pure function that processes messages and returns communication plans
+   *
+   * @param params.message - The incoming message to process
+   * @param params.machine - XState machine actor for state access and transitions
+   * @param params.dependencies - Injected dependencies (actor system, correlation manager, etc.)
+   * @returns MessagePlan describing communication intentions, or void for no action
+   */
+  readonly onMessage: (params: {
+    readonly message: TMessage;
+    readonly machine: Actor<AnyStateMachine>;
+    readonly dependencies: ActorDependencies;
+  }) => MessagePlan<TEmitted> | Promise<MessagePlan<TEmitted>> | void | Promise<void>;
 
-/**
- * Legacy actor behavior definition (deprecated)
- * @deprecated Use ActorDefinition or defineActor() for better type safety
- */
-export interface ActorBehavior<
-  TMessage = ActorMessage,
-  TContext = unknown,
-  TEmitted = ActorMessage,
-> {
-  context?: TContext;
-  onMessage(params: { message: TMessage; context: TContext }): Promise<
-    TContext | { context: TContext; emit?: TEmitted | TEmitted[] }
-  >;
-  onStart?(params: { context: TContext }): Promise<TContext>;
-  onStop?(params: { context: TContext }): Promise<void>;
-  supervisionStrategy?: SupervisionStrategy;
+  /**
+   * Optional lifecycle hook - actor start
+   * Called when the actor is first started
+   */
+  readonly onStart?: (params: {
+    readonly machine: Actor<AnyStateMachine>;
+    readonly dependencies: ActorDependencies;
+  }) => MessagePlan<TEmitted> | Promise<MessagePlan<TEmitted>> | void | Promise<void>;
+
+  /**
+   * Optional lifecycle hook - actor stop
+   * Called when the actor is being stopped
+   */
+  readonly onStop?: (params: {
+    readonly machine: Actor<AnyStateMachine>;
+    readonly dependencies: ActorDependencies;
+  }) => Promise<void> | void;
+
+  /**
+   * Supervision strategy for fault tolerance
+   */
+  readonly supervisionStrategy?: SupervisionStrategy;
 }
 
 /**
@@ -196,14 +232,12 @@ export interface ActorPID {
   getStats(): Promise<ActorStats>;
 
   /**
-   * Subscribe to actor events
+   * Subscribe to specific event types emitted by this actor
+   * @param eventType - The event type to subscribe to (supports wildcards like 'user.*')
+   * @param listener - Function to call when matching events are emitted
+   * @returns Unsubscribe function to stop receiving events
    */
-  subscribe(eventType: string): Observable<ActorMessage>;
-
-  /**
-   * Unsubscribe from actor events
-   */
-  unsubscribe(eventType: string): void;
+  subscribe(eventType: string, listener: (event: ActorMessage) => void): () => void;
 }
 
 // ============================================================================
@@ -220,10 +254,8 @@ export interface ActorSystem {
   /**
    * Spawn a new actor with the given behavior or definition
    */
-  spawn<TMessage = ActorMessage, TContext = unknown, TEmitted = never>(
-    behavior:
-      | ActorBehavior<TMessage, TContext, TEmitted>
-      | ActorDefinition<TMessage, TContext, TEmitted>,
+  spawn<TMessage = ActorMessage, TEmitted = ActorMessage>(
+    behavior: ActorBehavior<TMessage, TEmitted>,
     options?: SpawnOptions
   ): Promise<ActorPID>;
 
@@ -277,11 +309,12 @@ export interface ActorSystem {
 
   /**
    * Subscribe to cluster events
+   * @param listener - Function to call when cluster events occur
+   * @returns Unsubscribe function to stop receiving events
    */
-  subscribeToClusterEvents(): Observable<{
-    type: 'node-up' | 'node-down' | 'leader-changed';
-    node: string;
-  }>;
+  subscribeToClusterEvents(
+    listener: (event: { type: 'node-up' | 'node-down' | 'leader-changed'; node: string }) => void
+  ): () => void;
 
   /**
    * Register a shutdown handler to be called when the system stops
@@ -290,11 +323,12 @@ export interface ActorSystem {
 
   /**
    * Subscribe to system lifecycle events
+   * @param listener - Function to call when system events occur
+   * @returns Unsubscribe function to stop receiving events
    */
-  subscribeToSystemEvents(): Observable<{
-    type: string;
-    [key: string]: unknown;
-  }>;
+  subscribeToSystemEvents(
+    listener: (event: { type: string; [key: string]: unknown }) => void
+  ): () => void;
 
   // ============================================================================
   // LIFECYCLE
@@ -348,12 +382,16 @@ export interface ActorDirectory {
 
   /**
    * Subscribe to directory changes
+   * @param listener - Function to call when directory changes occur
+   * @returns Unsubscribe function to stop receiving events
    */
-  subscribeToChanges(): Observable<{
-    type: 'registered' | 'unregistered' | 'updated';
-    address: ActorAddress;
-    location?: string;
-  }>;
+  subscribeToChanges(
+    listener: (event: {
+      type: 'registered' | 'unregistered' | 'updated';
+      address: ActorAddress;
+      location?: string;
+    }) => void
+  ): () => void;
 }
 
 // ============================================================================
@@ -371,8 +409,10 @@ export interface MessageTransport {
 
   /**
    * Subscribe to incoming messages
+   * @param listener - Function to call when messages are received
+   * @returns Unsubscribe function to stop receiving messages
    */
-  subscribe(): Observable<{ source: string; message: ActorMessage }>;
+  subscribe(listener: (event: { source: string; message: ActorMessage }) => void): () => void;
 
   /**
    * Connect to a remote node

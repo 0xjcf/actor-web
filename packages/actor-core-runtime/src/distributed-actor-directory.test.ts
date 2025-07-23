@@ -6,10 +6,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ActorAddress } from './actor-system';
 import { DistributedActorDirectory } from './distributed-actor-directory';
-import { enableDevMode } from './logger';
+import { createActorDelay } from './pure-xstate-utilities';
 
-// Enable debug mode for detailed logging
-enableDevMode();
+// import { enableDevMode } from './logger'; // Removed - use pnpm test:debug for verbose output
+
+// Removed enableDevMode() - tests run quietly by default
+// Use `pnpm test:debug` for verbose output when needed
 
 function createActorAddress(id: string, type: string, node: string): ActorAddress {
   return {
@@ -218,8 +220,11 @@ describe('DistributedActorDirectory', () => {
       await shortTtlDirectory.register(testActorAddress, 'test-location');
       await shortTtlDirectory.lookup(testActorAddress);
 
-      // Wait for cleanup
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // ✅ PURE ACTOR MODEL: Use XState delay instead of setTimeout
+      await createActorDelay(100);
+
+      // ✅ CORRECT: Trigger cleanup before checking stats
+      await shortTtlDirectory.cleanup();
 
       const stats = shortTtlDirectory.getCacheStats();
       expect(stats.size).toBe(0);
@@ -287,8 +292,7 @@ describe('DistributedActorDirectory', () => {
         location?: string;
       }> = [];
 
-      const observable = directory.subscribeToChanges();
-      const subscription = observable.subscribe((event) => {
+      const unsubscribe = directory.subscribeToChanges((event) => {
         events.push(event);
       });
 
@@ -299,7 +303,7 @@ describe('DistributedActorDirectory', () => {
       expect(events[0].address).toEqual(testActorAddress);
       expect(events[0].location).toBe('test-location');
 
-      subscription.unsubscribe();
+      unsubscribe();
     });
 
     it('should notify subscribers of unregistration events', async () => {
@@ -309,8 +313,7 @@ describe('DistributedActorDirectory', () => {
         location?: string;
       }> = [];
 
-      const observable = directory.subscribeToChanges();
-      const subscription = observable.subscribe((event) => {
+      const unsubscribe = directory.subscribeToChanges((event) => {
         events.push(event);
       });
 
@@ -321,7 +324,7 @@ describe('DistributedActorDirectory', () => {
       expect(events[0].type).toBe('registered');
       expect(events[1].type).toBe('unregistered');
 
-      subscription.unsubscribe();
+      unsubscribe();
     });
   });
 
@@ -339,15 +342,14 @@ describe('DistributedActorDirectory', () => {
     });
 
     it('should handle subscriber errors gracefully', async () => {
-      const observable = directory.subscribeToChanges();
-      const subscription = observable.subscribe(() => {
+      const unsubscribe = directory.subscribeToChanges(() => {
         throw new Error('Subscriber error');
       });
 
       // Should not throw when notifying subscribers
       await expect(directory.register(testActorAddress, 'test-location')).resolves.not.toThrow();
 
-      subscription.unsubscribe();
+      unsubscribe();
     });
   });
 });

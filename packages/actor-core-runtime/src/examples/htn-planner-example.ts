@@ -8,13 +8,13 @@ import { assign, setup } from 'xstate';
 import { createActorRef } from '../create-actor-ref.js';
 import { Logger } from '../logger.js';
 import {
-  HTNPlanner,
   createCompoundTask,
   createCondition,
   createEffect,
   createPrimitiveTask,
   createTaskMethod,
   createWorldState,
+  HTNPlanner,
 } from '../planning/hierarchical-task-network.js';
 import type { BaseEventObject } from '../types.js';
 
@@ -438,7 +438,7 @@ export async function demonstrateSimpleTaskPlanning(): Promise<void> {
   const moveBookToShelfMethod = createTaskMethod(
     'move_book_method',
     'Move book to shelf method',
-    (task, state) => {
+    (_task, state) => {
       log.debug('Decomposing move book task', { state: Object.fromEntries(state.facts) });
       return [moveToTable, pickUpBook, moveToShelf, putBookOnShelf];
     },
@@ -621,7 +621,7 @@ export async function demonstrateMultiAgentPlanning(): Promise<void> {
     'agent1_move_box',
     'Agent 1 moves box',
     [
-      createTaskMethod('agent1_move_box_method', 'Agent 1 box moving method', (task, state) => [
+      createTaskMethod('agent1_move_box_method', 'Agent 1 box moving method', (_task, _state) => [
         createPrimitiveTask('agent1_pickup', 'Agent 1 pick up box', agent1Manipulation, {
           type: 'PICK_UP',
           object: 'box1',
@@ -644,7 +644,7 @@ export async function demonstrateMultiAgentPlanning(): Promise<void> {
     'agent2_move_box',
     'Agent 2 moves box',
     [
-      createTaskMethod('agent2_move_box_method', 'Agent 2 box moving method', (task, state) => [
+      createTaskMethod('agent2_move_box_method', 'Agent 2 box moving method', (_task, _state) => [
         createPrimitiveTask('agent2_pickup', 'Agent 2 pick up box', agent2Manipulation, {
           type: 'PICK_UP',
           object: 'box2',
@@ -670,7 +670,7 @@ export async function demonstrateMultiAgentPlanning(): Promise<void> {
       createTaskMethod(
         'parallel_move_method',
         'Parallel box moving method',
-        (task, state) => [agent1MoveBox, agent2MoveBox],
+        (_task, _state) => [agent1MoveBox, agent2MoveBox],
         { priority: 10 }
       ),
     ],
@@ -792,7 +792,7 @@ export async function demonstrateAdaptivePlanning(): Promise<void> {
   const directPathMethod = createTaskMethod(
     'direct_path_method',
     'Direct path method',
-    (task, state) => [
+    (_task, _state) => [
       createPrimitiveTask('move_direct', 'Move directly to goal', navigationActor, {
         type: 'MOVE_TO',
         location: 'goal',
@@ -813,7 +813,7 @@ export async function demonstrateAdaptivePlanning(): Promise<void> {
   const alternativePathMethod = createTaskMethod(
     'alternative_path_method',
     'Alternative path method',
-    (task, state) => [
+    (_task, _state) => [
       createPrimitiveTask('scan_area', 'Scan for obstacles', perceptionActor, {
         type: 'SCAN_AREA',
         area: 'path',

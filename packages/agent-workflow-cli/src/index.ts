@@ -163,7 +163,7 @@ export async function generateIntelligentCommitMessage(baseDir?: string): Promis
   const gitActor = createGitActor(baseDir);
 
   return new Promise((resolve, reject) => {
-    const unsubscribe = gitActor.subscribe((event: unknown) => {
+    const unsubscribe = gitActor.subscribe('*', (event: unknown) => {
       const snapshot = event as ActorSnapshot<GitContext>;
 
       // Check for successful completion
@@ -215,7 +215,7 @@ export async function validateDocumentationDates(
   const gitActor = createGitActor(baseDir);
 
   return new Promise((resolve, reject) => {
-    const unsubscribe = gitActor.subscribe((event: unknown) => {
+    const unsubscribe = gitActor.subscribe('*', (event: unknown) => {
       const snapshot = event as ActorSnapshot<GitContext>;
 
       // Check for successful completion
@@ -242,7 +242,7 @@ export async function validateDocumentationDates(
 
     // Start the actor and send the event
     gitActor.start();
-    gitActor.send({ type: 'VALIDATE_DATES', filePaths: files });
+    gitActor.send({ type: 'VALIDATE_DATES', payload: { filePaths: files } });
   });
 }
 
@@ -303,7 +303,8 @@ export async function runWorkflowCommand(
 // ============================================================================
 
 // Import package.json for version info
-import packageJson from '../package.json' with { type: 'json' };
+// Using require to support TypeScript 5.3 module resolution
+const packageJson = require('../package.json');
 
 /**
  * CLI Package version

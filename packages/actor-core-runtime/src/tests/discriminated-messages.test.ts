@@ -15,12 +15,12 @@ import {
   type AIAgentMessage,
   GitHandler,
   type GitMessage,
-  MessageRouter,
-  WorkflowHandler,
-  type WorkflowMessage,
   isAIAgentMessage,
   isGitMessage,
   isWorkflowMessage,
+  MessageRouter,
+  WorkflowHandler,
+  type WorkflowMessage,
 } from '../discriminated-messages.js';
 
 describe('Discriminated Message Handling', () => {
@@ -171,7 +171,14 @@ describe('Discriminated Message Handling', () => {
       };
       const result = await handler.handle(message);
       expect(result).toHaveProperty('workflowId');
-      expect((result as any).workflowId).toMatch(/^workflow-\d+$/);
+
+      // Type guard for workflow result
+      if (result && typeof result === 'object' && 'workflowId' in result) {
+        const workflowResult = result as { workflowId: string };
+        expect(workflowResult.workflowId).toMatch(/^workflow-\d+$/);
+      } else {
+        throw new Error('Expected result to have workflowId property');
+      }
     });
 
     it('should handle pause messages', async () => {

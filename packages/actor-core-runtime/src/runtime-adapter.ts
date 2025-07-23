@@ -319,7 +319,10 @@ export class NodeTransport implements MessageTransport {
       this.subscribers.set(actorId, new Set());
     }
 
-    const handlers = this.subscribers.get(actorId)!;
+    const handlers = this.subscribers.get(actorId);
+    if (!handlers) {
+      throw new Error(`No handlers found for actor ${actorId}`);
+    }
     handlers.add(handler as (message: BaseEventObject) => Promise<void>);
     this.stats.activeSubscriptions++;
 
@@ -469,7 +472,7 @@ export class BrowserStorage implements RuntimeStorage {
     const keys: string[] = [];
     for (let i = 0; i < storage.length; i++) {
       const key = storage.key(i);
-      if (key && key.startsWith(this.prefix)) {
+      if (key?.startsWith(this.prefix)) {
         keys.push(key.substring(this.prefix.length));
       }
     }
@@ -527,7 +530,10 @@ export class BrowserTransport implements MessageTransport {
       this.subscribers.set(actorId, new Set());
     }
 
-    const handlers = this.subscribers.get(actorId)!;
+    const handlers = this.subscribers.get(actorId);
+    if (!handlers) {
+      throw new Error(`No handlers found for actor ${actorId}`);
+    }
     handlers.add(handler as (message: BaseEventObject) => Promise<void>);
     this.stats.activeSubscriptions++;
 
@@ -570,6 +576,16 @@ export class BrowserTransport implements MessageTransport {
 
   getStats() {
     return { ...this.stats };
+  }
+
+  /**
+   * Clean up all broadcast channels
+   */
+  cleanup(): void {
+    for (const channel of this.channels.values()) {
+      channel.close();
+    }
+    this.channels.clear();
   }
 }
 
@@ -653,8 +669,8 @@ export class BrowserAdapter implements RuntimeAdapter {
     await this.storage.clear();
 
     // Close all broadcast channels
-    for (const channel of Array.from((this.transport as BrowserTransport)['channels'].values())) {
-      channel.close();
+    if (this.transport instanceof BrowserTransport) {
+      this.transport.cleanup();
     }
   }
 }
@@ -750,7 +766,10 @@ export class WorkerTransport implements MessageTransport {
       this.subscribers.set(actorId, new Set());
     }
 
-    const handlers = this.subscribers.get(actorId)!;
+    const handlers = this.subscribers.get(actorId);
+    if (!handlers) {
+      throw new Error(`No handlers found for actor ${actorId}`);
+    }
     handlers.add(handler as (message: BaseEventObject) => Promise<void>);
     this.stats.activeSubscriptions++;
 

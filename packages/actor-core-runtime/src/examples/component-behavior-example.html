@@ -1,0 +1,1310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎭 Actor-Web Component Playground</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      color: #333;
+    }
+    
+    .header {
+      text-align: center;
+      color: white;
+      margin-bottom: 30px;
+    }
+    
+    .header h1 {
+      font-size: 2.5rem;
+      margin: 0;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    
+    .header p {
+      font-size: 1.1rem;
+      opacity: 0.9;
+      margin: 10px 0;
+    }
+    
+    .container {
+      background: white;
+      border-radius: 16px;
+      padding: 28px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+      margin-bottom: 24px;
+      backdrop-filter: blur(10px);
+    }
+    
+    .demo-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+    
+    @media (max-width: 1024px) {
+      .demo-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+    
+    @media (max-width: 768px) {
+      .demo-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    .system-section {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+    
+    @media (max-width: 1024px) {
+      .system-section {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    h2 {
+      color: #2d3748;
+      margin: 0 0 20px 0;
+      font-size: 1.4rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    /* Enhanced Button Styles */
+    button {
+      padding: 12px 24px;
+      margin: 6px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 600;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+    }
+    
+    button:active {
+      transform: translateY(0);
+    }
+    
+    button:disabled {
+      background: #e2e8f0;
+      color: #a0aec0;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    
+    button.secondary {
+      background: linear-gradient(135deg, #fd746c 0%, #ff9068 100%);
+    }
+    
+    button.danger {
+      background: linear-gradient(135deg, #fc466b 0%, #3f5efb 100%);
+    }
+    
+    /* Counter Styles */
+    .counter-display {
+      font-size: 3rem;
+      font-weight: 800;
+      color: #667eea;
+      text-align: center;
+      margin: 20px 0;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      transition: all 0.3s ease;
+    }
+    
+    .counter-display.changed {
+      transform: scale(1.1);
+      color: #fd746c;
+    }
+    
+    .counter-controls {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    
+    .step-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 12px 0;
+      justify-content: center;
+    }
+    
+    .step-controls input {
+      width: 60px;
+      padding: 8px;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 16px;
+    }
+    
+    /* Shopping Cart Styles */
+    .cart-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .cart-item:last-child {
+      border-bottom: none;
+    }
+    
+    .item-name {
+      font-weight: 600;
+      color: #2d3748;
+    }
+    
+    .item-price {
+      color: #667eea;
+      font-weight: 700;
+    }
+    
+    .cart-total {
+      text-align: center;
+      font-size: 1.3rem;
+      font-weight: 800;
+      color: #667eea;
+      margin: 16px 0;
+      padding: 16px;
+      background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+      border-radius: 12px;
+    }
+    
+    /* Form Styles */
+    .form-group {
+      margin: 16px 0;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+      color: #4a5568;
+    }
+    
+    input, select {
+      width: 100%;
+      padding: 12px 16px;
+      border: 2px solid #e2e8f0;
+      border-radius: 12px;
+      font-size: 16px;
+      transition: border-color 0.2s ease;
+    }
+    
+    input:focus, select:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .status {
+      padding: 12px 20px;
+      border-radius: 12px;
+      margin: 12px 0;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .status.idle { 
+      background: rgba(102, 126, 234, 0.1); 
+      color: #667eea; 
+    }
+    
+    .status.submitting { 
+      background: rgba(255, 144, 104, 0.1); 
+      color: #ff9068; 
+    }
+    
+    .status.success { 
+      background: rgba(72, 187, 120, 0.1); 
+      color: #48bb78; 
+    }
+    
+    .status.error { 
+      background: rgba(252, 70, 107, 0.1); 
+      color: #fc466b; 
+    }
+    
+    /* System Monitor Styles */
+    .monitor-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    
+    .monitor-card {
+      background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+      border: 2px solid transparent;
+      transition: all 0.3s ease;
+    }
+    
+    .monitor-card.active {
+      border-color: #667eea;
+      transform: scale(1.02);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+    }
+    
+    .monitor-value {
+      font-size: 2rem;
+      font-weight: 800;
+      margin: 8px 0;
+    }
+    
+    .monitor-label {
+      font-size: 0.9rem;
+      color: #718096;
+      font-weight: 600;
+    }
+    
+    .activity-feed {
+      max-height: 200px;
+      overflow-y: auto;
+      background: #f8fafc;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    
+    .activity-item {
+      padding: 8px 12px;
+      margin: 4px 0;
+      background: white;
+      border-radius: 6px;
+      border-left: 4px solid #667eea;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      animation: slideIn 0.3s ease;
+    }
+    
+    .activity-item.new {
+      background: linear-gradient(135deg, rgba(72, 187, 120, 0.1) 0%, rgba(72, 187, 120, 0.05) 100%);
+      border-left-color: #48bb78;
+    }
+    
+    .activity-icon {
+      font-size: 14px;
+    }
+    
+    .activity-text {
+      flex: 1;
+    }
+    
+    .activity-time {
+      font-size: 0.75rem;
+      color: #a0aec0;
+    }
+    
+    /* Enhanced Event Log */
+    .event-log-container {
+      position: relative;
+    }
+    
+    .event-log-controls {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    
+    .filter-buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    
+    .filter-btn {
+      padding: 6px 12px;
+      font-size: 12px;
+      border-radius: 20px;
+      border: 2px solid transparent;
+      background: #f7fafc;
+      color: #4a5568;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    
+    .filter-btn.active {
+      background: #667eea;
+      color: white;
+    }
+    
+    .filter-btn:hover {
+      background: #e2e8f0;
+    }
+    
+    .filter-btn.active:hover {
+      background: #5a67d8;
+    }
+    
+    .event-log {
+      max-height: 400px;
+      overflow-y: auto;
+      border: 2px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 16px;
+      background: #f8fafc;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    }
+    
+    .event-entry {
+      margin: 8px 0;
+      padding: 12px 16px;
+      border-radius: 8px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      animation: slideIn 0.3s ease;
+      transition: all 0.2s ease;
+    }
+    
+    .event-entry:hover {
+      transform: translateX(4px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .event-icon {
+      font-size: 18px;
+      line-height: 1;
+      margin-top: 2px;
+    }
+    
+    .event-content {
+      flex: 1;
+      line-height: 1.4;
+    }
+    
+    .event-type {
+      font-weight: 700;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .event-data {
+      font-size: 13px;
+      margin-top: 4px;
+      opacity: 0.8;
+    }
+    
+    .event-time {
+      font-size: 11px;
+      opacity: 0.6;
+      white-space: nowrap;
+      margin-top: 2px;
+    }
+    
+    /* Event Type Colors */
+    .event-entry.dom-event {
+      background: rgba(102, 126, 234, 0.1);
+      border-left: 4px solid #667eea;
+    }
+    
+    .event-entry.machine-event {
+      background: rgba(255, 144, 104, 0.1);
+      border-left: 4px solid #ff9068;
+    }
+    
+    .event-entry.actor-emit {
+      background: rgba(72, 187, 120, 0.1);
+      border-left: 4px solid #48bb78;
+    }
+    
+    .event-entry.system-event {
+      background: rgba(159, 122, 234, 0.1);
+      border-left: 4px solid #9f7aea;
+    }
+    
+    .event-entry.hidden {
+      display: none;
+    }
+    
+    .stats-bar {
+      display: flex;
+      gap: 16px;
+      margin-top: 12px;
+      font-size: 12px;
+      color: #718096;
+    }
+    
+    .stat {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🎭 Actor-Web Component Playground</h1>
+    <p>Experience the unified <code>defineBehavior()</code> API with cross-component communication</p>
+  </div>
+
+  <div class="demo-grid">
+    <div class="container">
+      <h2>🔢 Smart Counter</h2>
+      <div id="counter-container"></div>
+    </div>
+
+    <div class="container">
+      <h2>🛒 Shopping Cart</h2>
+      <div id="cart-container"></div>
+    </div>
+    
+    <div class="container">
+      <h2>📊 System Monitor</h2>
+      <div id="monitor-container"></div>
+    </div>
+  </div>
+
+  <div class="container">
+    <h2>📝 User Profile Form</h2>
+    <div id="form-container"></div>
+  </div>
+
+  <div class="system-section">
+    <div class="container">
+      <h2>📡 Live Event Stream</h2>
+      <div class="event-log-container">
+        <div class="event-log-controls">
+          <div class="filter-buttons">
+            <button class="filter-btn active" data-filter="all">All Events</button>
+            <button class="filter-btn" data-filter="dom-event">🎯 User Actions</button>
+            <button class="filter-btn" data-filter="machine-event">⚙️ State Changes</button>
+            <button class="filter-btn" data-filter="actor-emit">📡 Actor Messages</button>
+            <button class="filter-btn" data-filter="system-event">🔄 System</button>
+          </div>
+          <button id="clear-log" class="filter-btn secondary">🗑️ Clear</button>
+        </div>
+        <div id="event-log" class="event-log"></div>
+        <div class="stats-bar">
+          <div class="stat">📈 Total Events: <span id="total-events">0</span></div>
+          <div class="stat">🎯 User Actions: <span id="dom-events">0</span></div>
+          <div class="stat">⚙️ State Changes: <span id="machine-events">0</span></div>
+          <div class="stat">📡 Actor Messages: <span id="actor-events">0</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    // Global event bus for cross-component communication
+    const globalEventBus = {
+      listeners: new Map(),
+      
+      subscribe(eventType, callback) {
+        if (!this.listeners.has(eventType)) {
+          this.listeners.set(eventType, new Set());
+        }
+        this.listeners.get(eventType).add(callback);
+        
+        return () => {
+          const callbacks = this.listeners.get(eventType);
+          if (callbacks) {
+            callbacks.delete(callback);
+            if (callbacks.size === 0) {
+              this.listeners.delete(eventType);
+            }
+          }
+        };
+      },
+      
+      emit(eventType, data) {
+        const callbacks = this.listeners.get(eventType);
+        if (callbacks) {
+          callbacks.forEach(callback => callback(data));
+        }
+        
+        // Also emit to 'all' listeners
+        const allCallbacks = this.listeners.get('all');
+        if (allCallbacks) {
+          allCallbacks.forEach(callback => callback({ type: eventType, data }));
+        }
+      }
+    };
+
+    // Enhanced event logging system
+    const eventLog = document.getElementById('event-log');
+    const eventStats = {
+      total: 0,
+      'dom-event': 0,
+      'machine-event': 0,
+      'actor-emit': 0,
+      'system-event': 0
+    };
+    
+    let currentFilter = 'all';
+    
+    const eventTypeConfig = {
+      'dom-event': { icon: '🎯', name: 'User Action', color: '#667eea' },
+      'machine-event': { icon: '⚙️', name: 'State Change', color: '#ff9068' },
+      'actor-emit': { icon: '📡', name: 'Actor Message', color: '#48bb78' },
+      'system-event': { icon: '🔄', name: 'System Event', color: '#9f7aea' }
+    };
+
+    function updateStats() {
+      document.getElementById('total-events').textContent = eventStats.total;
+      document.getElementById('dom-events').textContent = eventStats['dom-event'];
+      document.getElementById('machine-events').textContent = eventStats['machine-event'];
+      document.getElementById('actor-events').textContent = eventStats['actor-emit'];
+    }
+
+    function logEvent(category, summary, details = {}) {
+      const config = eventTypeConfig[category];
+      const entry = document.createElement('div');
+      entry.className = `event-entry ${category}`;
+      
+      const shouldShow = currentFilter === 'all' || currentFilter === category;
+      if (!shouldShow) entry.classList.add('hidden');
+      
+      entry.innerHTML = `
+        <div class="event-icon">${config.icon}</div>
+        <div class="event-content">
+          <div class="event-type" style="color: ${config.color}">${config.name}</div>
+          <div class="event-data">${summary}</div>
+          ${Object.keys(details).length > 0 ? `<div class="event-data" style="opacity: 0.6">${JSON.stringify(details, null, 2)}</div>` : ''}
+        </div>
+        <div class="event-time">${new Date().toLocaleTimeString()}</div>
+      `;
+      
+      eventLog.insertBefore(entry, eventLog.firstChild);
+      
+      // Update stats
+      eventStats.total++;
+      eventStats[category]++;
+      updateStats();
+      
+      // Limit log size
+      if (eventLog.children.length > 100) {
+        eventLog.removeChild(eventLog.lastChild);
+      }
+    }
+
+    // Filter functionality
+    document.querySelectorAll('.filter-btn[data-filter]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn[data-filter]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentFilter = btn.dataset.filter;
+        
+        document.querySelectorAll('.event-entry').forEach(entry => {
+          if (currentFilter === 'all' || entry.classList.contains(currentFilter)) {
+            entry.classList.remove('hidden');
+          } else {
+            entry.classList.add('hidden');
+          }
+        });
+      });
+    });
+
+    // Clear log functionality
+    document.getElementById('clear-log').addEventListener('click', () => {
+      eventLog.innerHTML = '';
+      Object.keys(eventStats).forEach(key => eventStats[key] = 0);
+      updateStats();
+      logEvent('system-event', 'Event log cleared by user');
+    });
+
+    // Enhanced Mock Actor-Web Framework
+    const MockActorWeb = {
+      createMachine: (config) => ({
+        id: config.id,
+        initial: config.initial,
+        context: config.context,
+        states: config.states,
+        _state: config.initial,
+        _context: { ...config.context },
+        send: function(event) {
+          logEvent('machine-event', `${this.id} received ${event.type}`, { 
+            machine: this.id, 
+            event: event.type,
+            previousState: this._state,
+            context: this._context 
+          });
+          
+          // Enhanced state transition logic
+          if (this.id === 'counter') {
+            const oldCount = this._context.count;
+            if (event.type === 'INCREMENT') {
+              const step = event.step || 1;
+              this._context.count += step;
+              // Fix: Update history properly
+              this._context.history = [...(this._context.history || []), this._context.count].slice(-10);
+            } else if (event.type === 'DECREMENT') {
+              const step = event.step || 1;
+              this._context.count -= step;
+              // Fix: Update history properly  
+              this._context.history = [...(this._context.history || []), this._context.count].slice(-10);
+            } else if (event.type === 'RESET') {
+              this._context.count = 0;
+              // Fix: Update history properly
+              this._context.history = [...(this._context.history || []), 0].slice(-10);
+            }
+            
+            // Emit global event for counter changes
+            if (this._context.count !== oldCount) {
+              globalEventBus.emit('COUNTER_CHANGED', {
+                from: oldCount,
+                to: this._context.count,
+                step: event.step || 1
+              });
+            }
+            
+          } else if (this.id === 'cart') {
+            if (event.type === 'ADD_ITEM') {
+              this._context.items.push(event.item);
+              this._context.total += event.item.price;
+              
+              globalEventBus.emit('ITEM_ADDED', {
+                item: event.item,
+                cartTotal: this._context.total,
+                itemCount: this._context.items.length
+              });
+            } else if (event.type === 'REMOVE_ITEM') {
+              const index = this._context.items.findIndex(item => item.id === event.itemId);
+              if (index >= 0) {
+                const item = this._context.items.splice(index, 1)[0];
+                this._context.total -= item.price;
+                
+                globalEventBus.emit('ITEM_REMOVED', {
+                  item: item,
+                  cartTotal: this._context.total,
+                  itemCount: this._context.items.length
+                });
+              }
+            } else if (event.type === 'CLEAR_CART') {
+              const clearedItems = this._context.items.length;
+              this._context.items = [];
+              this._context.total = 0;
+              
+              globalEventBus.emit('CART_CLEARED', {
+                clearedItemCount: clearedItems
+              });
+            }
+          } else if (this.id === 'form') {
+            if (event.type === 'SUBMIT') {
+              this._state = 'submitting';
+              globalEventBus.emit('FORM_SUBMIT_STARTED', {
+                attempt: this._context.submitCount + 1
+              });
+            } else if (event.type === 'SUCCESS') {
+              this._state = 'success';
+              globalEventBus.emit('FORM_SUBMIT_SUCCESS', {
+                attempt: this._context.submitCount
+              });
+            } else if (event.type === 'ERROR') {
+              this._state = 'error';
+              this._context.error = event.error || 'Submission failed';
+              globalEventBus.emit('FORM_SUBMIT_ERROR', {
+                error: this._context.error,
+                attempt: this._context.submitCount
+              });
+            } else if (event.type === 'RESET') {
+              this._state = 'idle';
+              this._context.error = null;
+              globalEventBus.emit('FORM_RESET', {});
+            }
+          }
+          
+          this._notifyListeners();
+        },
+        getSnapshot: function() {
+          return { value: this._state, context: this._context };
+        },
+        _listeners: [],
+        subscribe: function(fn) {
+          this._listeners.push(fn);
+          return () => {
+            const idx = this._listeners.indexOf(fn);
+            if (idx >= 0) this._listeners.splice(idx, 1);
+          };
+        },
+        _notifyListeners: function() {
+          // Yes, we need this! It triggers re-renders
+          this._listeners.forEach(fn => fn(this.getSnapshot()));
+        }
+      }),
+
+      createComponent: ({ machine, template, behavior }) => {
+        return {
+          machine,
+          template,
+          behavior,
+          mount: function(container) {
+            const render = () => {
+              const state = machine.getSnapshot();
+              container.innerHTML = template(state);
+              
+              // Wire up event handlers with enhanced logging
+              container.querySelectorAll('[data-send]').forEach(el => {
+                const eventType = el.getAttribute('data-send');
+                const eventData = el.dataset;
+                
+                el.addEventListener('click', (e) => {
+                  e.preventDefault();
+                  
+                  logEvent('dom-event', `User clicked ${eventType} button`, { 
+                    element: el.tagName, 
+                    send: eventType,
+                    data: eventData 
+                  });
+                  
+                  // Parse any data attributes for the event
+                  const machineEvent = { type: eventType };
+                  if (eventData.step) machineEvent.step = parseInt(eventData.step);
+                  if (eventData.item) machineEvent.item = JSON.parse(eventData.item);
+                  if (eventData.itemId) machineEvent.itemId = eventData.itemId;
+                  
+                  machine.send(machineEvent);
+                  
+                  // Add visual feedback
+                  el.style.transform = 'scale(0.95)';
+                  setTimeout(() => el.style.transform = '', 100);
+                  
+                  // Simulate behavior.onMessage
+                  if (behavior && behavior.onMessage) {
+                    behavior.onMessage({
+                      message: { type: 'DOM_EVENT', payload: { eventType, data: eventData } },
+                      context: machine._context
+                    }).then(result => {
+                      if (result.emit) {
+                        logEvent('actor-emit', `Component emitted ${result.emit.type}`, result.emit);
+                      }
+                    });
+                  }
+                });
+              });
+              
+              // Handle form inputs
+              container.querySelectorAll('input, select').forEach(input => {
+                if (input.type !== 'button' && input.type !== 'submit') {
+                  input.addEventListener('input', (e) => {
+                    logEvent('dom-event', `User updated ${input.name || 'input'} field`, { 
+                      field: input.name,
+                      value: input.value 
+                    });
+                  });
+                }
+              });
+            };
+            
+            machine.subscribe(render);
+            render();
+            
+            logEvent('system-event', `Component ${machine.id} mounted successfully`);
+          }
+        };
+      },
+
+      defineBehavior: (config) => config.behavior || config
+    };
+
+    // Enhanced Counter Component
+    const counterMachine = MockActorWeb.createMachine({
+      id: 'counter',
+      initial: 'active',
+      context: { count: 0, step: 1, history: [] },
+      states: { active: {} }
+    });
+
+    const counterTemplate = (state) => {
+      const { count, step, history } = state.context;
+      const displayHistory = history.length > 0 ? history.slice(-5).join(' → ') : 'None';
+      
+      return `
+        <div class="counter-display ${count !== (history[history.length - 2] || 0) ? 'changed' : ''}">
+          ${count.toLocaleString()}
+        </div>
+        <div class="step-controls">
+          <label>Step Size:</label>
+          <input type="number" min="1" max="100" value="${step}" 
+                 onchange="updateStep(this.value)" style="width: 80px">
+        </div>
+        <div class="counter-controls">
+          <button data-send="DECREMENT" data-step="${step}" class="secondary">
+            −${step}
+          </button>
+          <button data-send="INCREMENT" data-step="${step}">
+            +${step}
+          </button>
+          <button data-send="RESET" class="danger">Reset</button>
+        </div>
+        <div style="margin-top: 12px; font-size: 0.8rem; color: #718096;">
+          History: ${displayHistory}
+        </div>
+      `;
+    };
+
+    window.updateStep = (value) => {
+      counterMachine._context.step = parseInt(value) || 1;
+      counterMachine._notifyListeners();
+      logEvent('system-event', `Counter step size changed to ${value}`);
+    };
+
+    const counterBehavior = MockActorWeb.defineBehavior({
+      onMessage: async ({ message, context }) => {
+        if (message.type === 'DOM_EVENT') {
+          const eventType = message.payload.eventType;
+          return {
+            context,
+            emit: {
+              type: `COUNTER_${eventType}`,
+              payload: { count: context.count, step: context.step },
+              timestamp: Date.now()
+            }
+          };
+        }
+        return { context };
+      }
+    });
+
+    // Shopping Cart Component
+    const cartMachine = MockActorWeb.createMachine({
+      id: 'cart',
+      initial: 'shopping',
+      context: { items: [], total: 0 },
+      states: { shopping: {} }
+    });
+
+    const cartTemplate = (state) => {
+      const { items, total } = state.context;
+      const availableItems = [
+        { id: '1', name: '🍕 Pizza', price: 12.99 },
+        { id: '2', name: '🍔 Burger', price: 8.99 },
+        { id: '3', name: '🥤 Drink', price: 2.99 },
+        { id: '4', name: '🍟 Fries', price: 4.99 },
+        { id: '5', name: '🍦 Ice Cream', price: 3.99 }
+      ];
+
+      return `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+          <div>
+            <h3 style="margin: 0 0 12px 0; color: #4a5568;">Available Items</h3>
+            ${availableItems.map(item => `
+              <button data-send="ADD_ITEM" data-item='${JSON.stringify(item)}' 
+                      style="display: block; width: 100%; margin: 4px 0; text-align: left;">
+                ${item.name} - $${item.price}
+              </button>
+            `).join('')}
+          </div>
+          <div>
+            <h3 style="margin: 0 0 12px 0; color: #4a5568;">Shopping Cart</h3>
+            ${items.length === 0 ? '<p style="color: #a0aec0; font-style: italic;">Cart is empty</p>' : ''}
+            ${items.map(item => `
+              <div class="cart-item">
+                <span class="item-name">${item.name}</span>
+                <span class="item-price">$${item.price}</span>
+                <button data-send="REMOVE_ITEM" data-item-id="${item.id}" 
+                        style="padding: 4px 8px; font-size: 12px; background: #fc466b;">Remove</button>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        <div class="cart-total">
+          💰 Total: $${total.toFixed(2)}
+        </div>
+        ${items.length > 0 ? `
+          <div style="text-align: center;">
+            <button data-send="CLEAR_CART" class="danger">Clear Cart</button>
+          </div>
+        ` : ''}
+      `;
+    };
+
+    const cartBehavior = MockActorWeb.defineBehavior({
+      onMessage: async ({ message, context }) => {
+        if (message.type === 'DOM_EVENT') {
+          const eventType = message.payload.eventType;
+          return {
+            context,
+            emit: {
+              type: `CART_${eventType}`,
+              payload: { itemCount: context.items.length, total: context.total },
+              timestamp: Date.now()
+            }
+          };
+        }
+        return { context };
+      }
+    });
+
+    // NEW: System Monitor Component - Responds to Global Events!
+    const monitorMachine = MockActorWeb.createMachine({
+      id: 'monitor',
+      initial: 'monitoring',
+      context: { 
+        totalCounterChanges: 0, 
+        totalCartActions: 0,
+        totalFormSubmissions: 0,
+        recentActivities: [],
+        activeCards: new Set()
+      },
+      states: { monitoring: {} }
+    });
+
+    const monitorTemplate = (state) => {
+      const { totalCounterChanges, totalCartActions, totalFormSubmissions, recentActivities, activeCards } = state.context;
+      
+      return `
+        <div class="monitor-grid">
+          <div class="monitor-card ${activeCards.has('counter') ? 'active' : ''}">
+            <div class="monitor-value" style="color: #667eea;">${totalCounterChanges}</div>
+            <div class="monitor-label">Counter Changes</div>
+          </div>
+          <div class="monitor-card ${activeCards.has('cart') ? 'active' : ''}">
+            <div class="monitor-value" style="color: #fd746c;">${totalCartActions}</div>
+            <div class="monitor-label">Cart Actions</div>
+          </div>
+        </div>
+        <div class="monitor-card ${activeCards.has('form') ? 'active' : ''}" style="margin-bottom: 20px;">
+          <div class="monitor-value" style="color: #48bb78;">${totalFormSubmissions}</div>
+          <div class="monitor-label">Form Submissions</div>
+        </div>
+        
+        <h3 style="margin: 20px 0 12px 0; color: #4a5568; font-size: 1rem;">🎯 Recent Activity</h3>
+        <div class="activity-feed">
+          ${recentActivities.length === 0 ? 
+            '<div style="text-align: center; color: #a0aec0; padding: 20px;">Waiting for user interactions...</div>' :
+            recentActivities.slice(0, 8).map((activity, index) => `
+              <div class="activity-item ${index < 2 ? 'new' : ''}">
+                <div class="activity-icon">${activity.icon}</div>
+                <div class="activity-text">${activity.text}</div>
+                <div class="activity-time">${activity.time}</div>
+              </div>
+            `).join('')}
+        </div>
+      `;
+    };
+
+    const monitorBehavior = MockActorWeb.defineBehavior({
+      onMessage: async ({ message, context }) => {
+        // This component only responds to global events, not DOM events
+        return { context };
+      }
+    });
+
+    // Enhanced Form Component
+    const formMachine = MockActorWeb.createMachine({
+      id: 'form',
+      initial: 'idle',
+      context: { data: {}, error: null, submitCount: 0 },
+      states: {
+        idle: {},
+        submitting: {},
+        success: {},
+        error: {}
+      }
+    });
+
+    const formTemplate = (state) => {
+      const statusText = {
+        idle: '✏️ Ready to submit',
+        submitting: '⏳ Processing your profile...',
+        success: '✅ Profile saved successfully!',
+        error: `❌ ${state.context.error || 'Something went wrong'}`
+      }[state.value];
+
+      return `
+        <div class="status ${state.value}">${statusText}</div>
+        <form onsubmit="return false;">
+          <div class="form-group">
+            <label for="name">👤 Full Name</label>
+            <input type="text" id="name" placeholder="Enter your full name" 
+                   ${state.value === 'submitting' ? 'disabled' : ''}>
+          </div>
+          <div class="form-group">
+            <label for="email">📧 Email Address</label>
+            <input type="email" id="email" placeholder="you@example.com"
+                   ${state.value === 'submitting' ? 'disabled' : ''}>
+          </div>
+          <div class="form-group">
+            <label for="role">🏢 Role</label>
+            <select id="role" ${state.value === 'submitting' ? 'disabled' : ''}>
+              <option value="">Select your role</option>
+              <option value="developer">👨‍💻 Developer</option>
+              <option value="designer">🎨 Designer</option>
+              <option value="manager">👔 Manager</option>
+              <option value="other">🤷 Other</option>
+            </select>
+          </div>
+          ${state.value === 'idle' ? `
+            <button data-send="SUBMIT" style="width: 100%;">
+              💾 Save Profile
+            </button>
+          ` : ''}
+          ${state.value === 'submitting' ? `
+            <button disabled style="width: 100%;">
+              ⏳ Saving...
+            </button>
+          ` : ''}
+          ${state.value === 'success' ? `
+            <button data-send="RESET" style="width: 100%;" class="secondary">
+              📝 Edit Again
+            </button>
+          ` : ''}
+          ${state.value === 'error' ? `
+            <div style="display: flex; gap: 12px;">
+              <button data-send="SUBMIT" style="flex: 1;">🔄 Try Again</button>
+              <button data-send="RESET" style="flex: 1;" class="secondary">📝 Edit</button>
+            </div>
+          ` : ''}
+        </form>
+        ${state.context.submitCount > 0 ? `
+          <div style="margin-top: 12px; font-size: 0.8rem; color: #718096; text-align: center;">
+            Submission attempts: ${state.context.submitCount}
+          </div>
+        ` : ''}
+      `;
+    };
+
+    const formBehavior = MockActorWeb.defineBehavior({
+      onMessage: async ({ message, context }) => {
+        if (message.type === 'DOM_EVENT' && message.payload.eventType === 'SUBMIT') {
+          // Simulate API call with 75% success rate
+          setTimeout(() => {
+            const success = Math.random() > 0.25;
+            formMachine.send(success ? 
+              { type: 'SUCCESS' } : 
+              { type: 'ERROR', error: 'Network timeout - please try again' }
+            );
+            formMachine._context.submitCount++;
+            formMachine._notifyListeners();
+          }, 2000);
+          
+          return {
+            context,
+            emit: {
+              type: 'FORM_SUBMITTED',
+              payload: { timestamp: Date.now(), attempt: context.submitCount + 1 }
+            }
+          };
+        }
+        return { context };
+      }
+    });
+
+    // Create and mount components
+    const counterComponent = MockActorWeb.createComponent({
+      machine: counterMachine,
+      template: counterTemplate,
+      behavior: counterBehavior
+    });
+
+    const cartComponent = MockActorWeb.createComponent({
+      machine: cartMachine,
+      template: cartTemplate,
+      behavior: cartBehavior
+    });
+
+    const monitorComponent = MockActorWeb.createComponent({
+      machine: monitorMachine,
+      template: monitorTemplate,
+      behavior: monitorBehavior
+    });
+
+    const formComponent = MockActorWeb.createComponent({
+      machine: formMachine,
+      template: formTemplate,
+      behavior: formBehavior
+    });
+
+    // Wire up global event listeners for the monitor
+    globalEventBus.subscribe('COUNTER_CHANGED', (data) => {
+      const context = monitorMachine._context;
+      context.totalCounterChanges++;
+      
+      // Add activity
+      context.recentActivities.unshift({
+        icon: '🔢',
+        text: `Counter changed from ${data.from} to ${data.to} (±${data.step})`,
+        time: new Date().toLocaleTimeString()
+      });
+      context.recentActivities = context.recentActivities.slice(0, 20);
+      
+      // Highlight card
+      context.activeCards.add('counter');
+      setTimeout(() => {
+        context.activeCards.delete('counter');
+        monitorMachine._notifyListeners();
+      }, 1000);
+      
+      monitorMachine._notifyListeners();
+    });
+
+    globalEventBus.subscribe('ITEM_ADDED', (data) => {
+      const context = monitorMachine._context;
+      context.totalCartActions++;
+      
+      context.recentActivities.unshift({
+        icon: '🛒',
+        text: `Added ${data.item.name} to cart (${data.itemCount} items, $${data.cartTotal.toFixed(2)})`,
+        time: new Date().toLocaleTimeString()
+      });
+      context.recentActivities = context.recentActivities.slice(0, 20);
+      
+      context.activeCards.add('cart');
+      setTimeout(() => {
+        context.activeCards.delete('cart');
+        monitorMachine._notifyListeners();
+      }, 1000);
+      
+      monitorMachine._notifyListeners();
+    });
+
+    globalEventBus.subscribe('ITEM_REMOVED', (data) => {
+      const context = monitorMachine._context;
+      context.totalCartActions++;
+      
+      context.recentActivities.unshift({
+        icon: '🗑️',
+        text: `Removed ${data.item.name} from cart (${data.itemCount} items left)`,
+        time: new Date().toLocaleTimeString()
+      });
+      context.recentActivities = context.recentActivities.slice(0, 20);
+      
+      context.activeCards.add('cart');
+      setTimeout(() => {
+        context.activeCards.delete('cart');
+        monitorMachine._notifyListeners();
+      }, 1000);
+      
+      monitorMachine._notifyListeners();
+    });
+
+    globalEventBus.subscribe('CART_CLEARED', (data) => {
+      const context = monitorMachine._context;
+      context.totalCartActions++;
+      
+      context.recentActivities.unshift({
+        icon: '🧹',
+        text: `Cart cleared (removed ${data.clearedItemCount} items)`,
+        time: new Date().toLocaleTimeString()
+      });
+      context.recentActivities = context.recentActivities.slice(0, 20);
+      
+      context.activeCards.add('cart');
+      setTimeout(() => {
+        context.activeCards.delete('cart');
+        monitorMachine._notifyListeners();
+      }, 1000);
+      
+      monitorMachine._notifyListeners();
+    });
+
+    globalEventBus.subscribe('FORM_SUBMIT_SUCCESS', (data) => {
+      const context = monitorMachine._context;
+      context.totalFormSubmissions++;
+      
+      context.recentActivities.unshift({
+        icon: '✅',
+        text: `Form submitted successfully (attempt #${data.attempt})`,
+        time: new Date().toLocaleTimeString()
+      });
+      context.recentActivities = context.recentActivities.slice(0, 20);
+      
+      context.activeCards.add('form');
+      setTimeout(() => {
+        context.activeCards.delete('form');
+        monitorMachine._notifyListeners();
+      }, 1000);
+      
+      monitorMachine._notifyListeners();
+    });
+
+    globalEventBus.subscribe('FORM_SUBMIT_ERROR', (data) => {
+      const context = monitorMachine._context;
+      
+      context.recentActivities.unshift({
+        icon: '❌',
+        text: `Form submission failed: ${data.error}`,
+        time: new Date().toLocaleTimeString()
+      });
+      context.recentActivities = context.recentActivities.slice(0, 20);
+      
+      context.activeCards.add('form');
+      setTimeout(() => {
+        context.activeCards.delete('form');
+        monitorMachine._notifyListeners();
+      }, 1000);
+      
+      monitorMachine._notifyListeners();
+    });
+
+    // Mount all components
+    counterComponent.mount(document.getElementById('counter-container'));
+    cartComponent.mount(document.getElementById('cart-container'));
+    monitorComponent.mount(document.getElementById('monitor-container'));
+    formComponent.mount(document.getElementById('form-container'));
+
+    // Add some CSS animations
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+        100% { transform: scale(1); }
+      }
+    `;
+    document.head.appendChild(style);
+
+    // Welcome message
+    setTimeout(() => {
+      logEvent('system-event', '🎉 Actor-Web Playground loaded with cross-component communication!', {
+        components: ['counter', 'cart', 'form', 'monitor'],
+        framework: 'Actor-Web v2.0',
+        features: ['Type Safety', 'Event Sourcing', 'State Machines', 'Cross-Component Communication']
+      });
+    }, 500);
+  </script>
+</body>
+</html> 

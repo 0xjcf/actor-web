@@ -6,9 +6,9 @@
 
 import { assign, setup } from 'xstate';
 import {
+  createSupervisorTree,
   type SupervisorTreeConfig,
   SupervisorTreePatterns,
-  createSupervisorTree,
 } from '../actors/supervisor-tree.js';
 import { createActorRef } from '../create-actor-ref.js';
 import { Logger } from '../logger.js';
@@ -246,7 +246,7 @@ export async function demonstrateSimpleHierarchy(): Promise<void> {
       type: 'PROCESS_TASK';
       task: string;
     });
-  } catch (error) {
+  } catch (_error) {
     log.info('Worker failure handled by supervisor tree');
   }
 
@@ -317,7 +317,7 @@ export async function demonstrateOneForOne(): Promise<void> {
       type: 'PROCESS_TASK';
       task: string;
     });
-  } catch (error) {
+  } catch (_error) {
     log.info('Worker-2 failure handled, other workers continue');
   }
 

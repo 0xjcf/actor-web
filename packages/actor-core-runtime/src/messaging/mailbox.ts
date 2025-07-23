@@ -68,7 +68,6 @@ export class MailboxError extends Error {
  */
 export class BoundedMailbox {
   private queue: MessageEnvelope[] = [];
-  private messageIdCounter = 0;
   private parkedSenders: Array<{
     resolve: (success: boolean) => void;
     reject: (error: Error) => void;
@@ -254,7 +253,7 @@ export class BoundedMailbox {
   }
 
   private generateMessageId(): string {
-    return `msg-${++this.messageIdCounter}-${Date.now()}`;
+    return `msg-${Date.now()}`;
   }
 }
 

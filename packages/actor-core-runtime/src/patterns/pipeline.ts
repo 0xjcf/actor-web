@@ -286,7 +286,8 @@ export class Pipeline<TInput = unknown, TOutput = unknown> {
           if (this.config.errorStrategy === 'stop') {
             lastError = error instanceof Error ? error : new Error(String(error));
             break;
-          } else if (this.config.errorStrategy === 'continue') {
+          }
+          if (this.config.errorStrategy === 'continue') {
             // Continue with the previous value
             this.logger.debug('Continuing pipeline despite stage failure', {
               pipelineName: this.config.name,
@@ -390,15 +391,14 @@ export class Pipeline<TInput = unknown, TOutput = unknown> {
               setTimeout(() => reject(new Error(`Stage timeout after ${timeout}ms`)), timeout)
             ),
           ]);
-        } else {
-          return await stage(input);
         }
+        return await stage(input);
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
 
         if (attempt < maxAttempts && retry) {
           const delay =
-            retry.backoff === 'exponential' ? retry.delay * Math.pow(2, attempt - 1) : retry.delay;
+            retry.backoff === 'exponential' ? retry.delay * 2 ** (attempt - 1) : retry.delay;
 
           this.logger.debug(
             `Retrying stage ${stageConfig.name} (attempt ${attempt + 1}/${maxAttempts})`,
@@ -442,7 +442,7 @@ export class Pipeline<TInput = unknown, TOutput = unknown> {
    */
   private sanitizeForLogging(value: unknown): unknown {
     if (typeof value === 'string' && value.length > 200) {
-      return value.substring(0, 200) + '...';
+      return `${value.substring(0, 200)}...`;
     }
     if (typeof value === 'object' && value !== null) {
       return { type: typeof value, constructor: value.constructor.name };
@@ -577,9 +577,8 @@ export function branch<T, R>(
   return async (input: T): Promise<R> => {
     if (condition(input)) {
       return trueBranch(input);
-    } else {
-      return falseBranch(input);
     }
+    return falseBranch(input);
   };
 }
 

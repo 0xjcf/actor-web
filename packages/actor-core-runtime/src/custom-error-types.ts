@@ -1,5 +1,8 @@
 /**
  * Custom Type Error Messages in TypeScript
+ *
+ * This file contains demonstration types for TypeScript error patterns.
+ * Types prefixed with underscore are intentionally unused examples.
  */
 
 // Method 1: Using Template Literal Types for custom errors
@@ -12,56 +15,42 @@ type ValidateEventType<T extends string> = T extends ValidEventTypes
   : ErrorMessage<`"${T}" is not a valid event type. Valid types are: ${ValidEventTypes}`>;
 
 // Method 2: Using conditional types with never
-type AssertEventType<T extends string> = T extends ValidEventTypes ? T : never; // This will show "Type '"RESPONE"' is not assignable to type 'never'"
+type _AssertEventType<T extends string> = T extends ValidEventTypes ? T : never; // This will show "Type '"RESPONE"' is not assignable to type 'never'"
 
 // Method 3: Using a more sophisticated error system
 type TypeError<Message extends string> = { __error__: Message };
 
-type CheckEventType<T> = T extends { type: infer Type }
+type _CheckEventType<T> = T extends { type: infer Type }
   ? Type extends ValidEventTypes
     ? T
-    : TypeError<`Invalid event type "${Type & string}". Valid types: ${ValidEventTypes}`>
-  : never;
+    : TypeError<`Invalid event type: ${Type extends string ? Type : 'unknown'}`>
+  : TypeError<'Event must have a type property'>;
 
-// Method 4: Using impossible types to force better errors
-type If<Condition, Then, Else> = Condition extends true ? Then : Else;
+// Method 4: Using utility types with better error messages
+type If<Condition extends boolean, True, False> = Condition extends true ? True : False;
 
 type IsValidEventType<T> = T extends ValidEventTypes ? true : false;
 
-type CreateEvent<Type extends string, Data> = If<
+type _CreateEvent<Type extends string, Data> = If<
   IsValidEventType<Type>,
   { type: Type; data: Data },
-  {
-    type: Type;
-    data: Data;
-    __TYPE_ERROR__: `"${Type}" is not a valid event type. Use one of: ${ValidEventTypes}`;
-  }
+  TypeError<`Cannot create event with invalid type: ${Type}`>
 >;
 
-// Method 5: Using a validation function with type predicates
-export function assertValidEventType<T extends string>(
-  type: T,
-  _valid?: T extends ValidEventTypes
-    ? true
-    : ErrorMessage<`"${T}" is not valid. Use: ${ValidEventTypes}`>
-): asserts type is T & ValidEventTypes {
-  // Runtime check could go here
-}
+// Export the main validation function that is actually used
+export type { ValidateEventType };
 
-// Example usage:
-type TestEvent1 = ValidateEventType<'RESPONSE'>; // 'RESPONSE'
-type TestEvent2 = ValidateEventType<'RESPONE'>; // Error: "RESPONE" is not a valid event type...
+// Example usage (these are demonstrations):
+// type _TestEvent1 = ValidateEventType<'RESPONSE'>; // 'RESPONSE'
+// type _TestEvent2 = ValidateEventType<'RESPONE'>; // Error: "RESPONE" is not a valid event type
 
 // For stack traces - TypeScript doesn't support custom stack traces,
 // but we can use type-level breadcrumbs:
-type WithContext<T, Context extends string> = T & { __context__?: Context };
+type _WithContext<T, Context extends string> = T & { __context__?: Context };
 
-type ValidateWithContext<
-  T extends string,
-  Context extends string = 'Unknown',
-> = T extends ValidEventTypes
+type _ValidateWithContext<T extends string, Context extends string> = T extends ValidEventTypes
   ? T
-  : ErrorMessage<`[${Context}] "${T}" is invalid. Expected: ${ValidEventTypes}`>;
+  : ErrorMessage<`Invalid "${T}" in ${Context}`>;
 
 // Usage with context:
-type FromComponent = ValidateWithContext<'RESPONE', 'CounterComponent.onMessage'>;
+// type _FromComponent = _ValidateWithContext<'RESPONE', 'CounterComponent.onMessage'>;

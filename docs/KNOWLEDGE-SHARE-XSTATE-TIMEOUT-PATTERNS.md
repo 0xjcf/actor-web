@@ -9,8 +9,9 @@
 4. [Migration Patterns](#migration-patterns)
 5. [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
 6. [Architecture Decisions](#architecture-decisions)
-7. [Performance Impact](#performance-impact)
-8. [Integration Guidelines](#integration-guidelines)
+7. [Pure XState Delay Utilities](#pure-xstate-delay-utilities) ⭐ **NEW**
+8. [Performance Impact](#performance-impact)
+9. [Integration Guidelines](#integration-guidelines)
 
 ---
 
@@ -423,6 +424,277 @@ await waitForState(gitActor, 'statusChecked');
 // ❌ AVOIDED: External timeout wrappers
 await waitForCompletionWithTimeout(gitActor, 10000);
 ```
+
+---
+
+## ⏱️ Pure XState Delay Utilities ⭐
+
+> **Architectural Decision**: Provide both **convenience wrappers** and **pure actor APIs** for delay functionality
+
+The framework provides two approaches for handling delays - both built on pure XState patterns with zero JavaScript timers.
+
+### 🎯 **Design Philosophy: Convenience vs. Purity**
+
+We implemented **both** approaches to serve different developer needs:
+
+| Approach | Use Case | Trade-offs |
+|----------|----------|------------|
+| **Promise Wrapper** | `setTimeout` replacement, simple delays | Convenient but less actor-like |
+| **Pure Actor API** | Full control, cancellation, debugging | More explicit but requires lifecycle management |
+
+### 🔧 **Approach 1: Promise Convenience Wrapper**
+
+**Use for**: Direct `setTimeout` replacement in existing async code
+
+```typescript
+import { createActorDelay } from '@actor-core/runtime';
+
+// ✅ Drop-in setTimeout replacement
+async function processWithDelay() {
+  console.log('Starting process...');
+  await createActorDelay(1000);  // Pure XState delay, zero timers
+  console.log('Process complete!');
+}
+
+// ✅ Use in async workflows
+async function retryOperation(maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (attempt === maxRetries) throw error;
+      
+      // Exponential backoff with pure XState
+      await createActorDelay(1000 * Math.pow(2, attempt - 1));
+    }
+  }
+}
+```
+
+**Benefits**:
+- ✅ Familiar async/await API
+- ✅ Automatic actor cleanup (no memory leaks)
+- ✅ Drop-in `setTimeout` replacement
+- ✅ Zero cognitive overhead
+
+**Limitations**:
+- ❌ No cancellation capability
+- ❌ Can't inspect delay state
+- ❌ Less composable than actor references
+
+### 🎭 **Approach 2: Pure Actor API**
+
+**Use for**: Complex delay orchestration, cancellation needs, debugging
+
+```typescript
+import { createDelayActor, waitForDelayActor } from '@actor-core/runtime';
+
+// ✅ Full control with explicit lifecycle management
+async function cancellableDelay() {
+  const delayActor = createDelayActor(5000);
+  delayActor.start();
+  
+  // Can inspect actor state
+  console.log('Actor state:', delayActor.getSnapshot().value); // 'idle'
+  
+  // Start the delay
+  delayActor.send({ type: 'START' });
+  console.log('Actor state:', delayActor.getSnapshot().value); // 'waiting'
+  
+  // Wait for completion with cancellation support
+  const result = await waitForDelayActor(delayActor); // 'completed' | 'cancelled'
+  
+  // ✅ CRITICAL: Cleanup to prevent memory leaks
+  delayActor.stop();
+  
+  return result;
+}
+
+// ✅ Cancellable delay with user interaction
+async function delayWithCancelOption(ms: number, signal: AbortSignal) {
+  const delayActor = createDelayActor(ms);
+  delayActor.start();
+  
+  // Set up cancellation
+  const abortHandler = () => delayActor.send({ type: 'CANCEL' });
+  signal.addEventListener('abort', abortHandler);
+  
+  delayActor.send({ type: 'START' });
+  
+  try {
+    const result = await waitForDelayActor(delayActor);
+    return result === 'completed';
+  } finally {
+    signal.removeEventListener('abort', abortHandler);
+    delayActor.stop();
+  }
+}
+
+// ✅ Debug complex delay patterns
+function createDelayWithLogging(ms: number) {
+  const delayActor = createDelayActor(ms);
+  
+  // Subscribe to all state changes for debugging
+  delayActor.subscribe((state) => {
+    console.log(`Delay actor: ${state.value}`, {
+      timestamp: Date.now(),
+      context: state.context
+    });
+  });
+  
+  return delayActor;
+}
+```
+
+**Benefits**:
+- ✅ Full actor lifecycle control
+- ✅ Cancellation via `{ type: 'CANCEL' }`
+- ✅ State inspection and debugging
+- ✅ Composable with other actors
+- ✅ Event subscriptions for monitoring
+
+**Responsibilities**:
+- ⚠️ Must call `delayActor.stop()` to prevent memory leaks
+- ⚠️ Must call `delayActor.start()` before sending events
+- ⚠️ Must handle Promise rejections from `waitForDelayActor()`
+
+### 🏗️ **Implementation Architecture**
+
+Both APIs share the same underlying XState architecture:
+
+```typescript
+// Pure XState machine (zero JavaScript timers)
+const delayMachine = setup({
+  types: {
+    context: {} as { delay: number },
+    events: {} as { type: 'START' | 'CANCEL' },
+  },
+}).createMachine({
+  id: 'delay',
+  initial: 'idle',
+  context: { delay: ms },
+  states: {
+    idle: {
+      on: { START: 'waiting' }  // Manual control
+    },
+    waiting: {
+      // ✅ PURE XSTATE: 'after' transition - no setTimeout
+      after: {
+        [ms]: 'completed'
+      },
+      on: { CANCEL: 'cancelled' }
+    },
+    completed: { type: 'final' },
+    cancelled: { type: 'final' }
+  }
+});
+```
+
+**Key Principles**:
+- **Zero JavaScript timers** - All delays via XState `after` transitions
+- **Automatic cleanup** - Actors stopped when delays complete
+- **Type safety** - Full TypeScript support without `any` types
+- **Location transparency** - Can run in Worker threads or across network
+
+### 🎯 **When to Use Each Approach**
+
+#### Use `createActorDelay()` when:
+- Replacing `setTimeout` in existing code
+- Simple delay needs without cancellation
+- Want minimal API surface area
+- Working in Promise-heavy codebases
+
+```typescript
+// ✅ Perfect for simple delays
+await createActorDelay(1000);
+console.log('1 second later');
+```
+
+#### Use `createDelayActor()` when:
+- Need cancellation capability
+- Building complex delay orchestration
+- Want to debug delay behavior
+- Need to compose with other actors
+- Require explicit lifecycle control
+
+```typescript
+// ✅ Perfect for complex scenarios
+const delayActor = createDelayActor(5000);
+// ... set up cancellation handlers
+// ... start and manage lifecycle
+// ... clean up explicitly
+```
+
+### 🛠️ **Migration Patterns**
+
+#### From `setTimeout` to Promise API:
+```typescript
+// ❌ BEFORE: JavaScript timer (blocks pure actor model)
+setTimeout(() => {
+  processNextStep();
+}, 1000);
+
+// ✅ AFTER: Pure XState delay
+await createActorDelay(1000);
+processNextStep();
+```
+
+#### From Promise to Actor API (when you need cancellation):
+```typescript
+// ❌ LIMITED: Promise API (no cancellation)
+await createActorDelay(5000);
+
+// ✅ ENHANCED: Actor API (with cancellation)
+const delayActor = createDelayActor(5000);
+delayActor.start();
+delayActor.send({ type: 'START' });
+
+// Set up cancellation logic
+const result = await waitForDelayActor(delayActor);
+delayActor.stop();
+```
+
+### ⚠️ **Common Pitfalls**
+
+#### Memory Leak: Forgetting to stop actors
+```typescript
+// ❌ MEMORY LEAK: Actor never stopped
+const delayActor = createDelayActor(1000);
+delayActor.start();
+await waitForDelayActor(delayActor);
+// Missing: delayActor.stop();
+
+// ✅ CORRECT: Always clean up
+try {
+  const result = await waitForDelayActor(delayActor);
+  return result;
+} finally {
+  delayActor.stop();  // Always cleanup
+}
+```
+
+#### Race Condition: Starting delay before actor is ready
+```typescript
+// ❌ RACE CONDITION: Sending START before start()
+const delayActor = createDelayActor(1000);
+delayActor.send({ type: 'START' });  // Event ignored!
+delayActor.start();
+
+// ✅ CORRECT: Start actor before sending events
+const delayActor = createDelayActor(1000);
+delayActor.start();                  // Actor ready
+delayActor.send({ type: 'START' });  // Event processed
+```
+
+### 📋 **API Summary**
+
+| Function | Returns | Use Case |
+|----------|---------|----------|
+| `createActorDelay(ms)` | `Promise<void>` | setTimeout replacement |
+| `createDelayActor(ms)` | `ActorRef` | Full actor control |
+| `waitForDelayActor(actor)` | `Promise<'completed' \| 'cancelled'>` | Bridge actor to Promise |
+
+This dual-API approach exemplifies the framework's philosophy: **provide both convenience and power**, letting developers choose the right tool for their specific needs while maintaining pure actor model compliance underneath.
 
 ---
 

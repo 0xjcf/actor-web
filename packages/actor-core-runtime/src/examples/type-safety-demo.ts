@@ -1,12 +1,12 @@
 /**
- * Type Safety Demo - Demonstrates compile-time type checking with createActor
+ * Type Safety Demo - Demonstrates compile-time type checking with defineBehavior
  *
- * This example shows how createActor provides proper type safety for emitted events,
+ * This example shows how defineBehavior provides proper type safety for emitted events,
  * catching typos and incorrect property types at compile time.
  */
 
 import type { ActorMessage } from '../actor-system.js';
-import { createActor } from '../create-actor.js';
+import { defineBehavior } from '../index.js';
 
 // Define typed events
 type CounterEvent =
@@ -15,9 +15,8 @@ type CounterEvent =
 
 // This will produce compile-time errors (uncomment to see):
 /*
-const brokenActor = createActor<ActorMessage, { count: number }, CounterEvent>({
+const brokenActor = defineBehavior<ActorMessage, { count: number }, CounterEvent>({
   context: { count: 0 },
-  behavior: {
     onMessage: ({ message, context }) => {
       return {
         context,
@@ -36,12 +35,11 @@ const brokenActor = createActor<ActorMessage, { count: number }, CounterEvent>({
         ],
       };
     },
-  },
 });
 */
 
 // Correct implementation with proper types
-const counterActor = createActor<ActorMessage, { count: number }, CounterEvent>({
+const counterActor = defineBehavior<ActorMessage, { count: number }, CounterEvent>({
   context: { count: 0 },
   onMessage: ({ message, context }) => {
     if (message.type === 'INCREMENT') {
@@ -71,7 +69,7 @@ const counterActor = createActor<ActorMessage, { count: number }, CounterEvent>(
 });
 
 // Example with multiple event types
-const notificationActor = createActor<
+const notificationActor = defineBehavior<
   ActorMessage,
   { notifications: string[] },
   | { type: 'NOTIFICATION_ADDED'; data: string }

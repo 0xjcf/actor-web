@@ -10,4 +10,3 @@ export * from './testing/actor-test-utils.js';
 
 // Fixtures
 export * from './testing/fixtures/index.js';
-export * from './testing/reactive-test-adapters.js';

@@ -6,10 +6,10 @@
 
 import { Logger } from '../logger.js';
 import {
-  type Experience,
-  type Memory,
   createAgentMemory,
   createExperience,
+  type Experience,
+  type Memory,
 } from '../memory/hybrid-memory.js';
 
 // Setup logging
@@ -119,7 +119,7 @@ export async function demonstrateBasicMemoryOperations(): Promise<void> {
 
     log.debug(`Storing experience ${i + 1}`, {
       id: experience.id,
-      content: experience.content.substring(0, 60) + '...',
+      content: `${experience.content.substring(0, 60)}...`,
       importance: experience.importance,
       tags: experience.tags,
     });
@@ -157,7 +157,7 @@ export async function demonstrateBasicMemoryOperations(): Promise<void> {
       query,
       memories: memories.map((m) => ({
         type: m.type,
-        content: typeof m.content === 'string' ? m.content.substring(0, 50) + '...' : m.content,
+        content: typeof m.content === 'string' ? `${m.content.substring(0, 50)}...` : m.content,
         relevance: Math.round(m.relevance * 100) / 100,
         confidence: Math.round(m.confidence * 100) / 100,
         age: m.age ? `${Math.round(m.age / 1000)}s` : 'timeless',
@@ -301,7 +301,7 @@ export async function demonstrateSelectiveRecall(): Promise<void> {
     results: episodicOnly.map((m) => ({
       type: m.type,
       relevance: Math.round(m.relevance * 100) / 100,
-      content: typeof m.content === 'string' ? m.content.substring(0, 40) + '...' : m.content,
+      content: typeof m.content === 'string' ? `${m.content.substring(0, 40)}...` : m.content,
     })),
   });
 
@@ -413,7 +413,7 @@ export async function demonstrateMemoryDrivenDecisions(): Promise<void> {
     log.debug('Supporting memories', {
       topMemories: relevantMemories.slice(0, 3).map((m) => ({
         type: m.type,
-        content: typeof m.content === 'string' ? m.content.substring(0, 50) + '...' : m.content,
+        content: typeof m.content === 'string' ? `${m.content.substring(0, 50)}...` : m.content,
         relevance: Math.round(m.relevance * 100) / 100,
         confidence: Math.round(m.confidence * 100) / 100,
       })),

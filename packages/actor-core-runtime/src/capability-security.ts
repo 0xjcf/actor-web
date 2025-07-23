@@ -16,7 +16,7 @@ import type { VirtualActorSystem } from './virtual-actor-system.js';
 /**
  * A capability represents a permission to perform specific operations on an actor
  */
-export interface Capability<T = unknown> {
+export interface Capability<_T = unknown> {
   /**
    * Unique identifier for this capability
    */
@@ -261,7 +261,7 @@ export class SecureActorProxy<T> implements Capability<T> {
  * In-memory capability registry with virtual actor system integration
  */
 export class InMemoryCapabilityRegistry implements CapabilityRegistry {
-  private capabilities = new Map<string, Capability<any>>();
+  private capabilities = new Map<string, Capability<unknown>>();
   private actorCapabilities = new Map<string, Set<string>>();
   private logger = Logger.namespace('CAPABILITY_REGISTRY');
 
@@ -285,7 +285,7 @@ export class InMemoryCapabilityRegistry implements CapabilityRegistry {
     if (!this.actorCapabilities.has(request.actorId)) {
       this.actorCapabilities.set(request.actorId, new Set());
     }
-    this.actorCapabilities.get(request.actorId)!.add(capabilityId);
+    this.actorCapabilities.get(request.actorId)?.add(capabilityId);
 
     this.logger.debug('Capability granted', {
       capabilityId,
@@ -326,7 +326,7 @@ export class InMemoryCapabilityRegistry implements CapabilityRegistry {
 
     for (const capabilityId of capabilityIds) {
       const capability = this.capabilities.get(capabilityId);
-      if (capability && capability.isValid()) {
+      if (capability?.isValid()) {
         capabilities.push(capability);
       }
     }
@@ -400,7 +400,36 @@ export class InMemoryCapabilityRegistry implements CapabilityRegistry {
       start: () => {},
       stop: async () => {},
       restart: async () => {},
-      spawn: () => ({}) as any,
+      spawn: () =>
+        ({
+          id: 'mock-child',
+          status: 'running',
+          send: () => {},
+          ask: async () => ({ success: true }),
+          emit: () => {},
+          subscribe: () => () => {},
+          on: () => () => {},
+          observe: () => ({ subscribe: () => ({ unsubscribe: () => {} }) }),
+          start: () => {},
+          stop: async () => {},
+          restart: async () => {},
+          spawn: () => ({}) as ActorRef<BaseEventObject>,
+          stopChild: async () => {},
+          getChildren: () => new Map(),
+          matches: () => false,
+          accepts: () => false,
+          getSnapshot: () => ({
+            value: 'idle',
+            context: {},
+            status: 'running',
+            matches: () => false,
+            can: () => false,
+            hasTag: () => false,
+            toJSON: () => ({ value: 'idle', context: {}, status: 'running' }),
+          }),
+          parent: undefined,
+          supervision: undefined,
+        }) as ActorRef<BaseEventObject>,
       stopChild: async () => {},
       getChildren: () => new Map(),
       matches: () => false,

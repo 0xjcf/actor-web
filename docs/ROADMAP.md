@@ -80,6 +80,8 @@
 
 **Goal:** Complete the pure actor reference abstraction that hides internal state
 
+**📚 See [API-ROADMAP.md](./API-ROADMAP.md) for detailed API evolution plan**
+
 #### 1.1 Core ActorRef Interface ✅ COMPLETE
 
 #### 1.2 Message Passing System

@@ -6,7 +6,7 @@
  */
 
 import type { ActorMessage } from '../actor-system.js';
-import { createActor } from '../create-actor.js';
+import { defineBehavior } from '../index.js';
 
 // Define typed events for a user authentication actor
 type AuthEvent =
@@ -18,7 +18,7 @@ type AuthEvent =
 // Example 1: Typo in event type
 // Uncomment to see the improved error message
 /*
-const typoExample = createActor<ActorMessage, { isAuthenticated: boolean }, AuthEvent>({
+const typoExample = defineBehavior<ActorMessage, { isAuthenticated: boolean }, AuthEvent>({
   context: { isAuthenticated: false },
   onMessage: ({ message, context }) => {
     return {
@@ -33,7 +33,7 @@ const typoExample = createActor<ActorMessage, { isAuthenticated: boolean }, Auth
 // Example 2: Wrong property name
 // Uncomment to see the improved error message
 /*
-const wrongPropertyExample = createActor<ActorMessage, { isAuthenticated: boolean }, AuthEvent>({
+const wrongPropertyExample = defineBehavior<ActorMessage, { isAuthenticated: boolean }, AuthEvent>({
   context: { isAuthenticated: false },
   onMessage: ({ message, context }) => {
     return {
@@ -48,7 +48,7 @@ const wrongPropertyExample = createActor<ActorMessage, { isAuthenticated: boolea
 // Example 3: Wrong property type
 // Uncomment to see the improved error message
 /*
-const wrongTypeExample = createActor<ActorMessage, { isAuthenticated: boolean }, AuthEvent>({
+const wrongTypeExample = defineBehavior<ActorMessage, { isAuthenticated: boolean }, AuthEvent>({
   context: { isAuthenticated: false },
   onMessage: ({ message, context }) => {
     return {
@@ -63,7 +63,7 @@ const wrongTypeExample = createActor<ActorMessage, { isAuthenticated: boolean },
 // Example 4: Missing required field
 // Uncomment to see the improved error message
 /*
-const missingFieldExample = createActor<ActorMessage, { isAuthenticated: boolean }, AuthEvent>({
+const missingFieldExample = defineBehavior<ActorMessage, { isAuthenticated: boolean }, AuthEvent>({
   context: { isAuthenticated: false },
   onMessage: ({ message, context }) => {
     return {
@@ -78,7 +78,7 @@ const missingFieldExample = createActor<ActorMessage, { isAuthenticated: boolean
 // Example 5: Extra properties (if using strict validation)
 // Uncomment to see the improved error message
 /*
-const extraPropertiesExample = createActor<ActorMessage, { isAuthenticated: boolean }, AuthEvent>({
+const extraPropertiesExample = defineBehavior<ActorMessage, { isAuthenticated: boolean }, AuthEvent>({
   context: { isAuthenticated: false },
   onMessage: ({ message, context }) => {
     return {
@@ -95,7 +95,7 @@ const extraPropertiesExample = createActor<ActorMessage, { isAuthenticated: bool
 */
 
 // Correct implementation - this compiles without errors
-const authActor = createActor<
+const authActor = defineBehavior<
   ActorMessage,
   { isAuthenticated: boolean; userId?: string },
   AuthEvent
@@ -103,7 +103,7 @@ const authActor = createActor<
   context: { isAuthenticated: false },
   onMessage: ({ message, context }) => {
     switch (message.type) {
-      case 'LOGIN':
+      case 'LOGIN': {
         // Simulate authentication
         const success = Math.random() > 0.5;
         if (success) {
@@ -114,15 +114,15 @@ const authActor = createActor<
               data: { userId: '123', token: 'auth-token-xyz' },
             },
           };
-        } else {
-          return {
-            context,
-            emit: {
-              type: 'LOGIN_FAILED',
-              data: { reason: 'Invalid credentials', attempts: 1 },
-            },
-          };
         }
+        return {
+          context,
+          emit: {
+            type: 'LOGIN_FAILED',
+            data: { reason: 'Invalid credentials', attempts: 1 },
+          },
+        };
+      }
 
       case 'LOGOUT':
         if (context.userId) {

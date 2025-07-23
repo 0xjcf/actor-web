@@ -8,11 +8,11 @@ import { assign, setup } from 'xstate';
 import { createActorRef } from '../create-actor-ref.js';
 import { Logger } from '../logger.js';
 import {
-  type PipelineStage,
   branch,
   compose,
   createActorStage,
   createPipeline,
+  type PipelineStage,
   parallel,
   retry,
 } from '../patterns/pipeline.js';
@@ -737,7 +737,7 @@ export async function demonstrateComplexAIWorkflow(): Promise<void> {
     'This is a comprehensive test of our AI pipeline system that should trigger all stages including analysis, enhancement, and formatting.';
 
   log.info('🚀 Executing complex AI workflow', {
-    input: complexInput.substring(0, 50) + '...',
+    input: `${complexInput.substring(0, 50)}...`,
     length: complexInput.length,
   });
 

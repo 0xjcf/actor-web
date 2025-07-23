@@ -31,11 +31,12 @@ const testActorMachine = setup({
     // ✅ CORRECT: Use emit() to send response events that framework will capture
     emitStatusResponse: emit(({ event }) => {
       const log = Logger.namespace('TEST_ACTOR');
-      log.debug('Emitting status response', { requestId: (event as any).requestId });
+      const requestEvent = event as { requestId: string };
+      log.debug('Emitting status response', { requestId: requestEvent.requestId });
 
       return {
         type: 'REQUEST_RESPONSE' as const,
-        requestId: (event as { requestId: string }).requestId,
+        requestId: requestEvent.requestId,
         response: {
           status: 'running',
           version: '1.0.0',
@@ -45,11 +46,12 @@ const testActorMachine = setup({
     }),
     emitInfoResponse: emit(({ event }) => {
       const log = Logger.namespace('TEST_ACTOR');
-      log.debug('Emitting info response', { requestId: (event as any).requestId });
+      const requestEvent = event as { requestId: string };
+      log.debug('Emitting info response', { requestId: requestEvent.requestId });
 
       return {
         type: 'REQUEST_RESPONSE' as const,
-        requestId: (event as { requestId: string }).requestId,
+        requestId: requestEvent.requestId,
         response: {
           info: 'Actor information',
           details: (event as { details: string }).details,

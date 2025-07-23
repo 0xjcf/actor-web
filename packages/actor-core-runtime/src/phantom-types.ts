@@ -91,7 +91,7 @@ export namespace ActorMessages {
  * Type-safe message sending function
  * Ensures only valid messages are sent to actors
  */
-export function sendMessage<T extends ActorRef<any>>(actor: T, message: MessageFor<T>): void {
+export function sendMessage<T extends ActorRef<any>>(_actor: T, _message: MessageFor<T>): void {
   // Implementation would be provided by the runtime
   // This is a type-safe interface that ensures compile-time validation
   throw new Error('sendMessage must be implemented by the runtime');
@@ -102,9 +102,9 @@ export function sendMessage<T extends ActorRef<any>>(actor: T, message: MessageF
  * Ensures queries match expected message types
  */
 export function askActor<T extends ActorRef<any>, R = unknown>(
-  actor: T,
-  query: MessageFor<T>,
-  options?: { timeout?: number }
+  _actor: T,
+  _query: MessageFor<T>,
+  _options?: { timeout?: number }
 ): Promise<R> {
   // Implementation would be provided by the runtime
   // This is a type-safe interface that ensures compile-time validation
@@ -144,14 +144,14 @@ export interface ActorRegistry {
 /**
  * Factory function for creating typed actor references
  */
-export function createTypedActorRef<T>(type: T, id: string): ActorRef<T> {
+export function createTypedActorRef<T>(_type: T, id: string): ActorRef<T> {
   return id as ActorRef<T>;
 }
 
 /**
  * Factory function for creating typed actor IDs
  */
-export function createTypedActorId<T>(type: T, id: string): ActorId<T> {
+export function createTypedActorId<T>(_type: T, id: string): ActorId<T> {
   return id as ActorId<T>;
 }
 

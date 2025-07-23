@@ -6,9 +6,10 @@
 
 import type { ActorMessage } from '../actor-system.js';
 import { Logger } from '../logger.js';
+import { createActorInterval } from '../pure-xstate-utilities.js';
 
 /**
- * Dead letter entry with metadata
+ * Dead letter - represents a message that couldn't be delivered
  */
 export interface DeadLetter {
   /**
@@ -71,12 +72,16 @@ export interface DeadLetterQueueConfig {
  * Dead letter queue implementation
  */
 export class DeadLetterQueue {
-  private queue: DeadLetter[] = [];
+  private deadLetters: DeadLetter[] = [];
+  private cleanupStopFn: (() => void) | null = null; // XState interval stop function
+  private readonly maxSize: number;
+  private readonly retentionPeriod: number;
   private readonly logger = Logger.namespace('DEAD_LETTER_QUEUE');
   private readonly config: Required<DeadLetterQueueConfig>;
-  private cleanupInterval?: NodeJS.Timeout;
 
   constructor(config: DeadLetterQueueConfig = {}) {
+    this.maxSize = config.maxSize ?? 1000;
+    this.retentionPeriod = config.ttl ?? 24 * 60 * 60 * 1000; // 24 hours
     this.config = {
       maxSize: config.maxSize ?? 1000,
       ttl: config.ttl ?? 24 * 60 * 60 * 1000, // 24 hours
@@ -85,7 +90,7 @@ export class DeadLetterQueue {
     };
 
     // Start cleanup interval
-    if (this.config.ttl > 0) {
+    if (this.retentionPeriod > 0) {
       this.startCleanup();
     }
   }
@@ -118,11 +123,11 @@ export class DeadLetterQueue {
     });
 
     // Add to queue
-    this.queue.push(deadLetter);
+    this.deadLetters.push(deadLetter);
 
     // Enforce max size
-    if (this.queue.length > this.config.maxSize) {
-      const removed = this.queue.shift();
+    if (this.deadLetters.length > this.maxSize) {
+      const removed = this.deadLetters.shift();
       this.logger.debug('Dead letter evicted due to size limit', {
         messageType: removed?.message.type,
       });
@@ -141,28 +146,28 @@ export class DeadLetterQueue {
    * Get all dead letters
    */
   getAll(): ReadonlyArray<DeadLetter> {
-    return [...this.queue];
+    return [...this.deadLetters];
   }
 
   /**
    * Get dead letters for a specific actor
    */
   getByActor(actorId: string): ReadonlyArray<DeadLetter> {
-    return this.queue.filter((letter) => letter.targetActorId === actorId);
+    return this.deadLetters.filter((letter) => letter.targetActorId === actorId);
   }
 
   /**
    * Get dead letters by message type
    */
   getByMessageType(type: string): ReadonlyArray<DeadLetter> {
-    return this.queue.filter((letter) => letter.message.type === type);
+    return this.deadLetters.filter((letter) => letter.message.type === type);
   }
 
   /**
    * Remove a dead letter
    */
   remove(index: number): DeadLetter | undefined {
-    const [removed] = this.queue.splice(index, 1);
+    const [removed] = this.deadLetters.splice(index, 1);
     return removed;
   }
 
@@ -170,8 +175,8 @@ export class DeadLetterQueue {
    * Clear all dead letters
    */
   clear(): void {
-    const count = this.queue.length;
-    this.queue = [];
+    const count = this.deadLetters.length;
+    this.deadLetters = [];
     this.logger.info('Dead letter queue cleared', { count });
   }
 
@@ -179,7 +184,7 @@ export class DeadLetterQueue {
    * Get queue size
    */
   size(): number {
-    return this.queue.length;
+    return this.deadLetters.length;
   }
 
   /**
@@ -192,7 +197,7 @@ export class DeadLetterQueue {
     messageTypes: Record<string, number>;
     actors: Record<string, number>;
   } {
-    if (this.queue.length === 0) {
+    if (this.deadLetters.length === 0) {
       return {
         size: 0,
         oldestTimestamp: null,
@@ -205,7 +210,7 @@ export class DeadLetterQueue {
     const messageTypes: Record<string, number> = {};
     const actors: Record<string, number> = {};
 
-    for (const letter of this.queue) {
+    for (const letter of this.deadLetters) {
       // Count message types
       messageTypes[letter.message.type] = (messageTypes[letter.message.type] || 0) + 1;
 
@@ -214,9 +219,9 @@ export class DeadLetterQueue {
     }
 
     return {
-      size: this.queue.length,
-      oldestTimestamp: this.queue[0].timestamp,
-      newestTimestamp: this.queue[this.queue.length - 1].timestamp,
+      size: this.deadLetters.length,
+      oldestTimestamp: this.deadLetters[0].timestamp,
+      newestTimestamp: this.deadLetters[this.deadLetters.length - 1].timestamp,
       messageTypes,
       actors,
     };
@@ -229,7 +234,7 @@ export class DeadLetterQueue {
     index: number,
     retryFn: (message: ActorMessage, actorId: string) => Promise<void>
   ): Promise<boolean> {
-    const letter = this.queue[index];
+    const letter = this.deadLetters[index];
     if (!letter) {
       return false;
     }
@@ -263,13 +268,23 @@ export class DeadLetterQueue {
   }
 
   /**
-   * Start cleanup interval
+   * Start cleanup interval using pure XState
    */
   private startCleanup(): void {
-    // Run cleanup every minute
-    this.cleanupInterval = setInterval(() => {
+    // ✅ PURE ACTOR MODEL: Use XState interval instead of setInterval
+    this.cleanupStopFn = createActorInterval(() => {
       this.cleanup();
-    }, 60 * 1000);
+    }, 60 * 1000); // Run cleanup every minute
+  }
+
+  /**
+   * Stop cleanup interval
+   */
+  private stopCleanup(): void {
+    if (this.cleanupStopFn) {
+      this.cleanupStopFn();
+      this.cleanupStopFn = null;
+    }
   }
 
   /**
@@ -277,14 +292,14 @@ export class DeadLetterQueue {
    */
   private cleanup(): void {
     const now = Date.now();
-    const before = this.queue.length;
+    const before = this.deadLetters.length;
 
-    this.queue = this.queue.filter((letter) => {
+    this.deadLetters = this.deadLetters.filter((letter) => {
       const age = now - letter.timestamp;
-      return age < this.config.ttl;
+      return age < this.retentionPeriod;
     });
 
-    const removed = before - this.queue.length;
+    const removed = before - this.deadLetters.length;
     if (removed > 0) {
       this.logger.debug('Dead letters expired', { count: removed });
     }
@@ -304,9 +319,6 @@ export class DeadLetterQueue {
    * Stop the dead letter queue
    */
   stop(): void {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = undefined;
-    }
+    this.stopCleanup();
   }
 }

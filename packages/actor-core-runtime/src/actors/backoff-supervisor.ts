@@ -6,8 +6,12 @@
 
 import type { ActorRef } from '../actor-ref.js';
 import { Logger } from '../logger.js';
+// ✅ PURE ACTOR MODEL: Import XState-based delay function
+import { createActorDelay } from '../pure-xstate-utilities.js';
 import type { BaseEventObject } from '../types.js';
 import { Supervisor, type SupervisorOptions } from './supervisor.js';
+
+const logger = Logger.namespace('BACKOFF_SUPERVISOR');
 
 /**
  * Backoff strategy types
@@ -60,7 +64,6 @@ interface BackoffState {
 export class BackoffSupervisor extends Supervisor {
   private readonly backoffOptions: Required<BackoffSupervisorOptions>;
   private readonly backoffStates = new Map<string, BackoffState>();
-  private readonly logger = Logger.namespace('BACKOFF_SUPERVISOR');
 
   constructor(options: BackoffSupervisorOptions) {
     // Pass through base options
@@ -100,15 +103,15 @@ export class BackoffSupervisor extends Supervisor {
     // Calculate delay based on strategy
     const delay = this.calculateDelay(state);
 
-    this.logger.debug('Applying backoff delay', {
+    logger.debug('Applying backoff delay', {
       actorId,
       attempt: state.attempt,
       delay,
       strategy: this.backoffOptions.backoffStrategy,
     });
 
-    // Wait for backoff delay
-    await new Promise((resolve) => setTimeout(resolve, delay));
+    // ✅ PURE ACTOR MODEL: Wait for backoff delay using XState instead of setTimeout
+    await createActorDelay(delay);
 
     // Call parent handler
     await super.handleFailure(error, actorRef);
@@ -123,8 +126,7 @@ export class BackoffSupervisor extends Supervisor {
     switch (this.backoffOptions.backoffStrategy) {
       case 'exponential':
         baseDelay = Math.min(
-          this.backoffOptions.initialDelay *
-            Math.pow(this.backoffOptions.multiplier, state.attempt - 1),
+          this.backoffOptions.initialDelay * this.backoffOptions.multiplier ** (state.attempt - 1),
           this.backoffOptions.maxDelay
         );
         break;
@@ -136,13 +138,14 @@ export class BackoffSupervisor extends Supervisor {
         );
         break;
 
-      case 'fibonacci':
+      case 'fibonacci': {
         // Calculate next Fibonacci number
         const next = state.fibPrev + state.fibCurrent;
         state.fibPrev = state.fibCurrent;
         state.fibCurrent = next;
         baseDelay = Math.min(next, this.backoffOptions.maxDelay);
         break;
+      }
 
       default:
         baseDelay = this.backoffOptions.initialDelay;
@@ -167,7 +170,7 @@ export class BackoffSupervisor extends Supervisor {
    */
   resetBackoff(actorId: string): void {
     this.backoffStates.delete(actorId);
-    this.logger.debug('Backoff state reset', { actorId });
+    logger.debug('Backoff state reset', { actorId });
   }
 
   /**
@@ -201,7 +204,14 @@ export class BackoffSupervisor extends Supervisor {
       strategy: BackoffStrategy;
     }
   > {
-    const stats: Record<string, any> = {};
+    const stats: Record<
+      string,
+      {
+        attempt: number;
+        currentDelay: number;
+        strategy: BackoffStrategy;
+      }
+    > = {};
 
     for (const [actorId, state] of this.backoffStates) {
       stats[actorId] = {
