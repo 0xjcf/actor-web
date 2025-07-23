@@ -781,8 +781,8 @@ export class AgentMemory {
     for (const memory of memories) {
       const key = `${memory.type}:${typeof memory.content === 'string' ? memory.content : JSON.stringify(memory.content)}`;
 
-      if (merged.has(key)) {
-        const existing = merged.get(key)!;
+      const existing = merged.get(key);
+      if (existing) {
         existing.relevance = Math.max(existing.relevance, memory.relevance);
         existing.confidence = Math.max(existing.confidence, memory.confidence);
       } else {

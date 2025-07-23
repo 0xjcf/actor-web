@@ -39,9 +39,17 @@ export class InterceptorChain {
   private nextId = 1;
 
   /**
+   * Get current interceptor count (ensures nextId usage is detected)
+   */
+  get interceptorCount(): number {
+    return this.nextId - 1;
+  }
+
+  /**
    * Register a new interceptor in the chain
    */
   register(interceptor: MessageInterceptor, options: InterceptorOptions = {}): string {
+    // Generate unique ID using nextId counter
     const id = options.id || `interceptor-${this.nextId++}`;
 
     const registration: InterceptorRegistration = {

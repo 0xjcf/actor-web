@@ -4,9 +4,10 @@
  */
 
 import { beforeAll } from 'vitest';
-import { resetDevMode } from '../src/logger.js';
+
+// import { resetDevMode } from '../src/logger.js';
 
 // Ensure debug mode is disabled for tests by default
 beforeAll(() => {
-  resetDevMode();
+  // resetDevMode();
 });

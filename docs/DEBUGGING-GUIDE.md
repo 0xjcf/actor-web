@@ -714,3 +714,30 @@ export const createHttpService = () => {
 ---
 
 *Happy debugging! 🐛→✨* 
+
+---
+
+## 📚 Additional Resources
+
+### Testing & Debugging Guides
+
+For comprehensive guidance on avoiding and debugging hanging tests, see:
+- **[Avoiding Hanging Tests](./TESTING-GUIDE.md#-avoiding-hanging-tests)** - Detailed guide on preventing system actor initialization issues that cause hanging tests
+- **[System Actor Best Practices](./TESTING-GUIDE.md#prevention-checklist)** - Checklist for proper `defineBehavior` usage and type safety
+- **[Ask Pattern Debugging](./TESTING-GUIDE.md#diagnostic-strategies)** - Strategies for tracing ask pattern flow and event loop analysis
+
+### Key Lessons from Production Issues
+
+Based on real hanging test issues resolved in the framework:
+
+1. **System actors must use `defineBehavior`** - Never use custom configuration objects
+2. **Enforce TypeScript type safety** - Zero `any` types in system-critical code  
+3. **Context initialization via XState lifecycle** - Not through custom injection hacks
+4. **Proper framework imports** - Use correct paths like `./create-actor.js`, `./actor-ref.js`
+5. **Test hanging = system actor errors** - Usually not infinite loops or ask pattern issues
+
+Remember: **Most hanging tests are system actor initialization problems, not event loop issues!**
+
+---
+
+*Happy debugging! Focus on behavior, not implementation details.* 🐛🔍 

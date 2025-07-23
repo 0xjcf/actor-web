@@ -21,6 +21,38 @@ All new projects and major features follow this three-phase planning approach:
 - ✅ Tasks broken down with dependencies
 - 🔄 Pending approvals before implementation begins
 
+### Actor System API Migration
+**Status**: In planning  
+**Location**: `project-planning/actor-system-api-migration/`
+
+- ✅ Requirements defined
+- ✅ Design in progress
+- ⏳ Task list pending
+
+### Pure Actor Context Fix
+**Status**: In planning  
+**Location**: `project-planning/pure-actor-context-fix/`
+
+- ✅ Requirements defined
+- ⏳ Design pending
+- ⏳ Task list pending
+
+## Completed Projects
+
+Completed projects are moved to the `DONE/` directory for reference:
+
+### ✅ Hanging Tests Fix
+**Status**: **COMPLETED** 🎉  
+**Location**: `project-planning/DONE/hanging-tests-fix/`  
+**Completion Date**: 2025-01-21
+
+**Key Achievements**:
+- 🎯 **Root Cause Fixed**: System actor initialization using incorrect patterns
+- ✅ **Tests Now Pass**: `debug-minimal.test.ts` completes in 333ms (was hanging indefinitely)
+- 🔧 **Framework Improved**: Updated to use proper `defineBehavior` patterns
+- 📚 **Documentation Enhanced**: Added comprehensive hanging tests prevention guide
+- 🛡️ **Type Safety**: Eliminated `any` types in system-critical code
+
 ## Workflow Enforcement
 
 This process is enforced by `.cursor/rules/workflow.mdc` which ensures:
@@ -35,7 +67,12 @@ This process is enforced by `.cursor/rules/workflow.mdc` which ensures:
 ```
 project-planning/
 ├── README.md                           # This file
-├── [project-name]/                     # Individual project directories
+├── DONE/                              # ✅ Completed projects (archived)
+│   └── hanging-tests-fix/             # 🎉 Fixed hanging tests issue
+│       ├── requirements.md
+│       ├── design.md
+│       └── task-list.md
+├── [project-name]/                     # 🔄 Active project directories
 │   ├── requirements.md                 # Requirements document
 │   ├── design.md                      # Design document
 │   └── task-list.md                   # Implementation tasks
@@ -48,26 +85,6 @@ The previous planning documents have been archived:
 - `docs/AGENT-A-NEXT-ACTIONS.md` → `docs/archive/planning/`
 - `docs/IMMEDIATE-ACTION-PLAN.md` → `docs/archive/planning/`
 
-This structured approach replaces the scattered documentation with a systematic, reviewable process.
+---
 
-## Getting Started
-
-To create a new project planning set:
-
-1. Create directory: `project-planning/[project-name]/`
-2. Copy templates from workflow rule documentation
-3. Fill out `requirements.md` completely
-4. Get requirements approved
-5. Fill out `design.md` completely  
-6. Get design approved
-7. Fill out `task-list.md` completely
-8. Get task list approved
-9. Begin implementation
-
-## Benefits
-
-- **Clear Understanding**: Each phase builds understanding before moving forward
-- **Reduced Rework**: Catch issues in planning, not implementation
-- **Better Estimates**: Detailed task breakdown improves time estimates
-- **Traceable Decisions**: All architectural choices documented with rationale
-- **Reviewable Process**: Each phase can be reviewed and approved separately 
+**Note**: Projects move to `DONE/` when implementation is complete and all acceptance criteria are met. 

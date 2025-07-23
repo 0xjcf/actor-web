@@ -52,14 +52,6 @@ interface TranslationResult {
   confidence: number;
 }
 
-interface ProcessingResult {
-  originalText: string;
-  analysis: AnalysisResult;
-  summary: SummaryResult;
-  translation?: TranslationResult;
-  processingTime: number;
-}
-
 // ========================================================================================
 // EXAMPLE ACTOR MACHINES
 // ========================================================================================
@@ -698,7 +690,19 @@ export async function demonstrateComplexAIWorkflow(): Promise<void> {
     })
     .stage({
       name: 'content-enhancement',
-      stage: async (input: any) => {
+      stage: async (input: {
+        text: string;
+        language: string;
+        preprocessed: boolean;
+        tokens: number;
+        timestamp: number;
+        analysis: {
+          sentiment: 'positive';
+          topics: string[];
+          complexity: string;
+          readability: number;
+        };
+      }) => {
         // Simulate content enhancement
         return {
           ...input,
@@ -713,7 +717,24 @@ export async function demonstrateComplexAIWorkflow(): Promise<void> {
     })
     .stage({
       name: 'output-formatting',
-      stage: async (input: any) => {
+      stage: async (input: {
+        text: string;
+        language: string;
+        preprocessed: boolean;
+        tokens: number;
+        timestamp: number;
+        analysis: {
+          sentiment: 'positive';
+          topics: string[];
+          complexity: string;
+          readability: number;
+        };
+        enhanced: {
+          improvedText: string;
+          suggestions: string[];
+          confidence: number;
+        };
+      }) => {
         const processingTime = Date.now() - input.timestamp;
 
         return {
@@ -749,10 +770,10 @@ export async function demonstrateComplexAIWorkflow(): Promise<void> {
       stagesExecuted: result.stats.stagesExecuted,
       result: {
         originalLength: complexInput.length,
-        processedLength: (result.result as any).processedText?.length,
-        analysis: (result.result as any).analysis,
-        suggestions: (result.result as any).suggestions,
-        metadata: (result.result as any).metadata,
+        processedLength: (result.result as { processedText?: string }).processedText?.length,
+        analysis: (result.result as { analysis?: unknown }).analysis,
+        suggestions: (result.result as { suggestions?: string[] }).suggestions,
+        metadata: (result.result as { metadata?: unknown }).metadata,
       },
     });
 

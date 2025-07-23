@@ -263,9 +263,11 @@ export class PureXStateTimeoutManager {
       if (state.matches('completed')) {
         // Execute callback and cleanup
         callback();
+        timeoutActor.stop(); // ✅ CRITICAL FIX: Stop the actor to prevent event loop leak
         this.timeouts.delete(timeoutId);
       } else if (state.matches('cancelled')) {
         // Just cleanup
+        timeoutActor.stop(); // ✅ CRITICAL FIX: Stop the actor to prevent event loop leak
         this.timeouts.delete(timeoutId);
       }
     });

@@ -5,7 +5,6 @@
  */
 
 import type { ActorRef } from '../actor-ref.js';
-import { Logger } from '../logger.js';
 import { createActorDelay } from '../pure-xstate-utilities.js';
 import type { BaseEventObject, SupervisionStrategy } from '../types.js';
 
@@ -60,7 +59,6 @@ interface SupervisedActor {
 export class Supervisor {
   private supervisedActors = new Map<string, SupervisedActor>();
   private readonly options: Required<SupervisorOptions>;
-  private readonly logger = Logger.namespace('SUPERVISOR');
 
   constructor(options: SupervisorOptions) {
     this.options = {

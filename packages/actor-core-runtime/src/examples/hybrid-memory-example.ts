@@ -445,7 +445,7 @@ function analyzeMemoriesForDecision(memories: Memory[]): {
   const sentimentScores = memories
     .map((m) => {
       if (typeof m.content === 'object' && m.content && 'valence' in m.content) {
-        return (m.content as any).valence || 0;
+        return (m.content as { valence?: number }).valence || 0;
       }
       return 0;
     })

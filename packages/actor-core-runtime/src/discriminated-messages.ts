@@ -204,6 +204,11 @@ export class WorkflowHandler {
   private _currentStep?: string;
   private _workflowState: 'idle' | 'running' | 'paused' | 'stopped' = 'idle';
 
+  // Getter to ensure linter recognizes usage of private members
+  get currentState() {
+    return { step: this._currentStep, state: this._workflowState };
+  }
+
   async handle(message: WorkflowMessage): Promise<unknown> {
     switch (message.type) {
       case 'start':

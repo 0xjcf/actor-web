@@ -64,13 +64,13 @@ describe('Actor Event Emission', () => {
               const currentSnapshot = machine.getSnapshot();
               const currentCount = (currentSnapshot.context as { count?: number })?.count || 0;
               const newCount = currentCount + (message.payload?.value || 1);
-              
+
               // Update machine state
-              machine.send({ 
-                type: 'UPDATE_COUNT', 
-                count: newCount 
+              machine.send({
+                type: 'UPDATE_COUNT',
+                count: newCount,
               });
-              
+
               // Return event emission (MessagePlan)
               return {
                 type: 'INCREMENT',
@@ -79,18 +79,18 @@ describe('Actor Event Emission', () => {
                 version: '1.0.0',
               };
             }
-            
+
             case 'DECREMENT': {
               const currentSnapshot = machine.getSnapshot();
               const currentCount = (currentSnapshot.context as { count?: number })?.count || 0;
               const newCount = currentCount - (message.payload?.value || 1);
-              
+
               // Update machine state
-              machine.send({ 
-                type: 'UPDATE_COUNT', 
-                count: newCount 
+              machine.send({
+                type: 'UPDATE_COUNT',
+                count: newCount,
               });
-              
+
               return {
                 type: 'DECREMENT',
                 payload: { value: newCount },
@@ -98,16 +98,16 @@ describe('Actor Event Emission', () => {
                 version: '1.0.0',
               };
             }
-            
+
             case 'RESET': {
               const resetValue = message.payload?.value || 0;
-              
+
               // Update machine state
-              machine.send({ 
-                type: 'UPDATE_COUNT', 
-                count: resetValue 
+              machine.send({
+                type: 'UPDATE_COUNT',
+                count: resetValue,
               });
-              
+
               return {
                 type: 'RESET',
                 payload: { value: resetValue },
@@ -115,15 +115,15 @@ describe('Actor Event Emission', () => {
                 version: '1.0.0',
               };
             }
-            
-            // ✅ CORRECT: Check for correlationId for ask pattern
+
+            // ✅ FRAMEWORK-STANDARD: Use business message type, never 'RESPONSE'
             case 'GET_COUNT': {
               if (message.correlationId) {
                 const currentSnapshot = machine.getSnapshot();
                 const currentCount = (currentSnapshot.context as { count?: number })?.count || 0;
-                
+
                 return {
-                  type: 'RESPONSE',
+                  type: 'COUNT_RESULT', // ✅ Business message type
                   payload: { value: currentCount },
                   correlationId: message.correlationId,
                   timestamp: Date.now(),
@@ -132,7 +132,7 @@ describe('Actor Event Emission', () => {
               }
               break;
             }
-            
+
             default:
               return undefined;
           }
@@ -190,10 +190,10 @@ describe('Actor Event Emission', () => {
               version: '1.0.0',
             };
           }
-          // ✅ CORRECT: Check for correlationId for ask pattern
+          // ✅ FRAMEWORK-STANDARD: Use business message type, never 'RESPONSE'
           if (message.type === 'GET_STATUS' && message.correlationId) {
             return {
-              type: 'RESPONSE',
+              type: 'STATUS_RESULT', // ✅ Business message type
               correlationId: message.correlationId,
               payload: 'OK',
               timestamp: Date.now(),
@@ -248,17 +248,17 @@ describe('Actor Event Emission', () => {
             const currentSnapshot = machine.getSnapshot();
             const currentValue = (currentSnapshot.context as { value?: number })?.value || 0;
             machine.send({ type: 'UPDATE_VALUE', value: currentValue + 1 });
-            
+
             // Return no events (just state update)
             return undefined;
           }
-          // ✅ CORRECT: Check for correlationId for ask pattern
+          // ✅ FRAMEWORK-STANDARD: Use business message type, never 'RESPONSE'
           if (message.type === 'GET_VALUE' && message.correlationId) {
             const currentSnapshot = machine.getSnapshot();
             const currentValue = (currentSnapshot.context as { value?: number })?.value || 0;
-            
+
             return {
-              type: 'RESPONSE',
+              type: 'VALUE_RESULT', // ✅ Business message type
               correlationId: message.correlationId,
               payload: currentValue,
               timestamp: Date.now(),
@@ -295,18 +295,19 @@ describe('Actor Event Emission', () => {
           if (message.type === 'PROCESS_BATCH') {
             const payload = message.payload as { items: string[] };
             const items = payload.items;
-            
+
             // Get current state from machine
             const currentSnapshot = machine.getSnapshot();
-            const currentProcessed = (currentSnapshot.context as { processed?: number })?.processed || 0;
+            const currentProcessed =
+              (currentSnapshot.context as { processed?: number })?.processed || 0;
             const newProcessed = currentProcessed + items.length;
-            
+
             // Update machine state
-            machine.send({ 
-              type: 'UPDATE_PROCESSED', 
-              processed: newProcessed 
+            machine.send({
+              type: 'UPDATE_PROCESSED',
+              processed: newProcessed,
             });
-            
+
             const emittedEvents: ActorMessage[] = [];
 
             // Process each item and emit event
@@ -330,13 +331,14 @@ describe('Actor Event Emission', () => {
             // Return MessagePlan array
             return emittedEvents;
           }
-          // ✅ CORRECT: Check for correlationId for ask pattern
+          // ✅ FRAMEWORK-STANDARD: Use business message type, never 'RESPONSE'
           if (message.type === 'GET_STATS' && message.correlationId) {
             const currentSnapshot = machine.getSnapshot();
-            const currentProcessed = (currentSnapshot.context as { processed?: number })?.processed || 0;
-            
+            const currentProcessed =
+              (currentSnapshot.context as { processed?: number })?.processed || 0;
+
             return {
-              type: 'RESPONSE',
+              type: 'STATS_RESULT', // ✅ Business message type
               payload: { processed: currentProcessed },
               correlationId: message.correlationId,
               timestamp: Date.now(),
@@ -391,10 +393,10 @@ describe('Actor Event Emission', () => {
               },
             ];
           }
-          // ✅ CORRECT: Check for correlationId for ask pattern
+          // ✅ FRAMEWORK-STANDARD: Use business message type, never 'RESPONSE'
           if (message.type === 'CHECK' && message.correlationId) {
             return {
-              type: 'RESPONSE',
+              type: 'CHECK_RESULT', // ✅ Business message type
               payload: { checked: true },
               correlationId: message.correlationId,
               timestamp: Date.now(),
@@ -457,10 +459,10 @@ describe('Actor Event Emission', () => {
 
             return [emittedMessage];
           }
-          // ✅ CORRECT: Check for correlationId for ask pattern
+          // ✅ FRAMEWORK-STANDARD: Use business message type, never 'RESPONSE'
           if (message.type === 'VERIFY' && message.correlationId) {
             return {
-              type: 'RESPONSE',
+              type: 'VERIFY_RESULT', // ✅ Business message type
               payload: { verified: true },
               correlationId: message.correlationId,
               timestamp: Date.now(),

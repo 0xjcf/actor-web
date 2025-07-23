@@ -263,26 +263,10 @@ class XStateBridge {
 export function createComponentActorBehavior(
   config: ComponentActorConfig
 ): ActorBehavior<ComponentActorMessage, ComponentActorContext> {
-  const initialContext: ComponentActorContext = {
-    machine: config.machine,
-    xstateActor: null,
-    xstateBridge: null,
-    currentState: null,
-    element: null,
-    template: config.template,
-    isMounted: false,
-    dependencies: {},
-    messageCount: 0,
-    renderCount: 0,
-    lastRender: 0,
-    mountTime: 0,
-    isDestroyed: false,
-  };
-
   const behavior: ActorBehavior<ComponentActorMessage, ComponentActorContext> = {
-    context: initialContext,
+    async onMessage({ message, machine }) {
+      const context = machine.getSnapshot().context;
 
-    async onMessage({ message, context }) {
       if (context.isDestroyed) {
         log.warn('Message received by destroyed component actor', { type: message.type });
         return { context };

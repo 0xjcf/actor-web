@@ -109,19 +109,6 @@ export interface ActorRef<
   // REQUEST/RESPONSE PATTERN (ASK)
   // ========================================================================================
 
-  /**
-   * Send a request to this actor and await a response (ask pattern)
-   * @param request - The request event to send
-   * @param options - Request options including timeout
-   * @returns Promise that resolves with the response
-   * @throws {TimeoutError} if response is not received within timeout
-   * @throws {ActorStoppedError} if actor is stopped
-   */
-  ask<TRequest extends TEvent, TResponse = unknown>(
-    request: TRequest,
-    options?: AskOptions
-  ): Promise<TResponse>;
-
   // ========================================================================================
   // STATE ACCESS (PURE ACTOR MODEL)
   // ========================================================================================

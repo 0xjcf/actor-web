@@ -8,19 +8,35 @@
  */
 
 import type { AnyStateMachine } from 'xstate';
-import type { ActorMessage, ActorPID, ActorSystem } from './actor-system.js';
+import type {
+  ActorBehavior,
+  ActorMessage,
+  ActorPID,
+  ActorSystem,
+  JsonValue,
+  ActorDependencies as PureActorDependencies,
+} from './actor-system.js';
 import { createActorSystem } from './actor-system-impl.js';
 import {
   type ActorDependencies,
   type ComponentActorConfig,
-  type ComponentActorContext,
   createComponentActorBehavior,
   type TemplateFunction,
 } from './component-actor.js';
-import type { ActorBehavior } from './create-actor.js';
 import { Logger } from './logger.js';
 
 const log = Logger.namespace('CREATE_COMPONENT');
+
+/**
+ * Safely serialize component payloads to JsonValue
+ */
+function safeJsonSerialize(payload: unknown): JsonValue {
+  try {
+    return JSON.parse(JSON.stringify(payload));
+  } catch {
+    return {};
+  }
+}
 
 // ============================================================================
 // CREATE COMPONENT API TYPES
@@ -57,8 +73,8 @@ export interface CreateComponentConfig {
    * ```typescript
    * // 1. Create reusable behavior with standard actor API
    * const formBehavior = defineBehavior({
-   *   context: { lastSaveTime: null },
-   *   onMessage: ({ message, context }) => {
+   *   onMessage: ({ message, machine }) => {
+   *     const context = machine.getSnapshot().context;
    *     switch (message.type) {
    *       case 'FORM_SAVE_REQUESTED':
    *         return {
@@ -209,15 +225,14 @@ async function getActorSystem(): Promise<ActorSystem> {
     *     <input name="name" .value=${context.formData.name ?? ''} />
   *     <button type="submit">Save</button>
   *     ${context.error && html`
-      <p class="error">${context.error}</p>
-`}
+      <p class="error">${context.error}</p>  `}
   *</form>
 `;
  *
  * // 🔌 3. Behavior ― standard actor behavior
  * const formBehavior = defineBehavior({
- *   context: { lastSaveTime: null },
- *   onMessage: ({ message, context }) => {
+ *   onMessage: ({ message, machine }) => {
+ *     const context = machine.getSnapshot().context;
  *     switch (message.type) {
  *       case 'FORM_SAVE_REQUESTED':
  *         return {
@@ -267,27 +282,47 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
     template: config.template,
     dependencies: config.dependencies,
     onMessage: config.behavior?.onMessage
-      ? // Adapt standard actor onMessage to component message handler signature
-        async ({ message, context, machine, dependencies: _dependencies }) => {
+      ? // Integrate pure actor behavior with component message handling
+        async ({ message, context, machine }) => {
+          // Convert ComponentActorMessage to ActorMessage format for pure actor behavior
+          const actorMessage: ActorMessage = {
+            type: message.type,
+            payload: safeJsonSerialize(message.payload),
+            timestamp: Date.now(),
+            version: '1.0.0',
+          };
+
+          // Create simplified ActorDependencies for the pure actor behavior
+          const actorDependencies: PureActorDependencies = {
+            actorId: machine.id || 'component-actor',
+            machine,
+            emit: () => {}, // Components manage their own emission
+            send: async () => {}, // Components handle sends through their own system
+            ask: async <T>(): Promise<T> => ({}) as T, // Components handle asks through their own system
+            logger: Logger.namespace('COMPONENT'),
+          };
+
+          // Call the pure actor behavior's onMessage (fire and forget)
+          // The behavior will handle its own MessagePlan processing
           if (config.behavior?.onMessage) {
-            const result = await config.behavior.onMessage({
-              message: message as ActorMessage, // Type adaptation for component message
-              context: context as unknown, // Context type adaptation
-            });
-
-            // Ensure we maintain the full ComponentActorContext structure
-            const updatedContext: ComponentActorContext = {
-              ...context, // Keep existing component context (includes original machine)
-              xstateActor: machine, // The machine parameter is the Actor instance
-              ...(result.context as Partial<ComponentActorContext>), // Merge in updates
-            };
-
-            return {
-              context: updatedContext,
-              emit: result.emit ? ([result.emit].flat() as never[]) : undefined,
-            };
+            try {
+              await config.behavior.onMessage({
+                message: actorMessage,
+                machine,
+                dependencies: actorDependencies,
+              });
+            } catch (error) {
+              // Log any errors from the pure actor behavior but don't break component flow
+              Logger.namespace('COMPONENT').error('Pure actor behavior error', { error });
+            }
           }
-          return { context };
+
+          // Components with pure actor behaviors manage their own emission
+          // Return standard component result format
+          return {
+            context, // Component context remains unchanged (managed by XState machine)
+            emit: undefined, // Components with pure actor behaviors manage their own emission
+          };
         }
       : undefined,
     mailbox: config.mailbox,
@@ -456,6 +491,8 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
 
       // Resolve each dependency path to an ActorPID
       for (const [key, actorPath] of Object.entries(dependencies)) {
+        if (typeof actorPath !== 'string') continue;
+
         try {
           const dependencyActor = await actorSystem.lookup(actorPath);
           if (dependencyActor) {
@@ -477,6 +514,25 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
       if (Object.keys(resolvedDependencies).length > 0) {
         await this.updateDependencies(resolvedDependencies);
       }
+    }
+
+    // Type guard for JsonValue
+    private isJsonValue(value: unknown): value is JsonValue {
+      if (
+        value === null ||
+        typeof value === 'string' ||
+        typeof value === 'number' ||
+        typeof value === 'boolean'
+      ) {
+        return true;
+      }
+      if (Array.isArray(value)) {
+        return value.every((v) => this.isJsonValue(v));
+      }
+      if (typeof value === 'object' && value !== null) {
+        return Object.values(value).every((v) => this.isJsonValue(v));
+      }
+      return false;
     }
   }
 

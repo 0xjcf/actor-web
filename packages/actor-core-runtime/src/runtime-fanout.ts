@@ -282,7 +282,7 @@ export type CreateDomainEvent<
   {
     type: TType;
   } & (TPayload extends null
-    ? {}
+    ? Record<string, never>
     : TPayload extends Record<string, JsonValue>
       ? TPayload
       : { payload: TPayload })

@@ -289,18 +289,6 @@ describe('ComponentActor - Pure Actor Model Integration', () => {
       const config: ComponentActorConfig = {
         machine: counterMachine,
         template: counterTemplate,
-        onMessage: async ({ message, dependencies }) => {
-          if (message.type === 'EXTERNAL_MESSAGE' && dependencies.backend) {
-            // Test cross-actor communication
-            await dependencies.backend.send({
-              type: 'SAVE_DATA',
-              payload: { count: 42 },
-              timestamp: Date.now(),
-              version: '1.0.0',
-            });
-          }
-          return { context: {} };
-        },
       };
 
       const behavior = createComponentActorBehavior(config);

@@ -176,18 +176,6 @@ class EnhancedReadline {
     return [allMatches, line];
   }
 
-  private updatePromptWithFeedback(input: string) {
-    if (input.length === 0) {
-      this.rl.setPrompt(chalk.blue('> '));
-    } else {
-      const validation = this.validateInput(input);
-      const status = validation.isValid ? '✓' : '✗';
-      const color = validation.color;
-      this.rl.setPrompt(color(`${status} > `));
-    }
-    this.rl.prompt();
-  }
-
   private setupEventHandlers(onLine: (input: string) => void, onClose: () => void) {
     this.rl.on('line', (input: string) => {
       this.currentInput = '';

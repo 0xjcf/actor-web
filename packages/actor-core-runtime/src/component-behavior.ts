@@ -101,7 +101,7 @@ export interface ComponentBehaviorConfig<
   TContext = unknown,
   TDomainEvent = DomainEvent,
   TMachine extends AnyStateMachine = AnyStateMachine,
-> extends Omit<ActorBehavior<TMessage, TContext, unknown>, 'onMessage'> {
+> extends Omit<ActorBehavior<TMessage, unknown>, 'onMessage'> {
   /**
    * Fan-out message handler - the standard and only supported approach
    *
@@ -275,7 +275,7 @@ export function componentBehavior<
  * Type guard to check if a behavior is a component behavior
  */
 export function isComponentBehavior<T, C, E>(
-  behavior: ActorBehavior<T, C, E> | ComponentBehaviorConfig<T, C, E>
+  behavior: ActorBehavior<T, E> | ComponentBehaviorConfig<T, C, E>
 ): behavior is ComponentBehaviorConfig<T, C, E> {
   return 'dependencies' in behavior || 'mailbox' in behavior || 'transport' in behavior;
 }

@@ -231,7 +231,7 @@ class AdvancedGitWorkflowHandler {
     this.actor.send({ type: 'CHECK_STATUS' });
 
     // Wait for event
-    const currentBranch = await branchPromise;
+    await branchPromise;
 
     // Get additional info from status
     const response = await this.actor.ask({ type: 'REQUEST_BRANCH_INFO' });
@@ -310,7 +310,7 @@ class AdvancedGitWorkflowHandler {
     this.actor.send({ type: 'CHECK_STATUS' });
 
     // Wait for event
-    const currentBranch = await branchPromise;
+    await branchPromise;
 
     // Get additional info from status
     const statusResponse = await this.actor.ask({ type: 'REQUEST_BRANCH_INFO' });

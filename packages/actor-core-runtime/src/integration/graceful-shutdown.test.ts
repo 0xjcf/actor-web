@@ -113,17 +113,17 @@ describe('Graceful Shutdown and Lifecycle Management', () => {
           // ✅ CORRECT: Check for correlationId for ask pattern
           if (message.type === 'PROCESS' && message.correlationId) {
             log.debug('Processing message', { message });
-            
+
             // Update machine state to indicate processing
             machine.send({ type: 'START_PROCESSING' });
-            
+
             // Simulate async work by yielding control
             await Promise.resolve();
-            
+
             // Update machine state to indicate completion
             machine.send({ type: 'COMPLETE_PROCESSING' });
             processedSuccessfully = true;
-            
+
             // Return response for ask pattern
             return {
               type: 'RESPONSE',

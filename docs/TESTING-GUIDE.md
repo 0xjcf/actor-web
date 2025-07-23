@@ -1004,6 +1004,225 @@ it('should handle state transitions', () => {
 
 ---
 
+## 🚫 Avoiding Hanging Tests
+
+### Overview
+
+Hanging tests are one of the most frustrating issues in actor system development. Based on our experience fixing critical hanging test issues, here are the key patterns to prevent them.
+
+### Root Causes of Hanging Tests
+
+#### ❌ **System Actor Initialization Issues** (Most Common!)
+
+The most common cause of hanging tests is **incorrect system actor initialization patterns**:
+
+```typescript
+// ❌ WRONG: Custom configuration objects instead of defineBehavior
+export function createSystemEventActor() {
+  return {
+    behavior: {
+      onMessage: async ({ message, machine }) => {
+        // Custom behavior implementation
+      }
+    },
+    initialContext: { subscribers: new Map() }, // ❌ Broken context injection
+    address: '/system/event'
+  };
+}
+
+// ✅ CORRECT: Use proper defineBehavior pattern
+export function createSystemEventActor(): ActorBehavior<SystemEventActorMessage, DomainEvent> {
+  return defineBehavior({
+    onMessage: async ({ message, machine, dependencies }) => {
+      const context = machine.getSnapshot().context as SystemEventActorContext;
+      
+      // Handle message properly
+      switch (message.type) {
+        case 'SUBSCRIBE_TO_SYSTEM_EVENTS':
+          // Process message
+          return;
+      }
+    },
+    
+    onStart: async ({ machine }) => {
+      // Initialize context through proper XState lifecycle
+      machine.send({
+        type: 'INITIALIZE',
+        context: createInitialSystemEventActorContext()
+      });
+    }
+  });
+}
+```
+
+#### ❌ **Type Safety Violations**
+
+Avoid `any` types and type casting in system-critical code:
+
+```typescript
+// ❌ WRONG: Type casting masks initialization problems
+const context = machine.getSnapshot().context as any;
+const systemActorConfig = (behavior as any)._systemActorConfig;
+
+// ✅ CORRECT: Proper type guards and interface compliance
+const context = machine.getSnapshot().context as SystemEventActorContext;
+if (!context.subscribers) {
+  // Handle uninitialized context gracefully
+  machine.send({ type: 'INITIALIZE_CONTEXT' });
+  return;
+}
+```
+
+#### ❌ **Framework API Misuse**
+
+Always use the framework's intended APIs:
+
+```typescript
+// ❌ WRONG: Custom actor system implementations
+class ActorSystemImpl {
+  private wrapSystemActor(config: any): any {
+    // Custom wrapping logic that breaks type safety
+  }
+}
+
+// ✅ CORRECT: Use framework's defineBehavior consistently
+const systemEventBehavior = createSystemEventActor();
+const systemEventActor = await this.spawn(systemEventBehavior, {
+  id: 'system-event-actor',
+  supervised: false,
+});
+```
+
+### Diagnostic Strategies
+
+#### **Event Loop Analysis**
+
+When tests hang, first check if it's an event loop issue:
+
+```typescript
+// Create diagnostic script to identify active handles
+const activeHandles = process._getActiveHandles();
+const activeRequests = process._getActiveRequests();
+
+console.log('Active handles:', activeHandles.length);
+console.log('Active requests:', activeRequests.length);
+
+// If these numbers are 0 after system.stop(), hanging is likely in ask pattern
+// If these numbers are > 0, you have resource leaks
+```
+
+#### **Ask Pattern Flow Tracing**
+
+Add debug logging to trace ask pattern flow:
+
+```typescript
+const log = Logger.namespace('ASK_PATTERN_DEBUG');
+
+// In test
+const response = await actor.ask(createMessage('PING'), { timeout: 5000 });
+
+// In actor behavior
+onMessage: async ({ message, machine, dependencies }) => {
+  log.debug('Received message', { type: message.type, correlationId: message.correlationId });
+  
+  // Process and respond
+  return {
+    type: 'RESPONSE',
+    correlationId: message.correlationId
+  } as DomainEvent;
+}
+```
+
+#### **System Actor Bootstrap Logging**
+
+Monitor system actor initialization:
+
+```typescript
+const log = Logger.namespace('SYSTEM_BOOTSTRAP');
+
+// In actor system startup
+log.info('Starting system actors...');
+const systemEventBehavior = createSystemEventActor();
+log.debug('System event behavior created');
+
+const systemEventActor = await this.spawn(systemEventBehavior, {
+  id: 'system-event-actor'
+});
+log.info('System event actor spawned', { address: systemEventActor.address.path });
+```
+
+### Prevention Checklist
+
+Before deploying system actors, verify:
+
+- [ ] ✅ **Uses `defineBehavior`** - No custom configuration objects
+- [ ] ✅ **Zero `any` types** - Full TypeScript compliance  
+- [ ] ✅ **Proper imports** - `./create-actor.js`, `./actor-ref.js`
+- [ ] ✅ **Context initialization** - Through XState lifecycle, not hacks
+- [ ] ✅ **Message type compliance** - Proper `SystemEventActorMessage` usage
+- [ ] ✅ **Error handling** - Graceful degradation, not crashes
+- [ ] ✅ **Framework API usage** - Standard spawn/stop patterns
+
+### Test Environment Setup
+
+#### **Timeout Configuration**
+
+```typescript
+// Configure appropriate timeouts for ask patterns
+describe('System Actor Tests', () => {
+  const DEFAULT_TIMEOUT = 5000; // Generous for CI environments
+  
+  it('should respond to queries', async () => {
+    const response = await actor.ask(
+      createMessage('GET_STATUS'),
+      { timeout: DEFAULT_TIMEOUT }
+    );
+    expect(response).toBeDefined();
+  }, DEFAULT_TIMEOUT + 1000); // Test timeout > ask timeout
+});
+```
+
+#### **Resource Cleanup**
+
+```typescript
+describe('Actor System Tests', () => {
+  let system: ActorSystem;
+  
+  beforeEach(async () => {
+    system = createActorSystem({ nodeAddress: 'test-node' });
+    await system.start();
+  });
+  
+  afterEach(async () => {
+    // ✅ CRITICAL: Always stop the system to prevent hangs
+    if (system?.isRunning()) {
+      await system.stop();
+    }
+  });
+});
+```
+
+### Quick Debug Steps for Hanging Tests
+
+1. **Check Event Loop**: Are there active handles/requests after `system.stop()`?
+2. **Verify Ask Pattern**: Is the actor receiving and responding to messages?
+3. **System Actor Errors**: Any `undefined` context errors in logs?
+4. **Type Safety**: Any `any` types or type casting in critical paths?
+5. **Framework Compliance**: Using `defineBehavior` consistently?
+
+### Success Metrics
+
+A properly functioning actor system should:
+- ✅ Complete tests in <1 second (not hanging indefinitely)
+- ✅ Have 0 active handles after `system.stop()`
+- ✅ Show clean startup logs without context errors
+- ✅ Respond to ask patterns in <10ms typically
+- ✅ Pass type checking without `any` types
+
+Remember: **Hanging tests are almost always system actor initialization issues, not infinite loops!**
+
+---
+
 ## 🚀 Performance Testing
 
 ### Basic Performance Test

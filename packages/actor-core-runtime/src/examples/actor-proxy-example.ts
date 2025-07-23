@@ -184,7 +184,8 @@ export namespace ECommerceExample {
 
       handleProxyQuery: assign({
         pendingResponses: ({ context, event }) => {
-          const { procedure, input, correlationId } = event as any;
+          if (event.type !== 'PROXY_QUERY') return context.pendingResponses;
+          const { procedure, input, correlationId } = event;
           let result: unknown = null;
 
           switch (procedure) {
@@ -257,11 +258,11 @@ export namespace ECommerceExample {
               const topProducts = Array.from(productSales.entries())
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 5)
-                .map(([productId, sales]) => ({
-                  product: context.products.get(productId)!,
-                  sales,
-                }))
-                .filter((item) => item.product);
+                .map(([productId, sales]) => {
+                  const product = context.products.get(productId);
+                  return product ? { product, sales } : null;
+                })
+                .filter((item): item is { product: Product; sales: number } => item !== null);
 
               result = { totalSales, orderCount, topProducts };
               break;
@@ -300,7 +301,8 @@ export namespace ECommerceExample {
 
       handleProxyMutation: assign({
         products: ({ context, event }) => {
-          const { procedure, input } = event as any;
+          if (event.type !== 'PROXY_MUTATION') return context.products;
+          const { procedure, input } = event;
           const newProducts = new Map(context.products);
 
           switch (procedure) {
@@ -331,7 +333,8 @@ export namespace ECommerceExample {
         },
 
         orders: ({ context, event }) => {
-          const { procedure, input } = event as any;
+          if (event.type !== 'PROXY_MUTATION') return context.orders;
+          const { procedure, input } = event;
           const newOrders = new Map(context.orders);
 
           switch (procedure) {
@@ -372,7 +375,8 @@ export namespace ECommerceExample {
         },
 
         users: ({ context, event }) => {
-          const { procedure, input } = event as any;
+          if (event.type !== 'PROXY_MUTATION') return context.users;
+          const { procedure, input } = event;
           const newUsers = new Map(context.users);
 
           switch (procedure) {
@@ -397,7 +401,8 @@ export namespace ECommerceExample {
         },
 
         pendingResponses: ({ context, event }) => {
-          const { procedure, input, correlationId } = event as any;
+          if (event.type !== 'PROXY_MUTATION') return context.pendingResponses;
+          const { procedure, input, correlationId } = event;
           let result: unknown = null;
 
           switch (procedure) {
@@ -514,7 +519,8 @@ export namespace ECommerceExample {
 
       handleProxySubscription: assign({
         subscribers: ({ context, event }) => {
-          const { procedure, input } = event as any;
+          if (event.type !== 'PROXY_SUBSCRIPTION') return context.subscribers;
+          const { procedure, input } = event;
           const newSubscribers = new Map(context.subscribers);
           const key = `${procedure}:${JSON.stringify(input)}`;
 
@@ -868,7 +874,8 @@ export namespace AIAssistantExample {
 
         handleProxyQuery: assign({
           pendingResponses: ({ context, event }) => {
-            const { procedure, input, correlationId } = event as any;
+            if (event.type !== 'PROXY_QUERY') return context.pendingResponses;
+            const { procedure, input, correlationId } = event;
             let result: unknown = null;
 
             switch (procedure) {
@@ -887,7 +894,7 @@ export namespace AIAssistantExample {
               }
 
               case 'tools.list': {
-                const { category } = input as { category?: string };
+                const { category: _category } = input as { category?: string };
                 const tools = Array.from(context.tools.values());
                 result = { tools };
                 break;
@@ -910,7 +917,7 @@ export namespace AIAssistantExample {
               }
 
               case 'analytics.usage': {
-                const { timeframe } = input as { timeframe: 'hour' | 'day' | 'week' };
+                const { timeframe: _timeframe } = input as { timeframe: 'hour' | 'day' | 'week' };
                 const avgResponseTime =
                   context.analytics.responseTime.length > 0
                     ? context.analytics.responseTime.reduce((a, b) => a + b, 0) /
@@ -943,7 +950,7 @@ export namespace AIAssistantExample {
 
         handleProxyMutation: assign({
           knowledge: ({ context, event }) => {
-            const { procedure, input } = event as any;
+            const { procedure, input } = event;
             const newKnowledge = new Map(context.knowledge);
 
             if (procedure === 'knowledge.add') {
@@ -969,7 +976,7 @@ export namespace AIAssistantExample {
           },
 
           memory: ({ context, event }) => {
-            const { procedure, input } = event as any;
+            const { procedure, input } = event;
             const newMemory = new Map(context.memory);
 
             if (procedure === 'memory.store') {
@@ -992,7 +999,7 @@ export namespace AIAssistantExample {
           },
 
           analytics: ({ context, event }) => {
-            const { procedure } = event as any;
+            const { procedure: _procedure } = event;
             const newAnalytics = { ...context.analytics };
 
             // Track this request
@@ -1008,15 +1015,13 @@ export namespace AIAssistantExample {
           },
 
           pendingResponses: ({ context, event }) => {
-            const { procedure, input, correlationId } = event as any;
+            if (event.type !== 'PROXY_MUTATION') return context.pendingResponses;
+            const { procedure, input, correlationId } = event;
             let result: unknown = null;
 
             switch (procedure) {
               case 'chat.send': {
-                const { message, context: chatContext } = input as {
-                  message: string;
-                  context?: string;
-                };
+                const { message } = input as { message: string };
                 const tokens = message.split(' ').length * 1.3; // Rough token estimate
                 result = {
                   response: `I understand you're asking about: ${message}. This is a simulated response.`,
@@ -1027,7 +1032,6 @@ export namespace AIAssistantExample {
               }
 
               case 'knowledge.add': {
-                const { content } = input as { content: string };
                 const id = `knowledge-${Date.now()}`;
                 result = { id, success: true };
                 break;
