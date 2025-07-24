@@ -19,7 +19,13 @@
  * Supervision: Restart strategy with retry limits
  */
 
-import { type ActorInstance, Logger, spawnActor } from '@actor-core/runtime';
+import {
+  asTypeSafeActor,
+  Logger,
+  type MessageMap,
+  spawnActor,
+  type TypeSafeActor,
+} from '@actor-core/runtime';
 import { type SimpleGit, simpleGit } from 'simple-git';
 import { assign, emit, fromPromise, setup } from 'xstate';
 
@@ -91,13 +97,156 @@ function getSourceBranch(currentBranch?: string): string {
 }
 
 // ============================================================================
+// SUPPORTING TYPES FOR GIT ACTOR
+// ============================================================================
+
+export interface DateIssue {
+  file: string;
+  line: number;
+  date: string;
+  issue: 'future' | 'past' | 'invalid';
+  context: string;
+}
+
+// ============================================================================
+// TYPE-SAFE MESSAGE DEFINITIONS
+// ============================================================================
+
+/**
+ * Type-safe mapping of GitActor message types to their expected response types
+ * This provides compile-time type safety for actor.ask() calls
+ */
+export interface GitMessageMap extends MessageMap {
+  REQUEST_STATUS: {
+    isGitRepo: boolean;
+    currentBranch?: string;
+    agentType?: string;
+    uncommittedChanges?: boolean;
+    worktrees?: Array<{
+      agentId: string;
+      path: string;
+      branch: string;
+      role: string;
+      exists: boolean;
+    }>;
+  };
+  CHECK_STATUS: {
+    currentBranch: string;
+    agentType: string;
+  };
+  CHECK_UNCOMMITTED_CHANGES: {
+    uncommittedChanges: boolean;
+  };
+  GET_INTEGRATION_STATUS: {
+    ahead: number;
+    behind: number;
+  };
+  GET_CHANGED_FILES: {
+    files: string[];
+  };
+  ADD_ALL: {
+    success: boolean;
+  };
+  COMMIT_CHANGES: {
+    commitHash: string;
+    message: string;
+  };
+  COMMIT_WITH_CONVENTION: {
+    commitHash: string;
+    message: string;
+  };
+  GENERATE_COMMIT_MESSAGE: {
+    message: string;
+  };
+  VALIDATE_DATES: {
+    issues: DateIssue[];
+  };
+  SETUP_WORKTREES: {
+    worktrees: Array<{
+      agentId: string;
+      path: string;
+      branch: string;
+      role: string;
+      exists: boolean;
+    }>;
+  };
+  PUSH_CHANGES: {
+    success: boolean;
+    branch: string;
+  };
+  FETCH_REMOTE: {
+    success: boolean;
+    branch: string;
+  };
+  MERGE_BRANCH: {
+    success: boolean;
+    branch: string;
+    strategy: 'merge' | 'rebase';
+    result?: unknown;
+    commitHash?: string;
+    error?: string;
+  };
+  CREATE_BRANCH: {
+    success: boolean;
+    branchName: string;
+    existed: boolean;
+    message: string;
+  };
+  GET_LAST_COMMIT: {
+    hash: string;
+    message: string;
+    author: string;
+    email: string;
+    date: string;
+  };
+  CHECK_WORKTREE: {
+    exists: boolean;
+    path: string;
+    branch: string;
+    head: string;
+  };
+  START: {
+    started: boolean;
+  };
+  STOP: {
+    stopped: boolean;
+  };
+  CONTINUE: {
+    continued: boolean;
+  };
+  RETRY: {
+    retried: boolean;
+  };
+  REQUEST_BRANCH_INFO: {
+    requestId: string;
+    response: {
+      currentBranch?: string;
+      agentType?: string;
+      integrationStatus?: { ahead: number; behind: number };
+    };
+  };
+  REQUEST_COMMIT_STATUS: {
+    requestId: string;
+    response: {
+      lastCommitHash?: string;
+      lastCommitMessage?: string;
+      uncommittedChanges?: boolean;
+    };
+  };
+  CHECK_REPO: {
+    isGitRepo: boolean;
+  };
+}
+
+// ============================================================================
 // ACTOR INTERFACES
 // ============================================================================
 
 /**
  * GitActor type - represents a git actor instance created from the git actor definition
+ * Now with enhanced type safety for ask() calls using the base TypeSafeActor interface
  */
-export type GitActor = ActorInstance;
+export type GitActor = TypeSafeActor<GitMessageMap>;
 
 // ============================================================================
 // GIT ACTOR EVENTS (No Responses!)
@@ -203,14 +352,6 @@ export type GitEmittedEvent =
 // ============================================================================
 // GIT ACTOR CONTEXT (Pure State)
 // ============================================================================
-
-interface DateIssue {
-  file: string;
-  line: number;
-  date: string;
-  issue: 'future' | 'past' | 'invalid';
-  context: string;
-}
 
 interface CommitMessageConfig {
   projectTag?: string;
@@ -2067,8 +2208,7 @@ export const gitActorMachine = setup({
  * 3. Supports supervision strategies
  * 4. Implements proper event emission and request/response patterns
  *
- * NOTE: This function is in transition for Phase 2 - Pure Actor Model
- * Future versions will use ActorSystem.spawn() instead of direct createActorRef()
+ * ✅ CRITICAL FIX: Now uses CLI actor system when available for proper guardian initialization
  */
 export function createGitActor(baseDir?: string): GitActor {
   const actorId = generateGitActorId('git-actor');
@@ -2078,7 +2218,44 @@ export function createGitActor(baseDir?: string): GitActor {
   // Determine if we're in a test environment
   const isTest = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
 
-  // Use the framework's spawnActor with XState machine
+  // ✅ CRITICAL FIX: Use CLI actor system when available, default system as fallback
+  try {
+    const cliSystem = getCLIActorSystem();
+    const actorSystem = cliSystem.getActorSystem();
+
+    // If CLI actor system is available and initialized, use it
+    if (actorSystem) {
+      console.log(
+        `🎯 GitActor using CLI actor system with guardian at /system/guardian (${actorId})`
+      );
+      log.debug('✅ Using CLI actor system with guardian at /system/guardian', { actorId });
+
+      // Use spawnActor to get proper ActorInstance type that asTypeSafeActor expects
+      const actorInstance = spawnActor({
+        machine: gitActorMachine,
+        id: actorId,
+        input: { baseDir },
+        autoStart: false,
+        // Disable supervision in tests to prevent cleanup conflicts
+        supervision: isTest ? undefined : 'restart-on-failure',
+      });
+
+      log.debug(`✅ Created git actor with CLI system: ${actorId}`);
+
+      return asTypeSafeActor<GitMessageMap>(actorInstance);
+    }
+  } catch (error) {
+    // CLI actor system not available, fall back to default
+    console.log(
+      `⚠️  GitActor falling back to default system (${actorId}): ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+    log.debug('CLI actor system not available, using default system', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+
+  // Fallback: Use the framework's spawnActor with default system
+  console.log(`🔄 GitActor using default actor system (${actorId})`);
   const actorInstance = spawnActor({
     machine: gitActorMachine,
     id: actorId,
@@ -2089,11 +2266,11 @@ export function createGitActor(baseDir?: string): GitActor {
   });
 
   // Log actor creation - no manual registry needed (actor system handles this)
-  log.debug(`✅ Created git actor with ID: ${actorId}`);
+  log.debug(`✅ Created git actor with default system: ${actorId}`);
   log.debug(`🎯 Using distributed actor system for discovery (test mode: ${isTest})`);
 
-  // Return the actor instance directly
-  return actorInstance;
+  // Return the type-safe actor instance
+  return asTypeSafeActor<GitMessageMap>(actorInstance);
 }
 
 /**

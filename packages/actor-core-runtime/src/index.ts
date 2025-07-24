@@ -18,7 +18,7 @@ export {
   isResponseEvent,
   TimeoutError,
 } from './actor-ref.js';
-// Core actor system types
+// Core types and interfaces
 export type {
   ActorAddress,
   ActorBehavior,
@@ -26,9 +26,13 @@ export type {
   ActorPID,
   ActorStats,
   ActorSystem,
+  BasicMessage,
   ClusterState,
   JsonValue,
-  MessageInput,
+  // Type-safe actor types
+  MessageMap,
+  TypeSafeActor,
+  TypeSafeMessageInput,
 } from './actor-system.js';
 export type { ActorSystemConfig } from './actor-system-impl.js';
 export { createActorSystem } from './actor-system-impl.js';
@@ -63,6 +67,8 @@ export {
   type ActorEmittedType,
   type ActorInstance,
   type ActorMessageType,
+  // Type-safe actor creation
+  asTypeSafeActor,
   type CreateActorConfig,
   createActor,
   createLegacyBehavior,

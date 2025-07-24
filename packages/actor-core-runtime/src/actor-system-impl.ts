@@ -52,9 +52,9 @@ import type {
   ActorPID,
   ActorStats,
   ActorSystem,
+  BasicMessage,
   ClusterState,
   JsonValue,
-  MessageInput,
   SpawnOptions,
 } from './actor-system.js';
 import { normalizeMessage, parseActorPath } from './actor-system.js';
@@ -1335,8 +1335,8 @@ export class ActorSystemImpl implements ActorSystem {
     const actorPid = {
       address,
       stop: async () => this.stopActorInternal(address),
-      send: async (msg: MessageInput) => this.enqueueMessage(address, normalizeMessage(msg)),
-      ask: async (msg: MessageInput) =>
+      send: async (msg: BasicMessage) => this.enqueueMessage(address, normalizeMessage(msg)),
+      ask: async (msg: BasicMessage) =>
         this.askActor(address, normalizeMessage(msg), this.config.defaultAskTimeout ?? 5000),
       getStats: async () => this.getActorStatsInternal(address),
     } as ActorPID;
@@ -1768,14 +1768,14 @@ class ActorPIDImpl implements ActorPID {
     private readonly system: ActorSystemImpl
   ) {}
 
-  async send(message: MessageInput): Promise<void> {
+  async send(message: BasicMessage): Promise<void> {
     // Normalize the message input to full ActorMessage
     const normalizedMessage = normalizeMessage(message);
     // Fire and forget - enqueue to mailbox
     await this.system.enqueueMessage(this.address, normalizedMessage);
   }
 
-  async ask<T>(message: MessageInput, timeout?: number): Promise<T> {
+  async ask<T>(message: BasicMessage, timeout?: number): Promise<T> {
     // Normalize the message input to full ActorMessage
     const normalizedMessage = normalizeMessage(message);
     const askTimeout = timeout ?? this.system.getDefaultAskTimeout();

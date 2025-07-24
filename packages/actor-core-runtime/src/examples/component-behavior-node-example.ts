@@ -6,16 +6,9 @@
  */
 
 import { type Actor, type AnyStateMachine, assign, createMachine } from 'xstate';
-import type {
-  ActorAddress,
-  ActorMessage,
-  ActorPID,
-  ActorStats,
-  JsonValue,
-  MessageInput,
-} from '../actor-system.js';
 import { componentBehavior, isComponentBehavior } from '../component-behavior.js';
 import { defineBehavior } from '../create-actor.js';
+import type { ActorPID, ActorStats, JsonValue } from '../index.js';
 
 // ============================================================================
 // TYPE-SAFE COMPONENT BEHAVIOR EXAMPLES
@@ -69,7 +62,7 @@ const _counterMachine = createMachine({
 
 // Build counter behavior with type safety (fixed async issue)
 const counterBehavior = componentBehavior<CounterMessage, CounterContext, CounterEvent>()
-  .onMessage(async ({ message, context, machine, emit }) => {
+  .onMessage(async ({ message, context, machine }) => {
     console.log(`[Counter] Processing message: ${message.type}`);
 
     // Handle different message types
@@ -77,27 +70,26 @@ const counterBehavior = componentBehavior<CounterMessage, CounterContext, Counte
       case 'INCREMENT':
       case 'DECREMENT':
         machine.send({ type: message.type });
-        emit({
+        return {
           type: 'COUNTER_CHANGED',
           payload: {
             count: context.count + (message.type === 'INCREMENT' ? 1 : -1),
             action: message.type.toLowerCase(),
           },
-        });
-        break;
+        };
 
       case 'RESET': {
         const previousCount = context.count;
         machine.send({ type: 'RESET' });
-        emit({
+        return {
           type: 'COUNTER_RESET',
           payload: { previousCount },
-        });
-        break;
+        };
+      }
+      default: {
+        return { context };
       }
     }
-
-    return { context };
   })
   .dependencies({
     analytics: 'actor://system/analytics',
@@ -247,7 +239,7 @@ function demonstrateTypeSafety() {
  * without using any types or type casting
  */
 function createMockActorPID(name: string): ActorPID {
-  const mockAddress: ActorAddress = {
+  const mockAddress: ActorPID['address'] = {
     id: `mock-${name}`,
     type: 'mock',
     path: `/system/${name}`,
@@ -263,10 +255,10 @@ function createMockActorPID(name: string): ActorPID {
 
   return {
     address: mockAddress,
-    async send(message: MessageInput): Promise<void> {
+    async send(message: BasicMessage): Promise<void> {
       console.log(`  [${name}] Received message: ${message.type}`);
     },
-    async ask<T = JsonValue>(_message: MessageInput, _timeout?: number): Promise<T> {
+    async ask<T = JsonValue>(_message: BasicMessage, _timeout?: number): Promise<T> {
       return { success: true } as T;
     },
     async stop(): Promise<void> {
@@ -278,7 +270,7 @@ function createMockActorPID(name: string): ActorPID {
     async getStats(): Promise<ActorStats> {
       return mockStats;
     },
-    subscribe(_eventType: string, _listener: (event: ActorMessage) => void): () => void {
+    subscribe(_eventType: string, _listener: (event: BasicMessage) => void): () => void {
       return () => {
         /* unsubscribe */
       };

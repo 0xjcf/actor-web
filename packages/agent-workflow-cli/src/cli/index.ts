@@ -23,11 +23,42 @@ import { shipCommand } from '../commands/ship.js';
 import { statusCommand } from '../commands/status.js';
 import { syncCommand } from '../commands/sync.js';
 import { validateCommand } from '../commands/validate.js';
+// Add CLI actor system imports
+import { cleanupCLIActorSystem, initializeCLIActorSystem } from '../core/cli-actor-system.js';
+import { getDescriptionSync, getVersionSync, initializePackageInfo } from '../package-info.js';
 
-program
-  .name('aw')
-  .description('Agent-centric development workflow automation')
-  .version('0.1.0-alpha');
+// ============================================================================
+// CRITICAL FIX: Initialize Actor System BEFORE Command Definitions
+// ============================================================================
+
+async function initializeEverything() {
+  try {
+    // Load package info asynchronously at startup
+    await initializePackageInfo();
+
+    // ✅ CRITICAL FIX: Initialize CLI Actor System with guardian actor FIRST
+    console.log(chalk.gray('🚀 Initializing CLI Actor System...'));
+    await initializeCLIActorSystem({
+      nodeAddress: 'cli-node',
+      messageTimeout: 30000,
+      maxActors: 50,
+      directory: {
+        cacheTtl: 300000, // 5 minutes
+        maxCacheSize: 1000,
+        cleanupInterval: 60000, // 1 minute
+      },
+    });
+    console.log(chalk.gray('✅ CLI Actor System initialized'));
+
+    return true;
+  } catch (error) {
+    console.error(chalk.red('CLI Actor System Initialization Error:'), error);
+    return false;
+  }
+}
+
+// Initialize everything at module load time
+const initPromise = initializeEverything();
 
 // ============================================================================
 // CORE WORKFLOW COMMANDS
@@ -45,7 +76,10 @@ program
   .option('--base-dir <path>', 'Base directory for relative paths')
   .option('--integration-branch <branch>', 'Integration branch name')
   .option('--root <path>', 'Specify repository root path explicitly')
-  .action(initCommand);
+  .action(async (options) => {
+    await initPromise; // Ensure initialization is complete
+    await initCommand(options);
+  });
 
 program.command('sync').description('Sync with integration branch').action(syncCommand);
 
@@ -66,7 +100,10 @@ program
   .command('status')
   .description('Show current agent and repository status')
   .option('--root <path>', 'Specify repository root path explicitly')
-  .action(statusCommand);
+  .action(async () => {
+    await initPromise; // Ensure initialization is complete
+    await statusCommand();
+  });
 
 // ============================================================================
 // ENHANCED COMMIT SYSTEM
@@ -222,11 +259,79 @@ program
     console.log(chalk.gray('  aw validate-dates --files "docs/*.md"'));
   });
 
-// Error handling
-program.on('command:*', (operands) => {
-  console.error(chalk.red(`Unknown command: ${operands[0]}`));
-  console.log(chalk.gray('Run "aw help" for available commands'));
+// Async main function to handle program execution
+async function main() {
+  try {
+    // Wait for initialization to complete
+    const initialized = await initPromise;
+    if (!initialized) {
+      process.exit(1);
+    }
+
+    // Configure program with loaded package info
+    program.name('aw').description(getDescriptionSync()).version(getVersionSync());
+
+    // Error handling
+    program.on('command:*', (operands) => {
+      console.error(chalk.red(`Unknown command: ${operands[0]}`));
+      console.log(chalk.gray('Run "aw help" for available commands'));
+      process.exit(1);
+    });
+
+    // ✅ CRITICAL FIX: Add graceful shutdown handlers
+    const cleanup = async () => {
+      console.log(chalk.gray('🧹 Cleaning up CLI Actor System...'));
+      await cleanupCLIActorSystem();
+      console.log(chalk.gray('✅ CLI Actor System cleaned up'));
+    };
+
+    // Handle graceful shutdown
+    process.on('SIGINT', async () => {
+      console.log(chalk.yellow('\n⚠️  Received SIGINT, shutting down gracefully...'));
+      await cleanup();
+      process.exit(0);
+    });
+
+    process.on('SIGTERM', async () => {
+      console.log(chalk.yellow('\n⚠️  Received SIGTERM, shutting down gracefully...'));
+      await cleanup();
+      process.exit(0);
+    });
+
+    // Handle process exit
+    process.on('exit', () => {
+      console.log(chalk.gray('👋 CLI process exiting'));
+    });
+
+    // Parse command line arguments
+    await program.parseAsync();
+
+    // ✅ CRITICAL FIX: Cleanup after command completion
+    await cleanup();
+  } catch (error) {
+    console.error(chalk.red('CLI Error:'), error);
+
+    // Cleanup on error
+    try {
+      await cleanupCLIActorSystem();
+    } catch (cleanupError) {
+      console.error(chalk.red('Cleanup Error:'), cleanupError);
+    }
+
+    process.exit(1);
+  }
+}
+
+// Handle async main
+main().catch(async (error) => {
+  console.error(chalk.red('CLI Error:'), error);
+
+  // Cleanup on error
+  try {
+    await cleanupCLIActorSystem();
+  } catch (cleanupError) {
+    console.error(chalk.red('Cleanup Error:'), cleanupError);
+  }
+
   process.exit(1);
 });
-
-program.parse();

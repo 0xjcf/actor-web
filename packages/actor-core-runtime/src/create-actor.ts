@@ -15,13 +15,16 @@ import type {
   ActorMessage,
   ActorPID,
   ActorSystem,
-  MessageInput,
+  BasicMessage,
+  MessageMap,
   SupervisionStrategy,
+  TypeSafeActor,
 } from './actor-system.js';
 import { createActorSystem } from './actor-system-impl.js';
 import { createActorRef } from './create-actor-ref.js';
 import { Logger } from './logger.js';
 import type { DomainEvent, MessagePlan } from './message-plan.js';
+import type { MessageUnion } from './types.js';
 
 const log = Logger.namespace('CREATE_ACTOR');
 
@@ -445,9 +448,9 @@ function getDefaultSystem(): ActorSystem {
 }
 
 /**
- * Helper to convert MessageInput to ActorMessage
+ * Helper to convert BasicMessage to ActorMessage
  */
-function toActorMessage(input: MessageInput): ActorMessage {
+function toActorMessage(input: BasicMessage): ActorMessage {
   return {
     type: input.type,
     payload: input.payload ?? null,
@@ -461,8 +464,8 @@ function toActorMessage(input: MessageInput): ActorMessage {
  * Actor instance interface for XState compatibility
  */
 export interface ActorInstance {
-  send(event: MessageInput): void;
-  ask<T = unknown>(message: MessageInput, timeout?: number): Promise<T>;
+  send(event: BasicMessage): void;
+  ask<T = unknown>(message: BasicMessage, timeout?: number): Promise<T>;
   start(): void;
   stop(): Promise<void>;
   subscribe(eventType: string, handler: (event: ActorMessage) => void): () => void;
@@ -533,11 +536,11 @@ export function spawnActor<TMessage = ActorMessage, TEmitted = ActorMessage>(
 
     // Return ActorInstance-compatible interface wrapping the unified ActorRef
     return {
-      send: (event: MessageInput) => {
-        // Convert MessageInput to the event format expected by ActorRef
+      send: (event: BasicMessage) => {
+        // Convert BasicMessage to the event format expected by ActorRef
         actorRef.send(event);
       },
-      ask: async <T = unknown>(message: MessageInput, timeout?: number): Promise<T> => {
+      ask: async <T = unknown>(message: BasicMessage, timeout?: number): Promise<T> => {
         return actorRef.ask(message, { timeout });
       },
       start: () => actorRef.start(),
@@ -575,7 +578,7 @@ export function spawnActor<TMessage = ActorMessage, TEmitted = ActorMessage>(
 
   // Return immediately with deferred execution
   return {
-    send: (event: MessageInput) => {
+    send: (event: BasicMessage) => {
       // Need to return void but ensure the promise chain completes
       void ensureSpawned()
         .then((pid) => pid.send(toActorMessage(event)))
@@ -583,7 +586,7 @@ export function spawnActor<TMessage = ActorMessage, TEmitted = ActorMessage>(
           console.error('Failed to send message:', err);
         });
     },
-    ask: <T = unknown>(message: MessageInput, timeout?: number) => {
+    ask: <T = unknown>(message: BasicMessage, timeout?: number) => {
       return ensureSpawned().then((pid) => pid.ask<T>(toActorMessage(message), timeout));
     },
     start: () => {
@@ -634,6 +637,94 @@ export function createActor<TMessage = ActorMessage, TEmitted = ActorMessage>(
   config: CreateActorConfig<TMessage, TEmitted>
 ): ActorInstance {
   return spawnActor({ ...config, autoStart: true });
+}
+
+/**
+ * Create a type-safe wrapper around an existing actor
+ * This provides compile-time type safety for message types and responses
+ * with immediate error detection at call sites for invalid message types.
+ *
+ * @example
+ * ```typescript
+ * interface GitMessages extends MessageMap {
+ *   'GET_STATUS': { isGitRepo: boolean; currentBranch?: string };
+ *   'COMMIT_CHANGES': { commitHash: string; message: string };
+ * }
+ *
+ * const gitActor = createActor(gitBehavior);
+ * const typeSafeGitActor = asTypeSafeActor<GitMessages>(gitActor);
+ *
+ * // ✅ Valid usage - TypeScript provides proper inference
+ * const status = await typeSafeGitActor.ask({ type: 'GET_STATUS' });
+ * // TypeScript knows status has { isGitRepo: boolean; currentBranch?: string }
+ *
+ * // ❌ Invalid usage - immediate TypeScript error at call site
+ * const invalid = await typeSafeGitActor.ask({ type: 'INVALID_TYPE' });
+ * // Error: Argument of type '{ type: "INVALID_TYPE"; }' is not assignable to parameter of type 'never'
+ * ```
+ */
+export function asTypeSafeActor<T extends MessageMap>(actor: ActorInstance): TypeSafeActor<T> {
+  /**
+   * Type guard to validate MessageUnion at runtime
+   * Provides additional safety beyond compile-time checks
+   */
+  function isValidMessage(message: unknown): message is MessageUnion<T> {
+    return (
+      message !== null &&
+      typeof message === 'object' &&
+      'type' in message &&
+      typeof (message as { type: unknown }).type === 'string'
+    );
+  }
+
+  return {
+    /**
+     * Send a message using discriminated union constraint
+     * ✅ FIXED: No type casting needed - TypeScript ensures validity at compile time
+     */
+    send: (message: MessageUnion<T>) => {
+      // Runtime validation for extra safety
+      if (!isValidMessage(message)) {
+        throw new Error(`Invalid message format: Expected MessageUnion<T>, got ${typeof message}`);
+      }
+
+      // Send to underlying actor - all properties are guaranteed to exist by MessageUnion<T>
+      actor.send({
+        type: message.type as string, // MessageUnion ensures this is always a string
+        payload: message.payload,
+        correlationId: message.correlationId,
+        timestamp: message.timestamp,
+        version: message.version,
+      });
+    },
+
+    /**
+     * Ask with proper type inference using intersection types
+     * ✅ FIXED: The & { type: K } ensures we can infer the specific return type T[K]
+     */
+    ask: <K extends keyof T>(message: MessageUnion<T> & { type: K }): Promise<T[K]> => {
+      // Runtime validation for extra safety
+      if (!isValidMessage(message)) {
+        throw new Error(`Invalid message format: Expected MessageUnion<T>, got ${typeof message}`);
+      }
+
+      // Ask underlying actor WITHOUT explicit generic - let TypeScript infer
+      // The return type Promise<T[K]> is guaranteed by our interface constraint
+      return actor.ask({
+        type: message.type as string, // MessageUnion ensures this is always a string
+        payload: message.payload,
+        correlationId: message.correlationId,
+        timestamp: message.timestamp,
+        version: message.version,
+      }) as Promise<T[K]>;
+    },
+
+    // Pass through other methods unchanged
+    start: () => actor.start(),
+    stop: () => actor.stop(),
+    subscribe: (eventType: string, handler: (event: ActorMessage) => void) =>
+      actor.subscribe(eventType, handler),
+  };
 }
 
 // Type guard function for ActorMessage validation

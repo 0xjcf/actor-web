@@ -8,6 +8,7 @@
 
 import type { ActorSnapshot } from '@actor-core/runtime';
 import { createGitActor, type GitContext } from './actors/git-actor.js';
+import { getPackageInfo } from './package-info.js';
 
 // ============================================================================
 // GIT ACTOR SYSTEM
@@ -145,7 +146,7 @@ export async function getAgentStatus(baseDir?: string): Promise<AgentStatus> {
   const changedFiles = await git.getChangedFiles();
 
   return {
-    currentBranch,
+    currentBranch: currentBranch || 'unknown',
     agentType,
     uncommittedChanges,
     ahead,
@@ -302,59 +303,65 @@ export async function runWorkflowCommand(
 // PACKAGE METADATA
 // ============================================================================
 
-// Import package.json for version info
-// Using require to support TypeScript 5.3 module resolution
-const packageJson = require('../package.json');
+// Import ES module-compatible package info functions
+export {
+  getDescriptionSync,
+  getNameSync,
+  getPackageInfo,
+  getVersionSync,
+  initializePackageInfo,
+  type PackageInfo,
+} from './package-info.js';
 
 /**
- * CLI Package version
+ * Get CLI package information asynchronously
+ * This replaces the synchronous CLI_INFO export
  */
-export const version = packageJson.version;
-
-/**
- * Get CLI package information
- */
-export const CLI_INFO = {
-  name: '@agent-workflow/cli',
-  description: 'Agent-centric development workflow automation',
-  features: [
-    'Git worktree management',
-    'Smart validation (changed files only)',
-    'Agent-aware operations',
-    'Enhanced conventional commits',
-    'Date validation',
-    'Actor-based git operations',
-    'Multi-agent coordination',
-    'Conflict detection',
-    'Advanced git actor system',
-  ],
-  commands: [
-    // Core workflow
-    'init',
-    'sync',
-    'validate',
-    'save',
-    'ship',
-    'status',
-    // Enhanced commits
-    'commit',
-    'generate-message',
-    'validate-dates',
-    // Actor system
-    'actor:status',
-    'actor:worktrees',
-    'actor:create',
-    // Agent coordination
-    'agents:status',
-    'agents:sync',
-    'agents:conflicts',
-    // Utilities
-    'help',
-  ],
-  categories: {
-    core: ['init', 'sync', 'validate', 'save', 'ship', 'status'],
-    commits: ['commit', 'generate-message', 'validate-dates'],
-    actors: ['actor:status', 'actor:worktrees', 'actor:create'],
-    coordination: ['agents:status', 'agents:sync', 'agents:conflicts'],
-  },
-} as const;
+export async function getCLIInfo() {
+  const packageInfo = await getPackageInfo();
+  return {
+    name: packageInfo.name,
+    description: packageInfo.description,
+    version: packageInfo.version,
+    features: [
+      'Git worktree management',
+      'Smart validation (changed files only)',
+      'Agent-aware operations',
+      'Enhanced conventional commits',
+      'Date validation',
+      'Actor-based git operations',
+      'Multi-agent coordination',
+      'Conflict detection',
+      'Advanced git actor system',
+    ],
+    commands: [
+      // Core workflow
+      'init',
+      'sync',
+      'validate',
+      'save',
+      'ship',
+      'status',
+      // Enhanced commits
+      'commit',
+      'generate-message',
+      'validate-dates',
+      // Actor system
+      'actor:status',
+      'actor:worktrees',
+      'actor:create',
+      // Agent coordination
+      'agents:status',
+      'agents:sync',
+      'agents:conflicts',
+      // Utilities
+      'help',
+    ],
+    categories: {
+      core: ['init', 'sync', 'validate', 'save', 'ship', 'status'],
+      commits: ['commit', 'generate-message', 'validate-dates'],
+      actors: ['actor:status', 'actor:worktrees', 'actor:create'],
+      coordination: ['agents:status', 'agents:sync', 'agents:conflicts'],
+    },
+  } as const;
+}

@@ -4,6 +4,7 @@
  * @author Agent C - 2025-07-15
  *
  * Updated for v2.0.0 to use @actor-core/runtime
+ * Cleaned up for pure actor model compliance - no timeouts, no observables
  */
 
 import type {
@@ -12,13 +13,12 @@ import type {
   ActorPID,
   ActorStats,
   ActorSystem,
+  BasicMessage,
   ClusterState,
-  MessageInput,
-  Observable,
 } from '@actor-core/runtime';
 
 /**
- * Mock Actor implementation for testing
+ * Mock Actor implementation for testing - Pure Actor Model Compliant
  */
 export class MockActor implements ActorPID {
   public readonly address: ActorAddress;
@@ -29,11 +29,11 @@ export class MockActor implements ActorPID {
     this.address = { id, type: 'mock', path: `/mock/${id}` };
   }
 
-  async send(message: MessageInput): Promise<void> {
+  async send(message: BasicMessage): Promise<void> {
     this.messages.push(message as ActorMessage);
   }
 
-  async ask<T>(message: MessageInput): Promise<T> {
+  async ask<T>(message: BasicMessage): Promise<T> {
     this.messages.push(message as ActorMessage);
     // Return mock response
     return {} as T;
@@ -43,15 +43,12 @@ export class MockActor implements ActorPID {
     this.isAliveValue = false;
   }
 
-  subscribe(_eventType: string): Observable<ActorMessage> {
-    // Mock observable
-    return {
-      subscribe: () => ({ unsubscribe: () => {} }),
-    } as Observable<ActorMessage>;
-  }
-
-  unsubscribe(_eventType: string): void {
-    // Mock implementation
+  subscribe(_eventType: string, _listener: (event: ActorMessage) => void): () => void {
+    // Mock implementation - just return a cleanup function
+    // In a real implementation, this would register the listener and return an unsubscribe function
+    return () => {
+      // Mock unsubscribe - in real implementation would remove listener
+    };
   }
 
   async isAlive(): Promise<boolean> {
@@ -82,7 +79,7 @@ export class MockActor implements ActorPID {
 }
 
 /**
- * Mock Actor System for testing
+ * Mock Actor System for testing - Pure Actor Model Compliant
  */
 export class MockActorSystem implements ActorSystem {
   private actors = new Map<string, MockActor>();
@@ -138,26 +135,26 @@ export class MockActorSystem implements ActorSystem {
     return { nodes: [], leader: undefined, status: 'up' as const };
   }
 
-  subscribeToClusterEvents(): Observable<{
-    type: 'node-up' | 'node-down' | 'leader-changed';
-    node: string;
-  }> {
-    return {
-      subscribe: () => ({ unsubscribe: () => {} }),
-    } as Observable<{ type: 'node-up' | 'node-down' | 'leader-changed'; node: string }>;
+  subscribeToClusterEvents(
+    _listener: (event: { type: 'node-up' | 'node-down' | 'leader-changed'; node: string }) => void
+  ): () => void {
+    // Mock implementation - just return a cleanup function
+    return () => {
+      // Mock unsubscribe - in real implementation would remove listener
+    };
   }
 
   onShutdown(_handler: () => Promise<void>): void {
     // Mock implementation
   }
 
-  subscribeToSystemEvents(): Observable<{
-    type: string;
-    [key: string]: unknown;
-  }> {
-    return {
-      subscribe: () => ({ unsubscribe: () => {} }),
-    } as Observable<{ type: string; [key: string]: unknown }>;
+  subscribeToSystemEvents(
+    _listener: (event: { type: string; [key: string]: unknown }) => void
+  ): () => void {
+    // Mock implementation - just return a cleanup function
+    return () => {
+      // Mock unsubscribe - in real implementation would remove listener
+    };
   }
 
   // Test helpers
@@ -222,22 +219,21 @@ export function assertMessageReceived(
 }
 
 /**
- * Wait for an actor to receive a specific message
+ * Check if actor received a specific message (pure, no timeouts)
+ * Use this instead of waitForMessage for pure actor model compliance
  */
-export async function waitForMessage(
+export function hasReceivedMessage(
   actor: MockActor,
-  messageType: string,
-  timeout = 1000
-): Promise<ActorMessage> {
-  const start = Date.now();
+  messageType: string
+): ActorMessage | undefined {
+  const messages = actor.getMessages();
+  return messages.find((m) => m.type === messageType);
+}
 
-  while (Date.now() - start < timeout) {
-    const messages = actor.getMessages();
-    const found = messages.find((m) => m.type === messageType);
-    if (found) return found;
-
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-
-  throw new Error(`Timeout waiting for message: ${messageType}`);
+/**
+ * Get all messages of a specific type received by actor
+ */
+export function getMessagesOfType(actor: MockActor, messageType: string): ActorMessage[] {
+  const messages = actor.getMessages();
+  return messages.filter((m) => m.type === messageType);
 }

@@ -13,9 +13,129 @@
  */
 
 import type { Actor, AnyStateMachine } from 'xstate';
+import type { MessageUnion } from './types.js';
 
 // ============================================================================
-// CORE TYPES
+// TYPE-SAFE ACTOR FOUNDATIONS
+// ============================================================================
+
+/**
+ * Base message map interface that all actors can extend
+ * Maps message types to their expected response types
+ *
+ * ⚠️ CRITICAL: This interface intentionally has NO index signature.
+ * Adding `[K: string]: unknown` would break TypeScript immediate type validation
+ * by making `keyof MessageMap` return `string` instead of literal string unions.
+ *
+ * Example:
+ * ```typescript
+ * interface MyActorMessages extends MessageMap {
+ *   'GET_USER': { id: string; name: string };
+ *   'UPDATE_USER': { success: boolean };
+ * }
+ *
+ * // With this fix:
+ * type ValidKeys = keyof MyActorMessages; // 'GET_USER' | 'UPDATE_USER' ✅
+ *
+ * // If we had [K: string]: unknown:
+ * type BrokenKeys = keyof MyActorMessages; // string ❌
+ * ```
+ */
+export interface MessageMap {
+  // Intentionally minimal - no index signature that would break type inference
+  // Extending interfaces will define specific message type mappings
+  readonly __messageMapBrand?: never; // Phantom type for brand identification
+}
+
+/**
+ * Strict type-safe message input that constrains message types exactly
+ * T extends MessageMap - the actor's message-to-response mapping
+ * K extends keyof T - ONLY valid message types are allowed
+ */
+export type TypeSafeMessageInput<T extends MessageMap, K extends keyof T = keyof T> = {
+  readonly type: K; // This constrains to ONLY valid message types
+  readonly payload?: JsonValue;
+  readonly correlationId?: string;
+  readonly timestamp?: number;
+  readonly version?: string;
+};
+
+/**
+ * Enhanced TypeSafeActor interface providing IMMEDIATE type validation
+ * at call sites when invalid message types are used.
+ *
+ * ✅ FIXED: Uses discriminated union approach instead of broken conditional types
+ *
+ * This interface now provides true immediate type validation by using our
+ * MessageUnion<T> utility that creates a discriminated union of all valid
+ * message objects. TypeScript will show errors immediately when invalid
+ * message types are used, not when accessing response properties.
+ *
+ * @example Valid Usage:
+ * ```typescript
+ * interface UserMessages extends MessageMap {
+ *   'GET_USER': { id: string; name: string };
+ *   'UPDATE_USER': { success: boolean };
+ * }
+ *
+ * const actor = asTypeSafeActor<UserMessages>(regularActor);
+ *
+ * // ✅ Valid - TypeScript accepts this
+ * const user = await actor.ask({ type: 'GET_USER' });
+ * console.log(user.name); // TypeScript knows this is string
+ *
+ * // ❌ Invalid - TypeScript shows IMMEDIATE error at call site
+ * const invalid = await actor.ask({ type: 'INVALID_TYPE' }); // Error here!
+ * ```
+ *
+ * @template T - MessageMap interface defining valid message types and responses
+ */
+export interface TypeSafeActor<T extends MessageMap> {
+  /**
+   * Send a message to the actor (fire-and-forget)
+   *
+   * Uses discriminated union constraint for immediate type validation.
+   * Invalid message types will cause TypeScript errors at the call site.
+   *
+   * @param message - Valid message object matching MessageUnion<T>
+   */
+  send(message: MessageUnion<T>): void;
+
+  /**
+   * Ask the actor a question and get a typed response
+   *
+   * Uses discriminated union constraint with mapped return type.
+   * - Immediate validation: Invalid message types cause compile errors
+   * - Precise returns: Response type is T[MessageType] not Promise<unknown>
+   *
+   * @param message - Valid message object with specific type
+   * @returns Promise resolving to the response type for that message
+   */
+  ask<K extends keyof T>(message: MessageUnion<T> & { type: K }): Promise<T[K]>;
+
+  /**
+   * Start the actor
+   */
+  start(): void;
+
+  /**
+   * Stop the actor
+   */
+  stop(): Promise<void>;
+
+  /**
+   * Subscribe to actor events
+   */
+  subscribe(eventType: string, handler: (event: ActorMessage) => void): () => void;
+}
+
+/**
+ * Type-safe actor creation function signature
+ */
+export type CreateTypeSafeActor<T extends MessageMap> = (...args: unknown[]) => TypeSafeActor<T>;
+
+// ============================================================================
+// EXISTING INTERFACES (Updated for compatibility)
 // ============================================================================
 
 /**
@@ -23,11 +143,17 @@ import type { Actor, AnyStateMachine } from 'xstate';
  */
 export type JsonValue =
   | null
+  | undefined
   | boolean
   | number
   | string
   | JsonValue[]
   | { [key: string]: JsonValue };
+
+/**
+ * Correlation ID for tracking message flows and request-response patterns
+ */
+export type CorrelationId = string;
 
 /**
  * Actor dependencies injected into behavior handlers
@@ -61,11 +187,12 @@ export interface ActorAddress {
 }
 
 /**
- * Serializable message for actor communication
+ * Standard actor message interface
+ * All communication between actors uses this format
  */
 export interface ActorMessage {
   readonly type: string;
-  readonly payload: JsonValue;
+  readonly payload: JsonValue | null;
   readonly sender?: ActorAddress;
   readonly correlationId?: string;
   readonly timestamp: number;
@@ -73,10 +200,10 @@ export interface ActorMessage {
 }
 
 /**
- * Simplified message input for send/ask operations
- * Optional fields will be populated with defaults
+ * Basic message structure for general actor communication
+ * Use StrictMessageInput<T> for type-safe actors with specific message maps
  */
-export interface MessageInput {
+export interface BasicMessage {
   readonly type: string;
   readonly payload?: JsonValue;
   readonly correlationId?: string;
@@ -209,12 +336,12 @@ export interface ActorPID {
   /**
    * Send a message to the actor (fire-and-forget)
    */
-  send(message: MessageInput): Promise<void>;
+  send(message: BasicMessage): Promise<void>;
 
   /**
    * Ask the actor a question and wait for a response
    */
-  ask<T = JsonValue>(message: MessageInput, timeout?: number): Promise<T>;
+  ask<T = JsonValue>(message: BasicMessage, timeout?: number): Promise<T>;
 
   /**
    * Stop the actor
@@ -493,9 +620,9 @@ export function createActorMessage(
 }
 
 /**
- * Convert MessageInput to ActorMessage with defaults
+ * Convert BasicMessage to ActorMessage with defaults
  */
-export function normalizeMessage(input: MessageInput): ActorMessage {
+export function normalizeMessage(input: BasicMessage): ActorMessage {
   return {
     type: input.type,
     payload: input.payload ?? null,

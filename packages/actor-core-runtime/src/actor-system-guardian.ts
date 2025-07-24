@@ -16,6 +16,7 @@ import type {
   ActorDependencies,
   ActorMessage,
   ActorPID,
+  ActorSystem,
   JsonValue,
 } from './actor-system';
 import { SupervisionDirective } from './actor-system';
@@ -25,6 +26,7 @@ import type { DomainEvent, MessagePlan } from './message-plan';
 // Guardian Message Types
 export type GuardianMessage =
   | { type: 'SPAWN_ACTOR'; payload: JsonValue }
+  | { type: 'SPAWN_CHILD'; payload: JsonValue } // ✅ ADD: Handle child spawn notifications
   | { type: 'STOP_ACTOR'; payload: JsonValue }
   | { type: 'ACTOR_FAILED'; payload: JsonValue }
   | { type: 'SHUTDOWN'; payload: JsonValue }
@@ -74,6 +76,9 @@ export const guardianBehavior: ActorBehavior<GuardianMessage, ActorMessage> = {
     switch (message.type) {
       case 'SPAWN_ACTOR':
         return await handleSpawnActor(message.payload, newContext, dependencies);
+
+      case 'SPAWN_CHILD': // ✅ ADD: Handle child spawn notifications
+        return await handleSpawnChild(message.payload, newContext, dependencies);
 
       case 'STOP_ACTOR':
         return await handleStopActor(message.payload, newContext, dependencies);
@@ -163,6 +168,63 @@ async function handleSpawnActor(
     // Return failure domain event
     return {
       type: 'ACTOR_SPAWN_FAILED',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+async function handleSpawnChild(
+  payload: JsonValue,
+  context: GuardianContext,
+  dependencies: ActorDependencies
+): Promise<MessagePlan<DomainEvent>> {
+  try {
+    if (!isSpawnChildPayload(payload)) {
+      throw new Error('Invalid SPAWN_CHILD payload');
+    }
+
+    console.log(`✅ Guardian: Child actor spawned - ${payload.name} at ${payload.address}`);
+
+    // Track the child actor in guardian context
+    const actorInfo: ActorInfo = {
+      id: payload.name,
+      name: payload.name,
+      type: 'child',
+      path: payload.address,
+      parentId: 'guardian',
+      childIds: [],
+      supervisionDirective: SupervisionDirective.RESUME,
+      createdAt: Date.now(),
+      restartCount: 0,
+    };
+
+    // Update machine context
+    const newActors = new Map(context.actors);
+    newActors.set(payload.name, actorInfo);
+
+    const newChildren = new Set(context.children);
+    newChildren.add(payload.name);
+
+    // Update machine state
+    (dependencies.machine as Actor<AnyStateMachine>).send({
+      type: 'UPDATE_CONTEXT',
+      actors: newActors,
+      children: newChildren,
+    });
+
+    // Return success domain event
+    return {
+      type: 'CHILD_SPAWN_ACKNOWLEDGED',
+      actorId: payload.name,
+      name: payload.name,
+      path: payload.address,
+    };
+  } catch (error) {
+    console.error('❌ Guardian: Failed to handle SPAWN_CHILD:', error);
+
+    // Return failure domain event
+    return {
+      type: 'CHILD_SPAWN_FAILED',
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
@@ -374,6 +436,23 @@ function isShutdownPayload(payload: JsonValue): payload is { reason: string } {
   );
 }
 
+function isSpawnChildPayload(payload: JsonValue): payload is {
+  name: string;
+  address: string;
+  supervision: string;
+} {
+  return (
+    payload !== null &&
+    typeof payload === 'object' &&
+    'name' in payload &&
+    'address' in payload &&
+    'supervision' in payload &&
+    typeof payload.name === 'string' &&
+    typeof payload.address === 'string' &&
+    typeof payload.supervision === 'string'
+  );
+}
+
 /**
  * Guardian Actor Address - Well-known system address
  */
@@ -388,58 +467,27 @@ export const GUARDIAN_ADDRESS: ActorAddress = {
  * Creates the Guardian Actor instance
  * The Guardian is the root supervisor in the pure actor model
  */
-export async function createGuardianActor(_actorSystem: unknown): Promise<ActorPID> {
-  // Track Guardian shutdown state
-  let isShutdown = false;
+export async function createGuardianActor(actorSystem: ActorSystem): Promise<ActorPID> {
+  // ✅ CRITICAL FIX: Use proper actor system integration instead of mock
 
-  // Create a proper ActorPID using the actor system
-  // This is a simplified implementation that should be replaced with proper system integration
-  const guardianPID: ActorPID = {
-    address: GUARDIAN_ADDRESS,
+  // Define the guardian behavior using the actor behavior interface
+  const guardianActorBehavior: ActorBehavior<GuardianMessage, ActorMessage> = guardianBehavior;
 
-    async send(message: ActorMessage): Promise<void> {
-      // This should integrate with the actual actor system
-      console.log('Guardian: Received message:', message.type);
+  // Spawn the guardian actor using the actor system
+  const guardianPID = await actorSystem.spawn(guardianActorBehavior, {
+    id: 'guardian',
+    supervised: false, // Guardian is not supervised by anyone
+  });
 
-      // Update shutdown state when SHUTDOWN message is received
-      if (message.type === 'SHUTDOWN') {
-        isShutdown = true;
-      }
-    },
-
-    async ask<T>(message: ActorMessage, _timeout?: number): Promise<T> {
-      // This should integrate with the actual actor system
-      console.log('Guardian: Ask pattern for:', message.type);
-      return {} as T;
-    },
-
-    async stop(): Promise<void> {
-      await this.send({
-        type: 'SHUTDOWN',
-        payload: { reason: 'Guardian stop requested' },
-        timestamp: Date.now(),
-        version: '1.0.0',
-      });
-    },
-
-    isAlive: async (): Promise<boolean> => {
-      return !isShutdown; // Return false after shutdown
-    },
-
-    getStats: async () => {
-      return {
-        messagesReceived: 0,
-        messagesProcessed: 0,
-        errors: 0,
-        uptime: Date.now(),
-      };
-    },
-
-    subscribe(_eventType: string, _handler: (message: ActorMessage) => void): () => void {
-      // Simplified subscription implementation
-      return () => {}; // Unsubscribe function
-    },
-  };
+  // Verify the guardian was created at the expected address
+  const expectedPath = '/system/guardian';
+  if (guardianPID.address.path !== expectedPath) {
+    console.warn(
+      `⚠️  Guardian actor created at ${guardianPID.address.path}, expected ${expectedPath}`
+    );
+  } else {
+    console.log(`✅ Guardian actor created and registered at ${guardianPID.address.path}`);
+  }
 
   return guardianPID;
 }

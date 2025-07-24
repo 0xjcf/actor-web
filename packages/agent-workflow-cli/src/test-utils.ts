@@ -5,15 +5,13 @@
  */
 
 import type { JsonValue } from '../../actor-core-runtime/src/actor-system.js';
-import type { GitActor } from './actors/git-actor.js';
+import type { MessageUnion } from '../../actor-core-runtime/src/types.js';
+import type { GitActor, GitMessageMap } from './actors/git-actor.js';
 
 /**
- * Test message interface with proper typing
+ * Type for valid Git messages - uses the type-safe message union
  */
-interface TestMessage {
-  type: string;
-  payload?: JsonValue | null;
-}
+type GitMessage = MessageUnion<GitMessageMap>;
 
 /**
  * Type guard for status response
@@ -32,35 +30,27 @@ function isStatusResponse(response: unknown): response is { currentState: string
  */
 export async function sendAndVerify(
   actor: GitActor,
-  message: TestMessage,
+  message: GitMessage,
   verifyFn: () => Promise<boolean>
 ): Promise<void> {
-  await actor.send(message);
+  actor.send(message);
 
   // Allow time for message processing
   await new Promise((resolve) => setTimeout(resolve, 50));
 
   if (!(await verifyFn())) {
-    throw new Error(`Verification failed for message type: ${message.type}`);
+    throw new Error(`Verification failed for message type: ${message?.type ?? 'unknown'}`);
   }
-}
-
-/**
- * Ask pattern test helper with timeout
- */
-export async function askAndVerify<T>(
-  actor: GitActor,
-  message: TestMessage,
-  responseTimeout = 1000
-): Promise<T> {
-  return actor.ask(message, responseTimeout);
 }
 
 /**
  * Check if actor is in expected state
  */
 export async function isInState(actor: GitActor, expectedState: string): Promise<boolean> {
-  const response = await actor.ask({ type: 'REQUEST_STATUS' });
+  const response = await actor.ask({
+    type: 'REQUEST_STATUS' as const,
+    payload: null,
+  });
   if (isStatusResponse(response)) {
     return response.currentState === expectedState;
   }
@@ -138,6 +128,40 @@ export function createEventCollector(actor: GitActor) {
     },
   };
 }
+
+// ============================================================================
+// SPECIFIC TEST HELPERS FOR GIT ACTOR MESSAGES
+// ============================================================================
+
+/**
+ * Helper to create properly typed git messages
+ */
+export const createGitMessage = {
+  requestStatus: (): GitMessage => ({
+    type: 'REQUEST_STATUS' as const,
+    payload: null,
+  }),
+
+  checkStatus: (): GitMessage => ({
+    type: 'CHECK_STATUS' as const,
+    payload: null,
+  }),
+
+  getIntegrationStatus: (): GitMessage => ({
+    type: 'GET_INTEGRATION_STATUS' as const,
+    payload: null,
+  }),
+
+  validateDates: (): GitMessage => ({
+    type: 'VALIDATE_DATES' as const,
+    payload: null,
+  }),
+
+  commitChanges: (message: string): GitMessage => ({
+    type: 'COMMIT_CHANGES' as const,
+    payload: { message },
+  }),
+};
 
 // ============================================================================
 // DEPRECATED - TO BE REMOVED

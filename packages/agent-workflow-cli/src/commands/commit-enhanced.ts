@@ -1,13 +1,13 @@
 /**
  * Enhanced Commit Command - Pure Actor Model Implementation
  *
- * Smart commit message generation using pure message-passing.
- * No state observation or direct access.
+ * ✅ PURE ACTOR MODEL: Uses only ask/tell patterns
+ * ❌ NO subscriptions, handlers, or classes
  */
 
+import { createInterface } from 'node:readline';
 import chalk from 'chalk';
 import { createGitActor, type GitActor } from '../actors/git-actor.js';
-import { subscribeToEvent } from '../actors/git-actor-helpers.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';
 
 // ============================================================================
@@ -19,17 +19,44 @@ export async function commitEnhancedCommand(customMessage?: string) {
   console.log(chalk.blue('========================================='));
 
   const repoRoot = await findRepoRoot();
-
-  // Create git actor using the proper factory function
   const gitActor = createGitActor(repoRoot);
 
   try {
-    // Start the actor
     gitActor.start();
 
-    // Create workflow handler
-    const workflow = new CommitEnhancedWorkflowHandler(gitActor);
-    await workflow.executeCommit(customMessage);
+    if (customMessage) {
+      console.log(chalk.blue('📝 Using provided commit message...'));
+
+      // ✅ PURE ACTOR MODEL: Commit with custom message using ask patterns
+      await commitWithMessage(gitActor, customMessage);
+      console.log(chalk.green('✅ Committed with custom message:'));
+      console.log(chalk.gray(customMessage));
+    } else {
+      console.log(chalk.blue('🧠 Generating smart commit message...'));
+
+      // ✅ PURE ACTOR MODEL: Generate commit message using ask pattern
+      const generatedMessage = await generateMessage(gitActor);
+
+      if (generatedMessage) {
+        console.log(chalk.yellow('📝 Generated commit message:'));
+        console.log(chalk.gray(generatedMessage));
+        console.log();
+
+        // Ask for confirmation
+        const useMessage = await promptForConfirmation('Use this commit message? (Y/n): ');
+
+        if (!useMessage) {
+          console.log(chalk.yellow('❌ Commit cancelled'));
+          return;
+        }
+
+        // Commit with generated message
+        await commitWithMessage(gitActor, generatedMessage);
+        console.log(chalk.green('✅ Committed successfully!'));
+      } else {
+        console.log(chalk.red('❌ Failed to generate commit message'));
+      }
+    }
   } catch (error) {
     console.error(chalk.red('❌ Enhanced commit failed:'), error);
     process.exit(1);
@@ -43,17 +70,13 @@ export async function generateCommitMessageCommand() {
   console.log(chalk.blue('=========================================='));
 
   const repoRoot = await findRepoRoot();
-
-  // Create git actor using the proper factory function
   const gitActor = createGitActor(repoRoot);
 
   try {
-    // Start the actor
     gitActor.start();
 
-    // Create workflow handler
-    const workflow = new CommitEnhancedWorkflowHandler(gitActor);
-    const message = await workflow.generateMessage();
+    // ✅ PURE ACTOR MODEL: Generate message using ask pattern
+    const message = await generateMessage(gitActor);
 
     if (message) {
       console.log(chalk.green('✅ Generated commit message:'));
@@ -75,12 +98,9 @@ export async function validateDatesCommand(files?: string[]) {
   console.log(chalk.blue('================================='));
 
   const repoRoot = await findRepoRoot();
-
-  // Create git actor using the proper factory function
   const gitActor = createGitActor(repoRoot);
 
   try {
-    // Start the actor
     gitActor.start();
 
     // Default to common documentation files if none provided
@@ -88,9 +108,8 @@ export async function validateDatesCommand(files?: string[]) {
       ? validateFilesArray(files)
       : ['docs/README.md', 'docs/agent-updates.md', 'src/**/*.ts'];
 
-    // Create workflow handler
-    const workflow = new CommitEnhancedWorkflowHandler(gitActor);
-    await workflow.validateDates(filesToCheck);
+    // ✅ PURE ACTOR MODEL: Validate dates using ask pattern
+    await validateDates(gitActor, filesToCheck);
   } catch (error) {
     console.error(chalk.red('❌ Date validation failed:'), error);
   } finally {
@@ -99,148 +118,58 @@ export async function validateDatesCommand(files?: string[]) {
 }
 
 // ============================================================================
-// WORKFLOW HANDLER
+// PURE FUNCTIONS
 // ============================================================================
 
 /**
- * Commit enhanced workflow handler using pure message-passing
+ * Generate commit message using ask pattern
  */
-class CommitEnhancedWorkflowHandler {
-  constructor(private actor: GitActor) {}
+async function generateMessage(gitActor: GitActor): Promise<string | undefined> {
+  console.log(chalk.blue('🔍 Analyzing changes...'));
 
-  /**
-   * Execute commit with optional custom message
-   */
-  async executeCommit(customMessage?: string): Promise<void> {
-    if (customMessage) {
-      console.log(chalk.blue('📝 Using provided commit message...'));
+  const response = await gitActor.ask({
+    type: 'GENERATE_COMMIT_MESSAGE',
+  });
 
-      // Commit with custom message
-      await this.commitWithMessage(customMessage);
-      console.log(chalk.green('✅ Committed with custom message:'));
-      console.log(chalk.gray(customMessage));
-    } else {
-      console.log(chalk.blue('🧠 Generating smart commit message...'));
+  return response.message;
+}
+//
 
-      // Generate commit message
-      const generatedMessage = await this.generateMessage();
+/**
+ * Commit with message using ask patterns
+ */
+async function commitWithMessage(gitActor: GitActor, message: string): Promise<void> {
+  // Stage all changes using ask pattern
+  await gitActor.ask({ type: 'ADD_ALL' });
 
-      if (generatedMessage) {
-        console.log(chalk.yellow('📝 Generated commit message:'));
-        console.log(chalk.gray(generatedMessage));
-        console.log();
+  // Commit with message using ask pattern
+  await gitActor.ask({
+    type: 'COMMIT_CHANGES',
+    payload: { message },
+  });
+}
 
-        // Ask for confirmation
-        const useMessage = await promptForConfirmation('Use this commit message? (Y/n): ');
+/**
+ * Validate dates in files using ask pattern
+ */
+async function validateDates(gitActor: GitActor, filesToCheck: string[]): Promise<void> {
+  console.log(chalk.blue(`🔍 Checking ${filesToCheck.length} files for date issues...`));
 
-        if (!useMessage) {
-          console.log(chalk.yellow('❌ Commit cancelled'));
-          return;
-        }
+  const response = await gitActor.ask({
+    type: 'VALIDATE_DATES',
+    payload: { filePaths: filesToCheck },
+  });
 
-        // Commit with generated message
-        await this.commitWithMessage(generatedMessage);
-        console.log(chalk.green('✅ Committed successfully!'));
-      } else {
-        console.log(chalk.red('❌ Failed to generate commit message'));
-      }
-    }
-  }
+  const dateIssues = response.issues;
 
-  /**
-   * Generate commit message
-   */
-  async generateMessage(): Promise<string | undefined> {
-    console.log(chalk.blue('🔍 Analyzing changes...'));
+  if (dateIssues.length === 0) {
+    console.log(chalk.green('✅ No date issues found'));
+  } else {
+    console.log(chalk.yellow(`⚠️  Found ${dateIssues.length} date issues:`));
 
-    // Subscribe to commit message generated event
-    const messagePromise = new Promise<string>((resolve) => {
-      const unsubscribe = subscribeToEvent(this.actor, 'GIT_COMMIT_MESSAGE_GENERATED', (event) => {
-        unsubscribe();
-        resolve(event.message);
-      });
-    });
-
-    // Send GENERATE_COMMIT_MESSAGE
-    this.actor.send({ type: 'GENERATE_COMMIT_MESSAGE' });
-
-    // Wait for event
-    const message = await messagePromise;
-
-    return message;
-  }
-
-  /**
-   * Commit with message
-   */
-  private async commitWithMessage(message: string): Promise<void> {
-    // Subscribe to staging completed event
-    const stagingPromise = new Promise<void>((resolve) => {
-      const unsubscribe = subscribeToEvent(this.actor, 'GIT_STAGING_COMPLETED', () => {
-        unsubscribe();
-        resolve();
-      });
-    });
-
-    // First stage all changes
-    this.actor.send({ type: 'ADD_ALL' });
-
-    // Wait for staging to complete
-    await stagingPromise;
-
-    // Subscribe to commit completed event
-    const commitPromise = new Promise<void>((resolve) => {
-      const unsubscribe = subscribeToEvent(this.actor, 'GIT_COMMIT_COMPLETED', () => {
-        unsubscribe();
-        resolve();
-      });
-    });
-
-    // Then commit with message
-    this.actor.send({ type: 'COMMIT_CHANGES', payload: { message } });
-
-    // Wait for commit to complete
-    await commitPromise;
-  }
-
-  /**
-   * Validate dates in files
-   */
-  async validateDates(filesToCheck: string[]): Promise<void> {
-    console.log(chalk.blue(`🔍 Checking ${filesToCheck.length} files for date issues...`));
-
-    // Subscribe to date validation completed event
-    type DateIssue = {
-      file: string;
-      line: number;
-      date: string;
-      issue: 'future' | 'past' | 'invalid';
-      context: string;
-    };
-
-    const validationPromise = new Promise<DateIssue[]>((resolve) => {
-      const unsubscribe = subscribeToEvent(this.actor, 'GIT_DATE_VALIDATION_COMPLETED', (event) => {
-        unsubscribe();
-        resolve(event.issues);
-      });
-    });
-
-    // Send VALIDATE_DATES message
-    this.actor.send({ type: 'VALIDATE_DATES', payload: { filePaths: filesToCheck } });
-
-    // Wait for validation to complete
-    const dateIssues = await validationPromise;
-
-    if (dateIssues.length === 0) {
-      console.log(chalk.green('✅ No date issues found!'));
-    } else {
-      console.log(chalk.yellow(`⚠️  Found ${dateIssues.length} date issues:`));
-
-      for (const issue of dateIssues) {
-        console.log(chalk.red(`  ${issue.file}:${issue.line}`));
-        console.log(chalk.gray(`    Date: ${issue.date} (${issue.issue})`));
-        console.log(chalk.gray(`    Context: ${issue.context}`));
-      }
+    for (const issue of dateIssues) {
+      console.log(chalk.red(`  ❌ ${issue.file}:${issue.line} - ${issue.date} (${issue.issue})`));
+      console.log(chalk.gray(`     Context: ${issue.context}`));
     }
   }
 }
@@ -276,8 +205,7 @@ async function promptForConfirmation(prompt: string): Promise<boolean> {
   process.stdout.write(prompt);
 
   return new Promise((resolve) => {
-    const readline = require('node:readline');
-    const rl = readline.createInterface({
+    const rl = createInterface({
       input: process.stdin,
       output: process.stdout,
     });

@@ -29,11 +29,15 @@ export class GitOperations {
   }
 
   /**
-   * Get current branch name
+   * Get the current branch name
    */
-  async getCurrentBranch(): Promise<string> {
-    const status = await this.git.status();
-    return status.current || 'unknown';
+  async getCurrentBranch(): Promise<string | null> {
+    try {
+      const status = await this.git.status();
+      return status.current || null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -152,22 +156,22 @@ export class GitOperations {
 
     // Check for integration branch first
     if (
-      currentBranch.includes('integration') ||
+      currentBranch?.includes('integration') ||
       currentBranch === 'feature/actor-ref-integration'
     ) {
       return 'Integration Hub';
     }
 
-    if (currentBranch.includes('agent-a') || currentBranch.includes('architecture')) {
+    if (currentBranch?.includes('agent-a') || currentBranch?.includes('architecture')) {
       return 'Agent A (Architecture)';
     }
-    if (currentBranch.includes('agent-b') || currentBranch.includes('implementation')) {
+    if (currentBranch?.includes('agent-b') || currentBranch?.includes('implementation')) {
       return 'Agent B (Implementation)';
     }
     if (
-      currentBranch.includes('agent-c') ||
-      currentBranch.includes('test') ||
-      currentBranch.includes('cleanup')
+      currentBranch?.includes('agent-c') ||
+      currentBranch?.includes('test') ||
+      currentBranch?.includes('cleanup')
     ) {
       return 'Agent C (Testing/Cleanup)';
     }
@@ -184,8 +188,27 @@ export class GitOperations {
    * Check if there are uncommitted changes
    */
   async hasUncommittedChanges(): Promise<boolean> {
-    const status = await this.git.status();
-    return status.files.length > 0;
+    try {
+      const status = await this.git.status();
+      return status.files.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Stage all changes
+   */
+  async addAll(): Promise<void> {
+    await this.git.add('.');
+  }
+
+  /**
+   * Commit changes with a message
+   */
+  async commit(message: string): Promise<string> {
+    const result = await this.git.commit(message);
+    return result.commit || '';
   }
 
   /**
@@ -195,13 +218,17 @@ export class GitOperations {
     integrationBranch = 'feature/actor-ref-integration'
   ): Promise<{ ahead: number; behind: number }> {
     try {
+      // Fetch the integration branch
       await this.git.fetch(['origin', integrationBranch]);
 
+      // Get ahead count
       const ahead = await this.git.raw([
         'rev-list',
         '--count',
         `origin/${integrationBranch}..HEAD`,
       ]);
+
+      // Get behind count
       const behind = await this.git.raw([
         'rev-list',
         '--count',
