@@ -23,42 +23,27 @@ import { shipCommand } from '../commands/ship.js';
 import { statusCommand } from '../commands/status.js';
 import { syncCommand } from '../commands/sync.js';
 import { validateCommand } from '../commands/validate.js';
-// Add CLI actor system imports
+// Add CLI actor system imports for advanced commands only
 import { cleanupCLIActorSystem, initializeCLIActorSystem } from '../core/cli-actor-system.js';
 import { getDescriptionSync, getVersionSync, initializePackageInfo } from '../package-info.js';
 
 // ============================================================================
-// CRITICAL FIX: Initialize Actor System BEFORE Command Definitions
+// SIMPLIFIED INITIALIZATION - No Actor System by Default
 // ============================================================================
 
-async function initializeEverything() {
+async function initializeBasics() {
   try {
-    // Load package info asynchronously at startup
+    // Only load package info - no heavy actor system initialization
     await initializePackageInfo();
-
-    // ✅ CRITICAL FIX: Initialize CLI Actor System with guardian actor FIRST
-    console.log(chalk.gray('🚀 Initializing CLI Actor System...'));
-    await initializeCLIActorSystem({
-      nodeAddress: 'cli-node',
-      messageTimeout: 30000,
-      maxActors: 50,
-      directory: {
-        cacheTtl: 300000, // 5 minutes
-        maxCacheSize: 1000,
-        cleanupInterval: 60000, // 1 minute
-      },
-    });
-    console.log(chalk.gray('✅ CLI Actor System initialized'));
-
     return true;
   } catch (error) {
-    console.error(chalk.red('CLI Actor System Initialization Error:'), error);
+    console.error(chalk.red('CLI Initialization Error:'), error);
     return false;
   }
 }
 
-// Initialize everything at module load time
-const initPromise = initializeEverything();
+// Initialize basics at module load time (lightweight)
+const initPromise = initializeBasics();
 
 // ============================================================================
 // CORE WORKFLOW COMMANDS
@@ -262,7 +247,7 @@ program
 // Async main function to handle program execution
 async function main() {
   try {
-    // Wait for initialization to complete
+    // Wait for basic initialization to complete (lightweight)
     const initialized = await initPromise;
     if (!initialized) {
       process.exit(1);
@@ -278,11 +263,16 @@ async function main() {
       process.exit(1);
     });
 
-    // ✅ CRITICAL FIX: Add graceful shutdown handlers
+    // Parse command line arguments first to determine what we're running
+    await program.parseAsync();
+
+    // Simple cleanup - only cleanup actor system if it was initialized
     const cleanup = async () => {
-      console.log(chalk.gray('🧹 Cleaning up CLI Actor System...'));
-      await cleanupCLIActorSystem();
-      console.log(chalk.gray('✅ CLI Actor System cleaned up'));
+      try {
+        await cleanupCLIActorSystem();
+      } catch {
+        // Actor system might not be initialized, ignore cleanup errors
+      }
     };
 
     // Handle graceful shutdown
@@ -303,10 +293,6 @@ async function main() {
       console.log(chalk.gray('👋 CLI process exiting'));
     });
 
-    // Parse command line arguments
-    await program.parseAsync();
-
-    // ✅ CRITICAL FIX: Cleanup after command completion
     await cleanup();
   } catch (error) {
     console.error(chalk.red('CLI Error:'), error);
@@ -314,8 +300,8 @@ async function main() {
     // Cleanup on error
     try {
       await cleanupCLIActorSystem();
-    } catch (cleanupError) {
-      console.error(chalk.red('Cleanup Error:'), cleanupError);
+    } catch {
+      // Ignore cleanup errors if actor system wasn't initialized
     }
 
     process.exit(1);
