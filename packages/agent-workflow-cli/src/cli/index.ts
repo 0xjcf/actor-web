@@ -12,11 +12,7 @@ import {
   agentsStatusCommand,
   agentsSyncCommand,
 } from '../commands/agent-coordination.js';
-import {
-  commitEnhancedCommand,
-  generateCommitMessageCommand,
-  validateDatesCommand,
-} from '../commands/commit-enhanced.js';
+import { generateCommitMessageCommand } from '../commands/commit-enhanced.js';
 import { initCommand } from '../commands/init.js';
 import { saveCommand } from '../commands/save.js';
 import { shipCommand } from '../commands/ship.js';
@@ -75,9 +71,15 @@ program
 program
   .command('save [message]')
   .description('Save current work to agent branch with optional commit message')
+  .option('--dry-run', 'Show what would be done without actually doing it')
+  .option('--interactive', 'Enhanced commit with confirmation and detailed analysis')
   .action(saveCommand);
 
-program.command('ship').description('Ship work to integration branch').action(shipCommand);
+program
+  .command('ship')
+  .description('Ship work to integration branch')
+  .option('--dry-run', 'Show what would be done without actually doing it')
+  .action(shipCommand);
 
 program
   .command('status')
@@ -89,29 +91,14 @@ program
   });
 
 // ============================================================================
-// ENHANCED COMMIT SYSTEM
+// MESSAGE GENERATION UTILITIES
 // ============================================================================
-
-program
-  .command('commit')
-  .alias('c')
-  .description('Enhanced commit with actor-powered analysis')
-  .option('--message <msg>', 'Custom commit message')
-  .option('--no-verify', 'Skip git hooks')
-  .action(commitEnhancedCommand);
 
 program
   .command('generate-message')
   .alias('gm')
   .description('Generate intelligent commit message')
   .action(generateCommitMessageCommand);
-
-program
-  .command('validate-dates')
-  .alias('vd')
-  .description('Validate dates in documentation')
-  .option('--files <files>', 'Comma-separated list of files to check')
-  .action(validateDatesCommand);
 
 // ============================================================================
 // ADVANCED GIT ACTOR COMMANDS

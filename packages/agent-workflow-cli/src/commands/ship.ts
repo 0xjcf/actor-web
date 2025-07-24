@@ -1,59 +1,74 @@
 import chalk from 'chalk';
-import { createGitActor } from '../actors/git-actor.js';
+import { GitOperations } from '../core/git-operations.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';
 
+interface ShipOptions {
+  dryRun?: boolean;
+}
+
 /**
- * Ship Command - Pure Actor Model Implementation
+ * Ship Command - Simplified Local Implementation
  *
- * ✅ PURE ACTOR MODEL: Uses only ask/tell patterns
- * ❌ NO subscriptions, handlers, or classes
+ * ✅ SIMPLIFIED APPROACH: Uses direct GitOperations for local CLI operations
+ * ✅ NO complex actor system needed for simple CLI commands
+ * ✅ FOLLOWS event-broker-dx-improvement plan for local operations
  */
-export async function shipCommand() {
+export async function shipCommand(options: ShipOptions = {}) {
+  const isDryRun = options.dryRun || false;
+
   console.log(chalk.blue('🚀 Ship Workflow'));
+  if (isDryRun) {
+    console.log(chalk.yellow('🔍 DRY RUN MODE - No changes will be made'));
+  }
   console.log(chalk.blue('==========================================='));
 
   const repoRoot = await findRepoRoot();
-  const gitActor = createGitActor(repoRoot);
+  const git = new GitOperations(repoRoot);
 
   try {
-    gitActor.start();
+    // ✅ SIMPLIFIED: Direct git operations instead of actor messaging
+    console.log(chalk.gray('🔍 Checking repository status...'));
 
-    // ✅ PURE ACTOR MODEL: Get status using ask pattern
-    const status = await gitActor.ask({
-      type: 'REQUEST_STATUS',
-    });
-
-    if (!status.isGitRepo) {
+    const isGitRepo = await git.isGitRepo();
+    if (!isGitRepo) {
       console.log(chalk.red('❌ Not a git repository'));
       return;
     }
 
-    if (!status.currentBranch) {
+    const currentBranch = await git.getCurrentBranch();
+    if (!currentBranch) {
       console.log(chalk.red('❌ Could not determine current branch'));
       return;
     }
 
-    console.log(chalk.blue(`📋 Current branch: ${status.currentBranch}`));
+    console.log(chalk.blue(`📋 Current branch: ${currentBranch}`));
 
     // Handle uncommitted changes
-    if (status.uncommittedChanges) {
+    const hasChanges = await git.hasUncommittedChanges();
+    if (hasChanges) {
       console.log(chalk.yellow('⚠️  Uncommitted changes detected'));
 
-      // ✅ PURE ACTOR MODEL: Commit changes using ask pattern
-      const commitResponse = await gitActor.ask({
-        type: 'COMMIT_CHANGES',
-        payload: { message: generateAutoCommitMessage(status.currentBranch) },
-      });
+      if (isDryRun) {
+        console.log(chalk.cyan('📝 [DRY RUN] Would commit changes with message:'));
+        const commitMessage = generateAutoCommitMessage(currentBranch);
+        console.log(chalk.gray(`   "${commitMessage.split('\n')[0]}"`));
+      } else {
+        // Generate and commit changes
+        const commitMessage = generateAutoCommitMessage(currentBranch);
+        console.log(chalk.gray('📝 Committing changes...'));
 
-      console.log(
-        chalk.green(`✅ Changes committed! Commit: ${commitResponse.commitHash.substring(0, 7)}`)
-      );
+        await git.addAll();
+        const commitHash = await git.commit(commitMessage);
+
+        console.log(chalk.green(`✅ Changes committed! Commit: ${commitHash.substring(0, 7)}`));
+      }
+    } else {
+      console.log(chalk.green('✅ No uncommitted changes'));
     }
 
-    // ✅ PURE ACTOR MODEL: Check integration status using ask pattern
-    const integrationStatus = await gitActor.ask({
-      type: 'GET_INTEGRATION_STATUS',
-    });
+    // Check integration status
+    console.log(chalk.gray('🔍 Checking integration status...'));
+    const integrationStatus = await git.getIntegrationStatus();
 
     const { ahead, behind } = integrationStatus;
     console.log(chalk.blue(`📊 Integration status: ${ahead} ahead, ${behind} behind`));
@@ -63,20 +78,24 @@ export async function shipCommand() {
       console.log(chalk.gray('   Consider merging or rebasing before shipping'));
     }
 
-    // ✅ PURE ACTOR MODEL: Push changes using ask pattern
-    await gitActor.ask({
-      type: 'PUSH_CHANGES',
-      payload: { branch: status.currentBranch },
-    });
+    // Push changes
+    if (isDryRun) {
+      console.log(chalk.cyan(`🚀 [DRY RUN] Would push changes to origin/${currentBranch}`));
+      console.log(chalk.cyan('✅ [DRY RUN] Ship workflow would complete successfully!'));
+      console.log(
+        chalk.gray('💡 [DRY RUN] Changes would be available in the integration environment')
+      );
+    } else {
+      console.log(chalk.gray('🚀 Pushing changes...'));
+      await git.pushChanges(currentBranch);
 
-    console.log(chalk.green('✅ Changes pushed successfully'));
-    console.log(chalk.green('🚀 Ship workflow completed successfully!'));
-    console.log(chalk.gray('💡 Your changes are now in the integration environment'));
+      console.log(chalk.green('✅ Changes pushed successfully'));
+      console.log(chalk.green('🚀 Ship workflow completed successfully!'));
+      console.log(chalk.gray('💡 Your changes are now in the integration environment'));
+    }
   } catch (error) {
     console.error(chalk.red('❌ Ship failed:'), error);
     process.exit(1);
-  } finally {
-    await gitActor.stop();
   }
 }
 

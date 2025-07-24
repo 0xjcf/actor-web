@@ -1,88 +1,35 @@
 /**
- * Advanced Git Commands - Pure Actor Model Implementation
+ * Advanced Git Commands - Simplified Implementation
  *
- * ✅ PURE ACTOR MODEL: Uses only ask/tell patterns
- * ❌ NO subscriptions, handlers, or classes
+ * ✅ SIMPLIFIED APPROACH: Uses direct GitOperations for local CLI operations
+ * ✅ NO complex actor system needed for simple CLI commands
+ * ✅ FOLLOWS event-broker-dx-improvement plan for local operations
  */
 
 import * as path from 'node:path';
 import chalk from 'chalk';
-import { createGitActor, type GitActor } from '../actors/git-actor.js';
 import { GitOperations } from '../core/git-operations.js';
 
 /**
- * Demo git actor workflow with pure message-passing
- */
-export async function demoGitActorCommand() {
-  console.log(chalk.blue('🎭 Git Actor Demo'));
-  console.log(chalk.blue('=================='));
-
-  const repoRoot = path.resolve(process.cwd(), '../..');
-  const gitActor = createGitActor(repoRoot);
-
-  try {
-    gitActor.start();
-
-    console.log(chalk.green('✅ Git Actor: Initialized'));
-    console.log(chalk.blue('📊 Actor Machine: Running'));
-
-    // ✅ PURE ACTOR MODEL: Show status using ask pattern
-    await showStatus(gitActor);
-  } catch (error) {
-    console.error(chalk.red('❌ Demo failed:'), error);
-  } finally {
-    await gitActor.stop();
-    console.log(chalk.green('✅ Git Actor: Stopped'));
-  }
-}
-
-/**
- * Advanced git operations demo
- */
-export async function advancedGitOperationsCommand() {
-  console.log(chalk.blue('🚀 Advanced Git Operations Demo'));
-  console.log(chalk.blue('=================================='));
-
-  const repoRoot = path.resolve(process.cwd(), '../..');
-  const gitActor = createGitActor(repoRoot);
-
-  try {
-    gitActor.start();
-
-    // ✅ PURE ACTOR MODEL: Show advanced status using ask pattern
-    await showAdvancedStatus(gitActor);
-  } catch (error) {
-    console.error(chalk.red('❌ Advanced operations failed:'), error);
-  } finally {
-    await gitActor.stop();
-    console.log(chalk.green('✅ Git Actor: Stopped'));
-  }
-}
-
-/**
- * Show git actor system status
+ * Show git repository status using simplified operations
  */
 export async function actorStatusCommand() {
-  console.log(chalk.blue('🎭 Git Actor System Status'));
+  console.log(chalk.blue('📊 Git Repository Status'));
   console.log(chalk.blue('==============================='));
 
   const repoRoot = path.resolve(process.cwd(), '../..');
-  const gitActor = createGitActor(repoRoot);
+  const git = new GitOperations(repoRoot);
 
   try {
-    gitActor.start();
+    console.log(chalk.green('✅ Git Operations: Initialized'));
+    console.log(chalk.blue('📊 Repository Analysis: Running'));
 
-    console.log(chalk.green('✅ Git Actor: Initialized'));
-    console.log(chalk.blue('📊 Actor Machine: Running'));
+    // ✅ SIMPLIFIED: Direct git operations instead of complex actor messaging
+    await showSimplifiedStatus(git);
 
-    // ✅ PURE ACTOR MODEL: Show full status using ask pattern
-    await showComprehensiveStatus(gitActor);
-
-    console.log(chalk.green('🚀 Actor system is operational'));
+    console.log(chalk.green('🚀 Repository status check completed'));
   } catch (error) {
-    console.error(chalk.red('❌ Actor system error:'), error);
-  } finally {
-    await gitActor.stop();
+    console.error(chalk.red('❌ Repository status error:'), error);
   }
 }
 
@@ -127,155 +74,146 @@ export async function actorWorktreesCommand(options: {
     const agentCount = options.count || 3;
     console.log(chalk.blue(`🚀 Setting up ${agentCount} agent worktrees...`));
 
-    const gitActor = createGitActor(repoRoot);
-
-    try {
-      gitActor.start();
-
-      // ✅ PURE ACTOR MODEL: Setup worktrees using ask pattern
-      await setupWorktrees(gitActor);
-    } finally {
-      await gitActor.stop();
-    }
+    // ✅ SIMPLIFIED: Setup worktrees using GitOperations
+    await setupWorktreesSimplified(git, agentCount);
   } catch (error) {
     console.error(chalk.red('❌ Worktree management failed:'), error);
   }
 }
 
 /**
- * Advanced git actor creation and configuration
+ * Show available git operations and configuration info
  */
 export async function actorCreateCommand(options: { type?: string; config?: string }) {
-  console.log(chalk.blue('🏭 Create Custom Git Actor'));
+  console.log(chalk.blue('🏭 Git Operations Configuration'));
   console.log(chalk.blue('============================'));
 
-  const actorType = options.type || 'custom';
-  console.log(chalk.yellow(`🎭 Creating ${actorType} git actor...`));
+  const operationType = options.type || 'standard';
+  console.log(chalk.yellow(`🎭 Configuring ${operationType} git operations...`));
 
   const repoRoot = path.resolve(process.cwd(), '../..');
-  const gitActor = createGitActor(repoRoot);
+  const git = new GitOperations(repoRoot);
 
   try {
-    gitActor.start();
-
-    console.log(chalk.green('✅ Custom git actor created'));
-    console.log(chalk.blue('📋 Actor Configuration:'));
-    console.log(chalk.gray(`  Type: ${actorType}`));
+    console.log(chalk.green('✅ Git operations initialized'));
+    console.log(chalk.blue('📋 Operation Configuration:'));
+    console.log(chalk.gray(`  Type: ${operationType}`));
     console.log(chalk.gray(`  Base Directory: ${repoRoot}`));
     console.log(chalk.gray(`  Configuration: ${options.config || 'default'}`));
 
-    // Show available events
-    console.log(chalk.yellow('⚡ Available Events:'));
-    const events = [
-      'CHECK_REPO',
-      'CHECK_STATUS',
-      'CHECK_UNCOMMITTED_CHANGES',
-      'GET_INTEGRATION_STATUS',
-      'GET_CHANGED_FILES',
-      'ADD_ALL',
-      'COMMIT_CHANGES',
-      'PUSH_CHANGES',
-      'GENERATE_COMMIT_MESSAGE',
-      'VALIDATE_DATES',
+    // Show available operations
+    console.log(chalk.yellow('⚡ Available Git Operations:'));
+    const operations = [
+      'isGitRepo() - Check if directory is a git repository',
+      'getCurrentBranch() - Get current branch name',
+      'hasUncommittedChanges() - Check for uncommitted changes',
+      'getChangedFiles() - Get list of changed files',
+      'getIntegrationStatus() - Get ahead/behind status with integration',
+      'addAll() - Stage all changes',
+      'commit(message) - Commit with message',
+      'pushChanges(branch) - Push changes to remote',
+      'setupAgentWorktrees(count) - Setup multi-agent worktrees',
     ];
-    for (const event of events) {
-      console.log(chalk.gray(`  • ${event}`));
+    for (const op of operations) {
+      console.log(chalk.gray(`  • ${op}`));
     }
 
-    console.log(chalk.green('🚀 Actor is ready for use'));
+    // Test basic functionality
+    console.log(chalk.blue('\n🔍 Testing basic operations:'));
+    const isRepo = await git.isGitRepo();
+    const currentBranch = await git.getCurrentBranch();
+    const hasChanges = await git.hasUncommittedChanges();
+
+    console.log(chalk.gray(`  Git Repository: ${isRepo ? 'Yes' : 'No'}`));
+    console.log(chalk.gray(`  Current Branch: ${currentBranch || 'Unknown'}`));
+    console.log(chalk.gray(`  Uncommitted Changes: ${hasChanges ? 'Yes' : 'No'}`));
+
+    console.log(chalk.green('🚀 Git operations are ready for use'));
   } catch (error) {
-    console.error(chalk.red('❌ Actor creation failed:'), error);
-  } finally {
-    await gitActor.stop();
+    console.error(chalk.red('❌ Git operations configuration failed:'), error);
   }
 }
 
 // ============================================================================
-// PURE FUNCTIONS
+// HELPER FUNCTIONS
 // ============================================================================
 
 /**
- * Show basic status using ask pattern
+ * Show simplified status using GitOperations
  */
-async function showStatus(gitActor: GitActor): Promise<void> {
-  // ✅ PURE ACTOR MODEL: Get status using ask pattern
-  const branchInfo = await gitActor.ask({
-    type: 'REQUEST_STATUS',
-  });
-
-  console.log(chalk.yellow('🔍 Current Context:'));
-  console.log(chalk.gray(`  Branch: ${branchInfo.currentBranch || 'Unknown'}`));
-  console.log(chalk.gray(`  Agent: ${branchInfo.agentType || 'Unknown'}`));
-  console.log(chalk.gray(`  Uncommitted: ${branchInfo.uncommittedChanges ? 'Yes' : 'No'}`));
-}
-
-/**
- * Show advanced status with integration info using ask pattern
- */
-async function showAdvancedStatus(gitActor: GitActor): Promise<void> {
-  // ✅ PURE ACTOR MODEL: Check repository status using ask pattern
-  const repoStatus = await gitActor.ask({
-    type: 'REQUEST_STATUS',
-  });
-
-  if (repoStatus.isGitRepo) {
-    console.log(chalk.green('✅ Git repository detected'));
-
-    // ✅ PURE ACTOR MODEL: Get integration status using ask pattern
-    const integrationStatus = await gitActor.ask({
-      type: 'GET_INTEGRATION_STATUS',
-    });
-
-    console.log(chalk.blue('📊 Integration Status:'));
-    console.log(chalk.gray(`  Ahead: ${integrationStatus.ahead} commits`));
-    console.log(chalk.gray(`  Behind: ${integrationStatus.behind} commits`));
-  } else {
-    console.log(chalk.red('❌ Not a git repository'));
-  }
-}
-
-/**
- * Show comprehensive status including worktrees using ask pattern
- */
-async function showComprehensiveStatus(gitActor: GitActor): Promise<void> {
-  // ✅ PURE ACTOR MODEL: Get comprehensive status using ask pattern
-  const statusInfo = await gitActor.ask({
-    type: 'REQUEST_STATUS',
-  });
-
+async function showSimplifiedStatus(git: GitOperations): Promise<void> {
   console.log(chalk.yellow('🔍 Repository Status:'));
-  console.log(chalk.gray(`  Branch: ${statusInfo.currentBranch || 'Unknown'}`));
-  console.log(chalk.gray(`  Agent: ${statusInfo.agentType || 'Unknown'}`));
-  console.log(chalk.gray(`  Uncommitted: ${statusInfo.uncommittedChanges ? 'Yes' : 'No'}`));
 
-  if (statusInfo.worktrees && statusInfo.worktrees.length > 0) {
-    console.log(chalk.gray(`  Worktrees: ${statusInfo.worktrees.length} configured`));
-    for (const wt of statusInfo.worktrees) {
-      const status = wt.exists ? '✅' : '❌';
-      console.log(chalk.gray(`    ${status} ${wt.agentId} (${wt.role}) -> ${wt.branch}`));
+  try {
+    // Get repository information using direct operations
+    const [currentBranch, hasChanges, integrationStatus] = await Promise.all([
+      git.getCurrentBranch(),
+      git.hasUncommittedChanges(),
+      git.getIntegrationStatus(),
+    ]);
+
+    // Determine agent type based on branch name
+    const agentType = determineAgentType(currentBranch);
+
+    console.log(chalk.gray(`  Branch: ${currentBranch || 'Unknown'}`));
+    console.log(chalk.gray(`  Agent: ${agentType}`));
+    console.log(chalk.gray(`  Uncommitted: ${hasChanges ? 'Yes' : 'No'}`));
+    console.log(
+      chalk.gray(
+        `  Integration: ${integrationStatus.ahead} ahead, ${integrationStatus.behind} behind`
+      )
+    );
+
+    // Check for worktrees (simplified approach)
+    try {
+      const worktrees = await git.setupAgentWorktrees(0); // Just list, don't create
+      if (worktrees.length > 0) {
+        console.log(chalk.gray(`  Worktrees: ${worktrees.length} configured`));
+        for (const wt of worktrees) {
+          console.log(chalk.gray(`    ✅ ${wt.agentId} (${wt.role}) -> ${wt.branch}`));
+        }
+      } else {
+        console.log(chalk.gray('  Worktrees: None configured'));
+      }
+    } catch {
+      console.log(chalk.gray('  Worktrees: Status unavailable'));
     }
+  } catch (error) {
+    console.error(chalk.red('Error getting repository status:'), error);
   }
 }
 
 /**
- * Setup worktrees for multi-agent workflows using ask pattern
+ * Determine agent type from branch name
  */
-async function setupWorktrees(gitActor: GitActor): Promise<void> {
+function determineAgentType(branchName: string | null): string {
+  if (!branchName) return 'Unknown';
+
+  if (branchName.includes('agent-a')) return 'Agent A (Architecture)';
+  if (branchName.includes('agent-b')) return 'Agent B (Implementation)';
+  if (branchName.includes('agent-c')) return 'Agent C (Testing/Cleanup)';
+  if (branchName.includes('integration')) return 'Integration';
+
+  return 'Independent';
+}
+
+/**
+ * Setup worktrees for multi-agent workflows using GitOperations
+ */
+async function setupWorktreesSimplified(git: GitOperations, agentCount: number): Promise<void> {
   console.log(chalk.blue('🔧 Setting up agent worktrees...'));
 
-  // ✅ PURE ACTOR MODEL: Setup worktrees using ask pattern
-  const response = await gitActor.ask({
-    type: 'SETUP_WORKTREES',
-  });
-
-  const worktrees = response.worktrees;
-
-  if (worktrees.length > 0) {
-    console.log(chalk.green(`✅ Created ${worktrees.length} worktrees:`));
-    for (const wt of worktrees) {
-      console.log(chalk.yellow(`  🎭 ${wt.agentId}: ${wt.role}`));
+  try {
+    const worktrees = await git.setupAgentWorktrees(agentCount);
+    if (worktrees.length > 0) {
+      console.log(chalk.green(`✅ Created ${worktrees.length} worktrees:`));
+      for (const wt of worktrees) {
+        console.log(chalk.yellow(`  🎭 ${wt.agentId}: ${wt.role}`));
+      }
+    } else {
+      console.log(chalk.red('❌ Failed to create worktrees'));
     }
-  } else {
-    console.log(chalk.red('❌ Failed to create worktrees'));
+  } catch (error) {
+    console.error(chalk.red('❌ Worktree setup failed:'), error);
   }
 }

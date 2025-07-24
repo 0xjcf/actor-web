@@ -1,45 +1,38 @@
 import chalk from 'chalk';
-import { createGitActor } from '../actors/git-actor.js';
+import { GitOperations } from '../core/git-operations.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';
 import { ValidationService } from '../core/validation.js';
 
 /**
- * Validate Command - Pure Actor Model Implementation
+ * Validate Command - Simplified Local Implementation
  *
- * ✅ PURE ACTOR MODEL: Uses only ask/tell patterns
- * ❌ NO subscriptions, handlers, or classes
+ * ✅ SIMPLIFIED APPROACH: Uses direct GitOperations for local CLI operations
+ * ✅ NO complex actor system needed for simple CLI commands
+ * ✅ FOLLOWS event-broker-dx-improvement plan for local operations
  */
 export async function validateCommand() {
   console.log(chalk.blue('🔍 Validation Check'));
   console.log(chalk.blue('==========================================='));
 
   const repoRoot = await findRepoRoot();
-  const gitActor = createGitActor(repoRoot);
+  const git = new GitOperations(repoRoot);
   const validator = new ValidationService();
 
   try {
-    gitActor.start();
-
-    // ✅ PURE ACTOR MODEL: Step 1 - Check repository status using ask pattern
+    // ✅ SIMPLIFIED: Direct git operations instead of actor messaging
     console.log(chalk.gray('🔍 Checking repository...'));
-    const repoStatus = await gitActor.ask({
-      type: 'REQUEST_STATUS',
-    });
 
-    if (!repoStatus.isGitRepo) {
+    const isGitRepo = await git.isGitRepo();
+    if (!isGitRepo) {
       console.log(chalk.red('❌ Not in a Git repository'));
       return;
     }
 
     console.log(chalk.green('✅ Git repository detected'));
 
-    // ✅ PURE ACTOR MODEL: Step 2 - Get changed files using ask pattern
+    // ✅ SIMPLIFIED: Get changed files directly
     console.log(chalk.gray('🔍 Getting changed files...'));
-    const changedFilesResponse = await gitActor.ask({
-      type: 'GET_CHANGED_FILES',
-    });
-
-    const changedFiles = changedFilesResponse.files;
+    const changedFiles = await git.getChangedFiles();
 
     if (changedFiles.length === 0) {
       console.log(chalk.green('✅ No changed files to validate'));
@@ -48,13 +41,11 @@ export async function validateCommand() {
 
     console.log(chalk.blue(`📁 Found ${changedFiles.length} changed files`));
 
-    // ✅ PURE ACTOR MODEL: Step 3 - Run validation on changed files
+    // ✅ SIMPLIFIED: Run validation on changed files
     await runValidation(validator, changedFiles);
   } catch (error) {
     console.error(chalk.red('❌ Validation failed:'), error);
     process.exit(1);
-  } finally {
-    await gitActor.stop();
   }
 }
 

@@ -243,4 +243,11 @@ export class GitOperations {
       return { ahead: 0, behind: 0 };
     }
   }
+
+  /**
+   * Push changes to remote branch
+   */
+  async pushChanges(branch: string): Promise<void> {
+    await this.git.push('origin', branch);
+  }
 }
