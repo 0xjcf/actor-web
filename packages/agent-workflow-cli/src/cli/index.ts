@@ -23,8 +23,6 @@ import { shipCommand } from '../commands/ship.js';
 import { statusCommand } from '../commands/status.js';
 import { syncCommand } from '../commands/sync.js';
 import { validateCommand } from '../commands/validate.js';
-// Add CLI actor system imports for advanced commands only
-import { cleanupCLIActorSystem, initializeCLIActorSystem } from '../core/cli-actor-system.js';
 import { getDescriptionSync, getVersionSync, initializePackageInfo } from '../package-info.js';
 
 // ============================================================================
@@ -266,25 +264,14 @@ async function main() {
     // Parse command line arguments first to determine what we're running
     await program.parseAsync();
 
-    // Simple cleanup - only cleanup actor system if it was initialized
-    const cleanup = async () => {
-      try {
-        await cleanupCLIActorSystem();
-      } catch {
-        // Actor system might not be initialized, ignore cleanup errors
-      }
-    };
-
     // Handle graceful shutdown
     process.on('SIGINT', async () => {
       console.log(chalk.yellow('\n⚠️  Received SIGINT, shutting down gracefully...'));
-      await cleanup();
       process.exit(0);
     });
 
     process.on('SIGTERM', async () => {
       console.log(chalk.yellow('\n⚠️  Received SIGTERM, shutting down gracefully...'));
-      await cleanup();
       process.exit(0);
     });
 
@@ -292,18 +279,8 @@ async function main() {
     process.on('exit', () => {
       console.log(chalk.gray('👋 CLI process exiting'));
     });
-
-    await cleanup();
   } catch (error) {
     console.error(chalk.red('CLI Error:'), error);
-
-    // Cleanup on error
-    try {
-      await cleanupCLIActorSystem();
-    } catch {
-      // Ignore cleanup errors if actor system wasn't initialized
-    }
-
     process.exit(1);
   }
 }
@@ -311,13 +288,5 @@ async function main() {
 // Handle async main
 main().catch(async (error) => {
   console.error(chalk.red('CLI Error:'), error);
-
-  // Cleanup on error
-  try {
-    await cleanupCLIActorSystem();
-  } catch (cleanupError) {
-    console.error(chalk.red('Cleanup Error:'), cleanupError);
-  }
-
   process.exit(1);
 });
