@@ -24,6 +24,7 @@ import { createActorSystem } from './actor-system-impl.js';
 import { createActorRef } from './create-actor-ref.js';
 import { Logger } from './logger.js';
 import type { DomainEvent, MessagePlan } from './message-plan.js';
+import { analyzeMessage, isActorHandlerResult, processSmartDefaults } from './otp-types.js';
 import type { MessageUnion } from './types.js';
 
 const log = Logger.namespace('CREATE_ACTOR');
@@ -59,41 +60,57 @@ export interface XStateActorConfig {
 }
 
 /**
- * Pure message handler signature following actor model principles
- * No context state - all state lives in XState machine
+ * Message handler for pure actors with context-based state
+ * ✅ TYPE SAFETY: Context is required for context-based actors
  */
-export type PureMessageHandler<TMessage, _TEmitted, TDomainEvent = DomainEvent> = (params: {
+export type PureMessageHandlerWithContext<
+  TMessage,
+  _TEmitted,
+  TDomainEvent = DomainEvent,
+  TContext = Record<string, unknown>,
+> = (params: {
   readonly message: TMessage;
   readonly machine: Actor<AnyStateMachine>;
   readonly dependencies: ActorDependencies;
+  readonly context: TContext; // ✅ Required: context-based state
 }) => MessagePlan<TDomainEvent> | Promise<MessagePlan<TDomainEvent>> | void | Promise<void>;
 
 /**
- * Enhanced behavior configuration for pure actor model
- * Replaces old context-based configurations
+ * Message handler for pure actors with machine-based state
+ * ✅ TYPE SAFETY: No context parameter - use machine.getSnapshot().context
  */
-export interface PureActorBehaviorConfig<
+export type PureMessageHandlerWithMachine<
+  TMessage,
+  _TEmitted,
+  TDomainEvent = DomainEvent,
+> = (params: {
+  readonly message: TMessage;
+  readonly machine: Actor<AnyStateMachine>;
+  readonly dependencies: ActorDependencies;
+  // ✅ No context: use machine.getSnapshot().context instead
+}) => MessagePlan<TDomainEvent> | Promise<MessagePlan<TDomainEvent>> | void | Promise<void>;
+
+/**
+ * Base configuration for pure actor behaviors with context-based state
+ * ✅ TYPE SAFETY: Discriminated union with configType
+ */
+export interface PureActorBehaviorConfigWithContext<
   TMessage = ActorMessage,
   TEmitted = ActorMessage,
   TDomainEvent = DomainEvent,
+  TContext = Record<string, unknown>,
 > {
-  /**
-   * Type definitions for compile-time validation
-   */
+  readonly configType: 'context'; // ✅ Discriminator
   readonly types?: {
     readonly message?: TMessage;
     readonly emitted?: TEmitted;
     readonly domainEvent?: TDomainEvent;
+    readonly context?: TContext;
   };
 
-  /**
-   * Pure message handler - no context, only machine and dependencies
-   */
-  readonly onMessage: PureMessageHandler<TMessage, TEmitted, TDomainEvent>;
+  readonly initialContext?: TContext;
+  readonly onMessage: PureMessageHandlerWithContext<TMessage, TEmitted, TDomainEvent, TContext>;
 
-  /**
-   * Pure lifecycle handlers
-   */
   readonly onStart?: (params: {
     readonly machine: Actor<AnyStateMachine>;
     readonly dependencies: ActorDependencies;
@@ -104,11 +121,53 @@ export interface PureActorBehaviorConfig<
     readonly dependencies: ActorDependencies;
   }) => Promise<void> | void;
 
-  /**
-   * Supervision strategy
-   */
   readonly supervisionStrategy?: SupervisionStrategy;
 }
+
+/**
+ * Configuration for pure actor behaviors with machine-based state
+ * ✅ TYPE SAFETY: Discriminated union with configType
+ */
+export interface PureActorBehaviorConfigWithMachine<
+  TMessage = ActorMessage,
+  TEmitted = ActorMessage,
+  TDomainEvent = DomainEvent,
+> {
+  readonly configType: 'machine'; // ✅ Discriminator
+  readonly types?: {
+    readonly message?: TMessage;
+    readonly emitted?: TEmitted;
+    readonly domainEvent?: TDomainEvent;
+  };
+
+  readonly machine: AnyStateMachine;
+  readonly onMessage: PureMessageHandlerWithMachine<TMessage, TEmitted, TDomainEvent>;
+
+  readonly onStart?: (params: {
+    readonly machine: Actor<AnyStateMachine>;
+    readonly dependencies: ActorDependencies;
+  }) => MessagePlan<TDomainEvent> | Promise<MessagePlan<TDomainEvent>> | void | Promise<void>;
+
+  readonly onStop?: (params: {
+    readonly machine: Actor<AnyStateMachine>;
+    readonly dependencies: ActorDependencies;
+  }) => Promise<void> | void;
+
+  readonly supervisionStrategy?: SupervisionStrategy;
+}
+
+/**
+ * Union type for pure actor behavior configurations
+ * ✅ TYPE SAFETY: Prevents context + machine conflicts at compile time
+ */
+export type PureActorBehaviorConfig<
+  TMessage = ActorMessage,
+  TEmitted = ActorMessage,
+  TDomainEvent = DomainEvent,
+  TContext = Record<string, unknown>,
+> =
+  | PureActorBehaviorConfigWithContext<TMessage, TEmitted, TDomainEvent, TContext>
+  | PureActorBehaviorConfigWithMachine<TMessage, TEmitted, TDomainEvent>;
 
 /**
  * Union type for all supported actor configurations (Pure Actors Only)
@@ -125,7 +184,10 @@ export type CreateActorConfig<TMessage = ActorMessage, TEmitted = ActorMessage> 
 function isXStateConfig<TMessage, TEmitted>(
   config: CreateActorConfig<TMessage, TEmitted>
 ): config is XStateActorConfig {
-  return 'machine' in config && typeof config.machine === 'object';
+  // ✅ FIXED: Only pure XState configs (machine without onMessage handler)
+  return (
+    'machine' in config && typeof config.machine === 'object' && !('onMessage' in config) // ← KEY: Exclude configs with onMessage handlers
+  );
 }
 
 /**
@@ -138,7 +200,8 @@ function isPureActorBehaviorConfig<TMessage, TEmitted>(
   return (
     'onMessage' in config &&
     typeof config.onMessage === 'function' &&
-    !('machine' in config) &&
+    // ✅ FIXED: Allow configs with machines - pure actors can have XState machines
+    // !('machine' in config) &&  // ← REMOVED: This was incorrectly excluding machine configs
     // Check if it's a plain object config (not already an ActorBehavior)
     !Object.hasOwn(config, 'types')
   );
@@ -249,6 +312,250 @@ function createActorFromXState<TMessage = ActorMessage, TEmitted = ActorMessage>
 }
 
 // ============================================================================
+// FLUENT BUILDER PATTERN TYPES WITH OTP SUPPORT
+// ============================================================================
+
+import type { OTPMessageHandler } from './otp-types.js';
+
+/**
+ * Base builder interface providing withContext() and withMachine() methods
+ * This is the entry point for the fluent builder pattern
+ */
+export interface BehaviorBuilderBase<TMessage = ActorMessage, TEmitted = ActorMessage> {
+  /**
+   * Create a context-based actor with initial state
+   * Locks out .withMachine() - compile-time mutual exclusivity
+   */
+  withContext<TContext>(
+    initialContext: TContext
+  ): ContextBehaviorBuilder<TMessage, TEmitted, TContext>;
+
+  /**
+   * Create a machine-based actor with XState machine
+   * Locks out .withContext() - compile-time mutual exclusivity
+   */
+  withMachine(machine: AnyStateMachine): MachineBehaviorBuilder<TMessage, TEmitted>;
+}
+
+/**
+ * Context-based behavior builder supporting OTP patterns with smart defaults
+ * Only provides .onMessage() method after .withContext()
+ */
+export class ContextBehaviorBuilder<
+  TMessage = ActorMessage,
+  TEmitted = ActorMessage,
+  TContext = unknown,
+> {
+  constructor(private readonly context: TContext) {}
+
+  /**
+   * Define the message handler with OTP patterns and smart defaults support
+   *
+   * @example Smart Defaults Usage
+   * ```typescript
+   * .onMessage(({ message, machine, dependencies }) => {
+   *   const context = machine.getSnapshot().context;
+   *
+   *   switch (message.type) {
+   *     case 'INCREMENT':
+   *       // ✅ Smart default: Auto-respond with context for ask patterns
+   *       return { context: { ...context, count: context.count + 1 } };
+   *
+   *     case 'CREATE_USER':
+   *       // ✅ Explicit control: Different context vs response
+   *       return {
+   *         context: { ...context, users: [...context.users, newUser] },
+   *         response: { id: newUser.id, status: 'created' }
+   *       };
+   *   }
+   * })
+   * ```
+   */
+  onMessage(
+    handler: OTPMessageHandler<TMessage, TContext, TContext>
+  ): ActorBehavior<TMessage, TEmitted> {
+    return createActorBehaviorFromConfig({
+      configType: 'context',
+      context: this.context,
+      onMessage: handler,
+    });
+  }
+}
+
+/**
+ * Machine-based behavior builder supporting OTP patterns with smart defaults
+ * Only provides .onMessage() method after .withMachine()
+ */
+export class MachineBehaviorBuilder<TMessage = ActorMessage, TEmitted = ActorMessage> {
+  constructor(private readonly machine: AnyStateMachine) {}
+
+  /**
+   * Define the message handler with OTP patterns and smart defaults support
+   * Uses the provided XState machine for state access and transitions
+   */
+  onMessage(
+    handler: OTPMessageHandler<TMessage, unknown, unknown>
+  ): ActorBehavior<TMessage, TEmitted> {
+    return createActorBehaviorFromConfig({
+      configType: 'machine',
+      machine: this.machine,
+      onMessage: handler,
+    });
+  }
+}
+
+/**
+ * Helper function to create ActorBehavior from builder config
+ * This bridges the fluent builder API with the existing behavior system with OTP patterns
+ */
+function createActorBehaviorFromConfig<TMessage, TEmitted>(config: {
+  configType: 'context' | 'machine';
+  context?: unknown;
+  machine?: AnyStateMachine;
+  onMessage: OTPMessageHandler<TMessage, unknown, unknown>;
+}): ActorBehavior<TMessage, TEmitted> {
+  log.debug('Creating ActorBehavior from fluent builder config', {
+    configType: config.configType,
+    hasContext: config.context !== undefined,
+    hasMachine: config.machine !== undefined,
+  });
+
+  return {
+    // Add context if provided
+    context: config.context as import('./actor-system.js').JsonValue | undefined,
+    // Convert OTP message handler to standard ActorBehavior onMessage
+    onMessage: async (params) => {
+      try {
+        log.debug('Processing OTP message with enhanced processor', {
+          messageType: (params.message as { type?: string })?.type || 'unknown',
+          configType: config.configType,
+          actorId: params.dependencies.actorId,
+        });
+
+        // Call the OTP message handler
+        const result = await config.onMessage({
+          message: params.message,
+          machine: params.machine,
+          dependencies: params.dependencies,
+        });
+
+        console.log('🔍 OTP DEBUG: Handler result:', result);
+        console.log('🔍 OTP DEBUG: isActorHandlerResult check:', isActorHandlerResult(result));
+
+        // Handle OTP result patterns with enhanced processor
+        if (isActorHandlerResult(result)) {
+          console.log('🔍 OTP DEBUG: Processing ActorHandlerResult...');
+          // Import OTP processor dynamically to avoid circular dependencies
+          const { OTPMessagePlanProcessor } = await import('./otp-message-plan-processor.js');
+          const otpProcessor = new OTPMessagePlanProcessor();
+
+          // Type assertion after successful type guard check
+          const otpResult = result as import('./otp-types.js').ActorHandlerResult<unknown, unknown>;
+
+          // Process smart defaults
+          const messageAnalysis = analyzeMessage(params.message as ActorMessage);
+          const smartDefaults = processSmartDefaults(otpResult, messageAnalysis);
+
+          log.debug('OTP result with smart defaults', {
+            hasContext: otpResult.context !== undefined,
+            hasResponse: otpResult.response !== undefined,
+            hasBehavior: otpResult.behavior !== undefined,
+            hasEffects: otpResult.effects !== undefined,
+            responseSource: smartDefaults.responseSource,
+            shouldRespond: smartDefaults.shouldRespond,
+            actorId: params.dependencies.actorId,
+          });
+
+          // Create enhanced result with smart defaults applied
+          const enhancedResult: import('./otp-types.js').ActorHandlerResult<unknown, unknown> = {
+            context: otpResult.context,
+            response: smartDefaults.shouldRespond
+              ? smartDefaults.finalResponse
+              : otpResult.response,
+            behavior: otpResult.behavior,
+            effects: otpResult.effects,
+          };
+
+          // Process OTP patterns (context updates, behavior switching, effects, responses)
+          await otpProcessor.processOTPResult(
+            enhancedResult,
+            params.dependencies.actorId,
+            params.machine,
+            params.dependencies,
+            (params.message as ActorMessage).correlationId,
+            (params.message as ActorMessage).type // Pass original message type for response compatibility
+          );
+
+          // Return undefined - all processing handled by OTP processor
+          return undefined;
+        }
+
+        // Handle legacy MessagePlan returns (backward compatibility)
+        return result;
+      } catch (error) {
+        log.error('Error in OTP message handler', {
+          error,
+          actorId: params.dependencies.actorId,
+          messageType: (params.message as { type?: string })?.type || 'unknown',
+        });
+        throw error;
+      }
+    },
+
+    // Pass through lifecycle handlers (fluent builders don't support these yet)
+    onStart: undefined,
+    onStop: undefined,
+  };
+}
+
+/**
+ * Create an actor behavior using the new fluent builder pattern with OTP support
+ *
+ * @example Context-based Actor with Smart Defaults
+ * ```typescript
+ * const behavior = defineBehavior<CounterMessage>()
+ *   .withContext({ count: 0 })
+ *   .onMessage(({ message, machine, dependencies }) => {
+ *     const context = machine.getSnapshot().context;
+ *
+ *     switch (message.type) {
+ *       case 'INCREMENT':
+ *         // ✅ Smart default: Auto-respond with state for ask patterns
+ *         return { state: { ...context, count: context.count + 1 } };
+ *
+ *       case 'GET_COUNT':
+ *         // ✅ Response-only: No state change
+ *         return { response: context.count };
+ *     }
+ *   });
+ * ```
+ *
+ * @example Machine-based Actor
+ * ```typescript
+ * const behavior = defineBehavior<UserMessage>()
+ *   .withMachine(userStateMachine)
+ *   .onMessage(({ message, machine, dependencies }) => {
+ *     // Use XState machine for complex state management
+ *     machine.send({ type: message.type, ...message.payload });
+ *   });
+ * ```
+ */
+export function defineFluentBehavior<
+  TMessage = ActorMessage,
+  TEmitted = ActorMessage,
+>(): BehaviorBuilderBase<TMessage, TEmitted> {
+  return {
+    withContext<TContext>(initialContext: TContext) {
+      return new ContextBehaviorBuilder<TMessage, TEmitted, TContext>(initialContext);
+    },
+
+    withMachine(machine: AnyStateMachine) {
+      return new MachineBehaviorBuilder<TMessage, TEmitted>(machine);
+    },
+  };
+}
+
+// ============================================================================
 // UNIFIED BEHAVIOR API - Pure Actors Only
 // ============================================================================
 
@@ -329,13 +636,34 @@ export function defineBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>
         });
 
         try {
-          const result = await pureConfig.onMessage({
-            message: params.message,
-            machine: params.machine,
-            dependencies: params.dependencies,
-          });
+          // ✅ TYPE SAFETY: Use discriminator for proper type narrowing
+          if (pureConfig.configType === 'context') {
+            // Context-based actor configuration
+            const context = pureConfig.initialContext || ({} as Record<string, unknown>);
 
-          return result;
+            return await pureConfig.onMessage({
+              message: params.message,
+              machine: params.machine,
+              dependencies: params.dependencies,
+              context,
+            });
+          }
+
+          if (pureConfig.configType === 'machine') {
+            // Machine-based actor configuration
+            return await pureConfig.onMessage({
+              message: params.message,
+              machine: params.machine,
+              dependencies: params.dependencies,
+            });
+          }
+
+          // This should not happen with proper type guards, but add error for safety
+          throw new Error(
+            `Invalid actor configuration: Expected 'context' or 'machine' configType, got: ${
+              (pureConfig as { configType?: string }).configType || 'undefined'
+            }`
+          );
         } catch (error) {
           log.error('Error in message handler', { error, messageType });
           throw error;
@@ -414,9 +742,12 @@ export function validateMessagePlan(value: unknown): value is MessagePlan {
  * ```
  */
 export function createSimpleBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>(
-  handler: PureMessageHandler<TMessage, TEmitted>
+  handler: PureMessageHandlerWithContext<TMessage, TEmitted>
 ): ActorBehavior<TMessage, TEmitted> {
-  return defineBehavior({ onMessage: handler });
+  return defineBehavior({
+    configType: 'context',
+    onMessage: handler,
+  });
 }
 
 /**

@@ -1,6 +1,7 @@
 /**
  * @module actor-core/runtime
  * @description Core actor runtime for universal actor-based applications
+ * Enhanced with OTP (Open Telecom Platform) state management patterns
  */
 
 export type { EventListener, Unsubscribe } from './actor-event-bus.js';
@@ -69,13 +70,19 @@ export {
   type ActorMessageType,
   // Type-safe actor creation
   asTypeSafeActor,
+  // NEW: Fluent builder pattern with OTP support
+  type BehaviorBuilderBase,
+  ContextBehaviorBuilder,
   type CreateActorConfig,
   createActor,
   createLegacyBehavior,
   createSimpleBehavior,
   defineBehavior,
+  defineFluentBehavior,
+  MachineBehaviorBuilder,
   type PureActorBehaviorConfig,
-  type PureMessageHandler,
+  type PureMessageHandlerWithContext,
+  type PureMessageHandlerWithMachine,
   spawnActor,
   validateMessagePlan,
   type XStateActorConfig,
@@ -124,6 +131,21 @@ export {
 export type { SubscriberFunction, TeardownLogic } from './observable.js';
 // Observable implementation
 export { CustomObservable } from './observable.js';
+export { OTPMessagePlanProcessor } from './otp-message-plan-processor.js';
+// NEW: OTP state management types with smart defaults
+export type {
+  ActorHandlerResult,
+  BehaviorFunction,
+  Effect,
+  MessageAnalysis,
+  OTPMessageHandler,
+  SmartDefaultsResult,
+} from './otp-types.js';
+export {
+  analyzeMessage,
+  isActorHandlerResult,
+  processSmartDefaults,
+} from './otp-types.js';
 // Type helpers for better error messages
 export type {
   EventWithType,

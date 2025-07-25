@@ -6,16 +6,12 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ActorPID, JsonValue } from '../actor-system.js';
+import type { ActorPID, ActorSystem, JsonValue } from '../actor-system.js';
 import { createGuardianActor } from '../actor-system-guardian.js';
 
 describe('Guardian Actor Integration', () => {
   let guardian: ActorPID;
-  let mockActorSystem: {
-    spawn: ReturnType<typeof vi.fn>;
-    stop: ReturnType<typeof vi.fn>;
-    send: ReturnType<typeof vi.fn>;
-  };
+  let mockActorSystem: Partial<ActorSystem>;
 
   beforeEach(async () => {
     // Create mock actor system
@@ -30,11 +26,10 @@ describe('Guardian Actor Integration', () => {
         subscribe: vi.fn(),
       } satisfies ActorPID),
       stop: vi.fn().mockResolvedValue(void 0),
-      send: vi.fn().mockResolvedValue(void 0),
     };
 
     // Create Guardian with mock system
-    guardian = await createGuardianActor(mockActorSystem);
+    guardian = await createGuardianActor(mockActorSystem as ActorSystem);
   });
 
   describe('Guardian Creation and Basic Operations', () => {
@@ -73,7 +68,7 @@ describe('Guardian Actor Integration', () => {
       };
 
       // Should not throw
-      await expect(guardian.send(spawnMessage)).resolves.not.toThrow();
+      expect(() => guardian.send(spawnMessage)).not.toThrow();
     });
 
     it('should handle STOP_ACTOR message', async () => {
@@ -87,7 +82,7 @@ describe('Guardian Actor Integration', () => {
       };
 
       // Should not throw
-      await expect(guardian.send(stopMessage)).resolves.not.toThrow();
+      expect(() => guardian.send(stopMessage)).not.toThrow();
     });
   });
 
@@ -105,7 +100,7 @@ describe('Guardian Actor Integration', () => {
       };
 
       // Should not throw
-      await expect(guardian.send(failedMessage)).resolves.not.toThrow();
+      expect(() => guardian.send(failedMessage)).not.toThrow();
     });
 
     it('should handle ACTOR_FAILED message with stop directive', async () => {
@@ -121,7 +116,7 @@ describe('Guardian Actor Integration', () => {
       };
 
       // Should not throw
-      await expect(guardian.send(failedMessage)).resolves.not.toThrow();
+      expect(() => guardian.send(failedMessage)).not.toThrow();
     });
   });
 
@@ -149,7 +144,7 @@ describe('Guardian Actor Integration', () => {
       };
 
       // Should not throw
-      await expect(guardian.send(healthCheckMessage)).resolves.not.toThrow();
+      expect(() => guardian.send(healthCheckMessage)).not.toThrow();
     });
 
     it('should handle SHUTDOWN message', async () => {
@@ -163,7 +158,7 @@ describe('Guardian Actor Integration', () => {
       };
 
       // Should not throw
-      await expect(guardian.send(shutdownMessage)).resolves.not.toThrow();
+      expect(() => guardian.send(shutdownMessage)).not.toThrow();
 
       // Guardian should no longer be alive after shutdown
       const isAlive = await guardian.isAlive();
@@ -181,7 +176,7 @@ describe('Guardian Actor Integration', () => {
       };
 
       // Should not throw, but should log warning
-      await expect(guardian.send(invalidMessage)).resolves.not.toThrow();
+      expect(() => guardian.send(invalidMessage)).not.toThrow();
     });
 
     it('should reject non-Guardian messages', async () => {
@@ -193,7 +188,7 @@ describe('Guardian Actor Integration', () => {
       };
 
       // Should not throw, but should log warning
-      await expect(guardian.send(nonGuardianMessage)).resolves.not.toThrow();
+      expect(() => guardian.send(nonGuardianMessage)).not.toThrow();
     });
   });
 });

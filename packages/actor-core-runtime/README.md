@@ -84,12 +84,12 @@ That's it! No manual event handling, no correlation IDs, no boilerplate. Just pu
 
 ### Usage Examples
 
-#### **Basic Actor System**
+#### **Basic Actor System (Unified API)**
 ```typescript
-import { createActorRef } from '@actor-core/runtime';
+import { defineBehavior, createActor } from '@actor-core/runtime';
 import { setup, assign } from 'xstate';
 
-// Define behavior once
+// Define XState machine for state management
 const counterMachine = setup({
   types: {
     context: {} as { count: number },
@@ -111,11 +111,42 @@ const counterMachine = setup({
   }
 });
 
-// Create, start, and use in one line
-const counter = createActorRef(counterMachine, { id: 'counter' });
-counter.start();
+// Define pure actor behavior using unified API
+const counterBehavior = defineBehavior({
+  onMessage: async ({ message, machine, dependencies }) => {
+    const currentState = machine.getSnapshot();
+    
+    switch (message.type) {
+      case 'INCREMENT':
+        machine.send({ type: 'INCREMENT' });
+        return {
+          type: 'COUNTER_INCREMENTED',
+          payload: { newValue: currentState.context.count + 1 },
+          timestamp: Date.now(),
+          version: '1.0.0'
+        };
+        
+      case 'GET_COUNT':
+        if (message.correlationId) {
+          return {
+            type: 'COUNT_RESULT',
+            correlationId: message.correlationId,
+            payload: currentState.context.count,
+            timestamp: Date.now(),
+            version: '1.0.0'
+          };
+        }
+        break;
+    }
+    return undefined;
+  }
+});
 
-// Simple message passing
+// Create and use actor with unified API
+const counter = createActor(counterBehavior);
+await system.spawn(counter, { id: 'counter' });
+
+// Pure actor model - message-only communication
 counter.send({ type: 'INCREMENT' });
 const count = await counter.ask({ type: 'GET_COUNT' });
 ```

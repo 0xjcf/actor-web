@@ -263,6 +263,12 @@ export interface ActorBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>
   };
 
   /**
+   * Optional context for context-based actors
+   * Used when creating the XState machine for the actor
+   */
+  readonly context?: JsonValue;
+
+  /**
    * Message handler - pure function that processes messages and returns communication plans
    *
    * @param params.message - The incoming message to process

@@ -5,9 +5,8 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     setupFiles: ['./tests/setup.ts'],
-    // Only include example tests and integration tests
+    // Only include integration tests
     include: [
-      'src/examples/**/*.{test,spec}.{js,ts}',
       'src/**/*.integration.{test,spec}.{js,ts}',
       'src/distributed-actor-directory.test.ts', // This is an integration test
     ],

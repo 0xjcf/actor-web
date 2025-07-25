@@ -42,8 +42,6 @@
  */
 
 import { type Actor, type AnyStateMachine, createActor, createMachine } from 'xstate';
-import { generateCorrelationId } from './actor-ref.js';
-
 import type {
   ActorAddress,
   ActorBehavior,
@@ -70,6 +68,7 @@ import { createGuardianActor } from './actor-system-guardian.js';
 //   SYSTEM_EVENT_BROKER_ADDRESS,
 // } from './actors/event-broker-actor.js';
 import { createSystemEventActor, type SystemEventPayload } from './actors/system-event-actor.js';
+import { type CorrelationManager, createCorrelationManager } from './correlation-manager.js';
 import { DistributedActorDirectory } from './distributed-actor-directory.js';
 import { Logger } from './logger.js';
 import { DeadLetterQueue } from './messaging/dead-letter-queue.js';
@@ -82,12 +81,9 @@ import type {
 import { createMessageContext } from './messaging/interceptors.js';
 import { type BoundedMailbox, createMailbox } from './messaging/mailbox.js';
 import { RequestResponseManager } from './messaging/request-response.js';
-// ✅ PURE ACTOR MODEL: Import pure behavior handler and message plan processor
-import {
-  DefaultMessagePlanProcessor,
-  type PureActorBehavior,
-  PureActorBehaviorHandler,
-} from './pure-behavior-handler.js';
+import { OTPMessagePlanProcessor } from './otp-message-plan-processor.js';
+// ✅ PURE ACTOR MODEL: Import pure behavior handler and OTP message plan processor
+import { type PureActorBehavior, PureActorBehaviorHandler } from './pure-behavior-handler.js';
 // ✅ PURE ACTOR MODEL: Import XState-based timeout management
 import { PureXStateTimeoutManager } from './pure-xstate-utilities.js';
 
@@ -162,9 +158,10 @@ function generateActorId(): string {
  */
 function normalizeBehavior<TMessage, TEmitted>(
   behavior: ActorBehavior<TMessage, TEmitted>
-): PureActorBehavior<ActorMessage, ActorMessage> {
+): PureActorBehavior<ActorMessage, ActorMessage> & { context?: unknown } {
   // Convert to pure actor behavior format with proper type handling
   return {
+    context: behavior.context,
     onMessage: behavior.onMessage as PureActorBehavior<ActorMessage, ActorMessage>['onMessage'],
     onStart: behavior.onStart as PureActorBehavior<ActorMessage, ActorMessage>['onStart'],
     onStop: behavior.onStop as PureActorBehavior<ActorMessage, ActorMessage>['onStop'],
@@ -200,13 +197,14 @@ export class ActorSystemImpl implements ActorSystem {
   };
   private actorStats = new Map<string, ActorStats & { startTime: number }>();
   private requestManager: RequestResponseManager;
+  private correlationManager: CorrelationManager;
   private shutdownHandlers = new Set<() => Promise<void>>();
   private actorStarted = new Map<string, boolean>(); // Track whether onStart has been called
 
   // ✅ PURE ACTOR MODEL: XState timeout manager for system scheduling
   private systemTimeoutManager = new PureXStateTimeoutManager();
-  // ✅ PURE ACTOR MODEL: Message plan processor for all behaviors
-  private messagePlanProcessor: DefaultMessagePlanProcessor;
+  // ✅ PURE ACTOR MODEL: OTP message plan processor for all behaviors
+  private messagePlanProcessor: OTPMessagePlanProcessor;
 
   // Interceptor chains
   private globalInterceptors = new InterceptorChain();
@@ -235,10 +233,16 @@ export class ActorSystemImpl implements ActorSystem {
       defaultTimeout: config.defaultAskTimeout ?? 5000,
     });
 
+    // Initialize correlation manager for ask pattern
+    this.correlationManager = createCorrelationManager({
+      defaultTimeout: config.defaultAskTimeout ?? 5000,
+      enableDebugLogging: config.debug ?? false,
+    });
+
     this.deadLetterQueue = new DeadLetterQueue();
 
-    // ✅ PURE ACTOR MODEL: Initialize message plan processor
-    this.messagePlanProcessor = new DefaultMessagePlanProcessor();
+    // ✅ PURE ACTOR MODEL: Initialize OTP message plan processor
+    this.messagePlanProcessor = new OTPMessagePlanProcessor();
 
     // ✅ PURE ACTOR MODEL: Initialize XState timeout scheduler
     // this.systemScheduler = createActor(timeoutSchedulerMachine);
@@ -511,7 +515,7 @@ export class ActorSystemImpl implements ActorSystem {
     const actorMachine = createMachine({
       id: `actor-${id}`,
       initial: 'active',
-      context: {}, // Use empty context - actors manage their own state
+      context: normalizedBehavior.context || {}, // Use context from behavior if provided
       states: {
         active: {},
       },
@@ -1116,51 +1120,17 @@ export class ActorSystemImpl implements ActorSystem {
 
   /**
    * Ask an actor and wait for response
-   * ⚠️ TEMPORARY: Simplified implementation to isolate hanging issue
+   * Uses correlation manager for proper response handling
    */
   async askActor<T>(address: ActorAddress, message: ActorMessage, timeout: number): Promise<T> {
-    console.log('🔍 SIMPLE ASK: Starting basic askActor implementation');
+    console.log('🔍 ASK: Starting askActor with correlation manager');
 
-    // Create a correlation ID for this request
-    const correlationId = generateCorrelationId();
-    console.log('🔍 SIMPLE ASK: Generated correlationId:', correlationId);
+    // Generate correlation ID
+    const correlationId = this.correlationManager.generateId();
+    console.log('🔍 ASK: Generated correlationId:', correlationId);
 
-    // Simple promise-based approach
-    const responsePromise = new Promise<T>((resolve, reject) => {
-      console.log('🔍 SIMPLE ASK: Creating simple response promise');
-
-      // ✅ PURE ACTOR MODEL: Use XState timeout manager instead of deprecated setTimeout
-      const timeoutId = this.systemTimeoutManager.setTimeout(() => {
-        console.log('🚨 SIMPLE ASK: Timeout triggered');
-        unsubscribe();
-        reject(new Error(`Ask timeout after ${timeout}ms for actor ${address.path}`));
-      }, timeout);
-
-      console.log('🔍 SIMPLE ASK: Setting up simple subscription');
-
-      // Simple subscription for RESPONSE messages only
-      const unsubscribe = this.subscribeToActor(address, 'RESPONSE', (responseMsg) => {
-        console.log('🔍 SIMPLE ASK: Received RESPONSE message', {
-          hasCorrelationId: !!responseMsg.correlationId,
-          correlationIdMatches: responseMsg.correlationId === correlationId,
-        });
-
-        // Check if this is the response we're waiting for
-        if (responseMsg.correlationId === correlationId) {
-          console.log('✅ SIMPLE ASK: Found matching response!');
-
-          this.systemTimeoutManager.clearTimeout(timeoutId);
-          unsubscribe();
-
-          // Extract the response payload
-          if ('payload' in responseMsg) {
-            resolve(responseMsg.payload as T);
-          } else {
-            resolve(responseMsg as unknown as T);
-          }
-        }
-      });
-    });
+    // Register the request with correlation manager to get a promise
+    const responsePromise = this.correlationManager.registerRequest<T>(correlationId, timeout);
 
     // Send the message with correlation ID
     const messageWithCorrelation: ActorMessage = {
@@ -1170,12 +1140,34 @@ export class ActorSystemImpl implements ActorSystem {
       version: message.version || '1.0.0',
     };
 
-    console.log('🔍 SIMPLE ASK: Sending message');
-    await this.enqueueMessage(address, messageWithCorrelation);
-    console.log('✅ SIMPLE ASK: Message sent, waiting for response');
+    console.log('🔍 ASK: Sending message with correlation:', {
+      messageType: messageWithCorrelation.type,
+      correlationId,
+      targetAddress: address,
+    });
 
-    // Wait for response
-    return responsePromise;
+    await this.enqueueMessage(address, messageWithCorrelation);
+
+    console.log('🔍 ASK: Waiting for response...');
+    const response = await responsePromise;
+    console.log('🔍 ASK: Got response:', response);
+
+    // The correlation manager returns the ActorMessage
+    // Extract payload if it's an ActorMessage format
+    if (
+      response &&
+      typeof response === 'object' &&
+      'type' in response &&
+      'payload' in response &&
+      'timestamp' in response &&
+      'version' in response
+    ) {
+      const message = response as ActorMessage;
+      return message.payload as T;
+    }
+
+    // If response is not an ActorMessage, return it as is
+    return response;
   }
 
   /**
@@ -1740,7 +1732,7 @@ export class ActorSystemImpl implements ActorSystem {
         return Promise.resolve({} as T);
       },
       logger: Logger.namespace(`ACTOR_${actorId}`),
-      correlationManager: this.requestManager,
+      correlationManager: this.correlationManager,
     };
   }
 

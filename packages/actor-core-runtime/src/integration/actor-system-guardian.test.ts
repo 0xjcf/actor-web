@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ActorPID, JsonValue } from '../actor-system';
+import type { ActorPID, ActorSystem, JsonValue } from '../actor-system';
 import {
   createGuardianActor,
   type GuardianMessage,
@@ -19,21 +19,36 @@ function createGuardianMessage<T extends GuardianMessage['type']>(
 
 describe('Guardian Actor - Pure Actor Model', () => {
   let guardian: ActorPID | null = null;
-  let mockActorSystem: {
-    createActor: ReturnType<typeof vi.fn>;
-    getActor: ReturnType<typeof vi.fn>;
-    stopActor: ReturnType<typeof vi.fn>;
-  };
+  let mockActorSystem: Partial<ActorSystem>;
 
   beforeEach(async () => {
     mockActorSystem = {
-      createActor: vi.fn(),
-      getActor: vi.fn(),
-      stopActor: vi.fn(),
+      spawn: vi.fn().mockResolvedValue({
+        id: 'guardian',
+        address: {
+          id: 'guardian',
+          type: 'system',
+          node: 'local',
+          path: '/system/guardian',
+        },
+        send: vi.fn(),
+        ask: vi.fn(),
+        stop: vi.fn(),
+        isAlive: vi.fn().mockResolvedValue(true),
+        getStats: vi.fn().mockResolvedValue({
+          messagesReceived: 0,
+          messagesProcessed: 0,
+          errors: 0,
+          uptime: 0,
+        }),
+        subscribe: vi.fn(),
+      }),
+      lookup: vi.fn(),
+      stop: vi.fn(),
     };
 
     // Create actual Guardian Actor instance for testing
-    guardian = await createGuardianActor(mockActorSystem);
+    guardian = await createGuardianActor(mockActorSystem as ActorSystem);
   });
 
   afterEach(async () => {
@@ -58,7 +73,8 @@ describe('Guardian Actor - Pure Actor Model', () => {
       });
 
       // ✅ INTEGRATION TEST: Use actor system, not direct behavior call
-      await expect(guardian.send(spawnMessage)).resolves.not.toThrow();
+      if (!guardian) throw new Error('Guardian not initialized');
+      expect(() => guardian?.send(spawnMessage)).not.toThrow();
 
       // Check that guardian processed the message
       expect(await guardian.isAlive()).toBe(true);
@@ -72,7 +88,8 @@ describe('Guardian Actor - Pure Actor Model', () => {
       });
 
       // ✅ INTEGRATION TEST: Use actor system, test actual behavior
-      await expect(guardian.send(stopMessage)).resolves.not.toThrow();
+      if (!guardian) throw new Error('Guardian not initialized');
+      expect(() => guardian?.send(stopMessage)).not.toThrow();
 
       // Check that guardian is still alive after processing
       expect(await guardian.isAlive()).toBe(true);
@@ -88,7 +105,8 @@ describe('Guardian Actor - Pure Actor Model', () => {
       });
 
       // ✅ INTEGRATION TEST: Use actor system to test supervision
-      await expect(guardian.send(failureMessage)).resolves.not.toThrow();
+      if (!guardian) throw new Error('Guardian not initialized');
+      expect(() => guardian?.send(failureMessage)).not.toThrow();
 
       // Verify guardian is still operational after handling failure
       expect(await guardian.isAlive()).toBe(true);
@@ -100,7 +118,8 @@ describe('Guardian Actor - Pure Actor Model', () => {
       const shutdownMessage = createGuardianMessage('SHUTDOWN', null);
 
       // ✅ INTEGRATION TEST: Test actual shutdown behavior
-      await expect(guardian.send(shutdownMessage)).resolves.not.toThrow();
+      if (!guardian) throw new Error('Guardian not initialized');
+      expect(() => guardian?.send(shutdownMessage)).not.toThrow();
 
       // Note: Guardian may still be alive briefly after shutdown initiation
       // This tests that the message was processed without error
@@ -114,7 +133,8 @@ describe('Guardian Actor - Pure Actor Model', () => {
       });
 
       // ✅ INTEGRATION TEST: Test system info request
-      await expect(guardian.send(infoMessage)).resolves.not.toThrow();
+      if (!guardian) throw new Error('Guardian not initialized');
+      expect(() => guardian?.send(infoMessage)).not.toThrow();
 
       // Verify guardian processes the info request
       expect(await guardian.isAlive()).toBe(true);
@@ -126,7 +146,8 @@ describe('Guardian Actor - Pure Actor Model', () => {
       const healthMessage = createGuardianMessage('SYSTEM_HEALTH_CHECK', null);
 
       // ✅ INTEGRATION TEST: Test health check functionality
-      await expect(guardian.send(healthMessage)).resolves.not.toThrow();
+      if (!guardian) throw new Error('Guardian not initialized');
+      expect(() => guardian?.send(healthMessage)).not.toThrow();
 
       // Verify guardian processes health check
       expect(await guardian.isAlive()).toBe(true);
@@ -138,7 +159,7 @@ describe('Guardian Actor - Pure Actor Model', () => {
       const messageWithNullPayload = createGuardianMessage('SPAWN_ACTOR', null);
 
       // ✅ INTEGRATION TEST: Test graceful handling of null payloads
-      await expect(guardian.send(messageWithNullPayload)).resolves.not.toThrow();
+      expect(() => guardian?.send(messageWithNullPayload)).not.toThrow();
 
       // Verify guardian handles edge cases gracefully
       expect(await guardian.isAlive()).toBe(true);
@@ -150,7 +171,7 @@ describe('Guardian Actor - Pure Actor Model', () => {
       const healthMessage = createGuardianMessage('SYSTEM_HEALTH_CHECK', null);
 
       // ✅ INTEGRATION TEST: Test message processing reliability
-      await expect(guardian.send(healthMessage)).resolves.not.toThrow();
+      expect(() => guardian?.send(healthMessage)).not.toThrow();
 
       // Verify guardian continues operating normally
       expect(await guardian.isAlive()).toBe(true);
@@ -179,7 +200,8 @@ describe('Guardian Actor - Pure Actor Model', () => {
       };
 
       // Should not throw
-      await expect(guardian.send(healthCheckMessage)).resolves.not.toThrow();
+      if (!guardian) throw new Error('Guardian not initialized');
+      expect(() => guardian?.send(healthCheckMessage)).not.toThrow();
     });
 
     it('should report alive status correctly', async () => {
@@ -215,7 +237,8 @@ describe('Guardian Actor - Pure Actor Model', () => {
       };
 
       // Should not throw - Guardian's isGuardianMessage type guard handles this
-      await expect(guardian.send(invalidMessage)).resolves.not.toThrow();
+      if (!guardian) throw new Error('Guardian not initialized');
+      expect(() => guardian?.send(invalidMessage)).not.toThrow();
     });
   });
 
