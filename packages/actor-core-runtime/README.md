@@ -2,7 +2,7 @@
 
 ## Pure Actor Model Runtime for Actor-Web Framework
 
-**✅ 100% Pure Actor Model Compliant** - See [PURE-ACTOR-MODEL-COMPLIANCE.md](./PURE-ACTOR-MODEL-COMPLIANCE.md)
+**✅ 100% Pure Actor Model Compliant**
 
 This package provides the pure actor model implementation for the Actor-Web Framework, featuring advanced TypeScript design patterns for building resilient, scalable distributed systems with AI agent capabilities.
 

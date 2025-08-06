@@ -2,7 +2,7 @@
 
 > **Pure Actor Model for JavaScript/TypeScript** - Build resilient, distributed systems with location-transparent actors, inspired by Erlang/OTP
 
-[![Pure Actor Model](https://img.shields.io/badge/Pure%20Actor%20Model-100%25%20Compliant-green)](./packages/actor-core-runtime/PURE-ACTOR-MODEL-COMPLIANCE.md)
+[![Pure Actor Model](https://img.shields.io/badge/Pure%20Actor%20Model-100%25%20Compliant-green)](https://github.com/0xjcf/actor-web)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue)](https://www.typescriptlang.org/)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-brightgreen)](./package.json)
 
@@ -424,10 +424,9 @@ describe('Counter Actor', () => {
 
 ## 📖 Documentation
 
-- [Pure Actor Model Compliance](./packages/actor-core-runtime/PURE-ACTOR-MODEL-COMPLIANCE.md)
-- [API Reference](./packages/actor-core-runtime/docs/API.md)
-- [Testing Guide](./packages/actor-core-runtime/docs/TESTING-GUIDE.md)
-- [Migration from Legacy APIs](./packages/actor-core-runtime/docs/MIGRATION.md)
+- [API Reference](./docs/API.md)
+- [Runtime Package](./packages/actor-core-runtime/README.md)
+- [CLI Package](./packages/agent-workflow-cli/README.md)
 
 ## 🤝 Contributing
 
