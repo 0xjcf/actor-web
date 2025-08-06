@@ -1,5 +1,4 @@
 {
-  "root": true,
   "linter": {
     "enabled": true,
     "rules": {
@@ -29,8 +28,7 @@
       },
       "correctness": {
         "noUnusedVariables": "error",
-        "noUnusedImports": "error",
-        "noUnknownTypeSelector": "off"
+        "noUnusedImports": "error"
       }
     }
   },
@@ -55,8 +53,15 @@
       "trailingCommas": "none"
     }
   },
-
   "files": {
-    "ignoreUnknown": true
+    "ignoreUnknown": true,
+    "includes": [
+      "**",
+      "!**/coverage/**",
+      "!**/dist/**",
+      "!**/node_modules/**",
+      "!**/*.d.ts.map",
+      "!**/*.js.map"
+    ]
   }
 }

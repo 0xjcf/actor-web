@@ -1,60 +1,55 @@
 {
-    "compilerOptions": {
-        "target": "ES2022",
-        "module": "ES2022",
-        "moduleResolution": "bundler",
-        "allowSyntheticDefaultImports": true,
-        "esModuleInterop": true,
-        "allowJs": true,
-        "checkJs": false,
-        "strict": true,
-        "noEmit": false,
-        "outDir": "./dist",
-        "skipLibCheck": true,
-        "forceConsistentCasingInFileNames": true,
-        "plugins": [
-            {
-                "name": "ts-lit-plugin",
-                "htmlTemplateTags": ["html", "raw"],
-                "cssTemplateTags": ["css"]
-            }
-        ],
-        "lib": [
-            "DOM",
-            "DOM.Iterable",
-            "ES2022"
-        ],
-        "types": [],
-        "baseUrl": ".",
-        "paths": {
-            "@/*": [
-                "src/*"
-            ],
-            "@/components/*": [
-                "src/components/*"
-            ],
-            "@/styles/*": [
-                "src/styles/*"
-            ],
-            "@/scripts/*": [
-                "src/scripts/*"
-            ],
-            "@/framework/*": [
-                "src/framework/*"
-            ],
-            "@/app/*": [
-                "src/app/*"
-            ]
-        }
-    },
-    "include": [
-        "src/**/*",
-        "*.js",
-        "*.ts"
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "allowJs": true,
+    "checkJs": false,
+    "strict": true,
+    "noEmit": false,
+    "outDir": "./dist",
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "downlevelIteration": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "useDefineForClassFields": false,
+    "plugins": [
+      {
+        "name": "ts-lit-plugin",
+        "htmlTemplateTags": ["html", "raw"],
+        "cssTemplateTags": ["css"]
+      }
     ],
-    "exclude": [
-        "node_modules",
-        "dist",
-        "public"
-    ]
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "types": [],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@/core/*": ["src/core/*"],
+      "@/testing/*": ["src/testing/*"],
+      "@/components/*": ["src/components/*"],
+      "@/styles/*": ["src/styles/*"],
+      "@/scripts/*": ["src/scripts/*"],
+      "@/app/*": ["src/app/*"],
+      "@actor-core/runtime": ["packages/actor-core-runtime/src/index.ts"],
+      "@actor-core/testing": ["packages/actor-core-testing/src/index.ts"],
+      "@agent-workflow/cli": ["packages/agent-workflow-cli/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*", "*.js", "*.ts"],
+  "exclude": ["node_modules", "dist", "public"],
+  "references": [
+    {
+      "path": "./packages/actor-core-runtime"
+    },
+    {
+      "path": "./packages/actor-core-testing"
+    },
+    {
+      "path": "./packages/agent-workflow-cli"
+    }
+  ]
 }

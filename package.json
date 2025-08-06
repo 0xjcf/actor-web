@@ -15,16 +15,43 @@
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "build:watch": "pnpm build --watch",
     "dev": "vitest --watch",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
-    "lint": "biome check src",
-    "lint:fix": "biome check src --apply",
-    "format": "biome format src --write",
-    "typecheck": "tsc --noEmit",
+    "test": "pnpm test:dom && pnpm test:cli && pnpm test:runtime",
+    "test:dom": "vitest run",
+    "test:cli": "pnpm --filter @agent-workflow/cli test",
+    "test:runtime": "pnpm --filter @actor-core/runtime test",
+    "test:all": "pnpm test",
+    "lint": "biome check .",
+    "format": "biome format . --write",
+    "typecheck": "tsc --build",
     "clean": "rm -rf dist",
     "prepublishOnly": "pnpm clean && pnpm build",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest --watch",
+    "test:ui": "vitest --ui",
+    "test:debug": "DEBUG_TESTS=true vitest run",
+    "lint:fix": "biome check . --write",
+    "format:imports": "biome check . --write --organize-imports-enabled=true",
+    "format:all": "biome check . --write --organize-imports-enabled=true --formatter-enabled=true",
+    "deps:check": "pnpm list tinypool && pnpm why tinypool",
+    "deps:clean": "pnpm store prune && rm -rf node_modules pnpm-lock.yaml && pnpm install",
     "examples:dev": "vite examples --config examples/vite.config.ts",
-    "examples:build": "vite build examples --config examples/vite.config.ts"
+    "examples:build": "vite build examples --config examples/vite.config.ts",
+    "aw": "pnpm --filter @agent-workflow/cli dev",
+    "aw:help": "pnpm --filter @agent-workflow/cli dev --help",
+    "aw:init": "pnpm --filter @agent-workflow/cli dev init",
+    "aw:sync": "pnpm --filter @agent-workflow/cli dev sync",
+    "aw:validate": "pnpm --filter @agent-workflow/cli dev validate",
+    "aw:ship": "pnpm --filter @agent-workflow/cli dev ship",
+    "aw:save": "pnpm --filter @agent-workflow/cli dev save",
+    "aw:status": "pnpm --filter @agent-workflow/cli dev status",
+    "aw:commit": "pnpm --filter @agent-workflow/cli dev commit",
+    "aw:generate": "pnpm --filter @agent-workflow/cli dev generate-message",
+    "utils:date": "./scripts/date-utils.sh current",
+    "utils:date-scan": "./scripts/date-utils.sh scan",
+    "utils:date-fix": "./scripts/date-utils.sh fix-all",
+    "utils:commit-config": "./scripts/commit-config.sh validate",
+    "utils:commit-sample": "./scripts/commit-config.sh create-sample",
+    "utils:validate-dates": "pnpm --filter @agent-workflow/cli dev validate-dates"
   },
   "keywords": [
     "actor-model",
@@ -49,12 +76,14 @@
   },
   "homepage": "https://github.com/0xjcf/actor-web#readme",
   "dependencies": {
+    "@actor-core/testing": "workspace:*",
     "xstate": "^5.19.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
+    "@biomejs/biome": "^2.1.2",
     "@types/node": "^20.0.0",
     "@vitest/coverage-v8": "^2.1.4",
+    "@xstate/graph": "^3.0.4",
     "happy-dom": "^18.0.1",
     "tsup": "^8.3.5",
     "typescript": "^5.6.3",
@@ -86,5 +115,11 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "pnpm": {
+    "overrides": {
+      "tinypool": "^1.1.1",
+      "vitest": "^2.1.4"
+    }
   }
 }
