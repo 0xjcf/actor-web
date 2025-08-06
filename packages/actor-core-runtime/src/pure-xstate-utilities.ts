@@ -217,7 +217,7 @@ export class PureXStateTimeoutManager {
     }
   >();
 
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: <it's being use in the setTimeout method>
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: <it's being used in the setTimeout method>
   private _idCounter = 0;
 
   /**
@@ -347,7 +347,7 @@ export class PureXStateCorrelationManager {
   }
 
   async registerRequest<T>(correlationId: string, timeout: number): Promise<T> {
-    // ✅ CORRECT: Check if correlation ID is already in use (same as DefaultCorrelationManager)
+    // ✅ CORRECT: Check if correlation ID is already in use
     if (this.pendingRequests.has(correlationId)) {
       throw new Error(`Correlation ID already in use: ${correlationId}`);
     }
@@ -374,16 +374,41 @@ export class PureXStateCorrelationManager {
   }
 
   handleResponse(correlationId: string, response: unknown): void {
+    log.debug('🔍 CORRELATION DEBUG: handleResponse called', {
+      correlationId,
+      hasPendingRequest: this.pendingRequests.has(correlationId),
+      pendingRequestsCount: this.pendingRequests.size,
+      allPendingIds: Array.from(this.pendingRequests.keys()),
+    });
+
+    const pendingRequest = this.pendingRequests.get(correlationId);
+    if (!pendingRequest) {
+      log.debug('🔍 CORRELATION DEBUG: No pending request found for correlationId:', correlationId);
+      return;
+    }
+
+    // Remove from pending requests
+    this.pendingRequests.delete(correlationId);
+
+    log.debug('🔍 CORRELATION DEBUG: Resolving pending request for:', correlationId);
+
+    // Resolve the promise
+    pendingRequest.resolve(response);
+
+    log.debug('Request completed successfully', { correlationId });
+  }
+
+  handleError(correlationId: string, error: Error): void {
     const pendingRequest = this.pendingRequests.get(correlationId);
     if (!pendingRequest) return;
 
     // Remove from pending requests
     this.pendingRequests.delete(correlationId);
 
-    // Resolve the promise
-    pendingRequest.resolve(response);
+    // Reject the promise with the error
+    pendingRequest.reject(error);
 
-    log.debug('Request completed successfully', { correlationId });
+    log.debug('Request failed with error', { correlationId, error: error.message });
   }
 
   handleTimeout(correlationId: string): void {

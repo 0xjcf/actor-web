@@ -17,31 +17,27 @@ import {
   createSendInstruction,
   // Types and interfaces
   type DomainEvent,
-  isActorMessage,
   isAskInstruction,
-  // Type guards
-  isDomainEvent,
   isJsonSerializable,
-  isMessagePlan,
   isSendInstruction,
   type SendInstruction,
 } from '../message-plan.js';
+import { createMockActorRef } from '../utils/factories.js';
+import { isActorMessage, isDomainEvent, isMessagePlan } from '../utils/validation.js';
 
 // ============================================================================
 // TEST FIXTURES
 // ============================================================================
 
-const mockActorRef: ActorRef<ActorMessage> = {
-  id: 'test-actor',
+const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
+  address: { id: 'test-actor', type: 'test', path: '/test-actor' },
   send: vi.fn().mockResolvedValue(undefined),
   ask: vi.fn().mockResolvedValue({ success: true }),
-};
+});
 
-const validActorMessage: ActorMessage = {
+const validActorMessage = {
   type: 'TEST_MESSAGE',
-  payload: { data: 'test' },
-  timestamp: Date.now(),
-  version: '1.0.0',
+  data: 'test',
 };
 
 const validDomainEvent: DomainEvent = {

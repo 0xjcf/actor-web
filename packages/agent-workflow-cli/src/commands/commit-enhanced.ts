@@ -7,7 +7,11 @@
  */
 
 import { createInterface } from 'node:readline';
+import { Logger } from '@actor-core/runtime';
 import chalk from 'chalk';
+
+const log = Logger.namespace('COMMIT_ENHANCED');
+
 import { GitOperations } from '../core/git-operations.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';
 
@@ -31,58 +35,57 @@ export async function commitEnhancedCommand(command?: {
   const isDryRun = command?.dryRun || false;
   const customMessage = command?.message;
 
-  console.log(chalk.blue('🎭 Enhanced Commit'));
+  log.debug(chalk.blue('🎭 Enhanced Commit'));
   if (isDryRun) {
-    console.log(chalk.yellow('🔍 DRY RUN MODE - No changes will be made'));
+    log.debug(chalk.yellow('🔍 DRY RUN MODE - No changes will be made'));
   }
-  console.log(chalk.blue('========================================='));
+  log.debug(chalk.blue('========================================='));
 
   const repoRoot = await findRepoRoot();
   const git = new GitOperations(repoRoot);
 
   try {
     if (customMessage) {
-      console.log(chalk.blue('📝 Using provided commit message...'));
+      log.debug(chalk.blue('📝 Using provided commit message...'));
 
       if (isDryRun) {
-        console.log(chalk.cyan('📝 [DRY RUN] Would commit changes with message:'));
-        console.log(chalk.gray(`   "${customMessage}"`));
-        console.log(chalk.cyan('✅ [DRY RUN] Enhanced commit would complete successfully!'));
+        log.debug(chalk.cyan('📝 [DRY RUN] Would commit changes with message:'));
+        log.debug(chalk.gray(`   "${customMessage}"`));
+        log.debug(chalk.cyan('✅ [DRY RUN] Enhanced commit would complete successfully!'));
       } else {
         // ✅ SIMPLIFIED: Commit with custom message using direct operations
         await commitWithMessage(git, customMessage);
-        console.log(chalk.green('✅ Committed with custom message:'));
-        console.log(chalk.gray(customMessage));
+        log.debug(chalk.green('✅ Committed with custom message:'));
+        log.debug(chalk.gray(customMessage));
       }
     } else {
-      console.log(chalk.blue('🧠 Generating smart commit message...'));
+      log.debug(chalk.blue('🧠 Generating smart commit message...'));
 
       // ✅ SIMPLIFIED: Generate commit message using direct operations
       const generatedMessage = await generateMessage(git);
 
       if (generatedMessage) {
-        console.log(chalk.yellow('📝 Generated commit message:'));
-        console.log(chalk.gray(generatedMessage));
-        console.log();
+        log.debug(chalk.yellow('📝 Generated commit message:'));
+        log.debug(chalk.gray(generatedMessage));
 
         if (isDryRun) {
-          console.log(chalk.cyan('📝 [DRY RUN] Would commit changes with generated message'));
-          console.log(chalk.cyan('✅ [DRY RUN] Enhanced commit would complete successfully!'));
+          log.debug(chalk.cyan('📝 [DRY RUN] Would commit changes with generated message'));
+          log.debug(chalk.cyan('✅ [DRY RUN] Enhanced commit would complete successfully!'));
         } else {
           // Ask for confirmation
           const useMessage = await promptForConfirmation('Use this commit message? (Y/n): ');
 
           if (!useMessage) {
-            console.log(chalk.yellow('❌ Commit cancelled'));
+            log.debug(chalk.yellow('❌ Commit cancelled'));
             return;
           }
 
           // Commit with generated message
           await commitWithMessage(git, generatedMessage);
-          console.log(chalk.green('✅ Committed successfully!'));
+          log.debug(chalk.green('✅ Committed successfully!'));
         }
       } else {
-        console.log(chalk.red('❌ Failed to generate commit message'));
+        log.debug(chalk.red('❌ Failed to generate commit message'));
       }
     }
   } catch (error) {
@@ -92,8 +95,8 @@ export async function commitEnhancedCommand(command?: {
 }
 
 export async function generateCommitMessageCommand() {
-  console.log(chalk.blue('🧠 Generate Commit Message'));
-  console.log(chalk.blue('=========================================='));
+  log.debug(chalk.blue('🧠 Generate Commit Message'));
+  log.debug(chalk.blue('=========================================='));
 
   const repoRoot = await findRepoRoot();
   const git = new GitOperations(repoRoot);
@@ -103,12 +106,11 @@ export async function generateCommitMessageCommand() {
     const message = await generateMessage(git);
 
     if (message) {
-      console.log(chalk.green('✅ Generated commit message:'));
-      console.log();
-      console.log(message);
-      console.log();
+      log.debug(chalk.green('✅ Generated commit message:'));
+
+      log.debug(message);
     } else {
-      console.log(chalk.red('❌ Failed to generate commit message'));
+      log.debug(chalk.red('❌ Failed to generate commit message'));
     }
   } catch (error) {
     console.error(chalk.red('❌ Message generation failed:'), error);
@@ -116,8 +118,8 @@ export async function generateCommitMessageCommand() {
 }
 
 export async function validateDatesCommand(files?: string[]) {
-  console.log(chalk.blue('📅 Validate Dates'));
-  console.log(chalk.blue('================================='));
+  log.debug(chalk.blue('📅 Validate Dates'));
+  log.debug(chalk.blue('================================='));
 
   try {
     // Default to common documentation files if none provided
@@ -140,7 +142,7 @@ export async function validateDatesCommand(files?: string[]) {
  * Generate commit message using GitOperations
  */
 async function generateMessage(git: GitOperations): Promise<string | undefined> {
-  console.log(chalk.blue('🔍 Analyzing changes...'));
+  log.debug(chalk.blue('🔍 Analyzing changes...'));
 
   try {
     // Get changed files to analyze
@@ -217,19 +219,19 @@ async function commitWithMessage(git: GitOperations, message: string): Promise<v
  * Validate dates in files using GitOperations
  */
 async function validateDates(filesToCheck: string[]): Promise<void> {
-  console.log(chalk.blue(`🔍 Checking ${filesToCheck.length} files for date issues...`));
+  log.debug(chalk.blue(`🔍 Checking ${filesToCheck.length} files for date issues...`));
 
   // For now, this is a simplified implementation
   // In a full implementation, you would read each file and check for date patterns
-  console.log(chalk.yellow('⚠️  Date validation not fully implemented yet'));
-  console.log(chalk.gray('   This would check files for outdated dates and inconsistencies'));
+  log.debug(chalk.yellow('⚠️  Date validation not fully implemented yet'));
+  log.debug(chalk.gray('   This would check files for outdated dates and inconsistencies'));
 
   // Show what files would be checked
   for (const file of filesToCheck.slice(0, 3)) {
-    console.log(chalk.gray(`   • Would check: ${file}`));
+    log.debug(chalk.gray(`   • Would check: ${file}`));
   }
   if (filesToCheck.length > 3) {
-    console.log(chalk.gray(`   • ... and ${filesToCheck.length - 3} more files`));
+    log.debug(chalk.gray(`   • ... and ${filesToCheck.length - 3} more files`));
   }
 }
 

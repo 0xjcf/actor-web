@@ -6,8 +6,7 @@
  * @author Actor-Web Team
  */
 
-import type { ActorSnapshot } from '@actor-core/runtime';
-import { createGitActor, type GitContext } from './actors/git-actor.js';
+import { createGitActorWithSystem } from './core/cli-actor-system.js';
 import { getPackageInfo } from './package-info.js';
 
 // ============================================================================
@@ -161,46 +160,45 @@ export async function getAgentStatus(baseDir?: string): Promise<AgentStatus> {
  * @returns Analyzed commit message with metadata
  */
 export async function generateIntelligentCommitMessage(baseDir?: string): Promise<CommitAnalysis> {
-  const gitActor = createGitActor(baseDir);
+  // Use the CLI actor system to spawn the git actor
+  const gitActor = await createGitActorWithSystem(baseDir);
 
-  return new Promise((resolve, reject) => {
-    const unsubscribe = gitActor.subscribe('*', (event: unknown) => {
-      const snapshot = event as ActorSnapshot<GitContext>;
+  try {
+    // Use ask pattern for proper request/response
+    const response = await gitActor.ask({ type: 'GENERATE_COMMIT_MESSAGE' });
 
-      // Check for successful completion
-      if (snapshot.value === 'commitMessageGenerated') {
-        unsubscribe();
-        gitActor.stop();
-        resolve({
-          type: snapshot.context?.commitConfig?.type || 'feat',
-          scope: snapshot.context?.commitConfig?.scope || 'core',
-          description: snapshot.context?.commitConfig?.description || 'update implementation',
-          workCategory: snapshot.context?.commitConfig?.workCategory || 'implementation',
-          agentType: snapshot.context?.agentType || 'Unknown Agent',
-          files: [], // Would be populated from git diff
-          projectTag: snapshot.context?.commitConfig?.projectTag || 'actor-web',
-        });
-      }
+    // Parse response - currently returns unknown, need type guard
+    if (isCommitMessageResponse(response)) {
+      return {
+        type: response.type || 'feat',
+        scope: response.scope || 'core',
+        description: response.description || 'update implementation',
+        workCategory: response.workCategory || 'implementation',
+        agentType: response.agentType || 'Unknown Agent',
+        files: response.files || [],
+        projectTag: response.projectTag || 'actor-web',
+      };
+    }
 
-      // Check for error states
-      if (snapshot.value === 'commitMessageError') {
-        unsubscribe();
-        gitActor.stop();
-        reject(new Error(snapshot.context?.lastError || 'Commit message generation failed'));
-      }
+    throw new Error('Invalid response format from git actor');
+  } finally {
+    // Actor cleanup is handled by the actor system
+  }
+}
 
-      // Check for timeout state
-      if (snapshot.value === 'commitMessageTimeout') {
-        unsubscribe();
-        gitActor.stop();
-        reject(new Error('Commit message generation timed out'));
-      }
-    });
-
-    // Start the actor and send the event
-    gitActor.start();
-    gitActor.send({ type: 'GENERATE_COMMIT_MESSAGE' });
-  });
+/**
+ * Type guard for commit message response
+ */
+function isCommitMessageResponse(response: unknown): response is {
+  type?: string;
+  scope?: string;
+  description?: string;
+  workCategory?: string;
+  agentType?: string;
+  files?: string[];
+  projectTag?: string;
+} {
+  return typeof response === 'object' && response !== null;
 }
 
 /**
@@ -213,38 +211,31 @@ export async function validateDocumentationDates(
   files: string[],
   baseDir?: string
 ): Promise<DateValidationResult[]> {
-  const gitActor = createGitActor(baseDir);
+  // Use the CLI actor system to spawn the git actor
+  const gitActor = await createGitActorWithSystem(baseDir);
 
-  return new Promise((resolve, reject) => {
-    const unsubscribe = gitActor.subscribe('*', (event: unknown) => {
-      const snapshot = event as ActorSnapshot<GitContext>;
+  try {
+    // Use ask pattern for proper request/response
+    const response = await gitActor.ask({ type: 'VALIDATE_DATES', filePaths: files });
 
-      // Check for successful completion
-      if (snapshot.value === 'datesValidated') {
-        unsubscribe();
-        gitActor.stop();
-        resolve(snapshot.context?.dateIssues || []);
-      }
+    // Parse response - currently returns unknown, need type guard
+    if (isDateValidationResponse(response)) {
+      return response.dateIssues || [];
+    }
 
-      // Check for error states
-      if (snapshot.value === 'datesValidationError') {
-        unsubscribe();
-        gitActor.stop();
-        reject(new Error(snapshot.context?.lastError || 'Date validation failed'));
-      }
+    throw new Error('Invalid response format from git actor');
+  } finally {
+    // Actor cleanup is handled by the actor system
+  }
+}
 
-      // Check for timeout state
-      if (snapshot.value === 'datesValidationTimeout') {
-        unsubscribe();
-        gitActor.stop();
-        reject(new Error('Date validation timed out'));
-      }
-    });
-
-    // Start the actor and send the event
-    gitActor.start();
-    gitActor.send({ type: 'VALIDATE_DATES', payload: { filePaths: files } });
-  });
+/**
+ * Type guard for date validation response
+ */
+function isDateValidationResponse(response: unknown): response is {
+  dateIssues?: DateValidationResult[];
+} {
+  return typeof response === 'object' && response !== null;
 }
 
 // ============================================================================

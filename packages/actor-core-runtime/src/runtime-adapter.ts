@@ -6,8 +6,11 @@
 
 import type { AnyStateMachine } from 'xstate';
 import type { ActorRef } from './actor-ref.js';
+import type { ActorMessage } from './actor-system.js';
 import { createActorRef } from './create-actor-ref.js';
 import { Logger } from './logger.js';
+import { createActorDelay } from './pure-xstate-utilities.js';
+import { ActorBasedTimer } from './runtime/actor-based-timer.js';
 import type { ActorRefOptions, BaseEventObject } from './types.js';
 
 // ========================================================================================
@@ -152,27 +155,39 @@ export interface MessageTransport {
 
 /**
  * Timer interface for cross-environment scheduling
+ *
+ * @note This interface provides pure actor-based scheduling to achieve full actor model compliance.
+ * All scheduling operations use message passing through the SchedulerActor.
  */
 export interface RuntimeTimer {
   /**
-   * Schedule a callback to run after a delay
+   * Schedule a message to be sent to a target actor after a delay
+   * @param delay - Delay in milliseconds
+   * @param target - Target actor reference
+   * @param message - Message to send
+   * @returns Promise resolving to schedule ID
    */
-  setTimeout(callback: () => void, delay: number): unknown;
+  scheduleMessage(delay: number, target: ActorRef, message: ActorMessage): Promise<string>;
 
   /**
-   * Cancel a scheduled timeout
+   * Schedule a recurring message to be sent to a target actor
+   * @param interval - Interval in milliseconds
+   * @param target - Target actor reference
+   * @param message - Message to send
+   * @returns Promise resolving to schedule ID
    */
-  clearTimeout(id: unknown): void;
+  scheduleRecurringMessage(
+    interval: number,
+    target: ActorRef,
+    message: ActorMessage
+  ): Promise<string>;
 
   /**
-   * Schedule a callback to run repeatedly
+   * Cancel a scheduled message
+   * @param scheduleId - ID returned by scheduleMessage
+   * @returns Promise resolving when cancelled
    */
-  setInterval(callback: () => void, interval: number): unknown;
-
-  /**
-   * Cancel a scheduled interval
-   */
-  clearInterval(id: unknown): void;
+  cancelSchedule(scheduleId: string): Promise<void>;
 
   /**
    * Get current timestamp
@@ -294,11 +309,8 @@ export class NodeTransport implements MessageTransport {
 
       // Apply timeout if specified
       if (options?.timeout) {
-        const timeoutPromise = new Promise<void>((_, reject) => {
-          setTimeout(
-            () => reject(new Error(`Message send timeout after ${options.timeout}ms`)),
-            options.timeout
-          );
+        const timeoutPromise = createActorDelay(options.timeout).then(() => {
+          throw new Error(`Message send timeout after ${options.timeout}ms`);
         });
         await Promise.race([Promise.all(promises), timeoutPromise]);
       } else {
@@ -355,25 +367,9 @@ export class NodeTransport implements MessageTransport {
 /**
  * Node.js runtime timer implementation
  */
-export class NodeTimer implements RuntimeTimer {
-  setTimeout(callback: () => void, delay: number): unknown {
-    return global.setTimeout(callback, delay);
-  }
-
-  clearTimeout(id: unknown): void {
-    global.clearTimeout(id as NodeJS.Timeout);
-  }
-
-  setInterval(callback: () => void, interval: number): unknown {
-    return global.setInterval(callback, interval);
-  }
-
-  clearInterval(id: unknown): void {
-    global.clearInterval(id as NodeJS.Timeout);
-  }
-
-  now(): number {
-    return Date.now();
+export class NodeTimer extends ActorBasedTimer {
+  constructor() {
+    super(undefined, 'node');
   }
 }
 
@@ -407,11 +403,13 @@ export class NodeAdapter implements RuntimeAdapter {
 
   async initialize(): Promise<void> {
     this.logger.info('Initializing Node.js adapter');
+    this.timer.initialize();
   }
 
   async cleanup(): Promise<void> {
     this.logger.info('Cleaning up Node.js adapter');
     await this.storage.clear();
+    this.timer.cleanup();
   }
 }
 
@@ -592,43 +590,9 @@ export class BrowserTransport implements MessageTransport {
 /**
  * Browser runtime timer implementation
  */
-export class BrowserTimer implements RuntimeTimer {
-  setTimeout(callback: () => void, delay: number): unknown {
-    const win = getWindow();
-    if (win) {
-      return win.setTimeout(callback, delay);
-    }
-    return setTimeout(callback, delay);
-  }
-
-  clearTimeout(id: unknown): void {
-    const win = getWindow();
-    if (win) {
-      win.clearTimeout(id as number);
-    } else {
-      clearTimeout(id as NodeJS.Timeout);
-    }
-  }
-
-  setInterval(callback: () => void, interval: number): unknown {
-    const win = getWindow();
-    if (win) {
-      return win.setInterval(callback, interval);
-    }
-    return setInterval(callback, interval);
-  }
-
-  clearInterval(id: unknown): void {
-    const win = getWindow();
-    if (win) {
-      win.clearInterval(id as number);
-    } else {
-      clearInterval(id as NodeJS.Timeout);
-    }
-  }
-
-  now(): number {
-    return Date.now();
+export class BrowserTimer extends ActorBasedTimer {
+  constructor() {
+    super(undefined, 'browser');
   }
 }
 
@@ -662,6 +626,7 @@ export class BrowserAdapter implements RuntimeAdapter {
 
   async initialize(): Promise<void> {
     this.logger.info('Initializing browser adapter');
+    this.timer.initialize();
   }
 
   async cleanup(): Promise<void> {
@@ -672,6 +637,8 @@ export class BrowserAdapter implements RuntimeAdapter {
     if (this.transport instanceof BrowserTransport) {
       this.transport.cleanup();
     }
+
+    this.timer.cleanup();
   }
 }
 
@@ -802,25 +769,9 @@ export class WorkerTransport implements MessageTransport {
 /**
  * Web Worker runtime timer implementation
  */
-export class WorkerTimer implements RuntimeTimer {
-  setTimeout(callback: () => void, delay: number): unknown {
-    return setTimeout(callback, delay);
-  }
-
-  clearTimeout(id: unknown): void {
-    clearTimeout(id as number);
-  }
-
-  setInterval(callback: () => void, interval: number): unknown {
-    return setInterval(callback, interval);
-  }
-
-  clearInterval(id: unknown): void {
-    clearInterval(id as number);
-  }
-
-  now(): number {
-    return Date.now();
+export class WorkerTimer extends ActorBasedTimer {
+  constructor() {
+    super(undefined, 'worker');
   }
 }
 
@@ -854,11 +805,13 @@ export class WorkerAdapter implements RuntimeAdapter {
 
   async initialize(): Promise<void> {
     this.logger.info('Initializing worker adapter');
+    this.timer.initialize();
   }
 
   async cleanup(): Promise<void> {
     this.logger.info('Cleaning up worker adapter');
     await this.storage.clear();
+    this.timer.cleanup();
   }
 }
 

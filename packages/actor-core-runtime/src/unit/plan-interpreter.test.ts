@@ -4,10 +4,9 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ActorMessage, ActorRef, DomainEvent, MessagePlan } from '../message-plan.js';
+import type { ActorRef, DomainEvent, MessagePlan } from '../message-plan.js';
 
 import { createAskInstruction, createDomainEvent, createSendInstruction } from '../message-plan.js';
-
 import type { PlanExecutionResult, RuntimeContext } from '../plan-interpreter.js';
 // Import functions and types separately to avoid linter issues
 import {
@@ -16,16 +15,15 @@ import {
   processMessagePlan,
   validateRuntimeContext,
 } from '../plan-interpreter.js';
+import { createMockActorRef as createMockActorRefUtil } from '../utils/factories.js';
 
 // ============================================================================
 // TEST FIXTURES
 // ============================================================================
 
-const mockActorMessage: ActorMessage = {
+const mockActorMessage = {
   type: 'TEST_MESSAGE',
-  payload: { data: 'test payload' },
-  timestamp: Date.now(),
-  version: '1.0.0',
+  data: 'test payload',
 };
 
 const mockDomainEvent: DomainEvent = {
@@ -35,11 +33,12 @@ const mockDomainEvent: DomainEvent = {
   timestamp: Date.now(),
 };
 
-const createMockActorRef = (): ActorRef => ({
-  id: 'mock-actor',
-  send: vi.fn().mockResolvedValue(undefined),
-  ask: vi.fn().mockResolvedValue({ success: true }),
-});
+const createMockActorRef = (): ActorRef =>
+  createMockActorRefUtil({
+    address: { id: 'mock-actor', type: 'test', path: '/mock-actor' },
+    send: vi.fn().mockResolvedValue(undefined),
+    ask: vi.fn().mockResolvedValue({ success: true }),
+  });
 
 // ============================================================================
 // DOMAIN EVENT TESTS
@@ -56,7 +55,7 @@ describe('processMessagePlan - Domain Events', () => {
 
     // Focus on behavior: what the function needs, not interface compliance
     runtimeContext = {
-      machine: { send: mockSend },
+      actor: { send: mockSend },
       emit: mockEmit,
       actorId: 'test-actor',
     } as unknown as RuntimeContext;
@@ -65,7 +64,7 @@ describe('processMessagePlan - Domain Events', () => {
   it('should fan out domain events to machine and emit', async () => {
     const mockDomainEvent = createDomainEvent({
       type: 'USER_LOGGED_IN',
-      payload: { userId: 'test' },
+      userId: 'test',
       timestamp: Date.now(),
       version: '1.0.0',
     });
@@ -92,8 +91,8 @@ describe('processMessagePlan - Domain Events', () => {
     expect(result.domainEventsEmitted).toBe(2);
     expect(result.instructionsExecuted).toBe(2);
 
-    expect(runtimeContext.machine.send).toHaveBeenCalledWith(event1);
-    expect(runtimeContext.machine.send).toHaveBeenCalledWith(event2);
+    expect(runtimeContext.actor.send).toHaveBeenCalledWith(event1);
+    expect(runtimeContext.actor.send).toHaveBeenCalledWith(event2);
     expect(runtimeContext.emit).toHaveBeenCalledWith(event1);
     expect(runtimeContext.emit).toHaveBeenCalledWith(event2);
   });
@@ -244,10 +243,10 @@ describe('Helper Functions', () => {
   it('should create mock runtime context', () => {
     const mockContext = createMockRuntimeContext();
 
-    expect(mockContext.machine).toBeDefined();
+    expect(mockContext.actor).toBeDefined();
     expect(mockContext.emit).toBeDefined();
     expect(mockContext.actorId).toBe('test-actor');
-    expect(typeof mockContext.machine.send).toBe('function');
+    expect(typeof mockContext.actor.send).toBe('function');
     expect(typeof mockContext.emit).toBe('function');
   });
 
@@ -257,12 +256,12 @@ describe('Helper Functions', () => {
     expect(validErrors).toHaveLength(0);
 
     const invalidContext = {
-      machine: null,
+      actor: null,
       emit: 'not a function',
     } as unknown as RuntimeContext;
     const invalidErrors = validateRuntimeContext(invalidContext);
     expect(invalidErrors.length).toBeGreaterThan(0);
-    expect(invalidErrors).toContain('Runtime context missing machine');
+    expect(invalidErrors).toContain('Runtime context missing actor');
   });
 
   it('should create execution metrics', () => {

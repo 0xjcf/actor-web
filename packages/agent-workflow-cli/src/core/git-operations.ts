@@ -1,6 +1,9 @@
 import { execSync } from 'node:child_process';
+import { Logger } from '@actor-core/runtime';
 import { type SimpleGit, simpleGit } from 'simple-git';
 import { type AgentWorktreeConfig, loadAgentConfig } from './agent-config.js';
+
+const log = Logger.namespace('GIT_OPERATIONS');
 
 export class GitOperations {
   private git: SimpleGit;
@@ -74,7 +77,7 @@ export class GitOperations {
       try {
         // Check if worktree already exists
         if (await this.worktreeExists(config.path)) {
-          console.log(`⚠️  Worktree ${config.path} already exists, skipping...`);
+          log.debug(`⚠️  Worktree ${config.path} already exists, skipping...`);
           results.push(config);
           continue;
         }
@@ -99,10 +102,10 @@ export class GitOperations {
         } catch {
           // Remote branch doesn't exist, create new branch
           await this.git.raw(['worktree', 'add', config.path, '-b', config.branch]);
-          console.log(`   Created new branch: ${config.branch}`);
+          log.debug(`   Created new branch: ${config.branch}`);
         }
 
-        console.log(`   ✅ Created: ${config.path}`);
+        log.debug(`   ✅ Created: ${config.path}`);
         results.push(config);
       } catch (error) {
         console.error(`❌ Failed to create worktree for ${config.agentId}:`, error);
@@ -112,7 +115,7 @@ export class GitOperations {
     // Configure automatic push tracking
     try {
       await this.git.raw(['config', '--global', 'worktree.guessRemote', 'true']);
-      console.log('   ✅ Enabled automatic push tracking');
+      log.debug('   ✅ Enabled automatic push tracking');
     } catch (error) {
       console.error('⚠️  Failed to set worktree.guessRemote:', error);
     }

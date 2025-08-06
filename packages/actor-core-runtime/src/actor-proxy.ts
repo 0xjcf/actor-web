@@ -195,38 +195,14 @@ export class ActorProxyBuilder {
  * Actor proxy client for type-safe actor communication
  */
 export class ActorProxyClient<T extends ActorRouter> {
-  private actorRef: ActorRef<ProxyEvent>;
+  private actorRef: ActorRef<unknown>;
   private router: T;
   private logger = Logger.namespace('ACTOR_PROXY_CLIENT');
 
-  constructor(actorRef: ActorRef<ProxyEvent>, router: T) {
+  constructor(actorRef: ActorRef<unknown>, router: T) {
     this.actorRef = actorRef;
     this.router = router;
-    this.logger.debug('Actor proxy client created', { actorId: actorRef.id });
-  }
-
-  /**
-   * Type guard for proxy events
-   */
-  private isProxyEvent(event: unknown): event is ProxyEvent {
-    return (
-      typeof event === 'object' &&
-      event !== null &&
-      'type' in event &&
-      typeof (event as BaseEventObject).type === 'string'
-    );
-  }
-
-  /**
-   * Type guard for subscription data events
-   */
-  private isSubscriptionDataEvent(event: unknown): event is SubscriptionDataEvent {
-    return (
-      this.isProxyEvent(event) &&
-      event.type === 'SUBSCRIPTION_DATA' &&
-      'procedure' in event &&
-      'data' in event
-    );
+    this.logger.debug('Actor proxy client created', { actorId: actorRef.address.id });
   }
 
   /**
@@ -241,8 +217,8 @@ export class ActorProxyClient<T extends ActorRouter> {
           case 'query':
             (proxy as Record<string, unknown>)[name] = async (input: unknown) => {
               this.logger.debug('Executing query', { name, input });
-              const queryEvent: ProxyQueryEvent = {
-                type: 'PROXY_QUERY',
+              const queryEvent = {
+                type: 'PROXY_QUERY' as const,
                 procedure: name,
                 input,
                 correlationId: this.generateCorrelationId(),
@@ -255,8 +231,8 @@ export class ActorProxyClient<T extends ActorRouter> {
           case 'mutation':
             (proxy as Record<string, unknown>)[name] = async (input: unknown) => {
               this.logger.debug('Executing mutation', { name, input });
-              const mutationEvent: ProxyMutationEvent = {
-                type: 'PROXY_MUTATION',
+              const mutationEvent = {
+                type: 'PROXY_MUTATION' as const,
                 procedure: name,
                 input,
                 correlationId: this.generateCorrelationId(),
@@ -270,7 +246,14 @@ export class ActorProxyClient<T extends ActorRouter> {
             (proxy as Record<string, unknown>)[name] = (input: unknown) => {
               this.logger.debug('Creating subscription', { name, input });
               return {
-                subscribe: (callback: (data: unknown) => void) => {
+                subscribe: (_callback: (data: unknown) => void) => {
+                  // 🚨 TEMPORARY: Subscription functionality disabled during pure actor model migration
+                  // TODO: Implement pure actor subscription pattern for proxy layer
+                  // See: docs/research/pure-actor-model-subscriptions.md
+                  this.logger.warn(
+                    'Actor proxy subscriptions temporarily disabled - pure actor pattern needed'
+                  );
+
                   const subscriptionEvent: ProxySubscriptionEvent = {
                     type: 'PROXY_SUBSCRIPTION',
                     procedure: name,
@@ -278,18 +261,9 @@ export class ActorProxyClient<T extends ActorRouter> {
                   };
                   this.actorRef.send(subscriptionEvent);
 
-                  const subscription = this.actorRef.subscribe(
-                    'PROXY_SUBSCRIPTION_DATA',
-                    (event) => {
-                      if (this.isSubscriptionDataEvent(event) && event.procedure === name) {
-                        callback(event.data);
-                      }
-                    }
-                  );
-
+                  // Return no-op subscription until pure pattern implemented
                   return {
                     unsubscribe: () => {
-                      subscription();
                       const unsubscribeEvent: ProxyUnsubscribeEvent = {
                         type: 'PROXY_UNSUBSCRIBE',
                         procedure: name,
@@ -357,7 +331,7 @@ export function createActorProxyBuilder(): ActorProxyBuilder {
  * Create an actor proxy client
  */
 export function createActorProxyClient<T extends ActorRouter>(
-  actorRef: ActorRef<ProxyEvent>,
+  actorRef: ActorRef<unknown>,
   router: T
 ): CreateProxyClient<T> {
   const client = new ActorProxyClient(actorRef, router);
@@ -371,10 +345,10 @@ export function createProxyActor<T extends ActorRouter>(
   machine: AnyStateMachine,
   router: T
 ): {
-  actor: ActorRef<ProxyEvent>;
+  actor: ActorRef<unknown>;
   proxy: CreateProxyClient<T>;
 } {
-  const actor = createActorRef(machine) as ActorRef<ProxyEvent>;
+  const actor = createActorRef(machine) as ActorRef<unknown>;
   const proxy = createActorProxyClient(actor, router);
 
   return { actor, proxy };

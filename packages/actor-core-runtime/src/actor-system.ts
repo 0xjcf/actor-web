@@ -12,8 +12,13 @@
  * 5. Supervision Hierarchy - Fault tolerance through actor supervision
  */
 
-import type { Actor, AnyStateMachine } from 'xstate';
-import type { MessageUnion } from './types.js';
+import type { ActorInstance } from './actor-instance.js';
+import type { ActorRef } from './actor-ref.js';
+import type { UniversalTemplate } from './create-actor.js';
+import type { JsonValue, Message } from './types.js';
+import { createActorAddress } from './utils/factories.js';
+
+export type { JsonValue } from './types.js';
 
 // ============================================================================
 // TYPE-SAFE ACTOR FOUNDATIONS
@@ -47,108 +52,12 @@ export interface MessageMap {
   readonly __messageMapBrand?: never; // Phantom type for brand identification
 }
 
-/**
- * Strict type-safe message input that constrains message types exactly
- * T extends MessageMap - the actor's message-to-response mapping
- * K extends keyof T - ONLY valid message types are allowed
- */
-export type TypeSafeMessageInput<T extends MessageMap, K extends keyof T = keyof T> = {
-  readonly type: K; // This constrains to ONLY valid message types
-  readonly payload?: JsonValue;
-  readonly correlationId?: string;
-  readonly timestamp?: number;
-  readonly version?: string;
-};
-
-/**
- * Enhanced TypeSafeActor interface providing IMMEDIATE type validation
- * at call sites when invalid message types are used.
- *
- * ✅ FIXED: Uses discriminated union approach instead of broken conditional types
- *
- * This interface now provides true immediate type validation by using our
- * MessageUnion<T> utility that creates a discriminated union of all valid
- * message objects. TypeScript will show errors immediately when invalid
- * message types are used, not when accessing response properties.
- *
- * @example Valid Usage:
- * ```typescript
- * interface UserMessages extends MessageMap {
- *   'GET_USER': { id: string; name: string };
- *   'UPDATE_USER': { success: boolean };
- * }
- *
- * const actor = asTypeSafeActor<UserMessages>(regularActor);
- *
- * // ✅ Valid - TypeScript accepts this
- * const user = await actor.ask({ type: 'GET_USER' });
- * console.log(user.name); // TypeScript knows this is string
- *
- * // ❌ Invalid - TypeScript shows IMMEDIATE error at call site
- * const invalid = await actor.ask({ type: 'INVALID_TYPE' }); // Error here!
- * ```
- *
- * @template T - MessageMap interface defining valid message types and responses
- */
-export interface TypeSafeActor<T extends MessageMap> {
-  /**
-   * Send a message to the actor (fire-and-forget)
-   *
-   * Uses discriminated union constraint for immediate type validation.
-   * Invalid message types will cause TypeScript errors at the call site.
-   *
-   * @param message - Valid message object matching MessageUnion<T>
-   */
-  send(message: MessageUnion<T>): void;
-
-  /**
-   * Ask the actor a question and get a typed response
-   *
-   * Uses discriminated union constraint with mapped return type.
-   * - Immediate validation: Invalid message types cause compile errors
-   * - Precise returns: Response type is T[MessageType] not Promise<unknown>
-   *
-   * @param message - Valid message object with specific type
-   * @returns Promise resolving to the response type for that message
-   */
-  ask<K extends keyof T>(message: MessageUnion<T> & { type: K }): Promise<T[K]>;
-
-  /**
-   * Start the actor
-   */
-  start(): void;
-
-  /**
-   * Stop the actor
-   */
-  stop(): Promise<void>;
-
-  /**
-   * Subscribe to actor events
-   */
-  subscribe(eventType: string, handler: (event: ActorMessage) => void): () => void;
-}
-
-/**
- * Type-safe actor creation function signature
- */
-export type CreateTypeSafeActor<T extends MessageMap> = (...args: unknown[]) => TypeSafeActor<T>;
-
 // ============================================================================
 // EXISTING INTERFACES (Updated for compatibility)
 // ============================================================================
 
-/**
- * JSON-serializable value type for message payloads
- */
-export type JsonValue =
-  | null
-  | undefined
-  | boolean
-  | number
-  | string
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+// JsonValue type moved to types.ts for consolidation
+// Import: import type { JsonValue } from './types.js';
 
 /**
  * Correlation ID for tracking message flows and request-response patterns
@@ -161,8 +70,9 @@ export type CorrelationId = string;
  */
 export interface ActorDependencies {
   readonly actorId: string;
-  readonly machine: unknown; // Actor<AnyStateMachine> - avoiding circular dependency
-  readonly emit: (event: unknown) => void;
+  readonly actor: ActorInstance;
+  readonly self: ActorRef<unknown>; // ActorRef to self for scheduling, forwarding, etc.
+  readonly emit: (event: ActorMessage) => void;
   readonly send: (to: unknown, message: ActorMessage) => Promise<void>;
   readonly ask: <T>(to: unknown, message: ActorMessage, timeout?: number) => Promise<T>;
   readonly logger: unknown; // Logger - avoiding circular dependency
@@ -187,29 +97,47 @@ export interface ActorAddress {
 }
 
 /**
- * Standard actor message interface
- * All communication between actors uses this format
+ * Actor envelope with reserved framework fields
+ * Forms the base for all actor messages with flat structure
+ *
+ * Reserved fields are prefixed with underscore to avoid collisions
+ * with user-defined message fields.
  */
-export interface ActorMessage {
+export interface ActorEnvelope {
+  /** Message type discriminant (required) */
   readonly type: string;
-  readonly payload: JsonValue | null;
-  readonly sender?: ActorAddress;
-  readonly correlationId?: string;
-  readonly timestamp: number;
-  readonly version: string;
+
+  // Framework reserved fields (all optional)
+  /** Timestamp when message was created */
+  readonly _timestamp?: number;
+  /** Message format version */
+  readonly _version?: string;
+  /** Correlation ID for request-response patterns */
+  readonly _correlationId?: string;
+  /** Sender actor address for reply patterns */
+  readonly _sender?: ActorAddress;
 }
 
 /**
- * Basic message structure for general actor communication
- * Use StrictMessageInput<T> for type-safe actors with specific message maps
+ * Standard actor message type that extends envelope with user fields
+ * Enables natural TypeScript discriminated unions
+ *
+ * Example:
+ * ```typescript
+ * type UserMessage =
+ *   | { type: 'GET_USER'; userId: string }
+ *   | { type: 'USER_FOUND'; name: string; email: string }
+ *   | { type: 'USER_NOT_FOUND'; error: string };
+ *
+ * // All messages automatically have envelope fields available
+ * const msg: UserMessage & ActorEnvelope = {
+ *   type: 'GET_USER',
+ *   userId: '123',
+ *   _correlationId: 'req-456'
+ * };
+ * ```
  */
-export interface BasicMessage {
-  readonly type: string;
-  readonly payload?: JsonValue;
-  readonly correlationId?: string;
-  readonly timestamp?: number;
-  readonly version?: string;
-}
+export type ActorMessage<T extends { type: string } = { type: string }> = T & ActorEnvelope;
 
 /**
  * Actor spawn options
@@ -236,7 +164,7 @@ export enum SupervisionDirective {
  * Supervision strategy for handling actor failures
  */
 export interface SupervisionStrategy {
-  onFailure(error: Error, actor: ActorPID): SupervisionDirective;
+  onFailure(error: Error, actor: ActorRef): SupervisionDirective;
   maxRetries?: number;
   retryDelay?: number;
 }
@@ -272,13 +200,13 @@ export interface ActorBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>
    * Message handler - pure function that processes messages and returns communication plans
    *
    * @param params.message - The incoming message to process
-   * @param params.machine - XState machine actor for state access and transitions
+   * @param params.actor - Actor instance for state access and transitions
    * @param params.dependencies - Injected dependencies (actor system, correlation manager, etc.)
    * @returns MessagePlan describing communication intentions, or void for no action
    */
   readonly onMessage: (params: {
     readonly message: TMessage;
-    readonly machine: Actor<AnyStateMachine>;
+    readonly actor: ActorInstance;
     readonly dependencies: ActorDependencies;
   }) => MessagePlan<TEmitted> | Promise<MessagePlan<TEmitted>> | void | Promise<void>;
 
@@ -287,7 +215,7 @@ export interface ActorBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>
    * Called when the actor is first started
    */
   readonly onStart?: (params: {
-    readonly machine: Actor<AnyStateMachine>;
+    readonly actor: ActorInstance;
     readonly dependencies: ActorDependencies;
   }) => MessagePlan<TEmitted> | Promise<MessagePlan<TEmitted>> | void | Promise<void>;
 
@@ -296,7 +224,7 @@ export interface ActorBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>
    * Called when the actor is being stopped
    */
   readonly onStop?: (params: {
-    readonly machine: Actor<AnyStateMachine>;
+    readonly actor: ActorInstance;
     readonly dependencies: ActorDependencies;
   }) => Promise<void> | void;
 
@@ -304,6 +232,13 @@ export interface ActorBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>
    * Supervision strategy for fault tolerance
    */
   readonly supervisionStrategy?: SupervisionStrategy;
+
+  /**
+   * Optional universal template for cross-platform rendering
+   * Used for component actors and template-based rendering
+   * Phase 2.1: Templates are extracted from behavior definitions, not options
+   */
+  readonly template?: UniversalTemplate | ((context: unknown) => string) | string;
 }
 
 /**
@@ -326,28 +261,46 @@ export interface ActorStats {
 }
 
 // ============================================================================
-// ACTOR PID - LOCATION TRANSPARENT ACTOR REFERENCE
+// ACTOR PID - INTERNAL LOCATION TRANSPARENT ACTOR REFERENCE
 // ============================================================================
 
 /**
- * Location-transparent actor reference (Process ID)
+ * Location-transparent actor reference (Process ID) - INTERNAL USE ONLY
  *
- * This is the core abstraction that enables location transparency. An ActorPID
- * works the same way whether the actor is local or remote, following the
+ * @internal Use ActorRef instead for all public-facing APIs
+ *
+ * This is the low-level core abstraction that enables location transparency.
+ * An ActorPID works the same way whether the actor is local or remote, following the
  * principle that actors communicate only through message passing.
+ *
+ * ⚠️ WARNING: This interface is for internal framework use only. All public APIs
+ * should use ActorRef (from actor-ref.ts) which extends this interface
+ * with additional type safety and methods.
+ *
+ * Why ActorPID is internal:
+ * - ActorPID is the low-level "socket" for message routing
+ * - ActorRef provides the typed, user-friendly interface
+ * - This separation allows internal optimizations without breaking public APIs
+ *
+ * If you're using ActorPID in application code, refactor to use ActorRef instead.
  */
 export interface ActorPID {
   readonly address: ActorAddress;
 
   /**
    * Send a message to the actor (fire-and-forget)
+   * Accepts any message that has at least a 'type' field
+   * @param message - Message with a type field and any additional properties
    */
-  send(message: BasicMessage): Promise<void>;
+  send<T extends { type: string }>(message: T): Promise<void>;
 
   /**
    * Ask the actor a question and wait for a response
+   * Accepts any message that has at least a 'type' field
+   * @param message - Message with a type field and any additional properties
+   * @param timeout - Optional timeout in milliseconds
    */
-  ask<T = JsonValue>(message: BasicMessage, timeout?: number): Promise<T>;
+  ask<TResponse = JsonValue>(message: Message, timeout?: number): Promise<TResponse>;
 
   /**
    * Stop the actor
@@ -363,14 +316,6 @@ export interface ActorPID {
    * Get actor statistics
    */
   getStats(): Promise<ActorStats>;
-
-  /**
-   * Subscribe to specific event types emitted by this actor
-   * @param eventType - The event type to subscribe to (supports wildcards like 'user.*')
-   * @param listener - Function to call when matching events are emitted
-   * @returns Unsubscribe function to stop receiving events
-   */
-  subscribe(eventType: string, listener: (event: ActorMessage) => void): () => void;
 }
 
 // ============================================================================
@@ -386,21 +331,22 @@ export interface ActorPID {
 export interface ActorSystem {
   /**
    * Spawn a new actor with the given behavior or definition
+   * Accepts ActorBehavior or fluent builder (auto-builds internally)
    */
-  spawn<TMessage = ActorMessage, TEmitted = ActorMessage>(
-    behavior: ActorBehavior<TMessage, TEmitted>,
+  spawn<TMessage extends ActorMessage = ActorMessage, TEmitted = ActorMessage, TContext = unknown>(
+    behavior: ActorBehavior<TMessage, TEmitted> | { build(): ActorBehavior<TMessage, TEmitted> },
     options?: SpawnOptions
-  ): Promise<ActorPID>;
+  ): Promise<ActorRef<TContext, TMessage>>;
 
   /**
    * Look up an actor by its path
    */
-  lookup(path: string): Promise<ActorPID | undefined>;
+  lookup(path: string): Promise<ActorRef | undefined>;
 
   /**
    * Stop an actor
    */
-  stop(pid: ActorPID): Promise<void>;
+  stop(ref: ActorRef): Promise<void>;
   /**
    * Stop the actor system
    */
@@ -420,6 +366,126 @@ export interface ActorSystem {
     uptime: number;
     clusterState: ClusterState;
   }>;
+
+  // ============================================================================
+  // SUBSCRIPTION UTILITIES - Pure Actor Pattern
+  // ============================================================================
+
+  /**
+   * Subscribe an actor to events from a publisher actor using pure actor messaging
+   *
+   * This maintains pure actor model compliance by sending SUBSCRIBE messages internally.
+   * Despite the name "subscribe", this is purely message-based communication.
+   *
+   * @param publisher - The actor that emits events
+   * @param options - Subscription configuration
+   * @param options.subscriber - The actor that should receive events
+   * @param options.events - Optional array of event types to subscribe to (defaults to all)
+   * @returns Promise that resolves to an unsubscribe function
+   *
+   * @example
+   * ```typescript
+   * const counter = await system.spawn(counterBehavior);
+   * const logger = await system.spawn(loggerBehavior);
+   *
+   * // Subscribe logger to counter events
+   * const unsubscribe = await system.subscribe(counter, {
+   *   subscriber: logger,
+   *   events: ['COUNT_INCREMENTED', 'COUNT_DECREMENTED']
+   * });
+   *
+   * // Later: unsubscribe
+   * await unsubscribe();
+   * ```
+   */
+  subscribe<TEventType extends string = string>(
+    publisher: ActorRef,
+    options: {
+      subscriber: ActorRef;
+      events?: TEventType[];
+    }
+  ): Promise<() => Promise<void>>;
+
+  /**
+   * Spawn an event collector actor for testing purposes
+   *
+   * Event collectors use pure actor patterns to collect events via message passing.
+   * They respond to control messages (GET_EVENTS, CLEAR_EVENTS, START/STOP_COLLECTING)
+   * and collect all other messages as events.
+   *
+   * @param options - Collector configuration
+   * @param options.id - Optional ID for the collector actor
+   * @param options.autoStart - Whether to start collecting immediately (default: true)
+   * @returns Promise resolving to the collector actor PID
+   *
+   * @example
+   * ```typescript
+   * const collector = await system.spawnEventCollector({ id: 'test-collector' });
+   *
+   * // Subscribe collector to events
+   * await system.subscribe(publisher, { subscriber: collector });
+   *
+   * // Get collected events using ask pattern
+   * const result = await collector.ask({ type: 'GET_EVENTS' });
+   * log.debug('Collected events:', result.events);
+   * ```
+   */
+  spawnEventCollector(options?: { id?: string; autoStart?: boolean }): Promise<ActorRef>;
+
+  // ============================================================================
+  // TEST SYNCHRONIZATION UTILITIES
+  // ============================================================================
+
+  /**
+   * Enable synchronous test mode where messages are processed immediately
+   * Similar to Akka's CallingThreadDispatcher
+   *
+   * When enabled:
+   * - Messages are processed synchronously in the calling thread
+   * - No setImmediate delays between enqueue and processing
+   * - Makes tests deterministic without timing dependencies
+   *
+   * @example
+   * ```typescript
+   * system.enableTestMode();
+   * await counter.send({ type: 'INCREMENT' });
+   * // Message is already processed, no need to wait
+   * const state = await counter.ask({ type: 'GET_STATE' });
+   * ```
+   */
+  enableTestMode(): void;
+
+  /**
+   * Disable synchronous test mode and return to normal async processing
+   */
+  disableTestMode(): void;
+
+  /**
+   * Check if test mode is currently enabled
+   */
+  isTestMode(): boolean;
+
+  /**
+   * Flush all pending messages in all mailboxes until system is idle
+   * Useful for test synchronization when not using test mode
+   *
+   * Processes messages round-robin across all actors to maintain fairness.
+   * Includes safeguards against infinite loops from self-sending actors.
+   *
+   * @param options Configuration for flush operation
+   * @param options.timeout Maximum time to wait for idle state (default: 5000ms)
+   * @param options.maxRounds Maximum processing rounds to prevent infinite loops (default: 1000)
+   * @returns Promise that resolves when all messages are processed
+   * @throws Error if timeout is exceeded or max rounds is reached
+   *
+   * @example
+   * ```typescript
+   * await counter.send({ type: 'INCREMENT' });
+   * await system.flush(); // Wait for all messages to be processed
+   * const events = await collector.ask({ type: 'GET_EVENTS' });
+   * ```
+   */
+  flush(options?: { timeout?: number; maxRounds?: number }): Promise<void>;
 
   // ============================================================================
   // CLUSTER OPERATIONS
@@ -459,9 +525,7 @@ export interface ActorSystem {
    * @param listener - Function to call when system events occur
    * @returns Unsubscribe function to stop receiving events
    */
-  subscribeToSystemEvents(
-    listener: (event: { type: string; [key: string]: unknown }) => void
-  ): () => void;
+  subscribeToSystemEvents(listener: (event: Message) => void): () => void;
 
   // ============================================================================
   // LIFECYCLE
@@ -579,77 +643,36 @@ export interface ActorSupervisor {
   /**
    * Supervise an actor
    */
-  supervise(pid: ActorPID, strategy: SupervisionStrategy): void;
+  supervise(ref: ActorRef, strategy: SupervisionStrategy): void;
 
   /**
    * Handle actor failure
    */
-  onActorFailure(pid: ActorPID, error: Error): Promise<void>;
+  onActorFailure(ref: ActorRef, error: Error): Promise<void>;
 
   /**
    * Get supervision tree
    */
   getSupervisionTree(): Promise<
     {
-      supervisor: ActorPID;
-      children: ActorPID[];
+      supervisor: ActorRef;
+      children: ActorRef[];
     }[]
   >;
 
   /**
    * Stop supervision of an actor
    */
-  stopSupervision(pid: ActorPID): void;
+  stopSupervision(ref: ActorRef): void;
 }
 
 // ============================================================================
 // UTILITIES
 // ============================================================================
 
-/**
- * Create an actor message
- */
-export function createActorMessage(
-  type: string,
-  payload: JsonValue,
-  sender?: ActorAddress,
-  correlationId?: string
-): ActorMessage {
-  return {
-    type,
-    payload,
-    sender,
-    correlationId,
-    timestamp: Date.now(),
-    version: '1.0.0',
-  };
-}
+// createActorMessage moved to utils/factories.ts
 
-/**
- * Convert BasicMessage to ActorMessage with defaults
- */
-export function normalizeMessage(input: BasicMessage): ActorMessage {
-  return {
-    type: input.type,
-    payload: input.payload ?? null,
-    correlationId: input.correlationId,
-    timestamp: input.timestamp ?? Date.now(),
-    version: input.version ?? '1.0.0',
-  };
-}
-
-/**
- * Create an actor address
- */
-export function createActorAddress(id: string, type: string, node?: string): ActorAddress {
-  const path = node ? `actor://${node}/${type}/${id}` : `actor://local/${type}/${id}`;
-  return {
-    id,
-    type,
-    node,
-    path,
-  };
-}
+// createActorAddress moved to utils/factories.ts
 
 /**
  * Parse an actor path into an address
@@ -671,11 +694,4 @@ export function isLocalAddress(address: ActorAddress): boolean {
   return !address.node || address.node === 'local';
 }
 
-/**
- * Generate a unique actor ID
- */
-export function generateActorId(prefix = 'actor'): string {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 11);
-  return `${prefix}-${timestamp}-${random}`;
-}
+// generateActorId moved to utils/factories.ts

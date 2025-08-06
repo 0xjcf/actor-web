@@ -13,26 +13,25 @@
  * @version 1.0.0
  */
 
-import type { Actor, AnyStateMachine } from 'xstate';
+import type { ActorInstance } from './actor-instance.js';
 import type { ActorDependencies, ActorMessage } from './actor-system.js';
+import { Logger } from './logger.js';
+import type { MessagePlan } from './message-plan.js';
+import type { ActorSnapshot } from './types.js';
+
+const log = Logger.namespace('OTP_TYPES');
 
 // ============================================================================
 // OTP CORE TYPES
 // ============================================================================
 
 /**
- * Side effect function for supervised execution
- * Effects are executed after successful state updates
- */
-export type Effect = () => void | Promise<void>;
-
-/**
  * Behavior function type for dynamic behavior switching (becomes pattern)
  * Used in the becomes pattern where actors can switch their message handling logic
  */
-export type BehaviorFunction<TContext> = (params: {
-  readonly message: ActorMessage;
-  readonly machine: Actor<AnyStateMachine>;
+export type BehaviorFunction<TContext, TMessage = ActorMessage> = (params: {
+  readonly message: TMessage;
+  readonly actor: ActorInstance & { getSnapshot(): ActorSnapshot<TContext> };
   readonly dependencies: ActorDependencies;
 }) =>
   | ActorHandlerResult<TContext, unknown>
@@ -73,14 +72,22 @@ export interface ActorHandlerResult<TContext, TResponse = void> {
   context?: TContext;
 
   /**
-   * Explicit response for ask patterns (smart defaults available)
+   * Direct reply for ask patterns (Phase 2.1 - OTP semantic alignment)
    *
-   * Smart Defaults Logic:
-   * - Ask Pattern (correlationId present): If omitted, auto-respond with `context`
-   * - Send Pattern (no correlationId): No response sent regardless
-   * - Explicit Response: Always takes precedence over smart defaults
+   * This field provides clear 1-to-1 reply semantics for ask patterns,
+   * distinguishing from the 1-to-many broadcast nature of `emit`.
+   *
+   * @example
+   * ```typescript
+   * // Clear distinction between reply and emit
+   * return {
+   *   context: { balance: newBalance },
+   *   reply: { success: true, newBalance },        // 1-to-1 to asker
+   *   emit: [{ type: 'WITHDRAWAL_COMPLETED' }]     // 1-to-many broadcast
+   * };
+   * ```
    */
-  response?: TResponse;
+  reply?: TResponse;
 
   /**
    * Switch to new behavior (becomes pattern)
@@ -91,12 +98,24 @@ export interface ActorHandlerResult<TContext, TResponse = void> {
   behavior?: BehaviorFunction<TContext>;
 
   /**
-   * Side effects to execute after context update
-   * - Executed in order after successful context application
-   * - Supervised execution (failures don't crash actor)
-   * - Useful for logging, notifications, external system integration
+   * Events to emit after successful context update (unified-api-design Phase 2.1)
+   * - Array of events to be emitted to subscribers (supports flat messages)
+   * - Emitted after context update and effects execution
+   * - Used for OTP-style event emission: { context, emit: [...] }
+   * - Subscribers receive events via actor.subscribe() pattern
+   *
+   * @example
+   * ```typescript
+   * return {
+   *   context,
+   *   emit: [
+   *     { type: 'USER_CREATED', userId: '123', name: 'Alice' }, // Flat message
+   *     { type: 'EMAIL_SENT', to: 'alice@example.com' }         // Direct fields
+   *   ]
+   * };
+   * ```
    */
-  effects?: Effect[];
+  emit?: unknown[];
 }
 
 // ============================================================================
@@ -139,13 +158,36 @@ export interface SmartDefaultsResult<TResponse> {
  * @template TContext - Actor context/state type
  * @template TResponse - Response type for ask patterns
  */
-export type OTPMessageHandler<TMessage, TContext = unknown, TResponse = TContext> = (params: {
+export type OTPMessageHandler<
+  TMessage,
+  TContext = unknown,
+  TResponse = TContext,
+  TDomainEvent = unknown,
+> = (params: {
   readonly message: TMessage;
-  readonly machine: Actor<AnyStateMachine>;
+  readonly actor: ActorInstance & { getSnapshot(): ActorSnapshot<TContext> };
   readonly dependencies: ActorDependencies;
 }) =>
   | ActorHandlerResult<TContext, TResponse>
   | Promise<ActorHandlerResult<TContext, TResponse>>
+  | MessagePlan<TDomainEvent>
+  | Promise<MessagePlan<TDomainEvent>>
+  | void
+  | Promise<void>;
+
+/**
+ * Runtime message handler type used at the ActorBehavior level
+ * This type works with generic ActorInstance without specific context types
+ */
+export type RuntimeMessageHandler<TMessage, TDomainEvent = unknown, TContext = unknown> = (params: {
+  readonly message: TMessage;
+  readonly actor: ActorInstance;
+  readonly dependencies: ActorDependencies;
+}) =>
+  | ActorHandlerResult<TContext, unknown>
+  | Promise<ActorHandlerResult<TContext, unknown>>
+  | MessagePlan<TDomainEvent>
+  | Promise<MessagePlan<TDomainEvent>>
   | void
   | Promise<void>;
 
@@ -155,11 +197,29 @@ export type OTPMessageHandler<TMessage, TContext = unknown, TResponse = TContext
 export function isActorHandlerResult(
   value: unknown
 ): value is ActorHandlerResult<unknown, unknown> {
-  return (
+  log.debug('🔍 TYPE GUARD DEBUG: Checking isActorHandlerResult for:', value);
+  log.debug('🔍 TYPE GUARD DEBUG: Value type:', typeof value);
+  log.debug('🔍 TYPE GUARD DEBUG: Value is null?', value === null);
+
+  if (value !== null && typeof value === 'object') {
+    log.debug('🔍 TYPE GUARD DEBUG: Has context?', 'context' in value);
+    log.debug('🔍 TYPE GUARD DEBUG: Has response?', 'response' in value);
+    log.debug('🔍 TYPE GUARD DEBUG: Has reply?', 'reply' in value);
+    log.debug('🔍 TYPE GUARD DEBUG: Has behavior?', 'behavior' in value);
+    log.debug('🔍 TYPE GUARD DEBUG: Has emit?', 'emit' in value);
+  }
+
+  const result =
     value !== null &&
     typeof value === 'object' &&
-    ('context' in value || 'response' in value || 'behavior' in value || 'effects' in value)
-  );
+    ('context' in value ||
+      'response' in value ||
+      'reply' in value ||
+      'behavior' in value ||
+      'emit' in value);
+
+  log.debug('🔍 TYPE GUARD DEBUG: isActorHandlerResult result:', result);
+  return result;
 }
 
 /**
@@ -169,10 +229,19 @@ export function processSmartDefaults<TContext, TResponse>(
   result: ActorHandlerResult<TContext, TResponse>,
   messageAnalysis: MessageAnalysis
 ): SmartDefaultsResult<TResponse> {
-  // Explicit response always takes precedence
-  if (result.response !== undefined) {
+  // Explicit reply takes highest precedence (Phase 2.1)
+  if (result.reply !== undefined) {
     return {
-      finalResponse: result.response,
+      finalResponse: result.reply,
+      shouldRespond: messageAnalysis.isAskPattern,
+      responseSource: 'explicit',
+    };
+  }
+
+  // Explicit response takes precedence over smart defaults
+  if (result.reply !== undefined) {
+    return {
+      finalResponse: result.reply,
       shouldRespond: messageAnalysis.isAskPattern,
       responseSource: 'explicit',
     };
@@ -199,7 +268,7 @@ export function processSmartDefaults<TContext, TResponse>(
  * Analyze message for smart defaults processing
  */
 export function analyzeMessage(message: ActorMessage): MessageAnalysis {
-  const hasCorrelationId = Boolean(message.correlationId);
+  const hasCorrelationId = Boolean(message._correlationId);
 
   return {
     hasCorrelationId,

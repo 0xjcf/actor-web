@@ -6,7 +6,8 @@
 
 import type { ActorRef } from '../actor-ref.js';
 import { Logger } from '../logger.js';
-import type { BaseEventObject } from '../types.js';
+import { createActorDelay } from '../pure-xstate-utilities.js';
+import type { Message } from '../types.js';
 
 // ========================================================================================
 // PIPELINE CORE TYPES
@@ -387,9 +388,9 @@ export class Pipeline<TInput = unknown, TOutput = unknown> {
         if (timeout) {
           return await Promise.race([
             stage(input),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error(`Stage timeout after ${timeout}ms`)), timeout)
-            ),
+            createActorDelay(timeout).then(() => {
+              throw new Error(`Stage timeout after ${timeout}ms`);
+            }),
           ]);
         }
         return await stage(input);
@@ -412,7 +413,7 @@ export class Pipeline<TInput = unknown, TOutput = unknown> {
             }
           );
 
-          await new Promise((resolve) => setTimeout(resolve, delay));
+          await createActorDelay(delay);
         }
       }
     }
@@ -477,7 +478,7 @@ export interface ActorStage<TInput = unknown, TOutput = unknown> {
   /**
    * Actor reference
    */
-  actor: ActorRef<BaseEventObject>;
+  actor: ActorRef<Message>;
 
   /**
    * Event type to send to the actor
@@ -487,7 +488,7 @@ export interface ActorStage<TInput = unknown, TOutput = unknown> {
   /**
    * Transform input to actor event
    */
-  mapInput: (input: TInput) => BaseEventObject;
+  mapInput: (input: TInput) => Message;
 
   /**
    * Transform actor response to output
@@ -508,10 +509,7 @@ export function createActorStage<TInput, TOutput>(
 ): PipelineStage<TInput, TOutput> {
   return async (input: TInput): Promise<TOutput> => {
     const event = config.mapInput(input);
-    const response = await config.actor.ask(
-      event,
-      config.timeout ? { timeout: config.timeout } : undefined
-    );
+    const response = await config.actor.ask(event, config.timeout ? config.timeout : undefined);
     return config.mapOutput(response);
   };
 }
@@ -600,7 +598,7 @@ export function retry<T, R>(
         lastError = error instanceof Error ? error : new Error(String(error));
 
         if (attempt < attempts) {
-          await new Promise((resolve) => setTimeout(resolve, delay));
+          await createActorDelay(delay);
         }
       }
     }

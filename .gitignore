@@ -103,3 +103,25 @@ worktree-*/
 
 CLAUDE.md
 .cursor/
+
+# Internal development directories
+project-planning/
+.claude/
+docs/research/
+
+# Internal development files
+*-AUDIT*.md
+*-ANALYSIS*.md
+*-REPORT*.md
+*-guest-guide*.md
+*-GUEST-GUIDE*.md
+research-prompt-*.md
+PROJECT-STATUS-*.md
+REMAINING-WORK-*.md
+CODE-QUALITY-*.md
+FRAMEWORK-*.md
+ACTOR-WEB-FRAMEWORK-*.md
+
+# Scripts for migration
+migrate-*.sh
+mark-*.js

@@ -1,10 +1,13 @@
 import path from 'node:path';
+import { Logger } from '@actor-core/runtime';
 import chalk from 'chalk';
 import { GitOperations } from '../core/git-operations.js';
 
+const log = Logger.namespace('SYNC_COMMAND');
+
 export async function syncCommand() {
-  console.log(chalk.blue('🔄 Agent Daily Sync'));
-  console.log(chalk.blue('==========================================='));
+  log.debug(chalk.blue('🔄 Agent Daily Sync'));
+  log.debug(chalk.blue('==========================================='));
 
   // Navigate to repository root (two levels up from CLI package)
   const repoRoot = path.resolve(process.cwd(), '../..');
@@ -13,7 +16,7 @@ export async function syncCommand() {
   try {
     // Check if we're in a git repo
     if (!(await git.isGitRepo())) {
-      console.log(chalk.red('❌ Not in a Git repository'));
+      log.debug(chalk.red('❌ Not in a Git repository'));
       return;
     }
 
@@ -22,16 +25,16 @@ export async function syncCommand() {
 
     // Check for uncommitted changes
     if (await git.hasUncommittedChanges()) {
-      console.log(chalk.yellow('⚠️  You have uncommitted changes'));
-      console.log(chalk.blue('💡 Commit your work first: pnpm aw:save or pnpm aw:ship'));
+      log.debug(chalk.yellow('⚠️  You have uncommitted changes'));
+      log.debug(chalk.blue('💡 Commit your work first: pnpm aw:save or pnpm aw:ship'));
       return;
     }
 
-    console.log(chalk.blue(`🔄 Syncing with ${integrationBranch}...`));
+    log.debug(chalk.blue(`🔄 Syncing with ${integrationBranch}...`));
 
     try {
       // Fetch latest changes
-      console.log('   → Fetching latest changes...');
+      log.debug('   → Fetching latest changes...');
       await git.getGit().fetch(['origin']);
 
       // Check if integration branch exists
@@ -40,8 +43,8 @@ export async function syncCommand() {
           .getGit()
           .raw(['show-ref', '--verify', '--quiet', `refs/remotes/origin/${integrationBranch}`]);
       } catch {
-        console.log(chalk.yellow(`⚠️  Integration branch ${integrationBranch} not found`));
-        console.log(chalk.blue('💡 It will be created when someone ships first'));
+        log.debug(chalk.yellow(`⚠️  Integration branch ${integrationBranch} not found`));
+        log.debug(chalk.blue('💡 It will be created when someone ships first'));
         return;
       }
 
@@ -49,22 +52,22 @@ export async function syncCommand() {
       const statusBefore = await git.getIntegrationStatus(integrationBranch);
 
       if (statusBefore.behind === 0) {
-        console.log(chalk.green('✅ Already up to date with integration!'));
+        log.debug(chalk.green('✅ Already up to date with integration!'));
         return;
       }
 
-      console.log(`   → Merging ${statusBefore.behind} commits from integration...`);
+      log.debug(`   → Merging ${statusBefore.behind} commits from integration...`);
 
       // Merge integration branch
       await git.getGit().merge([`origin/${integrationBranch}`]);
 
-      console.log(chalk.green('✅ Successfully synced with integration!'));
-      console.log(chalk.blue(`📥 Pulled ${statusBefore.behind} commits from other agents`));
+      log.debug(chalk.green('✅ Successfully synced with integration!'));
+      log.debug(chalk.blue(`📥 Pulled ${statusBefore.behind} commits from other agents`));
 
       // Show what changed
       try {
         const mergeCommit = await git.getGit().raw(['log', '--oneline', '-1']);
-        console.log(chalk.gray(`   Latest: ${mergeCommit.trim()}`));
+        log.debug(chalk.gray(`   Latest: ${mergeCommit.trim()}`));
       } catch {
         // Ignore if we can't get the commit info
       }
@@ -72,15 +75,15 @@ export async function syncCommand() {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
       if (errorMessage.includes('CONFLICT')) {
-        console.log(chalk.red('❌ Merge conflicts detected!'));
-        console.log(chalk.blue('💡 Resolve conflicts manually:'));
-        console.log('   1. Edit conflicted files');
-        console.log('   2. git add <resolved-files>');
-        console.log('   3. git commit');
-        console.log('   4. Try sync again');
+        log.debug(chalk.red('❌ Merge conflicts detected!'));
+        log.debug(chalk.blue('💡 Resolve conflicts manually:'));
+        log.debug('   1. Edit conflicted files');
+        log.debug('   2. git add <resolved-files>');
+        log.debug('   3. git commit');
+        log.debug('   4. Try sync again');
       } else {
         console.error(chalk.red('❌ Failed to sync:'), errorMessage);
-        console.log(chalk.blue('💡 Try: git status to see current state'));
+        log.debug(chalk.blue('💡 Try: git status to see current state'));
       }
       process.exit(1);
     }

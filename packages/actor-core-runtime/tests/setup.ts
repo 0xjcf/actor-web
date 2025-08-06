@@ -3,11 +3,15 @@
  * @description Test setup file
  */
 
-import { beforeAll } from 'vitest';
+import { afterEach, beforeAll } from 'vitest';
+import { configureTestLogger } from '../src/testing/test-logger-config.js';
 
-// import { resetDevMode } from '../src/logger.js';
-
-// Ensure debug mode is disabled for tests by default
+// Ensure debug mode is configured properly for tests
 beforeAll(() => {
-  // resetDevMode();
+  configureTestLogger();
+});
+
+// Reset logger state between tests
+afterEach(() => {
+  configureTestLogger();
 });

@@ -4,36 +4,34 @@
  * Enhanced with OTP (Open Telecom Platform) state management patterns
  */
 
-export type { EventListener, Unsubscribe } from './actor-event-bus.js';
-// Event bus for actor-to-actor communication
 export { ActorEventBus } from './actor-event-bus.js';
-// ActorRef interface and utilities
-export type {
-  ActorRef,
-  CreateActorRefFunction,
-} from './actor-ref.js';
+// Actor instance interface
+export type { ActorInstance, ActorInstanceType } from './actor-instance.js';
+// ActorRef is the primary public interface for actor references
+export type { ActorRef } from './actor-ref.js';
+// ActorRef utilities (errors from the old actor-ref.js)
 export {
   ActorStoppedError,
-  generateActorId,
-  generateCorrelationId,
+  // generateActorId and generateCorrelationId moved to utils/factories.js
   isResponseEvent,
   TimeoutError,
 } from './actor-ref.js';
+// Symbol-based runtime patterns (NEW - TASK 2.2.1)
+export {
+  ActorSymbols,
+  ComponentSymbols,
+} from './actor-symbols.js';
 // Core types and interfaces
 export type {
   ActorAddress,
   ActorBehavior,
+  ActorEnvelope,
   ActorMessage,
-  ActorPID,
+  // ActorPID is now internal - use ActorRef instead
   ActorStats,
   ActorSystem,
-  BasicMessage,
   ClusterState,
-  JsonValue,
-  // Type-safe actor types
-  MessageMap,
-  TypeSafeActor,
-  TypeSafeMessageInput,
+  // JsonValue moved to types.js - import from there if needed
 } from './actor-system.js';
 export type { ActorSystemConfig } from './actor-system-impl.js';
 export { createActorSystem } from './actor-system-impl.js';
@@ -45,6 +43,14 @@ export {
 export type { SupervisorOptions } from './actors/supervisor.js';
 // Supervision
 export { Supervisor } from './actors/supervisor.js';
+// Auto-publishing system (Phase 2.1)
+export {
+  AutoPublishingRegistry,
+  analyzeMessagePlan,
+  createSubscribeMessage,
+  createUnsubscribeMessage,
+  type PublishableEventMetadata,
+} from './auto-publishing.js';
 export {
   type ComponentActorConfig,
   type ComponentActorMessage,
@@ -62,28 +68,38 @@ export {
   type SerializableEvent,
   validateSerializableEvent,
 } from './component-behavior.js';
+export { ContextActor } from './context-actor.js';
 // Actor creation factory
 export {
-  type ActorContextType,
   type ActorEmittedType,
-  type ActorInstance,
   type ActorMessageType,
-  // Type-safe actor creation
-  asTypeSafeActor,
-  // NEW: Fluent builder pattern with OTP support
+  // Enhanced type inference utilities (TASK 2.1.3)
+  type ActorRefFromBehavior,
+  // Modern fluent builder pattern APIs
   type BehaviorBuilderBase,
+  type BehaviorTypeInference,
   ContextBehaviorBuilder,
   type CreateActorConfig,
   createActor,
-  createLegacyBehavior,
-  createSimpleBehavior,
-  defineBehavior,
-  defineFluentBehavior,
+  type InferBehaviorType,
+  type InferMessageType,
   MachineBehaviorBuilder,
+  // Simplified operation-based typing (IMPROVED APPROACH)
+  type OperationMap,
   type PureActorBehaviorConfig,
   type PureMessageHandlerWithContext,
   type PureMessageHandlerWithMachine,
-  spawnActor,
+  type RequestFromOperations,
+  type ResponseFromOperations,
+  renderTemplate,
+  // Template builder classes (NEW - TASK 2.1.1)
+  TemplateBehaviorBuilder,
+  TemplateContextBehaviorBuilder,
+  TemplateMachineBehaviorBuilder,
+  type TypeSafeOperationActor,
+  // Universal template system (NEW - TASK 2.1.1)
+  template,
+  type UniversalTemplate,
   validateMessagePlan,
   type XStateActorConfig,
 } from './create-actor.js';
@@ -108,6 +124,18 @@ export {
   Logger,
   resetDevMode,
 } from './logger.js';
+export { MachineActor } from './machine-actor.js';
+// Enhanced machine registry (NEW - TASK 2.2.2)
+export {
+  behaviorHasMachine,
+  getMachineFromBehavior,
+  type MachineDiscoveryOptions,
+  type MachineRegistration,
+  machineRegistry,
+  type RegistryStats,
+  registerMachineWithBehavior,
+  SymbolBasedMachineRegistry,
+} from './machine-registry.js';
 // Messaging
 export {
   type DeadLetter,
@@ -120,7 +148,7 @@ export type {
   RequestResponseStats,
 } from './messaging/request-response.js';
 // Request/response messaging
-export { RequestResponseManager } from './messaging/request-response.js';
+export { XStateRequestResponseManager } from './messaging/request-response.js';
 export type { SerializationFormat } from './messaging/serialization.js';
 export {
   getSerializer,
@@ -136,7 +164,6 @@ export { OTPMessagePlanProcessor } from './otp-message-plan-processor.js';
 export type {
   ActorHandlerResult,
   BehaviorFunction,
-  Effect,
   MessageAnalysis,
   OTPMessageHandler,
   SmartDefaultsResult,
@@ -146,17 +173,12 @@ export {
   isActorHandlerResult,
   processSmartDefaults,
 } from './otp-types.js';
-// Type helpers for better error messages
+// Actor implementation classes
+export { StatelessActor } from './stateless-actor.js';
+// Type helpers for context and message extraction
 export type {
-  EventWithType,
-  ExtractEventTypes,
-  PrettyError,
-  ShowAvailableEventTypes,
-  StrictEventValidation,
-  TypedEvent,
-  ValidateEmittedEvent,
-  ValidateEvent,
-  ValidateEventType,
+  ContextOf,
+  MessageOf,
 } from './type-helpers.js';
 // Core types
 export type {
@@ -166,10 +188,10 @@ export type {
   AskOptions,
   BaseActor,
   BaseEventObject,
-  BaseMessage,
   EventMetadata,
   FrameworkSnapshot,
   Mailbox,
+  Message,
   Observable,
   Observer,
   QueryEvent,
@@ -178,3 +200,51 @@ export type {
   Subscription,
   SupervisionStrategy,
 } from './types.js';
+// Unified Actor API (NEW - Replaces defineActor/defineActor)
+export {
+  type ActorSpec,
+  defineActor,
+  UnifiedActorBuilder,
+  type UnifiedMessageHandler,
+} from './unified-actor-builder.js';
+
+// ============================================================================
+// CONSOLIDATED UTILITIES (Re-exports from utils modules)
+// ============================================================================
+
+export type {
+  AdvanceTimeMessage,
+  CancelScheduledMessage,
+  GetScheduledMessage,
+  ScheduleDelayMessage,
+  ScheduleMessage,
+  TimerActorMessage,
+  TimerActorRef,
+  TimerActorState,
+} from './actors/timer-actor.js';
+// Timer Actor exports (NEW - Pure actor model time management)
+export { createTestTimerBehavior, createTimerActor } from './actors/timer-actor.js';
+// Event collector for testing subscription patterns
+export {
+  createEventCollectorBehavior,
+  type EventCollectorMessage,
+  type EventCollectorResponse,
+} from './testing/event-collector.js';
+export type { TestActorSystem } from './testing/timer-test-utils.js';
+// Testing utilities
+export { createTimerDelay, withTimerTesting } from './testing/timer-test-utils.js';
+// JsonValue type from types.js (consolidated from actor-system.js)
+export type { JsonValue } from './types.js';
+// Factory functions from utils/factories.js (consolidated from multiple files)
+export {
+  createActorAddress,
+  generateActorId,
+  generateCorrelationId,
+} from './utils/factories.js';
+// Validation functions from utils/validation.js (consolidated from multiple files)
+export {
+  isActorMessage,
+  isDomainEvent,
+  isJsonValue,
+  isMessagePlan,
+} from './utils/validation.js';

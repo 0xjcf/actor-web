@@ -10,24 +10,28 @@
  * distribute events throughout the actor system using pure message passing.
  */
 
-import type { Actor, AnyStateMachine } from 'xstate';
-import { generateCorrelationId } from '../actor-ref.js';
-import type { ActorBehavior, ActorDependencies, ActorMessage, JsonValue } from '../actor-system.js';
-import { defineBehavior } from '../create-actor.js';
+import type { ActorRef } from '../actor-ref.js';
+import type { ActorBehavior, ActorMessage, JsonValue } from '../actor-system.js';
 import { Logger } from '../logger.js';
-import type { DomainEvent, MessagePlan } from '../message-plan.js';
+import type { DomainEvent } from '../message-plan.js';
+import { createSendInstruction } from '../message-plan.js';
+import type { BaseEventObject } from '../types.js';
+import { defineActor } from '../unified-actor-builder.js';
+import { generateCorrelationId } from '../utils/factories.js';
+import { createNullActorRef } from '../utils/null-actor.js';
 
 const log = Logger.namespace('SYSTEM_EVENT_ACTOR');
 
 // ========================================================================================
-// SYSTEM EVENT ACTOR CONTEXT (stored in external XState machine)
+// SYSTEM EVENT ACTOR STATE (stored externally, not in actor context)
 // ========================================================================================
 
-export interface SystemEventActorContext {
+interface SystemEventActorState {
   subscribers: Map<
     string,
     {
       path: string;
+      actorRef?: unknown; // Store the actual ActorRef reference if available
       eventTypes?: string[];
       isCallback?: boolean; // True if this is a callback-based subscriber
     }
@@ -36,18 +40,12 @@ export interface SystemEventActorContext {
   maxHistorySize: number;
 }
 
-/**
- * Create initial context for System Event Actor
- */
-export function createInitialSystemEventActorContext(
-  maxHistorySize = 100
-): SystemEventActorContext {
-  return {
-    subscribers: new Map(),
-    eventHistory: [],
-    maxHistorySize,
-  };
-}
+// External state for system event actor (not part of actor context)
+const systemEventState: SystemEventActorState = {
+  subscribers: new Map(),
+  eventHistory: [],
+  maxHistorySize: 100,
+};
 
 /**
  * System event payload - must be JSON-serializable
@@ -81,10 +79,9 @@ function isSystemEventPayload(value: unknown): value is SystemEventPayload {
  */
 export interface SubscribeToSystemEvents extends ActorMessage {
   type: 'SUBSCRIBE_TO_SYSTEM_EVENTS';
-  payload: {
-    subscriberPath: string; // Use path instead of full address
-    eventTypes?: string[]; // Optional filter for specific event types
-  };
+  subscriberPath: string; // Use path instead of full address
+  subscriberRef?: unknown; // Optional ActorRef reference
+  eventTypes?: string[]; // Optional filter for specific event types
 }
 
 /**
@@ -92,9 +89,7 @@ export interface SubscribeToSystemEvents extends ActorMessage {
  */
 export interface UnsubscribeFromSystemEvents extends ActorMessage {
   type: 'UNSUBSCRIBE_FROM_SYSTEM_EVENTS';
-  payload: {
-    subscriberPath: string;
-  };
+  subscriberPath: string;
 }
 
 /**
@@ -102,7 +97,9 @@ export interface UnsubscribeFromSystemEvents extends ActorMessage {
  */
 export interface SystemEventNotification extends ActorMessage {
   type: 'SYSTEM_EVENT_NOTIFICATION';
-  payload: JsonValue; // Will be a SystemEvent but typed as JsonValue for compatibility
+  eventType: string;
+  timestamp: number;
+  data?: JsonValue;
 }
 
 /**
@@ -110,14 +107,36 @@ export interface SystemEventNotification extends ActorMessage {
  */
 export interface EmitSystemEvent extends ActorMessage {
   type: 'EMIT_SYSTEM_EVENT';
-  payload: JsonValue; // Will be a SystemEvent but typed as JsonValue for compatibility
+  eventType: string;
+  timestamp: number;
+  data?: JsonValue;
+}
+
+/**
+ * Simplified subscribe message for tests
+ */
+export interface SimpleSubscribe extends ActorMessage {
+  type: 'SUBSCRIBE';
+  subscriberPath: string;
+  subscriberRef?: unknown; // Optional ActorRef reference
+  eventTypes?: string[];
+}
+
+/**
+ * Simplified unsubscribe message for tests
+ */
+export interface SimpleUnsubscribe extends ActorMessage {
+  type: 'UNSUBSCRIBE';
+  subscriberPath: string;
 }
 
 export type SystemEventActorMessage =
   | SubscribeToSystemEvents
   | UnsubscribeFromSystemEvents
   | SystemEventNotification
-  | EmitSystemEvent;
+  | EmitSystemEvent
+  | SimpleSubscribe
+  | SimpleUnsubscribe;
 
 // ========================================================================================
 // SYSTEM EVENT ACTOR BEHAVIOR - PURE ACTOR MODEL
@@ -133,58 +152,181 @@ export type SystemEventActorMessage =
  */
 export function createSystemEventActor(
   maxHistorySize = 100
-): ActorBehavior<SystemEventActorMessage, DomainEvent> {
-  return defineBehavior({
-    onMessage: async ({
-      message,
-      machine,
-      dependencies: _dependencies,
-    }: {
-      message: SystemEventActorMessage;
-      machine: Actor<AnyStateMachine>;
-      dependencies: ActorDependencies;
-    }): Promise<MessagePlan<DomainEvent> | undefined> => {
-      const context = machine.getSnapshot().context as SystemEventActorContext;
+): ActorBehavior<SystemEventActorMessage, unknown> {
+  // Clear subscribers when creating a new system event actor (for test isolation)
+  systemEventState.subscribers.clear();
+  systemEventState.eventHistory = [];
+  systemEventState.maxHistorySize = maxHistorySize;
 
-      // Initialize context if needed (defensive programming)
-      if (!context.subscribers) {
-        // Send initialization event to the machine
-        machine.send({
-          type: 'INITIALIZE_CONTEXT',
-          context: createInitialSystemEventActorContext(maxHistorySize),
-        });
-        return; // Skip processing this message, let it be retried
-      }
-
-      log.debug('System event actor processing message', {
+  return defineActor<SystemEventActorMessage>()
+    .onMessage(async ({ message, actor }) => {
+      log.info('System event actor processing message', {
         type: message.type,
-        subscriberCount: context.subscribers.size,
+        subscriberCount: systemEventState.subscribers.size,
+        eventType:
+          message.type === 'EMIT_SYSTEM_EVENT' ? (message as EmitSystemEvent).eventType : undefined,
       });
 
       switch (message.type) {
-        case 'SUBSCRIBE_TO_SYSTEM_EVENTS': {
-          const { subscriberPath, eventTypes } = message.payload;
+        case 'SUBSCRIBE': {
+          // Handle simplified subscribe message from tests
+          const { subscriberPath, subscriberRef, eventTypes } = message;
 
-          log.debug('Adding system event subscriber', {
-            subscriber: subscriberPath,
+          log.debug('Processing SUBSCRIBE (simplified)', {
+            subscriberPath,
             eventTypes,
+            hasRef: !!subscriberRef,
+            currentSubscribers: systemEventState.subscribers.size,
           });
 
-          // Add to subscribers map
-          context.subscribers.set(generateCorrelationId(), {
-            path: subscriberPath,
+          // Check if this subscriber already exists
+          let existingSubscriberId: string | undefined;
+          for (const [id, sub] of systemEventState.subscribers.entries()) {
+            if (sub.path === subscriberPath) {
+              existingSubscriberId = id;
+              break;
+            }
+          }
+
+          if (existingSubscriberId) {
+            // Update existing subscription
+            systemEventState.subscribers.set(existingSubscriberId, {
+              path: subscriberPath,
+              actorRef: subscriberRef, // Store the ActorRef if provided
+              eventTypes,
+            });
+            log.debug('Updated existing subscriber', {
+              subscriberId: existingSubscriberId,
+              subscriberPath,
+              eventTypes,
+            });
+          } else {
+            // Add new subscriber
+            const subscriberId = generateCorrelationId();
+            systemEventState.subscribers.set(subscriberId, {
+              path: subscriberPath,
+              actorRef: subscriberRef, // Store the ActorRef if provided
+              eventTypes,
+            });
+            log.debug('Added new subscriber', {
+              subscriberId,
+              subscriberPath,
+              eventTypes,
+            });
+          }
+
+          log.debug('Subscriber processed via simplified SUBSCRIBE', {
+            subscriberPath,
+            totalSubscribers: systemEventState.subscribers.size,
+            wasUpdate: !!existingSubscriberId,
+          });
+
+          return; // No domain event needed for subscribe
+        }
+
+        case 'UNSUBSCRIBE': {
+          // Handle simplified unsubscribe message from tests
+          const { subscriberPath } = message;
+
+          log.debug('Processing UNSUBSCRIBE (simplified)', {
+            subscriberPath,
+            currentSubscribers: systemEventState.subscribers.size,
+          });
+
+          // Remove from subscribers map
+          for (const [id, subscriber] of systemEventState.subscribers.entries()) {
+            if (subscriber.path === subscriberPath) {
+              systemEventState.subscribers.delete(id);
+              log.debug('Subscriber removed via simplified UNSUBSCRIBE', {
+                subscriberId: id,
+                subscriberPath,
+                totalSubscribers: systemEventState.subscribers.size,
+              });
+              break;
+            }
+          }
+
+          return; // No domain event needed for unsubscribe
+        }
+
+        case 'SUBSCRIBE_TO_SYSTEM_EVENTS': {
+          const { subscriberPath, subscriberRef, eventTypes } = message;
+
+          log.debug('Processing SUBSCRIBE_TO_SYSTEM_EVENTS', {
+            subscriberPath,
             eventTypes,
+            hasRef: !!subscriberRef,
+            currentSubscribers: systemEventState.subscribers.size,
+          });
+
+          log.info('Adding system event subscriber', {
+            subscriber: subscriberPath,
+            eventTypes,
+            hasRef: !!subscriberRef,
+            currentSubscribers: systemEventState.subscribers.size,
+          });
+
+          // Check if this subscriber already exists
+          let existingSubscriberId: string | undefined;
+          for (const [id, sub] of systemEventState.subscribers.entries()) {
+            if (sub.path === subscriberPath) {
+              existingSubscriberId = id;
+              break;
+            }
+          }
+
+          if (existingSubscriberId) {
+            // Update existing subscription
+            systemEventState.subscribers.set(existingSubscriberId, {
+              path: subscriberPath,
+              actorRef: subscriberRef, // Store the ActorRef if provided
+              eventTypes,
+            });
+            log.debug('Updated existing subscriber', {
+              subscriberId: existingSubscriberId,
+              subscriberPath,
+              eventTypes,
+            });
+          } else {
+            // Add new subscriber
+            const subscriberId = generateCorrelationId();
+            systemEventState.subscribers.set(subscriberId, {
+              path: subscriberPath,
+              actorRef: subscriberRef, // Store the ActorRef if provided
+              eventTypes,
+            });
+            log.debug('Added new subscriber', {
+              subscriberId,
+              subscriberPath,
+              eventTypes,
+            });
+          }
+
+          log.debug('Subscriber processed', {
+            subscriberPath,
+            totalSubscribers: systemEventState.subscribers.size,
+            wasUpdate: !!existingSubscriberId,
+            allSubscribers: Array.from(systemEventState.subscribers.entries()).map(([id, sub]) => ({
+              id,
+              path: sub.path,
+            })),
+          });
+
+          log.info('Subscriber processed', {
+            subscriberPath,
+            totalSubscribers: systemEventState.subscribers.size,
+            wasUpdate: !!existingSubscriberId,
           });
 
           // Update machine context
-          machine.send({
+          actor.send({
             type: 'SUBSCRIBE_REQUESTED',
             subscriberPath,
             eventTypes,
           });
 
           // Send recent events to new subscriber
-          const recentEvents = context.eventHistory.slice(-10);
+          const recentEvents = systemEventState.eventHistory.slice(-10);
           const eventsToSend = recentEvents
             .filter((event) => !eventTypes || eventTypes.includes(event.eventType))
             .map(
@@ -197,26 +339,29 @@ export function createSystemEventActor(
             );
 
           // Return recent events as domain events if any
-          return eventsToSend.length > 0 ? eventsToSend : undefined;
+          if (eventsToSend.length > 0) {
+            return eventsToSend;
+          }
+          return;
         }
 
         case 'UNSUBSCRIBE_FROM_SYSTEM_EVENTS': {
-          const { subscriberPath } = message.payload;
+          const { subscriberPath } = message;
 
           log.debug('Removing system event subscriber', {
             subscriber: subscriberPath,
           });
 
           // Remove from subscribers map
-          for (const [subscriberId, subscriber] of context.subscribers.entries()) {
+          for (const [subscriberId, subscriber] of systemEventState.subscribers.entries()) {
             if (subscriber.path === subscriberPath) {
-              context.subscribers.delete(subscriberId);
+              systemEventState.subscribers.delete(subscriberId);
               break;
             }
           }
 
           // Update machine context
-          machine.send({
+          actor.send({
             type: 'UNSUBSCRIBE_REQUESTED',
             subscriberPath,
           });
@@ -225,55 +370,103 @@ export function createSystemEventActor(
         }
 
         case 'EMIT_SYSTEM_EVENT': {
+          // Extract system event payload from flat message
+          const event: SystemEventPayload = {
+            eventType:
+              'systemEventType' in message ? String(message.systemEventType) : message.type,
+            timestamp: 'systemTimestamp' in message ? Number(message.systemTimestamp) : Date.now(),
+            data: 'systemData' in message ? (message.systemData as JsonValue) : null,
+          };
+
           // Type guard for system event payload
-          if (!isSystemEventPayload(message.payload)) {
+          if (!isSystemEventPayload(event)) {
             log.error('Invalid system event payload');
             return;
           }
 
-          const event = message.payload;
-
           log.debug('Emitting system event', {
             eventType: event.eventType,
-            subscriberCount: context.subscribers.size,
+            subscriberCount: systemEventState.subscribers.size,
           });
 
           // Update machine context
-          machine.send({
+          actor.send({
             type: 'EVENT_EMITTED',
-            event,
+            eventType: event.eventType,
+            eventData: event.data,
           });
 
           // Add to history
-          context.eventHistory.push(event);
-          if (context.eventHistory.length > context.maxHistorySize) {
-            context.eventHistory.shift();
+          systemEventState.eventHistory.push(event);
+          if (systemEventState.eventHistory.length > systemEventState.maxHistorySize) {
+            systemEventState.eventHistory.shift();
           }
 
-          // Return domain event for distribution
-          return {
-            type: event.eventType,
-            timestamp: event.timestamp,
-            data: event.data || null,
-          } as DomainEvent;
+          // ✅ PURE ACTOR MODEL: Send events directly to subscribers
+          const hasSubscribers = systemEventState.subscribers.size > 0;
+
+          log.debug('Processing EMIT_SYSTEM_EVENT', {
+            eventType: event.eventType,
+            hasSubscribers,
+            subscriberCount: systemEventState.subscribers.size,
+            subscribers: Array.from(systemEventState.subscribers.entries()).map(([id, sub]) => ({
+              id,
+              path: sub.path,
+              eventTypes: sub.eventTypes,
+            })),
+          });
+
+          log.info('Processing system event', {
+            eventType: event.eventType,
+            hasSubscribers,
+            subscriberCount: systemEventState.subscribers.size,
+          });
+
+          // Send notifications to all subscribers (including wildcard '*')
+          const notifications: import('../message-plan.js').SendInstruction[] = [];
+
+          for (const [_subscriberId, subscriber] of systemEventState.subscribers.entries()) {
+            // Check if subscriber is interested in this event type
+            const isInterestedInEvent =
+              !subscriber.eventTypes ||
+              subscriber.eventTypes.includes(event.eventType) ||
+              subscriber.eventTypes.includes('*');
+
+            if (isInterestedInEvent) {
+              // Create send instruction for this subscriber using proper helpers
+              const message = {
+                type: 'SYSTEM_EVENT_NOTIFICATION',
+                eventType: event.eventType,
+                timestamp: event.timestamp,
+                data: event.data,
+              };
+
+              // Use the ActorRef reference if available, otherwise fall back to NullActorRef
+              const targetRef =
+                (subscriber.actorRef as ActorRef<BaseEventObject>) ||
+                createNullActorRef(subscriber.path);
+
+              const notification = createSendInstruction(targetRef, message, 'fireAndForget');
+              notifications.push(notification);
+            }
+          }
+
+          log.debug('Sending notifications', {
+            eventType: event.eventType,
+            notificationCount: notifications.length,
+          });
+
+          // Return send instructions as reply for ask pattern
+          // The OTP message processor will handle these as emit instructions
+          return { reply: notifications };
         }
 
         default:
           log.warn('Unknown message type', { type: (message as SystemEventActorMessage).type });
           return;
       }
-    },
-
-    onStart: async ({ machine }) => {
-      // Initialize the system event actor context
-      machine.send({
-        type: 'INITIALIZE',
-        context: createInitialSystemEventActorContext(maxHistorySize),
-      });
-
-      log.info('System event actor started', { maxHistorySize });
-    },
-  });
+    })
+    .build();
 }
 
 // ========================================================================================

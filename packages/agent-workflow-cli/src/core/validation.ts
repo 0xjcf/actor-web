@@ -1,5 +1,8 @@
 import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { Logger } from '@actor-core/runtime';
+
+const log = Logger.namespace('VALIDATION_SERVICE');
 
 /**
  * Safely escape a file path for shell usage
@@ -160,59 +163,59 @@ export class ValidationService {
     biome: ValidationResult;
     overall: boolean;
   }> {
-    console.log(`📁 Validating ${files.length} files changed by your branch...`);
+    log.debug(`📁 Validating ${files.length} files changed by your branch...`);
 
     if (files.length <= 10) {
-      console.log('Changed files:');
+      log.debug('Changed files:');
       for (const file of files) {
-        console.log(`  - ${file}`);
+        log.debug(`  - ${file}`);
       }
     } else {
-      console.log('Changed files:');
+      log.debug('Changed files:');
       for (const file of files.slice(0, 10)) {
-        console.log(`  - ${file}`);
+        log.debug(`  - ${file}`);
       }
-      console.log(`  ... and ${files.length - 10} more`);
+      log.debug(`  ... and ${files.length - 10} more`);
     }
 
-    console.log('');
+    log.debug('');
 
     // TypeScript validation
-    console.log('  → TypeScript validation (your files only)...');
+    log.debug('  → TypeScript validation (your files only)...');
     const typescript = await this.validateTypeScript(files);
 
     if (typescript.success) {
-      console.log(`    ✅ TypeScript OK (${typescript.filesChecked} files)`);
+      log.debug(`    ✅ TypeScript OK (${typescript.filesChecked} files)`);
     } else {
-      console.log(`    ❌ TypeScript errors in ${typescript.filesChecked} files:`);
+      log.debug(`    ❌ TypeScript errors in ${typescript.filesChecked} files:`);
       for (const error of typescript.errors) {
-        console.log(`      ${error}`);
+        log.debug(`      ${error}`);
       }
     }
 
     // Biome validation
-    console.log('  → Linting validation (your files only)...');
+    log.debug('  → Linting validation (your files only)...');
     const biome = await this.validateBiome(files);
 
     if (biome.success) {
       if (biome.warnings.length > 0) {
-        console.log(`    ✅ ${biome.warnings[0]}`);
+        log.debug(`    ✅ ${biome.warnings[0]}`);
       } else {
-        console.log(`    ✅ Linting OK (${biome.filesChecked} files)`);
+        log.debug(`    ✅ Linting OK (${biome.filesChecked} files)`);
       }
     } else {
-      console.log(`    ❌ ${biome.errors[0]}`);
+      log.debug(`    ❌ ${biome.errors[0]}`);
       if (biome.warnings.length > 0) {
-        console.log(`    💡 ${biome.warnings[0]}`);
+        log.debug(`    💡 ${biome.warnings[0]}`);
       }
     }
 
     const overall = typescript.success && biome.success;
 
     if (overall) {
-      console.log(`✅ All validations passed for your ${files.length} changed files!`);
+      log.debug(`✅ All validations passed for your ${files.length} changed files!`);
     } else {
-      console.log('❌ Validation failed - please fix issues above');
+      log.debug('❌ Validation failed - please fix issues above');
     }
 
     return { typescript, biome, overall };

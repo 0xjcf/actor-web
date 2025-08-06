@@ -136,7 +136,7 @@ describe('Ship Command - Loop Detection Tests', () => {
       'integrationStatusChecked',
     ];
 
-    console.log('Expected states for ship workflow:', expectedStates);
+    log.debug('Expected states for ship workflow:', expectedStates);
 
     // Simulate the ship workflow
     gitActor.send({ type: 'CHECK_STATUS' });
@@ -162,14 +162,14 @@ describe('Ship Command - Loop Detection Tests', () => {
 
     // Integration status check might succeed or fail depending on git setup
     // In test environment, it's likely to fail due to missing remote
-    console.log('Actual state transitions:', stateTransitions);
+    log.debug('Actual state transitions:', stateTransitions);
 
     const hasIntegrationResult =
       stateTransitions.includes('integrationStatusChecked') ||
       stateTransitions.includes('integrationStatusError');
 
     if (!hasIntegrationResult) {
-      console.log('Missing integration result. Last few states:', stateTransitions.slice(-5));
+      log.debug('Missing integration result. Last few states:', stateTransitions.slice(-5));
     }
 
     expect(hasIntegrationResult).toBe(true);

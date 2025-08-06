@@ -13,11 +13,12 @@
  * @version 1.0.0
  */
 
-import type { Actor, AnyStateMachine } from 'xstate';
+import type { ActorInstance } from '../actor-instance.js';
 import type { ActorDependencies, ActorMessage, JsonValue } from '../actor-system.js';
 import { Logger } from '../logger.js';
 import type { DomainEvent, MessagePlan } from '../message-plan.js';
 import { createSendInstruction } from '../message-plan.js';
+import { createNullActorRef } from '../utils/null-actor.js';
 
 const log = Logger.namespace('EVENT_BROKER_ACTOR');
 
@@ -30,11 +31,9 @@ const log = Logger.namespace('EVENT_BROKER_ACTOR');
  */
 export interface SubscribeMessage extends ActorMessage {
   type: 'SUBSCRIBE';
-  payload: {
-    readonly topic: string;
-    readonly pattern?: string; // For wildcard matching like 'user.*'
-    readonly subscriber: string; // Actor address
-  };
+  readonly topic: string;
+  readonly pattern?: string; // For wildcard matching like 'user.*'
+  readonly subscriber: string; // Actor address
 }
 
 /**
@@ -42,11 +41,9 @@ export interface SubscribeMessage extends ActorMessage {
  */
 export interface UnsubscribeMessage extends ActorMessage {
   type: 'UNSUBSCRIBE';
-  payload: {
-    readonly topic: string;
-    readonly pattern?: string;
-    readonly subscriber: string; // Actor address
-  };
+  readonly topic: string;
+  readonly pattern?: string;
+  readonly subscriber: string; // Actor address
 }
 
 /**
@@ -54,11 +51,9 @@ export interface UnsubscribeMessage extends ActorMessage {
  */
 export interface PublishMessage extends ActorMessage {
   type: 'PUBLISH';
-  payload: {
-    readonly topic: string;
-    readonly event: JsonValue; // Event data as JSON-serializable value
-    readonly publisherId?: string; // Optional publisher identification
-  };
+  readonly topic: string;
+  readonly event: JsonValue; // Event data as JSON-serializable value
+  readonly publisherId?: string; // Optional publisher identification
 }
 
 /**
@@ -66,9 +61,7 @@ export interface PublishMessage extends ActorMessage {
  */
 export interface GetBrokerStatsMessage extends ActorMessage {
   type: 'GET_BROKER_STATS';
-  payload: {
-    readonly requestor: string; // Actor address to send response to
-  };
+  readonly requestor: string; // Actor address to send response to
 }
 
 /**
@@ -118,12 +111,12 @@ export function createInitialEventBrokerContext(): EventBrokerContext {
 function isSubscribeMessage(message: ActorMessage): message is SubscribeMessage {
   return (
     message.type === 'SUBSCRIBE' &&
-    message.payload !== null &&
-    typeof message.payload === 'object' &&
-    'topic' in message.payload &&
-    'subscriber' in message.payload &&
-    typeof message.payload.topic === 'string' &&
-    typeof message.payload.subscriber === 'string'
+    message !== null &&
+    typeof message === 'object' &&
+    'topic' in message &&
+    'subscriber' in message &&
+    typeof message.topic === 'string' &&
+    typeof message.subscriber === 'string'
   );
 }
 
@@ -133,12 +126,12 @@ function isSubscribeMessage(message: ActorMessage): message is SubscribeMessage 
 function isUnsubscribeMessage(message: ActorMessage): message is UnsubscribeMessage {
   return (
     message.type === 'UNSUBSCRIBE' &&
-    message.payload !== null &&
-    typeof message.payload === 'object' &&
-    'topic' in message.payload &&
-    'subscriber' in message.payload &&
-    typeof message.payload.topic === 'string' &&
-    typeof message.payload.subscriber === 'string'
+    message !== null &&
+    typeof message === 'object' &&
+    'topic' in message &&
+    'subscriber' in message &&
+    typeof message.topic === 'string' &&
+    typeof message.subscriber === 'string'
   );
 }
 
@@ -148,13 +141,13 @@ function isUnsubscribeMessage(message: ActorMessage): message is UnsubscribeMess
 function isPublishMessage(message: ActorMessage): message is PublishMessage {
   return (
     message.type === 'PUBLISH' &&
-    message.payload !== null &&
-    typeof message.payload === 'object' &&
-    'topic' in message.payload &&
-    'event' in message.payload &&
-    typeof message.payload.topic === 'string' &&
-    typeof message.payload.event === 'object' &&
-    message.payload.event !== null
+    message !== null &&
+    typeof message === 'object' &&
+    'topic' in message &&
+    'event' in message &&
+    typeof message.topic === 'string' &&
+    typeof message.event === 'object' &&
+    message.event !== null
   );
 }
 
@@ -164,10 +157,10 @@ function isPublishMessage(message: ActorMessage): message is PublishMessage {
 function isGetBrokerStatsMessage(message: ActorMessage): message is GetBrokerStatsMessage {
   return (
     message.type === 'GET_BROKER_STATS' &&
-    message.payload !== null &&
-    typeof message.payload === 'object' &&
-    'requestor' in message.payload &&
-    typeof message.payload.requestor === 'string'
+    message !== null &&
+    typeof message === 'object' &&
+    'requestor' in message &&
+    typeof message.requestor === 'string'
   );
 }
 
@@ -264,7 +257,7 @@ export function createEventBrokerBehavior() {
       dependencies,
     }: {
       message: ActorMessage;
-      machine: Actor<AnyStateMachine>;
+      machine: ActorInstance;
       dependencies: ActorDependencies;
     }): Promise<MessagePlan | undefined> {
       const context = machine.getSnapshot().context as EventBrokerContext;
@@ -320,7 +313,7 @@ async function handleSubscribe(
   context: EventBrokerContext,
   dependencies: ActorDependencies
 ): Promise<MessagePlan> {
-  const { topic, pattern, subscriber } = message.payload;
+  const { topic, pattern, subscriber } = message;
 
   log.debug('Handling subscription', {
     topic,
@@ -352,7 +345,7 @@ async function handleSubscribe(
   };
 
   // Update machine state
-  (dependencies.machine as Actor<AnyStateMachine>).send({
+  dependencies.actor.send({
     type: 'SUBSCRIPTION_ADDED',
     topic: subscriptionKey,
     subscriber,
@@ -378,7 +371,7 @@ async function handleUnsubscribe(
   context: EventBrokerContext,
   dependencies: ActorDependencies
 ): Promise<MessagePlan> {
-  const { topic, pattern, subscriber } = message.payload;
+  const { topic, pattern, subscriber } = message;
 
   log.debug('Handling unsubscription', {
     topic,
@@ -414,7 +407,7 @@ async function handleUnsubscribe(
   };
 
   // Update machine state
-  (dependencies.machine as Actor<AnyStateMachine>).send({
+  dependencies.actor.send({
     type: 'SUBSCRIPTION_REMOVED',
     topic: subscriptionKey,
     subscriber,
@@ -441,7 +434,7 @@ async function handlePublish(
   context: EventBrokerContext,
   dependencies: ActorDependencies
 ): Promise<MessagePlan> {
-  const { topic, event, publisherId } = message.payload;
+  const { topic, event, publisherId } = message;
 
   // Extract event type safely with type guard
   const eventType = getEventType(event);
@@ -473,7 +466,7 @@ async function handlePublish(
   };
 
   // Update machine state
-  (dependencies.machine as Actor<AnyStateMachine>).send({
+  dependencies.actor.send({
     type: 'EVENT_PUBLISHED',
     topic,
     eventType,
@@ -483,28 +476,16 @@ async function handlePublish(
   // Create fan-out instructions for all matching subscribers
   const fanOutInstructions = Array.from(matchingSubscribers).map((subscriberAddress) => {
     // Create topic event message for subscriber with proper JsonValue handling
-    const topicEventMessage: ActorMessage = {
+    const topicEventMessage = {
       type: 'TOPIC_EVENT',
-      payload: {
-        topic,
-        event,
-        publisherId: publisherId || null, // Convert undefined to null for JsonValue compatibility
-      },
-      timestamp: Date.now(),
-      version: '1.0.0',
+      topic,
+      event,
+      publisherId: publisherId || null, // Convert undefined to null for JsonValue compatibility
     };
 
-    // Create send instruction with type-safe placeholder
+    // Create send instruction with null actor placeholder
     return createSendInstruction(
-      {
-        id: subscriberAddress,
-        send: async () => {
-          /* Placeholder - will be resolved by system */
-        },
-        ask: async <T>(): Promise<T> => {
-          throw new Error('Placeholder ActorRef - should be resolved by system');
-        },
-      },
+      createNullActorRef(subscriberAddress),
       topicEventMessage,
       'fireAndForget'
     );
@@ -537,7 +518,7 @@ async function handleGetBrokerStats(
   context: EventBrokerContext,
   dependencies: ActorDependencies
 ): Promise<MessagePlan> {
-  const { requestor } = message.payload;
+  const { requestor } = message;
 
   log.debug('Handling stats request', {
     requestor,
@@ -554,25 +535,15 @@ async function handleGetBrokerStats(
     timestamp: Date.now(),
   };
 
-  // Create response message
-  const statsResponseMessage: ActorMessage = {
+  // Create response message with flat structure
+  const statsResponseMessage = {
     type: 'BROKER_STATS_RESPONSE',
-    payload: stats,
-    timestamp: Date.now(),
-    version: '1.0.0',
+    ...stats,
   };
 
-  // Return send instruction to requestor with type-safe placeholder
+  // Return send instruction to requestor with null actor placeholder
   return createSendInstruction(
-    {
-      id: requestor,
-      send: async () => {
-        /* Placeholder - will be resolved by system */
-      },
-      ask: async <T>(): Promise<T> => {
-        throw new Error('Placeholder ActorRef - should be resolved by system');
-      },
-    },
+    createNullActorRef(requestor),
     statsResponseMessage,
     'fireAndForget'
   );

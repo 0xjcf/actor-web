@@ -1,745 +1,463 @@
 # 🎭 Actor-Web Framework
 
-> **Erlang OTP for JavaScript/TypeScript** - Battle-tested telecom patterns for building resilient, fault-tolerant web applications.
+> **Pure Actor Model for JavaScript/TypeScript** - Build resilient, distributed systems with location-transparent actors, inspired by Erlang/OTP
 
-## ⚠️ IMPORTANT: Framework Migration in Progress
+[![Pure Actor Model](https://img.shields.io/badge/Pure%20Actor%20Model-100%25%20Compliant-green)](./packages/actor-core-runtime/PURE-ACTOR-MODEL-COMPLIANCE.md)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue)](https://www.typescriptlang.org/)
+[![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-brightgreen)](./package.json)
 
-**The main framework (`/src/core`) is being deprecated in favor of `@actor-core/runtime`.**
+## 🚀 Why Actor-Web?
 
-The current implementation violates pure actor model principles:
-- ❌ Uses singleton patterns (prevents distribution)
-- ❌ Allows direct state access via `getSnapshot()`
-- ❌ Contains shared global state
+JavaScript lacks built-in primitives for actor-based concurrency and fault tolerance. **Actor-Web** brings Erlang/OTP's battle-tested patterns to JavaScript with:
 
-**Use `@actor-core/runtime` for new projects:**
-- ✅ Pure message-passing communication
-- ✅ True location transparency
-- ✅ Distributed actor directory
-- ✅ No singleton dependencies
+- **🎯 Pure Actor Model** - No shared state, message-only communication
+- **🌍 Location Transparency** - Actors work identically local or distributed
+- **🛡️ Fault Tolerance** - Supervisor trees with "let it crash" philosophy
+- **📦 Zero Dependencies** - Lightweight, pure TypeScript implementation
+- **🔄 Unified API** - Single `defineActor()` for all patterns
 
-```typescript
-// Migration:
-// Old: import { createActorRef } from '@actor-web/core';
-// New: import { createActorRef } from '@actor-core/runtime';
-```
-
----
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.6+-blue.svg)](https://www.typescriptlang.org/)
-[![XState v5](https://img.shields.io/badge/XState-v5-orange.svg)](https://stately.ai/docs/xstate)
-![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/0xjcf/actor-web?utm_source=oss&utm_medium=github&utm_campaign=0xjcf%2Factor-web&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
-
-## 🚀 Features
-
-### 🎭 **Erlang OTP-Style Actor Model**
-- **Direct OTP Mapping**: XState replaces recursive state, Message Plans replace `Pid ! Reply`
-- **Battle-Tested Patterns**: 30+ years of telecom reliability patterns
-- **"Let It Crash" Philosophy**: Supervision trees with automatic restart strategies  
-- **Location Transparency**: Actors work seamlessly across different processes
-- **Distributed Actor Directory**: Orleans-style caching for high-performance lookups
-
-### 🔒 **Advanced Security & Access Control**
-- **Capability Security**: Fine-grained permission-based actor access
-- **Virtual Actor System**: Orleans-style lifecycle with automatic activation/passivation
-- **Rate Limiting**: Built-in protection against message flooding
-- **Time-Limited Access**: Automatic capability expiration
-
-### Zero-Boilerplate APIs
-
-- **One-Line Actor Creation**: `const { actor, proxy } = createProxyActor(machine, router)`
-- **Auto-Generated Type Safety**: Full IntelliSense without manual typing
-- **Instant Security**: `createSecureActor(actor, permissions, grantedBy)`
-- **Smart Memory**: `await memory.recall(query)` across cache + vectors + knowledge graph
-
-### 🧠 **AI Agent Patterns**
-- **Hierarchical Task Networks (HTN)**: Complex agent planning and decomposition
-- **Hybrid Memory Systems**: LRU cache + vector store + knowledge graph
-- **Pipeline Workflows**: Composable AI workflows with retry and error handling
-- **Event Sourcing**: Complete actor state replay and debugging
-
-### ⚡ **Core Capabilities**
-- **Pure Message Passing**: No shared state between actors
-- **Supervision Strategies**: Automatic restart, escalation, and recovery
-- **Ask Pattern**: Request-response with automatic correlation
-- **XState Integration**: Seamless state machine integration
-
-## 📦 Installation
-
-**Note**: The packages are currently in development and not yet published to npm. Clone the repository and use pnpm workspaces for now.
+## ⚡ Quick Start
 
 ```bash
-# Clone the repository
-git clone https://github.com/0xjcf/actor-web.git
-cd actor-web
-
-# Install dependencies
-pnpm install
-
-# For future npm installation (not yet available):
-# pnpm add @actor-core/runtime
-# pnpm add @agent-workflow/cli -D
-# pnpm add @actor-core/testing -D
+npm install @actor-core/runtime
 ```
 
-## 🎯 Quick Start
-
-### OTP-Style Counter Actor (Erlang → JS/TS)
-
 ```typescript
-import { createActor, defineBehavior } from '@actor-core/runtime';
-import { createMachine, assign } from 'xstate';
+import { createActorSystem, defineActor } from '@actor-core/runtime';
 
-// 1. State machine (replaces Erlang's recursive counter(Count))
-const counterMachine = createMachine({
-  context: { count: 0 },
-  states: {
-    active: {
-      on: {
-        INCREMENT: { actions: assign({ count: ctx => ctx.count + 1 }) },
-        DECREMENT: { actions: assign({ count: ctx => ctx.count - 1 }) },
-        RESET: { actions: assign({ count: 0 }) }
-      }
-    }
-  }
-});
-
-// 2. Behavior (like OTP gen_server callbacks)
-const counterBehavior = defineBehavior({
-  context: { messageCount: 0 },
-  
-  onMessage({ message, context, machine }) {
-    const newContext = { messageCount: context.messageCount + 1 };
+// Define an actor with the unified API
+const counterActor = defineActor<{ type: 'INCREMENT' | 'GET_COUNT' }>()
+  .withContext({ count: 0 })
+  .onMessage(({ message, actor }) => {
+    const { count } = actor.getSnapshot().context;
     
-    // Handle ask pattern - respond with current count
-    if (message.type === 'GET_COUNT' && message.correlationId) {
-      return {
-        context: newContext,
-        emit: {
-          type: 'RESPONSE',
-          correlationId: message.correlationId,
-          payload: machine.getSnapshot().context.count,
-          timestamp: Date.now(),
-          version: '1.0.0'
-        }
-      };
-    }
-    
-    // Handle increment with domain event (auto fan-out)
-    if (message.type === 'INCREMENT') {
-      return {
-        context: newContext,
-        emit: {
-          type: 'COUNT_CHANGED',
-          oldValue: machine.getSnapshot().context.count,
-          newValue: machine.getSnapshot().context.count + 1
-        }
-      };
-    }
-    
-    return { context: newContext }; // Default: no emission
-  }
-});
-
-// 3. Spawn and use
-const counter = createActor({ machine: counterMachine, behavior: counterBehavior });
-counter.start();
-
-// Send messages
-counter.send(createMessage('INCREMENT'));
-
-// Ask for count (request-response)
-const count = await counter.ask(createMessage('GET_COUNT'), { timeout: 1000 });
-console.log('Count:', count); // Outputs: Count: 1
-```
-
-### Why OTP for Web?
-
-| Erlang OTP Challenge | Web Solution |
-|---------------------|--------------|
-| Learning OTP syntax | **Same patterns**, familiar JS/TS syntax |
-| Managing recursive state | **XState** handles state transitions visually |  
-| Manual machine.send() calls | **Fan-out** automatically updates state from returns |
-| Manual message correlation | **Ask pattern** with automatic correlation IDs |
-| Process supervision setup | **Built-in** supervision strategies |
-| Location transparency | **URI addressing**: `actor://worker/service` |
-| Hot code reloading | **Dynamic behaviors** with same actor identity |
-
-**The patterns you know from Erlang/Elixir, now with TypeScript safety and web-native APIs.**
-
-### Traditional Actor System Usage
-
-```typescript
-import { createActorSystem, createActorRef } from '@actor-core/runtime';
-import { setup, assign } from 'xstate';
-
-// 1. Create the actor system
-const system = createActorSystem({
-  nodeAddress: 'node-1',
-  directory: {
-    maxCacheSize: 10000,
-    cacheTtl: 300000 // 5 minutes
-  }
-});
-
-// 2. Start the system
-await system.start();
-
-// 3. Define your state machine
-const counterMachine = setup({
-  types: {
-    context: {} as { count: number },
-    events: {} as 
-      | { type: 'INCREMENT' }
-      | { type: 'DECREMENT' }
-      | { type: 'RESET' }
-  }
-}).createMachine({
-  id: 'counter',
-  initial: 'idle',
-  context: { count: 0 },
-  states: {
-    idle: {
-      on: {
-        INCREMENT: { actions: assign({ count: ({ context }) => context.count + 1 }) },
-        DECREMENT: { actions: assign({ count: ({ context }) => context.count - 1 }) },
-        RESET: { actions: assign({ count: 0 }) }
-      }
-    }
-  }
-});
-
-// 4. Spawn an actor
-const counterActor = await system.spawn({
-  initialState: { count: 0 },
-  onMessage: async (message, state) => {
-    // Handle messages and return new state
     switch (message.type) {
       case 'INCREMENT':
-        return { count: state.count + 1 };
-      case 'DECREMENT':
-        return { count: state.count - 1 };
-      case 'RESET':
-        return { count: 0 };
-      default:
-        return state;
+        return {
+          context: { count: count + 1 },
+          emit: [{ type: 'COUNT_CHANGED', newValue: count + 1 }]
+        };
+        
+      case 'GET_COUNT':
+        return { reply: { count } };
     }
-  }
-}, { id: 'counter-1' });
-
-// 5. Send messages
-await counterActor.send({ type: 'INCREMENT', payload: null, timestamp: Date.now() });
-
-// 6. Check if actor is alive
-const isAlive = await counterActor.isAlive();
-console.log('Actor is alive:', isAlive);
-
-// 7. Get actor statistics
-const stats = await counterActor.getStats();
-console.log('Messages processed:', stats.messagesProcessed);
-```
-
-### Location-Transparent Actor Lookup
-
-```typescript
-// Look up actors by path from anywhere in the system
-const remoteActor = await system.lookup('actor://node-2/service/user-manager');
-
-if (remoteActor) {
-  // Send message to remote actor (location transparent)
-  await remoteActor.send({ 
-    type: 'GET_USER', 
-    payload: { userId: '123' },
-    timestamp: Date.now()
   });
-}
+  // Note: .build() is called automatically by the framework
 
-// List all actors in the system
-const allActors = await system.listActors();
-console.log('Total actors:', allActors.length);
+// Create and use the actor system
+const system = await createActorSystem({ nodeAddress: 'localhost:0' });
+await system.start();
+
+const counter = await system.spawn(counterActor, { id: 'counter-1' });
+
+await counter.send({ type: 'INCREMENT' });
+const { count } = await counter.ask({ type: 'GET_COUNT' });
+console.log(count); // 1
 ```
 
-### Cluster Operations
+## 🏛️ Core Principles
+
+### Pure Actor Model Compliance
+
+This framework **strictly** follows the pure actor model:
+
+- ✅ **Message-Only Communication** - No shared state or direct method calls
+- ✅ **Location Transparency** - Same API for local and distributed actors
+- ✅ **Asynchronous Processing** - No blocking operations
+- ✅ **Fault Isolation** - Actor failures don't cascade
+- ✅ **JSON Serialization** - All messages are network-ready
+
+### What We DON'T Support (By Design)
+
+- ❌ **No Effects** - No async functions or side effects in actors
+- ❌ **No Singletons** - No global state or shared instances
+- ❌ **No Timeouts** - Use actor-based scheduling instead
+- ❌ **No Direct State Access** - Only through messages
+
+## 📚 Key Features
+
+### 1. Unified Actor API
+
+One API for all actor patterns - no need to choose between different builder types:
 
 ```typescript
-// Join a cluster
-await system.join(['node-2', 'node-3']);
+// Stateless actor (pure message router)
+const routerActor = defineActor<RouterMessage>()
+  .onMessage(({ message }) => {
+    return { emit: [{ type: 'ROUTED', to: message.target }] };
+  });
 
-// Get cluster state
-const clusterState = system.getClusterState();
-console.log('Cluster nodes:', clusterState.nodes);
-console.log('Leader:', clusterState.leader);
+// Stateful actor (with context)
+const accountActor = defineActor<AccountMessage>()
+  .withContext({ balance: 0 })
+  .onMessage(({ message, actor }) => {
+    // Handle deposits, withdrawals, etc.
+  });
 
-// Subscribe to cluster events
-const clusterEvents = system.subscribeToClusterEvents();
-clusterEvents.subscribe(event => {
-  console.log('Cluster event:', event.type, event.node);
+// State machine actor (with XState)
+const orderActor = defineActor<OrderMessage>()
+  .withMachine(orderStateMachine)
+  .onMessage(({ message, actor }) => {
+    // Handle based on current state
+  });
+```
+
+### 2. OTP-Style Return Patterns
+
+Following Erlang/Elixir conventions:
+
+```typescript
+// Update context (like {:noreply, new_state})
+return { context: { count: newCount } };
+
+// Reply to ask pattern (like {:reply, response, new_state})
+return { 
+  context: { processed: true },
+  reply: { status: 'success' }
+};
+
+// Emit events (broadcast to subscribers)
+return {
+  emit: [
+    { type: 'USER_CREATED', userId },
+    { type: 'EMAIL_QUEUED', email }
+  ]
+};
+```
+
+### 3. Test Synchronization
+
+Built-in utilities for deterministic testing:
+
+```typescript
+// Enable synchronous message processing
+system.enableTestMode();
+
+// Send messages - processed immediately!
+await actor.send({ type: 'INCREMENT' });
+
+// Or wait for all actors to process messages
+await system.flush();
+
+// Collect and verify events
+const collector = await system.spawn(createEventCollectorBehavior());
+await system.subscribe(actor, { 
+  subscriber: collector,
+  events: ['COUNT_CHANGED']
 });
 ```
 
-## 🎭 Pure Actor Model
+### 4. Supervision Trees
 
-The Actor-Web Framework supports both XState-based actors and pure message-passing actors. Pure actors are ideal for CLI applications, backend services, and systems requiring maximum control over message flow.
-
-### Message-Passing Actors
+Erlang-style fault tolerance:
 
 ```typescript
-import { createPureGitActor, createGitMessage } from '@agent-workflow/cli';
+// Define a supervisor declaratively (Erlang/Elixir OTP style)
+const supervisorBehavior = createSupervisor({
+  strategy: 'one-for-one',      // 'one-for-all' | 'rest-for-one'
+  children: [
+    { id: 'worker-1', behavior: workerBehavior },
+    { id: 'worker-2', behavior: workerBehavior },
+    { id: 'db-pool', behavior: databaseActor }
+  ],
+  maxRestarts: 3,
+  restartWindow: 60000  // 1 minute
+});
 
-// Create a pure actor
-const gitActor = createPureGitActor('/path/to/repo');
-
-// Start the actor
-await gitActor.start();
-
-// Send messages
-await gitActor.send(createGitMessage('CHECK_STATUS'));
-await gitActor.send(createGitMessage('COMMIT_CHANGES', { 
-  message: 'feat: implement pure actor model' 
-}));
-await gitActor.send(createGitMessage('PUSH_CHANGES', { 
-  branch: 'main' 
-}));
-
-// Get actor state
-const state = gitActor.getState();
-console.log('Current branch:', state.currentBranch);
-console.log('Last operation:', state.lastOperation);
-
-// Stop the actor
-await gitActor.stop();
+// Spawn the supervisor (which automatically starts all children)
+const supervisor = await system.spawn(supervisorBehavior, { 
+  id: 'main-supervisor' 
+});
 ```
 
-### Custom Pure Actor Implementation
+## 🔧 Advanced Patterns
+
+### State-Based Behavior (XState Integration)
 
 ```typescript
-// Define message types
-export type CustomMessageType = 
-  | 'PROCESS_DATA'
-  | 'SAVE_RESULT'
-  | 'CLEANUP';
-
-export interface CustomMessage {
-  type: CustomMessageType;
-  payload?: Record<string, unknown>;
-  timestamp: number;
-  correlationId?: string;
-}
-
-// Define actor state
-export interface CustomActorState {
-  data?: unknown;
-  processed?: boolean;
-  lastError?: string;
-  lastOperation?: string;
-}
-
-// Pure actor implementation
-export class CustomActor {
-  private state: CustomActorState = {};
-  private messageQueue: CustomMessage[] = [];
-  private isProcessing = false;
-
-  async send(message: CustomMessage): Promise<void> {
-    this.messageQueue.push(message);
+const trafficLightActor = defineActor<{ type: 'TIMER' | 'EMERGENCY' }>()
+  .withMachine(trafficLightMachine)
+  .onMessage(({ message, actor }) => {
+    const snapshot = actor.getSnapshot();
     
-    if (!this.isProcessing) {
-      await this.processMessages();
-    }
-  }
-
-  getState(): CustomActorState {
-    return { ...this.state };
-  }
-
-  private async processMessages(): Promise<void> {
-    this.isProcessing = true;
-    
-    while (this.messageQueue.length > 0) {
-      const message = this.messageQueue.shift();
-      if (message) {
-        await this.handleMessage(message);
-      }
+    // Use state.matches for conditional behavior
+    if (message.type === 'EMERGENCY' && snapshot.matches('green')) {
+      return {
+        emit: [{ type: 'SWITCHING_TO_RED' }]
+      };
     }
     
-    this.isProcessing = false;
-  }
+    // Let the state machine handle normal transitions
+    actor.send(message);
+  });
+```
 
-  private async handleMessage(message: CustomMessage): Promise<void> {
+### Ask Pattern (Request/Response)
+
+```typescript
+// IMPORTANT: External resources (DB, APIs) must be wrapped in dedicated actors
+// This maintains actor isolation and enables location transparency
+
+// Create a database actor that manages its own connection pool
+const databaseActor = defineActor<
+  | { type: 'QUERY'; sql: string; params?: any[] }
+  | { type: 'INSERT'; table: string; data: Record<string, any> }
+  | { type: 'INIT_POOL'; config: any }
+>()
+  .withContext({ 
+    isInitialized: false,
+    // In real implementation, you'd store pool reference here
+    // But remember: context must be JSON-serializable
+    poolConfig: null as any
+  })
+  .onMessage(({ message, actor }) => {
+    const { isInitialized } = actor.getSnapshot().context;
+    
     switch (message.type) {
-      case 'PROCESS_DATA':
-        await this.processData(message.payload);
-        break;
-      case 'SAVE_RESULT':
-        await this.saveResult(message.payload);
-        break;
-      case 'CLEANUP':
-        await this.cleanup();
-        break;
+      case 'INIT_POOL':
+        // Store configuration, actual pool creation happens in onStart
+        return {
+          context: { 
+            isInitialized: true,
+            poolConfig: message.config 
+          },
+          emit: [{ type: 'DATABASE_INITIALIZED' }]
+        };
+        
+      case 'QUERY':
+        if (!isInitialized) {
+          return { 
+            reply: { error: 'Database not initialized' }
+          };
+        }
+        
+        // In a real implementation, you would:
+        // 1. Send message to a worker actor that owns the actual connection
+        // 2. Use correlation to match the response
+        // 3. Return the result via reply
+        
+        // For this example, we simulate the async query result
+        return {
+          reply: { 
+            rows: [
+              { id: 1, name: 'Alice' },
+              { id: 2, name: 'Bob' }
+            ],
+            rowCount: 2
+          },
+          emit: [{ 
+            type: 'QUERY_EXECUTED',
+            sql: message.sql,
+            timestamp: Date.now()
+          }]
+        };
+        
+      case 'INSERT':
+        if (!isInitialized) {
+          return { 
+            reply: { error: 'Database not initialized' }
+          };
+        }
+        
+        // Simulate insert with generated ID
+        const newId = Date.now();
+        return {
+          reply: { 
+            id: newId,
+            ...message.data
+          },
+          emit: [{
+            type: 'RECORD_INSERTED',
+            table: message.table,
+            id: newId
+          }]
+        };
     }
-  }
+  })
+  .onStart(() => {
+    // This is where you'd actually create the connection pool
+    // But remember: no direct external calls here either!
+    // Instead, emit a message that a worker actor handles
+    console.log('Database actor started');
+  })
+  .onStop(() => {
+    // Cleanup would also be message-based
+    console.log('Database actor stopped');
+  });
 
-  private async processData(payload: unknown): Promise<void> {
-    // Implementation details...
-    this.state = {
-      ...this.state,
-      data: payload,
-      processed: true,
-      lastOperation: 'PROCESS_DATA',
-      lastError: undefined,
-    };
-  }
+// Usage: Database operations through actor messages
+const system = await createActorSystem({ nodeAddress: 'localhost:0' });
+await system.start();
 
-  private async saveResult(payload: unknown): Promise<void> {
-    // Implementation details...
-    this.state = {
-      ...this.state,
-      lastOperation: 'SAVE_RESULT',
-      lastError: undefined,
-    };
-  }
+const dbActor = await system.spawn(databaseActor, { id: 'database' });
 
-  private async cleanup(): Promise<void> {
-    // Implementation details...
-    this.state = {
-      data: undefined,
-      processed: false,
-      lastOperation: 'CLEANUP',
-      lastError: undefined,
-    };
+// Initialize the database connection
+await dbActor.send({ 
+  type: 'INIT_POOL',
+  config: { 
+    host: 'localhost',
+    database: 'myapp',
+    max: 20 
   }
+});
+
+// Query data using ask pattern
+const queryResult = await dbActor.ask({ 
+  type: 'QUERY', 
+  sql: 'SELECT * FROM users WHERE active = $1',
+  params: [true]
+});
+
+if ('error' in queryResult) {
+  console.error('Query failed:', queryResult.error);
+} else {
+  console.log('Active users:', queryResult.rows);
 }
+
+// Insert data
+const newUser = await dbActor.ask({
+  type: 'INSERT',
+  table: 'users',
+  data: { name: 'Charlie', email: 'charlie@example.com' }
+});
+
+console.log('Created user:', newUser);
 ```
 
-### When to Use Pure Actors vs State Machines
+## 📦 Packages
 
-**Use Pure Actors for:**
-- CLI applications and backend services
-- Simple request/response patterns
-- Integration with external systems
-- When you need maximum control over message flow
+- **`@actor-core/runtime`** - Core actor system implementation
+- **`@actor-core/testing`** - Testing utilities and mocks
+- **`@agent-workflow/cli`** - CLI tools for development
 
-**Use State Machines for:**
-- Complex UI interactions
-- Multi-step workflows with branching
-- When you need visual state representation
-- Event-driven frontend components
-
-## 🛠️ CLI Tools
-
-### Agent Workflow CLI
-
-```bash
-# Initialize agent workflow
-pnpm aw init
-
-# Save changes with conventional commits
-pnpm aw save "feat: implement user authentication"
-
-# Ship changes to integration
-pnpm aw ship
-
-# Analyze state machines
-pnpm aw analyze --target git-actor --workflow
-
-# Interactive state machine monitoring
-pnpm aw analyze --subscribe --target git-actor
-```
-
-### State Machine Analysis
+## 🚫 Common Anti-Patterns
 
 ```typescript
-// Use the CLI for interactive state machine analysis
-import { analyzeCommand } from '@agent-workflow/cli';
+// ❌ NEVER: Direct external calls in actors
+const myActor = defineActor()
+  .onMessage(async ({ message }) => {
+    await database.save(data);  // VIOLATION! Breaks actor isolation
+    await fetch('/api/endpoint'); // VIOLATION! Not message-based
+  });
 
-// Analyze with workflow validation
-await analyzeCommand({
-  target: 'git-actor',
-  workflow: true,
-  validate: true,
-  verbose: true
-});
+// ✅ CORRECT: Create dedicated actors for external systems
+const databaseActor = defineActor<{ type: 'SAVE'; data: any }>()
+  .onMessage(async ({ message }) => {
+    // This actor's sole responsibility is database interaction
+    await database.save(message.data);
+    return { emit: [{ type: 'DATA_SAVED', id: message.data.id }] };
+  });
 
-// Live monitoring with event simulation
-await analyzeCommand({
-  target: 'git-actor',
-  subscribe: true,
-  events: 'CHECK_STATUS,COMMIT_CHANGES,PUSH_CHANGES',
-  eventDelay: '1000',
-  autoRun: true
-});
-```
+// Then send messages to it
+return { emit: [{ type: 'SAVE', data }] };
 
-## 🎭 Advanced Actor Patterns
+// ❌ NEVER: Shared state or singletons
+const globalCache = new Map();  // VIOLATION!
+class MySingleton {
+  static instance = new MySingleton(); // VIOLATION!
+}
 
-### Supervision Strategies
+// ✅ CORRECT: State as actor context
+const cacheActor = defineActor<{ type: 'GET' | 'SET'; key: string; value?: any }>()
+  .withContext({ cache: new Map() })
+  .onMessage(({ message, actor }) => {
+    const { cache } = actor.getSnapshot().context;
+    if (message.type === 'GET') {
+      return { reply: cache.get(message.key) };
+    }
+    // Return new context with updated cache
+    const newCache = new Map(cache);
+    newCache.set(message.key, message.value);
+    return { context: { cache: newCache } };
+  });
 
-```typescript
-import { createActorRef, SupervisionStrategy } from '@actor-core/runtime';
+// ❌ NEVER: Direct state access
+const count = actor.getSnapshot().context.value;  // VIOLATION!
 
-// Create a supervised actor
-const supervisedActor = createActorRef(machine, {
-  supervision: {
-    strategy: SupervisionStrategy.RESTART_ON_FAILURE,
-    maxRestarts: 3,
-    withinTimespan: 60000
-  }
-});
+// ✅ CORRECT: Use ask pattern
+const { value } = await actor.ask({ type: 'GET_VALUE' });
 
-// The supervisor will automatically restart the actor on failure
-```
+// ❌ NEVER: Blocking operations
+const actor = defineActor()
+  .onMessage(({ message }) => {
+    const result = someSyncBlockingOperation(); // VIOLATION!
+    while (condition) { /* busy wait */ }       // VIOLATION!
+  });
 
-### Distributed Actor Directory
-
-```typescript
-import { DistributedActorDirectory } from '@actor-core/runtime';
-
-// Create a distributed directory with Orleans-style caching
-const directory = new DistributedActorDirectory({
-  nodeAddress: 'node-1',
-  maxCacheSize: 10000,
-  cacheTtl: 300000,
-  cleanupInterval: 60000
-});
-
-// Register an actor
-const address = { id: 'user-1', type: 'user', path: 'actor://node-1/user/user-1' };
-await directory.register(address, 'node-1');
-
-// High-performance lookup with caching
-const location = await directory.lookup(address);
-console.log('Actor location:', location);
-
-// Get cache statistics
-const stats = directory.getCacheStats();
-console.log('Cache hit rate:', stats.hitRate);
-```
-
-### Event-Driven Architecture
-
-```typescript
-// Subscribe to directory changes
-const changes = directory.subscribeToChanges();
-changes.subscribe(event => {
-  console.log('Directory event:', event.type, event.address.path);
-});
-
-// List actors by type
-const userActors = await directory.listByType('user');
-console.log('User actors:', userActors.length);
-
-// Get all registered actors
-const allActors = await directory.getAll();
-console.log('Total registered actors:', allActors.size);
+// ✅ CORRECT: All operations must be async and message-based
+const actor = defineActor()
+  .onMessage(({ message }) => {
+    // Delegate to another actor or return immediately
+    return { emit: [{ type: 'PROCESS_ASYNC', data: message.data }] };
+  });
 ```
 
 ## 🧪 Testing
 
 ```typescript
-import { createMockActorRef, createTestEnvironment } from '@actor-core/testing';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { createActorSystem, createEventCollectorBehavior } from '@actor-core/runtime';
 
-describe('User Actor', () => {
-  let testEnv: TestEnvironment;
-  let userActor: MockActorRef;
-
-  beforeEach(() => {
-    testEnv = createTestEnvironment();
-    userActor = createMockActorRef('user');
-  });
-
-  it('should handle user registration', async () => {
-    const message = { 
-      type: 'REGISTER_USER', 
-      payload: { email: 'test@example.com' },
-      timestamp: Date.now()
-    };
+describe('Counter Actor', () => {
+  it('should increment and emit events', async () => {
+    const system = await createActorSystem();
+    system.enableTestMode(); // Synchronous processing
     
-    await userActor.send(message);
+    const counter = await system.spawn(counterActor);
+    const collector = await system.spawn(createEventCollectorBehavior());
     
-    expect(userActor.getSentEvents()).toContain(message);
-  });
-
-  it('should maintain actor statistics', async () => {
-    const stats = await userActor.getStats();
-    expect(stats.messagesProcessed).toBe(0);
-    expect(stats.uptime).toBeGreaterThan(0);
+    await system.subscribe(counter, {
+      subscriber: collector,
+      events: ['COUNT_CHANGED']
+    });
+    
+    await counter.send({ type: 'INCREMENT' });
+    
+    const events = await collector.ask({ type: 'GET_EVENTS' });
+    expect(events.collectedEvents).toHaveLength(1);
+    expect(events.collectedEvents[0]).toMatchObject({
+      type: 'COUNT_CHANGED',
+      newValue: 1
+    });
   });
 });
 ```
 
-## 🏛️ Architecture
+## 📖 Documentation
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                           Distributed Actor System                              │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                 │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐             │
-│  │     Node-1      │    │     Node-2      │    │     Node-3      │             │
-│  │                 │    │                 │    │                 │             │
-│  │  ┌───────────┐  │    │  ┌───────────┐  │    │  ┌───────────┐  │             │
-│  │  │ ActorRef  │  │    │  │ ActorRef  │  │    │  │ ActorRef  │  │             │
-│  │  │  (Local)  │  │    │  │ (Remote)  │  │    │  │ (Remote)  │  │             │
-│  │  └───────────┘  │    │  └───────────┘  │    │  └───────────┘  │             │
-│  │                 │    │                 │    │                 │             │
-│  │  ┌───────────┐  │    │  ┌───────────┐  │    │  ┌───────────┐  │             │
-│  │  │ Directory │  │    │  │ Directory │  │    │  │ Directory │  │             │
-│  │  │  (Cache)  │  │    │  │  (Cache)  │  │    │  │  (Cache)  │  │             │
-│  │  └───────────┘  │    │  └───────────┘  │    │  └───────────┘  │             │
-│  └─────────────────┘    └─────────────────┘    └─────────────────┘             │
-│                                                                                 │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                    Location-Transparent Message Routing                        │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                 │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐             │
-│  │   Supervisor    │    │  ActorSystem    │    │  CLI Tools      │             │
-│  │ (Fault Tol.)    │    │  (Cluster)      │    │  (Analysis)     │             │
-│  └─────────────────┘    └─────────────────┘    └─────────────────┘             │
-│                                                                                 │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
-
-## 📦 Package Structure
-
-```
-actor-web/
-├── packages/
-│   ├── actor-core-runtime/        # Core actor system implementation
-│   │   ├── src/
-│   │   │   ├── actor-system.ts    # Actor system interfaces
-│   │   │   ├── actor-system-impl.ts # Production implementation
-│   │   │   ├── distributed-actor-directory.ts # Orleans-style directory
-│   │   │   ├── create-actor-ref.ts # Actor reference creation
-│   │   │   └── logger.ts          # Debug logging system
-│   │   └── package.json
-│   │
-│   ├── actor-core-testing/        # Testing utilities
-│   │   ├── src/
-│   │   │   ├── index.ts          # Mock actors and test environment
-│   │   │   └── state-machine-analysis.ts # Analysis tools
-│   │   └── package.json
-│   │
-│   └── agent-workflow-cli/        # CLI tools
-│       ├── src/
-│       │   ├── commands/         # CLI commands
-│       │   ├── actors/          # Git and input actors
-│       │   └── cli/             # Command-line interface
-│       └── package.json
-│
-├── src/                          # Framework core (legacy)
-├── examples/                     # Usage examples
-└── docs/                        # Documentation
-```
-
-## 🛣️ Roadmap
-
-### Phase 1: Core Stabilization (Current)
-- [x] Distributed Actor Directory with Orleans-style caching
-- [x] Location-transparent actor system
-- [x] CLI tools and state machine analysis
-- [x] Virtual Actor System implementation
-- [x] Hierarchical Task Networks (HTN) for AI agents
-- [x] Hybrid Memory Systems (LRU + Vector + Knowledge Graph)
-- [x] Pipeline Workflows with retry and error handling
-- [x] Event Sourcing with time-travel debugging
-- [ ] Publish packages to npm registry
-- [ ] Comprehensive performance benchmarks
-
-### Phase 2: Platform Support (Q2 2025)
-- [ ] Web Worker support for true parallelism
-- [ ] Service Worker integration
-- [ ] Edge runtime compatibility
-- [ ] React/Vue/Svelte bindings
-
-### Phase 3: Developer Experience (Q3 2025)
-- [ ] Browser DevTools integration
-- [ ] Visual state machine editor
-- [ ] Real-time debugging tools
-- [ ] Performance monitoring dashboard
-
-### Phase 4: Enterprise Features (Q4 2025)
-- [ ] Multi-language bindings (Python, Go, Rust)
-- [ ] Kubernetes operators
-- [ ] Distributed tracing
-- [ ] Security audit tools
-- [ ] Commercial support
-
-### Phase 5: AI & ML Integration (2026)
-- [ ] Built-in ML model serving
-- [ ] Reinforcement learning actors
-- [ ] Natural language message routing
-- [ ] Auto-scaling based on load patterns
-
-See [docs/ROADMAP.md](./docs/ROADMAP.md) for detailed timeline and technical specifications.
-
-## 📚 Documentation
-
-### **Getting Started**
-- [Pure Actor Model Analysis](docs/PURE-ACTOR-MODEL-ANALYSIS.md) - Architecture principles and implementation
-- [Testing Guide](docs/TESTING-GUIDE.md) - Comprehensive testing patterns and best practices
-- [Implementation Plan](docs/AGENT-A-IMPLEMENTATION-PLAN.md) - Current development status
-
-### **Development & Debugging**
-- [🐛 Debugging Guide](docs/DEBUGGING-GUIDE.md) - Essential debugging techniques and Logger infrastructure
-- [🤖 Agent Workflow Guide](docs/AGENT-WORKFLOW-GUIDE.md) - Complete guide to parallel agent development
-
-### **Architecture**
-- [Actor System Design](docs/architecture/actor-system-design.md) - Core system architecture
-- [Distributed Directory Design](docs/architecture/distributed-directory-design.md) - Orleans-style caching
-- [Supervision Patterns](docs/architecture/supervision-patterns.md) - Fault tolerance strategies
-
-### **CLI & Tools**
-- [Agent Workflow CLI](packages/agent-workflow-cli/README.md) - Complete CLI documentation
-- [State Machine Analysis](docs/KNOWLEDGE-SHARE-XSTATE-TIMEOUT-PATTERNS.md) - Analysis patterns
+- [Pure Actor Model Compliance](./packages/actor-core-runtime/PURE-ACTOR-MODEL-COMPLIANCE.md)
+- [API Reference](./packages/actor-core-runtime/docs/API.md)
+- [Testing Guide](./packages/actor-core-runtime/docs/TESTING-GUIDE.md)
+- [Migration from Legacy APIs](./packages/actor-core-runtime/docs/MIGRATION.md)
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Set up the agent workflow: `pnpm aw init`
-3. Follow the [🤖 Agent Workflow Guide](./docs/AGENT-WORKFLOW-GUIDE.md) for parallel development
-4. Use agent scripts: `pnpm aw save` and `pnpm aw ship`
-5. Submit a Pull Request from your agent branch
+We welcome contributions! Please ensure:
 
-### Development Setup
+1. **No `any` types** - Use proper TypeScript types
+2. **Pure actor model** - No shared state or side effects
+3. **Test coverage** - All features must have tests
+4. **Documentation** - Update docs for API changes
 
 ```bash
-# Clone the repository
-git clone https://github.com/0xjcf/actor-web.git
-cd actor-web
-
-# Install dependencies
+# Clone and setup
+git clone https://github.com/0xjcf/actor-web-architecture
+cd actor-web-architecture
 pnpm install
 
 # Run tests
 pnpm test
-# Or run tests by environment
-pnpm test:dom      # DOM tests
-pnpm test:cli      # CLI tests  
-pnpm test:runtime  # Runtime tests
 
-# Start development mode
-pnpm dev
-
-# Analyze state machines
-pnpm aw analyze --target git-actor --workflow
-
-# Build the project
+# Build all packages
 pnpm build
+
+# Run in dev mode
+pnpm dev
 ```
 
-## 📄 License
+## 📜 License
 
-MIT © [0xjcf](https://github.com/0xjcf)
-
-## 🙏 Acknowledgments
-
-- [XState](https://stately.ai/docs/xstate) for the excellent state machine library
-- [Orleans](https://docs.microsoft.com/en-us/dotnet/orleans/) for distributed actor model inspiration
-- [Akka](https://akka.io/) for actor supervision patterns
-- [Erlang/OTP](https://www.erlang.org/) for fault tolerance principles
+MIT © [José Flores](https://github.com/0xjcf)
 
 ---
 
-**Built with ❤️ for resilient, distributed web applications** 
+Built with ❤️ following Erlang/OTP principles for the JavaScript ecosystem

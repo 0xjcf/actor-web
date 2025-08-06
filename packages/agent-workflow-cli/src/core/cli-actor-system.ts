@@ -6,12 +6,13 @@
  */
 
 import {
+  type ActorRef,
   type ActorSystem,
   type ActorSystemConfig,
   createActorSystem,
   Logger,
 } from '@actor-core/runtime';
-import { createPureGitActor, type PureGitActor } from '../actors/pure-git-actor.js';
+import { createGitActor } from '../actors/git-actor.js';
 
 // Create scoped logger for CLI actor system
 const log = Logger.namespace('CLI_ACTOR_SYSTEM');
@@ -72,28 +73,45 @@ class CLIActorSystem {
   }
 
   /**
-   * Create a GitActor using XState-based actor pattern
+   * Create a GitActor using modern fluent API pattern
    *
-   * Note: XState actors use createActorRef() pattern, not ActorSystem.spawn().
-   * This is the correct approach for state machine-based actors.
+   * Uses the modernized GitActor with defineActor().withMachine().onMessage()
+   * Spawns the actor through the ActorSystem for proper lifecycle management.
+   * Even local actors benefit from the actor system's services:
+   * - Message queueing and delivery
+   * - Lifecycle management (start/stop)
+   * - Event emission and subscription
+   * - Fault isolation and supervision
    */
-  async createGitActor(baseDir?: string): Promise<PureGitActor> {
+  async createGitActor(baseDir?: string): Promise<ActorRef> {
     // Ensure system is initialized
     if (!this.isInitialized) {
       await this.initialize();
     }
 
-    log.debug('📦 Creating Pure GitActor with CLI system management', { baseDir });
+    log.debug('📦 Spawning GitActor through ActorSystem', { baseDir });
 
-    // Use pure message-passing GitActor
-    const gitActor = createPureGitActor(baseDir);
+    // Get the behavior definition
+    const gitBehavior = createGitActor(baseDir);
 
-    // Start the actor
-    await gitActor.start();
+    // Spawn the actor through the actor system
+    // This ensures proper message handling, lifecycle, and fault isolation
+    if (!this.actorSystem) {
+      throw new Error('Actor system not initialized');
+    }
 
-    log.debug('✅ Pure GitActor created and started successfully');
+    const actorPid = await this.actorSystem.spawn(gitBehavior, {
+      id: `git-actor-${Date.now()}`,
+    });
 
-    return gitActor;
+    log.debug('✅ GitActor spawned successfully', {
+      actorId: actorPid.address.id,
+      actorPath: actorPid.address.path,
+      hasAsk: typeof actorPid.ask === 'function',
+      hasSend: typeof actorPid.send === 'function',
+    });
+
+    return actorPid;
   }
 
   /**

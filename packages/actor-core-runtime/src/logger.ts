@@ -5,6 +5,15 @@
 
 let isDevModeEnabled = false;
 
+// Helper to safely check process.env
+function getProcessEnv(key: string): string | undefined {
+  if (typeof globalThis !== 'undefined' && 'process' in globalThis) {
+    const proc = globalThis.process as { env?: Record<string, string | undefined> };
+    return proc.env?.[key];
+  }
+  return undefined;
+}
+
 /**
  * Enable development mode for logging
  */
@@ -52,28 +61,24 @@ export interface ScopedLogger {
 export const Logger = {
   debug: (namespace: string, message: string, data?: unknown) => {
     if (isDevModeEnabled && typeof console !== 'undefined') {
-      console.log(`🐛 [${namespace}] ${message}`, data ? data : '');
+      console.debug(`🐛 [${namespace}] ${message}`, data ? data : '');
     }
   },
 
   info: (namespace: string, message: string, data?: unknown) => {
     // Respect debug mode and check for test environment
-    const isTestEnv =
-      typeof process !== 'undefined' &&
-      (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true');
-    const debugEnabled = isDevModeEnabled || (isTestEnv && process.env.DEBUG_TESTS === 'true');
+    const isTestEnv = getProcessEnv('NODE_ENV') === 'test' || getProcessEnv('VITEST') === 'true';
+    const debugEnabled = isDevModeEnabled || (isTestEnv && getProcessEnv('DEBUG_TESTS') === 'true');
 
     if (debugEnabled && typeof console !== 'undefined') {
-      console.log(`ℹ️  [${namespace}] ${message}`, data ? data : '');
+      console.info(`ℹ️  [${namespace}] ${message}`, data ? data : '');
     }
   },
 
   warn: (namespace: string, message: string, data?: unknown) => {
     // Keep warnings visible unless specifically silenced in tests
-    const isTestEnv =
-      typeof process !== 'undefined' &&
-      (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true');
-    const shouldLog = !isTestEnv || process.env.DEBUG_TESTS === 'true' || isDevModeEnabled;
+    const isTestEnv = getProcessEnv('NODE_ENV') === 'test' || getProcessEnv('VITEST') === 'true';
+    const shouldLog = !isTestEnv || getProcessEnv('DEBUG_TESTS') === 'true' || isDevModeEnabled;
 
     if (shouldLog && typeof console !== 'undefined') {
       console.warn(`⚠️  [${namespace}] ${message}`, data ? data : '');
@@ -82,10 +87,8 @@ export const Logger = {
 
   error: (namespace: string, message: string, error?: unknown) => {
     // Always show errors, but allow silencing in tests
-    const isTestEnv =
-      typeof process !== 'undefined' &&
-      (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true');
-    const shouldLog = !isTestEnv || process.env.DEBUG_TESTS === 'true' || isDevModeEnabled;
+    const isTestEnv = getProcessEnv('NODE_ENV') === 'test' || getProcessEnv('VITEST') === 'true';
+    const shouldLog = !isTestEnv || getProcessEnv('DEBUG_TESTS') === 'true' || isDevModeEnabled;
 
     if (shouldLog && typeof console !== 'undefined') {
       console.error(`❌ [${namespace}] ${message}`, error ? error : '');
@@ -120,6 +123,6 @@ export const Logger = {
 };
 
 // Development mode detection
-if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
+if (getProcessEnv('NODE_ENV') === 'development') {
   enableDevMode();
 }

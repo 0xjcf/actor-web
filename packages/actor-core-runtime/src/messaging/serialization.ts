@@ -7,6 +7,24 @@
 import type { ActorMessage } from '../actor-system.js';
 
 /**
+ * Type guard to validate ActorMessage structure according to actor-system.ts requirements
+ */
+function isValidActorMessage(value: unknown): value is ActorMessage {
+  if (value === null || typeof value !== 'object') {
+    return false;
+  }
+
+  const msg = value as Record<string, unknown>;
+
+  return (
+    typeof msg.type === 'string' &&
+    'payload' in msg && // payload can be null but must be present
+    typeof msg.timestamp === 'number' &&
+    typeof msg.version === 'string'
+  );
+}
+
+/**
  * Serialization format types
  */
 export type SerializationFormat = 'json' | 'msgpack';
@@ -46,7 +64,13 @@ export class JsonSerializer implements MessageSerializer {
   async decode(data: ArrayBuffer): Promise<ActorMessage> {
     const decoder = new TextDecoder();
     const json = decoder.decode(data);
-    return JSON.parse(json) as ActorMessage;
+    const parsed: unknown = JSON.parse(json);
+
+    if (!isValidActorMessage(parsed)) {
+      throw new Error('Invalid ActorMessage format');
+    }
+
+    return parsed;
   }
 }
 
@@ -83,7 +107,13 @@ export class MessagePackSerializer implements MessageSerializer {
       throw new Error('MessagePack not available - install @msgpack/msgpack');
     }
     const uint8Array = new Uint8Array(data);
-    return this.msgpack.decode(uint8Array) as ActorMessage;
+    const parsed: unknown = this.msgpack.decode(uint8Array);
+
+    if (!isValidActorMessage(parsed)) {
+      throw new Error('Invalid ActorMessage format');
+    }
+
+    return parsed;
   }
 }
 

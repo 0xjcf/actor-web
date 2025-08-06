@@ -9,12 +9,16 @@
  * and use message-passing for actor communication.
  */
 
+import { Logger } from '@actor-core/runtime';
 import {
   analyzeStateMachine,
   assertNoUnreachableStates,
   generateCoverageReport,
 } from '@actor-core/testing';
 import chalk from 'chalk';
+
+const log = Logger.namespace('STATE_MACHINE_ANALYSIS');
+
 import type { AnyStateMachine } from 'xstate';
 import { type GitContext, type GitEvent, gitActorMachine } from '../actors/git-actor';
 import { GitOperations } from '../core/git-operations.js';
@@ -34,8 +38,8 @@ async function monitorStateMachineSimplified(
   eventDelay: number,
   eventData: Record<string, unknown>
 ): Promise<void> {
-  console.log(chalk.blue('🎭 State Machine Interactive Simulator'));
-  console.log(chalk.blue('======================================'));
+  log.debug(chalk.blue('🎭 State Machine Interactive Simulator'));
+  log.debug(chalk.blue('======================================'));
 
   // Get current git context for realistic simulation
   try {
@@ -45,11 +49,11 @@ async function monitorStateMachineSimplified(
       git.getChangedFiles(),
     ]);
 
-    console.log(chalk.blue('🔍 Git Context for Simulation:'));
-    console.log(chalk.gray(`  Branch: ${currentBranch || 'unknown'}`));
-    console.log(chalk.gray(`  Uncommitted Changes: ${hasChanges ? 'Yes' : 'No'}`));
-    console.log(chalk.gray(`  Changed Files: ${changedFiles.length}`));
-    console.log('');
+    log.debug(chalk.blue('🔍 Git Context for Simulation:'));
+    log.debug(chalk.gray(`  Branch: ${currentBranch || 'unknown'}`));
+    log.debug(chalk.gray(`  Uncommitted Changes: ${hasChanges ? 'Yes' : 'No'}`));
+    log.debug(chalk.gray(`  Changed Files: ${changedFiles.length}`));
+    log.debug('');
 
     // Use XState's createActor for simulation (not our complex actor system)
     const { createActor } = await import('xstate');
@@ -57,25 +61,25 @@ async function monitorStateMachineSimplified(
       input: { baseDir: process.cwd() },
     });
 
-    console.log(chalk.green('🎭 Starting State Machine Simulation...'));
+    log.debug(chalk.green('🎭 Starting State Machine Simulation...'));
 
     // Start the simulation actor (lightweight XState actor)
     simulationActor.start();
 
     let currentState = simulationActor.getSnapshot().value;
-    console.log(chalk.yellow(`📍 Initial State: ${String(currentState)}`));
-    console.log('');
+    log.debug(chalk.yellow(`📍 Initial State: ${String(currentState)}`));
+    log.debug('');
 
     // AUTO-RUN MODE: Run provided events then exit
     if (eventsToSend.length > 0) {
-      console.log(chalk.blue(`🎯 Auto-run Mode: ${eventsToSend.join(' → ')}`));
-      console.log(chalk.gray(`⏱️  Event Delay: ${eventDelay}ms`));
-      console.log('');
+      log.debug(chalk.blue(`🎯 Auto-run Mode: ${eventsToSend.join(' → ')}`));
+      log.debug(chalk.gray(`⏱️  Event Delay: ${eventDelay}ms`));
+      log.debug('');
 
       // Simulate each event in sequence
       for (let i = 0; i < eventsToSend.length; i++) {
         const eventName = eventsToSend[i];
-        console.log(chalk.cyan(`🔄 Sending Event: ${eventName}`));
+        log.debug(chalk.cyan(`🔄 Sending Event: ${eventName}`));
 
         // Create properly typed event
         const event = createEventFromString(eventName, eventData);
@@ -88,43 +92,43 @@ async function monitorStateMachineSimplified(
         const newState = String(newSnapshot.value);
 
         if (newState !== String(currentState)) {
-          console.log(chalk.green(`  ✅ State Transition: ${String(currentState)} → ${newState}`));
+          log.debug(chalk.green(`  ✅ State Transition: ${String(currentState)} → ${newState}`));
           currentState = newSnapshot.value;
         } else {
-          console.log(chalk.gray(`  ⚪ No State Change: Remained in ${String(currentState)}`));
+          log.debug(chalk.gray(`  ⚪ No State Change: Remained in ${String(currentState)}`));
         }
 
         // Show context changes
         const context = newSnapshot.context as GitContext;
         if (context.lastOperation) {
-          console.log(chalk.blue(`     Context: lastOperation = ${context.lastOperation}`));
+          log.debug(chalk.blue(`     Context: lastOperation = ${context.lastOperation}`));
         }
         if (context.lastError) {
-          console.log(chalk.red(`     Error: ${context.lastError}`));
+          log.debug(chalk.red(`     Error: ${context.lastError}`));
         }
 
         // Add delay between events (except for last event)
         if (eventDelay > 0 && i < eventsToSend.length - 1) {
-          console.log(chalk.gray(`  ⏱️  Waiting ${eventDelay}ms...`));
+          log.debug(chalk.gray(`  ⏱️  Waiting ${eventDelay}ms...`));
           await new Promise((resolve) => setTimeout(resolve, eventDelay));
         }
 
-        console.log('');
+        log.debug('');
       }
 
       // Clean exit after events complete
-      console.log(chalk.green('🎉 Auto-run Complete!'));
-      console.log(chalk.blue(`📊 Final State: ${String(currentState)}`));
+      log.debug(chalk.green('🎉 Auto-run Complete!'));
+      log.debug(chalk.blue(`📊 Final State: ${String(currentState)}`));
     } else {
       // INTERACTIVE MODE: Create fresh actor to ensure clean state
-      console.log(chalk.cyan('🎮 Interactive Mode - Enter events to see state transitions'));
-      console.log(
+      log.debug(chalk.cyan('🎮 Interactive Mode - Enter events to see state transitions'));
+      log.debug(
         chalk.gray('Available events: CHECK_STATUS, COMMIT_CHANGES, PUSH_CHANGES, CHECK_REPO, etc.')
       );
-      console.log(
+      log.debug(
         chalk.gray('Type "help" for available events, "state" for current state, "q" to quit')
       );
-      console.log('');
+      log.debug('');
 
       // ✅ SOLUTION: Create fresh actor for interactive mode
       const { createActor } = await import('xstate');
@@ -134,10 +138,8 @@ async function monitorStateMachineSimplified(
       interactiveActor.start();
 
       const initialInteractiveState = interactiveActor.getSnapshot().value;
-      console.log(
-        chalk.blue(`🎮 Interactive actor starting in: ${String(initialInteractiveState)}`)
-      );
-      console.log('');
+      log.debug(chalk.blue(`🎮 Interactive actor starting in: ${String(initialInteractiveState)}`));
+      log.debug('');
 
       await startInteractiveMode(interactiveActor, initialInteractiveState, eventData);
     }
@@ -172,41 +174,41 @@ async function startInteractiveMode(
     const command = input.trim();
 
     if (command === 'q' || command === 'quit' || command === 'exit') {
-      console.log(chalk.yellow('👋 Exiting simulator...'));
+      log.debug(chalk.yellow('👋 Exiting simulator...'));
       rl.close();
       return;
     }
 
     if (command === 'help') {
-      console.log(chalk.cyan('Available Events:'));
-      console.log(chalk.gray('  CHECK_STATUS - Check git status'));
-      console.log(chalk.gray('  CHECK_REPO - Verify git repository'));
-      console.log(chalk.gray('  COMMIT_CHANGES - Commit changes'));
-      console.log(chalk.gray('  PUSH_CHANGES - Push to remote'));
-      console.log(chalk.gray('  GET_INTEGRATION_STATUS - Check integration status'));
-      console.log(chalk.gray('  CREATE_BRANCH - Create new branch'));
-      console.log(chalk.gray('  SETUP_WORKTREES - Setup agent worktrees'));
-      console.log(chalk.gray(''));
-      console.log(chalk.cyan('Commands:'));
-      console.log(chalk.gray('  help - Show this help'));
-      console.log(chalk.gray('  state - Show current state'));
-      console.log(chalk.gray('  q - Quit simulator'));
-      console.log('');
+      log.debug(chalk.cyan('Available Events:'));
+      log.debug(chalk.gray('  CHECK_STATUS - Check git status'));
+      log.debug(chalk.gray('  CHECK_REPO - Verify git repository'));
+      log.debug(chalk.gray('  COMMIT_CHANGES - Commit changes'));
+      log.debug(chalk.gray('  PUSH_CHANGES - Push to remote'));
+      log.debug(chalk.gray('  GET_INTEGRATION_STATUS - Check integration status'));
+      log.debug(chalk.gray('  CREATE_BRANCH - Create new branch'));
+      log.debug(chalk.gray('  SETUP_WORKTREES - Setup agent worktrees'));
+      log.debug(chalk.gray(''));
+      log.debug(chalk.cyan('Commands:'));
+      log.debug(chalk.gray('  help - Show this help'));
+      log.debug(chalk.gray('  state - Show current state'));
+      log.debug(chalk.gray('  q - Quit simulator'));
+      log.debug('');
       rl.prompt();
       return;
     }
 
     if (command === 'state') {
       const currentState = getCurrentState();
-      console.log(chalk.blue(`📊 Current State: ${String(currentState)}`));
-      console.log('');
+      log.debug(chalk.blue(`📊 Current State: ${String(currentState)}`));
+      log.debug('');
       rl.prompt();
       return;
     }
 
     if (command.length > 0) {
       // Try to send the event
-      console.log(chalk.cyan(`🔄 Sending Event: ${command}`));
+      log.debug(chalk.cyan(`🔄 Sending Event: ${command}`));
 
       try {
         const event = createEventFromString(command, eventData);
@@ -222,25 +224,25 @@ async function startInteractiveMode(
         const newState = String(newSnapshot.value);
 
         if (newState !== String(currentState)) {
-          console.log(chalk.green(`  ✅ State Transition: ${String(currentState)} → ${newState}`));
+          log.debug(chalk.green(`  ✅ State Transition: ${String(currentState)} → ${newState}`));
         } else {
-          console.log(chalk.gray(`  ⚪ No State Change: Remained in ${String(currentState)}`));
+          log.debug(chalk.gray(`  ⚪ No State Change: Remained in ${String(currentState)}`));
         }
 
         // Show context changes
         const context = newSnapshot.context as GitContext;
         if (context.lastOperation) {
-          console.log(chalk.blue(`     Context: lastOperation = ${context.lastOperation}`));
+          log.debug(chalk.blue(`     Context: lastOperation = ${context.lastOperation}`));
         }
         if (context.lastError) {
-          console.log(chalk.red(`     Error: ${context.lastError}`));
+          log.debug(chalk.red(`     Error: ${context.lastError}`));
         }
       } catch (_error) {
-        console.log(chalk.red(`  ❌ Invalid event: ${command}`));
-        console.log(chalk.gray('  Type "help" to see available events'));
+        log.debug(chalk.red(`  ❌ Invalid event: ${command}`));
+        log.debug(chalk.gray('  Type "help" to see available events'));
       }
 
-      console.log('');
+      log.debug('');
     }
 
     rl.prompt();
@@ -248,12 +250,12 @@ async function startInteractiveMode(
 
   rl.on('line', processInput);
   rl.on('close', () => {
-    console.log(chalk.yellow('👋 Simulator session ended'));
+    log.debug(chalk.yellow('👋 Simulator session ended'));
   });
 
   // Handle Ctrl+C gracefully
   rl.on('SIGINT', () => {
-    console.log(chalk.yellow('\n👋 Exiting simulator...'));
+    log.debug(chalk.yellow('\n👋 Exiting simulator...'));
     rl.close();
   });
 
@@ -318,7 +320,7 @@ async function subscribeToStateMachineWithEvents(
   eventData: Record<string, unknown>
 ): Promise<void> {
   if (target !== 'git-actor') {
-    console.log(chalk.red('❌ Live monitoring only supported for git-actor'));
+    log.debug(chalk.red('❌ Live monitoring only supported for git-actor'));
     return;
   }
 
@@ -328,7 +330,7 @@ async function subscribeToStateMachineWithEvents(
     // ✅ SIMPLIFIED: Use GitOperations instead of complex GitActor system
     const git = new GitOperations(repoRoot);
 
-    console.log(chalk.blue('🚀 Starting Git Analysis...'));
+    log.debug(chalk.blue('🚀 Starting Git Analysis...'));
 
     // ✅ SIMPLIFIED: Direct state machine analysis without complex monitoring
     await monitorStateMachineSimplified(git, eventsToSend, eventDelay, eventData);
@@ -799,75 +801,75 @@ function displayValidationResults(results: {
   warnings: string[];
 }): void {
   if (results.isValid) {
-    console.log(chalk.green('✅ Machine validation passed'));
+    log.debug(chalk.green('✅ Machine validation passed'));
   } else {
-    console.log(chalk.red('❌ Machine validation failed'));
+    log.debug(chalk.red('❌ Machine validation failed'));
   }
 
   if (results.errors.length > 0) {
-    console.log(chalk.red('Errors:'));
-    results.errors.forEach((error) => console.log(chalk.red(`  - ${error}`)));
+    log.debug(chalk.red('Errors:'));
+    results.errors.forEach((error) => log.debug(chalk.red(`  - ${error}`)));
   }
 
   if (results.warnings.length > 0) {
-    console.log(chalk.yellow('Warnings:'));
-    results.warnings.forEach((warning) => console.log(chalk.yellow(`  - ${warning}`)));
+    log.debug(chalk.yellow('Warnings:'));
+    results.warnings.forEach((warning) => log.debug(chalk.yellow(`  - ${warning}`)));
   }
 }
 
 // NEW: Display workflow analysis results
 function displayWorkflowAnalysisResults(results: { errors: string[]; warnings: string[] }): void {
   if (results.errors.length === 0 && results.warnings.length === 0) {
-    console.log(chalk.green('✅ Workflow analysis passed - no issues found!'));
+    log.debug(chalk.green('✅ Workflow analysis passed - no issues found!'));
     return;
   }
 
   if (results.errors.length > 0) {
-    console.log(chalk.red('❌ Workflow Errors:'));
-    results.errors.forEach((error) => console.log(chalk.red(`  - ${error}`)));
+    log.debug(chalk.red('❌ Workflow Errors:'));
+    results.errors.forEach((error) => log.debug(chalk.red(`  - ${error}`)));
   }
 
   if (results.warnings.length > 0) {
-    console.log(chalk.yellow('⚠️  Workflow Warnings:'));
-    results.warnings.forEach((warning) => console.log(chalk.yellow(`  - ${warning}`)));
+    log.debug(chalk.yellow('⚠️  Workflow Warnings:'));
+    results.warnings.forEach((warning) => log.debug(chalk.yellow(`  - ${warning}`)));
   }
 
   // Provide generic recommendations based on errors
   if (results.errors.length > 0) {
-    console.log(chalk.cyan('💡 Generic Workflow Recommendations:'));
+    log.debug(chalk.cyan('💡 Generic Workflow Recommendations:'));
 
     if (results.errors.some((e) => e.includes('dead-end states'))) {
-      console.log(chalk.gray('  - Review states with no outgoing transitions'));
-      console.log(
+      log.debug(chalk.gray('  - Review states with no outgoing transitions'));
+      log.debug(
         chalk.gray('  - Consider adding transitions to continue workflow or mark as final states')
       );
     }
 
     if (results.warnings.some((w) => w.includes('Final states with outgoing transitions'))) {
-      console.log(chalk.gray('  - Final states typically should not have outgoing transitions'));
-      console.log(
+      log.debug(chalk.gray('  - Final states typically should not have outgoing transitions'));
+      log.debug(
         chalk.gray('  - Consider if these states should be final or have different transitions')
       );
     }
 
     if (results.warnings.some((w) => w.includes('no incoming transitions'))) {
-      console.log(chalk.gray('  - Review states that may be unreachable'));
-      console.log(chalk.gray('  - Ensure states have proper entry points or remove if unused'));
+      log.debug(chalk.gray('  - Review states that may be unreachable'));
+      log.debug(chalk.gray('  - Ensure states have proper entry points or remove if unused'));
     }
   }
 }
 
 function showDebugInfo(machine: AnyStateMachine, _machineName: string): void {
-  console.log('');
+  log.debug('');
 
   const allEvents = ['CHECK_STATUS', 'REQUEST_STATUS']; // Simplified event list for analysis
-  console.log(`Machine ID: ${machine.id || 'not specified'}`);
-  console.log(`Machine Type: ${machine.config.type || 'not specified'}`);
-  console.log(`Total Events: ${allEvents.length}`);
+  log.debug(`Machine ID: ${machine.id || 'not specified'}`);
+  log.debug(`Machine Type: ${machine.config.type || 'not specified'}`);
+  log.debug(`Total Events: ${allEvents.length}`);
 
   if (allEvents.length > 0) {
-    console.log('All Events:');
-    allEvents.forEach((event: string) => console.log(`  - ${event}`));
+    log.debug('All Events:');
+    allEvents.forEach((event: string) => log.debug(`  - ${event}`));
   }
 }
 
@@ -889,8 +891,8 @@ export async function analyzeCommand(options: {
   //   enableDevMode();
   // }
 
-  console.log(chalk.blue('🔍 State Machine Analysis'));
-  console.log(chalk.blue('='.repeat(60)));
+  log.debug(chalk.blue('🔍 State Machine Analysis'));
+  log.debug(chalk.blue('='.repeat(60)));
 
   const target = options.target || 'git-actor';
   const verbose = options.verbose || false;
@@ -915,24 +917,24 @@ export async function analyzeCommand(options: {
         break;
 
       default:
-        console.log(chalk.red(`❌ Unknown target: ${target}`));
-        console.log(chalk.gray('Available targets: git-actor'));
+        log.debug(chalk.red(`❌ Unknown target: ${target}`));
+        log.debug(chalk.gray('Available targets: git-actor'));
         process.exit(1);
     }
 
-    console.log(chalk.yellow(`🎯 Analyzing: ${machineName}`));
-    console.log('');
+    log.debug(chalk.yellow(`🎯 Analyzing: ${machineName}`));
+    log.debug('');
 
     // Handle automated event sending or live subscription mode
     if (subscribe || eventsToSend.length > 0) {
-      console.log(chalk.cyan('🔔 Live State Monitoring Mode'));
-      console.log(chalk.gray('Press Ctrl+C to stop monitoring'));
-      console.log('');
+      log.debug(chalk.cyan('🔔 Live State Monitoring Mode'));
+      log.debug(chalk.gray('Press Ctrl+C to stop monitoring'));
+      log.debug('');
 
       if (eventsToSend.length > 0) {
-        console.log(chalk.yellow(`🎯 Automated Event Sequence: ${eventsToSend.join(' → ')}`));
-        console.log(chalk.gray(`⏱️  Event Delay: ${eventDelay}ms`));
-        console.log('');
+        log.debug(chalk.yellow(`🎯 Automated Event Sequence: ${eventsToSend.join(' → ')}`));
+        log.debug(chalk.gray(`⏱️  Event Delay: ${eventDelay}ms`));
+        log.debug('');
       }
 
       await subscribeToStateMachineWithEvents(
@@ -949,71 +951,71 @@ export async function analyzeCommand(options: {
     const analysis = analyzeStateMachineData(machine);
 
     // Show basic results
-    console.log(chalk.blue('📊 Analysis Results:'));
-    console.log(`  Total States: ${analysis.totalStates}`);
-    console.log(`  Reachable States: ${analysis.reachableStates}`);
-    console.log(
+    log.debug(chalk.blue('📊 Analysis Results:'));
+    log.debug(`  Total States: ${analysis.totalStates}`);
+    log.debug(`  Reachable States: ${analysis.reachableStates}`);
+    log.debug(
       `  Coverage: ${Math.round((analysis.reachableStates / analysis.totalStates) * 100)}%`
     );
-    console.log('');
+    log.debug('');
 
     if (analysis.unreachableStates.length > 0) {
-      console.log(chalk.red('❌ Unreachable States Found:'));
+      log.debug(chalk.red('❌ Unreachable States Found:'));
       analysis.unreachableStates.forEach((state: string, index: number) => {
-        console.log(chalk.red(`  ${index + 1}. ${state}`));
+        log.debug(chalk.red(`  ${index + 1}. ${state}`));
       });
-      console.log('');
+      log.debug('');
     } else {
-      console.log(chalk.green('✅ All states are reachable!'));
-      console.log('');
+      log.debug(chalk.green('✅ All states are reachable!'));
+      log.debug('');
     }
 
     // Run comprehensive validation if requested
     if (validate) {
-      console.log(chalk.blue('🔍 Comprehensive Validation:'));
+      log.debug(chalk.blue('🔍 Comprehensive Validation:'));
       const validationResults = validateStateMachine(machine, machineName);
       displayValidationResults(validationResults);
-      console.log('');
+      log.debug('');
     }
 
     // NEW: Run workflow analysis if requested
     if (workflow) {
-      console.log(chalk.blue('⚙️  Workflow Analysis:'));
+      log.debug(chalk.blue('⚙️  Workflow Analysis:'));
       const workflowIssues = analyzeWorkflowCompleteness(machine);
       displayWorkflowAnalysisResults(workflowIssues);
-      console.log('');
+      log.debug('');
     }
 
     // Show debug information if requested
     if (debug) {
-      console.log(chalk.blue('🐛 Debug Information:'));
+      log.debug(chalk.blue('🐛 Debug Information:'));
       showDebugInfo(machine, machineName);
-      console.log('');
+      log.debug('');
     }
 
     // Show verbose output if requested
     if (verbose) {
-      console.log(chalk.blue('📋 Detailed Coverage Report:'));
+      log.debug(chalk.blue('📋 Detailed Coverage Report:'));
 
       // Handle git-actor separately due to circular reference issues
       if (target === 'git-actor') {
-        console.log(chalk.yellow('Git Actor Analysis:'));
-        console.log(`  Machine ID: ${machine.id}`);
-        console.log(`  Total States: ${analysis.totalStates}`);
-        console.log(`  All States: ${analysis.allStates.join(', ')}`);
-        console.log('  Note: Detailed path analysis unavailable due to circular references');
+        log.debug(chalk.yellow('Git Actor Analysis:'));
+        log.debug(`  Machine ID: ${machine.id}`);
+        log.debug(`  Total States: ${analysis.totalStates}`);
+        log.debug(`  All States: ${analysis.allStates.join(', ')}`);
+        log.debug('  Note: Detailed path analysis unavailable due to circular references');
       } else {
         try {
-          console.log(generateCoverageReport(machine, machineName));
+          log.debug(generateCoverageReport(machine, machineName));
         } catch (_error) {
-          console.log(chalk.red('❌ Coverage report unavailable due to analysis limitations'));
+          log.debug(chalk.red('❌ Coverage report unavailable due to analysis limitations'));
         }
       }
 
-      console.log('');
+      log.debug('');
 
       if (analysis.simplePaths.length > 0) {
-        console.log(chalk.blue('🛤️  Sample State Paths:'));
+        log.debug(chalk.blue('🛤️  Sample State Paths:'));
         analysis.simplePaths.slice(0, 10).forEach(
           (
             path: {
@@ -1022,46 +1024,46 @@ export async function analyzeCommand(options: {
             },
             index: number
           ) => {
-            console.log(chalk.gray(`  ${index + 1}. ${path.state} (${path.steps.length} steps)`));
+            log.debug(chalk.gray(`  ${index + 1}. ${path.state} (${path.steps.length} steps)`));
           }
         );
-        console.log('');
+        log.debug('');
       } else if (target === 'git-actor') {
-        console.log(chalk.blue('🛤️  Sample States:'));
+        log.debug(chalk.blue('🛤️  Sample States:'));
         analysis.allStates.slice(0, 10).forEach((state, index) => {
-          console.log(chalk.gray(`  ${index + 1}. ${state}`));
+          log.debug(chalk.gray(`  ${index + 1}. ${state}`));
         });
-        console.log('');
+        log.debug('');
       }
     }
 
     // Run assertion if requested
     if (shouldAssert) {
-      console.log(chalk.blue('🧪 Running Assertion Test:'));
+      log.debug(chalk.blue('🧪 Running Assertion Test:'));
       try {
         assertNoUnreachableStates(machine, machineName);
-        console.log(chalk.green('✅ Assertion test passed - no unreachable states!'));
+        log.debug(chalk.green('✅ Assertion test passed - no unreachable states!'));
       } catch (error) {
-        console.log(
+        log.debug(
           chalk.red('❌ Assertion test failed:'),
           error instanceof Error ? error.message : String(error)
         );
         process.exit(1);
       }
-      console.log('');
+      log.debug('');
     }
 
     // Summary and recommendations
     if (analysis.unreachableStates.length > 0) {
-      console.log(chalk.yellow('💡 Recommendations:'));
-      console.log('  1. Check if unreachable states have missing event wiring');
-      console.log('  2. Remove unused states if they are not needed');
-      console.log('  3. Connect states to appropriate workflows');
-      console.log('');
+      log.debug(chalk.yellow('💡 Recommendations:'));
+      log.debug('  1. Check if unreachable states have missing event wiring');
+      log.debug('  2. Remove unused states if they are not needed');
+      log.debug('  3. Connect states to appropriate workflows');
+      log.debug('');
 
       process.exit(1);
     } else {
-      console.log(chalk.green('🎉 State machine analysis complete - no issues found!'));
+      log.debug(chalk.green('🎉 State machine analysis complete - no issues found!'));
     }
   } catch (error) {
     console.error(

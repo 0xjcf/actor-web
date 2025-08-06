@@ -4,14 +4,8 @@
  * @author Agent A - CLI Actor Migration Phase (Actor Model Compliant)
  */
 
-import type { JsonValue } from '../../actor-core-runtime/src/actor-system.js';
-import type { MessageUnion } from '../../actor-core-runtime/src/types.js';
-import type { GitActor, GitMessageMap } from './actors/git-actor.js';
-
-/**
- * Type for valid Git messages - uses the type-safe message union
- */
-type GitMessage = MessageUnion<GitMessageMap>;
+import type { ActorRef } from '@actor-core/runtime';
+import type { ActorMessage } from '../../actor-core-runtime/src/actor-system.js';
 
 /**
  * Type guard for status response
@@ -29,8 +23,8 @@ function isStatusResponse(response: unknown): response is { currentState: string
  * Send a message and verify outcome with retry logic
  */
 export async function sendAndVerify(
-  actor: GitActor,
-  message: GitMessage,
+  actor: ActorRef,
+  message: ActorMessage,
   verifyFn: () => Promise<boolean>
 ): Promise<void> {
   actor.send(message);
@@ -46,11 +40,8 @@ export async function sendAndVerify(
 /**
  * Check if actor is in expected state
  */
-export async function isInState(actor: GitActor, expectedState: string): Promise<boolean> {
-  const response = await actor.ask({
-    type: 'REQUEST_STATUS' as const,
-    payload: null,
-  });
+export async function isInState(actor: ActorRef, expectedState: string): Promise<boolean> {
+  const response = await actor.ask({ type: 'REQUEST_STATUS' });
   if (isStatusResponse(response)) {
     return response.currentState === expectedState;
   }
@@ -58,26 +49,10 @@ export async function isInState(actor: GitActor, expectedState: string): Promise
 }
 
 /**
- * Subscribe to test events with proper typing
- */
-export function subscribeToTestEvents(
-  actor: GitActor,
-  eventHandlers: Record<string, (event: { type: string; payload?: JsonValue }) => void>
-): () => void {
-  const unsubscribers = Object.entries(eventHandlers).map(([eventType, handler]) =>
-    actor.subscribe(eventType, handler)
-  );
-
-  return () => {
-    unsubscribers.forEach((unsub) => unsub());
-  };
-}
-
-/**
  * Wait for actor to reach specific state
  */
 export async function waitForState(
-  actor: GitActor,
+  actor: ActorRef,
   expectedState: string,
   maxWait = 2000,
   checkInterval = 100
@@ -94,38 +69,36 @@ export async function waitForState(
   throw new Error(`Actor did not reach state "${expectedState}" within ${maxWait}ms`);
 }
 
+// ============================================================================
+// MODERN ACTOR-BASED EVENT COLLECTION
+// ============================================================================
+
 /**
- * Event collector for testing - collects events with proper typing
+ * Create an event collector using the framework's spawnEventCollector
+ * This is the recommended pattern for pure actor model compliance
+ *
+ * @example
+ * ```typescript
+ * import { getCLIActorSystem } from './core/cli-actor-system.js';
+ *
+ * const cliSystem = getCLIActorSystem();
+ * const actorSystem = cliSystem.getActorSystem();
+ *
+ * // Create event collector
+ * const collector = await actorSystem.spawnEventCollector({
+ *   id: 'test-collector',
+ *   autoStart: true
+ * });
+ *
+ * // Get collected events
+ * const response = await collector.ask({ type: 'GET_EVENTS' });
+ * log.debug('Events:', response.events);
+ * ```
  */
-export function createEventCollector(actor: GitActor) {
-  const events: Array<{ type: string; timestamp: number; payload?: JsonValue }> = [];
-  const unsubscribers: Array<() => void> = [];
-
+export function getEventCollectionPattern() {
   return {
-    start(eventTypes: string[] = ['*']) {
-      eventTypes.forEach((eventType) => {
-        const unsub = actor.subscribe(eventType, (event) => {
-          events.push({
-            ...event,
-            timestamp: Date.now(),
-          });
-        });
-        unsubscribers.push(unsub);
-      });
-    },
-
-    stop() {
-      unsubscribers.forEach((unsub) => unsub());
-      unsubscribers.length = 0;
-    },
-
-    getEvents() {
-      return [...events];
-    },
-
-    clear() {
-      events.length = 0;
-    },
+    instructions: 'Use system.spawnEventCollector() for proper actor-based event collection',
+    example: 'See JSDoc example above for proper usage pattern',
   };
 }
 
@@ -137,41 +110,13 @@ export function createEventCollector(actor: GitActor) {
  * Helper to create properly typed git messages
  */
 export const createGitMessage = {
-  requestStatus: (): GitMessage => ({
-    type: 'REQUEST_STATUS' as const,
-    payload: null,
-  }),
+  requestStatus: () => ({ type: 'REQUEST_STATUS' }),
 
-  checkStatus: (): GitMessage => ({
-    type: 'CHECK_STATUS' as const,
-    payload: null,
-  }),
+  checkStatus: () => ({ type: 'CHECK_STATUS' }),
 
-  getIntegrationStatus: (): GitMessage => ({
-    type: 'GET_INTEGRATION_STATUS' as const,
-    payload: null,
-  }),
+  getIntegrationStatus: () => ({ type: 'GET_INTEGRATION_STATUS' }),
 
-  validateDates: (): GitMessage => ({
-    type: 'VALIDATE_DATES' as const,
-    payload: null,
-  }),
+  validateDates: () => ({ type: 'VALIDATE_DATES' }),
 
-  commitChanges: (message: string): GitMessage => ({
-    type: 'COMMIT_CHANGES' as const,
-    payload: { message },
-  }),
+  commitChanges: (message: string) => ({ type: 'COMMIT_CHANGES', message }),
 };
-
-// ============================================================================
-// DEPRECATED - TO BE REMOVED
-// ============================================================================
-
-/**
- * @deprecated Use pure actor model patterns instead
- */
-export async function waitForCompletion(_actor: GitActor, _timeout?: number): Promise<void> {
-  console.warn('waitForCompletion is deprecated. Use event-based patterns instead.');
-  // Minimal implementation for backward compatibility
-  await new Promise<void>((resolve) => setTimeout(resolve, 50));
-}

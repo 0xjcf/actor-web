@@ -12,12 +12,50 @@
 
 import type { Actor, AnyStateMachine } from 'xstate';
 import { createActor } from 'xstate';
-import type { ActorBehavior, ActorMessage, ActorPID, JsonValue } from './actor-system.js';
+import type { ActorInstance } from './actor-instance.js';
+import type { ActorRef } from './actor-ref.js';
+import { ComponentSymbols } from './actor-symbols.js';
+import type { ActorBehavior, ActorMessage, JsonValue } from './actor-system.js';
 import { SupervisionDirective } from './actor-system.js';
 import { Logger } from './logger.js';
 import type { FanOutResult } from './runtime-fanout.js';
 // Import fan-out detection and types
 import { detectFanOutEvents } from './runtime-fanout.js';
+import type { Message } from './types.js';
+
+/**
+ * Adapter to convert XState Actor to ActorInstance interface
+ */
+function xstateToActorInstance(xstateActor: Actor<AnyStateMachine>): ActorInstance {
+  return {
+    id: xstateActor.id || 'xstate-actor',
+    send: (message) => xstateActor.send(message),
+    getSnapshot: () => {
+      const snapshot = xstateActor.getSnapshot();
+      return {
+        context: snapshot.context,
+        value: snapshot.value,
+        status: 'running' as const,
+        matches: () => false,
+        can: () => false,
+        hasTag: () => false,
+        toJSON: () => ({ context: snapshot.context, value: snapshot.value }),
+      };
+    },
+    start: () => {}, // XState actors are already started
+    stop: () => {
+      xstateActor.stop();
+      return Promise.resolve();
+    },
+    ask: async <T>(_message: ActorMessage, _timeout?: number): Promise<T> => {
+      throw new Error(
+        `Ask pattern not yet implemented for component XState actor ${xstateActor.id}`
+      );
+    },
+    getType: () => 'machine' as const,
+    status: 'running' as const,
+  };
+}
 
 const log = Logger.namespace('COMPONENT_ACTOR');
 
@@ -26,83 +64,135 @@ const log = Logger.namespace('COMPONENT_ACTOR');
 // ============================================================================
 
 /**
- * Component Actor Messages - All messages a component actor can receive
+ * Component Actor Messages - All messages a component actor can receive (Flat format)
  */
 export type ComponentActorMessage =
-  | { type: 'DOM_EVENT'; payload: DOMEventPayload }
-  | { type: 'RENDER'; payload: null }
-  | { type: 'XSTATE_TRANSITION'; payload: XStateTransitionPayload }
-  | { type: 'STATE_CHANGED'; payload: StateChangedPayload }
-  | { type: 'EXTERNAL_MESSAGE'; payload: JsonValue }
-  | { type: 'MOUNT_COMPONENT'; payload: MountPayload }
-  | { type: 'UNMOUNT_COMPONENT'; payload: null }
-  | { type: 'UPDATE_DEPENDENCIES'; payload: DependenciesPayload };
+  | DOMEventMessage
+  | RenderMessage
+  | XStateTransitionMessage
+  | StateChangedMessage
+  | MountComponentMessage
+  | UnmountComponentMessage
+  | UpdateDependenciesMessage;
 
-/**
- * DOM Event payload from user interactions
- */
-export interface DOMEventPayload {
+// ============================================================================
+// FLAT MESSAGE INTERFACES (New format)
+// ============================================================================
+
+export interface MountComponentMessage extends ActorMessage {
+  type: 'MOUNT_COMPONENT';
+  elementId: string;
+  hasTemplate: boolean;
+  dependencies?: Record<string, ActorRef>;
+}
+
+export interface DOMEventMessage extends ActorMessage {
+  type: 'DOM_EVENT';
   eventType: string;
-  domEventType: string; // 'click', 'input', 'submit', etc.
-  attributes: Record<string, string>;
+  domEventType: DOMEventType;
+  attributes?: Record<string, string>;
   formData?: Record<string, string>;
   target?: {
-    tagName: string;
+    tagName: HTMLTagName;
     id: string;
     className: string;
   };
 }
 
-/**
- * Convert DOMEventPayload to JsonValue for message compatibility
- */
-function _domEventPayloadToJson(payload: DOMEventPayload): JsonValue {
-  return {
-    eventType: payload.eventType,
-    domEventType: payload.domEventType,
-    attributes: payload.attributes,
-    formData: payload.formData || null,
-    target: payload.target || null,
-  };
-}
-
-/**
- * XState machine transition payload
- */
-export interface XStateTransitionPayload {
+export interface XStateTransitionMessage extends ActorMessage {
+  type: 'XSTATE_TRANSITION';
   from: string;
   to: string;
   event: JsonValue;
   context: JsonValue;
 }
 
-/**
- * Component mount payload (JSON-serializable)
- */
-export interface MountPayload {
-  elementId: string;
-  hasTemplate: boolean;
-  dependencies?: ActorDependencies;
+export interface StateChangedMessage extends ActorMessage {
+  type: 'STATE_CHANGED';
+  value: unknown;
+  context: JsonValue;
+  tags: string[];
+  status: XStateStatus;
+  output?: JsonValue;
 }
 
-/**
- * Actor dependencies configuration
- */
-export interface ActorDependencies {
-  [key: string]: string; // actor://path/to/actor
+export interface UpdateDependenciesMessage extends ActorMessage {
+  type: 'UPDATE_DEPENDENCIES';
+  dependencies: Record<string, ActorRef>;
 }
 
-/**
- * Dependencies update payload
- */
-export interface DependenciesPayload {
-  dependencies: Record<string, ActorPID>;
+export interface RenderMessage extends ActorMessage {
+  type: 'RENDER';
+}
+
+export interface UnmountComponentMessage extends ActorMessage {
+  type: 'UNMOUNT_COMPONENT';
 }
 
 /**
  * Template function type
  */
 export type TemplateFunction = (state: unknown) => string;
+
+/**
+ * Component dependencies configuration with type-safe actor URLs
+ */
+export interface ComponentDependencies {
+  [key: string]: `actor://${string}` | `/${string}`; // Type-safe actor URLs
+}
+
+/**
+ * Common DOM event types for better type safety
+ */
+export type DOMEventType =
+  | 'click'
+  | 'dblclick'
+  | 'input'
+  | 'change'
+  | 'blur'
+  | 'focus'
+  | 'submit'
+  | 'reset'
+  | 'keydown'
+  | 'keyup'
+  | 'keypress'
+  | 'mousedown'
+  | 'mouseup'
+  | 'mouseover'
+  | 'mouseout'
+  | string; // Allow custom events
+
+/**
+ * Common HTML tag names for better type safety
+ */
+export type HTMLTagName =
+  | 'BUTTON'
+  | 'INPUT'
+  | 'FORM'
+  | 'DIV'
+  | 'SPAN'
+  | 'A'
+  | 'IMG'
+  | 'H1'
+  | 'H2'
+  | 'H3'
+  | 'H4'
+  | 'H5'
+  | 'H6'
+  | 'P'
+  | 'UL'
+  | 'OL'
+  | 'LI'
+  | 'TABLE'
+  | 'TR'
+  | 'TD'
+  | 'TH'
+  | string; // Allow custom elements
+
+/**
+ * XState status values for better type safety
+ */
+export type XStateStatus = 'active' | 'done' | 'error' | 'stopped';
 
 /**
  * Component Actor Context - Internal state
@@ -120,7 +210,7 @@ export interface ComponentActorContext {
   readonly isMounted: boolean;
 
   // Actor system integration
-  readonly dependencies: Record<string, ActorPID>;
+  readonly dependencies: Record<string, ActorRef>;
   readonly messageCount: number;
   readonly renderCount: number;
   readonly lastRender: number;
@@ -136,7 +226,7 @@ export interface ComponentActorContext {
 export interface ComponentActorConfig {
   machine: AnyStateMachine;
   template: TemplateFunction;
-  dependencies?: ActorDependencies;
+  dependencies?: ComponentDependencies;
   onMessage?: ComponentMessageHandler;
   mailbox?: {
     capacity: number;
@@ -157,20 +247,9 @@ export interface ComponentActorConfig {
 export type ComponentMessageHandler = (params: {
   message: ComponentActorMessage;
   context: ComponentActorContext;
-  machine: Actor<AnyStateMachine>;
-  dependencies: Record<string, ActorPID>;
+  machine: ActorInstance;
+  dependencies: Record<string, ActorRef>;
 }) => Promise<FanOutResult<ComponentActorContext, never, unknown>>;
-
-/**
- * State Changed payload from XState transitions
- */
-export interface StateChangedPayload {
-  value: JsonValue; // XState state value
-  context: JsonValue; // XState context
-  tags: string[]; // State tags
-  status: string; // State status
-  output: JsonValue; // State output
-}
 
 // ============================================================================
 // XSTATE BRIDGE IMPLEMENTATION
@@ -182,7 +261,7 @@ export interface StateChangedPayload {
  */
 class XStateBridge {
   private stateChangePending = false;
-  private latestStateMessage: ActorMessage | null = null;
+  private latestStateMessage: Message | null = null;
 
   constructor(private xstateActor: Actor<AnyStateMachine>) {
     this.setupStateChangeListener();
@@ -191,15 +270,13 @@ class XStateBridge {
   private setupStateChangeListener(): void {
     // Subscribe to XState state changes and convert to actor messages
     this.xstateActor.subscribe((state) => {
-      const stateMessage: ActorMessage = {
+      const stateMessage = {
         type: 'STATE_CHANGED',
-        payload: {
-          value: state.value,
-          context: state.context,
-          tags: Array.from(state.tags || []),
-          status: state.status,
-          output: state.output,
-        },
+        value: state.value,
+        context: state.context,
+        tags: Array.from(state.tags || []),
+        status: state.status,
+        output: state.output,
         timestamp: Date.now(),
         version: '1.0.0',
       };
@@ -219,15 +296,15 @@ class XStateBridge {
    * Trigger the bridge to emit any pending state changes
    * This is called by the component actor when it needs to process state changes
    */
-  triggerPendingEmission(): ActorMessage[] {
-    const messages: ActorMessage[] = [];
+  triggerPendingEmission(): Message[] {
+    const messages: Message[] = [];
     if (this.stateChangePending && this.latestStateMessage) {
       messages.push(this.latestStateMessage);
       this.stateChangePending = false;
 
       log.debug('XState bridge emitting pending state change', {
         type: this.latestStateMessage.type,
-        value: (this.latestStateMessage.payload as { value: unknown }).value,
+        value: 'value' in this.latestStateMessage ? this.latestStateMessage.value : undefined,
       });
     }
     return messages;
@@ -237,7 +314,7 @@ class XStateBridge {
    * Get pending state change message if available
    * This allows the actor system to retrieve state changes when processing messages
    */
-  getPendingStateChange(): ActorMessage | null {
+  getPendingStateChange(): Message | null {
     if (this.stateChangePending && this.latestStateMessage) {
       this.stateChangePending = false;
       return this.latestStateMessage;
@@ -263,16 +340,52 @@ class XStateBridge {
 export function createComponentActorBehavior(
   config: ComponentActorConfig
 ): ActorBehavior<ComponentActorMessage, ComponentActorContext> {
+  // Define initial JSON-serializable context
+  const initialContext = {
+    messageCount: 0,
+    renderCount: 0,
+    lastRender: 0,
+    mountTime: 0,
+    isDestroyed: false,
+    isMounted: false,
+  };
+
   const behavior: ActorBehavior<ComponentActorMessage, ComponentActorContext> = {
-    async onMessage({ message, machine }) {
-      const context = machine.getSnapshot().context;
+    context: initialContext,
+    async onMessage({ message, actor }) {
+      const jsonContext = actor.getSnapshot().context as {
+        messageCount?: number;
+        renderCount?: number;
+        lastRender?: number;
+        mountTime?: number;
+        isDestroyed?: boolean;
+        isMounted?: boolean;
+      };
+
+      // Reconstruct full ComponentActorContext from JSON context + config
+      const context: ComponentActorContext = {
+        machine: config.machine, // Always use the machine from config
+        xstateActor: null, // Will be set during mounting
+        xstateBridge: null, // Will be set during mounting
+        currentState: null, // Will be set during mounting
+        element: null, // Will be set during mounting
+        template: config.template, // From config
+        dependencies: {}, // Will be updated via messages
+        messageCount: jsonContext.messageCount || 0,
+        renderCount: jsonContext.renderCount || 0,
+        lastRender: jsonContext.lastRender || 0,
+        mountTime: jsonContext.mountTime || 0,
+        isDestroyed: jsonContext.isDestroyed || false,
+        isMounted: jsonContext.isMounted || false,
+      };
 
       if (context.isDestroyed) {
         log.warn('Message received by destroyed component actor', { type: message.type });
         return { context };
       }
 
-      const newContext = {
+      // Update message count and create new context
+      const newContext: ComponentActorContext = {
         ...context,
         messageCount: context.messageCount + 1,
       };
@@ -284,28 +397,25 @@ export function createComponentActorBehavior(
 
       switch (message.type) {
         case 'MOUNT_COMPONENT':
-          return await handleMountComponent(message.payload, newContext);
+          return await handleMountComponent(message, newContext);
 
         case 'UNMOUNT_COMPONENT':
           return await handleUnmountComponent(newContext);
 
         case 'DOM_EVENT':
-          return await handleDOMEvent(message.payload, newContext, config.onMessage);
+          return await handleDOMEvent(message, newContext, config.onMessage);
 
         case 'RENDER':
           return await handleRender(newContext);
 
         case 'XSTATE_TRANSITION':
-          return await handleXStateTransition(message.payload, newContext);
+          return await handleXStateTransition(message, newContext);
 
         case 'STATE_CHANGED':
-          return await handleStateChanged(message.payload, newContext);
-
-        case 'EXTERNAL_MESSAGE':
-          return await handleExternalMessage(message.payload, newContext, config.onMessage);
+          return await handleStateChanged(message, newContext);
 
         case 'UPDATE_DEPENDENCIES':
-          return await handleUpdateDependencies(message.payload, newContext);
+          return await handleUpdateDependencies(message, newContext);
 
         default:
           log.warn('Unknown message type received by component actor', {
@@ -335,13 +445,13 @@ export function createComponentActorBehavior(
 
 /**
  * Process fan-out results from component message handlers
- * Simplified for fan-out-only approach (no legacy compatibility)
+ * Simplified for fan-out-only approach
  */
 async function processFanOutResult(
   fanOutResult: FanOutResult<ComponentActorContext, never, unknown>,
   originalContext: ComponentActorContext,
   xstateActor: Actor<AnyStateMachine>
-): Promise<{ context: ComponentActorContext; emit: ActorMessage[] }> {
+): Promise<{ context: ComponentActorContext; emit: Message[] }> {
   // Detect fan-out events using our robust type system
   const {
     context: resultContext,
@@ -350,7 +460,7 @@ async function processFanOutResult(
   } = detectFanOutEvents(fanOutResult, originalContext);
 
   // Prepare emit messages array
-  const emitMessages: ActorMessage[] = [];
+  const emitMessages: Message[] = [];
 
   // Process fan-out events (the standard approach)
   for (const fanOutEvent of fanOutEvents) {
@@ -373,12 +483,7 @@ async function processFanOutResult(
     }
 
     // 🎯 Fan-out to actor system (automatic emit())
-    emitMessages.push({
-      type: fanOutEvent.type,
-      payload: fanOutEvent,
-      timestamp: Date.now(),
-      version: '1.0.0',
-    });
+    emitMessages.push(fanOutEvent);
 
     log.debug('Fan-out event added to emit queue', { eventType: fanOutEvent.type });
   }
@@ -388,12 +493,7 @@ async function processFanOutResult(
     const emitArray = Array.isArray(traditionalEmit) ? traditionalEmit : [traditionalEmit];
     for (const event of emitArray) {
       if (typeof event === 'object' && event !== null && 'type' in event) {
-        emitMessages.push({
-          type: (event as { type: string }).type,
-          payload: event,
-          timestamp: Date.now(),
-          version: '1.0.0',
-        });
+        emitMessages.push(event);
       }
     }
   }
@@ -420,9 +520,9 @@ async function processFanOutResult(
  * Handle component mounting
  */
 async function handleMountComponent(
-  payload: MountPayload,
+  message: MountComponentMessage,
   context: ComponentActorContext
-): Promise<{ context: ComponentActorContext; emit?: ActorMessage[] }> {
+): Promise<{ context: ComponentActorContext; emit?: Message[] }> {
   log.info('Mounting component actor');
 
   // Create and start XState actor
@@ -439,8 +539,8 @@ async function handleMountComponent(
   const _initialBridgeMessages = xstateBridge.triggerPendingEmission();
 
   // Resolve dependencies
-  const resolvedDependencies: Record<string, ActorPID> = {};
-  if (payload.dependencies) {
+  const resolvedDependencies: Record<string, ActorRef> = {};
+  if (message.dependencies) {
     // TODO: Implement dependency resolution via ActorSystem lookup
     // For now, dependencies will be updated via UPDATE_DEPENDENCIES message
   }
@@ -459,17 +559,13 @@ async function handleMountComponent(
   };
 
   // Emit initial STATE_CHANGED for first render
-  const initialStateMessage: ActorMessage = {
+  const initialStateMessage = {
     type: 'STATE_CHANGED',
-    payload: {
-      value: initialState.value,
-      context: initialState.context,
-      tags: Array.from(initialState.tags || []),
-      status: initialState.status,
-      output: initialState.output,
-    },
-    timestamp: Date.now(),
-    version: '1.0.0',
+    value: initialState.value,
+    context: initialState.context,
+    tags: Array.from(initialState.tags || []),
+    status: initialState.status,
+    output: initialState.output,
   };
 
   // Trigger any pending state changes from the bridge after startup
@@ -480,13 +576,9 @@ async function handleMountComponent(
     emit: [
       {
         type: 'COMPONENT_MOUNTED',
-        payload: {
-          elementId: payload.elementId,
-          machineId: context.machine.id,
-          mountTime: newContext.mountTime,
-        },
-        timestamp: Date.now(),
-        version: '1.0.0',
+        elementId: message.elementId,
+        machineId: context.machine.id,
+        mountTime: newContext.mountTime,
       },
       initialStateMessage, // Emit initial state for render
       ...pendingBridgeMessages, // Include any bridge-generated state changes
@@ -499,7 +591,7 @@ async function handleMountComponent(
  */
 async function handleUnmountComponent(
   context: ComponentActorContext
-): Promise<{ context: ComponentActorContext; emit?: ActorMessage[] }> {
+): Promise<{ context: ComponentActorContext; emit?: Message[] }> {
   log.info('Unmounting component actor');
 
   // Stop XState actor
@@ -525,12 +617,8 @@ async function handleUnmountComponent(
     emit: [
       {
         type: 'COMPONENT_UNMOUNTED',
-        payload: {
-          machineId: context.machine.id,
-          uptime: Date.now() - context.mountTime,
-        },
-        timestamp: Date.now(),
-        version: '1.0.0',
+        machineId: context.machine.id,
+        uptime: Date.now() - context.mountTime,
       },
     ],
   };
@@ -540,25 +628,24 @@ async function handleUnmountComponent(
  * Handle DOM events from user interactions
  */
 async function handleDOMEvent(
-  payload: DOMEventPayload,
+  message: DOMEventMessage,
   context: ComponentActorContext,
   customHandler?: ComponentMessageHandler
-): Promise<{ context: ComponentActorContext; emit?: ActorMessage[] }> {
+): Promise<{ context: ComponentActorContext; emit?: Message[] }> {
   if (!context.xstateActor || !context.isMounted) {
     log.warn('DOM event received but component not mounted');
     return { context };
   }
 
   log.debug('Processing DOM event', {
-    eventType: payload.eventType,
-    domEventType: payload.domEventType,
+    eventType: message.eventType,
+    domEventType: message.domEventType,
   });
 
   // Convert DOM event to XState event
   const xstateEvent = {
-    type: payload.eventType,
-    ...payload.attributes,
-    ...(payload.formData || {}),
+    type: message.eventType,
+    ...(message.formData || {}),
   };
 
   // Send event to XState machine
@@ -567,7 +654,7 @@ async function handleDOMEvent(
   // Wait for XState state change to propagate and then get bridge emissions
   await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
 
-  const stateChangeMessages: ActorMessage[] = [];
+  const stateChangeMessages: Message[] = [];
   if (context.xstateBridge) {
     stateChangeMessages.push(...context.xstateBridge.triggerPendingEmission());
   }
@@ -577,24 +664,26 @@ async function handleDOMEvent(
   const newContext: ComponentActorContext = {
     ...context,
     currentState: latestStateChange
-      ? (latestStateChange.payload as { value: unknown }).value
+      ? 'value' in latestStateChange
+        ? latestStateChange.value
+        : undefined
       : context.currentState,
   };
 
   // Call custom handler if provided with fan-out processing
-  let fanOutResult: { context: ComponentActorContext; emit: ActorMessage[] } = {
+  let fanOutResult: { context: ComponentActorContext; emit: Message[] } = {
     context: newContext,
     emit: [],
   };
 
   if (customHandler) {
-    log.debug('Calling custom handler for DOM event', { eventType: payload.eventType });
+    log.debug('Calling custom handler for DOM event', { eventType: message.eventType });
 
     // 🎯 Call the enhanced custom handler (supports fan-out return types)
     const handlerResult = await customHandler({
-      message: { type: 'DOM_EVENT', payload },
+      message,
       context: newContext,
-      machine: context.xstateActor,
+      machine: xstateToActorInstance(context.xstateActor),
       dependencies: context.dependencies,
     });
 
@@ -602,7 +691,7 @@ async function handleDOMEvent(
     fanOutResult = await processFanOutResult(handlerResult, newContext, context.xstateActor);
 
     log.debug('Fan-out processing complete for DOM event', {
-      eventType: payload.eventType,
+      eventType: message.eventType,
       emitCount: fanOutResult.emit.length,
       contextUpdated: fanOutResult.context !== newContext,
     });
@@ -629,7 +718,7 @@ async function handleDOMEvent(
  */
 async function handleRender(
   context: ComponentActorContext
-): Promise<{ context: ComponentActorContext; emit?: ActorMessage[] }> {
+): Promise<{ context: ComponentActorContext; emit?: Message[] }> {
   if (!context.element || !context.template || !context.isMounted) {
     return { context };
   }
@@ -665,13 +754,9 @@ async function handleRender(
       emit: [
         {
           type: 'COMPONENT_RENDERED',
-          payload: {
-            machineId: context.machine.id,
-            renderCount: newContext.renderCount,
-            renderTime: newContext.lastRender,
-          },
-          timestamp: Date.now(),
-          version: '1.0.0',
+          machineId: context.machine.id,
+          renderCount: newContext.renderCount,
+          renderTime: newContext.lastRender,
         },
       ],
     };
@@ -686,12 +771,8 @@ async function handleRender(
       emit: [
         {
           type: 'COMPONENT_RENDER_ERROR',
-          payload: {
-            machineId: context.machine.id,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          },
-          timestamp: Date.now(),
-          version: '1.0.0',
+          machineId: context.machine.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
         },
       ],
     };
@@ -702,10 +783,10 @@ async function handleRender(
  * Handle XState machine transitions
  */
 async function handleXStateTransition(
-  payload: XStateTransitionPayload,
+  message: XStateTransitionMessage,
   context: ComponentActorContext
-): Promise<{ context: ComponentActorContext; emit?: ActorMessage[] }> {
-  log.debug('XState transition', { from: payload.from, to: payload.to });
+): Promise<{ context: ComponentActorContext; emit?: Message[] }> {
+  log.debug('XState transition', { from: message.from, to: message.to });
 
   const newContext: ComponentActorContext = {
     ...context,
@@ -720,14 +801,14 @@ async function handleXStateTransition(
  * Handle STATE_CHANGED messages from XState actor
  */
 async function handleStateChanged(
-  payload: StateChangedPayload,
+  message: StateChangedMessage,
   context: ComponentActorContext
-): Promise<{ context: ComponentActorContext; emit?: ActorMessage[] }> {
-  log.debug('XState state changed', { value: payload.value, context: payload.context });
+): Promise<{ context: ComponentActorContext; emit?: Message[] }> {
+  log.debug('XState state changed', { value: message.value, context: message.context });
 
   const newContext: ComponentActorContext = {
     ...context,
-    currentState: payload.value,
+    currentState: message.value,
   };
 
   // Automatically trigger render on state change
@@ -735,58 +816,19 @@ async function handleStateChanged(
 }
 
 /**
- * Handle external messages from other actors
- */
-async function handleExternalMessage(
-  payload: JsonValue,
-  context: ComponentActorContext,
-  customHandler?: ComponentMessageHandler
-): Promise<{ context: ComponentActorContext; emit?: ActorMessage[] }> {
-  log.debug('Processing external message', { payload });
-
-  if (!customHandler || !context.xstateActor) {
-    log.warn('Cannot process external message - no custom handler or XState actor not available');
-    return { context };
-  }
-
-  log.debug('Calling custom handler for external message');
-
-  // 🎯 Call the enhanced custom handler (supports fan-out return types)
-  const handlerResult = await customHandler({
-    message: { type: 'EXTERNAL_MESSAGE', payload },
-    context,
-    machine: context.xstateActor,
-    dependencies: context.dependencies,
-  });
-
-  // 🚀 Process fan-out result using our Day 2 runtime logic
-  const fanOutResult = await processFanOutResult(handlerResult, context, context.xstateActor);
-
-  log.debug('Fan-out processing complete for external message', {
-    emitCount: fanOutResult.emit.length,
-    contextUpdated: fanOutResult.context !== context,
-  });
-
-  return {
-    context: fanOutResult.context,
-    emit: fanOutResult.emit,
-  };
-}
-
-/**
  * Handle dependency updates
  */
 async function handleUpdateDependencies(
-  payload: DependenciesPayload,
+  message: UpdateDependenciesMessage,
   context: ComponentActorContext
-): Promise<{ context: ComponentActorContext; emit?: ActorMessage[] }> {
+): Promise<{ context: ComponentActorContext; emit?: Message[] }> {
   log.info('Updating component dependencies', {
-    dependencyCount: Object.keys(payload.dependencies).length,
+    dependencyCount: Object.keys(message.dependencies).length,
   });
 
   const newContext: ComponentActorContext = {
     ...context,
-    dependencies: payload.dependencies,
+    dependencies: message.dependencies,
   };
 
   return { context: newContext };
@@ -802,23 +844,19 @@ async function handleUpdateDependencies(
  */
 function _setupXStateIntegration(
   xstateActor: Actor<AnyStateMachine>,
-  componentActorSend: (message: ActorMessage) => Promise<void>
+  componentActorSend: (message: Message) => Promise<void>
 ): void {
   // Listen for state transitions and convert to actor messages
   xstateActor.subscribe((state) => {
     // Send STATE_CHANGED message to component actor (pure actor model)
     componentActorSend({
       type: 'STATE_CHANGED',
-      payload: {
-        value: state.value,
-        context: state.context,
-        tags: Array.from(state.tags || []),
-        // Only include basic state information that exists on XState snapshot
-        status: state.status,
-        output: state.output,
-      },
-      timestamp: Date.now(),
-      version: '1.0.0',
+      value: state.value,
+      context: state.context,
+      tags: Array.from(state.tags || []),
+      // Only include basic state information that exists on XState snapshot
+      status: state.status,
+      output: state.output,
     }).catch((error) => {
       log.error('Failed to send STATE_CHANGED message', error);
     });
@@ -830,7 +868,7 @@ function _setupXStateIntegration(
  */
 function setupDOMEventListeners(
   element: HTMLElement,
-  sendToActor: (message: ActorMessage) => Promise<void>
+  sendToActor: (message: Message) => Promise<void>
 ): void {
   // Find all elements with send attributes
   const sendElements = element.querySelectorAll('[send], [data-send]');
@@ -845,8 +883,9 @@ function setupDOMEventListeners(
     const eventType = getEventTypeForElement(htmlEl);
 
     // Remove existing listeners to avoid duplicates
-    const existingListener = (htmlEl as HTMLElement & { __componentEventListener?: EventListener })
-      .__componentEventListener;
+    const existingListener = (htmlEl as unknown as Record<symbol, unknown>)[
+      ComponentSymbols.EVENT_LISTENER
+    ] as EventListener | undefined;
     if (existingListener) {
       htmlEl.removeEventListener(eventType, existingListener);
     }
@@ -859,7 +898,9 @@ function setupDOMEventListeners(
       const attributes = extractAttributes(htmlEl);
       const formData = extractFormData(event);
 
-      const payload: DOMEventPayload = {
+      // 🎯 FIXED: Send DOM_EVENT message to component actor with flat structure
+      const message = {
+        type: 'DOM_EVENT',
         eventType: sendType,
         domEventType: eventType,
         attributes,
@@ -871,14 +912,6 @@ function setupDOMEventListeners(
         },
       };
 
-      // 🎯 FIXED: Send DOM_EVENT message to component actor
-      const message: ActorMessage = {
-        type: 'DOM_EVENT',
-        payload: _domEventPayloadToJson(payload),
-        timestamp: Date.now(),
-        version: '1.0.0',
-      };
-
       sendToActor(message).catch((error) => {
         log.error('Failed to send DOM event to component actor', {
           error: error instanceof Error ? error.message : 'Unknown error',
@@ -888,9 +921,13 @@ function setupDOMEventListeners(
     };
 
     htmlEl.addEventListener(eventType, listener);
-    (
-      htmlEl as HTMLElement & { __componentEventListener?: EventListener }
-    ).__componentEventListener = listener;
+    // Store listener reference for cleanup using symbol-based approach
+    Object.defineProperty(htmlEl, ComponentSymbols.EVENT_LISTENER, {
+      value: listener,
+      enumerable: false,
+      configurable: true,
+      writable: true,
+    });
   });
 }
 
@@ -902,14 +939,14 @@ function cleanupDOMEventListeners(element: HTMLElement): void {
 
   sendElements.forEach((el) => {
     const htmlEl = el as HTMLElement;
-    const listener = (htmlEl as HTMLElement & { __componentEventListener?: EventListener })
-      .__componentEventListener;
+    const listener = (htmlEl as unknown as Record<symbol, unknown>)[
+      ComponentSymbols.EVENT_LISTENER
+    ] as EventListener | undefined;
 
     if (listener) {
       const eventType = getEventTypeForElement(htmlEl);
       htmlEl.removeEventListener(eventType, listener);
-      delete (htmlEl as HTMLElement & { __componentEventListener?: EventListener })
-        .__componentEventListener;
+      delete (htmlEl as unknown as Record<symbol, unknown>)[ComponentSymbols.EVENT_LISTENER];
     }
   });
 }
@@ -935,7 +972,7 @@ function getEventTypeForElement(element: HTMLElement): string {
 }
 
 /**
- * Extract attributes from element for message payload
+ * Extract attributes from element for flat message
  */
 function extractAttributes(element: HTMLElement): Record<string, string> {
   const attributes: Record<string, string> = {};

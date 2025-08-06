@@ -26,7 +26,7 @@
  *
  * await system.start();
  *
- * const actor = await system.spawn(defineBehavior({
+ * const actor = await system.spawn(defineActor({
  *   machine: myMachine,
  *   onMessage: async ({ message, machine, dependencies }) => {
  *     // Pure actor behavior with MessagePlan response
@@ -41,7 +41,11 @@
  * @version 1.0.0
  */
 
-import { type Actor, type AnyStateMachine, createActor, createMachine } from 'xstate';
+import { createMachine } from 'xstate';
+// ✅ CONTEXT ISOLATION: Actor context manager for identity boundaries
+import * as ActorContextManager from './actor-context-manager.js';
+import type { ActorInstance } from './actor-instance.js';
+import type { ActorRef } from './actor-ref.js';
 import type {
   ActorAddress,
   ActorBehavior,
@@ -50,27 +54,47 @@ import type {
   ActorPID,
   ActorStats,
   ActorSystem,
-  BasicMessage,
   ClusterState,
-  JsonValue,
   SpawnOptions,
 } from './actor-system.js';
-import { normalizeMessage, parseActorPath } from './actor-system.js';
+import { ContextActor } from './context-actor.js';
+import { MachineActor } from './machine-actor.js';
+import { StatelessActor } from './stateless-actor.js';
+import type { ContextOf, MessageOf } from './type-helpers.js';
+import type { ActorSnapshot, JsonValue, Message } from './types.js';
+
+// ✅ Define specific message types for type safety
+interface SpawnChildMessage extends ActorMessage {
+  type: 'SPAWN_CHILD';
+  childId: string;
+  childPath: string;
+  supervision: string;
+}
+
+interface SystemEventMessage extends ActorMessage {
+  type: 'EMIT_SYSTEM_EVENT';
+  systemEventType: string;
+  systemTimestamp: number;
+  systemData: unknown;
+}
+
+interface ActorFailedMessage extends ActorMessage {
+  type: 'ACTOR_FAILED';
+  actorId: string;
+  actorPath: string;
+  error: string;
+  directive: string;
+}
+
+import { parseActorPath } from './actor-system.js';
 import { createGuardianActor } from './actor-system-guardian.js';
-// TODO: Re-enable when system actors are updated to use defineBehavior
-// import {
-//   createSystemDiscoveryService,
-//   SYSTEM_DISCOVERY_SERVICE_ADDRESS,
-// } from './actors/actor-discovery-service.js';
-// // ✅ PURE ACTOR MODEL: Import system actor services
-// import {
-//   createSystemEventBroker,
-//   SYSTEM_EVENT_BROKER_ADDRESS,
-// } from './actors/event-broker-actor.js';
 import { createSystemEventActor, type SystemEventPayload } from './actors/system-event-actor.js';
+// ✅ UNIFIED API DESIGN Phase 2.1: Auto-publishing system for event subscriptions
+import { AutoPublishingRegistry } from './auto-publishing.js';
 import { type CorrelationManager, createCorrelationManager } from './correlation-manager.js';
 import { DistributedActorDirectory } from './distributed-actor-directory.js';
 import { Logger } from './logger.js';
+import { getMachineFromBehavior } from './machine-registry.js';
 import { DeadLetterQueue } from './messaging/dead-letter-queue.js';
 import { InterceptorChain } from './messaging/interceptor-chain.js';
 import type {
@@ -80,14 +104,22 @@ import type {
 } from './messaging/interceptors.js';
 import { createMessageContext } from './messaging/interceptors.js';
 import { type BoundedMailbox, createMailbox } from './messaging/mailbox.js';
-import { RequestResponseManager } from './messaging/request-response.js';
 import { OTPMessagePlanProcessor } from './otp-message-plan-processor.js';
 // ✅ PURE ACTOR MODEL: Import pure behavior handler and OTP message plan processor
 import { type PureActorBehavior, PureActorBehaviorHandler } from './pure-behavior-handler.js';
 // ✅ PURE ACTOR MODEL: Import XState-based timeout management
 import { PureXStateTimeoutManager } from './pure-xstate-utilities.js';
+import { generateCorrelationId } from './utils/factories.js';
 
 const log = Logger.namespace('ACTOR_SYSTEM');
+
+// Supervision strategy constants
+const MAX_RESTART_ATTEMPTS = 3;
+const RESTART_WINDOW_MS = 30000; // 30 seconds
+const RESTART_BACKOFF_MS = 1000; // 1 second
+
+// Import the fluent builder types
+import type { FluentBehaviorBuilder } from './fluent-behavior-builder.js';
 
 /**
  * Directory configuration for actor lookup
@@ -154,7 +186,6 @@ function generateActorId(): string {
 
 /**
  * Normalize a behavior to the PureActorBehavior format for internal use
- * Converts any legacy ActorBehavior to pure actor model format
  */
 function normalizeBehavior<TMessage, TEmitted>(
   behavior: ActorBehavior<TMessage, TEmitted>
@@ -173,7 +204,7 @@ function normalizeBehavior<TMessage, TEmitted>(
  */
 export class ActorSystemImpl implements ActorSystem {
   private actors = new Map<string, PureActorBehavior<ActorMessage, ActorMessage>>();
-  private actorMachines = new Map<string, Actor<AnyStateMachine>>();
+  private actorInstances = new Map<string, ActorInstance>();
   private actorBehaviorHandlers = new Map<string, PureActorBehaviorHandler>();
   private actorMailboxes = new Map<string, BoundedMailbox>();
   private actorProcessingLoops = new Map<string, boolean>(); // Track active processing loops
@@ -196,10 +227,11 @@ export class ActorSystemImpl implements ActorSystem {
     status: 'down',
   };
   private actorStats = new Map<string, ActorStats & { startTime: number }>();
-  private requestManager: RequestResponseManager;
   private correlationManager: CorrelationManager;
   private shutdownHandlers = new Set<() => Promise<void>>();
   private actorStarted = new Map<string, boolean>(); // Track whether onStart has been called
+  private actorRestartCounts = new Map<string, number>(); // Track restart attempts per actor
+  private actorLastRestartTime = new Map<string, number>(); // Track last restart time per actor
 
   // ✅ PURE ACTOR MODEL: XState timeout manager for system scheduling
   private systemTimeoutManager = new PureXStateTimeoutManager();
@@ -217,8 +249,20 @@ export class ActorSystemImpl implements ActorSystem {
     (event: { type: 'node-up' | 'node-down' | 'leader-changed'; node: string }) => void
   >();
 
+  // System event callbacks for subscribeToSystemEvents
+  private systemEventCallbacks = new Map<
+    string,
+    (event: { type: string; [key: string]: unknown }) => void
+  >();
+
   // Dead letter queue
   private deadLetterQueue: DeadLetterQueue;
+
+  // ✅ UNIFIED API DESIGN Phase 2.1: Auto-publishing registry for event subscriptions
+  private autoPublishingRegistry: AutoPublishingRegistry;
+
+  // Test mode flag - when true, messages are processed synchronously
+  private testMode = false;
 
   constructor(private readonly config: ActorSystemConfig) {
     this.directory = new DistributedActorDirectory({
@@ -228,11 +272,6 @@ export class ActorSystemImpl implements ActorSystem {
       cleanupInterval: config.directory?.cleanupInterval ?? 60 * 1000,
     });
 
-    // ⚠️ TEMPORARY: Revert to original request manager to isolate hanging issue
-    this.requestManager = new RequestResponseManager({
-      defaultTimeout: config.defaultAskTimeout ?? 5000,
-    });
-
     // Initialize correlation manager for ask pattern
     this.correlationManager = createCorrelationManager({
       defaultTimeout: config.defaultAskTimeout ?? 5000,
@@ -240,6 +279,9 @@ export class ActorSystemImpl implements ActorSystem {
     });
 
     this.deadLetterQueue = new DeadLetterQueue();
+
+    // ✅ UNIFIED API DESIGN Phase 2.1: Initialize auto-publishing registry
+    this.autoPublishingRegistry = new AutoPublishingRegistry();
 
     // ✅ PURE ACTOR MODEL: Initialize OTP message plan processor
     this.messagePlanProcessor = new OTPMessagePlanProcessor();
@@ -259,12 +301,14 @@ export class ActorSystemImpl implements ActorSystem {
    */
   async start(): Promise<void> {
     if (this.running) {
+      log.debug('System already running, skipping start');
       return;
     }
 
     log.info('Starting actor system', {
       nodeAddress: this.config.nodeAddress,
       maxActors: this.config.maxActors ?? 'unlimited',
+      timestamp: Date.now(),
     });
 
     this.clusterState = {
@@ -275,16 +319,22 @@ export class ActorSystemImpl implements ActorSystem {
 
     this.running = true;
 
+    log.debug('Spawning guardian actor');
     // Spawn guardian actor first - it supervises all other actors
     const guardianActor = await createGuardianActor(this);
     this.guardianActorAddress = guardianActor.address;
 
+    log.debug('Guardian actor spawned', {
+      guardianPath: this.guardianActorAddress?.path,
+      totalActors: this.actors.size,
+      totalMailboxes: this.actorMailboxes.size,
+      totalProcessingLoops: this.actorProcessingLoops.size,
+    });
+
     // ✅ PURE ACTOR MODEL: Spawn core system actors
 
-    // TODO: Temporarily disable other system actors to focus on fixing hanging tests
-    // Other system actors need to be updated to use defineBehavior pattern
-
-    // Spawn system event actor (updated to use defineBehavior)
+    log.debug('Spawning system event actor');
+    // Spawn system event actor (updated to use defineActor)
     const systemEventBehavior = createSystemEventActor();
     const systemEventActor = await this.spawn(systemEventBehavior, {
       id: 'system-event-actor',
@@ -292,6 +342,14 @@ export class ActorSystemImpl implements ActorSystem {
     });
     this.systemEventActorAddress = systemEventActor.address;
 
+    log.debug('System event actor spawned', {
+      systemEventPath: this.systemEventActorAddress?.path,
+      totalActors: this.actors.size,
+      totalMailboxes: this.actorMailboxes.size,
+      totalProcessingLoops: this.actorProcessingLoops.size,
+    });
+
+    log.debug('Emitting system started event');
     // Emit system started event
     await this.emitSystemEvent({
       eventType: 'started',
@@ -299,11 +357,12 @@ export class ActorSystemImpl implements ActorSystem {
     });
 
     log.info('Actor system started with core services', {
-      // TODO: Re-enable when system actors are working
-      // eventBroker: SYSTEM_EVENT_BROKER_ADDRESS,
-      // discoveryService: SYSTEM_DISCOVERY_SERVICE_ADDRESS,
       guardian: this.guardianActorAddress?.path,
       systemEventActor: this.systemEventActorAddress?.path,
+      totalActors: this.actors.size,
+      totalMailboxes: this.actorMailboxes.size,
+      totalProcessingLoops: this.actorProcessingLoops.size,
+      activeProcessing: this.actorProcessingActive.size,
     });
   }
 
@@ -352,7 +411,7 @@ export class ActorSystemImpl implements ActorSystem {
 
     // Stop all actors gracefully
     const stopPromises: Promise<void>[] = [];
-    for (const [path, _behavior] of this.actors) {
+    for (const [path, _behavior] of Array.from(this.actors)) {
       const actor = await this.lookup(path);
       if (actor) {
         stopPromises.push(this.stopActor(actor));
@@ -381,8 +440,7 @@ export class ActorSystemImpl implements ActorSystem {
     // Clear directory
     await this.directory.cleanup();
 
-    // Cleanup request manager
-    this.requestManager.cleanup();
+    // Cleanup request manager - handled automatically on system shutdown
 
     await this.emitSystemEvent({ eventType: 'stopped', timestamp: Date.now() });
   }
@@ -412,18 +470,32 @@ export class ActorSystemImpl implements ActorSystem {
           initial: 'active',
           states: { active: {} },
         });
-        const machineActor = createActor(defaultMachine);
+        // Create MachineActor wrapper for consistency
+        const machineDependencies = {
+          emit: (event: ActorMessage) => {
+            const address = parseActorPath(path);
+            this.emitEventToSubscribers(address, event);
+          },
+          logger: (msg: string, data?: unknown) => log.debug(msg, data),
+          system: this,
+        };
+        const machineActorInstance = new MachineActor(path, defaultMachine, machineDependencies);
+        machineActorInstance.start();
+
+        // Create ActorRef for self reference
+        const selfRef = new ActorPIDImpl(address, this) as unknown as ActorRef<unknown>;
 
         const dependencies: ActorDependencies = {
           actorId: path,
-          machine: machineActor,
+          actor: machineActorInstance,
+          self: selfRef,
           emit: (event: unknown) => {
             const eventMessage = this.createEventMessage({ path } as ActorAddress, event);
             // Use existing event emission to subscribers
             const eventKey = `${path}:EMIT:${eventMessage.type}`;
             const eventSubscribers = this.subscribers.get(eventKey);
             if (eventSubscribers) {
-              for (const handler of eventSubscribers) {
+              for (const handler of Array.from(eventSubscribers)) {
                 handler(eventMessage);
               }
             }
@@ -431,9 +503,10 @@ export class ActorSystemImpl implements ActorSystem {
           send: async () => {}, // Simple no-op for onStop
           ask: async <T>() => Promise.resolve({} as T), // Simple no-op for onStop
           logger: Logger.namespace(`ACTOR_${path}`),
+          correlationManager: this.correlationManager,
         };
 
-        await behavior.onStop({ machine: machineActor, dependencies });
+        await behavior.onStop({ actor: machineActorInstance, dependencies });
       } catch (error) {
         log.error('Error in actor onStop', { path, error });
       }
@@ -450,13 +523,21 @@ export class ActorSystemImpl implements ActorSystem {
       this.actorMailboxes.delete(path);
     }
 
-    // ✅ PURE ACTOR MODEL: Clean up actor machine and behavior handler
-    this.actorMachines.delete(path);
+    // ✅ PURE ACTOR MODEL: Clean up actor instance and behavior handler
+    const actorInstance = this.actorInstances.get(path);
+    if (actorInstance) {
+      actorInstance.stop();
+      this.actorInstances.delete(path);
+    }
     this.actorBehaviorHandlers.delete(path);
 
     // Remove from local actors
     this.actors.delete(path);
     this.actorStarted.delete(path);
+
+    // Clean up restart tracking
+    this.actorRestartCounts.delete(path);
+    this.actorLastRestartTime.delete(path);
 
     // Unregister from directory
     await this.directory.unregister(address);
@@ -486,14 +567,44 @@ export class ActorSystemImpl implements ActorSystem {
   }
 
   /**
-   * Spawn a new actor
+   * Spawn a new actor with proper type inference
+   * Clean approach: single generic overload that extracts types
    */
-  async spawn<TMessage = ActorMessage, TEmitted = ActorMessage>(
-    behavior: ActorBehavior<TMessage, TEmitted>,
+  async spawn<B extends FluentBehaviorBuilder<ActorMessage, unknown, unknown, unknown>>(
+    builder: B,
     options?: SpawnOptions
-  ): Promise<ActorPID> {
+  ): Promise<ActorRef<ContextOf<B>, MessageOf<B>>>;
+
+  async spawn<TMsg extends ActorMessage, TEmitted, TCtx>(
+    behavior: ActorBehavior<TMsg, TEmitted> & { context?: TCtx },
+    options?: SpawnOptions
+  ): Promise<ActorRef<TCtx, TMsg>>;
+
+  async spawn(
+    behaviorOrBuilder:
+      | FluentBehaviorBuilder<ActorMessage, unknown, unknown, unknown>
+      | ActorBehavior,
+    options?: SpawnOptions
+  ): Promise<ActorRef<unknown, ActorMessage>> {
     if (!this.running) {
       throw new Error('Actor system is not running');
+    }
+
+    // Handle FluentBehaviorBuilder or direct ActorBehavior
+    let actualBehavior: ActorBehavior;
+
+    if ('build' in behaviorOrBuilder && typeof behaviorOrBuilder.build === 'function') {
+      // It's a FluentBehaviorBuilder - build it
+      const spec = behaviorOrBuilder.build();
+      actualBehavior = {
+        context: spec.initialContext as JsonValue | undefined,
+        onMessage: spec.handler || (() => {}),
+        onStart: spec.startHandler,
+        onStop: spec.stopHandler,
+      };
+    } else {
+      // It's already an ActorBehavior
+      actualBehavior = behaviorOrBuilder as ActorBehavior;
     }
 
     const id = options?.id || generateActorId();
@@ -508,27 +619,63 @@ export class ActorSystemImpl implements ActorSystem {
     const address: ActorAddress = { id, type, path };
 
     // Store the behavior with type-safe normalization
-    const normalizedBehavior = normalizeBehavior(behavior);
+    const normalizedBehavior = normalizeBehavior(actualBehavior as ActorBehavior<unknown, unknown>);
     this.actors.set(path, normalizedBehavior);
 
-    // ✅ PURE ACTOR MODEL: Create and store XState machine for this actor
-    const actorMachine = createMachine({
-      id: `actor-${id}`,
-      initial: 'active',
-      context: normalizedBehavior.context || {}, // Use context from behavior if provided
-      states: {
-        active: {},
-      },
-    });
-    const machineActor = createActor(actorMachine);
-    this.actorMachines.set(path, machineActor);
+    // ✅ PURE ACTOR MODEL: Create appropriate actor type based on behavior
+    const existingMachine = getMachineFromBehavior(
+      actualBehavior as ActorBehavior<unknown, unknown>
+    );
+    let actorInstance: ActorInstance;
+
+    if (existingMachine) {
+      log.debug('Using machine from behavior', { actorId: id });
+      // Create MachineActor wrapper with dependency injection
+      const dependencies = {
+        emit: (event: ActorMessage) => {
+          const address = parseActorPath(path);
+          this.emitEventToSubscribers(address, event);
+        },
+        logger: (msg: string, data?: unknown) => log.debug(msg, data),
+        system: this,
+      };
+      actorInstance = new MachineActor(id, existingMachine, dependencies);
+    } else if (normalizedBehavior.context && Object.keys(normalizedBehavior.context).length > 0) {
+      log.debug('Creating context-based actor', {
+        actorId: id,
+        initialContext: normalizedBehavior.context,
+      });
+      // Context-based actors use ContextActor for stateful behaviors
+      actorInstance = new ContextActor(id, normalizedBehavior.context);
+    } else {
+      log.debug('Creating stateless actor', {
+        actorId: id,
+        hasContext: !!normalizedBehavior.context,
+        contextKeys: normalizedBehavior.context ? Object.keys(normalizedBehavior.context) : [],
+      });
+      // Stateless actors for maximum performance with no state
+      actorInstance = new StatelessActor(id);
+    }
+
+    // Start the actor instance
+    actorInstance.start();
+
+    // Store in polymorphic map
+    this.actorInstances.set(path, actorInstance);
 
     // ✅ PURE ACTOR MODEL: Create and store behavior handler for this actor
     const behaviorHandler = new PureActorBehaviorHandler(this.messagePlanProcessor);
     this.actorBehaviorHandlers.set(path, behaviorHandler);
 
     // Register in directory
+    log.debug('Registering actor in directory', {
+      actorPath: path,
+      nodeAddress: this.config.nodeAddress,
+    });
     await this.directory.register(address, this.config.nodeAddress);
+    log.debug('Actor registered in directory', {
+      actorPath: path,
+    });
 
     // Initialize stats with extended properties
     this.actorStats.set(path, {
@@ -539,8 +686,14 @@ export class ActorSystemImpl implements ActorSystem {
       startTime: Date.now(),
     });
 
+    // ✅ UNIFIED API DESIGN Phase 2.1: Analyze behavior for auto-publishing
+    this.autoPublishingRegistry.analyzeActorBehavior(
+      path,
+      normalizedBehavior as ActorBehavior<ActorMessage, unknown>
+    );
+
     // Create mailbox for the actor
-    const mailbox = createMailbox.dropping(1000); // TODO: Make configurable via SpawnOptions
+    const mailbox = createMailbox.dropping(1000);
     this.actorMailboxes.set(path, mailbox);
 
     // Initialize onStart tracking
@@ -566,25 +719,26 @@ export class ActorSystemImpl implements ActorSystem {
 
     // Notify guardian about the new child (if it's not the guardian itself)
     if (this.guardianActorAddress && address.id !== 'guardian') {
-      await this.enqueueMessage(this.guardianActorAddress, {
+      const spawnChildMessage: SpawnChildMessage = {
         type: 'SPAWN_CHILD',
-        payload: {
-          name: address.id,
-          address: address.path,
-          supervision: 'resume',
-        },
-        timestamp: Date.now(),
-        version: '1.0.0',
-      });
+        childId: address.id,
+        childPath: address.path,
+        supervision: 'resume',
+        _timestamp: Date.now(),
+        _version: '1.0.0',
+      };
+      await this.enqueueMessage(this.guardianActorAddress, spawnChildMessage);
     }
 
-    return new ActorPIDImpl(address, this);
+    // Create typed ActorRef using ActorPIDImpl which properly sends messages through the system
+    // This ensures messages go through the mailbox system instead of instance.send()
+    return new ActorPIDImpl(address, this) as unknown as ActorRef<unknown, ActorMessage>;
   }
 
   /**
    * Lookup an actor by path
    */
-  async lookup(path: string): Promise<ActorPID | undefined> {
+  async lookup(path: string): Promise<ActorRef | undefined> {
     const address = parseActorPath(path);
     if (!address) {
       return undefined;
@@ -605,7 +759,7 @@ export class ActorSystemImpl implements ActorSystem {
     const allActors = await this.directory.getAll();
     const results: ActorAddress[] = [];
 
-    for (const [path, location] of allActors) {
+    for (const [path, location] of Array.from(allActors)) {
       if (location === this.config.nodeAddress) {
         results.push(parseActorPath(path));
       }
@@ -627,7 +781,7 @@ export class ActorSystemImpl implements ActorSystem {
     let totalMessages = 0;
     let totalUptime = 0;
 
-    for (const stats of this.actorStats.values()) {
+    for (const stats of Array.from(this.actorStats.values())) {
       totalMessages += stats.messagesProcessed;
       totalUptime += (now - stats.startTime) / 1000;
     }
@@ -689,15 +843,13 @@ export class ActorSystemImpl implements ActorSystem {
       return;
     }
 
-    const message: ActorMessage = {
+    const message: SystemEventMessage = {
       type: 'EMIT_SYSTEM_EVENT',
-      payload: {
-        eventType: event.eventType,
-        timestamp: event.timestamp,
-        data: event.data ?? null,
-      },
-      timestamp: Date.now(),
-      version: '1.0.0',
+      systemEventType: event.eventType,
+      systemTimestamp: event.timestamp,
+      systemData: event.data ?? null,
+      _timestamp: Date.now(),
+      _version: '1.0.0',
     };
 
     await this.enqueueMessage(this.systemEventActorAddress, message);
@@ -716,21 +868,63 @@ export class ActorSystemImpl implements ActorSystem {
       return () => {};
     }
 
-    // Subscribe directly to all system events from the system event actor
-    const unsubscribe = this.subscribeToActor(this.systemEventActorAddress, 'EMIT:*', (message) => {
-      // Extract the event type from the message type (e.g., 'EMIT:actorSpawned' -> 'actorSpawned')
-      const eventType = message.type.startsWith('EMIT:') ? message.type.substring(5) : message.type;
+    log.debug(
+      '🔍 SUBSCRIBE TO SYSTEM EVENTS: systemEventActorAddress:',
+      this.systemEventActorAddress
+    );
 
-      listener({
-        type: eventType,
-        timestamp: message.timestamp || Date.now(),
-        ...(message.payload && typeof message.payload === 'object'
-          ? (message.payload as Record<string, unknown>)
-          : {}),
-      });
+    // Create a unique callback path for this listener
+    const callbackPath = `actor://${this.config.nodeAddress}/callback/${generateCorrelationId()}`;
+
+    // Store the callback in a map so we can invoke it when we receive notifications
+    if (!this.systemEventCallbacks) {
+      this.systemEventCallbacks = new Map<
+        string,
+        (event: { type: string; [key: string]: unknown }) => void
+      >();
+    }
+    this.systemEventCallbacks.set(callbackPath, listener);
+
+    // Send SUBSCRIBE_TO_SYSTEM_EVENTS message to the system event actor
+    const subscribeMessage = {
+      type: 'SUBSCRIBE_TO_SYSTEM_EVENTS',
+      subscriberPath: callbackPath,
+      // Don't filter events - we want all system events
+    };
+
+    log.debug('🔍 SUBSCRIBE TO SYSTEM EVENTS: Sending subscription message', {
+      subscriberPath: callbackPath,
+      systemEventActor: this.systemEventActorAddress.path,
     });
 
-    return unsubscribe;
+    // Send the subscription message
+    this.enqueueMessage(this.systemEventActorAddress, subscribeMessage).catch((err) => {
+      log.error('Failed to subscribe to system events', { error: err });
+    });
+
+    log.debug('🔍 SUBSCRIBE TO SYSTEM EVENTS: Subscription registered synchronously', {
+      callbackPath,
+    });
+
+    // Return unsubscribe function
+    return () => {
+      // Send unsubscribe message if system event actor is still available
+      if (this.systemEventActorAddress) {
+        const unsubscribeMessage = {
+          type: 'UNSUBSCRIBE_FROM_SYSTEM_EVENTS',
+          subscriberPath: callbackPath,
+        };
+
+        this.enqueueMessage(this.systemEventActorAddress, unsubscribeMessage).catch((err) => {
+          log.error('Failed to unsubscribe from system events', { error: err });
+        });
+      }
+
+      // Remove callback
+      if (this.systemEventCallbacks) {
+        this.systemEventCallbacks.delete(callbackPath);
+      }
+    };
   }
 
   /**
@@ -905,15 +1099,14 @@ export class ActorSystemImpl implements ActorSystem {
       'CLUSTER_EVENT_NOTIFICATION',
       (message) => {
         const callback = this.clusterEventCallbacks.get(callbackId);
-        if (callback && message.payload && typeof message.payload === 'object') {
-          // Transform cluster event payload to callback format
-          const payload = message.payload as Record<string, unknown>;
-          if ('eventType' in payload && 'node' in payload) {
-            const eventType = String(payload.eventType);
+        if (callback && typeof message === 'object' && message !== null) {
+          // Transform cluster event message to callback format
+          if ('eventType' in message && 'node' in message) {
+            const eventType = String(message.eventType);
             if (['node-up', 'node-down', 'leader-changed'].includes(eventType)) {
               callback({
                 type: eventType as 'node-up' | 'node-down' | 'leader-changed',
-                node: String(payload.node),
+                node: String(message.node),
               });
             }
           }
@@ -926,11 +1119,17 @@ export class ActorSystemImpl implements ActorSystem {
    * Enqueue a message to an actor's mailbox (fire-and-forget)
    */
   async enqueueMessage(address: ActorAddress, message: ActorMessage): Promise<void> {
+    log.debug('enqueueMessage called', {
+      actorPath: address.path,
+      messageType: message.type,
+      message,
+    });
+
     // Get or create message context
     let context = this.messageContexts.get(message);
     if (!context) {
       context = createMessageContext({
-        correlationId: message.correlationId,
+        correlationId: message._correlationId,
       });
       this.messageContexts.set(message, context);
     }
@@ -940,7 +1139,7 @@ export class ActorSystemImpl implements ActorSystem {
     if (this.globalInterceptors.size > 0) {
       const result = await this.globalInterceptors.execute(
         message,
-        message.sender || null,
+        message._sender || null,
         'send',
         context
       );
@@ -965,7 +1164,7 @@ export class ActorSystemImpl implements ActorSystem {
       if (actorChain && actorChain.size > 0) {
         const result = await actorChain.execute(
           processedMessage,
-          message.sender || null,
+          message._sender || null,
           'send',
           context
         );
@@ -986,10 +1185,72 @@ export class ActorSystemImpl implements ActorSystem {
     // Update context for the processed message
     this.messageContexts.set(processedMessage, context);
 
+    // Check if this is a callback path (for system event subscriptions)
+    if (address.path.includes('/callback/')) {
+      log.debug('🔍 ENQUEUE MESSAGE DEBUG: Callback path detected', {
+        callbackPath: address.path,
+        messageType: processedMessage.type,
+      });
+
+      // Handle callback-based delivery
+      if (processedMessage.type === 'SYSTEM_EVENT_NOTIFICATION' && this.systemEventCallbacks) {
+        const callback = this.systemEventCallbacks.get(address.path);
+        if (callback) {
+          log.debug('🔍 ENQUEUE MESSAGE DEBUG: Invoking callback', {
+            callbackPath: address.path,
+            eventType:
+              'eventType' in processedMessage ? processedMessage.eventType : processedMessage.type,
+          });
+
+          const eventData: {
+            type: string;
+            eventType?: string;
+            timestamp: number;
+            [key: string]: unknown;
+          } = {
+            type:
+              'eventType' in processedMessage
+                ? String(processedMessage.eventType)
+                : processedMessage.type,
+            eventType:
+              'eventType' in processedMessage
+                ? String(processedMessage.eventType)
+                : processedMessage.type,
+            timestamp:
+              'timestamp' in processedMessage
+                ? Number(processedMessage.timestamp)
+                : processedMessage._timestamp || Date.now(),
+          };
+
+          if ('data' in processedMessage && processedMessage.data !== undefined) {
+            eventData.data = processedMessage.data;
+          }
+
+          // Invoke callback
+          callback(eventData);
+          return; // Message delivered via callback
+        }
+      }
+
+      // Callback not found - add to dead letter queue
+      log.warn('Callback not found for path', { path: address.path });
+      this.deadLetterQueue.add(processedMessage, address.path, 'Callback not found', 1);
+      return;
+    }
+
     // First, check if the actor is local or remote
     const location = await this.directory.lookup(address);
 
+    log.debug('Directory lookup result', {
+      actorPath: address.path,
+      location,
+      nodeAddress: this.config.nodeAddress,
+    });
+
     if (!location) {
+      log.debug('Actor not found in directory', {
+        actorPath: address.path,
+      });
       log.error('Actor not found', { path: address.path });
       this.deadLetterQueue.add(processedMessage, address.path, 'Actor not found in directory', 1);
       return;
@@ -997,13 +1258,28 @@ export class ActorSystemImpl implements ActorSystem {
 
     // If remote, deliver to remote actor
     if (location !== this.config.nodeAddress) {
+      log.debug('🔍 ENQUEUE MESSAGE DEBUG: Delivering to remote actor', {
+        actorPath: address.path,
+        location,
+        nodeAddress: this.config.nodeAddress,
+      });
       await this.deliverMessageRemote(location, address, processedMessage);
       return;
     }
 
     // Local actor - enqueue to mailbox
     const mailbox = this.actorMailboxes.get(address.path);
+    log.debug('Local actor mailbox lookup', {
+      actorPath: address.path,
+      hasMailbox: !!mailbox,
+      totalMailboxes: this.actorMailboxes.size,
+      allMailboxKeys: Array.from(this.actorMailboxes.keys()),
+    });
+
     if (!mailbox) {
+      log.debug('Mailbox not found', {
+        actorPath: address.path,
+      });
       log.error('Mailbox not found for actor', { path: address.path });
       this.deadLetterQueue.add(processedMessage, address.path, 'Mailbox not found for actor', 1);
       return;
@@ -1024,17 +1300,63 @@ export class ActorSystemImpl implements ActorSystem {
         );
       } else if (enqueued) {
         // Message was successfully enqueued
+        log.debug('🔍 MAILBOX DEBUG: Message enqueued successfully', {
+          actorPath: address.path,
+          messageType: processedMessage.type,
+        });
+
         // Check if we need to restart the processing loop
         const isProcessing = this.actorProcessingActive.get(address.path) || false;
         const hasLoop = this.actorProcessingLoops.get(address.path) || false;
 
+        log.debug('🔍 MAILBOX DEBUG: Checking processing status', {
+          actorPath: address.path,
+          isProcessing,
+          hasLoop,
+          totalActiveActors: this.actorProcessingActive.size,
+          totalLoops: this.actorProcessingLoops.size,
+        });
+
         if (hasLoop && !isProcessing) {
           // The loop exists but is idle, wake it up
           const behavior = this.actors.get(address.path);
+          log.debug('🔍 MAILBOX DEBUG: Waking up idle processing loop', {
+            actorPath: address.path,
+            hasBehavior: !!behavior,
+          });
+
           if (behavior) {
-            // Mark as processing immediately to prevent race conditions
-            this.actorProcessingActive.set(address.path, true);
-            queueMicrotask(() => this.processActorMessages(address, behavior));
+            // Double-check to prevent race conditions
+            if (
+              this.actorProcessingLoops.get(address.path) &&
+              !this.actorProcessingActive.get(address.path)
+            ) {
+              this.actorProcessingActive.set(address.path, true);
+              // Use setImmediate to break out of microtask queue and prevent infinite loops
+              setImmediate(() => this.processActorMessages(address, behavior));
+            }
+          }
+        }
+
+        // In test mode, process message immediately
+        if (this.testMode) {
+          const behavior = this.actors.get(address.path);
+          if (behavior && !mailbox.isEmpty()) {
+            // Process one message synchronously
+            const message = mailbox.dequeue();
+            if (message) {
+              try {
+                await this.deliverMessageLocal(address, message);
+              } catch (error) {
+                log.error('Error processing message in test mode', {
+                  actor: address.path,
+                  messageType: message.type,
+                  error: error instanceof Error ? error.message : 'Unknown error',
+                });
+                // Apply supervision strategy
+                await this.applySupervisionStrategy(address, error);
+              }
+            }
           }
         }
       }
@@ -1066,8 +1388,8 @@ export class ActorSystemImpl implements ActorSystem {
     // Mark as actively processing immediately to prevent race conditions
     this.actorProcessingActive.set(address.path, true);
 
-    // Schedule the processing on the next tick to avoid blocking
-    queueMicrotask(() => this.processActorMessages(address, behavior));
+    // Use setImmediate to start processing on next event loop iteration
+    setImmediate(() => this.processActorMessages(address, behavior));
   }
 
   /**
@@ -1077,9 +1399,28 @@ export class ActorSystemImpl implements ActorSystem {
     address: ActorAddress,
     behavior: PureActorBehavior<ActorMessage, ActorMessage>
   ): Promise<void> {
+    const startTime = Date.now();
+    const processId = Math.random().toString(36).substring(7);
+
+    log.debug('processActorMessages called', {
+      actorPath: address.path,
+      processId,
+      timestamp: startTime,
+      activeProcessingCount: this.actorProcessingActive.size,
+      totalLoops: this.actorProcessingLoops.size,
+      isProcessingActive: this.actorProcessingActive.get(address.path),
+      hasProcessingLoop: this.actorProcessingLoops.get(address.path),
+    });
+
     const mailbox = this.actorMailboxes.get(address.path);
     if (!mailbox || !this.actorProcessingLoops.get(address.path)) {
-      // Actor has been stopped or mailbox removed
+      log.debug('Early exit - no mailbox or loop disabled', {
+        actorPath: address.path,
+        processId,
+        hasMailbox: !!mailbox,
+        hasProcessingLoop: !!this.actorProcessingLoops.get(address.path),
+        exitTime: Date.now() - startTime,
+      });
       this.actorProcessingActive.set(address.path, false);
       return;
     }
@@ -1087,19 +1428,44 @@ export class ActorSystemImpl implements ActorSystem {
     // Mark as actively processing
     this.actorProcessingActive.set(address.path, true);
 
+    log.debug('Starting message processing batch', {
+      actorPath: address.path,
+      processId,
+      mailboxSize: mailbox.size(),
+      isEmpty: mailbox.isEmpty(),
+    });
+
     // Process all available messages in a batch
-    let _processed = 0;
-    while (!mailbox.isEmpty() && this.actorProcessingLoops.get(address.path)) {
+    let processed = 0;
+    const maxMessages = 100; // Safety limit to prevent infinite processing
+
+    while (
+      !mailbox.isEmpty() &&
+      this.actorProcessingLoops.get(address.path) &&
+      processed < maxMessages
+    ) {
       const message = mailbox.dequeue();
+
+      log.debug('Processing message', {
+        actorPath: address.path,
+        processId,
+        messageType: message?.type,
+        hasMessage: !!message,
+        processed,
+        remainingInMailbox: mailbox.size(),
+      });
+
       if (message) {
         try {
           await this.deliverMessageLocal(address, message);
-          _processed++;
+          processed++;
         } catch (error) {
           log.error('Error processing message', {
             actor: address.path,
+            processId,
             messageType: message.type,
             error: error instanceof Error ? error.message : 'Unknown error',
+            processed,
           });
 
           // Apply supervision strategy
@@ -1108,11 +1474,48 @@ export class ActorSystemImpl implements ActorSystem {
       }
     }
 
+    // Safety check for infinite loop protection
+    if (processed >= maxMessages) {
+      log.error('Hit message processing limit - possible infinite loop', {
+        actorPath: address.path,
+        processId,
+        processed,
+        mailboxSize: mailbox.size(),
+      });
+      this.actorProcessingActive.set(address.path, false);
+      return;
+    }
+
+    const hasMoreMessages = !mailbox.isEmpty();
+    const shouldContinue = this.actorProcessingLoops.get(address.path);
+
+    log.debug('Batch complete, checking continuation', {
+      actorPath: address.path,
+      processId,
+      processed,
+      hasMoreMessages,
+      shouldContinue,
+      mailboxSize: mailbox.size(),
+      duration: Date.now() - startTime,
+    });
+
     // Check if there are more messages (could have arrived while processing)
-    if (!mailbox.isEmpty() && this.actorProcessingLoops.get(address.path)) {
+    if (hasMoreMessages && shouldContinue) {
+      log.debug('Scheduling next processing round', {
+        actorPath: address.path,
+        processId,
+        nextProcessId: 'will-be-generated',
+      });
       // More messages available, continue processing
-      queueMicrotask(() => this.processActorMessages(address, behavior));
+      // Use setImmediate to yield control and prevent blocking the event loop
+      setImmediate(() => this.processActorMessages(address, behavior));
     } else {
+      log.debug('Processing complete, marking idle', {
+        actorPath: address.path,
+        processId,
+        reason: hasMoreMessages ? 'loop disabled' : 'no more messages',
+        duration: Date.now() - startTime,
+      });
       // No more messages, mark as idle
       this.actorProcessingActive.set(address.path, false);
     }
@@ -1123,24 +1526,36 @@ export class ActorSystemImpl implements ActorSystem {
    * Uses correlation manager for proper response handling
    */
   async askActor<T>(address: ActorAddress, message: ActorMessage, timeout: number): Promise<T> {
-    console.log('🔍 ASK: Starting askActor with correlation manager');
+    log.debug('🔍 ASK: Starting askActor with correlation manager');
+
+    // Import ask pattern safeguards
+    const { createAskTimeout } = await import('./ask-pattern-safeguards.js');
 
     // Generate correlation ID
     const correlationId = this.correlationManager.generateId();
-    console.log('🔍 ASK: Generated correlationId:', correlationId);
+    log.debug('🔍 ASK: Generated correlationId:', correlationId);
 
     // Register the request with correlation manager to get a promise
-    const responsePromise = this.correlationManager.registerRequest<T>(correlationId, timeout);
+    // Use a much longer timeout for correlation manager so our AskPatternTimeout always wins
+    const responsePromise = this.correlationManager.registerRequest<T>(correlationId, timeout * 10);
+
+    // Create timeout promise with helpful error message
+    const { promise: timeoutPromise, cancel: cancelTimeout } = createAskTimeout(
+      address.path,
+      message.type,
+      correlationId,
+      timeout
+    );
 
     // Send the message with correlation ID
     const messageWithCorrelation: ActorMessage = {
       ...message,
-      correlationId,
-      timestamp: message.timestamp || Date.now(),
-      version: message.version || '1.0.0',
+      _correlationId: correlationId,
+      _timestamp: message._timestamp || Date.now(),
+      _version: message._version || '1.0.0',
     };
 
-    console.log('🔍 ASK: Sending message with correlation:', {
+    log.debug('🔍 ASK: Sending message with correlation:', {
       messageType: messageWithCorrelation.type,
       correlationId,
       targetAddress: address,
@@ -1148,26 +1563,92 @@ export class ActorSystemImpl implements ActorSystem {
 
     await this.enqueueMessage(address, messageWithCorrelation);
 
-    console.log('🔍 ASK: Waiting for response...');
-    const response = await responsePromise;
-    console.log('🔍 ASK: Got response:', response);
+    log.debug('🔍 ASK: Waiting for response...');
 
-    // The correlation manager returns the ActorMessage
-    // Extract payload if it's an ActorMessage format
-    if (
-      response &&
-      typeof response === 'object' &&
-      'type' in response &&
-      'payload' in response &&
-      'timestamp' in response &&
-      'version' in response
-    ) {
-      const message = response as ActorMessage;
-      return message.payload as T;
+    try {
+      // Race between response and timeout
+      const response = await Promise.race([responsePromise, timeoutPromise]);
+      cancelTimeout(); // Cancel timeout if we got a response
+      log.debug('🔍 ASK: Got response:', response);
+
+      // The correlation manager returns the ActorMessage
+      // For flat message structure, extract the response data from the message
+      if (
+        response &&
+        typeof response === 'object' &&
+        'type' in response &&
+        '_timestamp' in response &&
+        '_version' in response
+      ) {
+        // Extract response data from flat message structure
+        const message = response as ActorMessage;
+        log.debug('🔍 ASK PATTERN DEBUG: Processing response', {
+          actorPath: address.path,
+          messageType: message.type,
+          hasCorrelationId: !!message._correlationId,
+          correlationId: message._correlationId,
+          message,
+        });
+
+        const {
+          type: _type,
+          _timestamp,
+          _version,
+          _correlationId,
+          _sender,
+          ...responseData
+        } = message;
+
+        log.debug('🔍 ASK PATTERN DEBUG: Extracted response data', {
+          actorPath: address.path,
+          responseData,
+          responseDataKeys: Object.keys(responseData),
+          hasValueField: 'value' in responseData,
+        });
+
+        // If response data contains only a 'value' field, return the value directly
+        if (Object.keys(responseData).length === 1 && 'value' in responseData) {
+          const value = (responseData as { value: T }).value;
+          log.debug('🔍 ASK PATTERN DEBUG: Returning value field', {
+            actorPath: address.path,
+            value,
+          });
+          return value;
+        }
+
+        // If response data contains only a 'payload' field (for arrays), return the payload directly
+        if (Object.keys(responseData).length === 1 && 'payload' in responseData) {
+          const payload = (responseData as { payload: T }).payload;
+          log.debug('🔍 ASK PATTERN DEBUG: Returning payload field', {
+            actorPath: address.path,
+            payload,
+            isArray: Array.isArray(payload),
+          });
+          return payload;
+        }
+
+        // Otherwise return the response data object (excluding envelope fields)
+        log.debug('🔍 ASK PATTERN DEBUG: Returning response data object', {
+          actorPath: address.path,
+          responseData,
+        });
+        return responseData as T;
+      }
+
+      // If response is not an ActorMessage, return it as is
+      return response;
+    } catch (error) {
+      // Cancel timeout if it's still pending
+      cancelTimeout();
+
+      // If this is our AskPatternTimeout, clean up the correlation manager
+      if (error instanceof Error && error.name === 'AskPatternTimeout') {
+        // Cancel the pending request in correlation manager
+        this.correlationManager.handleTimeout(correlationId);
+      }
+
+      throw error;
     }
-
-    // If response is not an ActorMessage, return it as is
-    return response;
   }
 
   /**
@@ -1241,21 +1722,44 @@ export class ActorSystemImpl implements ActorSystem {
    * Create an event message from an emitted event
    */
   private createEventMessage(address: ActorAddress, event: unknown): ActorMessage {
+    log.debug('🔍 CREATE EVENT MESSAGE DEBUG: Creating event message', {
+      addressPath: address.path,
+      event,
+      eventType: typeof event,
+      isActorMessage: this.isActorMessage(event),
+    });
+
     // If event is already an ActorMessage, return it
     if (this.isActorMessage(event)) {
+      log.debug('🔍 CREATE EVENT MESSAGE DEBUG: Event is already ActorMessage', {
+        eventType: event.type,
+      });
       return event;
     }
 
-    // If event has a type property, use it
-    const eventType = (event as { type?: string })?.type || 'ACTOR_EVENT';
+    // Check if event has a type property safely
+    let eventType = 'ACTOR_EVENT';
+    if (event && typeof event === 'object' && 'type' in event && typeof event.type === 'string') {
+      eventType = event.type;
+    }
 
-    return {
+    // Create the event message with proper envelope
+    // For type safety, we'll create a message that extends ActorMessage
+    const eventMessage = {
       type: eventType,
-      payload: event as JsonValue,
-      sender: address,
-      timestamp: Date.now(),
-      version: '1.0.0',
-    };
+      _sender: address,
+      _timestamp: Date.now(),
+      _version: '1.0.0',
+      // Add event payload if it's not null/undefined
+      ...(event !== null && event !== undefined && { eventPayload: event }),
+    } as ActorMessage & { eventPayload?: unknown };
+
+    log.debug('🔍 CREATE EVENT MESSAGE DEBUG: Created event message', {
+      eventMessage,
+      eventType: eventMessage.type,
+    });
+
+    return eventMessage;
   }
 
   /**
@@ -1266,9 +1770,8 @@ export class ActorSystemImpl implements ActorSystem {
       typeof obj === 'object' &&
       obj !== null &&
       'type' in obj &&
-      'payload' in obj &&
-      'timestamp' in obj &&
-      'version' in obj
+      '_timestamp' in obj &&
+      '_version' in obj
     );
   }
 
@@ -1276,6 +1779,11 @@ export class ActorSystemImpl implements ActorSystem {
    * Deliver message to local actor
    */
   private async deliverMessageLocal(address: ActorAddress, message: ActorMessage): Promise<void> {
+    log.debug('🔍 DELIVER LOCAL DEBUG: deliverMessageLocal called', {
+      actorPath: address.path,
+      messageType: message.type,
+    });
+
     log.debug('Delivering message to local actor', {
       path: address.path,
       messageType: message.type,
@@ -1283,22 +1791,69 @@ export class ActorSystemImpl implements ActorSystem {
 
     const behavior = this.actors.get(address.path);
     if (!behavior) {
+      log.debug('🔍 DELIVER LOCAL DEBUG: Behavior not found', {
+        actorPath: address.path,
+      });
       throw new Error(`Local actor not found: ${address.path}`);
     }
 
-    // ✅ PURE ACTOR MODEL: Get stored machine and behavior handler
-    const machineActor = this.actorMachines.get(address.path);
+    // ✅ PURE ACTOR MODEL: Get stored actor instance and behavior handler
+    const actorInstance = this.actorInstances.get(address.path);
     const behaviorHandler = this.actorBehaviorHandlers.get(address.path);
 
-    if (!machineActor || !behaviorHandler) {
-      throw new Error(`Actor machine or behavior handler not found: ${address.path}`);
+    log.debug('🔍 DELIVER LOCAL DEBUG: Actor components lookup', {
+      actorPath: address.path,
+      hasBehavior: !!behavior,
+      hasActorInstance: !!actorInstance,
+      hasBehaviorHandler: !!behaviorHandler,
+    });
+
+    if (!actorInstance || !behaviorHandler) {
+      log.debug('🔍 DELIVER LOCAL DEBUG: Missing components', {
+        actorPath: address.path,
+        actorInstance: !!actorInstance,
+        behaviorHandler: !!behaviorHandler,
+      });
+      throw new Error(`Actor instance or behavior handler not found: ${address.path}`);
     }
 
+    // ✅ CONTEXT ISOLATION: Establish actor identity boundary
+    const actorContext = ActorContextManager.createContext(
+      address.path,
+      message._correlationId,
+      `msg-${Date.now()}`
+    );
+
+    return ActorContextManager.safeRun(
+      actorContext,
+      async () => {
+        return this.processMessageWithContext(
+          address,
+          message,
+          behavior,
+          actorInstance,
+          behaviorHandler
+        );
+      },
+      address.path
+    );
+  }
+
+  /**
+   * Process message within actor context
+   */
+  private async processMessageWithContext(
+    address: ActorAddress,
+    message: ActorMessage,
+    behavior: PureActorBehavior<ActorMessage, ActorMessage> & { context?: unknown },
+    actorInstance: ActorInstance,
+    behaviorHandler: PureActorBehaviorHandler
+  ): Promise<void> {
     // Get message context
     let context =
       this.messageContexts.get(message) ||
       createMessageContext({
-        correlationId: message.correlationId,
+        correlationId: message._correlationId,
       });
 
     // Execute global beforeReceive interceptors
@@ -1306,7 +1861,7 @@ export class ActorSystemImpl implements ActorSystem {
     if (this.globalInterceptors.size > 0) {
       const result = await this.globalInterceptors.execute(
         message,
-        message.sender || null,
+        message._sender || null,
         'receive',
         context
       );
@@ -1324,21 +1879,22 @@ export class ActorSystemImpl implements ActorSystem {
     }
 
     // Get actor PID for actor-specific interceptors
-    const actorPid = {
+    const actorPid: ActorPID = {
       address,
       stop: async () => this.stopActorInternal(address),
-      send: async (msg: BasicMessage) => this.enqueueMessage(address, normalizeMessage(msg)),
-      ask: async (msg: BasicMessage) =>
-        this.askActor(address, normalizeMessage(msg), this.config.defaultAskTimeout ?? 5000),
+      send: async <T extends { type: string }>(msg: T) => this.enqueueMessage(address, msg),
+      ask: async <TResponse = JsonValue>(msg: Message) =>
+        this.askActor<TResponse>(address, msg, this.config.defaultAskTimeout ?? 5000),
+      isAlive: async () => (await this.directory.lookup(address)) !== undefined,
       getStats: async () => this.getActorStatsInternal(address),
-    } as ActorPID;
+    };
 
     // Execute actor-specific beforeReceive interceptors
     const actorChain = this.actorInterceptors.get(actorPid);
     if (actorChain && actorChain.size > 0) {
       const result = await actorChain.execute(
         processedMessage,
-        processedMessage.sender || null,
+        processedMessage._sender || null,
         'receive',
         context
       );
@@ -1359,17 +1915,29 @@ export class ActorSystemImpl implements ActorSystem {
 
     try {
       // ✅ PURE ACTOR MODEL: Use createActorDependencies method for consistent dependency creation
-      const dependencies = this.createActorDependencies(address.path, machineActor);
+      const dependencies = this.createActorDependencies(address.path, actorInstance);
 
       // Call onStart if this is the first time
       if (!this.actorStarted.get(address.path)) {
+        log.debug('🔍 PROCESS MESSAGE DEBUG: Calling onStart for first time', {
+          actorPath: address.path,
+          behaviorType: typeof behavior,
+          hasOnStart: behavior && 'onStart' in behavior,
+          onStartType: behavior && 'onStart' in behavior ? typeof behavior.onStart : 'N/A',
+        });
+
         log.debug('Calling onStart for actor', { path: address.path });
 
         await behaviorHandler.handleStart(
           behavior as PureActorBehavior<unknown, ActorMessage>,
-          machineActor,
+          actorInstance,
           dependencies
         );
+
+        log.debug('🔍 PROCESS MESSAGE DEBUG: onStart completed', {
+          actorPath: address.path,
+        });
+
         this.actorStarted.set(address.path, true);
       }
 
@@ -1382,12 +1950,24 @@ export class ActorSystemImpl implements ActorSystem {
       }
 
       // ✅ PURE ACTOR MODEL: Use behavior handler for message processing
+      log.debug('🔍 PROCESS MESSAGE DEBUG: About to call behaviorHandler.handleMessage', {
+        actorPath: address.path,
+        messageType: processedMessage.type,
+        behaviorHandlerType: typeof behaviorHandler,
+        hasBehaviorHandler: !!behaviorHandler,
+      });
+
       await behaviorHandler.handleMessage(
         behavior as PureActorBehavior<ActorMessage, ActorMessage>,
         processedMessage,
-        machineActor,
+        actorInstance,
         dependencies
       );
+
+      log.debug('🔍 PROCESS MESSAGE DEBUG: behaviorHandler.handleMessage completed', {
+        actorPath: address.path,
+        messageType: processedMessage.type,
+      });
 
       // Update processed message stats
       if (stats) {
@@ -1424,6 +2004,22 @@ export class ActorSystemImpl implements ActorSystem {
         await actorChain.executeAfterProcess(processedMessage, null, address, context);
       }
     } catch (error) {
+      log.debug('🔍 PROCESS MESSAGE DEBUG: Error in processMessageWithContext', {
+        actorPath: address.path,
+        messageType: processedMessage.type,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        hasCorrelationId: !!processedMessage._correlationId,
+        correlationId: processedMessage._correlationId,
+      });
+
+      // If this is an ask pattern request (has correlation ID), reject the promise
+      if (processedMessage._correlationId) {
+        const err =
+          error instanceof Error ? error : new Error('Unknown error in message processing');
+        this.correlationManager.handleError(processedMessage._correlationId, err);
+      }
+
       // Handle actor processing errors
       if (stats) {
         const updatedStats = this.actorStats.get(address.path);
@@ -1450,45 +2046,64 @@ export class ActorSystemImpl implements ActorSystem {
   }
 
   /**
-   * Emit event to subscribers
+   * Emit event to subscribers using auto-publishing registry
+   *
+   * ✅ PURE ACTOR MODEL: Events are enqueued directly to subscriber mailboxes
+   * following Erlang/OTP patterns where Pid ! Message is synchronous enqueue
    */
   private emitEventToSubscribers(address: ActorAddress, eventMessage: ActorMessage): void {
-    // Notify subscribers for all events
-    const allEventKey = `${address.path}:EMIT:*`;
-    const allEventSubscribers = this.subscribers.get(allEventKey);
-    if (allEventSubscribers) {
-      const emitPrefixedMessage = {
-        ...eventMessage,
-        type: `EMIT:${eventMessage.type}`,
-      };
-      for (const handler of allEventSubscribers) {
-        handler(emitPrefixedMessage);
-      }
-    }
+    const publisherId = address.path;
 
-    // Notify subscribers for specific event type
-    if (eventMessage.type) {
-      const eventKey = `${address.path}:EMIT:${eventMessage.type}`;
-      const eventSubscribers = this.subscribers.get(eventKey);
-      if (eventSubscribers) {
-        const emitPrefixedMessage = {
-          ...eventMessage,
-          type: `EMIT:${eventMessage.type}`,
-        };
-        for (const handler of eventSubscribers) {
-          handler(emitPrefixedMessage);
-        }
-      }
+    // ✅ UNIFIED API DESIGN Phase 2.1: Use auto-publishing registry for event distribution
+    const subscribers = this.autoPublishingRegistry.getSubscribersForEvent(
+      publisherId,
+      eventMessage.type
+    );
 
-      // Special handling for RESPONSE events for ask pattern
-      if (eventMessage.type === 'RESPONSE') {
-        const responseKey = `${address.path}:RESPONSE`;
-        const responseSubscribers = this.subscribers.get(responseKey);
-        if (responseSubscribers) {
-          for (const handler of responseSubscribers) {
-            handler(eventMessage);
-          }
-        }
+    log.debug('🔍 EMIT EVENT DEBUG: Emitting to subscribers', {
+      publisherId,
+      eventType: eventMessage.type,
+      subscriberCount: subscribers.length,
+      subscribers: subscribers.map((s) => s.address.path),
+    });
+
+    // ✅ DIRECT MAILBOX ENQUEUE: Send event to each subscriber's mailbox directly
+    // This matches Erlang/OTP and Akka patterns where events are just messages
+    for (const subscriber of subscribers) {
+      log.debug('🔍 EMIT EVENT DEBUG: Direct enqueue to subscriber', {
+        publisherId,
+        subscriberId: subscriber.address.path,
+        eventType: eventMessage.type,
+        eventMessage,
+      });
+
+      try {
+        // Direct enqueue to mailbox - no async boundary
+        // This ensures events are available immediately in tests
+        // and maintains deterministic ordering with other messages
+        this.enqueueMessage(subscriber.address, eventMessage).catch((error) => {
+          // Log as dead letter if enqueue fails (e.g., mailbox full)
+          log.debug('🔍 EMIT EVENT DEBUG: Event dropped (dead letter)', {
+            subscriberId: subscriber.address.path,
+            eventType: eventMessage.type,
+            reason: error instanceof Error ? error.message : 'Unknown error',
+          });
+
+          log.warn('Event dropped - dead letter', {
+            publisherId,
+            subscriberId: subscriber.address.path,
+            eventType: eventMessage.type,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        });
+      } catch (syncError) {
+        // Handle any synchronous errors from enqueue attempt
+        log.error('Failed to enqueue event', {
+          publisherId,
+          subscriberId: subscriber.address.path,
+          eventType: eventMessage.type,
+          error: syncError instanceof Error ? syncError.message : 'Unknown error',
+        });
       }
     }
   }
@@ -1501,7 +2116,7 @@ export class ActorSystemImpl implements ActorSystem {
     const allKey = `${address.path}:*`;
     const allSubscribers = this.subscribers.get(allKey);
     if (allSubscribers) {
-      for (const handler of allSubscribers) {
+      for (const handler of Array.from(allSubscribers)) {
         handler(message);
       }
     }
@@ -1510,7 +2125,7 @@ export class ActorSystemImpl implements ActorSystem {
     const key = `${address.path}:${message.type}`;
     const subscribers = this.subscribers.get(key);
     if (subscribers) {
-      for (const handler of subscribers) {
+      for (const handler of Array.from(subscribers)) {
         handler(message);
       }
     }
@@ -1559,7 +2174,6 @@ export class ActorSystemImpl implements ActorSystem {
     address: ActorAddress,
     message: ActorMessage
   ): Promise<void> {
-    // TODO: Implement remote message delivery via transport
     log.warn('Remote message delivery not yet implemented', {
       location,
       address: address.path,
@@ -1581,19 +2195,53 @@ export class ActorSystemImpl implements ActorSystem {
       return;
     }
 
-    // ✅ PURE ACTOR MODEL: Default supervision strategy (no custom strategies on behaviors)
-    // Pure actor behaviors don't have supervision strategies - use system default
+    // Check restart limits to prevent infinite restart loops
+    const now = Date.now();
+    const currentRestartCount = this.actorRestartCounts.get(address.path) || 0;
+    const lastRestartTime = this.actorLastRestartTime.get(address.path) || 0;
+
+    // Reset restart count if enough time has passed
+    if (now - lastRestartTime > RESTART_WINDOW_MS) {
+      this.actorRestartCounts.set(address.path, 0);
+    }
+
+    // Check if we've exceeded restart limits
+    if (currentRestartCount >= MAX_RESTART_ATTEMPTS) {
+      log.error('Actor exceeded restart limits, stopping permanently', {
+        path: address.path,
+        restartCount: currentRestartCount,
+        maxAttempts: MAX_RESTART_ATTEMPTS,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      // Stop the actor permanently to prevent memory leaks
+      await this.stopActor(new ActorPIDImpl(address, this));
+      await this.emitSystemEvent({
+        eventType: 'actorStopped',
+        timestamp: Date.now(),
+        data: { address: address.path, reason: 'max-restarts-exceeded' },
+      });
+      return;
+    }
+
+    // ✅ PURE ACTOR MODEL: Default supervision strategy with restart limits
     const supervisionDirective = 'restart' as 'restart' | 'stop' | 'escalate' | 'resume';
 
-    log.warn('Actor failed, applying default supervision directive', {
+    log.warn('Actor failed, applying supervision directive with restart limits', {
       path: address.path,
       directive: supervisionDirective,
+      restartCount: currentRestartCount,
+      maxAttempts: MAX_RESTART_ATTEMPTS,
+      error: error instanceof Error ? error.message : String(error),
     });
 
     // Apply the directive using if-else to avoid TypeScript switch narrowing issues
     if (supervisionDirective === 'restart') {
-      log.warn('Actor failed, applying restart directive', { path: address.path });
-      await this.restartActor(address, behavior);
+      log.warn('Actor failed, applying restart directive', {
+        path: address.path,
+        restartAttempt: currentRestartCount + 1,
+      });
+      await this.restartActorWithLimits(address, behavior);
     } else if (supervisionDirective === 'stop') {
       log.error('Actor failed, applying stop directive', { path: address.path });
       await this.stopActor(new ActorPIDImpl(address, this));
@@ -1609,18 +2257,40 @@ export class ActorSystemImpl implements ActorSystem {
       log.warn('Actor failed, applying resume directive', { path: address.path });
       await this.resumeActor(address);
     } else {
-      log.error('Unknown supervision directive, defaulting to restart', {
+      log.error('Unknown supervision directive, defaulting to restart with limits', {
         path: address.path,
         directive: supervisionDirective,
       });
-      await this.restartActor(address, behavior);
+      await this.restartActorWithLimits(address, behavior);
     }
   }
 
   /**
-   * Restart an actor with the same behavior
+   * Restart an actor with the same behavior and track restart attempts
    */
-  private async restartActor(address: ActorAddress, behavior: PureActorBehavior): Promise<void> {
+  private async restartActorWithLimits(
+    address: ActorAddress,
+    behavior: PureActorBehavior
+  ): Promise<void> {
+    const now = Date.now();
+    const currentRestartCount = this.actorRestartCounts.get(address.path) || 0;
+
+    // Update restart tracking
+    this.actorRestartCounts.set(address.path, currentRestartCount + 1);
+    this.actorLastRestartTime.set(address.path, now);
+
+    // Add exponential backoff delay to prevent rapid restart loops
+    const backoffDelay = RESTART_BACKOFF_MS * 2 ** currentRestartCount;
+
+    log.info('Restarting actor with backoff delay', {
+      path: address.path,
+      restartAttempt: currentRestartCount + 1,
+      backoffDelayMs: backoffDelay,
+    });
+
+    // Wait before restarting to prevent rapid cycling
+    await new Promise((resolve) => setTimeout(resolve, backoffDelay));
+
     try {
       // Stop the current actor
       await this.stopActor(new ActorPIDImpl(address, this));
@@ -1631,13 +2301,20 @@ export class ActorSystemImpl implements ActorSystem {
       await this.emitSystemEvent({
         eventType: 'actorRestarted',
         timestamp: Date.now(),
-        data: { address: address.path },
+        data: {
+          address: address.path,
+          restartAttempt: currentRestartCount + 1,
+        },
       });
 
-      log.info('Actor restarted successfully', { path: address.path });
+      log.info('Actor restarted successfully', {
+        path: address.path,
+        restartAttempt: currentRestartCount + 1,
+      });
     } catch (restartError) {
       log.error('Failed to restart actor', {
         path: address.path,
+        restartAttempt: currentRestartCount + 1,
         error: restartError instanceof Error ? restartError.message : 'Unknown',
       });
       // Escalate restart failure
@@ -1669,7 +2346,7 @@ export class ActorSystemImpl implements ActorSystem {
         hasLoop,
       });
       // If can't resume, restart instead
-      await this.restartActor(address, behavior);
+      await this.restartActorWithLimits(address, behavior);
     }
   }
 
@@ -1685,17 +2362,16 @@ export class ActorSystemImpl implements ActorSystem {
     const errorMessage = error instanceof Error ? error.message : String(error);
 
     try {
-      await this.enqueueMessage(this.guardianActorAddress, {
+      const actorFailedMessage: ActorFailedMessage = {
         type: 'ACTOR_FAILED',
-        payload: {
-          actorId: address.id,
-          actorPath: address.path,
-          error: errorMessage,
-          directive: 'escalate',
-        },
-        timestamp: Date.now(),
-        version: '1.0.0',
-      });
+        actorId: address.id,
+        actorPath: address.path,
+        error: errorMessage,
+        directive: 'escalate',
+        _timestamp: Date.now(),
+        _version: '1.0.0',
+      };
+      await this.enqueueMessage(this.guardianActorAddress, actorFailedMessage);
 
       log.info('Failure escalated to Guardian', { path: address.path });
     } catch (escalationError) {
@@ -1711,16 +2387,52 @@ export class ActorSystemImpl implements ActorSystem {
    */
   private createActorDependencies(
     actorId: string,
-    machine: import('xstate').Actor<import('xstate').AnyStateMachine>
+    actorInstance: ActorInstance
   ): ActorDependencies {
+    // Create ActorRef for self reference
+    const address = parseActorPath(actorId);
+    const selfRef = address
+      ? (new ActorPIDImpl(address, this) as unknown as ActorRef<unknown>)
+      : undefined;
+
     return {
       actorId,
-      machine,
+      actor: actorInstance,
+      self: selfRef || ({} as ActorRef<unknown>), // Provide empty object as fallback
       emit: (event: unknown) => {
+        log.debug('🔍 EMIT FUNCTION DEBUG: emit() called', {
+          actorId,
+          event,
+          eventType:
+            event && typeof event === 'object' && 'type' in event
+              ? (event as { type: unknown }).type
+              : undefined,
+        });
+
         const address = parseActorPath(actorId);
         if (address) {
           const eventMessage = this.createEventMessage(address, event);
+
+          log.debug('🔍 EMIT FUNCTION DEBUG: Event message created', {
+            actorId,
+            eventMessage,
+            eventType: eventMessage.type,
+          });
+
+          // ✅ UNIFIED API DESIGN Phase 2.1: Track emitted events in auto-publishing registry
+          this.autoPublishingRegistry.trackEmittedEvent(actorId, eventMessage.type);
+
+          log.debug('🔍 EMIT FUNCTION DEBUG: Calling emitEventToSubscribers', {
+            actorId,
+            addressPath: address.path,
+            eventType: eventMessage.type,
+          });
+
           this.emitEventToSubscribers(address, eventMessage);
+        } else {
+          log.debug('🔍 EMIT FUNCTION DEBUG: Failed to parse actor path', {
+            actorId,
+          });
         }
       },
       send: async (to: unknown, message: ActorMessage) => {
@@ -1749,29 +2461,251 @@ export class ActorSystemImpl implements ActorSystem {
   getDiscoveryServiceAddress(): ActorAddress | undefined {
     return this.discoveryServiceActorAddress;
   }
+
+  /**
+   * Subscribe to events from a specific actor
+   * This is the primary subscription API that matches the interface
+   */
+  async subscribe<TEventType extends string = string>(
+    publisher: ActorRef,
+    options: {
+      subscriber: ActorRef;
+      events?: TEventType[];
+    }
+  ): Promise<() => Promise<void>> {
+    const publisherId = publisher.address.path;
+    const subscriberId = options.subscriber.address.path;
+    const eventTypes = options.events || [];
+
+    log.debug('🔍 SUBSCRIBE DEBUG: subscribe() called', {
+      publisherId,
+      subscriberId,
+      eventTypes,
+      hasPublisher: !!publisher,
+      hasSubscriber: !!options.subscriber,
+    });
+
+    // Register publisher with auto-publishing registry if not already registered
+    const behavior = this.actors.get(publisherId);
+    log.debug('🔍 SUBSCRIBE DEBUG: Checking publisher behavior', {
+      publisherId,
+      hasBehavior: !!behavior,
+      behaviorType: behavior ? typeof behavior : 'none',
+    });
+
+    if (behavior) {
+      this.autoPublishingRegistry.analyzeActorBehavior(publisherId, behavior);
+    }
+
+    // Add subscriber to the registry
+    log.debug('🔍 SUBSCRIBE DEBUG: Adding subscriber to registry', {
+      publisherId,
+      subscriberId,
+      eventTypes,
+    });
+
+    this.autoPublishingRegistry.addSubscriber(
+      publisherId,
+      subscriberId,
+      options.subscriber,
+      eventTypes
+    );
+
+    log.debug('🔍 SUBSCRIBE DEBUG: Subscription completed', {
+      publisherId,
+      subscriberId,
+      eventTypes: eventTypes.length > 0 ? eventTypes : 'all',
+    });
+
+    log.info('Actor subscription created', {
+      publisher: publisherId,
+      subscriber: subscriberId,
+      events: eventTypes.length > 0 ? eventTypes : 'all',
+    });
+
+    // Return unsubscribe function
+    return async () => {
+      this.autoPublishingRegistry.removeSubscriber(publisherId, subscriberId);
+      log.debug('Actor subscription removed', { publisherId, subscriberId });
+    };
+  }
+
+  /**
+   * Spawn an event collector actor for testing purposes
+   */
+  async spawnEventCollector(options: { id: string; autoStart?: boolean }): Promise<ActorRef> {
+    // Import EventCollectorActor behavior
+    const { createEventCollectorBehavior } = await import('./testing/event-collector.js');
+
+    const behavior = createEventCollectorBehavior();
+
+    return this.spawn(behavior, { id: options.id });
+  }
+
+  // ============================================================================
+  // TEST SYNCHRONIZATION UTILITIES
+  // ============================================================================
+
+  /**
+   * Enable synchronous test mode
+   */
+  enableTestMode(): void {
+    this.testMode = true;
+    log.info('Test mode enabled - messages will be processed synchronously');
+  }
+
+  /**
+   * Disable synchronous test mode
+   */
+  disableTestMode(): void {
+    this.testMode = false;
+    log.info('Test mode disabled - messages will be processed asynchronously');
+  }
+
+  /**
+   * Check if test mode is enabled
+   */
+  isTestMode(): boolean {
+    return this.testMode;
+  }
+
+  /**
+   * Flush all pending messages until system is idle
+   */
+  async flush(options?: { timeout?: number; maxRounds?: number }): Promise<void> {
+    const timeout = options?.timeout ?? 5000;
+    const maxRounds = options?.maxRounds ?? 1000;
+    const startTime = Date.now();
+    let rounds = 0;
+
+    log.debug('Starting flush operation', { timeout, maxRounds });
+
+    while (this.hasQueuedMessages()) {
+      // Check timeout
+      if (Date.now() - startTime > timeout) {
+        const busyActors = this.getBusyActors();
+        throw new Error(
+          `Flush timeout after ${rounds} rounds. Busy actors: ${busyActors.join(', ')}`
+        );
+      }
+
+      // Check max rounds
+      if (rounds++ > maxRounds) {
+        const busyActors = this.getBusyActors();
+        throw new Error(
+          `Flush exceeded max rounds (${maxRounds}). Possible infinite loop. Busy actors: ${busyActors.join(', ')}`
+        );
+      }
+
+      // Process one round of messages (one per actor for fairness)
+      await this.processOneRoundOfMessages();
+    }
+
+    log.debug('Flush completed', { rounds, duration: Date.now() - startTime });
+  }
+
+  /**
+   * Check if any actor has queued messages
+   */
+  private hasQueuedMessages(): boolean {
+    for (const mailbox of this.actorMailboxes.values()) {
+      if (mailbox.size() > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Get list of actors with pending messages
+   */
+  private getBusyActors(): string[] {
+    const busyActors: string[] = [];
+    for (const [path, mailbox] of this.actorMailboxes.entries()) {
+      if (mailbox.size() > 0) {
+        busyActors.push(path);
+      }
+    }
+    return busyActors;
+  }
+
+  /**
+   * Process one message from each actor's mailbox (round-robin)
+   */
+  private async processOneRoundOfMessages(): Promise<void> {
+    const promises: Promise<void>[] = [];
+
+    // Process one message from each actor
+    for (const [path, mailbox] of this.actorMailboxes.entries()) {
+      if (mailbox.size() > 0) {
+        // Get the actor address
+        const address = parseActorPath(path);
+        if (address) {
+          // Process one message for this actor
+          const promise = this.processNextMessage(address);
+          promises.push(promise);
+        }
+      }
+    }
+
+    // Wait for all messages in this round to be processed
+    await Promise.all(promises);
+  }
+
+  /**
+   * Process the next message for a specific actor
+   */
+  private async processNextMessage(address: ActorAddress): Promise<void> {
+    const mailbox = this.actorMailboxes.get(address.path);
+    if (!mailbox) return;
+
+    const message = await mailbox.dequeue();
+    if (!message) return;
+
+    // Process the message
+    await this.deliverMessageLocal(address, message);
+  }
 }
 
 /**
  * Internal implementation of ActorPID
  */
-class ActorPIDImpl implements ActorPID {
+class ActorPIDImpl implements ActorRef {
   constructor(
     public readonly address: ActorAddress,
     private readonly system: ActorSystemImpl
   ) {}
 
-  async send(message: BasicMessage): Promise<void> {
-    // Normalize the message input to full ActorMessage
-    const normalizedMessage = normalizeMessage(message);
-    // Fire and forget - enqueue to mailbox
-    await this.system.enqueueMessage(this.address, normalizedMessage);
+  async send<T extends { type: string }>(message: T): Promise<void> {
+    log.debug('🔍 ACTOR PID SEND DEBUG: send() called', {
+      actorAddress: this.address.path,
+      messageType: message.type,
+      message,
+    });
+
+    try {
+      // Fire and forget - enqueue to mailbox
+      await this.system.enqueueMessage(this.address, message);
+      log.debug('🔍 ACTOR PID SEND DEBUG: enqueueMessage completed', {
+        actorAddress: this.address.path,
+        messageType: message.type,
+      });
+    } catch (error) {
+      log.debug('🔍 ACTOR PID SEND DEBUG: enqueueMessage failed', {
+        actorAddress: this.address.path,
+        messageType: message.type,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      throw error;
+    }
   }
 
-  async ask<T>(message: BasicMessage, timeout?: number): Promise<T> {
-    // Normalize the message input to full ActorMessage
-    const normalizedMessage = normalizeMessage(message);
+  async ask<TResponse = JsonValue>(
+    message: { type: string; [key: string]: unknown },
+    timeout?: number
+  ): Promise<TResponse> {
     const askTimeout = timeout ?? this.system.getDefaultAskTimeout();
-    return this.system.askActor<T>(this.address, normalizedMessage, askTimeout);
+    return this.system.askActor<TResponse>(this.address, message, askTimeout);
   }
 
   async stop(): Promise<void> {
@@ -1795,6 +2729,21 @@ class ActorPIDImpl implements ActorPID {
   subscribe(eventType: string, listener: (event: ActorMessage) => void): () => void {
     // Subscribe to specific event types emitted by this actor
     return this.system.subscribeToActor(this.address, eventType, listener);
+  }
+
+  // ActorRef additional methods
+  getSnapshot(): ActorSnapshot<unknown> {
+    // For now, return a minimal snapshot
+    // In the future, this should fetch the actual actor state
+    return {
+      status: 'running',
+      context: {},
+      value: undefined,
+      matches: () => false,
+      can: () => false,
+      hasTag: () => false,
+      toJSON: () => ({ status: 'running', context: {}, value: undefined }),
+    };
   }
 }
 

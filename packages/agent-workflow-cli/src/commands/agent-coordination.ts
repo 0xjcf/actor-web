@@ -1,6 +1,10 @@
 import { execSync } from 'node:child_process';
 import path from 'node:path';
+import { Logger } from '@actor-core/runtime';
 import chalk from 'chalk';
+
+const log = Logger.namespace('AGENT_COORDINATION');
+
 import { GitOperations } from '../core/git-operations.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';
 import { getAgentStatus } from '../index.js';
@@ -162,25 +166,22 @@ async function getAgentWorktreeStatus(agent: AgentInfo): Promise<AgentInfo> {
  * Show status of all agents in the project (REAL DATA VERSION)
  */
 export async function agentsStatusCommand() {
-  console.log(chalk.blue('🤖 Multi-Agent Status Dashboard'));
-  console.log(chalk.blue('=================================='));
+  log.debug(chalk.blue('🤖 Multi-Agent Status Dashboard'));
+  log.debug(chalk.blue('=================================='));
 
   const repoRoot = await findRepoRoot();
 
   try {
     // Get current agent info
     const currentStatus = await getAgentStatus(repoRoot);
-    console.log(chalk.yellow('📍 Current Agent:'));
-    console.log(chalk.green(`  🎭 ${currentStatus.agentType}`));
-    console.log(chalk.gray(`  Branch: ${currentStatus.currentBranch}`));
-    console.log(chalk.gray(`  Changes: ${currentStatus.uncommittedChanges ? 'Yes' : 'No'}`));
-    console.log(
-      chalk.gray(`  Status: ${currentStatus.ahead} ahead, ${currentStatus.behind} behind`)
-    );
-    console.log();
+    log.debug(chalk.yellow('📍 Current Agent:'));
+    log.debug(chalk.green(`  🎭 ${currentStatus.agentType}`));
+    log.debug(chalk.gray(`  Branch: ${currentStatus.currentBranch}`));
+    log.debug(chalk.gray(`  Changes: ${currentStatus.uncommittedChanges ? 'Yes' : 'No'}`));
+    log.debug(chalk.gray(`  Status: ${currentStatus.ahead} ahead, ${currentStatus.behind} behind`));
 
     // REAL DATA: Query actual worktrees
-    console.log(chalk.blue('🔍 Querying real worktrees...'));
+    log.debug(chalk.blue('🔍 Querying real worktrees...'));
     const worktrees = await queryRealWorktrees();
 
     // Map worktrees to agents
@@ -188,8 +189,8 @@ export async function agentsStatusCommand() {
     const agentWorktrees = worktrees.map(mapWorktreeToAgent).filter(Boolean) as AgentInfo[];
 
     if (agentWorktrees.length === 0) {
-      console.log(chalk.yellow('⚠️  No agent worktrees found. Run setup-agent-worktrees.sh first.'));
-      console.log(chalk.blue('💡 Fallback: Using expected agent configuration...'));
+      log.debug(chalk.yellow('⚠️  No agent worktrees found. Run setup-agent-worktrees.sh first.'));
+      log.debug(chalk.blue('💡 Fallback: Using expected agent configuration...'));
 
       // Fallback to expected agents if no worktrees found
       const expectedAgents: AgentInfo[] = [
@@ -225,7 +226,7 @@ export async function agentsStatusCommand() {
       agents.push(...expectedAgents);
     } else {
       // Get real status for each agent
-      console.log(
+      log.debug(
         chalk.blue(`📊 Found ${agentWorktrees.length} agent worktrees, checking status...`)
       );
 
@@ -235,53 +236,50 @@ export async function agentsStatusCommand() {
       }
     }
 
-    console.log(chalk.yellow('🎭 All Agents:'));
+    log.debug(chalk.yellow('🎭 All Agents:'));
     for (const agent of agents) {
       const statusIcon =
         agent.status === 'active' ? '🟢' : agent.status === 'inactive' ? '🔴' : '⚪';
       const changesIcon = agent.uncommittedChanges ? '📝' : '✅';
 
-      console.log(chalk.blue(`  ${statusIcon} ${agent.id} (${agent.role})`));
-      console.log(chalk.gray(`     Branch: ${agent.branch}`));
-      console.log(
+      log.debug(chalk.blue(`  ${statusIcon} ${agent.id} (${agent.role})`));
+      log.debug(chalk.gray(`     Branch: ${agent.branch}`));
+      log.debug(
         chalk.gray(`     Status: ${changesIcon} ${agent.ahead} ahead, ${agent.behind} behind`)
       );
 
       if (agent.path) {
-        console.log(chalk.gray(`     Path: ${agent.path}`));
+        log.debug(chalk.gray(`     Path: ${agent.path}`));
       }
 
       if (agent.uncommittedChanges) {
-        console.log(chalk.yellow('     ⚠️  Has uncommitted changes'));
+        log.debug(chalk.yellow('     ⚠️  Has uncommitted changes'));
       }
     }
 
-    console.log();
-    console.log(chalk.yellow('💡 Recommendations:'));
+    log.debug(chalk.yellow('💡 Recommendations:'));
     const needsSync = agents.filter((a) => a.behind > 0);
     const hasChanges = agents.filter((a) => a.uncommittedChanges);
 
     if (needsSync.length > 0) {
-      console.log(
-        chalk.blue(`  • ${needsSync.length} agent(s) behind integration - recommend sync`)
-      );
+      log.debug(chalk.blue(`  • ${needsSync.length} agent(s) behind integration - recommend sync`));
     }
     if (hasChanges.length > 0) {
-      console.log(chalk.blue(`  • ${hasChanges.length} agent(s) with uncommitted changes`));
+      log.debug(chalk.blue(`  • ${hasChanges.length} agent(s) with uncommitted changes`));
     }
     if (needsSync.length === 0 && hasChanges.length === 0) {
-      console.log(chalk.green('  • All agents are synchronized! 🎉'));
+      log.debug(chalk.green('  • All agents are synchronized! 🎉'));
     }
 
     // Show hybrid system status
-    console.log();
-    console.log(chalk.blue('🔧 System Integration:'));
-    console.log(chalk.green('  ✅ Using real worktree data'));
-    console.log(chalk.green('  ✅ Hybrid actor/shell approach'));
-    console.log(chalk.gray('  💡 Run `scripts/actor-bridge.sh status` for full system status'));
+
+    log.debug(chalk.blue('🔧 System Integration:'));
+    log.debug(chalk.green('  ✅ Using real worktree data'));
+    log.debug(chalk.green('  ✅ Hybrid actor/shell approach'));
+    log.debug(chalk.gray('  💡 Run `scripts/actor-bridge.sh status` for full system status'));
   } catch (error) {
     console.error(chalk.red('❌ Failed to get agents status:'), error);
-    console.log(chalk.yellow('💡 Fallback: Try running `scripts/worktree-maintenance.sh check`'));
+    log.debug(chalk.yellow('💡 Fallback: Try running `scripts/worktree-maintenance.sh check`'));
   }
 }
 
@@ -289,14 +287,14 @@ export async function agentsStatusCommand() {
  * Sync with all other agents
  */
 export async function agentsSyncCommand() {
-  console.log(chalk.blue('🔄 Multi-Agent Synchronization'));
-  console.log(chalk.blue('================================'));
+  log.debug(chalk.blue('🔄 Multi-Agent Synchronization'));
+  log.debug(chalk.blue('================================'));
 
   const repoRoot = await findRepoRoot();
   const git = new GitOperations(repoRoot);
 
   try {
-    console.log(chalk.yellow('📡 Fetching from all agent branches...'));
+    log.debug(chalk.yellow('📡 Fetching from all agent branches...'));
 
     // Fetch from all known agent branches
     const agentBranches = ['feature/agent-a', 'feature/agent-b', 'feature/agent-c'];
@@ -304,28 +302,28 @@ export async function agentsSyncCommand() {
     for (const branch of agentBranches) {
       try {
         await git.getGit().fetch(['origin', branch]);
-        console.log(chalk.green(`  ✅ Fetched ${branch}`));
+        log.debug(chalk.green(`  ✅ Fetched ${branch}`));
       } catch {
-        console.log(chalk.gray(`  ⚪ ${branch} not available`));
+        log.debug(chalk.gray(`  ⚪ ${branch} not available`));
       }
     }
 
-    console.log(chalk.yellow('🔍 Checking integration status...'));
+    log.debug(chalk.yellow('🔍 Checking integration status...'));
     const status = await git.getIntegrationStatus();
 
     if (status.behind > 0) {
-      console.log(chalk.yellow(`⬇️  ${status.behind} commits behind integration`));
-      console.log(chalk.blue('💡 Run `aw sync` to pull latest changes'));
+      log.debug(chalk.yellow(`⬇️  ${status.behind} commits behind integration`));
+      log.debug(chalk.blue('💡 Run `aw sync` to pull latest changes'));
     } else {
-      console.log(chalk.green('✅ Up to date with integration'));
+      log.debug(chalk.green('✅ Up to date with integration'));
     }
 
     if (status.ahead > 0) {
-      console.log(chalk.yellow(`⬆️  ${status.ahead} commits ahead of integration`));
-      console.log(chalk.blue('💡 Run `aw ship` to share your changes'));
+      log.debug(chalk.yellow(`⬆️  ${status.ahead} commits ahead of integration`));
+      log.debug(chalk.blue('💡 Run `aw ship` to share your changes'));
     }
 
-    console.log(chalk.green('🎉 Multi-agent sync completed'));
+    log.debug(chalk.green('🎉 Multi-agent sync completed'));
   } catch (error) {
     console.error(chalk.red('❌ Multi-agent sync failed:'), error);
   }
@@ -335,26 +333,26 @@ export async function agentsSyncCommand() {
  * Detect potential conflicts between agents
  */
 export async function agentsConflictsCommand() {
-  console.log(chalk.blue('⚡ Agent Conflict Detection'));
-  console.log(chalk.blue('============================'));
+  log.debug(chalk.blue('⚡ Agent Conflict Detection'));
+  log.debug(chalk.blue('============================'));
 
   const repoRoot = await findRepoRoot();
   const git = new GitOperations(repoRoot);
 
   try {
-    console.log(chalk.yellow('🔍 Analyzing potential conflicts...'));
+    log.debug(chalk.yellow('🔍 Analyzing potential conflicts...'));
 
     // Get current agent's changed files
     const currentFiles = await git.getChangedFiles();
-    console.log(chalk.blue(`📂 Current agent modified ${currentFiles.length} files`));
+    log.debug(chalk.blue(`📂 Current agent modified ${currentFiles.length} files`));
 
     if (currentFiles.length > 0) {
-      console.log(chalk.gray('  Changed files:'));
+      log.debug(chalk.gray('  Changed files:'));
       for (const file of currentFiles.slice(0, 10)) {
-        console.log(chalk.gray(`    • ${file}`));
+        log.debug(chalk.gray(`    • ${file}`));
       }
       if (currentFiles.length > 10) {
-        console.log(chalk.gray(`    ... and ${currentFiles.length - 10} more`));
+        log.debug(chalk.gray(`    ... and ${currentFiles.length - 10} more`));
       }
     }
 
@@ -367,7 +365,7 @@ export async function agentsConflictsCommand() {
     // 4. Analyze git diff for actual conflicts
     // 5. Use proper git merge-base analysis for conflict prediction
 
-    console.log(chalk.yellow('🧠 Conflict Analysis:'));
+    log.debug(chalk.yellow('🧠 Conflict Analysis:'));
 
     // MOCK: Simple filename pattern-based conflict detection
     const potentialConflicts = currentFiles.filter(
@@ -375,23 +373,21 @@ export async function agentsConflictsCommand() {
     );
 
     if (potentialConflicts.length > 0) {
-      console.log(chalk.yellow(`⚠️  ${potentialConflicts.length} files may cause conflicts:`));
+      log.debug(chalk.yellow(`⚠️  ${potentialConflicts.length} files may cause conflicts:`));
       for (const file of potentialConflicts) {
-        console.log(chalk.red(`    ⚡ ${file} (shared component)`));
+        log.debug(chalk.red(`    ⚡ ${file} (shared component)`));
       }
 
-      console.log();
-      console.log(chalk.blue('💡 Recommendations:'));
-      console.log(chalk.gray('  • Coordinate with other agents before modifying shared files'));
-      console.log(chalk.gray('  • Consider splitting changes into smaller, focused commits'));
-      console.log(chalk.gray('  • Sync frequently to minimize conflict window'));
+      log.debug(chalk.blue('💡 Recommendations:'));
+      log.debug(chalk.gray('  • Coordinate with other agents before modifying shared files'));
+      log.debug(chalk.gray('  • Consider splitting changes into smaller, focused commits'));
+      log.debug(chalk.gray('  • Sync frequently to minimize conflict window'));
     } else {
-      console.log(chalk.green('✅ No potential conflicts detected'));
-      console.log(chalk.gray('  Your changes appear to be isolated to your domain'));
+      log.debug(chalk.green('✅ No potential conflicts detected'));
+      log.debug(chalk.gray('  Your changes appear to be isolated to your domain'));
     }
 
-    console.log();
-    console.log(chalk.green('🛡️  Conflict detection completed'));
+    log.debug(chalk.green('🛡️  Conflict detection completed'));
   } catch (error) {
     console.error(chalk.red('❌ Conflict detection failed:'), error);
   }

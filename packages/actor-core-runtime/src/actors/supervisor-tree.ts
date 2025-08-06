@@ -5,6 +5,7 @@
  */
 
 import type { ActorRef } from '../actor-ref.js';
+import type { ActorMessage } from '../actor-system.js';
 import { Logger } from '../logger.js';
 import type { BaseEventObject, SupervisionStrategy } from '../types.js';
 import { Supervisor, type SupervisorOptions } from './supervisor.js';
@@ -88,7 +89,7 @@ class SupervisorTreeNodeInternal {
       },
       onRestart: (actorRef, error, attempt) => {
         this.logger.debug('Actor restarted', {
-          actorId: actorRef.id,
+          actorId: actorRef.address.id,
           error: error.message,
           attempt,
         });
@@ -125,9 +126,9 @@ class SupervisorTreeNodeInternal {
   /**
    * Supervise an actor at this node
    */
-  supervise(actorRef: ActorRef<BaseEventObject, unknown>): void {
+  supervise(actorRef: ActorRef<BaseEventObject, ActorMessage>): void {
     this.logger.debug('Supervising actor', {
-      actorId: actorRef.id,
+      actorId: actorRef.address.id,
       supervisorPath: this.getPath(),
     });
     this.supervisor.supervise(actorRef);
@@ -143,9 +144,9 @@ class SupervisorTreeNodeInternal {
   /**
    * Handle failure - escalate to parent if needed
    */
-  private handleFailure(actorRef: ActorRef<BaseEventObject, unknown>, error: Error): void {
+  private handleFailure(actorRef: ActorRef<BaseEventObject, ActorMessage>, error: Error): void {
     this.logger.warn('Actor failure handled', {
-      actorId: actorRef.id,
+      actorId: actorRef.address.id,
       error: error.message,
       supervisorPath: this.getPath(),
     });
@@ -153,12 +154,12 @@ class SupervisorTreeNodeInternal {
     if (this.config.strategy === 'escalate' && this.parent) {
       this.logger.debug('Escalating failure to parent', {
         parentId: this.parent.id,
-        actorId: actorRef.id,
+        actorId: actorRef.address.id,
       });
       this.parent.handleFailure(actorRef, error);
     } else if (this.config.strategy === 'escalate' && !this.parent) {
       // Root supervisor with escalate strategy - call global handler
-      this.tree.handleUnhandledFailure(error, actorRef.id, this.getPath());
+      this.tree.handleUnhandledFailure(error, actorRef.address.id, this.getPath());
     }
   }
 
@@ -279,7 +280,7 @@ export class SupervisorTree {
   /**
    * Supervise an actor under a specific supervisor node
    */
-  supervise(actorRef: ActorRef<BaseEventObject, unknown>, supervisorId: string): void {
+  supervise(actorRef: ActorRef<BaseEventObject, ActorMessage>, supervisorId: string): void {
     const supervisor = this.root.findChild(supervisorId);
     if (!supervisor) {
       throw new Error(`Supervisor not found: ${supervisorId}`);

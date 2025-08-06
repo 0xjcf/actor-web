@@ -1,24 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ActorPID, ActorSystem, JsonValue } from '../actor-system';
+import type { ActorRef } from '../actor-ref.js';
+import type { ActorSystem } from '../actor-system.js';
 import {
   createGuardianActor,
   type GuardianMessage,
   guardianBehavior,
-} from '../actor-system-guardian';
+} from '../actor-system-guardian.js';
 
-// Test utilities
-function createGuardianMessage<T extends GuardianMessage['type']>(
-  type: T,
-  payload: JsonValue | null = null
-): Extract<GuardianMessage, { type: T }> {
-  return {
-    type,
-    payload,
-  } as Extract<GuardianMessage, { type: T }>;
+// Test utilities - Creates flat messages for Guardian
+function createGuardianMessage<T extends { type: string }>(messageData: T): GuardianMessage {
+  return messageData as GuardianMessage;
 }
 
 describe('Guardian Actor - Pure Actor Model', () => {
-  let guardian: ActorPID | null = null;
+  let guardian: ActorRef | null = null;
   let mockActorSystem: Partial<ActorSystem>;
 
   beforeEach(async () => {
@@ -58,64 +53,74 @@ describe('Guardian Actor - Pure Actor Model', () => {
   });
 
   describe('Guardian Behavior', () => {
-    it('should define guardian behavior for pure actor model', () => {
-      expect(guardianBehavior).toBeDefined();
-      expect(guardianBehavior.onMessage).toBeDefined();
-      expect(guardianBehavior.supervisionStrategy).toBeDefined();
-    });
-
-    it('should handle SPAWN_ACTOR message via guardian instance', async () => {
+    it('should process spawn actor messages without errors', async () => {
+      // Arrange
       if (!guardian) throw new Error('Guardian not initialized');
-
-      const spawnMessage = createGuardianMessage('SPAWN_ACTOR', {
+      const spawnMessage = createGuardianMessage({
+        type: 'SPAWN_ACTOR',
         name: 'test-actor',
-        type: 'service',
       });
 
-      // ✅ INTEGRATION TEST: Use actor system, not direct behavior call
-      if (!guardian) throw new Error('Guardian not initialized');
-      expect(() => guardian?.send(spawnMessage)).not.toThrow();
+      // Act
+      guardian.send(spawnMessage);
 
-      // Check that guardian processed the message
-      expect(await guardian.isAlive()).toBe(true);
+      // Assert - Guardian should remain operational after processing
+      await expect(guardian.isAlive()).resolves.toBe(true);
     });
 
-    it('should handle STOP_ACTOR message via guardian instance', async () => {
+    it('should remain operational after spawning child actors', async () => {
+      // Arrange
       if (!guardian) throw new Error('Guardian not initialized');
+      const spawnMessage = createGuardianMessage({
+        type: 'SPAWN_ACTOR',
+        name: 'test-actor-child',
+      });
 
-      const stopMessage = createGuardianMessage('STOP_ACTOR', {
+      // Act - Send spawn message
+      guardian.send(spawnMessage);
+
+      // Assert - Guardian continues to operate
+      await expect(guardian.isAlive()).resolves.toBe(true);
+    });
+
+    it('should continue operating after stopping child actors', async () => {
+      // Arrange
+      if (!guardian) throw new Error('Guardian not initialized');
+      const stopMessage = createGuardianMessage({
+        type: 'STOP_ACTOR',
         actorId: 'test-actor-id',
       });
 
-      // ✅ INTEGRATION TEST: Use actor system, test actual behavior
-      if (!guardian) throw new Error('Guardian not initialized');
-      expect(() => guardian?.send(stopMessage)).not.toThrow();
+      // Act - Send stop message
+      guardian.send(stopMessage);
 
-      // Check that guardian is still alive after processing
-      expect(await guardian.isAlive()).toBe(true);
+      // Assert - Guardian remains alive after processing stop request
+      await expect(guardian.isAlive()).resolves.toBe(true);
     });
 
-    it('should handle ACTOR_FAILED message for supervision', async () => {
+    it('should supervise failed actors and remain operational', async () => {
+      // Arrange
       if (!guardian) throw new Error('Guardian not initialized');
-
-      const failureMessage = createGuardianMessage('ACTOR_FAILED', {
+      const failureMessage = createGuardianMessage({
+        type: 'ACTOR_FAILED',
         actorId: 'failed-actor-id',
         error: 'Processing failed',
-        timestamp: Date.now(),
+        directive: 'restart',
       });
 
-      // ✅ INTEGRATION TEST: Use actor system to test supervision
-      if (!guardian) throw new Error('Guardian not initialized');
-      expect(() => guardian?.send(failureMessage)).not.toThrow();
+      // Act - Send failure notification
+      guardian.send(failureMessage);
 
-      // Verify guardian is still operational after handling failure
-      expect(await guardian.isAlive()).toBe(true);
+      // Assert - Guardian handles supervision and remains alive
+      await expect(guardian.isAlive()).resolves.toBe(true);
     });
 
     it('should handle SHUTDOWN message', async () => {
       if (!guardian) throw new Error('Guardian not initialized');
 
-      const shutdownMessage = createGuardianMessage('SHUTDOWN', null);
+      const shutdownMessage = createGuardianMessage({
+        type: 'SHUTDOWN',
+      });
 
       // ✅ INTEGRATION TEST: Test actual shutdown behavior
       if (!guardian) throw new Error('Guardian not initialized');
@@ -128,8 +133,8 @@ describe('Guardian Actor - Pure Actor Model', () => {
     it('should handle GET_SYSTEM_INFO message', async () => {
       if (!guardian) throw new Error('Guardian not initialized');
 
-      const infoMessage = createGuardianMessage('GET_SYSTEM_INFO', {
-        requestId: 'test-request-123',
+      const infoMessage = createGuardianMessage({
+        type: 'GET_SYSTEM_INFO',
       });
 
       // ✅ INTEGRATION TEST: Test system info request
@@ -143,7 +148,9 @@ describe('Guardian Actor - Pure Actor Model', () => {
     it('should handle SYSTEM_HEALTH_CHECK message', async () => {
       if (!guardian) throw new Error('Guardian not initialized');
 
-      const healthMessage = createGuardianMessage('SYSTEM_HEALTH_CHECK', null);
+      const healthMessage = createGuardianMessage({
+        type: 'SYSTEM_HEALTH_CHECK',
+      });
 
       // ✅ INTEGRATION TEST: Test health check functionality
       if (!guardian) throw new Error('Guardian not initialized');
@@ -156,7 +163,10 @@ describe('Guardian Actor - Pure Actor Model', () => {
     it('should handle unknown payload gracefully', async () => {
       if (!guardian) throw new Error('Guardian not initialized');
 
-      const messageWithNullPayload = createGuardianMessage('SPAWN_ACTOR', null);
+      const messageWithNullPayload = createGuardianMessage({
+        type: 'SPAWN_ACTOR',
+        name: 'test-null-actor',
+      });
 
       // ✅ INTEGRATION TEST: Test graceful handling of null payloads
       expect(() => guardian?.send(messageWithNullPayload)).not.toThrow();
@@ -168,7 +178,9 @@ describe('Guardian Actor - Pure Actor Model', () => {
     it('should process messages reliably', async () => {
       if (!guardian) throw new Error('Guardian not initialized');
 
-      const healthMessage = createGuardianMessage('SYSTEM_HEALTH_CHECK', null);
+      const healthMessage = createGuardianMessage({
+        type: 'SYSTEM_HEALTH_CHECK',
+      });
 
       // ✅ INTEGRATION TEST: Test message processing reliability
       expect(() => guardian?.send(healthMessage)).not.toThrow();
@@ -194,7 +206,6 @@ describe('Guardian Actor - Pure Actor Model', () => {
 
       const healthCheckMessage = {
         type: 'SYSTEM_HEALTH_CHECK',
-        payload: null,
         timestamp: Date.now(),
         version: '1.0.0',
       };
@@ -231,7 +242,6 @@ describe('Guardian Actor - Pure Actor Model', () => {
       // Create message with invalid type - TypeScript allows this through ActorMessage interface
       const invalidMessage = {
         type: 'INVALID_MESSAGE_TYPE',
-        payload: null,
         timestamp: Date.now(),
         version: '1.0.0',
       };

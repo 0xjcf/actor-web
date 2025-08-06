@@ -2,6 +2,8 @@
 
 ## Pure Actor Model Runtime for Actor-Web Framework
 
+**✅ 100% Pure Actor Model Compliant** - See [PURE-ACTOR-MODEL-COMPLIANCE.md](./PURE-ACTOR-MODEL-COMPLIANCE.md)
+
 This package provides the pure actor model implementation for the Actor-Web Framework, featuring advanced TypeScript design patterns for building resilient, scalable distributed systems with AI agent capabilities.
 
 ### 🚨 Migration Notice
@@ -23,23 +25,29 @@ This package (`@actor-core/runtime`) implements the pure actor model correctly w
 
 ### 🌟 Feature Highlights
 
-#### **Advanced TypeScript Design Patterns**
-- **Phantom Types** - Compile-time actor state validation
-- **Discriminated Unions** - Type-safe message handling
-- **Cross-Environment Adapters** - Seamless Node.js/Browser/Worker support
+#### **Unified Actor API**
+- **Single `defineActor()` API** - One API for all actor patterns
+- **Three Actor Types** - Stateless, Context-based, Machine-based
+- **OTP Pattern Support** - Context updates, event emission, and replies
+- **Type Inference** - Full TypeScript support with proper context types
+
+#### **Test Synchronization Utilities**
+- **Test Mode** - Synchronous message processing for deterministic tests
+- **Flush Method** - Wait for all mailboxes to process
+- **Event Collectors** - Built-in test utilities for event verification
+- **No `setImmediate`** - Clean test code without timing hacks
+
+#### **Pure Actor Model**
+- **Message-Only Communication** - No shared state or direct method calls
+- **Location Transparency** - Actors work the same locally or distributed
+- **Auto-Publishing** - Events automatically routed to subscribers
+- **Direct Mailbox Enqueue** - No async boundaries for event delivery
+
+#### **Performance & Architecture**
+- **Orleans-Style Caching** - 90%+ cache hit rates
+- **Bounded Mailboxes** - Automatic backpressure handling
 - **Zero `any` Types** - Complete type safety without casting
-
-#### **AI Agent Architecture**
-- **Hierarchical Task Networks (HTN)** - Complex agent planning and decomposition
-- **Hybrid Memory Systems** - LRU cache + vector store + knowledge graph
-- **Pipeline Patterns** - Composable AI workflows with retry and error handling
-- **Event Sourcing** - Complete actor state replay and debugging
-
-#### **Developer Experience**
-- **Enhanced Logging** - Detailed debug output with dev mode support
-- **Comprehensive Examples** - Real-world patterns and use cases
-- **Type-Safe APIs** - IntelliSense-driven development
-- **Performance Optimized** - Sub-millisecond actor lookup with 90%+ cache hit rates
+- **Cross-Environment** - Node.js/Browser/Worker support
 
 ## ⚡ Quick Start
 
@@ -65,26 +73,329 @@ chat.typing({}).subscribe(status => console.log(status));
 
 That's it! No manual event handling, no correlation IDs, no boilerplate. Just pure type safety and simplicity.
 
-### Current Status
+## Core APIs
 
-- [x] **Core Actor System** - Foundation with distributed directory
-- [x] **Capability Security Model** - Permission-based actor access
-- [x] **Virtual Actor System** - Orleans-style caching and lifecycle
-- [x] **tRPC-Inspired Proxies** - Type-safe actor communication
-- [x] **Supervisor Trees** - Hierarchical fault tolerance
-- [x] **Ask Pattern** - Request/response with correlation IDs
-- [x] **HTN Planning** - AI agent task decomposition
-- [x] **Pipeline Workflows** - Composable AI agent chains
-- [x] **Hybrid Memory** - Multi-layer memory architecture
-- [x] **Cross-Environment Adapters** - Node.js/Browser/Worker support
-- [ ] **Message Transport** - WebSocket and Worker transport layers
-- [ ] **Property-Based Testing** - Controlled randomness testing
-- [ ] **Time-Travel Debugging** - Distributed system replay
-- [ ] **OpenTelemetry Integration** - Structured tracing
+### Actor System
 
-### Usage Examples
+```typescript
+import { createActorSystem } from '@actor-core/runtime';
 
-#### **Basic Actor System (Unified API)**
+// Create and start the actor system
+const system = await createActorSystem({ nodeAddress: 'localhost:0' });
+await system.start();
+
+// Spawn actors
+const counter = await system.spawn(counterActor, { id: 'counter-1' });
+
+// Send messages
+await counter.send({ type: 'INCREMENT' });
+
+// Ask pattern (request/response)
+const count = await counter.ask({ type: 'GET_COUNT' });
+
+// Subscribe to events
+await system.subscribe(counter, { 
+  subscriber: logger,
+  events: ['COUNT_CHANGED']
+});
+
+// Test utilities
+system.enableTestMode();  // Synchronous processing
+await system.flush();     // Wait for all messages
+```
+
+### Defining Actors
+
+```typescript
+import { defineActor } from '@actor-core/runtime';
+
+// Define message types
+type CounterMessage = 
+  | { type: 'INCREMENT' }
+  | { type: 'DECREMENT' }
+  | { type: 'GET_COUNT' }
+  | { type: 'RESET'; value: number };
+
+// Define actor with OTP patterns
+const counterActor = defineActor<CounterMessage>()
+  .withContext({ count: 0 })
+  .onMessage(({ message, actor }) => {
+    const { count } = actor.getSnapshot().context;
+    
+    switch (message.type) {
+      case 'INCREMENT':
+        // Update context and emit event
+        return {
+          context: { count: count + 1 },
+          emit: [{ 
+            type: 'COUNT_CHANGED', 
+            oldValue: count, 
+            newValue: count + 1 
+          }]
+        };
+        
+      case 'GET_COUNT':
+        // Reply to ask pattern
+        return {
+          reply: { value: count }
+        };
+        
+      case 'RESET':
+        // Update context with new value
+        return {
+          context: { count: message.value },
+          emit: [{ 
+            type: 'COUNT_RESET', 
+            newValue: message.value 
+          }]
+        };
+    }
+  });
+```
+
+### OTP Handler Patterns
+
+#### Context Updates
+```typescript
+// Return new context to update actor state
+return {
+  context: { count: newCount, lastUpdated: Date.now() }
+};
+```
+
+#### Event Emission
+```typescript
+// Emit events that subscribers will receive
+return {
+  emit: [
+    { type: 'STATE_CHANGED', data: newState },
+    { type: 'METRIC_UPDATED', metric: 'count', value: newCount }
+  ]
+};
+```
+
+#### Reply to Ask Pattern
+```typescript
+// Reply directly to ask() calls
+return {
+  reply: { status: 'success', data: result }
+};
+
+// Reply with context update
+return {
+  context: { processed: true },
+  reply: { id: generatedId, timestamp: Date.now() }
+};
+```
+
+#### State-Based Behavior (XState Machines)
+
+**When to use `state.matches` vs `message.type`:**
+- **`message.type`** - For deciding what action to take based on incoming message
+- **`state.matches`** - For conditional behavior based on actor's current state
+
+```typescript
+const orderActor = defineActor<OrderMessage>()
+  .withMachine(orderMachine)
+  .onMessage(({ message, actor }) => {
+    const snapshot = actor.getSnapshot();
+    
+    // First, handle based on message type
+    switch (message.type) {
+      case 'SUBMIT_ORDER':
+        // Then check state to decide if action is valid
+        if (snapshot.matches('draft')) {
+          return {
+            emit: [{ type: 'ORDER_SUBMITTED', orderId: snapshot.context.orderId }]
+          };
+        } else {
+          return {
+            emit: [{ type: 'INVALID_ACTION', reason: 'Order already submitted' }]
+          };
+        }
+        
+      case 'CANCEL_ORDER':
+        // Different behavior based on current state
+        if (snapshot.matches('processing')) {
+          return {
+            emit: [{ type: 'CANCELLATION_REQUESTED' }]
+          };
+        } else if (snapshot.matches('shipped')) {
+          return {
+            reply: { error: 'Cannot cancel shipped orders' }
+          };
+        }
+        break;
+    }
+  });
+```
+
+#### Pure Actor Model Clarification
+
+**Important:** This framework strictly follows the pure actor model. All communication must be through messages.
+
+**Important:** In Erlang/Elixir OTP, there is no concept of "effects". Everything is handled through message passing. Following this principle, we have removed the `effects` field from our framework to maintain pure actor model compliance.
+
+```typescript
+
+// ✅ CORRECT: Use standard OTP patterns - just emit messages
+return {
+  // Simple and clean - just like Erlang/Elixir
+  emit: [
+    { type: 'SAVE_DATA_REQUESTED', data },
+    { type: 'EMAIL_REQUESTED', email }
+  ]
+};
+
+// ✅ CORRECT: Update context and emit events (standard OTP pattern)
+return {
+  context: { count: newCount },
+  emit: [
+    { type: 'COUNT_CHANGED', oldValue, newValue }
+  ]
+};
+
+// ✅ CORRECT: Reply to ask patterns
+return {
+  reply: { status: 'success', data: result }
+};
+```
+
+**Following Erlang/Elixir Patterns:**
+In Erlang/Elixir, gen_server callbacks return tuples like:
+- `{:reply, reply, new_state}` - Reply and update state
+- `{:noreply, new_state}` - Just update state
+- `{:stop, reason, new_state}` - Stop the actor
+
+Our framework mirrors this with:
+- `{ reply, context }` - Reply and update context
+- `{ context }` - Just update context  
+- `{ emit, context }` - Update context and broadcast events
+
+**Keep It Simple:**
+- Use `context` to update actor state
+- Use `reply` to respond to ask patterns
+- Use `emit` to broadcast events to subscribers
+- Avoid `effects` - it's not part of the pure actor model
+
+```typescript
+return {
+  // Broadcast to all subscribers
+  emit: [
+    { type: 'ORDER_COMPLETED', orderId, total }
+  ],
+  
+  // Send specific messages to known actors
+  effects: [
+    { to: inventoryActor, tell: { type: 'REDUCE_STOCK', items } },
+    { to: shippingActor, tell: { type: 'SCHEDULE_DELIVERY', orderId } }
+  ]
+};
+```
+
+## Usage Examples
+
+### Complete Banking Example
+
+```typescript
+import { createActorSystem, defineActor } from '@actor-core/runtime';
+
+// Define a bank account actor
+type AccountMessage = 
+  | { type: 'DEPOSIT'; amount: number }
+  | { type: 'WITHDRAW'; amount: number }
+  | { type: 'GET_BALANCE' }
+  | { type: 'TRANSFER'; to: string; amount: number };
+
+const accountActor = defineActor<AccountMessage>()
+  .withContext({ 
+    balance: 0, 
+    transactions: []
+  })
+  .onMessage(({ message, actor }) => {
+    const { balance, transactions } = actor.getSnapshot().context;
+    
+    switch (message.type) {
+      case 'DEPOSIT':
+        return {
+          context: {
+            balance: balance + message.amount,
+            transactions: [...transactions, { 
+              type: 'DEPOSIT', 
+              amount: message.amount,
+              timestamp: Date.now()
+            }]
+          },
+          emit: [{ 
+            type: 'TRANSACTION_COMPLETED', 
+            transactionType: 'DEPOSIT',
+            amount: message.amount,
+            newBalance: balance + message.amount
+          }]
+        };
+        
+      case 'WITHDRAW':
+        if (balance < message.amount) {
+          return {
+            reply: { error: 'INSUFFICIENT_FUNDS' },
+            emit: [{ 
+              type: 'WITHDRAWAL_FAILED', 
+              requested: message.amount, 
+              available: balance 
+            }]
+          };
+        }
+        return {
+          context: {
+            balance: balance - message.amount,
+            transactions: [...transactions, { 
+              type: 'WITHDRAW', 
+              amount: message.amount,
+              timestamp: Date.now()
+            }]
+          },
+          reply: { success: true, newBalance: balance - message.amount },
+          emit: [{ 
+            type: 'TRANSACTION_COMPLETED',
+            transactionType: 'WITHDRAW', 
+            amount: message.amount,
+            newBalance: balance - message.amount
+          }]
+        };
+        
+      case 'GET_BALANCE':
+        return {
+          reply: { 
+            balance, 
+            transactionCount: transactions.length,
+            lastTransaction: transactions[transactions.length - 1]
+          }
+        };
+    }
+  });
+
+// Usage
+const system = await createActorSystem({ nodeAddress: 'localhost:0' });
+const account = await system.spawn(accountActor, { id: 'account-123' });
+
+// Subscribe to events
+const auditor = await system.spawnEventCollector();
+await system.subscribe(account, {
+  subscriber: auditor,
+  events: ['TRANSACTION_COMPLETED', 'WITHDRAWAL_FAILED']
+});
+
+// Make transactions
+await account.send({ type: 'DEPOSIT', amount: 100 });
+const withdrawResult = await account.ask({ type: 'WITHDRAW', amount: 50 });
+console.log('Withdraw result:', withdrawResult); // { success: true, newBalance: 50 }
+
+// Check balance
+const { balance } = await account.ask({ type: 'GET_BALANCE' });
+console.log('Current balance:', balance); // 50
+```
+
+### Testing with Synchronization
 ```typescript
 import { defineBehavior, createActor } from '@actor-core/runtime';
 import { setup, assign } from 'xstate';
@@ -113,12 +424,12 @@ const counterMachine = setup({
 
 // Define pure actor behavior using unified API
 const counterBehavior = defineBehavior({
-  onMessage: async ({ message, machine, dependencies }) => {
-    const currentState = machine.getSnapshot();
+  onMessage: async ({ message, actor, dependencies }) => {
+    const currentState = actor.getSnapshot();
     
     switch (message.type) {
       case 'INCREMENT':
-        machine.send({ type: 'INCREMENT' });
+        actor.send({ type: 'INCREMENT' });
         return {
           type: 'COUNTER_INCREMENTED',
           payload: { newValue: currentState.context.count + 1 },
@@ -143,12 +454,13 @@ const counterBehavior = defineBehavior({
 });
 
 // Create and use actor with unified API
-const counter = createActor(counterBehavior);
-await system.spawn(counter, { id: 'counter' });
+// Create and spawn the actor
+const counter = await system.spawn(counterActor, { id: 'counter' });
 
 // Pure actor model - message-only communication
-counter.send({ type: 'INCREMENT' });
+await counter.send({ type: 'INCREMENT' });
 const count = await counter.ask({ type: 'GET_COUNT' });
+console.log('Count:', count.value); // 1
 ```
 
 #### **Zero-Boilerplate Actor Proxies**
@@ -314,34 +626,43 @@ const decision = analyzeMemoriesForDecision(memories);
 - **Fault Recovery**: Automatic supervisor restart within 100ms
 - **Type Checking**: Zero runtime overhead with compile-time validation
 
-### Migration from Legacy Framework
+### Testing Patterns
 
-#### From Singleton Patterns
 ```typescript
-// ❌ Legacy: Global singleton
-const eventBus = ReactiveEventBus.getInstance();
+import { createEventCollectorBehavior } from '@actor-core/runtime';
 
-// ✅ New: Actor-based messaging
-const coordinator = createActorRef(coordinatorMachine);
-coordinator.send({ type: 'BROADCAST', data });
-```
+// Enable test mode for deterministic behavior
+system.enableTestMode();
 
-#### From Direct State Access
-```typescript
-// ❌ Legacy: Direct state access
-const state = actor.getSnapshot();
+const counter = await system.spawn(counterActor);
+const collector = await system.spawn(createEventCollectorBehavior());
 
-// ✅ New: Message-based queries
-const state = await actor.ask({ type: 'GET_STATE' });
-```
+// Subscribe to events
+await system.subscribe(counter, {
+  subscriber: collector,
+  events: ['COUNT_CHANGED']
+});
 
-#### From Global Event Buses
-```typescript
-// ❌ Legacy: Global events
-GlobalEventDelegation.emit('user-action', payload);
+// Messages are processed synchronously in test mode
+await counter.send({ type: 'INCREMENT' });
+// No need to wait - message already processed!
 
-// ✅ New: Targeted actor messages
-userActor.send({ type: 'USER_ACTION', payload });
+const events = await collector.ask({ type: 'GET_EVENTS' });
+expect(events.collectedEvents).toHaveLength(1);
+expect(events.collectedEvents[0]).toMatchObject({
+  type: 'COUNT_CHANGED',
+  oldValue: 0,
+  newValue: 1
+});
+
+// Alternative: Use flush() for specific synchronization
+system.disableTestMode();
+await counter.send({ type: 'INCREMENT' });
+await counter.send({ type: 'INCREMENT' });
+await system.flush(); // Wait for all messages to process
+
+const finalCount = await counter.ask({ type: 'GET_COUNT' });
+expect(finalCount.value).toBe(3);
 ```
 
 ### Development Workflow

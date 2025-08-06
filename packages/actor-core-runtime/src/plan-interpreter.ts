@@ -16,10 +16,11 @@
  * @version 1.0.0
  */
 
-import type { Actor, AnyStateMachine } from 'xstate';
+import type { ActorInstance } from './actor-instance.js';
+import type { ActorMessage } from './actor-system.js';
 import { Logger } from './logger.js';
 import type {
-  ActorMessage,
+  // ActorMessage moved to actor-system.js
   AskInstruction,
   DomainEvent,
   MessagePlan,
@@ -29,10 +30,13 @@ import type {
 // Import type guards from message-plan
 import {
   isAskInstruction as validateAskInstruction,
-  isDomainEvent as validateDomainEvent,
-  isMessagePlan as validateMessagePlan,
+  // isDomainEvent and isMessagePlan moved to utils/validation.js
   isSendInstruction as validateSendInstruction,
 } from './message-plan.js';
+import {
+  isDomainEvent as validateDomainEvent,
+  isMessagePlan as validateMessagePlan,
+} from './utils/validation.js';
 
 const log = Logger.namespace('PLAN_INTERPRETER');
 
@@ -45,8 +49,8 @@ const log = Logger.namespace('PLAN_INTERPRETER');
  * Contains the necessary dependencies for executing message plans
  */
 export interface RuntimeContext {
-  /** XState machine actor for state transitions */
-  readonly machine: Actor<AnyStateMachine>;
+  /** Actor instance for state transitions */
+  readonly actor: ActorInstance;
   /** Event emission function for actor system broadcasting */
   readonly emit: (event: DomainEvent) => void | Promise<void>;
   /** Actor identifier for logging and debugging */
@@ -235,7 +239,7 @@ async function processDomainEvent(event: DomainEvent, context: RuntimeContext): 
 
   try {
     // Send to XState machine for state transitions
-    context.machine.send(event);
+    context.actor.send(event);
 
     // Emit to actor system for subscriber notifications
     const emitResult = context.emit(event);
@@ -268,7 +272,7 @@ async function processSendInstruction(
   context: RuntimeContext
 ): Promise<void> {
   log.debug('Processing send instruction', {
-    targetActor: instruction.to.id,
+    targetActor: instruction.to.address.id,
     messageType: instruction.tell.type,
     mode: instruction.mode || 'fireAndForget',
     actorId: context.actorId,
@@ -284,14 +288,14 @@ async function processSendInstruction(
     await instruction.to.send(instruction.tell);
 
     log.debug('Send instruction completed', {
-      targetActor: instruction.to.id,
+      targetActor: instruction.to.address.id,
       messageType: instruction.tell.type,
       actorId: context.actorId,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error('Error in send instruction', {
-      targetActor: instruction.to?.id || 'unknown',
+      targetActor: instruction.to?.address.id || 'unknown',
       messageType: instruction.tell?.type || 'unknown',
       error: errorMessage,
       actorId: context.actorId,
@@ -309,7 +313,7 @@ async function processAskInstruction(
   context: RuntimeContext
 ): Promise<PlanExecutionResult> {
   log.debug('Processing ask instruction', {
-    targetActor: instruction.to.id,
+    targetActor: instruction.to.address.id,
     messageType: instruction.ask.type,
     timeout: instruction.timeout,
     actorId: context.actorId,
@@ -363,7 +367,7 @@ async function processAskInstruction(
       callbackResult.success = recursiveResult.success && callbackResult.errors.length === 0;
 
       log.debug('Ask instruction completed successfully with callback', {
-        targetActor: instruction.to.id,
+        targetActor: instruction.to.address.id,
         messageType: instruction.ask.type,
         callbackEventType: callbackEvent.type,
         actorId: context.actorId,
@@ -371,7 +375,7 @@ async function processAskInstruction(
       });
     } else {
       log.debug('Ask instruction completed successfully without callback', {
-        targetActor: instruction.to.id,
+        targetActor: instruction.to.address.id,
         messageType: instruction.ask.type,
         actorId: context.actorId,
       });
@@ -380,7 +384,7 @@ async function processAskInstruction(
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
     log.error('Error in ask instruction', {
-      targetActor: instruction.to?.id || 'unknown',
+      targetActor: instruction.to?.address.id || 'unknown',
       messageType: instruction.ask?.type || 'unknown',
       error: errorMessage,
       actorId: context.actorId,
@@ -413,7 +417,7 @@ async function processAskInstruction(
         callbackResult.errors.push(...errorResult.errors);
 
         log.debug('Ask instruction error handled with callback', {
-          targetActor: instruction.to?.id || 'unknown',
+          targetActor: instruction.to?.address.id || 'unknown',
           messageType: instruction.ask?.type || 'unknown',
           errorEventType: errorEvent.type,
           actorId: context.actorId,
@@ -454,14 +458,14 @@ export function createMockRuntimeContext(overrides?: Partial<RuntimeContext>): R
     send: (event: DomainEvent) => {
       log.debug('Mock machine received event', { eventType: event.type });
     },
-  } as Actor<AnyStateMachine>;
+  } as ActorInstance;
 
   const mockEmit = (event: DomainEvent) => {
     log.debug('Mock emit called', { eventType: event.type });
   };
 
   return {
-    machine: mockMachine,
+    actor: mockMachine,
     emit: mockEmit,
     actorId: 'test-actor',
     ...overrides,
@@ -474,10 +478,10 @@ export function createMockRuntimeContext(overrides?: Partial<RuntimeContext>): R
 export function validateRuntimeContext(context: RuntimeContext): string[] {
   const errors: string[] = [];
 
-  if (!context.machine) {
-    errors.push('Runtime context missing machine');
-  } else if (typeof context.machine.send !== 'function') {
-    errors.push('Runtime context machine missing send method');
+  if (!context.actor) {
+    errors.push('Runtime context missing actor');
+  } else if (typeof context.actor.send !== 'function') {
+    errors.push('Runtime context actor missing send method');
   }
 
   if (!context.emit) {

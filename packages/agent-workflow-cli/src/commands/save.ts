@@ -1,5 +1,9 @@
 import { createInterface } from 'node:readline';
+import { Logger } from '@actor-core/runtime';
 import chalk from 'chalk';
+
+const log = Logger.namespace('SAVE_COMMAND');
+
 import { GitOperations } from '../core/git-operations.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';
 
@@ -19,54 +23,54 @@ export async function saveCommand(
 
   // Dynamic title based on mode
   const title = isInteractive ? '🎭 Enhanced Save' : '💾 Quick Save';
-  console.log(chalk.blue(title));
+  log.debug(chalk.blue(title));
   if (isDryRun) {
-    console.log(chalk.yellow('🔍 DRY RUN MODE - No changes will be made'));
+    log.debug(chalk.yellow('🔍 DRY RUN MODE - No changes will be made'));
   }
   if (isInteractive) {
-    console.log(chalk.cyan('🤖 Interactive mode - Enhanced analysis with confirmation'));
+    log.debug(chalk.cyan('🤖 Interactive mode - Enhanced analysis with confirmation'));
   }
-  console.log(chalk.blue('==========================================='));
+  log.debug(chalk.blue('==========================================='));
 
   const repoRoot = await findRepoRoot();
   const git = new GitOperations(repoRoot);
 
   try {
     // ✅ SIMPLIFIED: Direct git operations instead of actor messaging
-    console.log(chalk.gray('🔍 Checking repository status...'));
+    log.debug(chalk.gray('🔍 Checking repository status...'));
 
     const isGitRepo = await git.isGitRepo();
     if (!isGitRepo) {
-      console.log(chalk.red('❌ Not a git repository'));
+      log.debug(chalk.red('❌ Not a git repository'));
       return;
     }
 
     const currentBranch = await git.getCurrentBranch();
     if (!currentBranch) {
-      console.log(chalk.red('❌ Could not determine current branch'));
+      log.debug(chalk.red('❌ Could not determine current branch'));
       return;
     }
 
-    console.log(chalk.blue(`📋 Current branch: ${currentBranch}`));
+    log.debug(chalk.blue(`📋 Current branch: ${currentBranch}`));
 
     // Check for uncommitted changes
     const hasChanges = await git.hasUncommittedChanges();
     if (!hasChanges) {
-      console.log(chalk.green('✅ No uncommitted changes'));
+      log.debug(chalk.green('✅ No uncommitted changes'));
       return;
     }
 
-    console.log(chalk.yellow('📝 Uncommitted changes detected'));
+    log.debug(chalk.yellow('📝 Uncommitted changes detected'));
 
     // Handle message generation based on mode
     let commitMessage: string;
 
     if (customMessage) {
       commitMessage = customMessage;
-      console.log(chalk.blue('📝 Using provided commit message...'));
+      log.debug(chalk.blue('📝 Using provided commit message...'));
     } else {
       const messageType = isInteractive ? 'Enhanced' : 'Quick';
-      console.log(chalk.blue(`🤖 Generating ${messageType.toLowerCase()} commit message...`));
+      log.debug(chalk.blue(`🤖 Generating ${messageType.toLowerCase()} commit message...`));
 
       if (isInteractive) {
         commitMessage = await generateEnhancedCommitMessage(git, currentBranch);
@@ -77,50 +81,50 @@ export async function saveCommand(
 
     // Interactive mode: Show message and ask for confirmation
     if (isInteractive) {
-      console.log(chalk.yellow('📝 Commit message to be used:'));
-      console.log(chalk.gray(commitMessage));
-      console.log();
+      log.debug(chalk.yellow('📝 Commit message to be used:'));
+      log.debug(chalk.gray(commitMessage));
+      log.debug('');
 
       if (customMessage) {
-        console.log(chalk.blue('💡 Using your custom message with interactive confirmation'));
+        log.debug(chalk.blue('💡 Using your custom message with interactive confirmation'));
       } else {
-        console.log(chalk.blue('💡 Generated using enhanced analysis'));
+        log.debug(chalk.blue('💡 Generated using enhanced analysis'));
       }
-      console.log();
+      log.debug('');
 
       // Always ask for confirmation in interactive mode (even in dry-run)
       if (!isDryRun) {
         const useMessage = await promptForConfirmation('Proceed with this commit? (Y/n): ');
         if (!useMessage) {
-          console.log(chalk.yellow('❌ Save cancelled'));
+          log.debug(chalk.yellow('❌ Save cancelled'));
           return;
         }
       } else {
-        console.log(
+        log.debug(
           chalk.cyan(
             '🔍 [DRY RUN] In real mode, you would be asked: "Proceed with this commit? (Y/n)"'
           )
         );
-        console.log(chalk.cyan('🔍 [DRY RUN] Assuming "Yes" for demonstration'));
+        log.debug(chalk.cyan('🔍 [DRY RUN] Assuming "Yes" for demonstration'));
       }
     }
 
     // Execute or preview the commit
     if (isDryRun) {
-      console.log(chalk.cyan('📝 [DRY RUN] Would commit changes with message:'));
-      console.log(chalk.gray(`   "${commitMessage.split('\n')[0]}"`));
+      log.debug(chalk.cyan('📝 [DRY RUN] Would commit changes with message:'));
+      log.debug(chalk.gray(`   "${commitMessage.split('\n')[0]}"`));
       const modeText = isInteractive ? 'Enhanced save' : 'Quick save';
-      console.log(chalk.cyan(`✅ [DRY RUN] ${modeText} workflow would complete successfully!`));
-      console.log(chalk.gray('💡 [DRY RUN] Changes would be committed to current branch'));
+      log.debug(chalk.cyan(`✅ [DRY RUN] ${modeText} workflow would complete successfully!`));
+      log.debug(chalk.gray('💡 [DRY RUN] Changes would be committed to current branch'));
     } else {
       // ✅ SIMPLIFIED: Commit changes
-      console.log(chalk.gray('📝 Committing changes...'));
+      log.debug(chalk.gray('📝 Committing changes...'));
       await git.addAll();
       const commitHash = await git.commit(commitMessage);
 
       const modeText = isInteractive ? 'Enhanced save' : 'Quick save';
-      console.log(chalk.green(`✅ Changes saved! Commit: ${commitHash.substring(0, 7)}`));
-      console.log(chalk.green(`💾 ${modeText} completed successfully!`));
+      log.debug(chalk.green(`✅ Changes saved! Commit: ${commitHash.substring(0, 7)}`));
+      log.debug(chalk.green(`💾 ${modeText} completed successfully!`));
     }
   } catch (error) {
     console.error(chalk.red('❌ Save failed:'), error);

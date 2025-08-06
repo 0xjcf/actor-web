@@ -17,7 +17,9 @@
  * @version 1.0.0
  */
 
-import type { JsonValue } from './actor-system.js';
+import type { ActorRef } from './actor-ref.js';
+import type { JsonValue, Message } from './types.js';
+import { isActorMessage, isDomainEvent } from './utils/validation.js';
 
 // ============================================================================
 // DOMAIN EVENT TYPES
@@ -48,47 +50,17 @@ export type ValidDomainEvent<T> = T extends DomainEvent
     : never
   : never;
 
-/**
- * Runtime type guard to validate domain events
- */
-export function isDomainEvent(value: unknown): value is DomainEvent {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    'type' in value &&
-    typeof (value as { type: unknown }).type === 'string' &&
-    isJsonSerializable(value)
-  );
-}
+// isDomainEvent moved to utils/validation.ts
 
 // ============================================================================
 // ACTOR REFERENCE TYPES
 // ============================================================================
 
-/**
- * Minimal actor reference interface for message plan instructions
- * This will be extended with the full ActorRef implementation
- */
-export interface ActorRef<TMessage = unknown> {
-  /** Phantom type for message type checking */
-  readonly _messageType?: TMessage;
-  /** Actor identifier */
-  readonly id: string;
-  /** Send a message to this actor (fire-and-forget) */
-  send(message: TMessage): Promise<void>;
-  /** Ask pattern - send message and wait for response */
-  ask<TResponse = unknown>(message: TMessage, timeout?: number): Promise<TResponse>;
-}
+// ActorRef interface moved to actor-ref.ts for consolidation
+// Import: import type { ActorRef } from './actor-ref.js';
 
-/**
- * Basic actor message structure
- */
-export interface ActorMessage {
-  readonly type: string;
-  readonly payload?: JsonValue | null;
-  readonly timestamp?: number;
-  readonly version?: string;
-}
+// ActorMessage interface moved to actor-system.ts for consolidation
+// Import: import type { ActorMessage } from './actor-system.js';
 
 // ============================================================================
 // MESSAGE PLAN INSTRUCTION TYPES
@@ -101,7 +73,7 @@ export interface SendInstruction {
   /** Target actor reference */
   readonly to: ActorRef<unknown>;
   /** Message to send */
-  readonly tell: ActorMessage;
+  readonly tell: Message;
   /** Delivery mode */
   readonly mode: 'fireAndForget' | 'retry(3)' | 'guaranteed';
 }
@@ -113,7 +85,7 @@ export interface AskInstruction<TResponse = unknown> {
   /** Target actor reference */
   readonly to: ActorRef<unknown>;
   /** Request message to send */
-  readonly ask: ActorMessage;
+  readonly ask: Message;
   /** Success callback or domain event */
   readonly onOk?: DomainEvent | ((response: TResponse) => DomainEvent);
   /** Error callback or domain event */
@@ -180,34 +152,7 @@ export function isAskInstruction(value: unknown): value is AskInstruction {
   );
 }
 
-/**
- * Type guard to check if a value is an actor message
- */
-export function isActorMessage(value: unknown): value is ActorMessage {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    'type' in value &&
-    typeof (value as ActorMessage).type === 'string'
-  );
-}
-
-/**
- * Type guard to check if a value is a valid message plan
- */
-export function isMessagePlan(value: unknown): value is MessagePlan {
-  if (value === null || value === undefined) {
-    return true; // void is valid
-  }
-
-  if (Array.isArray(value)) {
-    return value.every(
-      (item) => isDomainEvent(item) || isSendInstruction(item) || isAskInstruction(item)
-    );
-  }
-
-  return isDomainEvent(value) || isSendInstruction(value) || isAskInstruction(value);
-}
+// isActorMessage and isMessagePlan moved to utils/validation.ts
 
 // ============================================================================
 // JSON SERIALIZATION HELPER
@@ -276,7 +221,7 @@ export function isJsonSerializable(value: unknown): value is JsonValue {
  */
 export function createSendInstruction(
   to: ActorRef<unknown>,
-  tell: ActorMessage,
+  tell: Message,
   mode: 'fireAndForget' | 'retry(3)' | 'guaranteed' = 'fireAndForget'
 ): SendInstruction {
   return { to, tell, mode };
@@ -287,7 +232,7 @@ export function createSendInstruction(
  */
 export function createAskInstruction<TResponse = unknown>(
   to: ActorRef<unknown>,
-  ask: ActorMessage,
+  ask: Message,
   onOk?: DomainEvent | ((response: TResponse) => DomainEvent),
   onError?: DomainEvent | ((error: Error) => DomainEvent),
   timeout = 5000
@@ -304,3 +249,7 @@ export function createDomainEvent<T extends DomainEvent>(event: T): ValidDomainE
   }
   return event as ValidDomainEvent<T>;
 }
+
+export type { ActorRef } from './actor-ref.js';
+// Re-export types for test files
+export type { ActorMessage } from './actor-system.js';

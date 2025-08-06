@@ -8,18 +8,19 @@
  */
 
 import type { AnyStateMachine } from 'xstate';
+import type { ActorInstance } from './actor-instance.js';
+import type { ActorRef } from './actor-ref.js';
 import type {
   ActorBehavior,
+  ActorDependencies,
   ActorMessage,
-  ActorPID,
   ActorSystem,
   JsonValue,
-  ActorDependencies as PureActorDependencies,
 } from './actor-system.js';
 import { createActorSystem } from './actor-system-impl.js';
 import {
-  type ActorDependencies,
   type ComponentActorConfig,
+  type ComponentDependencies,
   createComponentActorBehavior,
   type TemplateFunction,
 } from './component-actor.js';
@@ -28,11 +29,11 @@ import { Logger } from './logger.js';
 const log = Logger.namespace('CREATE_COMPONENT');
 
 /**
- * Safely serialize component payloads to JsonValue
+ * Safely serialize component data to JsonValue
  */
-function safeJsonSerialize(payload: unknown): JsonValue {
+function safeJsonSerialize(data: unknown): JsonValue {
   try {
-    return JSON.parse(JSON.stringify(payload));
+    return JSON.parse(JSON.stringify(data));
   } catch {
     return {};
   }
@@ -45,7 +46,7 @@ function safeJsonSerialize(payload: unknown): JsonValue {
 /**
  * Component configuration for the unified createComponent API
  *
- * Uses defineBehavior() + clean component properties for consistent developer experience
+ * Uses defineActor() + clean component properties for consistent developer experience
  */
 export interface CreateComponentConfig {
   // ============================================================================
@@ -63,16 +64,16 @@ export interface CreateComponentConfig {
   template: TemplateFunction;
 
   // ============================================================================
-  // UNIFIED API - Use defineBehavior for actor logic
+  // UNIFIED API - Use defineActor for actor logic
   // ============================================================================
 
   /**
-   * Actor behavior created with defineBehavior() for cross-actor communication
+   * Actor behavior created with defineActor() for cross-actor communication
    *
    * @example
    * ```typescript
    * // 1. Create reusable behavior with standard actor API
-   * const formBehavior = defineBehavior({
+   * const formBehavior = defineActor({
    *   onMessage: ({ message, machine }) => {
    *     const context = machine.getSnapshot().context;
    *     switch (message.type) {
@@ -106,7 +107,7 @@ export interface CreateComponentConfig {
    * Actor dependencies for cross-actor communication
    * Maps dependency names to actor addresses (e.g., { backend: 'actor://system/backend' })
    */
-  dependencies?: ActorDependencies;
+  dependencies?: ComponentDependencies;
 
   /**
    * Mailbox configuration for message queue management
@@ -150,7 +151,7 @@ export interface CreateComponentConfig {
  */
 export interface ComponentActorElement extends HTMLElement {
   // Actor integration
-  readonly actorPID: ActorPID;
+  readonly actorPID: ActorRef;
   readonly isActorMounted: boolean;
 
   // Component lifecycle
@@ -158,7 +159,7 @@ export interface ComponentActorElement extends HTMLElement {
   getActorSnapshot(): Promise<unknown>;
 
   // Dependency management
-  updateDependencies(dependencies: Record<string, ActorPID>): Promise<void>;
+  updateDependencies(dependencies: Record<string, ActorRef>): Promise<void>;
 }
 
 /**
@@ -170,7 +171,7 @@ export interface ComponentClass {
 
   // Factory methods for programmatic creation
   create(): ComponentActorElement;
-  createWithDependencies(dependencies: Record<string, ActorPID>): ComponentActorElement;
+  createWithDependencies(dependencies: Record<string, ActorRef>): ComponentActorElement;
 }
 
 // ============================================================================
@@ -202,7 +203,7 @@ async function getActorSystem(): Promise<ActorSystem> {
 /**
  * Create a Web Component backed by a Pure Actor - Unified API
  *
- * This API provides a consistent developer experience by using defineBehavior()
+ * This API provides a consistent developer experience by using defineActor()
  * for actor logic and clean component-specific properties at the top level.
  *
  * @example
@@ -225,12 +226,13 @@ async function getActorSystem(): Promise<ActorSystem> {
     *     <input name="name" .value=${context.formData.name ?? ''} />
   *     <button type="submit">Save</button>
   *     ${context.error && html`
-      <p class="error">${context.error}</p>  `}
+      <p class="error">${context.error}</p>
+`}
   *</form>
 `;
  *
  * // 🔌 3. Behavior ― standard actor behavior
- * const formBehavior = defineBehavior({
+ * const formBehavior = defineActor({
  *   onMessage: ({ message, machine }) => {
  *     const context = machine.getSnapshot().context;
  *     switch (message.type) {
@@ -284,18 +286,57 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
     onMessage: config.behavior?.onMessage
       ? // Integrate pure actor behavior with component message handling
         async ({ message, context, machine }) => {
-          // Convert ComponentActorMessage to ActorMessage format for pure actor behavior
-          const actorMessage: ActorMessage = {
-            type: message.type,
-            payload: safeJsonSerialize(message.payload),
-            timestamp: Date.now(),
-            version: '1.0.0',
+          // Convert ComponentActorMessage to flat ActorMessage format for pure actor behavior
+          // Build message that satisfies { type: string; [key: string]: unknown }
+          const actorMessage = (() => {
+            const baseMessage = { type: message.type };
+
+            if (message && typeof message === 'object') {
+              const serialized = safeJsonSerialize(message);
+              // Only spread if the result is an object (not array or primitive)
+              if (serialized && typeof serialized === 'object' && !Array.isArray(serialized)) {
+                return { ...baseMessage, ...serialized };
+              }
+              if (serialized !== null && serialized !== undefined) {
+                // If it's not an object, store it under a data field
+                return { ...baseMessage, data: serialized };
+              }
+            }
+
+            return baseMessage;
+          })();
+
+          // Create an ActorInstance adapter for the XState machine
+          const actorInstanceAdapter: ActorInstance = {
+            id: machine.id || 'component-actor',
+            send: (message) => machine.send(message),
+            getSnapshot: () => {
+              const snapshot = machine.getSnapshot();
+              // Convert XState snapshot to our ActorSnapshot format
+              return {
+                context: snapshot.context,
+                value: snapshot.value,
+                status: 'running' as const,
+                matches: () => false,
+                can: () => false,
+                hasTag: () => false,
+                toJSON: () => ({ context: snapshot.context, value: snapshot.value }),
+              };
+            },
+            start: () => {}, // XState actors are already started
+            stop: async () => machine.stop(),
+            ask: async <T>(_message: ActorMessage, _timeout?: number): Promise<T> => {
+              throw new Error(`Ask pattern not yet implemented for component actor ${machine.id}`);
+            },
+            getType: () => 'machine' as const,
+            status: 'running' as const, // Components are running when processing messages
           };
 
           // Create simplified ActorDependencies for the pure actor behavior
-          const actorDependencies: PureActorDependencies = {
+          const actorDependencies: ActorDependencies = {
             actorId: machine.id || 'component-actor',
-            machine,
+            actor: actorInstanceAdapter,
+            self: {} as ActorRef<unknown>, // Component manages its own reference
             emit: () => {}, // Components manage their own emission
             send: async () => {}, // Components handle sends through their own system
             ask: async <T>(): Promise<T> => ({}) as T, // Components handle asks through their own system
@@ -308,7 +349,7 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
             try {
               await config.behavior.onMessage({
                 message: actorMessage,
-                machine,
+                actor: actorInstanceAdapter,
                 dependencies: actorDependencies,
               });
             } catch (error) {
@@ -334,7 +375,7 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
 
   // Define the Web Component class
   class ComponentActorElementImpl extends HTMLElement implements ComponentActorElement {
-    private _actorPID: ActorPID | null = null;
+    private _actorPID: ActorRef | null = null;
     private _isActorMounted = false;
     private _shadowRoot: ShadowRoot;
 
@@ -355,7 +396,7 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
     }
 
     // Getters for actor integration
-    get actorPID(): ActorPID {
+    get actorPID(): ActorRef {
       if (!this._actorPID) {
         throw new Error('Component actor not yet spawned. Call connectedCallback first.');
       }
@@ -390,11 +431,9 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
         // Instead, the actor will access the element directly when needed
         await this._actorPID.send({
           type: 'MOUNT_COMPONENT',
-          payload: {
-            elementId: this.id || generateComponentId(),
-            hasTemplate: true,
-            hasDependencies: !!config.dependencies,
-          },
+          elementId: this.id || generateComponentId(),
+          hasTemplate: true,
+          hasDependencies: !!config.dependencies,
         });
 
         // Resolve dependencies if configured
@@ -422,7 +461,6 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
           // Unmount the component actor
           await this._actorPID.send({
             type: 'UNMOUNT_COMPONENT',
-            payload: null,
           });
 
           // Stop the actor
@@ -459,18 +497,15 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
       // Request current state from actor
       return await this._actorPID.ask({
         type: 'GET_STATE',
-        payload: null,
-        timestamp: Date.now(),
-        version: '1.0.0',
       });
     }
 
-    async updateDependencies(dependencies: Record<string, ActorPID>): Promise<void> {
+    async updateDependencies(dependencies: Record<string, ActorRef>): Promise<void> {
       if (!this._actorPID) {
         throw new Error('Component actor not available. Component may not be connected.');
       }
 
-      // Convert ActorPID objects to serializable references
+      // Convert ActorRef objects to serializable references
       const dependencyRefs: Record<string, string> = {};
       for (const [key, actor] of Object.entries(dependencies)) {
         dependencyRefs[key] = actor.address.path;
@@ -478,18 +513,18 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
 
       await this._actorPID.send({
         type: 'UPDATE_DEPENDENCIES',
-        payload: { dependencyRefs },
+        dependencyRefs,
       });
     }
 
     // Private helper methods
-    private async resolveDependencies(dependencies: ActorDependencies): Promise<void> {
+    private async resolveDependencies(dependencies: ComponentDependencies): Promise<void> {
       if (!this._actorPID) return;
 
       const actorSystem = await getActorSystem();
-      const resolvedDependencies: Record<string, ActorPID> = {};
+      const resolvedDependencies: Record<string, ActorRef> = {};
 
-      // Resolve each dependency path to an ActorPID
+      // Resolve each dependency path to an ActorRef
       for (const [key, actorPath] of Object.entries(dependencies)) {
         if (typeof actorPath !== 'string') continue;
 
@@ -553,7 +588,7 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
       return document.createElement(tagName) as ComponentActorElement;
     },
 
-    createWithDependencies(dependencies: Record<string, ActorPID>): ComponentActorElement {
+    createWithDependencies(dependencies: Record<string, ActorRef>): ComponentActorElement {
       const element = document.createElement(tagName) as ComponentActorElement;
 
       // Set up dependency injection when component connects

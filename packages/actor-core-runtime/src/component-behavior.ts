@@ -8,8 +8,8 @@
  */
 
 import type { Actor, AnyStateMachine } from 'xstate';
-import type { ActorBehavior, ActorMessage, ActorPID, JsonValue } from './actor-system.js';
-
+import type { ActorRef } from './actor-ref.js';
+import type { ActorBehavior, ActorMessage, JsonValue } from './actor-system.js';
 // Import our fan-out types
 import type { DomainEvent, FanOutResult, ValidDomainEvent } from './runtime-fanout.js';
 
@@ -63,7 +63,7 @@ export function isJsonSerializable(value: unknown): value is JsonValue {
  * Maps dependency names to actor addresses or PIDs
  */
 export interface ComponentDependencies {
-  [key: string]: string | ActorPID;
+  [key: string]: string | ActorRef;
 }
 
 /**
@@ -81,11 +81,11 @@ export interface ComponentMessageParams<
   /** Current component context/state */
   readonly context: TContext;
 
-  /** XState machine instance for UI state management */
-  readonly machine: Actor<TMachine>;
+  /** Actor instance for UI state management */
+  readonly actor: Actor<TMachine>;
 
   /** Resolved actor dependencies */
-  readonly dependencies: Record<string, ActorPID>;
+  readonly dependencies: Record<string, ActorRef>;
 }
 
 /**

@@ -13,22 +13,24 @@
  * @version 1.0.0
  */
 
-import type { Actor, AnyStateMachine } from 'xstate';
+import type { ActorInstance } from './actor-instance.js';
 import type { ActorDependencies, ActorMessage } from './actor-system.js';
 import { Logger } from './logger.js';
 import type { DomainEvent, MessagePlan } from './message-plan.js';
-import { isMessagePlan } from './message-plan.js';
+import type { ActorHandlerResult } from './otp-types.js';
+import { isActorHandlerResult } from './otp-types.js';
 import type { RuntimeContext } from './plan-interpreter.js';
+import { isMessagePlan } from './utils/validation.js';
 
 const log = Logger.namespace('PURE_BEHAVIOR_HANDLER');
 
 /**
  * Pure Actor Message Handler signature following FRAMEWORK-STANDARD
- * No context parameter - only machine and dependencies
+ * No context parameter - only actor instance and dependencies
  */
 export type PureMessageHandler<TMessage, TDomainEvent = DomainEvent> = (params: {
   readonly message: TMessage;
-  readonly machine: Actor<AnyStateMachine>;
+  readonly actor: ActorInstance;
   readonly dependencies: ActorDependencies;
 }) => MessagePlan<TDomainEvent> | Promise<MessagePlan<TDomainEvent>> | void | Promise<void>;
 
@@ -38,11 +40,11 @@ export type PureMessageHandler<TMessage, TDomainEvent = DomainEvent> = (params: 
 export interface PureActorBehavior<TMessage = ActorMessage, TDomainEvent = DomainEvent> {
   readonly onMessage: PureMessageHandler<TMessage, TDomainEvent>;
   readonly onStart?: (params: {
-    readonly machine: Actor<AnyStateMachine>;
+    readonly actor: ActorInstance;
     readonly dependencies: ActorDependencies;
   }) => MessagePlan<TDomainEvent> | Promise<MessagePlan<TDomainEvent>> | void | Promise<void>;
   readonly onStop?: (params: {
-    readonly machine: Actor<AnyStateMachine>;
+    readonly actor: ActorInstance;
     readonly dependencies: ActorDependencies;
   }) => Promise<void> | void;
 }
@@ -56,14 +58,27 @@ export interface MessagePlanProcessor {
 }
 
 /**
- * Type guard to validate unknown values as MessagePlan
+ * Type guard to validate unknown values as MessagePlan or ActorHandlerResult
+ * Updated to support both MessagePlan (domain events/instructions) and OTP results
  */
-function isValidMessagePlan(value: unknown): value is MessagePlan {
+function isValidMessagePlan(
+  value: unknown
+): value is MessagePlan | ActorHandlerResult<unknown, unknown> {
   if (value === null || value === undefined) {
     return true; // void is valid
   }
 
-  return isMessagePlan(value);
+  // Check if it's a MessagePlan (domain events, send/ask instructions)
+  if (isMessagePlan(value)) {
+    return true;
+  }
+
+  // Check if it's an OTP ActorHandlerResult (context, emit, reply, etc.)
+  if (isActorHandlerResult(value)) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -97,7 +112,7 @@ export class PureActorBehaviorHandler {
   async handleMessage<TMessage, TDomainEvent>(
     behavior: PureActorBehavior<TMessage, TDomainEvent>,
     message: TMessage,
-    machine: Actor<AnyStateMachine>,
+    actor: ActorInstance,
     dependencies: ActorDependencies
   ): Promise<void> {
     const messageType = this.getMessageType(message);
@@ -105,27 +120,97 @@ export class PureActorBehaviorHandler {
     log.debug('Handling message with pure behavior', {
       messageType,
       actorId: dependencies.actorId,
-      machineId: machine.id,
+      machineId: actor.id,
     });
 
     try {
       // Execute pure behavior onMessage handler
+      log.debug('🔍 BEHAVIOR HANDLER: Executing behavior.onMessage', {
+        messageType,
+        actorId: dependencies.actorId,
+        machineId: actor.id,
+      });
+
       const messagePlan = await behavior.onMessage({
         message,
-        machine,
+        actor,
         dependencies,
+      });
+
+      log.debug('🔍 BEHAVIOR HANDLER: Behavior returned result', {
+        messageType,
+        actorId: dependencies.actorId,
+        resultType: typeof messagePlan,
+        result: messagePlan,
+        isNull: messagePlan === null,
+        isUndefined: messagePlan === undefined,
       });
 
       // Validate MessagePlan response
       if (!isValidMessagePlan(messagePlan)) {
+        log.debug('🔍 BEHAVIOR HANDLER: Invalid MessagePlan detected', {
+          messageType,
+          actorId: dependencies.actorId,
+          messagePlan,
+        });
         throw new Error(
           `Invalid MessagePlan returned from behavior: ${JSON.stringify(messagePlan)}`
         );
       }
 
-      // Process MessagePlan if returned
+      // Process result if returned (MessagePlan or ActorHandlerResult)
       if (messagePlan !== undefined && messagePlan !== null) {
-        await this.messagePlanProcessor.processMessagePlan(messagePlan, dependencies);
+        log.debug('🔍 BEHAVIOR HANDLER: Processing result', {
+          messageType,
+          actorId: dependencies.actorId,
+          resultType: typeof messagePlan,
+          isActorHandlerResult: isActorHandlerResult(messagePlan),
+          isMessagePlan: isMessagePlan(messagePlan),
+        });
+
+        // Check if it's an OTP ActorHandlerResult
+        if (isActorHandlerResult(messagePlan)) {
+          log.debug('🔍 BEHAVIOR HANDLER: Processing OTP ActorHandlerResult', {
+            messageType,
+            actorId: dependencies.actorId,
+            otpResult: messagePlan,
+          });
+
+          // Import and use OTP processor for ActorHandlerResult
+          const { OTPMessagePlanProcessor } = await import('./otp-message-plan-processor.js');
+          const otpProcessor = new OTPMessagePlanProcessor();
+
+          // Extract correlationId safely from message if it's an ActorMessage
+          let correlationId: string | undefined;
+          if (message && typeof message === 'object' && '_correlationId' in message) {
+            const messageWithCorrelation = message as Record<string, unknown>;
+            if (typeof messageWithCorrelation._correlationId === 'string') {
+              correlationId = messageWithCorrelation._correlationId;
+            }
+          }
+
+          await otpProcessor.processOTPResult(
+            messagePlan,
+            dependencies.actorId,
+            actor,
+            dependencies,
+            correlationId,
+            messageType
+          );
+        } else {
+          // Process as regular MessagePlan
+          log.debug('🔍 BEHAVIOR HANDLER: Processing regular MessagePlan', {
+            messageType,
+            actorId: dependencies.actorId,
+            messagePlan,
+          });
+          await this.messagePlanProcessor.processMessagePlan(messagePlan, dependencies);
+        }
+      } else {
+        log.debug('🔍 BEHAVIOR HANDLER: No result to process', {
+          messageType,
+          actorId: dependencies.actorId,
+        });
       }
 
       log.debug('Message processed successfully', {
@@ -150,7 +235,7 @@ export class PureActorBehaviorHandler {
    */
   async handleStart<TDomainEvent>(
     behavior: PureActorBehavior<unknown, TDomainEvent>,
-    machine: Actor<AnyStateMachine>,
+    actor: ActorInstance,
     dependencies: ActorDependencies
   ): Promise<void> {
     if (!behavior.onStart) {
@@ -163,7 +248,7 @@ export class PureActorBehaviorHandler {
 
     try {
       const messagePlan = await behavior.onStart({
-        machine,
+        actor,
         dependencies,
       });
 
@@ -191,7 +276,7 @@ export class PureActorBehaviorHandler {
    */
   async handleStop<TDomainEvent>(
     behavior: PureActorBehavior<unknown, TDomainEvent>,
-    machine: Actor<AnyStateMachine>,
+    actor: ActorInstance,
     dependencies: ActorDependencies
   ): Promise<void> {
     if (!behavior.onStop) {
@@ -204,7 +289,7 @@ export class PureActorBehaviorHandler {
 
     try {
       await behavior.onStop({
-        machine,
+        actor,
         dependencies,
       });
     } catch (error) {
@@ -283,7 +368,7 @@ export class DefaultMessagePlanProcessor implements MessagePlanProcessor {
    */
   private adaptDependenciesToRuntimeContext(dependencies: ActorDependencies): RuntimeContext {
     return {
-      machine: dependencies.machine as Actor<AnyStateMachine>,
+      actor: dependencies.actor,
       emit: (event: DomainEvent) => {
         // Convert to the format expected by ActorDependencies.emit
         dependencies.emit(event);

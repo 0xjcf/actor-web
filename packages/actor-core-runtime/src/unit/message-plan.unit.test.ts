@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import type { ActorMessage } from '../actor-system.js';
 import {
   type ActorRef,
   type AskInstruction,
@@ -14,11 +15,11 @@ import {
   createSendInstruction,
   type DomainEvent,
   isAskInstruction,
-  isDomainEvent,
-  isMessagePlan,
   isSendInstruction,
   type SendInstruction,
 } from '../message-plan.js';
+import { createMockActorRef } from '../utils/factories.js';
+import { isDomainEvent, isMessagePlan } from '../utils/validation.js';
 
 describe('MessagePlan Utility Functions (Unit Tests)', () => {
   describe('Type Guards', () => {
@@ -37,20 +38,15 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
     });
 
     it('should identify SendInstruction correctly', () => {
-      const mockActorRef: ActorRef<unknown> = {
-        id: 'actor-123',
+      const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
+        address: { id: 'actor-123', type: 'test', path: '/actor-123' },
         send: async () => {},
         ask: async <T>(): Promise<T> => ({}) as T,
-      };
+      });
 
       const sendInstruction: SendInstruction = {
         to: mockActorRef,
-        tell: {
-          type: 'TEST_MESSAGE',
-          payload: null,
-          timestamp: Date.now(),
-          version: '1.0.0',
-        },
+        tell: { type: 'TEST_MESSAGE' },
         mode: 'fireAndForget',
       };
 
@@ -61,20 +57,15 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
     });
 
     it('should identify AskInstruction correctly', () => {
-      const mockActorRef: ActorRef<unknown> = {
-        id: 'actor-123',
+      const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
+        address: { id: 'actor-123', type: 'test', path: '/actor-123' },
         send: async () => {},
         ask: async <T>(): Promise<T> => ({}) as T,
-      };
+      });
 
       const askInstruction: AskInstruction = {
         to: mockActorRef,
-        ask: {
-          type: 'GET_DATA',
-          payload: null,
-          timestamp: Date.now(),
-          version: '1.0.0',
-        },
+        ask: { type: 'GET_DATA' },
         onOk: (response) => ({ type: 'SUCCESS', result: String(response), timestamp: Date.now() }),
         timeout: 5000,
       };
@@ -88,21 +79,21 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
     it('should identify MessagePlan correctly', () => {
       const domainEvent: DomainEvent = { type: 'TEST_EVENT', timestamp: Date.now() };
 
-      const mockActorRef: ActorRef<unknown> = {
-        id: '123',
+      const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
+        address: { id: '123', type: 'test', path: '/123' },
         send: async () => {},
         ask: async <T>(): Promise<T> => ({}) as T,
-      };
+      });
 
       const sendInstruction: SendInstruction = {
         to: mockActorRef,
-        tell: { type: 'TEST', payload: null, timestamp: Date.now(), version: '1.0.0' },
+        tell: { type: 'TEST' },
         mode: 'fireAndForget',
       };
 
       const askInstruction: AskInstruction = {
         to: mockActorRef,
-        ask: { type: 'GET', payload: null, timestamp: Date.now(), version: '1.0.0' },
+        ask: { type: 'GET' },
         onOk: () => ({ type: 'SUCCESS', timestamp: Date.now() }),
       };
 
@@ -119,15 +110,15 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
 
   describe('Factory Functions', () => {
     it('should create SendInstruction with correct structure', () => {
-      const mockActorRef: ActorRef<unknown> = {
-        id: 'test-actor',
+      const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
+        address: { id: 'test-actor', type: 'test', path: '/test-actor' },
         send: async () => {},
         ask: async <T>(): Promise<T> => ({}) as T,
-      };
+      });
 
       const message = {
         type: 'TEST_MESSAGE',
-        payload: { data: 'test' },
+        data: 'test',
         timestamp: Date.now(),
         version: '1.0.0',
       };
@@ -141,15 +132,14 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
     });
 
     it('should create SendInstruction with custom mode', () => {
-      const mockActorRef: ActorRef<unknown> = {
-        id: 'test-actor',
+      const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
+        address: { id: 'test-actor', type: 'test', path: '/test-actor' },
         send: async () => {},
         ask: async <T>(): Promise<T> => ({}) as T,
-      };
+      });
 
       const message = {
         type: 'TEST_MESSAGE',
-        payload: null,
         timestamp: Date.now(),
         version: '1.0.0',
       };
@@ -161,15 +151,15 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
     });
 
     it('should create AskInstruction with correct structure', () => {
-      const mockActorRef: ActorRef<unknown> = {
-        id: 'test-actor',
+      const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
+        address: { id: 'test-actor', type: 'test', path: '/test-actor' },
         send: async () => {},
         ask: async <T>(): Promise<T> => ({ result: 'success' }) as T,
-      };
+      });
 
       const message = {
         type: 'GET_DATA',
-        payload: { query: 'test' },
+        query: 'test',
         timestamp: Date.now(),
         version: '1.0.0',
       };
@@ -190,15 +180,95 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
     });
 
     it('should create AskInstruction with custom timeout', () => {
-      const mockActorRef: ActorRef<unknown> = {
-        id: 'test-actor',
+      const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
+        address: { id: 'test-actor', type: 'test', path: '/test-actor' },
         send: async () => {},
         ask: async <T>(): Promise<T> => ({}) as T,
-      };
+      });
 
       const message = {
         type: 'GET_DATA',
-        payload: null,
+        timestamp: Date.now(),
+        version: '1.0.0',
+      };
+
+      const onOkCallback = () => ({ type: 'SUCCESS', timestamp: Date.now() });
+
+      const askInstruction = createAskInstruction(
+        mockActorRef,
+        message,
+        onOkCallback,
+        undefined, // onError parameter
+        10000 // 10 second timeout
+      );
+
+      expect(askInstruction.timeout).toBe(10000);
+      expect(isAskInstruction(askInstruction)).toBe(true);
+    });
+
+    it('should handle timeout in createAskInstruction', () => {
+      const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
+        address: { id: 'test-actor', type: 'test', path: '/test-actor' },
+        send: async () => {},
+        ask: async <T>(): Promise<T> => ({}) as T,
+      });
+
+      const message = {
+        type: 'GET_DATA',
+        timestamp: Date.now(),
+        version: '1.0.0',
+      };
+
+      const onOkCallback = () => ({ type: 'SUCCESS', timestamp: Date.now() });
+
+      const askInstruction = createAskInstruction(
+        mockActorRef,
+        message,
+        onOkCallback,
+        undefined, // onError parameter
+        10000 // 10 second timeout
+      );
+
+      expect(askInstruction.timeout).toBe(10000);
+      expect(isAskInstruction(askInstruction)).toBe(true);
+    });
+
+    it('should handle error callback in createAskInstruction', () => {
+      const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
+        address: { id: 'test-actor', type: 'test', path: '/test-actor' },
+        send: async () => {},
+        ask: async <T>(): Promise<T> => ({}) as T,
+      });
+
+      const message = {
+        type: 'GET_DATA',
+        timestamp: Date.now(),
+        version: '1.0.0',
+      };
+
+      const onOkCallback = () => ({ type: 'SUCCESS', timestamp: Date.now() });
+
+      const askInstruction = createAskInstruction(
+        mockActorRef,
+        message,
+        onOkCallback,
+        undefined, // onError parameter
+        10000 // 10 second timeout
+      );
+
+      expect(askInstruction.timeout).toBe(10000);
+      expect(isAskInstruction(askInstruction)).toBe(true);
+    });
+
+    it('should validate both onOk and onError in createAskInstruction', () => {
+      const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
+        address: { id: 'test-actor', type: 'test', path: '/test-actor' },
+        send: async () => {},
+        ask: async <T>(): Promise<T> => ({}) as T,
+      });
+
+      const message = {
+        type: 'GET_DATA',
         timestamp: Date.now(),
         version: '1.0.0',
       };

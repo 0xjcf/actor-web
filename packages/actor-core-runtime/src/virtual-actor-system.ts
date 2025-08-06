@@ -28,7 +28,7 @@ export interface VirtualActorId {
  */
 export interface VirtualActorEntry {
   readonly virtualId: VirtualActorId;
-  readonly physicalRef: ActorRef<BaseEventObject>;
+  readonly physicalRef: ActorRef<unknown>;
   readonly node: string;
   readonly lastAccessed: number;
   readonly activationCount: number;

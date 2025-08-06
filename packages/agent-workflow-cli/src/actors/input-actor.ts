@@ -19,7 +19,7 @@
  * Supervision: Restart strategy with retry limits
  */
 
-import { type ActorRef, type ActorSnapshot, createActorRef, Logger } from '@actor-core/runtime';
+import { type ActorRef, createActorRef, Logger } from '@actor-core/runtime';
 import { assign, emit, setup } from 'xstate';
 
 // Use scoped logger for input-actor
@@ -47,8 +47,7 @@ function generateInputActorId(prefix: string): string {
 // ACTOR INTERFACES
 // ============================================================================
 
-export interface InputActor
-  extends ActorRef<InputEvent, InputEmittedEvent, ActorSnapshot<InputContext>> {
+export interface InputActor extends ActorRef<InputContext> {
   // All ActorRef methods are inherited
   // Additional standardized methods will be added here
 }

@@ -5,6 +5,7 @@
  */
 
 import type { ActorRef } from '../actor-ref.js';
+import type { ActorMessage } from '../actor-system.js';
 import { Logger } from '../logger.js';
 // ✅ PURE ACTOR MODEL: Import XState-based delay function
 import { createActorDelay } from '../pure-xstate-utilities.js';
@@ -83,8 +84,11 @@ export class BackoffSupervisor extends Supervisor {
   /**
    * Override to add backoff delay calculation
    */
-  async handleFailure(error: Error, actorRef: ActorRef<BaseEventObject, unknown>): Promise<void> {
-    const actorId = actorRef.id;
+  async handleFailure(
+    error: Error,
+    actorRef: ActorRef<BaseEventObject, ActorMessage>
+  ): Promise<void> {
+    const actorId = actorRef.address.id;
     // Get or create backoff state
     let state = this.backoffStates.get(actorId);
     if (!state) {
@@ -176,11 +180,11 @@ export class BackoffSupervisor extends Supervisor {
   /**
    * Override supervise to reset backoff on success
    */
-  supervise(actorRef: ActorRef<BaseEventObject, unknown>): void {
+  supervise(actorRef: ActorRef<BaseEventObject, ActorMessage>): void {
     super.supervise(actorRef);
 
     // Reset backoff state when actor is supervised
-    this.resetBackoff(actorRef.id);
+    this.resetBackoff(actorRef.address.id);
   }
 
   /**

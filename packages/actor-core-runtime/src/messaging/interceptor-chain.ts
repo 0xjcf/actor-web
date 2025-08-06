@@ -152,7 +152,7 @@ export class InterceptorChain {
     const context =
       initialContext ||
       createMessageContext({
-        correlationId: message.correlationId,
+        correlationId: message._correlationId,
       });
 
     // Store reference to avoid closure issues
@@ -223,7 +223,7 @@ export class InterceptorChain {
     ): Promise<PipelineResult> => {
       let current = message;
       const context = createMessageContext({
-        correlationId: message.correlationId,
+        correlationId: message._correlationId,
       });
 
       for (const reg of sorted) {

@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 
+import { Logger } from '@actor-core/runtime';
 import chalk from 'chalk';
 import { program } from 'commander';
+
+const log = Logger.namespace('CLI_INDEX');
+
 import {
   actorCreateCommand,
   actorStatusCommand,
@@ -183,50 +187,50 @@ program
   .command('help')
   .description('Show comprehensive help')
   .action(() => {
-    console.log(chalk.blue('🤖 Agent Workflow CLI - Comprehensive Help'));
-    console.log(chalk.blue('=========================================='));
-    console.log();
+    log.debug(chalk.blue('🤖 Agent Workflow CLI - Comprehensive Help'));
+    log.debug(chalk.blue('=========================================='));
+    log.debug();
 
-    console.log(chalk.yellow('📚 Core Workflow:'));
-    console.log(chalk.gray('  aw init           - Initialize agent environment'));
-    console.log(chalk.gray('  aw sync           - Sync with integration branch'));
-    console.log(chalk.gray('  aw validate       - Validate current work'));
-    console.log(chalk.gray('  aw save           - Save work to agent branch'));
-    console.log(chalk.gray('  aw ship           - Ship work to integration'));
-    console.log(chalk.gray('  aw status         - Show current status'));
-    console.log();
+    log.debug(chalk.yellow('📚 Core Workflow:'));
+    log.debug(chalk.gray('  aw init           - Initialize agent environment'));
+    log.debug(chalk.gray('  aw sync           - Sync with integration branch'));
+    log.debug(chalk.gray('  aw validate       - Validate current work'));
+    log.debug(chalk.gray('  aw save           - Save work to agent branch'));
+    log.debug(chalk.gray('  aw ship           - Ship work to integration'));
+    log.debug(chalk.gray('  aw status         - Show current status'));
+    log.debug();
 
-    console.log(chalk.yellow('🎯 Enhanced Commits:'));
-    console.log(chalk.gray('  aw commit, c      - Enhanced commit with AI analysis'));
-    console.log(chalk.gray('  aw generate-message, gm - Generate smart commit message'));
-    console.log(chalk.gray('  aw validate-dates, vd   - Validate documentation dates'));
-    console.log();
+    log.debug(chalk.yellow('🎯 Enhanced Commits:'));
+    log.debug(chalk.gray('  aw commit, c      - Enhanced commit with AI analysis'));
+    log.debug(chalk.gray('  aw generate-message, gm - Generate smart commit message'));
+    log.debug(chalk.gray('  aw validate-dates, vd   - Validate documentation dates'));
+    log.debug();
 
-    console.log(chalk.yellow('🎭 Actor System:'));
-    console.log(chalk.gray('  aw actor:status   - Show git actor status'));
-    console.log(chalk.gray('  aw actor:worktrees - Manage worktrees'));
-    console.log(chalk.gray('  aw actor:create   - Create custom actor'));
-    console.log();
+    log.debug(chalk.yellow('🎭 Actor System:'));
+    log.debug(chalk.gray('  aw actor:status   - Show git actor status'));
+    log.debug(chalk.gray('  aw actor:worktrees - Manage worktrees'));
+    log.debug(chalk.gray('  aw actor:create   - Create custom actor'));
+    log.debug();
 
-    console.log(chalk.yellow('🔍 Analysis Tools:'));
-    console.log(chalk.gray('  aw analyze        - Analyze state machines'));
-    console.log(chalk.gray('  aw analyze --verbose - Detailed analysis output'));
-    console.log(chalk.gray('  aw analyze --assert  - Assert no unreachable states'));
-    console.log(chalk.gray('  aw analyze --workflow - Enhanced workflow analysis'));
-    console.log();
+    log.debug(chalk.yellow('🔍 Analysis Tools:'));
+    log.debug(chalk.gray('  aw analyze        - Analyze state machines'));
+    log.debug(chalk.gray('  aw analyze --verbose - Detailed analysis output'));
+    log.debug(chalk.gray('  aw analyze --assert  - Assert no unreachable states'));
+    log.debug(chalk.gray('  aw analyze --workflow - Enhanced workflow analysis'));
+    log.debug();
 
-    console.log(chalk.yellow('🤝 Agent Coordination:'));
-    console.log(chalk.gray('  aw agents:status  - Multi-agent status dashboard'));
-    console.log(chalk.gray('  aw agents:sync    - Sync with all agents'));
-    console.log(chalk.gray('  aw agents:conflicts - Detect agent conflicts'));
-    console.log();
+    log.debug(chalk.yellow('🤝 Agent Coordination:'));
+    log.debug(chalk.gray('  aw agents:status  - Multi-agent status dashboard'));
+    log.debug(chalk.gray('  aw agents:sync    - Sync with all agents'));
+    log.debug(chalk.gray('  aw agents:conflicts - Detect agent conflicts'));
+    log.debug();
 
-    console.log(chalk.green('💡 Examples:'));
-    console.log(chalk.gray('  aw init --agents 3'));
-    console.log(chalk.gray('  aw commit --message "feat: add new feature"'));
-    console.log(chalk.gray('  aw actor:worktrees --count 5'));
-    console.log(chalk.gray('  aw analyze --target git-actor --verbose'));
-    console.log(chalk.gray('  aw validate-dates --files "docs/*.md"'));
+    log.debug(chalk.green('💡 Examples:'));
+    log.debug(chalk.gray('  aw init --agents 3'));
+    log.debug(chalk.gray('  aw commit --message "feat: add new feature"'));
+    log.debug(chalk.gray('  aw actor:worktrees --count 5'));
+    log.debug(chalk.gray('  aw analyze --target git-actor --verbose'));
+    log.debug(chalk.gray('  aw validate-dates --files "docs/*.md"'));
   });
 
 // Async main function to handle program execution
@@ -244,7 +248,7 @@ async function main() {
     // Error handling
     program.on('command:*', (operands) => {
       console.error(chalk.red(`Unknown command: ${operands[0]}`));
-      console.log(chalk.gray('Run "aw help" for available commands'));
+      log.debug(chalk.gray('Run "aw help" for available commands'));
       process.exit(1);
     });
 
@@ -253,18 +257,18 @@ async function main() {
 
     // Handle graceful shutdown
     process.on('SIGINT', async () => {
-      console.log(chalk.yellow('\n⚠️  Received SIGINT, shutting down gracefully...'));
+      log.debug(chalk.yellow('\n⚠️  Received SIGINT, shutting down gracefully...'));
       process.exit(0);
     });
 
     process.on('SIGTERM', async () => {
-      console.log(chalk.yellow('\n⚠️  Received SIGTERM, shutting down gracefully...'));
+      log.debug(chalk.yellow('\n⚠️  Received SIGTERM, shutting down gracefully...'));
       process.exit(0);
     });
 
     // Handle process exit
     process.on('exit', () => {
-      console.log(chalk.gray('👋 CLI process exiting'));
+      log.debug(chalk.gray('👋 CLI process exiting'));
     });
   } catch (error) {
     console.error(chalk.red('CLI Error:'), error);

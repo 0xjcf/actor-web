@@ -230,31 +230,32 @@ export function createValidator(
 }
 
 /**
- * Create a validator that checks message payload properties
+ * Create a validator that checks message properties
+ * In the flat message structure, properties are directly on the message
  */
 export function createPayloadValidator(
-  validator: (payload: unknown) => boolean | Promise<boolean>,
+  validator: (message: unknown) => boolean | Promise<boolean>,
   errorMessage?: string
 ): MessageValidator {
-  return createValidator((message) => validator(message.payload), errorMessage);
+  return createValidator((message) => validator(message), errorMessage);
 }
 
 /**
  * Create a validator that checks required fields
+ * In the flat message structure, fields are directly on the message
  */
-export function createRequiredFieldsValidator(
-  fields: string[],
-  checkPayload = true
-): MessageValidator {
+export function createRequiredFieldsValidator(fields: string[]): MessageValidator {
   return createValidator(
     (message) => {
-      const target = checkPayload ? message.payload : message;
+      // For flat messages, always check the message itself
+      const target = message;
 
       if (typeof target !== 'object' || target === null) {
         return false;
       }
 
-      const obj = target as Record<string, unknown>;
+      // Type-safe conversion for ActorMessage
+      const obj = target as unknown as Record<string, unknown>;
       return fields.every((field) => field in obj && obj[field] !== undefined);
     },
     `Required fields missing: ${fields.join(', ')}`

@@ -14,11 +14,12 @@
  * @version 1.0.0
  */
 
-import type { Actor, AnyStateMachine } from 'xstate';
+import type { ActorInstance } from '../actor-instance.js';
 import type { ActorDependencies, ActorMessage, JsonValue } from '../actor-system.js';
 import { Logger } from '../logger.js';
 import type { DomainEvent, MessagePlan } from '../message-plan.js';
 import { createSendInstruction } from '../message-plan.js';
+import { createNullActorRef } from '../utils/null-actor.js';
 
 const log = Logger.namespace('ACTOR_DISCOVERY_SERVICE');
 
@@ -31,12 +32,10 @@ const log = Logger.namespace('ACTOR_DISCOVERY_SERVICE');
  */
 export interface RegisterMessage extends ActorMessage {
   type: 'REGISTER';
-  payload: {
-    readonly name: string; // Well-known name (e.g., 'services.user') or ephemeral PID
-    readonly address: string; // Actor address/path
-    readonly isEphemeral?: boolean; // True for ephemeral PIDs, false for well-known names
-    readonly metadata?: JsonValue; // Optional metadata about the actor
-  };
+  readonly name: string; // Well-known name (e.g., 'services.user') or ephemeral PID
+  readonly address: string; // Actor address/path
+  readonly isEphemeral?: boolean; // True for ephemeral PIDs, false for well-known names
+  readonly metadata?: JsonValue; // Optional metadata about the actor
 }
 
 /**
@@ -44,10 +43,8 @@ export interface RegisterMessage extends ActorMessage {
  */
 export interface UnregisterMessage extends ActorMessage {
   type: 'UNREGISTER';
-  payload: {
-    readonly name: string; // Name or PID to unregister
-    readonly address?: string; // Optional address verification
-  };
+  readonly name: string; // Name or PID to unregister
+  readonly address?: string; // Optional address verification
 }
 
 /**
@@ -55,11 +52,9 @@ export interface UnregisterMessage extends ActorMessage {
  */
 export interface LookupMessage extends ActorMessage {
   type: 'LOOKUP';
-  payload: {
-    readonly name: string; // Name or pattern to lookup
-    readonly requestor: string; // Actor address to send response to
-    readonly requestId?: string; // Optional request correlation ID
-  };
+  readonly name: string; // Name or pattern to lookup
+  readonly requestor: string; // Actor address to send response to
+  readonly requestId?: string; // Optional request correlation ID
 }
 
 /**
@@ -67,12 +62,10 @@ export interface LookupMessage extends ActorMessage {
  */
 export interface ListMessage extends ActorMessage {
   type: 'LIST';
-  payload: {
-    readonly pattern?: string; // Pattern to match (e.g., 'services.*'), or null for all
-    readonly requestor: string; // Actor address to send response to
-    readonly requestId?: string; // Optional request correlation ID
-    readonly includeEphemeral?: boolean; // Include ephemeral PIDs in results
-  };
+  readonly pattern?: string; // Pattern to match (e.g., 'services.*'), or null for all
+  readonly requestor: string; // Actor address to send response to
+  readonly requestId?: string; // Optional request correlation ID
+  readonly includeEphemeral?: boolean; // Include ephemeral PIDs in results
 }
 
 /**
@@ -80,9 +73,7 @@ export interface ListMessage extends ActorMessage {
  */
 export interface HealthCheckMessage extends ActorMessage {
   type: 'HEALTH_CHECK';
-  payload: {
-    readonly requestor: string; // Actor address to send response to
-  };
+  readonly requestor: string; // Actor address to send response to
 }
 
 /**
@@ -120,6 +111,7 @@ export interface DiscoveryServiceContext {
   readonly messageCount: number;
   readonly registrationCount: number;
   readonly lookupCount: number;
+  readonly startTime: number; // Track when the service started
 }
 
 /**
@@ -132,6 +124,7 @@ export function createInitialDiscoveryServiceContext(): DiscoveryServiceContext 
     messageCount: 0,
     registrationCount: 0,
     lookupCount: 0,
+    startTime: Date.now(),
   };
 }
 
@@ -145,12 +138,12 @@ export function createInitialDiscoveryServiceContext(): DiscoveryServiceContext 
 function isRegisterMessage(message: ActorMessage): message is RegisterMessage {
   return (
     message.type === 'REGISTER' &&
-    message.payload !== null &&
-    typeof message.payload === 'object' &&
-    'name' in message.payload &&
-    'address' in message.payload &&
-    typeof message.payload.name === 'string' &&
-    typeof message.payload.address === 'string'
+    message !== null &&
+    typeof message === 'object' &&
+    'name' in message &&
+    'address' in message &&
+    typeof message.name === 'string' &&
+    typeof message.address === 'string'
   );
 }
 
@@ -160,10 +153,10 @@ function isRegisterMessage(message: ActorMessage): message is RegisterMessage {
 function isUnregisterMessage(message: ActorMessage): message is UnregisterMessage {
   return (
     message.type === 'UNREGISTER' &&
-    message.payload !== null &&
-    typeof message.payload === 'object' &&
-    'name' in message.payload &&
-    typeof message.payload.name === 'string'
+    message !== null &&
+    typeof message === 'object' &&
+    'name' in message &&
+    typeof message.name === 'string'
   );
 }
 
@@ -173,12 +166,12 @@ function isUnregisterMessage(message: ActorMessage): message is UnregisterMessag
 function isLookupMessage(message: ActorMessage): message is LookupMessage {
   return (
     message.type === 'LOOKUP' &&
-    message.payload !== null &&
-    typeof message.payload === 'object' &&
-    'name' in message.payload &&
-    'requestor' in message.payload &&
-    typeof message.payload.name === 'string' &&
-    typeof message.payload.requestor === 'string'
+    message !== null &&
+    typeof message === 'object' &&
+    'name' in message &&
+    'requestor' in message &&
+    typeof message.name === 'string' &&
+    typeof message.requestor === 'string'
   );
 }
 
@@ -188,10 +181,10 @@ function isLookupMessage(message: ActorMessage): message is LookupMessage {
 function isListMessage(message: ActorMessage): message is ListMessage {
   return (
     message.type === 'LIST' &&
-    message.payload !== null &&
-    typeof message.payload === 'object' &&
-    'requestor' in message.payload &&
-    typeof message.payload.requestor === 'string'
+    message !== null &&
+    typeof message === 'object' &&
+    'requestor' in message &&
+    typeof message.requestor === 'string'
   );
 }
 
@@ -201,10 +194,10 @@ function isListMessage(message: ActorMessage): message is ListMessage {
 function isHealthCheckMessage(message: ActorMessage): message is HealthCheckMessage {
   return (
     message.type === 'HEALTH_CHECK' &&
-    message.payload !== null &&
-    typeof message.payload === 'object' &&
-    'requestor' in message.payload &&
-    typeof message.payload.requestor === 'string'
+    message !== null &&
+    typeof message === 'object' &&
+    'requestor' in message &&
+    typeof message.requestor === 'string'
   );
 }
 
@@ -286,7 +279,7 @@ export function createDiscoveryServiceBehavior() {
       dependencies,
     }: {
       message: ActorMessage;
-      machine: Actor<AnyStateMachine>;
+      machine: ActorInstance;
       dependencies: ActorDependencies;
     }): Promise<MessagePlan | undefined> {
       const context = machine.getSnapshot().context as DiscoveryServiceContext;
@@ -350,7 +343,7 @@ async function handleRegister(
   context: DiscoveryServiceContext,
   dependencies: ActorDependencies
 ): Promise<MessagePlan> {
-  const { name, address, isEphemeral = false, metadata } = message.payload;
+  const { name, address, isEphemeral = false, metadata } = message;
 
   log.debug('Handling registration', {
     name,
@@ -386,7 +379,7 @@ async function handleRegister(
   };
 
   // Update machine state
-  (dependencies.machine as Actor<AnyStateMachine>).send({
+  dependencies.actor.send({
     type: 'ACTOR_REGISTERED',
     name,
     address,
@@ -414,7 +407,7 @@ async function handleUnregister(
   context: DiscoveryServiceContext,
   dependencies: ActorDependencies
 ): Promise<MessagePlan> {
-  const { name, address } = message.payload;
+  const { name, address } = message;
 
   log.debug('Handling unregistration', {
     name,
@@ -448,7 +441,7 @@ async function handleUnregister(
   };
 
   // Update machine state
-  (dependencies.machine as Actor<AnyStateMachine>).send({
+  dependencies.actor.send({
     type: 'ACTOR_UNREGISTERED',
     name,
     address,
@@ -476,7 +469,7 @@ async function handleLookup(
   context: DiscoveryServiceContext,
   dependencies: ActorDependencies
 ): Promise<MessagePlan> {
-  const { name, requestor, requestId } = message.payload;
+  const { name, requestor, requestId } = message;
 
   log.debug('Handling lookup', {
     name,
@@ -502,7 +495,7 @@ async function handleLookup(
   }
 
   // Update machine state
-  (dependencies.machine as Actor<AnyStateMachine>).send({
+  dependencies.actor.send({
     type: 'LOOKUP_PERFORMED',
     name,
     found: !!entry,
@@ -510,37 +503,24 @@ async function handleLookup(
   });
 
   // Create response message with proper JsonValue handling
-  const lookupResponseMessage: ActorMessage = {
+  const lookupResponseMessage = {
     type: 'LOOKUP_RESULT',
-    payload: {
-      name,
-      entry: entry
-        ? {
-            name: entry.name,
-            address: entry.address,
-            isEphemeral: entry.isEphemeral,
-            metadata: entry.metadata || null, // Convert undefined to null for JsonValue compatibility
-            registeredAt: entry.registeredAt,
-          }
-        : null,
-      requestId: requestId || null, // Convert undefined to null for JsonValue compatibility
-      timestamp: Date.now(),
-    },
-    timestamp: Date.now(),
-    version: '1.0.0',
+    name,
+    entry: entry
+      ? {
+          name: entry.name,
+          address: entry.address,
+          isEphemeral: entry.isEphemeral,
+          metadata: entry.metadata || null, // Convert undefined to null for JsonValue compatibility
+          registeredAt: entry.registeredAt,
+        }
+      : null,
+    requestId: requestId || null, // Convert undefined to null for JsonValue compatibility
   };
 
-  // Create proper SendInstruction with type-safe placeholder
+  // Create proper SendInstruction with null actor placeholder
   const sendInstruction = createSendInstruction(
-    {
-      id: requestor,
-      send: async () => {
-        /* Placeholder - will be resolved by system */
-      },
-      ask: async <T>(): Promise<T> => {
-        throw new Error('Placeholder ActorRef - should be resolved by system');
-      },
-    },
+    createNullActorRef(requestor),
     lookupResponseMessage,
     'fireAndForget'
   );
@@ -566,7 +546,7 @@ async function handleList(
   context: DiscoveryServiceContext,
   dependencies: ActorDependencies
 ): Promise<MessagePlan> {
-  const { pattern = '*', requestor, requestId, includeEphemeral = false } = message.payload;
+  const { pattern = '*', requestor, requestId, includeEphemeral = false } = message;
 
   log.debug('Handling list', {
     pattern,
@@ -584,7 +564,7 @@ async function handleList(
   );
 
   // Update machine state
-  (dependencies.machine as Actor<AnyStateMachine>).send({
+  dependencies.actor.send({
     type: 'LIST_PERFORMED',
     pattern,
     matchCount: matchingEntries.length,
@@ -592,35 +572,22 @@ async function handleList(
   });
 
   // Create response message with serializable entry data and proper JsonValue handling
-  const listResponseMessage: ActorMessage = {
+  const listResponseMessage = {
     type: 'LIST_RESULT',
-    payload: {
-      pattern,
-      entries: matchingEntries.map((entry) => ({
-        name: entry.name,
-        address: entry.address,
-        isEphemeral: entry.isEphemeral,
-        metadata: entry.metadata || null, // Convert undefined to null for JsonValue compatibility
-        registeredAt: entry.registeredAt,
-      })),
-      requestId: requestId || null, // Convert undefined to null for JsonValue compatibility
-      timestamp: Date.now(),
-    },
-    timestamp: Date.now(),
-    version: '1.0.0',
+    pattern,
+    entries: matchingEntries.map((entry) => ({
+      name: entry.name,
+      address: entry.address,
+      isEphemeral: entry.isEphemeral,
+      metadata: entry.metadata || null, // Convert undefined to null for JsonValue compatibility
+      registeredAt: entry.registeredAt,
+    })),
+    requestId: requestId || null, // Convert undefined to null for JsonValue compatibility
   };
 
-  // Create proper SendInstruction with type-safe placeholder
+  // Create proper SendInstruction with null actor placeholder
   const sendInstruction = createSendInstruction(
-    {
-      id: requestor,
-      send: async () => {
-        /* Placeholder - will be resolved by system */
-      },
-      ask: async <T>(): Promise<T> => {
-        throw new Error('Placeholder ActorRef - should be resolved by system');
-      },
-    },
+    createNullActorRef(requestor),
     listResponseMessage,
     'fireAndForget'
   );
@@ -645,7 +612,7 @@ async function handleHealthCheck(
   context: DiscoveryServiceContext,
   dependencies: ActorDependencies
 ): Promise<MessagePlan> {
-  const { requestor } = message.payload;
+  const { requestor } = message;
 
   log.debug('Handling health check', {
     requestor,
@@ -660,31 +627,19 @@ async function handleHealthCheck(
     lookupCount: context.lookupCount,
     wellKnownNamesCount: context.wellKnownNames.size,
     ephemeralPidsCount: context.ephemeralPids.size,
-    uptime:
-      Date.now() -
-        (dependencies.machine as Actor<AnyStateMachine>).getSnapshot().context?.startTime || 0,
+    uptime: Date.now() - context.startTime,
     timestamp: Date.now(),
   };
 
   // Create response message
-  const healthResponseMessage: ActorMessage = {
+  const healthResponseMessage = {
     type: 'HEALTH_CHECK_RESPONSE',
-    payload: health,
-    timestamp: Date.now(),
-    version: '1.0.0',
+    health,
   };
 
-  // Return send instruction to requestor with type-safe placeholder
+  // Return send instruction to requestor with null actor placeholder
   return createSendInstruction(
-    {
-      id: requestor,
-      send: async () => {
-        /* Placeholder - will be resolved by system */
-      },
-      ask: async <T>(): Promise<T> => {
-        throw new Error('Placeholder ActorRef - should be resolved by system');
-      },
-    },
+    createNullActorRef(requestor),
     healthResponseMessage,
     'fireAndForget'
   );

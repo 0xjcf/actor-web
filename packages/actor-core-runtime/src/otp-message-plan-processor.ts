@@ -4,82 +4,149 @@
  * @author AI Assistant - 2025-01-20
  */
 
-import type { Actor, AnyStateMachine } from 'xstate';
-import type { ActorDependencies, ActorMessage } from './actor-system.js';
+import type { ActorInstance } from './actor-instance.js';
+import type { ActorDependencies, ActorEnvelope, ActorMessage } from './actor-system.js';
+import { validateAskResponse } from './ask-pattern-safeguards.js';
 import { Logger } from './logger.js';
-import type { MessagePlan } from './message-plan.js';
-import type { ActorHandlerResult, BehaviorFunction, Effect } from './otp-types.js';
+import type { MessagePlan, SendInstruction } from './message-plan.js';
+import type { ActorHandlerResult, BehaviorFunction } from './otp-types.js';
+import { processMessagePlan, type RuntimeContext } from './plan-interpreter.js';
 import { DefaultMessagePlanProcessor } from './pure-behavior-handler.js';
 
 const log = Logger.namespace('OTP_MESSAGE_PLAN_PROCESSOR');
 
+// Define specific message types for OTP operations
+interface BehaviorChangedMessage extends ActorMessage {
+  type: 'BEHAVIOR_CHANGED';
+  actorId: string;
+}
+
+/**
+ * Type guard to check if a message is a SendInstruction
+ */
+function isSendInstruction(message: unknown): message is SendInstruction {
+  return (
+    typeof message === 'object' &&
+    message !== null &&
+    'to' in message &&
+    'tell' in message &&
+    'mode' in message &&
+    typeof (message as Record<string, unknown>).to === 'object' &&
+    typeof (message as Record<string, unknown>).tell === 'object'
+  );
+}
+
 /**
  * Enhanced message plan processor that handles both traditional MessagePlan
- * and OTP state management patterns (state updates, behavior switching, effects)
+ * and OTP state management patterns (state updates, behavior switching)
  */
 export class OTPMessagePlanProcessor extends DefaultMessagePlanProcessor {
   // Track behavior switches for actors
   private behaviorSwitches = new Map<string, BehaviorFunction<unknown>>();
 
-  // Track pending effects for actors
-  private pendingEffects = new Map<string, Effect[]>();
-
   /**
    * Enhanced OTP result processor with ask pattern response support
-   * Processes context updates, behavior switching, effects, and responses
+   * Processes context updates, behavior switching, and responses
    */
   async processOTPResult<TContext, TResponse>(
     result: ActorHandlerResult<TContext, TResponse>,
     actorId: string,
-    machine: Actor<AnyStateMachine>,
+    actorInstance: ActorInstance,
     dependencies: ActorDependencies,
     correlationId?: string,
     originalMessageType?: string // Add original message type for response compatibility
   ): Promise<void> {
-    console.log('🔍 OTP DEBUG: processOTPResult called', {
+    log.debug('Processing OTP result', {
       actorId,
       hasContext: result.context !== undefined,
-      hasResponse: result.response !== undefined,
+      hasReply: result.reply !== undefined,
       hasBehavior: result.behavior !== undefined,
-      hasEffects: result.effects !== undefined,
+      hasEmit: result.emit !== undefined,
+      emitLength: result.emit ? result.emit.length : 0,
       correlationId,
       originalMessageType,
     });
 
-    log.debug('Processing OTP result', {
+    // Validate ask pattern response
+    validateAskResponse(result, actorId, originalMessageType || 'UNKNOWN', correlationId);
+
+    log.debug('🔍 OTP PROCESSOR DEBUG: processOTPResult called', {
       actorId,
-      hasContext: result.context !== undefined,
-      hasResponse: result.response !== undefined,
-      hasBehavior: result.behavior !== undefined,
-      hasEffects: result.effects !== undefined,
-      correlationId,
-      originalMessageType,
+      hasEmit: result.emit !== undefined,
+      emitLength: result.emit ? result.emit.length : 0,
+      emitArray: result.emit,
     });
 
     try {
       // Apply context update
       if (result.context !== undefined) {
-        await this.applyContextUpdate(result.context, actorId, machine);
+        log.debug('🔍 OTP STEP DEBUG: Starting context update', { actorId });
+        try {
+          await this.applyContextUpdate(result.context, actorId, actorInstance);
+          log.debug('🔍 OTP STEP DEBUG: Context update completed', { actorId });
+        } catch (error) {
+          log.debug('🔍 OTP STEP DEBUG: Context update failed', { actorId, error });
+          throw error;
+        }
       }
 
       // Apply behavior switching
       if (result.behavior !== undefined) {
-        await this.applyBehaviorSwitch(result.behavior, actorId, dependencies);
+        log.debug('🔍 OTP STEP DEBUG: Starting behavior switch', { actorId });
+        try {
+          await this.applyBehaviorSwitch(
+            result.behavior as BehaviorFunction<unknown>,
+            actorId,
+            dependencies
+          );
+          log.debug('🔍 OTP STEP DEBUG: Behavior switch completed', { actorId });
+        } catch (error) {
+          log.debug('🔍 OTP STEP DEBUG: Behavior switch failed', { actorId, error });
+          throw error;
+        }
       }
 
-      // Send response for ask pattern (use original message type)
-      if (result.response !== undefined && correlationId) {
-        await this.sendResponse(
-          result.response,
+      // Send response for ask pattern using reply field (Phase 2.1)
+      const replyValue = result.reply;
+      if (replyValue !== undefined && correlationId) {
+        log.debug('🔍 OTP STEP DEBUG: Starting reply send', {
+          actorId,
           correlationId,
-          dependencies,
-          originalMessageType || 'RESPONSE' // Use original message type or fallback to 'RESPONSE'
-        );
+          usingReplyField: result.reply !== undefined,
+        });
+        try {
+          await this.sendResponse(
+            replyValue,
+            correlationId,
+            dependencies,
+            originalMessageType || 'RESPONSE' // Use original message type or fallback to 'RESPONSE'
+          );
+          log.debug('🔍 OTP STEP DEBUG: Reply send completed', { actorId, correlationId });
+        } catch (error) {
+          log.debug('🔍 OTP STEP DEBUG: Reply send failed', { actorId, correlationId, error });
+          throw error;
+        }
       }
 
-      // Execute effects
-      if (result.effects && result.effects.length > 0) {
-        await this.executeEffects(result.effects, actorId, dependencies);
+      // ✅ UNIFIED API DESIGN Phase 2.1: Process emit arrays for event emission
+      if (result.emit && result.emit.length > 0) {
+        log.debug('🔍 OTP STEP DEBUG: Starting emit processing', {
+          actorId,
+          emitCount: result.emit.length,
+        });
+        try {
+          await this.processEmitArray(result.emit, actorId, dependencies);
+          log.debug('🔍 OTP STEP DEBUG: Emit processing completed', { actorId });
+        } catch (error) {
+          log.debug('🔍 OTP STEP DEBUG: Emit processing failed', { actorId, error });
+          throw error;
+        }
+      } else {
+        log.debug('🔍 OTP STEP DEBUG: No emit arrays to process', {
+          actorId,
+          hasEmit: result.emit !== undefined,
+          emitLength: result.emit ? result.emit.length : 0,
+        });
       }
 
       log.debug('OTP result processing completed successfully', { actorId });
@@ -98,19 +165,77 @@ export class OTPMessagePlanProcessor extends DefaultMessagePlanProcessor {
   private async applyContextUpdate<TContext>(
     newContext: TContext,
     actorId: string,
-    machine: Actor<AnyStateMachine>
+    actorInstance: ActorInstance
   ): Promise<void> {
+    log.debug('🔍 CONTEXT UPDATE: Starting context update', {
+      actorId,
+      hasContext: newContext !== undefined,
+      newContext,
+      currentActorState: actorInstance.getSnapshot()?.value,
+      currentActorContext: actorInstance.getSnapshot()?.context,
+    });
+
     log.debug('Applying context update', { actorId, hasContext: newContext !== undefined });
 
     try {
-      // Send context update event to XState machine
-      machine.send({
-        type: 'UPDATE_CONTEXT',
-        context: newContext,
-      });
+      // Check if this is a ContextActor that supports direct context updates
+      if (actorInstance.getType?.() === 'context') {
+        // Import dynamically to avoid circular dependencies
+        const { isContextActor } = await import('./context-actor.js');
+
+        if (isContextActor(actorInstance)) {
+          log.debug('🔍 CONTEXT UPDATE: Direct update for ContextActor', {
+            actorId,
+            newContext,
+          });
+
+          // Update context directly on ContextActor
+          // TypeScript doesn't know about updateContext on ActorInstance
+          // but we've already verified it's a ContextActor
+          (
+            actorInstance as import('./context-actor.js').ContextActor<typeof newContext>
+          ).updateContext(newContext);
+
+          log.debug('🔍 CONTEXT UPDATE: Context updated directly', {
+            actorId,
+            updatedContext: actorInstance.getSnapshot()?.context,
+          });
+        }
+      } else {
+        // For XState machines, send UPDATE_CONTEXT event
+        log.debug('🔍 CONTEXT UPDATE: Sending UPDATE_CONTEXT event to XState machine', {
+          actorId,
+          eventType: 'UPDATE_CONTEXT',
+          newContext,
+        });
+
+        actorInstance.send({
+          type: 'UPDATE_CONTEXT',
+          context: newContext,
+          _timestamp: Date.now(),
+          _version: '1.0.0',
+        } as ActorMessage);
+
+        // Check if context actually updated
+        const updatedSnapshot = actorInstance.getSnapshot();
+        log.debug('🔍 CONTEXT UPDATE: After sending UPDATE_CONTEXT', {
+          actorId,
+          previousContext: actorInstance.getSnapshot()?.context,
+          updatedContext: updatedSnapshot?.context,
+          contextChanged:
+            JSON.stringify(updatedSnapshot?.context) !==
+            JSON.stringify(actorInstance.getSnapshot()?.context),
+        });
+      }
 
       log.debug('Context update applied successfully', { actorId });
     } catch (error) {
+      log.debug('🔍 CONTEXT UPDATE: ERROR during context update', {
+        actorId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        errorStack: error instanceof Error ? error.stack : undefined,
+      });
+
       log.error('Failed to apply context update', {
         actorId,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -134,11 +259,11 @@ export class OTPMessagePlanProcessor extends DefaultMessagePlanProcessor {
       this.behaviorSwitches.set(actorId, newBehavior);
 
       // Emit behavior change event
-      const behaviorChangeEvent: ActorMessage = {
+      const behaviorChangeEvent: BehaviorChangedMessage = {
         type: 'BEHAVIOR_CHANGED',
-        payload: { actorId, timestamp: Date.now() },
-        timestamp: Date.now(),
-        version: '1.0.0',
+        actorId,
+        _timestamp: Date.now(),
+        _version: '2.0.0',
       };
 
       dependencies.emit(behaviorChangeEvent);
@@ -162,26 +287,22 @@ export class OTPMessagePlanProcessor extends DefaultMessagePlanProcessor {
     dependencies: ActorDependencies,
     messageType: string
   ): Promise<void> {
-    console.log('🔍 OTP DEBUG: sendResponse called', {
-      correlationId,
-      messageType,
-      hasResponse: response !== undefined,
-      response,
-    });
-
     log.debug('Sending response', { correlationId, hasResponse: response !== undefined });
 
     try {
-      // Create response message (cast to JsonValue for ActorMessage compatibility)
+      // Create response message using flat structure
+      // For arrays, wrap them in a payload property to preserve their structure
       const responseMessage: ActorMessage = {
         type: messageType,
-        payload: response as import('./actor-system.js').JsonValue,
-        correlationId,
-        timestamp: Date.now(),
-        version: '1.0.0',
+        ...(Array.isArray(response)
+          ? { payload: response }
+          : typeof response === 'object' && response !== null
+            ? response
+            : { value: response }),
+        _correlationId: correlationId,
+        _timestamp: Date.now(),
+        _version: '2.0.0',
       };
-
-      console.log('🔍 OTP DEBUG: Created response message:', responseMessage);
 
       // Use correlation manager to handle response (this is the correct mechanism for ask patterns)
       if (
@@ -192,14 +313,12 @@ export class OTPMessagePlanProcessor extends DefaultMessagePlanProcessor {
         typeof (dependencies.correlationManager as { handleResponse: unknown }).handleResponse ===
           'function'
       ) {
-        console.log('🔍 OTP DEBUG: Using correlationManager.handleResponse');
         (
           dependencies.correlationManager as {
             handleResponse: (correlationId: string, response: ActorMessage) => void;
           }
         ).handleResponse(correlationId, responseMessage);
       } else {
-        console.log('🔍 OTP DEBUG: Fallback to dependencies.emit');
         // Fallback to emit if correlation manager not available
         dependencies.emit(responseMessage);
       }
@@ -215,53 +334,151 @@ export class OTPMessagePlanProcessor extends DefaultMessagePlanProcessor {
   }
 
   /**
-   * Execute effects with supervision
+   * Process emit arrays for event emission
    */
-  private async executeEffects(
-    effects: Effect[],
+  private async processEmitArray(
+    emitArray: unknown[],
     actorId: string,
     dependencies: ActorDependencies
   ): Promise<void> {
-    log.debug('Executing effects', { actorId, effectCount: effects.length });
+    log.debug('Processing emit array', { actorId, emitCount: emitArray.length });
+    log.debug('🔍 EMIT ARRAY DEBUG: Starting emit processing', {
+      actorId,
+      emitCount: emitArray.length,
+      emitArray,
+      dependenciesKeys: Object.keys(dependencies),
+      hasEmitFunction: typeof dependencies.emit === 'function',
+    });
 
-    for (let i = 0; i < effects.length; i++) {
-      const effect = effects[i];
-
+    for (const message of emitArray) {
       try {
-        // Execute effect with supervision
-        const result = effect();
-
-        // Handle async effects
-        if (result && typeof result.then === 'function') {
-          await result;
-        }
-
-        log.debug('Effect executed successfully', { actorId, effectIndex: i });
-      } catch (error) {
-        log.warn('Effect execution failed (supervised)', {
+        log.debug('🔍 EMIT ARRAY DEBUG: Processing message', {
           actorId,
-          effectIndex: i,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          messageType: (message as { type: string }).type,
+          message,
         });
 
-        // Emit effect failure event but don't crash actor
-        const effectFailureEvent: ActorMessage = {
-          type: 'EFFECT_FAILED',
-          payload: {
-            actorId,
-            effectIndex: i,
-            error: error instanceof Error ? error.message : 'Unknown error',
-            timestamp: Date.now(),
-          },
-          timestamp: Date.now(),
-          version: '1.0.0',
-        };
+        // Ensure message is an object before spreading
+        if (typeof message !== 'object' || message === null) {
+          log.warn('Invalid emit message - not an object', { actorId, message });
+          continue;
+        }
 
-        dependencies.emit(effectFailureEvent);
+        // 🎯 FIX: Check if this is a SendInstruction (has 'to', 'tell', 'mode' fields)
+        if (isSendInstruction(message)) {
+          log.debug('🔍 EMIT ARRAY DEBUG: Detected SendInstruction, processing as direct message', {
+            actorId,
+            targetActor: message.to,
+            messageType: message.tell?.type,
+            mode: message.mode,
+          });
+
+          // Process as SendInstruction - send message directly to target actor
+          const sendInstruction = message; // Now properly typed as SendInstruction
+          try {
+            // Use the plan interpreter to process the SendInstruction correctly
+            log.debug('🔍 EMIT ARRAY DEBUG: Using plan interpreter to process SendInstruction', {
+              actorId,
+              targetActorPath: sendInstruction.to.address.id,
+              messageType: sendInstruction.tell?.type,
+            });
+
+            // Create a mini message plan with just this SendInstruction
+            const messagePlan = [sendInstruction];
+
+            // Use the plan interpreter to process it (this should handle NullActorRef resolution)
+            const runtimeContext: RuntimeContext = {
+              actor: dependencies.actor,
+              emit: dependencies.emit,
+              actorId,
+              correlationManager:
+                dependencies.correlationManager as RuntimeContext['correlationManager'],
+            };
+
+            await processMessagePlan(messagePlan, runtimeContext);
+            log.debug('🔍 EMIT ARRAY DEBUG: SendInstruction processed successfully', {
+              actorId,
+              targetActor: sendInstruction.to,
+              messageType: sendInstruction.tell?.type,
+            });
+          } catch (error) {
+            log.error('🔍 EMIT ARRAY DEBUG: SendInstruction processing failed', {
+              actorId,
+              targetActor: sendInstruction.to,
+              messageType: sendInstruction.tell?.type,
+              error: error instanceof Error ? error.message : String(error),
+              errorStack: error instanceof Error ? error.stack : undefined,
+            });
+            console.error('❌ SendInstruction Error Details:', error);
+          }
+          continue; // Skip the regular event processing
+        }
+
+        // Ensure message has envelope fields
+        const emitMessage = {
+          ...(message as Record<string, unknown>),
+          _correlationId:
+            (message as ActorEnvelope)._correlationId ||
+            `emit-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+          _timestamp: (message as ActorEnvelope)._timestamp || Date.now(),
+          _version: (message as ActorEnvelope)._version || '2.0.0',
+        } as ActorMessage;
+
+        log.debug('🔍 EMIT ARRAY DEBUG: Message with correlationId', {
+          actorId,
+          messageType: emitMessage.type,
+          hasCorrelationId: !!emitMessage._correlationId,
+          correlationId: emitMessage._correlationId,
+        });
+
+        // Ensure correlationId exists before proceeding
+        if (!emitMessage._correlationId) {
+          log.error('Failed to ensure correlationId for emit message', {
+            actorId,
+            messageType: emitMessage.type,
+          });
+          continue;
+        }
+
+        // ✅ UNIFIED API DESIGN Phase 2.1: Use proper event emission system for subscriptions
+        // Emit events should go through dependencies.emit(), not correlation manager
+        log.debug('🔍 EMIT ARRAY DEBUG: Calling dependencies.emit', {
+          actorId,
+          messageType: emitMessage.type,
+          emitFunctionType: typeof dependencies.emit,
+        });
+
+        dependencies.emit(emitMessage);
+
+        log.debug('🔍 EMIT ARRAY DEBUG: dependencies.emit called successfully', {
+          actorId,
+          messageType: emitMessage.type,
+        });
+
+        log.debug('Emit array message processed successfully', {
+          actorId,
+          messageType: emitMessage.type,
+        });
+      } catch (error) {
+        log.debug('🔍 EMIT ARRAY DEBUG: Error during message processing', {
+          actorId,
+          messageType: (message as { type: string }).type,
+          error,
+        });
+        log.error('Failed to process emit array message', {
+          actorId,
+          messageType: (message as { type: string }).type,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
       }
     }
 
-    log.debug('Effects execution completed', { actorId, effectCount: effects.length });
+    log.debug('🔍 EMIT ARRAY DEBUG: Emit array processing completed', {
+      actorId,
+      emitCount: emitArray.length,
+    });
+
+    log.debug('Emit array processing completed', { actorId, emitCount: emitArray.length });
   }
 
   /**
@@ -276,9 +493,8 @@ export class OTPMessagePlanProcessor extends DefaultMessagePlanProcessor {
    */
   clearBehaviorSwitch(actorId: string): void {
     this.behaviorSwitches.delete(actorId);
-    this.pendingEffects.delete(actorId);
 
-    log.debug('Cleared behavior switch and effects for actor', { actorId });
+    log.debug('Cleared behavior switch for actor', { actorId });
   }
 
   /**

@@ -70,7 +70,7 @@ describe('CLI Commands Integration Tests', () => {
         } else {
           // Other errors (like git errors) are acceptable for this test
           // We only care about ES module errors for now
-          console.log('Non-ES-module error (acceptable):', errorMessage);
+          log.debug('Non-ES-module error (acceptable):', errorMessage);
         }
       }
     });
@@ -91,7 +91,7 @@ describe('CLI Commands Integration Tests', () => {
           expect(errorMessage).toContain('require is not defined in ES module scope');
         } else {
           // Other errors are acceptable - we only test ES module compatibility
-          console.log('Non-ES-module error (acceptable):', errorMessage);
+          log.debug('Non-ES-module error (acceptable):', errorMessage);
         }
       }
     });
@@ -111,7 +111,7 @@ describe('CLI Commands Integration Tests', () => {
           // This is the expected failure case before fix
           expect(errorMessage).toContain('require is not defined in ES module scope');
         } else {
-          console.log('Non-ES-module error (acceptable):', errorMessage);
+          log.debug('Non-ES-module error (acceptable):', errorMessage);
         }
       }
     });
@@ -131,7 +131,7 @@ describe('CLI Commands Integration Tests', () => {
           // This is the expected failure case before fix
           expect(errorMessage).toContain('require is not defined in ES module scope');
         } else {
-          console.log('Non-ES-module error (acceptable):', errorMessage);
+          log.debug('Non-ES-module error (acceptable):', errorMessage);
         }
       }
     });
@@ -151,7 +151,7 @@ describe('CLI Commands Integration Tests', () => {
           // This is the expected failure case before fix
           expect(errorMessage).toContain('require is not defined in ES module scope');
         } else {
-          console.log('Non-ES-module error (acceptable):', errorMessage);
+          log.debug('Non-ES-module error (acceptable):', errorMessage);
         }
       }
     });

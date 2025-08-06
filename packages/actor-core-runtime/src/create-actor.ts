@@ -8,24 +8,97 @@
  * while maintaining compile-time type safety for emitted events.
  */
 
-import type { Actor, AnyStateMachine } from 'xstate';
+import type { AnyStateMachine } from 'xstate';
+import type { ActorInstance } from './actor-instance.js';
+import type { ActorRef } from './actor-ref.js';
+import { ActorSymbols } from './actor-symbols.js';
 import type {
   ActorBehavior,
   ActorDependencies,
   ActorMessage,
-  ActorPID,
-  ActorSystem,
-  BasicMessage,
-  MessageMap,
   SupervisionStrategy,
-  TypeSafeActor,
 } from './actor-system.js';
-import { createActorSystem } from './actor-system-impl.js';
-import { createActorRef } from './create-actor-ref.js';
 import { Logger } from './logger.js';
+import { registerMachineWithBehavior } from './machine-registry.js';
 import type { DomainEvent, MessagePlan } from './message-plan.js';
-import { analyzeMessage, isActorHandlerResult, processSmartDefaults } from './otp-types.js';
-import type { MessageUnion } from './types.js';
+import { analyzeMessage, processSmartDefaults } from './otp-types.js';
+import type { ActorSnapshot, JsonValue } from './types.js';
+
+// ============================================================================
+// THREE-PATTERN MESSAGE HANDLER TYPES (Phase 2.1 Task 2.2)
+// ============================================================================
+
+/**
+ * Pure routing message handler - stateless message transformation
+ * Returns array of messages directly for simple routing
+ */
+export type PureRoutingHandler<TMessage> = (params: {
+  readonly message: TMessage;
+}) => TMessage[] | undefined;
+
+/**
+ * OTP-style context handler - explicit context management like Erlang GenServer
+ * Returns { context: newState, emit: [...] } for explicit state updates
+ */
+export type OTPContextHandler<TMessage, TContext> = (params: {
+  readonly message: TMessage;
+  readonly context: TContext;
+}) =>
+  | {
+      context?: TContext;
+      emit?: TMessage | TMessage[];
+    }
+  | undefined;
+
+/**
+ * XState machine handler - machine manages state automatically
+ * Returns { emit: [...] } for event emission, state managed by machine
+ */
+export type XStateMachineHandler<TMessage> = (params: {
+  readonly message: TMessage;
+  readonly actor: ActorInstance;
+}) =>
+  | {
+      emit?: TMessage | TMessage[];
+    }
+  | undefined;
+
+// ============================================================================
+// THREE-PATTERN BEHAVIOR INTERFACES (Phase 2.1 Task 2.2)
+// ============================================================================
+
+/**
+ * Pure routing behavior - stateless message transformation
+ */
+export interface PureRoutingBehavior<TMessage> {
+  readonly type: 'stateless';
+  readonly onMessage: PureRoutingHandler<TMessage>;
+  readonly template?: UniversalTemplate;
+}
+
+/**
+ * OTP-style behavior - explicit context management
+ */
+export interface OTPContextBehavior<TMessage, TContext> {
+  readonly type: 'otp';
+  readonly onMessage: OTPContextHandler<TMessage, TContext>;
+  readonly initialContext: TContext;
+  readonly template?: UniversalTemplate;
+}
+
+/**
+ * XState-style behavior - machine-managed state
+ */
+export interface XStateMachineBehavior<TMessage> {
+  readonly type: 'xstate';
+  readonly onMessage: XStateMachineHandler<TMessage>;
+  readonly machine: AnyStateMachine;
+  readonly template?: UniversalTemplate;
+}
+
+// ============================================================================
+// DEFAULT STATELESS MACHINE (Phase 2.1 - Task 2.2)
+// ============================================================================
 
 const log = Logger.namespace('CREATE_ACTOR');
 
@@ -70,7 +143,7 @@ export type PureMessageHandlerWithContext<
   TContext = Record<string, unknown>,
 > = (params: {
   readonly message: TMessage;
-  readonly machine: Actor<AnyStateMachine>;
+  readonly actor: ActorInstance;
   readonly dependencies: ActorDependencies;
   readonly context: TContext; // ✅ Required: context-based state
 }) => MessagePlan<TDomainEvent> | Promise<MessagePlan<TDomainEvent>> | void | Promise<void>;
@@ -85,9 +158,9 @@ export type PureMessageHandlerWithMachine<
   TDomainEvent = DomainEvent,
 > = (params: {
   readonly message: TMessage;
-  readonly machine: Actor<AnyStateMachine>;
+  readonly actor: ActorInstance;
   readonly dependencies: ActorDependencies;
-  // ✅ No context: use machine.getSnapshot().context instead
+  // ✅ No context: use actor.getSnapshot().context instead
 }) => MessagePlan<TDomainEvent> | Promise<MessagePlan<TDomainEvent>> | void | Promise<void>;
 
 /**
@@ -112,12 +185,12 @@ export interface PureActorBehaviorConfigWithContext<
   readonly onMessage: PureMessageHandlerWithContext<TMessage, TEmitted, TDomainEvent, TContext>;
 
   readonly onStart?: (params: {
-    readonly machine: Actor<AnyStateMachine>;
+    readonly actor: ActorInstance;
     readonly dependencies: ActorDependencies;
   }) => MessagePlan<TDomainEvent> | Promise<MessagePlan<TDomainEvent>> | void | Promise<void>;
 
   readonly onStop?: (params: {
-    readonly machine: Actor<AnyStateMachine>;
+    readonly actor: ActorInstance;
     readonly dependencies: ActorDependencies;
   }) => Promise<void> | void;
 
@@ -144,12 +217,12 @@ export interface PureActorBehaviorConfigWithMachine<
   readonly onMessage: PureMessageHandlerWithMachine<TMessage, TEmitted, TDomainEvent>;
 
   readonly onStart?: (params: {
-    readonly machine: Actor<AnyStateMachine>;
+    readonly actor: ActorInstance;
     readonly dependencies: ActorDependencies;
   }) => MessagePlan<TDomainEvent> | Promise<MessagePlan<TDomainEvent>> | void | Promise<void>;
 
   readonly onStop?: (params: {
-    readonly machine: Actor<AnyStateMachine>;
+    readonly actor: ActorInstance;
     readonly dependencies: ActorDependencies;
   }) => Promise<void> | void;
 
@@ -174,38 +247,9 @@ export type PureActorBehaviorConfig<
  * Components should use createComponent() directly
  */
 export type CreateActorConfig<TMessage = ActorMessage, TEmitted = ActorMessage> =
-  | XStateActorConfig
   | ActorBehavior<TMessage, TEmitted>
+  | XStateActorConfig
   | PureActorBehaviorConfig<TMessage, TEmitted>;
-
-/**
- * Type guard to check if config is an XStateActorConfig
- */
-function isXStateConfig<TMessage, TEmitted>(
-  config: CreateActorConfig<TMessage, TEmitted>
-): config is XStateActorConfig {
-  // ✅ FIXED: Only pure XState configs (machine without onMessage handler)
-  return (
-    'machine' in config && typeof config.machine === 'object' && !('onMessage' in config) // ← KEY: Exclude configs with onMessage handlers
-  );
-}
-
-/**
- * Type guard to check if config is a PureActorBehaviorConfig
- * These are the old-style configs that need conversion
- */
-function isPureActorBehaviorConfig<TMessage, TEmitted>(
-  config: CreateActorConfig<TMessage, TEmitted>
-): config is PureActorBehaviorConfig<TMessage, TEmitted> {
-  return (
-    'onMessage' in config &&
-    typeof config.onMessage === 'function' &&
-    // ✅ FIXED: Allow configs with machines - pure actors can have XState machines
-    // !('machine' in config) &&  // ← REMOVED: This was incorrectly excluding machine configs
-    // Check if it's a plain object config (not already an ActorBehavior)
-    !Object.hasOwn(config, 'types')
-  );
-}
 
 /**
  * Type guard to check if config is already a unified ActorBehavior
@@ -218,97 +262,8 @@ function _isActorBehavior<TMessage, TEmitted>(
     'onMessage' in config &&
     typeof config.onMessage === 'function' &&
     !('machine' in config) &&
-    // ActorBehavior may have types property (distinguishes from PureActorBehaviorConfig)
-    (Object.hasOwn(config, 'types') ||
-      // Or check function signature - ActorBehavior onMessage has different params than PureActorBehaviorConfig
-      config.onMessage
-        .toString()
-        .includes('machine'))
+    !('configType' in config)
   );
-}
-
-/**
- * Create a start handler wrapper with proper error handling
- */
-function createStartHandler<_TEmitted, TDomainEvent>(
-  startHandler: (params: {
-    readonly machine: Actor<AnyStateMachine>;
-    readonly dependencies: ActorDependencies;
-  }) => MessagePlan<TDomainEvent> | Promise<MessagePlan<TDomainEvent>> | void | Promise<void>
-) {
-  return async (params: {
-    readonly machine: Actor<AnyStateMachine>;
-    readonly dependencies: ActorDependencies;
-  }) => {
-    log.debug('Processing start in pure behavior');
-
-    try {
-      const result = await startHandler({
-        machine: params.machine,
-        dependencies: params.dependencies,
-      });
-
-      return result;
-    } catch (error) {
-      log.error('Error in start handler', { error });
-      throw error;
-    }
-  };
-}
-
-/**
- * Create a stop handler wrapper with proper error handling
- */
-function createStopHandler(
-  stopHandler: (params: {
-    readonly machine: Actor<AnyStateMachine>;
-    readonly dependencies: ActorDependencies;
-  }) => Promise<void> | void
-) {
-  return async (params: {
-    readonly machine: Actor<AnyStateMachine>;
-    readonly dependencies: ActorDependencies;
-  }) => {
-    log.debug('Processing stop in pure behavior');
-
-    try {
-      await stopHandler({
-        machine: params.machine,
-        dependencies: params.dependencies,
-      });
-    } catch (error) {
-      log.error('Error in stop handler', { error });
-      throw error;
-    }
-  };
-}
-
-/**
- * Create an actor from XState machine
- * Note: This returns an ActorBehavior that wraps the XState machine
- */
-function createActorFromXState<TMessage = ActorMessage, TEmitted = ActorMessage>(
-  _config: XStateActorConfig
-): ActorBehavior<TMessage, TEmitted> {
-  // This is a simplified adapter - in a real implementation,
-  // we would need to properly bridge XState actors with our actor system
-  return {
-    onMessage: async (_params) => {
-      // In a real implementation, we would:
-      // 1. Use the machine parameter to access XState state
-      // 2. Send the message as an XState event via machine.send()
-      // 3. Extract any emitted events from the machine
-      // 4. Return as MessagePlan
-
-      // For now, this is a placeholder that shows the pattern
-      console.warn('XState actor integration not yet implemented');
-      return undefined; // Return void (no action)
-    },
-
-    // XState handles its own lifecycle
-    onStart: undefined,
-    onStop: undefined,
-  };
 }
 
 // ============================================================================
@@ -318,8 +273,8 @@ function createActorFromXState<TMessage = ActorMessage, TEmitted = ActorMessage>
 import type { OTPMessageHandler } from './otp-types.js';
 
 /**
- * Base builder interface providing withContext() and withMachine() methods
- * This is the entry point for the fluent builder pattern
+ * Base interface for all behavior builders
+ * Supports pure routing, OTP-style context, and XState machine patterns
  */
 export interface BehaviorBuilderBase<TMessage = ActorMessage, TEmitted = ActorMessage> {
   /**
@@ -328,7 +283,7 @@ export interface BehaviorBuilderBase<TMessage = ActorMessage, TEmitted = ActorMe
    */
   withContext<TContext>(
     initialContext: TContext
-  ): ContextBehaviorBuilder<TMessage, TEmitted, TContext>;
+  ): ContextBehaviorBuilder<TMessage, TEmitted, TContext, TContext>;
 
   /**
    * Create a machine-based actor with XState machine
@@ -339,22 +294,46 @@ export interface BehaviorBuilderBase<TMessage = ActorMessage, TEmitted = ActorMe
 
 /**
  * Context-based behavior builder supporting OTP patterns with smart defaults
- * Only provides .onMessage() method after .withContext()
+ * Can be used directly with spawn() - no .build() required!
+ */
+/**
+ * Enhanced Context-based behavior builder implementing research-based type inference
+ * Research Pattern #1: Type Accumulation - each method returns new typed builder
+ * Research Pattern #4: Phantom Type Branding - compile-time type tracking
  */
 export class ContextBehaviorBuilder<
   TMessage = ActorMessage,
   TEmitted = ActorMessage,
   TContext = unknown,
+  TResponse = TContext,
 > {
-  constructor(private readonly context: TContext) {}
+  // Research Pattern #4: Phantom type properties for compile-time inference
+  readonly __contextType!: TContext;
+  readonly __messageType!: TMessage;
+  readonly __emittedType!: TEmitted;
+  readonly __behaviorBuilder!: true; // Builder detection marker
+
+  constructor(
+    private readonly context: TContext,
+    private readonly messageHandler?: OTPMessageHandler<TMessage, TContext, TResponse, TEmitted>,
+    private readonly startHandler?: (params: {
+      readonly actor: ActorInstance;
+      readonly dependencies: ActorDependencies;
+    }) => void | Promise<void>,
+    private readonly stopHandler?: (params: {
+      readonly actor: ActorInstance;
+      readonly dependencies: ActorDependencies;
+    }) => void | Promise<void>
+  ) {}
 
   /**
    * Define the message handler with OTP patterns and smart defaults support
+   * Research Pattern #1: Type Accumulation - returns new typed builder
    *
    * @example Smart Defaults Usage
    * ```typescript
-   * .onMessage(({ message, machine, dependencies }) => {
-   *   const context = machine.getSnapshot().context;
+   * .onMessage(({ message, actor, dependencies }) => {
+   *   const context = actor.getSnapshot().context; // ✅ Now properly typed as TContext
    *
    *   switch (message.type) {
    *     case 'INCREMENT':
@@ -365,26 +344,130 @@ export class ContextBehaviorBuilder<
    *       // ✅ Explicit control: Different context vs response
    *       return {
    *         context: { ...context, users: [...context.users, newUser] },
-   *         response: { id: newUser.id, status: 'created' }
+   *         reply: { id: newUser.id, status: 'created' }
    *       };
    *   }
    * })
    * ```
    */
-  onMessage(
-    handler: OTPMessageHandler<TMessage, TContext, TContext>
-  ): ActorBehavior<TMessage, TEmitted> {
-    return createActorBehaviorFromConfig({
-      configType: 'context',
+  onMessage<TNewResponse = TResponse>(
+    handler: OTPMessageHandler<TMessage, TContext, TNewResponse, TEmitted>
+  ): ContextBehaviorBuilder<TMessage, TEmitted, TContext, TNewResponse> {
+    // Research Pattern #1: Return new builder preserving all type information
+    return new ContextBehaviorBuilder(this.context, handler, this.startHandler, this.stopHandler);
+  }
+
+  /**
+   * Define the actor startup handler
+   */
+  onStart(
+    handler: (params: {
+      readonly actor: ActorInstance;
+      readonly dependencies: ActorDependencies;
+    }) => void | Promise<void>
+  ): ContextBehaviorBuilder<TMessage, TEmitted, TContext, TResponse> {
+    if (!this.messageHandler) {
+      throw new Error('onStart can only be called after onMessage');
+    }
+    return new ContextBehaviorBuilder(this.context, this.messageHandler, handler, this.stopHandler);
+  }
+
+  /**
+   * Define the actor shutdown handler
+   */
+  onStop(
+    handler: (params: {
+      readonly actor: ActorInstance;
+      readonly dependencies: ActorDependencies;
+    }) => void | Promise<void>
+  ): ContextBehaviorBuilder<TMessage, TEmitted, TContext, TResponse> {
+    if (!this.messageHandler) {
+      throw new Error('onStop can only be called after onMessage');
+    }
+    return new ContextBehaviorBuilder(
+      this.context,
+      this.messageHandler,
+      this.startHandler,
+      handler
+    );
+  }
+
+  /**
+   * Build the final actor behavior with type preservation (Research Pattern #4: Phantom Type Branding)
+   * Called automatically when used with spawn() - no explicit .build() needed!
+   */
+  build(): ActorBehavior<TMessage, TEmitted> & { __contextType: TContext } {
+    if (!this.messageHandler) {
+      throw new Error('onMessage must be called before building the behavior');
+    }
+
+    // Create a runtime adapter that converts OTPMessageHandler to RuntimeMessageHandler
+    const runtimeHandler = async (params: {
+      readonly message: TMessage;
+      readonly actor: ActorInstance;
+      readonly dependencies: import('./actor-system.js').ActorDependencies;
+    }) => {
+      // Get the current context from the actor and cast it to the proper type
+      // This is safe because we control the context type through the builder
+      const snapshot = params.actor.getSnapshot();
+
+      // Create a typed actor wrapper that provides the properly typed context
+      const typedActor: ActorInstance & { getSnapshot(): ActorSnapshot<TContext> } = {
+        ...params.actor,
+        getSnapshot: (): ActorSnapshot<TContext> => ({
+          ...snapshot,
+          context: snapshot.context as TContext,
+        }),
+      };
+
+      // Call the OTPMessageHandler with the properly typed actor parameter
+      // The OTPMessageHandler signature expects actor: ActorInstance & { getSnapshot(): ActorSnapshot<TContext> }
+      // which matches our typedActor type exactly
+      if (!this.messageHandler) {
+        return undefined;
+      }
+
+      const result = await this.messageHandler({
+        message: params.message,
+        actor: typedActor, // This should now preserve TContext type
+        dependencies: params.dependencies,
+      });
+
+      // Convert OTPMessageHandler result to RuntimeMessageHandler result
+      // OTPMessageHandler can return ActorHandlerResult, MessagePlan, void, or Promise variants
+      // RuntimeMessageHandler expects the same types, so we can return as-is
+      return result as
+        | import('./otp-types.js').ActorHandlerResult<TContext, unknown>
+        | import('./message-plan.js').MessagePlan<TEmitted>
+        | undefined;
+    };
+
+    // Use the OTP-style behavior creation
+    const behavior = createActorBehaviorFromConfig<TMessage, TEmitted, TContext, TEmitted>({
       context: this.context,
-      onMessage: handler,
+      onMessage: runtimeHandler as import('./otp-types.js').RuntimeMessageHandler<
+        TMessage,
+        TEmitted,
+        TContext
+      >,
+      onStart: this.startHandler,
+      onStop: this.stopHandler,
     });
+
+    // Add phantom type for spawn() inference (Research Pattern #4)
+    // This allows spawn() to extract TContext from the behavior
+    (behavior as { __contextType?: TContext }).__contextType = undefined as TContext;
+    return behavior as ActorBehavior<TMessage, TEmitted> & { __contextType: TContext };
+  }
+
+  toActorBehavior(): ActorBehavior<TMessage, TEmitted> {
+    return this.build();
   }
 }
 
 /**
- * Machine-based behavior builder supporting OTP patterns with smart defaults
- * Only provides .onMessage() method after .withMachine()
+ * Machine-based behavior builder supporting XState integration
+ * Can be used directly with spawn() - no .build() required!
  */
 export class MachineBehaviorBuilder<TMessage = ActorMessage, TEmitted = ActorMessage> {
   constructor(private readonly machine: AnyStateMachine) {}
@@ -396,10 +479,182 @@ export class MachineBehaviorBuilder<TMessage = ActorMessage, TEmitted = ActorMes
   onMessage(
     handler: OTPMessageHandler<TMessage, unknown, unknown>
   ): ActorBehavior<TMessage, TEmitted> {
-    return createActorBehaviorFromConfig({
-      configType: 'machine',
+    // Machine handlers already work with unknown context, so we can use them directly
+    // But we still need to convert to RuntimeMessageHandler
+    const runtimeHandler: import('./otp-types.js').RuntimeMessageHandler<
+      TMessage,
+      TEmitted,
+      unknown
+    > = handler;
+
+    return createActorBehaviorFromConfig<TMessage, TEmitted, unknown, TEmitted>({
       machine: this.machine,
-      onMessage: handler,
+      onMessage: runtimeHandler,
+    });
+  }
+}
+
+/**
+ * Template-based behavior builder supporting template integration (NEW - TASK 2.1.1)
+ * Follows the same pattern as ContextBehaviorBuilder and MachineBehaviorBuilder
+ */
+export class TemplateBehaviorBuilder<TMessage = ActorMessage, TEmitted = ActorMessage> {
+  constructor(private readonly template: UniversalTemplate) {}
+
+  /**
+   * Add context after template definition
+   * Allows: defineActor().withTemplate().withContext().onMessage()
+   */
+  withContext<TContext>(
+    initialContext: TContext
+  ): TemplateContextBehaviorBuilder<TMessage, TEmitted, TContext> {
+    return new TemplateContextBehaviorBuilder<TMessage, TEmitted, TContext>(
+      this.template,
+      initialContext
+    );
+  }
+
+  /**
+   * Add machine after template definition
+   * Allows: defineActor().withTemplate().withMachine().onMessage()
+   */
+  withMachine(machine: AnyStateMachine): TemplateMachineBehaviorBuilder<TMessage, TEmitted> {
+    return new TemplateMachineBehaviorBuilder<TMessage, TEmitted>(this.template, machine);
+  }
+
+  /**
+   * Define message handler directly after template
+   * Allows: defineActor().withTemplate().onMessage()
+   */
+  onMessage(
+    handler: OTPMessageHandler<TMessage, unknown, unknown, TEmitted>
+  ): ActorBehavior<TMessage, TEmitted> {
+    // Convert to RuntimeMessageHandler
+    const runtimeHandler: import('./otp-types.js').RuntimeMessageHandler<
+      TMessage,
+      TEmitted,
+      unknown
+    > = handler;
+
+    return createActorBehaviorFromConfig<TMessage, TEmitted, unknown, TEmitted>({
+      template: this.template,
+      onMessage: runtimeHandler,
+    });
+  }
+}
+
+/**
+ * Combined template + context behavior builder (NEW - TASK 2.1.1)
+ */
+export class TemplateContextBehaviorBuilder<
+  TMessage = ActorMessage,
+  TEmitted = ActorMessage,
+  TContext = unknown,
+> {
+  constructor(
+    private readonly template: UniversalTemplate,
+    private readonly context: TContext
+  ) {}
+
+  onMessage(
+    handler: OTPMessageHandler<TMessage, TContext, TContext, TEmitted>
+  ): ActorBehavior<TMessage, TEmitted> {
+    // Create a runtime adapter that converts typed handler to runtime handler
+    const runtimeHandler = async (params: {
+      readonly message: TMessage;
+      readonly actor: ActorInstance;
+      readonly dependencies: import('./actor-system.js').ActorDependencies;
+    }) => {
+      // Create a typed actor wrapper for the handler
+      const typedActor: ActorInstance & { getSnapshot(): ActorSnapshot<TContext> } = {
+        ...params.actor,
+        getSnapshot: () => {
+          const snapshot = params.actor.getSnapshot();
+          // At runtime, we know the context is TContext
+          // This is safe because we control the context through the builder
+          return {
+            ...snapshot,
+            context: snapshot.context as TContext,
+          };
+        },
+      };
+
+      // Call the typed handler with the typed actor
+      const result = await handler({
+        message: params.message,
+        actor: typedActor,
+        dependencies: params.dependencies,
+      });
+
+      // Handle the result based on its type
+      if (result === undefined || result === null) {
+        return undefined;
+      }
+
+      // Check if it's an ActorHandlerResult
+      if (
+        typeof result === 'object' &&
+        ('context' in result || 'reply' in result || 'behavior' in result || 'emit' in result)
+      ) {
+        // Convert typed ActorHandlerResult to runtime ActorHandlerResult
+        const handlerResult = result as import('./otp-types.js').ActorHandlerResult<
+          TContext,
+          TContext
+        >;
+        return {
+          context: handlerResult.context,
+          reply: handlerResult.reply,
+          behavior: handlerResult.behavior,
+          emit: handlerResult.emit,
+        } as import('./otp-types.js').ActorHandlerResult<unknown, unknown>;
+      }
+
+      // Otherwise it's a MessagePlan
+      return result as import('./message-plan.js').MessagePlan<TEmitted>;
+    };
+
+    // Type the handler to satisfy RuntimeMessageHandler requirements
+    const typedRuntimeHandler: import('./otp-types.js').RuntimeMessageHandler<
+      TMessage,
+      TEmitted,
+      TContext
+    > = runtimeHandler as import('./otp-types.js').RuntimeMessageHandler<
+      TMessage,
+      TEmitted,
+      TContext
+    >;
+
+    return createActorBehaviorFromConfig<TMessage, TEmitted, TContext, TEmitted>({
+      template: this.template,
+      context: this.context,
+      onMessage: typedRuntimeHandler,
+    });
+  }
+}
+
+/**
+ * Combined template + machine behavior builder (NEW - TASK 2.1.1)
+ */
+export class TemplateMachineBehaviorBuilder<TMessage = ActorMessage, TEmitted = ActorMessage> {
+  constructor(
+    private readonly template: UniversalTemplate,
+    private readonly machine: AnyStateMachine
+  ) {}
+
+  onMessage(
+    handler: OTPMessageHandler<TMessage, unknown, unknown, TEmitted>
+  ): ActorBehavior<TMessage, TEmitted> {
+    // Convert to RuntimeMessageHandler
+    const runtimeHandler: import('./otp-types.js').RuntimeMessageHandler<
+      TMessage,
+      TEmitted,
+      unknown
+    > = handler;
+
+    return createActorBehaviorFromConfig<TMessage, TEmitted, unknown, TEmitted>({
+      template: this.template,
+      machine: this.machine,
+      onMessage: runtimeHandler,
     });
   }
 }
@@ -407,60 +662,115 @@ export class MachineBehaviorBuilder<TMessage = ActorMessage, TEmitted = ActorMes
 /**
  * Helper function to create ActorBehavior from builder config
  * This bridges the fluent builder API with the existing behavior system with OTP patterns
+ *
+ * Uses feature flags instead of combinatorial config types for simplicity:
+ * - context?: present = has context
+ * - machine?: present = has machine
+ * - template?: present = has template
+ *
+ * Note: context and machine are mutually exclusive (enforced by builder types)
  */
-function createActorBehaviorFromConfig<TMessage, TEmitted>(config: {
-  configType: 'context' | 'machine';
-  context?: unknown;
+function createActorBehaviorFromConfig<
+  TMessage,
+  TEmitted,
+  TContext = unknown,
+  TDomainEvent = TEmitted,
+>(config: {
+  context?: TContext;
   machine?: AnyStateMachine;
-  onMessage: OTPMessageHandler<TMessage, unknown, unknown>;
+  template?: UniversalTemplate;
+  onMessage: import('./otp-types.js').RuntimeMessageHandler<TMessage, TDomainEvent, TContext>;
+  onStart?: (params: {
+    readonly actor: ActorInstance;
+    readonly dependencies: ActorDependencies;
+  }) => void | Promise<void>;
+  onStop?: (params: {
+    readonly actor: ActorInstance;
+    readonly dependencies: ActorDependencies;
+  }) => void | Promise<void>;
 }): ActorBehavior<TMessage, TEmitted> {
+  const hasContext = config.context !== undefined;
+  const hasMachine = config.machine !== undefined;
+  const hasTemplate = config.template !== undefined;
+
   log.debug('Creating ActorBehavior from fluent builder config', {
-    configType: config.configType,
-    hasContext: config.context !== undefined,
-    hasMachine: config.machine !== undefined,
+    hasContext,
+    hasMachine,
+    hasTemplate,
   });
 
-  return {
+  // Validate mutual exclusivity (should never happen due to type system, but good safeguard)
+  if (hasContext && hasMachine) {
+    throw new Error('Invalid configuration: context and machine are mutually exclusive');
+  }
+
+  const behavior: ActorBehavior<TMessage, TEmitted> = {
     // Add context if provided
-    context: config.context as import('./actor-system.js').JsonValue | undefined,
+    context: config.context as JsonValue | undefined,
     // Convert OTP message handler to standard ActorBehavior onMessage
     onMessage: async (params) => {
       try {
         log.debug('Processing OTP message with enhanced processor', {
           messageType: (params.message as { type?: string })?.type || 'unknown',
-          configType: config.configType,
+          hasContext,
+          hasMachine,
+          hasTemplate,
           actorId: params.dependencies.actorId,
         });
 
-        // Call the OTP message handler
+        // Execute OTP message handler
         const result = await config.onMessage({
-          message: params.message,
-          machine: params.machine,
+          message: params.message as TMessage,
+          actor: params.actor,
           dependencies: params.dependencies,
         });
 
-        console.log('🔍 OTP DEBUG: Handler result:', result);
-        console.log('🔍 OTP DEBUG: isActorHandlerResult check:', isActorHandlerResult(result));
+        log.debug('🔍 OTP DEBUG: Message handler result', {
+          result,
+          resultType: typeof result,
+          isObject: result && typeof result === 'object',
+          hasContextProperty: result && typeof result === 'object' && 'context' in result,
+          actorId: params.dependencies.actorId,
+        });
 
-        // Handle OTP result patterns with enhanced processor
-        if (isActorHandlerResult(result)) {
-          console.log('🔍 OTP DEBUG: Processing ActorHandlerResult...');
-          // Import OTP processor dynamically to avoid circular dependencies
+        // Handle OTP results (context updates, effects, responses)
+        const isOTPResult =
+          result &&
+          typeof result === 'object' &&
+          ('context' in result ||
+            'reply' in result ||
+            'response' in result ||
+            'emit' in result ||
+            'effects' in result ||
+            'behavior' in result);
+
+        if (isOTPResult) {
+          log.debug('🔍 OTP DEBUG: OTP result detected', {
+            hasContext: 'context' in result,
+            hasResponse: 'response' in result,
+            hasBehavior: 'behavior' in result,
+            hasEffects: 'effects' in result,
+            hasEmit: 'emit' in result,
+            resultKeys: Object.keys(result),
+            actorId: params.dependencies.actorId,
+          });
+
+          // Import OTP processor dynamically for efficient loading
           const { OTPMessagePlanProcessor } = await import('./otp-message-plan-processor.js');
           const otpProcessor = new OTPMessagePlanProcessor();
 
           // Type assertion after successful type guard check
           const otpResult = result as import('./otp-types.js').ActorHandlerResult<unknown, unknown>;
 
-          // Process smart defaults
+          // Process smart defaults (using existing logic)
           const messageAnalysis = analyzeMessage(params.message as ActorMessage);
           const smartDefaults = processSmartDefaults(otpResult, messageAnalysis);
 
           log.debug('OTP result with smart defaults', {
             hasContext: otpResult.context !== undefined,
-            hasResponse: otpResult.response !== undefined,
+            hasReply: otpResult.reply !== undefined,
             hasBehavior: otpResult.behavior !== undefined,
-            hasEffects: otpResult.effects !== undefined,
+            hasEmit: otpResult.emit !== undefined,
             responseSource: smartDefaults.responseSource,
             shouldRespond: smartDefaults.shouldRespond,
             actorId: params.dependencies.actorId,
@@ -469,90 +779,113 @@ function createActorBehaviorFromConfig<TMessage, TEmitted>(config: {
           // Create enhanced result with smart defaults applied
           const enhancedResult: import('./otp-types.js').ActorHandlerResult<unknown, unknown> = {
             context: otpResult.context,
-            response: smartDefaults.shouldRespond
-              ? smartDefaults.finalResponse
-              : otpResult.response,
+            reply: smartDefaults.shouldRespond ? smartDefaults.finalResponse : otpResult.reply,
             behavior: otpResult.behavior,
-            effects: otpResult.effects,
+            // ✅ UNIFIED API DESIGN Phase 2.1: Preserve emit arrays
+            emit: otpResult.emit,
           };
 
           // Process OTP patterns (context updates, behavior switching, effects, responses)
           await otpProcessor.processOTPResult(
             enhancedResult,
             params.dependencies.actorId,
-            params.machine,
+            params.actor,
             params.dependencies,
-            (params.message as ActorMessage).correlationId,
+            (params.message as ActorMessage)._correlationId,
             (params.message as ActorMessage).type // Pass original message type for response compatibility
           );
+
+          log.debug('🔍 OTP DEBUG: OTP processor called successfully', {
+            actorId: params.dependencies.actorId,
+            messageType: (params.message as ActorMessage).type,
+          });
 
           // Return undefined - all processing handled by OTP processor
           return undefined;
         }
 
-        // Handle legacy MessagePlan returns (backward compatibility)
+        // Handle MessagePlan returns
         return result;
       } catch (error) {
         log.error('Error in OTP message handler', {
           error,
           actorId: params.dependencies.actorId,
           messageType: (params.message as { type?: string })?.type || 'unknown',
+          correlationId: (params.message as ActorMessage)._correlationId,
         });
+
+        // For ask patterns (messages with correlationId), send error as response
+        const correlationId = (params.message as ActorMessage)._correlationId;
+        if (correlationId) {
+          // Import OTP processor dynamically to send error response
+          const { OTPMessagePlanProcessor } = await import('./otp-message-plan-processor.js');
+          const otpProcessor = new OTPMessagePlanProcessor();
+
+          // Send error response
+          await otpProcessor.processOTPResult(
+            {
+              context: undefined, // Don't update context on error
+              reply: {
+                error: error instanceof Error ? error.message : 'Unknown error',
+                errorType: 'HANDLER_ERROR',
+              },
+              behavior: undefined,
+            },
+            params.dependencies.actorId,
+            params.actor,
+            params.dependencies,
+            correlationId,
+            'ERROR_RESPONSE' // Use ERROR_RESPONSE type for error responses
+          );
+
+          // Don't re-throw for ask patterns - we've handled it by sending error response
+          return undefined;
+        }
+
+        // Re-throw for non-ask patterns (normal send)
         throw error;
       }
     },
 
-    // Pass through lifecycle handlers (fluent builders don't support these yet)
-    onStart: undefined,
-    onStop: undefined,
+    // Pass through lifecycle handlers
+    onStart: config.onStart,
+    onStop: config.onStop,
   };
-}
 
-/**
- * Create an actor behavior using the new fluent builder pattern with OTP support
- *
- * @example Context-based Actor with Smart Defaults
- * ```typescript
- * const behavior = defineBehavior<CounterMessage>()
- *   .withContext({ count: 0 })
- *   .onMessage(({ message, machine, dependencies }) => {
- *     const context = machine.getSnapshot().context;
- *
- *     switch (message.type) {
- *       case 'INCREMENT':
- *         // ✅ Smart default: Auto-respond with state for ask patterns
- *         return { state: { ...context, count: context.count + 1 } };
- *
- *       case 'GET_COUNT':
- *         // ✅ Response-only: No state change
- *         return { response: context.count };
- *     }
- *   });
- * ```
- *
- * @example Machine-based Actor
- * ```typescript
- * const behavior = defineBehavior<UserMessage>()
- *   .withMachine(userStateMachine)
- *   .onMessage(({ message, machine, dependencies }) => {
- *     // Use XState machine for complex state management
- *     machine.send({ type: message.type, ...message.payload });
- *   });
- * ```
- */
-export function defineFluentBehavior<
-  TMessage = ActorMessage,
-  TEmitted = ActorMessage,
->(): BehaviorBuilderBase<TMessage, TEmitted> {
-  return {
-    withContext<TContext>(initialContext: TContext) {
-      return new ContextBehaviorBuilder<TMessage, TEmitted, TContext>(initialContext);
-    },
+  // Template integration (NEW - TASK 2.1.2)
+  if (hasTemplate && config.template) {
+    // Attach template as non-enumerable property using symbol-based approach
+    Object.defineProperty(behavior, ActorSymbols.TEMPLATE, {
+      value: config.template,
+      enumerable: false,
+      configurable: false,
+      writable: false,
+    });
 
-    withMachine(machine: AnyStateMachine) {
-      return new MachineBehaviorBuilder<TMessage, TEmitted>(machine);
-    },
-  };
+    // Add template rendering method to behavior
+    Object.defineProperty(behavior, 'renderTemplate', {
+      value: (context?: unknown) => {
+        // Use provided context, behavior context, or machine snapshot context
+        const renderContext = context || (behavior as { context?: unknown }).context || {};
+
+        if (!config.template) {
+          throw new Error('Template not available for rendering');
+        }
+
+        return renderTemplate(config.template, renderContext);
+      },
+      enumerable: false,
+      configurable: false,
+      writable: false,
+    });
+  }
+
+  // Register the machine with the enhanced registry system (symbol-based)
+  if (config.machine) {
+    registerMachineWithBehavior(behavior, config.machine);
+  }
+
+  return behavior;
 }
 
 // ============================================================================
@@ -574,14 +907,14 @@ export function defineFluentBehavior<
  * @example
  * ```typescript
  * // Pure actor behavior config
- * const behavior = defineBehavior({
+ * const behavior = defineActor({
  *   onMessage: async ({ message, machine, dependencies }) => {
  *     // Process message using machine state and dependencies
  *     const currentState = machine.getSnapshot();
  *
  *     if (message.type === 'INCREMENT') {
  *       // Send event to machine for state transition
- *       machine.send({ type: 'INCREMENT', value: message.payload?.value });
+ *       machine.send({ type: 'INCREMENT', value: message?.value });
  *
  *       // Return domain event for fan-out
  *       return { type: 'COUNTER_INCREMENTED', newValue: currentState.context.count + 1 };
@@ -592,115 +925,208 @@ export function defineFluentBehavior<
  * });
  *
  * // XState machine config
- * const xstateBehavior = defineBehavior({
+ * const xstateBehavior = defineActor({
  *   machine: counterMachine,
  *   input: { count: 0 }
  * });
  * ```
  */
-export function defineBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>(
-  config: CreateActorConfig<TMessage, TEmitted>
-): ActorBehavior<TMessage, TEmitted> {
-  // Handle XState actor configuration
-  if (isXStateConfig(config)) {
-    return createActorFromXState(config);
-  }
-
-  // Handle existing ActorBehavior configurations (pass through)
-  if (_isActorBehavior(config)) {
-    return config;
-  }
-
-  // Handle PureActorBehaviorConfig - convert to unified ActorBehavior
-  if (isPureActorBehaviorConfig(config)) {
-    const pureConfig = config as PureActorBehaviorConfig<TMessage, TEmitted>;
-
-    log.debug('Creating pure actor behavior from config', {
-      hasOnStart: pureConfig.onStart !== undefined,
-      hasOnStop: pureConfig.onStop !== undefined,
-      hasTypes: pureConfig.types !== undefined,
-    });
-
-    return {
-      // Include type definitions for compile-time validation
-      types: pureConfig.types,
-
-      // Pure message handler - no context parameter
-      onMessage: async (params) => {
-        const messageType = (params.message as { type?: string })?.type || 'unknown';
-
-        log.debug('Processing message in pure behavior', {
-          messageType,
-          hasMachine: params.machine !== undefined,
-          hasDependencies: params.dependencies !== undefined,
-        });
-
-        try {
-          // ✅ TYPE SAFETY: Use discriminator for proper type narrowing
-          if (pureConfig.configType === 'context') {
-            // Context-based actor configuration
-            const context = pureConfig.initialContext || ({} as Record<string, unknown>);
-
-            return await pureConfig.onMessage({
-              message: params.message,
-              machine: params.machine,
-              dependencies: params.dependencies,
-              context,
-            });
-          }
-
-          if (pureConfig.configType === 'machine') {
-            // Machine-based actor configuration
-            return await pureConfig.onMessage({
-              message: params.message,
-              machine: params.machine,
-              dependencies: params.dependencies,
-            });
-          }
-
-          // This should not happen with proper type guards, but add error for safety
-          throw new Error(
-            `Invalid actor configuration: Expected 'context' or 'machine' configType, got: ${
-              (pureConfig as { configType?: string }).configType || 'undefined'
-            }`
-          );
-        } catch (error) {
-          log.error('Error in message handler', { error, messageType });
-          throw error;
-        }
-      },
-
-      // Pure start handler
-      onStart: pureConfig.onStart ? createStartHandler(pureConfig.onStart) : undefined,
-
-      // Pure stop handler
-      onStop: pureConfig.onStop ? createStopHandler(pureConfig.onStop) : undefined,
-
-      // Pass through supervision strategy
-      supervisionStrategy: pureConfig.supervisionStrategy,
-    };
-  }
-
-  throw new Error('Invalid actor configuration provided to defineBehavior');
-}
+// CoordinatorMachineBuilder was removed - use unified-actor-builder.ts instead
 
 /**
- * Type helper for extracting message types from an actor definition
+ * Enhanced type utilities for research-based type inference system
+ * Implements patterns from docs/research/context-type-inference.md
  */
-export type ActorMessageType<T> = T extends ActorBehavior<infer M, unknown> ? M : never;
 
 /**
- * Type helper for extracting context type from an actor definition
+ * Extract context type from behavior builders (Research Pattern #3)
+ * Uses distributive conditional types to detect context type
  */
-export type ActorContextType<T> = T extends ActorBehavior<unknown, infer C> ? C : never;
+export type ActorContextType<T> = T extends ContextBehaviorBuilder<
+  unknown,
+  unknown,
+  infer C,
+  unknown
+>
+  ? C
+  : T extends { __contextType: infer C }
+    ? C
+    : T extends ActorBehavior<unknown, unknown>
+      ? unknown
+      : never;
 
 /**
- * Type helper for extracting emitted event types from an actor definition
+ * Extract message type from behavior builders and behaviors
  */
-export type ActorEmittedType<T> = T extends ActorBehavior<unknown, infer E> ? E : never;
+export type ActorMessageType<T> = T extends ContextBehaviorBuilder<
+  infer M,
+  unknown,
+  unknown,
+  unknown
+>
+  ? M
+  : T extends { __messageType: infer M }
+    ? M
+    : T extends ActorBehavior<infer M, unknown>
+      ? M
+      : ActorMessage;
+
+/**
+ * Extract emitted type from behavior builders and behaviors
+ */
+export type ActorEmittedType<T> = T extends ContextBehaviorBuilder<
+  unknown,
+  infer E,
+  unknown,
+  unknown
+>
+  ? E
+  : T extends { __emittedType: infer E }
+    ? E
+    : T extends ActorBehavior<unknown, infer E>
+      ? E
+      : ActorMessage;
+
+/**
+ * Behavior detection utility for spawn method overloading
+ */
+export type IsBehaviorBuilder<T> = T extends ContextBehaviorBuilder<
+  unknown,
+  unknown,
+  unknown,
+  unknown
+>
+  ? true
+  : T extends { __behaviorBuilder: true }
+    ? true
+    : false;
+
+/**
+ * Helper to detect if a type is a context behavior specifically
+ */
+export type IsContextBehavior<T> = T extends ContextBehaviorBuilder<
+  unknown,
+  unknown,
+  infer C,
+  unknown
+>
+  ? C extends never
+    ? false
+    : true
+  : false;
 
 // ============================================================================
-// UTILITY FUNCTIONS
+// UNIFIED ACTOR INTERFACE (RESEARCH-VALIDATED)
+// ============================================================================
+
+/**
+ * Enhanced behavior inference supporting simplified operation-based typing (TASK 2.1.3)
+ * Provides compile-time type safety for message handling and response generation
+ */
+export type ActorRefFromBehavior<B extends ActorBehavior<unknown, unknown>> =
+  B extends ActorBehavior<infer TMessage, unknown>
+    ? ActorRef<unknown, TMessage extends ActorMessage ? TMessage : ActorMessage>
+    : never;
+
+/**
+ * Simplified operation-based typing - eliminates redundancy (IMPROVED APPROACH)
+ * Single source of truth for request/response pairs
+ *
+ * @example
+ * ```typescript
+ * interface UserOperations {
+ *   'CREATE_USER': {
+ *     request: { name: string; email: string };
+ *     response: { user: User; success: boolean };
+ *   };
+ *   'UPDATE_USER': {
+ *     request: { id: string; changes: Partial<User> };
+ *     response: { user: User };
+ *   };
+ * }
+ *
+ * type UserMessage = RequestFromOperations<UserOperations>;
+ * type UserResponse = ResponseFromOperations<UserOperations>;
+ * ```
+ */
+export type OperationMap = Record<
+  string,
+  {
+    request: unknown;
+    response: unknown;
+  }
+>;
+
+/**
+ * Extract request message types from operation map (SIMPLIFIED APPROACH)
+ */
+export type RequestFromOperations<TOperations extends OperationMap> = {
+  [K in keyof TOperations]: TOperations[K]['request'] extends void
+    ? { type: K }
+    : { type: K } & TOperations[K]['request']; // Flat structure
+}[keyof TOperations];
+
+/**
+ * Extract response types from operation map (SIMPLIFIED APPROACH)
+ */
+export type ResponseFromOperations<TOperations extends OperationMap> = {
+  [K in keyof TOperations]: TOperations[K]['response'];
+}[keyof TOperations];
+
+/**
+ * Type-safe ask pattern using operation map (SIMPLIFIED APPROACH)
+ */
+export type TypeSafeOperationActor<TOperations extends OperationMap> = {
+  send: <K extends keyof TOperations>(
+    messageType: K,
+    ...args: TOperations[K]['request'] extends void ? [] : [data: TOperations[K]['request']]
+  ) => Promise<void>;
+
+  ask: <K extends keyof TOperations>(
+    messageType: K,
+    ...args: TOperations[K]['request'] extends void ? [] : [data: TOperations[K]['request']]
+  ) => Promise<TOperations[K]['response']>;
+};
+
+/**
+ * Advanced type inference for three-pattern builder system (Phase 2.1 Task 2.2)
+ * Maintains type safety throughout the entire builder chain
+ */
+export type InferMessageType<T> = T extends BehaviorBuilderBase<infer TMessage>
+  ? TMessage
+  : T extends OTPContextBuilder<infer TMessage, unknown>
+    ? TMessage
+    : T extends XStateMachineBuilder<infer TMessage>
+      ? TMessage
+      : T extends PureRoutingBuilder<infer TMessage>
+        ? TMessage
+        : never;
+
+/**
+ * Infer behavior types from three-pattern builders (Phase 2.1 Task 2.2)
+ */
+export type InferBehaviorType<T> = T extends PureRoutingBehavior<infer TMessage>
+  ? PureRoutingBehavior<TMessage>
+  : T extends OTPContextBehavior<infer TMessage, infer TContext>
+    ? OTPContextBehavior<TMessage, TContext>
+    : T extends XStateMachineBehavior<infer TMessage>
+      ? XStateMachineBehavior<TMessage>
+      : never;
+
+/**
+ * Comprehensive behavior type extraction supporting all builder patterns (TASK 2.1.3)
+ * Provides unified type inference across the entire fluent API
+ */
+export type BehaviorTypeInference<T> = T extends ActorBehavior<infer TMessage, infer TEmitted>
+  ? {
+      message: TMessage;
+      emitted: TEmitted;
+      actor: ActorRef<unknown, TMessage extends ActorMessage ? TMessage : ActorMessage>;
+    }
+  : never;
+
+// ============================================================================
+// UTILITY FUNCTIONS (RESTORED)
 // ============================================================================
 
 /**
@@ -730,345 +1156,169 @@ export function validateMessagePlan(value: unknown): value is MessagePlan {
 }
 
 /**
- * Create a behavior from a simple message handler function (convenience)
- *
- * @example
- * ```typescript
- * const behavior = createSimpleBehavior(async ({ message, machine }) => {
- *   if (message.type === 'PING') {
- *     return { type: 'PONG' };
- *   }
- * });
- * ```
+ * Pure routing builder - stateless message transformation
  */
-export function createSimpleBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>(
-  handler: PureMessageHandlerWithContext<TMessage, TEmitted>
-): ActorBehavior<TMessage, TEmitted> {
-  return defineBehavior({
-    configType: 'context',
-    onMessage: handler,
-  });
-}
+export class PureRoutingBuilder<TMessage> {
+  constructor(private template?: UniversalTemplate) {}
 
-/**
- * @deprecated Legacy support - will be removed in future versions
- * Use defineBehavior with PureActorBehaviorConfig instead
- */
-export function createLegacyBehavior(): never {
-  throw new Error(
-    'Legacy behavior creation is no longer supported. Use defineBehavior with PureActorBehaviorConfig instead. ' +
-      'See migration guide for converting context-based behaviors to pure actor model.'
-  );
-}
-
-// Default actor system for spawnActor
-let defaultSystem: ActorSystem | null = null;
-
-/**
- * Get or create the default actor system
- */
-function getDefaultSystem(): ActorSystem {
-  if (!defaultSystem) {
-    defaultSystem = createActorSystem({
-      nodeAddress: 'default',
-      debug: false,
-    });
-    defaultSystem.start();
-  }
-  return defaultSystem;
-}
-
-/**
- * Helper to convert BasicMessage to ActorMessage
- */
-function toActorMessage(input: BasicMessage): ActorMessage {
-  return {
-    type: input.type,
-    payload: input.payload ?? null,
-    correlationId: input.correlationId,
-    timestamp: input.timestamp ?? Date.now(),
-    version: input.version ?? '1.0.0',
-  };
-}
-
-/**
- * Actor instance interface for XState compatibility
- */
-export interface ActorInstance {
-  send(event: BasicMessage): void;
-  ask<T = unknown>(message: BasicMessage, timeout?: number): Promise<T>;
-  start(): void;
-  stop(): Promise<void>;
-  subscribe(eventType: string, handler: (event: ActorMessage) => void): () => void;
-}
-
-/**
- * Spawn an actor instance directly (convenience function)
- *
- * This function provides a migration-friendly API that returns
- * an actor instance immediately, similar to XState's createActor.
- * It automatically creates and manages a default actor system.
- *
- * For advanced use cases requiring supervision, clustering, or
- * custom actor systems, use `defineBehavior` with `ActorSystem.spawn`.
- *
- * @param config - Actor configuration
- * @returns Actor instance with send/ask/start/stop methods
- *
- * @example
- * ```typescript
- * // XState machine - returns immediately usable actor
- * const gitActor = spawnActor({
- *   machine: gitMachine,
- *   input: { baseDir: './' },
- *   autoStart: true  // Auto-start by default
- * });
- *
- * gitActor.send({ type: 'FETCH' });
- * const result = await gitActor.ask({ type: 'GET_STATUS' });
- *
- * // Behavior-based actor
- * const counter = spawnActor({
- *   context: { count: 0 },
- *   onMessage: ({ message, context }) => {
- *     if (message.type === 'INCREMENT') {
- *       return {
- *         context: { count: context.count + 1 },
- *         emit: { type: 'COUNTED', count: context.count + 1 }
- *       };
- *     }
- *     return { context };
- *   }
- * });
- * ```
- */
-export function spawnActor<TMessage = ActorMessage, TEmitted = ActorMessage>(
-  config: CreateActorConfig<TMessage, TEmitted> & {
-    autoStart?: boolean;
-  }
-): ActorInstance {
-  const system = getDefaultSystem();
-
-  // Special handling for XState machines
-  if ('machine' in config && config.machine) {
-    const xstateConfig = config as XStateActorConfig;
-
-    // Use createActorRef for unified event bridge support
-    const actorRef = createActorRef(xstateConfig.machine, {
-      input: xstateConfig.input,
-      id: xstateConfig.id,
-    });
-
-    // Auto-start if requested (default true)
-    const autoStart = config.autoStart !== false;
-    if (autoStart) {
-      actorRef.start();
-    }
-
-    // Return ActorInstance-compatible interface wrapping the unified ActorRef
+  onMessage(handler: PureRoutingHandler<TMessage>): PureRoutingBehavior<TMessage> {
     return {
-      send: (event: BasicMessage) => {
-        // Convert BasicMessage to the event format expected by ActorRef
-        actorRef.send(event);
-      },
-      ask: async <T = unknown>(message: BasicMessage, timeout?: number): Promise<T> => {
-        return actorRef.ask(message, { timeout });
-      },
-      start: () => actorRef.start(),
-      stop: async () => actorRef.stop(),
-      subscribe: (eventType: string, handler: (event: ActorMessage) => void) => {
-        // Wrap handler with type guard for type safety
-        const safeHandler = (event: unknown) => {
-          // Type guard to ensure event is ActorMessage
-          if (isActorMessage(event)) {
-            handler(event);
-          } else {
-            console.warn('Received non-ActorMessage event:', event);
-          }
-        };
-        return actorRef.subscribe(eventType, safeHandler);
-      },
+      type: 'stateless',
+      onMessage: handler,
+      template: this.template,
     };
   }
 
-  // For behavior-based actors, use the actor system with deferred spawn
-  const definition = defineBehavior(config);
-  let pidPromise: Promise<ActorPID> | null = null;
-  let resolvedPid: ActorPID | null = null;
-
-  // Lazy spawn function
-  const ensureSpawned = async (): Promise<ActorPID> => {
-    if (!pidPromise) {
-      pidPromise = system.spawn(definition, {
-        id: 'id' in config && typeof config.id === 'string' ? config.id : undefined,
-      });
-      resolvedPid = await pidPromise;
-    }
-    return resolvedPid || (await pidPromise);
-  };
-
-  // Return immediately with deferred execution
-  return {
-    send: (event: BasicMessage) => {
-      // Need to return void but ensure the promise chain completes
-      void ensureSpawned()
-        .then((pid) => pid.send(toActorMessage(event)))
-        .catch((err) => {
-          console.error('Failed to send message:', err);
-        });
-    },
-    ask: <T = unknown>(message: BasicMessage, timeout?: number) => {
-      return ensureSpawned().then((pid) => pid.ask<T>(toActorMessage(message), timeout));
-    },
-    start: () => {
-      // Trigger spawn if not already done
-      ensureSpawned().catch((err) => {
-        console.error('Failed to start actor:', err);
-      });
-    },
-    stop: async () => {
-      const pid = await ensureSpawned();
-      await pid.stop();
-    },
-    subscribe: (eventType: string, handler: (event: ActorMessage) => void) => {
-      // For subscriptions, we need to handle async
-      let unsubscribe: (() => void) | null = null;
-
-      ensureSpawned()
-        .then((pid) => {
-          unsubscribe = pid.subscribe(eventType, handler);
-        })
-        .catch((err: unknown) => {
-          console.error('Failed to subscribe:', err);
-        });
-
-      // Return a function that will unsubscribe when available
-      return () => {
-        if (unsubscribe) unsubscribe();
-      };
-    },
-  };
+  withTemplate(template: UniversalTemplate): PureRoutingBuilder<TMessage> {
+    return new PureRoutingBuilder<TMessage>(template);
+  }
 }
 
 /**
- * Create an actor instance directly from a configuration
- * This is the main API for creating actors, similar to XState's createActor
- *
- * @example
- * ```typescript
- * const counterActor = createActor<ActorMessage, { count: number }, CounterEvent>({
- *   context: { count: 0 },
- *   onMessage: async ({ message, context }) => {
- *     // Handle message and return new context with optional events
- *   }
- * });
- * ```
+ * OTP-style context builder with mutual exclusivity enforcement
  */
-export function createActor<TMessage = ActorMessage, TEmitted = ActorMessage>(
-  config: CreateActorConfig<TMessage, TEmitted>
-): ActorInstance {
-  return spawnActor({ ...config, autoStart: true });
-}
+export class OTPContextBuilder<TMessage, TContext> {
+  constructor(
+    private initialContext: TContext,
+    private template?: UniversalTemplate
+  ) {}
 
-/**
- * Create a type-safe wrapper around an existing actor
- * This provides compile-time type safety for message types and responses
- * with immediate error detection at call sites for invalid message types.
- *
- * @example
- * ```typescript
- * interface GitMessages extends MessageMap {
- *   'GET_STATUS': { isGitRepo: boolean; currentBranch?: string };
- *   'COMMIT_CHANGES': { commitHash: string; message: string };
- * }
- *
- * const gitActor = createActor(gitBehavior);
- * const typeSafeGitActor = asTypeSafeActor<GitMessages>(gitActor);
- *
- * // ✅ Valid usage - TypeScript provides proper inference
- * const status = await typeSafeGitActor.ask({ type: 'GET_STATUS' });
- * // TypeScript knows status has { isGitRepo: boolean; currentBranch?: string }
- *
- * // ❌ Invalid usage - immediate TypeScript error at call site
- * const invalid = await typeSafeGitActor.ask({ type: 'INVALID_TYPE' });
- * // Error: Argument of type '{ type: "INVALID_TYPE"; }' is not assignable to parameter of type 'never'
- * ```
- */
-export function asTypeSafeActor<T extends MessageMap>(actor: ActorInstance): TypeSafeActor<T> {
-  /**
-   * Type guard to validate MessageUnion at runtime
-   * Provides additional safety beyond compile-time checks
-   */
-  function isValidMessage(message: unknown): message is MessageUnion<T> {
-    return (
-      message !== null &&
-      typeof message === 'object' &&
-      'type' in message &&
-      typeof (message as { type: unknown }).type === 'string'
-    );
+  onMessage(
+    handler: OTPContextHandler<TMessage, TContext>
+  ): OTPContextBehavior<TMessage, TContext> {
+    return {
+      type: 'otp',
+      onMessage: handler,
+      initialContext: this.initialContext,
+      template: this.template,
+    };
   }
 
-  return {
-    /**
-     * Send a message using discriminated union constraint
-     * ✅ FIXED: No type casting needed - TypeScript ensures validity at compile time
-     */
-    send: (message: MessageUnion<T>) => {
-      // Runtime validation for extra safety
-      if (!isValidMessage(message)) {
-        throw new Error(`Invalid message format: Expected MessageUnion<T>, got ${typeof message}`);
-      }
+  withTemplate(template: UniversalTemplate): OTPContextBuilder<TMessage, TContext> {
+    return new OTPContextBuilder<TMessage, TContext>(this.initialContext, template);
+  }
 
-      // Send to underlying actor - all properties are guaranteed to exist by MessageUnion<T>
-      actor.send({
-        type: message.type as string, // MessageUnion ensures this is always a string
-        payload: message.payload,
-        correlationId: message.correlationId,
-        timestamp: message.timestamp,
-        version: message.version,
-      });
-    },
-
-    /**
-     * Ask with proper type inference using intersection types
-     * ✅ FIXED: The & { type: K } ensures we can infer the specific return type T[K]
-     */
-    ask: <K extends keyof T>(message: MessageUnion<T> & { type: K }): Promise<T[K]> => {
-      // Runtime validation for extra safety
-      if (!isValidMessage(message)) {
-        throw new Error(`Invalid message format: Expected MessageUnion<T>, got ${typeof message}`);
-      }
-
-      // Ask underlying actor WITHOUT explicit generic - let TypeScript infer
-      // The return type Promise<T[K]> is guaranteed by our interface constraint
-      return actor.ask({
-        type: message.type as string, // MessageUnion ensures this is always a string
-        payload: message.payload,
-        correlationId: message.correlationId,
-        timestamp: message.timestamp,
-        version: message.version,
-      }) as Promise<T[K]>;
-    },
-
-    // Pass through other methods unchanged
-    start: () => actor.start(),
-    stop: () => actor.stop(),
-    subscribe: (eventType: string, handler: (event: ActorMessage) => void) =>
-      actor.subscribe(eventType, handler),
-  };
+  /**
+   * Mutual exclusivity enforcement - withMachine() not allowed after withContext()
+   */
+  withMachine(_machine: AnyStateMachine): never {
+    throw new Error(
+      'Mutual exclusivity violation: withMachine() cannot be used after withContext(). ' +
+        'Use either withContext() for OTP-style state management OR withMachine() for XState management, not both.'
+    );
+  }
 }
 
-// Type guard function for ActorMessage validation
-function isActorMessage(value: unknown): value is ActorMessage {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    'type' in value &&
-    typeof (value as { type: unknown }).type === 'string' &&
-    'payload' in value &&
-    'timestamp' in value &&
-    typeof (value as { timestamp: unknown }).timestamp === 'number' &&
-    'version' in value &&
-    typeof (value as { version: unknown }).version === 'string'
-  );
+/**
+ * XState machine builder with mutual exclusivity enforcement
+ */
+export class XStateMachineBuilder<TMessage> {
+  constructor(
+    private machine: AnyStateMachine,
+    private template?: UniversalTemplate
+  ) {}
+
+  onMessage(handler: XStateMachineHandler<TMessage>): XStateMachineBehavior<TMessage> {
+    return {
+      type: 'xstate',
+      onMessage: handler,
+      machine: this.machine,
+      template: this.template,
+    };
+  }
+
+  withTemplate(template: UniversalTemplate): XStateMachineBuilder<TMessage> {
+    return new XStateMachineBuilder<TMessage>(this.machine, template);
+  }
+
+  /**
+   * Mutual exclusivity enforcement - withContext() not allowed after withMachine()
+   */
+  withContext<TContext>(_initialContext: TContext): never {
+    throw new Error(
+      'Mutual exclusivity violation: withContext() cannot be used after withMachine(). ' +
+        'Use either withMachine() for XState state management OR withContext() for OTP-style management, not both.'
+    );
+  }
+}
+
+// ============================================================================
+// BEHAVIOR BRIDGE (Phase 2.1 Task 2.2) - SIMPLIFIED
+// ============================================================================
+
+/**
+ * Union type for all supported behavior patterns
+ */
+export type UnifiedBehavior<TMessage> =
+  | PureRoutingBehavior<TMessage>
+  | OTPContextBehavior<TMessage, unknown>
+  | XStateMachineBehavior<TMessage>
+  | ActorBehavior<TMessage, unknown>;
+
+/**
+ * Type guard to check if a behavior is OTP-style
+ */
+export function isOTPBehavior<TMessage>(
+  behavior: UnifiedBehavior<TMessage>
+): behavior is OTPContextBehavior<TMessage, unknown> {
+  return 'type' in behavior && behavior.type === 'otp';
+}
+
+/**
+ * Type guard to check if a behavior is pure routing
+ */
+export function isPureRoutingBehavior<TMessage>(
+  behavior: UnifiedBehavior<TMessage>
+): behavior is PureRoutingBehavior<TMessage> {
+  return 'type' in behavior && behavior.type === 'stateless';
+}
+
+/**
+ * Type guard to check if a behavior is XState-style
+ */
+export function isXStateBehavior<TMessage>(
+  behavior: UnifiedBehavior<TMessage>
+): behavior is XStateMachineBehavior<TMessage> {
+  return 'type' in behavior && behavior.type === 'xstate';
+}
+
+// ============================================================================
+// 🎯 PUBLIC API - Actor Creation Functions
+// ============================================================================
+
+/**
+ * Minimal UniversalTemplate interface to satisfy type references
+ * TODO: Restore full template system after foundation stability
+ */
+export interface UniversalTemplate {
+  readonly strings: ReadonlyArray<string>;
+  readonly values: ReadonlyArray<unknown>;
+}
+
+/**
+ * Minimal template function for compatibility
+ */
+export function template(strings: TemplateStringsArray, ...values: unknown[]): UniversalTemplate {
+  return { strings: [...strings], values };
+}
+
+/**
+ * Minimal renderTemplate function for compatibility
+ */
+export function renderTemplate<TContext = unknown>(
+  template: UniversalTemplate,
+  _context: TContext
+): string {
+  return template.strings.join('');
+}
+
+// ActorInstance is imported from actor-instance.js
+
+/**
+ * Create actor function - creates an ActorBehavior that can be spawned
+ */
+export function createActor<TMessage extends ActorMessage = ActorMessage>(
+  config: ActorBehavior<TMessage>
+): ActorBehavior<TMessage> {
+  return config;
 }

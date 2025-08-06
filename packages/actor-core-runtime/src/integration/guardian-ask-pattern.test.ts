@@ -8,33 +8,10 @@
  * ✅ FRAMEWORK-STANDARD COMPLIANT: Zero `any` types, uses proper type guards
  */
 
-import { v4 as uuidv4 } from 'uuid';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ActorPID } from '../actor-system.js';
-import {
-  createGuardianActor,
-  type GuardianContext,
-  guardianBehavior,
-} from '../actor-system-guardian';
-
-// ============================================================================
-// TEST UTILITIES
-// ============================================================================
-
-function createTestContext(): GuardianContext {
-  return {
-    systemId: uuidv4(),
-    startTime: Date.now(),
-    actors: new Map(),
-    children: new Set(),
-    isShuttingDown: false,
-    messageCount: 0,
-  };
-}
-
-// ============================================================================
-// RESPONSE TYPE DEFINITIONS - Following FRAMEWORK-STANDARD
-// ============================================================================
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { ActorRef } from '../actor-ref.js';
+import { createGuardianActor } from '../actor-system-guardian.js';
+import { createActorSystem } from '../actor-system-impl.js';
 
 interface SystemInfoResponse {
   systemId: string;
@@ -193,42 +170,29 @@ function isHealthCheckResponse(value: unknown): value is HealthCheckResponse {
 // ============================================================================
 
 describe('Guardian Ask Pattern - Critical Fix Tests', () => {
-  let guardian: ActorPID;
-  let mockActorSystem: {
-    spawn: ReturnType<typeof vi.fn>;
-    stop: ReturnType<typeof vi.fn>;
-    send: ReturnType<typeof vi.fn>;
-  };
+  let guardian: ActorRef;
+  let system: ReturnType<typeof createActorSystem>;
 
   beforeEach(async () => {
-    // ✅ CRITICAL: Reset Guardian behavior context for test isolation
-    guardianBehavior.context = createTestContext();
+    // Create real actor system for integration tests
+    system = createActorSystem({
+      nodeAddress: 'test-node',
+    });
 
-    // Create mock actor system
-    mockActorSystem = {
-      spawn: vi.fn().mockResolvedValue({
-        address: { id: 'mock-actor', type: 'test', node: 'local', path: '/test/mock-actor' },
-        send: vi.fn(),
-        ask: vi.fn(),
-        stop: vi.fn(),
-        isAlive: vi.fn().mockResolvedValue(true),
-        getStats: vi.fn(),
-        subscribe: vi.fn(),
-      } satisfies ActorPID),
-      stop: vi.fn().mockResolvedValue(void 0),
-      send: vi.fn().mockResolvedValue(void 0),
-    };
+    // Create guardian actor using real system
+    guardian = await createGuardianActor(system);
+  });
 
-    guardian = await createGuardianActor(mockActorSystem);
+  afterEach(async () => {
+    if (system.isRunning()) {
+      await system.stop();
+    }
   });
 
   describe('GET_SYSTEM_INFO Ask Pattern', () => {
     it('should return system information via ask', async () => {
       const response: unknown = await guardian.ask({
         type: 'GET_SYSTEM_INFO',
-        payload: null,
-        timestamp: Date.now(),
-        version: '1.0.0',
       });
 
       // ✅ FRAMEWORK-STANDARD: Use type guard instead of any casting
@@ -255,13 +219,11 @@ describe('Guardian Ask Pattern - Critical Fix Tests', () => {
 
   describe('SPAWN_ACTOR Ask Pattern', () => {
     it('should return spawn success response via ask', async () => {
+      // Define message type
+
       const response: unknown = await guardian.ask({
         type: 'SPAWN_ACTOR',
-        payload: {
-          name: 'test-actor-ask',
-        },
-        timestamp: Date.now(),
-        version: '1.0.0',
+        name: 'test-actor-ask',
       });
 
       // ✅ FRAMEWORK-STANDARD: Use type guard
@@ -276,34 +238,29 @@ describe('Guardian Ask Pattern - Critical Fix Tests', () => {
     });
 
     it('should throw error for invalid spawn payload via ask', async () => {
+      // Define invalid message without name field
+
       await expect(
         guardian.ask({
           type: 'SPAWN_ACTOR',
-          payload: null, // Invalid payload
-          timestamp: Date.now(),
-          version: '1.0.0',
         })
-      ).rejects.toThrow('Guardian: Spawn failed');
+      ).rejects.toThrow('Guardian: Spawn failed - name is required');
     });
   });
 
   describe('STOP_ACTOR Ask Pattern', () => {
     it('should return stop success response via ask', async () => {
+      // Define message types
+
       // First spawn an actor to stop
       await guardian.ask({
         type: 'SPAWN_ACTOR',
-        payload: { name: 'actor-to-stop' },
-        timestamp: Date.now(),
-        version: '1.0.0',
+        name: 'actor-to-stop',
       });
 
       const response: unknown = await guardian.ask({
         type: 'STOP_ACTOR',
-        payload: {
-          actorId: 'some-actor-id',
-        },
-        timestamp: Date.now(),
-        version: '1.0.0',
+        actorId: 'some-actor-id',
       });
 
       // ✅ FRAMEWORK-STANDARD: Use type guard
@@ -317,15 +274,13 @@ describe('Guardian Ask Pattern - Critical Fix Tests', () => {
 
   describe('ACTOR_FAILED Ask Pattern', () => {
     it('should return failure handling response via ask', async () => {
-      const response: unknown = await guardian.ask({
+      // Define message type
+
+      const response = await guardian.ask({
         type: 'ACTOR_FAILED',
-        payload: {
-          actorId: 'failed-actor',
-          error: 'Test failure',
-          directive: 'restart',
-        },
-        timestamp: Date.now(),
-        version: '1.0.0',
+        actorId: 'failed-actor',
+        error: 'Test failure',
+        directive: 'restart',
       });
 
       // ✅ FRAMEWORK-STANDARD: Use type guard
@@ -339,13 +294,11 @@ describe('Guardian Ask Pattern - Critical Fix Tests', () => {
 
   describe('SHUTDOWN Ask Pattern', () => {
     it('should return shutdown response with final stats via ask', async () => {
+      // Define message type
+
       const response: unknown = await guardian.ask({
         type: 'SHUTDOWN',
-        payload: {
-          reason: 'Test shutdown',
-        },
-        timestamp: Date.now(),
-        version: '1.0.0',
+        reason: 'Test shutdown',
       });
 
       // ✅ FRAMEWORK-STANDARD: Use type guard
@@ -365,14 +318,12 @@ describe('Guardian Ask Pattern - Critical Fix Tests', () => {
 
   describe('REGISTER_ACTOR Ask Pattern', () => {
     it('should return registration success via ask', async () => {
+      // Define message type
+
       const response: unknown = await guardian.ask({
         type: 'REGISTER_ACTOR',
-        payload: {
-          actorId: 'test-actor',
-          path: '/test/actor',
-        },
-        timestamp: Date.now(),
-        version: '1.0.0',
+        actorId: 'test-actor',
+        path: '/test/actor',
       });
 
       // ✅ FRAMEWORK-STANDARD: Use type guard
@@ -386,13 +337,11 @@ describe('Guardian Ask Pattern - Critical Fix Tests', () => {
 
   describe('UNREGISTER_ACTOR Ask Pattern', () => {
     it('should return unregistration success via ask', async () => {
+      // Define message type
+
       const response: unknown = await guardian.ask({
         type: 'UNREGISTER_ACTOR',
-        payload: {
-          actorId: 'test-actor',
-        },
-        timestamp: Date.now(),
-        version: '1.0.0',
+        actorId: 'test-actor',
       });
 
       // ✅ FRAMEWORK-STANDARD: Use type guard
@@ -408,9 +357,6 @@ describe('Guardian Ask Pattern - Critical Fix Tests', () => {
     it('should return health check response via ask', async () => {
       const response: unknown = await guardian.ask({
         type: 'SYSTEM_HEALTH_CHECK',
-        payload: null,
-        timestamp: Date.now(),
-        version: '1.0.0',
       });
 
       // ✅ FRAMEWORK-STANDARD: Use type guard
@@ -434,23 +380,22 @@ describe('Guardian Ask Pattern - Critical Fix Tests', () => {
 
   describe('Invalid Message Types', () => {
     it('should throw error for unknown message types via ask', async () => {
+      // Define invalid message type
+
       await expect(
         guardian.ask({
           type: 'UNKNOWN_MESSAGE_TYPE',
-          payload: null,
-          timestamp: Date.now(),
-          version: '1.0.0',
         })
       ).rejects.toThrow('Guardian: Invalid message type for ask pattern');
     });
 
     it('should throw error for non-Guardian message types via ask', async () => {
+      // Define random message type
+
       await expect(
         guardian.ask({
           type: 'RANDOM_USER_MESSAGE',
-          payload: { data: 'test' },
-          timestamp: Date.now(),
-          version: '1.0.0',
+          data: 'test',
         })
       ).rejects.toThrow('Guardian: Invalid message type for ask pattern');
     });
@@ -462,15 +407,9 @@ describe('Guardian Ask Pattern - Critical Fix Tests', () => {
       const startTime = Date.now();
 
       try {
-        await guardian.ask(
-          {
-            type: 'GET_SYSTEM_INFO',
-            payload: null,
-            timestamp: Date.now(),
-            version: '1.0.0',
-          },
-          1
-        ); // 1ms timeout
+        await guardian.ask({
+          type: 'GET_SYSTEM_INFO',
+        });
 
         // If it doesn't timeout, it should complete very quickly
         const elapsed = Date.now() - startTime;
@@ -486,21 +425,13 @@ describe('Guardian Ask Pattern - Critical Fix Tests', () => {
       const promises = [
         guardian.ask({
           type: 'GET_SYSTEM_INFO',
-          payload: null,
-          timestamp: Date.now(),
-          version: '1.0.0',
         }),
+
         guardian.ask({
           type: 'SYSTEM_HEALTH_CHECK',
-          payload: null,
-          timestamp: Date.now(),
-          version: '1.0.0',
         }),
         guardian.ask({
           type: 'GET_SYSTEM_INFO',
-          payload: null,
-          timestamp: Date.now(),
-          version: '1.0.0',
         }),
       ];
 

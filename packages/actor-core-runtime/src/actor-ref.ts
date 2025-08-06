@@ -1,192 +1,193 @@
 /**
  * @module actor-core/runtime/actor-ref
- * @description Core ActorRef interface for the Actor-Core runtime
+ * @description Typed ActorRef interface - the primary public interface for actor references
+ *
+ * This module provides the ActorRef interface which is the only public-facing way to
+ * interact with actors. It extends the internal ActorPID interface with type safety
+ * and additional convenience methods.
+ *
+ * This implements the "typed interface, dynamic implementation" pattern used by
+ * mature actor frameworks like Orleans and Akka Typed.
  */
 
-import type { AnyStateMachine } from 'xstate';
-import type {
-  ActorBehavior,
-  ActorSnapshot,
-  ActorStatus,
-  AskOptions,
-  BaseEventObject,
-  SpawnOptions,
-  SupervisionStrategy,
-} from './types.js';
-
-// ========================================================================================
-// ACTOR REFERENCE INTERFACE
-// ========================================================================================
+import type { ActorInstance } from './actor-instance.js';
+import type { ActorAddress, ActorMessage, ActorPID, ActorStats } from './actor-system.js';
+import type { ActorSnapshot, BaseEventObject, JsonValue, Message } from './types.js';
 
 /**
- * Core ActorRef interface for the Actor-Core runtime.
- *
- * This interface provides a pure actor reference abstraction that enforces
- * message-only communication while hiding internal actor state.
- *
- * @template TEvent - The event types this actor can receive
- * @template TEmitted - The types of events this actor can emit
- * @template TSnapshot - The snapshot type for this actor's state
+ * Phantom type symbol for compile-time context type tagging.
+ * This symbol is used to "brand" actor references with their context type
+ * without any runtime overhead.
  */
-export interface ActorRef<
-  TEvent extends BaseEventObject = BaseEventObject,
-  TEmitted = unknown,
-  TSnapshot extends ActorSnapshot = ActorSnapshot,
-> {
-  // ========================================================================================
-  // IDENTITY & METADATA
-  // ========================================================================================
+declare const __contextType: unique symbol;
+
+/**
+ * Phantom type symbol for compile-time message type tagging.
+ * Used to associate actor references with their expected message types.
+ */
+declare const __messageType: unique symbol;
+
+/**
+ * Typed actor reference that preserves context and message types at compile time
+ * while maintaining polymorphic storage at runtime.
+ *
+ * This interface extends ActorPID but overrides methods to use specific types:
+ * - TContext: The actor's context type (e.g., { count: number })
+ * - TMessage: The message types this actor can handle
+ *
+ * @template TContext The actor's context type (default: unknown for stateless actors)
+ * @template TMessage The message types this actor handles (default: ActorMessage)
+ *
+ * @example
+ * ```typescript
+ * // Context actor with typed context
+ * const counterRef: ActorRef<{ count: number }> = await system.spawn(counterBehavior);
+ * const snapshot = counterRef.getSnapshot();
+ * log.debug(snapshot.context.count); // ✅ TypeScript knows this is number
+ *
+ * // Stateless actor
+ * const routerRef: ActorRef = await system.spawn(routerBehavior);
+ * const snapshot = routerRef.getSnapshot();
+ * log.debug(snapshot.context); // ✅ TypeScript knows this is {}
+ * ```
+ */
+export interface ActorRef<TContext = unknown, TMessage extends ActorMessage = ActorMessage>
+  extends ActorPID {
+  /**
+   * Phantom type properties for compile-time type tracking.
+   * These don't exist at runtime but enable TypeScript to track types.
+   */
+  readonly [__contextType]?: TContext;
+  readonly [__messageType]?: TMessage;
 
   /**
-   * Unique identifier for this actor
+   * Get current snapshot with properly typed context
    */
-  readonly id: string;
+  getSnapshot(): ActorSnapshot<TContext>;
 
-  /**
-   * Current lifecycle status
-   */
-  readonly status: ActorStatus;
-
-  /**
-   * Parent actor reference (if this is a child actor)
-   */
-  readonly parent?: ActorRef<BaseEventObject, unknown>;
-
-  /**
-   * Supervision strategy applied to this actor
-   */
-  readonly supervision?: SupervisionStrategy;
-
-  // ========================================================================================
-  // MESSAGE PASSING (CORE ACTOR MODEL)
-  // ========================================================================================
-
-  /**
-   * Send a fire-and-forget message to this actor
-   * @param event - The event to send
-   * @throws {ActorStoppedError} if actor is stopped
-   */
-  send(event: TEvent): void;
-
-  /**
-   * Send a query and wait for a response (request/response pattern)
-   * @param query - The query to send
-   * @param options - Timeout and retry options
-   * @returns Promise resolving to the response
-   * @throws {TimeoutError} if response not received within timeout
-   * @throws {ActorStoppedError} if actor is stopped
-   */
-  ask<TQuery, TResponse>(query: TQuery, options?: AskOptions): Promise<TResponse>;
-
-  // ========================================================================================
-  // EVENT EMISSION SYSTEM (ACTOR-TO-ACTOR COMMUNICATION)
-  // ========================================================================================
-
-  /**
-   * Emit an event to all subscribers of this actor
-   * @param event - The event to emit
-   * @throws {ActorStoppedError} if actor is stopped
-   */
-  emit(event: TEmitted): void;
-
-  /**
-   * Subscribe to specific event types emitted by this actor
-   * @param eventType - The event type to subscribe to (supports wildcards like 'user.*')
-   * @param listener - Function to call when matching events are emitted
-   * @returns Unsubscribe function to stop receiving events
-   */
-  subscribe(eventType: string, listener: (event: TEmitted) => void): () => void;
-
-  /**
-   * Subscribe to specific event types emitted by this actor (alias for subscribe)
-   * @param eventType - The event type to subscribe to (supports wildcards like 'user.*')
-   * @param listener - Function to call when matching events are emitted
-   * @returns Unsubscribe function to stop receiving events
-   */
-  on(eventType: string, listener: (event: TEmitted) => void): () => void;
-
-  // ========================================================================================
-  // REQUEST/RESPONSE PATTERN (ASK)
-  // ========================================================================================
-
-  // ========================================================================================
-  // STATE ACCESS (PURE ACTOR MODEL)
-  // ========================================================================================
-
-  /**
-   * Get the current snapshot of this actor's state (one-time read)
-   * @returns Current actor snapshot
-   */
-  getSnapshot(): TSnapshot;
-
-  // ========================================================================================
-  // ACTOR LIFECYCLE
-  // ========================================================================================
-
-  /**
-   * Start the actor if not already running
-   * @throws {ActorError} if actor cannot be started
-   */
-  start(): void;
-
-  /**
-   * Stop this actor gracefully and cleanup all resources
-   * @returns Promise that resolves when actor is fully stopped
-   */
-  stop(): Promise<void>;
-
-  /**
-   * Restart this actor with the same configuration
-   * @returns Promise that resolves when actor is restarted
-   */
-  restart(): Promise<void>;
-
-  // ========================================================================================
-  // ACTOR SUPERVISION (HIERARCHICAL FAULT TOLERANCE)
-  // ========================================================================================
-
-  /**
-   * Spawn a child actor under this actor's supervision
-   * @param behavior - The behavior/machine for the child actor
-   * @param options - Options for spawning including supervision strategy
-   * @returns Reference to the spawned child actor
-   */
-  spawn<TChildEvent extends BaseEventObject, TChildEmitted = unknown>(
-    behavior: ActorBehavior<TChildEvent> | AnyStateMachine,
-    options?: SpawnOptions
-  ): ActorRef<TChildEvent, TChildEmitted>;
-
-  /**
-   * Stop a specific child actor
-   * @param childId - ID of the child actor to stop
-   * @returns Promise that resolves when child is stopped
-   */
-  stopChild(childId: string): Promise<void>;
-
-  /**
-   * Get all child actor references
-   * @returns ReadonlyMap of child IDs to actor references
-   */
-  getChildren(): ReadonlyMap<string, ActorRef<BaseEventObject, unknown>>;
-
-  // ========================================================================================
-  // UTILITY METHODS
-  // ========================================================================================
-
-  /**
-   * Check if this actor matches a specific state pattern
-   * @param statePath - State path to check (e.g., 'loading.submitting')
-   * @returns true if actor is in the specified state
-   */
-  matches(statePath: string): boolean;
-
-  /**
-   * Check if this actor can receive a specific event type
-   * @param eventType - Event type to check
-   * @returns true if actor accepts this event type
-   */
-  accepts(eventType: string): boolean;
+  // send and ask are inherited from ActorPID with flexible typing
+  // They accept any message with a type field, not just TMessage
 }
+
+/**
+ * Type guard to check if an object is a typed ActorRef
+ */
+export function isActorRef<TContext = unknown, TMessage extends ActorMessage = ActorMessage>(
+  value: unknown
+): value is ActorRef<TContext, TMessage> {
+  // Since ActorRef is just a typed view of ActorInstance, we check for ActorInstance
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'id' in value &&
+    'getType' in value &&
+    'getSnapshot' in value &&
+    'send' in value &&
+    'ask' in value
+  );
+}
+
+/**
+ * Create a typed ActorRef from an ActorInstance.
+ * This is the core function that provides the "typed facade" over the polymorphic instance.
+ *
+ * @param instance The polymorphic ActorInstance
+ * @param address The actor's address
+ * @returns A typed ActorRef that wraps the instance
+ *
+ * @internal This function performs a safe type cast since we control the creation flow
+ */
+export function createTypedActorRef<
+  TContext = unknown,
+  TMessage extends ActorMessage = ActorMessage,
+>(
+  instance: ActorInstance,
+  address: ActorAddress,
+  // Optional context hint for better inference (Research Pattern #5)
+  _contextHint?: TContext
+): ActorRef<TContext, TMessage> {
+  // Create a typed wrapper that delegates to the underlying instance
+  // This is safe because we control the actor creation process and ensure type consistency
+  const typedRef: ActorRef<TContext, TMessage> = {
+    // ActorPID properties
+    address,
+
+    // Override getSnapshot to return properly typed context
+    getSnapshot(): ActorSnapshot<TContext> {
+      const snapshot = instance.getSnapshot();
+      // The context is already the correct type at runtime (we created it that way)
+      // This cast tells TypeScript to trust us that the context is TContext
+      return {
+        ...snapshot,
+        context: snapshot.context as TContext,
+      };
+    },
+
+    // Flexible send method (accepts any message with a type field)
+    async send<T extends { type: string }>(message: T): Promise<void> {
+      instance.send(message);
+    },
+
+    // Flexible ask method (accepts any message with a type field)
+    async ask<TResponse = JsonValue>(message: Message, timeout?: number): Promise<TResponse> {
+      return instance.ask<TResponse>(message, timeout);
+    },
+
+    // ActorPID required methods
+    async stop(): Promise<void> {
+      await instance.stop();
+    },
+
+    async isAlive(): Promise<boolean> {
+      return instance.status !== 'stopped' && instance.status !== 'error';
+    },
+
+    async getStats(): Promise<ActorStats> {
+      return {
+        messagesReceived: 0,
+        messagesProcessed: 0,
+        errors: 0,
+        uptime: 0,
+      };
+    },
+  };
+
+  return typedRef;
+}
+
+/**
+ * Utility type to extract the context type from an ActorRef
+ */
+export type ContextOf<T> = T extends ActorRef<infer TContext, ActorMessage> ? TContext : never;
+
+/**
+ * Utility type to extract the message type from an ActorRef
+ */
+export type MessageOf<T> = T extends ActorRef<unknown, infer TMessage> ? TMessage : never;
+
+/**
+ * Type alias for stateless actors (no context)
+ */
+export type StatelessActorRef<TMessage extends ActorMessage = ActorMessage> = ActorRef<
+  Record<string, never>,
+  TMessage
+>;
+
+/**
+ * Type alias for context-based actors
+ */
+export type ContextActorRef<TContext, TMessage extends ActorMessage = ActorMessage> = ActorRef<
+  TContext,
+  TMessage
+>;
+
+/**
+ * Type alias for machine-based actors (context from XState machine)
+ */
+export type MachineActorRef<TContext, TMessage extends ActorMessage = ActorMessage> = ActorRef<
+  TContext,
+  TMessage
+>;
 
 // ========================================================================================
 // SUPPORTING TYPES AND ERRORS
@@ -213,33 +214,8 @@ export class TimeoutError extends Error {
 }
 
 /**
- * Generate a unique actor ID
- */
-export function generateActorId(prefix = 'actor'): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-}
-
-/**
- * Generate a unique correlation ID for request/response tracking
- */
-export function generateCorrelationId(): string {
-  return `corr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-}
-
-/**
  * Check if an event is a response event
  */
 export function isResponseEvent(event: BaseEventObject): boolean {
   return '_response' in event && event._response === true;
 }
-
-/**
- * Factory function type for creating ActorRef instances
- */
-export type CreateActorRefFunction = <
-  TEvent extends BaseEventObject = BaseEventObject,
-  TResponse = unknown,
->(
-  machine: AnyStateMachine,
-  options?: import('./types.js').ActorRefOptions
-) => ActorRef<TEvent, TResponse>;

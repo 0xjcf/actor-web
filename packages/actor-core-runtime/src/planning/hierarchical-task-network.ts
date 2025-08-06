@@ -485,7 +485,7 @@ export class HTNPlanner {
       this.logger.debug(`${indent}⚡ Primitive task ready for execution`, {
         taskName: task.name,
         taskId: task.id,
-        executor: task.executor.id,
+        executor: task.executor.address.id,
         action: task.action,
         estimatedDuration: task.estimatedDuration,
       });

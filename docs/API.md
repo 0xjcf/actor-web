@@ -1,18 +1,19 @@
 # 🎭 Actor-Web Framework API Reference
 
 > **Framework**: Actor-Web Framework - OTP-style Actors for JavaScript/TypeScript  
-> **Version**: 2.0.0  
+> **Version**: 3.0.0  
 > **Package**: `@actor-core/runtime`  
-> **Status**: Production Ready with Message Plan DSL
+> **Status**: Production Ready with Unified Actor API
 
 ## 📋 **Table of Contents**
 
 - [Getting Started](#getting-started)
-- [OTP-Style Actor Pattern](#otp-style-actor-pattern)
+  - [Unified Actor API](#unified-actor-api-v30)
+  - [Three Actor Types](#three-actor-types-automatically-selected)
 - [Core API](#core-api)
   - [Actor Creation](#actor-creation)
-  - [Message Plan DSL](#message-plan-dsl)
-  - [Component Behaviors](#component-behaviors)
+  - [Message Handling](#message-handling)
+  - [Event Subscription](#event-subscription)
 - [Pure XState Delay Utilities](#pure-xstate-delay-utilities)
   - [Architectural Decision](#architectural-decision)
   - [Delay APIs](#delay-apis)
@@ -25,77 +26,105 @@
 
 ## 🚀 **Getting Started**
 
-The Actor-Web Framework brings **Erlang OTP-style actor patterns** to JavaScript/TypeScript. Build resilient, fault-tolerant applications using proven patterns from telecom systems, now with modern web development ergonomics.
+The Actor-Web Framework brings **Erlang OTP-style actor patterns** to JavaScript/TypeScript. Build resilient, fault-tolerant applications using proven patterns from telecom systems, now with a **unified API** for all actor patterns.
+
+### Unified Actor API (v3.0+)
 
 ```typescript
-import { createActor, defineBehavior, createMessage } from '@actor-core/runtime';
-import { createMachine, assign } from 'xstate';
+import { createActorSystem, defineActor } from '@actor-core/runtime';
 
-// 1. Define your state machine (replaces Erlang's recursive counter(Count))
-const counterMachine = createMachine({
-  id: 'counter',
-  context: { count: 0 },
-  initial: 'active',
-  states: {
-    active: {
-      on: {
-        INCREMENT: { 
-          actions: assign({ count: ctx => ctx.count + 1 }) 
-        },
-        DECREMENT: { 
-          actions: assign({ count: ctx => ctx.count - 1 }) 
-        },
-        RESET: { 
-          actions: assign({ count: 0 }) 
-        }
-      }
+type CounterMessage = 
+  | { type: 'INCREMENT' }
+  | { type: 'DECREMENT' }
+  | { type: 'GET_COUNT'; correlationId?: string };
+
+// Define actor with the unified API - automatically selects optimal implementation
+const counterActor = defineActor<CounterMessage>()
+  .withContext({ count: 0 })
+  .onMessage(({ message, actor }) => {
+    const { count } = actor.getSnapshot().context;
+    
+    switch (message.type) {
+      case 'INCREMENT':
+        return {
+          context: { count: count + 1 },
+          emit: [{ type: 'COUNT_CHANGED', newValue: count + 1 }]
+        };
+        
+      case 'DECREMENT':
+        return {
+          context: { count: count - 1 },
+          emit: [{ type: 'COUNT_CHANGED', newValue: count - 1 }]
+        };
+        
+      case 'GET_COUNT':
+        // Reply for ask pattern
+        return { reply: count };
     }
-  }
+  });
+
+// Create and use the actor system
+const system = await createActorSystem({ nodeAddress: 'localhost:0' });
+await system.start();
+
+const counter = await system.spawn(counterActor, { id: 'counter-1' });
+
+// Send messages
+await counter.send({ type: 'INCREMENT' });
+
+// Ask pattern with automatic correlation
+const count = await counter.ask({ type: 'GET_COUNT' });
+console.log(count); // 1
+
+// Subscribe to events (returns unsubscribe function)
+const unsubscribe = await system.subscribe(counter, {
+  subscriber: loggerActor,
+  events: ['COUNT_CHANGED']
 });
 
-// 2. Define behavior (handles messages like OTP gen_server)
-const counterBehavior = defineBehavior({
-  context: { messageCount: 0 },
-  
-  onMessage({ message, context, machine }) {
-    // Track messages processed
-    const newContext = { messageCount: context.messageCount + 1 };
-    
-    // Handle ask pattern requests - respond with current count
-    if (message.type === 'GET_COUNT' && message.correlationId) {
-      const currentCount = machine.getSnapshot().context.count;
-      
-      // ✅ CORRECT: Emit RESPONSE message for ask pattern
+// Later: clean up subscription
+await unsubscribe();
+```
+
+### Three Actor Types (Automatically Selected)
+
+The framework automatically selects the optimal actor implementation based on your usage:
+
+```typescript
+// 1. StatelessActor - For pure message routing (fastest, ~1M msgs/sec)
+const routerActor = defineActor<RouterMessage>()
+  .onMessage(({ message }) => {
+    // No context, just routing logic
+    return { emit: [{ type: 'ROUTED', target: message.destination }] };
+  });
+
+// 2. ContextActor - For state management (fast, ~100K msgs/sec)
+const accountActor = defineActor<AccountMessage>()
+  .withContext({ balance: 0 })
+  .onMessage(({ message, actor }) => {
+    const { balance } = actor.getSnapshot().context;
+    // Update context based on message
+    if (message.type === 'DEPOSIT') {
       return {
-        context: newContext,
-        emit: {
-          type: 'RESPONSE',
-          correlationId: message.correlationId,
-          payload: currentCount,  // ask() returns this value
-          timestamp: Date.now(),
-          version: '1.0.0'
-        }
+        context: { balance: balance + message.amount },
+        emit: [{ type: 'BALANCE_CHANGED', newBalance: balance + message.amount }]
       };
     }
-    
-    // Handle increment with domain event (auto fan-out)
-    if (message.type === 'INCREMENT') {
-      // ✅ CORRECT: Return domain event - runtime auto sends to machine + emit
+  });
+
+// 3. MachineActor - For complex state machines (XState integration, ~30K msgs/sec)
+const workflowActor = defineActor<WorkflowMessage>()
+  .withMachine(workflowMachine)
+  .onMessage(({ message, actor }) => {
+    // Access both XState machine state and context
+    const state = actor.getSnapshot();
+    if (state.matches('pending') && message.type === 'APPROVE') {
       return {
-        context: newContext,
-        emit: {
-          type: 'COUNT_CHANGED',
-          oldValue: machine.getSnapshot().context.count,
-          newValue: machine.getSnapshot().context.count + 1,
-          operation: 'increment'
-        }
+        emit: [{ type: 'WORKFLOW_APPROVED', id: message.workflowId }]
       };
     }
-    
-    // Default: no emission, just update context
-    return { context: newContext };
-  }
-});
+  });
+```
 
 // 3. Create and start the actor
 const counter = createActor({ 
@@ -165,15 +194,15 @@ const counterMachine = createMachine({
   }
 });
 
-const counterBehavior = defineBehavior({
-  context: { totalMessages: 0 },
-  
-  onMessage({ message, context, machine }) {
+const counterBehavior = defineBehavior<CounterMessage>()
+  .withContext({ totalMessages: 0 })
+  .onMessage(({ message, actor }) => {
+    const context = actor.getSnapshot().context;
     const newContext = { totalMessages: context.totalMessages + 1 };
     
     // Equivalent to: receive {get_count, Pid} -> Pid ! {count, Count}
     if (message.type === 'GET_COUNT' && message.correlationId) {
-      const count = machine.getSnapshot().context.count;
+      const count = actor.getSnapshot().context.count;
       
       // ✅ CORRECT: Emit RESPONSE for ask pattern correlation
       return {
@@ -280,7 +309,7 @@ Defines reusable component behavior with the Message Plan DSL.
 
 ```typescript
 const behavior = defineComponentBehavior({
-  onMessage: ({ message, machine, dependencies }) => MessagePlan,
+  onMessage: ({ message, actor, dependencies }) => MessagePlan,
   dependencies: {
     backend: 'actor://system/backend',
     validator: 'actor://system/validator'
@@ -483,10 +512,10 @@ init([]) ->
 
 ```typescript
 const supervisorBehavior = defineBehavior({
-  onMessage: async ({ message, machine, dependencies }) => {
+  onMessage: async ({ message, actor, dependencies }) => {
     if (message.type === 'CHILD_CRASHED' && message.payload?.childId) {
       const { childId, crashReason, childSpec } = message.payload;
-      const context = machine.getSnapshot().context;
+      const context = actor.getSnapshot().context;
       const restartCount = context.restartCounts[childId] || 0;
       
       // Exponential backoff: 1s, 2s, 4s, 8s...
@@ -555,12 +584,12 @@ handle_info(health_check, State) ->
 
 ```typescript
 const healthMonitorBehavior = defineBehavior({
-  onMessage: async ({ message, machine, dependencies }) => {
+  onMessage: async ({ message, actor, dependencies }) => {
     if (message.type === 'START_MONITORING') {
       // ✅ PURE ACTOR MODEL: XState interval for periodic checks
       const stopInterval = createActorInterval(async () => {
         // Send health check message to self to trigger check
-        machine.send(createMessage('PERFORM_HEALTH_CHECK', {
+        actor.send(createMessage('PERFORM_HEALTH_CHECK', {
           scheduledAt: Date.now(),
           checkId: `health-${Date.now()}`
         }));
@@ -691,7 +720,7 @@ This ensures your actors follow the pure actor model and can run **anywhere** - 
 
 ```typescript
 const submitBehavior = defineComponentBehavior({
-  onMessage: ({ message, machine, dependencies }) => {
+  onMessage: ({ message, actor, dependencies }) => {
     if (message.type === 'SUBMIT_FORM') {
       return [
         // 1. Optimistic UI update

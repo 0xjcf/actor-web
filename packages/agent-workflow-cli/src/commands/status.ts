@@ -1,6 +1,9 @@
+import { Logger } from '@actor-core/runtime';
 import chalk from 'chalk';
 import { GitOperations } from '../core/git-operations.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';
+
+const log = Logger.namespace('STATUS_COMMAND');
 
 /**
  * Status Command - Simplified Local Implementation
@@ -10,26 +13,26 @@ import { findRepoRoot } from '../core/repo-root-finder.js';
  * ✅ FOLLOWS event-broker-dx-improvement plan for local operations
  */
 export async function statusCommand() {
-  console.log(chalk.blue('📊 Status Check'));
-  console.log(chalk.blue('==========================================='));
+  log.debug(chalk.blue('📊 Status Check'));
+  log.debug(chalk.blue('==========================================='));
 
   const repoRoot = await findRepoRoot();
   const git = new GitOperations(repoRoot);
 
   try {
     // ✅ SIMPLIFIED: Direct git operations instead of actor messaging
-    console.log(chalk.gray('🔍 Checking repository...'));
+    log.debug(chalk.gray('🔍 Checking repository...'));
 
     const isGitRepo = await git.isGitRepo();
     if (!isGitRepo) {
-      console.log(chalk.red('❌ Not a git repository'));
+      log.debug(chalk.red('❌ Not a git repository'));
       return;
     }
 
-    console.log(chalk.green('✅ Git repository confirmed'));
+    log.debug(chalk.green('✅ Git repository confirmed'));
 
     // Get all status information in parallel for speed
-    console.log(chalk.gray('🔍 Gathering status information...'));
+    log.debug(chalk.gray('🔍 Gathering status information...'));
 
     const [currentBranch, hasChanges, integrationStatus, changedFiles] = await Promise.all([
       git.getCurrentBranch(),
@@ -79,55 +82,55 @@ function displayStatusSummary(status: {
   integrationStatus?: { ahead: number; behind: number };
   changedFiles?: string[];
 }): void {
-  console.log(chalk.blue('\n📊 Repository Status'));
-  console.log(chalk.blue('==========================================='));
+  log.debug(chalk.blue('\n📊 Repository Status'));
+  log.debug(chalk.blue('==========================================='));
 
   // Branch information
   if (status.currentBranch) {
-    console.log(chalk.white(`📍 Current Branch: ${chalk.cyan(status.currentBranch)}`));
+    log.debug(chalk.white(`📍 Current Branch: ${chalk.cyan(status.currentBranch)}`));
   }
 
   // Agent type
   if (status.agentType) {
-    console.log(chalk.white(`🤖 Agent Type: ${chalk.yellow(status.agentType)}`));
+    log.debug(chalk.white(`🤖 Agent Type: ${chalk.yellow(status.agentType)}`));
   }
 
   // Uncommitted changes
   if (status.uncommittedChanges) {
-    console.log(chalk.yellow('📝 Uncommitted changes present'));
+    log.debug(chalk.yellow('📝 Uncommitted changes present'));
     if (status.changedFiles && status.changedFiles.length > 0) {
-      console.log(chalk.gray(`   ${status.changedFiles.length} files changed`));
+      log.debug(chalk.gray(`   ${status.changedFiles.length} files changed`));
       // Show first few files if not too many
       if (status.changedFiles.length <= 5) {
         for (const file of status.changedFiles) {
-          console.log(chalk.gray(`   • ${file}`));
+          log.debug(chalk.gray(`   • ${file}`));
         }
       } else {
         for (const file of status.changedFiles.slice(0, 3)) {
-          console.log(chalk.gray(`   • ${file}`));
+          log.debug(chalk.gray(`   • ${file}`));
         }
-        console.log(chalk.gray(`   ... and ${status.changedFiles.length - 3} more`));
+        log.debug(chalk.gray(`   ... and ${status.changedFiles.length - 3} more`));
       }
     }
   } else {
-    console.log(chalk.green('✅ Working directory clean'));
+    log.debug(chalk.green('✅ Working directory clean'));
   }
 
   // Integration status
   if (status.integrationStatus) {
     const { ahead, behind } = status.integrationStatus;
     if (ahead > 0 || behind > 0) {
-      console.log(chalk.white('🔄 Integration Status:'));
+      log.debug(chalk.white('🔄 Integration Status:'));
       if (ahead > 0) {
-        console.log(chalk.green(`   ↑ ${ahead} commits ahead`));
+        log.debug(chalk.green(`   ↑ ${ahead} commits ahead`));
       }
       if (behind > 0) {
-        console.log(chalk.yellow(`   ↓ ${behind} commits behind`));
+        log.debug(chalk.yellow(`   ↓ ${behind} commits behind`));
       }
     } else {
-      console.log(chalk.green('✅ In sync with integration branch'));
+      log.debug(chalk.green('✅ In sync with integration branch'));
     }
   }
 
-  console.log(chalk.blue('==========================================='));
+  log.debug(chalk.blue('==========================================='));
 }

@@ -9,12 +9,12 @@
  * Key Features:
  * - Type-safe domain event return values
  * - Automatic fan-out to machine.send() and emit()
- * - Backward compatibility with existing emit() calls
  * - Atomic persistence with transactional outbox (Phase 3)
  */
 
-import type { JsonValue } from './actor-system.js';
 import type { SerializableEvent } from './component-behavior.js';
+import type { JsonValue } from './types.js';
+import { isDomainEvent } from './utils/validation.js';
 
 // ============================================================================
 // DOMAIN EVENT TYPE SYSTEM
@@ -34,51 +34,9 @@ export interface DomainEvent extends Record<string, JsonValue> {
  */
 export type ValidDomainEvent<T> = T extends DomainEvent ? (T extends JsonValue ? T : never) : never;
 
-/**
- * Runtime type guard to check if a value is a domain event
- */
-export function isDomainEvent(value: unknown): value is DomainEvent {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    'type' in value &&
-    typeof (value as { type: unknown }).type === 'string' &&
-    isJsonSerializable(value)
-  );
-}
+// isDomainEvent moved to utils/validation.ts
 
-/**
- * Runtime type guard for JSON serializability
- * Ensures the event can be stored, transmitted, and replayed
- */
-function isJsonSerializable(value: unknown): value is JsonValue {
-  if (value === null) return true;
-  if (value === undefined) return false; // JSON cannot serialize undefined
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
-    return true;
-
-  if (Array.isArray(value)) {
-    return value.every(isJsonSerializable);
-  }
-
-  if (typeof value === 'object') {
-    // Check for non-serializable types
-    if (value instanceof Date || value instanceof RegExp || value instanceof Error) return false;
-    if (
-      value instanceof Map ||
-      value instanceof Set ||
-      value instanceof WeakMap ||
-      value instanceof WeakSet
-    )
-      return false;
-    if (typeof (value as { then?: unknown }).then === 'function') return false; // Promises
-
-    // Check all properties
-    return Object.values(value).every(isJsonSerializable);
-  }
-
-  return false;
-}
+// isJsonSerializable moved to utils/validation.ts (as isJsonValue)
 
 // ============================================================================
 // ENHANCED BEHAVIOR RESULT TYPES
@@ -279,11 +237,9 @@ export type CreateDomainEvent<
   TType extends string,
   TPayload extends JsonValue = null,
 > = ValidDomainEvent<
-  {
-    type: TType;
-  } & (TPayload extends null
-    ? Record<string, never>
+  TPayload extends null
+    ? { type: TType }
     : TPayload extends Record<string, JsonValue>
-      ? TPayload
-      : { payload: TPayload })
+      ? { type: TType } & TPayload
+      : never // Remove payload fallback - only flat messages allowed
 >;
