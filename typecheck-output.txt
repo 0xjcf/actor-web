@@ -1,4 +1,0 @@
-
-> @actor-web/core@0.1.0 typecheck /Users/joseflores/Development/actor-web-architecture
-> tsc --build
-
