@@ -27,13 +27,13 @@ importers:
         version: 20.19.7
       '@vitest/coverage-v8':
         specifier: ^2.1.4
-        version: 2.1.9(vitest@2.1.9(@types/node@20.19.7)(happy-dom@18.0.1))
+        version: 2.1.9(vitest@2.1.9(@types/node@20.19.7)(happy-dom@20.0.2))
       '@xstate/graph':
         specifier: ^3.0.4
         version: 3.0.4(xstate@5.20.1)
       happy-dom:
-        specifier: ^18.0.1
-        version: 18.0.1
+        specifier: ^20.0.2
+        version: 20.0.2
       tsup:
         specifier: ^8.3.5
         version: 8.5.0(postcss@8.5.6)(tsx@4.20.3)(typescript@5.8.3)
@@ -45,7 +45,7 @@ importers:
         version: 5.4.19(@types/node@20.19.7)
       vitest:
         specifier: ^2.1.4
-        version: 2.1.9(@types/node@20.19.7)(happy-dom@18.0.1)
+        version: 2.1.9(@types/node@20.19.7)(happy-dom@20.0.2)
 
   packages/actor-core-runtime:
     dependencies:
@@ -73,7 +73,7 @@ importers:
         version: 5.8.3
       vitest:
         specifier: ^2.1.4
-        version: 2.1.9(@types/node@20.19.7)(happy-dom@18.0.1)
+        version: 2.1.9(@types/node@20.19.7)(happy-dom@20.0.2)
 
   packages/actor-core-testing:
     dependencies:
@@ -101,7 +101,7 @@ importers:
         version: 5.8.3
       vitest:
         specifier: ^2.1.4
-        version: 2.1.9(@types/node@20.19.7)(happy-dom@18.0.1)
+        version: 2.1.9(@types/node@20.19.7)(happy-dom@20.0.2)
 
   packages/agent-workflow-cli:
     dependencies:
@@ -138,7 +138,7 @@ importers:
         version: 5.8.3
       vitest:
         specifier: ^2.1.4
-        version: 2.1.9(@types/node@20.19.7)(happy-dom@18.0.1)
+        version: 2.1.9(@types/node@20.19.7)(happy-dom@20.0.2)
 
 packages:
 
@@ -965,8 +965,8 @@ packages:
     resolution: {integrity: sha512-7Bv8RF0k6xjo7d4A/PxYLbUCfb6c+Vpd2/mB2yRDlew7Jb5hEXiCD9ibfO7wpk8i4sevK6DFny9h7EYbM3/sHg==}
     hasBin: true
 
-  happy-dom@18.0.1:
-    resolution: {integrity: sha512-qn+rKOW7KWpVTtgIUi6RVmTBZJSe2k0Db0vh1f7CWrWclkkc7/Q+FrOfkZIb2eiErLyqu5AXEzE7XthO9JVxRA==}
+  happy-dom@20.0.2:
+    resolution: {integrity: sha512-pYOyu624+6HDbY+qkjILpQGnpvZOusItCk+rvF5/V+6NkcgTKnbOldpIy22tBnxoaLtlM9nXgoqAcW29/B7CIw==}
     engines: {node: '>=20.0.0'}
 
   has-flag@4.0.0:
@@ -1239,6 +1239,7 @@ packages:
   source-map@0.8.0-beta.0:
     resolution: {integrity: sha512-2ymg6oRBpebeZi9UUNsgQ89bhx01TcTkmNTGnNO88imTmbSgy4nfujrgVEFKWpMTEGA11EDkTt7mqObTPdigIA==}
     engines: {node: '>= 8'}
+    deprecated: The work that was done in this beta branch won't be included in future versions
 
   stackback@0.0.2:
     resolution: {integrity: sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw==}
@@ -1829,7 +1830,7 @@ snapshots:
 
   '@types/whatwg-mimetype@3.0.2': {}
 
-  '@vitest/coverage-v8@2.1.9(vitest@2.1.9(@types/node@20.19.7)(happy-dom@18.0.1))':
+  '@vitest/coverage-v8@2.1.9(vitest@2.1.9(@types/node@20.19.7)(happy-dom@20.0.2))':
     dependencies:
       '@ampproject/remapping': 2.3.0
       '@bcoe/v8-coverage': 0.2.3
@@ -1843,7 +1844,7 @@ snapshots:
       std-env: 3.9.0
       test-exclude: 7.0.1
       tinyrainbow: 1.2.0
-      vitest: 2.1.9(@types/node@20.19.7)(happy-dom@18.0.1)
+      vitest: 2.1.9(@types/node@20.19.7)(happy-dom@20.0.2)
     transitivePeerDependencies:
       - supports-color
 
@@ -2110,7 +2111,7 @@ snapshots:
       package-json-from-dist: 1.0.1
       path-scurry: 1.11.1
 
-  happy-dom@18.0.1:
+  happy-dom@20.0.2:
     dependencies:
       '@types/node': 20.19.7
       '@types/whatwg-mimetype': 3.0.2
@@ -2540,7 +2541,7 @@ snapshots:
       '@types/node': 20.19.7
       fsevents: 2.3.3
 
-  vitest@2.1.9(@types/node@20.19.7)(happy-dom@18.0.1):
+  vitest@2.1.9(@types/node@20.19.7)(happy-dom@20.0.2):
     dependencies:
       '@vitest/expect': 2.1.9
       '@vitest/mocker': 2.1.9(vite@5.4.19(@types/node@20.19.7))
@@ -2564,7 +2565,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 20.19.7
-      happy-dom: 18.0.1
+      happy-dom: 20.0.2
     transitivePeerDependencies:
       - less
       - lightningcss
