@@ -7,11 +7,19 @@ import type { Actor, AnyStateMachine } from 'xstate';
 import { createActor } from 'xstate';
 // Import the new components
 import { ActorEventBus } from './actor-event-bus.js';
-import { type ActorRef, ActorStoppedError } from './actor-ref.js';
+import {
+  type ActorEventSubscriptionOptions,
+  type ActorRef,
+  ActorStoppedError,
+} from './actor-ref.js';
 import type { ActorAddress, ActorMessage, ActorStats } from './actor-system.js';
 import type { Supervisor } from './actors/supervisor.js';
 import { Logger } from './logger.js';
 import { XStateRequestResponseManager } from './messaging/request-response.js';
+import {
+  createProjectionTransportStatus,
+  type ProjectionTransportStatus,
+} from './projection-transport.js';
 import type {
   ActorBehavior,
   ActorRefOptions,
@@ -286,6 +294,32 @@ class XStateActorRef<TContext = unknown, TMessage extends ActorMessage = ActorMe
     };
   }
 
+  subscribeEvent(
+    listener: (event: ActorMessage) => void,
+    options: ActorEventSubscriptionOptions = {}
+  ): () => void {
+    return this.eventBus.subscribe((event) => {
+      if (!this.isActorMessage(event)) {
+        return;
+      }
+
+      if (options.types && options.types.length > 0 && !options.types.includes(event.type)) {
+        return;
+      }
+
+      listener(event);
+    });
+  }
+
+  getTransportStatus(): ProjectionTransportStatus {
+    return createProjectionTransportStatus('local');
+  }
+
+  subscribeTransportStatus(listener: (status: ProjectionTransportStatus) => void): () => void {
+    listener(this.getTransportStatus());
+    return () => {};
+  }
+
   // ========================================================================================
   // ASK PATTERN WITH PROPER REQUEST/RESPONSE MANAGEMENT
   // ========================================================================================
@@ -528,6 +562,15 @@ class XStateActorRef<TContext = unknown, TMessage extends ActorMessage = ActorMe
       return relevant;
     }
     return {};
+  }
+
+  private isActorMessage(event: unknown): event is ActorMessage {
+    return (
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      typeof event.type === 'string'
+    );
   }
 
   private notifySnapshotListeners(): void {

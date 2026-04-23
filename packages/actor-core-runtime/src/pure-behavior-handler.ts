@@ -17,9 +17,10 @@ import type { ActorInstance } from './actor-instance.js';
 import type { ActorDependencies, ActorMessage } from './actor-system.js';
 import { Logger } from './logger.js';
 import type { DomainEvent, MessagePlan } from './message-plan.js';
+import type { MessagePlanProcessor } from './message-plan-processor.js';
+import { OTPMessagePlanProcessor } from './otp-message-plan-processor.js';
 import type { ActorHandlerResult } from './otp-types.js';
 import { isActorHandlerResult } from './otp-types.js';
-import type { RuntimeContext } from './plan-interpreter.js';
 import { isMessagePlan } from './utils/validation.js';
 
 const log = Logger.namespace('PURE_BEHAVIOR_HANDLER');
@@ -47,14 +48,6 @@ export interface PureActorBehavior<TMessage = ActorMessage, TDomainEvent = Domai
     readonly actor: ActorInstance;
     readonly dependencies: ActorDependencies;
   }) => Promise<void> | void;
-}
-
-/**
- * Message Plan Processor Interface
- * Handles the execution of MessagePlan instructions
- */
-export interface MessagePlanProcessor {
-  processMessagePlan(plan: MessagePlan, dependencies: ActorDependencies): Promise<void>;
 }
 
 /**
@@ -92,6 +85,7 @@ function isValidMessagePlan(
  */
 export class PureActorBehaviorHandler {
   private readonly messagePlanProcessor: MessagePlanProcessor;
+  private readonly otpMessagePlanProcessor = new OTPMessagePlanProcessor();
 
   constructor(messagePlanProcessor: MessagePlanProcessor) {
     this.messagePlanProcessor = messagePlanProcessor;
@@ -176,10 +170,6 @@ export class PureActorBehaviorHandler {
             otpResult: messagePlan,
           });
 
-          // Import and use OTP processor for ActorHandlerResult
-          const { OTPMessagePlanProcessor } = await import('./otp-message-plan-processor.js');
-          const otpProcessor = new OTPMessagePlanProcessor();
-
           // Extract correlationId safely from message if it's an ActorMessage
           let correlationId: string | undefined;
           if (message && typeof message === 'object' && '_correlationId' in message) {
@@ -189,7 +179,7 @@ export class PureActorBehaviorHandler {
             }
           }
 
-          await otpProcessor.processOTPResult(
+          await this.otpMessagePlanProcessor.processOTPResult(
             messagePlan,
             dependencies.actorId,
             actor,
@@ -311,70 +301,5 @@ export class PureActorBehaviorHandler {
       return typeof messageObj.type === 'string' ? messageObj.type : 'unknown';
     }
     return 'unknown';
-  }
-}
-
-/**
- * Default Message Plan Processor Implementation
- *
- * Integrates with existing plan interpreter for comprehensive MessagePlan processing
- * following FRAMEWORK-STANDARD principles
- */
-export class DefaultMessagePlanProcessor implements MessagePlanProcessor {
-  async processMessagePlan(plan: MessagePlan, dependencies: ActorDependencies): Promise<void> {
-    if (!plan) {
-      return;
-    }
-
-    log.debug('Processing MessagePlan with integrated plan interpreter', {
-      instructionCount: Array.isArray(plan) ? plan.length : 1,
-      actorId: dependencies.actorId,
-    });
-
-    // Convert ActorDependencies to RuntimeContext for existing plan interpreter
-    const runtimeContext = this.adaptDependenciesToRuntimeContext(dependencies);
-
-    // Use existing comprehensive plan interpreter
-    const { processMessagePlan: processExistingPlan } = await import('./plan-interpreter.js');
-    const result = await processExistingPlan(plan, runtimeContext);
-
-    // Log result for debugging
-    if (result.success) {
-      log.debug('MessagePlan processed successfully via plan interpreter', {
-        instructionsExecuted: result.instructionsExecuted,
-        domainEventsEmitted: result.domainEventsEmitted,
-        sendInstructionsProcessed: result.sendInstructionsProcessed,
-        askInstructionsProcessed: result.askInstructionsProcessed,
-        executionTimeMs: result.executionTimeMs,
-        actorId: dependencies.actorId,
-      });
-    } else {
-      log.warn('MessagePlan processed with errors via plan interpreter', {
-        errorCount: result.errors.length,
-        errors: result.errors.map((err) => err.message),
-        actorId: dependencies.actorId,
-      });
-
-      // Throw first error to maintain error propagation
-      if (result.errors.length > 0) {
-        throw result.errors[0];
-      }
-    }
-  }
-
-  /**
-   * Adapter function to convert ActorDependencies to RuntimeContext
-   * This allows us to reuse the existing comprehensive plan interpreter
-   */
-  private adaptDependenciesToRuntimeContext(dependencies: ActorDependencies): RuntimeContext {
-    return {
-      actor: dependencies.actor,
-      emit: (event: DomainEvent) => {
-        // Convert to the format expected by ActorDependencies.emit
-        dependencies.emit(event);
-      },
-      actorId: dependencies.actorId,
-      correlationManager: dependencies.correlationManager as RuntimeContext['correlationManager'],
-    };
   }
 }

@@ -7,11 +7,12 @@
 import type { ActorInstance } from './actor-instance.js';
 import type { ActorDependencies, ActorEnvelope, ActorMessage } from './actor-system.js';
 import { validateAskResponse } from './ask-pattern-safeguards.js';
+import { type ContextActor, isContextActor } from './context-actor.js';
 import { Logger } from './logger.js';
 import type { MessagePlan, SendInstruction } from './message-plan.js';
+import { DefaultMessagePlanProcessor } from './message-plan-processor.js';
 import type { ActorHandlerResult, BehaviorFunction } from './otp-types.js';
 import { processMessagePlan, type RuntimeContext } from './plan-interpreter.js';
-import { DefaultMessagePlanProcessor } from './pure-behavior-handler.js';
 
 const log = Logger.namespace('OTP_MESSAGE_PLAN_PROCESSOR');
 
@@ -180,9 +181,6 @@ export class OTPMessagePlanProcessor extends DefaultMessagePlanProcessor {
     try {
       // Check if this is a ContextActor that supports direct context updates
       if (actorInstance.getType?.() === 'context') {
-        // Import dynamically to avoid circular dependencies
-        const { isContextActor } = await import('./context-actor.js');
-
         if (isContextActor(actorInstance)) {
           log.debug('🔍 CONTEXT UPDATE: Direct update for ContextActor', {
             actorId,
@@ -192,9 +190,7 @@ export class OTPMessagePlanProcessor extends DefaultMessagePlanProcessor {
           // Update context directly on ContextActor
           // TypeScript doesn't know about updateContext on ActorInstance
           // but we've already verified it's a ContextActor
-          (
-            actorInstance as import('./context-actor.js').ContextActor<typeof newContext>
-          ).updateContext(newContext);
+          (actorInstance as ContextActor<typeof newContext>).updateContext(newContext);
 
           log.debug('🔍 CONTEXT UPDATE: Context updated directly', {
             actorId,

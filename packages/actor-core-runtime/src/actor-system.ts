@@ -341,7 +341,9 @@ export interface ActorSystem {
   /**
    * Look up an actor by its path
    */
-  lookup(path: string): Promise<ActorRef | undefined>;
+  lookup<TContext = unknown, TMessage extends ActorMessage = ActorMessage>(
+    path: string
+  ): Promise<ActorRef<TContext, TMessage> | undefined>;
 
   /**
    * Stop an actor

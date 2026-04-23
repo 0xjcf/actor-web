@@ -8,7 +8,7 @@ export { ActorEventBus } from './actor-event-bus.js';
 // Actor instance interface
 export type { ActorInstance, ActorInstanceType } from './actor-instance.js';
 // ActorRef is the primary public interface for actor references
-export type { ActorRef } from './actor-ref.js';
+export type { ActorEventSubscriptionOptions, ActorRef } from './actor-ref.js';
 // ActorRef utilities (errors from the old actor-ref.js)
 export {
   ActorStoppedError,
@@ -31,6 +31,7 @@ export type {
   ActorStats,
   ActorSystem,
   ClusterState,
+  MessageTransport,
   // JsonValue moved to types.js - import from there if needed
 } from './actor-system.js';
 export type { ActorSystemConfig } from './actor-system-impl.js';
@@ -139,13 +140,19 @@ export {
   type FasWorkflowTransitionRecord,
 } from './integration/fas-shared-contracts.js';
 export {
+  actorEventToIgniteSourceEvent,
   actorSnapshotToIgniteSourceSnapshot,
   type CreateIgniteActorSourceOptions,
   createIgniteActorSource,
+  type EventSubscribableActorRef,
   type IgniteActorSource,
+  type IgniteActorSourceEvent,
   type IgniteActorSourceSnapshot,
+  isEventSubscribableActorRef,
   isSnapshotSubscribableActorRef,
+  isTransportStatusSubscribableActorRef,
   type SnapshotSubscribableActorRef,
+  type TransportStatusSubscribableActorRef,
 } from './integration/ignite-element-bridge.js';
 export type { ScopedLogger } from './logger.js';
 // Logger utility
@@ -205,8 +212,14 @@ export {
   isActorHandlerResult,
   processSmartDefaults,
 } from './otp-types.js';
+export type {
+  ProjectionTransportState,
+  ProjectionTransportStatus,
+} from './projection-transport.js';
 // Actor implementation classes
 export { StatelessActor } from './stateless-actor.js';
+export type { InMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';
+export { createInMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';
 // Type helpers for context and message extraction
 export type {
   ContextOf,

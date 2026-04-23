@@ -11,6 +11,7 @@
 
 import type { AnyStateMachine, ContextFrom } from 'xstate';
 import type { ActorBehavior, ActorDependencies, ActorMessage, JsonValue } from './actor-system.js';
+import { registerMachineWithBehavior } from './machine-registry.js';
 import type { DomainEvent, MessagePlan } from './message-plan.js';
 import type { ActorHandlerResult } from './otp-types.js';
 import type { TypedActorInstance } from './typed-actor-instance.js';
@@ -153,6 +154,10 @@ export class UnifiedActorBuilder<TMsg extends ActorMessage, TEmitted, TCtx> {
         emitted: undefined as TEmitted | undefined,
       },
     };
+
+    if (this.spec.machine) {
+      registerMachineWithBehavior(behavior, this.spec.machine);
+    }
 
     // Return intersection type with phantom types for inference
     return {

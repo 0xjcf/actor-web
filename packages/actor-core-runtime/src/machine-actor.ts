@@ -248,6 +248,10 @@ export class MachineActor<
    */
   private buildSnapshot(xstateSnapshot: SnapshotFrom<TMachine>): ActorSnapshot {
     const snapshot = xstateSnapshot as XStateSnapshot;
+    const serialized =
+      typeof snapshot.toJSON === 'function' ? (snapshot.toJSON() as Record<string, unknown>) : {};
+    const serializedValue = serialized.value;
+    const serializedContext = serialized.context;
 
     // Determine status based on XState v5 snapshot
     let status: ActorStatus = 'idle';
@@ -260,8 +264,8 @@ export class MachineActor<
     }
 
     return {
-      value: snapshot.value ?? 'active',
-      context: snapshot.context ?? {},
+      value: snapshot.value ?? serializedValue ?? 'active',
+      context: snapshot.context ?? serializedContext ?? {},
       status,
       error: snapshot.error instanceof Error ? snapshot.error : undefined,
       matches: (state: string) => {

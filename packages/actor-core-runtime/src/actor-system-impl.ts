@@ -45,7 +45,7 @@ import { createMachine } from 'xstate';
 // ✅ CONTEXT ISOLATION: Actor context manager for identity boundaries
 import * as ActorContextManager from './actor-context-manager.js';
 import type { ActorInstance } from './actor-instance.js';
-import type { ActorRef } from './actor-ref.js';
+import type { ActorEventSubscriptionOptions, ActorRef } from './actor-ref.js';
 import type {
   ActorAddress,
   ActorBehavior,
@@ -55,13 +55,57 @@ import type {
   ActorStats,
   ActorSystem,
   ClusterState,
+  MessageTransport,
   SpawnOptions,
 } from './actor-system.js';
+import { parseActorPath } from './actor-system.js';
+import { createGuardianActor } from './actor-system-guardian.js';
+import { createSystemEventActor, type SystemEventPayload } from './actors/system-event-actor.js';
+// ✅ UNIFIED API DESIGN Phase 2.1: Auto-publishing system for event subscriptions
+import { AutoPublishingRegistry } from './auto-publishing.js';
 import { ContextActor } from './context-actor.js';
+import { type CorrelationManager, createCorrelationManager } from './correlation-manager.js';
+import { DistributedActorDirectory } from './distributed-actor-directory.js';
+import type { FluentBehaviorBuilder } from './fluent-behavior-builder.js';
+import {
+  actorMessageToFasEventEnvelope,
+  actorRuntimeProjectionToActorSnapshot,
+  actorSnapshotsToFasTransitionRecord,
+  actorSnapshotToFasWorkflowSnapshot,
+  fasEventEnvelopeToActorMessage,
+} from './integration/fas-shared-contracts.js';
+import { Logger } from './logger.js';
 import { MachineActor } from './machine-actor.js';
+import { getMachineFromBehavior } from './machine-registry.js';
+import { DeadLetterQueue } from './messaging/dead-letter-queue.js';
+import { InterceptorChain } from './messaging/interceptor-chain.js';
+import type {
+  InterceptorOptions,
+  MessageContext,
+  MessageInterceptor,
+} from './messaging/interceptors.js';
+import { createMessageContext } from './messaging/interceptors.js';
+import { type BoundedMailbox, createMailbox } from './messaging/mailbox.js';
+import { OTPMessagePlanProcessor } from './otp-message-plan-processor.js';
+import {
+  createProjectionTransportStatus,
+  type ProjectionTransportStatus,
+} from './projection-transport.js';
+// ✅ PURE ACTOR MODEL: Import pure behavior handler and OTP message plan processor
+import { type PureActorBehavior, PureActorBehaviorHandler } from './pure-behavior-handler.js';
+// ✅ PURE ACTOR MODEL: Import XState-based timeout management
+import { PureXStateTimeoutManager } from './pure-xstate-utilities.js';
+import {
+  isRuntimeProtocolMessage,
+  type RuntimeDirectoryEntry,
+  type RuntimeEventProjection,
+  type RuntimeProtocolMessage,
+  type RuntimeSnapshotProjection,
+} from './runtime-transport-protocol.js';
 import { StatelessActor } from './stateless-actor.js';
 import type { ContextOf, MessageOf } from './type-helpers.js';
 import type { ActorSnapshot, JsonValue, Message } from './types.js';
+import { generateCorrelationId } from './utils/factories.js';
 
 // ✅ Define specific message types for type safety
 interface SpawnChildMessage extends ActorMessage {
@@ -86,30 +130,48 @@ interface ActorFailedMessage extends ActorMessage {
   directive: string;
 }
 
-import { parseActorPath } from './actor-system.js';
-import { createGuardianActor } from './actor-system-guardian.js';
-import { createSystemEventActor, type SystemEventPayload } from './actors/system-event-actor.js';
-// ✅ UNIFIED API DESIGN Phase 2.1: Auto-publishing system for event subscriptions
-import { AutoPublishingRegistry } from './auto-publishing.js';
-import { type CorrelationManager, createCorrelationManager } from './correlation-manager.js';
-import { DistributedActorDirectory } from './distributed-actor-directory.js';
-import { Logger } from './logger.js';
-import { getMachineFromBehavior } from './machine-registry.js';
-import { DeadLetterQueue } from './messaging/dead-letter-queue.js';
-import { InterceptorChain } from './messaging/interceptor-chain.js';
-import type {
-  InterceptorOptions,
-  MessageContext,
-  MessageInterceptor,
-} from './messaging/interceptors.js';
-import { createMessageContext } from './messaging/interceptors.js';
-import { type BoundedMailbox, createMailbox } from './messaging/mailbox.js';
-import { OTPMessagePlanProcessor } from './otp-message-plan-processor.js';
-// ✅ PURE ACTOR MODEL: Import pure behavior handler and OTP message plan processor
-import { type PureActorBehavior, PureActorBehaviorHandler } from './pure-behavior-handler.js';
-// ✅ PURE ACTOR MODEL: Import XState-based timeout management
-import { PureXStateTimeoutManager } from './pure-xstate-utilities.js';
-import { generateCorrelationId } from './utils/factories.js';
+interface ActorProjectionState {
+  createdAt: string;
+  updatedAt: string;
+  correlationId: string;
+  lastEventType: string | null;
+  sequence: number;
+}
+
+interface RemoteProjectionWatcher {
+  address: ActorAddress;
+  snapshot: ActorSnapshot<unknown>;
+  snapshotListeners: Set<(snapshot: ActorSnapshot<unknown>) => void>;
+  eventSubscribers: Set<{
+    listener: (event: ActorMessage) => void;
+    types?: readonly string[];
+  }>;
+  statusListeners: Set<(status: ProjectionTransportStatus) => void>;
+  status: ProjectionTransportStatus;
+  snapshotSubscribed: boolean;
+  eventSubscribed: boolean;
+}
+
+interface OutboundRemoteProjectionSubscribers {
+  snapshotNodes: Set<string>;
+  eventNodes: Set<string>;
+}
+
+type MacrotaskScheduler = (callback: () => void) => void;
+
+const scheduleMacrotask: MacrotaskScheduler = (() => {
+  const maybeSetImmediate = (
+    globalThis as typeof globalThis & { setImmediate?: MacrotaskScheduler }
+  ).setImmediate;
+
+  if (typeof maybeSetImmediate === 'function') {
+    return (callback: () => void) => maybeSetImmediate(callback);
+  }
+
+  return (callback: () => void) => {
+    setTimeout(callback, 0);
+  };
+})();
 
 const log = Logger.namespace('ACTOR_SYSTEM');
 
@@ -117,9 +179,6 @@ const log = Logger.namespace('ACTOR_SYSTEM');
 const MAX_RESTART_ATTEMPTS = 3;
 const RESTART_WINDOW_MS = 30000; // 30 seconds
 const RESTART_BACKOFF_MS = 1000; // 1 second
-
-// Import the fluent builder types
-import type { FluentBehaviorBuilder } from './fluent-behavior-builder.js';
 
 /**
  * Directory configuration for actor lookup
@@ -168,6 +227,11 @@ export interface ActorSystemConfig {
    * Graceful shutdown timeout in milliseconds
    */
   shutdownTimeout?: number;
+
+  /**
+   * Optional cross-node runtime transport.
+   */
+  transport?: MessageTransport;
 }
 
 /**
@@ -206,11 +270,27 @@ export class ActorSystemImpl implements ActorSystem {
   private actors = new Map<string, PureActorBehavior<ActorMessage, ActorMessage>>();
   private actorInstances = new Map<string, ActorInstance>();
   private actorBehaviorHandlers = new Map<string, PureActorBehaviorHandler>();
+  private actorSnapshots = new Map<string, ActorSnapshot<unknown>>();
   private actorMailboxes = new Map<string, BoundedMailbox>();
   private actorProcessingLoops = new Map<string, boolean>(); // Track active processing loops
   private actorProcessingActive = new Map<string, boolean>(); // Track if loop is currently processing
   private directory: DistributedActorDirectory;
   private subscribers = new Map<string, Set<(message: ActorMessage) => void>>();
+  private snapshotSubscribers = new Map<string, Set<(snapshot: ActorSnapshot<unknown>) => void>>();
+  private actorEventSubscribers = new Map<
+    string,
+    Set<{
+      listener: (event: ActorMessage) => void;
+      types?: readonly string[];
+    }>
+  >();
+  private actorProjectionState = new Map<string, ActorProjectionState>();
+  private remoteProjectionWatchers = new Map<string, RemoteProjectionWatcher>();
+  private outboundRemoteProjectionSubscribers = new Map<
+    string,
+    OutboundRemoteProjectionSubscribers
+  >();
+  private transportSubscriptionStop: (() => void) | null = null;
 
   // System event and cluster event actors
   private guardianActorAddress?: ActorAddress;
@@ -318,6 +398,18 @@ export class ActorSystemImpl implements ActorSystem {
     };
 
     this.running = true;
+
+    if (this.config.transport) {
+      this.transportSubscriptionStop = this.config.transport.subscribe(
+        async ({ source, message }) => {
+          if (!isRuntimeProtocolMessage(message)) {
+            return;
+          }
+
+          await this.handleRuntimeProtocolMessage(source, message);
+        }
+      );
+    }
 
     log.debug('Spawning guardian actor');
     // Spawn guardian actor first - it supervises all other actors
@@ -440,6 +532,11 @@ export class ActorSystemImpl implements ActorSystem {
     // Clear directory
     await this.directory.cleanup();
 
+    if (this.transportSubscriptionStop) {
+      this.transportSubscriptionStop();
+      this.transportSubscriptionStop = null;
+    }
+
     // Cleanup request manager - handled automatically on system shutdown
 
     await this.emitSystemEvent({ eventType: 'stopped', timestamp: Date.now() });
@@ -473,8 +570,7 @@ export class ActorSystemImpl implements ActorSystem {
         // Create MachineActor wrapper for consistency
         const machineDependencies = {
           emit: (event: ActorMessage) => {
-            const address = parseActorPath(path);
-            this.emitEventToSubscribers(address, event);
+            this.publishActorEvent(address, event);
           },
           logger: (msg: string, data?: unknown) => log.debug(msg, data),
           system: this,
@@ -490,15 +586,7 @@ export class ActorSystemImpl implements ActorSystem {
           actor: machineActorInstance,
           self: selfRef,
           emit: (event: unknown) => {
-            const eventMessage = this.createEventMessage({ path } as ActorAddress, event);
-            // Use existing event emission to subscribers
-            const eventKey = `${path}:EMIT:${eventMessage.type}`;
-            const eventSubscribers = this.subscribers.get(eventKey);
-            if (eventSubscribers) {
-              for (const handler of Array.from(eventSubscribers)) {
-                handler(eventMessage);
-              }
-            }
+            this.publishActorEvent(address, event);
           },
           send: async () => {}, // Simple no-op for onStop
           ask: async <T>() => Promise.resolve({} as T), // Simple no-op for onStop
@@ -525,10 +613,19 @@ export class ActorSystemImpl implements ActorSystem {
 
     // ✅ PURE ACTOR MODEL: Clean up actor instance and behavior handler
     const actorInstance = this.actorInstances.get(path);
+    const lastKnownSnapshot =
+      this.actorSnapshots.get(path) ??
+      actorInstance?.getSnapshot() ??
+      this.createFallbackSnapshot();
     if (actorInstance) {
       actorInstance.stop();
       this.actorInstances.delete(path);
     }
+    const stoppedSnapshot = this.createFallbackSnapshot('stopped', lastKnownSnapshot);
+    this.actorSnapshots.set(path, stoppedSnapshot);
+    this.notifySnapshotSubscribers(path, stoppedSnapshot);
+    await this.publishRemoteSnapshotProjection(address, stoppedSnapshot, lastKnownSnapshot);
+    this.actorEventSubscribers.delete(path);
     this.actorBehaviorHandlers.delete(path);
 
     // Remove from local actors
@@ -541,9 +638,12 @@ export class ActorSystemImpl implements ActorSystem {
 
     // Unregister from directory
     await this.directory.unregister(address);
+    await this.broadcastDirectoryUnregister(address);
 
     // Clear stats
     this.actorStats.delete(path);
+    this.actorProjectionState.delete(path);
+    this.outboundRemoteProjectionSubscribers.delete(path);
 
     globalActorCount--;
 
@@ -633,8 +733,7 @@ export class ActorSystemImpl implements ActorSystem {
       // Create MachineActor wrapper with dependency injection
       const dependencies = {
         emit: (event: ActorMessage) => {
-          const address = parseActorPath(path);
-          this.emitEventToSubscribers(address, event);
+          this.publishActorEvent(address, event);
         },
         logger: (msg: string, data?: unknown) => log.debug(msg, data),
         system: this,
@@ -662,6 +761,14 @@ export class ActorSystemImpl implements ActorSystem {
 
     // Store in polymorphic map
     this.actorInstances.set(path, actorInstance);
+    this.actorSnapshots.set(path, actorInstance.getSnapshot());
+    this.actorProjectionState.set(path, {
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      correlationId: path,
+      lastEventType: null,
+      sequence: 0,
+    });
 
     // ✅ PURE ACTOR MODEL: Create and store behavior handler for this actor
     const behaviorHandler = new PureActorBehaviorHandler(this.messagePlanProcessor);
@@ -673,6 +780,7 @@ export class ActorSystemImpl implements ActorSystem {
       nodeAddress: this.config.nodeAddress,
     });
     await this.directory.register(address, this.config.nodeAddress);
+    await this.broadcastDirectoryRegister(address);
     log.debug('Actor registered in directory', {
       actorPath: path,
     });
@@ -738,18 +846,29 @@ export class ActorSystemImpl implements ActorSystem {
   /**
    * Lookup an actor by path
    */
-  async lookup(path: string): Promise<ActorRef | undefined> {
+  async lookup<TContext = unknown, TMessage extends ActorMessage = ActorMessage>(
+    path: string
+  ): Promise<ActorRef<TContext, TMessage> | undefined> {
     const address = parseActorPath(path);
     if (!address) {
       return undefined;
     }
 
-    const location = await this.directory.lookup(address);
+    let location = await this.directory.lookup(address);
+    const node = this.getAddressNode(address);
+    if (!location && node && this.config.transport?.isConnected(node)) {
+      await this.requestDirectorySync(node);
+      location = await this.directory.lookup(address);
+    }
     if (!location) {
       return undefined;
     }
 
-    return new ActorPIDImpl(address, this);
+    if (location !== this.config.nodeAddress) {
+      await this.primeRemoteProjectionWatcher(address);
+    }
+
+    return new ActorPIDImpl(address, this) as unknown as ActorRef<TContext, TMessage>;
   }
 
   /**
@@ -800,8 +919,18 @@ export class ActorSystemImpl implements ActorSystem {
    * Join a cluster of nodes
    */
   async join(nodes: string[]): Promise<void> {
+    if (this.config.transport) {
+      for (const node of nodes) {
+        if (node === this.config.nodeAddress || this.config.transport.isConnected(node)) {
+          continue;
+        }
+
+        await this.config.transport.connect(node);
+      }
+    }
+
     this.clusterState = {
-      nodes: [...this.clusterState.nodes, ...nodes],
+      nodes: Array.from(new Set([...this.clusterState.nodes, ...nodes])),
       leader: this.clusterState.leader,
       status: 'up',
     };
@@ -816,6 +945,12 @@ export class ActorSystemImpl implements ActorSystem {
    * Leave the cluster
    */
   async leave(): Promise<void> {
+    if (this.config.transport) {
+      for (const node of this.config.transport.getConnectedNodes()) {
+        await this.config.transport.disconnect(node);
+      }
+    }
+
     this.clusterState = {
       nodes: [this.config.nodeAddress],
       leader: this.config.nodeAddress,
@@ -839,7 +974,9 @@ export class ActorSystemImpl implements ActorSystem {
    */
   private async emitSystemEvent(event: SystemEventPayload): Promise<void> {
     if (!this.systemEventActorAddress) {
-      log.warn('System event actor not initialized');
+      log.debug('Skipping system event emission before system event actor initialization', {
+        eventType: event.eventType,
+      });
       return;
     }
 
@@ -1332,8 +1469,8 @@ export class ActorSystemImpl implements ActorSystem {
               !this.actorProcessingActive.get(address.path)
             ) {
               this.actorProcessingActive.set(address.path, true);
-              // Use setImmediate to break out of microtask queue and prevent infinite loops
-              setImmediate(() => this.processActorMessages(address, behavior));
+              // Yield to the next macrotask to break out of the current processing turn
+              scheduleMacrotask(() => this.processActorMessages(address, behavior));
             }
           }
         }
@@ -1388,8 +1525,8 @@ export class ActorSystemImpl implements ActorSystem {
     // Mark as actively processing immediately to prevent race conditions
     this.actorProcessingActive.set(address.path, true);
 
-    // Use setImmediate to start processing on next event loop iteration
-    setImmediate(() => this.processActorMessages(address, behavior));
+    // Start processing on the next macrotask so browser workers can run this path too
+    scheduleMacrotask(() => this.processActorMessages(address, behavior));
   }
 
   /**
@@ -1507,8 +1644,8 @@ export class ActorSystemImpl implements ActorSystem {
         nextProcessId: 'will-be-generated',
       });
       // More messages available, continue processing
-      // Use setImmediate to yield control and prevent blocking the event loop
-      setImmediate(() => this.processActorMessages(address, behavior));
+      // Yield before the next processing round to avoid monopolizing the event loop
+      scheduleMacrotask(() => this.processActorMessages(address, behavior));
     } else {
       log.debug('Processing complete, marking idle', {
         actorPath: address.path,
@@ -1528,6 +1665,18 @@ export class ActorSystemImpl implements ActorSystem {
   async askActor<T>(address: ActorAddress, message: ActorMessage, timeout: number): Promise<T> {
     log.debug('🔍 ASK: Starting askActor with correlation manager');
 
+    if (this.isKnownRemoteAddress(address)) {
+      return this.requestRemoteActorAsk<T>(address, message, timeout);
+    }
+
+    return this.askLocalActor(address, message, timeout);
+  }
+
+  private async askLocalActor<T>(
+    address: ActorAddress,
+    message: ActorMessage,
+    timeout: number
+  ): Promise<T> {
     // Import ask pattern safeguards
     const { createAskTimeout } = await import('./ask-pattern-safeguards.js');
 
@@ -1655,6 +1804,11 @@ export class ActorSystemImpl implements ActorSystem {
    * Stop an actor by address (internal method)
    */
   async stopActorInternal(address: ActorAddress): Promise<void> {
+    if (this.isKnownRemoteAddress(address)) {
+      await this.requestRemoteActorStop(address);
+      return;
+    }
+
     // Find the actor in our local actors map
     if (this.actors.has(address.path)) {
       // Create a temporary PID to call the public stop method
@@ -1680,6 +1834,10 @@ export class ActorSystemImpl implements ActorSystem {
     errors: number;
     uptime: number;
   }> {
+    if (this.isKnownRemoteAddress(address)) {
+      return this.requestRemoteActorStats(address);
+    }
+
     const stats = this.actorStats.get(address.path);
     if (!stats) {
       return {
@@ -1695,6 +1853,133 @@ export class ActorSystemImpl implements ActorSystem {
       ...stats,
       uptime: (now - stats.startTime) / 1000,
     };
+  }
+
+  getActorSnapshotInternal(address: ActorAddress): ActorSnapshot<unknown> {
+    if (this.isKnownRemoteAddress(address)) {
+      return this.getOrCreateRemoteProjectionWatcher(address).snapshot;
+    }
+
+    return this.getLocalActorSnapshot(address.path);
+  }
+
+  subscribeToActorSnapshots(
+    address: ActorAddress,
+    listener: (snapshot: ActorSnapshot<unknown>) => void
+  ): () => void {
+    if (this.isKnownRemoteAddress(address)) {
+      return this.subscribeToRemoteActorSnapshots(address, listener);
+    }
+
+    return this.subscribeToLocalActorSnapshots(address.path, listener);
+  }
+
+  subscribeToActorEvents(
+    address: ActorAddress,
+    listener: (event: ActorMessage) => void,
+    options: ActorEventSubscriptionOptions = {}
+  ): () => void {
+    if (this.isKnownRemoteAddress(address)) {
+      return this.subscribeToRemoteActorEvents(address, listener, options);
+    }
+
+    return this.subscribeToLocalActorEvents(address.path, listener, options);
+  }
+
+  getActorTransportStatusInternal(address: ActorAddress): ProjectionTransportStatus {
+    if (this.isKnownRemoteAddress(address)) {
+      return this.getOrCreateRemoteProjectionWatcher(address).status;
+    }
+
+    return createProjectionTransportStatus('local');
+  }
+
+  subscribeToActorTransportStatus(
+    address: ActorAddress,
+    listener: (status: ProjectionTransportStatus) => void
+  ): () => void {
+    if (this.isKnownRemoteAddress(address)) {
+      const watcher = this.getOrCreateRemoteProjectionWatcher(address);
+      watcher.statusListeners.add(listener);
+      listener(watcher.status);
+
+      return () => {
+        watcher.statusListeners.delete(listener);
+      };
+    }
+
+    listener(createProjectionTransportStatus('local'));
+    return () => {};
+  }
+
+  private getLocalActorSnapshot(path: string): ActorSnapshot<unknown> {
+    const actorInstance = this.actorInstances.get(path);
+    if (actorInstance) {
+      const snapshot = actorInstance.getSnapshot();
+      this.actorSnapshots.set(path, snapshot);
+      return snapshot;
+    }
+
+    return this.actorSnapshots.get(path) ?? this.createFallbackSnapshot();
+  }
+
+  private subscribeToLocalActorSnapshots(
+    path: string,
+    listener: (snapshot: ActorSnapshot<unknown>) => void
+  ): () => void {
+    const key = path;
+    if (!this.snapshotSubscribers.has(key)) {
+      this.snapshotSubscribers.set(key, new Set());
+    }
+
+    this.snapshotSubscribers.get(key)?.add(listener);
+
+    return () => {
+      const listeners = this.snapshotSubscribers.get(key);
+      if (listeners) {
+        listeners.delete(listener);
+        if (listeners.size === 0) {
+          this.snapshotSubscribers.delete(key);
+        }
+      }
+    };
+  }
+
+  private subscribeToLocalActorEvents(
+    path: string,
+    listener: (event: ActorMessage) => void,
+    options: ActorEventSubscriptionOptions = {}
+  ): () => void {
+    const key = path;
+    if (!this.actorEventSubscribers.has(key)) {
+      this.actorEventSubscribers.set(key, new Set());
+    }
+
+    const subscriber = {
+      listener,
+      types: options.types,
+    };
+
+    this.actorEventSubscribers.get(key)?.add(subscriber);
+
+    return () => {
+      const subscribers = this.actorEventSubscribers.get(key);
+      if (subscribers) {
+        subscribers.delete(subscriber);
+        if (subscribers.size === 0) {
+          this.actorEventSubscribers.delete(key);
+        }
+      }
+    };
+  }
+
+  private getAddressNode(address: ActorAddress): string | undefined {
+    return address.node ?? parseActorPath(address.path).node;
+  }
+
+  private isKnownRemoteAddress(address: ActorAddress): boolean {
+    const node = this.getAddressNode(address);
+    return Boolean(node && node !== this.config.nodeAddress);
   }
 
   /**
@@ -1773,6 +2058,26 @@ export class ActorSystemImpl implements ActorSystem {
       '_timestamp' in obj &&
       '_version' in obj
     );
+  }
+
+  private publishActorEvent(address: ActorAddress, event: unknown): void {
+    const eventMessage = this.createEventMessage(address, event);
+
+    log.debug('🔍 PUBLISH EVENT DEBUG: Publishing actor event', {
+      actorPath: address.path,
+      eventType: eventMessage.type,
+    });
+
+    this.updateActorProjectionState(address.path, {
+      updatedAt: new Date().toISOString(),
+      lastEventType: eventMessage.type,
+      correlationId:
+        eventMessage._correlationId ?? this.getActorProjectionState(address.path).correlationId,
+    });
+    this.autoPublishingRegistry.trackEmittedEvent(address.path, eventMessage.type);
+    this.notifyActorEventSubscribers(address, eventMessage);
+    this.emitEventToSubscribers(address, eventMessage);
+    void this.publishRemoteActorEvent(address, eventMessage);
   }
 
   /**
@@ -1964,6 +2269,21 @@ export class ActorSystemImpl implements ActorSystem {
         dependencies
       );
 
+      const previousSnapshot = this.cloneSnapshot(
+        this.actorSnapshots.get(address.path) ?? actorInstance.getSnapshot()
+      );
+      const latestSnapshot = actorInstance.getSnapshot();
+      this.updateActorProjectionState(address.path, {
+        updatedAt: new Date().toISOString(),
+        correlationId: processedMessage._correlationId ?? address.path,
+      });
+      this.actorSnapshots.set(address.path, latestSnapshot);
+      const snapshotChanged = !this.snapshotsAreEquivalent(previousSnapshot, latestSnapshot);
+      if (snapshotChanged) {
+        this.notifySnapshotSubscribers(address.path, latestSnapshot);
+        await this.publishRemoteSnapshotProjection(address, latestSnapshot, previousSnapshot);
+      }
+
       log.debug('🔍 PROCESS MESSAGE DEBUG: behaviorHandler.handleMessage completed', {
         actorPath: address.path,
         messageType: processedMessage.type,
@@ -2131,6 +2451,1007 @@ export class ActorSystemImpl implements ActorSystem {
     }
   }
 
+  private notifySnapshotSubscribers(path: string, snapshot: ActorSnapshot<unknown>): void {
+    const subscribers = this.snapshotSubscribers.get(path);
+    if (!subscribers) {
+      return;
+    }
+
+    for (const listener of Array.from(subscribers)) {
+      listener(snapshot);
+    }
+  }
+
+  private notifyActorEventSubscribers(address: ActorAddress, event: ActorMessage): void {
+    const subscribers = this.actorEventSubscribers.get(address.path);
+    if (!subscribers) {
+      return;
+    }
+
+    for (const subscriber of Array.from(subscribers)) {
+      if (
+        subscriber.types &&
+        subscriber.types.length > 0 &&
+        !subscriber.types.includes(event.type)
+      ) {
+        continue;
+      }
+
+      subscriber.listener(event);
+    }
+  }
+
+  private async handleRuntimeProtocolMessage(
+    source: string,
+    message: RuntimeProtocolMessage
+  ): Promise<void> {
+    switch (message.type) {
+      case '__runtime.transport.connected':
+        await this.handleTransportConnected(message.nodeAddress);
+        return;
+      case '__runtime.transport.disconnected':
+        await this.handleTransportDisconnected(message.nodeAddress);
+        return;
+      case '__runtime.directory.register':
+        this.directory.applyRemoteEntry(message.entry);
+        return;
+      case '__runtime.directory.unregister':
+        this.directory.removeRemoteEntry(message.address);
+        return;
+      case '__runtime.directory.sync.request':
+        await this.sendTransportMessage(source, {
+          type: '__runtime.directory.sync.response',
+          requestId: message.requestId,
+          entries: this.directory.exportEntries(),
+          _timestamp: Date.now(),
+          _version: '1.0.0',
+        });
+        return;
+      case '__runtime.directory.sync.response':
+      case '__runtime.remote.ask.response':
+      case '__runtime.remote.snapshot.fetch.response':
+      case '__runtime.remote.stop.response':
+      case '__runtime.remote.stats.response':
+        this.correlationManager.handleResponse(message.requestId, message);
+        return;
+      case '__runtime.remote.ask.error':
+      case '__runtime.remote.snapshot.fetch.error':
+      case '__runtime.remote.stop.error':
+      case '__runtime.remote.stats.error':
+        this.correlationManager.handleError(message.requestId, new Error(message.errorMessage));
+        return;
+      case '__runtime.remote.send':
+        await this.enqueueMessage(message.address, message.message);
+        return;
+      case '__runtime.remote.ask.request':
+        try {
+          const payload = await this.askLocalActor(
+            message.address,
+            message.message,
+            message.timeout
+          );
+          await this.sendTransportMessage(source, {
+            type: '__runtime.remote.ask.response',
+            requestId: message.requestId,
+            payload,
+            _timestamp: Date.now(),
+            _version: '1.0.0',
+          });
+        } catch (error) {
+          await this.sendRuntimeRequestError(
+            source,
+            '__runtime.remote.ask.error',
+            message.requestId,
+            error
+          );
+        }
+        return;
+      case '__runtime.remote.snapshot.fetch.request':
+        try {
+          await this.sendTransportMessage(source, {
+            type: '__runtime.remote.snapshot.fetch.response',
+            requestId: message.requestId,
+            payload: this.createSnapshotProjection(
+              message.address,
+              this.getLocalActorSnapshot(message.address.path)
+            ),
+            _timestamp: Date.now(),
+            _version: '1.0.0',
+          });
+        } catch (error) {
+          await this.sendRuntimeRequestError(
+            source,
+            '__runtime.remote.snapshot.fetch.error',
+            message.requestId,
+            error
+          );
+        }
+        return;
+      case '__runtime.remote.snapshot.subscribe':
+        await this.addOutboundRemoteProjectionSubscriber(message.address, source, 'snapshot');
+        return;
+      case '__runtime.remote.snapshot.unsubscribe':
+        this.removeOutboundRemoteProjectionSubscriber(message.address, source, 'snapshot');
+        return;
+      case '__runtime.remote.snapshot.update':
+        this.handleRemoteSnapshotProjection(message.payload);
+        return;
+      case '__runtime.remote.event.subscribe':
+        await this.addOutboundRemoteProjectionSubscriber(message.address, source, 'event');
+        return;
+      case '__runtime.remote.event.unsubscribe':
+        this.removeOutboundRemoteProjectionSubscriber(message.address, source, 'event');
+        return;
+      case '__runtime.remote.event.update':
+        this.handleRemoteEventProjection(message.payload);
+        return;
+      case '__runtime.remote.stop.request':
+        try {
+          await this.stopActorInternal(message.address);
+          await this.sendTransportMessage(source, {
+            type: '__runtime.remote.stop.response',
+            requestId: message.requestId,
+            payload: { stopped: true },
+            _timestamp: Date.now(),
+            _version: '1.0.0',
+          });
+        } catch (error) {
+          await this.sendRuntimeRequestError(
+            source,
+            '__runtime.remote.stop.error',
+            message.requestId,
+            error
+          );
+        }
+        return;
+      case '__runtime.remote.stats.request':
+        try {
+          await this.sendTransportMessage(source, {
+            type: '__runtime.remote.stats.response',
+            requestId: message.requestId,
+            payload: await this.getActorStatsInternal(message.address),
+            _timestamp: Date.now(),
+            _version: '1.0.0',
+          });
+        } catch (error) {
+          await this.sendRuntimeRequestError(
+            source,
+            '__runtime.remote.stats.error',
+            message.requestId,
+            error
+          );
+        }
+        return;
+    }
+  }
+
+  private getActorProjectionState(path: string): ActorProjectionState {
+    const existingState = this.actorProjectionState.get(path);
+    if (existingState) {
+      return existingState;
+    }
+
+    const now = new Date().toISOString();
+    const createdState: ActorProjectionState = {
+      createdAt: now,
+      updatedAt: now,
+      correlationId: path,
+      lastEventType: null,
+      sequence: 0,
+    };
+    this.actorProjectionState.set(path, createdState);
+    return createdState;
+  }
+
+  private updateActorProjectionState(
+    path: string,
+    updates: Partial<Omit<ActorProjectionState, 'createdAt' | 'sequence'>> & {
+      sequence?: number;
+    }
+  ): ActorProjectionState {
+    const currentState = this.getActorProjectionState(path);
+    const nextState: ActorProjectionState = {
+      ...currentState,
+      ...updates,
+      createdAt: currentState.createdAt,
+      sequence: updates.sequence ?? currentState.sequence,
+    };
+    this.actorProjectionState.set(path, nextState);
+    return nextState;
+  }
+
+  private nextActorProjectionSequence(path: string): number {
+    const state = this.getActorProjectionState(path);
+    const nextSequence = state.sequence + 1;
+    this.actorProjectionState.set(path, {
+      ...state,
+      sequence: nextSequence,
+    });
+    return nextSequence;
+  }
+
+  private currentActorProjectionSequence(path: string): number {
+    return this.getActorProjectionState(path).sequence;
+  }
+
+  private createRemoteProjectionWatcher(address: ActorAddress): RemoteProjectionWatcher {
+    const node = this.getAddressNode(address) ?? '';
+    return {
+      address,
+      snapshot: this.createFallbackSnapshot(),
+      snapshotListeners: new Set(),
+      eventSubscribers: new Set(),
+      statusListeners: new Set(),
+      status: createProjectionTransportStatus(
+        this.config.transport?.isConnected(node) ? 'replaying' : 'disconnected',
+        {
+          reason: this.config.transport ? undefined : 'No runtime transport configured',
+        }
+      ),
+      snapshotSubscribed: false,
+      eventSubscribed: false,
+    };
+  }
+
+  private getOrCreateRemoteProjectionWatcher(address: ActorAddress): RemoteProjectionWatcher {
+    const existingWatcher = this.remoteProjectionWatchers.get(address.path);
+    if (existingWatcher) {
+      return existingWatcher;
+    }
+
+    const watcher = this.createRemoteProjectionWatcher(address);
+    this.remoteProjectionWatchers.set(address.path, watcher);
+    return watcher;
+  }
+
+  private updateRemoteProjectionWatcherStatus(
+    watcher: RemoteProjectionWatcher,
+    nextStatus: ProjectionTransportStatus
+  ): void {
+    watcher.status = nextStatus;
+    for (const listener of Array.from(watcher.statusListeners)) {
+      listener(nextStatus);
+    }
+  }
+
+  private createSnapshotProjection(
+    address: ActorAddress,
+    snapshot: ActorSnapshot<unknown>,
+    previousSnapshot?: ActorSnapshot<unknown>,
+    sequence = this.currentActorProjectionSequence(address.path)
+  ): RuntimeSnapshotProjection {
+    const projectionState = this.getActorProjectionState(address.path);
+    const workflowSnapshot = actorSnapshotToFasWorkflowSnapshot({
+      snapshot,
+      workflowId: address.path,
+      actorId: address.id,
+      taskId: address.id,
+      taskTitle: address.id,
+      createdAt: projectionState.createdAt,
+      updatedAt: projectionState.updatedAt,
+      correlationId: projectionState.correlationId,
+      lastEventType: projectionState.lastEventType,
+    });
+
+    const transition =
+      previousSnapshot &&
+      (previousSnapshot.status !== snapshot.status || previousSnapshot.value !== snapshot.value)
+        ? actorSnapshotsToFasTransitionRecord({
+            fromSnapshot: previousSnapshot,
+            toSnapshot: snapshot,
+          })
+        : undefined;
+
+    return {
+      address,
+      workflowSnapshot,
+      value: snapshot.value,
+      context: snapshot.context,
+      sequence,
+      transition,
+    };
+  }
+
+  private createEventProjection(
+    address: ActorAddress,
+    event: ActorMessage,
+    sequence = this.currentActorProjectionSequence(address.path)
+  ): RuntimeEventProjection {
+    return {
+      address,
+      envelope: actorMessageToFasEventEnvelope(event as typeof event & Record<string, unknown>, {
+        id: `${address.path}:event:${sequence}`,
+        kind: 'fact',
+        occurredAt: new Date(event._timestamp ?? Date.now()).toISOString(),
+        sourceActor: address.path,
+        workflowId: address.path,
+        taskId: address.id,
+        correlationId:
+          event._correlationId ?? this.getActorProjectionState(address.path).correlationId,
+      }),
+      sequence,
+    };
+  }
+
+  private handleRemoteSnapshotProjection(payload: RuntimeSnapshotProjection): void {
+    const watcher = this.getOrCreateRemoteProjectionWatcher(payload.address);
+    const previousSequence = watcher.status.lastSequence;
+
+    if (previousSequence !== undefined) {
+      if (payload.sequence <= previousSequence) {
+        return;
+      }
+
+      if (payload.sequence > previousSequence + 1) {
+        this.updateRemoteProjectionWatcherStatus(
+          watcher,
+          createProjectionTransportStatus('degraded', {
+            lastSequence: previousSequence,
+            reason: `Projection sequence gap detected for ${payload.address.path}`,
+          })
+        );
+      }
+    }
+
+    watcher.snapshot = actorRuntimeProjectionToActorSnapshot({
+      workflowSnapshot: payload.workflowSnapshot,
+      value: payload.value,
+      context: payload.context,
+    });
+
+    for (const listener of Array.from(watcher.snapshotListeners)) {
+      listener(watcher.snapshot);
+    }
+
+    const nextState = watcher.status.state === 'replaying' ? 'replaying' : watcher.status.state;
+    this.updateRemoteProjectionWatcherStatus(
+      watcher,
+      createProjectionTransportStatus(nextState === 'disconnected' ? 'connected' : nextState, {
+        lastSequence: payload.sequence,
+        lagMs: this.calculateProjectionLagMs(payload.workflowSnapshot.updatedAt),
+        reason: nextState === 'degraded' ? watcher.status.reason : undefined,
+      })
+    );
+  }
+
+  private handleRemoteEventProjection(payload: RuntimeEventProjection): void {
+    const watcher = this.getOrCreateRemoteProjectionWatcher(payload.address);
+    const previousSequence = watcher.status.lastSequence;
+
+    if (previousSequence !== undefined) {
+      if (payload.sequence <= previousSequence) {
+        return;
+      }
+
+      if (payload.sequence > previousSequence + 1) {
+        this.updateRemoteProjectionWatcherStatus(
+          watcher,
+          createProjectionTransportStatus('degraded', {
+            lastSequence: previousSequence,
+            reason: `Projection sequence gap detected for ${payload.address.path}`,
+          })
+        );
+      }
+    }
+
+    const event = fasEventEnvelopeToActorMessage(payload.envelope);
+    for (const subscriber of Array.from(watcher.eventSubscribers)) {
+      if (
+        subscriber.types &&
+        subscriber.types.length > 0 &&
+        !subscriber.types.includes(event.type)
+      ) {
+        continue;
+      }
+
+      subscriber.listener(event);
+    }
+
+    const nextState = watcher.status.state === 'replaying' ? 'replaying' : watcher.status.state;
+    this.updateRemoteProjectionWatcherStatus(
+      watcher,
+      createProjectionTransportStatus(nextState === 'disconnected' ? 'connected' : nextState, {
+        lastSequence: payload.sequence,
+        lagMs: this.calculateProjectionLagMs(payload.envelope.occurredAt),
+        reason: nextState === 'degraded' ? watcher.status.reason : undefined,
+      })
+    );
+  }
+
+  private calculateProjectionLagMs(updatedAt: string | undefined): number | undefined {
+    if (!updatedAt) {
+      return undefined;
+    }
+
+    const parsed = Date.parse(updatedAt);
+    if (Number.isNaN(parsed)) {
+      return undefined;
+    }
+
+    return Math.max(0, Date.now() - parsed);
+  }
+
+  private async handleTransportConnected(nodeAddress: string): Promise<void> {
+    this.clusterState = {
+      ...this.clusterState,
+      nodes: Array.from(new Set([...this.clusterState.nodes, nodeAddress])),
+      status: 'up',
+    };
+
+    try {
+      await this.requestDirectorySync(nodeAddress);
+    } catch (error) {
+      log.warn('Failed to sync remote directory on transport connect', {
+        nodeAddress,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    const watcherPromises = Array.from(this.remoteProjectionWatchers.values())
+      .filter((watcher) => this.getAddressNode(watcher.address) === nodeAddress)
+      .map((watcher) => this.replayRemoteProjectionWatcher(watcher));
+
+    await Promise.allSettled(watcherPromises);
+  }
+
+  private async handleTransportDisconnected(nodeAddress: string): Promise<void> {
+    this.clusterState = {
+      ...this.clusterState,
+      nodes: this.clusterState.nodes.filter(
+        (node) => node === this.config.nodeAddress || node !== nodeAddress
+      ),
+      status: 'up',
+    };
+
+    const allEntries = await this.directory.getAll();
+    for (const [path, location] of Array.from(allEntries.entries())) {
+      if (location !== nodeAddress) {
+        continue;
+      }
+
+      const address = parseActorPath(path);
+      if (address) {
+        this.directory.removeRemoteEntry(address);
+      }
+    }
+
+    for (const watcher of Array.from(this.remoteProjectionWatchers.values())) {
+      if (this.getAddressNode(watcher.address) !== nodeAddress) {
+        continue;
+      }
+
+      this.updateRemoteProjectionWatcherStatus(
+        watcher,
+        createProjectionTransportStatus('disconnected', {
+          lastSequence: watcher.status.lastSequence,
+          reason: `Transport disconnected from ${nodeAddress}`,
+        })
+      );
+    }
+
+    this.removeOutboundRemoteProjectionSubscriptionsForNode(nodeAddress);
+  }
+
+  private async replayRemoteProjectionWatcher(watcher: RemoteProjectionWatcher): Promise<void> {
+    this.updateRemoteProjectionWatcherStatus(
+      watcher,
+      createProjectionTransportStatus('replaying', {
+        lastSequence: watcher.status.lastSequence,
+      })
+    );
+
+    try {
+      if (watcher.snapshotSubscribed) {
+        await this.sendTransportMessage(this.getAddressNode(watcher.address), {
+          type: '__runtime.remote.snapshot.subscribe',
+          address: watcher.address,
+          _timestamp: Date.now(),
+          _version: '1.0.0',
+        });
+      }
+
+      if (watcher.eventSubscribed) {
+        await this.sendTransportMessage(this.getAddressNode(watcher.address), {
+          type: '__runtime.remote.event.subscribe',
+          address: watcher.address,
+          _timestamp: Date.now(),
+          _version: '1.0.0',
+        });
+      }
+
+      const projection = await this.requestRemoteSnapshotProjection(watcher.address);
+      this.handleRemoteSnapshotProjection(projection);
+      this.updateRemoteProjectionWatcherStatus(
+        watcher,
+        createProjectionTransportStatus('connected', {
+          lastSequence: projection.sequence,
+          lagMs: this.calculateProjectionLagMs(projection.workflowSnapshot.updatedAt),
+        })
+      );
+    } catch (error) {
+      this.updateRemoteProjectionWatcherStatus(
+        watcher,
+        createProjectionTransportStatus('degraded', {
+          lastSequence: watcher.status.lastSequence,
+          reason: error instanceof Error ? error.message : 'Projection replay failed',
+        })
+      );
+    }
+  }
+
+  private async primeRemoteProjectionWatcher(address: ActorAddress): Promise<void> {
+    const watcher = this.getOrCreateRemoteProjectionWatcher(address);
+    try {
+      const projection = await this.requestRemoteSnapshotProjection(address);
+      watcher.snapshot = actorRuntimeProjectionToActorSnapshot({
+        workflowSnapshot: projection.workflowSnapshot,
+        value: projection.value,
+        context: projection.context,
+      });
+      this.updateRemoteProjectionWatcherStatus(
+        watcher,
+        createProjectionTransportStatus('connected', {
+          lastSequence: projection.sequence,
+          lagMs: this.calculateProjectionLagMs(projection.workflowSnapshot.updatedAt),
+        })
+      );
+    } catch (error) {
+      this.updateRemoteProjectionWatcherStatus(
+        watcher,
+        createProjectionTransportStatus('disconnected', {
+          lastSequence: watcher.status.lastSequence,
+          reason: error instanceof Error ? error.message : 'Remote snapshot priming failed',
+        })
+      );
+    }
+  }
+
+  private subscribeToRemoteActorSnapshots(
+    address: ActorAddress,
+    listener: (snapshot: ActorSnapshot<unknown>) => void
+  ): () => void {
+    const watcher = this.getOrCreateRemoteProjectionWatcher(address);
+    watcher.snapshotListeners.add(listener);
+
+    if (!watcher.snapshotSubscribed) {
+      watcher.snapshotSubscribed = true;
+      void this.sendTransportMessage(this.getAddressNode(address), {
+        type: '__runtime.remote.snapshot.subscribe',
+        address,
+        _timestamp: Date.now(),
+        _version: '1.0.0',
+      });
+    }
+
+    return () => {
+      watcher.snapshotListeners.delete(listener);
+      if (watcher.snapshotListeners.size === 0 && watcher.snapshotSubscribed) {
+        watcher.snapshotSubscribed = false;
+        void this.sendTransportMessage(this.getAddressNode(address), {
+          type: '__runtime.remote.snapshot.unsubscribe',
+          address,
+          _timestamp: Date.now(),
+          _version: '1.0.0',
+        });
+      }
+    };
+  }
+
+  private subscribeToRemoteActorEvents(
+    address: ActorAddress,
+    listener: (event: ActorMessage) => void,
+    options: ActorEventSubscriptionOptions = {}
+  ): () => void {
+    const watcher = this.getOrCreateRemoteProjectionWatcher(address);
+    const subscriber = {
+      listener,
+      types: options.types,
+    };
+    watcher.eventSubscribers.add(subscriber);
+
+    if (!watcher.eventSubscribed) {
+      watcher.eventSubscribed = true;
+      void this.sendTransportMessage(this.getAddressNode(address), {
+        type: '__runtime.remote.event.subscribe',
+        address,
+        _timestamp: Date.now(),
+        _version: '1.0.0',
+      });
+    }
+
+    return () => {
+      watcher.eventSubscribers.delete(subscriber);
+      if (watcher.eventSubscribers.size === 0 && watcher.eventSubscribed) {
+        watcher.eventSubscribed = false;
+        void this.sendTransportMessage(this.getAddressNode(address), {
+          type: '__runtime.remote.event.unsubscribe',
+          address,
+          _timestamp: Date.now(),
+          _version: '1.0.0',
+        });
+      }
+    };
+  }
+
+  private async sendTransportMessage(
+    destination: string | undefined,
+    message: RuntimeProtocolMessage
+  ): Promise<void> {
+    if (!destination) {
+      throw new Error('Remote transport destination is required');
+    }
+
+    if (!this.config.transport) {
+      throw new Error('Actor system transport is not configured');
+    }
+
+    await this.config.transport.send(destination, message);
+  }
+
+  private async sendRuntimeRequest<TResponse extends ActorMessage>(
+    destination: string | undefined,
+    requestId: string,
+    message: RuntimeProtocolMessage,
+    timeout = this.config.defaultAskTimeout ?? 5000
+  ): Promise<TResponse> {
+    const responsePromise = this.correlationManager.registerRequest<TResponse>(requestId, timeout);
+
+    try {
+      await this.sendTransportMessage(destination, message);
+      return await responsePromise;
+    } catch (error) {
+      this.correlationManager.handleError(
+        requestId,
+        error instanceof Error ? error : new Error(String(error))
+      );
+      throw error;
+    }
+  }
+
+  private async sendRuntimeRequestError(
+    destination: string,
+    type:
+      | '__runtime.remote.ask.error'
+      | '__runtime.remote.snapshot.fetch.error'
+      | '__runtime.remote.stop.error'
+      | '__runtime.remote.stats.error',
+    requestId: string,
+    error: unknown
+  ): Promise<void> {
+    await this.sendTransportMessage(destination, {
+      type,
+      requestId,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      _timestamp: Date.now(),
+      _version: '1.0.0',
+    });
+  }
+
+  private async broadcastDirectoryRegister(address: ActorAddress): Promise<void> {
+    if (!this.config.transport) {
+      return;
+    }
+
+    const entry: RuntimeDirectoryEntry = {
+      address,
+      location: this.config.nodeAddress,
+      timestamp: Date.now(),
+      ttl: Date.now() + (this.config.directory?.cacheTtl ?? 5 * 60 * 1000),
+    };
+
+    await Promise.allSettled(
+      this.config.transport.getConnectedNodes().map((node) =>
+        this.sendTransportMessage(node, {
+          type: '__runtime.directory.register',
+          entry,
+          _timestamp: Date.now(),
+          _version: '1.0.0',
+        })
+      )
+    );
+  }
+
+  private async broadcastDirectoryUnregister(address: ActorAddress): Promise<void> {
+    if (!this.config.transport) {
+      return;
+    }
+
+    await Promise.allSettled(
+      this.config.transport.getConnectedNodes().map((node) =>
+        this.sendTransportMessage(node, {
+          type: '__runtime.directory.unregister',
+          address,
+          _timestamp: Date.now(),
+          _version: '1.0.0',
+        })
+      )
+    );
+  }
+
+  private async requestDirectorySync(node: string): Promise<void> {
+    const requestId = this.correlationManager.generateId();
+    const response = await this.sendRuntimeRequest<ActorMessage>(
+      node,
+      requestId,
+      {
+        type: '__runtime.directory.sync.request',
+        requestId,
+        _timestamp: Date.now(),
+        _version: '1.0.0',
+      },
+      this.config.defaultAskTimeout ?? 5000
+    );
+
+    if (response.type !== '__runtime.directory.sync.response') {
+      throw new Error(`Unexpected directory sync response: ${response.type}`);
+    }
+
+    const syncResponse = response as ActorMessage & { entries: RuntimeDirectoryEntry[] };
+    for (const entry of syncResponse.entries) {
+      this.directory.applyRemoteEntry(entry);
+    }
+  }
+
+  private async requestRemoteActorAsk<T>(
+    address: ActorAddress,
+    message: ActorMessage,
+    timeout: number
+  ): Promise<T> {
+    const requestId = this.correlationManager.generateId();
+    const response = await this.sendRuntimeRequest<ActorMessage>(
+      this.getAddressNode(address),
+      requestId,
+      {
+        type: '__runtime.remote.ask.request',
+        requestId,
+        address,
+        message: {
+          ...message,
+          _correlationId: message._correlationId ?? requestId,
+          _timestamp: message._timestamp ?? Date.now(),
+          _version: message._version ?? '1.0.0',
+        },
+        timeout,
+        _timestamp: Date.now(),
+        _version: '1.0.0',
+      },
+      timeout
+    );
+
+    if (response.type !== '__runtime.remote.ask.response') {
+      throw new Error(`Unexpected remote ask response: ${response.type}`);
+    }
+
+    return (response as ActorMessage & { payload: T }).payload;
+  }
+
+  private async requestRemoteSnapshotProjection(
+    address: ActorAddress
+  ): Promise<RuntimeSnapshotProjection> {
+    const requestId = this.correlationManager.generateId();
+    const response = await this.sendRuntimeRequest<ActorMessage>(
+      this.getAddressNode(address),
+      requestId,
+      {
+        type: '__runtime.remote.snapshot.fetch.request',
+        requestId,
+        address,
+        _timestamp: Date.now(),
+        _version: '1.0.0',
+      }
+    );
+
+    if (response.type !== '__runtime.remote.snapshot.fetch.response') {
+      throw new Error(`Unexpected remote snapshot response: ${response.type}`);
+    }
+
+    return (response as ActorMessage & { payload: RuntimeSnapshotProjection }).payload;
+  }
+
+  private async requestRemoteActorStop(address: ActorAddress): Promise<void> {
+    const requestId = this.correlationManager.generateId();
+    const response = await this.sendRuntimeRequest<ActorMessage>(
+      this.getAddressNode(address),
+      requestId,
+      {
+        type: '__runtime.remote.stop.request',
+        requestId,
+        address,
+        _timestamp: Date.now(),
+        _version: '1.0.0',
+      }
+    );
+
+    if (response.type !== '__runtime.remote.stop.response') {
+      throw new Error(`Unexpected remote stop response: ${response.type}`);
+    }
+  }
+
+  private async requestRemoteActorStats(address: ActorAddress): Promise<ActorStats> {
+    const requestId = this.correlationManager.generateId();
+    const response = await this.sendRuntimeRequest<ActorMessage>(
+      this.getAddressNode(address),
+      requestId,
+      {
+        type: '__runtime.remote.stats.request',
+        requestId,
+        address,
+        _timestamp: Date.now(),
+        _version: '1.0.0',
+      }
+    );
+
+    if (response.type !== '__runtime.remote.stats.response') {
+      throw new Error(`Unexpected remote stats response: ${response.type}`);
+    }
+
+    return (response as ActorMessage & { payload: ActorStats }).payload;
+  }
+
+  private async addOutboundRemoteProjectionSubscriber(
+    address: ActorAddress,
+    sourceNode: string,
+    kind: 'snapshot' | 'event'
+  ): Promise<void> {
+    const subscribers = this.outboundRemoteProjectionSubscribers.get(address.path) ?? {
+      snapshotNodes: new Set<string>(),
+      eventNodes: new Set<string>(),
+    };
+    this.outboundRemoteProjectionSubscribers.set(address.path, subscribers);
+
+    if (kind === 'snapshot') {
+      subscribers.snapshotNodes.add(sourceNode);
+      await this.sendTransportMessage(sourceNode, {
+        type: '__runtime.remote.snapshot.update',
+        payload: this.createSnapshotProjection(address, this.getLocalActorSnapshot(address.path)),
+        _timestamp: Date.now(),
+        _version: '1.0.0',
+      });
+      return;
+    }
+
+    subscribers.eventNodes.add(sourceNode);
+  }
+
+  private removeOutboundRemoteProjectionSubscriber(
+    address: ActorAddress,
+    sourceNode: string,
+    kind: 'snapshot' | 'event'
+  ): void {
+    const subscribers = this.outboundRemoteProjectionSubscribers.get(address.path);
+    if (!subscribers) {
+      return;
+    }
+
+    if (kind === 'snapshot') {
+      subscribers.snapshotNodes.delete(sourceNode);
+    } else {
+      subscribers.eventNodes.delete(sourceNode);
+    }
+
+    if (subscribers.snapshotNodes.size === 0 && subscribers.eventNodes.size === 0) {
+      this.outboundRemoteProjectionSubscribers.delete(address.path);
+    }
+  }
+
+  private removeOutboundRemoteProjectionSubscriptionsForNode(nodeAddress: string): void {
+    for (const [path, subscribers] of Array.from(
+      this.outboundRemoteProjectionSubscribers.entries()
+    )) {
+      subscribers.snapshotNodes.delete(nodeAddress);
+      subscribers.eventNodes.delete(nodeAddress);
+
+      if (subscribers.snapshotNodes.size === 0 && subscribers.eventNodes.size === 0) {
+        this.outboundRemoteProjectionSubscribers.delete(path);
+      }
+    }
+  }
+
+  private async publishRemoteSnapshotProjection(
+    address: ActorAddress,
+    snapshot: ActorSnapshot<unknown>,
+    previousSnapshot?: ActorSnapshot<unknown>
+  ): Promise<void> {
+    const subscribers = this.outboundRemoteProjectionSubscribers.get(address.path);
+    if (!subscribers || subscribers.snapshotNodes.size === 0) {
+      return;
+    }
+
+    const sequence = this.nextActorProjectionSequence(address.path);
+    const payload = this.createSnapshotProjection(address, snapshot, previousSnapshot, sequence);
+
+    await Promise.allSettled(
+      Array.from(subscribers.snapshotNodes).map((node) =>
+        this.sendTransportMessage(node, {
+          type: '__runtime.remote.snapshot.update',
+          payload,
+          _timestamp: Date.now(),
+          _version: '1.0.0',
+        })
+      )
+    );
+  }
+
+  private async publishRemoteActorEvent(address: ActorAddress, event: ActorMessage): Promise<void> {
+    const subscribers = this.outboundRemoteProjectionSubscribers.get(address.path);
+    if (!subscribers || subscribers.eventNodes.size === 0) {
+      return;
+    }
+
+    const sequence = this.nextActorProjectionSequence(address.path);
+    const payload = this.createEventProjection(address, event, sequence);
+
+    await Promise.allSettled(
+      Array.from(subscribers.eventNodes).map((node) =>
+        this.sendTransportMessage(node, {
+          type: '__runtime.remote.event.update',
+          payload,
+          _timestamp: Date.now(),
+          _version: '1.0.0',
+        })
+      )
+    );
+  }
+
+  private createFallbackSnapshot(
+    status: ActorSnapshot<unknown>['status'] = 'running',
+    previousSnapshot?: ActorSnapshot<unknown>
+  ): ActorSnapshot<unknown> {
+    const value = previousSnapshot?.value;
+    const context = previousSnapshot?.context ?? {};
+    const error = previousSnapshot?.error;
+    const matches = previousSnapshot?.matches ?? (() => false);
+    const hasTag = previousSnapshot?.hasTag ?? (() => false);
+
+    return {
+      value,
+      context,
+      status,
+      error,
+      matches,
+      can: () => status === 'running',
+      hasTag,
+      toJSON: () => ({
+        value,
+        context,
+        status,
+      }),
+    };
+  }
+
+  private snapshotsAreEquivalent(
+    left: ActorSnapshot<unknown>,
+    right: ActorSnapshot<unknown>
+  ): boolean {
+    return JSON.stringify(left.toJSON()) === JSON.stringify(right.toJSON());
+  }
+
+  private cloneSnapshot<TContext>(snapshot: ActorSnapshot<TContext>): ActorSnapshot<TContext> {
+    const serialized = snapshot.toJSON() as {
+      value?: ActorSnapshot<TContext>['value'];
+      context?: TContext;
+      status?: ActorSnapshot<TContext>['status'];
+    };
+    const value = serialized.value ?? snapshot.value;
+    const context = (serialized.context ?? snapshot.context) as TContext;
+    const status = serialized.status ?? snapshot.status;
+
+    return {
+      value,
+      context,
+      status,
+      error: snapshot.error,
+      matches: snapshot.matches,
+      can: snapshot.can,
+      hasTag: snapshot.hasTag,
+      toJSON: () => ({
+        value,
+        context,
+        status,
+      }),
+    };
+  }
+
   /**
    * Execute error interceptors
    */
@@ -2174,13 +3495,13 @@ export class ActorSystemImpl implements ActorSystem {
     address: ActorAddress,
     message: ActorMessage
   ): Promise<void> {
-    log.warn('Remote message delivery not yet implemented', {
-      location,
-      address: address.path,
-      messageType: message.type,
+    await this.sendTransportMessage(location, {
+      type: '__runtime.remote.send',
+      address,
+      message,
+      _timestamp: Date.now(),
+      _version: '1.0.0',
     });
-
-    throw new Error('Remote message delivery not yet implemented');
   }
 
   /**
@@ -2411,24 +3732,7 @@ export class ActorSystemImpl implements ActorSystem {
 
         const address = parseActorPath(actorId);
         if (address) {
-          const eventMessage = this.createEventMessage(address, event);
-
-          log.debug('🔍 EMIT FUNCTION DEBUG: Event message created', {
-            actorId,
-            eventMessage,
-            eventType: eventMessage.type,
-          });
-
-          // ✅ UNIFIED API DESIGN Phase 2.1: Track emitted events in auto-publishing registry
-          this.autoPublishingRegistry.trackEmittedEvent(actorId, eventMessage.type);
-
-          log.debug('🔍 EMIT FUNCTION DEBUG: Calling emitEventToSubscribers', {
-            actorId,
-            addressPath: address.path,
-            eventType: eventMessage.type,
-          });
-
-          this.emitEventToSubscribers(address, eventMessage);
+          this.publishActorEvent(address, event);
         } else {
           log.debug('🔍 EMIT FUNCTION DEBUG: Failed to parse actor path', {
             actorId,
@@ -2731,19 +4035,28 @@ class ActorPIDImpl implements ActorRef {
     return this.system.subscribeToActor(this.address, eventType, listener);
   }
 
+  subscribeEvent(
+    listener: (event: ActorMessage) => void,
+    options: ActorEventSubscriptionOptions = {}
+  ): () => void {
+    return this.system.subscribeToActorEvents(this.address, listener, options);
+  }
+
+  subscribeSnapshot(listener: (snapshot: ActorSnapshot<unknown>) => void): () => void {
+    return this.system.subscribeToActorSnapshots(this.address, listener);
+  }
+
   // ActorRef additional methods
   getSnapshot(): ActorSnapshot<unknown> {
-    // For now, return a minimal snapshot
-    // In the future, this should fetch the actual actor state
-    return {
-      status: 'running',
-      context: {},
-      value: undefined,
-      matches: () => false,
-      can: () => false,
-      hasTag: () => false,
-      toJSON: () => ({ status: 'running', context: {}, value: undefined }),
-    };
+    return this.system.getActorSnapshotInternal(this.address);
+  }
+
+  getTransportStatus(): ProjectionTransportStatus {
+    return this.system.getActorTransportStatusInternal(this.address);
+  }
+
+  subscribeTransportStatus(listener: (status: ProjectionTransportStatus) => void): () => void {
+    return this.system.subscribeToActorTransportStatus(this.address, listener);
   }
 }
 

@@ -3,6 +3,7 @@
     "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "bundler",
+    "jsx": "react-jsx",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "allowJs": true,
@@ -35,11 +36,20 @@
       "@/scripts/*": ["src/scripts/*"],
       "@/app/*": ["src/app/*"],
       "@actor-core/runtime": ["packages/actor-core-runtime/src/index.ts"],
+      "@actor-core/runtime/browser": ["packages/actor-core-runtime/src/browser.ts"],
       "@actor-core/testing": ["packages/actor-core-testing/src/index.ts"],
-      "@agent-workflow/cli": ["packages/agent-workflow-cli/src/index.ts"]
+      "@agent-workflow/cli": ["packages/agent-workflow-cli/src/index.ts"],
+      "ignite-element": ["../ignite-element/packages/ignite-element/dist/types/index.d.ts"],
+      "ignite-element/*": ["../ignite-element/packages/ignite-element/dist/types/*"],
+      "ignite-adapters": ["../ignite-element/packages/ignite-adapters/dist/types/index.d.ts"],
+      "ignite-adapters/*": ["../ignite-element/packages/ignite-adapters/dist/types/*"],
+      "ignite-core": ["../ignite-element/packages/ignite-core/dist/types/index.d.ts"],
+      "ignite-core/*": ["../ignite-element/packages/ignite-core/dist/types/*"],
+      "ignite-renderer": ["../ignite-element/packages/ignite-renderer/dist/types/index.d.ts"],
+      "ignite-renderer/*": ["../ignite-element/packages/ignite-renderer/dist/types/*"]
     }
   },
-  "include": ["src/**/*", "*.js", "*.ts"],
+  "include": ["src/**/*", "examples/**/*", "*.js", "*.ts"],
   "exclude": ["node_modules", "dist", "public"],
   "references": [
     {

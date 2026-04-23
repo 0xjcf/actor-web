@@ -80,7 +80,7 @@ ignite-element docs only.
 | Shared orchestration runtime | Actor-Web has runtime primitives, but no completed Actor-Web ADR-003 result doc or FAS contract adoption. | Actor-Web exposes a stable orchestration runtime contract that FAS and product repos can consume without importing internals. |
 | FAS integration | FAS remains standalone and has its own runtime, policies, artifacts, queue, verification, and shared-contracts package. | FAS delegates selected runtime mechanics through explicit Actor-Web contracts while retaining policy and evidence ownership. |
 | Contract package | Actor-Web has `ActorEnvelope`, `ActorMessage`, snapshots, runtime adapters, actor stats, and a FAS mapping module at `packages/actor-core-runtime/src/integration/fas-shared-contracts.ts` that imports real `@franchise/shared-contracts` types through `packages/actor-core-runtime/package.json`. | Actor-Web can replace the local `file:` dependency with workspace or published package wiring when FAS contracts are promoted. |
-| ignite-element bridge | Actor-Web now has a minimal public bridge API at `packages/actor-core-runtime/src/integration/ignite-element-bridge.ts` plus a concrete host example in `docs/examples/ignite-element-host.md`. The slice currently targets `createActorRef()`-backed refs and snapshot-driven hosts. | ignite-element can render Actor-Web snapshots and issue typed Actor-Web commands through an explicit adapter without per-host boilerplate. |
+| ignite-element bridge | Actor-Web now has a minimal public bridge API at `packages/actor-core-runtime/src/integration/ignite-element-bridge.ts`, a browser-safe public entry at `packages/actor-core-runtime/src/browser.ts`, a concrete host example in `docs/examples/ignite-element-host.md`, and a runnable Ignite custom-element example under `examples/ignite-headless-host/` that consumes `ignite-adapters/actor-web`. The current slice supports `createActorRef()` refs, `ActorSystem.spawn()` refs, emitted-event subscriptions, transport-backed cross-node snapshot/event projection, and host-visible projection status (`local`, `connected`, `replaying`, `degraded`, `disconnected`). The example now separates the runtime harness from the host consumer so browser hosts stay thin while server/worker runtimes own transport/bootstrap, and the browser prove-out uses a service worker as the remote runtime owner. Explicit overrides remain available for foreign transports. | ignite-element can render Actor-Web snapshots and consume typed Actor-Web events through an explicit adapter without per-host boilerplate or fake remote state. |
 | Blueprint | No local Blueprint repo evidence was available. | Blueprint owns product composition and consumes projected state without bypassing runtime or workflow contracts. |
 | Boundary enforcement | Biome enforces general style/type hygiene. `pnpm architecture:check` now enforces the first deterministic decision slice. | Actor-Web expands committed boundary config and checks until runtime, adapter, projection, and contract surfaces are all explicitly classified. |
 
@@ -240,22 +240,23 @@ Blueprint evidence is not grounded from a local checkout in this review.
 4. Expand the deterministic-core boundary checker coverage based on that map.
 5. Replace the local `@franchise/shared-contracts` `file:` dependency with shared
    workspace or published-package wiring.
-6. Expand the ignite-element bridge beyond the initial host source:
-   - support actor-system-spawned refs, not only `createActorRef()` refs
-   - add typed event bridging, not just snapshot + command wiring
-   - add a headless test showing an ignite surface backed by an Actor-Web actor
-7. Only after the contract and bridge exist at that wider surface, evaluate whether FAS can delegate a
+6. Replace the current in-memory prove-out transport with a real external runtime transport boundary.
+7. Align transport payloads and projection vocabulary directly to the promoted `@franchise/shared-contracts` package source.
+8. Add remote-host observability for reconnect, replay, lag, and dropped-subscription behavior once the external transport is in place.
+9. Only after the contract and bridge exist at that wider surface, evaluate whether FAS can delegate a
    narrow runtime workflow to Actor-Web.
 
 ## Verification Run
 
-Run on 2026-04-22:
+Run on 2026-04-23:
 
 - `pnpm architecture:check`: passed across five deterministic decision files.
 - `pnpm --dir packages/actor-core-runtime exec vitest run
   src/unit/fas-shared-contracts.test.ts`: passed six compatibility tests.
 - `pnpm --dir packages/actor-core-runtime exec vitest run
-  src/unit/ignite-element-bridge.test.ts`: passed two bridge tests.
+  src/unit/ignite-element-bridge.test.ts`: passed five bridge tests.
+- `pnpm --dir packages/actor-core-runtime exec vitest run
+  src/unit/remote-transport.test.ts`: passed three transport integration tests.
 - `pnpm lint`: passed.
 - `pnpm typecheck`: passed.
 

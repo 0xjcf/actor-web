@@ -72,6 +72,12 @@ export interface ActorSnapshotTransitionInput {
   toStatus?: string;
 }
 
+export interface ActorRuntimeProjection<TContext = unknown> {
+  workflowSnapshot: FasWorkflowSnapshot;
+  value: unknown;
+  context: TContext;
+}
+
 export interface ActorWebCommandExecutionInput {
   commandType: string;
   requestedAt: string;
@@ -141,6 +147,16 @@ export function actorMessageToFasEventEnvelope(
   return envelope;
 }
 
+export function fasEventEnvelopeToActorMessage(envelope: FasEventEnvelope): ActorMessageRecord {
+  return {
+    type: envelope.type,
+    ...(envelope.payload ?? {}),
+    _timestamp: Date.parse(envelope.occurredAt) || 0,
+    _version: String(envelope.schemaVersion),
+    ...(envelope.correlationId !== undefined ? { _correlationId: envelope.correlationId } : {}),
+  };
+}
+
 export function actorSnapshotPhase(value: unknown): string {
   if (typeof value === 'string') {
     return value;
@@ -200,6 +216,29 @@ export function actorSnapshotsToFasTransitionRecord(
     toPhase: input.toPhase ?? actorSnapshotPhase(input.toSnapshot.value),
     fromStatus: input.fromStatus ?? input.fromSnapshot.status,
     toStatus: input.toStatus ?? input.toSnapshot.status,
+  };
+}
+
+export function actorRuntimeProjectionToActorSnapshot<TContext = unknown>(
+  projection: ActorRuntimeProjection<TContext>
+): ActorSnapshot<TContext> {
+  const value = projection.value;
+  const context = projection.context;
+  const status = projection.workflowSnapshot.status as ActorSnapshot<TContext>['status'];
+  const phase = projection.workflowSnapshot.phase;
+
+  return {
+    value,
+    context,
+    status,
+    matches: (state: string) => state === phase || state === actorSnapshotPhase(value),
+    can: () => status === 'running',
+    hasTag: () => false,
+    toJSON: () => ({
+      value,
+      context,
+      status,
+    }),
   };
 }
 

@@ -21,8 +21,11 @@ import type {
 import { Logger } from './logger.js';
 import { registerMachineWithBehavior } from './machine-registry.js';
 import type { DomainEvent, MessagePlan } from './message-plan.js';
+import { OTPMessagePlanProcessor } from './otp-message-plan-processor.js';
 import { analyzeMessage, processSmartDefaults } from './otp-types.js';
 import type { ActorSnapshot, JsonValue } from './types.js';
+
+const otpMessagePlanProcessor = new OTPMessagePlanProcessor();
 
 // ============================================================================
 // THREE-PATTERN MESSAGE HANDLER TYPES (Phase 2.1 Task 2.2)
@@ -755,10 +758,6 @@ function createActorBehaviorFromConfig<
             actorId: params.dependencies.actorId,
           });
 
-          // Import OTP processor dynamically for efficient loading
-          const { OTPMessagePlanProcessor } = await import('./otp-message-plan-processor.js');
-          const otpProcessor = new OTPMessagePlanProcessor();
-
           // Type assertion after successful type guard check
           const otpResult = result as import('./otp-types.js').ActorHandlerResult<unknown, unknown>;
 
@@ -786,7 +785,7 @@ function createActorBehaviorFromConfig<
           };
 
           // Process OTP patterns (context updates, behavior switching, effects, responses)
-          await otpProcessor.processOTPResult(
+          await otpMessagePlanProcessor.processOTPResult(
             enhancedResult,
             params.dependencies.actorId,
             params.actor,
@@ -817,12 +816,8 @@ function createActorBehaviorFromConfig<
         // For ask patterns (messages with correlationId), send error as response
         const correlationId = (params.message as ActorMessage)._correlationId;
         if (correlationId) {
-          // Import OTP processor dynamically to send error response
-          const { OTPMessagePlanProcessor } = await import('./otp-message-plan-processor.js');
-          const otpProcessor = new OTPMessagePlanProcessor();
-
           // Send error response
-          await otpProcessor.processOTPResult(
+          await otpMessagePlanProcessor.processOTPResult(
             {
               context: undefined, // Don't update context on error
               reply: {

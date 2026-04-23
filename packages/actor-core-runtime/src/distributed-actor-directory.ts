@@ -13,6 +13,7 @@
 import type { ActorAddress, ActorDirectory } from './actor-system.js';
 import { Logger } from './logger.js';
 import { createActorInterval } from './pure-xstate-utilities.js';
+import type { RuntimeDirectoryEntry } from './runtime-transport-protocol.js';
 
 // Create scoped logger for distributed directory
 const log = Logger.namespace('DISTRIBUTED_ACTOR_DIRECTORY');
@@ -315,6 +316,47 @@ export class DistributedActorDirectory implements ActorDirectory {
     return result;
   }
 
+  exportEntries(): RuntimeDirectoryEntry[] {
+    const now = Date.now();
+    const entries: RuntimeDirectoryEntry[] = [];
+
+    for (const [key, entry] of this.registry) {
+      if (entry.ttl <= now) {
+        continue;
+      }
+
+      const address = this.parseAddressKey(key);
+      if (!address) {
+        continue;
+      }
+
+      entries.push({
+        address,
+        location: entry.location,
+        timestamp: entry.timestamp,
+        ttl: entry.ttl,
+      });
+    }
+
+    return entries;
+  }
+
+  applyRemoteEntry(entry: RuntimeDirectoryEntry): void {
+    const key = this.getAddressKey(entry.address);
+    this.registry.set(key, {
+      location: entry.location,
+      timestamp: entry.timestamp,
+      ttl: entry.ttl,
+    });
+    this.cache.delete(key);
+  }
+
+  removeRemoteEntry(address: ActorAddress): void {
+    const key = this.getAddressKey(address);
+    this.registry.delete(key);
+    this.cache.delete(key);
+  }
+
   /**
    * Subscribe to directory changes
    */
@@ -428,8 +470,6 @@ export class DistributedActorDirectory implements ActorDirectory {
    * Broadcast actor lookup request to other nodes
    */
   private async broadcastLookup(address: ActorAddress): Promise<string | undefined> {
-    // TODO: Implement actual network broadcast
-    // For now, return undefined (cache miss)
     log.debug('Broadcasting actor lookup', {
       address: address.path,
       nodeAddress: this.config.nodeAddress,

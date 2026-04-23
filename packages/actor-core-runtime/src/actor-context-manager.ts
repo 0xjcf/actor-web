@@ -13,7 +13,6 @@
  * @author Agent A (Tech Lead) - 2025-07-30
  */
 
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { Logger } from './logger.js';
 
 const log = Logger.namespace('ACTOR_CONTEXT');
@@ -67,8 +66,53 @@ export interface ContextManagerConfig {
  * - Performance-optimized for high-throughput scenarios
  */
 
+interface ContextStorage<T> {
+  run<TResult>(context: T, fn: () => TResult): TResult;
+  getStore(): T | undefined;
+}
+
+class FallbackContextStorage<T> implements ContextStorage<T> {
+  private current: T | undefined;
+
+  run<TResult>(context: T, fn: () => TResult): TResult {
+    const previous = this.current;
+    this.current = context;
+
+    try {
+      return fn();
+    } finally {
+      this.current = previous;
+    }
+  }
+
+  getStore(): T | undefined {
+    return this.current;
+  }
+}
+
+function createContextStorage<T>(): ContextStorage<T> {
+  const builtinLoader =
+    typeof process !== 'undefined' && typeof process.getBuiltinModule === 'function'
+      ? process.getBuiltinModule.bind(process)
+      : undefined;
+
+  if (builtinLoader) {
+    const asyncHooksModule = builtinLoader('node:async_hooks') as
+      | {
+          AsyncLocalStorage?: new <TStore>() => ContextStorage<TStore>;
+        }
+      | undefined;
+
+    if (asyncHooksModule?.AsyncLocalStorage) {
+      return new asyncHooksModule.AsyncLocalStorage<T>();
+    }
+  }
+
+  return new FallbackContextStorage<T>();
+}
+
 /** AsyncLocalStorage instance for context propagation */
-const storage = new AsyncLocalStorage<ActorContext>();
+const storage = createContextStorage<ActorContext>();
 
 /** Configuration for the context manager */
 let config: ContextManagerConfig = {

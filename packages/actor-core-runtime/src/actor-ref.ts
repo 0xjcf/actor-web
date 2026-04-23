@@ -12,7 +12,15 @@
 
 import type { ActorInstance } from './actor-instance.js';
 import type { ActorAddress, ActorMessage, ActorPID, ActorStats } from './actor-system.js';
+import {
+  createProjectionTransportStatus,
+  type ProjectionTransportStatus,
+} from './projection-transport.js';
 import type { ActorSnapshot, BaseEventObject, JsonValue, Message } from './types.js';
+
+export interface ActorEventSubscriptionOptions {
+  types?: readonly string[];
+}
 
 /**
  * Phantom type symbol for compile-time context type tagging.
@@ -71,6 +79,26 @@ export interface ActorRef<TContext = unknown, TMessage extends ActorMessage = Ac
    * may expose it through adapter-specific wiring.
    */
   subscribeSnapshot?(listener: (snapshot: ActorSnapshot<TContext>) => void): () => void;
+
+  /**
+   * Optional emitted-event subscription for host adapters that need a typed event stream.
+   * Implementations should emit actor output events, not inbound command messages.
+   */
+  subscribeEvent?(
+    listener: (event: ActorMessage) => void,
+    options?: ActorEventSubscriptionOptions
+  ): () => void;
+
+  /**
+   * Optional projection transport status for host adapters that need to surface
+   * remote-stream health without inspecting runtime internals.
+   */
+  getTransportStatus?(): ProjectionTransportStatus;
+
+  /**
+   * Optional subscription for projection transport health changes.
+   */
+  subscribeTransportStatus?(listener: (status: ProjectionTransportStatus) => void): () => void;
 
   // send and ask are inherited from ActorPID with flexible typing
   // They accept any message with a type field, not just TMessage
@@ -156,6 +184,15 @@ export function createTypedActorRef<
         errors: 0,
         uptime: 0,
       };
+    },
+
+    getTransportStatus(): ProjectionTransportStatus {
+      return createProjectionTransportStatus('local');
+    },
+
+    subscribeTransportStatus(listener: (status: ProjectionTransportStatus) => void): () => void {
+      listener(createProjectionTransportStatus('local'));
+      return () => {};
     },
   };
 
