@@ -17,7 +17,11 @@
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "lib": ["ES2022"],
-    "types": ["node"]
+    "types": ["node"],
+    "baseUrl": "../..",
+    "paths": {
+      "@actor-core/runtime": ["packages/actor-core-runtime/src/index.ts"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"],

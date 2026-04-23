@@ -49,6 +49,9 @@ importers:
 
   packages/actor-core-runtime:
     dependencies:
+      '@franchise/shared-contracts':
+        specifier: file:../../../fas/packages/shared-contracts
+        version: file:../fas/packages/shared-contracts
       uuid:
         specifier: ^11.1.0
         version: 11.1.0
@@ -565,6 +568,9 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@franchise/shared-contracts@file:../fas/packages/shared-contracts':
+    resolution: {directory: ../fas/packages/shared-contracts, type: directory}
 
   '@inquirer/figures@1.0.12':
     resolution: {integrity: sha512-MJttijd8rMFcKJC8NYmprWr6hD3r9Gd9qUC0XwPNwoEPWSMVJwA2MlXxF+nhZZNMY+HXsWa+o7KY2emWYIn0jQ==}
@@ -1711,6 +1717,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.25.6':
     optional: true
+
+  '@franchise/shared-contracts@file:../fas/packages/shared-contracts': {}
 
   '@inquirer/figures@1.0.12': {}
 

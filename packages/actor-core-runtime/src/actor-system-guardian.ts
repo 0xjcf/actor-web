@@ -8,7 +8,6 @@
  * - Actor directory integration point
  */
 
-import { v4 as uuidv4 } from 'uuid';
 import type { ActorInstance } from './actor-instance';
 import type { ActorRef } from './actor-ref.js';
 import type {
@@ -21,6 +20,7 @@ import type {
 } from './actor-system';
 import { SupervisionDirective } from './actor-system';
 import { Logger } from './logger.js';
+import { generateActorId, generateSystemId } from './utils/factories.js';
 
 // Guardian Message Types - Flat structure
 export interface SpawnActorMessage extends ActorMessage {
@@ -124,7 +124,7 @@ export interface ActorInfo {
  */
 // Create initial serializable context
 const initialContext: GuardianContext = {
-  systemId: uuidv4(),
+  systemId: generateSystemId(),
   startTime: Date.now(),
   isShuttingDown: false,
   messageCount: 0,
@@ -270,7 +270,7 @@ async function handleSpawnActor(
     }
 
     // Generate new actor ID
-    const actorId = uuidv4();
+    const actorId = generateActorId('guardian-child');
     const actorInfo: ActorInfo = {
       id: actorId,
       name: message.name,

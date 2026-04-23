@@ -7,6 +7,7 @@ export type { StateAnalysisResult } from './state-machine-analysis.js';
 // State machine analysis utilities
 export {
   analyzeStateMachine,
+  analyzeStateMachineWithGraph,
   assertNoUnreachableStates,
   generateCoverageReport,
 } from './state-machine-analysis.js';

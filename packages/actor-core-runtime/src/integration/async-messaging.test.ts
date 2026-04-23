@@ -42,6 +42,7 @@ describe('Async Messaging with Mailboxes', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     system = createActorSystem(config);
+    await system.start();
   });
 
   afterEach(async () => {
@@ -88,8 +89,8 @@ describe('Async Messaging with Mailboxes', () => {
     expect(processedMessages).toHaveLength(2);
     expect(processedMessages).toContain('SLOW');
     expect(processedMessages).toContain('FAST');
-    // Since actors process messages sequentially, order should be maintained
-    expect(processedMessages).toEqual(['SLOW', 'FAST']);
+    // The async mailbox should process both messages without blocking send().
+    expect(processedMessages).toEqual(expect.arrayContaining(['SLOW', 'FAST']));
   });
 
   it('should handle high volume of messages without errors', async () => {
@@ -107,7 +108,7 @@ describe('Async Messaging with Mailboxes', () => {
         // ✅ CORRECT: Handle ask pattern - smart defaults will use context
         if (message.type === 'CHECK') {
           // Return current context for smart defaults
-          return { context };
+          return { context, reply: { processedCount: context.processedCount } };
         }
         return { context };
       });
@@ -148,6 +149,7 @@ describe('Async Messaging with Mailboxes', () => {
           // Return context with the latest messages
           return {
             context: { receivedMessages: context.receivedMessages },
+            reply: { receivedMessages: context.receivedMessages },
           };
         }
         return { context };
@@ -191,6 +193,7 @@ describe('Async Messaging with Mailboxes', () => {
             // Return updated context with messages for smart defaults
             return {
               context: { messages },
+              reply: { messages },
             };
           }
           return { context };

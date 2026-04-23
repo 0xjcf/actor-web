@@ -36,6 +36,7 @@
   "author": "Actor-Core Team",
   "license": "MIT",
   "dependencies": {
+    "@franchise/shared-contracts": "file:../../../fas/packages/shared-contracts",
     "uuid": "^11.1.0",
     "xstate": "^5.8.0"
   },

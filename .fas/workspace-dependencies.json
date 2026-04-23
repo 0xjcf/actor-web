@@ -1,0 +1,83 @@
+{
+  "_comment": "Actor-Web ecosystem dependency map. Scope is intentionally limited to FAS and ignite-element until a local Blueprint checkout is available for evidence.",
+  "projects": {
+    "FAS": {
+      "type": "node",
+      "path": "../FAS",
+      "dependsOn": [],
+      "consumedBy": ["actor-web", "ignite-element"],
+      "sharedContracts": [
+        "packages/shared-contracts/package.json",
+        "packages/shared-contracts/index.d.ts",
+        "packages/shared-contracts/README.md"
+      ]
+    },
+    "actor-web": {
+      "type": "node",
+      "path": ".",
+      "dependsOn": ["FAS"],
+      "consumedBy": ["ignite-element"],
+      "sharedContracts": [
+        "packages/actor-core-runtime/package.json",
+        "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+        "packages/actor-core-runtime/src/integration/fas-shared-contracts.typecheck.ts",
+        "packages/actor-core-runtime/src/unit/fas-shared-contracts.test.ts"
+      ]
+    },
+    "ignite-element": {
+      "type": "node",
+      "path": "../ignite-element",
+      "dependsOn": ["FAS", "actor-web"],
+      "consumedBy": [],
+      "sharedContracts": [
+        "docs/adr-003-shared-arc.md",
+        "docs/shared-architecture-model.md",
+        "packages/ignite-core/package.json",
+        "packages/ignite-adapters/package.json",
+        "packages/ignite-renderer/package.json",
+        "packages/ignite-element/package.json"
+      ]
+    }
+  },
+  "contracts": {
+    "franchise-shared-contracts": {
+      "description": "FAS-owned shared vocabulary for event envelopes, workflow snapshots, transition records, command execution records, actor addresses, and orchestration contracts.",
+      "producer": "FAS",
+      "consumers": ["actor-web", "ignite-element"],
+      "surfaces": {
+        "FAS": [
+          "../FAS/packages/shared-contracts/package.json",
+          "../FAS/packages/shared-contracts/index.d.ts",
+          "../FAS/packages/shared-contracts/README.md"
+        ],
+        "actor-web": [
+          "packages/actor-core-runtime/package.json",
+          "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+          "packages/actor-core-runtime/src/integration/fas-shared-contracts.typecheck.ts",
+          "packages/actor-core-runtime/src/unit/fas-shared-contracts.test.ts"
+        ],
+        "ignite-element": [
+          "../ignite-element/docs/adr-003-shared-arc.md",
+          "../ignite-element/docs/shared-architecture-model.md"
+        ]
+      }
+    },
+    "actor-web-ignite-adapter-target": {
+      "description": "Target-state bridge where ignite-element consumes Actor-Web actor snapshots, typed command senders, and event bridge contracts. No runtime adapter implementation exists in Actor-Web yet.",
+      "producer": "actor-web",
+      "consumers": ["ignite-element"],
+      "surfaces": {
+        "actor-web": [
+          "docs/examples/ignite-element-host.md",
+          "docs/examples/ignite-element-actor-web-north-star.md",
+          "docs/spikes/actor-web-adr-003-fas-integration-review.md"
+        ],
+        "ignite-element": [
+          "../ignite-element/docs/adr-003-shared-arc.md",
+          "../ignite-element/docs/shared-architecture-model.md",
+          "../ignite-element/packages/ignite-element/package.json"
+        ]
+      }
+    }
+  }
+}

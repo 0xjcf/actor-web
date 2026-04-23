@@ -65,6 +65,13 @@ export interface ActorRef<TContext = unknown, TMessage extends ActorMessage = Ac
    */
   getSnapshot(): ActorSnapshot<TContext>;
 
+  /**
+   * Optional snapshot subscription for host adapters that need reactive projections.
+   * `createActorRef()`-backed refs provide this directly. Other ActorRef implementations
+   * may expose it through adapter-specific wiring.
+   */
+  subscribeSnapshot?(listener: (snapshot: ActorSnapshot<TContext>) => void): () => void;
+
   // send and ask are inherited from ActorPID with flexible typing
   // They accept any message with a type field, not just TMessage
 }

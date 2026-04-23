@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 1,
+  "name": "Actor-Web ADR-003 Boundary Map",
+  "decision": "Actor-Web follows a hexagonal runtime shape with actor-model topology: typed messages enter through ports, actor lifecycle and delivery live in the runtime, deterministic decision code stays pure, projections expose read models, product composition assembles public surfaces, and adapters own clocks, environment, browser, filesystem, network, and subprocess effects.",
+  "layers": {
+    "intent": {
+      "description": "Typed commands, events, envelopes, and public contract vocabulary.",
+      "paths": [
+        "packages/actor-core-runtime/src/actor-symbols.ts",
+        "packages/actor-core-runtime/src/types.ts",
+        "packages/actor-core-runtime/src/actor-system.ts",
+        "packages/actor-core-runtime/src/better-types.ts",
+        "packages/actor-core-runtime/src/otp-types.ts"
+      ]
+    },
+    "deterministicDecision": {
+      "description": "Pure actor decision surfaces: message validation, behavior contracts, fan-out detection, and type helpers. These files must not read runtime effects directly.",
+      "paths": [
+        "packages/actor-core-runtime/src/component-behavior.ts",
+        "packages/actor-core-runtime/src/message-plan.ts",
+        "packages/actor-core-runtime/src/runtime-fanout.ts",
+        "packages/actor-core-runtime/src/type-helpers.ts",
+        "packages/actor-core-runtime/src/utils/validation.ts",
+        "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts"
+      ],
+      "rules": {
+        "forbiddenImports": [
+          "child_process",
+          "crypto",
+          "fs",
+          "fs/promises",
+          "http",
+          "https",
+          "net",
+          "os",
+          "path",
+          "simple-git",
+          "tls",
+          "worker_threads"
+        ],
+        "forbiddenImportPrefixes": ["node:"],
+        "forbiddenRuntimePatterns": [
+          {
+            "name": "Date.now()",
+            "pattern": "\\bDate\\.now\\s*\\("
+          },
+          {
+            "name": "new Date()",
+            "pattern": "\\bnew\\s+Date\\s*\\("
+          },
+          {
+            "name": "Math.random()",
+            "pattern": "\\bMath\\.random\\s*\\("
+          },
+          {
+            "name": "process access",
+            "pattern": "\\bprocess\\."
+          },
+          {
+            "name": "browser window access",
+            "pattern": "\\bwindow\\."
+          },
+          {
+            "name": "browser document access",
+            "pattern": "\\bdocument\\."
+          },
+          {
+            "name": "localStorage access",
+            "pattern": "\\blocalStorage\\b"
+          },
+          {
+            "name": "sessionStorage access",
+            "pattern": "\\bsessionStorage\\b"
+          },
+          {
+            "name": "fetch()",
+            "pattern": "\\bfetch\\s*\\("
+          },
+          {
+            "name": "setTimeout()",
+            "pattern": "\\bsetTimeout\\s*\\("
+          },
+          {
+            "name": "setInterval()",
+            "pattern": "\\bsetInterval\\s*\\("
+          }
+        ]
+      }
+    },
+    "workflowLifecycle": {
+      "description": "Actor identity, lifecycle, supervision, snapshots, and delivery orchestration.",
+      "paths": [
+        "packages/actor-core-runtime/src/actor-instance.ts",
+        "packages/actor-core-runtime/src/actor-ref.ts",
+        "packages/actor-core-runtime/src/actor-context-manager.ts",
+        "packages/actor-core-runtime/src/actor-event-bus.ts",
+        "packages/actor-core-runtime/src/actor-system-impl.ts",
+        "packages/actor-core-runtime/src/actor-system.ts",
+        "packages/actor-core-runtime/src/actor-system-guardian.ts",
+        "packages/actor-core-runtime/src/context-actor.ts",
+        "packages/actor-core-runtime/src/create-actor.ts",
+        "packages/actor-core-runtime/src/create-actor-ref.ts",
+        "packages/actor-core-runtime/src/machine-actor.ts",
+        "packages/actor-core-runtime/src/machine-registry.ts",
+        "packages/actor-core-runtime/src/pure-behavior-handler.ts",
+        "packages/actor-core-runtime/src/stateless-actor.ts",
+        "packages/actor-core-runtime/src/typed-actor-instance.ts",
+        "packages/actor-core-runtime/src/unified-actor-builder.ts",
+        "packages/actor-core-runtime/src/virtual-actor-system.ts",
+        "packages/actor-core-runtime/src/actors",
+        "packages/actor-core-runtime/src/planning",
+        "packages/actor-core-runtime/src/patterns"
+      ]
+    },
+    "executionBoundary": {
+      "description": "Imperative adapters and shell/runtime effects over time.",
+      "paths": [
+        "packages/actor-core-runtime/src/runtime",
+        "packages/actor-core-runtime/src/runtime-adapter.ts",
+        "packages/actor-core-runtime/src/interceptors",
+        "packages/actor-core-runtime/src/messaging",
+        "packages/actor-core-runtime/src/memory",
+        "packages/actor-core-runtime/src/ask-pattern-safeguards.ts",
+        "packages/actor-core-runtime/src/auto-publishing.ts",
+        "packages/actor-core-runtime/src/capability-security.ts",
+        "packages/actor-core-runtime/src/correlation-manager.ts",
+        "packages/actor-core-runtime/src/distributed-actor-directory.ts",
+        "packages/actor-core-runtime/src/logger.ts",
+        "packages/actor-core-runtime/src/otp-message-plan-processor.ts",
+        "packages/actor-core-runtime/src/plan-interpreter.ts",
+        "packages/actor-core-runtime/src/pure-xstate-utilities.ts",
+        "packages/actor-core-runtime/src/utils/factories.ts",
+        "packages/agent-workflow-cli/src"
+      ]
+    },
+    "contractIntegration": {
+      "description": "Structural adapters between Actor-Web runtime shapes and cross-repo contract packages.",
+      "paths": [
+        "packages/actor-core-runtime/src/integration",
+        "packages/actor-core-runtime/src/integration/fas-shared-contracts.typecheck.ts"
+      ]
+    },
+    "projection": {
+      "description": "Snapshots, event collectors, statistics, and read-model surfaces.",
+      "paths": [
+        "packages/actor-core-runtime/src/event-sourcing.ts",
+        "packages/actor-core-runtime/src/observable.ts",
+        "packages/actor-core-runtime/src/performance",
+        "packages/actor-core-runtime/src/testing"
+      ]
+    },
+    "productComposition": {
+      "description": "Component composition helpers and UI-facing actor integration surfaces.",
+      "paths": [
+        "packages/actor-core-runtime/src/component-actor.ts",
+        "packages/actor-core-runtime/src/create-component.ts",
+        "packages/actor-core-runtime/src/fluent-behavior-builder.ts",
+        "packages/actor-core-runtime/src/simple-fluent-builder.ts",
+        "packages/actor-core-runtime/src/actor-proxy.ts",
+        "packages/actor-core-runtime/src/examples"
+      ]
+    },
+    "verificationSupport": {
+      "description": "Tests and typecheck-only files that verify Actor-Web behavior and cross-repo contract compatibility; not an ADR-003 runtime ownership layer.",
+      "paths": [
+        "packages/actor-core-runtime/src/unit",
+        "packages/actor-core-runtime/tests",
+        "packages/actor-core-testing/src",
+        "packages/agent-workflow-cli/tests"
+      ]
+    }
+  }
+}

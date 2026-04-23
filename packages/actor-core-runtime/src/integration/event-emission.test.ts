@@ -47,6 +47,7 @@ describe('Actor Event Emission', () => {
     system = createActorSystem(config);
     // Enable test mode for deterministic message processing
     (system as ActorSystemImpl).enableTestMode();
+    await system.start();
   });
 
   afterEach(async () => {

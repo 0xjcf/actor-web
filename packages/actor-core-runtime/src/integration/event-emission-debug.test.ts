@@ -16,6 +16,7 @@ describe('Event Emission - Debug Multiple Subscribers', () => {
   beforeEach(async () => {
     system = new ActorSystemImpl({ nodeAddress: 'test-node' });
     system.enableTestMode();
+    await system.start();
   });
 
   afterEach(async () => {

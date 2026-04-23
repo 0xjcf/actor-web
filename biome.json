@@ -60,6 +60,14 @@
       "!**/coverage/**",
       "!**/dist/**",
       "!**/node_modules/**",
+      "!**/.fas/agents/**",
+      "!**/.fas/index/**",
+      "!**/.fas/prompts/**",
+      "!**/.fas/queue/**",
+      "!**/.fas/scripts/**",
+      "!**/.fas/semantic/**",
+      "!**/.fas/memory/entries/**",
+      "!**/.fas/state/**",
       "!**/*.d.ts.map",
       "!**/*.js.map"
     ]

@@ -23,6 +23,7 @@ describe('Event Emission - Layered Integration Tests', () => {
   beforeEach(async () => {
     system = new ActorSystemImpl({ nodeAddress: 'test-node' });
     system.enableTestMode(); // Enable synchronous message processing
+    await system.start();
   });
 
   afterEach(async () => {

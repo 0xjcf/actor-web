@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "name": "actor-web",
+    "root": "."
+  },
+  "domains": {
+    "runtime": {
+      "name": "@actor-core/runtime",
+      "description": "Pure actor runtime, lifecycle, supervision, messaging, projections, and FAS contract bridge surfaces for Actor-Web.",
+      "aliases": [
+        "actor-web runtime",
+        "actor runtime",
+        "mailbox",
+        "supervisor",
+        "event bus",
+        "fas shared contracts"
+      ],
+      "ownedPaths": ["packages/actor-core-runtime/"],
+      "entrypoints": [
+        "packages/actor-core-runtime/package.json",
+        "packages/actor-core-runtime/src/index.ts"
+      ],
+      "docs": [
+        "packages/actor-core-runtime/README.md",
+        "docs/API.md",
+        "docs/spikes/actor-web-adr-003-fas-integration-review.md",
+        "docs/examples/ignite-element-host.md",
+        "docs/examples/ignite-element-actor-web-north-star.md"
+      ],
+      "tests": [
+        "packages/actor-core-runtime/src/unit",
+        "packages/actor-core-runtime/src/integration",
+        "packages/actor-core-runtime/tests"
+      ],
+      "boundaries": ["packages/actor-core-runtime/"],
+      "dependencies": []
+    },
+    "testing": {
+      "name": "@actor-core/testing",
+      "description": "Testing utilities and XState graph analysis helpers that extend the runtime package.",
+      "aliases": ["actor testing", "state machine analysis", "xstate graph", "test utilities"],
+      "ownedPaths": ["packages/actor-core-testing/"],
+      "entrypoints": [
+        "packages/actor-core-testing/package.json",
+        "packages/actor-core-testing/src/index.ts",
+        "packages/actor-core-testing/src/state-machine-analysis.ts"
+      ],
+      "docs": [],
+      "tests": [],
+      "boundaries": ["packages/actor-core-testing/"],
+      "dependencies": ["runtime"]
+    },
+    "cli": {
+      "name": "@agent-workflow/cli",
+      "description": "Agent workflow CLI commands, git/worktree orchestration, and validation helpers built on the runtime and testing packages.",
+      "aliases": ["aw", "agent workflow", "git actor", "worktree cli", "workflow cli"],
+      "ownedPaths": ["packages/agent-workflow-cli/"],
+      "entrypoints": [
+        "packages/agent-workflow-cli/package.json",
+        "packages/agent-workflow-cli/src/index.ts",
+        "packages/agent-workflow-cli/src/cli/index.ts"
+      ],
+      "docs": ["packages/agent-workflow-cli/README.md"],
+      "tests": [
+        "packages/agent-workflow-cli/tests",
+        "packages/agent-workflow-cli/src/actors/git-actor.test.ts",
+        "packages/agent-workflow-cli/src/actors/input-actor.test.ts",
+        "packages/agent-workflow-cli/src/commands/ship.test.ts",
+        "packages/agent-workflow-cli/src/integration/cli-commands.test.ts"
+      ],
+      "boundaries": ["packages/agent-workflow-cli/"],
+      "dependencies": ["runtime", "testing"]
+    }
+  },
+  "workspaceContracts": [
+    {
+      "name": "runtime-public-api",
+      "producer": "runtime",
+      "consumers": ["testing", "cli"],
+      "surfaces": [
+        "packages/actor-core-runtime/package.json",
+        "packages/actor-core-runtime/src/index.ts",
+        "packages/actor-core-runtime/README.md",
+        "docs/API.md"
+      ]
+    },
+    {
+      "name": "testing-analysis-api",
+      "producer": "testing",
+      "consumers": ["cli"],
+      "surfaces": [
+        "packages/actor-core-testing/package.json",
+        "packages/actor-core-testing/src/index.ts",
+        "packages/actor-core-testing/src/state-machine-analysis.ts"
+      ]
+    },
+    {
+      "name": "fas-shared-contract-bridge",
+      "producer": "runtime",
+      "consumers": ["fas"],
+      "surfaces": [
+        "packages/actor-core-runtime/package.json",
+        "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+        "packages/actor-core-runtime/src/integration/fas-shared-contracts.typecheck.ts",
+        "packages/actor-core-runtime/src/unit/fas-shared-contracts.test.ts",
+        "docs/spikes/actor-web-adr-003-fas-integration-review.md"
+      ]
+    }
+  ],
+  "curated": true
+}

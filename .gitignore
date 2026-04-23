@@ -125,3 +125,21 @@ ACTOR-WEB-FRAMEWORK-*.md
 # Scripts for migration
 migrate-*.sh
 mark-*.js
+
+# >>> FAS managed ignore block >>>
+# FAS runtime data and local workspace state (generated, do not commit)
+.fas/*
+!.fas/TASKS.md
+!.fas/architecture-rules.json
+!.fas/workspace-dependencies.json
+!.fas/memory/
+!.fas/memory/*.md
+.fas/memory/entries/
+.fas/memory/*.db
+.fas/memory/*.db-shm
+.fas/memory/*.db-wal
+!.fas/tasks/
+.fas/tasks/*
+!.fas/tasks/*.md
+fas
+# <<< FAS managed ignore block <<<

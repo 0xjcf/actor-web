@@ -189,7 +189,7 @@ program
   .action(() => {
     log.debug(chalk.blue('🤖 Agent Workflow CLI - Comprehensive Help'));
     log.debug(chalk.blue('=========================================='));
-    log.debug();
+    log.debug('');
 
     log.debug(chalk.yellow('📚 Core Workflow:'));
     log.debug(chalk.gray('  aw init           - Initialize agent environment'));
@@ -198,32 +198,32 @@ program
     log.debug(chalk.gray('  aw save           - Save work to agent branch'));
     log.debug(chalk.gray('  aw ship           - Ship work to integration'));
     log.debug(chalk.gray('  aw status         - Show current status'));
-    log.debug();
+    log.debug('');
 
     log.debug(chalk.yellow('🎯 Enhanced Commits:'));
     log.debug(chalk.gray('  aw commit, c      - Enhanced commit with AI analysis'));
     log.debug(chalk.gray('  aw generate-message, gm - Generate smart commit message'));
     log.debug(chalk.gray('  aw validate-dates, vd   - Validate documentation dates'));
-    log.debug();
+    log.debug('');
 
     log.debug(chalk.yellow('🎭 Actor System:'));
     log.debug(chalk.gray('  aw actor:status   - Show git actor status'));
     log.debug(chalk.gray('  aw actor:worktrees - Manage worktrees'));
     log.debug(chalk.gray('  aw actor:create   - Create custom actor'));
-    log.debug();
+    log.debug('');
 
     log.debug(chalk.yellow('🔍 Analysis Tools:'));
     log.debug(chalk.gray('  aw analyze        - Analyze state machines'));
     log.debug(chalk.gray('  aw analyze --verbose - Detailed analysis output'));
     log.debug(chalk.gray('  aw analyze --assert  - Assert no unreachable states'));
     log.debug(chalk.gray('  aw analyze --workflow - Enhanced workflow analysis'));
-    log.debug();
+    log.debug('');
 
     log.debug(chalk.yellow('🤝 Agent Coordination:'));
     log.debug(chalk.gray('  aw agents:status  - Multi-agent status dashboard'));
     log.debug(chalk.gray('  aw agents:sync    - Sync with all agents'));
     log.debug(chalk.gray('  aw agents:conflicts - Detect agent conflicts'));
-    log.debug();
+    log.debug('');
 
     log.debug(chalk.green('💡 Examples:'));
     log.debug(chalk.gray('  aw init --agents 3'));

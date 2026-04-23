@@ -1,0 +1,505 @@
+{
+  "_comment": "Actor-Web FAS import rules. FAS also generates functional-core rules from .fas-config.json behaviorBoundaries; these explicit package-family rules keep the runtime, testing package, and legacy agent-workflow CLI separated.",
+  "rules": [
+    {
+      "name": "runtime-no-agent-workflow-cli",
+      "from": "packages/actor-core-runtime/src",
+      "cannotImport": "packages/agent-workflow-cli/src"
+    },
+    {
+      "name": "runtime-no-actor-core-testing",
+      "from": "packages/actor-core-runtime/src",
+      "cannotImport": "packages/actor-core-testing/src"
+    },
+    {
+      "name": "actor-core-testing-no-agent-workflow-cli",
+      "from": "packages/actor-core-testing/src",
+      "cannotImport": "packages/agent-workflow-cli/src"
+    },
+    {
+      "name": "message-plan-no-runtime",
+      "from": "packages/actor-core-runtime/src/message-plan.ts",
+      "cannotImport": "packages/actor-core-runtime/src/runtime"
+    },
+    {
+      "name": "message-plan-no-adapters",
+      "from": "packages/actor-core-runtime/src/message-plan.ts",
+      "cannotImport": "packages/actor-core-runtime/src/interceptors"
+    },
+    {
+      "name": "runtime-fanout-no-runtime",
+      "from": "packages/actor-core-runtime/src/runtime-fanout.ts",
+      "cannotImport": "packages/actor-core-runtime/src/runtime"
+    },
+    {
+      "name": "runtime-fanout-no-adapters",
+      "from": "packages/actor-core-runtime/src/runtime-fanout.ts",
+      "cannotImport": "packages/actor-core-runtime/src/interceptors"
+    },
+    {
+      "name": "type-helpers-no-runtime",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/runtime"
+    },
+    {
+      "name": "validation-no-runtime",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/runtime"
+    },
+    {
+      "name": "fas-shared-contracts-no-runtime",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/runtime"
+    },
+    {
+      "name": "deterministic-core-no-agent-workflow-cli",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/agent-workflow-cli/src"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-actors-scheduler-actor.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/scheduler-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-actors-timer-actor.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/timer-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-interceptors",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/interceptors"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-messaging",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/messaging"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-memory",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/memory"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-performance",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/performance"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-agent-workflow-cli-src",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/agent-workflow-cli/src"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-actors-scheduler-actor.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/scheduler-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-actors-timer-actor.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/timer-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-interceptors",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/interceptors"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-messaging",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/messaging"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-memory",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/memory"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-performance",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/performance"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-agent-workflow-cli-src",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/agent-workflow-cli/src"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-actors-scheduler-actor.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/scheduler-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-actors-timer-actor.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/timer-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-interceptors",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/interceptors"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-messaging",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/messaging"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-memory",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/memory"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-performance",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/performance"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-actor-instance.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-instance.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-actor-system-impl.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-system-impl.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-actor-system-guardian.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-system-guardian.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-actor-context-manager.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-context-manager.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-actor-event-bus.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-event-bus.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-actor-proxy.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-proxy.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-component-actor.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/component-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-create-actor.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/create-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-create-actor-ref.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/create-actor-ref.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-create-component.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/create-component.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-context-actor.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/context-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-stateless-actor.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/stateless-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-typed-actor-instance.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/typed-actor-instance.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-unified-actor-builder.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/unified-actor-builder.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-virtual-actor-system.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/virtual-actor-system.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-actors-actor-discovery-service.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/actor-discovery-service.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-actors-backoff-supervisor.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/backoff-supervisor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-actors-event-broker-actor.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/event-broker-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-actors-supervisor.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/supervisor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-actors-supervisor-tree.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/supervisor-tree.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-actors-system-event-actor.ts",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/system-event-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-planning",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/planning"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-type-helpers.ts-no-packages-actor-core-runtime-src-patterns",
+      "from": "packages/actor-core-runtime/src/type-helpers.ts",
+      "cannotImport": "packages/actor-core-runtime/src/patterns"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-actor-instance.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-instance.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-actor-system-impl.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-system-impl.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-actor-system-guardian.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-system-guardian.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-actor-context-manager.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-context-manager.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-actor-event-bus.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-event-bus.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-actor-proxy.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-proxy.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-component-actor.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/component-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-create-actor.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/create-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-create-actor-ref.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/create-actor-ref.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-create-component.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/create-component.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-context-actor.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/context-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-stateless-actor.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/stateless-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-typed-actor-instance.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/typed-actor-instance.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-unified-actor-builder.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/unified-actor-builder.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-virtual-actor-system.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/virtual-actor-system.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-actors-actor-discovery-service.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/actor-discovery-service.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-actors-backoff-supervisor.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/backoff-supervisor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-actors-event-broker-actor.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/event-broker-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-actors-supervisor.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/supervisor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-actors-supervisor-tree.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/supervisor-tree.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-actors-system-event-actor.ts",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/system-event-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-planning",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/planning"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-utils-validation.ts-no-packages-actor-core-runtime-src-patterns",
+      "from": "packages/actor-core-runtime/src/utils/validation.ts",
+      "cannotImport": "packages/actor-core-runtime/src/patterns"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-actor-instance.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-instance.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-actor-system-impl.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-system-impl.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-actor-system-guardian.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-system-guardian.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-actor-context-manager.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-context-manager.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-actor-event-bus.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-event-bus.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-actor-proxy.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actor-proxy.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-component-actor.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/component-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-create-actor.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/create-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-create-actor-ref.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/create-actor-ref.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-create-component.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/create-component.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-context-actor.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/context-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-stateless-actor.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/stateless-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-typed-actor-instance.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/typed-actor-instance.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-unified-actor-builder.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/unified-actor-builder.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-virtual-actor-system.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/virtual-actor-system.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-actors-actor-discovery-service.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/actor-discovery-service.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-actors-backoff-supervisor.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/backoff-supervisor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-actors-event-broker-actor.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/event-broker-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-actors-supervisor.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/supervisor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-actors-supervisor-tree.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/supervisor-tree.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-actors-system-event-actor.ts",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/actors/system-event-actor.ts"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-planning",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/planning"
+    },
+    {
+      "name": "packages-actor-core-runtime-src-integration-fas-shared-contracts.ts-no-packages-actor-core-runtime-src-patterns",
+      "from": "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts",
+      "cannotImport": "packages/actor-core-runtime/src/patterns"
+    }
+  ]
+}

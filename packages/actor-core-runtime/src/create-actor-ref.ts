@@ -55,6 +55,7 @@ class XStateActorRef<TContext = unknown, TMessage extends ActorMessage = ActorMe
 
   // Event emission system - THIS IS THE FIX!
   private eventBus: ActorEventBus<unknown>;
+  private snapshotListeners = new Set<(snapshot: ActorSnapshot<TContext>) => void>();
 
   // Actor hierarchy
   private children = new Map<string, ActorRef<unknown, ActorMessage>>();
@@ -277,6 +278,14 @@ class XStateActorRef<TContext = unknown, TMessage extends ActorMessage = ActorMe
     };
   }
 
+  subscribeSnapshot(listener: (snapshot: ActorSnapshot<TContext>) => void): () => void {
+    this.snapshotListeners.add(listener);
+
+    return () => {
+      this.snapshotListeners.delete(listener);
+    };
+  }
+
   // ========================================================================================
   // ASK PATTERN WITH PROPER REQUEST/RESPONSE MANAGEMENT
   // ========================================================================================
@@ -397,6 +406,7 @@ class XStateActorRef<TContext = unknown, TMessage extends ActorMessage = ActorMe
           context: this.summarizeContext(snapshot.context),
           actorId: this.id,
         });
+        this.notifySnapshotListeners();
       },
       error: (error) => {
         this.logger.error('Actor error', { error, actorId: this.id });
@@ -518,6 +528,22 @@ class XStateActorRef<TContext = unknown, TMessage extends ActorMessage = ActorMe
       return relevant;
     }
     return {};
+  }
+
+  private notifySnapshotListeners(): void {
+    if (this.snapshotListeners.size === 0) {
+      return;
+    }
+
+    const snapshot = this.getSnapshot();
+
+    for (const listener of this.snapshotListeners) {
+      try {
+        listener(snapshot);
+      } catch (error) {
+        this.logger.warn('Snapshot listener failed', { actorId: this.id, error });
+      }
+    }
   }
 }
 

@@ -115,6 +115,38 @@ export { createComponent } from './create-component.js';
 export type { DirectoryConfig } from './distributed-actor-directory.js';
 // Phase 1: Distributed Actor Directory and System
 export { DistributedActorDirectory } from './distributed-actor-directory.js';
+export {
+  type ActorMessageRecord,
+  type ActorSnapshotToFasWorkflowSnapshotInput,
+  type ActorSnapshotTransitionInput,
+  type ActorWebCommandExecutionInput,
+  type ActorWebToFasEventEnvelopeOptions,
+  actorAddressToFasActorAddress,
+  actorCommandExecutionToFasRecord,
+  actorMessagePayload,
+  actorMessageToFasEventEnvelope,
+  actorSnapshotPhase,
+  actorSnapshotsToFasTransitionRecord,
+  actorSnapshotToFasWorkflowSnapshot,
+  type FasActorAddress,
+  type FasArtifactReference,
+  type FasCommandExecutionRecord,
+  type FasCommandExecutionStatus,
+  type FasCorrelationContext,
+  type FasEventEnvelope,
+  type FasMessageKind,
+  type FasWorkflowSnapshot,
+  type FasWorkflowTransitionRecord,
+} from './integration/fas-shared-contracts.js';
+export {
+  actorSnapshotToIgniteSourceSnapshot,
+  type CreateIgniteActorSourceOptions,
+  createIgniteActorSource,
+  type IgniteActorSource,
+  type IgniteActorSourceSnapshot,
+  isSnapshotSubscribableActorRef,
+  type SnapshotSubscribableActorRef,
+} from './integration/ignite-element-bridge.js';
 export type { ScopedLogger } from './logger.js';
 // Logger utility
 export {

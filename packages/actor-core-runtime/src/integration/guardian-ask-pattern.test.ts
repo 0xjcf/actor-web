@@ -178,6 +178,7 @@ describe('Guardian Ask Pattern - Critical Fix Tests', () => {
     system = createActorSystem({
       nodeAddress: 'test-node',
     });
+    await system.start();
 
     // Create guardian actor using real system
     guardian = await createGuardianActor(system);
