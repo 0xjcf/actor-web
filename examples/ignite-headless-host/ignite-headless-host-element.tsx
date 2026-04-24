@@ -4,41 +4,42 @@ import 'ignite-element/renderers/ignite-jsx';
 
 import { type ActorWebExtendedState, createActorWebAdapter } from 'ignite-adapters/actor-web';
 import { igniteElementFactory, StateScope } from 'ignite-element';
-import type { HeadlessCheckoutEventLog, HeadlessCheckoutHostState } from './headless-host';
+import type { LogisticsEventLog, LogisticsHostState } from './headless-host';
 import {
-  type CheckoutCommand,
-  type CheckoutContext,
-  type CheckoutEvent,
-  createCheckoutRuntimeHarness,
+  createLogisticsRuntimeHarness,
+  type ShipmentCommand,
+  type ShipmentContext,
+  type ShipmentEvent,
 } from './runtime-harness';
 
 export const IGNITE_HEADLESS_HOST_ELEMENT_NAME = 'aw-ignite-headless-host';
 
-type CheckoutElementEvent =
-  | { type: 'draft.change'; value: string }
-  | { type: 'submit' }
-  | { type: 'submit.quick'; orderId: string }
+type LogisticsElementEvent =
+  | { type: 'draft.destination'; value: string }
+  | { type: 'draft.reference'; value: string }
+  | { type: 'create' }
+  | { type: 'create.quick'; destination: string; reference: string }
+  | { type: 'mark.inTransit' }
+  | { type: 'mark.delivered' }
   | { type: 'reset' };
 
-interface CheckoutElementState extends HeadlessCheckoutHostState {
+interface LogisticsElementState extends LogisticsHostState {
   address: string;
   busy: boolean;
-  draftOrderId: string;
+  draftDestination: string;
+  draftReference: string;
 }
 
-type CheckoutActorState = ActorWebExtendedState<CheckoutContext>;
-type CheckoutCommandActor = ReturnType<typeof createBaseCheckoutAdapter.resolveCommandActor>;
+type LogisticsActorState = ActorWebExtendedState<ShipmentContext>;
+type LogisticsCommandActor = ReturnType<typeof createBaseLogisticsAdapter.resolveCommandActor>;
 type TransportAwareActor = {
-  transportStatus?: () => { state: HeadlessCheckoutHostState['transportState']; reason?: string };
+  transportStatus?: () => { state: LogisticsHostState['transportState']; reason?: string };
   subscribeTransportStatus?: (
-    listener: (status: {
-      state: HeadlessCheckoutHostState['transportState'];
-      reason?: string;
-    }) => void
+    listener: (status: { state: LogisticsHostState['transportState']; reason?: string }) => void
   ) => () => void;
 };
 
-const checkoutExampleStyles = `
+const styles = `
   :host {
     display: block;
     color: #e5eef5;
@@ -46,36 +47,28 @@ const checkoutExampleStyles = `
       Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
 
-  * {
-    box-sizing: border-box;
-  }
+  * { box-sizing: border-box; }
+  button, input, code { font: inherit; }
 
-  button,
-  input,
-  code,
-  pre {
-    font: inherit;
-  }
-
-  .runtime-shell {
+  .shell {
     min-height: 100vh;
     padding: 32px;
     background:
-      linear-gradient(180deg, rgba(18, 24, 29, 0.94) 0%, rgba(11, 15, 20, 0.98) 100%),
-      #0b0f14;
+      linear-gradient(180deg, rgba(15, 23, 32, 0.96), rgba(8, 12, 18, 0.98)),
+      #081018;
   }
 
-  .runtime-frame {
-    width: min(1180px, 100%);
+  .frame {
+    width: min(1220px, 100%);
     margin: 0 auto;
     display: grid;
     gap: 24px;
   }
 
-  .runtime-header {
+  .header {
     display: grid;
     gap: 20px;
-    grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.9fr);
+    grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.9fr);
     align-items: start;
   }
 
@@ -88,31 +81,42 @@ const checkoutExampleStyles = `
     text-transform: uppercase;
   }
 
-  .runtime-header h1 {
-    margin: 0;
-    color: #f3f7fa;
-    font-size: clamp(38px, 6vw, 64px);
-    line-height: 1;
-  }
+  h1, h2, h3, p { margin: 0; }
+  h1 { color: #f3f7fa; font-size: clamp(38px, 6vw, 64px); line-height: 1; }
+  h2, h3 { color: #f3f7fa; font-size: 20px; line-height: 1.2; }
 
-  .runtime-copy {
+  .copy {
     max-width: 760px;
-    margin: 16px 0 0;
+    margin-top: 16px;
     color: #9db0be;
-    font-size: 18px;
+    font-size: 17px;
     line-height: 1.55;
   }
 
-  .runtime-summary {
+  .summary, .panel {
     display: grid;
-    gap: 12px;
-    padding: 18px 20px;
-    border: 1px solid rgba(120, 142, 156, 0.22);
+    gap: 16px;
+    padding: 20px;
+    border: 1px solid rgba(120, 142, 156, 0.18);
     border-radius: 8px;
-    background: rgba(23, 31, 38, 0.82);
+    background: rgba(20, 27, 33, 0.84);
   }
 
-  .summary-label {
+  .grid {
+    display: grid;
+    gap: 14px 18px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .layout {
+    display: grid;
+    gap: 24px;
+    grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .stack { display: grid; gap: 24px; }
+  .label {
     color: #7e95a5;
     font-size: 12px;
     font-weight: 700;
@@ -120,24 +124,16 @@ const checkoutExampleStyles = `
     text-transform: uppercase;
   }
 
-  .summary-grid {
-    display: grid;
-    gap: 14px 18px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .summary-value {
+  .value {
     margin-top: 6px;
     color: #f3f7fa;
     font-size: 15px;
     font-weight: 600;
     line-height: 1.4;
+    overflow-wrap: anywhere;
   }
 
-  .summary-value code {
-    display: inline-block;
-    max-width: 100%;
-    overflow-wrap: anywhere;
+  code {
     color: #cbe7f2;
     font-family:
       "SFMono-Regular", SFMono-Regular, ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono",
@@ -145,156 +141,32 @@ const checkoutExampleStyles = `
     font-size: 13px;
   }
 
-  .phase-badge {
+  .badge {
     display: inline-flex;
     align-items: center;
     min-height: 28px;
     padding: 0 12px;
     border-radius: 999px;
+    background: rgba(94, 234, 212, 0.13);
+    color: #5eead4;
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
 
-  .phase-ready {
-    background: rgba(245, 158, 11, 0.16);
-    color: #fbbf24;
-  }
+  .status-idle { background: rgba(96, 165, 250, 0.14); color: #93c5fd; }
+  .status-route-assigned, .status-delivered { background: rgba(16, 185, 129, 0.16); color: #34d399; }
+  .status-route-requested, .status-in-transit { background: rgba(45, 212, 191, 0.14); color: #5eead4; }
+  .status-busy { background: rgba(245, 158, 11, 0.16); color: #fbbf24; }
+  .transport-disconnected, .transport-degraded { background: rgba(248, 113, 113, 0.16); color: #f87171; }
 
-  .phase-submitted {
-    background: rgba(16, 185, 129, 0.16);
-    color: #34d399;
-  }
-
-  .phase-busy {
-    background: rgba(45, 212, 191, 0.16);
-    color: #5eead4;
-  }
-
-  .transport-chip {
-    display: inline-flex;
-    align-items: center;
-    min-height: 28px;
-    padding: 0 12px;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
-
-  .transport-connected {
-    background: rgba(16, 185, 129, 0.16);
-    color: #34d399;
-  }
-
-  .transport-local {
-    background: rgba(96, 165, 250, 0.14);
-    color: #93c5fd;
-  }
-
-  .transport-replaying {
-    background: rgba(45, 212, 191, 0.14);
-    color: #5eead4;
-  }
-
-  .transport-degraded {
-    background: rgba(245, 158, 11, 0.16);
-    color: #fbbf24;
-  }
-
-  .transport-disconnected {
-    background: rgba(248, 113, 113, 0.16);
-    color: #f87171;
-  }
-
-  .runtime-layout {
-    display: grid;
-    gap: 24px;
-    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
-    align-items: start;
-  }
-
-  .panel {
-    display: grid;
-    gap: 18px;
-    padding: 20px;
-    border: 1px solid rgba(120, 142, 156, 0.18);
-    border-radius: 8px;
-    background: rgba(20, 27, 33, 0.84);
-  }
-
-  .panel-header {
-    display: grid;
-    gap: 6px;
-  }
-
-  .panel-title-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  .panel h2,
-  .panel h3 {
-    margin: 0;
-    color: #f3f7fa;
-    font-size: 20px;
-    line-height: 1.2;
-  }
-
-  .panel-copy {
-    margin: 0;
-    color: #8da1af;
-    font-size: 14px;
-    line-height: 1.5;
-  }
-
-  .panel-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 28px;
-    height: 28px;
-    padding: 0 10px;
-    border-radius: 999px;
-    background: rgba(94, 234, 212, 0.12);
-    color: #5eead4;
-    font-size: 12px;
-    font-weight: 700;
-  }
-
-  .command-stack,
-  .content-stack {
-    display: grid;
-    gap: 24px;
-  }
-
-  .field-label {
-    color: #8da1af;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .command-group {
-    display: grid;
-    gap: 12px;
-  }
-
-  .toolbar {
-    display: grid;
-    gap: 10px;
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .toolbar input {
+  .field { display: grid; gap: 8px; }
+  .toolbar { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) auto; }
+  input {
     width: 100%;
     min-width: 0;
-    height: 46px;
+    height: 44px;
     padding: 0 14px;
     border: 1px solid rgba(120, 142, 156, 0.24);
     border-radius: 8px;
@@ -303,324 +175,109 @@ const checkoutExampleStyles = `
     outline: none;
   }
 
-  .toolbar input:focus {
-    border-color: rgba(94, 234, 212, 0.72);
-    box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.14);
-  }
-
-  .button-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-
-  .button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+  button {
     min-height: 42px;
     padding: 0 14px;
-    border: 1px solid transparent;
+    border: 1px solid rgba(94, 234, 212, 0.22);
     border-radius: 8px;
-    background: rgba(37, 99, 235, 0.18);
+    background: #0f766e;
     color: #eff7ff;
     cursor: pointer;
-    font-size: 14px;
-    font-weight: 600;
-    transition:
-      background 120ms ease,
-      border-color 120ms ease,
-      color 120ms ease,
-      transform 120ms ease;
-  }
-
-  .button:hover:enabled {
-    transform: translateY(-1px);
-  }
-
-  .button:disabled {
-    cursor: wait;
-    opacity: 0.56;
-    transform: none;
-  }
-
-  .button-primary {
-    background: #0f766e;
-    border-color: rgba(94, 234, 212, 0.22);
-  }
-
-  .button-primary:hover:enabled {
-    background: #0d9488;
-  }
-
-  .button-secondary {
-    background: rgba(38, 48, 57, 0.96);
-    border-color: rgba(120, 142, 156, 0.2);
-    color: #dbe7ef;
-  }
-
-  .button-secondary:hover:enabled {
-    background: rgba(50, 63, 74, 0.96);
-  }
-
-  .button-danger {
-    background: rgba(127, 29, 29, 0.22);
-    border-color: rgba(248, 113, 113, 0.18);
-    color: #fecaca;
-  }
-
-  .button-danger:hover:enabled {
-    background: rgba(153, 27, 27, 0.32);
-  }
-
-  .quick-grid {
-    display: grid;
-    gap: 10px;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .helper-line {
-    margin: 0;
-    color: #708796;
-    font-size: 13px;
-    line-height: 1.5;
-  }
-
-  .state-grid {
-    display: grid;
-    gap: 12px 20px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .state-cell {
-    min-width: 0;
-    padding-bottom: 12px;
-    border-bottom: 1px solid rgba(120, 142, 156, 0.12);
-  }
-
-  .state-cell:last-child,
-  .state-cell:nth-last-child(2):nth-child(odd) {
-    border-bottom: 0;
-    padding-bottom: 0;
-  }
-
-  .state-cell dt {
-    margin: 0 0 8px;
-    color: #7e95a5;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .state-cell dd {
-    margin: 0;
-    color: #f3f7fa;
-    font-size: 15px;
-    font-weight: 600;
-    line-height: 1.45;
-    overflow-wrap: anywhere;
-  }
-
-  .state-cell code {
-    color: #cbe7f2;
-    font-family:
-      "SFMono-Regular", SFMono-Regular, ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono",
-      "Courier New", monospace;
-    font-size: 13px;
-  }
-
-  .order-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .order-chip {
-    display: inline-flex;
-    align-items: center;
-    min-height: 28px;
-    padding: 0 10px;
-    border-radius: 999px;
-    background: rgba(94, 234, 212, 0.1);
-    color: #bff7ed;
-    font-size: 12px;
     font-weight: 600;
   }
 
-  .empty-value {
-    color: #7e95a5;
-    font-weight: 500;
-  }
+  button.secondary { background: rgba(38, 48, 57, 0.96); border-color: rgba(120, 142, 156, 0.2); }
+  button.danger { background: rgba(127, 29, 29, 0.22); border-color: rgba(248, 113, 113, 0.18); }
+  button:disabled { cursor: wait; opacity: 0.56; }
 
-  .event-list {
+  .quick-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+  .item {
     display: grid;
-    gap: 12px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .event-item {
-    display: grid;
-    gap: 8px;
-    padding: 14px 16px;
+    gap: 6px;
+    padding: 12px 14px;
     border: 1px solid rgba(120, 142, 156, 0.14);
     border-radius: 8px;
     background: rgba(10, 14, 18, 0.72);
   }
+  .muted { color: #8da1af; font-size: 13px; line-height: 1.45; }
 
-  .event-item strong {
-    color: #f3f7fa;
-    font-size: 14px;
-    line-height: 1.35;
-  }
-
-  .event-meta {
-    display: grid;
-    gap: 4px;
-    color: #a7bac7;
-    font-size: 13px;
-    line-height: 1.45;
-  }
-
-  .muted {
-    color: #6f8797;
-  }
-
-  .code-note {
-    margin: 0;
-    padding: 14px 16px;
-    border: 1px solid rgba(120, 142, 156, 0.16);
-    border-radius: 8px;
-    background: rgba(8, 12, 16, 0.92);
-    color: #cbe7f2;
-    font-family:
-      "SFMono-Regular", SFMono-Regular, ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono",
-      "Courier New", monospace;
-    font-size: 12px;
-    line-height: 1.6;
-    overflow-x: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-
-  @media (max-width: 980px) {
-    .runtime-shell {
-      padding: 22px;
-    }
-
-    .runtime-header,
-    .runtime-layout {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  @media (max-width: 720px) {
-    .runtime-shell {
-      padding: 16px;
-    }
-
-    .runtime-header h1 {
-      font-size: clamp(34px, 11vw, 48px);
-    }
-
-    .runtime-copy {
-      font-size: 16px;
-    }
-
-    .summary-grid,
-    .state-grid,
-    .toolbar,
-    .quick-grid {
-      grid-template-columns: 1fr;
-    }
+  @media (max-width: 900px) {
+    .header, .layout, .grid, .toolbar, .quick-grid { grid-template-columns: 1fr; }
+    .shell { padding: 18px; }
   }
 `;
 
-const createBaseCheckoutAdapter = createActorWebAdapter<
-  CheckoutContext,
-  CheckoutCommand,
-  CheckoutEvent
+const createBaseLogisticsAdapter = createActorWebAdapter<
+  ShipmentContext,
+  ShipmentCommand,
+  ShipmentEvent
 >(() => {
-  const harness = createCheckoutRuntimeHarness();
-
+  const harness = createLogisticsRuntimeHarness();
   return {
     source: harness.source,
     stop: () => harness.destroy(),
   };
 });
 
-function cloneState(state: CheckoutElementState): CheckoutElementState {
+function cloneState(state: LogisticsElementState): LogisticsElementState {
   return {
     ...state,
-    submittedOrders: [...state.submittedOrders],
+    timeline: state.timeline.map((entry) => ({ ...entry })),
     eventLog: state.eventLog.map((event) => ({ ...event })),
   };
 }
 
-function renderEvent(event: HeadlessCheckoutEventLog) {
+function renderEvent(event: LogisticsEventLog) {
   return (
-    <li class="event-item">
+    <li class="item">
       <strong>{event.type}</strong>
-      <div class="event-meta">
-        <div>
-          <span class="muted">Actor:</span> {event.actorId}
-        </div>
-        <div>
-          {event.orderId ? (
-            <>
-              <span class="muted">Order:</span> {event.orderId}
-            </>
-          ) : (
-            'Reset'
-          )}
-        </div>
-      </div>
+      <span class="muted">
+        Actor {event.actorId}
+        {event.shipmentId ? ` / ${event.shipmentId}` : ''}
+      </span>
     </li>
   );
 }
 
 function projectElementState(
-  actorState: CheckoutActorState,
-  current?: CheckoutElementState
-): CheckoutElementState {
+  actorState: LogisticsActorState,
+  current?: LogisticsElementState
+): LogisticsElementState {
   return {
     phase: actorState.phase,
-    submittedOrders: [...actorState.submittedOrders],
-    lastSubmittedOrderId: actorState.lastSubmittedOrderId,
+    shipmentId: actorState.shipmentId,
+    destination: actorState.destination,
+    reference: actorState.reference,
+    status: actorState.status,
+    carrier: actorState.carrier,
+    eta: actorState.eta,
+    routeNotes: actorState.routeNotes,
+    shipmentCount: actorState.shipmentCount,
+    timeline: actorState.timeline.map((entry) => ({ ...entry })),
     eventLog: current?.eventLog ?? [],
     transportState: current?.transportState ?? 'replaying',
     transportReason: current?.transportReason ?? null,
     address: actorState.address.path,
     busy: current?.busy ?? false,
-    draftOrderId: current?.draftOrderId ?? 'order-1001',
+    draftDestination: current?.draftDestination ?? 'Chicago warehouse',
+    draftReference: current?.draftReference ?? 'REF-1001',
   };
 }
 
-function createCheckoutAdapter() {
-  const actorAdapter = createBaseCheckoutAdapter();
-  const actor = createBaseCheckoutAdapter.resolveCommandActor(
+function createLogisticsAdapter() {
+  const actorAdapter = createBaseLogisticsAdapter();
+  const actor = createBaseLogisticsAdapter.resolveCommandActor(
     actorAdapter
-  ) as CheckoutCommandActor & TransportAwareActor;
-  const listeners = new Set<(state: CheckoutElementState) => void>();
+  ) as LogisticsCommandActor & TransportAwareActor;
+  const listeners = new Set<(state: LogisticsElementState) => void>();
   let stopped = false;
   let state = projectElementState(actorAdapter.getState());
-
-  if (typeof actor.transportStatus === 'function') {
-    const status = actor.transportStatus();
-    state = {
-      ...state,
-      transportState: status.state,
-      transportReason: status.reason ?? null,
-    };
-  }
 
   const notify = (): void => {
     if (stopped) {
       return;
     }
-
     const snapshot = cloneState(state);
     for (const listener of Array.from(listeners)) {
       listener(snapshot);
@@ -640,15 +297,24 @@ function createCheckoutAdapter() {
             eventLog: [
               {
                 type: event.type,
-                orderId: 'orderId' in event ? event.orderId : null,
+                shipmentId: 'shipmentId' in event ? event.shipmentId : null,
                 actorId: actor.address.id,
               },
               ...state.eventLog,
-            ].slice(0, 8),
+            ].slice(0, 10),
           };
           notify();
         },
-        { types: ['CHECKOUT_SUBMITTED', 'CHECKOUT_RESET'] }
+        {
+          types: [
+            'SHIPMENT_CREATED',
+            'ROUTE_REQUESTED',
+            'ROUTE_ASSIGNED',
+            'SHIPMENT_IN_TRANSIT',
+            'SHIPMENT_DELIVERED',
+            'SHIPMENT_RESET',
+          ],
+        }
       )
     : () => {};
 
@@ -668,77 +334,76 @@ function createCheckoutAdapter() {
     if (state.busy || stopped) {
       return;
     }
-
-    state = {
-      ...state,
-      busy: true,
-    };
+    state = { ...state, busy: true };
     notify();
-
     try {
       await action();
     } finally {
-      state = {
-        ...state,
-        busy: false,
-      };
+      state = { ...state, busy: false };
       notify();
     }
   };
 
+  const createShipment = async (destination: string, reference?: string): Promise<void> => {
+    await actor.send({
+      type: 'CREATE_SHIPMENT',
+      shipmentId: `shipment-${Date.now().toString(36)}`,
+      destination,
+      reference,
+    });
+  };
+
   return {
     scope: StateScope.Isolated,
-    subscribe(listener: (nextState: CheckoutElementState) => void) {
+    subscribe(listener: (nextState: LogisticsElementState) => void) {
       listeners.add(listener);
       listener(cloneState(state));
-
       return {
         unsubscribe: () => {
           listeners.delete(listener);
         },
       };
     },
-    send(event: CheckoutElementEvent): void {
+    send(event: LogisticsElementEvent): void {
       switch (event.type) {
-        case 'draft.change':
-          state = {
-            ...state,
-            draftOrderId: event.value,
-          };
+        case 'draft.destination':
+          state = { ...state, draftDestination: event.value };
           notify();
           return;
-        case 'submit':
+        case 'draft.reference':
+          state = { ...state, draftReference: event.value };
+          notify();
+          return;
+        case 'create':
           void run(async () => {
-            const orderId = state.draftOrderId.trim();
-            if (orderId.length === 0) {
+            const destination = state.draftDestination.trim();
+            if (destination.length === 0) {
               return;
             }
-
-            await actor.send({
-              type: 'SUBMIT',
-              orderId,
-            });
+            await createShipment(destination, state.draftReference.trim() || undefined);
           });
           return;
-        case 'submit.quick':
+        case 'create.quick':
           state = {
             ...state,
-            draftOrderId: event.orderId,
+            draftDestination: event.destination,
+            draftReference: event.reference,
           };
           notify();
-          void run(() =>
-            actor.send({
-              type: 'SUBMIT',
-              orderId: event.orderId,
-            })
-          );
+          void run(() => createShipment(event.destination, event.reference));
+          return;
+        case 'mark.inTransit':
+          void run(() => actor.send({ type: 'MARK_IN_TRANSIT' }));
+          return;
+        case 'mark.delivered':
+          void run(() => actor.send({ type: 'MARK_DELIVERED' }));
           return;
         case 'reset':
-          void run(() => actor.send({ type: 'RESET' }));
+          void run(() => actor.send({ type: 'RESET_SHIPMENT' }));
           return;
       }
     },
-    getState(): CheckoutElementState {
+    getState(): LogisticsElementState {
       return cloneState(state);
     },
     stop(): void {
@@ -752,12 +417,10 @@ function createCheckoutAdapter() {
   };
 }
 
-const registerIgniteHeadlessHost = igniteElementFactory<CheckoutElementState, CheckoutElementEvent>(
-  createCheckoutAdapter,
-  {
-    scope: StateScope.Isolated,
-  }
-);
+const registerIgniteHeadlessHost = igniteElementFactory<
+  LogisticsElementState,
+  LogisticsElementEvent
+>(createLogisticsAdapter, { scope: StateScope.Isolated });
 
 export function defineIgniteHeadlessHostElement(): void {
   if (customElements.get(IGNITE_HEADLESS_HOST_ELEMENT_NAME)) {
@@ -765,57 +428,47 @@ export function defineIgniteHeadlessHostElement(): void {
   }
 
   registerIgniteHeadlessHost(IGNITE_HEADLESS_HOST_ELEMENT_NAME, ({ state, send }) => {
-    const latestEvent = state.eventLog[0]?.type ?? 'none';
-    const submittedCount = state.submittedOrders.length;
-    const canSubmit = !state.busy && state.draftOrderId.trim().length > 0;
-    const canReset = !state.busy && (submittedCount > 0 || state.eventLog.length > 0);
-    const phaseClass = state.busy
-      ? 'phase-badge phase-busy'
-      : `phase-badge ${state.phase === 'submitted' ? 'phase-submitted' : 'phase-ready'}`;
-    const transportClass = `transport-chip transport-${state.transportState}`;
+    const canCreate = !state.busy && state.draftDestination.trim().length > 0;
+    const canReset = !state.busy && (state.shipmentCount > 0 || state.eventLog.length > 0);
+    const statusClass = state.busy ? 'badge status-busy' : `badge status-${state.status}`;
+    const transportClass = `badge transport-${state.transportState}`;
 
     return (
       <>
-        <style>{checkoutExampleStyles}</style>
-        <main class="runtime-shell">
-          <div class="runtime-frame">
-            <header class="runtime-header">
+        <style>{styles}</style>
+        <main class="shell">
+          <div class="frame">
+            <header class="header">
               <div>
-                <p class="eyebrow">Ignite Headless Host</p>
-                <h1>Snapshot + Event Bridge</h1>
-                <p class="runtime-copy">
-                  Actor-Web snapshots and emitted events rendered through Ignite with the shared{' '}
-                  <code>ignite-adapters/actor-web</code> seam. This demo runs the remote runtime
-                  inside a service worker so the UI and actor owner live in different browser
-                  contexts.
+                <p class="eyebrow">Actor-Web Logistics Control Tower</p>
+                <h1>REST ingress, live WebSocket projections, runtime transport</h1>
+                <p class="copy">
+                  Create a shipment through the thin Ignite host, watch gateway updates arrive live,
+                  and route work to a WebWorker-owned Actor-Web runtime over WebSocket transport.
                 </p>
               </div>
 
-              <section class="runtime-summary">
-                <div class="summary-grid">
+              <section class="summary">
+                <div class="grid">
                   <div>
-                    <div class="summary-label">Status</div>
-                    <div class="summary-value">
-                      <span class={phaseClass}>{state.busy ? 'dispatching' : state.phase}</span>
+                    <div class="label">Shipment Status</div>
+                    <div class="value">
+                      <span class={statusClass}>{state.busy ? 'dispatching' : state.status}</span>
                     </div>
                   </div>
                   <div>
-                    <div class="summary-label">Submitted</div>
-                    <div class="summary-value">{submittedCount}</div>
+                    <div class="label">Shipments</div>
+                    <div class="value">{state.shipmentCount}</div>
                   </div>
                   <div>
-                    <div class="summary-label">Last Event</div>
-                    <div class="summary-value">{latestEvent}</div>
-                  </div>
-                  <div>
-                    <div class="summary-label">Transport</div>
-                    <div class="summary-value">
+                    <div class="label">Transport</div>
+                    <div class="value">
                       <span class={transportClass}>{state.transportState}</span>
                     </div>
                   </div>
                   <div>
-                    <div class="summary-label">Address</div>
-                    <div class="summary-value">
+                    <div class="label">Actor</div>
+                    <div class="value">
                       <code>{state.address}</code>
                     </div>
                   </div>
@@ -823,191 +476,213 @@ export function defineIgniteHeadlessHostElement(): void {
               </section>
             </header>
 
-            <section class="runtime-layout">
-              <aside class="command-stack">
+            <section class="layout">
+              <aside class="stack">
                 <section class="panel">
-                  <div class="panel-header">
-                    <h2>Commands</h2>
-                    <p class="panel-copy">Dispatch typed messages against the host actor.</p>
-                  </div>
-
-                  <label class="command-group">
-                    <span class="field-label">Order ID</span>
+                  <h2>Create Shipment</h2>
+                  <label class="field">
+                    <span class="label">Destination</span>
                     <div class="toolbar">
                       <input
-                        name="order-id"
-                        value={state.draftOrderId}
-                        placeholder="order-1001"
+                        value={state.draftDestination}
+                        placeholder="Chicago warehouse"
                         disabled={state.busy}
                         onInput={(event: Event) =>
                           send({
-                            type: 'draft.change',
+                            type: 'draft.destination',
                             value: (event.currentTarget as HTMLInputElement).value,
                           })
                         }
                       />
                       <button
-                        class="button button-primary"
-                        id="submit-order"
                         type="button"
-                        disabled={!canSubmit}
-                        onClick={() => send({ type: 'submit' })}
+                        id="create-shipment"
+                        disabled={!canCreate}
+                        onClick={() => send({ type: 'create' })}
                       >
-                        Submit
+                        Create
                       </button>
                     </div>
                   </label>
-
+                  <label class="field">
+                    <span class="label">Reference</span>
+                    <input
+                      value={state.draftReference}
+                      placeholder="REF-1001"
+                      disabled={state.busy}
+                      onInput={(event: Event) =>
+                        send({
+                          type: 'draft.reference',
+                          value: (event.currentTarget as HTMLInputElement).value,
+                        })
+                      }
+                    />
+                  </label>
                   <div class="quick-grid">
                     <button
-                      class="button button-secondary"
                       type="button"
+                      class="secondary"
                       disabled={state.busy}
-                      onClick={() => send({ type: 'submit.quick', orderId: 'order-2002' })}
+                      onClick={() =>
+                        send({
+                          type: 'create.quick',
+                          destination: 'Dallas cross-dock',
+                          reference: 'REF-2002',
+                        })
+                      }
                     >
-                      Order 2002
+                      Dallas
                     </button>
                     <button
-                      class="button button-secondary"
                       type="button"
+                      class="secondary"
                       disabled={state.busy}
-                      onClick={() => send({ type: 'submit.quick', orderId: 'order-3003' })}
+                      onClick={() =>
+                        send({
+                          type: 'create.quick',
+                          destination: 'International hub',
+                          reference: 'REF-3003',
+                        })
+                      }
                     >
-                      Order 3003
+                      International
                     </button>
                     <button
-                      class="button button-danger"
-                      id="reset-orders"
                       type="button"
+                      class="secondary"
+                      disabled={state.busy}
+                      onClick={() => send({ type: 'mark.inTransit' })}
+                    >
+                      In Transit
+                    </button>
+                    <button
+                      type="button"
+                      class="secondary"
+                      disabled={state.busy}
+                      onClick={() => send({ type: 'mark.delivered' })}
+                    >
+                      Delivered
+                    </button>
+                    <button
+                      type="button"
+                      class="danger"
                       disabled={!canReset}
                       onClick={() => send({ type: 'reset' })}
                     >
                       Reset
                     </button>
                   </div>
+                </section>
 
-                  <p class="helper-line">
-                    Public runtime source: <code>@actor-core/runtime/browser</code>
-                  </p>
+                <section class="panel">
+                  <h3>Runtime Topology</h3>
+                  <ul class="list">
+                    <li class="item">
+                      <strong>Browser Host</strong>
+                      <span class="muted">Ignite thin projection host</span>
+                    </li>
+                    <li class="item">
+                      <strong>Server Runtime</strong>
+                      <span class="muted">REST, gateway, shipment actor</span>
+                    </li>
+                    <li class="item">
+                      <strong>WebWorker Runtime</strong>
+                      <span class="muted">Routing actor over Actor-Web transport</span>
+                    </li>
+                    <li class="item">
+                      <strong>Service Worker Runtime</strong>
+                      <span class="muted">Browser-local MessagePort topology proof</span>
+                    </li>
+                  </ul>
                 </section>
               </aside>
 
-              <div class="content-stack">
+              <div class="stack">
                 <section class="panel">
-                  <div class="panel-header">
-                    <div class="panel-title-row">
-                      <h3>Projected Host State</h3>
-                      <span class="panel-badge">{submittedCount}</span>
+                  <h3>Live Shipment Projection</h3>
+                  <div class="grid">
+                    <div>
+                      <div class="label">Shipment</div>
+                      <div class="value">{state.shipmentId ?? 'none'}</div>
+                    </div>
+                    <div>
+                      <div class="label">Destination</div>
+                      <div class="value">{state.destination ?? 'none'}</div>
+                    </div>
+                    <div>
+                      <div class="label">Carrier</div>
+                      <div class="value">{state.carrier ?? 'pending'}</div>
+                    </div>
+                    <div>
+                      <div class="label">ETA</div>
+                      <div class="value">{state.eta ?? 'pending'}</div>
+                    </div>
+                    <div>
+                      <div class="label">Route Notes</div>
+                      <div class="value">{state.routeNotes ?? 'pending route plan'}</div>
+                    </div>
+                    <div>
+                      <div class="label">Transport Reason</div>
+                      <div class="value">{state.transportReason ?? 'none'}</div>
                     </div>
                   </div>
-
-                  <dl class="state-grid">
-                    <div class="state-cell">
-                      <dt>Phase</dt>
-                      <dd>
-                        <span class={phaseClass}>{state.busy ? 'dispatching' : state.phase}</span>
-                      </dd>
-                    </div>
-
-                    <div class="state-cell">
-                      <dt>Last Submitted</dt>
-                      <dd class={state.lastSubmittedOrderId ? '' : 'empty-value'}>
-                        {state.lastSubmittedOrderId ?? 'none'}
-                      </dd>
-                    </div>
-
-                    <div class="state-cell">
-                      <dt>Submitted Orders</dt>
-                      <dd>
-                        {submittedCount > 0 ? (
-                          <div class="order-list">
-                            {state.submittedOrders.map((orderId) => (
-                              <span class="order-chip">{orderId}</span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span class="empty-value">none</span>
-                        )}
-                      </dd>
-                    </div>
-
-                    <div class="state-cell">
-                      <dt>Transport</dt>
-                      <dd>
-                        <span class={transportClass}>{state.transportState}</span>
-                        {state.transportReason ? (
-                          <div class="helper-line">{state.transportReason}</div>
-                        ) : null}
-                      </dd>
-                    </div>
-
-                    <div class="state-cell">
-                      <dt>Actor Path</dt>
-                      <dd>
-                        <code>{state.address}</code>
-                      </dd>
-                    </div>
-                  </dl>
                 </section>
 
                 <section class="panel">
-                  <div class="panel-header">
-                    <div class="panel-title-row">
-                      <h3>Emitted Event Log</h3>
-                      <span class="panel-badge">{state.eventLog.length}</span>
-                    </div>
-                  </div>
+                  <h3>Message Routes</h3>
+                  <ul class="list">
+                    <li class="item">
+                      <strong>REST browser/client {'->'} server runtime</strong>
+                      <span class="muted">POST /shipments accepts command ingress</span>
+                    </li>
+                    <li class="item">
+                      <strong>WS gateway server runtime {'->'} browser host</strong>
+                      <span class="muted">Snapshots, events, status, replies</span>
+                    </li>
+                    <li class="item">
+                      <strong>Actor-Web server runtime {'->'} worker runtime</strong>
+                      <span class="muted">PLAN_ROUTE ask over MessageTransport</span>
+                    </li>
+                    <li class="item">
+                      <strong>Actor-Web worker runtime {'->'} server runtime</strong>
+                      <span class="muted">Route plan reply</span>
+                    </li>
+                    <li class="item">
+                      <strong>MessagePort browser host {'<->'} service worker runtime</strong>
+                      <span class="muted">Browser-local topology proof</span>
+                    </li>
+                  </ul>
+                </section>
 
-                  <ol class="event-list">
-                    {state.eventLog.length > 0 ? (
-                      state.eventLog.map((event: HeadlessCheckoutEventLog) => renderEvent(event))
+                <section class="panel">
+                  <h3>Timeline</h3>
+                  <ol class="list">
+                    {state.timeline.length > 0 ? (
+                      state.timeline.map((entry) => (
+                        <li class="item">
+                          <strong>{entry.label}</strong>
+                          <span class="muted">{entry.detail}</span>
+                        </li>
+                      ))
                     ) : (
-                      <li class="event-item">
-                        <div class="event-meta">No emitted events yet.</div>
+                      <li class="item">
+                        <span class="muted">No shipment activity yet.</span>
                       </li>
                     )}
                   </ol>
                 </section>
 
                 <section class="panel">
-                  <div class="panel-header">
-                    <h3>Runtime Ownership</h3>
-                    <p class="panel-copy">
-                      The element is the client-side host. The remote actor runtime is owned by a
-                      service worker in this demo. Production hosts usually consume the same source
-                      from a server or worker-owned runtime.
-                    </p>
-                  </div>
-
-                  <pre class="code-note">{`await navigator.serviceWorker.register("./ignite-headless-host.sw.js", {
-  type: "module",
-  scope: "./",
-});
-
-const remoteRef = await localSystem.lookup<CheckoutContext, CheckoutCommand>(
-  "actor://node-b/actor/checkout"
-);
-const remoteSource = createIgniteActorSource(remoteRef);
-
-remoteSource.subscribeTransportStatus((status) => {
-  console.log(status.state);
-});
-
-// Local refs report "local" because there is no remote projection hop.
-const localSource = createIgniteActorSource(localCheckoutRef);
-console.log(localSource.transportStatus().state); // "local"
-
-// Explicit overrides stay available for foreign transports or non-Actor-Web runtimes.
-createIgniteActorSource(foreignRemoteRef, {
-  getSnapshot: () => remoteSnapshotCache.read(),
-  subscribeSnapshot: (listener) => remoteSnapshotStream.subscribe(listener),
-  subscribeEvent: (listener, options) =>
-    remoteEventStream.subscribe((event) => {
-      if (!options?.types?.length || options.types.includes(event.type)) {
-        listener(event);
-      }
-    }),
-});`}</pre>
+                  <h3>Gateway Event Stream</h3>
+                  <ol class="list">
+                    {state.eventLog.length > 0 ? (
+                      state.eventLog.map((event) => renderEvent(event))
+                    ) : (
+                      <li class="item">
+                        <span class="muted">No emitted events yet.</span>
+                      </li>
+                    )}
+                  </ol>
                 </section>
               </div>
             </section>

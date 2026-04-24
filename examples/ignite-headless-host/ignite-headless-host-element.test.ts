@@ -21,35 +21,37 @@ describe('ignite-headless-host element', () => {
     const element = document.createElement(IGNITE_HEADLESS_HOST_ELEMENT_NAME);
     document.body.appendChild(element);
 
-    expect(element.shadowRoot?.textContent).toContain('Snapshot + Event Bridge');
-    expect(element.shadowRoot?.textContent).toContain('@actor-core/runtime/browser');
-    expect(element.shadowRoot?.textContent).toContain('service worker');
+    expect(element.shadowRoot?.textContent).toContain('Actor-Web Logistics Control Tower');
+    expect(element.shadowRoot?.textContent).toContain('REST ingress');
+    expect(element.shadowRoot?.textContent).toContain('Service Worker Runtime');
 
     const root = element.shadowRoot;
-    const input = root?.querySelector<HTMLInputElement>('input[name="order-id"]');
-    const submitButton = root?.querySelector<HTMLButtonElement>('#submit-order');
-    const resetButton = root?.querySelector<HTMLButtonElement>('#reset-orders');
+    const input = root?.querySelector<HTMLInputElement>('input');
+    const submitButton = root?.querySelector<HTMLButtonElement>('#create-shipment');
+    const resetButton = Array.from(root?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(
+      (button) => button.textContent?.includes('Reset')
+    );
 
     if (!root || !input || !submitButton || !resetButton) {
       throw new Error('Expected ignite-headless-host controls to be rendered.');
     }
 
-    input.value = 'order-4242';
+    input.value = 'Denver hub';
     input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
     submitButton.click();
     await flush();
     await flush();
 
-    expect(root.textContent).toContain('submitted');
-    expect(root.textContent).toContain('order-4242');
-    expect(root.textContent).toContain('CHECKOUT_SUBMITTED');
+    expect(root.textContent).toContain('route-requested');
+    expect(root.textContent).toContain('Denver hub');
+    expect(root.textContent).toContain('SHIPMENT_CREATED');
     expect(root.textContent).toContain('connected');
 
     resetButton.click();
     await flush();
     await flush();
 
-    expect(root.textContent).toContain('ready');
-    expect(root.textContent).toContain('CHECKOUT_RESET');
+    expect(root.textContent).toContain('idle');
+    expect(root.textContent).toContain('SHIPMENT_RESET');
   });
 });

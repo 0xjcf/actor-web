@@ -3,69 +3,98 @@ import type {
   IgniteActorSourceEvent,
   ProjectionTransportState,
 } from '@actor-core/runtime/browser';
-import type { CheckoutCommand, CheckoutContext, CheckoutEvent } from './runtime-harness';
-import { createCheckoutRuntimeHarness } from './runtime-harness';
+import type { ShipmentCommand, ShipmentContext, ShipmentEvent } from './runtime-harness';
+import { createLogisticsRuntimeHarness } from './runtime-harness';
 
-export interface HeadlessCheckoutEventLog {
-  type: CheckoutEvent['type'];
-  orderId: string | null;
+export interface LogisticsEventLog {
+  type: ShipmentEvent['type'];
+  shipmentId: string | null;
   actorId: string;
 }
 
-export interface HeadlessCheckoutHostState {
+export interface LogisticsHostState {
   phase: string;
-  submittedOrders: string[];
-  lastSubmittedOrderId: string | null;
-  eventLog: HeadlessCheckoutEventLog[];
+  shipmentId: string | null;
+  destination: string | null;
+  reference: string | null;
+  status: ShipmentContext['status'];
+  carrier: string | null;
+  eta: string | null;
+  routeNotes: string | null;
+  shipmentCount: number;
+  timeline: ShipmentContext['timeline'];
+  eventLog: LogisticsEventLog[];
   transportState: ProjectionTransportState;
   transportReason: string | null;
 }
 
-export interface HeadlessCheckoutHost {
+export interface LogisticsHost {
   readonly address: string;
-  getState(): HeadlessCheckoutHostState;
-  subscribe(listener: (state: HeadlessCheckoutHostState) => void): () => void;
-  submit(orderId: string): Promise<void>;
+  getState(): LogisticsHostState;
+  subscribe(listener: (state: LogisticsHostState) => void): () => void;
+  createShipment(input: {
+    shipmentId?: string;
+    destination: string;
+    reference?: string;
+  }): Promise<void>;
   reset(): Promise<void>;
   destroy(): Promise<void>;
 }
 
-interface CreateHeadlessCheckoutHostOptions {
+export type HeadlessCheckoutEventLog = LogisticsEventLog;
+export type HeadlessCheckoutHostState = LogisticsHostState;
+export type HeadlessCheckoutHost = LogisticsHost;
+
+interface CreateLogisticsHostOptions {
   destroy?: () => Promise<void>;
 }
 
-function cloneState(state: HeadlessCheckoutHostState): HeadlessCheckoutHostState {
+function cloneState(state: LogisticsHostState): LogisticsHostState {
   return {
-    phase: state.phase,
-    submittedOrders: [...state.submittedOrders],
-    lastSubmittedOrderId: state.lastSubmittedOrderId,
+    ...state,
+    timeline: state.timeline.map((entry) => ({ ...entry })),
     eventLog: state.eventLog.map((event) => ({ ...event })),
-    transportState: state.transportState,
-    transportReason: state.transportReason,
   };
 }
 
-function toEventLogEntry(event: IgniteActorSourceEvent<CheckoutEvent>): HeadlessCheckoutEventLog {
+function toEventLogEntry(event: IgniteActorSourceEvent<ShipmentEvent>): LogisticsEventLog {
   return {
     type: event.type,
-    orderId: 'orderId' in event ? event.orderId : null,
+    shipmentId: 'shipmentId' in event ? event.shipmentId : null,
     actorId: event.address.id,
   };
 }
 
-export function createHeadlessCheckoutHostFromSource(
-  source: IgniteActorSource<CheckoutContext, CheckoutCommand, CheckoutEvent>,
-  options: CreateHeadlessCheckoutHostOptions = {}
-): HeadlessCheckoutHost {
-  const listeners = new Set<(state: HeadlessCheckoutHostState) => void>();
-  let state: HeadlessCheckoutHostState = {
-    phase: source.snapshot().phase,
-    submittedOrders: [...source.snapshot().context.submittedOrders],
-    lastSubmittedOrderId: source.snapshot().context.lastSubmittedOrderId,
-    eventLog: [],
-    transportState: source.transportStatus().state,
-    transportReason: source.transportStatus().reason ?? null,
+function projectSourceState(
+  source: IgniteActorSource<ShipmentContext, ShipmentCommand, ShipmentEvent>,
+  eventLog: LogisticsEventLog[] = []
+): LogisticsHostState {
+  const snapshot = source.snapshot();
+  const status = source.transportStatus();
+
+  return {
+    phase: snapshot.phase,
+    shipmentId: snapshot.context.shipmentId,
+    destination: snapshot.context.destination,
+    reference: snapshot.context.reference,
+    status: snapshot.context.status,
+    carrier: snapshot.context.carrier,
+    eta: snapshot.context.eta,
+    routeNotes: snapshot.context.routeNotes,
+    shipmentCount: snapshot.context.shipmentCount,
+    timeline: snapshot.context.timeline.map((entry) => ({ ...entry })),
+    eventLog,
+    transportState: status.state,
+    transportReason: status.reason ?? null,
   };
+}
+
+export function createLogisticsHostFromSource(
+  source: IgniteActorSource<ShipmentContext, ShipmentCommand, ShipmentEvent>,
+  options: CreateLogisticsHostOptions = {}
+): LogisticsHost {
+  const listeners = new Set<(state: LogisticsHostState) => void>();
+  let state = projectSourceState(source);
 
   const notify = (): void => {
     const snapshot = cloneState(state);
@@ -78,8 +107,15 @@ export function createHeadlessCheckoutHostFromSource(
     state = {
       ...state,
       phase: snapshot.phase,
-      submittedOrders: [...snapshot.context.submittedOrders],
-      lastSubmittedOrderId: snapshot.context.lastSubmittedOrderId,
+      shipmentId: snapshot.context.shipmentId,
+      destination: snapshot.context.destination,
+      reference: snapshot.context.reference,
+      status: snapshot.context.status,
+      carrier: snapshot.context.carrier,
+      eta: snapshot.context.eta,
+      routeNotes: snapshot.context.routeNotes,
+      shipmentCount: snapshot.context.shipmentCount,
+      timeline: snapshot.context.timeline.map((entry) => ({ ...entry })),
     };
     notify();
   });
@@ -88,11 +124,20 @@ export function createHeadlessCheckoutHostFromSource(
     (event) => {
       state = {
         ...state,
-        eventLog: [toEventLogEntry(event), ...state.eventLog].slice(0, 8),
+        eventLog: [toEventLogEntry(event), ...state.eventLog].slice(0, 10),
       };
       notify();
     },
-    { types: ['CHECKOUT_SUBMITTED', 'CHECKOUT_RESET'] }
+    {
+      types: [
+        'SHIPMENT_CREATED',
+        'ROUTE_REQUESTED',
+        'ROUTE_ASSIGNED',
+        'SHIPMENT_IN_TRANSIT',
+        'SHIPMENT_DELIVERED',
+        'SHIPMENT_RESET',
+      ],
+    }
   );
 
   const unsubscribeTransportStatus = source.subscribeTransportStatus((status) => {
@@ -106,10 +151,10 @@ export function createHeadlessCheckoutHostFromSource(
 
   return {
     address: source.address.path,
-    getState(): HeadlessCheckoutHostState {
+    getState(): LogisticsHostState {
       return cloneState(state);
     },
-    subscribe(listener: (nextState: HeadlessCheckoutHostState) => void): () => void {
+    subscribe(listener: (nextState: LogisticsHostState) => void): () => void {
       listeners.add(listener);
       listener(cloneState(state));
 
@@ -117,19 +162,21 @@ export function createHeadlessCheckoutHostFromSource(
         listeners.delete(listener);
       };
     },
-    async submit(orderId: string): Promise<void> {
-      const normalizedOrderId = orderId.trim();
-      if (normalizedOrderId.length === 0) {
+    async createShipment(input): Promise<void> {
+      const destination = input.destination.trim();
+      if (destination.length === 0) {
         return;
       }
 
       await source.send({
-        type: 'SUBMIT',
-        orderId: normalizedOrderId,
+        type: 'CREATE_SHIPMENT',
+        shipmentId: input.shipmentId ?? `shipment-${Date.now().toString(36)}`,
+        destination,
+        reference: input.reference?.trim() || undefined,
       });
     },
     async reset(): Promise<void> {
-      await source.send({ type: 'RESET' });
+      await source.send({ type: 'RESET_SHIPMENT' });
     },
     async destroy(): Promise<void> {
       unsubscribeTransportStatus();
@@ -141,9 +188,18 @@ export function createHeadlessCheckoutHostFromSource(
   };
 }
 
-export function createHeadlessCheckoutHost(): HeadlessCheckoutHost {
-  const runtimeHarness = createCheckoutRuntimeHarness();
-  return createHeadlessCheckoutHostFromSource(runtimeHarness.source, {
+export function createHeadlessCheckoutHostFromSource(
+  source: IgniteActorSource<ShipmentContext, ShipmentCommand, ShipmentEvent>,
+  options: CreateLogisticsHostOptions = {}
+): LogisticsHost {
+  return createLogisticsHostFromSource(source, options);
+}
+
+export function createLogisticsHost(): LogisticsHost {
+  const runtimeHarness = createLogisticsRuntimeHarness();
+  return createLogisticsHostFromSource(runtimeHarness.source, {
     destroy: runtimeHarness.destroy,
   });
 }
+
+export const createHeadlessCheckoutHost = createLogisticsHost;

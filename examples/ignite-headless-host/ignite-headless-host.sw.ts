@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import { startCheckoutServiceWorkerRuntime } from './worker-runtime';
+import { startLogisticsServiceWorkerRuntime } from './worker-runtime';
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -12,4 +12,4 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-startCheckoutServiceWorkerRuntime();
+startLogisticsServiceWorkerRuntime();

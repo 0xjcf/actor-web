@@ -86,6 +86,18 @@
 - Blast radius: cross-cutting
 - Artifacts: brief=.fas/tasks/full-server-worker-runtime-demo.md; verification=.fas/state/verification/latest.json
 
+### Task: Logistics control tower demo
+
+- Title: Logistics control tower demo
+- Mode: 6-agent
+- Status: done
+- Owner: reviewer
+- Brief: .fas/tasks/logistics-control-tower-demo.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: brief=.fas/tasks/logistics-control-tower-demo.md; verification=.fas/state/verification/latest.json
+
 ## Template
 
 ### Task: `<short task title>`

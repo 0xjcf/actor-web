@@ -64,7 +64,7 @@ hexagonal boundary or the actor model.
   - gateway error codes
   - stream sequencing, status, and resync behavior
 - the Ignite headless example now has a server-owned runtime gateway path:
-  - a Node checkout runtime owns the actor
+  - a Node logistics runtime owns the shipment actor
   - a browser/Ignite host consumes snapshots, events, status, and commands over
     a gateway WebSocket
   - service-worker and in-memory modes remain topology proofs/fallbacks
@@ -99,14 +99,18 @@ hexagonal boundary or the actor model.
   - Node transport interop for browser-style heartbeat frames
   - runtime-level directory sync, remote send/ask, and projection tests with a
     browser-style worker peer
-- the Ignite headless example now has a server plus worker runtime demo mode:
+- the Ignite headless example now has a logistics control tower demo mode:
   - the Node server exposes a browser-facing runtime gateway and a runtime
     WebSocket transport listener
-  - the server runtime owns `actor://ignite-host-runtime/actor/ignite-headless-host`
+  - the Node server also exposes REST ingress for shipment commands and queries
+  - the server runtime owns
+    `actor://logistics-server-runtime/actor/logistics-shipment`
   - the browser/WebWorker runtime owns
-    `actor://ignite-worker-runtime/actor/ignite-worker-checkout`
+    `actor://logistics-worker-runtime/actor/logistics-routing`
   - gateway sources can project and command both actors while the runtimes
     communicate over Actor-Web transport
+  - REST-created shipments stream live gateway updates to subscribed browser
+    hosts
 - Actor-Web already maps its data plane toward FAS shared contracts:
   - `EventEnvelope`
   - `WorkflowSnapshot`

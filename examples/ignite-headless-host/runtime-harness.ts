@@ -15,33 +15,36 @@ import {
   serviceWorkerRuntimeAvailable,
 } from './browser-transport';
 import {
-  type CheckoutCommand,
-  type CheckoutContext,
-  type CheckoutEvent,
-  createCheckoutBehavior,
   createPlaceholderSnapshot,
+  createRoutingBehavior,
+  createShipmentBehavior,
   LOCAL_NODE,
-  normalizeCheckoutSnapshot,
+  normalizeShipmentSnapshot,
   REMOTE_ACTOR_ID,
   REMOTE_ADDRESS,
   REMOTE_NODE,
+  type ShipmentCommand,
+  type ShipmentContext,
+  type ShipmentEvent,
   WORKER_ACTOR_ID,
   WORKER_NODE,
 } from './checkout-contract';
 import {
   configuredGatewayUrl,
-  createCheckoutServerGatewayRuntimeHarness,
-  createConfiguredCheckoutServerGatewayRuntimeHarness,
+  createConfiguredLogisticsServerGatewayRuntimeHarness,
+  createLogisticsServerGatewayRuntimeHarness,
   type GatewaySocket,
   serverGatewayRuntimeAvailable,
 } from './server-gateway-client';
 
-export type { CheckoutCommand, CheckoutContext, CheckoutEvent } from './checkout-contract';
+export type { ShipmentCommand, ShipmentContext, ShipmentEvent } from './checkout-contract';
 
-export interface CheckoutRuntimeHarness {
-  readonly source: IgniteActorSource<CheckoutContext, CheckoutCommand, CheckoutEvent>;
+export interface LogisticsRuntimeHarness {
+  readonly source: IgniteActorSource<ShipmentContext, ShipmentCommand, ShipmentEvent>;
   destroy(): Promise<void>;
 }
+
+export type CheckoutRuntimeHarness = LogisticsRuntimeHarness;
 
 export interface ServerWorkerDemoRuntimeHarnessOptions {
   gatewayUrl: string;
@@ -52,16 +55,16 @@ export interface ServerWorkerDemoRuntimeHarnessOptions {
 
 function createHarnessSource(
   startRuntime: (options: {
-    setSource(source: IgniteActorSource<CheckoutContext, CheckoutCommand, CheckoutEvent>): void;
-    setSnapshot(snapshot: IgniteActorSourceSnapshot<CheckoutContext>): void;
+    setSource(source: IgniteActorSource<ShipmentContext, ShipmentCommand, ShipmentEvent>): void;
+    setSnapshot(snapshot: IgniteActorSourceSnapshot<ShipmentContext>): void;
     setTransportStatus(status: ProjectionTransportStatus): void;
     notifySnapshots(): void;
     notifyTransportStatus(): void;
   }) => Promise<void>,
   destroyRuntime: () => Promise<void>,
   afterSend: () => Promise<void> = async () => {}
-): CheckoutRuntimeHarness {
-  let activeSource: IgniteActorSource<CheckoutContext, CheckoutCommand, CheckoutEvent> | null =
+): LogisticsRuntimeHarness {
+  let activeSource: IgniteActorSource<ShipmentContext, ShipmentCommand, ShipmentEvent> | null =
     null;
   let currentSnapshot = createPlaceholderSnapshot();
   let currentTransportStatus: ProjectionTransportStatus = {
@@ -71,10 +74,10 @@ function createHarnessSource(
   let stopped = false;
 
   const snapshotListeners = new Set<
-    (snapshot: IgniteActorSourceSnapshot<CheckoutContext>) => void
+    (snapshot: IgniteActorSourceSnapshot<ShipmentContext>) => void
   >();
   const eventListeners = new Set<{
-    listener: (event: IgniteActorSourceEvent<CheckoutEvent>) => void;
+    listener: (event: IgniteActorSourceEvent<ShipmentEvent>) => void;
     types?: readonly string[];
   }>();
   const transportStatusListeners = new Set<(status: ProjectionTransportStatus) => void>();
@@ -98,13 +101,13 @@ function createHarnessSource(
   const runtimeReady = startRuntime({
     setSource(source) {
       activeSource = source;
-      currentSnapshot = normalizeCheckoutSnapshot(source.snapshot());
+      currentSnapshot = normalizeShipmentSnapshot(source.snapshot());
       currentTransportStatus = source.transportStatus();
       notifySnapshots();
       notifyTransportStatus();
 
       stopRuntimeBridge = source.subscribe((snapshot) => {
-        currentSnapshot = normalizeCheckoutSnapshot(snapshot);
+        currentSnapshot = normalizeShipmentSnapshot(snapshot);
         notifySnapshots();
       });
 
@@ -122,7 +125,16 @@ function createHarnessSource(
             subscriber.listener(event);
           }
         },
-        { types: ['CHECKOUT_SUBMITTED', 'CHECKOUT_RESET'] }
+        {
+          types: [
+            'SHIPMENT_CREATED',
+            'ROUTE_REQUESTED',
+            'ROUTE_ASSIGNED',
+            'SHIPMENT_IN_TRANSIT',
+            'SHIPMENT_DELIVERED',
+            'SHIPMENT_RESET',
+          ],
+        }
       );
 
       stopTransportBridge = source.subscribeTransportStatus((status) => {
@@ -131,7 +143,7 @@ function createHarnessSource(
       });
     },
     setSnapshot(snapshot) {
-      currentSnapshot = normalizeCheckoutSnapshot(snapshot);
+      currentSnapshot = normalizeShipmentSnapshot(snapshot);
     },
     setTransportStatus(status) {
       currentTransportStatus = status;
@@ -151,11 +163,11 @@ function createHarnessSource(
   return {
     source: {
       address: REMOTE_ADDRESS,
-      snapshot(): IgniteActorSourceSnapshot<CheckoutContext> {
+      snapshot(): IgniteActorSourceSnapshot<ShipmentContext> {
         return currentSnapshot;
       },
       subscribe(
-        listener: (snapshot: IgniteActorSourceSnapshot<CheckoutContext>) => void
+        listener: (snapshot: IgniteActorSourceSnapshot<ShipmentContext>) => void
       ): () => void {
         snapshotListeners.add(listener);
         listener(currentSnapshot);
@@ -165,7 +177,7 @@ function createHarnessSource(
         };
       },
       subscribeEvent(
-        listener: (event: IgniteActorSourceEvent<CheckoutEvent>) => void,
+        listener: (event: IgniteActorSourceEvent<ShipmentEvent>) => void,
         options = {}
       ): () => void {
         const subscriber = {
@@ -189,7 +201,7 @@ function createHarnessSource(
           transportStatusListeners.delete(listener);
         };
       },
-      async send(message: CheckoutCommand): Promise<void> {
+      async send(message: ShipmentCommand): Promise<void> {
         if (!activeSource) {
           await runtimeReady;
         }
@@ -203,7 +215,7 @@ function createHarnessSource(
         await afterSend();
       },
       async ask<TResponse = unknown>(
-        message: CheckoutCommand,
+        message: ShipmentCommand,
         timeout?: number
       ): Promise<TResponse> {
         if (!activeSource) {
@@ -244,9 +256,9 @@ function wait(delayMs: number): Promise<void> {
 }
 
 async function waitForRemoteRef(
-  lookup: () => Promise<ActorRef<CheckoutContext, CheckoutCommand> | undefined>,
+  lookup: () => Promise<ActorRef<ShipmentContext, ShipmentCommand> | undefined>,
   attempts = 20
-): Promise<ActorRef<CheckoutContext, CheckoutCommand> | undefined> {
+): Promise<ActorRef<ShipmentContext, ShipmentCommand> | undefined> {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const ref = await lookup();
     if (ref) {
@@ -259,7 +271,7 @@ async function waitForRemoteRef(
   return undefined;
 }
 
-function createInMemoryCheckoutRuntimeHarness(): CheckoutRuntimeHarness {
+function createInMemoryLogisticsRuntimeHarness(): LogisticsRuntimeHarness {
   const network = createInMemoryMessageTransportNetwork();
   const localTransport = network.createTransport(LOCAL_NODE);
   const remoteTransport = network.createTransport(REMOTE_NODE);
@@ -275,20 +287,20 @@ function createInMemoryCheckoutRuntimeHarness(): CheckoutRuntimeHarness {
   return createHarnessSource(
     async ({ setSource }) => {
       await Promise.all([localSystem.start(), remoteSystem.start()]);
-      await remoteSystem.spawn(createCheckoutBehavior(), {
+      await remoteSystem.spawn(createShipmentBehavior(), {
         id: REMOTE_ACTOR_ID,
       });
 
       await localSystem.join([REMOTE_NODE]);
 
-      const remoteRef = await localSystem.lookup<CheckoutContext, CheckoutCommand>(
+      const remoteRef = await localSystem.lookup<ShipmentContext, ShipmentCommand>(
         REMOTE_ADDRESS.path
       );
       if (!remoteRef) {
         throw new Error(`Unable to resolve remote actor ${REMOTE_ADDRESS.path}`);
       }
 
-      const source = createIgniteActorSource<CheckoutContext, CheckoutCommand, CheckoutEvent>(
+      const source = createIgniteActorSource<ShipmentContext, ShipmentCommand, ShipmentEvent>(
         remoteRef
       );
       setSource(source);
@@ -303,7 +315,7 @@ function createInMemoryCheckoutRuntimeHarness(): CheckoutRuntimeHarness {
   );
 }
 
-function createServiceWorkerCheckoutRuntimeHarness(): CheckoutRuntimeHarness {
+function createServiceWorkerLogisticsRuntimeHarness(): LogisticsRuntimeHarness {
   const transport = createBrowserServiceWorkerTransport();
   const localSystem = createActorSystem({
     nodeAddress: LOCAL_NODE,
@@ -332,7 +344,7 @@ function createServiceWorkerCheckoutRuntimeHarness(): CheckoutRuntimeHarness {
       await localSystem.join([serviceWorkerRemoteNode()]);
 
       const remoteRef = await waitForRemoteRef(() =>
-        localSystem.lookup<CheckoutContext, CheckoutCommand>(REMOTE_ADDRESS.path)
+        localSystem.lookup<ShipmentContext, ShipmentCommand>(REMOTE_ADDRESS.path)
       );
       if (!remoteRef) {
         throw new Error(
@@ -340,7 +352,7 @@ function createServiceWorkerCheckoutRuntimeHarness(): CheckoutRuntimeHarness {
         );
       }
 
-      const source = createIgniteActorSource<CheckoutContext, CheckoutCommand, CheckoutEvent>(
+      const source = createIgniteActorSource<ShipmentContext, ShipmentCommand, ShipmentEvent>(
         remoteRef
       );
       setSource(source);
@@ -369,8 +381,8 @@ export function serverWorkerDemoRuntimeAvailable(): boolean {
 
 export function createServerWorkerDemoRuntimeHarness(
   options: ServerWorkerDemoRuntimeHarnessOptions
-): CheckoutRuntimeHarness {
-  const gatewayHarness = createCheckoutServerGatewayRuntimeHarness({
+): LogisticsRuntimeHarness {
+  const gatewayHarness = createLogisticsServerGatewayRuntimeHarness({
     url: options.gatewayUrl,
     ...(options.createGatewaySocket ? { createSocket: options.createGatewaySocket } : {}),
   });
@@ -405,7 +417,7 @@ function createInProcessWorkerRuntime(options: ServerWorkerDemoRuntimeHarnessOpt
   });
   const workerReady = (async () => {
     await workerSystem.start();
-    await workerSystem.spawn(createCheckoutBehavior(), {
+    await workerSystem.spawn(createRoutingBehavior(), {
       id: WORKER_ACTOR_ID,
     });
     await workerSystem.join([REMOTE_NODE]);
@@ -435,7 +447,7 @@ function createWebWorkerRuntime(transportUrl: string): { destroy(): Promise<void
   };
 }
 
-export function createCheckoutRuntimeHarness(): CheckoutRuntimeHarness {
+export function createLogisticsRuntimeHarness(): LogisticsRuntimeHarness {
   if (serverWorkerDemoRuntimeAvailable()) {
     const gatewayUrl = configuredGatewayUrl();
     const transportUrl = configuredTransportUrl();
@@ -445,12 +457,14 @@ export function createCheckoutRuntimeHarness(): CheckoutRuntimeHarness {
   }
 
   if (serverGatewayRuntimeAvailable()) {
-    return createConfiguredCheckoutServerGatewayRuntimeHarness();
+    return createConfiguredLogisticsServerGatewayRuntimeHarness();
   }
 
   if (serviceWorkerRuntimeAvailable()) {
-    return createServiceWorkerCheckoutRuntimeHarness();
+    return createServiceWorkerLogisticsRuntimeHarness();
   }
 
-  return createInMemoryCheckoutRuntimeHarness();
+  return createInMemoryLogisticsRuntimeHarness();
 }
+
+export const createCheckoutRuntimeHarness = createLogisticsRuntimeHarness;

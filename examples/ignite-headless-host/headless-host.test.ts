@@ -1,24 +1,24 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import {
-  createHeadlessCheckoutHost,
-  createHeadlessCheckoutHostFromSource,
-  type HeadlessCheckoutHost,
+  createLogisticsHost,
+  createLogisticsHostFromSource,
+  type LogisticsHost,
 } from './headless-host';
 import {
-  createCheckoutRuntimeHarness,
+  createLogisticsRuntimeHarness,
   createServerWorkerDemoRuntimeHarness,
 } from './runtime-harness';
-import { createCheckoutServerGatewayRuntimeHarness } from './server-gateway-client';
+import { createLogisticsServerGatewayRuntimeHarness } from './server-gateway-client';
 import {
-  type CheckoutRuntimeGatewayServer,
-  createCheckoutRuntimeGatewayServer,
+  createLogisticsRuntimeGatewayServer,
+  type LogisticsRuntimeGatewayServer,
 } from './server-runtime-gateway';
 
-describe('ignite-headless-host example', () => {
-  let host: HeadlessCheckoutHost | undefined;
-  let workerHost: HeadlessCheckoutHost | undefined;
-  let gatewayServer: CheckoutRuntimeGatewayServer | undefined;
+describe('ignite-headless-host logistics example', () => {
+  let host: LogisticsHost | undefined;
+  let workerHost: LogisticsHost | undefined;
+  let gatewayServer: LogisticsRuntimeGatewayServer | undefined;
 
   afterEach(async () => {
     if (workerHost) {
@@ -35,124 +35,169 @@ describe('ignite-headless-host example', () => {
     }
   });
 
-  it('projects snapshots and emitted events through the public bridge', async () => {
-    host = createHeadlessCheckoutHost();
-    const observedPhases: string[] = [];
+  it('projects shipment snapshots and emitted events through the public bridge', async () => {
+    host = createLogisticsHost();
+    const observedStatuses: string[] = [];
     const unsubscribe = host.subscribe((state) => {
-      observedPhases.push(state.phase);
+      observedStatuses.push(state.status);
     });
 
-    await host.submit('order-1001');
+    await host.createShipment({
+      shipmentId: 'shipment-1001',
+      destination: 'Chicago warehouse',
+      reference: 'REF-1001',
+    });
 
-    expect(host.getState()).toEqual({
-      phase: 'submitted',
-      submittedOrders: ['order-1001'],
-      lastSubmittedOrderId: 'order-1001',
-      eventLog: [
-        {
-          type: 'CHECKOUT_SUBMITTED',
-          orderId: 'order-1001',
-          actorId: 'ignite-headless-host',
-        },
-      ],
+    expect(host.getState()).toMatchObject({
+      status: 'route-requested',
+      shipmentId: 'shipment-1001',
+      destination: 'Chicago warehouse',
+      reference: 'REF-1001',
+      shipmentCount: 1,
       transportState: 'connected',
       transportReason: null,
     });
+    expect(host.getState().eventLog.map((event) => event.type)).toEqual([
+      'ROUTE_REQUESTED',
+      'SHIPMENT_CREATED',
+    ]);
 
     await host.reset();
 
-    expect(host.getState()).toEqual({
-      phase: 'ready',
-      submittedOrders: [],
-      lastSubmittedOrderId: null,
-      eventLog: [
-        {
-          type: 'CHECKOUT_RESET',
-          orderId: null,
-          actorId: 'ignite-headless-host',
-        },
-        {
-          type: 'CHECKOUT_SUBMITTED',
-          orderId: 'order-1001',
-          actorId: 'ignite-headless-host',
-        },
-      ],
+    expect(host.getState()).toMatchObject({
+      status: 'idle',
+      shipmentId: null,
+      destination: null,
+      shipmentCount: 1,
       transportState: 'connected',
       transportReason: null,
     });
 
     unsubscribe();
-    expect(observedPhases[0]).toBe('ready');
-    expect(observedPhases).toContain('submitted');
-    expect(observedPhases[observedPhases.length - 1]).toBe('ready');
+    expect(observedStatuses[0]).toBe('idle');
+    expect(observedStatuses).toContain('route-requested');
+    expect(observedStatuses[observedStatuses.length - 1]).toBe('idle');
   });
 
   it('can consume a separately owned runtime harness through the same host bridge', async () => {
-    const runtimeHarness = createCheckoutRuntimeHarness();
-    host = createHeadlessCheckoutHostFromSource(runtimeHarness.source, {
+    const runtimeHarness = createLogisticsRuntimeHarness();
+    host = createLogisticsHostFromSource(runtimeHarness.source, {
       destroy: runtimeHarness.destroy,
     });
 
-    await host.submit('order-2002');
+    await host.createShipment({
+      shipmentId: 'shipment-2002',
+      destination: 'Dallas cross-dock',
+    });
 
-    expect(host.getState()).toEqual({
-      phase: 'submitted',
-      submittedOrders: ['order-2002'],
-      lastSubmittedOrderId: 'order-2002',
-      eventLog: [
-        {
-          type: 'CHECKOUT_SUBMITTED',
-          orderId: 'order-2002',
-          actorId: 'ignite-headless-host',
-        },
-      ],
+    expect(host.getState()).toMatchObject({
+      status: 'route-requested',
+      shipmentId: 'shipment-2002',
+      destination: 'Dallas cross-dock',
+      shipmentCount: 1,
       transportState: 'connected',
       transportReason: null,
     });
   });
 
   it('can consume a server-owned runtime through the runtime gateway source', async () => {
-    gatewayServer = createCheckoutRuntimeGatewayServer();
+    gatewayServer = createLogisticsRuntimeGatewayServer();
     await gatewayServer.start();
     const gatewayUrl = gatewayServer.getGatewayUrl();
     if (!gatewayUrl) {
-      throw new Error('Expected checkout gateway URL');
+      throw new Error('Expected logistics gateway URL');
     }
 
-    const runtimeHarness = createCheckoutServerGatewayRuntimeHarness({
+    const runtimeHarness = createLogisticsServerGatewayRuntimeHarness({
       url: gatewayUrl,
       createSocket: (url) => new WebSocket(url) as never,
     });
-    host = createHeadlessCheckoutHostFromSource(runtimeHarness.source, {
+    host = createLogisticsHostFromSource(runtimeHarness.source, {
       destroy: runtimeHarness.destroy,
     });
 
-    await host.submit('order-server-3003');
-    expect(host.getState()).toMatchObject({
-      phase: 'submitted',
-      submittedOrders: ['order-server-3003'],
-      lastSubmittedOrderId: 'order-server-3003',
-      transportState: 'connected',
-      transportReason: null,
+    await host.createShipment({
+      shipmentId: 'shipment-gateway-3003',
+      destination: 'Seattle depot',
     });
-
-    await host.reset();
+    await waitForHostState(
+      host,
+      (state) => state.shipmentId === 'shipment-gateway-3003',
+      'Expected gateway shipment projection'
+    );
     expect(host.getState()).toMatchObject({
-      phase: 'ready',
-      submittedOrders: [],
-      lastSubmittedOrderId: null,
+      status: 'route-requested',
+      shipmentId: 'shipment-gateway-3003',
+      destination: 'Seattle depot',
       transportState: 'connected',
       transportReason: null,
     });
   });
 
-  it('can demo a server runtime and worker runtime over real WebSocket transport through the gateway', async () => {
-    gatewayServer = createCheckoutRuntimeGatewayServer();
+  it('accepts REST shipment ingress and streams live gateway updates', async () => {
+    gatewayServer = createLogisticsRuntimeGatewayServer();
+    await gatewayServer.start();
+    const gatewayUrl = gatewayServer.getGatewayUrl();
+    const restUrl = gatewayServer.getRestUrl();
+    if (!gatewayUrl || !restUrl) {
+      throw new Error('Expected logistics gateway and REST URLs');
+    }
+
+    const runtimeHarness = createLogisticsServerGatewayRuntimeHarness({
+      url: gatewayUrl,
+      createSocket: (url) => new WebSocket(url) as never,
+    });
+    host = createLogisticsHostFromSource(runtimeHarness.source, {
+      destroy: runtimeHarness.destroy,
+    });
+    await waitForHostState(
+      host,
+      (state) => state.transportState === 'connected',
+      'Expected gateway source to connect before REST shipment ingress'
+    );
+
+    const response = await fetch(`${restUrl}/shipments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        shipmentId: 'shipment-rest-4004',
+        destination: 'Portland terminal',
+        reference: 'REST-4004',
+      }),
+    });
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toMatchObject({
+      shipmentId: 'shipment-rest-4004',
+      status: 'route-requested',
+    });
+
+    await waitForHostState(
+      host,
+      (state) => state.shipmentId === 'shipment-rest-4004',
+      'Expected REST shipment to stream through gateway'
+    );
+    expect(host.getState()).toMatchObject({
+      shipmentId: 'shipment-rest-4004',
+      destination: 'Portland terminal',
+      reference: 'REST-4004',
+      status: 'route-requested',
+    });
+
+    await expect(
+      fetch(`${restUrl}/shipments/count`).then((result) => result.json())
+    ).resolves.toEqual({
+      count: 1,
+    });
+  });
+
+  it('routes REST-created shipments through the worker runtime over real WebSocket transport', async () => {
+    gatewayServer = createLogisticsRuntimeGatewayServer();
     await gatewayServer.start();
     const gatewayUrl = gatewayServer.getGatewayUrl();
     const transportUrl = gatewayServer.getTransportUrl();
-    if (!gatewayUrl || !transportUrl) {
-      throw new Error('Expected checkout gateway and transport URLs');
+    const restUrl = gatewayServer.getRestUrl();
+    if (!gatewayUrl || !transportUrl || !restUrl) {
+      throw new Error('Expected logistics gateway, transport, and REST URLs');
     }
 
     const runtimeHarness = createServerWorkerDemoRuntimeHarness({
@@ -161,72 +206,102 @@ describe('ignite-headless-host example', () => {
       createGatewaySocket: (url) => new WebSocket(url) as never,
       createWorkerSocket: (url) => new WebSocket(url) as never,
     });
-    host = createHeadlessCheckoutHostFromSource(runtimeHarness.source, {
+    host = createLogisticsHostFromSource(runtimeHarness.source, {
       destroy: runtimeHarness.destroy,
     });
-
-    await host.submit('order-server-runtime');
     await waitForHostState(
       host,
-      (state) => state.submittedOrders.includes('order-server-runtime'),
-      'Expected server runtime checkout submission'
+      (state) => state.transportState === 'connected',
+      'Expected gateway source to connect before worker-backed REST shipment ingress'
     );
-    expect(host.getState()).toMatchObject({
-      phase: 'submitted',
-      submittedOrders: ['order-server-runtime'],
-      transportState: 'connected',
+    workerHost = await createWorkerGatewayHost(gatewayUrl);
+    expect(workerHost.address).toBe('actor://logistics-worker-runtime/actor/logistics-routing');
+
+    const response = await fetch(`${restUrl}/shipments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        shipmentId: 'shipment-worker-5005',
+        destination: 'International hub',
+        reference: 'WORKER-5005',
+      }),
+    });
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toMatchObject({
+      shipmentId: 'shipment-worker-5005',
+      status: 'route-assigned',
     });
 
-    workerHost = await createWorkerGatewayHost(gatewayUrl);
-    await workerHost.submit('order-worker-runtime');
     await waitForHostState(
-      workerHost,
-      (state) => state.submittedOrders.includes('order-worker-runtime'),
-      'Expected worker runtime checkout submission'
+      host,
+      (state) => state.status === 'route-assigned' && state.carrier === 'Atlas Freight',
+      'Expected worker route plan to update server shipment actor'
     );
-    expect(workerHost.getState()).toMatchObject({
-      phase: 'submitted',
-      submittedOrders: ['order-worker-runtime'],
-      transportState: 'connected',
+    expect(host.getState()).toMatchObject({
+      shipmentId: 'shipment-worker-5005',
+      destination: 'International hub',
+      carrier: 'Atlas Freight',
+      eta: '72h',
+      routeNotes: 'Route shipment-worker-5005 through International hub',
     });
-    expect(workerHost.address).toBe('actor://ignite-worker-runtime/actor/ignite-worker-checkout');
+  });
+
+  it('exposes runtime status for REST and websocket boundary discovery', async () => {
+    gatewayServer = createLogisticsRuntimeGatewayServer();
+    await gatewayServer.start();
+    const restUrl = gatewayServer.getRestUrl();
+    if (!restUrl) {
+      throw new Error('Expected logistics REST URL');
+    }
+
+    await expect(
+      fetch(`${restUrl}/runtime/status`).then((result) => result.json())
+    ).resolves.toMatchObject({
+      nodes: {
+        serverRuntime: 'logistics-server-runtime',
+        workerRuntime: 'logistics-worker-runtime',
+      },
+      actors: {
+        shipment: 'actor://logistics-server-runtime/actor/logistics-shipment',
+        routing: 'actor://logistics-worker-runtime/actor/logistics-routing',
+      },
+    });
   });
 });
 
 async function waitForHostState(
-  target: HeadlessCheckoutHost,
-  predicate: (state: ReturnType<HeadlessCheckoutHost['getState']>) => boolean,
+  target: LogisticsHost,
+  predicate: (state: ReturnType<LogisticsHost['getState']>) => boolean,
   message: string
 ): Promise<void> {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
     if (predicate(target.getState())) {
       return;
     }
 
     await new Promise((resolve) => {
-      setTimeout(resolve, 10);
+      setTimeout(resolve, 20);
     });
   }
 
-  throw new Error(message);
+  throw new Error(`${message}: ${JSON.stringify(target.getState())}`);
 }
 
-async function createWorkerGatewayHost(gatewayUrl: string): Promise<HeadlessCheckoutHost> {
+async function createWorkerGatewayHost(gatewayUrl: string): Promise<LogisticsHost> {
   let lastError: unknown;
 
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const runtimeHarness = createCheckoutServerGatewayRuntimeHarness({
+    const runtimeHarness = createLogisticsServerGatewayRuntimeHarness({
       url: gatewayUrl,
-      streamId: `worker-checkout-${attempt}`,
-      scope: { kind: 'ignite-headless-worker-checkout' },
+      streamId: `routing-${attempt}`,
+      scope: { kind: 'logistics-routing' },
       createSocket: (url) => new WebSocket(url) as never,
     });
-    const candidate = createHeadlessCheckoutHostFromSource(runtimeHarness.source, {
+    const candidate = createLogisticsHostFromSource(runtimeHarness.source, {
       destroy: runtimeHarness.destroy,
     });
 
     try {
-      await candidate.submit(`probe-worker-${attempt}`);
       await candidate.reset();
       return candidate;
     } catch (error) {

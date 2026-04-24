@@ -6,7 +6,7 @@ import {
   createBrowserWebSocketMessageTransport,
 } from '@actor-core/runtime/browser';
 import {
-  createCheckoutBehavior,
+  createRoutingBehavior,
   REMOTE_NODE,
   WORKER_ACTOR_ID,
   WORKER_NODE,
@@ -84,7 +84,7 @@ async function startRuntime(transportUrl: string): Promise<void> {
   });
 
   await system.start();
-  await system.spawn(createCheckoutBehavior(), {
+  await system.spawn(createRoutingBehavior(), {
     id: WORKER_ACTOR_ID,
   });
   await system.join([REMOTE_NODE]);

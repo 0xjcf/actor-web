@@ -2,7 +2,7 @@
 
 import type { ActorMessage, MessageTransport } from '@actor-core/runtime/browser';
 import { createActorSystem } from '@actor-core/runtime/browser';
-import { createCheckoutBehavior, REMOTE_ACTOR_ID, REMOTE_NODE } from './checkout-contract';
+import { createShipmentBehavior, REMOTE_ACTOR_ID, REMOTE_NODE } from './checkout-contract';
 import {
   isServiceWorkerTransportEnvelope,
   type ServiceWorkerTransportEnvelope,
@@ -163,7 +163,7 @@ class ServiceWorkerPortTransport implements MessageTransport {
   }
 }
 
-class CheckoutServiceWorkerRuntime {
+class LogisticsServiceWorkerRuntime {
   private readonly transport = new ServiceWorkerPortTransport(REMOTE_NODE);
   private readonly system = createActorSystem({
     nodeAddress: REMOTE_NODE,
@@ -177,7 +177,7 @@ class CheckoutServiceWorkerRuntime {
     if (!this.started) {
       this.started = true;
       await this.system.start();
-      await this.system.spawn(createCheckoutBehavior(), {
+      await this.system.spawn(createShipmentBehavior(), {
         id: REMOTE_ACTOR_ID,
       });
     }
@@ -199,8 +199,8 @@ class CheckoutServiceWorkerRuntime {
   }
 }
 
-export function startCheckoutServiceWorkerRuntime(): void {
-  const runtime = new CheckoutServiceWorkerRuntime();
+export function startLogisticsServiceWorkerRuntime(): void {
+  const runtime = new LogisticsServiceWorkerRuntime();
 
   self.addEventListener('message', (event: ExtendableMessageEvent) => {
     if (!isServiceWorkerTransportEnvelope(event.data)) {
@@ -222,3 +222,5 @@ export function startCheckoutServiceWorkerRuntime(): void {
     }
   });
 }
+
+export const startCheckoutServiceWorkerRuntime = startLogisticsServiceWorkerRuntime;

@@ -16,16 +16,16 @@ import {
   createProjectionTransportStatus,
 } from '@actor-core/runtime/browser';
 import {
-  type CheckoutCommand,
-  type CheckoutContext,
-  type CheckoutEvent,
   createActorSnapshot,
   createPlaceholderSnapshot,
-  normalizeCheckoutSnapshot,
+  normalizeShipmentSnapshot,
   REMOTE_ADDRESS,
+  type ShipmentCommand,
+  type ShipmentContext,
+  type ShipmentEvent,
   WORKER_ADDRESS,
 } from './checkout-contract';
-import type { CheckoutRuntimeHarness } from './runtime-harness';
+import type { LogisticsRuntimeHarness } from './runtime-harness';
 
 export interface GatewaySocket {
   readyState: number;
@@ -37,12 +37,14 @@ export interface GatewaySocket {
   addEventListener(type: 'message', listener: (event: MessageEvent<string>) => void): void;
 }
 
-export interface CreateCheckoutServerGatewaySourceOptions {
+export interface CreateLogisticsServerGatewaySourceOptions {
   url: string;
   streamId?: string;
   scope?: RuntimeGatewayScopeDescriptor;
   createSocket?: (url: string) => GatewaySocket;
 }
+
+export type CreateCheckoutServerGatewaySourceOptions = CreateLogisticsServerGatewaySourceOptions;
 
 type PendingAsk = {
   resolve(value: unknown): void;
@@ -66,9 +68,9 @@ export function configuredGatewayUrl(): string | undefined {
 }
 
 function toGatewaySnapshot(
-  projection: RuntimeGatewaySnapshotProjection<CheckoutContext>
-): IgniteActorSourceSnapshot<CheckoutContext> {
-  return normalizeCheckoutSnapshot(
+  projection: RuntimeGatewaySnapshotProjection<ShipmentContext>
+): IgniteActorSourceSnapshot<ShipmentContext> {
+  return normalizeShipmentSnapshot(
     actorSnapshotToIgniteSourceSnapshot(
       projection.address,
       createActorSnapshot(projection.value, projection.context)
@@ -78,11 +80,11 @@ function toGatewaySnapshot(
 
 function toGatewayEvent(
   projection: RuntimeGatewayEventProjection
-): IgniteActorSourceEvent<CheckoutEvent> {
+): IgniteActorSourceEvent<ShipmentEvent> {
   const event = {
     type: projection.envelope.type,
     ...projection.envelope.payload,
-  } as CheckoutEvent;
+  } as ShipmentEvent;
 
   return {
     ...event,
@@ -102,21 +104,23 @@ export function serverGatewayRuntimeAvailable(): boolean {
   );
 }
 
-export function createCheckoutServerGatewayRuntimeHarness(
-  options: CreateCheckoutServerGatewaySourceOptions
-): CheckoutRuntimeHarness {
-  const streamId = options.streamId ?? 'checkout-main';
-  const scope = options.scope ?? { kind: 'ignite-headless-checkout' };
+export function createLogisticsServerGatewayRuntimeHarness(
+  options: CreateLogisticsServerGatewaySourceOptions
+): LogisticsRuntimeHarness {
+  const streamId = options.streamId ?? 'logistics-main';
+  const scope = options.scope ?? { kind: 'logistics-shipment' };
   const sourceAddress =
-    scope.kind === 'ignite-headless-worker-checkout' ? WORKER_ADDRESS : REMOTE_ADDRESS;
+    scope.kind === 'ignite-headless-worker-checkout' || scope.kind === 'logistics-routing'
+      ? WORKER_ADDRESS
+      : REMOTE_ADDRESS;
   const socket = (options.createSocket ?? ((url: string): GatewaySocket => new WebSocket(url)))(
     options.url
   );
   const snapshotListeners = new Set<
-    (snapshot: IgniteActorSourceSnapshot<CheckoutContext>) => void
+    (snapshot: IgniteActorSourceSnapshot<ShipmentContext>) => void
   >();
   const eventListeners = new Set<{
-    listener: (event: IgniteActorSourceEvent<CheckoutEvent>) => void;
+    listener: (event: IgniteActorSourceEvent<ShipmentEvent>) => void;
     types?: readonly string[];
   }>();
   const statusListeners = new Set<(status: ProjectionTransportStatus) => void>();
@@ -146,7 +150,7 @@ export function createCheckoutServerGatewayRuntimeHarness(
     }
   };
 
-  const emitEvent = (event: IgniteActorSourceEvent<CheckoutEvent>): void => {
+  const emitEvent = (event: IgniteActorSourceEvent<ShipmentEvent>): void => {
     for (const subscriber of Array.from(eventListeners)) {
       if (
         subscriber.types &&
@@ -194,7 +198,7 @@ export function createCheckoutServerGatewayRuntimeHarness(
         return;
       case 'snapshot':
         currentSnapshot = toGatewaySnapshot(
-          frame.projection as RuntimeGatewaySnapshotProjection<CheckoutContext>
+          frame.projection as RuntimeGatewaySnapshotProjection<ShipmentContext>
         );
         resolveReady?.();
         resolveReady = null;
@@ -284,7 +288,7 @@ export function createCheckoutServerGatewayRuntimeHarness(
           statusListeners.delete(listener);
         };
       },
-      async send(message: CheckoutCommand): Promise<void> {
+      async send(message: ShipmentCommand): Promise<void> {
         await ready;
         await new Promise<void>((resolve, reject) => {
           pendingSend = { resolve, reject };
@@ -297,7 +301,7 @@ export function createCheckoutServerGatewayRuntimeHarness(
         });
       },
       async ask<TResponse = unknown>(
-        message: CheckoutCommand,
+        message: ShipmentCommand,
         timeout?: number
       ): Promise<TResponse> {
         await ready;
@@ -329,11 +333,15 @@ export function createCheckoutServerGatewayRuntimeHarness(
   };
 }
 
-export function createConfiguredCheckoutServerGatewayRuntimeHarness(): CheckoutRuntimeHarness {
+export function createConfiguredLogisticsServerGatewayRuntimeHarness(): LogisticsRuntimeHarness {
   const url = defaultGatewayUrl();
   if (!url) {
     throw new Error('VITE_ACTOR_WEB_GATEWAY_URL is not configured.');
   }
 
-  return createCheckoutServerGatewayRuntimeHarness({ url });
+  return createLogisticsServerGatewayRuntimeHarness({ url });
 }
+
+export const createCheckoutServerGatewayRuntimeHarness = createLogisticsServerGatewayRuntimeHarness;
+export const createConfiguredCheckoutServerGatewayRuntimeHarness =
+  createConfiguredLogisticsServerGatewayRuntimeHarness;
