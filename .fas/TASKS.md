@@ -18,13 +18,25 @@
 
 - Title: Runtime transport handshake and wire contract
 - Mode: 6-agent
-- Status: review
+- Status: done
 - Owner: reviewer
 - Brief: .fas/tasks/runtime-transport-handshake-wire-contract.md
 - Verification lane: full
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 - Artifacts: brief=.fas/tasks/runtime-transport-handshake-wire-contract.md; verification=.fas/state/verification/latest.json
+
+### Task: Node WebSocket transport prove-out
+
+- Title: Node WebSocket transport prove-out
+- Mode: 6-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/node-websocket-transport-prove-out.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: brief=.fas/tasks/node-websocket-transport-prove-out.md; verification=.fas/state/verification/latest.json
 
 ## Template
 

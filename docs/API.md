@@ -851,7 +851,62 @@ Behavioral constraints:
 - Frame validation rejects malformed envelopes, incompatible protocol versions, missing identities, and frames addressed to the wrong local node.
 - Delivery semantics remain at-most-once until a later idempotency/message-id slice.
 
-The in-memory test transport can opt into this contract for runtime tests. Production WebSocket transport is still future work.
+The in-memory test transport can opt into this contract for runtime tests.
+
+## Node WebSocket Transport
+
+`NodeWebSocketMessageTransport` is the Node-only first external transport prove-out. It implements `MessageTransport` over localhost or network WebSocket connections using the runtime handshake and frame contract. It is exported from `@actor-core/runtime`, not from `@actor-core/runtime/browser`.
+
+```typescript
+import {
+  createActorSystem,
+  createNodeWebSocketMessageTransport,
+} from '@actor-core/runtime';
+
+const nodeB = createNodeWebSocketMessageTransport({
+  nodeAddress: 'node-b',
+  incarnation: 'node-b-boot',
+  listen: { host: '127.0.0.1', port: 0 },
+});
+await nodeB.start();
+
+const nodeA = createNodeWebSocketMessageTransport({
+  nodeAddress: 'node-a',
+  incarnation: 'node-a-boot',
+  listen: { host: '127.0.0.1', port: 0 },
+  peers: {
+    'node-b': nodeB.getListeningUrl() ?? '',
+  },
+});
+await nodeA.start();
+
+const systemA = await createActorSystem({
+  nodeAddress: 'node-a',
+  transport: nodeA,
+});
+await systemA.start();
+await systemA.join(['node-b']);
+```
+
+Lifecycle:
+
+- `start()` opens the optional listener when `listen` is provided.
+- `connect(nodeAddress)` resolves the peer URL, opens a socket, sends handshake hello, validates accept, stores peer identity, and emits `__runtime.transport.connected`.
+- `send(destination, message)` wraps the message in a `RuntimeTransportFrame`, validates peer state, and sends JSON over the socket.
+- inbound sockets must handshake before runtime frames are accepted.
+- socket close/error removes the peer and emits `__runtime.transport.disconnected`.
+- `stop()` closes peers and the listener.
+
+Options:
+
+- `nodeAddress`: logical runtime node address used in actor paths.
+- `nodeId`, `incarnation`, `capabilities`: optional identity fields for the runtime handshake.
+- `listen`: optional `{ host, port }`; use port `0` for ephemeral local tests.
+- `peers`: static mapping of node address to WebSocket URL.
+- `peerUrlResolver`: optional resolver for static or test-managed peer URLs.
+- `connectTimeoutMs`: handshake/open timeout.
+
+This transport keeps delivery at-most-once and does not yet provide dynamic membership, auth/security, durable replay, or production backpressure.
 
 ## 📝 **Examples**
 

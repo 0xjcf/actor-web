@@ -195,6 +195,11 @@ export {
   type MessageSerializer,
   TransportSerializer,
 } from './messaging/serialization.js';
+export type { NodeWebSocketMessageTransportOptions } from './node-websocket-message-transport.js';
+export {
+  createNodeWebSocketMessageTransport,
+  NodeWebSocketMessageTransport,
+} from './node-websocket-message-transport.js';
 export type { SubscriberFunction, TeardownLogic } from './observable.js';
 // Observable implementation
 export { CustomObservable } from './observable.js';

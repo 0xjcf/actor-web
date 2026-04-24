@@ -68,6 +68,13 @@ hexagonal boundary or the actor model.
   - `RuntimeTransportHandshake`
   - `RUNTIME_TRANSPORT_PROTOCOL_VERSION`
   - identity, handshake, and frame validation helpers
+- Node WebSocket transport prove-out now covers:
+  - `NodeWebSocketMessageTransport`
+  - localhost listener lifecycle
+  - static peer URL resolution
+  - handshake-backed connect/disconnect
+  - runtime frame send/receive over real WebSocket sockets
+  - two-runtime directory sync, remote send/ask, and Ignite projection tests
 - Actor-Web already maps its data plane toward FAS shared contracts:
   - `EventEnvelope`
   - `WorkflowSnapshot`
@@ -77,15 +84,15 @@ hexagonal boundary or the actor model.
 
 ### Remaining before production distributed transport
 
-- the current runtime harness transport is still in-memory or browser-local
 - the distributed actor directory is still an in-memory replicated cache
 - stable node identity and incarnation are defined as a wire contract, but not
-  yet backed by a real network transport or membership store
+  yet backed by a membership store
 - there is no real network auth/security model
 - `send` and remote subscription delivery do not yet have production-grade
   delivery guarantees over unreliable networks
 - replay is latest snapshot plus ordered live stream, not durable event replay
-- there is no production `NodeWebSocketMessageTransport` yet
+- `NodeWebSocketMessageTransport` is a localhost/network prove-out, not a fully
+  hardened production transport
 - there is no metrics/tracing/backpressure telemetry for real network transport
 
 ## Architectural Constraints
@@ -408,6 +415,10 @@ Backpressure rules:
 - run two Actor-Web runtimes in separate processes
 - keep existing `MessageTransport` port intact
 - support handshake, direct send, ask, and projection streams
+
+Status: complete for localhost/static-peer prove-out. Remaining production work
+is membership hardening, auth/security, durable replay/resync, observability,
+and backpressure.
 
 ### Phase 3: Identity and membership hardening
 

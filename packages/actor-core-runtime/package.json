@@ -38,12 +38,14 @@
   "dependencies": {
     "@franchise/shared-contracts": "file:../../../fas/packages/shared-contracts",
     "uuid": "^11.1.0",
+    "ws": "^8.18.3",
     "xstate": "5.30.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.8.0",
     "@types/node": "^20.0.0",
     "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.18.1",
     "tsup": "^8.0.0",
     "typescript": "^5.3.0",
     "vitest": "^1.0.0"
