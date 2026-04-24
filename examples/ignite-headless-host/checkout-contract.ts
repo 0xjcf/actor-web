@@ -13,7 +13,21 @@ export type ShipmentStatus =
 export interface ShipmentTimelineEntry {
   label: string;
   detail: string;
+  source?: string;
+  channel?: string;
+  note?: string;
+  timestamp?: number;
+  facility?: string;
+  signal?: ProviderSignal;
+  loadId?: string;
 }
+
+export type ProviderSignal =
+  | 'LABEL_SCANNED'
+  | 'PACKED_INTO_TRUCK'
+  | 'OUTBOUND_SCAN'
+  | 'DELIVERY_CONFIRMED'
+  | 'RETURN_EXCEPTION';
 
 export interface ShipmentContext {
   shipmentId: string | null;
@@ -23,6 +37,10 @@ export interface ShipmentContext {
   carrier: string | null;
   eta: string | null;
   routeNotes: string | null;
+  providerFacility: string | null;
+  providerSignal: ProviderSignal | null;
+  providerLoadId: string | null;
+  providerNote: string | null;
   shipmentCount: number;
   timeline: ShipmentTimelineEntry[];
 }
@@ -42,7 +60,15 @@ export type ShipmentCommand =
   | { type: 'ASSIGN_ROUTE'; plan: RoutePlan }
   | { type: 'MARK_IN_TRANSIT'; shipmentId?: string }
   | { type: 'MARK_DELIVERED'; shipmentId?: string }
-  | { type: 'MARK_RETURNED'; shipmentId?: string };
+  | { type: 'MARK_RETURNED'; shipmentId?: string }
+  | {
+      type: 'APPLY_PROVIDER_SIGNAL';
+      shipmentId?: string;
+      signal: ProviderSignal;
+      facility?: string;
+      loadId?: string;
+      note?: string;
+    };
 
 export type ShipmentEvent =
   | { type: 'SHIPMENT_CREATED'; shipmentId: string; destination: string }
@@ -51,6 +77,13 @@ export type ShipmentEvent =
   | { type: 'SHIPMENT_IN_TRANSIT'; shipmentId: string }
   | { type: 'SHIPMENT_DELIVERED'; shipmentId: string }
   | { type: 'SHIPMENT_RETURNED'; shipmentId: string }
+  | {
+      type: 'PROVIDER_SIGNAL_RECORDED';
+      shipmentId: string;
+      signal: ProviderSignal;
+      facility: string;
+      loadId: string;
+    }
   | { type: 'SHIPMENT_RESET'; shipmentId: string | null };
 
 export const LOCAL_NODE = 'logistics-browser-host';
@@ -80,6 +113,10 @@ export function createInitialShipmentContext(): ShipmentContext {
     carrier: null,
     eta: null,
     routeNotes: null,
+    providerFacility: null,
+    providerSignal: null,
+    providerLoadId: null,
+    providerNote: null,
     shipmentCount: 0,
     timeline: [],
   };
@@ -88,9 +125,111 @@ export function createInitialShipmentContext(): ShipmentContext {
 function appendTimeline(
   context: ShipmentContext,
   label: string,
-  detail: string
+  detail: string,
+  metadata: Omit<ShipmentTimelineEntry, 'label' | 'detail'> = {}
 ): ShipmentTimelineEntry[] {
-  return [{ label, detail }, ...context.timeline].slice(0, 8);
+  return [{ label, detail, timestamp: Date.now(), ...metadata }, ...context.timeline];
+}
+
+function providerTimeline(signal: ProviderSignal): { label: string; detail: string } {
+  switch (signal) {
+    case 'LABEL_SCANNED':
+      return {
+        label: 'Provider label scan',
+        detail: 'Shipment label scanned at provider HQ',
+      };
+    case 'PACKED_INTO_TRUCK':
+      return {
+        label: 'Packed into truck',
+        detail: 'Provider packed the shipment into the assigned load',
+      };
+    case 'OUTBOUND_SCAN':
+      return {
+        label: 'Shipped',
+        detail: 'Provider outbound scan completed',
+      };
+    case 'DELIVERY_CONFIRMED':
+      return {
+        label: 'Delivered',
+        detail: 'Delivery confirmed at destination dock',
+      };
+    case 'RETURN_EXCEPTION':
+      return {
+        label: 'Returned',
+        detail: 'Provider reported a return exception',
+      };
+  }
+}
+
+function statusForProviderSignal(signal: ProviderSignal, current: ShipmentStatus): ShipmentStatus {
+  switch (signal) {
+    case 'OUTBOUND_SCAN':
+      return 'in-transit';
+    case 'DELIVERY_CONFIRMED':
+      return 'delivered';
+    case 'RETURN_EXCEPTION':
+      return 'returned';
+    default:
+      return current;
+  }
+}
+
+function eventForProviderSignal(signal: ProviderSignal, shipmentId: string): ShipmentEvent[] {
+  const providerEvent = {
+    type: 'PROVIDER_SIGNAL_RECORDED' as const,
+    shipmentId,
+    signal,
+    facility: providerFacilityForShipment(shipmentId),
+    loadId: providerLoadIdForShipment(shipmentId),
+  };
+
+  if (signal === 'OUTBOUND_SCAN') {
+    return [providerEvent, { type: 'SHIPMENT_IN_TRANSIT', shipmentId }];
+  }
+
+  if (signal === 'DELIVERY_CONFIRMED') {
+    return [providerEvent, { type: 'SHIPMENT_DELIVERED', shipmentId }];
+  }
+
+  if (signal === 'RETURN_EXCEPTION') {
+    return [providerEvent, { type: 'SHIPMENT_RETURNED', shipmentId }];
+  }
+
+  return [providerEvent];
+}
+
+export function providerFacilityForShipment(seed: string): string {
+  const facilities = ['ORD Provider HQ', 'DFW Fulfillment Hub', 'LAX Cross-Dock'];
+  const index = Math.abs(hashString(seed)) % facilities.length;
+  return facilities[index];
+}
+
+export function providerLoadIdForShipment(seed: string): string {
+  return `LOAD-${Math.abs(hashString(seed)).toString(36).slice(0, 5).toUpperCase()}`;
+}
+
+export function providerNoteForSignal(signal: ProviderSignal): string {
+  switch (signal) {
+    case 'LABEL_SCANNED':
+      return 'Label barcode matched shipment manifest.';
+    case 'PACKED_INTO_TRUCK':
+      return 'Shipment was packed into the assigned truck load.';
+    case 'OUTBOUND_SCAN':
+      return 'Carrier accepted handoff and outbound scan was recorded.';
+    case 'DELIVERY_CONFIRMED':
+      return 'Destination dock confirmed delivery.';
+    case 'RETURN_EXCEPTION':
+      return 'Return exception triggered by address validation hold.';
+  }
+}
+
+function hashString(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  }
+
+  return hash;
 }
 
 export function createShipmentBehavior() {
@@ -114,11 +253,19 @@ export function createShipmentBehavior() {
             carrier: null,
             eta: null,
             routeNotes: null,
+            providerFacility: null,
+            providerSignal: null,
+            providerLoadId: null,
+            providerNote: null,
             shipmentCount: context.shipmentCount + 1,
             timeline: appendTimeline(
               context,
               'Shipment accepted',
-              `${message.shipmentId} to ${message.destination}`
+              `${message.shipmentId} to ${message.destination}`,
+              {
+                source: 'Server Shipment Runtime',
+                channel: 'REST command ingress',
+              }
             ),
           },
           emit: [
@@ -148,7 +295,12 @@ export function createShipmentBehavior() {
             timeline: appendTimeline(
               context,
               'Route assigned',
-              `${message.plan.carrier} arriving ${message.plan.eta}`
+              `${message.plan.carrier} arriving ${message.plan.eta}`,
+              {
+                source: 'Worker Routing Runtime',
+                channel: 'Actor-Web transport',
+                note: message.plan.routeNotes,
+              }
             ),
           },
           emit: [
@@ -169,7 +321,10 @@ export function createShipmentBehavior() {
             ...context,
             shipmentId,
             status: 'in-transit' as const,
-            timeline: appendTimeline(context, 'Shipped', shipmentId),
+            timeline: appendTimeline(context, 'Shipped', shipmentId, {
+              source: 'Server Lifecycle',
+              channel: 'gateway WS update',
+            }),
           },
           emit: [{ type: 'SHIPMENT_IN_TRANSIT', shipmentId }],
         };
@@ -182,7 +337,10 @@ export function createShipmentBehavior() {
             ...context,
             shipmentId,
             status: 'delivered' as const,
-            timeline: appendTimeline(context, 'Delivered', shipmentId),
+            timeline: appendTimeline(context, 'Delivered', shipmentId, {
+              source: 'Server Lifecycle',
+              channel: 'gateway WS update',
+            }),
           },
           emit: [{ type: 'SHIPMENT_DELIVERED', shipmentId }],
         };
@@ -195,9 +353,43 @@ export function createShipmentBehavior() {
             ...context,
             shipmentId,
             status: 'returned' as const,
-            timeline: appendTimeline(context, 'Returned', shipmentId),
+            timeline: appendTimeline(context, 'Returned', shipmentId, {
+              source: 'Server Lifecycle',
+              channel: 'gateway WS update',
+            }),
           },
           emit: [{ type: 'SHIPMENT_RETURNED', shipmentId }],
+        };
+      }
+
+      if (message.type === 'APPLY_PROVIDER_SIGNAL') {
+        const shipmentId = message.shipmentId ?? context.shipmentId ?? 'unknown-shipment';
+        const facility = message.facility ?? providerFacilityForShipment(shipmentId);
+        const loadId = message.loadId ?? providerLoadIdForShipment(shipmentId);
+        const note = message.note ?? providerNoteForSignal(message.signal);
+        const timeline = providerTimeline(message.signal);
+
+        return {
+          context: {
+            ...context,
+            shipmentId,
+            status: statusForProviderSignal(message.signal, context.status),
+            providerFacility: facility,
+            providerSignal: message.signal,
+            providerLoadId: loadId,
+            providerNote: note,
+            timeline: appendTimeline(context, timeline.label, timeline.detail, {
+              source: 'Remote Provider HQ',
+              channel: 'Provider signal -> server runtime -> gateway WS',
+              note,
+              facility,
+              signal: message.signal,
+              loadId,
+            }),
+          },
+          emit: eventForProviderSignal(message.signal, shipmentId).map((event) =>
+            event.type === 'PROVIDER_SIGNAL_RECORDED' ? { ...event, facility, loadId } : event
+          ),
         };
       }
 

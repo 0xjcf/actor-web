@@ -210,6 +210,7 @@ const styles = `
   .tone-server { border-left-color: #2dd4bf; }
   .tone-worker { border-left-color: #60a5fa; }
   .tone-lifecycle { border-left-color: #f59e0b; }
+  .tone-provider { border-left-color: #fb7185; }
   .tone-local { border-left-color: #a78bfa; }
   .item-heading {
     display: flex;
@@ -253,6 +254,7 @@ const styles = `
     background: rgba(10, 14, 18, 0.72);
   }
   .muted { color: #8da1af; font-size: 13px; line-height: 1.45; }
+  a { color: #5eead4; font-weight: 700; text-decoration: none; }
 
   @media (max-width: 900px) {
     .header, .layout, .grid, .toolbar, .quick-grid, .route-grid { grid-template-columns: 1fr; }
@@ -290,6 +292,14 @@ function eventRuntime(eventType: ShipmentEvent['type']): {
       source: 'Worker -> Server',
       via: 'Actor-Web transport + gateway WS',
       tone: 'tone-worker',
+    };
+  }
+
+  if (eventType === 'PROVIDER_SIGNAL_RECORDED') {
+    return {
+      source: 'Remote Provider HQ',
+      via: 'provider signal -> server runtime -> gateway WS',
+      tone: 'tone-provider',
     };
   }
 
@@ -337,6 +347,14 @@ function timelineRuntime(label: string): { source: string; via: string; tone: st
     };
   }
 
+  if (label === 'Provider label scan' || label === 'Packed into truck') {
+    return {
+      source: 'Remote Provider HQ',
+      via: 'provider signal',
+      tone: 'tone-provider',
+    };
+  }
+
   return {
     source: 'Server Shipment Runtime',
     via: 'REST command ingress',
@@ -372,8 +390,11 @@ function renderTimelineEntry(entry: ShipmentContext['timeline'][number]) {
         <strong>{entry.label}</strong>
       </div>
       <div class="route-meta">
-        <span>{runtime.via}</span>
+        <span>{entry.channel ?? runtime.via}</span>
         <span>{entry.detail}</span>
+        {entry.facility ? <span>Facility {entry.facility}</span> : null}
+        {entry.loadId ? <span>Load {entry.loadId}</span> : null}
+        {entry.note ? <span>{entry.note}</span> : null}
       </div>
     </li>
   );
@@ -392,6 +413,10 @@ function projectElementState(
     carrier: actorState.carrier,
     eta: actorState.eta,
     routeNotes: actorState.routeNotes,
+    providerFacility: actorState.providerFacility,
+    providerSignal: actorState.providerSignal,
+    providerLoadId: actorState.providerLoadId,
+    providerNote: actorState.providerNote,
     shipmentCount: actorState.shipmentCount,
     timeline: actorState.timeline.map((entry) => ({ ...entry })),
     eventLog: current?.eventLog ?? [],
@@ -452,6 +477,7 @@ function createLogisticsAdapter() {
             'SHIPMENT_IN_TRANSIT',
             'SHIPMENT_DELIVERED',
             'SHIPMENT_RETURNED',
+            'PROVIDER_SIGNAL_RECORDED',
             'SHIPMENT_RESET',
           ],
         }
@@ -742,6 +768,29 @@ export function defineIgniteHeadlessHostElement(): void {
                     </li>
                   </ul>
                 </section>
+
+                <section class="panel">
+                  <h3>Remote Provider HQ</h3>
+                  <div class="grid">
+                    <div>
+                      <div class="label">Facility</div>
+                      <div class="value">{state.providerFacility ?? 'waiting for scan'}</div>
+                    </div>
+                    <div>
+                      <div class="label">Signal</div>
+                      <div class="value">{state.providerSignal ?? 'none'}</div>
+                    </div>
+                    <div>
+                      <div class="label">Truck Load</div>
+                      <div class="value">{state.providerLoadId ?? 'unassigned'}</div>
+                    </div>
+                    <div>
+                      <div class="label">Provider Note</div>
+                      <div class="value">{state.providerNote ?? 'No provider update yet.'}</div>
+                    </div>
+                  </div>
+                  <a href="./provider.html">Open Provider HQ Console</a>
+                </section>
               </aside>
 
               <div class="stack">
@@ -799,6 +848,13 @@ export function defineIgniteHeadlessHostElement(): void {
                       <span class="runtime-chip">4 Server lifecycle</span>
                       <strong>Shipped / delivered / returned</strong>
                       <span class="muted">Server-owned timed lifecycle signals.</span>
+                    </div>
+                    <div class="route-card tone-provider">
+                      <span class="runtime-chip">Provider HQ</span>
+                      <strong>Label, truck, and exception scans</strong>
+                      <span class="muted">
+                        External provider signals applied by server runtime.
+                      </span>
                     </div>
                     <div class="route-card tone-server">
                       <span class="runtime-chip">5 Server {'->'} Browser</span>

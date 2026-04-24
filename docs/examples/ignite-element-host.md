@@ -38,6 +38,17 @@ gateway commands, but Create will not produce a REST network request. When
 `route-requested` with pending carrier/ETA because no worker runtime peer is
 connected.
 
+The launcher also prints a Provider HQ URL. To drive the lifecycle manually:
+
+```sh
+LIFECYCLE_MODE=manual pnpm examples:logistics
+```
+
+Open the Provider HQ console and send label scan, truck pack, outbound scan,
+delivery confirmation, or return exception signals. The server runtime applies
+those provider updates to the shipment actor, and the control tower receives
+fresh snapshots/events over the gateway WebSocket.
+
 ## Runtime Owners
 
 - Browser host: Ignite custom element, projection consumer only.
@@ -45,6 +56,8 @@ connected.
   `actor://logistics-server-runtime/actor/logistics-shipment`.
 - WebWorker runtime: owns
   `actor://logistics-worker-runtime/actor/logistics-routing`.
+- Remote Provider HQ: external-system simulation that reports label, truck, and
+  delivery/return scan signals back to the server runtime.
 - Service worker runtime: browser-local fallback/topology proof.
 
 ## Demo Flow
@@ -57,11 +70,13 @@ connected.
    actor to `PLAN_ROUTE`.
 4. The worker returns a deterministic carrier, ETA, and route note.
 5. The server shipment actor applies `ASSIGN_ROUTE` and emits `ROUTE_ASSIGNED`.
-6. The server runtime simulates lifecycle progress for the live demo: after
+6. In simulation mode, the server runtime simulates provider lifecycle progress: after
    roughly 10 seconds it emits `SHIPMENT_IN_TRANSIT` and the timeline shows
    `Shipped`; after roughly 20 seconds it emits deterministic
    `SHIPMENT_DELIVERED` or `SHIPMENT_RETURNED` based on the shipment id.
-7. Subscribed browser hosts receive live gateway snapshots/events without
+7. In manual mode, the Provider HQ console sends the lifecycle signals instead
+   of the server timers.
+8. Subscribed browser hosts receive live gateway snapshots/events without
    polling.
 
 ## Boundary Guidance

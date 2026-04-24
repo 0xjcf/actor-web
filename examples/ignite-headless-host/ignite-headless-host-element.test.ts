@@ -24,6 +24,8 @@ describe('ignite-headless-host element', () => {
     expect(element.shadowRoot?.textContent).toContain('Actor-Web Logistics Control Tower');
     expect(element.shadowRoot?.textContent).toContain('REST ingress');
     expect(element.shadowRoot?.textContent).toContain('Service Worker Runtime');
+    expect(element.shadowRoot?.textContent).toContain('Remote Provider HQ');
+    expect(element.shadowRoot?.textContent).toContain('Open Provider HQ Console');
     expect(element.shadowRoot?.textContent).not.toContain('In Transit');
     expect(element.shadowRoot?.textContent).toContain('Worker -> Server');
     expect(element.shadowRoot?.textContent).toContain('Gateway WebSocket projection');
@@ -59,5 +61,18 @@ describe('ignite-headless-host element', () => {
 
     expect(root.textContent).toContain('idle');
     expect(root.textContent).toContain('SHIPMENT_RESET');
+  });
+
+  it('renders the separate provider HQ console page controller', async () => {
+    await import('./provider-console');
+
+    const element = document.createElement('aw-provider-console');
+    document.body.appendChild(element);
+    await flush();
+
+    expect(element.shadowRoot?.textContent).toContain('Remote Provider HQ');
+    expect(element.shadowRoot?.textContent).toContain('Provider scan console');
+    expect(element.shadowRoot?.textContent).toContain('Scan Label');
+    expect(element.shadowRoot?.textContent).toContain('Report Return');
   });
 });

@@ -192,6 +192,8 @@ describe('ignite-headless-host logistics example', () => {
 
   it('routes REST-created shipments through the worker runtime over real WebSocket transport', async () => {
     gatewayServer = createLogisticsRuntimeGatewayServer({
+      lifecycleLabelDelayMs: 10,
+      lifecyclePackedDelayMs: 20,
       lifecycleShippedDelayMs: 25,
       lifecycleTerminalDelayMs: 70,
     });
@@ -257,7 +259,90 @@ describe('ignite-headless-host logistics example', () => {
       'Expected server-owned lifecycle updates to stream through gateway'
     );
     expect(host.getState().timeline.map((entry) => entry.label)).toEqual(
-      expect.arrayContaining(['Delivered', 'Shipped', 'Route assigned', 'Shipment accepted'])
+      expect.arrayContaining([
+        'Delivered',
+        'Shipped',
+        'Packed into truck',
+        'Provider label scan',
+        'Route assigned',
+        'Shipment accepted',
+      ])
+    );
+    expect(host.getState()).toMatchObject({
+      providerSignal: 'DELIVERY_CONFIRMED',
+      providerFacility: expect.any(String),
+      providerLoadId: expect.stringMatching(/^LOAD-/),
+    });
+  });
+
+  it('supports manual provider HQ signals over REST while streaming gateway updates', async () => {
+    gatewayServer = createLogisticsRuntimeGatewayServer({ lifecycleMode: 'manual' });
+    await gatewayServer.start();
+    const gatewayUrl = gatewayServer.getGatewayUrl();
+    const transportUrl = gatewayServer.getTransportUrl();
+    const restUrl = gatewayServer.getRestUrl();
+    if (!gatewayUrl || !transportUrl || !restUrl) {
+      throw new Error('Expected logistics gateway, transport, and REST URLs');
+    }
+
+    const runtimeHarness = createServerWorkerDemoRuntimeHarness({
+      gatewayUrl,
+      transportUrl,
+      createGatewaySocket: (url) => new WebSocket(url) as never,
+      createWorkerSocket: (url) => new WebSocket(url) as never,
+    });
+    host = createLogisticsHostFromSource(runtimeHarness.source, {
+      destroy: runtimeHarness.destroy,
+    });
+    await waitForHostState(
+      host,
+      (state) => state.transportState === 'connected',
+      'Expected gateway source to connect before manual provider signal test'
+    );
+    workerHost = await createWorkerGatewayHost(gatewayUrl);
+
+    await fetch(`${restUrl}/shipments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        shipmentId: 'shipment-manual-6006',
+        destination: 'Chicago warehouse',
+        reference: 'MANUAL-6006',
+      }),
+    });
+    await waitForHostState(
+      host,
+      (state) => state.status === 'route-assigned',
+      'Expected manual mode shipment to stop after route assignment'
+    );
+
+    await expect(
+      fetch(`${restUrl}/provider/status`).then((result) => result.json())
+    ).resolves.toMatchObject({
+      mode: 'manual',
+      shipmentId: 'shipment-manual-6006',
+      signal: null,
+    });
+
+    const providerResponse = await fetch(`${restUrl}/provider/signals`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ signal: 'OUTBOUND_SCAN' }),
+    });
+    expect(providerResponse.status).toBe(202);
+    await expect(providerResponse.json()).resolves.toMatchObject({
+      shipmentId: 'shipment-manual-6006',
+      status: 'in-transit',
+      signal: 'OUTBOUND_SCAN',
+    });
+
+    await waitForHostState(
+      host,
+      (state) =>
+        state.status === 'in-transit' &&
+        state.providerSignal === 'OUTBOUND_SCAN' &&
+        state.eventLog.some((event) => event.type === 'PROVIDER_SIGNAL_RECORDED'),
+      'Expected provider HQ signal to stream through gateway'
     );
   });
 

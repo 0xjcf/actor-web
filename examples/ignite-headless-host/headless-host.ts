@@ -21,6 +21,10 @@ export interface LogisticsHostState {
   carrier: string | null;
   eta: string | null;
   routeNotes: string | null;
+  providerFacility: string | null;
+  providerSignal: ShipmentContext['providerSignal'];
+  providerLoadId: string | null;
+  providerNote: string | null;
   shipmentCount: number;
   timeline: ShipmentContext['timeline'];
   eventLog: LogisticsEventLog[];
@@ -81,6 +85,10 @@ function projectSourceState(
     carrier: snapshot.context.carrier,
     eta: snapshot.context.eta,
     routeNotes: snapshot.context.routeNotes,
+    providerFacility: snapshot.context.providerFacility,
+    providerSignal: snapshot.context.providerSignal,
+    providerLoadId: snapshot.context.providerLoadId,
+    providerNote: snapshot.context.providerNote,
     shipmentCount: snapshot.context.shipmentCount,
     timeline: snapshot.context.timeline.map((entry) => ({ ...entry })),
     eventLog,
@@ -114,6 +122,10 @@ export function createLogisticsHostFromSource(
       carrier: snapshot.context.carrier,
       eta: snapshot.context.eta,
       routeNotes: snapshot.context.routeNotes,
+      providerFacility: snapshot.context.providerFacility,
+      providerSignal: snapshot.context.providerSignal,
+      providerLoadId: snapshot.context.providerLoadId,
+      providerNote: snapshot.context.providerNote,
       shipmentCount: snapshot.context.shipmentCount,
       timeline: snapshot.context.timeline.map((entry) => ({ ...entry })),
     };
@@ -136,6 +148,7 @@ export function createLogisticsHostFromSource(
         'SHIPMENT_IN_TRANSIT',
         'SHIPMENT_DELIVERED',
         'SHIPMENT_RETURNED',
+        'PROVIDER_SIGNAL_RECORDED',
         'SHIPMENT_RESET',
       ],
     }

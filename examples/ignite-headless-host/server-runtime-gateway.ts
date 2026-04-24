@@ -15,6 +15,10 @@ import {
 import WebSocket, { WebSocketServer } from 'ws';
 import {
   createShipmentBehavior,
+  type ProviderSignal,
+  providerFacilityForShipment,
+  providerLoadIdForShipment,
+  providerNoteForSignal,
   REMOTE_ACTOR_ID,
   REMOTE_ADDRESS,
   REMOTE_NODE,
@@ -31,6 +35,9 @@ export interface LogisticsRuntimeGatewayServerOptions {
   port?: number;
   transportPort?: number;
   restPort?: number;
+  lifecycleMode?: 'simulation' | 'manual';
+  lifecycleLabelDelayMs?: number;
+  lifecyclePackedDelayMs?: number;
   lifecycleShippedDelayMs?: number;
   lifecycleTerminalDelayMs?: number;
 }
@@ -121,9 +128,22 @@ function shouldReturnShipment(shipmentId: string): boolean {
   return hash % 5 === 0;
 }
 
+function isProviderSignal(value: unknown): value is ProviderSignal {
+  return (
+    value === 'LABEL_SCANNED' ||
+    value === 'PACKED_INTO_TRUCK' ||
+    value === 'OUTBOUND_SCAN' ||
+    value === 'DELIVERY_CONFIRMED' ||
+    value === 'RETURN_EXCEPTION'
+  );
+}
+
 export function createLogisticsRuntimeGatewayServer(
   options: LogisticsRuntimeGatewayServerOptions = {}
 ): LogisticsRuntimeGatewayServer {
+  const lifecycleMode = options.lifecycleMode ?? 'simulation';
+  const lifecycleLabelDelayMs = options.lifecycleLabelDelayMs ?? 2_000;
+  const lifecyclePackedDelayMs = options.lifecyclePackedDelayMs ?? 6_000;
   const lifecycleShippedDelayMs = options.lifecycleShippedDelayMs ?? 10_000;
   const lifecycleTerminalDelayMs = options.lifecycleTerminalDelayMs ?? 20_000;
   const transport: NodeWebSocketMessageTransport = createNodeWebSocketMessageTransport({
@@ -168,17 +188,65 @@ export function createLogisticsRuntimeGatewayServer(
   };
 
   const scheduleShipmentLifecycle = (shipmentId: string): void => {
+    if (lifecycleMode === 'manual') {
+      return;
+    }
+
     clearLifecycleTimers();
     scheduleLifecycleUpdate(
+      lifecycleLabelDelayMs,
+      { type: 'APPLY_PROVIDER_SIGNAL', shipmentId, signal: 'LABEL_SCANNED' },
+      shipmentId
+    );
+    scheduleLifecycleUpdate(
+      lifecyclePackedDelayMs,
+      { type: 'APPLY_PROVIDER_SIGNAL', shipmentId, signal: 'PACKED_INTO_TRUCK' },
+      shipmentId
+    );
+    scheduleLifecycleUpdate(
       lifecycleShippedDelayMs,
-      { type: 'MARK_IN_TRANSIT', shipmentId },
+      { type: 'APPLY_PROVIDER_SIGNAL', shipmentId, signal: 'OUTBOUND_SCAN' },
       shipmentId
     );
     scheduleLifecycleUpdate(
       lifecycleTerminalDelayMs,
-      { type: shouldReturnShipment(shipmentId) ? 'MARK_RETURNED' : 'MARK_DELIVERED', shipmentId },
+      {
+        type: 'APPLY_PROVIDER_SIGNAL',
+        shipmentId,
+        signal: shouldReturnShipment(shipmentId) ? 'RETURN_EXCEPTION' : 'DELIVERY_CONFIRMED',
+      },
       shipmentId
     );
+  };
+
+  const applyProviderSignal = async (input: {
+    shipmentId?: string;
+    signal: ProviderSignal;
+    facility?: string;
+    loadId?: string;
+    note?: string;
+  }): Promise<ShipmentContext> => {
+    if (!shipmentActor) {
+      throw new Error('Shipment actor is not ready.');
+    }
+
+    clearLifecycleTimers();
+    const shipmentId = input.shipmentId ?? shipmentActor.getSnapshot().context.shipmentId;
+    if (!shipmentId) {
+      throw new Error('No active shipment is available for provider signal.');
+    }
+
+    await shipmentActor.send({
+      type: 'APPLY_PROVIDER_SIGNAL',
+      shipmentId,
+      signal: input.signal,
+      facility: input.facility ?? providerFacilityForShipment(shipmentId),
+      loadId: input.loadId ?? providerLoadIdForShipment(shipmentId),
+      note: input.note ?? providerNoteForSignal(input.signal),
+    });
+    await system.flush();
+
+    return shipmentActor.getSnapshot().context;
   };
 
   const planRouteForShipment = async (input: {
@@ -323,10 +391,50 @@ export function createLogisticsRuntimeGatewayServer(
         return;
       }
 
+      if (request.method === 'GET' && url.pathname === '/provider/status') {
+        const snapshot = shipmentActor?.getSnapshot().context ?? null;
+        sendJson(response, 200, {
+          mode: lifecycleMode,
+          shipmentId: snapshot?.shipmentId ?? null,
+          status: snapshot?.status ?? null,
+          facility: snapshot?.providerFacility ?? null,
+          signal: snapshot?.providerSignal ?? null,
+          loadId: snapshot?.providerLoadId ?? null,
+          note: snapshot?.providerNote ?? null,
+        });
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/provider/signals') {
+        const body = await readJson(request);
+        if (!isProviderSignal(body.signal)) {
+          sendJson(response, 400, { error: 'provider signal is required' });
+          return;
+        }
+
+        const snapshot = await applyProviderSignal({
+          shipmentId: typeof body.shipmentId === 'string' ? body.shipmentId : undefined,
+          signal: body.signal,
+          facility: typeof body.facility === 'string' ? body.facility : undefined,
+          loadId: typeof body.loadId === 'string' ? body.loadId : undefined,
+          note: typeof body.note === 'string' ? body.note : undefined,
+        });
+        sendJson(response, 202, {
+          shipmentId: snapshot.shipmentId,
+          status: snapshot.status,
+          facility: snapshot.providerFacility,
+          signal: snapshot.providerSignal,
+          loadId: snapshot.providerLoadId,
+          note: snapshot.providerNote,
+        });
+        return;
+      }
+
       if (request.method === 'GET' && url.pathname === '/runtime/status') {
         sendJson(response, 200, {
           gatewayUrl,
           transportUrl: transport.getListeningUrl(),
+          lifecycleMode,
           nodes: {
             browserHost: 'thin Ignite host',
             serverRuntime: REMOTE_NODE,

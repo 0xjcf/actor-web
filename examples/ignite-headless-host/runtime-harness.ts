@@ -133,6 +133,7 @@ function createHarnessSource(
             'SHIPMENT_IN_TRANSIT',
             'SHIPMENT_DELIVERED',
             'SHIPMENT_RETURNED',
+            'PROVIDER_SIGNAL_RECORDED',
             'SHIPMENT_RESET',
           ],
         }

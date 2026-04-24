@@ -88,6 +88,7 @@ export default defineConfig({
       input: {
         index: path.resolve(currentDir, 'index.html'),
         igniteHeadlessHost: path.resolve(currentDir, 'ignite-headless-host/index.html'),
+        igniteHeadlessProvider: path.resolve(currentDir, 'ignite-headless-host/provider.html'),
         'ignite-headless-host/ignite-headless-host.sw': path.resolve(
           currentDir,
           'ignite-headless-host/ignite-headless-host.sw.ts'

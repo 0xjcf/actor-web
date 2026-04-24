@@ -9,8 +9,9 @@ const viteConfig = path.resolve(examplesDir, 'vite.config.ts');
 
 const host = process.env.HOST ?? '127.0.0.1';
 const port = Number.parseInt(process.env.PORT ?? '4173', 10);
+const lifecycleMode = process.env.LIFECYCLE_MODE === 'manual' ? 'manual' : 'simulation';
 
-const gateway = createLogisticsRuntimeGatewayServer({ host });
+const gateway = createLogisticsRuntimeGatewayServer({ host, lifecycleMode });
 await gateway.start();
 
 const restUrl = gateway.getRestUrl();
@@ -40,12 +41,15 @@ await vite.listen();
 
 const localUrl = vite.resolvedUrls?.local[0] ?? `http://${host}:${port}/`;
 const pageUrl = new URL('/ignite-headless-host/', localUrl).toString();
+const providerUrl = new URL('/ignite-headless-host/provider.html', localUrl).toString();
 
 console.log('\nActor-Web Logistics Control Tower');
 console.log(`  UI:        ${pageUrl}`);
+console.log(`  Provider:  ${providerUrl}`);
 console.log(`  REST:      ${restUrl}`);
 console.log(`  Gateway:   ${gatewayUrl}`);
 console.log(`  Transport: ${transportUrl}`);
+console.log(`  Mode:      ${lifecycleMode}`);
 console.log('\nOpen DevTools Network and filter by Fetch/XHR and WS.');
 vite.printUrls();
 
