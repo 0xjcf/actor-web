@@ -25,12 +25,33 @@ export interface NodeWebSocketMessageTransportOptions {
   peers?: Record<string, string>;
   peerUrlResolver?: (nodeAddress: string) => string | undefined | Promise<string | undefined>;
   connectTimeoutMs?: number;
+  heartbeatIntervalMs?: number;
+  heartbeatTimeoutMs?: number;
+}
+
+export type NodeWebSocketPeerState =
+  | 'connecting'
+  | 'connected'
+  | 'disconnecting'
+  | 'disconnected'
+  | 'rejected';
+
+export interface NodeWebSocketPeerSnapshot {
+  nodeAddress: string;
+  identity?: RuntimeNodeIdentity;
+  state: NodeWebSocketPeerState;
+  lastSeenAt?: string;
+  rejectedReason?: string;
 }
 
 type PeerConnection = {
   socket: WebSocket;
   identity: RuntimeNodeIdentity;
   sequence: number;
+  state: NodeWebSocketPeerState;
+  lastSeenAt: number;
+  heartbeatInterval: ReturnType<typeof setInterval> | null;
+  heartbeatTimeout: ReturnType<typeof setTimeout> | null;
 };
 
 export class NodeWebSocketMessageTransport implements MessageTransport {
@@ -38,8 +59,11 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
     (event: { source: string; message: ActorMessage }) => void
   >();
   private readonly peers = new Map<string, PeerConnection>();
+  private readonly peerSnapshots = new Map<string, NodeWebSocketPeerSnapshot>();
   private readonly identity: RuntimeNodeIdentity;
   private readonly connectTimeoutMs: number;
+  private readonly heartbeatIntervalMs: number;
+  private readonly heartbeatTimeoutMs: number;
   private server: WebSocketServer | null = null;
   private listeningUrl: string | null = null;
 
@@ -51,6 +75,8 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
       ...(options.capabilities ? { capabilities: options.capabilities } : {}),
     });
     this.connectTimeoutMs = options.connectTimeoutMs ?? 3000;
+    this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 15000;
+    this.heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? this.heartbeatIntervalMs * 2;
   }
 
   async start(): Promise<void> {
@@ -118,7 +144,7 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
 
   async send(destination: string, message: ActorMessage): Promise<void> {
     const peer = this.peers.get(destination);
-    if (!peer || peer.socket.readyState !== WebSocket.OPEN) {
+    if (!peer || peer.state !== 'connected' || peer.socket.readyState !== WebSocket.OPEN) {
       throw new Error(`Transport ${this.identity.nodeAddress} is not connected to ${destination}`);
     }
 
@@ -147,20 +173,34 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
     }
 
     const existing = this.peers.get(address);
-    if (existing?.socket.readyState === WebSocket.OPEN) {
+    if (existing?.state === 'connected' && existing.socket.readyState === WebSocket.OPEN) {
       return;
     }
 
+    this.setPeerSnapshot(address, { state: 'connecting' });
+
     const url = await this.resolvePeerUrl(address);
     if (!url) {
+      this.setPeerSnapshot(address, {
+        state: 'rejected',
+        rejectedReason: `No WebSocket peer URL configured for node ${address}`,
+      });
       throw new Error(`No WebSocket peer URL configured for node ${address}`);
     }
 
     const socket = new WebSocket(url);
-    await this.waitForOpen(socket);
-    await this.sendJson(socket, createRuntimeTransportHandshakeHello(this.identity));
-    const peerIdentity = await this.waitForHandshakeAccept(socket, address);
-    this.registerPeer(socket, peerIdentity);
+    try {
+      await this.waitForOpen(socket);
+      await this.sendJson(socket, createRuntimeTransportHandshakeHello(this.identity));
+      const peerIdentity = await this.waitForHandshakeAccept(socket, address);
+      this.registerPeer(socket, peerIdentity);
+    } catch (error) {
+      this.setPeerSnapshot(address, {
+        state: 'rejected',
+        rejectedReason: error instanceof Error ? error.message : 'Runtime peer connection failed.',
+      });
+      throw error;
+    }
   }
 
   async disconnect(address: string): Promise<void> {
@@ -174,12 +214,35 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
 
   getConnectedNodes(): string[] {
     return Array.from(this.peers.entries())
-      .filter(([, peer]) => peer.socket.readyState === WebSocket.OPEN)
+      .filter(([, peer]) => peer.state === 'connected' && peer.socket.readyState === WebSocket.OPEN)
       .map(([nodeAddress]) => nodeAddress);
   }
 
   isConnected(address: string): boolean {
-    return this.peers.get(address)?.socket.readyState === WebSocket.OPEN;
+    const peer = this.peers.get(address);
+    return peer?.state === 'connected' && peer.socket.readyState === WebSocket.OPEN;
+  }
+
+  getPeerState(nodeAddress: string): NodeWebSocketPeerState | undefined {
+    return this.peerSnapshots.get(nodeAddress)?.state;
+  }
+
+  getPeerSnapshot(nodeAddress: string): NodeWebSocketPeerSnapshot | undefined {
+    const snapshot = this.peerSnapshots.get(nodeAddress);
+    if (!snapshot) {
+      return undefined;
+    }
+
+    return {
+      ...snapshot,
+      ...(snapshot.identity ? { identity: { ...snapshot.identity } } : {}),
+    };
+  }
+
+  getPeerIdentity(nodeAddress: string): RuntimeNodeIdentity | undefined {
+    const identity =
+      this.peers.get(nodeAddress)?.identity ?? this.peerSnapshots.get(nodeAddress)?.identity;
+    return identity ? { ...identity } : undefined;
   }
 
   private async resolvePeerUrl(nodeAddress: string): Promise<string | undefined> {
@@ -213,6 +276,19 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
 
     if (!this.isHandshakeHello(frame)) {
       await this.rejectAndClose(socket, 'malformed_frame', 'Expected runtime handshake hello.');
+      return;
+    }
+
+    const acceptance = this.canAcceptPeer(frame.source);
+    if (!acceptance.ok) {
+      if (!this.peers.has(frame.source.nodeAddress)) {
+        this.setPeerSnapshot(frame.source.nodeAddress, {
+          state: 'rejected',
+          identity: frame.source,
+          rejectedReason: acceptance.message,
+        });
+      }
+      await this.rejectAndClose(socket, 'malformed_frame', acceptance.message);
       return;
     }
 
@@ -279,6 +355,14 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
           return;
         }
 
+        const acceptance = this.canAcceptPeer(frame.source);
+        if (!acceptance.ok) {
+          cleanup();
+          socket.close();
+          reject(new Error(acceptance.message));
+          return;
+        }
+
         cleanup();
         resolve(frame.source);
       };
@@ -292,17 +376,30 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
   private registerPeer(socket: WebSocket, identity: RuntimeNodeIdentity): void {
     const existing = this.peers.get(identity.nodeAddress);
     if (existing && existing.socket !== socket) {
-      existing.socket.close();
+      this.closePeer(identity.nodeAddress, existing, false);
     }
 
-    this.peers.set(identity.nodeAddress, {
+    const peer: PeerConnection = {
       socket,
       identity,
       sequence: 0,
+      state: 'connected',
+      lastSeenAt: Date.now(),
+      heartbeatInterval: null,
+      heartbeatTimeout: null,
+    };
+    this.peers.set(identity.nodeAddress, peer);
+    this.setPeerSnapshot(identity.nodeAddress, {
+      state: 'connected',
+      identity,
+      lastSeenAt: new Date(peer.lastSeenAt).toISOString(),
     });
 
     socket.on('message', (data) => {
-      this.handleRuntimeFrame(identity.nodeAddress, data);
+      this.handleRuntimeFrame(identity.nodeAddress, socket, data);
+    });
+    socket.on('pong', () => {
+      this.markPeerSeen(identity.nodeAddress, socket);
     });
     socket.on('close', () => {
       this.handlePeerClosed(identity.nodeAddress, socket);
@@ -310,6 +407,8 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
     socket.on('error', () => {
       this.handlePeerClosed(identity.nodeAddress, socket);
     });
+
+    this.startHeartbeat(identity.nodeAddress, peer);
 
     this.emitTransportMessage(identity.nodeAddress, {
       type: '__runtime.transport.connected',
@@ -319,7 +418,16 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
     } as ActorMessage<{ type: '__runtime.transport.connected'; nodeAddress: string }>);
   }
 
-  private handleRuntimeFrame(sourceNodeAddress: string, data: WebSocket.RawData): void {
+  private handleRuntimeFrame(
+    sourceNodeAddress: string,
+    socket: WebSocket,
+    data: WebSocket.RawData
+  ): void {
+    const peer = this.peers.get(sourceNodeAddress);
+    if (!peer || peer.socket !== socket || peer.socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
     const frame = this.parseJson(data);
     const validation = validateRuntimeTransportFrame(frame, this.identity);
     if (!validation.ok) {
@@ -328,17 +436,35 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
     }
 
     const runtimeFrame = frame as RuntimeTransportFrame;
-    if (runtimeFrame.source.nodeAddress !== sourceNodeAddress) {
+    if (
+      runtimeFrame.source.nodeAddress !== sourceNodeAddress ||
+      runtimeFrame.source.nodeId !== peer.identity.nodeId ||
+      runtimeFrame.source.incarnation !== peer.identity.incarnation
+    ) {
       this.disconnect(sourceNodeAddress).catch(() => {});
       return;
     }
 
+    this.markPeerSeen(sourceNodeAddress, peer.socket);
     this.emitTransportMessage(runtimeFrame.source.nodeAddress, runtimeFrame.message);
   }
 
   private closePeer(nodeAddress: string, peer: PeerConnection, emitDisconnected: boolean): void {
+    this.clearHeartbeat(peer);
+    peer.state = 'disconnecting';
+    this.setPeerSnapshot(nodeAddress, {
+      state: 'disconnecting',
+      identity: peer.identity,
+      lastSeenAt: new Date(peer.lastSeenAt).toISOString(),
+    });
     this.peers.delete(nodeAddress);
     peer.socket.close();
+    peer.state = 'disconnected';
+    this.setPeerSnapshot(nodeAddress, {
+      state: 'disconnected',
+      identity: peer.identity,
+      lastSeenAt: new Date(peer.lastSeenAt).toISOString(),
+    });
 
     if (emitDisconnected) {
       this.emitTransportMessage(nodeAddress, {
@@ -363,6 +489,97 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
     for (const listener of Array.from(this.listeners)) {
       listener({ source, message });
     }
+  }
+
+  private canAcceptPeer(
+    identity: RuntimeNodeIdentity
+  ): { ok: true } | { ok: false; message: string } {
+    const existing = this.peers.get(identity.nodeAddress);
+    if (!existing) {
+      return { ok: true };
+    }
+
+    if (existing.identity.nodeId !== identity.nodeId) {
+      return {
+        ok: false,
+        message: `Runtime peer identity conflict for ${identity.nodeAddress}.`,
+      };
+    }
+
+    return { ok: true };
+  }
+
+  private setPeerSnapshot(
+    nodeAddress: string,
+    update: Omit<NodeWebSocketPeerSnapshot, 'nodeAddress'>
+  ): void {
+    this.peerSnapshots.set(nodeAddress, {
+      nodeAddress,
+      ...update,
+    });
+  }
+
+  private startHeartbeat(nodeAddress: string, peer: PeerConnection): void {
+    if (this.heartbeatIntervalMs <= 0) {
+      return;
+    }
+
+    peer.heartbeatInterval = setInterval(() => {
+      if (peer.socket.readyState !== WebSocket.OPEN || this.peers.get(nodeAddress) !== peer) {
+        this.clearHeartbeat(peer);
+        return;
+      }
+
+      peer.socket.ping();
+      this.armHeartbeatTimeout(nodeAddress, peer);
+    }, this.heartbeatIntervalMs);
+  }
+
+  private armHeartbeatTimeout(nodeAddress: string, peer: PeerConnection): void {
+    if (this.heartbeatTimeoutMs <= 0) {
+      return;
+    }
+
+    if (peer.heartbeatTimeout) {
+      clearTimeout(peer.heartbeatTimeout);
+    }
+
+    peer.heartbeatTimeout = setTimeout(() => {
+      if (this.peers.get(nodeAddress) !== peer) {
+        return;
+      }
+
+      this.closePeer(nodeAddress, peer, true);
+    }, this.heartbeatTimeoutMs);
+  }
+
+  private clearHeartbeat(peer: PeerConnection): void {
+    if (peer.heartbeatInterval) {
+      clearInterval(peer.heartbeatInterval);
+      peer.heartbeatInterval = null;
+    }
+    if (peer.heartbeatTimeout) {
+      clearTimeout(peer.heartbeatTimeout);
+      peer.heartbeatTimeout = null;
+    }
+  }
+
+  private markPeerSeen(nodeAddress: string, socket: WebSocket): void {
+    const peer = this.peers.get(nodeAddress);
+    if (!peer || peer.socket !== socket) {
+      return;
+    }
+
+    peer.lastSeenAt = Date.now();
+    if (peer.heartbeatTimeout) {
+      clearTimeout(peer.heartbeatTimeout);
+      peer.heartbeatTimeout = null;
+    }
+    this.setPeerSnapshot(nodeAddress, {
+      state: peer.state,
+      identity: peer.identity,
+      lastSeenAt: new Date(peer.lastSeenAt).toISOString(),
+    });
   }
 
   private async rejectAndClose(

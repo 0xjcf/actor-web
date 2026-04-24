@@ -20,6 +20,7 @@ async function createStartedTransport(
   const transport = createNodeWebSocketMessageTransport({
     nodeAddress,
     incarnation: `${nodeAddress}-boot`,
+    heartbeatIntervalMs: 0,
     listen: { port: 0 },
     ...options,
   });
@@ -83,6 +84,41 @@ describe('NodeWebSocketMessageTransport', () => {
     expect(local.isConnected('node-b')).toBe(true);
     expect(remote.isConnected('node-a')).toBe(true);
     expect(local.getConnectedNodes()).toEqual(['node-b']);
+    expect(local.getPeerState('node-b')).toBe('connected');
+    expect(local.getPeerSnapshot('node-b')).toMatchObject({
+      nodeAddress: 'node-b',
+      state: 'connected',
+      identity: {
+        nodeAddress: 'node-b',
+        nodeId: 'node-b',
+        incarnation: 'node-b-boot',
+      },
+    });
+  });
+
+  it('tracks peer state transitions from connecting to connected to disconnected', async () => {
+    const remote = await createStartedTransport('node-b');
+    const remoteUrl = remote.getListeningUrl();
+    if (!remoteUrl) {
+      throw new Error('Expected remote listening URL');
+    }
+    const local = await createStartedTransport('node-a', {
+      peers: { 'node-b': remoteUrl },
+    });
+
+    const connectPromise = local.connect('node-b');
+    expect(local.getPeerState('node-b')).toBe('connecting');
+    await connectPromise;
+
+    expect(local.getPeerState('node-b')).toBe('connected');
+    expect(local.getPeerIdentity('node-b')).toMatchObject({
+      nodeAddress: 'node-b',
+      nodeId: 'node-b',
+      incarnation: 'node-b-boot',
+    });
+
+    await local.disconnect('node-b');
+    expect(local.getPeerState('node-b')).toBe('disconnected');
   });
 
   it('rejects unknown peer URLs', async () => {
@@ -195,6 +231,174 @@ describe('NodeWebSocketMessageTransport', () => {
     );
 
     socket.close();
+    unsubscribe();
+  });
+
+  it('closes stale sockets when heartbeat times out and emits disconnected', async () => {
+    const remote = await createStartedTransport('node-b');
+    const remoteUrl = remote.getListeningUrl();
+    if (!remoteUrl) {
+      throw new Error('Expected remote listening URL');
+    }
+    const local = await createStartedTransport('node-a', {
+      heartbeatIntervalMs: 1000,
+      heartbeatTimeoutMs: 1,
+      peers: { 'node-b': remoteUrl },
+    });
+    const receivedTypes: string[] = [];
+    const unsubscribe = local.subscribe((event) => {
+      receivedTypes.push(event.message.type);
+    });
+
+    await local.connect('node-b');
+    const peer = (
+      local as unknown as {
+        peers: Map<string, unknown>;
+      }
+    ).peers.get('node-b');
+    (
+      local as unknown as {
+        armHeartbeatTimeout: (nodeAddress: string, peer: unknown) => void;
+      }
+    ).armHeartbeatTimeout('node-b', peer);
+
+    await waitFor(() => local.getPeerState('node-b') === 'disconnected', 'Expected timeout');
+
+    expect(receivedTypes).toContain('__runtime.transport.disconnected');
+    unsubscribe();
+  });
+
+  it('replaces a peer with the same node id and a new incarnation', async () => {
+    const local = await createStartedTransport('node-a');
+    const remoteOne = await createStartedTransport('node-b', {
+      nodeId: 'stable-node-b',
+      incarnation: 'node-b-boot-1',
+      peers: { 'node-a': local.getListeningUrl() ?? '' },
+    });
+
+    await remoteOne.connect('node-a');
+    expect(local.getPeerSnapshot('node-b')).toMatchObject({
+      state: 'connected',
+      identity: { nodeId: 'stable-node-b', incarnation: 'node-b-boot-1' },
+    });
+
+    const remoteTwo = await createStartedTransport('node-b', {
+      nodeId: 'stable-node-b',
+      incarnation: 'node-b-boot-2',
+      peers: { 'node-a': local.getListeningUrl() ?? '' },
+    });
+    await remoteTwo.connect('node-a');
+
+    await waitFor(
+      () => local.getPeerSnapshot('node-b')?.identity?.incarnation === 'node-b-boot-2',
+      'Expected replacement peer identity'
+    );
+    await waitFor(
+      () => remoteOne.getPeerState('node-a') === 'disconnected',
+      'Expected replaced peer socket to close'
+    );
+    expect(local.getPeerSnapshot('node-b')).toMatchObject({
+      state: 'connected',
+      identity: { nodeId: 'stable-node-b', incarnation: 'node-b-boot-2' },
+    });
+  });
+
+  it('rejects a connection with the same node address and a different node id', async () => {
+    const local = await createStartedTransport('node-a');
+    const remoteOne = await createStartedTransport('node-b', {
+      nodeId: 'stable-node-b',
+      peers: { 'node-a': local.getListeningUrl() ?? '' },
+    });
+    await remoteOne.connect('node-a');
+
+    const remoteTwo = await createStartedTransport('node-b', {
+      nodeId: 'different-node-b',
+      incarnation: 'node-b-boot-conflict',
+      peers: { 'node-a': local.getListeningUrl() ?? '' },
+    });
+
+    await expect(remoteTwo.connect('node-a')).rejects.toThrow('identity conflict');
+    expect(local.getPeerSnapshot('node-b')).toMatchObject({
+      state: 'connected',
+      identity: { nodeId: 'stable-node-b' },
+    });
+    expect(remoteTwo.getPeerState('node-a')).toBe('rejected');
+    expect(local.getPeerIdentity('node-b')).toMatchObject({ nodeId: 'stable-node-b' });
+  });
+
+  it('ignores frames from sockets replaced by a newer incarnation', async () => {
+    const local = await createStartedTransport('node-a');
+    const localUrl = local.getListeningUrl();
+    if (!localUrl) {
+      throw new Error('Expected local listening URL');
+    }
+    const remoteOne = await createStartedTransport('node-b', {
+      nodeId: 'stable-node-b',
+      incarnation: 'node-b-boot-1',
+      peers: { 'node-a': localUrl },
+    });
+    const receivedTypes: string[] = [];
+    const unsubscribe = local.subscribe((event) => {
+      receivedTypes.push(event.message.type);
+    });
+
+    await remoteOne.connect('node-a');
+    const remoteOneSocket = (
+      remoteOne as unknown as {
+        peers: Map<
+          string,
+          { socket: WebSocket; identity: ReturnType<typeof createRuntimeNodeIdentity> }
+        >;
+      }
+    ).peers.get('node-a')?.socket;
+    if (!remoteOneSocket) {
+      throw new Error('Expected first remote socket');
+    }
+
+    const remoteTwo = await createStartedTransport('node-b', {
+      nodeId: 'stable-node-b',
+      incarnation: 'node-b-boot-2',
+      peers: { 'node-a': localUrl },
+    });
+    await remoteTwo.connect('node-a');
+    await waitFor(
+      () => local.getPeerSnapshot('node-b')?.identity?.incarnation === 'node-b-boot-2',
+      'Expected replacement peer'
+    );
+
+    (
+      local as unknown as {
+        handleRuntimeFrame: (sourceNodeAddress: string, socket: WebSocket, data: Buffer) => void;
+      }
+    ).handleRuntimeFrame(
+      'node-b',
+      remoteOneSocket,
+      Buffer.from(
+        JSON.stringify(
+          createRuntimeTransportFrame({
+            source: createRuntimeNodeIdentity({
+              nodeAddress: 'node-b',
+              nodeId: 'stable-node-b',
+              incarnation: 'node-b-boot-1',
+            }),
+            destination: createRuntimeNodeIdentity({
+              nodeAddress: 'node-a',
+              nodeId: 'node-a',
+              incarnation: 'node-a-boot',
+            }),
+            sequence: 1,
+            message: { type: 'STALE_SOCKET' },
+          })
+        )
+      )
+    );
+
+    await remoteTwo.send('node-a', {
+      type: 'CURRENT_SOCKET',
+    } as ActorMessage<{ type: 'CURRENT_SOCKET' }>);
+
+    await waitFor(() => receivedTypes.includes('CURRENT_SOCKET'), 'Expected current frame');
+    expect(receivedTypes).not.toContain('STALE_SOCKET');
     unsubscribe();
   });
 });

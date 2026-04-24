@@ -75,6 +75,14 @@ hexagonal boundary or the actor model.
   - handshake-backed connect/disconnect
   - runtime frame send/receive over real WebSocket sockets
   - two-runtime directory sync, remote send/ask, and Ignite projection tests
+- runtime membership hardening now covers:
+  - peer lifecycle states: `connecting`, `connected`, `disconnecting`,
+    `disconnected`, and `rejected`
+  - stable `nodeId` plus `incarnation` peer replacement
+  - identity-conflict rejection for reused `nodeAddress` with a different
+    `nodeId`
+  - transport-level heartbeat timeout and disconnect emission
+  - stale socket frame suppression after peer replacement
 - Actor-Web already maps its data plane toward FAS shared contracts:
   - `EventEnvelope`
   - `WorkflowSnapshot`
@@ -85,14 +93,14 @@ hexagonal boundary or the actor model.
 ### Remaining before production distributed transport
 
 - the distributed actor directory is still an in-memory replicated cache
-- stable node identity and incarnation are defined as a wire contract, but not
-  yet backed by a membership store
+- stable node identity and incarnation are enforced at the WebSocket transport
+  edge, but not yet backed by a membership store or dynamic discovery
 - there is no real network auth/security model
 - `send` and remote subscription delivery do not yet have production-grade
   delivery guarantees over unreliable networks
 - replay is latest snapshot plus ordered live stream, not durable event replay
-- `NodeWebSocketMessageTransport` is a localhost/network prove-out, not a fully
-  hardened production transport
+- `NodeWebSocketMessageTransport` has basic lifecycle and stale-peer handling,
+  but is not a fully hardened production transport
 - there is no metrics/tracing/backpressure telemetry for real network transport
 
 ## Architectural Constraints
@@ -417,8 +425,8 @@ Backpressure rules:
 - support handshake, direct send, ask, and projection streams
 
 Status: complete for localhost/static-peer prove-out. Remaining production work
-is membership hardening, auth/security, durable replay/resync, observability,
-and backpressure.
+is dynamic discovery, auth/security, durable replay/resync, observability, and
+backpressure.
 
 ### Phase 3: Identity and membership hardening
 
@@ -426,6 +434,10 @@ and backpressure.
   peer lifecycles
 - add heartbeat and stale-peer rejection
 - move directory sync to handshake/bootstrap lifecycle
+
+Status: complete for basic static-peer membership hardening. Remaining
+production work is a real membership/discovery provider, auth/security, durable
+replay/resync, observability, and backpressure.
 
 ### Phase 4: Projection hardening
 

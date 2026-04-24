@@ -888,12 +888,15 @@ await systemA.start();
 await systemA.join(['node-b']);
 ```
 
-Lifecycle:
+Lifecycle and membership:
 
 - `start()` opens the optional listener when `listen` is provided.
-- `connect(nodeAddress)` resolves the peer URL, opens a socket, sends handshake hello, validates accept, stores peer identity, and emits `__runtime.transport.connected`.
+- `connect(nodeAddress)` resolves the peer URL, opens a socket, sends handshake hello, validates accept, stores peer identity, and emits `__runtime.transport.connected` after the peer is registered.
 - `send(destination, message)` wraps the message in a `RuntimeTransportFrame`, validates peer state, and sends JSON over the socket.
 - inbound sockets must handshake before runtime frames are accepted.
+- heartbeats use transport-level WebSocket ping/pong after handshake; heartbeat timeout closes the peer and emits `__runtime.transport.disconnected`.
+- same `nodeAddress` plus same `nodeId` and a new `incarnation` replaces the previous socket; same `nodeAddress` plus a different `nodeId` is rejected as an identity conflict.
+- `getPeerState(nodeAddress)`, `getPeerSnapshot(nodeAddress)`, and `getPeerIdentity(nodeAddress)` expose Node-only transport inspection for lifecycle/debugging.
 - socket close/error removes the peer and emits `__runtime.transport.disconnected`.
 - `stop()` closes peers and the listener.
 
@@ -905,8 +908,9 @@ Options:
 - `peers`: static mapping of node address to WebSocket URL.
 - `peerUrlResolver`: optional resolver for static or test-managed peer URLs.
 - `connectTimeoutMs`: handshake/open timeout.
+- `heartbeatIntervalMs`, `heartbeatTimeoutMs`: optional heartbeat cadence and timeout in milliseconds. Set the interval to `0` to disable transport heartbeats.
 
-This transport keeps delivery at-most-once and does not yet provide dynamic membership, auth/security, durable replay, or production backpressure.
+This transport keeps delivery at-most-once and does not yet provide dynamic discovery, auth/security, durable replay, or production backpressure.
 
 ## 📝 **Examples**
 

@@ -195,7 +195,11 @@ export {
   type MessageSerializer,
   TransportSerializer,
 } from './messaging/serialization.js';
-export type { NodeWebSocketMessageTransportOptions } from './node-websocket-message-transport.js';
+export type {
+  NodeWebSocketMessageTransportOptions,
+  NodeWebSocketPeerSnapshot,
+  NodeWebSocketPeerState,
+} from './node-websocket-message-transport.js';
 export {
   createNodeWebSocketMessageTransport,
   NodeWebSocketMessageTransport,

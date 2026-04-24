@@ -132,6 +132,7 @@ describe('Node WebSocket runtime transport', () => {
     localTransport = createNodeWebSocketMessageTransport({
       nodeAddress: 'node-a',
       incarnation: 'node-a-boot',
+      heartbeatIntervalMs: 0,
       listen: { port: 0 },
       peers: { 'node-b': remoteUrl },
     });
@@ -181,5 +182,102 @@ describe('Node WebSocket runtime transport', () => {
 
     unsubscribeEvent();
     unsubscribeSnapshot();
+  });
+
+  it('reconnects after a remote transport restart with a new incarnation', async () => {
+    let remoteUrl = '';
+    remoteTransport = createNodeWebSocketMessageTransport({
+      nodeAddress: 'node-b',
+      nodeId: 'stable-node-b',
+      incarnation: 'node-b-boot-1',
+      heartbeatIntervalMs: 0,
+      listen: { port: 0 },
+    });
+    await remoteTransport.start();
+    remoteUrl = remoteTransport.getListeningUrl() ?? '';
+    if (!remoteUrl) {
+      throw new Error('Expected remote listening URL');
+    }
+
+    localTransport = createNodeWebSocketMessageTransport({
+      nodeAddress: 'node-a',
+      incarnation: 'node-a-boot',
+      heartbeatIntervalMs: 0,
+      listen: { port: 0 },
+      peerUrlResolver: (nodeAddress) => (nodeAddress === 'node-b' ? remoteUrl : undefined),
+    });
+    await localTransport.start();
+
+    localSystem = new ActorSystemImpl({
+      nodeAddress: 'node-a',
+      transport: localTransport,
+    });
+    remoteSystem = new ActorSystemImpl({
+      nodeAddress: 'node-b',
+      transport: remoteTransport,
+    });
+    await Promise.all([localSystem.start(), remoteSystem.start()]);
+
+    const firstRemoteActor = await remoteSystem.spawn(createCheckoutBehavior(), {
+      id: 'websocket-checkout',
+    });
+    await localSystem.join(['node-b']);
+    const firstRemoteRef = await localSystem.lookup<CheckoutContext, CheckoutMessage>(
+      firstRemoteActor.address.path
+    );
+    if (!firstRemoteRef) {
+      throw new Error('Expected first remote ref');
+    }
+    await firstRemoteRef.send({ type: 'SUBMIT', orderId: 'before-restart' });
+    await remoteSystem.flush();
+    await expect(firstRemoteRef.ask<number>({ type: 'GET_COUNT' })).resolves.toBe(1);
+
+    await remoteSystem.stop();
+    await remoteTransport.stop();
+    await waitFor(
+      () => localTransport?.getPeerState('node-b') === 'disconnected',
+      'Expected local transport to observe remote restart'
+    );
+
+    remoteTransport = createNodeWebSocketMessageTransport({
+      nodeAddress: 'node-b',
+      nodeId: 'stable-node-b',
+      incarnation: 'node-b-boot-2',
+      heartbeatIntervalMs: 0,
+      listen: { port: 0 },
+    });
+    await remoteTransport.start();
+    remoteUrl = remoteTransport.getListeningUrl() ?? '';
+    if (!remoteUrl) {
+      throw new Error('Expected restarted remote listening URL');
+    }
+
+    remoteSystem = new ActorSystemImpl({
+      nodeAddress: 'node-b',
+      transport: remoteTransport,
+    });
+    await remoteSystem.start();
+    const secondRemoteActor = await remoteSystem.spawn(createCheckoutBehavior(), {
+      id: 'websocket-checkout',
+    });
+
+    await localSystem.join(['node-b']);
+    await waitFor(
+      () => localTransport?.getPeerSnapshot('node-b')?.identity?.incarnation === 'node-b-boot-2',
+      'Expected local transport to register restarted incarnation'
+    );
+
+    const secondRemoteRef = await localSystem.lookup<CheckoutContext, CheckoutMessage>(
+      secondRemoteActor.address.path
+    );
+    if (!secondRemoteRef) {
+      throw new Error('Expected restarted remote ref');
+    }
+
+    await secondRemoteRef.send({ type: 'SUBMIT', orderId: 'after-restart' });
+    await remoteSystem.flush();
+    await localSystem.flush();
+
+    await expect(secondRemoteRef.ask<number>({ type: 'GET_COUNT' })).resolves.toBe(1);
   });
 });
