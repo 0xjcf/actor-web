@@ -1,18 +1,29 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import WebSocket from 'ws';
 import {
   createHeadlessCheckoutHost,
   createHeadlessCheckoutHostFromSource,
   type HeadlessCheckoutHost,
 } from './headless-host';
 import { createCheckoutRuntimeHarness } from './runtime-harness';
+import { createCheckoutServerGatewayRuntimeHarness } from './server-gateway-client';
+import {
+  type CheckoutRuntimeGatewayServer,
+  createCheckoutRuntimeGatewayServer,
+} from './server-runtime-gateway';
 
 describe('ignite-headless-host example', () => {
   let host: HeadlessCheckoutHost | undefined;
+  let gatewayServer: CheckoutRuntimeGatewayServer | undefined;
 
   afterEach(async () => {
     if (host) {
       await host.destroy();
       host = undefined;
+    }
+    if (gatewayServer) {
+      await gatewayServer.stop();
+      gatewayServer = undefined;
     }
   });
 
@@ -87,6 +98,41 @@ describe('ignite-headless-host example', () => {
           actorId: 'ignite-headless-host',
         },
       ],
+      transportState: 'connected',
+      transportReason: null,
+    });
+  });
+
+  it('can consume a server-owned runtime through the runtime gateway source', async () => {
+    gatewayServer = createCheckoutRuntimeGatewayServer();
+    await gatewayServer.start();
+    const gatewayUrl = gatewayServer.getGatewayUrl();
+    if (!gatewayUrl) {
+      throw new Error('Expected checkout gateway URL');
+    }
+
+    const runtimeHarness = createCheckoutServerGatewayRuntimeHarness({
+      url: gatewayUrl,
+      createSocket: (url) => new WebSocket(url) as never,
+    });
+    host = createHeadlessCheckoutHostFromSource(runtimeHarness.source, {
+      destroy: runtimeHarness.destroy,
+    });
+
+    await host.submit('order-server-3003');
+    expect(host.getState()).toMatchObject({
+      phase: 'submitted',
+      submittedOrders: ['order-server-3003'],
+      lastSubmittedOrderId: 'order-server-3003',
+      transportState: 'connected',
+      transportReason: null,
+    });
+
+    await host.reset();
+    expect(host.getState()).toMatchObject({
+      phase: 'ready',
+      submittedOrders: [],
+      lastSubmittedOrderId: null,
       transportState: 'connected',
       transportReason: null,
     });

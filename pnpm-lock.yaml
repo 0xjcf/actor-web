@@ -25,6 +25,9 @@ importers:
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.7
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       '@vitest/coverage-v8':
         specifier: ^2.1.4
         version: 2.1.9(vitest@2.1.9(@types/node@20.19.7)(happy-dom@18.0.1))
@@ -46,6 +49,9 @@ importers:
       vitest:
         specifier: ^2.1.4
         version: 2.1.9(@types/node@20.19.7)(happy-dom@18.0.1)
+      ws:
+        specifier: ^8.18.3
+        version: 8.18.3
 
   packages/actor-core-runtime:
     dependencies:

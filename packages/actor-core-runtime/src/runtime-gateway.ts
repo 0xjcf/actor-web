@@ -19,6 +19,7 @@ import {
   createProjectionTransportStatus,
   type ProjectionTransportStatus,
 } from './projection-transport.js';
+import type { Message } from './types.js';
 
 export interface RuntimeGatewayScopeDescriptor {
   kind: string;
@@ -55,6 +56,8 @@ export type RuntimeGatewayClientFrame =
     }
   | { type: 'unsubscribe'; streamId: string }
   | { type: 'resync'; streamId: string; fromSequence?: number }
+  | { type: 'send'; streamId: string; message: Message }
+  | { type: 'ask'; streamId: string; requestId: string; message: Message; timeoutMs?: number }
   | { type: 'ping'; sentAt: string };
 
 export type RuntimeGatewayServerFrame =
@@ -85,10 +88,13 @@ export type RuntimeGatewayServerFrame =
   | {
       type: 'error';
       streamId?: string;
+      requestId?: string;
       code: RuntimeGatewayErrorCode;
       message: string;
       recoverable: boolean;
     }
+  | { type: 'ack'; streamId: string; requestId?: string }
+  | { type: 'reply'; streamId: string; requestId: string; value: unknown }
   | { type: 'pong'; sentAt: string; serverTime: string };
 
 export interface RuntimeGatewayConnectionAdapter<TAuthContext = unknown> {
@@ -106,6 +112,8 @@ export interface RuntimeGatewaySource {
   transportStatus(): ProjectionTransportStatus;
   subscribeTransportStatus(listener: (status: ProjectionTransportStatus) => void): () => void;
   subscribeTransition?(listener: (transition: FasWorkflowTransitionRecord) => void): () => void;
+  send?(message: Message): Promise<void>;
+  ask?<TResponse = unknown>(message: Message, timeoutMs?: number): Promise<TResponse>;
 }
 
 export type RuntimeGatewayScopeResolver<TAuthContext = unknown> = (
@@ -247,6 +255,12 @@ export function createRuntimeGatewaySource(
         listener(transition);
       });
     },
+    async send(message: ActorMessage): Promise<void> {
+      await actorRef.send(message);
+    },
+    async ask<TResponse = unknown>(message: Message, timeoutMs?: number): Promise<TResponse> {
+      return actorRef.ask<TResponse>(message, timeoutMs);
+    },
   };
 }
 
@@ -300,11 +314,13 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         code: RuntimeGatewayErrorCode,
         message: string,
         recoverable: boolean,
-        streamId?: string
+        streamId?: string,
+        requestId?: string
       ): void => {
         send({
           type: 'error',
           ...(streamId !== undefined ? { streamId } : {}),
+          ...(requestId !== undefined ? { requestId } : {}),
           code,
           message,
           recoverable,
@@ -426,6 +442,132 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         sendStatus(streamId, stream.source.transportStatus());
       };
 
+      const isValidMessage = (message: unknown): message is Message =>
+        Boolean(
+          message &&
+            typeof message === 'object' &&
+            'type' in message &&
+            typeof (message as { type?: unknown }).type === 'string' &&
+            (message as { type: string }).type.trim().length > 0
+        );
+
+      const commandStream = (streamId: string): RuntimeGatewayStreamState | null => {
+        if (typeof streamId !== 'string' || streamId.trim().length === 0) {
+          sendError('invalid_frame', 'command requires a non-empty streamId.', true);
+          return null;
+        }
+
+        const stream = streams.get(streamId);
+        if (!stream) {
+          sendError('not_found', 'Cannot send command to an unsubscribed stream.', true, streamId);
+          return null;
+        }
+
+        return stream;
+      };
+
+      const sendCommand = async (streamId: string, message: unknown): Promise<void> => {
+        const stream = commandStream(streamId);
+        if (!stream) {
+          return;
+        }
+
+        if (!isValidMessage(message)) {
+          sendError('invalid_frame', 'send requires a valid actor message.', true, streamId);
+          return;
+        }
+
+        if (!stream.source.send) {
+          sendError('forbidden', 'Runtime scope does not accept commands.', false, streamId);
+          return;
+        }
+
+        try {
+          await stream.source.send(message);
+          send({ type: 'ack', streamId });
+        } catch (error) {
+          sendError(
+            'internal_error',
+            error instanceof Error ? error.message : 'Runtime command failed.',
+            false,
+            streamId
+          );
+        }
+      };
+
+      const askCommand = async (
+        streamId: string,
+        requestId: unknown,
+        message: unknown,
+        timeoutMs?: unknown
+      ): Promise<void> => {
+        const stream = commandStream(streamId);
+        if (!stream) {
+          return;
+        }
+
+        if (typeof requestId !== 'string' || requestId.trim().length === 0) {
+          sendError('invalid_frame', 'ask requires a non-empty requestId.', true, streamId);
+          return;
+        }
+
+        if (!isValidMessage(message)) {
+          sendError(
+            'invalid_frame',
+            'ask requires a valid actor message.',
+            true,
+            streamId,
+            requestId
+          );
+          return;
+        }
+
+        const normalizedTimeoutMs =
+          timeoutMs === undefined
+            ? undefined
+            : typeof timeoutMs === 'number' &&
+                Number.isFinite(timeoutMs) &&
+                timeoutMs > 0 &&
+                Number.isInteger(timeoutMs)
+              ? timeoutMs
+              : null;
+
+        if (normalizedTimeoutMs === null) {
+          sendError(
+            'invalid_frame',
+            'timeoutMs must be a positive integer.',
+            true,
+            streamId,
+            requestId
+          );
+          return;
+        }
+
+        if (!stream.source.ask) {
+          sendError(
+            'forbidden',
+            'Runtime scope does not accept ask commands.',
+            false,
+            streamId,
+            requestId
+          );
+          return;
+        }
+
+        try {
+          const value = await stream.source.ask(message, normalizedTimeoutMs);
+          send({ type: 'reply', streamId, requestId, value });
+        } catch (error) {
+          sendError(
+            'internal_error',
+            error instanceof Error ? error.message : 'Runtime ask failed.',
+            false,
+            streamId,
+            requestId
+          );
+        }
+      };
+
       const isValidScopeDescriptor = (scope: unknown): scope is RuntimeGatewayScopeDescriptor =>
         Boolean(
           scope &&
@@ -480,6 +622,12 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
               return;
             }
             resyncStream(frame.streamId, frame.fromSequence);
+            return;
+          case 'send':
+            await sendCommand(frame.streamId, frame.message);
+            return;
+          case 'ask':
+            await askCommand(frame.streamId, frame.requestId, frame.message, frame.timeoutMs);
             return;
           case 'subscribe':
             if (typeof frame.streamId !== 'string' || frame.streamId.trim().length === 0) {

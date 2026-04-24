@@ -25,6 +25,10 @@ import {
   REMOTE_ADDRESS,
   REMOTE_NODE,
 } from './checkout-contract';
+import {
+  createConfiguredCheckoutServerGatewayRuntimeHarness,
+  serverGatewayRuntimeAvailable,
+} from './server-gateway-client';
 
 export type { CheckoutCommand, CheckoutContext, CheckoutEvent } from './checkout-contract';
 
@@ -335,6 +339,10 @@ function createServiceWorkerCheckoutRuntimeHarness(): CheckoutRuntimeHarness {
 }
 
 export function createCheckoutRuntimeHarness(): CheckoutRuntimeHarness {
+  if (serverGatewayRuntimeAvailable()) {
+    return createConfiguredCheckoutServerGatewayRuntimeHarness();
+  }
+
   if (serviceWorkerRuntimeAvailable()) {
     return createServiceWorkerCheckoutRuntimeHarness();
   }

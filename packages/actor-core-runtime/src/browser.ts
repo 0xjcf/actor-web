@@ -32,6 +32,15 @@ export type {
   ProjectionTransportState,
   ProjectionTransportStatus,
 } from './projection-transport.js';
+export { createProjectionTransportStatus } from './projection-transport.js';
+export type {
+  RuntimeGatewayClientFrame,
+  RuntimeGatewayErrorCode,
+  RuntimeGatewayEventProjection,
+  RuntimeGatewayScopeDescriptor,
+  RuntimeGatewayServerFrame,
+  RuntimeGatewaySnapshotProjection,
+} from './runtime-gateway.js';
 export type { InMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';
 export { createInMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';
 export type { ActorSnapshot } from './types.js';

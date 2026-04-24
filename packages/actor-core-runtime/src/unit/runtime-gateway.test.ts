@@ -16,6 +16,7 @@ import {
   type RuntimeGatewaySnapshotProjection,
   type RuntimeGatewaySource,
 } from '../runtime-gateway.js';
+import type { Message } from '../types.js';
 
 type CheckoutCommand = { type: 'SUBMIT'; orderId: string } | { type: 'RESET' };
 type CheckoutEvent = { type: 'CHECKOUT_SUBMITTED'; orderId: string } | { type: 'CHECKOUT_RESET' };
@@ -159,10 +160,14 @@ function createFakeSource(initialPhase = 'ready'): RuntimeGatewaySource & {
     toStatus: string;
   }): void;
   setStatus(status: ProjectionTransportStatus): void;
+  sentMessages: unknown[];
+  askMessages: unknown[];
   listenerCounts(): { snapshots: number; events: number; statuses: number; transitions: number };
 } {
   let currentSnapshot = createGatewaySnapshot(initialPhase, { phase: initialPhase });
   let currentStatus = createProjectionTransportStatus('connected');
+  const sentMessages: unknown[] = [];
+  const askMessages: unknown[] = [];
   const snapshotListeners = new Set<(projection: RuntimeGatewaySnapshotProjection) => void>();
   const eventListeners = new Set<(projection: RuntimeGatewayEventProjection) => void>();
   const statusListeners = new Set<(status: ProjectionTransportStatus) => void>();
@@ -230,6 +235,15 @@ function createFakeSource(initialPhase = 'ready'): RuntimeGatewaySource & {
       for (const listener of Array.from(statusListeners)) {
         listener(status);
       }
+    },
+    sentMessages,
+    askMessages,
+    async send(message) {
+      sentMessages.push(message);
+    },
+    async ask<TResponse = unknown>(message: Message): Promise<TResponse> {
+      askMessages.push(message);
+      return { ok: true, messageType: message.type } as TResponse;
     },
     listenerCounts() {
       return {
@@ -466,6 +480,93 @@ describe('runtime gateway hub', () => {
 
     source.emitSnapshot(createGatewaySnapshot('submitted', { phase: 'submitted' }));
     expect(connection.frames).toHaveLength(8);
+
+    detach();
+  });
+
+  it('routes send and ask commands through subscribed runtime sources', async () => {
+    const source = createFakeSource('ready');
+    const hub = createRuntimeGatewayHub({
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await Promise.resolve();
+
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      message: { type: 'SUBMIT', orderId: 'order-gateway' },
+    });
+    connection.push({
+      type: 'ask',
+      streamId: 'checkout-main',
+      requestId: 'request-1',
+      message: { type: 'GET_COUNT' },
+      timeoutMs: 1000,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(source.sentMessages).toEqual([{ type: 'SUBMIT', orderId: 'order-gateway' }]);
+    expect(source.askMessages).toEqual([{ type: 'GET_COUNT' }]);
+    expect(connection.frames).toContainEqual({
+      type: 'ack',
+      streamId: 'checkout-main',
+    });
+    expect(connection.frames).toContainEqual({
+      type: 'reply',
+      streamId: 'checkout-main',
+      requestId: 'request-1',
+      value: { ok: true, messageType: 'GET_COUNT' },
+    });
+
+    detach();
+  });
+
+  it('rejects command frames for invalid and unsubscribed streams', async () => {
+    const source = createFakeSource('ready');
+    const hub = createRuntimeGatewayHub({
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'send',
+      streamId: 'missing',
+      message: { type: 'SUBMIT', orderId: 'order-gateway' },
+    });
+    connection.push({
+      type: 'ask',
+      streamId: '',
+      requestId: 'request-1',
+      message: { type: 'GET_COUNT' },
+    });
+    await Promise.resolve();
+
+    expect(source.sentMessages).toEqual([]);
+    expect(connection.frames).toContainEqual({
+      type: 'error',
+      streamId: 'missing',
+      code: 'not_found',
+      message: 'Cannot send command to an unsubscribed stream.',
+      recoverable: true,
+    });
+    expect(connection.frames).toContainEqual({
+      type: 'error',
+      code: 'invalid_frame',
+      message: 'command requires a non-empty streamId.',
+      recoverable: true,
+    });
 
     detach();
   });

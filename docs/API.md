@@ -732,7 +732,7 @@ This ensures your actors follow the pure actor model and can run **anywhere** - 
 
 ## Runtime Gateway
 
-The runtime gateway exposes Actor-Web runtime projections to thin hosts such as browser pages, Ignite custom elements, server handlers, and worker-owned UI adapters. It is a gateway/projection API, not the production inter-node cluster transport. Distributed runtime ownership still flows through `MessageTransport`.
+The runtime gateway exposes Actor-Web runtime projections and command routing to thin hosts such as browser pages, Ignite custom elements, server handlers, and worker-owned UI adapters. It is a host gateway API, not the production inter-node cluster transport. Distributed runtime ownership still flows through `MessageTransport`.
 
 ### `createRuntimeGatewaySource(actorRef, options?)`
 
@@ -743,6 +743,7 @@ Wraps an `ActorRef` as a gateway source. A source provides:
 - `subscribeEvent(listener)` for emitted actor events normalized to FAS event envelopes.
 - `transportStatus()` and `subscribeTransportStatus(listener)` for local or remote projection health.
 - `subscribeTransition(listener)` for FAS workflow transition records when phase/status changes are observable.
+- `send(message)` and `ask(message, timeoutMs?)` for command-capable gateway streams.
 
 ```typescript
 import { createRuntimeGatewaySource } from '@actor-core/runtime';
@@ -784,7 +785,7 @@ const hub = createRuntimeGatewayHub({
 const detach = hub.attach(connection);
 ```
 
-Clients must send `hello` before stream frames. The hub responds with `ready`, then accepts `subscribe`, `unsubscribe`, `resync`, and `ping` frames.
+Clients must send `hello` before stream frames. The hub responds with `ready`, then accepts `subscribe`, `unsubscribe`, `resync`, `send`, `ask`, and `ping` frames.
 
 ### Frame Types
 
@@ -794,6 +795,8 @@ Client frames:
 - `subscribe`: opens or replaces a stream for a scope descriptor.
 - `unsubscribe`: closes a stream and releases source listeners.
 - `resync`: requests a fresh snapshot for an existing stream.
+- `send`: routes a fire-and-forget actor message through an existing stream.
+- `ask`: routes a request/response actor message through an existing stream with a client `requestId`.
 - `ping`: returns a `pong` with server time.
 
 Server frames:
@@ -803,6 +806,8 @@ Server frames:
 - `snapshot`: sends the current FAS workflow snapshot projection.
 - `event`: sends an emitted actor event as a FAS event envelope.
 - `transition`: sends a FAS workflow transition record.
+- `ack`: confirms a `send` command was accepted by the source actor.
+- `reply`: returns an `ask` response for the matching `requestId`.
 - `error`: reports invalid frames, scope failures, sequence problems, or internal resolver failures.
 - `pong`: heartbeat response.
 
@@ -811,6 +816,8 @@ Server frames:
 `RuntimeGatewayScopeDescriptor` is `{ kind: string; params?: Record<string, string> }`. The application-owned `RuntimeGatewayScopeResolver` maps that descriptor plus the connection `authContext` to a `RuntimeGatewaySource`, or returns `null` when the scope is not found.
 
 Each stream owns a monotonic sequence counter. Snapshot, event, and transition frames increment the stream sequence. Status frames do not increment it. Resync sends a `replaying` status, emits a fresh snapshot with the next sequence, then sends the source's current transport status.
+
+Command frames are scoped to an existing subscribed stream. `send` returns `ack` after the source accepts the message. `ask` returns `reply` with the matching `requestId`. Command failures reuse `error` and include `streamId`, and `requestId` when the failed command was an `ask`.
 
 ### Error Codes
 

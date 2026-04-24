@@ -18,6 +18,10 @@ export default defineConfig({
         replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/browser.ts'),
       },
       {
+        find: '@actor-core/runtime',
+        replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/index.ts'),
+      },
+      {
         find: 'ignite-adapters/actor-web',
         replacement: path.resolve(igniteAdaptersDist, 'actor-web.es.js'),
       },

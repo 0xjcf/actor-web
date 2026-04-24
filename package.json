@@ -85,13 +85,15 @@
   "devDependencies": {
     "@biomejs/biome": "^2.1.2",
     "@types/node": "^20.0.0",
+    "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^2.1.4",
     "@xstate/graph": "^3.0.4",
     "happy-dom": "^18.0.1",
     "tsup": "^8.3.5",
     "typescript": "^5.6.3",
     "vite": "^5.4.10",
-    "vitest": "^2.1.4"
+    "vitest": "^2.1.4",
+    "ws": "^8.18.3"
   },
   "peerDependencies": {
     "typescript": ">=5.0.0"

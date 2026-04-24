@@ -42,13 +42,25 @@
 
 - Title: Runtime membership and stale peer handling
 - Mode: 6-agent
-- Status: review
+- Status: done
 - Owner: reviewer
 - Brief: .fas/tasks/runtime-membership-stale-peer-handling.md
 - Verification lane: full
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 - Artifacts: brief=.fas/tasks/runtime-membership-stale-peer-handling.md; verification=.fas/state/verification/latest.json
+
+### Task: Server-owned headless runtime gateway example
+
+- Title: Server-owned headless runtime gateway example
+- Mode: 6-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/server-owned-headless-runtime-gateway-example.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: brief=.fas/tasks/server-owned-headless-runtime-gateway-example.md; verification=.fas/state/verification/latest.json
 
 ## Template
 

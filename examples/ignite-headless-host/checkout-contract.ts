@@ -2,7 +2,10 @@ import type { ActorSnapshot, IgniteActorSourceSnapshot } from '@actor-core/runti
 import { actorSnapshotToIgniteSourceSnapshot, defineActor } from '@actor-core/runtime/browser';
 import { emit, setup } from 'xstate';
 
-export type CheckoutCommand = { type: 'SUBMIT'; orderId: string } | { type: 'RESET' };
+export type CheckoutCommand =
+  | { type: 'SUBMIT'; orderId: string }
+  | { type: 'RESET' }
+  | { type: 'GET_COUNT' };
 
 export type CheckoutEvent =
   | { type: 'CHECKOUT_SUBMITTED'; orderId: string }
@@ -74,6 +77,10 @@ export function createCheckoutBehavior() {
     .withMachine(checkoutMachine)
     .onMessage(({ actor, message }) => {
       const context = actor.getSnapshot().context;
+
+      if (message.type === 'GET_COUNT') {
+        return { reply: context.submittedOrders.length };
+      }
 
       if (message.type === 'SUBMIT') {
         return {

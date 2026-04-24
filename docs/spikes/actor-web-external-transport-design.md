@@ -59,9 +59,15 @@ hexagonal boundary or the actor model.
   - `createRuntimeGatewayHub`
   - `createRuntimeGatewaySource`
   - client and server gateway frame types
+  - command-capable `send`/`ask` host frames with `ack`/`reply`
   - scope descriptors and scope resolver contract
   - gateway error codes
   - stream sequencing, status, and resync behavior
+- the Ignite headless example now has a server-owned runtime gateway path:
+  - a Node checkout runtime owns the actor
+  - a browser/Ignite host consumes snapshots, events, status, and commands over
+    a gateway WebSocket
+  - service-worker and in-memory modes remain topology proofs/fallbacks
 - runtime transport contract exports now cover:
   - `RuntimeNodeIdentity`
   - `RuntimeTransportFrame`
@@ -292,6 +298,8 @@ Important boundary:
 - browsers are thin hosts and consumers
 - server/worker nodes own actor runtime, transport, supervision, and recovery
 - service workers remain a prove-out pattern, not the canonical cluster model
+- the runtime gateway is a host projection/control channel, not the
+  runtime-to-runtime `MessageTransport` seam
 
 ### Why not make browsers cluster peers
 
