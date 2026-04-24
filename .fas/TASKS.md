@@ -2,6 +2,18 @@
 
 ## Active Tasks
 
+### Task: Runtime gateway and Ignite bridge closeout
+
+- Title: Runtime gateway and Ignite bridge closeout
+- Mode: single-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/runtime-gateway-ignite-bridge-closeout.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: contained
+- Artifacts: brief=.fas/tasks/runtime-gateway-ignite-bridge-closeout.md; verification=.fas/state/verification/latest.json
+
 ## Template
 
 ### Task: <short task title>

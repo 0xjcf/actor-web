@@ -5,6 +5,9 @@
 > **Package**: `@actor-core/runtime`  
 > **Status**: Production Ready with Unified Actor API
 
+Runtime gateway APIs are a documented projection/gateway surface. Production
+multi-machine transport still requires the external transport roadmap work.
+
 ## 📋 **Table of Contents**
 
 - [Getting Started](#getting-started)
@@ -19,6 +22,7 @@
   - [Delay APIs](#delay-apis)
   - [OTP-Style Examples](#otp-style-examples)
 - [Advanced Features](#advanced-features)
+  - [Runtime Gateway](#runtime-gateway)
   - [Virtual Actors](#virtual-actors-actor-corevirtual)
   - [Event Sourcing](#event-sourcing-actor-corepersistence)
   - [Security](#security-actor-coresecurity)
@@ -127,9 +131,9 @@ const workflowActor = defineActor<WorkflowMessage>()
 ```
 
 // 3. Create and start the actor
-const counter = createActor({ 
+const counter = createActor({
   machine: counterMachine,
-  behavior: counterBehavior 
+  behavior: counterBehavior
 });
 
 // Start the actor (required before sending messages)
@@ -146,6 +150,7 @@ const count = await counter.ask(
 );
 
 console.log('Current count:', count); // Logs: Current count: 1
+
 ```
 
 ### Key Points:
@@ -305,6 +310,7 @@ interface AskInstruction<R = unknown> {
 ### **Component Behaviors**
 
 #### `defineComponentBehavior(config)`
+
 Defines reusable component behavior with the Message Plan DSL.
 
 ```typescript
@@ -318,6 +324,7 @@ const behavior = defineComponentBehavior({
 ```
 
 **Parameters:**
+
 - `onMessage`: Handler that returns a message plan
 - `dependencies`: Required actor dependencies (resolved at mount)
 
@@ -326,6 +333,7 @@ const behavior = defineComponentBehavior({
 ### **Actor Creation**
 
 #### `createComponent(config)`
+
 Creates a web component backed by an actor with XState machine.
 
 ```typescript
@@ -337,6 +345,7 @@ const Component = createComponent({
 ```
 
 **Parameters:**
+
 - `machine`: XState state machine for UI logic
 - `behavior`: Component behavior from `defineComponentBehavior`
 - `template`: Template function for rendering
@@ -350,6 +359,7 @@ The Actor-Web Framework provides **pure XState-based delay utilities** that elim
 ### **Architectural Decision**
 
 **The Problem**: JavaScript timers violate the pure actor model because:
+
 - `setTimeout`/`setInterval` don't work in all environments (Web Workers, server-side)
 - Timers aren't serializable or location-transparent
 - They create memory leaks if not properly cleaned up
@@ -365,6 +375,7 @@ The Actor-Web Framework provides **pure XState-based delay utilities** that elim
 ### **Delay APIs**
 
 #### `createActorDelay(ms): Promise<void>`
+
 **Promise-based convenience wrapper** - Perfect for simple delays in actor behaviors.
 
 ```typescript
@@ -375,12 +386,14 @@ await createActorDelay(1000);  // Wait 1 second using XState 'after' transitions
 ```
 
 **Features**:
+
 - **Pure XState**: Uses `after` transitions, no `setTimeout`
 - **Auto-cleanup**: Actor automatically stopped when promise resolves
 - **Location-transparent**: Works everywhere (browser, Workers, Node.js)
 - **Testable**: Deterministic with XState test utilities
 
 #### `createDelayActor(ms)` + `waitForDelayActor(actor)`
+
 **Pure actor approach** - Full control over delay lifecycle with cancellation support.
 
 ```typescript
@@ -402,12 +415,14 @@ delayActor.stop();  // Manual cleanup
 ```
 
 **Features**:
+
 - **Full Lifecycle Control**: Manual start, stop, cancel
 - **Inspection**: Can observe actor state during delay
 - **Cancellation**: Interrupt delays gracefully
 - **Composable**: Integrate with other actors and supervision trees
 
 #### `PureXStateTimeoutManager`
+
 **Timeout management service** - Handles multiple concurrent timeouts using pure XState.
 
 ```typescript
@@ -714,6 +729,101 @@ const stopInterval = createActorInterval(() => {
 
 This ensures your actors follow the pure actor model and can run **anywhere** - browser main thread, Web Workers, server-side, or distributed across multiple machines.
 
+## Runtime Gateway
+
+The runtime gateway exposes Actor-Web runtime projections to thin hosts such as browser pages, Ignite custom elements, server handlers, and worker-owned UI adapters. It is a gateway/projection API, not the production inter-node cluster transport. Distributed runtime ownership still flows through `MessageTransport`.
+
+### `createRuntimeGatewaySource(actorRef, options?)`
+
+Wraps an `ActorRef` as a gateway source. A source provides:
+
+- `snapshot()` for the current runtime snapshot projection.
+- `subscribeSnapshot(listener)` for projected state changes.
+- `subscribeEvent(listener)` for emitted actor events normalized to FAS event envelopes.
+- `transportStatus()` and `subscribeTransportStatus(listener)` for local or remote projection health.
+- `subscribeTransition(listener)` for FAS workflow transition records when phase/status changes are observable.
+
+```typescript
+import { createRuntimeGatewaySource } from '@actor-core/runtime';
+
+const source = createRuntimeGatewaySource(checkoutActor, {
+  workflowId: 'checkout-workflow',
+  taskId: 'checkout-task',
+  taskTitle: 'Checkout runtime stream',
+});
+
+const current = source.snapshot();
+console.log(current.workflowSnapshot.phase);
+
+const unsubscribe = source.subscribeEvent((projection) => {
+  console.log(projection.envelope.type);
+});
+```
+
+`CreateRuntimeGatewaySourceOptions` lets callers set workflow/task metadata, correlation metadata, event kind, source actor, and a deterministic clock for tests. Local refs report `local` transport status. Remote Actor-Web refs surface runtime-backed projection states such as `connected`, `replaying`, `degraded`, and `disconnected`.
+
+### `createRuntimeGatewayHub(options)`
+
+Creates a connection hub that multiplexes gateway streams over an adapter-owned connection. The hub does not create sockets itself. Hosts provide a `RuntimeGatewayConnectionAdapter` with `receive`, `send`, `onClose`, and `authContext`, then attach it to the hub.
+
+```typescript
+import { createRuntimeGatewayHub, RuntimeGatewayScopeError } from '@actor-core/runtime';
+
+const hub = createRuntimeGatewayHub({
+  heartbeatMs: 15000,
+  async resolveScope(scope, authContext) {
+    if (scope.kind !== 'checkout') {
+      throw new RuntimeGatewayScopeError('invalid_scope', 'Unknown runtime scope.');
+    }
+
+    return checkoutGatewaySource;
+  },
+});
+
+const detach = hub.attach(connection);
+```
+
+Clients must send `hello` before stream frames. The hub responds with `ready`, then accepts `subscribe`, `unsubscribe`, `resync`, and `ping` frames.
+
+### Frame Types
+
+Client frames:
+
+- `hello`: starts the connection and may include a previous connection id or client version.
+- `subscribe`: opens or replaces a stream for a scope descriptor.
+- `unsubscribe`: closes a stream and releases source listeners.
+- `resync`: requests a fresh snapshot for an existing stream.
+- `ping`: returns a `pong` with server time.
+
+Server frames:
+
+- `ready`: confirms the connection id, heartbeat interval, and server time.
+- `status`: reports projection transport state for a stream.
+- `snapshot`: sends the current FAS workflow snapshot projection.
+- `event`: sends an emitted actor event as a FAS event envelope.
+- `transition`: sends a FAS workflow transition record.
+- `error`: reports invalid frames, scope failures, sequence problems, or internal resolver failures.
+- `pong`: heartbeat response.
+
+### Scopes, Sequencing, and Resync
+
+`RuntimeGatewayScopeDescriptor` is `{ kind: string; params?: Record<string, string> }`. The application-owned `RuntimeGatewayScopeResolver` maps that descriptor plus the connection `authContext` to a `RuntimeGatewaySource`, or returns `null` when the scope is not found.
+
+Each stream owns a monotonic sequence counter. Snapshot, event, and transition frames increment the stream sequence. Status frames do not increment it. Resync sends a `replaying` status, emits a fresh snapshot with the next sequence, then sends the source's current transport status.
+
+### Error Codes
+
+Gateway errors use `RuntimeGatewayErrorCode`:
+
+- `invalid_frame`: malformed frame or stream frame sent before `hello`.
+- `invalid_scope`: malformed or unsupported scope descriptor.
+- `not_found`: requested runtime scope or stream was not found.
+- `forbidden`: resolver rejected access for the connection auth context.
+- `bad_sequence`: invalid replay/resync sequence input.
+- `internal_error`: resolver or hub failure that should not be exposed as a domain event.
+
+`RuntimeGatewayScopeError` lets resolvers return scope-specific `invalid_scope`, `not_found`, or `forbidden` failures with a recoverability flag.
+
 ## 📝 **Examples**
 
 ### Form Submission Flow
@@ -806,6 +916,7 @@ The Message Plan DSL ensures all operations are atomic:
 ## 🎭 **Actor References**
 
 #### `ActorRef<T>`
+
 Location-transparent reference to an actor.
 
 ```typescript

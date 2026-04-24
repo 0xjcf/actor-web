@@ -55,6 +55,14 @@ const { count } = await counter.ask({ type: 'GET_COUNT' });
 console.log(count); // 1
 ```
 
+## 📖 Current Runtime Docs
+
+- [API reference](./docs/API.md) documents the public runtime surface, including the runtime gateway API.
+- [Ignite host bridge example](./docs/examples/ignite-element-host.md) shows how Ignite consumes Actor-Web snapshots and emitted events from local refs or remote projection refs.
+- [External transport roadmap](./docs/spikes/actor-web-external-transport-design.md) separates what is proven today from the remaining production multi-machine transport work.
+
+The browser/service-worker Ignite demo is a topology prove-out. Production distributed runtime work still needs real inter-node transport, stable node identity, membership, auth/security, delivery guarantees, durable replay, and observability hardening.
+
 ## 🏛️ Core Principles
 
 ### Pure Actor Model Compliance

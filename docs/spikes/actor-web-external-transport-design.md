@@ -2,9 +2,14 @@
 
 ## Status
 
-Active design doc. Tracks the current Actor-Web runtime transport state, the
-remaining work for true multi-machine deployment, and the recommended external
-transport direction.
+Active roadmap/status doc. Tracks the Actor-Web runtime transport and gateway
+state, the remaining work for true multi-machine deployment, and the recommended
+external transport direction.
+
+Current closeout status: the runtime gateway and Ignite bridge are a documented
+projection/gateway slice. They prove the host-facing API shape, service-worker
+topology, and shared-contract projection mapping. They do not complete
+production distributed transport.
 
 ## Why This Doc Exists
 
@@ -20,6 +25,8 @@ Actor-Web now has:
   `packages/actor-core-runtime/src/integration/fas-shared-contracts.ts`
 - a browser prove-out where the runtime is owned by a service worker and the
   page is the thin host
+- a gateway projection API at
+  `packages/actor-core-runtime/src/runtime-gateway.ts`
 
 That is enough to prove the API and topology shape, but not enough for
 deployment across multiple machines. This doc records how to move from the
@@ -28,7 +35,7 @@ hexagonal boundary or the actor model.
 
 ## Current State
 
-### What Actor-Web already does well
+### Done in the current prove-out slice
 
 - `MessageTransport` is a small runtime port:
   - `send(destination, message)`
@@ -48,12 +55,21 @@ hexagonal boundary or the actor model.
   - `connected`, `replaying`, `degraded`, `disconnected`
   - monotonic per-actor projection sequence tracking
   - reconnect and latest-snapshot resync
+- runtime gateway exports now cover:
+  - `createRuntimeGatewayHub`
+  - `createRuntimeGatewaySource`
+  - client and server gateway frame types
+  - scope descriptors and scope resolver contract
+  - gateway error codes
+  - stream sequencing, status, and resync behavior
 - Actor-Web already maps its data plane toward FAS shared contracts:
   - `EventEnvelope`
   - `WorkflowSnapshot`
   - `WorkflowTransitionRecord`
+- the Ignite/browser example demonstrates a service-worker-owned runtime with a
+  page-owned thin host consuming snapshots and emitted events
 
-### What is still prove-out only
+### Remaining before production distributed transport
 
 - the current runtime harness transport is still in-memory or browser-local
 - the distributed actor directory is still an in-memory replicated cache
@@ -62,6 +78,8 @@ hexagonal boundary or the actor model.
 - `send` and remote subscription delivery do not yet have production-grade
   delivery guarantees over unreliable networks
 - replay is latest snapshot plus ordered live stream, not durable event replay
+- there is no production `NodeWebSocketMessageTransport` yet
+- there is no metrics/tracing/backpressure telemetry for real network transport
 
 ## Architectural Constraints
 
