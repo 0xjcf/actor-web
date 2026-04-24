@@ -92,10 +92,17 @@ export default defineConfig({
           currentDir,
           'ignite-headless-host/ignite-headless-host.sw.ts'
         ),
+        'ignite-headless-host/worker-websocket-runtime': path.resolve(
+          currentDir,
+          'ignite-headless-host/worker-websocket-runtime.ts'
+        ),
       },
       output: {
         entryFileNames: (chunkInfo) => {
-          if (chunkInfo.name === 'ignite-headless-host/ignite-headless-host.sw') {
+          if (
+            chunkInfo.name === 'ignite-headless-host/ignite-headless-host.sw' ||
+            chunkInfo.name === 'ignite-headless-host/worker-websocket-runtime'
+          ) {
             return '[name].js';
           }
 

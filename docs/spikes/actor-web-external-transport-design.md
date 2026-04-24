@@ -99,6 +99,14 @@ hexagonal boundary or the actor model.
   - Node transport interop for browser-style heartbeat frames
   - runtime-level directory sync, remote send/ask, and projection tests with a
     browser-style worker peer
+- the Ignite headless example now has a server plus worker runtime demo mode:
+  - the Node server exposes a browser-facing runtime gateway and a runtime
+    WebSocket transport listener
+  - the server runtime owns `actor://ignite-host-runtime/actor/ignite-headless-host`
+  - the browser/WebWorker runtime owns
+    `actor://ignite-worker-runtime/actor/ignite-worker-checkout`
+  - gateway sources can project and command both actors while the runtimes
+    communicate over Actor-Web transport
 - Actor-Web already maps its data plane toward FAS shared contracts:
   - `EventEnvelope`
   - `WorkflowSnapshot`
@@ -164,14 +172,13 @@ That means:
 
 ## Remaining Actor-Web Work
 
-1. Full server runtime plus worker runtime demo mode
-2. Runtime membership and discovery across machines
-3. Production delivery semantics for remote `send` and `ask`
-4. Durable resync source for projections
-5. Shared-contract promotion from mapper to real data-plane wire shape
-6. Auth and transport security
-7. Metrics, tracing, lag, replay, and backpressure observability
-8. Multi-process and multi-machine prove-out beyond localhost
+1. Runtime membership and discovery across machines
+2. Production delivery semantics for remote `send` and `ask`
+3. Durable resync source for projections
+4. Shared-contract promotion from mapper to real data-plane wire shape
+5. Auth and transport security
+6. Metrics, tracing, lag, replay, and backpressure observability
+7. Multi-process and multi-machine prove-out beyond localhost
 
 ## External Transport Options
 

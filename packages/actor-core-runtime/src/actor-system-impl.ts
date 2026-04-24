@@ -3032,7 +3032,7 @@ export class ActorSystemImpl implements ActorSystem {
           address,
           _timestamp: Date.now(),
           _version: '1.0.0',
-        });
+        }).catch(() => {});
       }
     };
   }
@@ -3068,7 +3068,7 @@ export class ActorSystemImpl implements ActorSystem {
           address,
           _timestamp: Date.now(),
           _version: '1.0.0',
-        });
+        }).catch(() => {});
       }
     };
   }

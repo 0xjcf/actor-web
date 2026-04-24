@@ -5,7 +5,10 @@ import {
   createHeadlessCheckoutHostFromSource,
   type HeadlessCheckoutHost,
 } from './headless-host';
-import { createCheckoutRuntimeHarness } from './runtime-harness';
+import {
+  createCheckoutRuntimeHarness,
+  createServerWorkerDemoRuntimeHarness,
+} from './runtime-harness';
 import { createCheckoutServerGatewayRuntimeHarness } from './server-gateway-client';
 import {
   type CheckoutRuntimeGatewayServer,
@@ -14,9 +17,14 @@ import {
 
 describe('ignite-headless-host example', () => {
   let host: HeadlessCheckoutHost | undefined;
+  let workerHost: HeadlessCheckoutHost | undefined;
   let gatewayServer: CheckoutRuntimeGatewayServer | undefined;
 
   afterEach(async () => {
+    if (workerHost) {
+      await workerHost.destroy();
+      workerHost = undefined;
+    }
     if (host) {
       await host.destroy();
       host = undefined;
@@ -137,4 +145,98 @@ describe('ignite-headless-host example', () => {
       transportReason: null,
     });
   });
+
+  it('can demo a server runtime and worker runtime over real WebSocket transport through the gateway', async () => {
+    gatewayServer = createCheckoutRuntimeGatewayServer();
+    await gatewayServer.start();
+    const gatewayUrl = gatewayServer.getGatewayUrl();
+    const transportUrl = gatewayServer.getTransportUrl();
+    if (!gatewayUrl || !transportUrl) {
+      throw new Error('Expected checkout gateway and transport URLs');
+    }
+
+    const runtimeHarness = createServerWorkerDemoRuntimeHarness({
+      gatewayUrl,
+      transportUrl,
+      createGatewaySocket: (url) => new WebSocket(url) as never,
+      createWorkerSocket: (url) => new WebSocket(url) as never,
+    });
+    host = createHeadlessCheckoutHostFromSource(runtimeHarness.source, {
+      destroy: runtimeHarness.destroy,
+    });
+
+    await host.submit('order-server-runtime');
+    await waitForHostState(
+      host,
+      (state) => state.submittedOrders.includes('order-server-runtime'),
+      'Expected server runtime checkout submission'
+    );
+    expect(host.getState()).toMatchObject({
+      phase: 'submitted',
+      submittedOrders: ['order-server-runtime'],
+      transportState: 'connected',
+    });
+
+    workerHost = await createWorkerGatewayHost(gatewayUrl);
+    await workerHost.submit('order-worker-runtime');
+    await waitForHostState(
+      workerHost,
+      (state) => state.submittedOrders.includes('order-worker-runtime'),
+      'Expected worker runtime checkout submission'
+    );
+    expect(workerHost.getState()).toMatchObject({
+      phase: 'submitted',
+      submittedOrders: ['order-worker-runtime'],
+      transportState: 'connected',
+    });
+    expect(workerHost.address).toBe('actor://ignite-worker-runtime/actor/ignite-worker-checkout');
+  });
 });
+
+async function waitForHostState(
+  target: HeadlessCheckoutHost,
+  predicate: (state: ReturnType<HeadlessCheckoutHost['getState']>) => boolean,
+  message: string
+): Promise<void> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (predicate(target.getState())) {
+      return;
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 10);
+    });
+  }
+
+  throw new Error(message);
+}
+
+async function createWorkerGatewayHost(gatewayUrl: string): Promise<HeadlessCheckoutHost> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const runtimeHarness = createCheckoutServerGatewayRuntimeHarness({
+      url: gatewayUrl,
+      streamId: `worker-checkout-${attempt}`,
+      scope: { kind: 'ignite-headless-worker-checkout' },
+      createSocket: (url) => new WebSocket(url) as never,
+    });
+    const candidate = createHeadlessCheckoutHostFromSource(runtimeHarness.source, {
+      destroy: runtimeHarness.destroy,
+    });
+
+    try {
+      await candidate.submit(`probe-worker-${attempt}`);
+      await candidate.reset();
+      return candidate;
+    } catch (error) {
+      lastError = error;
+      await candidate.destroy();
+      await new Promise((resolve) => {
+        setTimeout(resolve, 25);
+      });
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}

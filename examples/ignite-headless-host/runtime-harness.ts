@@ -1,6 +1,7 @@
 import {
   type ActorRef,
   createActorSystem,
+  createBrowserWebSocketMessageTransport,
   createIgniteActorSource,
   createInMemoryMessageTransportNetwork,
   type IgniteActorSource,
@@ -24,9 +25,14 @@ import {
   REMOTE_ACTOR_ID,
   REMOTE_ADDRESS,
   REMOTE_NODE,
+  WORKER_ACTOR_ID,
+  WORKER_NODE,
 } from './checkout-contract';
 import {
+  configuredGatewayUrl,
+  createCheckoutServerGatewayRuntimeHarness,
   createConfiguredCheckoutServerGatewayRuntimeHarness,
+  type GatewaySocket,
   serverGatewayRuntimeAvailable,
 } from './server-gateway-client';
 
@@ -35,6 +41,13 @@ export type { CheckoutCommand, CheckoutContext, CheckoutEvent } from './checkout
 export interface CheckoutRuntimeHarness {
   readonly source: IgniteActorSource<CheckoutContext, CheckoutCommand, CheckoutEvent>;
   destroy(): Promise<void>;
+}
+
+export interface ServerWorkerDemoRuntimeHarnessOptions {
+  gatewayUrl: string;
+  transportUrl: string;
+  createGatewaySocket?: (url: string) => GatewaySocket;
+  createWorkerSocket?: (url: string) => WebSocket;
 }
 
 function createHarnessSource(
@@ -338,7 +351,99 @@ function createServiceWorkerCheckoutRuntimeHarness(): CheckoutRuntimeHarness {
   );
 }
 
+function configuredTransportUrl(): string | undefined {
+  const configuredUrl = import.meta.env.VITE_ACTOR_WEB_TRANSPORT_URL;
+  return typeof configuredUrl === 'string' && configuredUrl.trim().length > 0
+    ? configuredUrl
+    : undefined;
+}
+
+export function serverWorkerDemoRuntimeAvailable(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof WebSocket !== 'undefined' &&
+    configuredGatewayUrl() !== undefined &&
+    configuredTransportUrl() !== undefined
+  );
+}
+
+export function createServerWorkerDemoRuntimeHarness(
+  options: ServerWorkerDemoRuntimeHarnessOptions
+): CheckoutRuntimeHarness {
+  const gatewayHarness = createCheckoutServerGatewayRuntimeHarness({
+    url: options.gatewayUrl,
+    ...(options.createGatewaySocket ? { createSocket: options.createGatewaySocket } : {}),
+  });
+  const workerRuntime =
+    options.createWorkerSocket || typeof Worker === 'undefined'
+      ? createInProcessWorkerRuntime(options)
+      : createWebWorkerRuntime(options.transportUrl);
+
+  return {
+    source: gatewayHarness.source,
+    async destroy(): Promise<void> {
+      await Promise.allSettled([gatewayHarness.destroy(), workerRuntime.destroy()]);
+    },
+  };
+}
+
+function createInProcessWorkerRuntime(options: ServerWorkerDemoRuntimeHarnessOptions): {
+  destroy(): Promise<void>;
+} {
+  const workerTransport = createBrowserWebSocketMessageTransport({
+    nodeAddress: WORKER_NODE,
+    incarnation: `${WORKER_NODE}-demo`,
+    heartbeatIntervalMs: 0,
+    peers: {
+      [REMOTE_NODE]: options.transportUrl,
+    },
+    ...(options.createWorkerSocket ? { webSocketFactory: options.createWorkerSocket } : {}),
+  });
+  const workerSystem = createActorSystem({
+    nodeAddress: WORKER_NODE,
+    transport: workerTransport,
+  });
+  const workerReady = (async () => {
+    await workerSystem.start();
+    await workerSystem.spawn(createCheckoutBehavior(), {
+      id: WORKER_ACTOR_ID,
+    });
+    await workerSystem.join([REMOTE_NODE]);
+  })();
+
+  return {
+    async destroy(): Promise<void> {
+      await Promise.allSettled([
+        workerReady.then(() => workerSystem.stop()),
+        workerTransport.stop(),
+      ]);
+    },
+  };
+}
+
+function createWebWorkerRuntime(transportUrl: string): { destroy(): Promise<void> } {
+  const worker = new Worker(new URL('./worker-websocket-runtime.ts', import.meta.url), {
+    type: 'module',
+  });
+  worker.postMessage({ type: 'start', transportUrl });
+
+  return {
+    async destroy(): Promise<void> {
+      worker.postMessage({ type: 'stop' });
+      worker.terminate();
+    },
+  };
+}
+
 export function createCheckoutRuntimeHarness(): CheckoutRuntimeHarness {
+  if (serverWorkerDemoRuntimeAvailable()) {
+    const gatewayUrl = configuredGatewayUrl();
+    const transportUrl = configuredTransportUrl();
+    if (gatewayUrl && transportUrl) {
+      return createServerWorkerDemoRuntimeHarness({ gatewayUrl, transportUrl });
+    }
+  }
+
   if (serverGatewayRuntimeAvailable()) {
     return createConfiguredCheckoutServerGatewayRuntimeHarness();
   }

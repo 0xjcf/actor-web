@@ -66,13 +66,25 @@
 
 - Title: Browser/WebWorker WebSocket transport
 - Mode: 6-agent
-- Status: review
+- Status: done
 - Owner: reviewer
 - Brief: .fas/tasks/browser-webworker-websocket-transport.md
 - Verification lane: full
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 - Artifacts: brief=.fas/tasks/browser-webworker-websocket-transport.md; verification=.fas/state/verification/latest.json
+
+### Task: Full server runtime plus worker runtime demo
+
+- Title: Full server runtime plus worker runtime demo
+- Mode: 6-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/full-server-worker-runtime-demo.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: brief=.fas/tasks/full-server-worker-runtime-demo.md; verification=.fas/state/verification/latest.json
 
 ## Template
 

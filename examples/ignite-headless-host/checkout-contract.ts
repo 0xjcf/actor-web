@@ -19,11 +19,19 @@ export interface CheckoutContext {
 export const LOCAL_NODE = 'ignite-host-ui';
 export const REMOTE_NODE = 'ignite-host-runtime';
 export const REMOTE_ACTOR_ID = 'ignite-headless-host';
+export const WORKER_NODE = 'ignite-worker-runtime';
+export const WORKER_ACTOR_ID = 'ignite-worker-checkout';
 export const REMOTE_ADDRESS = {
   id: REMOTE_ACTOR_ID,
   type: 'actor',
   node: REMOTE_NODE,
   path: `actor://${REMOTE_NODE}/actor/${REMOTE_ACTOR_ID}`,
+} as const;
+export const WORKER_ADDRESS = {
+  id: WORKER_ACTOR_ID,
+  type: 'actor',
+  node: WORKER_NODE,
+  path: `actor://${WORKER_NODE}/actor/${WORKER_ACTOR_ID}`,
 } as const;
 
 const checkoutMachine = setup({

@@ -293,10 +293,10 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           return;
         }
 
-        stream.unsubscribeSnapshot();
-        stream.unsubscribeEvent();
-        stream.unsubscribeStatus();
-        stream.unsubscribeTransition();
+        void Promise.resolve(stream.unsubscribeSnapshot()).catch(() => {});
+        void Promise.resolve(stream.unsubscribeEvent()).catch(() => {});
+        void Promise.resolve(stream.unsubscribeStatus()).catch(() => {});
+        void Promise.resolve(stream.unsubscribeTransition()).catch(() => {});
         streams.delete(streamId);
       };
 

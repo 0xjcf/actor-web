@@ -23,10 +23,11 @@ import {
   createPlaceholderSnapshot,
   normalizeCheckoutSnapshot,
   REMOTE_ADDRESS,
+  WORKER_ADDRESS,
 } from './checkout-contract';
 import type { CheckoutRuntimeHarness } from './runtime-harness';
 
-interface GatewaySocket {
+export interface GatewaySocket {
   readyState: number;
   send(data: string): void;
   close(): void;
@@ -36,7 +37,7 @@ interface GatewaySocket {
   addEventListener(type: 'message', listener: (event: MessageEvent<string>) => void): void;
 }
 
-interface CreateCheckoutServerGatewaySourceOptions {
+export interface CreateCheckoutServerGatewaySourceOptions {
   url: string;
   streamId?: string;
   scope?: RuntimeGatewayScopeDescriptor;
@@ -58,6 +59,10 @@ function defaultGatewayUrl(): string | undefined {
   return typeof configuredUrl === 'string' && configuredUrl.trim().length > 0
     ? configuredUrl
     : undefined;
+}
+
+export function configuredGatewayUrl(): string | undefined {
+  return defaultGatewayUrl();
 }
 
 function toGatewaySnapshot(
@@ -102,6 +107,8 @@ export function createCheckoutServerGatewayRuntimeHarness(
 ): CheckoutRuntimeHarness {
   const streamId = options.streamId ?? 'checkout-main';
   const scope = options.scope ?? { kind: 'ignite-headless-checkout' };
+  const sourceAddress =
+    scope.kind === 'ignite-headless-worker-checkout' ? WORKER_ADDRESS : REMOTE_ADDRESS;
   const socket = (options.createSocket ?? ((url: string): GatewaySocket => new WebSocket(url)))(
     options.url
   );
@@ -249,7 +256,7 @@ export function createCheckoutServerGatewayRuntimeHarness(
 
   return {
     source: {
-      address: REMOTE_ADDRESS,
+      address: sourceAddress,
       snapshot() {
         return currentSnapshot;
       },
