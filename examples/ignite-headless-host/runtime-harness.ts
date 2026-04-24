@@ -132,6 +132,7 @@ function createHarnessSource(
             'ROUTE_ASSIGNED',
             'SHIPMENT_IN_TRANSIT',
             'SHIPMENT_DELIVERED',
+            'SHIPMENT_RETURNED',
             'SHIPMENT_RESET',
           ],
         }

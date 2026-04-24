@@ -244,6 +244,18 @@ describe('ignite-headless-host logistics example', () => {
       eta: '72h',
       routeNotes: 'Route shipment-worker-5005 through International hub',
     });
+
+    await waitForHostState(
+      host,
+      (state) =>
+        state.status === 'delivered' &&
+        state.eventLog.some((event) => event.type === 'SHIPMENT_IN_TRANSIT') &&
+        state.eventLog.some((event) => event.type === 'SHIPMENT_DELIVERED'),
+      'Expected server-owned lifecycle updates to stream through gateway'
+    );
+    expect(host.getState().timeline.map((entry) => entry.label)).toEqual(
+      expect.arrayContaining(['Delivered', 'In transit', 'Route assigned', 'Shipment accepted'])
+    );
   });
 
   it('exposes runtime status for REST and websocket boundary discovery', async () => {

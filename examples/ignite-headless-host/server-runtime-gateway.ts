@@ -110,6 +110,15 @@ function wait(delayMs: number): Promise<void> {
   });
 }
 
+function shouldReturnShipment(shipmentId: string): boolean {
+  let hash = 0;
+  for (let index = 0; index < shipmentId.length; index += 1) {
+    hash = (hash * 31 + shipmentId.charCodeAt(index)) >>> 0;
+  }
+
+  return hash % 5 === 0;
+}
+
 export function createLogisticsRuntimeGatewayServer(
   options: LogisticsRuntimeGatewayServerOptions = {}
 ): LogisticsRuntimeGatewayServer {
@@ -128,6 +137,41 @@ export function createLogisticsRuntimeGatewayServer(
   let restServer: Server | null = null;
   let gatewayUrl: string | null = null;
   let restUrl: string | null = null;
+  const lifecycleTimers = new Set<ReturnType<typeof setTimeout>>();
+
+  const clearLifecycleTimers = (): void => {
+    for (const timer of Array.from(lifecycleTimers)) {
+      clearTimeout(timer);
+      lifecycleTimers.delete(timer);
+    }
+  };
+
+  const scheduleLifecycleUpdate = (
+    delayMs: number,
+    command: ShipmentCommand,
+    expectedShipmentId: string
+  ): void => {
+    const timer = setTimeout(() => {
+      lifecycleTimers.delete(timer);
+      const activeShipmentId = shipmentActor?.getSnapshot().context.shipmentId;
+      if (activeShipmentId !== expectedShipmentId) {
+        return;
+      }
+
+      void shipmentActor?.send(command);
+    }, delayMs);
+    lifecycleTimers.add(timer);
+  };
+
+  const scheduleShipmentLifecycle = (shipmentId: string): void => {
+    clearLifecycleTimers();
+    scheduleLifecycleUpdate(250, { type: 'MARK_IN_TRANSIT', shipmentId }, shipmentId);
+    scheduleLifecycleUpdate(
+      700,
+      { type: shouldReturnShipment(shipmentId) ? 'MARK_RETURNED' : 'MARK_DELIVERED', shipmentId },
+      shipmentId
+    );
+  };
 
   const planRouteForShipment = async (input: {
     shipmentId: string;
@@ -191,6 +235,7 @@ export function createLogisticsRuntimeGatewayServer(
     });
     if (plan) {
       await shipmentActor.send({ type: 'ASSIGN_ROUTE', plan });
+      scheduleShipmentLifecycle(shipmentId);
     }
 
     return { shipmentId, status: plan ? 'route-assigned' : 'route-requested' };
@@ -253,6 +298,7 @@ export function createLogisticsRuntimeGatewayServer(
       }
 
       if (request.method === 'POST' && /^\/shipments\/[^/]+\/reset$/.test(url.pathname)) {
+        clearLifecycleTimers();
         await shipmentActor?.send({ type: 'RESET_SHIPMENT' });
         sendJson(response, 202, { status: 'idle' });
         return;
@@ -363,6 +409,7 @@ export function createLogisticsRuntimeGatewayServer(
       gatewayUrl = null;
       restUrl = null;
       shipmentActor = null;
+      clearLifecycleTimers();
 
       if (activeServer) {
         await new Promise<void>((resolve, reject) => {

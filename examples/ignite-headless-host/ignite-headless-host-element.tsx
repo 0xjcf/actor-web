@@ -19,8 +19,6 @@ type LogisticsElementEvent =
   | { type: 'draft.reference'; value: string }
   | { type: 'create' }
   | { type: 'create.quick'; destination: string; reference: string }
-  | { type: 'mark.inTransit' }
-  | { type: 'mark.delivered' }
   | { type: 'reset' };
 
 interface LogisticsElementState extends LogisticsHostState {
@@ -319,6 +317,7 @@ function createLogisticsAdapter() {
             'ROUTE_ASSIGNED',
             'SHIPMENT_IN_TRANSIT',
             'SHIPMENT_DELIVERED',
+            'SHIPMENT_RETURNED',
             'SHIPMENT_RESET',
           ],
         }
@@ -415,12 +414,6 @@ function createLogisticsAdapter() {
           };
           notify();
           void run(() => createShipment(event.destination, event.reference));
-          return;
-        case 'mark.inTransit':
-          void run(() => actor.send({ type: 'MARK_IN_TRANSIT' }));
-          return;
-        case 'mark.delivered':
-          void run(() => actor.send({ type: 'MARK_DELIVERED' }));
           return;
         case 'reset':
           void run(() => actor.send({ type: 'RESET_SHIPMENT' }));
@@ -573,22 +566,6 @@ export function defineIgniteHeadlessHostElement(): void {
                     </button>
                     <button
                       type="button"
-                      class="secondary"
-                      disabled={state.busy}
-                      onClick={() => send({ type: 'mark.inTransit' })}
-                    >
-                      In Transit
-                    </button>
-                    <button
-                      type="button"
-                      class="secondary"
-                      disabled={state.busy}
-                      onClick={() => send({ type: 'mark.delivered' })}
-                    >
-                      Delivered
-                    </button>
-                    <button
-                      type="button"
                       class="danger"
                       disabled={!canReset}
                       onClick={() => send({ type: 'reset' })}
@@ -670,6 +647,10 @@ export function defineIgniteHeadlessHostElement(): void {
                     <li class="item">
                       <strong>Actor-Web worker runtime {'->'} server runtime</strong>
                       <span class="muted">Route plan reply</span>
+                    </li>
+                    <li class="item">
+                      <strong>Server runtime {'->'} gateway subscribers</strong>
+                      <span class="muted">Lifecycle updates: in transit, delivered, returned</span>
                     </li>
                     <li class="item">
                       <strong>MessagePort browser host {'<->'} service worker runtime</strong>

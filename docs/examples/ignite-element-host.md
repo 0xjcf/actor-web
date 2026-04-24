@@ -57,7 +57,10 @@ connected.
    actor to `PLAN_ROUTE`.
 4. The worker returns a deterministic carrier, ETA, and route note.
 5. The server shipment actor applies `ASSIGN_ROUTE` and emits `ROUTE_ASSIGNED`.
-6. Subscribed browser hosts receive live gateway snapshots/events without
+6. The server runtime simulates lifecycle progress and emits
+   `SHIPMENT_IN_TRANSIT`, then deterministic `SHIPMENT_DELIVERED` or
+   `SHIPMENT_RETURNED` based on the shipment id.
+7. Subscribed browser hosts receive live gateway snapshots/events without
    polling.
 
 ## Boundary Guidance
@@ -66,4 +69,6 @@ Gateway traffic is the thin host projection/control channel. Actor-Web
 `MessageTransport` is the runtime-to-runtime channel. REST is a conventional
 ingress adapter for clients that do not want to hold a live socket. The service
 worker path remains a browser-local topology proof, not direct production
-server-to-service-worker transport.
+server-to-service-worker transport. The browser host submits shipment creation
+intent but does not own in-transit, delivered, or returned lifecycle decisions;
+those updates are server-owned demo signals streamed back over the gateway.

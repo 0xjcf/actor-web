@@ -24,6 +24,8 @@ describe('ignite-headless-host element', () => {
     expect(element.shadowRoot?.textContent).toContain('Actor-Web Logistics Control Tower');
     expect(element.shadowRoot?.textContent).toContain('REST ingress');
     expect(element.shadowRoot?.textContent).toContain('Service Worker Runtime');
+    expect(element.shadowRoot?.textContent).not.toContain('In Transit');
+    expect(element.shadowRoot?.textContent).not.toContain('Delivered');
 
     const root = element.shadowRoot;
     const input = root?.querySelector<HTMLInputElement>('input');
@@ -46,6 +48,7 @@ describe('ignite-headless-host element', () => {
     expect(root.textContent).toContain('Denver hub');
     expect(root.textContent).toContain('SHIPMENT_CREATED');
     expect(root.textContent).toContain('connected');
+    expect(root.textContent).toContain('Lifecycle updates');
 
     resetButton.click();
     await flush();

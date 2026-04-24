@@ -7,7 +7,8 @@ export type ShipmentStatus =
   | 'route-requested'
   | 'route-assigned'
   | 'in-transit'
-  | 'delivered';
+  | 'delivered'
+  | 'returned';
 
 export interface ShipmentTimelineEntry {
   label: string;
@@ -40,7 +41,8 @@ export type ShipmentCommand =
   | { type: 'PLAN_ROUTE'; shipmentId: string; destination: string; reference?: string }
   | { type: 'ASSIGN_ROUTE'; plan: RoutePlan }
   | { type: 'MARK_IN_TRANSIT'; shipmentId?: string }
-  | { type: 'MARK_DELIVERED'; shipmentId?: string };
+  | { type: 'MARK_DELIVERED'; shipmentId?: string }
+  | { type: 'MARK_RETURNED'; shipmentId?: string };
 
 export type ShipmentEvent =
   | { type: 'SHIPMENT_CREATED'; shipmentId: string; destination: string }
@@ -48,6 +50,7 @@ export type ShipmentEvent =
   | { type: 'ROUTE_ASSIGNED'; shipmentId: string; carrier: string; eta: string }
   | { type: 'SHIPMENT_IN_TRANSIT'; shipmentId: string }
   | { type: 'SHIPMENT_DELIVERED'; shipmentId: string }
+  | { type: 'SHIPMENT_RETURNED'; shipmentId: string }
   | { type: 'SHIPMENT_RESET'; shipmentId: string | null };
 
 export const LOCAL_NODE = 'logistics-browser-host';
@@ -182,6 +185,19 @@ export function createShipmentBehavior() {
             timeline: appendTimeline(context, 'Delivered', shipmentId),
           },
           emit: [{ type: 'SHIPMENT_DELIVERED', shipmentId }],
+        };
+      }
+
+      if (message.type === 'MARK_RETURNED') {
+        const shipmentId = message.shipmentId ?? context.shipmentId ?? 'unknown-shipment';
+        return {
+          context: {
+            ...context,
+            shipmentId,
+            status: 'returned' as const,
+            timeline: appendTimeline(context, 'Returned', shipmentId),
+          },
+          emit: [{ type: 'SHIPMENT_RETURNED', shipmentId }],
         };
       }
 
