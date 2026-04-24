@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { setup } from 'xstate';
 import { ActorSystemImpl } from '../actor-system-impl.js';
 import { createIgniteActorSource } from '../integration/ignite-element-bridge.js';
+import { createRuntimeNodeIdentity } from '../runtime-transport-contract.js';
 import {
   createInMemoryMessageTransportNetwork,
   type InMemoryTransportFrame,
@@ -187,6 +188,52 @@ describe('remote runtime transport', () => {
       { phase: 'active', count: 1, status: 'stopped' },
     ]);
     expect(events).toEqual(['CHECKOUT_SUBMITTED:order-1']);
+  });
+
+  it('supports remote actor parity over handshake-backed in-memory transport', async () => {
+    const network = createInMemoryMessageTransportNetwork();
+    localSystem = new ActorSystemImpl({
+      nodeAddress: 'node-a',
+      transport: network.createTransport('node-a', {
+        handshake: true,
+        identity: createRuntimeNodeIdentity({
+          nodeAddress: 'node-a',
+          nodeId: 'node-a-id',
+          incarnation: 'boot-a',
+        }),
+      }),
+    });
+    remoteSystem = new ActorSystemImpl({
+      nodeAddress: 'node-b',
+      transport: network.createTransport('node-b', {
+        handshake: true,
+        identity: createRuntimeNodeIdentity({
+          nodeAddress: 'node-b',
+          nodeId: 'node-b-id',
+          incarnation: 'boot-b',
+        }),
+      }),
+    });
+    await Promise.all([localSystem.start(), remoteSystem.start()]);
+
+    const remoteActor = await remoteSystem.spawn(createCheckoutBehavior(), {
+      id: 'handshake-checkout',
+    });
+
+    await localSystem.join(['node-b']);
+
+    const remoteRef = await localSystem.lookup<CheckoutContext, CheckoutMessage>(
+      remoteActor.address.path
+    );
+    if (!remoteRef) {
+      throw new Error('Expected remote ref after handshake-backed directory sync');
+    }
+
+    await remoteRef.send({ type: 'SUBMIT', orderId: 'order-handshake' });
+    await remoteSystem.flush();
+    await localSystem.flush();
+
+    await expect(remoteRef.ask<number>({ type: 'GET_COUNT' })).resolves.toBe(1);
   });
 
   it('reports disconnected, replaying, and connected during transport reconnect', async () => {

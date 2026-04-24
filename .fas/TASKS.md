@@ -6,13 +6,25 @@
 
 - Title: Runtime gateway and Ignite bridge closeout
 - Mode: single-agent
-- Status: review
+- Status: done
 - Owner: reviewer
 - Brief: .fas/tasks/runtime-gateway-ignite-bridge-closeout.md
 - Verification lane: full
 - Policy sensitivity: standard
 - Blast radius: contained
 - Artifacts: brief=.fas/tasks/runtime-gateway-ignite-bridge-closeout.md; verification=.fas/state/verification/latest.json
+
+### Task: Runtime transport handshake and wire contract
+
+- Title: Runtime transport handshake and wire contract
+- Mode: 6-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/runtime-transport-handshake-wire-contract.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: brief=.fas/tasks/runtime-transport-handshake-wire-contract.md; verification=.fas/state/verification/latest.json
 
 ## Template
 

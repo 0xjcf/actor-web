@@ -234,9 +234,33 @@ export {
   createRuntimeGatewaySource,
   RuntimeGatewayScopeError,
 } from './runtime-gateway.js';
+export type {
+  RuntimeNodeIdentity,
+  RuntimeTransportFrame,
+  RuntimeTransportHandshake,
+  RuntimeTransportHandshakeRejectCode,
+  RuntimeTransportProtocolVersion,
+  RuntimeTransportValidationResult,
+} from './runtime-transport-contract.js';
+export {
+  createRuntimeNodeIdentity,
+  createRuntimeTransportFrame,
+  createRuntimeTransportHandshakeAccept,
+  createRuntimeTransportHandshakeHello,
+  createRuntimeTransportHandshakeReject,
+  isRuntimeNodeIdentity,
+  isSameRuntimeNodeIdentity,
+  RUNTIME_TRANSPORT_PROTOCOL_VERSION,
+  validateRuntimeNodeIdentity,
+  validateRuntimeTransportFrame,
+  validateRuntimeTransportHandshake,
+} from './runtime-transport-contract.js';
 // Actor implementation classes
 export { StatelessActor } from './stateless-actor.js';
-export type { InMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';
+export type {
+  InMemoryMessageTransportNetwork,
+  InMemoryMessageTransportOptions,
+} from './testing/in-memory-message-transport.js';
 export { createInMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';
 // Type helpers for context and message extraction
 export type {

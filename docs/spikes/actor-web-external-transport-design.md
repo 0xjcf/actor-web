@@ -62,6 +62,12 @@ hexagonal boundary or the actor model.
   - scope descriptors and scope resolver contract
   - gateway error codes
   - stream sequencing, status, and resync behavior
+- runtime transport contract exports now cover:
+  - `RuntimeNodeIdentity`
+  - `RuntimeTransportFrame`
+  - `RuntimeTransportHandshake`
+  - `RUNTIME_TRANSPORT_PROTOCOL_VERSION`
+  - identity, handshake, and frame validation helpers
 - Actor-Web already maps its data plane toward FAS shared contracts:
   - `EventEnvelope`
   - `WorkflowSnapshot`
@@ -73,7 +79,8 @@ hexagonal boundary or the actor model.
 
 - the current runtime harness transport is still in-memory or browser-local
 - the distributed actor directory is still an in-memory replicated cache
-- there is no stable node incarnation/epoch model
+- stable node identity and incarnation are defined as a wire contract, but not
+  yet backed by a real network transport or membership store
 - there is no real network auth/security model
 - `send` and remote subscription delivery do not yet have production-grade
   delivery guarantees over unreliable networks
@@ -125,14 +132,13 @@ That means:
 ## Remaining Actor-Web Work
 
 1. Real external inter-node transport
-2. Stable node identity and handshake
-3. Membership and discovery across machines
-4. Production delivery semantics for remote `send` and `ask`
-5. Durable resync source for projections
-6. Shared-contract promotion from mapper to real data-plane wire shape
-7. Auth and transport security
-8. Metrics, tracing, lag, replay, and backpressure observability
-9. Multi-process and multi-machine prove-out
+2. Runtime membership and discovery across machines
+3. Production delivery semantics for remote `send` and `ask`
+4. Durable resync source for projections
+5. Shared-contract promotion from mapper to real data-plane wire shape
+6. Auth and transport security
+7. Metrics, tracing, lag, replay, and backpressure observability
+8. Multi-process and multi-machine prove-out
 
 ## External Transport Options
 
@@ -388,31 +394,40 @@ Backpressure rules:
 
 ## Implementation Phases
 
-### Phase 1: Real external transport prove-out
+### Phase 1: Runtime handshake and wire contract
+
+- define `RuntimeNodeIdentity`, protocol version, handshake frames, and runtime
+  frame envelopes
+- validate missing identity, self-connections, incompatible protocol versions,
+  and malformed frame envelopes
+- prove the contract through the in-memory transport harness
+
+### Phase 2: Real external transport prove-out
 
 - implement `NodeWebSocketMessageTransport`
 - run two Actor-Web runtimes in separate processes
 - keep existing `MessageTransport` port intact
 - support handshake, direct send, ask, and projection streams
 
-### Phase 2: Identity and membership hardening
+### Phase 3: Identity and membership hardening
 
-- add `nodeId`, `incarnation`, and protocol version
+- persist and compare `nodeId`, `incarnation`, and protocol version across real
+  peer lifecycles
 - add heartbeat and stale-peer rejection
 - move directory sync to handshake/bootstrap lifecycle
 
-### Phase 3: Projection hardening
+### Phase 4: Projection hardening
 
 - durable latest snapshot source per actor owner
 - resubscribe and resync behavior over real disconnects
 - bounded queue/backpressure behavior
 
-### Phase 4: Shared-contract wire promotion
+### Phase 5: Shared-contract wire promotion
 
 - use shared-contract payloads as the remote projection wire shape
 - prove FAS and Ignite consume the resulting projections unchanged
 
-### Phase 5: Broker adapter
+### Phase 6: Broker adapter
 
 - add a NATS transport adapter only after the direct transport semantics are
   stable

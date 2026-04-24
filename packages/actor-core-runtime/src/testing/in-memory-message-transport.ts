@@ -4,6 +4,15 @@
  */
 
 import type { ActorMessage, MessageTransport } from '../actor-system.js';
+import {
+  createRuntimeNodeIdentity,
+  createRuntimeTransportFrame,
+  createRuntimeTransportHandshakeAccept,
+  createRuntimeTransportHandshakeHello,
+  type RuntimeNodeIdentity,
+  validateRuntimeTransportFrame,
+  validateRuntimeTransportHandshake,
+} from '../runtime-transport-contract.js';
 
 export interface InMemoryTransportFrame {
   source: string;
@@ -12,8 +21,13 @@ export interface InMemoryTransportFrame {
 }
 
 export interface InMemoryMessageTransportNetwork {
-  createTransport(nodeAddress: string): MessageTransport;
+  createTransport(nodeAddress: string, options?: InMemoryMessageTransportOptions): MessageTransport;
   dropNextMessage(predicate: (frame: InMemoryTransportFrame) => boolean): void;
+}
+
+export interface InMemoryMessageTransportOptions {
+  handshake?: boolean;
+  identity?: RuntimeNodeIdentity;
 }
 
 class InMemoryMessageTransport implements MessageTransport {
@@ -21,9 +35,11 @@ class InMemoryMessageTransport implements MessageTransport {
     (event: { source: string; message: ActorMessage }) => void
   >();
   private readonly connections = new Set<string>();
+  private sequence = 0;
 
   constructor(
     readonly nodeAddress: string,
+    readonly options: InMemoryMessageTransportOptions,
     private readonly network: InMemoryMessageTransportNetworkImpl
   ) {}
 
@@ -77,18 +93,41 @@ class InMemoryMessageTransport implements MessageTransport {
       listener(event);
     }
   }
+
+  nextSequence(): number {
+    this.sequence += 1;
+    return this.sequence;
+  }
+
+  usesHandshake(): boolean {
+    return this.options.handshake === true;
+  }
+
+  identity(): RuntimeNodeIdentity {
+    return (
+      this.options.identity ??
+      createRuntimeNodeIdentity({
+        nodeAddress: this.nodeAddress,
+        nodeId: this.nodeAddress,
+        incarnation: 'in-memory',
+      })
+    );
+  }
 }
 
 class InMemoryMessageTransportNetworkImpl implements InMemoryMessageTransportNetwork {
   private readonly transports = new Map<string, InMemoryMessageTransport>();
   private readonly dropPredicates: Array<(frame: InMemoryTransportFrame) => boolean> = [];
 
-  createTransport(nodeAddress: string): MessageTransport {
+  createTransport(
+    nodeAddress: string,
+    options: InMemoryMessageTransportOptions = {}
+  ): MessageTransport {
     if (this.transports.has(nodeAddress)) {
       throw new Error(`Transport already exists for node ${nodeAddress}`);
     }
 
-    const transport = new InMemoryMessageTransport(nodeAddress, this);
+    const transport = new InMemoryMessageTransport(nodeAddress, options, this);
     this.transports.set(nodeAddress, transport);
     return transport;
   }
@@ -103,6 +142,10 @@ class InMemoryMessageTransportNetworkImpl implements InMemoryMessageTransportNet
 
     if (sourceTransport.isConnected(destination) && destinationTransport.isConnected(source)) {
       return;
+    }
+
+    if (sourceTransport.usesHandshake() || destinationTransport.usesHandshake()) {
+      this.handshake(sourceTransport, destinationTransport);
     }
 
     sourceTransport.setConnected(destination, true);
@@ -166,7 +209,24 @@ class InMemoryMessageTransportNetworkImpl implements InMemoryMessageTransportNet
       return;
     }
 
+    const sourceTransport = this.getTransport(frame.source);
     const destinationTransport = this.getTransport(frame.destination);
+    if (sourceTransport.usesHandshake() || destinationTransport.usesHandshake()) {
+      const runtimeFrame = createRuntimeTransportFrame({
+        source: sourceTransport.identity(),
+        destination: destinationTransport.identity(),
+        sequence: sourceTransport.nextSequence(),
+        message: frame.message,
+      });
+      const validation = validateRuntimeTransportFrame(
+        runtimeFrame,
+        destinationTransport.identity()
+      );
+      if (!validation.ok) {
+        throw new Error(`Runtime transport frame rejected: ${validation.message}`);
+      }
+    }
+
     destinationTransport.deliver({
       source: frame.source,
       message: frame.message,
@@ -180,6 +240,25 @@ class InMemoryMessageTransportNetworkImpl implements InMemoryMessageTransportNet
     }
 
     return transport;
+  }
+
+  private handshake(
+    sourceTransport: InMemoryMessageTransport,
+    destinationTransport: InMemoryMessageTransport
+  ): void {
+    const sourceIdentity = sourceTransport.identity();
+    const destinationIdentity = destinationTransport.identity();
+    const hello = createRuntimeTransportHandshakeHello(sourceIdentity);
+    const helloValidation = validateRuntimeTransportHandshake(hello, destinationIdentity);
+    if (!helloValidation.ok) {
+      throw new Error(`Runtime handshake rejected: ${helloValidation.message}`);
+    }
+
+    const accept = createRuntimeTransportHandshakeAccept(destinationIdentity, sourceIdentity);
+    const acceptValidation = validateRuntimeTransportHandshake(accept, sourceIdentity);
+    if (!acceptValidation.ok) {
+      throw new Error(`Runtime handshake rejected: ${acceptValidation.message}`);
+    }
   }
 }
 

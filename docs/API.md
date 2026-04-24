@@ -23,6 +23,7 @@ multi-machine transport still requires the external transport roadmap work.
   - [OTP-Style Examples](#otp-style-examples)
 - [Advanced Features](#advanced-features)
   - [Runtime Gateway](#runtime-gateway)
+  - [Runtime Transport Contract](#runtime-transport-contract)
   - [Virtual Actors](#virtual-actors-actor-corevirtual)
   - [Event Sourcing](#event-sourcing-actor-corepersistence)
   - [Security](#security-actor-coresecurity)
@@ -823,6 +824,34 @@ Gateway errors use `RuntimeGatewayErrorCode`:
 - `internal_error`: resolver or hub failure that should not be exposed as a domain event.
 
 `RuntimeGatewayScopeError` lets resolvers return scope-specific `invalid_scope`, `not_found`, or `forbidden` failures with a recoverability flag.
+
+## Runtime Transport Contract
+
+The runtime transport contract defines the handshake and frame envelope expected by production inter-node transports. It prepares the direct WebSocket transport path without adding a socket adapter or changing `MessageTransport`.
+
+Public constants and helpers:
+
+- `RUNTIME_TRANSPORT_PROTOCOL_VERSION`: initial runtime protocol compatibility string.
+- `createRuntimeNodeIdentity(...)`: creates a `RuntimeNodeIdentity` with the current protocol version.
+- `createRuntimeTransportHandshakeHello(...)`, `createRuntimeTransportHandshakeAccept(...)`, and `createRuntimeTransportHandshakeReject(...)`: create handshake frames.
+- `createRuntimeTransportFrame(...)`: wraps an internal runtime `ActorMessage` in a transport envelope.
+- `validateRuntimeNodeIdentity(...)`, `validateRuntimeTransportHandshake(...)`, and `validateRuntimeTransportFrame(...)`: validate identities, handshakes, and frame envelopes before accepting peer traffic.
+
+Core public types:
+
+- `RuntimeNodeIdentity`: stable peer identity using `nodeAddress`, `nodeId`, `incarnation`, `protocolVersion`, and optional capabilities.
+- `RuntimeTransportHandshake`: `hello`, `accept`, and `reject` handshake frame union.
+- `RuntimeTransportFrame`: envelope for internal `__runtime.*` control messages.
+- `RuntimeTransportHandshakeRejectCode`: rejection codes for missing identity, self-connections, incompatible protocol, and malformed frames.
+
+Behavioral constraints:
+
+- `nodeAddress` remains the logical address used in actor paths.
+- `nodeId + incarnation` is the stable peer identity key for future stale-peer and replay behavior.
+- Frame validation rejects malformed envelopes, incompatible protocol versions, missing identities, and frames addressed to the wrong local node.
+- Delivery semantics remain at-most-once until a later idempotency/message-id slice.
+
+The in-memory test transport can opt into this contract for runtime tests. Production WebSocket transport is still future work.
 
 ## 📝 **Examples**
 
