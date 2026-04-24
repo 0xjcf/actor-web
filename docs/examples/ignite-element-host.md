@@ -17,8 +17,14 @@ The example demonstrates four boundaries:
 
 Runnable prove-out: [`examples/ignite-headless-host/`](/Users/joseflores/Development/actor-web/examples/ignite-headless-host)
 
-For the full browser demo, start the logistics gateway server and run Vite with
-all three runtime URLs configured:
+For the full browser demo, use the dedicated launcher:
+
+```sh
+pnpm examples:logistics
+```
+
+The launcher starts the logistics backend and Vite in one process, then injects
+all three runtime URLs:
 
 - `VITE_ACTOR_WEB_REST_URL`: REST command ingress for the Create button.
 - `VITE_ACTOR_WEB_GATEWAY_URL`: WebSocket projection/control gateway for live

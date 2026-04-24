@@ -257,7 +257,7 @@ function wait(delayMs: number): Promise<void> {
 
 async function waitForRemoteRef(
   lookup: () => Promise<ActorRef<ShipmentContext, ShipmentCommand> | undefined>,
-  attempts = 20
+  attempts = 80
 ): Promise<ActorRef<ShipmentContext, ShipmentCommand> | undefined> {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const ref = await lookup();
