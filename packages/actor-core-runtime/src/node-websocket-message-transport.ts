@@ -6,11 +6,13 @@ import {
   createRuntimeTransportHandshakeAccept,
   createRuntimeTransportHandshakeHello,
   createRuntimeTransportHandshakeReject,
+  createRuntimeTransportHeartbeatPong,
   type RuntimeNodeIdentity,
   type RuntimeTransportFrame,
   type RuntimeTransportHandshake,
   validateRuntimeTransportFrame,
   validateRuntimeTransportHandshake,
+  validateRuntimeTransportHeartbeatFrame,
 } from './runtime-transport-contract.js';
 
 export interface NodeWebSocketMessageTransportOptions {
@@ -429,6 +431,11 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
     }
 
     const frame = this.parseJson(data);
+    if (this.isHeartbeatFrame(frame)) {
+      this.handleHeartbeatFrame(sourceNodeAddress, peer, frame);
+      return;
+    }
+
     const validation = validateRuntimeTransportFrame(frame, this.identity);
     if (!validation.ok) {
       this.disconnect(sourceNodeAddress).catch(() => {});
@@ -447,6 +454,37 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
 
     this.markPeerSeen(sourceNodeAddress, peer.socket);
     this.emitTransportMessage(runtimeFrame.source.nodeAddress, runtimeFrame.message);
+  }
+
+  private handleHeartbeatFrame(
+    sourceNodeAddress: string,
+    peer: PeerConnection,
+    frame: unknown
+  ): void {
+    const validation = validateRuntimeTransportHeartbeatFrame(frame, this.identity);
+    if (!validation.ok || !this.isHeartbeatFrame(frame)) {
+      this.disconnect(sourceNodeAddress).catch(() => {});
+      return;
+    }
+
+    if (
+      frame.source.nodeAddress !== sourceNodeAddress ||
+      frame.source.nodeId !== peer.identity.nodeId ||
+      frame.source.incarnation !== peer.identity.incarnation
+    ) {
+      this.disconnect(sourceNodeAddress).catch(() => {});
+      return;
+    }
+
+    this.markPeerSeen(sourceNodeAddress, peer.socket);
+    if (frame.type === 'runtime.transport.ping') {
+      this.sendJson(
+        peer.socket,
+        createRuntimeTransportHeartbeatPong(this.identity, peer.identity)
+      ).catch(() => {
+        this.disconnect(sourceNodeAddress).catch(() => {});
+      });
+    }
   }
 
   private closePeer(nodeAddress: string, peer: PeerConnection, emitDisconnected: boolean): void {
@@ -676,6 +714,18 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
       frame &&
         typeof frame === 'object' &&
         (frame as { type?: string }).type === 'runtime.handshake.reject'
+    );
+  }
+
+  private isHeartbeatFrame(frame: unknown): frame is {
+    type: 'runtime.transport.ping' | 'runtime.transport.pong';
+    source: RuntimeNodeIdentity;
+  } {
+    return Boolean(
+      frame &&
+        typeof frame === 'object' &&
+        ((frame as { type?: string }).type === 'runtime.transport.ping' ||
+          (frame as { type?: string }).type === 'runtime.transport.pong')
     );
   }
 }

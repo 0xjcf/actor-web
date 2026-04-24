@@ -27,6 +27,22 @@ export interface RuntimeTransportFrame<TMessage extends ActorMessage = ActorMess
   message: TMessage;
 }
 
+export type RuntimeTransportHeartbeatFrame =
+  | {
+      type: 'runtime.transport.ping';
+      protocolVersion: RuntimeTransportProtocolVersion;
+      source: RuntimeNodeIdentity;
+      destination: RuntimeNodeIdentity;
+      sentAt: string;
+    }
+  | {
+      type: 'runtime.transport.pong';
+      protocolVersion: RuntimeTransportProtocolVersion;
+      source: RuntimeNodeIdentity;
+      destination: RuntimeNodeIdentity;
+      sentAt: string;
+    };
+
 export type RuntimeTransportHandshake =
   | {
       type: 'runtime.handshake.hello';
@@ -347,6 +363,66 @@ export function validateRuntimeTransportFrame(
   return { ok: true };
 }
 
+export function validateRuntimeTransportHeartbeatFrame(
+  frame: unknown,
+  localIdentity?: RuntimeNodeIdentity
+): RuntimeTransportValidationResult {
+  if (!isRecord(frame)) {
+    return {
+      ok: false,
+      code: 'malformed_frame',
+      message: 'Runtime transport heartbeat frame must be an object.',
+    };
+  }
+
+  if (frame.type !== 'runtime.transport.ping' && frame.type !== 'runtime.transport.pong') {
+    return {
+      ok: false,
+      code: 'malformed_frame',
+      message: `Unsupported runtime transport heartbeat type: ${String(frame.type)}.`,
+    };
+  }
+
+  if (!hasProtocolVersion(frame.protocolVersion)) {
+    return {
+      ok: false,
+      code: 'incompatible_protocol',
+      message: `Unsupported runtime protocol version: ${String(frame.protocolVersion)}.`,
+    };
+  }
+
+  const sourceValidation = validateRuntimeNodeIdentity(frame.source);
+  if (!sourceValidation.ok) {
+    return sourceValidation;
+  }
+
+  const destinationValidation = validateRuntimeNodeIdentity(frame.destination);
+  if (!destinationValidation.ok) {
+    return destinationValidation;
+  }
+
+  if (
+    localIdentity &&
+    !isSameRuntimeNodeIdentity(frame.destination as RuntimeNodeIdentity, localIdentity)
+  ) {
+    return {
+      ok: false,
+      code: 'malformed_frame',
+      message: 'Runtime transport heartbeat destination does not match the local node.',
+    };
+  }
+
+  if (!isNonEmptyString(frame.sentAt)) {
+    return {
+      ok: false,
+      code: 'malformed_frame',
+      message: 'Runtime transport heartbeat frame requires sentAt.',
+    };
+  }
+
+  return { ok: true };
+}
+
 export function createRuntimeTransportFrame<TMessage extends ActorMessage>(input: {
   source: RuntimeNodeIdentity;
   destination: RuntimeNodeIdentity;
@@ -361,5 +437,33 @@ export function createRuntimeTransportFrame<TMessage extends ActorMessage>(input
     sequence: input.sequence,
     sentAt: (input.now ?? (() => new Date()))().toISOString(),
     message: input.message,
+  };
+}
+
+export function createRuntimeTransportHeartbeatPing(
+  source: RuntimeNodeIdentity,
+  destination: RuntimeNodeIdentity,
+  now: () => Date = () => new Date()
+): RuntimeTransportHeartbeatFrame {
+  return {
+    type: 'runtime.transport.ping',
+    protocolVersion: RUNTIME_TRANSPORT_PROTOCOL_VERSION,
+    source,
+    destination,
+    sentAt: now().toISOString(),
+  };
+}
+
+export function createRuntimeTransportHeartbeatPong(
+  source: RuntimeNodeIdentity,
+  destination: RuntimeNodeIdentity,
+  now: () => Date = () => new Date()
+): RuntimeTransportHeartbeatFrame {
+  return {
+    type: 'runtime.transport.pong',
+    protocolVersion: RUNTIME_TRANSPORT_PROTOCOL_VERSION,
+    source,
+    destination,
+    sentAt: now().toISOString(),
   };
 }

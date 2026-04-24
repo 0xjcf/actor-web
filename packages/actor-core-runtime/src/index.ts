@@ -248,6 +248,7 @@ export type {
   RuntimeTransportFrame,
   RuntimeTransportHandshake,
   RuntimeTransportHandshakeRejectCode,
+  RuntimeTransportHeartbeatFrame,
   RuntimeTransportProtocolVersion,
   RuntimeTransportValidationResult,
 } from './runtime-transport-contract.js';
@@ -257,12 +258,15 @@ export {
   createRuntimeTransportHandshakeAccept,
   createRuntimeTransportHandshakeHello,
   createRuntimeTransportHandshakeReject,
+  createRuntimeTransportHeartbeatPing,
+  createRuntimeTransportHeartbeatPong,
   isRuntimeNodeIdentity,
   isSameRuntimeNodeIdentity,
   RUNTIME_TRANSPORT_PROTOCOL_VERSION,
   validateRuntimeNodeIdentity,
   validateRuntimeTransportFrame,
   validateRuntimeTransportHandshake,
+  validateRuntimeTransportHeartbeatFrame,
 } from './runtime-transport-contract.js';
 // Actor implementation classes
 export { StatelessActor } from './stateless-actor.js';

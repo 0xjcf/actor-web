@@ -4,10 +4,12 @@ import {
   createRuntimeTransportFrame,
   createRuntimeTransportHandshakeAccept,
   createRuntimeTransportHandshakeHello,
+  createRuntimeTransportHeartbeatPing,
   RUNTIME_TRANSPORT_PROTOCOL_VERSION,
   validateRuntimeNodeIdentity,
   validateRuntimeTransportFrame,
   validateRuntimeTransportHandshake,
+  validateRuntimeTransportHeartbeatFrame,
 } from '../runtime-transport-contract.js';
 
 const fixedNow = () => new Date('2026-04-24T14:00:00.000Z');
@@ -119,5 +121,25 @@ describe('runtime transport contract', () => {
     });
 
     expect(validateRuntimeTransportFrame(frame, local)).toEqual({ ok: true });
+  });
+
+  it('accepts app-level heartbeat frames for browser transports', () => {
+    const local = node('node-a');
+    const remote = node('node-b');
+    const ping = createRuntimeTransportHeartbeatPing(remote, local, fixedNow);
+
+    expect(validateRuntimeTransportHeartbeatFrame(ping, local)).toEqual({ ok: true });
+  });
+
+  it('rejects heartbeat frames addressed to a different local identity', () => {
+    const local = node('node-a');
+    const remote = node('node-b');
+    const other = node('node-c');
+    const ping = createRuntimeTransportHeartbeatPing(remote, other, fixedNow);
+
+    expect(validateRuntimeTransportHeartbeatFrame(ping, local)).toMatchObject({
+      ok: false,
+      code: 'malformed_frame',
+    });
   });
 });

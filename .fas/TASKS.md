@@ -54,13 +54,25 @@
 
 - Title: Server-owned headless runtime gateway example
 - Mode: 6-agent
-- Status: review
+- Status: done
 - Owner: reviewer
 - Brief: .fas/tasks/server-owned-headless-runtime-gateway-example.md
 - Verification lane: full
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 - Artifacts: brief=.fas/tasks/server-owned-headless-runtime-gateway-example.md; verification=.fas/state/verification/latest.json
+
+### Task: Browser/WebWorker WebSocket transport
+
+- Title: Browser/WebWorker WebSocket transport
+- Mode: 6-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/browser-webworker-websocket-transport.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: brief=.fas/tasks/browser-webworker-websocket-transport.md; verification=.fas/state/verification/latest.json
 
 ## Template
 

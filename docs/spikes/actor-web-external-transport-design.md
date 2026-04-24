@@ -89,6 +89,16 @@ hexagonal boundary or the actor model.
     `nodeId`
   - transport-level heartbeat timeout and disconnect emission
   - stale socket frame suppression after peer replacement
+- browser/WebWorker runtime transport now covers:
+  - `BrowserWebSocketMessageTransport` exported from
+    `@actor-core/runtime/browser`
+  - outbound-only browser WebSocket peer connections
+  - reuse of the runtime handshake and frame envelope contract
+  - app-level `runtime.transport.ping` and `runtime.transport.pong` heartbeat
+    frames for browser sockets
+  - Node transport interop for browser-style heartbeat frames
+  - runtime-level directory sync, remote send/ask, and projection tests with a
+    browser-style worker peer
 - Actor-Web already maps its data plane toward FAS shared contracts:
   - `EventEnvelope`
   - `WorkflowSnapshot`
@@ -107,6 +117,8 @@ hexagonal boundary or the actor model.
 - replay is latest snapshot plus ordered live stream, not durable event replay
 - `NodeWebSocketMessageTransport` has basic lifecycle and stale-peer handling,
   but is not a fully hardened production transport
+- `BrowserWebSocketMessageTransport` is outbound-only and still depends on
+  static peer URL resolution
 - there is no metrics/tracing/backpressure telemetry for real network transport
 
 ## Architectural Constraints
@@ -152,14 +164,14 @@ That means:
 
 ## Remaining Actor-Web Work
 
-1. Real external inter-node transport
+1. Full server runtime plus worker runtime demo mode
 2. Runtime membership and discovery across machines
 3. Production delivery semantics for remote `send` and `ask`
 4. Durable resync source for projections
 5. Shared-contract promotion from mapper to real data-plane wire shape
 6. Auth and transport security
 7. Metrics, tracing, lag, replay, and backpressure observability
-8. Multi-process and multi-machine prove-out
+8. Multi-process and multi-machine prove-out beyond localhost
 
 ## External Transport Options
 

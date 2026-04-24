@@ -842,13 +842,15 @@ Public constants and helpers:
 - `createRuntimeNodeIdentity(...)`: creates a `RuntimeNodeIdentity` with the current protocol version.
 - `createRuntimeTransportHandshakeHello(...)`, `createRuntimeTransportHandshakeAccept(...)`, and `createRuntimeTransportHandshakeReject(...)`: create handshake frames.
 - `createRuntimeTransportFrame(...)`: wraps an internal runtime `ActorMessage` in a transport envelope.
-- `validateRuntimeNodeIdentity(...)`, `validateRuntimeTransportHandshake(...)`, and `validateRuntimeTransportFrame(...)`: validate identities, handshakes, and frame envelopes before accepting peer traffic.
+- `createRuntimeTransportHeartbeatPing(...)` and `createRuntimeTransportHeartbeatPong(...)`: create app-level heartbeat frames for browser/WebWorker transports.
+- `validateRuntimeNodeIdentity(...)`, `validateRuntimeTransportHandshake(...)`, `validateRuntimeTransportFrame(...)`, and `validateRuntimeTransportHeartbeatFrame(...)`: validate identities, handshakes, frame envelopes, and app-level heartbeat frames before accepting peer traffic.
 
 Core public types:
 
 - `RuntimeNodeIdentity`: stable peer identity using `nodeAddress`, `nodeId`, `incarnation`, `protocolVersion`, and optional capabilities.
 - `RuntimeTransportHandshake`: `hello`, `accept`, and `reject` handshake frame union.
 - `RuntimeTransportFrame`: envelope for internal `__runtime.*` control messages.
+- `RuntimeTransportHeartbeatFrame`: `runtime.transport.ping` and `runtime.transport.pong` control frames used when the platform cannot send low-level WebSocket ping/pong frames.
 - `RuntimeTransportHandshakeRejectCode`: rejection codes for missing identity, self-connections, incompatible protocol, and malformed frames.
 
 Behavioral constraints:
@@ -918,6 +920,52 @@ Options:
 - `heartbeatIntervalMs`, `heartbeatTimeoutMs`: optional heartbeat cadence and timeout in milliseconds. Set the interval to `0` to disable transport heartbeats.
 
 This transport keeps delivery at-most-once and does not yet provide dynamic discovery, auth/security, durable replay, or production backpressure.
+
+## Browser WebSocket Transport
+
+`BrowserWebSocketMessageTransport` is the browser/WebWorker runtime peer adapter. It is exported from `@actor-core/runtime/browser`, opens outbound WebSocket connections only, and reuses the same runtime handshake and frame contract as the Node transport. It is intended for worker-owned Actor-Web runtimes, not for making a thin browser page the default cluster member.
+
+```typescript
+import {
+  createActorSystem,
+  createBrowserWebSocketMessageTransport,
+} from '@actor-core/runtime/browser';
+
+const workerTransport = createBrowserWebSocketMessageTransport({
+  nodeAddress: 'worker-a',
+  incarnation: 'worker-a-boot',
+  peers: {
+    'node-b': 'ws://127.0.0.1:4174',
+  },
+});
+
+const workerSystem = await createActorSystem({
+  nodeAddress: 'worker-a',
+  transport: workerTransport,
+});
+await workerSystem.start();
+await workerSystem.join(['node-b']);
+```
+
+Lifecycle and behavior:
+
+- `connect(nodeAddress)` resolves a static peer URL, opens an outbound browser WebSocket, sends handshake hello, validates accept, stores peer identity, and emits `__runtime.transport.connected`.
+- `send(destination, message)` wraps runtime control traffic in `RuntimeTransportFrame` and sends JSON over the validated socket.
+- inbound runtime frames validate protocol, destination identity, peer identity, sequence, and message shape before delivery to `subscribe` listeners.
+- heartbeats use app-level `runtime.transport.ping` and `runtime.transport.pong` frames because browser WebSockets cannot send low-level ping/pong frames.
+- socket close/error removes the peer and emits `__runtime.transport.disconnected`.
+- `stop()` closes all outbound peer sockets.
+
+Options:
+
+- `nodeAddress`: logical runtime node address used in actor paths.
+- `nodeId`, `incarnation`, `capabilities`: optional identity fields for the runtime handshake.
+- `peers`: static mapping of node address to WebSocket URL.
+- `peerUrlResolver`: optional resolver for static or test-managed peer URLs.
+- `connectTimeoutMs`: handshake/open timeout.
+- `heartbeatIntervalMs`, `heartbeatTimeoutMs`: optional app-level heartbeat cadence and timeout in milliseconds. Set the interval to `0` to disable heartbeats.
+
+The browser adapter does not include a listener, dynamic discovery, auth/security, durable replay, or production backpressure. Delivery remains at-most-once.
 
 ## 📝 **Examples**
 
