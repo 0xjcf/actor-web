@@ -39,6 +39,13 @@ type TransportAwareActor = {
   ) => () => void;
 };
 
+function configuredRestUrl(): string | undefined {
+  const configuredUrl = import.meta.env.VITE_ACTOR_WEB_REST_URL;
+  return typeof configuredUrl === 'string' && configuredUrl.trim().length > 0
+    ? configuredUrl.replace(/\/$/, '')
+    : undefined;
+}
+
 const styles = `
   :host {
     display: block;
@@ -345,6 +352,23 @@ function createLogisticsAdapter() {
   };
 
   const createShipment = async (destination: string, reference?: string): Promise<void> => {
+    const restUrl = configuredRestUrl();
+    if (restUrl) {
+      const response = await fetch(`${restUrl}/shipments`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          shipmentId: `shipment-${Date.now().toString(36)}`,
+          destination,
+          reference,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`Shipment REST ingress failed with ${response.status}.`);
+      }
+      return;
+    }
+
     await actor.send({
       type: 'CREATE_SHIPMENT',
       shipmentId: `shipment-${Date.now().toString(36)}`,

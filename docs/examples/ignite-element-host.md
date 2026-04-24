@@ -17,6 +17,21 @@ The example demonstrates four boundaries:
 
 Runnable prove-out: [`examples/ignite-headless-host/`](/Users/joseflores/Development/actor-web/examples/ignite-headless-host)
 
+For the full browser demo, start the logistics gateway server and run Vite with
+all three runtime URLs configured:
+
+- `VITE_ACTOR_WEB_REST_URL`: REST command ingress for the Create button.
+- `VITE_ACTOR_WEB_GATEWAY_URL`: WebSocket projection/control gateway for live
+  snapshots and events.
+- `VITE_ACTOR_WEB_TRANSPORT_URL`: Actor-Web runtime transport listener used by
+  the browser WebWorker routing runtime.
+
+When only `VITE_ACTOR_WEB_GATEWAY_URL` is configured, the UI still works through
+gateway commands, but Create will not produce a REST network request. When
+`VITE_ACTOR_WEB_TRANSPORT_URL` is missing, the shipment actor will stay at
+`route-requested` with pending carrier/ETA because no worker runtime peer is
+connected.
+
 ## Runtime Owners
 
 - Browser host: Ignite custom element, projection consumer only.
@@ -28,7 +43,9 @@ Runnable prove-out: [`examples/ignite-headless-host/`](/Users/joseflores/Develop
 
 ## Demo Flow
 
-1. A client submits a shipment through REST or the gateway source.
+1. The Ignite UI submits a shipment through REST when
+   `VITE_ACTOR_WEB_REST_URL` is configured; otherwise it falls back to gateway
+   commands for local/dev topology proof.
 2. The server shipment actor emits `SHIPMENT_CREATED` and `ROUTE_REQUESTED`.
 3. When the worker runtime is connected, the server asks the worker routing
    actor to `PLAN_ROUTE`.

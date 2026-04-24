@@ -135,6 +135,10 @@ export function createLogisticsRuntimeGatewayServer(
     reference?: string;
   }): Promise<RoutePlan | null> => {
     try {
+      for (let attempt = 0; !transport.isConnected(WORKER_NODE) && attempt < 40; attempt += 1) {
+        await wait(25);
+      }
+
       if (!transport.isConnected(WORKER_NODE)) {
         return null;
       }
