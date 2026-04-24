@@ -764,230 +764,222 @@ export function defineIgniteHeadlessHostElement(): void {
     return;
   }
 
-  registerIgniteHeadlessHost(
-    IGNITE_HEADLESS_HOST_ELEMENT_NAME,
-    ({
-      state,
-      send,
-    }: {
-      state: CheckoutElementState;
-      send: (event: CheckoutElementEvent) => void;
-    }) => {
-      const latestEvent = state.eventLog[0]?.type ?? 'none';
-      const submittedCount = state.submittedOrders.length;
-      const canSubmit = !state.busy && state.draftOrderId.trim().length > 0;
-      const canReset = !state.busy && (submittedCount > 0 || state.eventLog.length > 0);
-      const phaseClass = state.busy
-        ? 'phase-badge phase-busy'
-        : `phase-badge ${state.phase === 'submitted' ? 'phase-submitted' : 'phase-ready'}`;
-      const transportClass = `transport-chip transport-${state.transportState}`;
+  registerIgniteHeadlessHost(IGNITE_HEADLESS_HOST_ELEMENT_NAME, ({ state, send }) => {
+    const latestEvent = state.eventLog[0]?.type ?? 'none';
+    const submittedCount = state.submittedOrders.length;
+    const canSubmit = !state.busy && state.draftOrderId.trim().length > 0;
+    const canReset = !state.busy && (submittedCount > 0 || state.eventLog.length > 0);
+    const phaseClass = state.busy
+      ? 'phase-badge phase-busy'
+      : `phase-badge ${state.phase === 'submitted' ? 'phase-submitted' : 'phase-ready'}`;
+    const transportClass = `transport-chip transport-${state.transportState}`;
 
-      return (
-        <>
-          <style>{checkoutExampleStyles}</style>
-          <main class="runtime-shell">
-            <div class="runtime-frame">
-              <header class="runtime-header">
-                <div>
-                  <p class="eyebrow">Ignite Headless Host</p>
-                  <h1>Snapshot + Event Bridge</h1>
-                  <p class="runtime-copy">
-                    Actor-Web snapshots and emitted events rendered through Ignite with the shared{' '}
-                    <code>ignite-adapters/actor-web</code> seam. This demo runs the remote runtime
-                    inside a service worker so the UI and actor owner live in different browser
-                    contexts.
-                  </p>
-                </div>
+    return (
+      <>
+        <style>{checkoutExampleStyles}</style>
+        <main class="runtime-shell">
+          <div class="runtime-frame">
+            <header class="runtime-header">
+              <div>
+                <p class="eyebrow">Ignite Headless Host</p>
+                <h1>Snapshot + Event Bridge</h1>
+                <p class="runtime-copy">
+                  Actor-Web snapshots and emitted events rendered through Ignite with the shared{' '}
+                  <code>ignite-adapters/actor-web</code> seam. This demo runs the remote runtime
+                  inside a service worker so the UI and actor owner live in different browser
+                  contexts.
+                </p>
+              </div>
 
-                <section class="runtime-summary">
-                  <div class="summary-grid">
-                    <div>
-                      <div class="summary-label">Status</div>
-                      <div class="summary-value">
-                        <span class={phaseClass}>{state.busy ? 'dispatching' : state.phase}</span>
-                      </div>
-                    </div>
-                    <div>
-                      <div class="summary-label">Submitted</div>
-                      <div class="summary-value">{submittedCount}</div>
-                    </div>
-                    <div>
-                      <div class="summary-label">Last Event</div>
-                      <div class="summary-value">{latestEvent}</div>
-                    </div>
-                    <div>
-                      <div class="summary-label">Transport</div>
-                      <div class="summary-value">
-                        <span class={transportClass}>{state.transportState}</span>
-                      </div>
-                    </div>
-                    <div>
-                      <div class="summary-label">Address</div>
-                      <div class="summary-value">
-                        <code>{state.address}</code>
-                      </div>
+              <section class="runtime-summary">
+                <div class="summary-grid">
+                  <div>
+                    <div class="summary-label">Status</div>
+                    <div class="summary-value">
+                      <span class={phaseClass}>{state.busy ? 'dispatching' : state.phase}</span>
                     </div>
                   </div>
+                  <div>
+                    <div class="summary-label">Submitted</div>
+                    <div class="summary-value">{submittedCount}</div>
+                  </div>
+                  <div>
+                    <div class="summary-label">Last Event</div>
+                    <div class="summary-value">{latestEvent}</div>
+                  </div>
+                  <div>
+                    <div class="summary-label">Transport</div>
+                    <div class="summary-value">
+                      <span class={transportClass}>{state.transportState}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="summary-label">Address</div>
+                    <div class="summary-value">
+                      <code>{state.address}</code>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </header>
+
+            <section class="runtime-layout">
+              <aside class="command-stack">
+                <section class="panel">
+                  <div class="panel-header">
+                    <h2>Commands</h2>
+                    <p class="panel-copy">Dispatch typed messages against the host actor.</p>
+                  </div>
+
+                  <label class="command-group">
+                    <span class="field-label">Order ID</span>
+                    <div class="toolbar">
+                      <input
+                        name="order-id"
+                        value={state.draftOrderId}
+                        placeholder="order-1001"
+                        disabled={state.busy}
+                        onInput={(event: Event) =>
+                          send({
+                            type: 'draft.change',
+                            value: (event.currentTarget as HTMLInputElement).value,
+                          })
+                        }
+                      />
+                      <button
+                        class="button button-primary"
+                        id="submit-order"
+                        type="button"
+                        disabled={!canSubmit}
+                        onClick={() => send({ type: 'submit' })}
+                      >
+                        Submit
+                      </button>
+                    </div>
+                  </label>
+
+                  <div class="quick-grid">
+                    <button
+                      class="button button-secondary"
+                      type="button"
+                      disabled={state.busy}
+                      onClick={() => send({ type: 'submit.quick', orderId: 'order-2002' })}
+                    >
+                      Order 2002
+                    </button>
+                    <button
+                      class="button button-secondary"
+                      type="button"
+                      disabled={state.busy}
+                      onClick={() => send({ type: 'submit.quick', orderId: 'order-3003' })}
+                    >
+                      Order 3003
+                    </button>
+                    <button
+                      class="button button-danger"
+                      id="reset-orders"
+                      type="button"
+                      disabled={!canReset}
+                      onClick={() => send({ type: 'reset' })}
+                    >
+                      Reset
+                    </button>
+                  </div>
+
+                  <p class="helper-line">
+                    Public runtime source: <code>@actor-core/runtime/browser</code>
+                  </p>
                 </section>
-              </header>
+              </aside>
 
-              <section class="runtime-layout">
-                <aside class="command-stack">
-                  <section class="panel">
-                    <div class="panel-header">
-                      <h2>Commands</h2>
-                      <p class="panel-copy">Dispatch typed messages against the host actor.</p>
+              <div class="content-stack">
+                <section class="panel">
+                  <div class="panel-header">
+                    <div class="panel-title-row">
+                      <h3>Projected Host State</h3>
+                      <span class="panel-badge">{submittedCount}</span>
+                    </div>
+                  </div>
+
+                  <dl class="state-grid">
+                    <div class="state-cell">
+                      <dt>Phase</dt>
+                      <dd>
+                        <span class={phaseClass}>{state.busy ? 'dispatching' : state.phase}</span>
+                      </dd>
                     </div>
 
-                    <label class="command-group">
-                      <span class="field-label">Order ID</span>
-                      <div class="toolbar">
-                        <input
-                          name="order-id"
-                          value={state.draftOrderId}
-                          placeholder="order-1001"
-                          disabled={state.busy}
-                          onInput={(event: Event) =>
-                            send({
-                              type: 'draft.change',
-                              value: (event.currentTarget as HTMLInputElement).value,
-                            })
-                          }
-                        />
-                        <button
-                          class="button button-primary"
-                          id="submit-order"
-                          type="button"
-                          disabled={!canSubmit}
-                          onClick={() => send({ type: 'submit' })}
-                        >
-                          Submit
-                        </button>
-                      </div>
-                    </label>
-
-                    <div class="quick-grid">
-                      <button
-                        class="button button-secondary"
-                        type="button"
-                        disabled={state.busy}
-                        onClick={() => send({ type: 'submit.quick', orderId: 'order-2002' })}
-                      >
-                        Order 2002
-                      </button>
-                      <button
-                        class="button button-secondary"
-                        type="button"
-                        disabled={state.busy}
-                        onClick={() => send({ type: 'submit.quick', orderId: 'order-3003' })}
-                      >
-                        Order 3003
-                      </button>
-                      <button
-                        class="button button-danger"
-                        id="reset-orders"
-                        type="button"
-                        disabled={!canReset}
-                        onClick={() => send({ type: 'reset' })}
-                      >
-                        Reset
-                      </button>
+                    <div class="state-cell">
+                      <dt>Last Submitted</dt>
+                      <dd class={state.lastSubmittedOrderId ? '' : 'empty-value'}>
+                        {state.lastSubmittedOrderId ?? 'none'}
+                      </dd>
                     </div>
 
-                    <p class="helper-line">
-                      Public runtime source: <code>@actor-core/runtime/browser</code>
+                    <div class="state-cell">
+                      <dt>Submitted Orders</dt>
+                      <dd>
+                        {submittedCount > 0 ? (
+                          <div class="order-list">
+                            {state.submittedOrders.map((orderId) => (
+                              <span class="order-chip">{orderId}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span class="empty-value">none</span>
+                        )}
+                      </dd>
+                    </div>
+
+                    <div class="state-cell">
+                      <dt>Transport</dt>
+                      <dd>
+                        <span class={transportClass}>{state.transportState}</span>
+                        {state.transportReason ? (
+                          <div class="helper-line">{state.transportReason}</div>
+                        ) : null}
+                      </dd>
+                    </div>
+
+                    <div class="state-cell">
+                      <dt>Actor Path</dt>
+                      <dd>
+                        <code>{state.address}</code>
+                      </dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section class="panel">
+                  <div class="panel-header">
+                    <div class="panel-title-row">
+                      <h3>Emitted Event Log</h3>
+                      <span class="panel-badge">{state.eventLog.length}</span>
+                    </div>
+                  </div>
+
+                  <ol class="event-list">
+                    {state.eventLog.length > 0 ? (
+                      state.eventLog.map((event: HeadlessCheckoutEventLog) => renderEvent(event))
+                    ) : (
+                      <li class="event-item">
+                        <div class="event-meta">No emitted events yet.</div>
+                      </li>
+                    )}
+                  </ol>
+                </section>
+
+                <section class="panel">
+                  <div class="panel-header">
+                    <h3>Runtime Ownership</h3>
+                    <p class="panel-copy">
+                      The element is the client-side host. The remote actor runtime is owned by a
+                      service worker in this demo. Production hosts usually consume the same source
+                      from a server or worker-owned runtime.
                     </p>
-                  </section>
-                </aside>
+                  </div>
 
-                <div class="content-stack">
-                  <section class="panel">
-                    <div class="panel-header">
-                      <div class="panel-title-row">
-                        <h3>Projected Host State</h3>
-                        <span class="panel-badge">{submittedCount}</span>
-                      </div>
-                    </div>
-
-                    <dl class="state-grid">
-                      <div class="state-cell">
-                        <dt>Phase</dt>
-                        <dd>
-                          <span class={phaseClass}>{state.busy ? 'dispatching' : state.phase}</span>
-                        </dd>
-                      </div>
-
-                      <div class="state-cell">
-                        <dt>Last Submitted</dt>
-                        <dd class={state.lastSubmittedOrderId ? '' : 'empty-value'}>
-                          {state.lastSubmittedOrderId ?? 'none'}
-                        </dd>
-                      </div>
-
-                      <div class="state-cell">
-                        <dt>Submitted Orders</dt>
-                        <dd>
-                          {submittedCount > 0 ? (
-                            <div class="order-list">
-                              {state.submittedOrders.map((orderId) => (
-                                <span class="order-chip">{orderId}</span>
-                              ))}
-                            </div>
-                          ) : (
-                            <span class="empty-value">none</span>
-                          )}
-                        </dd>
-                      </div>
-
-                      <div class="state-cell">
-                        <dt>Transport</dt>
-                        <dd>
-                          <span class={transportClass}>{state.transportState}</span>
-                          {state.transportReason ? (
-                            <div class="helper-line">{state.transportReason}</div>
-                          ) : null}
-                        </dd>
-                      </div>
-
-                      <div class="state-cell">
-                        <dt>Actor Path</dt>
-                        <dd>
-                          <code>{state.address}</code>
-                        </dd>
-                      </div>
-                    </dl>
-                  </section>
-
-                  <section class="panel">
-                    <div class="panel-header">
-                      <div class="panel-title-row">
-                        <h3>Emitted Event Log</h3>
-                        <span class="panel-badge">{state.eventLog.length}</span>
-                      </div>
-                    </div>
-
-                    <ol class="event-list">
-                      {state.eventLog.length > 0 ? (
-                        state.eventLog.map((event: HeadlessCheckoutEventLog) => renderEvent(event))
-                      ) : (
-                        <li class="event-item">
-                          <div class="event-meta">No emitted events yet.</div>
-                        </li>
-                      )}
-                    </ol>
-                  </section>
-
-                  <section class="panel">
-                    <div class="panel-header">
-                      <h3>Runtime Ownership</h3>
-                      <p class="panel-copy">
-                        The element is the client-side host. The remote actor runtime is owned by a
-                        service worker in this demo. Production hosts usually consume the same
-                        source from a server or worker-owned runtime.
-                      </p>
-                    </div>
-
-                    <pre class="code-note">{`await navigator.serviceWorker.register("./ignite-headless-host.sw.js", {
+                  <pre class="code-note">{`await navigator.serviceWorker.register("./ignite-headless-host.sw.js", {
   type: "module",
   scope: "./",
 });
@@ -1016,13 +1008,12 @@ createIgniteActorSource(foreignRemoteRef, {
       }
     }),
 });`}</pre>
-                  </section>
-                </div>
-              </section>
-            </div>
-          </main>
-        </>
-      );
-    }
-  );
+                </section>
+              </div>
+            </section>
+          </div>
+        </main>
+      </>
+    );
+  });
 }

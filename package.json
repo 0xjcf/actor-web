@@ -80,7 +80,7 @@
   "homepage": "https://github.com/0xjcf/actor-web#readme",
   "dependencies": {
     "@actor-core/testing": "workspace:*",
-    "xstate": "^5.19.0"
+    "xstate": "5.30.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.2",

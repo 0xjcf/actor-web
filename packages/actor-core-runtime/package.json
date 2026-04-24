@@ -38,7 +38,7 @@
   "dependencies": {
     "@franchise/shared-contracts": "file:../../../fas/packages/shared-contracts",
     "uuid": "^11.1.0",
-    "xstate": "^5.8.0"
+    "xstate": "5.30.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.8.0",

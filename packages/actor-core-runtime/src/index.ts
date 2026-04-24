@@ -216,6 +216,24 @@ export type {
   ProjectionTransportState,
   ProjectionTransportStatus,
 } from './projection-transport.js';
+export type {
+  CreateRuntimeGatewayHubOptions,
+  CreateRuntimeGatewaySourceOptions,
+  RuntimeGatewayClientFrame,
+  RuntimeGatewayConnectionAdapter,
+  RuntimeGatewayErrorCode,
+  RuntimeGatewayEventProjection,
+  RuntimeGatewayScopeDescriptor,
+  RuntimeGatewayScopeResolver,
+  RuntimeGatewayServerFrame,
+  RuntimeGatewaySnapshotProjection,
+  RuntimeGatewaySource,
+} from './runtime-gateway.js';
+export {
+  createRuntimeGatewayHub,
+  createRuntimeGatewaySource,
+  RuntimeGatewayScopeError,
+} from './runtime-gateway.js';
 // Actor implementation classes
 export { StatelessActor } from './stateless-actor.js';
 export type { InMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';

@@ -34,7 +34,7 @@
   "license": "MIT",
   "dependencies": {
     "@actor-core/runtime": "workspace:*",
-    "xstate": "^5.8.0",
+    "xstate": "5.30.0",
     "@xstate/graph": "^2.0.0"
   },
   "devDependencies": {

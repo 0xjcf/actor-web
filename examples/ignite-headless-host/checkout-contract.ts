@@ -73,7 +73,7 @@ export function createCheckoutBehavior() {
   return defineActor<CheckoutCommand>()
     .withMachine(checkoutMachine)
     .onMessage(({ actor, message }) => {
-      const context = actor.getSnapshot().context as CheckoutContext;
+      const context = actor.getSnapshot().context;
 
       if (message.type === 'SUBMIT') {
         return {
@@ -92,8 +92,7 @@ export function createCheckoutBehavior() {
         },
         emit: [{ type: 'CHECKOUT_RESET' }],
       };
-    })
-    .build();
+    });
 }
 
 export function createActorSnapshot<TContext>(
