@@ -136,7 +136,7 @@ export function createLogisticsHostFromSource(
     (event) => {
       state = {
         ...state,
-        eventLog: [toEventLogEntry(event), ...state.eventLog].slice(0, 10),
+        eventLog: [toEventLogEntry(event), ...state.eventLog],
       };
       notify();
     },

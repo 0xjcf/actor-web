@@ -10,24 +10,45 @@ export const PROVIDER_CONSOLE_ELEMENT_NAME = 'aw-provider-console';
 
 type ProviderConsoleEvent =
   | { type: 'refresh' }
+  | { type: 'mode'; mode: 'simulation' | 'manual' }
+  | { type: 'queue.select'; shipmentId: string }
+  | { type: 'queue.next' }
+  | { type: 'queue.prev' }
   | { type: 'signal'; signal: ProviderSignal; note: string };
 
+interface ProviderQueueItem {
+  shipmentId: string;
+  destination: string | null;
+  reference: string | null;
+  status: ShipmentStatus;
+  facility: string;
+  signal: ProviderSignal | null;
+  loadId: string;
+  note: string | null;
+  updatedAt: number;
+}
+
 interface ProviderStatus {
-  mode: string;
+  mode: 'simulation' | 'manual' | 'unknown';
   shipmentId: string | null;
   status: ShipmentStatus | null;
   facility: string | null;
   signal: ProviderSignal | null;
   loadId: string | null;
   note: string | null;
+  queue: ProviderQueueItem[];
 }
 
 interface ProviderConsoleState {
   restUrl: string | null;
   status: ProviderStatus;
+  selectedShipmentId: string | null;
+  queuePage: number;
   busy: boolean;
   message: string;
 }
+
+const PAGE_SIZE = 5;
 
 const signals: Array<{ signal: ProviderSignal; label: string; note: string }> = [
   {
@@ -108,6 +129,19 @@ const styles = `
   }
   .value { color: #f3f7fa; font-weight: 700; overflow-wrap: anywhere; }
   .actions { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mode-toggle { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .queue-item {
+    display: grid;
+    gap: 8px;
+    padding: 12px 14px;
+    border: 1px solid rgba(120, 142, 156, 0.14);
+    border-radius: 8px;
+    background: rgba(10, 14, 18, 0.72);
+  }
+  .queue-item.active { border-color: rgba(94, 234, 212, 0.46); }
+  .queue-head { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+  .queue-meta { color: #8da1af; font-size: 13px; line-height: 1.45; }
+  .pager { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
   button {
     min-height: 48px;
     padding: 0 14px;
@@ -120,6 +154,7 @@ const styles = `
     font-weight: 800;
   }
   button.secondary { background: rgba(38, 48, 57, 0.96); border-color: rgba(120, 142, 156, 0.2); }
+  button.active { background: #0f766e; border-color: rgba(94, 234, 212, 0.42); }
   button:disabled { cursor: wait; opacity: 0.56; }
   a { color: #5eead4; font-weight: 800; text-decoration: none; }
   @media (max-width: 760px) { :host { padding: 18px; } .grid, .actions { grid-template-columns: 1fr; } }
@@ -141,6 +176,7 @@ function emptyStatus(): ProviderStatus {
     signal: null,
     loadId: null,
     note: null,
+    queue: [],
   };
 }
 
@@ -150,6 +186,8 @@ function createProviderConsoleAdapter() {
   let state: ProviderConsoleState = {
     restUrl,
     status: emptyStatus(),
+    selectedShipmentId: null,
+    queuePage: 0,
     busy: false,
     message: restUrl
       ? 'Provider console ready.'
@@ -158,7 +196,10 @@ function createProviderConsoleAdapter() {
 
   const clone = (): ProviderConsoleState => ({
     ...state,
-    status: { ...state.status },
+    status: {
+      ...state.status,
+      queue: state.status.queue.map((item) => ({ ...item })),
+    },
   });
 
   const notify = (): void => {
@@ -168,22 +209,68 @@ function createProviderConsoleAdapter() {
     }
   };
 
+  const selectedOrFirst = (
+    status: ProviderStatus,
+    selectedShipmentId: string | null
+  ): string | null => {
+    if (selectedShipmentId && status.queue.some((item) => item.shipmentId === selectedShipmentId)) {
+      return selectedShipmentId;
+    }
+
+    return status.shipmentId ?? status.queue[0]?.shipmentId ?? null;
+  };
+
   const refresh = async (): Promise<void> => {
     if (!restUrl) {
       return;
     }
 
     const response = await fetch(`${restUrl}/provider/status`);
+    const status = (await response.json()) as ProviderStatus;
     state = {
       ...state,
-      status: (await response.json()) as ProviderStatus,
+      status,
+      selectedShipmentId: selectedOrFirst(status, state.selectedShipmentId),
+      queuePage: Math.min(
+        state.queuePage,
+        Math.max(0, Math.ceil(status.queue.length / PAGE_SIZE) - 1)
+      ),
       message: 'Provider status refreshed.',
     };
     notify();
   };
 
-  const sendSignal = async (signal: ProviderSignal, note: string): Promise<void> => {
+  const setMode = async (mode: 'simulation' | 'manual'): Promise<void> => {
     if (!restUrl || state.busy) {
+      return;
+    }
+
+    state = { ...state, busy: true, message: `Switching provider mode to ${mode}.` };
+    notify();
+
+    try {
+      const response = await fetch(`${restUrl}/provider/mode`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+      const body = (await response.json()) as ProviderStatus & { error?: string };
+      state = {
+        ...state,
+        status: response.ok ? body : state.status,
+        selectedShipmentId: response.ok
+          ? selectedOrFirst(body, state.selectedShipmentId)
+          : state.selectedShipmentId,
+        message: response.ok ? `Provider mode set to ${mode}.` : String(body.error),
+      };
+    } finally {
+      state = { ...state, busy: false };
+      notify();
+    }
+  };
+
+  const sendSignal = async (signal: ProviderSignal, note: string): Promise<void> => {
+    if (!restUrl || state.busy || !state.selectedShipmentId) {
       return;
     }
 
@@ -194,12 +281,15 @@ function createProviderConsoleAdapter() {
       const response = await fetch(`${restUrl}/provider/signals`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ signal, note }),
+        body: JSON.stringify({ shipmentId: state.selectedShipmentId, signal, note }),
       });
       const body = (await response.json()) as ProviderStatus & { error?: string };
       state = {
         ...state,
         status: response.ok ? body : state.status,
+        selectedShipmentId: response.ok
+          ? selectedOrFirst(body, state.selectedShipmentId)
+          : state.selectedShipmentId,
         message: response.ok ? `${signal} accepted by server runtime.` : String(body.error),
       };
     } finally {
@@ -207,6 +297,10 @@ function createProviderConsoleAdapter() {
       notify();
     }
   };
+
+  const refreshTimer = window.setInterval(() => {
+    void refresh();
+  }, 2_000);
 
   void refresh();
 
@@ -227,12 +321,42 @@ function createProviderConsoleAdapter() {
         return;
       }
 
+      if (event.type === 'mode') {
+        void setMode(event.mode);
+        return;
+      }
+
+      if (event.type === 'queue.select') {
+        state = { ...state, selectedShipmentId: event.shipmentId };
+        notify();
+        return;
+      }
+
+      if (event.type === 'queue.prev') {
+        state = { ...state, queuePage: Math.max(0, state.queuePage - 1) };
+        notify();
+        return;
+      }
+
+      if (event.type === 'queue.next') {
+        state = {
+          ...state,
+          queuePage: Math.min(
+            Math.max(0, Math.ceil(state.status.queue.length / PAGE_SIZE) - 1),
+            state.queuePage + 1
+          ),
+        };
+        notify();
+        return;
+      }
+
       void sendSignal(event.signal, event.note);
     },
     getState(): ProviderConsoleState {
       return clone();
     },
     stop(): void {
+      window.clearInterval(refreshTimer);
       listeners.clear();
     },
   };
@@ -248,79 +372,179 @@ export function defineProviderConsoleElement(): void {
     return;
   }
 
-  registerProviderConsole(PROVIDER_CONSOLE_ELEMENT_NAME, ({ state, send }) => (
-    <>
-      <style>{styles}</style>
-      <main>
-        <header>
-          <p class="eyebrow">Remote Provider HQ</p>
-          <h1>Provider scan console</h1>
-          <p class="copy">
-            Manually send label, truck, outbound, delivery, and return signals to the server
-            runtime. The control tower stays updated through the gateway WebSocket.
-          </p>
-        </header>
+  registerProviderConsole(PROVIDER_CONSOLE_ELEMENT_NAME, ({ state, send }) => {
+    const queuePageCount = Math.max(1, Math.ceil(state.status.queue.length / PAGE_SIZE));
+    const visibleQueue = state.status.queue.slice(
+      state.queuePage * PAGE_SIZE,
+      state.queuePage * PAGE_SIZE + PAGE_SIZE
+    );
+    const selectedItem = state.status.queue.find(
+      (item) => item.shipmentId === state.selectedShipmentId
+    );
 
-        <section class="panel">
-          <h2>Current Shipment</h2>
-          <div class="grid">
-            <div class="metric">
-              <span class="label">Lifecycle Mode</span>
-              <span class="value">{state.status.mode}</span>
-            </div>
-            <div class="metric">
-              <span class="label">Shipment</span>
-              <span class="value">{state.status.shipmentId ?? 'none'}</span>
-            </div>
-            <div class="metric">
-              <span class="label">Status</span>
-              <span class="value">{state.status.status ?? 'none'}</span>
-            </div>
-            <div class="metric">
-              <span class="label">Facility</span>
-              <span class="value">{state.status.facility ?? 'waiting for scan'}</span>
-            </div>
-            <div class="metric">
-              <span class="label">Latest Signal</span>
-              <span class="value">{state.status.signal ?? 'none'}</span>
-            </div>
-            <div class="metric">
-              <span class="label">Truck Load</span>
-              <span class="value">{state.status.loadId ?? 'unassigned'}</span>
-            </div>
-          </div>
-        </section>
+    return (
+      <>
+        <style>{styles}</style>
+        <main>
+          <header>
+            <p class="eyebrow">Remote Provider HQ</p>
+            <h1>Provider scan console</h1>
+            <p class="copy">
+              Manually send label, truck, outbound, delivery, and return signals to the server
+              runtime. The control tower stays updated through the gateway WebSocket.
+            </p>
+          </header>
 
-        <section class="panel">
-          <h2>Provider Signals</h2>
-          <div class="actions">
-            {signals.map((entry) => (
+          <section class="panel">
+            <h2>Operating Mode</h2>
+            <div class="mode-toggle">
               <button
                 type="button"
+                class={state.status.mode === 'simulation' ? 'active' : 'secondary'}
                 disabled={state.busy || !state.restUrl}
-                onClick={() => send({ type: 'signal', signal: entry.signal, note: entry.note })}
+                onClick={() => send({ type: 'mode', mode: 'simulation' })}
               >
-                {entry.label}
+                Live Simulation
               </button>
-            ))}
-          </div>
-          <p class="copy">{state.status.note ?? state.message}</p>
-          <button
-            type="button"
-            class="secondary"
-            disabled={state.busy || !state.restUrl}
-            onClick={() => send({ type: 'refresh' })}
-          >
-            Refresh Provider Status
-          </button>
-        </section>
+              <button
+                type="button"
+                class={state.status.mode === 'manual' ? 'active' : 'secondary'}
+                disabled={state.busy || !state.restUrl}
+                onClick={() => send({ type: 'mode', mode: 'manual' })}
+              >
+                Manual Provider
+              </button>
+            </div>
+            <p class="copy">
+              Simulation lets the server advance shipments. Manual mode lets this provider console
+              process the queue one shipment at a time.
+            </p>
+          </section>
 
-        <p class="copy">
-          <a href="./">Return to Logistics Control Tower</a>
-        </p>
-      </main>
-    </>
-  ));
+          <section class="panel">
+            <h2>Provider Queue</h2>
+            {visibleQueue.length > 0 ? (
+              visibleQueue.map((item) => (
+                <article
+                  class={`queue-item ${item.shipmentId === state.selectedShipmentId ? 'active' : ''}`}
+                >
+                  <div class="queue-head">
+                    <strong>{item.shipmentId}</strong>
+                    <button
+                      type="button"
+                      class="secondary"
+                      disabled={state.busy}
+                      onClick={() => send({ type: 'queue.select', shipmentId: item.shipmentId })}
+                    >
+                      Select
+                    </button>
+                  </div>
+                  <div class="queue-meta">
+                    <div>{item.destination ?? 'destination pending'}</div>
+                    <div>
+                      {item.reference ?? 'no reference'} / {item.status}
+                    </div>
+                    <div>
+                      {item.signal ?? 'awaiting provider scan'} / {item.loadId}
+                    </div>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <div class="queue-item">
+                <span class="queue-meta">No shipments are waiting at provider HQ.</span>
+              </div>
+            )}
+            <div class="pager">
+              <button
+                type="button"
+                class="secondary"
+                disabled={state.queuePage === 0}
+                onClick={() => send({ type: 'queue.prev' })}
+              >
+                Previous
+              </button>
+              <span class="queue-meta">
+                Page {state.queuePage + 1} of {queuePageCount}
+              </span>
+              <button
+                type="button"
+                class="secondary"
+                disabled={state.queuePage + 1 >= queuePageCount}
+                onClick={() => send({ type: 'queue.next' })}
+              >
+                Next
+              </button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Current Shipment</h2>
+            <div class="grid">
+              <div class="metric">
+                <span class="label">Lifecycle Mode</span>
+                <span class="value">{state.status.mode}</span>
+              </div>
+              <div class="metric">
+                <span class="label">Shipment</span>
+                <span class="value">
+                  {selectedItem?.shipmentId ?? state.status.shipmentId ?? 'none'}
+                </span>
+              </div>
+              <div class="metric">
+                <span class="label">Status</span>
+                <span class="value">{selectedItem?.status ?? state.status.status ?? 'none'}</span>
+              </div>
+              <div class="metric">
+                <span class="label">Facility</span>
+                <span class="value">
+                  {selectedItem?.facility ?? state.status.facility ?? 'waiting for scan'}
+                </span>
+              </div>
+              <div class="metric">
+                <span class="label">Latest Signal</span>
+                <span class="value">{selectedItem?.signal ?? state.status.signal ?? 'none'}</span>
+              </div>
+              <div class="metric">
+                <span class="label">Truck Load</span>
+                <span class="value">
+                  {selectedItem?.loadId ?? state.status.loadId ?? 'unassigned'}
+                </span>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Provider Signals</h2>
+            <div class="actions">
+              {signals.map((entry) => (
+                <button
+                  type="button"
+                  disabled={state.busy || !state.restUrl || !state.selectedShipmentId}
+                  onClick={() => send({ type: 'signal', signal: entry.signal, note: entry.note })}
+                >
+                  {entry.label}
+                </button>
+              ))}
+            </div>
+            <p class="copy">{selectedItem?.note ?? state.status.note ?? state.message}</p>
+            <button
+              type="button"
+              class="secondary"
+              disabled={state.busy || !state.restUrl}
+              onClick={() => send({ type: 'refresh' })}
+            >
+              Refresh Provider Status
+            </button>
+          </section>
+
+          <p class="copy">
+            <a href="./">Return to Logistics Control Tower</a>
+          </p>
+        </main>
+      </>
+    );
+  });
 }
 
 defineProviderConsoleElement();

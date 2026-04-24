@@ -26,6 +26,7 @@ describe('ignite-headless-host element', () => {
     expect(element.shadowRoot?.textContent).toContain('Service Worker Runtime');
     expect(element.shadowRoot?.textContent).toContain('Remote Provider HQ');
     expect(element.shadowRoot?.textContent).toContain('Open Provider HQ Console');
+    expect(element.shadowRoot?.textContent).toContain('Page 1 of 1');
     expect(element.shadowRoot?.textContent).not.toContain('In Transit');
     expect(element.shadowRoot?.textContent).toContain('Worker -> Server');
     expect(element.shadowRoot?.textContent).toContain('Gateway WebSocket projection');
@@ -72,6 +73,8 @@ describe('ignite-headless-host element', () => {
 
     expect(element.shadowRoot?.textContent).toContain('Remote Provider HQ');
     expect(element.shadowRoot?.textContent).toContain('Provider scan console');
+    expect(element.shadowRoot?.textContent).toContain('Operating Mode');
+    expect(element.shadowRoot?.textContent).toContain('Provider Queue');
     expect(element.shadowRoot?.textContent).toContain('Scan Label');
     expect(element.shadowRoot?.textContent).toContain('Report Return');
   });

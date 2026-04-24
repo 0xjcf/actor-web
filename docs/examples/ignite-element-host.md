@@ -44,10 +44,12 @@ The launcher also prints a Provider HQ URL. To drive the lifecycle manually:
 LIFECYCLE_MODE=manual pnpm examples:logistics
 ```
 
-Open the Provider HQ console and send label scan, truck pack, outbound scan,
-delivery confirmation, or return exception signals. The server runtime applies
-those provider updates to the shipment actor, and the control tower receives
-fresh snapshots/events over the gateway WebSocket.
+Open the Provider HQ console to switch between live simulation and manual
+provider control. In manual mode, the console polls the provider queue, lets the
+operator pick the active shipment, and sends label scan, truck pack, outbound
+scan, delivery confirmation, or return exception signals. The server runtime
+applies those provider updates to the shipment actor, and the control tower
+receives fresh snapshots/events over the gateway WebSocket.
 
 ## Runtime Owners
 
@@ -70,14 +72,17 @@ fresh snapshots/events over the gateway WebSocket.
    actor to `PLAN_ROUTE`.
 4. The worker returns a deterministic carrier, ETA, and route note.
 5. The server shipment actor applies `ASSIGN_ROUTE` and emits `ROUTE_ASSIGNED`.
-6. In simulation mode, the server runtime simulates provider lifecycle progress: after
-   roughly 10 seconds it emits `SHIPMENT_IN_TRANSIT` and the timeline shows
-   `Shipped`; after roughly 20 seconds it emits deterministic
-   `SHIPMENT_DELIVERED` or `SHIPMENT_RETURNED` based on the shipment id.
+6. In simulation mode, the server runtime simulates provider lifecycle progress:
+   label scan, truck pack, outbound scan, then deterministic delivered/returned
+   completion.
 7. In manual mode, the Provider HQ console sends the lifecycle signals instead
-   of the server timers.
+   of the server timers and processes queued shipments one at a time.
 8. Subscribed browser hosts receive live gateway snapshots/events without
    polling.
+
+The control tower keeps the full shipment timeline and gateway event stream in
+memory, showing five entries per page so an operator can inspect previous
+lifecycle updates without losing the latest projection.
 
 ## Boundary Guidance
 

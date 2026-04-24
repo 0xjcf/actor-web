@@ -322,18 +322,42 @@ describe('ignite-headless-host logistics example', () => {
       mode: 'manual',
       shipmentId: 'shipment-manual-6006',
       signal: null,
+      queue: [
+        expect.objectContaining({
+          shipmentId: 'shipment-manual-6006',
+          destination: 'Chicago warehouse',
+          status: 'route-assigned',
+        }),
+      ],
+    });
+
+    const modeResponse = await fetch(`${restUrl}/provider/mode`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'manual' }),
+    });
+    expect(modeResponse.status).toBe(202);
+    await expect(modeResponse.json()).resolves.toMatchObject({
+      mode: 'manual',
+      queue: [expect.objectContaining({ shipmentId: 'shipment-manual-6006' })],
     });
 
     const providerResponse = await fetch(`${restUrl}/provider/signals`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ signal: 'OUTBOUND_SCAN' }),
+      body: JSON.stringify({ shipmentId: 'shipment-manual-6006', signal: 'OUTBOUND_SCAN' }),
     });
     expect(providerResponse.status).toBe(202);
     await expect(providerResponse.json()).resolves.toMatchObject({
       shipmentId: 'shipment-manual-6006',
       status: 'in-transit',
       signal: 'OUTBOUND_SCAN',
+      queue: [
+        expect.objectContaining({
+          shipmentId: 'shipment-manual-6006',
+          signal: 'OUTBOUND_SCAN',
+        }),
+      ],
     });
 
     await waitForHostState(

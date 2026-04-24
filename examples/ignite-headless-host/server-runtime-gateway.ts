@@ -25,17 +25,32 @@ import {
   type RoutePlan,
   type ShipmentCommand,
   type ShipmentContext,
+  type ShipmentStatus,
   WORKER_ACTOR_ID,
   WORKER_ADDRESS,
   WORKER_NODE,
 } from './checkout-contract';
+
+type LifecycleMode = 'simulation' | 'manual';
+
+interface ProviderQueueItem {
+  shipmentId: string;
+  destination: string | null;
+  reference: string | null;
+  status: ShipmentStatus;
+  facility: string;
+  signal: ProviderSignal | null;
+  loadId: string;
+  note: string | null;
+  updatedAt: number;
+}
 
 export interface LogisticsRuntimeGatewayServerOptions {
   host?: string;
   port?: number;
   transportPort?: number;
   restPort?: number;
-  lifecycleMode?: 'simulation' | 'manual';
+  lifecycleMode?: LifecycleMode;
   lifecycleLabelDelayMs?: number;
   lifecyclePackedDelayMs?: number;
   lifecycleShippedDelayMs?: number;
@@ -141,7 +156,7 @@ function isProviderSignal(value: unknown): value is ProviderSignal {
 export function createLogisticsRuntimeGatewayServer(
   options: LogisticsRuntimeGatewayServerOptions = {}
 ): LogisticsRuntimeGatewayServer {
-  const lifecycleMode = options.lifecycleMode ?? 'simulation';
+  let lifecycleMode = options.lifecycleMode ?? 'simulation';
   const lifecycleLabelDelayMs = options.lifecycleLabelDelayMs ?? 2_000;
   const lifecyclePackedDelayMs = options.lifecyclePackedDelayMs ?? 6_000;
   const lifecycleShippedDelayMs = options.lifecycleShippedDelayMs ?? 10_000;
@@ -162,6 +177,7 @@ export function createLogisticsRuntimeGatewayServer(
   let gatewayUrl: string | null = null;
   let restUrl: string | null = null;
   const lifecycleTimers = new Set<ReturnType<typeof setTimeout>>();
+  const providerQueue = new Map<string, ProviderQueueItem>();
 
   const clearLifecycleTimers = (): void => {
     for (const timer of Array.from(lifecycleTimers)) {
@@ -219,6 +235,79 @@ export function createLogisticsRuntimeGatewayServer(
     );
   };
 
+  const upsertProviderQueue = (context: ShipmentContext): void => {
+    if (!context.shipmentId) {
+      return;
+    }
+
+    const current = providerQueue.get(context.shipmentId);
+    providerQueue.set(context.shipmentId, {
+      shipmentId: context.shipmentId,
+      destination: context.destination ?? current?.destination ?? null,
+      reference: context.reference ?? current?.reference ?? null,
+      status: context.status,
+      facility:
+        context.providerFacility ??
+        current?.facility ??
+        providerFacilityForShipment(context.shipmentId),
+      signal: context.providerSignal ?? current?.signal ?? null,
+      loadId:
+        context.providerLoadId ?? current?.loadId ?? providerLoadIdForShipment(context.shipmentId),
+      note: context.providerNote ?? current?.note ?? null,
+      updatedAt: Date.now(),
+    });
+  };
+
+  const providerQueueItems = (): ProviderQueueItem[] =>
+    Array.from(providerQueue.values()).sort((left, right) => right.updatedAt - left.updatedAt);
+
+  const selectedProviderShipmentId = (): string | null => {
+    const active = providerQueueItems().find(
+      (item) => item.status !== 'delivered' && item.status !== 'returned'
+    );
+    return active?.shipmentId ?? providerQueueItems()[0]?.shipmentId ?? null;
+  };
+
+  const providerStatus = (): {
+    mode: LifecycleMode;
+    shipmentId: string | null;
+    status: ShipmentStatus | null;
+    facility: string | null;
+    signal: ProviderSignal | null;
+    loadId: string | null;
+    note: string | null;
+    queue: ProviderQueueItem[];
+  } => {
+    const snapshot = shipmentActor?.getSnapshot().context ?? null;
+    const selectedShipmentId = selectedProviderShipmentId();
+    const queued = selectedShipmentId ? providerQueue.get(selectedShipmentId) : undefined;
+
+    return {
+      mode: lifecycleMode,
+      shipmentId: queued?.shipmentId ?? snapshot?.shipmentId ?? null,
+      status: queued?.status ?? snapshot?.status ?? null,
+      facility: queued?.facility ?? snapshot?.providerFacility ?? null,
+      signal: queued?.signal ?? snapshot?.providerSignal ?? null,
+      loadId: queued?.loadId ?? snapshot?.providerLoadId ?? null,
+      note: queued?.note ?? snapshot?.providerNote ?? null,
+      queue: providerQueueItems(),
+    };
+  };
+
+  const setLifecycleMode = (nextMode: LifecycleMode): void => {
+    lifecycleMode = nextMode;
+    clearLifecycleTimers();
+
+    if (nextMode !== 'simulation') {
+      return;
+    }
+
+    const activeShipmentId = selectedProviderShipmentId();
+    if (activeShipmentId) {
+      scheduleShipmentLifecycle(activeShipmentId);
+    }
+  };
+
   const applyProviderSignal = async (input: {
     shipmentId?: string;
     signal: ProviderSignal;
@@ -245,6 +334,7 @@ export function createLogisticsRuntimeGatewayServer(
       note: input.note ?? providerNoteForSignal(input.signal),
     });
     await system.flush();
+    upsertProviderQueue(shipmentActor.getSnapshot().context);
 
     return shipmentActor.getSnapshot().context;
   };
@@ -303,6 +393,8 @@ export function createLogisticsRuntimeGatewayServer(
       destination: input.destination,
       reference: input.reference,
     });
+    await system.flush();
+    upsertProviderQueue(shipmentActor.getSnapshot().context);
 
     const plan = await planRouteForShipment({
       shipmentId,
@@ -311,6 +403,8 @@ export function createLogisticsRuntimeGatewayServer(
     });
     if (plan) {
       await shipmentActor.send({ type: 'ASSIGN_ROUTE', plan });
+      await system.flush();
+      upsertProviderQueue(shipmentActor.getSnapshot().context);
       scheduleShipmentLifecycle(shipmentId);
     }
 
@@ -375,6 +469,7 @@ export function createLogisticsRuntimeGatewayServer(
 
       if (request.method === 'POST' && /^\/shipments\/[^/]+\/reset$/.test(url.pathname)) {
         clearLifecycleTimers();
+        providerQueue.clear();
         await shipmentActor?.send({ type: 'RESET_SHIPMENT' });
         sendJson(response, 202, { status: 'idle' });
         return;
@@ -392,16 +487,19 @@ export function createLogisticsRuntimeGatewayServer(
       }
 
       if (request.method === 'GET' && url.pathname === '/provider/status') {
-        const snapshot = shipmentActor?.getSnapshot().context ?? null;
-        sendJson(response, 200, {
-          mode: lifecycleMode,
-          shipmentId: snapshot?.shipmentId ?? null,
-          status: snapshot?.status ?? null,
-          facility: snapshot?.providerFacility ?? null,
-          signal: snapshot?.providerSignal ?? null,
-          loadId: snapshot?.providerLoadId ?? null,
-          note: snapshot?.providerNote ?? null,
-        });
+        sendJson(response, 200, providerStatus());
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/provider/mode') {
+        const body = await readJson(request);
+        if (body.mode !== 'simulation' && body.mode !== 'manual') {
+          sendJson(response, 400, { error: 'provider mode must be simulation or manual' });
+          return;
+        }
+
+        setLifecycleMode(body.mode);
+        sendJson(response, 202, providerStatus());
         return;
       }
 
@@ -413,20 +511,17 @@ export function createLogisticsRuntimeGatewayServer(
         }
 
         const snapshot = await applyProviderSignal({
-          shipmentId: typeof body.shipmentId === 'string' ? body.shipmentId : undefined,
+          shipmentId:
+            typeof body.shipmentId === 'string'
+              ? body.shipmentId
+              : (selectedProviderShipmentId() ?? undefined),
           signal: body.signal,
           facility: typeof body.facility === 'string' ? body.facility : undefined,
           loadId: typeof body.loadId === 'string' ? body.loadId : undefined,
           note: typeof body.note === 'string' ? body.note : undefined,
         });
-        sendJson(response, 202, {
-          shipmentId: snapshot.shipmentId,
-          status: snapshot.status,
-          facility: snapshot.providerFacility,
-          signal: snapshot.providerSignal,
-          loadId: snapshot.providerLoadId,
-          note: snapshot.providerNote,
-        });
+        upsertProviderQueue(snapshot);
+        sendJson(response, 202, providerStatus());
         return;
       }
 

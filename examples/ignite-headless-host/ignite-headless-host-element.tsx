@@ -19,6 +19,10 @@ type LogisticsElementEvent =
   | { type: 'draft.reference'; value: string }
   | { type: 'create' }
   | { type: 'create.quick'; destination: string; reference: string }
+  | { type: 'timeline.next' }
+  | { type: 'timeline.prev' }
+  | { type: 'events.next' }
+  | { type: 'events.prev' }
   | { type: 'reset' };
 
 interface LogisticsElementState extends LogisticsHostState {
@@ -26,6 +30,8 @@ interface LogisticsElementState extends LogisticsHostState {
   busy: boolean;
   draftDestination: string;
   draftReference: string;
+  timelinePage: number;
+  eventPage: number;
 }
 
 type LogisticsActorState = ActorWebExtendedState<ShipmentContext>;
@@ -36,6 +42,8 @@ type TransportAwareActor = {
     listener: (status: { state: LogisticsHostState['transportState']; reason?: string }) => void
   ) => () => void;
 };
+
+const PAGE_SIZE = 5;
 
 function configuredRestUrl(): string | undefined {
   const configuredUrl = import.meta.env.VITE_ACTOR_WEB_REST_URL;
@@ -253,6 +261,14 @@ const styles = `
     border-radius: 8px;
     background: rgba(10, 14, 18, 0.72);
   }
+  .section-head {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .pager { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+  .pager button { min-height: 34px; padding: 0 10px; }
   .muted { color: #8da1af; font-size: 13px; line-height: 1.45; }
   a { color: #5eead4; font-weight: 700; text-decoration: none; }
 
@@ -426,7 +442,13 @@ function projectElementState(
     busy: current?.busy ?? false,
     draftDestination: current?.draftDestination ?? 'Chicago warehouse',
     draftReference: current?.draftReference ?? 'REF-1001',
+    timelinePage: current?.timelinePage ?? 0,
+    eventPage: current?.eventPage ?? 0,
   };
+}
+
+function clampPage(page: number, itemCount: number): number {
+  return Math.min(Math.max(0, Math.ceil(itemCount / PAGE_SIZE) - 1), Math.max(0, page));
 }
 
 function createLogisticsAdapter() {
@@ -465,7 +487,7 @@ function createLogisticsAdapter() {
                 actorId: actor.address.id,
               },
               ...state.eventLog,
-            ].slice(0, 10),
+            ],
           };
           notify();
         },
@@ -575,6 +597,34 @@ function createLogisticsAdapter() {
           notify();
           void run(() => createShipment(event.destination, event.reference));
           return;
+        case 'timeline.prev':
+          state = { ...state, timelinePage: Math.max(0, state.timelinePage - 1) };
+          notify();
+          return;
+        case 'timeline.next':
+          state = {
+            ...state,
+            timelinePage: Math.min(
+              Math.max(0, Math.ceil(state.timeline.length / PAGE_SIZE) - 1),
+              state.timelinePage + 1
+            ),
+          };
+          notify();
+          return;
+        case 'events.prev':
+          state = { ...state, eventPage: Math.max(0, state.eventPage - 1) };
+          notify();
+          return;
+        case 'events.next':
+          state = {
+            ...state,
+            eventPage: Math.min(
+              Math.max(0, Math.ceil(state.eventLog.length / PAGE_SIZE) - 1),
+              state.eventPage + 1
+            ),
+          };
+          notify();
+          return;
         case 'reset':
           void run(() => actor.send({ type: 'RESET_SHIPMENT' }));
           return;
@@ -609,6 +659,18 @@ export function defineIgniteHeadlessHostElement(): void {
     const canReset = !state.busy && (state.shipmentCount > 0 || state.eventLog.length > 0);
     const statusClass = state.busy ? 'badge status-busy' : `badge status-${state.status}`;
     const transportClass = `badge transport-${state.transportState}`;
+    const timelinePage = clampPage(state.timelinePage, state.timeline.length);
+    const timelinePageCount = Math.max(1, Math.ceil(state.timeline.length / PAGE_SIZE));
+    const visibleTimeline = state.timeline.slice(
+      timelinePage * PAGE_SIZE,
+      timelinePage * PAGE_SIZE + PAGE_SIZE
+    );
+    const eventPage = clampPage(state.eventPage, state.eventLog.length);
+    const eventPageCount = Math.max(1, Math.ceil(state.eventLog.length / PAGE_SIZE));
+    const visibleEvents = state.eventLog.slice(
+      eventPage * PAGE_SIZE,
+      eventPage * PAGE_SIZE + PAGE_SIZE
+    );
 
     return (
       <>
@@ -870,29 +932,77 @@ export function defineIgniteHeadlessHostElement(): void {
                 </section>
 
                 <section class="panel">
-                  <h3>Timeline</h3>
+                  <div class="section-head">
+                    <h3>Timeline</h3>
+                    <span class="muted">
+                      Page {timelinePage + 1} of {timelinePageCount}
+                    </span>
+                  </div>
                   <ol class="list">
-                    {state.timeline.length > 0 ? (
-                      state.timeline.map((entry) => renderTimelineEntry(entry))
+                    {visibleTimeline.length > 0 ? (
+                      visibleTimeline.map((entry) => renderTimelineEntry(entry))
                     ) : (
                       <li class="item">
                         <span class="muted">No shipment activity yet.</span>
                       </li>
                     )}
                   </ol>
+                  <div class="pager">
+                    <button
+                      type="button"
+                      class="secondary"
+                      disabled={timelinePage === 0}
+                      onClick={() => send({ type: 'timeline.prev' })}
+                    >
+                      Previous
+                    </button>
+                    <span class="muted">{state.timeline.length} total timeline entries</span>
+                    <button
+                      type="button"
+                      class="secondary"
+                      disabled={timelinePage + 1 >= timelinePageCount}
+                      onClick={() => send({ type: 'timeline.next' })}
+                    >
+                      Next
+                    </button>
+                  </div>
                 </section>
 
                 <section class="panel">
-                  <h3>Gateway Event Stream</h3>
+                  <div class="section-head">
+                    <h3>Gateway Event Stream</h3>
+                    <span class="muted">
+                      Page {eventPage + 1} of {eventPageCount}
+                    </span>
+                  </div>
                   <ol class="list">
-                    {state.eventLog.length > 0 ? (
-                      state.eventLog.map((event) => renderEvent(event))
+                    {visibleEvents.length > 0 ? (
+                      visibleEvents.map((event) => renderEvent(event))
                     ) : (
                       <li class="item">
                         <span class="muted">No emitted events yet.</span>
                       </li>
                     )}
                   </ol>
+                  <div class="pager">
+                    <button
+                      type="button"
+                      class="secondary"
+                      disabled={eventPage === 0}
+                      onClick={() => send({ type: 'events.prev' })}
+                    >
+                      Previous
+                    </button>
+                    <span class="muted">{state.eventLog.length} total gateway events</span>
+                    <button
+                      type="button"
+                      class="secondary"
+                      disabled={eventPage + 1 >= eventPageCount}
+                      onClick={() => send({ type: 'events.next' })}
+                    >
+                      Next
+                    </button>
+                  </div>
                 </section>
               </div>
             </section>
