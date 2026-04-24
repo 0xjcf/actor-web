@@ -25,7 +25,8 @@ describe('ignite-headless-host element', () => {
     expect(element.shadowRoot?.textContent).toContain('REST ingress');
     expect(element.shadowRoot?.textContent).toContain('Service Worker Runtime');
     expect(element.shadowRoot?.textContent).not.toContain('In Transit');
-    expect(element.shadowRoot?.textContent).not.toContain('Delivered');
+    expect(element.shadowRoot?.textContent).toContain('Worker -> Server');
+    expect(element.shadowRoot?.textContent).toContain('Gateway WebSocket projection');
 
     const root = element.shadowRoot;
     const input = root?.querySelector<HTMLInputElement>('input');
@@ -47,8 +48,10 @@ describe('ignite-headless-host element', () => {
     expect(root.textContent).toContain('route-requested');
     expect(root.textContent).toContain('Denver hub');
     expect(root.textContent).toContain('SHIPMENT_CREATED');
+    expect(root.textContent).toContain('Server Runtime');
+    expect(root.textContent).toContain('REST ingress + gateway WS');
     expect(root.textContent).toContain('connected');
-    expect(root.textContent).toContain('Lifecycle updates');
+    expect(root.textContent).toContain('Server lifecycle');
 
     resetButton.click();
     await flush();

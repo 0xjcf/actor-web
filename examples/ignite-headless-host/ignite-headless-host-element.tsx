@@ -163,6 +163,7 @@ const styles = `
   .status-idle { background: rgba(96, 165, 250, 0.14); color: #93c5fd; }
   .status-route-assigned, .status-delivered { background: rgba(16, 185, 129, 0.16); color: #34d399; }
   .status-route-requested, .status-in-transit { background: rgba(45, 212, 191, 0.14); color: #5eead4; }
+  .status-returned { background: rgba(251, 146, 60, 0.16); color: #fb923c; }
   .status-busy { background: rgba(245, 158, 11, 0.16); color: #fbbf24; }
   .transport-disconnected, .transport-degraded { background: rgba(248, 113, 113, 0.16); color: #f87171; }
 
@@ -205,10 +206,56 @@ const styles = `
     border-radius: 8px;
     background: rgba(10, 14, 18, 0.72);
   }
+  .event-item { border-left: 3px solid rgba(120, 142, 156, 0.32); }
+  .tone-server { border-left-color: #2dd4bf; }
+  .tone-worker { border-left-color: #60a5fa; }
+  .tone-lifecycle { border-left-color: #f59e0b; }
+  .tone-local { border-left-color: #a78bfa; }
+  .item-heading {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .runtime-chip {
+    display: inline-flex;
+    min-height: 22px;
+    align-items: center;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: rgba(120, 142, 156, 0.14);
+    color: #cbe7f2;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .route-meta {
+    display: grid;
+    gap: 2px;
+    color: #8da1af;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .route-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .route-card {
+    display: grid;
+    gap: 8px;
+    min-height: 118px;
+    padding: 12px 14px;
+    border: 1px solid rgba(120, 142, 156, 0.14);
+    border-left: 3px solid rgba(120, 142, 156, 0.32);
+    border-radius: 8px;
+    background: rgba(10, 14, 18, 0.72);
+  }
   .muted { color: #8da1af; font-size: 13px; line-height: 1.45; }
 
   @media (max-width: 900px) {
-    .header, .layout, .grid, .toolbar, .quick-grid { grid-template-columns: 1fr; }
+    .header, .layout, .grid, .toolbar, .quick-grid, .route-grid { grid-template-columns: 1fr; }
     .shell { padding: 18px; }
   }
 `;
@@ -233,14 +280,101 @@ function cloneState(state: LogisticsElementState): LogisticsElementState {
   };
 }
 
+function eventRuntime(eventType: ShipmentEvent['type']): {
+  source: string;
+  via: string;
+  tone: string;
+} {
+  if (eventType === 'ROUTE_ASSIGNED') {
+    return {
+      source: 'Worker -> Server',
+      via: 'Actor-Web transport + gateway WS',
+      tone: 'tone-worker',
+    };
+  }
+
+  if (eventType === 'SHIPMENT_CREATED' || eventType === 'ROUTE_REQUESTED') {
+    return {
+      source: 'Server Runtime',
+      via: 'REST ingress + gateway WS',
+      tone: 'tone-server',
+    };
+  }
+
+  if (
+    eventType === 'SHIPMENT_IN_TRANSIT' ||
+    eventType === 'SHIPMENT_DELIVERED' ||
+    eventType === 'SHIPMENT_RETURNED'
+  ) {
+    return {
+      source: 'Server Lifecycle',
+      via: 'gateway WS',
+      tone: 'tone-lifecycle',
+    };
+  }
+
+  return {
+    source: 'Server Runtime',
+    via: 'gateway command + gateway WS',
+    tone: 'tone-server',
+  };
+}
+
+function timelineRuntime(label: string): { source: string; via: string; tone: string } {
+  if (label === 'Route assigned') {
+    return {
+      source: 'Worker Routing Runtime',
+      via: 'Actor-Web transport',
+      tone: 'tone-worker',
+    };
+  }
+
+  if (label === 'Shipped' || label === 'Delivered' || label === 'Returned') {
+    return {
+      source: 'Server Lifecycle',
+      via: 'gateway WS update',
+      tone: 'tone-lifecycle',
+    };
+  }
+
+  return {
+    source: 'Server Shipment Runtime',
+    via: 'REST command ingress',
+    tone: 'tone-server',
+  };
+}
+
 function renderEvent(event: LogisticsEventLog) {
+  const runtime = eventRuntime(event.type);
   return (
-    <li class="item">
-      <strong>{event.type}</strong>
-      <span class="muted">
-        Actor {event.actorId}
-        {event.shipmentId ? ` / ${event.shipmentId}` : ''}
-      </span>
+    <li class={`item event-item ${runtime.tone}`}>
+      <div class="item-heading">
+        <span class="runtime-chip">{runtime.source}</span>
+        <strong>{event.type}</strong>
+      </div>
+      <div class="route-meta">
+        <span>{runtime.via}</span>
+        <span>
+          Actor {event.actorId}
+          {event.shipmentId ? ` / ${event.shipmentId}` : ''}
+        </span>
+      </div>
+    </li>
+  );
+}
+
+function renderTimelineEntry(entry: ShipmentContext['timeline'][number]) {
+  const runtime = timelineRuntime(entry.label);
+  return (
+    <li class={`item event-item ${runtime.tone}`}>
+      <div class="item-heading">
+        <span class="runtime-chip">{runtime.source}</span>
+        <strong>{entry.label}</strong>
+      </div>
+      <div class="route-meta">
+        <span>{runtime.via}</span>
+        <span>{entry.detail}</span>
+      </div>
     </li>
   );
 }
@@ -578,21 +712,33 @@ export function defineIgniteHeadlessHostElement(): void {
                 <section class="panel">
                   <h3>Runtime Topology</h3>
                   <ul class="list">
-                    <li class="item">
-                      <strong>Browser Host</strong>
-                      <span class="muted">Ignite thin projection host</span>
+                    <li class="item event-item tone-local">
+                      <div class="item-heading">
+                        <span class="runtime-chip">Browser</span>
+                        <strong>Browser Host</strong>
+                      </div>
+                      <span class="muted">Ignite thin projection host; submits REST intent.</span>
                     </li>
-                    <li class="item">
-                      <strong>Server Runtime</strong>
-                      <span class="muted">REST, gateway, shipment actor</span>
+                    <li class="item event-item tone-server">
+                      <div class="item-heading">
+                        <span class="runtime-chip">Server</span>
+                        <strong>Server Runtime</strong>
+                      </div>
+                      <span class="muted">Owns shipment actor, REST ingress, gateway updates.</span>
                     </li>
-                    <li class="item">
-                      <strong>WebWorker Runtime</strong>
-                      <span class="muted">Routing actor over Actor-Web transport</span>
+                    <li class="item event-item tone-worker">
+                      <div class="item-heading">
+                        <span class="runtime-chip">Worker</span>
+                        <strong>WebWorker Runtime</strong>
+                      </div>
+                      <span class="muted">Owns routing actor over Actor-Web transport.</span>
                     </li>
-                    <li class="item">
-                      <strong>Service Worker Runtime</strong>
-                      <span class="muted">Browser-local MessagePort topology proof</span>
+                    <li class="item event-item tone-local">
+                      <div class="item-heading">
+                        <span class="runtime-chip">Fallback</span>
+                        <strong>Service Worker Runtime</strong>
+                      </div>
+                      <span class="muted">Browser-local MessagePort topology proof.</span>
                     </li>
                   </ul>
                 </section>
@@ -631,44 +777,47 @@ export function defineIgniteHeadlessHostElement(): void {
 
                 <section class="panel">
                   <h3>Message Routes</h3>
-                  <ul class="list">
-                    <li class="item">
-                      <strong>REST browser/client {'->'} server runtime</strong>
-                      <span class="muted">POST /shipments accepts command ingress</span>
-                    </li>
-                    <li class="item">
-                      <strong>WS gateway server runtime {'->'} browser host</strong>
-                      <span class="muted">Snapshots, events, status, replies</span>
-                    </li>
-                    <li class="item">
-                      <strong>Actor-Web server runtime {'->'} worker runtime</strong>
-                      <span class="muted">PLAN_ROUTE ask over MessageTransport</span>
-                    </li>
-                    <li class="item">
-                      <strong>Actor-Web worker runtime {'->'} server runtime</strong>
-                      <span class="muted">Route plan reply</span>
-                    </li>
-                    <li class="item">
-                      <strong>Server runtime {'->'} gateway subscribers</strong>
-                      <span class="muted">Lifecycle updates: in transit, delivered, returned</span>
-                    </li>
-                    <li class="item">
-                      <strong>MessagePort browser host {'<->'} service worker runtime</strong>
-                      <span class="muted">Browser-local topology proof</span>
-                    </li>
-                  </ul>
+                  <div class="route-grid">
+                    <div class="route-card tone-server">
+                      <span class="runtime-chip">1 Browser {'->'} Server</span>
+                      <strong>REST command ingress</strong>
+                      <span class="muted">POST /shipments creates shipment intent.</span>
+                    </div>
+                    <div class="route-card tone-worker">
+                      <span class="runtime-chip">2 Server {'->'} Worker</span>
+                      <strong>Route planning ask</strong>
+                      <span class="muted">PLAN_ROUTE over Actor-Web MessageTransport.</span>
+                    </div>
+                    <div class="route-card tone-worker">
+                      <span class="runtime-chip">3 Worker {'->'} Server</span>
+                      <strong>Route plan reply</strong>
+                      <span class="muted">
+                        Carrier, ETA, and route notes return to server actor.
+                      </span>
+                    </div>
+                    <div class="route-card tone-lifecycle">
+                      <span class="runtime-chip">4 Server lifecycle</span>
+                      <strong>Shipped / delivered / returned</strong>
+                      <span class="muted">Server-owned timed lifecycle signals.</span>
+                    </div>
+                    <div class="route-card tone-server">
+                      <span class="runtime-chip">5 Server {'->'} Browser</span>
+                      <strong>Gateway WebSocket projection</strong>
+                      <span class="muted">Snapshots, events, status, and replies stream live.</span>
+                    </div>
+                    <div class="route-card tone-local">
+                      <span class="runtime-chip">Fallback</span>
+                      <strong>MessagePort service worker proof</strong>
+                      <span class="muted">Browser-local topology only, not server transport.</span>
+                    </div>
+                  </div>
                 </section>
 
                 <section class="panel">
                   <h3>Timeline</h3>
                   <ol class="list">
                     {state.timeline.length > 0 ? (
-                      state.timeline.map((entry) => (
-                        <li class="item">
-                          <strong>{entry.label}</strong>
-                          <span class="muted">{entry.detail}</span>
-                        </li>
-                      ))
+                      state.timeline.map((entry) => renderTimelineEntry(entry))
                     ) : (
                       <li class="item">
                         <span class="muted">No shipment activity yet.</span>
