@@ -31,6 +31,8 @@ export interface LogisticsRuntimeGatewayServerOptions {
   port?: number;
   transportPort?: number;
   restPort?: number;
+  lifecycleShippedDelayMs?: number;
+  lifecycleTerminalDelayMs?: number;
 }
 
 export interface LogisticsRuntimeGatewayServer {
@@ -122,6 +124,8 @@ function shouldReturnShipment(shipmentId: string): boolean {
 export function createLogisticsRuntimeGatewayServer(
   options: LogisticsRuntimeGatewayServerOptions = {}
 ): LogisticsRuntimeGatewayServer {
+  const lifecycleShippedDelayMs = options.lifecycleShippedDelayMs ?? 10_000;
+  const lifecycleTerminalDelayMs = options.lifecycleTerminalDelayMs ?? 20_000;
   const transport: NodeWebSocketMessageTransport = createNodeWebSocketMessageTransport({
     nodeAddress: REMOTE_NODE,
     incarnation: `${REMOTE_NODE}-demo`,
@@ -165,9 +169,13 @@ export function createLogisticsRuntimeGatewayServer(
 
   const scheduleShipmentLifecycle = (shipmentId: string): void => {
     clearLifecycleTimers();
-    scheduleLifecycleUpdate(250, { type: 'MARK_IN_TRANSIT', shipmentId }, shipmentId);
     scheduleLifecycleUpdate(
-      700,
+      lifecycleShippedDelayMs,
+      { type: 'MARK_IN_TRANSIT', shipmentId },
+      shipmentId
+    );
+    scheduleLifecycleUpdate(
+      lifecycleTerminalDelayMs,
       { type: shouldReturnShipment(shipmentId) ? 'MARK_RETURNED' : 'MARK_DELIVERED', shipmentId },
       shipmentId
     );

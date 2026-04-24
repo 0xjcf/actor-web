@@ -57,9 +57,10 @@ connected.
    actor to `PLAN_ROUTE`.
 4. The worker returns a deterministic carrier, ETA, and route note.
 5. The server shipment actor applies `ASSIGN_ROUTE` and emits `ROUTE_ASSIGNED`.
-6. The server runtime simulates lifecycle progress and emits
-   `SHIPMENT_IN_TRANSIT`, then deterministic `SHIPMENT_DELIVERED` or
-   `SHIPMENT_RETURNED` based on the shipment id.
+6. The server runtime simulates lifecycle progress for the live demo: after
+   roughly 10 seconds it emits `SHIPMENT_IN_TRANSIT` and the timeline shows
+   `Shipped`; after roughly 20 seconds it emits deterministic
+   `SHIPMENT_DELIVERED` or `SHIPMENT_RETURNED` based on the shipment id.
 7. Subscribed browser hosts receive live gateway snapshots/events without
    polling.
 

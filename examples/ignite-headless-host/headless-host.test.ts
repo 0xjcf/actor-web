@@ -191,7 +191,10 @@ describe('ignite-headless-host logistics example', () => {
   });
 
   it('routes REST-created shipments through the worker runtime over real WebSocket transport', async () => {
-    gatewayServer = createLogisticsRuntimeGatewayServer();
+    gatewayServer = createLogisticsRuntimeGatewayServer({
+      lifecycleShippedDelayMs: 25,
+      lifecycleTerminalDelayMs: 70,
+    });
     await gatewayServer.start();
     const gatewayUrl = gatewayServer.getGatewayUrl();
     const transportUrl = gatewayServer.getTransportUrl();
@@ -254,7 +257,7 @@ describe('ignite-headless-host logistics example', () => {
       'Expected server-owned lifecycle updates to stream through gateway'
     );
     expect(host.getState().timeline.map((entry) => entry.label)).toEqual(
-      expect.arrayContaining(['Delivered', 'In transit', 'Route assigned', 'Shipment accepted'])
+      expect.arrayContaining(['Delivered', 'Shipped', 'Route assigned', 'Shipment accepted'])
     );
   });
 

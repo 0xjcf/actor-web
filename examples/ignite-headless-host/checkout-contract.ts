@@ -169,7 +169,7 @@ export function createShipmentBehavior() {
             ...context,
             shipmentId,
             status: 'in-transit' as const,
-            timeline: appendTimeline(context, 'In transit', shipmentId),
+            timeline: appendTimeline(context, 'Shipped', shipmentId),
           },
           emit: [{ type: 'SHIPMENT_IN_TRANSIT', shipmentId }],
         };
