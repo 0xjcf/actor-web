@@ -138,9 +138,21 @@ const styles = `
     border-radius: 8px;
     background: rgba(10, 14, 18, 0.72);
   }
-  .queue-item.active { border-color: rgba(94, 234, 212, 0.46); }
+  .queue-item.active {
+    border-color: rgba(94, 234, 212, 0.74);
+    background: rgba(15, 118, 110, 0.2);
+    box-shadow: inset 3px 0 0 rgba(94, 234, 212, 0.72);
+  }
   .queue-head { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
   .queue-meta { color: #8da1af; font-size: 13px; line-height: 1.45; }
+  .selection-banner {
+    display: grid;
+    gap: 4px;
+    padding: 12px 14px;
+    border: 1px solid rgba(94, 234, 212, 0.26);
+    border-radius: 8px;
+    background: rgba(15, 118, 110, 0.16);
+  }
   .pager { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
   button {
     min-height: 48px;
@@ -209,7 +221,7 @@ function createProviderConsoleAdapter() {
     }
   };
 
-  const selectedOrFirst = (
+  const preserveSelected = (
     status: ProviderStatus,
     selectedShipmentId: string | null
   ): string | null => {
@@ -217,7 +229,7 @@ function createProviderConsoleAdapter() {
       return selectedShipmentId;
     }
 
-    return status.shipmentId ?? status.queue[0]?.shipmentId ?? null;
+    return null;
   };
 
   const refresh = async (): Promise<void> => {
@@ -230,7 +242,7 @@ function createProviderConsoleAdapter() {
     state = {
       ...state,
       status,
-      selectedShipmentId: selectedOrFirst(status, state.selectedShipmentId),
+      selectedShipmentId: preserveSelected(status, state.selectedShipmentId),
       queuePage: Math.min(
         state.queuePage,
         Math.max(0, Math.ceil(status.queue.length / PAGE_SIZE) - 1)
@@ -258,9 +270,7 @@ function createProviderConsoleAdapter() {
       state = {
         ...state,
         status: response.ok ? body : state.status,
-        selectedShipmentId: response.ok
-          ? selectedOrFirst(body, state.selectedShipmentId)
-          : state.selectedShipmentId,
+        selectedShipmentId: response.ok ? preserveSelected(body, state.selectedShipmentId) : null,
         message: response.ok ? `Provider mode set to ${mode}.` : String(body.error),
       };
     } finally {
@@ -288,7 +298,7 @@ function createProviderConsoleAdapter() {
         ...state,
         status: response.ok ? body : state.status,
         selectedShipmentId: response.ok
-          ? selectedOrFirst(body, state.selectedShipmentId)
+          ? preserveSelected(body, state.selectedShipmentId)
           : state.selectedShipmentId,
         message: response.ok ? `${signal} accepted by server runtime.` : String(body.error),
       };
@@ -327,7 +337,11 @@ function createProviderConsoleAdapter() {
       }
 
       if (event.type === 'queue.select') {
-        state = { ...state, selectedShipmentId: event.shipmentId };
+        state = {
+          ...state,
+          selectedShipmentId: event.shipmentId,
+          message: `Selected ${event.shipmentId} for provider processing.`,
+        };
         notify();
         return;
       }
@@ -423,6 +437,17 @@ export function defineProviderConsoleElement(): void {
 
           <section class="panel">
             <h2>Provider Queue</h2>
+            <div class="selection-banner">
+              <span class="label">Selected Shipment</span>
+              <strong>
+                {selectedItem?.shipmentId ?? state.selectedShipmentId ?? 'none selected'}
+              </strong>
+              <span class="queue-meta">
+                {selectedItem
+                  ? `${selectedItem.destination ?? 'destination pending'} / ${selectedItem.status}`
+                  : 'Select a queued shipment before sending provider signals.'}
+              </span>
+            </div>
             {visibleQueue.length > 0 ? (
               visibleQueue.map((item) => (
                 <article
@@ -432,11 +457,11 @@ export function defineProviderConsoleElement(): void {
                     <strong>{item.shipmentId}</strong>
                     <button
                       type="button"
-                      class="secondary"
+                      class={item.shipmentId === state.selectedShipmentId ? 'active' : 'secondary'}
                       disabled={state.busy}
                       onClick={() => send({ type: 'queue.select', shipmentId: item.shipmentId })}
                     >
-                      Select
+                      {item.shipmentId === state.selectedShipmentId ? 'Selected' : 'Select'}
                     </button>
                   </div>
                   <div class="queue-meta">
@@ -487,29 +512,23 @@ export function defineProviderConsoleElement(): void {
               </div>
               <div class="metric">
                 <span class="label">Shipment</span>
-                <span class="value">
-                  {selectedItem?.shipmentId ?? state.status.shipmentId ?? 'none'}
-                </span>
+                <span class="value">{selectedItem?.shipmentId ?? 'select from queue'}</span>
               </div>
               <div class="metric">
                 <span class="label">Status</span>
-                <span class="value">{selectedItem?.status ?? state.status.status ?? 'none'}</span>
+                <span class="value">{selectedItem?.status ?? 'none selected'}</span>
               </div>
               <div class="metric">
                 <span class="label">Facility</span>
-                <span class="value">
-                  {selectedItem?.facility ?? state.status.facility ?? 'waiting for scan'}
-                </span>
+                <span class="value">{selectedItem?.facility ?? 'select a shipment first'}</span>
               </div>
               <div class="metric">
                 <span class="label">Latest Signal</span>
-                <span class="value">{selectedItem?.signal ?? state.status.signal ?? 'none'}</span>
+                <span class="value">{selectedItem?.signal ?? 'none selected'}</span>
               </div>
               <div class="metric">
                 <span class="label">Truck Load</span>
-                <span class="value">
-                  {selectedItem?.loadId ?? state.status.loadId ?? 'unassigned'}
-                </span>
+                <span class="value">{selectedItem?.loadId ?? 'select a shipment first'}</span>
               </div>
             </div>
           </section>

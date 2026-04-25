@@ -68,6 +68,7 @@ export type ShipmentCommand =
       facility?: string;
       loadId?: string;
       note?: string;
+      baseContext?: ShipmentContext;
     };
 
 export type ShipmentEvent =
@@ -363,7 +364,8 @@ export function createShipmentBehavior() {
       }
 
       if (message.type === 'APPLY_PROVIDER_SIGNAL') {
-        const shipmentId = message.shipmentId ?? context.shipmentId ?? 'unknown-shipment';
+        const baseContext = message.baseContext ?? context;
+        const shipmentId = message.shipmentId ?? baseContext.shipmentId ?? 'unknown-shipment';
         const facility = message.facility ?? providerFacilityForShipment(shipmentId);
         const loadId = message.loadId ?? providerLoadIdForShipment(shipmentId);
         const note = message.note ?? providerNoteForSignal(message.signal);
@@ -371,14 +373,15 @@ export function createShipmentBehavior() {
 
         return {
           context: {
-            ...context,
+            ...baseContext,
             shipmentId,
-            status: statusForProviderSignal(message.signal, context.status),
+            status: statusForProviderSignal(message.signal, baseContext.status),
             providerFacility: facility,
             providerSignal: message.signal,
             providerLoadId: loadId,
             providerNote: note,
-            timeline: appendTimeline(context, timeline.label, timeline.detail, {
+            shipmentCount: Math.max(context.shipmentCount, baseContext.shipmentCount),
+            timeline: appendTimeline(baseContext, timeline.label, timeline.detail, {
               source: 'Remote Provider HQ',
               channel: 'Provider signal -> server runtime -> gateway WS',
               note,

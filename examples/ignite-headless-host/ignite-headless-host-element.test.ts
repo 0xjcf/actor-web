@@ -75,6 +75,7 @@ describe('ignite-headless-host element', () => {
     expect(element.shadowRoot?.textContent).toContain('Provider scan console');
     expect(element.shadowRoot?.textContent).toContain('Operating Mode');
     expect(element.shadowRoot?.textContent).toContain('Provider Queue');
+    expect(element.shadowRoot?.textContent).toContain('Selected Shipment');
     expect(element.shadowRoot?.textContent).toContain('Scan Label');
     expect(element.shadowRoot?.textContent).toContain('Report Return');
   });

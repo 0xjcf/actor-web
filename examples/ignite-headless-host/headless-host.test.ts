@@ -273,6 +273,20 @@ describe('ignite-headless-host logistics example', () => {
       providerFacility: expect.any(String),
       providerLoadId: expect.stringMatching(/^LOAD-/),
     });
+    await expect(
+      fetch(`${restUrl}/provider/status`).then((result) => result.json())
+    ).resolves.toMatchObject({
+      shipmentId: 'shipment-worker-5005',
+      status: 'delivered',
+      signal: 'DELIVERY_CONFIRMED',
+      queue: [
+        expect.objectContaining({
+          shipmentId: 'shipment-worker-5005',
+          status: 'delivered',
+          signal: 'DELIVERY_CONFIRMED',
+        }),
+      ],
+    });
   });
 
   it('supports manual provider HQ signals over REST while streaming gateway updates', async () => {
@@ -367,6 +381,51 @@ describe('ignite-headless-host logistics example', () => {
         state.providerSignal === 'OUTBOUND_SCAN' &&
         state.eventLog.some((event) => event.type === 'PROVIDER_SIGNAL_RECORDED'),
       'Expected provider HQ signal to stream through gateway'
+    );
+
+    await fetch(`${restUrl}/shipments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        shipmentId: 'shipment-manual-7007',
+        destination: 'Dallas cross-dock',
+        reference: 'MANUAL-7007',
+      }),
+    });
+    await waitForHostState(
+      host,
+      (state) => state.shipmentId === 'shipment-manual-7007' && state.status === 'route-assigned',
+      'Expected newer manual mode shipment to become the live projection'
+    );
+
+    const deliveryResponse = await fetch(`${restUrl}/provider/signals`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ shipmentId: 'shipment-manual-6006', signal: 'DELIVERY_CONFIRMED' }),
+    });
+    expect(deliveryResponse.status).toBe(202);
+    await expect(deliveryResponse.json()).resolves.toMatchObject({
+      queue: expect.arrayContaining([
+        expect.objectContaining({ shipmentId: 'shipment-manual-7007' }),
+        expect.objectContaining({
+          shipmentId: 'shipment-manual-6006',
+          signal: 'DELIVERY_CONFIRMED',
+          status: 'delivered',
+        }),
+      ]),
+    });
+
+    await waitForHostState(
+      host,
+      (state) =>
+        state.shipmentId === 'shipment-manual-6006' &&
+        state.destination === 'Chicago warehouse' &&
+        state.status === 'delivered' &&
+        state.eventLog.some(
+          (event) =>
+            event.type === 'SHIPMENT_DELIVERED' && event.shipmentId === 'shipment-manual-6006'
+        ),
+      'Expected selected older provider shipment to complete after a newer order arrived'
     );
   });
 

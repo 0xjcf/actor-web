@@ -178,6 +178,7 @@ export function createLogisticsRuntimeGatewayServer(
   let restUrl: string | null = null;
   const lifecycleTimers = new Set<ReturnType<typeof setTimeout>>();
   const providerQueue = new Map<string, ProviderQueueItem>();
+  const shipmentContexts = new Map<string, ShipmentContext>();
 
   const clearLifecycleTimers = (): void => {
     for (const timer of Array.from(lifecycleTimers)) {
@@ -188,7 +189,7 @@ export function createLogisticsRuntimeGatewayServer(
 
   const scheduleLifecycleUpdate = (
     delayMs: number,
-    command: ShipmentCommand,
+    signal: ProviderSignal,
     expectedShipmentId: string
   ): void => {
     const timer = setTimeout(() => {
@@ -198,7 +199,11 @@ export function createLogisticsRuntimeGatewayServer(
         return;
       }
 
-      void shipmentActor?.send(command);
+      void applyProviderSignal({
+        shipmentId: expectedShipmentId,
+        signal,
+        clearLifecycleTimers: false,
+      });
     }, delayMs);
     lifecycleTimers.add(timer);
   };
@@ -209,28 +214,12 @@ export function createLogisticsRuntimeGatewayServer(
     }
 
     clearLifecycleTimers();
-    scheduleLifecycleUpdate(
-      lifecycleLabelDelayMs,
-      { type: 'APPLY_PROVIDER_SIGNAL', shipmentId, signal: 'LABEL_SCANNED' },
-      shipmentId
-    );
-    scheduleLifecycleUpdate(
-      lifecyclePackedDelayMs,
-      { type: 'APPLY_PROVIDER_SIGNAL', shipmentId, signal: 'PACKED_INTO_TRUCK' },
-      shipmentId
-    );
-    scheduleLifecycleUpdate(
-      lifecycleShippedDelayMs,
-      { type: 'APPLY_PROVIDER_SIGNAL', shipmentId, signal: 'OUTBOUND_SCAN' },
-      shipmentId
-    );
+    scheduleLifecycleUpdate(lifecycleLabelDelayMs, 'LABEL_SCANNED', shipmentId);
+    scheduleLifecycleUpdate(lifecyclePackedDelayMs, 'PACKED_INTO_TRUCK', shipmentId);
+    scheduleLifecycleUpdate(lifecycleShippedDelayMs, 'OUTBOUND_SCAN', shipmentId);
     scheduleLifecycleUpdate(
       lifecycleTerminalDelayMs,
-      {
-        type: 'APPLY_PROVIDER_SIGNAL',
-        shipmentId,
-        signal: shouldReturnShipment(shipmentId) ? 'RETURN_EXCEPTION' : 'DELIVERY_CONFIRMED',
-      },
+      shouldReturnShipment(shipmentId) ? 'RETURN_EXCEPTION' : 'DELIVERY_CONFIRMED',
       shipmentId
     );
   };
@@ -239,6 +228,11 @@ export function createLogisticsRuntimeGatewayServer(
     if (!context.shipmentId) {
       return;
     }
+
+    shipmentContexts.set(context.shipmentId, {
+      ...context,
+      timeline: context.timeline.map((entry) => ({ ...entry })),
+    });
 
     const current = providerQueue.get(context.shipmentId);
     providerQueue.set(context.shipmentId, {
@@ -314,12 +308,15 @@ export function createLogisticsRuntimeGatewayServer(
     facility?: string;
     loadId?: string;
     note?: string;
+    clearLifecycleTimers?: boolean;
   }): Promise<ShipmentContext> => {
     if (!shipmentActor) {
       throw new Error('Shipment actor is not ready.');
     }
 
-    clearLifecycleTimers();
+    if (input.clearLifecycleTimers !== false) {
+      clearLifecycleTimers();
+    }
     const shipmentId = input.shipmentId ?? shipmentActor.getSnapshot().context.shipmentId;
     if (!shipmentId) {
       throw new Error('No active shipment is available for provider signal.');
@@ -332,6 +329,7 @@ export function createLogisticsRuntimeGatewayServer(
       facility: input.facility ?? providerFacilityForShipment(shipmentId),
       loadId: input.loadId ?? providerLoadIdForShipment(shipmentId),
       note: input.note ?? providerNoteForSignal(input.signal),
+      baseContext: shipmentContexts.get(shipmentId),
     });
     await system.flush();
     upsertProviderQueue(shipmentActor.getSnapshot().context);
@@ -470,6 +468,7 @@ export function createLogisticsRuntimeGatewayServer(
       if (request.method === 'POST' && /^\/shipments\/[^/]+\/reset$/.test(url.pathname)) {
         clearLifecycleTimers();
         providerQueue.clear();
+        shipmentContexts.clear();
         await shipmentActor?.send({ type: 'RESET_SHIPMENT' });
         sendJson(response, 202, { status: 'idle' });
         return;
