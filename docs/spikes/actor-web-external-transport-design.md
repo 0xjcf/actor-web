@@ -111,6 +111,13 @@ hexagonal boundary or the actor model.
     communicate over Actor-Web transport
   - REST-created shipments stream live gateway updates to subscribed browser
     hosts
+- runtime transport observability now covers:
+  - public runtime-native telemetry event and stats types
+  - optional telemetry observer callbacks on Node and browser WebSocket
+    transports
+  - `getStats()` and `getPeerStats(nodeAddress)` snapshots
+  - connection, handshake, frame send/receive/drop, heartbeat timeout, and
+    sequence-gap counters
 - Actor-Web already maps its data plane toward FAS shared contracts:
   - `EventEnvelope`
   - `WorkflowSnapshot`
@@ -131,7 +138,9 @@ hexagonal boundary or the actor model.
   but is not a fully hardened production transport
 - `BrowserWebSocketMessageTransport` is outbound-only and still depends on
   static peer URL resolution
-- there is no metrics/tracing/backpressure telemetry for real network transport
+- transport telemetry is in-memory runtime-native observability; it is not yet
+  OpenTelemetry integration, durable telemetry export, replay, retry, or
+  backpressure enforcement
 
 ## Architectural Constraints
 
@@ -181,7 +190,8 @@ That means:
 3. Durable resync source for projections
 4. Shared-contract promotion from mapper to real data-plane wire shape
 5. Auth and transport security
-6. Metrics, tracing, lag, replay, and backpressure observability
+6. Durable telemetry export, tracing, lag, replay, and backpressure
+   observability
 7. Multi-process and multi-machine prove-out beyond localhost
 
 ## External Transport Options
@@ -469,6 +479,19 @@ backpressure.
 Status: complete for basic static-peer membership hardening. Remaining
 production work is a real membership/discovery provider, auth/security, durable
 replay/resync, observability, and backpressure.
+
+### Phase 3.5: Runtime transport observability foundation
+
+- add runtime-native telemetry events and stats snapshots to Node and browser
+  WebSocket transports
+- track handshakes, peer lifecycle, frame send/receive/drop, heartbeat timeout,
+  and sequence-gap counters
+- keep observability dependency-free and in-memory until export/tracing
+  semantics are designed
+
+Status: complete for runtime-native telemetry and stats snapshots. Remaining
+production work is auth/security, message id/idempotency, retry/ack semantics,
+durable replay/resync, backpressure enforcement, and durable telemetry export.
 
 ### Phase 4: Projection hardening
 

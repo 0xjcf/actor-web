@@ -71,6 +71,13 @@ export {
   validateRuntimeTransportHandshake,
   validateRuntimeTransportHeartbeatFrame,
 } from './runtime-transport-contract.js';
+export type {
+  RuntimeTransportPeerStats,
+  RuntimeTransportStats,
+  RuntimeTransportTelemetryEvent,
+  RuntimeTransportTelemetryEventType,
+  RuntimeTransportTelemetryObserver,
+} from './runtime-transport-telemetry.js';
 export type { InMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';
 export { createInMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';
 export type { ActorSnapshot } from './types.js';

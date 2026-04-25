@@ -11,6 +11,7 @@ import {
   createNodeWebSocketMessageTransport,
   type NodeWebSocketMessageTransport,
 } from '../node-websocket-message-transport.js';
+import type { RuntimeTransportTelemetryEvent } from '../runtime-transport-telemetry.js';
 import { defineActor } from '../unified-actor-builder.js';
 
 type CheckoutMessage =
@@ -129,8 +130,10 @@ describe('BrowserWebSocketMessageTransport', () => {
     if (!nodeUrl) {
       throw new Error('Expected node listening URL');
     }
+    const telemetry: RuntimeTransportTelemetryEvent[] = [];
 
     const browser = createBrowserTransport('worker-a', {
+      telemetry: (event) => telemetry.push(event),
       peers: { 'node-b': nodeUrl },
     });
 
@@ -139,6 +142,16 @@ describe('BrowserWebSocketMessageTransport', () => {
     expect(browser.isConnected('node-b')).toBe(true);
     expect(browser.getConnectedNodes()).toEqual(['node-b']);
     expect(node.isConnected('worker-a')).toBe(true);
+    expect(telemetry.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['peer.connecting', 'handshake.accepted', 'peer.connected'])
+    );
+    const stats = browser.getStats();
+    stats.peers['node-b'].framesSent = 999;
+    expect(browser.getPeerStats('node-b')).toMatchObject({
+      state: 'connected',
+      handshakeAcceptedCount: 1,
+      framesSent: 0,
+    });
   });
 
   it('sends and receives validated runtime frames through a Node peer', async () => {
@@ -147,7 +160,9 @@ describe('BrowserWebSocketMessageTransport', () => {
     if (!nodeUrl) {
       throw new Error('Expected node listening URL');
     }
+    const telemetry: RuntimeTransportTelemetryEvent[] = [];
     const browser = createBrowserTransport('worker-a', {
+      telemetry: (event) => telemetry.push(event),
       peers: { 'node-b': nodeUrl },
     });
     const receivedByNode: string[] = [];
@@ -165,6 +180,22 @@ describe('BrowserWebSocketMessageTransport', () => {
 
     await waitFor(() => receivedByNode.includes('FROM_BROWSER'), 'Expected Node frame');
     await waitFor(() => receivedByBrowser.includes('FROM_NODE'), 'Expected browser frame');
+
+    expect(browser.getStats()).toMatchObject({
+      framesSent: 1,
+      framesReceived: 1,
+      peers: {
+        'node-b': expect.objectContaining({
+          framesSent: 1,
+          framesReceived: 1,
+          lastSentSequence: 1,
+          lastReceivedSequence: 1,
+        }),
+      },
+    });
+    expect(telemetry.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['frame.sent', 'frame.received'])
+    );
 
     unsubscribeBrowser();
     unsubscribeNode();

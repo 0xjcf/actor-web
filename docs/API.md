@@ -852,6 +852,7 @@ Core public types:
 - `RuntimeTransportFrame`: envelope for internal `__runtime.*` control messages.
 - `RuntimeTransportHeartbeatFrame`: `runtime.transport.ping` and `runtime.transport.pong` control frames used when the platform cannot send low-level WebSocket ping/pong frames.
 - `RuntimeTransportHandshakeRejectCode`: rejection codes for missing identity, self-connections, incompatible protocol, and malformed frames.
+- `RuntimeTransportTelemetryEvent`, `RuntimeTransportStats`, `RuntimeTransportPeerStats`, and `RuntimeTransportTelemetryObserver`: runtime-native transport observability types for connection, handshake, frame, drop, heartbeat, and sequence-gap visibility.
 
 Behavioral constraints:
 
@@ -918,6 +919,14 @@ Options:
 - `peerUrlResolver`: optional resolver for static or test-managed peer URLs.
 - `connectTimeoutMs`: handshake/open timeout.
 - `heartbeatIntervalMs`, `heartbeatTimeoutMs`: optional heartbeat cadence and timeout in milliseconds. Set the interval to `0` to disable transport heartbeats.
+- `telemetry`: optional observer callback for runtime-native transport telemetry events.
+
+Observability:
+
+- `getStats()` returns a cloned `RuntimeTransportStats` snapshot for aggregate counters and peer stats.
+- `getPeerStats(nodeAddress)` returns a cloned `RuntimeTransportPeerStats` snapshot for one peer.
+- Telemetry events include transport start/stop, peer connect/disconnect/reject, handshake accept/reject, frame send/receive/drop, heartbeat timeout, and sequence gap.
+- Counters are in-memory diagnostic state only; they are not durable replay, retry, or delivery guarantees.
 
 This transport keeps delivery at-most-once and does not yet provide dynamic discovery, auth/security, durable replay, or production backpressure.
 
@@ -964,6 +973,13 @@ Options:
 - `peerUrlResolver`: optional resolver for static or test-managed peer URLs.
 - `connectTimeoutMs`: handshake/open timeout.
 - `heartbeatIntervalMs`, `heartbeatTimeoutMs`: optional app-level heartbeat cadence and timeout in milliseconds. Set the interval to `0` to disable heartbeats.
+- `telemetry`: optional observer callback for runtime-native transport telemetry events.
+
+Observability:
+
+- `getStats()` returns a cloned `RuntimeTransportStats` snapshot for aggregate counters and peer stats.
+- `getPeerStats(nodeAddress)` returns a cloned `RuntimeTransportPeerStats` snapshot for one peer.
+- Telemetry events mirror the Node transport where browser sockets expose equivalent lifecycle and frame information.
 
 The browser adapter does not include a listener, dynamic discovery, auth/security, durable replay, or production backpressure. Delivery remains at-most-once.
 

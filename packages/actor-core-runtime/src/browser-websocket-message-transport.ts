@@ -12,6 +12,12 @@ import {
   validateRuntimeTransportHandshake,
   validateRuntimeTransportHeartbeatFrame,
 } from './runtime-transport-contract.js';
+import type {
+  RuntimeTransportPeerStats,
+  RuntimeTransportStats,
+  RuntimeTransportTelemetryEvent,
+  RuntimeTransportTelemetryObserver,
+} from './runtime-transport-telemetry.js';
 
 export interface BrowserWebSocketMessageTransportOptions {
   nodeAddress: string;
@@ -23,6 +29,7 @@ export interface BrowserWebSocketMessageTransportOptions {
   connectTimeoutMs?: number;
   heartbeatIntervalMs?: number;
   heartbeatTimeoutMs?: number;
+  telemetry?: RuntimeTransportTelemetryObserver;
   webSocketFactory?: (url: string) => WebSocket;
 }
 
@@ -30,6 +37,7 @@ type BrowserPeerConnection = {
   socket: WebSocket;
   identity: RuntimeNodeIdentity;
   sequence: number;
+  lastReceivedSequence: number;
   lastSeenAt: number;
   heartbeatInterval: ReturnType<typeof setInterval> | null;
   heartbeatTimeout: ReturnType<typeof setTimeout> | null;
@@ -47,6 +55,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
   private readonly heartbeatIntervalMs: number;
   private readonly heartbeatTimeoutMs: number;
   private readonly webSocketFactory: (url: string) => WebSocket;
+  private readonly stats: RuntimeTransportStats;
 
   constructor(private readonly options: BrowserWebSocketMessageTransportOptions) {
     this.identity = createRuntimeNodeIdentity({
@@ -67,9 +76,14 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
 
         return new WebSocket(url);
       });
+    this.stats = this.createInitialStats();
   }
 
   async start(): Promise<void> {
+    if (!this.stats.startedAt) {
+      this.stats.startedAt = new Date().toISOString();
+      this.emitTelemetry({ type: 'transport.started' });
+    }
     return Promise.resolve();
   }
 
@@ -77,6 +91,17 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
     for (const [nodeAddress, peer] of Array.from(this.peers.entries())) {
       this.closePeer(nodeAddress, peer, false);
     }
+    this.stats.stoppedAt = new Date().toISOString();
+    this.emitTelemetry({ type: 'transport.stopped' });
+  }
+
+  getStats(): RuntimeTransportStats {
+    return this.cloneStats();
+  }
+
+  getPeerStats(nodeAddress: string): RuntimeTransportPeerStats | undefined {
+    const stats = this.stats.peers[nodeAddress];
+    return stats ? this.clonePeerStats(stats) : undefined;
   }
 
   async send(destination: string, message: ActorMessage): Promise<void> {
@@ -97,6 +122,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
         message,
       })
     );
+    this.recordFrameSent(destination, peer, message.type);
   }
 
   subscribe(listener: (event: { source: string; message: ActorMessage }) => void): () => void {
@@ -119,9 +145,12 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
 
     const url = await this.resolvePeerUrl(address);
     if (!url) {
+      this.recordHandshakeRejected(address, `No WebSocket peer URL configured for node ${address}`);
       throw new Error(`No WebSocket peer URL configured for node ${address}`);
     }
 
+    this.setPeerStats(address, { state: 'connecting' });
+    this.emitTelemetry({ type: 'peer.connecting', peerNodeAddress: address });
     const socket = this.webSocketFactory(url);
     try {
       await this.waitForOpen(socket);
@@ -130,6 +159,10 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       this.registerPeer(socket, peerIdentity);
     } catch (error) {
       socket.close();
+      this.recordHandshakeRejected(
+        address,
+        error instanceof Error ? error.message : 'Runtime peer connection failed.'
+      );
       throw error;
     }
   }
@@ -252,11 +285,13 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       socket,
       identity,
       sequence: 0,
+      lastReceivedSequence: 0,
       lastSeenAt: Date.now(),
       heartbeatInterval: null,
       heartbeatTimeout: null,
     };
     this.peers.set(identity.nodeAddress, peer);
+    this.recordPeerConnected(identity.nodeAddress, identity);
 
     socket.addEventListener('message', (event) => {
       void this.handleSocketMessage(identity.nodeAddress, socket, event.data);
@@ -301,6 +336,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
 
     const validation = validateRuntimeTransportFrame(frame, this.identity);
     if (!validation.ok) {
+      this.recordFrameDropped(sourceNodeAddress, validation.code, validation.message);
       await this.disconnect(sourceNodeAddress);
       return;
     }
@@ -311,11 +347,17 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       runtimeFrame.source.nodeId !== peer.identity.nodeId ||
       runtimeFrame.source.incarnation !== peer.identity.incarnation
     ) {
+      this.recordFrameDropped(
+        sourceNodeAddress,
+        'malformed_frame',
+        'Runtime frame source mismatch.'
+      );
       await this.disconnect(sourceNodeAddress);
       return;
     }
 
     this.markPeerSeen(sourceNodeAddress, peer.socket);
+    this.recordFrameReceived(sourceNodeAddress, peer, runtimeFrame);
     this.emitTransportMessage(runtimeFrame.source.nodeAddress, runtimeFrame.message);
   }
 
@@ -325,7 +367,13 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
     frame: unknown
   ): void {
     const validation = validateRuntimeTransportHeartbeatFrame(frame, this.identity);
-    if (!validation.ok || !this.isHeartbeatFrame(frame)) {
+    if (!validation.ok) {
+      this.recordFrameDropped(sourceNodeAddress, validation.code, validation.message);
+      void this.disconnect(sourceNodeAddress);
+      return;
+    }
+    if (!this.isHeartbeatFrame(frame)) {
+      this.recordFrameDropped(sourceNodeAddress, 'malformed_frame', 'Unsupported heartbeat frame.');
       void this.disconnect(sourceNodeAddress);
       return;
     }
@@ -335,6 +383,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       frame.source.nodeId !== peer.identity.nodeId ||
       frame.source.incarnation !== peer.identity.incarnation
     ) {
+      this.recordFrameDropped(sourceNodeAddress, 'malformed_frame', 'Heartbeat source mismatch.');
       void this.disconnect(sourceNodeAddress);
       return;
     }
@@ -353,6 +402,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
     this.clearHeartbeat(peer);
     this.peers.delete(nodeAddress);
     peer.socket.close();
+    this.recordPeerDisconnected(nodeAddress, peer);
 
     if (emitDisconnected) {
       this.emitTransportMessage(nodeAddress, {
@@ -403,6 +453,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
         return;
       }
 
+      this.recordHeartbeatTimeout(nodeAddress, peer);
       this.closePeer(nodeAddress, peer, true);
     }, this.heartbeatTimeoutMs);
   }
@@ -435,6 +486,225 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
     for (const listener of Array.from(this.listeners)) {
       listener({ source, message });
     }
+  }
+
+  private createInitialStats(): RuntimeTransportStats {
+    return {
+      nodeAddress: this.identity.nodeAddress,
+      connectedPeerCount: 0,
+      framesSent: 0,
+      framesReceived: 0,
+      malformedFramesDropped: 0,
+      validationFramesDropped: 0,
+      sequenceGapCount: 0,
+      handshakeAcceptedCount: 0,
+      handshakeRejectedCount: 0,
+      disconnectCount: 0,
+      reconnectCount: 0,
+      heartbeatTimeoutCount: 0,
+      peers: {},
+    };
+  }
+
+  private emptyPeerStats(nodeAddress: string): RuntimeTransportPeerStats {
+    return {
+      nodeAddress,
+      state: 'disconnected',
+      lastSentSequence: 0,
+      lastReceivedSequence: 0,
+      framesSent: 0,
+      framesReceived: 0,
+      malformedFramesDropped: 0,
+      validationFramesDropped: 0,
+      sequenceGapCount: 0,
+      handshakeAcceptedCount: 0,
+      handshakeRejectedCount: 0,
+      disconnectCount: 0,
+      reconnectCount: 0,
+      heartbeatTimeoutCount: 0,
+    };
+  }
+
+  private setPeerStats(
+    nodeAddress: string,
+    update: Partial<Omit<RuntimeTransportPeerStats, 'nodeAddress'>>
+  ): RuntimeTransportPeerStats {
+    const previous = this.stats.peers[nodeAddress] ?? this.emptyPeerStats(nodeAddress);
+    const next = {
+      ...previous,
+      ...update,
+      ...(update.identity ? { identity: { ...update.identity } } : {}),
+    };
+    this.stats.peers[nodeAddress] = next;
+    return next;
+  }
+
+  private emitTelemetry(
+    event: Omit<RuntimeTransportTelemetryEvent, 'nodeAddress' | 'timestamp'>
+  ): void {
+    const timestamp = new Date().toISOString();
+    this.stats.lastEventAt = timestamp;
+    this.options.telemetry?.({
+      nodeAddress: this.identity.nodeAddress,
+      timestamp,
+      ...event,
+    });
+  }
+
+  private recordPeerConnected(nodeAddress: string, identity: RuntimeNodeIdentity): void {
+    const previous = this.stats.peers[nodeAddress];
+    const connectedAt = new Date().toISOString();
+    this.stats.handshakeAcceptedCount += 1;
+    if (previous?.disconnectCount) {
+      this.stats.reconnectCount += 1;
+    }
+    this.setPeerStats(nodeAddress, {
+      state: 'connected',
+      identity,
+      connectedAt,
+      lastSeenAt: connectedAt,
+      handshakeAcceptedCount: (previous?.handshakeAcceptedCount ?? 0) + 1,
+      reconnectCount: previous?.disconnectCount ? (previous?.reconnectCount ?? 0) + 1 : 0,
+      rejectedReason: undefined,
+    });
+    this.refreshConnectedPeerCount();
+    this.emitTelemetry({ type: 'handshake.accepted', peerNodeAddress: nodeAddress });
+    this.emitTelemetry({ type: 'peer.connected', peerNodeAddress: nodeAddress });
+  }
+
+  private recordHandshakeRejected(nodeAddress: string, reason: string): void {
+    const previous = this.stats.peers[nodeAddress];
+    this.stats.handshakeRejectedCount += 1;
+    this.setPeerStats(nodeAddress, {
+      state: 'rejected',
+      handshakeRejectedCount: (previous?.handshakeRejectedCount ?? 0) + 1,
+      rejectedReason: reason,
+    });
+    this.emitTelemetry({ type: 'handshake.rejected', peerNodeAddress: nodeAddress, reason });
+    this.emitTelemetry({ type: 'peer.rejected', peerNodeAddress: nodeAddress, reason });
+  }
+
+  private recordPeerDisconnected(nodeAddress: string, peer: BrowserPeerConnection): void {
+    const previous = this.stats.peers[nodeAddress];
+    const disconnectedAt = new Date().toISOString();
+    this.stats.disconnectCount += 1;
+    this.setPeerStats(nodeAddress, {
+      state: 'disconnected',
+      identity: peer.identity,
+      disconnectedAt,
+      lastSeenAt: new Date(peer.lastSeenAt).toISOString(),
+      disconnectCount: (previous?.disconnectCount ?? 0) + 1,
+    });
+    this.refreshConnectedPeerCount();
+    this.emitTelemetry({ type: 'peer.disconnected', peerNodeAddress: nodeAddress });
+  }
+
+  private recordFrameSent(
+    nodeAddress: string,
+    peer: BrowserPeerConnection,
+    messageType: string
+  ): void {
+    this.stats.framesSent += 1;
+    this.setPeerStats(nodeAddress, {
+      identity: peer.identity,
+      lastSentAt: new Date().toISOString(),
+      lastSentSequence: peer.sequence,
+      framesSent: (this.stats.peers[nodeAddress]?.framesSent ?? 0) + 1,
+    });
+    this.emitTelemetry({
+      type: 'frame.sent',
+      peerNodeAddress: nodeAddress,
+      messageType,
+      sequence: peer.sequence,
+    });
+  }
+
+  private recordFrameReceived(
+    nodeAddress: string,
+    peer: BrowserPeerConnection,
+    frame: RuntimeTransportFrame
+  ): void {
+    const expectedSequence = peer.lastReceivedSequence + 1;
+    if (frame.sequence > expectedSequence) {
+      this.stats.sequenceGapCount += 1;
+      this.setPeerStats(nodeAddress, {
+        sequenceGapCount: (this.stats.peers[nodeAddress]?.sequenceGapCount ?? 0) + 1,
+      });
+      this.emitTelemetry({
+        type: 'sequence.gap',
+        peerNodeAddress: nodeAddress,
+        sequence: frame.sequence,
+        expectedSequence,
+      });
+    }
+
+    peer.lastReceivedSequence = Math.max(peer.lastReceivedSequence, frame.sequence);
+    this.stats.framesReceived += 1;
+    this.setPeerStats(nodeAddress, {
+      identity: peer.identity,
+      lastReceivedAt: new Date().toISOString(),
+      lastReceivedSequence: peer.lastReceivedSequence,
+      framesReceived: (this.stats.peers[nodeAddress]?.framesReceived ?? 0) + 1,
+    });
+    this.emitTelemetry({
+      type: 'frame.received',
+      peerNodeAddress: nodeAddress,
+      messageType: frame.message.type,
+      sequence: frame.sequence,
+    });
+  }
+
+  private recordFrameDropped(
+    nodeAddress: string,
+    code: 'malformed_frame' | 'missing_identity' | 'self_connection' | 'incompatible_protocol',
+    reason: string
+  ): void {
+    if (code === 'malformed_frame') {
+      this.stats.malformedFramesDropped += 1;
+      this.setPeerStats(nodeAddress, {
+        malformedFramesDropped: (this.stats.peers[nodeAddress]?.malformedFramesDropped ?? 0) + 1,
+      });
+    } else {
+      this.stats.validationFramesDropped += 1;
+      this.setPeerStats(nodeAddress, {
+        validationFramesDropped: (this.stats.peers[nodeAddress]?.validationFramesDropped ?? 0) + 1,
+      });
+    }
+    this.emitTelemetry({ type: 'frame.dropped', peerNodeAddress: nodeAddress, reason });
+  }
+
+  private recordHeartbeatTimeout(nodeAddress: string, peer: BrowserPeerConnection): void {
+    this.stats.heartbeatTimeoutCount += 1;
+    this.setPeerStats(nodeAddress, {
+      identity: peer.identity,
+      heartbeatTimeoutCount: (this.stats.peers[nodeAddress]?.heartbeatTimeoutCount ?? 0) + 1,
+    });
+    this.emitTelemetry({ type: 'heartbeat.timeout', peerNodeAddress: nodeAddress });
+  }
+
+  private refreshConnectedPeerCount(): void {
+    this.stats.connectedPeerCount = Array.from(this.peers.values()).filter(
+      (peer) => peer.socket.readyState === WEB_SOCKET_OPEN
+    ).length;
+  }
+
+  private cloneStats(): RuntimeTransportStats {
+    return {
+      ...this.stats,
+      peers: Object.fromEntries(
+        Object.entries(this.stats.peers).map(([nodeAddress, stats]) => [
+          nodeAddress,
+          this.clonePeerStats(stats),
+        ])
+      ),
+    };
+  }
+
+  private clonePeerStats(stats: RuntimeTransportPeerStats): RuntimeTransportPeerStats {
+    return {
+      ...stats,
+      ...(stats.identity ? { identity: { ...stats.identity } } : {}),
+    };
   }
 
   private waitForOpen(socket: WebSocket): Promise<void> {

@@ -78,13 +78,25 @@
 
 - Title: Full server runtime plus worker runtime demo
 - Mode: 6-agent
-- Status: review
+- Status: done
 - Owner: reviewer
 - Brief: .fas/tasks/full-server-worker-runtime-demo.md
 - Verification lane: full
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 - Artifacts: brief=.fas/tasks/full-server-worker-runtime-demo.md; verification=.fas/state/verification/latest.json
+
+### Task: Runtime transport observability foundation
+
+- Title: Runtime transport observability foundation
+- Mode: 6-agent
+- Status: done
+- Owner: reviewer
+- Brief: .fas/tasks/runtime-transport-observability-foundation.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: brief=.fas/tasks/runtime-transport-observability-foundation.md; verification=.fas/state/verification/latest.json
 
 ### Task: Logistics control tower demo
 

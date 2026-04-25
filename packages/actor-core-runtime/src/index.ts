@@ -268,6 +268,13 @@ export {
   validateRuntimeTransportHandshake,
   validateRuntimeTransportHeartbeatFrame,
 } from './runtime-transport-contract.js';
+export type {
+  RuntimeTransportPeerStats,
+  RuntimeTransportStats,
+  RuntimeTransportTelemetryEvent,
+  RuntimeTransportTelemetryEventType,
+  RuntimeTransportTelemetryObserver,
+} from './runtime-transport-telemetry.js';
 // Actor implementation classes
 export { StatelessActor } from './stateless-actor.js';
 export type {

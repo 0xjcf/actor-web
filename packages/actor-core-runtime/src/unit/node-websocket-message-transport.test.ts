@@ -10,6 +10,7 @@ import {
   createRuntimeTransportFrame,
   RUNTIME_TRANSPORT_PROTOCOL_VERSION,
 } from '../runtime-transport-contract.js';
+import type { RuntimeTransportTelemetryEvent } from '../runtime-transport-telemetry.js';
 
 const transports: NodeWebSocketMessageTransport[] = [];
 
@@ -75,7 +76,9 @@ describe('NodeWebSocketMessageTransport', () => {
     if (!remoteUrl) {
       throw new Error('Expected remote listening URL');
     }
+    const telemetry: RuntimeTransportTelemetryEvent[] = [];
     const local = await createStartedTransport('node-a', {
+      telemetry: (event) => telemetry.push(event),
       peers: { 'node-b': remoteUrl },
     });
 
@@ -92,6 +95,20 @@ describe('NodeWebSocketMessageTransport', () => {
         nodeAddress: 'node-b',
         nodeId: 'node-b',
         incarnation: 'node-b-boot',
+      },
+    });
+    expect(telemetry.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['peer.connecting', 'handshake.accepted', 'peer.connected'])
+    );
+    expect(local.getStats()).toMatchObject({
+      nodeAddress: 'node-a',
+      connectedPeerCount: 1,
+      handshakeAcceptedCount: 1,
+      peers: {
+        'node-b': expect.objectContaining({
+          state: 'connected',
+          handshakeAcceptedCount: 1,
+        }),
       },
     });
   });
@@ -196,11 +213,14 @@ describe('NodeWebSocketMessageTransport', () => {
     });
 
     await local.connect('node-b');
-    const socket = new WebSocket(remoteUrl);
-    await new Promise<void>((resolve, reject) => {
-      socket.once('open', () => resolve());
-      socket.once('error', reject);
-    });
+    const remotePeer = (
+      remote as unknown as {
+        peers: Map<string, { socket: WebSocket }>;
+      }
+    ).peers.get('node-a');
+    if (!remotePeer) {
+      throw new Error('Expected remote peer');
+    }
     const source = createRuntimeNodeIdentity({
       nodeAddress: 'node-a',
       nodeId: 'node-a',
@@ -211,26 +231,113 @@ describe('NodeWebSocketMessageTransport', () => {
       nodeId: 'node-b',
       incarnation: 'node-b-boot',
     });
-    socket.send(
-      JSON.stringify({
-        ...createRuntimeTransportFrame({
-          source,
-          destination,
-          sequence: 1,
-          message: { type: 'INVALID' },
-        }),
-        protocolVersion: RUNTIME_TRANSPORT_PROTOCOL_VERSION,
-        sequence: -1,
-      })
+    (
+      remote as unknown as {
+        handleRuntimeFrame: (sourceNodeAddress: string, socket: WebSocket, data: Buffer) => void;
+      }
+    ).handleRuntimeFrame(
+      'node-a',
+      remotePeer.socket,
+      Buffer.from(
+        JSON.stringify({
+          ...createRuntimeTransportFrame({
+            source,
+            destination,
+            sequence: 1,
+            message: { type: 'INVALID' },
+          }),
+          protocolVersion: RUNTIME_TRANSPORT_PROTOCOL_VERSION,
+          sequence: -1,
+        })
+      )
     );
 
-    await local.disconnect('node-b');
     await waitFor(
       () => receivedTypes.includes('__runtime.transport.disconnected'),
       'Expected disconnect message'
     );
 
-    socket.close();
+    expect(remote.getStats()).toMatchObject({
+      malformedFramesDropped: 1,
+      peers: {
+        'node-a': expect.objectContaining({
+          malformedFramesDropped: 1,
+        }),
+      },
+    });
+
+    unsubscribe();
+  });
+
+  it('tracks frame telemetry and sequence gaps without changing delivery', async () => {
+    const telemetry: RuntimeTransportTelemetryEvent[] = [];
+    const remote = await createStartedTransport('node-b', {
+      telemetry: (event) => telemetry.push(event),
+    });
+    const remoteUrl = remote.getListeningUrl();
+    if (!remoteUrl) {
+      throw new Error('Expected remote listening URL');
+    }
+    const local = await createStartedTransport('node-a', {
+      peers: { 'node-b': remoteUrl },
+    });
+    const receivedTypes: string[] = [];
+    const unsubscribe = remote.subscribe((event) => {
+      receivedTypes.push(event.message.type);
+    });
+
+    await local.connect('node-b');
+    const remotePeer = (
+      remote as unknown as {
+        peers: Map<string, { socket: WebSocket }>;
+      }
+    ).peers.get('node-a');
+    if (!remotePeer) {
+      throw new Error('Expected remote peer');
+    }
+
+    (
+      remote as unknown as {
+        handleRuntimeFrame: (sourceNodeAddress: string, socket: WebSocket, data: Buffer) => void;
+      }
+    ).handleRuntimeFrame(
+      'node-a',
+      remotePeer.socket,
+      Buffer.from(
+        JSON.stringify(
+          createRuntimeTransportFrame({
+            source: createRuntimeNodeIdentity({
+              nodeAddress: 'node-a',
+              nodeId: 'node-a',
+              incarnation: 'node-a-boot',
+            }),
+            destination: createRuntimeNodeIdentity({
+              nodeAddress: 'node-b',
+              nodeId: 'node-b',
+              incarnation: 'node-b-boot',
+            }),
+            sequence: 3,
+            message: { type: 'GAP_FRAME' },
+          })
+        )
+      )
+    );
+
+    await waitFor(() => receivedTypes.includes('GAP_FRAME'), 'Expected gap frame delivery');
+
+    expect(remote.getPeerStats('node-a')).toMatchObject({
+      framesReceived: 1,
+      lastReceivedSequence: 3,
+      sequenceGapCount: 1,
+    });
+    expect(remote.getStats()).toMatchObject({
+      framesReceived: 1,
+      sequenceGapCount: 1,
+    });
+    expect(telemetry.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['frame.received', 'sequence.gap'])
+    );
+
     unsubscribe();
   });
 
