@@ -808,6 +808,43 @@ the gateway WebSocket projection/control channel. Node-only transport helpers
 remain exported from `@actor-core/runtime`, and browser-safe transport helpers
 remain exported from `@actor-core/runtime/browser`.
 
+### `serveActorWebNode(topology, options)`
+
+Node entrypoints can host one topology node with `@actor-core/runtime/node`.
+The runner starts an actor system for the selected node, spawns topology actors
+owned by that node, optionally opens a Node WebSocket transport listener, and
+optionally exposes selected actors through the runtime gateway WebSocket.
+
+```typescript
+import { serveActorWebNode } from '@actor-core/runtime/node';
+import { logistics } from './logistics.topology';
+
+const node = await serveActorWebNode(logistics, {
+  node: 'server',
+  transport: {
+    listen: true,
+  },
+  gateway: {
+    expose: ['shipment'],
+  },
+});
+
+const shipment = node.getActor('shipment');
+await shipment?.send({
+  type: 'CREATE_SHIPMENT',
+  shipmentId: 'shipment-1001',
+  destination: 'Chicago warehouse',
+});
+
+console.log(node.getTransportUrl());
+console.log(node.getGatewayUrl());
+```
+
+`serveActorWebNode` deliberately does not own REST routes, provider callbacks,
+auth, persistence, or business ingress. Those remain hexagonal adapters around
+the served node and can use `node.getActor(...)`, `node.system`, and
+`node.transport`.
+
 ## Runtime Gateway
 
 The runtime gateway exposes Actor-Web runtime projections and command routing to thin hosts such as browser pages, Ignite custom elements, server handlers, and worker-owned UI adapters. It is a host gateway API, not the production inter-node cluster transport. Distributed runtime ownership still flows through `MessageTransport`.

@@ -62,8 +62,8 @@ Recommended public API boundaries:
 // Shared, browser-safe topology declarations.
 import { actor, defineActorWebTopology, node } from '@actor-core/runtime/topology';
 
-// Browser/presentation source creation.
-import { createActorWebSource, startActorWebWorkerNode } from '@actor-core/runtime/browser';
+// Browser/presentation source creation and browser worker runtime hosting.
+import { createActorWebSource, startActorWebNode } from '@actor-core/runtime/browser';
 
 // Node/server runtime hosting.
 import { serveActorWebNode } from '@actor-core/runtime/node';
@@ -81,8 +81,10 @@ Current implementation status:
   helpers and descriptor types.
 - `@actor-core/runtime/browser` exports `createActorWebSource` for gateway-backed
   Ignite-compatible projection/control sources.
-- `serveActorWebNode`, `startActorWebWorkerNode`, and
-  `ignite-element/actor-web` remain target-state APIs for later slices.
+- `@actor-core/runtime/node` exports `serveActorWebNode` for topology-owned
+  Node/server runtime hosting.
+- `startActorWebNode` and `ignite-element/actor-web` remain target-state APIs
+  for later slices.
 - The current example keeps a small domain wrapper around `createActorWebSource`
   only to preserve its in-memory/service-worker fallback behavior.
 
@@ -215,22 +217,7 @@ const server = await serveActorWebNode(logistics, {
   node: 'server',
 
   gateway: {
-    expose: ['shipment', 'routing'],
-  },
-
-  rest: {
-    routes: {
-      'POST /shipments': {
-        actor: 'shipment',
-        command: (body) => ({
-          type: 'CREATE_SHIPMENT',
-          shipmentId: body.shipmentId ?? `shipment-${Date.now().toString(36)}`,
-          destination: body.destination,
-          reference: body.reference,
-        }),
-        status: 202,
-      },
-    },
+    expose: ['shipment'],
   },
 
   transport: {
@@ -241,14 +228,18 @@ const server = await serveActorWebNode(logistics, {
 console.log(server.urls);
 ```
 
+REST, provider callbacks, and other ingress ports remain app-owned adapters.
+They can use `server.getActor('shipment')`, `server.system`, and
+`server.transport` to send messages, run asks, or join remote peers.
+
 The browser worker runs another node:
 
 ```ts
 // worker-runtime.ts
-import { startActorWebWorkerNode } from '@actor-core/runtime/browser';
+import { startActorWebNode } from '@actor-core/runtime/browser';
 import { logistics } from './logistics.topology';
 
-startActorWebWorkerNode(logistics, {
+startActorWebNode(logistics, {
   node: 'worker',
   transportUrl: new URL(self.location.href).searchParams.get('transportUrl'),
 });
@@ -372,7 +363,7 @@ Recommended API names:
 - `defineActorWebTopology`: declares shared runtime topology.
 - `supervisor`: declares a supervised actor group.
 - `serveActorWebNode`: starts a Node/server runtime node.
-- `startActorWebWorkerNode`: starts a browser worker runtime node.
+- `startActorWebNode`: starts a browser worker runtime node.
 - `createActorWebSource`: creates a browser-safe projection/control source.
 - `igniteCore` from `ignite-element/actor-web`: authoring surface for Actor-Web
   components.
@@ -396,7 +387,7 @@ Use address-based source creation when:
 
 Use `serveActorWebNode` only in Node/server entrypoints.
 
-Use `startActorWebWorkerNode` only in browser worker entrypoints.
+Use `startActorWebNode` only in browser worker entrypoints.
 
 Use `createActorWebSource(topology.actors.name, options)` in browser
 presentation code. A future source-enabled generated client may expose
