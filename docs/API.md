@@ -22,6 +22,7 @@ multi-machine transport still requires the external transport roadmap work.
   - [Delay APIs](#delay-apis)
   - [OTP-Style Examples](#otp-style-examples)
 - [Advanced Features](#advanced-features)
+  - [Actor-Web Topology And Sources](#actor-web-topology-and-sources)
   - [Runtime Gateway](#runtime-gateway)
   - [Runtime Transport Contract](#runtime-transport-contract)
   - [Virtual Actors](#virtual-actors-actor-corevirtual)
@@ -729,6 +730,83 @@ const stopInterval = createActorInterval(() => {
 ```
 
 This ensures your actors follow the pure actor model and can run **anywhere** - browser main thread, Web Workers, server-side, or distributed across multiple machines.
+
+## Actor-Web Topology And Sources
+
+Topology declarations are browser-safe and can be shared by frontend, backend,
+worker, and test code. They describe node ownership, actor addresses, gateway
+scope metadata, and supervisor group metadata without opening sockets or
+starting runtimes.
+
+```typescript
+import { actor, defineActorWebTopology, node, supervisor } from '@actor-core/runtime/topology';
+
+export const logistics = defineActorWebTopology({
+  contractVersion: '1.0.0',
+
+  nodes: {
+    browser: node('logistics-browser-host'),
+    server: node('logistics-server-runtime'),
+    worker: node('logistics-worker-runtime'),
+  },
+
+  actors: {
+    shipment: actor({
+      id: 'logistics-shipment',
+      node: 'server',
+      behavior: createShipmentBehavior,
+      supervision: {
+        strategy: 'restart',
+        maxRestarts: 3,
+        withinMs: 60_000,
+      },
+      gateway: {
+        scope: { kind: 'logistics-shipment' },
+      },
+    }),
+  },
+
+  supervisors: {
+    logistics: supervisor({
+      node: 'server',
+      strategy: 'one-for-one',
+      children: ['shipment'],
+    }),
+  },
+});
+```
+
+Browser presentation code can create an Ignite-compatible Actor-Web source from
+that topology actor descriptor:
+
+```typescript
+import { createActorWebSource } from '@actor-core/runtime/browser';
+import { logistics } from './logistics.topology';
+
+const shipmentSource = createActorWebSource(logistics.actors.shipment, {
+  gateway: {
+    url: import.meta.env.VITE_ACTOR_WEB_GATEWAY_URL,
+  },
+});
+```
+
+For separate repositories or generated clients, use the address-based form:
+
+```typescript
+const shipmentSource = createActorWebSource({
+  address: 'actor://logistics-server-runtime/actor/logistics-shipment',
+  contractVersion: '1.0.0',
+  gateway: {
+    url: import.meta.env.VITE_ACTOR_WEB_GATEWAY_URL,
+    scope: { kind: 'logistics-shipment' },
+  },
+});
+```
+
+The topology entry point is pure metadata. The browser source helper owns only
+the gateway WebSocket projection/control channel. Node-only transport helpers
+remain exported from `@actor-core/runtime`, and browser-safe transport helpers
+remain exported from `@actor-core/runtime/browser`.
 
 ## Runtime Gateway
 
