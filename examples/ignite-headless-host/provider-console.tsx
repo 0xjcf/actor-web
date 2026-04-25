@@ -50,6 +50,10 @@ interface ProviderConsoleState {
 
 const PAGE_SIZE = 5;
 
+function isTerminalShipment(status: ShipmentStatus | null | undefined): boolean {
+  return status === 'delivered' || status === 'returned';
+}
+
 const signals: Array<{ signal: ProviderSignal; label: string; note: string }> = [
   {
     signal: 'LABEL_SCANNED',
@@ -143,6 +147,19 @@ const styles = `
     background: rgba(15, 118, 110, 0.2);
     box-shadow: inset 3px 0 0 rgba(94, 234, 212, 0.72);
   }
+  .queue-state {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 0 12px;
+    border: 1px solid rgba(120, 142, 156, 0.18);
+    border-radius: 8px;
+    color: #9db0be;
+    background: rgba(38, 48, 57, 0.72);
+    font-size: 13px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
   .queue-head { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
   .queue-meta { color: #8da1af; font-size: 13px; line-height: 1.45; }
   .selection-banner {
@@ -225,7 +242,12 @@ function createProviderConsoleAdapter() {
     status: ProviderStatus,
     selectedShipmentId: string | null
   ): string | null => {
-    if (selectedShipmentId && status.queue.some((item) => item.shipmentId === selectedShipmentId)) {
+    if (
+      selectedShipmentId &&
+      status.queue.some(
+        (item) => item.shipmentId === selectedShipmentId && !isTerminalShipment(item.status)
+      )
+    ) {
       return selectedShipmentId;
     }
 
@@ -337,6 +359,17 @@ function createProviderConsoleAdapter() {
       }
 
       if (event.type === 'queue.select') {
+        const selected = state.status.queue.find((item) => item.shipmentId === event.shipmentId);
+        if (isTerminalShipment(selected?.status)) {
+          state = {
+            ...state,
+            selectedShipmentId: null,
+            message: `${event.shipmentId} is complete and no longer needs provider processing.`,
+          };
+          notify();
+          return;
+        }
+
         state = {
           ...state,
           selectedShipmentId: event.shipmentId,
@@ -395,6 +428,7 @@ export function defineProviderConsoleElement(): void {
     const selectedItem = state.status.queue.find(
       (item) => item.shipmentId === state.selectedShipmentId
     );
+    const selectedIsTerminal = isTerminalShipment(selectedItem?.status);
 
     return (
       <>
@@ -449,32 +483,42 @@ export function defineProviderConsoleElement(): void {
               </span>
             </div>
             {visibleQueue.length > 0 ? (
-              visibleQueue.map((item) => (
-                <article
-                  class={`queue-item ${item.shipmentId === state.selectedShipmentId ? 'active' : ''}`}
-                >
-                  <div class="queue-head">
-                    <strong>{item.shipmentId}</strong>
-                    <button
-                      type="button"
-                      class={item.shipmentId === state.selectedShipmentId ? 'active' : 'secondary'}
-                      disabled={state.busy}
-                      onClick={() => send({ type: 'queue.select', shipmentId: item.shipmentId })}
-                    >
-                      {item.shipmentId === state.selectedShipmentId ? 'Selected' : 'Select'}
-                    </button>
-                  </div>
-                  <div class="queue-meta">
-                    <div>{item.destination ?? 'destination pending'}</div>
-                    <div>
-                      {item.reference ?? 'no reference'} / {item.status}
+              visibleQueue.map((item) => {
+                const isTerminal = isTerminalShipment(item.status);
+                const isSelected =
+                  item.shipmentId === state.selectedShipmentId && !isTerminalShipment(item.status);
+
+                return (
+                  <article class={`queue-item ${isSelected ? 'active' : ''}`}>
+                    <div class="queue-head">
+                      <strong>{item.shipmentId}</strong>
+                      {isTerminal ? (
+                        <span class="queue-state">{item.status}</span>
+                      ) : (
+                        <button
+                          type="button"
+                          class={isSelected ? 'active' : 'secondary'}
+                          disabled={state.busy}
+                          onClick={() =>
+                            send({ type: 'queue.select', shipmentId: item.shipmentId })
+                          }
+                        >
+                          {isSelected ? 'Selected' : 'Select'}
+                        </button>
+                      )}
                     </div>
-                    <div>
-                      {item.signal ?? 'awaiting provider scan'} / {item.loadId}
+                    <div class="queue-meta">
+                      <div>{item.destination ?? 'destination pending'}</div>
+                      <div>
+                        {item.reference ?? 'no reference'} / {item.status}
+                      </div>
+                      <div>
+                        {item.signal ?? 'awaiting provider scan'} / {item.loadId}
+                      </div>
                     </div>
-                  </div>
-                </article>
-              ))
+                  </article>
+                );
+              })
             ) : (
               <div class="queue-item">
                 <span class="queue-meta">No shipments are waiting at provider HQ.</span>
@@ -539,7 +583,9 @@ export function defineProviderConsoleElement(): void {
               {signals.map((entry) => (
                 <button
                   type="button"
-                  disabled={state.busy || !state.restUrl || !state.selectedShipmentId}
+                  disabled={
+                    state.busy || !state.restUrl || !state.selectedShipmentId || selectedIsTerminal
+                  }
                   onClick={() => send({ type: 'signal', signal: entry.signal, note: entry.note })}
                 >
                   {entry.label}
