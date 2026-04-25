@@ -4,7 +4,7 @@
 import 'ignite-element/renderers/ignite-jsx';
 
 import { igniteElementFactory, StateScope } from 'ignite-element';
-import type { ProviderSignal, ShipmentStatus } from './checkout-contract';
+import type { ProviderSignal, ShipmentStatus } from './logistics-contract';
 
 export const PROVIDER_CONSOLE_ELEMENT_NAME = 'aw-provider-console';
 

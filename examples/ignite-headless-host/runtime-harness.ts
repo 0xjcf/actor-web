@@ -15,11 +15,7 @@ import {
   serviceWorkerRuntimeAvailable,
 } from './browser-transport';
 import {
-  createPlaceholderSnapshot,
-  createRoutingBehavior,
-  createShipmentBehavior,
   LOCAL_NODE,
-  normalizeShipmentSnapshot,
   REMOTE_ACTOR_ID,
   REMOTE_ADDRESS,
   REMOTE_NODE,
@@ -28,7 +24,10 @@ import {
   type ShipmentEvent,
   WORKER_ACTOR_ID,
   WORKER_NODE,
-} from './checkout-contract';
+} from './logistics-contract';
+import { createRoutingBehavior } from './logistics-routing-behavior';
+import { createShipmentBehavior } from './logistics-shipment-behavior';
+import { createPlaceholderSnapshot, normalizeShipmentSnapshot } from './logistics-snapshots';
 import {
   configuredGatewayUrl,
   createConfiguredLogisticsServerGatewayRuntimeHarness,
@@ -37,7 +36,7 @@ import {
   serverGatewayRuntimeAvailable,
 } from './server-gateway-client';
 
-export type { ShipmentCommand, ShipmentContext, ShipmentEvent } from './checkout-contract';
+export type { ShipmentCommand, ShipmentContext, ShipmentEvent } from './logistics-contract';
 
 export interface LogisticsRuntimeHarness {
   readonly source: IgniteActorSource<ShipmentContext, ShipmentCommand, ShipmentEvent>;

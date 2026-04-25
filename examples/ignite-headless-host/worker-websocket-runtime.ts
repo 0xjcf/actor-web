@@ -5,12 +5,8 @@ import {
   createActorSystem,
   createBrowserWebSocketMessageTransport,
 } from '@actor-core/runtime/browser';
-import {
-  createRoutingBehavior,
-  REMOTE_NODE,
-  WORKER_ACTOR_ID,
-  WORKER_NODE,
-} from './checkout-contract';
+import { REMOTE_NODE, WORKER_ACTOR_ID, WORKER_NODE } from './logistics-contract';
+import { createRoutingBehavior } from './logistics-routing-behavior';
 
 declare const self: DedicatedWorkerGlobalScope;
 

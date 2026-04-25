@@ -2,7 +2,8 @@
 
 import type { ActorMessage, MessageTransport } from '@actor-core/runtime/browser';
 import { createActorSystem } from '@actor-core/runtime/browser';
-import { createShipmentBehavior, REMOTE_ACTOR_ID, REMOTE_NODE } from './checkout-contract';
+import { REMOTE_ACTOR_ID, REMOTE_NODE } from './logistics-contract';
+import { createShipmentBehavior } from './logistics-shipment-behavior';
 import {
   isServiceWorkerTransportEnvelope,
   type ServiceWorkerTransportEnvelope,

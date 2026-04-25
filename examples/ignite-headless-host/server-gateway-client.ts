@@ -16,15 +16,17 @@ import {
   createProjectionTransportStatus,
 } from '@actor-core/runtime/browser';
 import {
-  createActorSnapshot,
-  createPlaceholderSnapshot,
-  normalizeShipmentSnapshot,
   REMOTE_ADDRESS,
   type ShipmentCommand,
   type ShipmentContext,
   type ShipmentEvent,
   WORKER_ADDRESS,
-} from './checkout-contract';
+} from './logistics-contract';
+import {
+  createActorSnapshot,
+  createPlaceholderSnapshot,
+  normalizeShipmentSnapshot,
+} from './logistics-snapshots';
 import type { LogisticsRuntimeHarness } from './runtime-harness';
 
 export interface GatewaySocket {

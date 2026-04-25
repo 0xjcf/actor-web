@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 import type { ActorMessage, MessageTransport } from '@actor-core/runtime/browser';
-import { LOCAL_NODE, REMOTE_NODE } from './checkout-contract';
+import { LOCAL_NODE, REMOTE_NODE } from './logistics-contract';
 import {
   isServiceWorkerTransportEnvelope,
   type ServiceWorkerTransportEnvelope,

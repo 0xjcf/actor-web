@@ -62,6 +62,32 @@ receives fresh snapshots/events over the gateway WebSocket.
   delivery/return scan signals back to the server runtime.
 - Service worker runtime: browser-local fallback/topology proof.
 
+## Example File Topology
+
+The example is organized around a hexagonal boundary:
+
+- Domain contract: `logistics-contract.ts` defines shipment commands, events,
+  context, actor addresses, and runtime owners.
+- Domain/application actors: `logistics-shipment-behavior.ts` owns shipment
+  lifecycle decisions, while `logistics-routing-behavior.ts` owns worker route
+  planning.
+- Domain helpers: `logistics-provider.ts` derives deterministic provider
+  facilities, loads, notes, and provider signal effects.
+- Adapter-side provider model: `logistics-provider-hq.ts` tracks the external
+  provider queue and manual/simulation status.
+- Projection helpers: `logistics-snapshots.ts` and `logistics-view-model.ts`
+  keep gateway snapshots and UI route labeling out of actor behavior.
+- Ports/adapters: `server-runtime-gateway.ts`, `server-gateway-client.ts`,
+  `browser-transport.ts`, `worker-runtime.ts`, and
+  `worker-websocket-runtime.ts` adapt REST, WebSocket gateway, MessagePort,
+  service worker, and Actor-Web transport edges.
+- Ignite hosts: `ignite-headless-host-element.tsx`, `provider-console.tsx`,
+  and `headless-host.ts` render and command the actors without owning runtime
+  state.
+
+`checkout-contract.ts` remains only as a compatibility barrel for older tests
+and imports.
+
 ## Demo Flow
 
 1. The Ignite UI submits a shipment through REST when

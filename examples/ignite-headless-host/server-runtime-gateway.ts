@@ -14,36 +14,29 @@ import {
 } from '@actor-core/runtime';
 import WebSocket, { WebSocketServer } from 'ws';
 import {
-  createShipmentBehavior,
   type ProviderSignal,
-  providerFacilityForShipment,
-  providerLoadIdForShipment,
-  providerNoteForSignal,
   REMOTE_ACTOR_ID,
   REMOTE_ADDRESS,
   REMOTE_NODE,
   type RoutePlan,
   type ShipmentCommand,
   type ShipmentContext,
-  type ShipmentStatus,
   WORKER_ACTOR_ID,
   WORKER_ADDRESS,
   WORKER_NODE,
-} from './checkout-contract';
-
-type LifecycleMode = 'simulation' | 'manual';
-
-interface ProviderQueueItem {
-  shipmentId: string;
-  destination: string | null;
-  reference: string | null;
-  status: ShipmentStatus;
-  facility: string;
-  signal: ProviderSignal | null;
-  loadId: string;
-  note: string | null;
-  updatedAt: number;
-}
+} from './logistics-contract';
+import {
+  providerFacilityForShipment,
+  providerLoadIdForShipment,
+  providerNoteForSignal,
+} from './logistics-provider';
+import {
+  isProviderSignal,
+  type LifecycleMode,
+  LogisticsProviderQueue,
+  shouldReturnShipment,
+} from './logistics-provider-hq';
+import { createShipmentBehavior } from './logistics-shipment-behavior';
 
 export interface LogisticsRuntimeGatewayServerOptions {
   host?: string;
@@ -134,25 +127,6 @@ function wait(delayMs: number): Promise<void> {
   });
 }
 
-function shouldReturnShipment(shipmentId: string): boolean {
-  let hash = 0;
-  for (let index = 0; index < shipmentId.length; index += 1) {
-    hash = (hash * 31 + shipmentId.charCodeAt(index)) >>> 0;
-  }
-
-  return hash % 5 === 0;
-}
-
-function isProviderSignal(value: unknown): value is ProviderSignal {
-  return (
-    value === 'LABEL_SCANNED' ||
-    value === 'PACKED_INTO_TRUCK' ||
-    value === 'OUTBOUND_SCAN' ||
-    value === 'DELIVERY_CONFIRMED' ||
-    value === 'RETURN_EXCEPTION'
-  );
-}
-
 export function createLogisticsRuntimeGatewayServer(
   options: LogisticsRuntimeGatewayServerOptions = {}
 ): LogisticsRuntimeGatewayServer {
@@ -177,8 +151,7 @@ export function createLogisticsRuntimeGatewayServer(
   let gatewayUrl: string | null = null;
   let restUrl: string | null = null;
   const lifecycleTimers = new Set<ReturnType<typeof setTimeout>>();
-  const providerQueue = new Map<string, ProviderQueueItem>();
-  const shipmentContexts = new Map<string, ShipmentContext>();
+  const providerQueue = new LogisticsProviderQueue();
 
   const clearLifecycleTimers = (): void => {
     for (const timer of Array.from(lifecycleTimers)) {
@@ -225,67 +198,14 @@ export function createLogisticsRuntimeGatewayServer(
   };
 
   const upsertProviderQueue = (context: ShipmentContext): void => {
-    if (!context.shipmentId) {
-      return;
-    }
-
-    shipmentContexts.set(context.shipmentId, {
-      ...context,
-      timeline: context.timeline.map((entry) => ({ ...entry })),
-    });
-
-    const current = providerQueue.get(context.shipmentId);
-    providerQueue.set(context.shipmentId, {
-      shipmentId: context.shipmentId,
-      destination: context.destination ?? current?.destination ?? null,
-      reference: context.reference ?? current?.reference ?? null,
-      status: context.status,
-      facility:
-        context.providerFacility ??
-        current?.facility ??
-        providerFacilityForShipment(context.shipmentId),
-      signal: context.providerSignal ?? current?.signal ?? null,
-      loadId:
-        context.providerLoadId ?? current?.loadId ?? providerLoadIdForShipment(context.shipmentId),
-      note: context.providerNote ?? current?.note ?? null,
-      updatedAt: Date.now(),
-    });
+    providerQueue.upsert(context);
   };
 
-  const providerQueueItems = (): ProviderQueueItem[] =>
-    Array.from(providerQueue.values()).sort((left, right) => right.updatedAt - left.updatedAt);
+  const selectedProviderShipmentId = (): string | null => providerQueue.selectedShipmentId();
 
-  const selectedProviderShipmentId = (): string | null => {
-    const active = providerQueueItems().find(
-      (item) => item.status !== 'delivered' && item.status !== 'returned'
-    );
-    return active?.shipmentId ?? providerQueueItems()[0]?.shipmentId ?? null;
-  };
-
-  const providerStatus = (): {
-    mode: LifecycleMode;
-    shipmentId: string | null;
-    status: ShipmentStatus | null;
-    facility: string | null;
-    signal: ProviderSignal | null;
-    loadId: string | null;
-    note: string | null;
-    queue: ProviderQueueItem[];
-  } => {
+  const providerStatus = () => {
     const snapshot = shipmentActor?.getSnapshot().context ?? null;
-    const selectedShipmentId = selectedProviderShipmentId();
-    const queued = selectedShipmentId ? providerQueue.get(selectedShipmentId) : undefined;
-
-    return {
-      mode: lifecycleMode,
-      shipmentId: queued?.shipmentId ?? snapshot?.shipmentId ?? null,
-      status: queued?.status ?? snapshot?.status ?? null,
-      facility: queued?.facility ?? snapshot?.providerFacility ?? null,
-      signal: queued?.signal ?? snapshot?.providerSignal ?? null,
-      loadId: queued?.loadId ?? snapshot?.providerLoadId ?? null,
-      note: queued?.note ?? snapshot?.providerNote ?? null,
-      queue: providerQueueItems(),
-    };
+    return providerQueue.status(lifecycleMode, snapshot);
   };
 
   const setLifecycleMode = (nextMode: LifecycleMode): void => {
@@ -329,7 +249,7 @@ export function createLogisticsRuntimeGatewayServer(
       facility: input.facility ?? providerFacilityForShipment(shipmentId),
       loadId: input.loadId ?? providerLoadIdForShipment(shipmentId),
       note: input.note ?? providerNoteForSignal(input.signal),
-      baseContext: shipmentContexts.get(shipmentId),
+      baseContext: providerQueue.contextFor(shipmentId),
     });
     await system.flush();
     upsertProviderQueue(shipmentActor.getSnapshot().context);
@@ -468,7 +388,6 @@ export function createLogisticsRuntimeGatewayServer(
       if (request.method === 'POST' && /^\/shipments\/[^/]+\/reset$/.test(url.pathname)) {
         clearLifecycleTimers();
         providerQueue.clear();
-        shipmentContexts.clear();
         await shipmentActor?.send({ type: 'RESET_SHIPMENT' });
         sendJson(response, 202, { status: 'idle' });
         return;

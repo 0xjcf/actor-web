@@ -6,6 +6,12 @@ import { type ActorWebExtendedState, createActorWebAdapter } from 'ignite-adapte
 import { igniteElementFactory, StateScope } from 'ignite-element';
 import type { LogisticsEventLog, LogisticsHostState } from './headless-host';
 import {
+  cloneTimeline,
+  eventRuntime,
+  projectEventLogItem,
+  timelineRuntime,
+} from './logistics-view-model';
+import {
   createLogisticsRuntimeHarness,
   type ShipmentCommand,
   type ShipmentContext,
@@ -298,86 +304,6 @@ function cloneState(state: LogisticsElementState): LogisticsElementState {
   };
 }
 
-function eventRuntime(eventType: ShipmentEvent['type']): {
-  source: string;
-  via: string;
-  tone: string;
-} {
-  if (eventType === 'ROUTE_ASSIGNED') {
-    return {
-      source: 'Worker -> Server',
-      via: 'Actor-Web transport + gateway WS',
-      tone: 'tone-worker',
-    };
-  }
-
-  if (eventType === 'PROVIDER_SIGNAL_RECORDED') {
-    return {
-      source: 'Remote Provider HQ',
-      via: 'provider signal -> server runtime -> gateway WS',
-      tone: 'tone-provider',
-    };
-  }
-
-  if (eventType === 'SHIPMENT_CREATED' || eventType === 'ROUTE_REQUESTED') {
-    return {
-      source: 'Server Runtime',
-      via: 'REST ingress + gateway WS',
-      tone: 'tone-server',
-    };
-  }
-
-  if (
-    eventType === 'SHIPMENT_IN_TRANSIT' ||
-    eventType === 'SHIPMENT_DELIVERED' ||
-    eventType === 'SHIPMENT_RETURNED'
-  ) {
-    return {
-      source: 'Server Lifecycle',
-      via: 'gateway WS',
-      tone: 'tone-lifecycle',
-    };
-  }
-
-  return {
-    source: 'Server Runtime',
-    via: 'gateway command + gateway WS',
-    tone: 'tone-server',
-  };
-}
-
-function timelineRuntime(label: string): { source: string; via: string; tone: string } {
-  if (label === 'Route assigned') {
-    return {
-      source: 'Worker Routing Runtime',
-      via: 'Actor-Web transport',
-      tone: 'tone-worker',
-    };
-  }
-
-  if (label === 'Shipped' || label === 'Delivered' || label === 'Returned') {
-    return {
-      source: 'Server Lifecycle',
-      via: 'gateway WS update',
-      tone: 'tone-lifecycle',
-    };
-  }
-
-  if (label === 'Provider label scan' || label === 'Packed into truck') {
-    return {
-      source: 'Remote Provider HQ',
-      via: 'provider signal',
-      tone: 'tone-provider',
-    };
-  }
-
-  return {
-    source: 'Server Shipment Runtime',
-    via: 'REST command ingress',
-    tone: 'tone-server',
-  };
-}
-
 function renderEvent(event: LogisticsEventLog) {
   const runtime = eventRuntime(event.type);
   return (
@@ -434,7 +360,7 @@ function projectElementState(
     providerLoadId: actorState.providerLoadId,
     providerNote: actorState.providerNote,
     shipmentCount: actorState.shipmentCount,
-    timeline: actorState.timeline.map((entry) => ({ ...entry })),
+    timeline: cloneTimeline(actorState.timeline),
     eventLog: current?.eventLog ?? [],
     transportState: current?.transportState ?? 'replaying',
     transportReason: current?.transportReason ?? null,
@@ -480,14 +406,7 @@ function createLogisticsAdapter() {
         (event) => {
           state = {
             ...state,
-            eventLog: [
-              {
-                type: event.type,
-                shipmentId: 'shipmentId' in event ? event.shipmentId : null,
-                actorId: actor.address.id,
-              },
-              ...state.eventLog,
-            ],
+            eventLog: [projectEventLogItem(event, actor.address.id), ...state.eventLog],
           };
           notify();
         },
