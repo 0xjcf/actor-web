@@ -10,6 +10,14 @@ export type {
 } from './actor-system.js';
 export type { ActorSystemConfig } from './actor-system-impl.js';
 export { createActorSystem } from './actor-system-impl.js';
+export type {
+  ActorWebAddressSourceInput,
+  ActorWebGatewaySocket,
+  ActorWebSourceGatewayOptions,
+  ActorWebSourceOptions,
+  ClosableActorWebSource,
+} from './actor-web-source.js';
+export { createActorWebSource } from './actor-web-source.js';
 export type { BrowserWebSocketMessageTransportOptions } from './browser-websocket-message-transport.js';
 export {
   BrowserWebSocketMessageTransport,

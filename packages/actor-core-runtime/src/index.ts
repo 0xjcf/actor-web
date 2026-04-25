@@ -282,6 +282,22 @@ export type {
   InMemoryMessageTransportOptions,
 } from './testing/in-memory-message-transport.js';
 export { createInMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';
+export type {
+  ActorWebActorAddress,
+  ActorWebActorContext,
+  ActorWebActorDefinition,
+  ActorWebActorDescriptor,
+  ActorWebActorEvent,
+  ActorWebActorMessage,
+  ActorWebNodeDefinition,
+  ActorWebSupervisionPolicy,
+  ActorWebSupervisionStrategy,
+  ActorWebSupervisorDefinition,
+  ActorWebSupervisorDescriptor,
+  ActorWebTopology,
+  ActorWebTopologyInput,
+} from './topology.js';
+export { actor, defineActorWebTopology, node, supervisor } from './topology.js';
 // Type helpers for context and message extraction
 export type {
   ContextOf,

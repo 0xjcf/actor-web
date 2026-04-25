@@ -35,6 +35,7 @@
       "@/app/*": ["./src/app/*"],
       "@actor-core/runtime": ["./packages/actor-core-runtime/src/index.ts"],
       "@actor-core/runtime/browser": ["./packages/actor-core-runtime/src/browser.ts"],
+      "@actor-core/runtime/topology": ["./packages/actor-core-runtime/src/topology-entry.ts"],
       "@actor-core/testing": ["./packages/actor-core-testing/src/index.ts"],
       "@agent-workflow/cli": ["./packages/agent-workflow-cli/src/index.ts"],
       "ignite-element": ["../ignite-element/packages/ignite-element/dist/types/index.d.ts"],

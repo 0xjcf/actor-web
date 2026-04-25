@@ -18,6 +18,13 @@ export default defineConfig({
         replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/browser.ts'),
       },
       {
+        find: '@actor-core/runtime/topology',
+        replacement: path.resolve(
+          actorWebRoot,
+          'packages/actor-core-runtime/src/topology-entry.ts'
+        ),
+      },
+      {
         find: '@actor-core/runtime',
         replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/index.ts'),
       },

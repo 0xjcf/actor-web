@@ -1,4 +1,5 @@
-import type { RuntimeGatewayScopeDescriptor } from '@actor-core/runtime/browser';
+import type { ActorBehavior, ActorMessage } from './actor-system.js';
+import type { RuntimeGatewayScopeDescriptor } from './runtime-gateway.js';
 
 export type ActorWebSupervisionStrategy = 'restart' | 'resume' | 'stop' | 'escalate';
 
@@ -22,18 +23,72 @@ export interface ActorWebNodeDefinition<TAddress extends string = string> {
 export interface ActorWebActorDefinition<
   TId extends string = string,
   TNode extends string = string,
+  TBehavior = unknown,
 > {
   readonly id: TId;
   readonly node: TNode;
-  readonly behavior?: unknown;
+  readonly behavior?: TBehavior;
   readonly supervision?: ActorWebSupervisionPolicy;
   readonly gateway?: {
     readonly scope: RuntimeGatewayScopeDescriptor;
   };
 }
 
-export interface ActorWebActorDescriptor<TId extends string = string, TNode extends string = string>
-  extends ActorWebActorDefinition<TId, TNode> {
+export type ActorWebActorContext<TActor> = TActor extends {
+  readonly behavior?: infer TBehavior;
+}
+  ? ActorWebBehaviorContext<NonNullable<TBehavior>>
+  : unknown;
+
+export type ActorWebActorMessage<TActor> = TActor extends {
+  readonly behavior?: infer TBehavior;
+}
+  ? ActorWebBehaviorMessage<NonNullable<TBehavior>>
+  : ActorMessage;
+
+export type ActorWebActorEvent<TActor> = TActor extends {
+  readonly behavior?: infer TBehavior;
+}
+  ? ActorWebBehaviorEvent<NonNullable<TBehavior>>
+  : ActorMessage;
+
+type ActorWebBehaviorContext<TBehavior> = TBehavior extends (
+  ...args: readonly never[]
+) => infer TReturn
+  ? ActorWebBehaviorContext<TReturn>
+  : TBehavior extends { readonly __contextType: infer TContext }
+    ? TContext
+    : unknown;
+
+type ActorWebBehaviorMessage<TBehavior> = TBehavior extends (
+  ...args: readonly never[]
+) => infer TReturn
+  ? ActorWebBehaviorMessage<TReturn>
+  : TBehavior extends { readonly __messageType: infer TMessage }
+    ? TMessage extends ActorMessage
+      ? TMessage
+      : ActorMessage
+    : TBehavior extends ActorBehavior<infer TMessage, unknown>
+      ? TMessage extends ActorMessage
+        ? TMessage
+        : ActorMessage
+      : ActorMessage;
+
+type ActorWebBehaviorEvent<TBehavior> = TBehavior extends (
+  ...args: readonly never[]
+) => infer TReturn
+  ? ActorWebBehaviorEvent<TReturn>
+  : TBehavior extends ActorBehavior<unknown, infer TEvent>
+    ? TEvent extends ActorMessage
+      ? TEvent
+      : ActorMessage
+    : ActorMessage;
+
+export interface ActorWebActorDescriptor<
+  TId extends string = string,
+  TNode extends string = string,
+  TBehavior = unknown,
+> extends ActorWebActorDefinition<TId, TNode, TBehavior> {
   readonly key: string;
   readonly nodeAddress: string;
   readonly address: ActorWebActorAddress;
@@ -51,7 +106,7 @@ export interface ActorWebSupervisorDescriptor<TNode extends string = string>
   readonly nodeAddress: string;
 }
 
-type ActorWebTopologyInput = {
+export type ActorWebTopologyInput = {
   readonly contractVersion?: string;
   readonly nodes: Record<string, ActorWebNodeDefinition>;
   readonly actors: Record<string, ActorWebActorDefinition>;
@@ -62,7 +117,11 @@ export type ActorWebTopology<TInput extends ActorWebTopologyInput> = {
   readonly contractVersion?: string;
   readonly nodes: TInput['nodes'];
   readonly actors: {
-    readonly [K in keyof TInput['actors']]: ActorWebActorDescriptor;
+    readonly [K in keyof TInput['actors']]: ActorWebActorDescriptor<
+      TInput['actors'][K]['id'],
+      TInput['actors'][K]['node'],
+      TInput['actors'][K] extends { readonly behavior?: infer TBehavior } ? TBehavior : unknown
+    >;
   };
   readonly supervisors: {
     readonly [K in keyof NonNullable<TInput['supervisors']>]: ActorWebSupervisorDescriptor;
@@ -73,15 +132,15 @@ export function node<TAddress extends string>(address: TAddress): ActorWebNodeDe
   return { address };
 }
 
-export function actor<TId extends string, TNode extends string>(
-  definition: ActorWebActorDefinition<TId, TNode>
-): ActorWebActorDefinition<TId, TNode> {
+export function actor<TDefinition extends ActorWebActorDefinition>(
+  definition: TDefinition
+): TDefinition {
   return definition;
 }
 
-export function supervisor<TNode extends string>(
-  definition: ActorWebSupervisorDefinition<TNode>
-): ActorWebSupervisorDefinition<TNode> {
+export function supervisor<TDefinition extends ActorWebSupervisorDefinition>(
+  definition: TDefinition
+): TDefinition {
   return definition;
 }
 

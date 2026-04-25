@@ -1,20 +1,21 @@
-import type { IgniteActorSource, RuntimeGatewayScopeDescriptor } from '@actor-core/runtime/browser';
-import type { ActorWebActorAddress, ActorWebActorDescriptor } from './actor-web-topology';
+import {
+  type ActorWebGatewaySocket,
+  createActorWebSource as createRuntimeActorWebSource,
+  type IgniteActorSource,
+  type RuntimeGatewayScopeDescriptor,
+} from '@actor-core/runtime/browser';
+import type { ActorWebActorAddress, ActorWebActorDescriptor } from '@actor-core/runtime/topology';
 import type {
   ShipmentCommand as LogisticsCommand,
   ShipmentContext as LogisticsContext,
   ShipmentEvent as LogisticsEvent,
 } from './logistics-contract';
 import { createLogisticsRuntimeHarness, type LogisticsRuntimeHarness } from './runtime-harness';
-import {
-  configuredGatewayUrl,
-  createLogisticsServerGatewayRuntimeHarness,
-  type GatewaySocket,
-} from './server-gateway-client';
+import { configuredGatewayUrl } from './server-gateway-client';
 
 export interface ActorWebActorSourceOptions {
   gatewayUrl?: string;
-  createSocket?: (url: string) => GatewaySocket;
+  createSocket?: (url: string) => ActorWebGatewaySocket;
 }
 
 export function createActorWebSource(
@@ -34,11 +35,31 @@ export function createActorWebSource(
     );
   }
 
-  return createLogisticsServerGatewayRuntimeHarness({
-    url,
-    ...(actorDescriptor.gateway?.scope ? { scope: actorDescriptor.gateway.scope } : {}),
+  const sourceOptions = {
+    gateway: {
+      url,
+      ...(actorDescriptor.gateway?.scope ? { scope: actorDescriptor.gateway.scope } : {}),
+    },
+    clientVersion: 'ignite-headless-host',
     ...(options.createSocket ? { createSocket: options.createSocket } : {}),
-  });
+  };
+  const source =
+    'nodeAddress' in actorDescriptor
+      ? createRuntimeActorWebSource(actorDescriptor, sourceOptions)
+      : createRuntimeActorWebSource(
+          {
+            address: actorDescriptor.address,
+            gateway: sourceOptions.gateway,
+          },
+          sourceOptions
+        );
+
+  return {
+    source: source as unknown as LogisticsActorSource,
+    async destroy(): Promise<void> {
+      source.close();
+    },
+  };
 }
 
 export type LogisticsActorSource = IgniteActorSource<
