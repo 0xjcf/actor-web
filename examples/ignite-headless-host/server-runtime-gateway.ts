@@ -3,16 +3,10 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import {
   type ActorRef,
-  createActorSystem,
-  createNodeWebSocketMessageTransport,
-  createRuntimeGatewayHub,
   createRuntimeGatewaySource,
-  type NodeWebSocketMessageTransport,
-  type RuntimeGatewayClientFrame,
-  type RuntimeGatewayConnectionAdapter,
   RuntimeGatewayScopeError,
 } from '@actor-core/runtime';
-import WebSocket, { WebSocketServer } from 'ws';
+import { type ServedActorWebNode, serveActorWebNode } from '@actor-core/runtime/node';
 import type {
   ProviderSignal,
   RoutePlan,
@@ -30,7 +24,6 @@ import {
   LogisticsProviderQueue,
   shouldReturnShipment,
 } from './logistics-provider-hq';
-import { createShipmentBehavior } from './logistics-shipment-behavior';
 import { logistics } from './logistics-topology';
 
 const shipmentActorDescriptor = logistics.actors.shipment;
@@ -60,39 +53,6 @@ export interface LogisticsRuntimeGatewayServer {
 
 export type CheckoutRuntimeGatewayServerOptions = LogisticsRuntimeGatewayServerOptions;
 export type CheckoutRuntimeGatewayServer = LogisticsRuntimeGatewayServer;
-
-class WebSocketGatewayConnection implements RuntimeGatewayConnectionAdapter {
-  readonly authContext = {};
-
-  constructor(private readonly socket: WebSocket) {}
-
-  receive(listener: (frame: RuntimeGatewayClientFrame) => void): () => void {
-    const onMessage = (data: WebSocket.RawData): void => {
-      const text = Array.isArray(data)
-        ? Buffer.concat(data).toString('utf8')
-        : Buffer.from(data).toString('utf8');
-      listener(JSON.parse(text) as RuntimeGatewayClientFrame);
-    };
-
-    this.socket.on('message', onMessage);
-    return () => {
-      this.socket.off('message', onMessage);
-    };
-  }
-
-  onClose(listener: () => void): () => void {
-    this.socket.on('close', listener);
-    return () => {
-      this.socket.off('close', listener);
-    };
-  }
-
-  send(frame: unknown): void {
-    if (this.socket.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify(frame));
-    }
-  }
-}
 
 function sendJson(response: ServerResponse, statusCode: number, body: unknown): void {
   response.writeHead(statusCode, {
@@ -135,23 +95,28 @@ export function createLogisticsRuntimeGatewayServer(
   const lifecyclePackedDelayMs = options.lifecyclePackedDelayMs ?? 6_000;
   const lifecycleShippedDelayMs = options.lifecycleShippedDelayMs ?? 10_000;
   const lifecycleTerminalDelayMs = options.lifecycleTerminalDelayMs ?? 20_000;
-  const transport: NodeWebSocketMessageTransport = createNodeWebSocketMessageTransport({
-    nodeAddress: serverNode,
-    incarnation: `${serverNode}-demo`,
-    heartbeatIntervalMs: 0,
-    listen: {
-      host: options.host ?? '127.0.0.1',
-      port: options.transportPort ?? 0,
-    },
-  });
-  const system = createActorSystem({ nodeAddress: serverNode, transport });
+  let servedNode: ServedActorWebNode<typeof logistics> | null = null;
   let shipmentActor: ActorRef<ShipmentContext, ShipmentCommand> | null = null;
-  let server: WebSocketServer | null = null;
   let restServer: Server | null = null;
-  let gatewayUrl: string | null = null;
   let restUrl: string | null = null;
   const lifecycleTimers = new Set<ReturnType<typeof setTimeout>>();
   const providerQueue = new LogisticsProviderQueue();
+
+  const system = () => {
+    if (!servedNode) {
+      throw new Error('Actor-Web server node is not ready.');
+    }
+
+    return servedNode.system;
+  };
+
+  const transport = () => {
+    if (!servedNode) {
+      throw new Error('Actor-Web server node is not ready.');
+    }
+
+    return servedNode.transport;
+  };
 
   const clearLifecycleTimers = (): void => {
     for (const timer of Array.from(lifecycleTimers)) {
@@ -251,7 +216,7 @@ export function createLogisticsRuntimeGatewayServer(
       note: input.note ?? providerNoteForSignal(input.signal),
       baseContext: providerQueue.contextFor(shipmentId),
     });
-    await system.flush();
+    await system().flush();
     upsertProviderQueue(shipmentActor.getSnapshot().context);
 
     return shipmentActor.getSnapshot().context;
@@ -263,17 +228,17 @@ export function createLogisticsRuntimeGatewayServer(
     reference?: string;
   }): Promise<RoutePlan | null> => {
     try {
-      for (let attempt = 0; !transport.isConnected(workerNode) && attempt < 40; attempt += 1) {
+      for (let attempt = 0; !transport().isConnected(workerNode) && attempt < 40; attempt += 1) {
         await wait(25);
       }
 
-      if (!transport.isConnected(workerNode)) {
+      if (!transport().isConnected(workerNode)) {
         return null;
       }
 
-      await system.join([workerNode]);
+      await system().join([workerNode]);
       for (let attempt = 0; attempt < 20; attempt += 1) {
-        const routingRef = await system.lookup<unknown, ShipmentCommand>(
+        const routingRef = await system().lookup<unknown, ShipmentCommand>(
           routingActorDescriptor.address.path
         );
         if (routingRef) {
@@ -313,7 +278,7 @@ export function createLogisticsRuntimeGatewayServer(
       destination: input.destination,
       reference: input.reference,
     });
-    await system.flush();
+    await system().flush();
     upsertProviderQueue(shipmentActor.getSnapshot().context);
 
     const plan = await planRouteForShipment({
@@ -323,45 +288,13 @@ export function createLogisticsRuntimeGatewayServer(
     });
     if (plan) {
       await shipmentActor.send({ type: 'ASSIGN_ROUTE', plan });
-      await system.flush();
+      await system().flush();
       upsertProviderQueue(shipmentActor.getSnapshot().context);
       scheduleShipmentLifecycle(shipmentId);
     }
 
     return { shipmentId, status: plan ? 'route-assigned' : 'route-requested' };
   };
-
-  const hub = createRuntimeGatewayHub({
-    resolveScope: async (scope) => {
-      if (
-        scope.kind !== 'ignite-headless-checkout' &&
-        scope.kind !== 'logistics-shipment' &&
-        scope.kind !== 'ignite-headless-worker-checkout' &&
-        scope.kind !== 'logistics-routing'
-      ) {
-        throw new RuntimeGatewayScopeError('invalid_scope', `Unsupported scope ${scope.kind}.`);
-      }
-
-      const isWorkerScope =
-        scope.kind === 'ignite-headless-worker-checkout' || scope.kind === 'logistics-routing';
-      const sourceActor = isWorkerScope ? routingActorDescriptor : shipmentActorDescriptor;
-      let actorRef = await system.lookup(sourceActor.address.path);
-      for (let attempt = 0; !actorRef && attempt < 20; attempt += 1) {
-        await wait(25);
-        actorRef = await system.lookup(sourceActor.address.path);
-      }
-      if (!actorRef) {
-        return null;
-      }
-
-      return createRuntimeGatewaySource(actorRef, {
-        workflowId: isWorkerScope ? 'logistics-routing' : 'logistics-shipment',
-        taskId: sourceActor.id,
-        taskTitle: isWorkerScope ? 'Logistics routing worker' : 'Logistics shipment tracker',
-        sourceActor: sourceActor.address.path,
-      });
-    },
-  });
 
   const handleRest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     try {
@@ -448,8 +381,8 @@ export function createLogisticsRuntimeGatewayServer(
 
       if (request.method === 'GET' && url.pathname === '/runtime/status') {
         sendJson(response, 200, {
-          gatewayUrl,
-          transportUrl: transport.getListeningUrl(),
+          gatewayUrl: servedNode?.getGatewayUrl() ?? null,
+          transportUrl: servedNode?.getTransportUrl() ?? null,
           lifecycleMode,
           nodes: {
             browserHost: 'thin Ignite host',
@@ -473,43 +406,65 @@ export function createLogisticsRuntimeGatewayServer(
 
   return {
     async start(): Promise<void> {
-      if (server) {
+      if (servedNode) {
         return;
       }
 
-      await transport.start();
-      await system.start();
-      shipmentActor = await system.spawn(createShipmentBehavior(), {
-        id: shipmentActorDescriptor.id,
-      });
-
-      server = new WebSocketServer({
+      servedNode = await serveActorWebNode(logistics, {
+        node: 'server',
         host: options.host ?? '127.0.0.1',
-        port: options.port ?? 0,
-      });
-      server.on('connection', (socket) => {
-        hub.attach(new WebSocketGatewayConnection(socket));
-      });
+        transport: {
+          listen: {
+            host: options.host ?? '127.0.0.1',
+            port: options.transportPort ?? 0,
+          },
+        },
+        gateway: {
+          host: options.host ?? '127.0.0.1',
+          port: options.port ?? 0,
+          expose: ['shipment'],
+          resolveScope: async (scope) => {
+            if (
+              scope.kind !== 'ignite-headless-checkout' &&
+              scope.kind !== 'logistics-shipment' &&
+              scope.kind !== 'ignite-headless-worker-checkout' &&
+              scope.kind !== 'logistics-routing'
+            ) {
+              throw new RuntimeGatewayScopeError(
+                'invalid_scope',
+                `Unsupported scope ${scope.kind}.`
+              );
+            }
 
-      await new Promise<void>((resolve, reject) => {
-        const activeServer = server;
-        if (!activeServer) {
-          reject(new Error('Gateway WebSocket server was not created.'));
-          return;
-        }
+            const isWorkerScope =
+              scope.kind === 'ignite-headless-worker-checkout' ||
+              scope.kind === 'logistics-routing';
+            const sourceActor = isWorkerScope ? routingActorDescriptor : shipmentActorDescriptor;
+            let actorRef = await system().lookup(sourceActor.address.path);
+            for (let attempt = 0; !actorRef && attempt < 20; attempt += 1) {
+              await wait(25);
+              actorRef = await system().lookup(sourceActor.address.path);
+            }
+            if (!actorRef) {
+              return null;
+            }
 
-        activeServer.once('listening', () => {
-          const address = activeServer.address();
-          if (!address || typeof address === 'string') {
-            reject(new Error('Gateway WebSocket server did not expose a TCP address.'));
-            return;
-          }
-
-          gatewayUrl = `ws://${address.address}:${address.port}`;
-          resolve();
-        });
-        activeServer.once('error', reject);
+            return createRuntimeGatewaySource(actorRef, {
+              workflowId: isWorkerScope ? 'logistics-routing' : 'logistics-shipment',
+              taskId: sourceActor.id,
+              taskTitle: isWorkerScope ? 'Logistics routing worker' : 'Logistics shipment tracker',
+              sourceActor: sourceActor.address.path,
+            });
+          },
+        },
       });
+      shipmentActor =
+        (servedNode.getActor('shipment') as
+          | ActorRef<ShipmentContext, ShipmentCommand>
+          | undefined) ?? null;
+      if (!shipmentActor) {
+        throw new Error('Shipment actor was not spawned by Actor-Web server node.');
+      }
 
       restServer = createServer((request, response) => {
         void handleRest(request, response);
@@ -536,27 +491,13 @@ export function createLogisticsRuntimeGatewayServer(
       });
     },
     async stop(): Promise<void> {
-      const activeServer = server;
+      const activeServedNode = servedNode;
       const activeRestServer = restServer;
-      server = null;
+      servedNode = null;
       restServer = null;
-      gatewayUrl = null;
       restUrl = null;
       shipmentActor = null;
       clearLifecycleTimers();
-
-      if (activeServer) {
-        await new Promise<void>((resolve, reject) => {
-          activeServer.close((error) => {
-            if (error) {
-              reject(error);
-              return;
-            }
-
-            resolve();
-          });
-        });
-      }
 
       if (activeRestServer) {
         await new Promise<void>((resolve, reject) => {
@@ -571,14 +512,13 @@ export function createLogisticsRuntimeGatewayServer(
         });
       }
 
-      await system.stop();
-      await transport.stop();
+      await activeServedNode?.stop();
     },
     getGatewayUrl(): string | null {
-      return gatewayUrl;
+      return servedNode?.getGatewayUrl() ?? null;
     },
     getTransportUrl(): string | null {
-      return transport.getListeningUrl();
+      return servedNode?.getTransportUrl() ?? null;
     },
     getRestUrl(): string | null {
       return restUrl;

@@ -19,6 +19,10 @@ export default defineConfig({
         replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/browser.ts'),
       },
       {
+        find: '@actor-core/runtime/node',
+        replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/node.ts'),
+      },
+      {
         find: '@actor-core/runtime/topology',
         replacement: path.resolve(
           actorWebRoot,
