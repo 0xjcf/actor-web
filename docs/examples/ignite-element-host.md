@@ -88,6 +88,16 @@ The example is organized around a hexagonal boundary:
 `checkout-contract.ts` remains only as a compatibility barrel for older tests
 and imports.
 
+The example also prototypes the planned topology/source DX:
+
+```ts
+const shipmentSource = logistics.actors.shipment.source();
+```
+
+That source currently wraps the existing gateway, service-worker, and in-memory
+demo harnesses. It is intentionally example-local until the API shape is ready
+to promote into `@actor-core/runtime` and `ignite-element/actor-web`.
+
 ## Demo Flow
 
 1. The Ignite UI submits a shipment through REST when

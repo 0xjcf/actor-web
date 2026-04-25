@@ -3,8 +3,8 @@ import type {
   IgniteActorSourceEvent,
   ProjectionTransportState,
 } from '@actor-core/runtime/browser';
-import type { ShipmentCommand, ShipmentContext, ShipmentEvent } from './runtime-harness';
-import { createLogisticsRuntimeHarness } from './runtime-harness';
+import type { ShipmentCommand, ShipmentContext, ShipmentEvent } from './logistics-contract';
+import { logistics } from './logistics-topology';
 
 export interface LogisticsEventLog {
   type: ShipmentEvent['type'];
@@ -210,10 +210,8 @@ export function createHeadlessCheckoutHostFromSource(
 }
 
 export function createLogisticsHost(): LogisticsHost {
-  const runtimeHarness = createLogisticsRuntimeHarness();
-  return createLogisticsHostFromSource(runtimeHarness.source, {
-    destroy: runtimeHarness.destroy,
-  });
+  const shipmentSource = logistics.actors.shipment.source();
+  return createLogisticsHostFromSource(shipmentSource.source, { destroy: shipmentSource.destroy });
 }
 
 export const createHeadlessCheckoutHost = createLogisticsHost;

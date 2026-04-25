@@ -5,6 +5,7 @@ import {
   createLogisticsHostFromSource,
   type LogisticsHost,
 } from './headless-host';
+import { logistics } from './logistics-topology';
 import {
   createLogisticsRuntimeHarness,
   createServerWorkerDemoRuntimeHarness,
@@ -33,6 +34,38 @@ describe('ignite-headless-host logistics example', () => {
       await gatewayServer.stop();
       gatewayServer = undefined;
     }
+  });
+
+  it('exposes a topology-owned source for the shipment actor', async () => {
+    expect(logistics.actors.shipment.address.path).toBe(
+      'actor://logistics-server-runtime/actor/logistics-shipment'
+    );
+    expect(logistics.actors.shipment.supervision).toMatchObject({
+      strategy: 'restart',
+      maxRestarts: 3,
+      withinMs: 60_000,
+    });
+    expect(logistics.supervisors.serverLogistics).toMatchObject({
+      nodeAddress: 'logistics-server-runtime',
+      strategy: 'one-for-one',
+      children: ['shipment'],
+    });
+
+    const sourceHandle = logistics.actors.shipment.source();
+    host = createLogisticsHostFromSource(sourceHandle.source, {
+      destroy: sourceHandle.destroy,
+    });
+
+    await host.createShipment({
+      shipmentId: 'shipment-topology-source',
+      destination: 'Topology depot',
+    });
+
+    expect(host.getState()).toMatchObject({
+      shipmentId: 'shipment-topology-source',
+      destination: 'Topology depot',
+      transportState: 'connected',
+    });
   });
 
   it('projects shipment snapshots and emitted events through the public bridge', async () => {
