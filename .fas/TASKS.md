@@ -125,8 +125,8 @@
 
 - Title: promote actor-web topology and source helpers into runtime package
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
