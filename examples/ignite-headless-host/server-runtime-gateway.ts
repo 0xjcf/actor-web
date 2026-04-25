@@ -13,17 +13,11 @@ import {
   RuntimeGatewayScopeError,
 } from '@actor-core/runtime';
 import WebSocket, { WebSocketServer } from 'ws';
-import {
-  type ProviderSignal,
-  REMOTE_ACTOR_ID,
-  REMOTE_ADDRESS,
-  REMOTE_NODE,
-  type RoutePlan,
-  type ShipmentCommand,
-  type ShipmentContext,
-  WORKER_ACTOR_ID,
-  WORKER_ADDRESS,
-  WORKER_NODE,
+import type {
+  ProviderSignal,
+  RoutePlan,
+  ShipmentCommand,
+  ShipmentContext,
 } from './logistics-contract';
 import {
   providerFacilityForShipment,
@@ -37,6 +31,12 @@ import {
   shouldReturnShipment,
 } from './logistics-provider-hq';
 import { createShipmentBehavior } from './logistics-shipment-behavior';
+import { logistics } from './logistics-topology';
+
+const shipmentActorDescriptor = logistics.actors.shipment;
+const routingActorDescriptor = logistics.actors.routing;
+const serverNode = logistics.nodes.server.address;
+const workerNode = logistics.nodes.worker.address;
 
 export interface LogisticsRuntimeGatewayServerOptions {
   host?: string;
@@ -136,15 +136,15 @@ export function createLogisticsRuntimeGatewayServer(
   const lifecycleShippedDelayMs = options.lifecycleShippedDelayMs ?? 10_000;
   const lifecycleTerminalDelayMs = options.lifecycleTerminalDelayMs ?? 20_000;
   const transport: NodeWebSocketMessageTransport = createNodeWebSocketMessageTransport({
-    nodeAddress: REMOTE_NODE,
-    incarnation: `${REMOTE_NODE}-demo`,
+    nodeAddress: serverNode,
+    incarnation: `${serverNode}-demo`,
     heartbeatIntervalMs: 0,
     listen: {
       host: options.host ?? '127.0.0.1',
       port: options.transportPort ?? 0,
     },
   });
-  const system = createActorSystem({ nodeAddress: REMOTE_NODE, transport });
+  const system = createActorSystem({ nodeAddress: serverNode, transport });
   let shipmentActor: ActorRef<ShipmentContext, ShipmentCommand> | null = null;
   let server: WebSocketServer | null = null;
   let restServer: Server | null = null;
@@ -263,17 +263,19 @@ export function createLogisticsRuntimeGatewayServer(
     reference?: string;
   }): Promise<RoutePlan | null> => {
     try {
-      for (let attempt = 0; !transport.isConnected(WORKER_NODE) && attempt < 40; attempt += 1) {
+      for (let attempt = 0; !transport.isConnected(workerNode) && attempt < 40; attempt += 1) {
         await wait(25);
       }
 
-      if (!transport.isConnected(WORKER_NODE)) {
+      if (!transport.isConnected(workerNode)) {
         return null;
       }
 
-      await system.join([WORKER_NODE]);
+      await system.join([workerNode]);
       for (let attempt = 0; attempt < 20; attempt += 1) {
-        const routingRef = await system.lookup<unknown, ShipmentCommand>(WORKER_ADDRESS.path);
+        const routingRef = await system.lookup<unknown, ShipmentCommand>(
+          routingActorDescriptor.address.path
+        );
         if (routingRef) {
           return await routingRef.ask<RoutePlan>(
             {
@@ -342,10 +344,11 @@ export function createLogisticsRuntimeGatewayServer(
 
       const isWorkerScope =
         scope.kind === 'ignite-headless-worker-checkout' || scope.kind === 'logistics-routing';
-      let actorRef = await system.lookup(isWorkerScope ? WORKER_ADDRESS.path : REMOTE_ADDRESS.path);
+      const sourceActor = isWorkerScope ? routingActorDescriptor : shipmentActorDescriptor;
+      let actorRef = await system.lookup(sourceActor.address.path);
       for (let attempt = 0; !actorRef && attempt < 20; attempt += 1) {
         await wait(25);
-        actorRef = await system.lookup(isWorkerScope ? WORKER_ADDRESS.path : REMOTE_ADDRESS.path);
+        actorRef = await system.lookup(sourceActor.address.path);
       }
       if (!actorRef) {
         return null;
@@ -353,9 +356,9 @@ export function createLogisticsRuntimeGatewayServer(
 
       return createRuntimeGatewaySource(actorRef, {
         workflowId: isWorkerScope ? 'logistics-routing' : 'logistics-shipment',
-        taskId: isWorkerScope ? WORKER_ACTOR_ID : REMOTE_ACTOR_ID,
+        taskId: sourceActor.id,
         taskTitle: isWorkerScope ? 'Logistics routing worker' : 'Logistics shipment tracker',
-        sourceActor: isWorkerScope ? WORKER_ADDRESS.path : REMOTE_ADDRESS.path,
+        sourceActor: sourceActor.address.path,
       });
     },
   });
@@ -450,13 +453,13 @@ export function createLogisticsRuntimeGatewayServer(
           lifecycleMode,
           nodes: {
             browserHost: 'thin Ignite host',
-            serverRuntime: REMOTE_NODE,
-            workerRuntime: WORKER_NODE,
+            serverRuntime: serverNode,
+            workerRuntime: workerNode,
             serviceWorkerRuntime: 'browser-local topology proof',
           },
           actors: {
-            shipment: REMOTE_ADDRESS.path,
-            routing: WORKER_ADDRESS.path,
+            shipment: shipmentActorDescriptor.address.path,
+            routing: routingActorDescriptor.address.path,
           },
         });
         return;
@@ -476,7 +479,9 @@ export function createLogisticsRuntimeGatewayServer(
 
       await transport.start();
       await system.start();
-      shipmentActor = await system.spawn(createShipmentBehavior(), { id: REMOTE_ACTOR_ID });
+      shipmentActor = await system.spawn(createShipmentBehavior(), {
+        id: shipmentActorDescriptor.id,
+      });
 
       server = new WebSocketServer({
         host: options.host ?? '127.0.0.1',

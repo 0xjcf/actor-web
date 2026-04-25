@@ -4,7 +4,7 @@ import type {
   ProjectionTransportState,
 } from '@actor-core/runtime/browser';
 import type { ShipmentCommand, ShipmentContext, ShipmentEvent } from './logistics-contract';
-import { logistics } from './logistics-topology';
+import { logisticsSources } from './logistics-source-topology';
 
 export interface LogisticsEventLog {
   type: ShipmentEvent['type'];
@@ -210,7 +210,7 @@ export function createHeadlessCheckoutHostFromSource(
 }
 
 export function createLogisticsHost(): LogisticsHost {
-  const shipmentSource = logistics.actors.shipment.source();
+  const shipmentSource = logisticsSources.actors.shipment.source();
   return createLogisticsHostFromSource(shipmentSource.source, { destroy: shipmentSource.destroy });
 }
 

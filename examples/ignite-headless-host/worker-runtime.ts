@@ -2,14 +2,17 @@
 
 import type { ActorMessage, MessageTransport } from '@actor-core/runtime/browser';
 import { createActorSystem } from '@actor-core/runtime/browser';
-import { REMOTE_ACTOR_ID, REMOTE_NODE } from './logistics-contract';
 import { createShipmentBehavior } from './logistics-shipment-behavior';
+import { logistics } from './logistics-topology';
 import {
   isServiceWorkerTransportEnvelope,
   type ServiceWorkerTransportEnvelope,
 } from './service-worker-transport-protocol';
 
 declare const self: ServiceWorkerGlobalScope;
+
+const shipmentActor = logistics.actors.shipment;
+const serverNode = logistics.nodes.server.address;
 
 class ServiceWorkerPortTransport implements MessageTransport {
   private readonly listeners = new Set<
@@ -165,9 +168,9 @@ class ServiceWorkerPortTransport implements MessageTransport {
 }
 
 class LogisticsServiceWorkerRuntime {
-  private readonly transport = new ServiceWorkerPortTransport(REMOTE_NODE);
+  private readonly transport = new ServiceWorkerPortTransport(serverNode);
   private readonly system = createActorSystem({
-    nodeAddress: REMOTE_NODE,
+    nodeAddress: serverNode,
     transport: this.transport,
   });
   private started = false;
@@ -179,14 +182,14 @@ class LogisticsServiceWorkerRuntime {
       this.started = true;
       await this.system.start();
       await this.system.spawn(createShipmentBehavior(), {
-        id: REMOTE_ACTOR_ID,
+        id: shipmentActor.id,
       });
     }
 
     port.postMessage({
       __actorWebServiceWorkerTransport: true,
       kind: 'bind-ack',
-      source: REMOTE_NODE,
+      source: serverNode,
     } satisfies ServiceWorkerTransportEnvelope);
   }
 

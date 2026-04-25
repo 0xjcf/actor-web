@@ -5,8 +5,8 @@ import {
   createActorSystem,
   createBrowserWebSocketMessageTransport,
 } from '@actor-core/runtime/browser';
-import { REMOTE_NODE, WORKER_ACTOR_ID, WORKER_NODE } from './logistics-contract';
 import { createRoutingBehavior } from './logistics-routing-behavior';
+import { logistics } from './logistics-topology';
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -37,6 +37,9 @@ type WorkerRuntimeStatus =
 
 let transport: BrowserWebSocketMessageTransport | null = null;
 let system: Awaited<ReturnType<typeof createActorSystem>> | null = null;
+const routingActor = logistics.actors.routing;
+const serverNode = logistics.nodes.server.address;
+const workerNode = logistics.nodes.worker.address;
 
 function postStatus(status: WorkerRuntimeStatus): void {
   self.postMessage(status);
@@ -49,9 +52,9 @@ async function stopRuntime(): Promise<void> {
   postStatus({
     type: 'status',
     state: 'disconnected',
-    workerNode: WORKER_NODE,
-    peerNode: REMOTE_NODE,
-    actorId: WORKER_ACTOR_ID,
+    workerNode,
+    peerNode: serverNode,
+    actorId: routingActor.id,
   });
 }
 
@@ -60,43 +63,43 @@ async function startRuntime(transportUrl: string): Promise<void> {
   postStatus({
     type: 'status',
     state: 'connecting',
-    workerNode: WORKER_NODE,
-    peerNode: REMOTE_NODE,
-    actorId: WORKER_ACTOR_ID,
+    workerNode,
+    peerNode: serverNode,
+    actorId: routingActor.id,
   });
 
   transport = createBrowserWebSocketMessageTransport({
-    nodeAddress: WORKER_NODE,
-    incarnation: `${WORKER_NODE}-${Date.now()}`,
+    nodeAddress: workerNode,
+    incarnation: `${workerNode}-${Date.now()}`,
     heartbeatIntervalMs: 5000,
     heartbeatTimeoutMs: 15000,
     peers: {
-      [REMOTE_NODE]: transportUrl,
+      [serverNode]: transportUrl,
     },
   });
   system = createActorSystem({
-    nodeAddress: WORKER_NODE,
+    nodeAddress: workerNode,
     transport,
   });
 
   await system.start();
   await system.spawn(createRoutingBehavior(), {
-    id: WORKER_ACTOR_ID,
+    id: routingActor.id,
   });
-  await system.join([REMOTE_NODE]);
+  await system.join([serverNode]);
 
   postStatus({
     type: 'ready',
-    workerNode: WORKER_NODE,
-    peerNode: REMOTE_NODE,
-    actorId: WORKER_ACTOR_ID,
+    workerNode,
+    peerNode: serverNode,
+    actorId: routingActor.id,
   });
   postStatus({
     type: 'status',
     state: 'connected',
-    workerNode: WORKER_NODE,
-    peerNode: REMOTE_NODE,
-    actorId: WORKER_ACTOR_ID,
+    workerNode,
+    peerNode: serverNode,
+    actorId: routingActor.id,
   });
 }
 
@@ -111,9 +114,9 @@ self.addEventListener('message', (event: MessageEvent<WorkerRuntimeCommand>) => 
     postStatus({
       type: 'status',
       state: 'error',
-      workerNode: WORKER_NODE,
-      peerNode: REMOTE_NODE,
-      actorId: WORKER_ACTOR_ID,
+      workerNode,
+      peerNode: serverNode,
+      actorId: routingActor.id,
       reason: error instanceof Error ? error.message : String(error),
     });
   });

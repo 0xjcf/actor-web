@@ -14,20 +14,11 @@ import {
   serviceWorkerRemoteNode,
   serviceWorkerRuntimeAvailable,
 } from './browser-transport';
-import {
-  LOCAL_NODE,
-  REMOTE_ACTOR_ID,
-  REMOTE_ADDRESS,
-  REMOTE_NODE,
-  type ShipmentCommand,
-  type ShipmentContext,
-  type ShipmentEvent,
-  WORKER_ACTOR_ID,
-  WORKER_NODE,
-} from './logistics-contract';
+import type { ShipmentCommand, ShipmentContext, ShipmentEvent } from './logistics-contract';
 import { createRoutingBehavior } from './logistics-routing-behavior';
 import { createShipmentBehavior } from './logistics-shipment-behavior';
 import { createPlaceholderSnapshot, normalizeShipmentSnapshot } from './logistics-snapshots';
+import { logistics } from './logistics-topology';
 import {
   configuredGatewayUrl,
   createConfiguredLogisticsServerGatewayRuntimeHarness,
@@ -51,6 +42,12 @@ export interface ServerWorkerDemoRuntimeHarnessOptions {
   createGatewaySocket?: (url: string) => GatewaySocket;
   createWorkerSocket?: (url: string) => WebSocket;
 }
+
+const browserNode = logistics.nodes.browser.address;
+const serverNode = logistics.nodes.server.address;
+const workerNode = logistics.nodes.worker.address;
+const shipmentActor = logistics.actors.shipment;
+const routingActor = logistics.actors.routing;
 
 function createHarnessSource(
   startRuntime: (options: {
@@ -163,7 +160,7 @@ function createHarnessSource(
 
   return {
     source: {
-      address: REMOTE_ADDRESS,
+      address: shipmentActor.address,
       snapshot(): IgniteActorSourceSnapshot<ShipmentContext> {
         return currentSnapshot;
       },
@@ -274,14 +271,14 @@ async function waitForRemoteRef(
 
 function createInMemoryLogisticsRuntimeHarness(): LogisticsRuntimeHarness {
   const network = createInMemoryMessageTransportNetwork();
-  const localTransport = network.createTransport(LOCAL_NODE);
-  const remoteTransport = network.createTransport(REMOTE_NODE);
+  const localTransport = network.createTransport(browserNode);
+  const remoteTransport = network.createTransport(serverNode);
   const localSystem = createActorSystem({
-    nodeAddress: LOCAL_NODE,
+    nodeAddress: browserNode,
     transport: localTransport,
   });
   const remoteSystem = createActorSystem({
-    nodeAddress: REMOTE_NODE,
+    nodeAddress: serverNode,
     transport: remoteTransport,
   });
 
@@ -289,16 +286,16 @@ function createInMemoryLogisticsRuntimeHarness(): LogisticsRuntimeHarness {
     async ({ setSource }) => {
       await Promise.all([localSystem.start(), remoteSystem.start()]);
       await remoteSystem.spawn(createShipmentBehavior(), {
-        id: REMOTE_ACTOR_ID,
+        id: shipmentActor.id,
       });
 
-      await localSystem.join([REMOTE_NODE]);
+      await localSystem.join([serverNode]);
 
       const remoteRef = await localSystem.lookup<ShipmentContext, ShipmentCommand>(
-        REMOTE_ADDRESS.path
+        shipmentActor.address.path
       );
       if (!remoteRef) {
-        throw new Error(`Unable to resolve remote actor ${REMOTE_ADDRESS.path}`);
+        throw new Error(`Unable to resolve remote actor ${shipmentActor.address.path}`);
       }
 
       const source = createIgniteActorSource<ShipmentContext, ShipmentCommand, ShipmentEvent>(
@@ -319,7 +316,7 @@ function createInMemoryLogisticsRuntimeHarness(): LogisticsRuntimeHarness {
 function createServiceWorkerLogisticsRuntimeHarness(): LogisticsRuntimeHarness {
   const transport = createBrowserServiceWorkerTransport();
   const localSystem = createActorSystem({
-    nodeAddress: LOCAL_NODE,
+    nodeAddress: browserNode,
     transport,
   });
 
@@ -345,11 +342,11 @@ function createServiceWorkerLogisticsRuntimeHarness(): LogisticsRuntimeHarness {
       await localSystem.join([serviceWorkerRemoteNode()]);
 
       const remoteRef = await waitForRemoteRef(() =>
-        localSystem.lookup<ShipmentContext, ShipmentCommand>(REMOTE_ADDRESS.path)
+        localSystem.lookup<ShipmentContext, ShipmentCommand>(shipmentActor.address.path)
       );
       if (!remoteRef) {
         throw new Error(
-          `Unable to resolve remote actor ${REMOTE_ADDRESS.path} through service worker`
+          `Unable to resolve remote actor ${shipmentActor.address.path} through service worker`
         );
       }
 
@@ -404,24 +401,24 @@ function createInProcessWorkerRuntime(options: ServerWorkerDemoRuntimeHarnessOpt
   destroy(): Promise<void>;
 } {
   const workerTransport = createBrowserWebSocketMessageTransport({
-    nodeAddress: WORKER_NODE,
-    incarnation: `${WORKER_NODE}-demo`,
+    nodeAddress: workerNode,
+    incarnation: `${workerNode}-demo`,
     heartbeatIntervalMs: 0,
     peers: {
-      [REMOTE_NODE]: options.transportUrl,
+      [serverNode]: options.transportUrl,
     },
     ...(options.createWorkerSocket ? { webSocketFactory: options.createWorkerSocket } : {}),
   });
   const workerSystem = createActorSystem({
-    nodeAddress: WORKER_NODE,
+    nodeAddress: workerNode,
     transport: workerTransport,
   });
   const workerReady = (async () => {
     await workerSystem.start();
     await workerSystem.spawn(createRoutingBehavior(), {
-      id: WORKER_ACTOR_ID,
+      id: routingActor.id,
     });
-    await workerSystem.join([REMOTE_NODE]);
+    await workerSystem.join([serverNode]);
   })();
 
   return {

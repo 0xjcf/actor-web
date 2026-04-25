@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 import type { ActorMessage, MessageTransport } from '@actor-core/runtime/browser';
-import { LOCAL_NODE, REMOTE_NODE } from './logistics-contract';
+import { logistics } from './logistics-topology';
 import {
   isServiceWorkerTransportEnvelope,
   type ServiceWorkerTransportEnvelope,
@@ -286,9 +286,9 @@ export function createBrowserServiceWorkerTransport(): BrowserServiceWorkerTrans
     window.location.href
   );
 
-  return new ServiceWorkerPageTransport(LOCAL_NODE, workerUrl);
+  return new ServiceWorkerPageTransport(logistics.nodes.browser.address, workerUrl);
 }
 
 export function serviceWorkerRemoteNode(): string {
-  return REMOTE_NODE;
+  return logistics.nodes.server.address;
 }

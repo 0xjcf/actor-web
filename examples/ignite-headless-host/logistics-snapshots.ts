@@ -1,10 +1,7 @@
 import type { ActorSnapshot, IgniteActorSourceSnapshot } from '@actor-core/runtime/browser';
 import { actorSnapshotToIgniteSourceSnapshot } from '@actor-core/runtime/browser';
-import {
-  createInitialShipmentContext,
-  REMOTE_ADDRESS,
-  type ShipmentContext,
-} from './logistics-contract';
+import { createInitialShipmentContext, type ShipmentContext } from './logistics-contract';
+import { logistics } from './logistics-topology';
 
 export function createActorSnapshot<TContext>(
   value: unknown,
@@ -28,7 +25,7 @@ export function createActorSnapshot<TContext>(
 
 export function createPlaceholderSnapshot(): IgniteActorSourceSnapshot<ShipmentContext> {
   return actorSnapshotToIgniteSourceSnapshot(
-    REMOTE_ADDRESS,
+    logistics.actors.shipment.address,
     createActorSnapshot('idle', createInitialShipmentContext())
   );
 }

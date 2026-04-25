@@ -15,18 +15,13 @@ import {
   actorSnapshotToIgniteSourceSnapshot,
   createProjectionTransportStatus,
 } from '@actor-core/runtime/browser';
-import {
-  REMOTE_ADDRESS,
-  type ShipmentCommand,
-  type ShipmentContext,
-  type ShipmentEvent,
-  WORKER_ADDRESS,
-} from './logistics-contract';
+import type { ShipmentCommand, ShipmentContext, ShipmentEvent } from './logistics-contract';
 import {
   createActorSnapshot,
   createPlaceholderSnapshot,
   normalizeShipmentSnapshot,
 } from './logistics-snapshots';
+import { logistics } from './logistics-topology';
 import type { LogisticsRuntimeHarness } from './runtime-harness';
 
 export interface GatewaySocket {
@@ -111,10 +106,12 @@ export function createLogisticsServerGatewayRuntimeHarness(
 ): LogisticsRuntimeHarness {
   const streamId = options.streamId ?? 'logistics-main';
   const scope = options.scope ?? { kind: 'logistics-shipment' };
+  const shipmentActor = logistics.actors.shipment;
+  const routingActor = logistics.actors.routing;
   const sourceAddress =
     scope.kind === 'ignite-headless-worker-checkout' || scope.kind === 'logistics-routing'
-      ? WORKER_ADDRESS
-      : REMOTE_ADDRESS;
+      ? routingActor.address
+      : shipmentActor.address;
   const socket = (options.createSocket ?? ((url: string): GatewaySocket => new WebSocket(url)))(
     options.url
   );

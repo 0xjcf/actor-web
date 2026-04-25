@@ -1,4 +1,4 @@
-import { actor, defineActorWebTopology, node, supervisor } from './actor-web-ignite-source';
+import { actor, defineActorWebTopology, node, supervisor } from './actor-web-topology';
 import {
   LOCAL_NODE,
   REMOTE_ACTOR_ID,
