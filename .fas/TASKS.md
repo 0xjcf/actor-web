@@ -147,8 +147,8 @@
 
 - Title: startActorWebNode browser worker topology runner
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: local
