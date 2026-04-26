@@ -6,10 +6,18 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ActorInstance } from '../actor-instance.js';
 import type { ActorDependencies } from '../actor-system.js';
+import { createActorToolbox } from '../actor-tools.js';
 import type { DomainEvent } from '../message-plan.js';
 import { OTPMessagePlanProcessor } from '../otp-message-plan-processor.js';
 import type { ActorHandlerResult } from '../otp-types.js';
 import { createMockActorRef } from '../utils/factories.js';
+
+function createMockTools() {
+  return createActorToolbox(undefined, {
+    actorId: 'test-actor',
+    nodeAddress: 'test-node',
+  });
+}
 
 describe('Layer 2: OTPMessagePlanProcessor - Emit Handling', () => {
   it('should process emit array from ActorHandlerResult', async () => {
@@ -43,6 +51,7 @@ describe('Layer 2: OTPMessagePlanProcessor - Emit Handling', () => {
       }),
       send: vi.fn(),
       ask: vi.fn(),
+      tools: createMockTools(),
       logger: {
         debug: vi.fn(),
         info: vi.fn(),
@@ -115,6 +124,7 @@ describe('Layer 2: OTPMessagePlanProcessor - Emit Handling', () => {
       emit: vi.fn(),
       send: vi.fn(),
       ask: vi.fn(),
+      tools: createMockTools(),
       logger: {
         debug: vi.fn(),
         info: vi.fn(),
@@ -165,6 +175,7 @@ describe('Layer 2: OTPMessagePlanProcessor - Emit Handling', () => {
       emit: vi.fn(),
       send: vi.fn(),
       ask: vi.fn(),
+      tools: createMockTools(),
       logger: {
         debug: vi.fn(),
         info: vi.fn(),
@@ -217,6 +228,7 @@ describe('Layer 2: OTPMessagePlanProcessor - Emit Handling', () => {
       }),
       send: vi.fn(),
       ask: vi.fn(),
+      tools: createMockTools(),
       logger: {
         debug: vi.fn(),
         info: vi.fn(),
@@ -289,6 +301,7 @@ describe('Layer 2: OTPMessagePlanProcessor - Emit Handling', () => {
       emit: vi.fn(),
       send: vi.fn(),
       ask: vi.fn(),
+      tools: createMockTools(),
       logger: {
         debug: vi.fn(),
         info: vi.fn(),

@@ -1,17 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { startActorWebNode } from '../start-actor-web-node.js';
-import { actor, defineActorWebTopology, node } from '../topology.js';
+import { actor, defineActorWebTopology, node, tool } from '../topology.js';
 import { defineActor } from '../unified-actor-builder.js';
 
-type CounterCommand = { type: 'INCREMENT' } | { type: 'GET_COUNT' };
+type CounterCommand =
+  | { type: 'INCREMENT' }
+  | { type: 'GET_COUNT' }
+  | { type: 'RUN_TOOL'; value: string };
 
 function createCounterBehavior() {
   return defineActor<CounterCommand>()
     .withContext({ count: 0 })
-    .onMessage(({ message, actor }) => {
+    .onMessage(async ({ message, actor, dependencies }) => {
       const context = actor.getSnapshot().context;
       if (message.type === 'GET_COUNT') {
         return { reply: context.count };
+      }
+      if (message.type === 'RUN_TOOL') {
+        const result = await dependencies.tools.execute<string>('agent.echo', {
+          value: message.value,
+        });
+        return { reply: result };
       }
 
       return {
@@ -41,6 +50,7 @@ describe('startActorWebNode', () => {
           id: 'worker-counter',
           node: 'worker',
           behavior: createCounterBehavior,
+          tools: [tool('agent.echo')],
         }),
       },
     });
@@ -49,6 +59,12 @@ describe('startActorWebNode', () => {
       node: 'worker',
       transport: {
         heartbeatIntervalMs: 0,
+      },
+      tools: {
+        'agent.echo': (input) => {
+          const payload = input as { value: string };
+          return `tool:${payload.value}`;
+        },
       },
     });
 
@@ -63,6 +79,9 @@ describe('startActorWebNode', () => {
       await counter?.send({ type: 'INCREMENT' });
       await workerNode.system.flush();
       await expect(counter?.ask<number>({ type: 'GET_COUNT' })).resolves.toBe(1);
+      await expect(counter?.ask<string>({ type: 'RUN_TOOL', value: 'fas' })).resolves.toBe(
+        'tool:fas'
+      );
     } finally {
       await workerNode.stop();
     }
@@ -83,6 +102,26 @@ describe('startActorWebNode', () => {
 
     await expect(startActorWebNode(topology, { node: 'worker' })).rejects.toThrow(
       'does not declare behavior'
+    );
+  });
+
+  it('rejects owned actors when required tools are not registered', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        worker: node('worker-node'),
+      },
+      actors: {
+        agent: actor({
+          id: 'agent',
+          node: 'worker',
+          behavior: createCounterBehavior,
+          tools: ['agent.echo'],
+        }),
+      },
+    });
+
+    await expect(startActorWebNode(topology, { node: 'worker' })).rejects.toThrow(
+      'requires unregistered tool'
     );
   });
 });

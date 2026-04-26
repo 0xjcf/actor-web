@@ -2,18 +2,27 @@ import { describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import type { RuntimeGatewayServerFrame } from '../runtime-gateway.js';
 import { serveActorWebNode } from '../serve-actor-web-node.js';
-import { actor, defineActorWebTopology, node } from '../topology.js';
+import { actor, defineActorWebTopology, node, tool } from '../topology.js';
 import { defineActor } from '../unified-actor-builder.js';
 
-type CounterCommand = { type: 'INCREMENT' } | { type: 'GET_COUNT' };
+type CounterCommand =
+  | { type: 'INCREMENT' }
+  | { type: 'GET_COUNT' }
+  | { type: 'RUN_TOOL'; value: string };
 
 function createCounterBehavior() {
   return defineActor<CounterCommand>()
     .withContext({ count: 0 })
-    .onMessage(({ message, actor }) => {
+    .onMessage(async ({ message, actor, dependencies }) => {
       const context = actor.getSnapshot().context;
       if (message.type === 'GET_COUNT') {
         return { reply: context.count };
+      }
+      if (message.type === 'RUN_TOOL') {
+        const result = await dependencies.tools.execute<string>('agent.echo', {
+          value: message.value,
+        });
+        return { reply: result };
       }
 
       return {
@@ -155,5 +164,39 @@ describe('serveActorWebNode', () => {
     await expect(serveActorWebNode(topology, { node: 'server' })).rejects.toThrow(
       'does not declare behavior'
     );
+  });
+
+  it('injects registered tools into topology-owned node actors', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+      },
+      actors: {
+        agent: actor({
+          id: 'agent',
+          node: 'server',
+          behavior: createCounterBehavior,
+          tools: [tool('agent.echo')],
+        }),
+      },
+    });
+
+    const served = await serveActorWebNode(topology, {
+      node: 'server',
+      tools: {
+        'agent.echo': (input) => {
+          const payload = input as { value: string };
+          return `node-tool:${payload.value}`;
+        },
+      },
+    });
+
+    try {
+      await expect(
+        served.getActor('agent')?.ask<string>({ type: 'RUN_TOOL', value: 'fas' })
+      ).resolves.toBe('node-tool:fas');
+    } finally {
+      await served.stop();
+    }
   });
 });

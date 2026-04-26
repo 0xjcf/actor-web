@@ -9,6 +9,7 @@ import {
   defineActorWebTopology,
   node,
   supervisor,
+  tool,
 } from '../topology.js';
 import { defineActor } from '../unified-actor-builder.js';
 
@@ -60,6 +61,7 @@ describe('Actor-Web topology helpers', () => {
             maxRestarts: 3,
             withinMs: 60_000,
           },
+          tools: [tool('route.plan', { description: 'Plan shipment routes.' })],
           gateway: {
             scope: { kind: 'logistics-shipment' },
           },
@@ -82,6 +84,12 @@ describe('Actor-Web topology helpers', () => {
       path: 'actor://logistics-server-runtime/actor/logistics-shipment',
     });
     expect(logistics.actors.shipment.nodeAddress).toBe('logistics-server-runtime');
+    expect(logistics.actors.shipment.tools).toEqual([
+      {
+        name: 'route.plan',
+        description: 'Plan shipment routes.',
+      },
+    ]);
     expect(logistics.supervisors.logistics).toMatchObject({
       key: 'logistics',
       nodeAddress: 'logistics-server-runtime',

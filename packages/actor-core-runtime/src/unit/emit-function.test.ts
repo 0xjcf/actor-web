@@ -6,7 +6,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ActorInstance } from '../actor-instance.js';
 import type { ActorDependencies, ActorMessage } from '../actor-system.js';
+import { createActorToolbox } from '../actor-tools.js';
 import { createMockActorRef } from '../utils/factories.js';
+
+function createMockTools() {
+  return createActorToolbox(undefined, {
+    actorId: 'test-actor',
+    nodeAddress: 'test-node',
+  });
+}
 
 describe('Layer 3: Emit Function', () => {
   it('should call emit function when events are emitted', () => {
@@ -40,6 +48,7 @@ describe('Layer 3: Emit Function', () => {
       }),
       send: vi.fn(),
       ask: vi.fn(),
+      tools: createMockTools(),
       logger: {
         debug: vi.fn(),
         info: vi.fn(),
@@ -77,6 +86,7 @@ describe('Layer 3: Emit Function', () => {
       }),
       send: vi.fn(),
       ask: vi.fn(),
+      tools: createMockTools(),
       logger: {
         debug: vi.fn(),
         info: vi.fn(),
@@ -115,6 +125,7 @@ describe('Layer 3: Emit Function', () => {
       }),
       send: vi.fn(),
       ask: vi.fn(),
+      tools: createMockTools(),
       logger: {
         debug: vi.fn(),
         info: vi.fn(),
@@ -152,6 +163,7 @@ describe('Layer 3: Emit Function', () => {
       }),
       send: vi.fn(),
       ask: vi.fn(),
+      tools: createMockTools(),
       logger: {
         debug: vi.fn(),
         info: vi.fn(),
@@ -188,6 +200,7 @@ describe('Layer 3: Emit Function', () => {
       emit: mockEmit,
       send: vi.fn(),
       ask: vi.fn(),
+      tools: createMockTools(),
       logger: {
         debug: vi.fn(),
         info: vi.fn(),
