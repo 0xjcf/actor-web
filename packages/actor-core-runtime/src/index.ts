@@ -36,6 +36,13 @@ export type {
 } from './actor-system.js';
 export type { ActorSystemConfig } from './actor-system-impl.js';
 export { createActorSystem } from './actor-system-impl.js';
+export type {
+  ActorToolbox,
+  ActorToolExecutionContext,
+  ActorToolExecutor,
+  ActorToolRegistry,
+} from './actor-tools.js';
+export { createActorToolbox } from './actor-tools.js';
 export {
   type BackoffStrategy,
   BackoffSupervisor,

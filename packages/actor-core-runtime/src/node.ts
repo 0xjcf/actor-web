@@ -1,3 +1,4 @@
+export type { ActorToolRegistry } from './actor-tools.js';
 export type {
   NodeWebSocketMessageTransportOptions,
   NodeWebSocketPeerSnapshot,

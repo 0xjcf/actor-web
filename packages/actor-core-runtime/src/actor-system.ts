@@ -14,6 +14,7 @@
 
 import type { ActorInstance } from './actor-instance.js';
 import type { ActorRef } from './actor-ref.js';
+import type { ActorToolbox } from './actor-tools.js';
 import type { UniversalTemplate } from './create-actor.js';
 import type { JsonValue, Message } from './types.js';
 import { createActorAddress } from './utils/factories.js';
@@ -75,6 +76,7 @@ export interface ActorDependencies {
   readonly emit: (event: ActorMessage) => void;
   readonly send: (to: unknown, message: ActorMessage) => Promise<void>;
   readonly ask: <T>(to: unknown, message: ActorMessage, timeout?: number) => Promise<T>;
+  readonly tools: ActorToolbox;
   readonly logger: unknown; // Logger - avoiding circular dependency
   readonly actorSystem?: unknown; // Will be properly typed when available
   readonly correlationManager?: unknown; // Will be properly typed when available

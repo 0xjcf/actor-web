@@ -1,6 +1,7 @@
 import type { ActorRef } from './actor-ref.js';
 import type { ActorMessage, ActorSystem } from './actor-system.js';
 import { createActorSystem } from './actor-system-impl.js';
+import type { ActorToolRegistry } from './actor-tools.js';
 import {
   type ActorWebNodeActorMap,
   getActorWebNodeDefinition,
@@ -34,6 +35,7 @@ export interface StartActorWebNodeOptions<
 > {
   readonly node: keyof TTopology['nodes'] & string;
   readonly transport?: ActorWebBrowserNodeTransportOptions;
+  readonly tools?: ActorToolRegistry;
 }
 
 export interface StartedActorWebNode<TTopology extends ActorWebTopology<ActorWebTopologyInput>> {
@@ -75,7 +77,11 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
       ? { webSocketFactory: transportOptions.webSocketFactory }
       : {}),
   });
-  const system = createActorSystem({ nodeAddress: nodeDefinition.address, transport });
+  const system = createActorSystem({
+    nodeAddress: nodeDefinition.address,
+    transport,
+    ...(options.tools ? { tools: options.tools } : {}),
+  });
   const actors: ActorWebNodeActorMap<TTopology> = new Map();
   let running = false;
 
@@ -86,7 +92,7 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
 
     await transport.start();
     await system.start();
-    await spawnOwnedActorWebActors(system, topology, options.node, actors);
+    await spawnOwnedActorWebActors(system, topology, options.node, actors, options.tools);
 
     const connectTargets = transportOptions?.connect ?? Object.keys(transportOptions?.peers ?? {});
     if (connectTargets.length > 0) {

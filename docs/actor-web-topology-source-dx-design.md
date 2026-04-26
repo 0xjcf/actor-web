@@ -408,6 +408,8 @@ agent should not require a separate runtime model; it should be an actor with
 isolated state, explicit messages, emitted events, supervision, and topology.
 
 ```ts
+import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-core/runtime/topology';
+
 export const fas = defineActorWebTopology({
   contractVersion: '1.0.0',
 
@@ -433,6 +435,10 @@ export const fas = defineActorWebTopology({
       id: 'fas-planner-agent',
       node: 'worker',
       behavior: createPlannerAgentBehavior,
+      tools: [
+        tool('repo.search', { description: 'Search indexed repository context.' }),
+        tool('fas.memory.read', { description: 'Read scoped FAS memory.' }),
+      ],
       supervision: {
         strategy: 'restart',
         maxRestarts: 2,
@@ -444,6 +450,9 @@ export const fas = defineActorWebTopology({
       id: 'fas-verifier-agent',
       node: 'worker',
       behavior: createVerifierAgentBehavior,
+      tools: [
+        tool('verification.run', { description: 'Run approved verification commands.' }),
+      ],
       supervision: {
         strategy: 'restart',
         maxRestarts: 2,
@@ -466,6 +475,40 @@ export const fas = defineActorWebTopology({
     }),
   },
 });
+```
+
+Tool declarations are required ports, not implementations. A runtime entrypoint
+provides the concrete adapters when it starts a node:
+
+```ts
+await startActorWebNode(fas, {
+  node: 'worker',
+  tools: {
+    'repo.search': repoSearchAdapter,
+    'fas.memory.read': fasMemoryReadAdapter,
+    'verification.run': verificationRunAdapter,
+  },
+});
+```
+
+Agent behaviors access those ports through runtime dependencies:
+
+```ts
+const createPlannerAgentBehavior = () =>
+  defineActor<PlannerMessage>()
+    .withContext(initialPlannerContext)
+    .onMessage(async ({ message, dependencies }) => {
+      if (message.type === 'PLAN_TASK') {
+        const context = await dependencies.tools.execute('repo.search', {
+          query: message.task,
+        });
+
+        return {
+          reply: { context },
+        };
+      }
+    })
+    .build();
 ```
 
 This keeps agentic workflow aligned with the same architecture used by product

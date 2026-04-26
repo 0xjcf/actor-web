@@ -1,6 +1,7 @@
 import type { ActorRef } from './actor-ref.js';
 import type { ActorMessage, ActorSystem } from './actor-system.js';
 import { createActorSystem } from './actor-system-impl.js';
+import type { ActorToolRegistry } from './actor-tools.js';
 import {
   getActorWebNodeDefinition,
   getOwnedActorWebActors,
@@ -45,6 +46,7 @@ export interface ServeActorWebNodeOptions<
   readonly host?: string;
   readonly gateway?: ActorWebNodeGatewayOptions<keyof TTopology['actors'] & string>;
   readonly transport?: ActorWebNodeTransportOptions;
+  readonly tools?: ActorToolRegistry;
 }
 
 export interface ServedActorWebNode<TTopology extends ActorWebTopology<ActorWebTopologyInput>> {
@@ -164,7 +166,11 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
         }
       : {}),
   });
-  const system = createActorSystem({ nodeAddress: nodeDefinition.address, transport });
+  const system = createActorSystem({
+    nodeAddress: nodeDefinition.address,
+    transport,
+    ...(options.tools ? { tools: options.tools } : {}),
+  });
   const actors = new Map<string, ActorRef<unknown, ActorMessage>>();
   const exposedActorKeys = new Set<string>(
     options.gateway?.expose ??
@@ -219,7 +225,7 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
     await transport.start();
     await system.start();
 
-    await spawnOwnedActorWebActors(system, topology, options.node, actors);
+    await spawnOwnedActorWebActors(system, topology, options.node, actors, options.tools);
 
     if (options.gateway) {
       const { WebSocketServer } = await import('ws');

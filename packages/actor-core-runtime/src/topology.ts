@@ -16,6 +16,15 @@ export interface ActorWebSupervisionPolicy {
   withinMs?: number;
 }
 
+export interface ActorWebToolDefinition<TName extends string = string> {
+  readonly name: TName;
+  readonly description?: string;
+}
+
+export type ActorWebToolReference<TName extends string = string> =
+  | TName
+  | ActorWebToolDefinition<TName>;
+
 export interface ActorWebNodeDefinition<TAddress extends string = string> {
   readonly address: TAddress;
 }
@@ -29,6 +38,7 @@ export interface ActorWebActorDefinition<
   readonly node: TNode;
   readonly behavior?: TBehavior;
   readonly supervision?: ActorWebSupervisionPolicy;
+  readonly tools?: readonly ActorWebToolReference[];
   readonly gateway?: {
     readonly scope: RuntimeGatewayScopeDescriptor;
   };
@@ -142,6 +152,16 @@ export function supervisor<TDefinition extends ActorWebSupervisorDefinition>(
   definition: TDefinition
 ): TDefinition {
   return definition;
+}
+
+export function tool<TName extends string>(
+  name: TName,
+  options: Omit<ActorWebToolDefinition<TName>, 'name'> = {}
+): ActorWebToolDefinition<TName> {
+  return {
+    name,
+    ...options,
+  };
 }
 
 export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(

@@ -10,7 +10,9 @@ export type {
   ActorWebSupervisionStrategy,
   ActorWebSupervisorDefinition,
   ActorWebSupervisorDescriptor,
+  ActorWebToolDefinition,
+  ActorWebToolReference,
   ActorWebTopology,
   ActorWebTopologyInput,
 } from './topology.js';
-export { actor, defineActorWebTopology, node, supervisor } from './topology.js';
+export { actor, defineActorWebTopology, node, supervisor, tool } from './topology.js';

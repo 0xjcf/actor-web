@@ -18,6 +18,7 @@ import type {
   JsonValue,
 } from './actor-system.js';
 import { createActorSystem } from './actor-system-impl.js';
+import { createActorToolbox } from './actor-tools.js';
 import {
   type ComponentActorConfig,
   type ComponentDependencies,
@@ -340,6 +341,10 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
             emit: () => {}, // Components manage their own emission
             send: async () => {}, // Components handle sends through their own system
             ask: async <T>(): Promise<T> => ({}) as T, // Components handle asks through their own system
+            tools: createActorToolbox(undefined, {
+              actorId: machine.id || 'component-actor',
+              nodeAddress: 'component',
+            }),
             logger: Logger.namespace('COMPONENT'),
           };
 

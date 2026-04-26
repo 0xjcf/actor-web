@@ -60,6 +60,7 @@ import type {
 } from './actor-system.js';
 import { parseActorPath } from './actor-system.js';
 import { createGuardianActor } from './actor-system-guardian.js';
+import { type ActorToolRegistry, createActorToolbox } from './actor-tools.js';
 import { createSystemEventActor, type SystemEventPayload } from './actors/system-event-actor.js';
 // ✅ UNIFIED API DESIGN Phase 2.1: Auto-publishing system for event subscriptions
 import { AutoPublishingRegistry } from './auto-publishing.js';
@@ -232,6 +233,11 @@ export interface ActorSystemConfig {
    * Optional cross-node runtime transport.
    */
   transport?: MessageTransport;
+
+  /**
+   * Runtime-native tool implementations exposed to actor dependencies.
+   */
+  tools?: ActorToolRegistry;
 }
 
 /**
@@ -590,6 +596,10 @@ export class ActorSystemImpl implements ActorSystem {
           },
           send: async () => {}, // Simple no-op for onStop
           ask: async <T>() => Promise.resolve({} as T), // Simple no-op for onStop
+          tools: createActorToolbox(this.config.tools, {
+            actorId: path,
+            nodeAddress: this.config.nodeAddress,
+          }),
           logger: Logger.namespace(`ACTOR_${path}`),
           correlationManager: this.correlationManager,
         };
@@ -3747,6 +3757,10 @@ export class ActorSystemImpl implements ActorSystem {
       ask: async <T>(_to: unknown, _message: ActorMessage, _timeout?: number) => {
         return Promise.resolve({} as T);
       },
+      tools: createActorToolbox(this.config.tools, {
+        actorId,
+        nodeAddress: this.config.nodeAddress,
+      }),
       logger: Logger.namespace(`ACTOR_${actorId}`),
       correlationManager: this.correlationManager,
     };

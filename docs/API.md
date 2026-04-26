@@ -739,7 +739,7 @@ scope metadata, and supervisor group metadata without opening sockets or
 starting runtimes.
 
 ```typescript
-import { actor, defineActorWebTopology, node, supervisor } from '@actor-core/runtime/topology';
+import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-core/runtime/topology';
 
 export const logistics = defineActorWebTopology({
   contractVersion: '1.0.0',
@@ -755,6 +755,7 @@ export const logistics = defineActorWebTopology({
       id: 'logistics-shipment',
       node: 'server',
       behavior: createShipmentBehavior,
+      tools: [tool('routing.plan', { description: 'Plan carrier route and ETA.' })],
       supervision: {
         strategy: 'restart',
         maxRestarts: 3,
@@ -821,6 +822,14 @@ import { logistics } from './logistics.topology';
 
 const node = await serveActorWebNode(logistics, {
   node: 'server',
+  tools: {
+    'routing.plan': async (input, context) => {
+      return {
+        ...input,
+        plannedBy: context.actorId,
+      };
+    },
+  },
   transport: {
     listen: true,
   },
@@ -845,6 +854,13 @@ auth, persistence, or business ingress. Those remain hexagonal adapters around
 the served node and can use `node.getActor(...)`, `node.system`, and
 `node.transport`.
 
+Actors can declare required tool ports in topology with `tool(...)`. Node and
+browser-worker runners receive concrete implementations through `tools`. Missing
+required tools fail at node startup, before the actor is spawned. Actor behavior
+handlers call implementations through `dependencies.tools.execute(...)`, which
+keeps AI/agent capabilities explicit and injectable instead of hidden behind
+global services.
+
 ### `startActorWebNode(topology, options)`
 
 Browser worker entrypoints can host one topology node with
@@ -858,6 +874,9 @@ import { logistics } from './logistics.topology';
 
 const worker = await startActorWebNode(logistics, {
   node: 'worker',
+  tools: {
+    'routing.plan': async (input) => input,
+  },
   transport: {
     peers: {
       [logistics.nodes.server.address]: 'ws://127.0.0.1:4101',
