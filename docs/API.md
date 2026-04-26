@@ -845,6 +845,36 @@ auth, persistence, or business ingress. Those remain hexagonal adapters around
 the served node and can use `node.getActor(...)`, `node.system`, and
 `node.transport`.
 
+### `startActorWebNode(topology, options)`
+
+Browser worker entrypoints can host one topology node with
+`@actor-core/runtime/browser`. The runner starts an actor system for the
+selected node, spawns topology actors owned by that node, creates a browser
+WebSocket transport, and optionally connects to configured peer nodes.
+
+```typescript
+import { startActorWebNode } from '@actor-core/runtime/browser';
+import { logistics } from './logistics.topology';
+
+const worker = await startActorWebNode(logistics, {
+  node: 'worker',
+  transport: {
+    peers: {
+      [logistics.nodes.server.address]: 'ws://127.0.0.1:4101',
+    },
+    connect: [logistics.nodes.server.address],
+    heartbeatIntervalMs: 5000,
+    heartbeatTimeoutMs: 15000,
+  },
+});
+
+const routing = worker.getActor('routing');
+```
+
+`startActorWebNode` is browser-safe and does not open a listener. It only opens
+outbound WebSocket connections, so browser worker runtimes remain explicit
+runtime peers without becoming server nodes.
+
 ## Runtime Gateway
 
 The runtime gateway exposes Actor-Web runtime projections and command routing to thin hosts such as browser pages, Ignite custom elements, server handlers, and worker-owned UI adapters. It is a host gateway API, not the production inter-node cluster transport. Distributed runtime ownership still flows through `MessageTransport`.

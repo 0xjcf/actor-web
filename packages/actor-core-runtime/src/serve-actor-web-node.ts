@@ -1,6 +1,11 @@
 import type { ActorRef } from './actor-ref.js';
-import type { ActorBehavior, ActorMessage, ActorSystem } from './actor-system.js';
+import type { ActorMessage, ActorSystem } from './actor-system.js';
 import { createActorSystem } from './actor-system-impl.js';
+import {
+  getActorWebNodeDefinition,
+  getOwnedActorWebActors,
+  spawnOwnedActorWebActors,
+} from './actor-web-node-runtime.js';
 import {
   createNodeWebSocketMessageTransport,
   type NodeWebSocketMessageTransport,
@@ -13,11 +18,7 @@ import {
   RuntimeGatewayScopeError,
   type RuntimeGatewayScopeResolver,
 } from './runtime-gateway.js';
-import type {
-  ActorWebActorDescriptor,
-  ActorWebTopology,
-  ActorWebTopologyInput,
-} from './topology.js';
+import type { ActorWebTopology, ActorWebTopologyInput } from './topology.js';
 
 export interface ActorWebNodeGatewayOptions<TActorKey extends string = string> {
   readonly host?: string;
@@ -120,36 +121,6 @@ class ActorWebNodeGatewayConnection implements RuntimeGatewayConnectionAdapter {
   }
 }
 
-function ownedActors<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
-  topology: TTopology,
-  nodeKey: keyof TTopology['nodes'] & string
-): Array<[keyof TTopology['actors'] & string, ActorWebActorDescriptor]> {
-  return Object.entries(topology.actors).filter(([, actorDescriptor]) => {
-    return actorDescriptor.node === nodeKey;
-  }) as Array<[keyof TTopology['actors'] & string, ActorWebActorDescriptor]>;
-}
-
-function materializeBehavior(
-  actorDescriptor: ActorWebActorDescriptor
-): ActorBehavior<ActorMessage, ActorMessage> {
-  const behavior = actorDescriptor.behavior;
-  if (!behavior) {
-    throw new Error(`Actor "${actorDescriptor.key}" does not declare behavior.`);
-  }
-
-  const resolved = typeof behavior === 'function' ? behavior() : behavior;
-  if (
-    !resolved ||
-    typeof resolved !== 'object' ||
-    !('onMessage' in resolved) ||
-    typeof resolved.onMessage !== 'function'
-  ) {
-    throw new Error(`Actor "${actorDescriptor.key}" behavior did not resolve to ActorBehavior.`);
-  }
-
-  return resolved as ActorBehavior<ActorMessage, ActorMessage>;
-}
-
 async function createWebSocketServer(
   ServerConstructor: WebSocketServerConstructor,
   options: { host: string; port: number }
@@ -176,10 +147,7 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
   topology: TTopology,
   options: ServeActorWebNodeOptions<TTopology>
 ): Promise<ServedActorWebNode<TTopology>> {
-  const nodeDefinition = topology.nodes[options.node];
-  if (!nodeDefinition) {
-    throw new Error(`Unknown Actor-Web node "${options.node}".`);
-  }
+  const nodeDefinition = getActorWebNodeDefinition(topology, options.node);
 
   const host = options.host ?? '127.0.0.1';
   const transportListen = options.transport?.listen;
@@ -200,7 +168,7 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
   const actors = new Map<string, ActorRef<unknown, ActorMessage>>();
   const exposedActorKeys = new Set<string>(
     options.gateway?.expose ??
-      ownedActors(topology, options.node)
+      getOwnedActorWebActors(topology, options.node)
         .filter(([, actorDescriptor]) => actorDescriptor.gateway)
         .map(([key]) => key)
   );
@@ -251,12 +219,7 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
     await transport.start();
     await system.start();
 
-    for (const [actorKey, actorDescriptor] of ownedActors(topology, options.node)) {
-      const actorRef = await system.spawn(materializeBehavior(actorDescriptor), {
-        id: actorDescriptor.id,
-      });
-      actors.set(actorKey, actorRef);
-    }
+    await spawnOwnedActorWebActors(system, topology, options.node, actors);
 
     if (options.gateway) {
       const { WebSocketServer } = await import('ws');

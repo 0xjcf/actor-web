@@ -83,8 +83,9 @@ Current implementation status:
   Ignite-compatible projection/control sources.
 - `@actor-core/runtime/node` exports `serveActorWebNode` for topology-owned
   Node/server runtime hosting.
-- `startActorWebNode` and `ignite-element/actor-web` remain target-state APIs
-  for later slices.
+- `@actor-core/runtime/browser` exports `startActorWebNode` for topology-owned
+  browser worker runtime hosting.
+- `ignite-element/actor-web` remains a target-state API for a later slice.
 - The current example keeps a small domain wrapper around `createActorWebSource`
   only to preserve its in-memory/service-worker fallback behavior.
 
@@ -239,9 +240,16 @@ The browser worker runs another node:
 import { startActorWebNode } from '@actor-core/runtime/browser';
 import { logistics } from './logistics.topology';
 
+const transportUrl = new URL(self.location.href).searchParams.get('transportUrl') ?? '';
+
 startActorWebNode(logistics, {
   node: 'worker',
-  transportUrl: new URL(self.location.href).searchParams.get('transportUrl'),
+  transport: {
+    peers: {
+      [logistics.nodes.server.address]: transportUrl,
+    },
+    connect: [logistics.nodes.server.address],
+  },
 });
 ```
 

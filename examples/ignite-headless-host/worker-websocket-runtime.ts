@@ -1,11 +1,6 @@
 /// <reference lib="webworker" />
 
-import {
-  type BrowserWebSocketMessageTransport,
-  createActorSystem,
-  createBrowserWebSocketMessageTransport,
-} from '@actor-core/runtime/browser';
-import { createRoutingBehavior } from './logistics-routing-behavior';
+import { type StartedActorWebNode, startActorWebNode } from '@actor-core/runtime/browser';
 import { logistics } from './logistics-topology';
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -35,8 +30,7 @@ type WorkerRuntimeStatus =
       actorId: string;
     };
 
-let transport: BrowserWebSocketMessageTransport | null = null;
-let system: Awaited<ReturnType<typeof createActorSystem>> | null = null;
+let runtimeNode: StartedActorWebNode<typeof logistics> | null = null;
 const routingActor = logistics.actors.routing;
 const serverNode = logistics.nodes.server.address;
 const workerNode = logistics.nodes.worker.address;
@@ -46,9 +40,8 @@ function postStatus(status: WorkerRuntimeStatus): void {
 }
 
 async function stopRuntime(): Promise<void> {
-  await Promise.allSettled([system?.stop(), transport?.stop()]);
-  system = null;
-  transport = null;
+  await runtimeNode?.stop();
+  runtimeNode = null;
   postStatus({
     type: 'status',
     state: 'disconnected',
@@ -68,25 +61,18 @@ async function startRuntime(transportUrl: string): Promise<void> {
     actorId: routingActor.id,
   });
 
-  transport = createBrowserWebSocketMessageTransport({
-    nodeAddress: workerNode,
-    incarnation: `${workerNode}-${Date.now()}`,
-    heartbeatIntervalMs: 5000,
-    heartbeatTimeoutMs: 15000,
-    peers: {
-      [serverNode]: transportUrl,
+  runtimeNode = await startActorWebNode(logistics, {
+    node: 'worker',
+    transport: {
+      incarnation: `${workerNode}-${Date.now()}`,
+      heartbeatIntervalMs: 5000,
+      heartbeatTimeoutMs: 15000,
+      peers: {
+        [serverNode]: transportUrl,
+      },
+      connect: [serverNode],
     },
   });
-  system = createActorSystem({
-    nodeAddress: workerNode,
-    transport,
-  });
-
-  await system.start();
-  await system.spawn(createRoutingBehavior(), {
-    id: routingActor.id,
-  });
-  await system.join([serverNode]);
 
   postStatus({
     type: 'ready',

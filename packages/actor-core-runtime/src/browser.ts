@@ -86,6 +86,12 @@ export type {
   RuntimeTransportTelemetryEventType,
   RuntimeTransportTelemetryObserver,
 } from './runtime-transport-telemetry.js';
+export type {
+  ActorWebBrowserNodeTransportOptions,
+  StartActorWebNodeOptions,
+  StartedActorWebNode,
+} from './start-actor-web-node.js';
+export { startActorWebNode } from './start-actor-web-node.js';
 export type { InMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';
 export { createInMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';
 export type { ActorSnapshot } from './types.js';
