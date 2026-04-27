@@ -202,8 +202,8 @@
 
 - Title: Actor-Web HTTP builder server adapter
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
