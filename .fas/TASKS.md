@@ -180,8 +180,8 @@
 
 - Title: topology tools array authoring
 - Mode: 6-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: contained
