@@ -100,7 +100,16 @@ describe('Actor-Web topology helpers', () => {
     type InferredCommand = ActorWebActorMessage<typeof logistics.actors.shipment>;
     type InferredEvent = ActorWebActorEvent<typeof logistics.actors.shipment>;
 
-    const source = createActorWebSource(logistics.actors.shipment, {
+    const source = logistics.actors.shipment.source({
+      gateway: { url: 'ws://example.invalid/gateway' },
+      createSocket: () => ({
+        readyState: 1,
+        send: () => {},
+        close: () => {},
+        addEventListener: () => {},
+      }),
+    });
+    const explicitSource = createActorWebSource(logistics.actors.shipment, {
       gateway: { url: 'ws://example.invalid/gateway' },
       createSocket: () => ({
         readyState: 1,
@@ -115,10 +124,12 @@ describe('Actor-Web topology helpers', () => {
     const event: InferredEvent = { type: 'SHIPMENT_CREATED' };
 
     expect(typedSource.address.path).toBe(logistics.actors.shipment.address.path);
+    expect(explicitSource.address.path).toBe(source.address.path);
     expect(context.status).toBe('idle');
     expect(command.type).toBe('CREATE_SHIPMENT');
     expect(event.type).toBe('SHIPMENT_CREATED');
     source.close();
+    explicitSource.close();
   });
 
   it('rejects actors and supervisors that reference unknown nodes', () => {
