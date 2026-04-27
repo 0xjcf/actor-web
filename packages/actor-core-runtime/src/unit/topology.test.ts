@@ -47,9 +47,7 @@ describe('Actor-Web topology helpers', () => {
   it('builds actor addresses, node descriptors, and supervisor metadata', () => {
     const logistics = defineActorWebTopology({
       contractVersion: '1.0.0',
-      tools: {
-        'route.plan': tool('route.plan', { description: 'Plan shipment routes.' }),
-      },
+      tools: [tool('route.plan', { description: 'Plan shipment routes.' })],
       nodes: {
         browser: node('logistics-browser-host'),
         server: node('logistics-server-runtime'),
@@ -151,9 +149,7 @@ describe('Actor-Web topology helpers', () => {
   it('rejects actors that reference unknown topology tools when a catalog is declared', () => {
     expect(() =>
       defineActorWebTopology({
-        tools: {
-          'route.plan': tool('route.plan'),
-        },
+        tools: [tool('route.plan')],
         nodes: {
           server: node('server-node'),
         },
@@ -166,5 +162,25 @@ describe('Actor-Web topology helpers', () => {
         },
       })
     ).toThrow('references unknown tool "missing.tool"');
+  });
+
+  it('keeps object-shaped topology tools supported for generated clients', () => {
+    const topology = defineActorWebTopology({
+      tools: {
+        'route.plan': tool('route.plan'),
+      },
+      nodes: {
+        server: node('server-node'),
+      },
+      actors: {
+        shipment: actor({
+          id: 'shipment',
+          node: 'server',
+          tools: ['route.plan'],
+        }),
+      },
+    });
+
+    expect(topology.tools['route.plan'].name).toBe('route.plan');
   });
 });
