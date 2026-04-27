@@ -244,6 +244,9 @@ describe('ignite-headless-host logistics example', () => {
       createGatewaySocket: (url) => new WebSocket(url) as never,
       createWorkerSocket: (url) => new WebSocket(url) as never,
     });
+    expect(runtimeHarness.routingSource?.address.path).toBe(
+      'actor://logistics-worker-runtime/actor/logistics-routing'
+    );
     host = createLogisticsHostFromSource(runtimeHarness.source, {
       destroy: runtimeHarness.destroy,
     });
@@ -281,6 +284,15 @@ describe('ignite-headless-host logistics example', () => {
       carrier: 'Atlas Freight',
       eta: '72h',
       routeNotes: 'Route shipment-worker-5005 through International hub',
+    });
+    await waitFor(
+      () => runtimeHarness.routingSource?.snapshot().context.shipmentId === 'shipment-worker-5005',
+      'Expected worker routing source to project the worker-owned actor'
+    );
+    expect(runtimeHarness.routingSource?.snapshot().context).toMatchObject({
+      shipmentId: 'shipment-worker-5005',
+      carrier: 'Atlas Freight',
+      eta: '72h',
     });
 
     await waitForHostState(
@@ -490,8 +502,15 @@ async function waitForHostState(
   predicate: (state: ReturnType<LogisticsHost['getState']>) => boolean,
   message: string
 ): Promise<void> {
+  await waitFor(
+    () => predicate(target.getState()),
+    () => `${message}: ${JSON.stringify(target.getState())}`
+  );
+}
+
+async function waitFor(predicate: () => boolean, message: string | (() => string)): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (predicate(target.getState())) {
+    if (predicate()) {
       return;
     }
 
@@ -500,7 +519,7 @@ async function waitForHostState(
     });
   }
 
-  throw new Error(`${message}: ${JSON.stringify(target.getState())}`);
+  throw new Error(typeof message === 'function' ? message() : message);
 }
 
 async function createWorkerGatewayHost(gatewayUrl: string): Promise<LogisticsHost> {

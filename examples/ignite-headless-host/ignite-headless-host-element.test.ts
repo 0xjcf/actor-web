@@ -26,6 +26,8 @@ describe('ignite-headless-host element', () => {
     expect(element.shadowRoot?.textContent).toContain('Service Worker Runtime');
     expect(element.shadowRoot?.textContent).toContain('Remote Provider HQ');
     expect(element.shadowRoot?.textContent).toContain('Open Provider HQ Console');
+    expect(element.shadowRoot?.textContent).toContain('Worker Routing Source');
+    expect(element.shadowRoot?.textContent).toContain('worker-owned actor source');
     expect(element.shadowRoot?.textContent).toContain('Page 1 of 1');
     expect(element.shadowRoot?.textContent).not.toContain('In Transit');
     expect(element.shadowRoot?.textContent).toContain('Worker -> Server');
