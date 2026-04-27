@@ -19,41 +19,14 @@ import {
 } from './runtime-harness';
 
 export const IGNITE_HEADLESS_HOST_ELEMENT_NAME = 'aw-ignite-headless-host';
+const IGNITE_ROUTING_SOURCE_ELEMENT_NAME = 'aw-logistics-routing-source';
 
 interface LogisticsElementState extends LogisticsHostState {
   address: string;
-  busy: boolean;
-  draftDestination: string;
-  draftReference: string;
-  routingAddress: string | null;
-  routingTransportState: LogisticsHostState['transportState'];
-  routingTransportReason: string | null;
-  routingShipmentId: string | null;
-  routingCarrier: string | null;
-  routingEta: string | null;
-  routingRouteNotes: string | null;
-  timelinePage: number;
-  eventPage: number;
-}
-
-interface LogisticsControlTowerViewState extends LogisticsElementState {
-  createShipment(destination?: string, reference?: string): void;
-  updateDraftDestination(value: string): void;
-  updateDraftReference(value: string): void;
-  resetShipment(): void;
-  nextTimelinePage(): void;
-  previousTimelinePage(): void;
-  nextEventPage(): void;
-  previousEventPage(): void;
 }
 
 interface LogisticsElementLocalState {
-  busy: boolean;
-  draftDestination: string;
-  draftReference: string;
   eventLog: LogisticsEventLog[];
-  timelinePage: number;
-  eventPage: number;
 }
 
 const PAGE_SIZE = 5;
@@ -105,20 +78,11 @@ function renderTimelineEntry(entry: ShipmentContext['timeline'][number]) {
   );
 }
 
-function clampPage(page: number, itemCount: number): number {
-  return Math.min(Math.max(0, Math.ceil(itemCount / PAGE_SIZE) - 1), Math.max(0, page));
-}
-
 function localStateFor(address: string): LogisticsElementLocalState {
   let state = localStateByAddress.get(address);
   if (!state) {
     state = {
-      busy: false,
-      draftDestination: 'Chicago warehouse',
-      draftReference: 'REF-1001',
       eventLog: [],
-      timelinePage: 0,
-      eventPage: 0,
     };
     localStateByAddress.set(address, state);
   }
@@ -139,8 +103,17 @@ function createShipmentSourceHandle(): ActorWebSourceHandle<
   };
 }
 
-function forceRender(host: HTMLElement): void {
-  (host as HTMLElement & { forceRender?: () => void }).forceRender?.();
+function createRoutingSourceHandle(): ActorWebSourceHandle<
+  ShipmentContext,
+  ShipmentCommand,
+  ShipmentEvent
+> {
+  const runtimeSources = createLogisticsTopologySources();
+
+  return {
+    source: runtimeSources.routingSource ?? runtimeSources.source,
+    stop: runtimeSources.destroy,
+  };
 }
 
 async function createShipment(
@@ -197,23 +170,10 @@ const registerIgniteHeadlessHost = igniteCore({
       transportState: transport.state,
       transportReason: transport.reason ?? null,
       address: address.path,
-      routingAddress: null,
-      routingTransportState: 'connected' as LogisticsHostState['transportState'],
-      routingTransportReason: null,
-      routingShipmentId: context.shipmentId,
-      routingCarrier: context.carrier,
-      routingEta: context.eta,
-      routingRouteNotes: context.routeNotes,
-      busy: local.busy,
-      draftDestination: local.draftDestination,
-      draftReference: local.draftReference,
-      timelinePage: local.timelinePage,
-      eventPage: local.eventPage,
     } satisfies LogisticsElementState;
   },
   commands: ({ actor, host }) => {
     const address = actor.address.path;
-    const local = localStateFor(address);
 
     if (!eventSubscriptionsByHost.has(host)) {
       eventSubscriptionsByHost.add(host);
@@ -224,7 +184,6 @@ const registerIgniteHeadlessHost = igniteCore({
             projectEventLogItem(event, actor.address.id),
             ...nextLocal.eventLog,
           ];
-          forceRender(host);
         },
         {
           types: [
@@ -241,92 +200,119 @@ const registerIgniteHeadlessHost = igniteCore({
       );
     }
 
-    const run = async (action: () => Promise<unknown>): Promise<void> => {
-      if (local.busy) {
-        return;
-      }
-      local.busy = true;
-      forceRender(host);
-      try {
-        await action();
-      } finally {
-        local.busy = false;
-        forceRender(host);
-      }
+    const readInputValue = (selector: string): string => {
+      return host.shadowRoot?.querySelector<HTMLInputElement>(selector)?.value ?? '';
     };
 
     return {
-      updateDraftDestination(value: string): void {
-        local.draftDestination = value;
-        forceRender(host);
-      },
-      updateDraftReference(value: string): void {
-        local.draftReference = value;
-        forceRender(host);
-      },
-      createShipment(destination = local.draftDestination, reference = local.draftReference): void {
+      createShipment(): void {
+        const destination = readInputValue('#shipment-destination');
+        const reference = readInputValue('#shipment-reference');
         const trimmedDestination = destination.trim();
         if (trimmedDestination.length === 0) {
           return;
         }
-        local.draftDestination = destination;
-        local.draftReference = reference;
-        void run(() => createShipment(actor, trimmedDestination, reference.trim() || undefined));
+        void createShipment(actor, trimmedDestination, reference.trim() || undefined);
+      },
+      createQuickShipment(destination: string, reference: string): void {
+        const destinationInput =
+          host.shadowRoot?.querySelector<HTMLInputElement>('#shipment-destination');
+        const referenceInput =
+          host.shadowRoot?.querySelector<HTMLInputElement>('#shipment-reference');
+        if (destinationInput) {
+          destinationInput.value = destination;
+        }
+        if (referenceInput) {
+          referenceInput.value = reference;
+        }
+        void createShipment(actor, destination, reference);
       },
       resetShipment(): void {
-        void run(() => actor.send({ type: 'RESET_SHIPMENT' }));
-      },
-      previousTimelinePage(): void {
-        local.timelinePage = Math.max(0, local.timelinePage - 1);
-        forceRender(host);
-      },
-      nextTimelinePage(): void {
-        const itemCount = actor.snapshot().context.timeline.length;
-        local.timelinePage = Math.min(
-          Math.max(0, Math.ceil(itemCount / PAGE_SIZE) - 1),
-          local.timelinePage + 1
-        );
-        forceRender(host);
-      },
-      previousEventPage(): void {
-        local.eventPage = Math.max(0, local.eventPage - 1);
-        forceRender(host);
-      },
-      nextEventPage(): void {
-        local.eventPage = Math.min(
-          Math.max(0, Math.ceil(local.eventLog.length / PAGE_SIZE) - 1),
-          local.eventPage + 1
-        );
-        forceRender(host);
+        void actor.send({ type: 'RESET_SHIPMENT' });
       },
     };
   },
   cleanup: true,
 });
 
+const registerRoutingSource = igniteCore({
+  source: createRoutingSourceHandle,
+  states: ({ address, context, transport }) => ({
+    routingAddress: address.path,
+    routingTransportState: transport.state,
+    routingTransportReason: transport.reason ?? null,
+    routingShipmentId: context.shipmentId,
+    routingCarrier: context.carrier,
+    routingEta: context.eta,
+    routingRouteNotes: context.routeNotes,
+  }),
+  cleanup: true,
+});
+
+function defineRoutingSourceElement(): void {
+  if (customElements.get(IGNITE_ROUTING_SOURCE_ELEMENT_NAME)) {
+    return;
+  }
+
+  registerRoutingSource(IGNITE_ROUTING_SOURCE_ELEMENT_NAME, (args) => {
+    const view = args;
+
+    return (
+      <section class="panel">
+        <style>{styles}</style>
+        <div class="section-head">
+          <h3>Worker Routing Source</h3>
+          <span class={`badge transport-${view.routingTransportState}`}>
+            {view.routingTransportState}
+          </span>
+        </div>
+        <div class="grid">
+          <div>
+            <div class="label">Actor</div>
+            <div class="value">
+              <code>{view.routingAddress ?? 'not connected'}</code>
+            </div>
+          </div>
+          <div>
+            <div class="label">Shipment</div>
+            <div class="value">{view.routingShipmentId ?? 'no route requested'}</div>
+          </div>
+          <div>
+            <div class="label">Carrier</div>
+            <div class="value">{view.routingCarrier ?? 'pending worker plan'}</div>
+          </div>
+          <div>
+            <div class="label">ETA</div>
+            <div class="value">{view.routingEta ?? 'pending'}</div>
+          </div>
+          <div>
+            <div class="label">Route Notes</div>
+            <div class="value">{view.routingRouteNotes ?? 'worker-owned actor source'}</div>
+          </div>
+          <div>
+            <div class="label">Transport Reason</div>
+            <div class="value">{view.routingTransportReason ?? 'none'}</div>
+          </div>
+        </div>
+      </section>
+    );
+  });
+}
+
 export function defineIgniteHeadlessHostElement(): void {
+  defineRoutingSourceElement();
+
   if (customElements.get(IGNITE_HEADLESS_HOST_ELEMENT_NAME)) {
     return;
   }
 
   registerIgniteHeadlessHost(IGNITE_HEADLESS_HOST_ELEMENT_NAME, (args) => {
-    const state = args as unknown as LogisticsControlTowerViewState;
-    const canCreate = !state.busy && state.draftDestination.trim().length > 0;
-    const canReset = !state.busy && (state.shipmentCount > 0 || state.eventLog.length > 0);
-    const statusClass = state.busy ? 'badge status-busy' : `badge status-${state.status}`;
-    const transportClass = `badge transport-${state.transportState}`;
-    const timelinePage = clampPage(state.timelinePage, state.timeline.length);
-    const timelinePageCount = Math.max(1, Math.ceil(state.timeline.length / PAGE_SIZE));
-    const visibleTimeline = state.timeline.slice(
-      timelinePage * PAGE_SIZE,
-      timelinePage * PAGE_SIZE + PAGE_SIZE
-    );
-    const eventPage = clampPage(state.eventPage, state.eventLog.length);
-    const eventPageCount = Math.max(1, Math.ceil(state.eventLog.length / PAGE_SIZE));
-    const visibleEvents = state.eventLog.slice(
-      eventPage * PAGE_SIZE,
-      eventPage * PAGE_SIZE + PAGE_SIZE
-    );
+    const view = args;
+    const canReset = view.shipmentCount > 0 || view.eventLog.length > 0;
+    const statusClass = `badge status-${view.status}`;
+    const transportClass = `badge transport-${view.transportState}`;
+    const visibleTimeline = view.timeline.slice(0, PAGE_SIZE);
+    const visibleEvents = view.eventLog.slice(0, PAGE_SIZE);
 
     return (
       <>
@@ -348,23 +334,23 @@ export function defineIgniteHeadlessHostElement(): void {
                   <div>
                     <div class="label">Shipment Status</div>
                     <div class="value">
-                      <span class={statusClass}>{state.busy ? 'dispatching' : state.status}</span>
+                      <span class={statusClass}>{view.status}</span>
                     </div>
                   </div>
                   <div>
                     <div class="label">Shipments</div>
-                    <div class="value">{state.shipmentCount}</div>
+                    <div class="value">{view.shipmentCount}</div>
                   </div>
                   <div>
                     <div class="label">Transport</div>
                     <div class="value">
-                      <span class={transportClass}>{state.transportState}</span>
+                      <span class={transportClass}>{view.transportState}</span>
                     </div>
                   </div>
                   <div>
                     <div class="label">Actor</div>
                     <div class="value">
-                      <code>{state.address}</code>
+                      <code>{view.address}</code>
                     </div>
                   </div>
                 </div>
@@ -379,20 +365,14 @@ export function defineIgniteHeadlessHostElement(): void {
                     <span class="label">Destination</span>
                     <div class="toolbar">
                       <input
-                        value={state.draftDestination}
+                        id="shipment-destination"
+                        value="Chicago warehouse"
                         placeholder="Chicago warehouse"
-                        disabled={state.busy}
-                        onInput={(event: Event) =>
-                          state.updateDraftDestination(
-                            (event.currentTarget as HTMLInputElement).value
-                          )
-                        }
                       />
                       <button
                         type="button"
                         id="create-shipment"
-                        disabled={!canCreate}
-                        onClick={() => state.createShipment()}
+                        onClick={() => view.createShipment()}
                       >
                         Create
                       </button>
@@ -400,29 +380,20 @@ export function defineIgniteHeadlessHostElement(): void {
                   </label>
                   <label class="field">
                     <span class="label">Reference</span>
-                    <input
-                      value={state.draftReference}
-                      placeholder="REF-1001"
-                      disabled={state.busy}
-                      onInput={(event: Event) =>
-                        state.updateDraftReference((event.currentTarget as HTMLInputElement).value)
-                      }
-                    />
+                    <input id="shipment-reference" value="REF-1001" placeholder="REF-1001" />
                   </label>
                   <div class="quick-grid">
                     <button
                       type="button"
                       class="secondary"
-                      disabled={state.busy}
-                      onClick={() => state.createShipment('Dallas cross-dock', 'REF-2002')}
+                      onClick={() => view.createQuickShipment('Dallas cross-dock', 'REF-2002')}
                     >
                       Dallas
                     </button>
                     <button
                       type="button"
                       class="secondary"
-                      disabled={state.busy}
-                      onClick={() => state.createShipment('International hub', 'REF-3003')}
+                      onClick={() => view.createQuickShipment('International hub', 'REF-3003')}
                     >
                       International
                     </button>
@@ -430,7 +401,7 @@ export function defineIgniteHeadlessHostElement(): void {
                       type="button"
                       class="danger"
                       disabled={!canReset}
-                      onClick={() => state.resetShipment()}
+                      onClick={() => view.resetShipment()}
                     >
                       Reset
                     </button>
@@ -476,19 +447,19 @@ export function defineIgniteHeadlessHostElement(): void {
                   <div class="grid">
                     <div>
                       <div class="label">Facility</div>
-                      <div class="value">{state.providerFacility ?? 'waiting for scan'}</div>
+                      <div class="value">{view.providerFacility ?? 'waiting for scan'}</div>
                     </div>
                     <div>
                       <div class="label">Signal</div>
-                      <div class="value">{state.providerSignal ?? 'none'}</div>
+                      <div class="value">{view.providerSignal ?? 'none'}</div>
                     </div>
                     <div>
                       <div class="label">Truck Load</div>
-                      <div class="value">{state.providerLoadId ?? 'unassigned'}</div>
+                      <div class="value">{view.providerLoadId ?? 'unassigned'}</div>
                     </div>
                     <div>
                       <div class="label">Provider Note</div>
-                      <div class="value">{state.providerNote ?? 'No provider update yet.'}</div>
+                      <div class="value">{view.providerNote ?? 'No provider update yet.'}</div>
                     </div>
                   </div>
                   <a href="./provider.html">Open Provider HQ Console</a>
@@ -501,69 +472,32 @@ export function defineIgniteHeadlessHostElement(): void {
                   <div class="grid">
                     <div>
                       <div class="label">Shipment</div>
-                      <div class="value">{state.shipmentId ?? 'none'}</div>
+                      <div class="value">{view.shipmentId ?? 'none'}</div>
                     </div>
                     <div>
                       <div class="label">Destination</div>
-                      <div class="value">{state.destination ?? 'none'}</div>
+                      <div class="value">{view.destination ?? 'none'}</div>
                     </div>
                     <div>
                       <div class="label">Carrier</div>
-                      <div class="value">{state.carrier ?? 'pending'}</div>
+                      <div class="value">{view.carrier ?? 'pending'}</div>
                     </div>
                     <div>
                       <div class="label">ETA</div>
-                      <div class="value">{state.eta ?? 'pending'}</div>
+                      <div class="value">{view.eta ?? 'pending'}</div>
                     </div>
                     <div>
                       <div class="label">Route Notes</div>
-                      <div class="value">{state.routeNotes ?? 'pending route plan'}</div>
+                      <div class="value">{view.routeNotes ?? 'pending route plan'}</div>
                     </div>
                     <div>
                       <div class="label">Transport Reason</div>
-                      <div class="value">{state.transportReason ?? 'none'}</div>
+                      <div class="value">{view.transportReason ?? 'none'}</div>
                     </div>
                   </div>
                 </section>
 
-                <section class="panel">
-                  <div class="section-head">
-                    <h3>Worker Routing Source</h3>
-                    <span class={`badge transport-${state.routingTransportState}`}>
-                      {state.routingTransportState}
-                    </span>
-                  </div>
-                  <div class="grid">
-                    <div>
-                      <div class="label">Actor</div>
-                      <div class="value">
-                        <code>{state.routingAddress ?? 'not connected'}</code>
-                      </div>
-                    </div>
-                    <div>
-                      <div class="label">Shipment</div>
-                      <div class="value">{state.routingShipmentId ?? 'no route requested'}</div>
-                    </div>
-                    <div>
-                      <div class="label">Carrier</div>
-                      <div class="value">{state.routingCarrier ?? 'pending worker plan'}</div>
-                    </div>
-                    <div>
-                      <div class="label">ETA</div>
-                      <div class="value">{state.routingEta ?? 'pending'}</div>
-                    </div>
-                    <div>
-                      <div class="label">Route Notes</div>
-                      <div class="value">
-                        {state.routingRouteNotes ?? 'worker-owned actor source'}
-                      </div>
-                    </div>
-                    <div>
-                      <div class="label">Transport Reason</div>
-                      <div class="value">{state.routingTransportReason ?? 'none'}</div>
-                    </div>
-                  </div>
-                </section>
+                <aw-logistics-routing-source />
 
                 <section class="panel">
                   <h3>Message Routes</h3>
@@ -613,9 +547,7 @@ export function defineIgniteHeadlessHostElement(): void {
                 <section class="panel">
                   <div class="section-head">
                     <h3>Timeline</h3>
-                    <span class="muted">
-                      Page {timelinePage + 1} of {timelinePageCount}
-                    </span>
+                    <span class="muted">Latest {PAGE_SIZE}</span>
                   </div>
                   <ol class="list">
                     {visibleTimeline.length > 0 ? (
@@ -627,21 +559,11 @@ export function defineIgniteHeadlessHostElement(): void {
                     )}
                   </ol>
                   <div class="pager">
-                    <button
-                      type="button"
-                      class="secondary"
-                      disabled={timelinePage === 0}
-                      onClick={() => state.previousTimelinePage()}
-                    >
+                    <button type="button" class="secondary" disabled={true}>
                       Previous
                     </button>
-                    <span class="muted">{state.timeline.length} total timeline entries</span>
-                    <button
-                      type="button"
-                      class="secondary"
-                      disabled={timelinePage + 1 >= timelinePageCount}
-                      onClick={() => state.nextTimelinePage()}
-                    >
+                    <span class="muted">{view.timeline.length} total timeline entries</span>
+                    <button type="button" class="secondary" disabled={true}>
                       Next
                     </button>
                   </div>
@@ -650,9 +572,7 @@ export function defineIgniteHeadlessHostElement(): void {
                 <section class="panel">
                   <div class="section-head">
                     <h3>Gateway Event Stream</h3>
-                    <span class="muted">
-                      Page {eventPage + 1} of {eventPageCount}
-                    </span>
+                    <span class="muted">Latest {PAGE_SIZE}</span>
                   </div>
                   <ol class="list">
                     {visibleEvents.length > 0 ? (
@@ -664,21 +584,11 @@ export function defineIgniteHeadlessHostElement(): void {
                     )}
                   </ol>
                   <div class="pager">
-                    <button
-                      type="button"
-                      class="secondary"
-                      disabled={eventPage === 0}
-                      onClick={() => state.previousEventPage()}
-                    >
+                    <button type="button" class="secondary" disabled={true}>
                       Previous
                     </button>
-                    <span class="muted">{state.eventLog.length} total gateway events</span>
-                    <button
-                      type="button"
-                      class="secondary"
-                      disabled={eventPage + 1 >= eventPageCount}
-                      onClick={() => state.nextEventPage()}
-                    >
+                    <span class="muted">{view.eventLog.length} total gateway events</span>
+                    <button type="button" class="secondary" disabled={true}>
                       Next
                     </button>
                   </div>

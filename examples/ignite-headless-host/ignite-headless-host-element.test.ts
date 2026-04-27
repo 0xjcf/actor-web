@@ -26,9 +26,10 @@ describe('ignite-headless-host element', () => {
     expect(element.shadowRoot?.textContent).toContain('Service Worker Runtime');
     expect(element.shadowRoot?.textContent).toContain('Remote Provider HQ');
     expect(element.shadowRoot?.textContent).toContain('Open Provider HQ Console');
-    expect(element.shadowRoot?.textContent).toContain('Worker Routing Source');
-    expect(element.shadowRoot?.textContent).toContain('worker-owned actor source');
-    expect(element.shadowRoot?.textContent).toContain('Page 1 of 1');
+    const routingElement = element.shadowRoot?.querySelector('aw-logistics-routing-source');
+    expect(routingElement?.shadowRoot?.textContent).toContain('Worker Routing Source');
+    expect(routingElement?.shadowRoot?.textContent).toContain('worker-owned actor source');
+    expect(element.shadowRoot?.textContent).toContain('Latest 5');
     expect(element.shadowRoot?.textContent).not.toContain('In Transit');
     expect(element.shadowRoot?.textContent).toContain('Worker -> Server');
     expect(element.shadowRoot?.textContent).toContain('Gateway WebSocket projection');

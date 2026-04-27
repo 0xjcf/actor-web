@@ -108,11 +108,15 @@ const routingSource = logistics.actors.routing.source({
 });
 ```
 
-`ignite-headless-host-element.tsx` passes the shipment actor source handle
-directly to `igniteCore` from `ignite-element/actor-web`. Browser-local details
-such as form draft values, busy state, event pagination, and timeline pagination
-stay as view state in the element instead of being disguised as an Actor-Web
-source.
+`ignite-headless-host-element.tsx` passes Actor-Web source handles directly to
+`igniteCore` from `ignite-element/actor-web`. The shipment projection drives the
+main Control Tower, and the worker routing actor is rendered as its own
+read-only Ignite component/source. The UI consumes the inferred Ignite view
+model from the `states` hook instead of wrapping projection data in a custom
+source-shaped adapter.
+
+Browser-local details such as form inputs and latest-event display remain
+element concerns instead of being disguised as Actor-Web source state.
 
 `server-runtime-gateway.ts` starts the server node with `serveActorWebNode` and
 uses `serveActorWebHttp(runtime).for(logistics.actors.shipment)` for REST
