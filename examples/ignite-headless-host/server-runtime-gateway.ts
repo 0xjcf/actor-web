@@ -51,9 +51,6 @@ export interface LogisticsRuntimeGatewayServer {
   getRestUrl(): string | null;
 }
 
-export type CheckoutRuntimeGatewayServerOptions = LogisticsRuntimeGatewayServerOptions;
-export type CheckoutRuntimeGatewayServer = LogisticsRuntimeGatewayServer;
-
 function sendJson(response: ServerResponse, statusCode: number, body: unknown): void {
   response.writeHead(statusCode, {
     'content-type': 'application/json',
@@ -424,21 +421,16 @@ export function createLogisticsRuntimeGatewayServer(
           port: options.port ?? 0,
           expose: ['shipment'],
           resolveScope: async (scope) => {
-            if (
-              scope.kind !== 'ignite-headless-checkout' &&
-              scope.kind !== 'logistics-shipment' &&
-              scope.kind !== 'ignite-headless-worker-checkout' &&
-              scope.kind !== 'logistics-routing'
-            ) {
+            const shipmentScope = shipmentActorDescriptor.gateway?.scope.kind;
+            const routingScope = routingActorDescriptor.gateway?.scope.kind;
+            if (scope.kind !== shipmentScope && scope.kind !== routingScope) {
               throw new RuntimeGatewayScopeError(
                 'invalid_scope',
                 `Unsupported scope ${scope.kind}.`
               );
             }
 
-            const isWorkerScope =
-              scope.kind === 'ignite-headless-worker-checkout' ||
-              scope.kind === 'logistics-routing';
+            const isWorkerScope = scope.kind === routingScope;
             const sourceActor = isWorkerScope ? routingActorDescriptor : shipmentActorDescriptor;
             let actorRef = await system().lookup(sourceActor.address.path);
             for (let attempt = 0; !actorRef && attempt < 20; attempt += 1) {
@@ -525,5 +517,3 @@ export function createLogisticsRuntimeGatewayServer(
     },
   };
 }
-
-export const createCheckoutRuntimeGatewayServer = createLogisticsRuntimeGatewayServer;

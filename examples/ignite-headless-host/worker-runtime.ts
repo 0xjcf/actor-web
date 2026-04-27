@@ -226,5 +226,3 @@ export function startLogisticsServiceWorkerRuntime(): void {
     }
   });
 }
-
-export const startCheckoutServiceWorkerRuntime = startLogisticsServiceWorkerRuntime;

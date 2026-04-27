@@ -3,8 +3,13 @@ import type {
   IgniteActorSourceEvent,
   ProjectionTransportState,
 } from '@actor-core/runtime/browser';
-import type { ShipmentCommand, ShipmentContext, ShipmentEvent } from './logistics-contract';
-import { logisticsSources } from './logistics-source-topology';
+import {
+  createInitialShipmentContext,
+  type ShipmentCommand,
+  type ShipmentContext,
+  type ShipmentEvent,
+} from './logistics-contract';
+import { createLogisticsRuntimeHarness } from './runtime-harness';
 
 export interface LogisticsEventLog {
   type: ShipmentEvent['type'];
@@ -45,10 +50,6 @@ export interface LogisticsHost {
   destroy(): Promise<void>;
 }
 
-export type HeadlessCheckoutEventLog = LogisticsEventLog;
-export type HeadlessCheckoutHostState = LogisticsHostState;
-export type HeadlessCheckoutHost = LogisticsHost;
-
 interface CreateLogisticsHostOptions {
   destroy?: () => Promise<void>;
 }
@@ -69,28 +70,37 @@ function toEventLogEntry(event: IgniteActorSourceEvent<ShipmentEvent>): Logistic
   };
 }
 
+function shipmentContextFromSnapshot(
+  snapshot: ReturnType<
+    IgniteActorSource<ShipmentContext, ShipmentCommand, ShipmentEvent>['snapshot']
+  >
+): ShipmentContext {
+  return snapshot.context ?? createInitialShipmentContext();
+}
+
 function projectSourceState(
   source: IgniteActorSource<ShipmentContext, ShipmentCommand, ShipmentEvent>,
   eventLog: LogisticsEventLog[] = []
 ): LogisticsHostState {
   const snapshot = source.snapshot();
   const status = source.transportStatus();
+  const context = shipmentContextFromSnapshot(snapshot);
 
   return {
     phase: snapshot.phase,
-    shipmentId: snapshot.context.shipmentId,
-    destination: snapshot.context.destination,
-    reference: snapshot.context.reference,
-    status: snapshot.context.status,
-    carrier: snapshot.context.carrier,
-    eta: snapshot.context.eta,
-    routeNotes: snapshot.context.routeNotes,
-    providerFacility: snapshot.context.providerFacility,
-    providerSignal: snapshot.context.providerSignal,
-    providerLoadId: snapshot.context.providerLoadId,
-    providerNote: snapshot.context.providerNote,
-    shipmentCount: snapshot.context.shipmentCount,
-    timeline: snapshot.context.timeline.map((entry) => ({ ...entry })),
+    shipmentId: context.shipmentId,
+    destination: context.destination,
+    reference: context.reference,
+    status: context.status,
+    carrier: context.carrier,
+    eta: context.eta,
+    routeNotes: context.routeNotes,
+    providerFacility: context.providerFacility,
+    providerSignal: context.providerSignal,
+    providerLoadId: context.providerLoadId,
+    providerNote: context.providerNote,
+    shipmentCount: context.shipmentCount,
+    timeline: context.timeline.map((entry) => ({ ...entry })),
     eventLog,
     transportState: status.state,
     transportReason: status.reason ?? null,
@@ -112,22 +122,23 @@ export function createLogisticsHostFromSource(
   };
 
   const unsubscribeSnapshot = source.subscribe((snapshot) => {
+    const context = shipmentContextFromSnapshot(snapshot);
     state = {
       ...state,
       phase: snapshot.phase,
-      shipmentId: snapshot.context.shipmentId,
-      destination: snapshot.context.destination,
-      reference: snapshot.context.reference,
-      status: snapshot.context.status,
-      carrier: snapshot.context.carrier,
-      eta: snapshot.context.eta,
-      routeNotes: snapshot.context.routeNotes,
-      providerFacility: snapshot.context.providerFacility,
-      providerSignal: snapshot.context.providerSignal,
-      providerLoadId: snapshot.context.providerLoadId,
-      providerNote: snapshot.context.providerNote,
-      shipmentCount: snapshot.context.shipmentCount,
-      timeline: snapshot.context.timeline.map((entry) => ({ ...entry })),
+      shipmentId: context.shipmentId,
+      destination: context.destination,
+      reference: context.reference,
+      status: context.status,
+      carrier: context.carrier,
+      eta: context.eta,
+      routeNotes: context.routeNotes,
+      providerFacility: context.providerFacility,
+      providerSignal: context.providerSignal,
+      providerLoadId: context.providerLoadId,
+      providerNote: context.providerNote,
+      shipmentCount: context.shipmentCount,
+      timeline: context.timeline.map((entry) => ({ ...entry })),
     };
     notify();
   });
@@ -202,16 +213,7 @@ export function createLogisticsHostFromSource(
   };
 }
 
-export function createHeadlessCheckoutHostFromSource(
-  source: IgniteActorSource<ShipmentContext, ShipmentCommand, ShipmentEvent>,
-  options: CreateLogisticsHostOptions = {}
-): LogisticsHost {
-  return createLogisticsHostFromSource(source, options);
-}
-
 export function createLogisticsHost(): LogisticsHost {
-  const shipmentSource = logisticsSources.actors.shipment.source();
+  const shipmentSource = createLogisticsRuntimeHarness();
   return createLogisticsHostFromSource(shipmentSource.source, { destroy: shipmentSource.destroy });
 }
-
-export const createHeadlessCheckoutHost = createLogisticsHost;

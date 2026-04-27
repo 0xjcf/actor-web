@@ -34,8 +34,6 @@ export interface LogisticsRuntimeHarness {
   destroy(): Promise<void>;
 }
 
-export type CheckoutRuntimeHarness = LogisticsRuntimeHarness;
-
 export interface ServerWorkerDemoRuntimeHarnessOptions {
   gatewayUrl: string;
   transportUrl: string;
@@ -464,5 +462,3 @@ export function createLogisticsRuntimeHarness(): LogisticsRuntimeHarness {
 
   return createInMemoryLogisticsRuntimeHarness();
 }
-
-export const createCheckoutRuntimeHarness = createLogisticsRuntimeHarness;
