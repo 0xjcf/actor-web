@@ -1,4 +1,9 @@
 import type { ActorBehavior, ActorMessage } from './actor-system.js';
+import {
+  type ActorWebSourceOptions,
+  type ClosableActorWebSource,
+  createActorWebSource,
+} from './actor-web-source.js';
 import type { RuntimeGatewayScopeDescriptor } from './runtime-gateway.js';
 
 export type ActorWebSupervisionStrategy = 'restart' | 'resume' | 'stop' | 'escalate';
@@ -102,6 +107,13 @@ export interface ActorWebActorDescriptor<
   readonly key: string;
   readonly nodeAddress: string;
   readonly address: ActorWebActorAddress;
+  source(
+    options: ActorWebSourceOptions
+  ): ClosableActorWebSource<
+    ActorWebBehaviorContext<NonNullable<TBehavior>>,
+    ActorWebBehaviorMessage<NonNullable<TBehavior>>,
+    ActorWebBehaviorEvent<NonNullable<TBehavior>>
+  >;
 }
 
 export interface ActorWebSupervisorDefinition<TNode extends string = string> {
@@ -233,6 +245,9 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
           key,
           nodeAddress: nodeDefinition.address,
           address,
+          source(options: ActorWebSourceOptions) {
+            return createActorWebSource(this, options);
+          },
         },
       ];
     })

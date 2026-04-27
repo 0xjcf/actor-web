@@ -5,7 +5,6 @@ import type {
   IgniteActorSource,
   RuntimeGatewayScopeDescriptor,
 } from '@actor-core/runtime/browser';
-import { createActorWebSource } from '@actor-core/runtime/browser';
 import type { ActorWebActorDescriptor } from '@actor-core/runtime/topology';
 import type { ShipmentCommand, ShipmentContext, ShipmentEvent } from './logistics-contract';
 import { logistics } from './logistics-topology';
@@ -53,7 +52,7 @@ export function createLogisticsServerGatewayRuntimeHarness(
   options: CreateLogisticsServerGatewaySourceOptions
 ): LogisticsRuntimeHarness {
   const actorDescriptor = gatewayActorForScope(options.scope);
-  const source = createActorWebSource(actorDescriptor, {
+  const source = actorDescriptor.source({
     gateway: {
       url: options.url,
       scope: options.scope ?? actorDescriptor.gateway?.scope,
