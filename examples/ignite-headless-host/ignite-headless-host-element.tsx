@@ -2,8 +2,7 @@
 
 import 'ignite-element/renderers/ignite-jsx';
 
-import { type ActorWebExtendedState, createActorWebAdapter } from 'ignite-adapters/actor-web';
-import { igniteElementFactory, StateScope } from 'ignite-element';
+import { type ActorWebSourceHandle, igniteCore } from 'ignite-element/actor-web';
 import type { LogisticsEventLog, LogisticsHostState } from './headless-host';
 import {
   cloneTimeline,
@@ -14,9 +13,7 @@ import {
 import {
   createLogisticsRuntimeHarness,
   type LogisticsRuntimeHarness,
-  type ShipmentCommand,
   type ShipmentContext,
-  type ShipmentEvent,
 } from './runtime-harness';
 
 export const IGNITE_HEADLESS_HOST_ELEMENT_NAME = 'aw-ignite-headless-host';
@@ -47,15 +44,6 @@ interface LogisticsElementState extends LogisticsHostState {
   timelinePage: number;
   eventPage: number;
 }
-
-type LogisticsActorState = ActorWebExtendedState<ShipmentContext>;
-type LogisticsCommandActor = ReturnType<typeof createBaseLogisticsAdapter.resolveCommandActor>;
-type TransportAwareActor = {
-  transportStatus?: () => { state: LogisticsHostState['transportState']; reason?: string };
-  subscribeTransportStatus?: (
-    listener: (status: { state: LogisticsHostState['transportState']; reason?: string }) => void
-  ) => () => void;
-};
 
 const PAGE_SIZE = 5;
 
@@ -292,21 +280,6 @@ const styles = `
   }
 `;
 
-const createBaseLogisticsAdapter = createActorWebAdapter<
-  ShipmentContext,
-  ShipmentCommand,
-  ShipmentEvent
->(() => {
-  const harness = createLogisticsRuntimeHarness();
-  latestRuntimeHarness = harness;
-  return {
-    source: harness.source,
-    stop: () => harness.destroy(),
-  };
-});
-
-let latestRuntimeHarness: LogisticsRuntimeHarness | undefined;
-
 function cloneState(state: LogisticsElementState): LogisticsElementState {
   return {
     ...state,
@@ -354,28 +327,31 @@ function renderTimelineEntry(entry: ShipmentContext['timeline'][number]) {
 }
 
 function projectElementState(
-  actorState: LogisticsActorState,
+  context: ShipmentContext,
+  source: LogisticsRuntimeHarness['source'],
   current?: LogisticsElementState
 ): LogisticsElementState {
+  const transport = source.transportStatus();
+
   return {
-    phase: actorState.phase,
-    shipmentId: actorState.shipmentId,
-    destination: actorState.destination,
-    reference: actorState.reference,
-    status: actorState.status,
-    carrier: actorState.carrier,
-    eta: actorState.eta,
-    routeNotes: actorState.routeNotes,
-    providerFacility: actorState.providerFacility,
-    providerSignal: actorState.providerSignal,
-    providerLoadId: actorState.providerLoadId,
-    providerNote: actorState.providerNote,
-    shipmentCount: actorState.shipmentCount,
-    timeline: cloneTimeline(actorState.timeline),
+    phase: context.status,
+    shipmentId: context.shipmentId,
+    destination: context.destination,
+    reference: context.reference,
+    status: context.status,
+    carrier: context.carrier,
+    eta: context.eta,
+    routeNotes: context.routeNotes,
+    providerFacility: context.providerFacility,
+    providerSignal: context.providerSignal,
+    providerLoadId: context.providerLoadId,
+    providerNote: context.providerNote,
+    shipmentCount: context.shipmentCount,
+    timeline: cloneTimeline(context.timeline),
     eventLog: current?.eventLog ?? [],
-    transportState: current?.transportState ?? 'replaying',
-    transportReason: current?.transportReason ?? null,
-    address: actorState.address.path,
+    transportState: transport.state,
+    transportReason: transport.reason ?? null,
+    address: source.address.path,
     busy: current?.busy ?? false,
     draftDestination: current?.draftDestination ?? 'Chicago warehouse',
     draftReference: current?.draftReference ?? 'REF-1001',
@@ -391,21 +367,35 @@ function projectElementState(
   };
 }
 
+function createLogisticsSnapshot(
+  source: LogisticsRuntimeHarness['source'],
+  state: LogisticsElementState
+) {
+  return {
+    address: source.address,
+    context: cloneState(state),
+    phase: state.phase,
+    toJSON: () => ({
+      address: source.address,
+      context: cloneState(state),
+      phase: state.phase,
+    }),
+  };
+}
+
 function clampPage(page: number, itemCount: number): number {
   return Math.min(Math.max(0, Math.ceil(itemCount / PAGE_SIZE) - 1), Math.max(0, page));
 }
 
-function createLogisticsAdapter() {
-  latestRuntimeHarness = undefined;
-  const actorAdapter = createBaseLogisticsAdapter();
-  const runtimeHarness = latestRuntimeHarness as LogisticsRuntimeHarness | undefined;
-  const routingSource = runtimeHarness?.routingSource;
-  const actor = createBaseLogisticsAdapter.resolveCommandActor(
-    actorAdapter
-  ) as LogisticsCommandActor & TransportAwareActor;
-  const listeners = new Set<(state: LogisticsElementState) => void>();
+function createLogisticsControlTowerSource(): ActorWebSourceHandle<
+  LogisticsElementState,
+  LogisticsElementEvent
+> {
+  const runtimeHarness = createLogisticsRuntimeHarness();
+  const { source, routingSource } = runtimeHarness;
+  const listeners = new Set<(snapshot: ReturnType<typeof createLogisticsSnapshot>) => void>();
   let stopped = false;
-  let state = projectElementState(actorAdapter.getState());
+  let state = projectElementState(source.snapshot().context, source);
 
   const notify = (): void => {
     if (stopped) {
@@ -413,50 +403,45 @@ function createLogisticsAdapter() {
     }
     const snapshot = cloneState(state);
     for (const listener of Array.from(listeners)) {
-      listener(snapshot);
+      listener(createLogisticsSnapshot(source, snapshot));
     }
   };
 
-  const unsubscribeSnapshot = actorAdapter.subscribe((nextState) => {
-    state = projectElementState(nextState, state);
+  const unsubscribeSnapshot = source.subscribe((snapshot) => {
+    state = projectElementState(snapshot.context, source, state);
     notify();
   });
 
-  const unsubscribeEvent = actor.subscribeEvent
-    ? actor.subscribeEvent(
-        (event) => {
-          state = {
-            ...state,
-            eventLog: [projectEventLogItem(event, actor.address.id), ...state.eventLog],
-          };
-          notify();
-        },
-        {
-          types: [
-            'SHIPMENT_CREATED',
-            'ROUTE_REQUESTED',
-            'ROUTE_ASSIGNED',
-            'SHIPMENT_IN_TRANSIT',
-            'SHIPMENT_DELIVERED',
-            'SHIPMENT_RETURNED',
-            'PROVIDER_SIGNAL_RECORDED',
-            'SHIPMENT_RESET',
-          ],
-        }
-      )
-    : () => {};
+  const unsubscribeEvent = source.subscribeEvent(
+    (event) => {
+      state = {
+        ...state,
+        eventLog: [projectEventLogItem(event, source.address.id), ...state.eventLog],
+      };
+      notify();
+    },
+    {
+      types: [
+        'SHIPMENT_CREATED',
+        'ROUTE_REQUESTED',
+        'ROUTE_ASSIGNED',
+        'SHIPMENT_IN_TRANSIT',
+        'SHIPMENT_DELIVERED',
+        'SHIPMENT_RETURNED',
+        'PROVIDER_SIGNAL_RECORDED',
+        'SHIPMENT_RESET',
+      ],
+    }
+  );
 
-  const unsubscribeTransportStatus =
-    typeof actor.subscribeTransportStatus === 'function'
-      ? actor.subscribeTransportStatus((status) => {
-          state = {
-            ...state,
-            transportState: status.state,
-            transportReason: status.reason ?? null,
-          };
-          notify();
-        })
-      : () => {};
+  const unsubscribeTransportStatus = source.subscribeTransportStatus((status) => {
+    state = {
+      ...state,
+      transportState: status.state,
+      transportReason: status.reason ?? null,
+    };
+    notify();
+  });
 
   let unsubscribeRoutingSnapshot = () => {};
   let unsubscribeRoutingTransportStatus = () => {};
@@ -548,7 +533,7 @@ function createLogisticsAdapter() {
       return;
     }
 
-    await actor.send({
+    await source.send({
       type: 'CREATE_SHIPMENT',
       shipmentId: `shipment-${Date.now().toString(36)}`,
       destination,
@@ -557,98 +542,101 @@ function createLogisticsAdapter() {
   };
 
   return {
-    scope: StateScope.Isolated,
-    subscribe(listener: (nextState: LogisticsElementState) => void) {
-      listeners.add(listener);
-      listener(cloneState(state));
-      return {
-        unsubscribe: () => {
+    source: {
+      address: source.address,
+      snapshot() {
+        return createLogisticsSnapshot(source, state);
+      },
+      subscribe(listener) {
+        listeners.add(listener);
+        listener(createLogisticsSnapshot(source, state));
+
+        return () => {
           listeners.delete(listener);
-        },
-      };
+        };
+      },
+      transportStatus: source.transportStatus.bind(source),
+      subscribeTransportStatus: source.subscribeTransportStatus.bind(source),
+      async send(event): Promise<void> {
+        switch (event.type) {
+          case 'draft.destination':
+            state = { ...state, draftDestination: event.value };
+            notify();
+            return;
+          case 'draft.reference':
+            state = { ...state, draftReference: event.value };
+            notify();
+            return;
+          case 'create':
+            await run(async () => {
+              const destination = state.draftDestination.trim();
+              if (destination.length === 0) {
+                return;
+              }
+              await createShipment(destination, state.draftReference.trim() || undefined);
+            });
+            return;
+          case 'create.quick':
+            state = {
+              ...state,
+              draftDestination: event.destination,
+              draftReference: event.reference,
+            };
+            notify();
+            await run(() => createShipment(event.destination, event.reference));
+            return;
+          case 'timeline.prev':
+            state = { ...state, timelinePage: Math.max(0, state.timelinePage - 1) };
+            notify();
+            return;
+          case 'timeline.next':
+            state = {
+              ...state,
+              timelinePage: Math.min(
+                Math.max(0, Math.ceil(state.timeline.length / PAGE_SIZE) - 1),
+                state.timelinePage + 1
+              ),
+            };
+            notify();
+            return;
+          case 'events.prev':
+            state = { ...state, eventPage: Math.max(0, state.eventPage - 1) };
+            notify();
+            return;
+          case 'events.next':
+            state = {
+              ...state,
+              eventPage: Math.min(
+                Math.max(0, Math.ceil(state.eventLog.length / PAGE_SIZE) - 1),
+                state.eventPage + 1
+              ),
+            };
+            notify();
+            return;
+          case 'reset':
+            await run(() => source.send({ type: 'RESET_SHIPMENT' }));
+            return;
+        }
+      },
     },
-    send(event: LogisticsElementEvent): void {
-      switch (event.type) {
-        case 'draft.destination':
-          state = { ...state, draftDestination: event.value };
-          notify();
-          return;
-        case 'draft.reference':
-          state = { ...state, draftReference: event.value };
-          notify();
-          return;
-        case 'create':
-          void run(async () => {
-            const destination = state.draftDestination.trim();
-            if (destination.length === 0) {
-              return;
-            }
-            await createShipment(destination, state.draftReference.trim() || undefined);
-          });
-          return;
-        case 'create.quick':
-          state = {
-            ...state,
-            draftDestination: event.destination,
-            draftReference: event.reference,
-          };
-          notify();
-          void run(() => createShipment(event.destination, event.reference));
-          return;
-        case 'timeline.prev':
-          state = { ...state, timelinePage: Math.max(0, state.timelinePage - 1) };
-          notify();
-          return;
-        case 'timeline.next':
-          state = {
-            ...state,
-            timelinePage: Math.min(
-              Math.max(0, Math.ceil(state.timeline.length / PAGE_SIZE) - 1),
-              state.timelinePage + 1
-            ),
-          };
-          notify();
-          return;
-        case 'events.prev':
-          state = { ...state, eventPage: Math.max(0, state.eventPage - 1) };
-          notify();
-          return;
-        case 'events.next':
-          state = {
-            ...state,
-            eventPage: Math.min(
-              Math.max(0, Math.ceil(state.eventLog.length / PAGE_SIZE) - 1),
-              state.eventPage + 1
-            ),
-          };
-          notify();
-          return;
-        case 'reset':
-          void run(() => actor.send({ type: 'RESET_SHIPMENT' }));
-          return;
-      }
-    },
-    getState(): LogisticsElementState {
-      return cloneState(state);
-    },
-    stop(): void {
+    async stop(): Promise<void> {
       stopped = true;
       unsubscribeRoutingEvent();
       unsubscribeRoutingTransportStatus();
       unsubscribeRoutingSnapshot();
       unsubscribeTransportStatus();
       unsubscribeEvent();
-      unsubscribeSnapshot.unsubscribe();
+      unsubscribeSnapshot();
       listeners.clear();
-      actorAdapter.stop();
+      await runtimeHarness.destroy();
     },
   };
 }
 
-const registerIgniteHeadlessHost = igniteElementFactory<
-  LogisticsElementState,
-  LogisticsElementEvent
->(createLogisticsAdapter, { scope: StateScope.Isolated });
+const registerIgniteHeadlessHost = igniteCore<LogisticsElementState, LogisticsElementEvent>({
+  source: createLogisticsControlTowerSource,
+  cleanup: true,
+});
 
 export function defineIgniteHeadlessHostElement(): void {
   if (customElements.get(IGNITE_HEADLESS_HOST_ELEMENT_NAME)) {

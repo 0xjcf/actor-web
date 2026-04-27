@@ -58,6 +58,10 @@ export default defineConfig({
         replacement: path.resolve(igniteElementDist, 'renderers/ignite-jsx.es.js'),
       },
       {
+        find: 'ignite-element/actor-web',
+        replacement: path.resolve(igniteElementDist, 'actor-web.es.js'),
+      },
+      {
         find: 'ignite-element',
         replacement: path.resolve(igniteElementDist, 'ignite-element.es.js'),
       },
