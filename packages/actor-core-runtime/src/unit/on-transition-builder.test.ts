@@ -128,8 +128,9 @@ describe('defineActor().onTransition', () => {
   it('falls back to onMessage for messages without transition handlers', async () => {
     const behavior = defineActor<ShipmentCommand>()
       .withMachine(shipmentMachine)
-      .onMessage(({ message, actor }) => {
+      .onMessage(({ message, context, actor }) => {
         if (message.type === 'GET_STATUS') {
+          expect(context).toEqual({ shipmentId: null });
           return { reply: actor.getSnapshot().value };
         }
 
@@ -176,9 +177,9 @@ describe('defineActor().onTransition', () => {
       .withContext(initialContext)
       .withFSM(shipmentFSM)
       .onTransition({
-        CREATE_SHIPMENT: ({ message, actor }) => ({
+        CREATE_SHIPMENT: ({ message, context }) => ({
           context: {
-            ...actor.getSnapshot().context,
+            ...context,
             shipmentId: message.shipmentId,
           },
           reply: {
