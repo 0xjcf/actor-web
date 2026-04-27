@@ -31,6 +31,7 @@ export type { ShipmentCommand, ShipmentContext, ShipmentEvent } from './logistic
 
 export interface LogisticsRuntimeHarness {
   readonly source: IgniteActorSource<ShipmentContext, ShipmentCommand, ShipmentEvent>;
+  readonly routingSource?: IgniteActorSource<ShipmentContext, ShipmentCommand, ShipmentEvent>;
   destroy(): Promise<void>;
 }
 
@@ -382,6 +383,12 @@ export function createServerWorkerDemoRuntimeHarness(
     url: options.gatewayUrl,
     ...(options.createGatewaySocket ? { createSocket: options.createGatewaySocket } : {}),
   });
+  const routingGatewayHarness = createLogisticsServerGatewayRuntimeHarness({
+    url: options.gatewayUrl,
+    streamId: 'logistics-routing',
+    scope: routingActor.gateway?.scope,
+    ...(options.createGatewaySocket ? { createSocket: options.createGatewaySocket } : {}),
+  });
   const workerRuntime =
     options.createWorkerSocket || typeof Worker === 'undefined'
       ? createInProcessWorkerRuntime(options)
@@ -389,8 +396,13 @@ export function createServerWorkerDemoRuntimeHarness(
 
   return {
     source: gatewayHarness.source,
+    routingSource: routingGatewayHarness.source,
     async destroy(): Promise<void> {
-      await Promise.allSettled([gatewayHarness.destroy(), workerRuntime.destroy()]);
+      await Promise.allSettled([
+        gatewayHarness.destroy(),
+        routingGatewayHarness.destroy(),
+        workerRuntime.destroy(),
+      ]);
     },
   };
 }

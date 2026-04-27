@@ -77,5 +77,18 @@ export function createConfiguredLogisticsServerGatewayRuntimeHarness(): Logistic
     throw new Error('VITE_ACTOR_WEB_GATEWAY_URL is not configured.');
   }
 
-  return createLogisticsServerGatewayRuntimeHarness({ url });
+  const shipmentHarness = createLogisticsServerGatewayRuntimeHarness({ url });
+  const routingHarness = createLogisticsServerGatewayRuntimeHarness({
+    url,
+    streamId: 'logistics-routing',
+    scope: logistics.actors.routing.gateway?.scope,
+  });
+
+  return {
+    source: shipmentHarness.source,
+    routingSource: routingHarness.source,
+    async destroy(): Promise<void> {
+      await Promise.allSettled([shipmentHarness.destroy(), routingHarness.destroy()]);
+    },
+  };
 }

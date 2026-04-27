@@ -13,6 +13,7 @@ import {
 } from './logistics-view-model';
 import {
   createLogisticsRuntimeHarness,
+  type LogisticsRuntimeHarness,
   type ShipmentCommand,
   type ShipmentContext,
   type ShipmentEvent,
@@ -36,6 +37,13 @@ interface LogisticsElementState extends LogisticsHostState {
   busy: boolean;
   draftDestination: string;
   draftReference: string;
+  routingAddress: string | null;
+  routingTransportState: LogisticsHostState['transportState'];
+  routingTransportReason: string | null;
+  routingShipmentId: string | null;
+  routingCarrier: string | null;
+  routingEta: string | null;
+  routingRouteNotes: string | null;
   timelinePage: number;
   eventPage: number;
 }
@@ -290,11 +298,14 @@ const createBaseLogisticsAdapter = createActorWebAdapter<
   ShipmentEvent
 >(() => {
   const harness = createLogisticsRuntimeHarness();
+  latestRuntimeHarness = harness;
   return {
     source: harness.source,
     stop: () => harness.destroy(),
   };
 });
+
+let latestRuntimeHarness: LogisticsRuntimeHarness | undefined;
 
 function cloneState(state: LogisticsElementState): LogisticsElementState {
   return {
@@ -368,6 +379,13 @@ function projectElementState(
     busy: current?.busy ?? false,
     draftDestination: current?.draftDestination ?? 'Chicago warehouse',
     draftReference: current?.draftReference ?? 'REF-1001',
+    routingAddress: current?.routingAddress ?? null,
+    routingTransportState: current?.routingTransportState ?? 'replaying',
+    routingTransportReason: current?.routingTransportReason ?? null,
+    routingShipmentId: current?.routingShipmentId ?? null,
+    routingCarrier: current?.routingCarrier ?? null,
+    routingEta: current?.routingEta ?? null,
+    routingRouteNotes: current?.routingRouteNotes ?? null,
     timelinePage: current?.timelinePage ?? 0,
     eventPage: current?.eventPage ?? 0,
   };
@@ -378,7 +396,10 @@ function clampPage(page: number, itemCount: number): number {
 }
 
 function createLogisticsAdapter() {
+  latestRuntimeHarness = undefined;
   const actorAdapter = createBaseLogisticsAdapter();
+  const runtimeHarness = latestRuntimeHarness as LogisticsRuntimeHarness | undefined;
+  const routingSource = runtimeHarness?.routingSource;
   const actor = createBaseLogisticsAdapter.resolveCommandActor(
     actorAdapter
   ) as LogisticsCommandActor & TransportAwareActor;
@@ -436,6 +457,64 @@ function createLogisticsAdapter() {
           notify();
         })
       : () => {};
+
+  let unsubscribeRoutingSnapshot = () => {};
+  let unsubscribeRoutingTransportStatus = () => {};
+  let unsubscribeRoutingEvent = () => {};
+
+  if (routingSource) {
+    const projectRoutingSource = (): void => {
+      const snapshot = routingSource.snapshot();
+      const status = routingSource.transportStatus();
+      state = {
+        ...state,
+        routingAddress: routingSource.address.path,
+        routingTransportState: status.state,
+        routingTransportReason: status.reason ?? null,
+        routingShipmentId: snapshot.context.shipmentId,
+        routingCarrier: snapshot.context.carrier,
+        routingEta: snapshot.context.eta,
+        routingRouteNotes: snapshot.context.routeNotes,
+      };
+    };
+
+    projectRoutingSource();
+
+    unsubscribeRoutingSnapshot = routingSource.subscribe((snapshot) => {
+      state = {
+        ...state,
+        routingAddress: routingSource.address.path,
+        routingShipmentId: snapshot.context.shipmentId,
+        routingCarrier: snapshot.context.carrier,
+        routingEta: snapshot.context.eta,
+        routingRouteNotes: snapshot.context.routeNotes,
+      };
+      notify();
+    });
+
+    unsubscribeRoutingTransportStatus = routingSource.subscribeTransportStatus((status) => {
+      state = {
+        ...state,
+        routingAddress: routingSource.address.path,
+        routingTransportState: status.state,
+        routingTransportReason: status.reason ?? null,
+      };
+      notify();
+    });
+
+    unsubscribeRoutingEvent = routingSource.subscribeEvent(
+      (event) => {
+        state = {
+          ...state,
+          eventLog: [projectEventLogItem(event, routingSource.address.id), ...state.eventLog],
+        };
+        notify();
+      },
+      {
+        types: ['ROUTE_ASSIGNED', 'SHIPMENT_RESET'],
+      }
+    );
+  }
 
   const run = async (action: () => Promise<unknown>): Promise<void> => {
     if (state.busy || stopped) {
@@ -554,6 +633,9 @@ function createLogisticsAdapter() {
     },
     stop(): void {
       stopped = true;
+      unsubscribeRoutingEvent();
+      unsubscribeRoutingTransportStatus();
+      unsubscribeRoutingSnapshot();
       unsubscribeTransportStatus();
       unsubscribeEvent();
       unsubscribeSnapshot.unsubscribe();
@@ -801,6 +883,45 @@ export function defineIgniteHeadlessHostElement(): void {
                     <div>
                       <div class="label">Transport Reason</div>
                       <div class="value">{state.transportReason ?? 'none'}</div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="panel">
+                  <div class="section-head">
+                    <h3>Worker Routing Source</h3>
+                    <span class={`badge transport-${state.routingTransportState}`}>
+                      {state.routingTransportState}
+                    </span>
+                  </div>
+                  <div class="grid">
+                    <div>
+                      <div class="label">Actor</div>
+                      <div class="value">
+                        <code>{state.routingAddress ?? 'not connected'}</code>
+                      </div>
+                    </div>
+                    <div>
+                      <div class="label">Shipment</div>
+                      <div class="value">{state.routingShipmentId ?? 'no route requested'}</div>
+                    </div>
+                    <div>
+                      <div class="label">Carrier</div>
+                      <div class="value">{state.routingCarrier ?? 'pending worker plan'}</div>
+                    </div>
+                    <div>
+                      <div class="label">ETA</div>
+                      <div class="value">{state.routingEta ?? 'pending'}</div>
+                    </div>
+                    <div>
+                      <div class="label">Route Notes</div>
+                      <div class="value">
+                        {state.routingRouteNotes ?? 'worker-owned actor source'}
+                      </div>
+                    </div>
+                    <div>
+                      <div class="label">Transport Reason</div>
+                      <div class="value">{state.routingTransportReason ?? 'none'}</div>
                     </div>
                   </div>
                 </section>
