@@ -286,6 +286,17 @@
 - Blast radius: cross-cutting
 - Artifacts: planning=.fas/state/planning.json; taskPacket=.fas/state/task-packet.json; commitPlan=.fas/state/commit-plan.json; verification=.fas/state/verification/latest.json; review=.fas/state/boundary-review-findings.md; workflow=.fas/state/workflows
 
+### Task: Logistics control tower direct ignite source and CSS cleanup
+
+- Title: Logistics control tower direct ignite source and CSS cleanup
+- Mode: single-agent
+- Status: review
+- Owner: reviewer
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: planning=.fas/state/planning.json; taskPacket=.fas/state/task-packet.json; commitPlan=.fas/state/commit-plan.json; verification=.fas/state/verification/latest.json; review=.fas/state/boundary-review-findings.md; workflow=.fas/state/workflows
+
 ## Template
 
 ### Task: `<short task title>`
