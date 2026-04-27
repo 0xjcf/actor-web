@@ -336,6 +336,8 @@ export {
   defineActor,
   UnifiedActorBuilder,
   type UnifiedMessageHandler,
+  type UnifiedTransitionHandler,
+  type UnifiedTransitionHandlers,
 } from './unified-actor-builder.js';
 
 // ============================================================================

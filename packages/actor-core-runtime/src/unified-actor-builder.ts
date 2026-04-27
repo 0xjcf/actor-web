@@ -45,12 +45,24 @@ export type UnifiedMessageHandler<TMsg, TCtx, _TEmitted> = (params: {
       | void
     >;
 
+export type UnifiedTransitionHandler<
+  TMsg extends ActorMessage,
+  TType extends TMsg['type'],
+  TCtx,
+  TEmitted,
+> = UnifiedMessageHandler<Extract<TMsg, { type: TType }>, TCtx, TEmitted>;
+
+export type UnifiedTransitionHandlers<TMsg extends ActorMessage, TCtx, TEmitted> = {
+  readonly [TType in TMsg['type']]?: UnifiedTransitionHandler<TMsg, TType, TCtx, TEmitted>;
+};
+
 /**
  * Internal spec for building actors
  */
 export interface ActorSpec<TMsg, TCtx, TEmitted> {
   readonly initialContext?: TCtx;
   readonly handler?: UnifiedMessageHandler<TMsg, TCtx, TEmitted>;
+  readonly transitionHandlers?: UnifiedTransitionHandlers<TMsg & ActorMessage, TCtx, TEmitted>;
   readonly startHandler?: () => void | Promise<void>;
   readonly stopHandler?: () => void | Promise<void>;
   readonly machine?: AnyStateMachine;
@@ -111,6 +123,23 @@ export class UnifiedActorBuilder<TMsg extends ActorMessage, TEmitted, TCtx> {
   }
 
   /**
+   * Set machine-aware transition handlers keyed by message type.
+   *
+   * When a transition handler exists for an incoming message, the builder checks
+   * the attached XState machine before running side effects. Messages without a
+   * transition handler fall back to onMessage when one is provided.
+   */
+  onTransition(
+    handlers: UnifiedTransitionHandlers<TMsg, TCtx, TEmitted>
+  ): UnifiedActorBuilder<TMsg, TEmitted, TCtx> {
+    return new UnifiedActorBuilder<TMsg, TEmitted, TCtx>({
+      ...this.spec,
+      transitionHandlers: handlers,
+      handler: createTransitionDispatcher(this.spec.machine, handlers, this.spec.handler),
+    });
+  }
+
+  /**
    * Set the start handler
    */
   onStart(handler: () => void | Promise<void>): UnifiedActorBuilder<TMsg, TEmitted, TCtx> {
@@ -157,19 +186,57 @@ export class UnifiedActorBuilder<TMsg extends ActorMessage, TEmitted, TCtx> {
       },
     };
 
-    if (this.spec.machine) {
-      registerMachineWithBehavior(behavior, this.spec.machine);
-    }
-
     // Return intersection type with phantom types for inference
-    return {
+    const builtBehavior = {
       ...this.spec,
       ...behavior,
       __contextType: this.spec.initialContext as TCtx,
       __messageType: {} as TMsg,
     } as ActorSpec<TMsg, TCtx, TEmitted> &
       ActorBehavior<TMsg, TEmitted> & { __contextType: TCtx; __messageType: TMsg };
+
+    if (this.spec.machine && this.spec.transitionHandlers) {
+      registerMachineWithBehavior(builtBehavior, this.spec.machine);
+    }
+
+    return builtBehavior;
   }
+}
+
+function createTransitionDispatcher<TMsg extends ActorMessage, TCtx, TEmitted>(
+  machine: AnyStateMachine | undefined,
+  handlers: UnifiedTransitionHandlers<TMsg, TCtx, TEmitted>,
+  fallback: UnifiedMessageHandler<TMsg, TCtx, TEmitted> | undefined
+): UnifiedMessageHandler<TMsg, TCtx, TEmitted> {
+  return async (params) => {
+    const handler = handlers[params.message.type as TMsg['type']] as
+      | UnifiedMessageHandler<TMsg, TCtx, TEmitted>
+      | undefined;
+
+    if (!handler) {
+      if (fallback) {
+        return fallback(params);
+      }
+
+      throw new Error(`Actor transition "${params.message.type}" does not declare a handler.`);
+    }
+
+    if (!machine) {
+      throw new Error(
+        `Actor transition "${params.message.type}" requires withMachine(...) before onTransition(...).`
+      );
+    }
+
+    const snapshot = params.actor.getSnapshot();
+    if (!snapshot.can(params.message)) {
+      throw new Error(
+        `Actor cannot apply transition "${params.message.type}" from state "${String(snapshot.value)}".`
+      );
+    }
+
+    params.actor.send(params.message);
+    return handler(params);
+  };
 }
 
 /**

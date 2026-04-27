@@ -146,6 +146,7 @@ export class MachineActor<
 
     // Start the actor
     this.actor.start();
+    this.snapshot = this.buildSnapshot(this.actor.getSnapshot());
   }
 
   /**
@@ -156,6 +157,7 @@ export class MachineActor<
       throw new Error(`Actor ${this.id} not started`);
     }
     this.actor.send(event as EventFrom<TMachine>);
+    this.snapshot = this.buildSnapshot(this.actor.getSnapshot());
   }
 
   /**
@@ -273,8 +275,8 @@ export class MachineActor<
       },
       can: (event: ActorMessage | string) => {
         if (typeof snapshot.can === 'function') {
-          const eventType = typeof event === 'string' ? event : event.type;
-          return snapshot.can(eventType);
+          const eventObject = typeof event === 'string' ? { type: event } : event;
+          return snapshot.can(eventObject);
         }
         // Check nextEvents if available
         const eventType = typeof event === 'string' ? event : event.type;
