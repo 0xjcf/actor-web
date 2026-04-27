@@ -8,8 +8,8 @@ The example demonstrates four boundaries:
 
 - **REST ingress:** browser or API clients submit shipments through
   `POST /shipments`.
-- **WebSocket gateway:** the thin Ignite host receives live shipment snapshots,
-  events, status, and replies.
+- **WebSocket gateway:** the thin Ignite host receives live snapshots, events,
+  status, and replies from more than one actor source.
 - **Actor-Web transport:** the server runtime asks a WebWorker-owned routing
   actor for carrier and ETA planning over WebSocket `MessageTransport`.
 - **Service worker topology proof:** browser host and service worker runtime
@@ -85,11 +85,25 @@ The example is organized around a hexagonal boundary:
   and `headless-host.ts` render and command the actors without owning runtime
   state.
 
-The example uses the runtime topology/source DX directly:
+The example uses the runtime topology/source DX directly. The Control Tower
+commands and projects the server-owned shipment actor:
 
 ```ts
 const source = createActorWebSource(logistics.actors.shipment, {
   gateway: { url: gatewayUrl },
+});
+```
+
+In the full server + worker mode, the same gateway also exposes the worker-owned
+routing actor as a second read-only source so the UI can show distributed
+ownership instead of folding every update into the shipment projection:
+
+```ts
+const routingSource = createActorWebSource(logistics.actors.routing, {
+  gateway: {
+    url: gatewayUrl,
+    scope: logistics.actors.routing.gateway?.scope,
+  },
 });
 ```
 
@@ -107,7 +121,8 @@ and in-memory test fallback.
    commands for local/dev topology proof.
 2. The server shipment actor emits `SHIPMENT_CREATED` and `ROUTE_REQUESTED`.
 3. When the worker runtime is connected, the server asks the worker routing
-   actor to `PLAN_ROUTE`.
+   actor to `PLAN_ROUTE`; the Control Tower also subscribes to the routing actor
+   source so the worker-owned projection is visible separately.
 4. The worker returns a deterministic carrier, ETA, and route note.
 5. The server shipment actor applies `ASSIGN_ROUTE` and emits `ROUTE_ASSIGNED`.
 6. In simulation mode, the server runtime simulates provider lifecycle progress:
