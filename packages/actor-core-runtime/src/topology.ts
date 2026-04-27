@@ -116,18 +116,30 @@ export interface ActorWebSupervisorDescriptor<TNode extends string = string>
   readonly nodeAddress: string;
 }
 
+export type ActorWebToolCatalogInput =
+  | readonly ActorWebToolDefinition[]
+  | Record<string, ActorWebToolDefinition>;
+
 export type ActorWebTopologyInput = {
   readonly contractVersion?: string;
-  readonly tools?: Record<string, ActorWebToolDefinition>;
+  readonly tools?: ActorWebToolCatalogInput;
   readonly nodes: Record<string, ActorWebNodeDefinition>;
   readonly actors: Record<string, ActorWebActorDefinition>;
   readonly supervisors?: Record<string, ActorWebSupervisorDefinition>;
 };
 
+type ActorWebToolCatalogFromArray<TTools extends readonly ActorWebToolDefinition[]> = {
+  readonly [TTool in TTools[number] as TTool['name']]: TTool;
+};
+
 type ActorWebTopologyTools<TInput extends ActorWebTopologyInput> = TInput extends {
-  readonly tools: infer TTools extends Record<string, ActorWebToolDefinition>;
+  readonly tools: infer TTools;
 }
-  ? TTools
+  ? TTools extends readonly ActorWebToolDefinition[]
+    ? ActorWebToolCatalogFromArray<TTools>
+    : TTools extends Record<string, ActorWebToolDefinition>
+      ? TTools
+      : Record<string, never>
   : Record<string, never>;
 
 export type ActorWebTopology<TInput extends ActorWebTopologyInput> = {
@@ -172,10 +184,26 @@ export function tool<TName extends string>(
   };
 }
 
+function normalizeActorWebToolCatalog(
+  tools: ActorWebToolCatalogInput | undefined
+): Record<string, ActorWebToolDefinition> {
+  if (!tools) {
+    return {};
+  }
+
+  if (Array.isArray(tools)) {
+    return Object.fromEntries(
+      tools.map((toolDefinition: ActorWebToolDefinition) => [toolDefinition.name, toolDefinition])
+    );
+  }
+
+  return tools as Record<string, ActorWebToolDefinition>;
+}
+
 export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
   input: TInput
 ): ActorWebTopology<TInput> {
-  const toolCatalog = input.tools ?? {};
+  const toolCatalog = normalizeActorWebToolCatalog(input.tools);
   const actors = Object.fromEntries(
     Object.entries(input.actors).map(([key, definition]) => {
       const nodeDefinition = input.nodes[definition.node];

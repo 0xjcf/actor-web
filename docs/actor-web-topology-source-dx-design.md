@@ -96,16 +96,14 @@ TypeScript contract. This is the recommended monorepo and shared package DX.
 
 ```ts
 // logistics.topology.ts
-import { actor, defineActorWebTopology, node } from '@actor-core/runtime/topology';
+import { actor, defineActorWebTopology, node, tool } from '@actor-core/runtime/topology';
 import { createRoutingBehavior } from './actors/routing.actor';
 import { createShipmentBehavior } from './actors/shipment.actor';
 
 export const logistics = defineActorWebTopology({
   contractVersion: '1.4.0',
 
-  tools: {
-    'route.plan': tool('route.plan'),
-  },
+  tools: [tool('route.plan')],
 
   nodes: {
     browser: node('logistics-browser-host'),

@@ -10,6 +10,7 @@ export type {
   ActorWebSupervisionStrategy,
   ActorWebSupervisorDefinition,
   ActorWebSupervisorDescriptor,
+  ActorWebToolCatalogInput,
   ActorWebToolDefinition,
   ActorWebToolReference,
   ActorWebTopology,

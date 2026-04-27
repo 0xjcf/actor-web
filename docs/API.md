@@ -744,9 +744,7 @@ import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-co
 export const logistics = defineActorWebTopology({
   contractVersion: '1.0.0',
 
-  tools: {
-    'routing.plan': tool('routing.plan', { description: 'Plan carrier route and ETA.' }),
-  },
+  tools: [tool('routing.plan', { description: 'Plan carrier route and ETA.' })],
 
   nodes: {
     browser: node('logistics-browser-host'),
