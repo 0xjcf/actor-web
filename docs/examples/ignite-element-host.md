@@ -89,7 +89,7 @@ The example uses the runtime topology/source DX directly. The Control Tower
 commands and projects the server-owned shipment actor:
 
 ```ts
-const source = createActorWebSource(logistics.actors.shipment, {
+const source = logistics.actors.shipment.source({
   gateway: { url: gatewayUrl },
 });
 ```
@@ -99,7 +99,7 @@ routing actor as a second read-only source so the UI can show distributed
 ownership instead of folding every update into the shipment projection:
 
 ```ts
-const routingSource = createActorWebSource(logistics.actors.routing, {
+const routingSource = logistics.actors.routing.source({
   gateway: {
     url: gatewayUrl,
     scope: logistics.actors.routing.gateway?.scope,

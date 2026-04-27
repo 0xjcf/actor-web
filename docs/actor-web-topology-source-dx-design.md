@@ -78,7 +78,7 @@ side obvious.
 Current implementation status:
 
 - `@actor-core/runtime/topology` exports the browser-safe topology declaration
-  helpers and descriptor types.
+  helpers, descriptor types, and actor descriptor `.source(...)` convenience.
 - `@actor-core/runtime/browser` exports `createActorWebSource` for gateway-backed
   Ignite-compatible projection/control sources.
 - `@actor-core/runtime/node` exports `serveActorWebNode` for topology-owned
@@ -88,8 +88,9 @@ Current implementation status:
 - `@actor-core/runtime/browser` exports `startActorWebNode` for topology-owned
   browser worker runtime hosting.
 - `ignite-element/actor-web` remains a target-state API for a later slice.
-- The current example keeps a small domain wrapper around `createActorWebSource`
-  only to preserve its in-memory/service-worker fallback behavior.
+- The current example uses topology actor `.source(...)` for server gateway
+  sources and keeps only the harness code needed for in-memory/service-worker
+  fallback behavior.
 
 ## Primary Path: Shared TypeScript Topology
 
@@ -161,12 +162,11 @@ The Ignite component consumes the actor source without explicit generics:
 
 import 'ignite-element/renderers/ignite-jsx';
 
-import { createActorWebSource } from '@actor-core/runtime/browser';
 import { igniteCore } from 'ignite-element/actor-web';
 import { logistics } from './logistics.topology';
 
 const logisticsControlTower = igniteCore({
-  source: createActorWebSource(logistics.actors.shipment, {
+  source: logistics.actors.shipment.source({
     gateway: {
       url: import.meta.env.VITE_ACTOR_WEB_GATEWAY_URL,
     },
@@ -386,7 +386,7 @@ boundary; the distinction is in how the source is declared and connected.
 | XState | local or provided machine/actor | `igniteCore({ source: machine })` |
 | Redux | local store or slice | `igniteCore({ source: store })` |
 | MobX | local observable object | `igniteCore({ source: store })` |
-| Actor-Web | local or remote actor projection/control port | `igniteCore({ source: createActorWebSource(topology.actors.shipment, options) })` |
+| Actor-Web | local or remote actor projection/control port | `igniteCore({ source: topology.actors.shipment.source(options) })` |
 
 ## Naming Decisions
 
@@ -424,9 +424,11 @@ Use `serveActorWebHttp` only in Node/server entrypoints that need HTTP ingress.
 
 Use `startActorWebNode` only in browser worker entrypoints.
 
-Use `createActorWebSource(topology.actors.name, options)` in browser
-presentation code. A future source-enabled generated client may expose
-`topology.actors.name.source()` as a convenience wrapper.
+Use `topology.actors.name.source(options)` in browser presentation code when a
+shared topology is available.
+
+Use `createActorWebSource({ address, contractVersion, gateway })` when the UI
+cannot import shared topology metadata.
 
 ## AI And Agentic Workflow Alignment
 
