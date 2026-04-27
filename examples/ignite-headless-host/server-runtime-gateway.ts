@@ -1,12 +1,16 @@
 /// <reference types="node" />
 
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import {
   type ActorRef,
   createRuntimeGatewaySource,
   RuntimeGatewayScopeError,
 } from '@actor-core/runtime';
-import { type ServedActorWebNode, serveActorWebNode } from '@actor-core/runtime/node';
+import {
+  type ServedActorWebHttp,
+  type ServedActorWebNode,
+  serveActorWebHttp,
+  serveActorWebNode,
+} from '@actor-core/runtime/node';
 import type {
   ProviderSignal,
   RoutePlan,
@@ -51,31 +55,14 @@ export interface LogisticsRuntimeGatewayServer {
   getRestUrl(): string | null;
 }
 
-function sendJson(response: ServerResponse, statusCode: number, body: unknown): void {
-  response.writeHead(statusCode, {
-    'content-type': 'application/json',
-    'access-control-allow-origin': '*',
-    'access-control-allow-methods': 'GET,POST,OPTIONS',
-    'access-control-allow-headers': 'content-type',
-  });
-  response.end(JSON.stringify(body));
-}
-
-async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-
-  if (chunks.length === 0) {
-    return {};
-  }
-
-  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
-}
-
 function createShipmentId(): string {
   return `shipment-${Date.now().toString(36)}`;
+}
+
+function bodyRecord(body: unknown): Record<string, unknown> {
+  return body && typeof body === 'object' && !Array.isArray(body)
+    ? (body as Record<string, unknown>)
+    : {};
 }
 
 function wait(delayMs: number): Promise<void> {
@@ -94,7 +81,7 @@ export function createLogisticsRuntimeGatewayServer(
   const lifecycleTerminalDelayMs = options.lifecycleTerminalDelayMs ?? 20_000;
   let servedNode: ServedActorWebNode<typeof logistics> | null = null;
   let shipmentActor: ActorRef<ShipmentContext, ShipmentCommand> | null = null;
-  let restServer: Server | null = null;
+  let restServer: ServedActorWebHttp | null = null;
   let restUrl: string | null = null;
   const lifecycleTimers = new Set<ReturnType<typeof setTimeout>>();
   const providerQueue = new LogisticsProviderQueue();
@@ -293,20 +280,14 @@ export function createLogisticsRuntimeGatewayServer(
     return { shipmentId, status: plan ? 'route-assigned' : 'route-requested' };
   };
 
-  const handleRest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
-    try {
-      if (request.method === 'OPTIONS') {
-        sendJson(response, 204, {});
-        return;
-      }
-
-      const url = new URL(request.url ?? '/', 'http://localhost');
-      if (request.method === 'POST' && url.pathname === '/shipments') {
-        const body = await readJson(request);
+  const serveRest = async (runtime: ServedActorWebNode<typeof logistics>): Promise<void> => {
+    restServer = await serveActorWebHttp(runtime)
+      .for(shipmentActorDescriptor)
+      .post('/shipments', async (request, response) => {
+        const body = bodyRecord(request.body);
         const destination = typeof body.destination === 'string' ? body.destination.trim() : '';
         if (destination.length === 0) {
-          sendJson(response, 400, { error: 'destination is required' });
-          return;
+          return response.badRequest({ error: 'destination is required' });
         }
 
         const result = await createShipment({
@@ -314,51 +295,37 @@ export function createLogisticsRuntimeGatewayServer(
           destination,
           reference: typeof body.reference === 'string' ? body.reference : undefined,
         });
-        sendJson(response, 202, result);
-        return;
-      }
-
-      if (request.method === 'POST' && /^\/shipments\/[^/]+\/reset$/.test(url.pathname)) {
+        return response.accepted(result);
+      })
+      .post('/shipments/:id/reset', async (_request, response) => {
         clearLifecycleTimers();
         providerQueue.clear();
         await shipmentActor?.send({ type: 'RESET_SHIPMENT' });
-        sendJson(response, 202, { status: 'idle' });
-        return;
-      }
-
-      if (request.method === 'GET' && url.pathname === '/shipments/current') {
-        sendJson(response, 200, shipmentActor?.getSnapshot().context ?? null);
-        return;
-      }
-
-      if (request.method === 'GET' && url.pathname === '/shipments/count') {
-        const count = await shipmentActor?.ask<number>({ type: 'GET_SHIPMENT_COUNT' });
-        sendJson(response, 200, { count: count ?? 0 });
-        return;
-      }
-
-      if (request.method === 'GET' && url.pathname === '/provider/status') {
-        sendJson(response, 200, providerStatus());
-        return;
-      }
-
-      if (request.method === 'POST' && url.pathname === '/provider/mode') {
-        const body = await readJson(request);
+        return response.accepted({ status: 'idle' });
+      })
+      .get('/shipments/current', (_request, response) => {
+        return response.ok(shipmentActor?.getSnapshot().context ?? null);
+      })
+      .get('/shipments/count', async (_request, response, actorWeb) => {
+        const count = await actorWeb.actor.ask<number>({ type: 'GET_SHIPMENT_COUNT' });
+        return response.ok({ count });
+      })
+      .get('/provider/status', (_request, response) => {
+        return response.ok(providerStatus());
+      })
+      .post('/provider/mode', (request, response) => {
+        const body = bodyRecord(request.body);
         if (body.mode !== 'simulation' && body.mode !== 'manual') {
-          sendJson(response, 400, { error: 'provider mode must be simulation or manual' });
-          return;
+          return response.badRequest({ error: 'provider mode must be simulation or manual' });
         }
 
         setLifecycleMode(body.mode);
-        sendJson(response, 202, providerStatus());
-        return;
-      }
-
-      if (request.method === 'POST' && url.pathname === '/provider/signals') {
-        const body = await readJson(request);
+        return response.accepted(providerStatus());
+      })
+      .post('/provider/signals', async (request, response) => {
+        const body = bodyRecord(request.body);
         if (!isProviderSignal(body.signal)) {
-          sendJson(response, 400, { error: 'provider signal is required' });
-          return;
+          return response.badRequest({ error: 'provider signal is required' });
         }
 
         const snapshot = await applyProviderSignal({
@@ -372,14 +339,12 @@ export function createLogisticsRuntimeGatewayServer(
           note: typeof body.note === 'string' ? body.note : undefined,
         });
         upsertProviderQueue(snapshot);
-        sendJson(response, 202, providerStatus());
-        return;
-      }
-
-      if (request.method === 'GET' && url.pathname === '/runtime/status') {
-        sendJson(response, 200, {
-          gatewayUrl: servedNode?.getGatewayUrl() ?? null,
-          transportUrl: servedNode?.getTransportUrl() ?? null,
+        return response.accepted(providerStatus());
+      })
+      .get('/runtime/status', (_request, response, actorWeb) => {
+        return response.ok({
+          gatewayUrl: actorWeb.runtime.getGatewayUrl(),
+          transportUrl: actorWeb.runtime.getTransportUrl(),
           lifecycleMode,
           nodes: {
             browserHost: 'thin Ignite host',
@@ -392,13 +357,12 @@ export function createLogisticsRuntimeGatewayServer(
             routing: routingActorDescriptor.address.path,
           },
         });
-        return;
-      }
-
-      sendJson(response, 404, { error: 'not found' });
-    } catch (error) {
-      sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) });
-    }
+      })
+      .listen({
+        host: options.host ?? '127.0.0.1',
+        port: options.restPort ?? 0,
+      });
+    restUrl = restServer.url;
   };
 
   return {
@@ -458,29 +422,7 @@ export function createLogisticsRuntimeGatewayServer(
         throw new Error('Shipment actor was not spawned by Actor-Web server node.');
       }
 
-      restServer = createServer((request, response) => {
-        void handleRest(request, response);
-      });
-      await new Promise<void>((resolve, reject) => {
-        const activeServer = restServer;
-        if (!activeServer) {
-          reject(new Error('REST server was not created.'));
-          return;
-        }
-
-        activeServer.listen(options.restPort ?? 0, options.host ?? '127.0.0.1');
-        activeServer.once('listening', () => {
-          const address = activeServer.address();
-          if (!address || typeof address === 'string') {
-            reject(new Error('REST server did not expose a TCP address.'));
-            return;
-          }
-
-          restUrl = `http://${address.address}:${address.port}`;
-          resolve();
-        });
-        activeServer.once('error', reject);
-      });
+      await serveRest(servedNode);
     },
     async stop(): Promise<void> {
       const activeServedNode = servedNode;
@@ -492,16 +434,7 @@ export function createLogisticsRuntimeGatewayServer(
       clearLifecycleTimers();
 
       if (activeRestServer) {
-        await new Promise<void>((resolve, reject) => {
-          activeRestServer.close((error) => {
-            if (error) {
-              reject(error);
-              return;
-            }
-
-            resolve();
-          });
-        });
+        await activeRestServer.stop();
       }
 
       await activeServedNode?.stop();
