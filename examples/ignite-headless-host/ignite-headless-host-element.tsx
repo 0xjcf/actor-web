@@ -6,10 +6,11 @@ import { type ActorWebSourceHandle, igniteCore } from 'ignite-element/actor-web'
 import type { LogisticsEventLog, LogisticsHostState } from './headless-host';
 import styles from './ignite-headless-host-element.css?raw';
 import {
-  cloneTimeline,
-  eventRuntime,
+  type ProjectedLogisticsEventLog,
+  type ProjectedTimelineEntry,
   projectEventLogItem,
-  timelineRuntime,
+  projectEventLogViewItem,
+  projectTimeline,
 } from './logistics-view-model';
 import {
   createLogisticsTopologySources,
@@ -21,8 +22,12 @@ import {
 export const IGNITE_HEADLESS_HOST_ELEMENT_NAME = 'aw-ignite-headless-host';
 const IGNITE_ROUTING_SOURCE_ELEMENT_NAME = 'aw-logistics-routing-source';
 
-interface LogisticsElementState extends LogisticsHostState {
+interface LogisticsElementState extends Omit<LogisticsHostState, 'eventLog' | 'timeline'> {
   address: string;
+  eventLog: ProjectedLogisticsEventLog[];
+  statusBadgeClass: string;
+  timeline: ProjectedTimelineEntry[];
+  transportBadgeClass: string;
 }
 
 interface LogisticsElementLocalState {
@@ -40,35 +45,30 @@ function configuredRestUrl(): string | undefined {
     : undefined;
 }
 
-function renderEvent(event: LogisticsEventLog) {
-  const runtime = eventRuntime(event.type);
+function renderEvent(event: ProjectedLogisticsEventLog) {
   return (
-    <li class={`item event-item ${runtime.tone}`}>
+    <li class={`item event-item ${event.runtime.tone}`}>
       <div class="item-heading">
-        <span class="runtime-chip">{runtime.source}</span>
+        <span class="runtime-chip">{event.runtime.source}</span>
         <strong>{event.type}</strong>
       </div>
       <div class="route-meta">
-        <span>{runtime.via}</span>
-        <span>
-          Actor {event.actorId}
-          {event.shipmentId ? ` / ${event.shipmentId}` : ''}
-        </span>
+        <span>{event.runtime.via}</span>
+        <span>{event.actorLabel}</span>
       </div>
     </li>
   );
 }
 
-function renderTimelineEntry(entry: ShipmentContext['timeline'][number]) {
-  const runtime = timelineRuntime(entry.label);
+function renderTimelineEntry(entry: ProjectedTimelineEntry) {
   return (
-    <li class={`item event-item ${runtime.tone}`}>
+    <li class={`item event-item ${entry.runtime.tone}`}>
       <div class="item-heading">
-        <span class="runtime-chip">{runtime.source}</span>
+        <span class="runtime-chip">{entry.runtime.source}</span>
         <strong>{entry.label}</strong>
       </div>
       <div class="route-meta">
-        <span>{entry.channel ?? runtime.via}</span>
+        <span>{entry.channel ?? entry.runtime.via}</span>
         <span>{entry.detail}</span>
         {entry.facility ? <span>Facility {entry.facility}</span> : null}
         {entry.loadId ? <span>Load {entry.loadId}</span> : null}
@@ -165,11 +165,13 @@ const registerIgniteHeadlessHost = igniteCore({
       providerLoadId: context.providerLoadId,
       providerNote: context.providerNote,
       shipmentCount: context.shipmentCount,
-      timeline: cloneTimeline(context.timeline),
-      eventLog: local.eventLog,
+      timeline: projectTimeline(context.timeline),
+      eventLog: local.eventLog.map((event) => projectEventLogViewItem(event)),
       transportState: transport.state,
       transportReason: transport.reason ?? null,
       address: address.path,
+      statusBadgeClass: `badge status-${context.status}`,
+      transportBadgeClass: `badge transport-${transport.state}`,
     } satisfies LogisticsElementState;
   },
   commands: ({ actor, host }) => {
@@ -177,27 +179,10 @@ const registerIgniteHeadlessHost = igniteCore({
 
     if (!eventSubscriptionsByHost.has(host)) {
       eventSubscriptionsByHost.add(host);
-      actor.subscribeEvent?.(
-        (event) => {
-          const nextLocal = localStateFor(address);
-          nextLocal.eventLog = [
-            projectEventLogItem(event, actor.address.id),
-            ...nextLocal.eventLog,
-          ];
-        },
-        {
-          types: [
-            'SHIPMENT_CREATED',
-            'ROUTE_REQUESTED',
-            'ROUTE_ASSIGNED',
-            'SHIPMENT_IN_TRANSIT',
-            'SHIPMENT_DELIVERED',
-            'SHIPMENT_RETURNED',
-            'PROVIDER_SIGNAL_RECORDED',
-            'SHIPMENT_RESET',
-          ],
-        }
-      );
+      actor.subscribeEvent?.((event) => {
+        const nextLocal = localStateFor(address);
+        nextLocal.eventLog = [projectEventLogItem(event, actor.address.id), ...nextLocal.eventLog];
+      });
     }
 
     const readInputValue = (selector: string): string => {
@@ -254,8 +239,7 @@ function defineRoutingSourceElement(): void {
     return;
   }
 
-  registerRoutingSource(IGNITE_ROUTING_SOURCE_ELEMENT_NAME, (args) => {
-    const view = args;
+  registerRoutingSource(IGNITE_ROUTING_SOURCE_ELEMENT_NAME, (view) => {
 
     return (
       <section class="panel">
@@ -306,11 +290,8 @@ export function defineIgniteHeadlessHostElement(): void {
     return;
   }
 
-  registerIgniteHeadlessHost(IGNITE_HEADLESS_HOST_ELEMENT_NAME, (args) => {
-    const view = args;
+  registerIgniteHeadlessHost(IGNITE_HEADLESS_HOST_ELEMENT_NAME, (view) => {
     const canReset = view.shipmentCount > 0 || view.eventLog.length > 0;
-    const statusClass = `badge status-${view.status}`;
-    const transportClass = `badge transport-${view.transportState}`;
     const visibleTimeline = view.timeline.slice(0, PAGE_SIZE);
     const visibleEvents = view.eventLog.slice(0, PAGE_SIZE);
 
@@ -334,7 +315,7 @@ export function defineIgniteHeadlessHostElement(): void {
                   <div>
                     <div class="label">Shipment Status</div>
                     <div class="value">
-                      <span class={statusClass}>{view.status}</span>
+                      <span class={view.statusBadgeClass}>{view.status}</span>
                     </div>
                   </div>
                   <div>
@@ -344,7 +325,7 @@ export function defineIgniteHeadlessHostElement(): void {
                   <div>
                     <div class="label">Transport</div>
                     <div class="value">
-                      <span class={transportClass}>{view.transportState}</span>
+                      <span class={view.transportBadgeClass}>{view.transportState}</span>
                     </div>
                   </div>
                   <div>

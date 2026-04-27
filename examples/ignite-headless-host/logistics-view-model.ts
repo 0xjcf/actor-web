@@ -7,6 +7,15 @@ export interface RuntimeDisplay {
   tone: string;
 }
 
+export interface ProjectedLogisticsEventLog extends LogisticsEventLog {
+  runtime: RuntimeDisplay;
+  actorLabel: string;
+}
+
+export type ProjectedTimelineEntry = ShipmentContext['timeline'][number] & {
+  runtime: RuntimeDisplay;
+};
+
 export function eventRuntime(eventType: ShipmentEvent['type']): RuntimeDisplay {
   if (eventType === 'ROUTE_ASSIGNED') {
     return {
@@ -91,6 +100,23 @@ export function projectEventLogItem(event: ShipmentEvent, actorId: string): Logi
   };
 }
 
-export function cloneTimeline(timeline: ShipmentContext['timeline']): ShipmentContext['timeline'] {
-  return timeline.map((entry) => ({ ...entry }));
+export function projectEventLogViewItem(event: LogisticsEventLog): ProjectedLogisticsEventLog {
+  return {
+    ...event,
+    runtime: eventRuntime(event.type),
+    actorLabel: `Actor ${event.actorId}${event.shipmentId ? ` / ${event.shipmentId}` : ''}`,
+  };
+}
+
+export function projectTimelineEntry(
+  entry: ShipmentContext['timeline'][number]
+): ProjectedTimelineEntry {
+  return {
+    ...entry,
+    runtime: timelineRuntime(entry.label),
+  };
+}
+
+export function projectTimeline(timeline: ShipmentContext['timeline']): ProjectedTimelineEntry[] {
+  return timeline.map((entry) => projectTimelineEntry(entry));
 }
