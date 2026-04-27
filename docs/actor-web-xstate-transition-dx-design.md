@@ -1,21 +1,23 @@
-# Actor-Web XState Transition DX Design
+# Actor-Web Transition Constraint DX Design
 
 ## Summary
 
-Actor-Web should use XState as the lifecycle constraint engine and add an
-Actor-Web-native `onTransition(...)` authoring layer for message handlers,
-tool calls, emits, replies, runtime projections, and agent guardrails.
+Actor-Web should support lifecycle constraint maps through either XState
+statecharts or a small Actor-Web-native FSM object. The `onTransition(...)`
+authoring layer then handles actor behavior for allowed transitions: tool calls,
+emits, replies, context updates, runtime projections, and agent guardrails.
 
-This should be implemented after the Actor-Web tool ports slice. Tool ports give
-agent actors explicit capabilities through `dependencies.tools`; this slice uses
-those ports inside typed transition handlers.
+Tool ports give agent actors explicit capabilities through `tools` and
+`dependencies.tools`; transition handlers use those ports while constraint maps
+stay pure.
 
 ## Problem
 
 Actor-Web currently has the right primitives, but the developer experience still
 forces too much manual wiring:
 
-- XState can constrain legal lifecycle transitions.
+- XState can constrain legal lifecycle transitions for richer statecharts.
+- Actor-Web FSM maps can constrain simple workflows without requiring XState.
 - `defineActor().withMachine(...)` can attach a machine to an actor behavior.
 - `defineActor().onMessage(...)` can handle commands, emit events, and call
   tools.
@@ -23,24 +25,29 @@ forces too much manual wiring:
 
 The missing layer is a clear way to say:
 
-> For each machine event/command transition, run this Actor-Web handler with a
-> narrowed message type, actor dependencies, and tool access.
+> For each constrained event/command transition, run this Actor-Web handler with
+> a narrowed message type, actor dependencies, and tool access.
 
-Without that layer, developers duplicate lifecycle knowledge between the XState
-machine and `onMessage(...)`.
+Without that layer, developers duplicate lifecycle knowledge between the
+constraint map and `onMessage(...)`.
 
 ## Design Goal
 
-Keep XState as the source of truth for lifecycle legality. Actor-Web should add
-ergonomics around XState, not replace it with a second FSM engine.
+Keep constraint maps as the source of truth for lifecycle legality. Actor-Web
+should add ergonomics around XState and a small native FSM map, not move I/O or
+business side effects into the constraint layer.
 
 ```text
-XState owns:
+XState or withFSM owns:
 - states
 - legal transitions
 - guards
-- machine context
-- delayed/transient transitions where needed
+- transition metadata
+
+XState additionally owns:
+- delayed/transient transitions
+- invoked services
+- richer statechart behavior where needed
 
 Actor-Web owns:
 - actor messages
@@ -55,6 +62,39 @@ Actor-Web owns:
 
 ## Proposed API
 
+For a small pure FSM constraint map:
+
+```ts
+const shipmentFSM = defineFSM<ShipmentCommand, ShipmentContext, ShipmentStatus>({
+  initial: 'idle',
+  states: {
+    idle: {
+      on: {
+        CREATE_SHIPMENT: 'route-requested',
+      },
+    },
+    'route-requested': {
+      on: {
+        ASSIGN_ROUTE: 'route-assigned',
+      },
+    },
+  },
+});
+
+export const createShipmentBehavior = () =>
+  defineActor<ShipmentCommand>()
+    .withContext(createInitialShipmentContext())
+    .withFSM(shipmentFSM)
+    .onTransition({
+      CREATE_SHIPMENT: async ({ message }) => ({
+        emit: [{ type: 'SHIPMENT_CREATED', shipmentId: message.shipmentId }],
+      }),
+    })
+    .build();
+```
+
+For a richer XState statechart:
+
 ```ts
 export const createShipmentBehavior = () =>
   defineActor<ShipmentCommand>()
@@ -65,7 +105,7 @@ export const createShipmentBehavior = () =>
       }),
 
       SCAN_LABEL: async ({ message, dependencies }) => {
-        const scan = await dependencies.tools.execute('provider.scan.verify', message);
+        const scan = await tools.execute('provider.scan.verify', message);
 
         return {
           emit: [{ type: 'PROVIDER_SIGNAL_RECORDED', scan }],
@@ -149,14 +189,16 @@ hardening step. The first slice can validate machine support at runtime.
 
 ## Runtime Behavior
 
-`onTransition(...)` should route incoming messages through the machine-aware
-handler table.
+`onTransition(...)` routes incoming messages through a constraint-aware handler
+table. It requires exactly one constraint source: `.withMachine(...)` or
+`.withFSM(...)`.
 
 Recommended behavior:
 
 1. Receive an actor message.
-2. Check whether the machine can accept the event.
-3. If the transition is invalid, reject with a clear invalid transition error.
+2. Check whether the XState machine or FSM map can accept the event.
+3. If the transition is invalid, return a structured error value and emit a
+   rejected-transition event.
 4. If a matching transition handler exists, run it.
 5. Let the existing actor behavior pipeline apply context, emit events, replies,
    and message plans.
@@ -166,31 +208,37 @@ Recommended behavior:
 The fallback lets teams migrate from manual `onMessage(...)` to
 `onTransition(...)` incrementally.
 
-## Invalid Transition Error
+## Invalid Transition Result
 
-Actor-Web should expose a stable error shape later, but the first implementation
-can start with a clear `Error`.
+Domain invalid transitions follow errors-as-values. They do not throw by
+default.
 
-```text
-Actor "logistics-shipment" cannot apply transition "SCAN_LABEL" from state "idle".
+```ts
+{
+  ok: false,
+  error: {
+    code: 'INVALID_TRANSITION',
+    messageType: 'SCAN_LABEL',
+    state: 'idle',
+    allowedTransitions: ['CREATE_SHIPMENT'],
+  },
+}
 ```
 
-Future hardening can add:
+The runtime also emits an `ACTOR_TRANSITION_REJECTED` diagnostic event. Thrown
+errors are reserved for invalid actor definitions:
 
-- error code,
-- current state,
-- attempted transition,
-- allowed transitions,
-- actor address,
-- correlation id.
+- `onTransition(...)` without `.withMachine(...)` or `.withFSM(...)`,
+- using `.withMachine(...)` and `.withFSM(...)` together,
+- malformed FSM definitions.
 
 ## Tool Port Integration
 
-Tool calls stay inside transition handlers:
+Tool calls stay inside transition handlers, never inside constraint maps:
 
 ```ts
-SCAN_LABEL: async ({ message, dependencies }) => {
-  const scan = await dependencies.tools.execute('provider.scan.verify', message);
+SCAN_LABEL: async ({ message, tools }) => {
+  const scan = await tools.execute('provider.scan.verify', message);
 
   return {
     emit: [{ type: 'PROVIDER_SIGNAL_RECORDED', scan }],
@@ -295,21 +343,24 @@ implementation in Actor-Web.
 
 ## Implementation Status
 
-Implemented in the first runtime slice:
+Implemented:
 
 - `defineActor().withMachine(...).onTransition(...)` for typed transition
   handler maps.
+- `defineFSM(...)` and `defineActor().withFSM(...)` for lightweight pure
+  constraint maps.
 - Handler key inference from the command union passed to `defineActor<T>()`.
 - Handler `message` narrowing by transition key.
-- Runtime XState legality checks before transition handler side effects.
+- Runtime XState and FSM legality checks before transition handler side effects.
+- Structured invalid-transition values instead of default domain throws.
 - `onMessage(...)` fallback for messages without transition handlers.
-- Public transition handler types from `@actor-core/runtime` and
+- Public FSM and transition handler types from `@actor-core/runtime` and
   `@actor-core/runtime/browser`.
+- Logistics shipment actor migrated to `withFSM(...).onTransition(...)`.
 
 Still remaining:
 
 - Transition metadata projection for UI/tooling.
-- Logistics example migration to `onTransition(...)`.
 - FAS agent lifecycle prototype using XState constraints and actor tools.
 
 ## Implementation Slices
@@ -328,10 +379,19 @@ Still remaining:
 
 - Status: implemented.
 - Detects whether the attached machine can accept a message.
-- Rejects invalid transitions before running side effects.
+- Returns invalid transition values before running side effects.
 - Includes invalid-transition tests.
 - Keep validation runtime-first; compile-time machine event validation can come
   later.
+
+### Slice 2.5: Actor-Web FSM Constraint Maps
+
+- Status: implemented.
+- Added `defineFSM(...)`.
+- Added `withFSM(...)`.
+- Disallowed mixing `.withMachine(...)` and `.withFSM(...)`.
+- Disallowed `onTransition(...)` without a constraint source.
+- Converted the logistics shipment actor to `withFSM(...).onTransition(...)`.
 
 ### Slice 3: Metadata Projection
 
@@ -341,7 +401,7 @@ Still remaining:
 
 ### Slice 4: Logistics Example Migration
 
-- Convert the logistics shipment actor to `withMachine(...).onTransition(...)`.
+- Status: implemented for the shipment actor with `withFSM(...)`.
 - Keep tool calls in transition handlers.
 - Use transition legality to disable or explain provider controls.
 - Keep gateway projections unchanged.
@@ -372,18 +432,18 @@ Still remaining:
 ## Non-Goals
 
 - Do not replace XState.
-- Do not build a new FSM engine.
+- Do not make the native FSM a full statechart engine.
 - Do not require every actor to use a machine.
 - Do not generate UI controls in the first slice.
 - Do not make FAS-specific APIs part of Actor-Web runtime.
 
 ## Open Questions
 
-- Should `onTransition(...)` require `.withMachine(...)`, or should it also work
-  without a machine as a typed message dispatch table?
-- Should invalid transitions throw, return an error reply, or emit a rejected
-  event by default?
-- Should transition metadata include required tools per transition, or should
-  required tools stay actor-level only for the first implementation?
-- Should `onMessage(...)` and `onTransition(...)` be mutually exclusive in the
-  long term, or should fallback remain supported?
+- How much transition metadata should be projected to Ignite Element and agent
+  planning UIs?
+- Should required tools remain actor-level only, or should optional
+  transition-level metadata be supported later for planning and approval UIs?
+- Should FSM state be inspectable through actor snapshots, or should domain
+  context remain the projection source for now?
+- What stable event contract should `ACTOR_TRANSITION_REJECTED` use once
+  transition diagnostics become public API?
