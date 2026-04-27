@@ -74,6 +74,17 @@ export function validateActorWebRequiredTools(
   }
 }
 
+export function createActorWebNodeToolAccess<
+  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
+>(topology: TTopology, nodeKey: keyof TTopology['nodes'] & string): Record<string, string[]> {
+  return Object.fromEntries(
+    getOwnedActorWebActors(topology, nodeKey).map(([, actorDescriptor]) => [
+      actorDescriptor.address.path,
+      getActorWebRequiredToolNames(actorDescriptor),
+    ])
+  );
+}
+
 export async function spawnOwnedActorWebActors<
   TTopology extends ActorWebTopology<ActorWebTopologyInput>,
 >(

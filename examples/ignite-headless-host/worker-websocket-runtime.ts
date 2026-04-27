@@ -63,14 +63,13 @@ async function startRuntime(transportUrl: string): Promise<void> {
 
   runtimeNode = await startActorWebNode(logistics, {
     node: 'worker',
+    peers: {
+      server: transportUrl,
+    },
     transport: {
       incarnation: `${workerNode}-${Date.now()}`,
       heartbeatIntervalMs: 5000,
       heartbeatTimeoutMs: 15000,
-      peers: {
-        [serverNode]: transportUrl,
-      },
-      connect: [serverNode],
     },
   });
 

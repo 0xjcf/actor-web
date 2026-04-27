@@ -60,7 +60,7 @@ Recommended public API boundaries:
 
 ```ts
 // Shared, browser-safe topology declarations.
-import { actor, defineActorWebTopology, node } from '@actor-core/runtime/topology';
+import { actor, defineActorWebTopology, node, tool } from '@actor-core/runtime/topology';
 
 // Browser/presentation source creation and browser worker runtime hosting.
 import { createActorWebSource, startActorWebNode } from '@actor-core/runtime/browser';
@@ -103,6 +103,10 @@ import { createShipmentBehavior } from './actors/shipment.actor';
 export const logistics = defineActorWebTopology({
   contractVersion: '1.4.0',
 
+  tools: {
+    'route.plan': tool('route.plan'),
+  },
+
   nodes: {
     browser: node('logistics-browser-host'),
     server: node('logistics-server-runtime'),
@@ -114,6 +118,7 @@ export const logistics = defineActorWebTopology({
       id: 'logistics-shipment',
       node: 'server',
       behavior: createShipmentBehavior,
+      tools: ['route.plan'],
       supervision: {
         strategy: 'restart',
         maxRestarts: 3,
@@ -216,14 +221,8 @@ import { logistics } from './logistics.topology';
 
 const server = await serveActorWebNode(logistics, {
   node: 'server',
-
-  gateway: {
-    expose: ['shipment'],
-  },
-
-  transport: {
-    listen: true,
-  },
+  gateway: true,
+  transport: true,
 });
 
 console.log(server.urls);
@@ -244,11 +243,11 @@ const transportUrl = new URL(self.location.href).searchParams.get('transportUrl'
 
 startActorWebNode(logistics, {
   node: 'worker',
+  peers: {
+    server: transportUrl,
+  },
   transport: {
-    peers: {
-      [logistics.nodes.server.address]: transportUrl,
-    },
-    connect: [logistics.nodes.server.address],
+    heartbeatIntervalMs: 5000,
   },
 });
 ```

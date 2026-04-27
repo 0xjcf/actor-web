@@ -210,6 +210,7 @@ export interface ActorBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>
     readonly message: TMessage;
     readonly actor: ActorInstance;
     readonly dependencies: ActorDependencies;
+    readonly tools: ActorToolbox;
   }) => MessagePlan<TEmitted> | Promise<MessagePlan<TEmitted>> | void | Promise<void>;
 
   /**
@@ -219,6 +220,7 @@ export interface ActorBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>
   readonly onStart?: (params: {
     readonly actor: ActorInstance;
     readonly dependencies: ActorDependencies;
+    readonly tools: ActorToolbox;
   }) => MessagePlan<TEmitted> | Promise<MessagePlan<TEmitted>> | void | Promise<void>;
 
   /**
@@ -228,6 +230,7 @@ export interface ActorBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>
   readonly onStop?: (params: {
     readonly actor: ActorInstance;
     readonly dependencies: ActorDependencies;
+    readonly tools: ActorToolbox;
   }) => Promise<void> | void;
 
   /**

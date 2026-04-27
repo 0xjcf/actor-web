@@ -356,6 +356,7 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
                 message: actorMessage,
                 actor: actorInstanceAdapter,
                 dependencies: actorDependencies,
+                tools: actorDependencies.tools,
               });
             } catch (error) {
               // Log any errors from the pure actor behavior but don't break component flow

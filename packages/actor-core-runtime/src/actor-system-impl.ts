@@ -238,6 +238,11 @@ export interface ActorSystemConfig {
    * Runtime-native tool implementations exposed to actor dependencies.
    */
   tools?: ActorToolRegistry;
+
+  /**
+   * Optional per-actor tool allow list keyed by actor path.
+   */
+  toolAccess?: Record<string, readonly string[]>;
 }
 
 /**
@@ -596,15 +601,23 @@ export class ActorSystemImpl implements ActorSystem {
           },
           send: async () => {}, // Simple no-op for onStop
           ask: async <T>() => Promise.resolve({} as T), // Simple no-op for onStop
-          tools: createActorToolbox(this.config.tools, {
-            actorId: path,
-            nodeAddress: this.config.nodeAddress,
-          }),
+          tools: createActorToolbox(
+            this.config.tools,
+            {
+              actorId: path,
+              nodeAddress: this.config.nodeAddress,
+            },
+            this.config.toolAccess?.[path]
+          ),
           logger: Logger.namespace(`ACTOR_${path}`),
           correlationManager: this.correlationManager,
         };
 
-        await behavior.onStop({ actor: machineActorInstance, dependencies });
+        await behavior.onStop({
+          actor: machineActorInstance,
+          dependencies,
+          tools: dependencies.tools,
+        });
       } catch (error) {
         log.error('Error in actor onStop', { path, error });
       }
@@ -3757,10 +3770,14 @@ export class ActorSystemImpl implements ActorSystem {
       ask: async <T>(_to: unknown, _message: ActorMessage, _timeout?: number) => {
         return Promise.resolve({} as T);
       },
-      tools: createActorToolbox(this.config.tools, {
-        actorId,
-        nodeAddress: this.config.nodeAddress,
-      }),
+      tools: createActorToolbox(
+        this.config.tools,
+        {
+          actorId,
+          nodeAddress: this.config.nodeAddress,
+        },
+        this.config.toolAccess?.[actorId]
+      ),
       logger: Logger.namespace(`ACTOR_${actorId}`),
       correlationManager: this.correlationManager,
     };

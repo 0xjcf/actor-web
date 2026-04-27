@@ -15,6 +15,7 @@
 
 import type { ActorInstance } from './actor-instance.js';
 import type { ActorDependencies, ActorMessage } from './actor-system.js';
+import type { ActorToolbox } from './actor-tools.js';
 import { Logger } from './logger.js';
 import type { DomainEvent, MessagePlan } from './message-plan.js';
 import type { MessagePlanProcessor } from './message-plan-processor.js';
@@ -33,6 +34,7 @@ export type PureMessageHandler<TMessage, TDomainEvent = DomainEvent> = (params: 
   readonly message: TMessage;
   readonly actor: ActorInstance;
   readonly dependencies: ActorDependencies;
+  readonly tools: ActorToolbox;
 }) => MessagePlan<TDomainEvent> | Promise<MessagePlan<TDomainEvent>> | void | Promise<void>;
 
 /**
@@ -43,10 +45,12 @@ export interface PureActorBehavior<TMessage = ActorMessage, TDomainEvent = Domai
   readonly onStart?: (params: {
     readonly actor: ActorInstance;
     readonly dependencies: ActorDependencies;
+    readonly tools: ActorToolbox;
   }) => MessagePlan<TDomainEvent> | Promise<MessagePlan<TDomainEvent>> | void | Promise<void>;
   readonly onStop?: (params: {
     readonly actor: ActorInstance;
     readonly dependencies: ActorDependencies;
+    readonly tools: ActorToolbox;
   }) => Promise<void> | void;
 }
 
@@ -129,6 +133,7 @@ export class PureActorBehaviorHandler {
         message,
         actor,
         dependencies,
+        tools: dependencies.tools,
       });
 
       log.debug('🔍 BEHAVIOR HANDLER: Behavior returned result', {
@@ -240,6 +245,7 @@ export class PureActorBehaviorHandler {
       const messagePlan = await behavior.onStart({
         actor,
         dependencies,
+        tools: dependencies.tools,
       });
 
       if (!isValidMessagePlan(messagePlan)) {
@@ -281,6 +287,7 @@ export class PureActorBehaviorHandler {
       await behavior.onStop({
         actor,
         dependencies,
+        tools: dependencies.tools,
       });
     } catch (error) {
       log.error('Error in pure behavior stop handler', {

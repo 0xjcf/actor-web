@@ -118,13 +118,21 @@ export interface ActorWebSupervisorDescriptor<TNode extends string = string>
 
 export type ActorWebTopologyInput = {
   readonly contractVersion?: string;
+  readonly tools?: Record<string, ActorWebToolDefinition>;
   readonly nodes: Record<string, ActorWebNodeDefinition>;
   readonly actors: Record<string, ActorWebActorDefinition>;
   readonly supervisors?: Record<string, ActorWebSupervisorDefinition>;
 };
 
+type ActorWebTopologyTools<TInput extends ActorWebTopologyInput> = TInput extends {
+  readonly tools: infer TTools extends Record<string, ActorWebToolDefinition>;
+}
+  ? TTools
+  : Record<string, never>;
+
 export type ActorWebTopology<TInput extends ActorWebTopologyInput> = {
   readonly contractVersion?: string;
+  readonly tools: ActorWebTopologyTools<TInput>;
   readonly nodes: TInput['nodes'];
   readonly actors: {
     readonly [K in keyof TInput['actors']]: ActorWebActorDescriptor<
@@ -167,11 +175,20 @@ export function tool<TName extends string>(
 export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
   input: TInput
 ): ActorWebTopology<TInput> {
+  const toolCatalog = input.tools ?? {};
   const actors = Object.fromEntries(
     Object.entries(input.actors).map(([key, definition]) => {
       const nodeDefinition = input.nodes[definition.node];
       if (!nodeDefinition) {
         throw new Error(`Actor "${key}" references unknown node "${definition.node}".`);
+      }
+      if (input.tools) {
+        for (const toolReference of definition.tools ?? []) {
+          const toolName = typeof toolReference === 'string' ? toolReference : toolReference.name;
+          if (!toolCatalog[toolName]) {
+            throw new Error(`Actor "${key}" references unknown tool "${toolName}".`);
+          }
+        }
       }
 
       const address: ActorWebActorAddress = {
@@ -213,6 +230,7 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
 
   return {
     contractVersion: input.contractVersion,
+    tools: toolCatalog as ActorWebTopologyTools<TInput>,
     nodes: input.nodes,
     actors: actors as ActorWebTopology<TInput>['actors'],
     supervisors: supervisors as ActorWebTopology<TInput>['supervisors'],

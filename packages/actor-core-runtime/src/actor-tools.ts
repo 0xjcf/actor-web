@@ -19,18 +19,28 @@ export interface ActorToolbox {
 
 export function createActorToolbox(
   registry: ActorToolRegistry | undefined,
-  context: ActorToolExecutionContext
+  context: ActorToolExecutionContext,
+  allowedToolNames?: readonly string[]
 ): ActorToolbox {
   const tools = registry ?? {};
+  const allowedTools = allowedToolNames ? new Set(allowedToolNames) : null;
+
+  const isAllowed = (name: string): boolean => {
+    return !allowedTools || allowedTools.has(name);
+  };
 
   return {
     has(name: string): boolean {
-      return typeof tools[name] === 'function';
+      return isAllowed(name) && typeof tools[name] === 'function';
     },
     list(): string[] {
-      return Object.keys(tools);
+      return Object.keys(tools).filter((name) => isAllowed(name));
     },
     get(name: string): ActorToolExecutor | undefined {
+      if (!isAllowed(name)) {
+        return undefined;
+      }
+
       return tools[name];
     },
     async execute<TOutput = unknown, TInput = unknown>(
@@ -38,7 +48,7 @@ export function createActorToolbox(
       input: TInput
     ): Promise<TOutput> {
       const executor = tools[name];
-      if (!executor) {
+      if (!isAllowed(name) || !executor) {
         throw new Error(`Actor tool "${name}" is not registered.`);
       }
 

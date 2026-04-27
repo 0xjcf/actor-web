@@ -11,6 +11,7 @@
 
 import type { AnyStateMachine, ContextFrom } from 'xstate';
 import type { ActorBehavior, ActorDependencies, ActorMessage, JsonValue } from './actor-system.js';
+import type { ActorToolbox } from './actor-tools.js';
 import { registerMachineWithBehavior } from './machine-registry.js';
 import type { DomainEvent, MessagePlan } from './message-plan.js';
 import type { ActorHandlerResult } from './otp-types.js';
@@ -28,6 +29,7 @@ export type UnifiedMessageHandler<TMsg, TCtx, _TEmitted> = (params: {
   readonly message: TMsg;
   readonly actor: TypedActorInstance<TCtx>;
   readonly dependencies: ActorDependencies;
+  readonly tools: ActorToolbox;
 }) =>
   | ActorHandlerResult<TCtx, unknown>
   | DomainEvent

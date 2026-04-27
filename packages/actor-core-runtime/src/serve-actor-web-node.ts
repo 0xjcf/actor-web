@@ -3,6 +3,7 @@ import type { ActorMessage, ActorSystem } from './actor-system.js';
 import { createActorSystem } from './actor-system-impl.js';
 import type { ActorToolRegistry } from './actor-tools.js';
 import {
+  createActorWebNodeToolAccess,
   getActorWebNodeDefinition,
   getOwnedActorWebActors,
   spawnOwnedActorWebActors,
@@ -35,6 +36,10 @@ export interface ActorWebNodeTransportOptions {
         readonly host?: string;
         readonly port?: number;
       };
+  readonly peerUrlResolver?: (
+    nodeAddress: string
+  ) => string | undefined | Promise<string | undefined>;
+  readonly connectTimeoutMs?: number;
   readonly heartbeatIntervalMs?: number;
   readonly heartbeatTimeoutMs?: number;
 }
@@ -44,8 +49,10 @@ export interface ServeActorWebNodeOptions<
 > {
   readonly node: keyof TTopology['nodes'] & string;
   readonly host?: string;
-  readonly gateway?: ActorWebNodeGatewayOptions<keyof TTopology['actors'] & string>;
-  readonly transport?: ActorWebNodeTransportOptions;
+  readonly gateway?: boolean | ActorWebNodeGatewayOptions<keyof TTopology['actors'] & string>;
+  readonly transport?: boolean | ActorWebNodeTransportOptions;
+  readonly peers?: Partial<Record<keyof TTopology['nodes'] & string, string>>;
+  readonly connect?: readonly (keyof TTopology['nodes'] & string)[];
   readonly tools?: ActorToolRegistry;
 }
 
@@ -145,6 +152,52 @@ async function createWebSocketServer(
   return { server, url };
 }
 
+function normalizeGatewayOptions<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
+  gateway: ServeActorWebNodeOptions<TTopology>['gateway']
+): ActorWebNodeGatewayOptions<keyof TTopology['actors'] & string> | undefined {
+  return gateway === true ? {} : gateway || undefined;
+}
+
+function normalizeTransportOptions(
+  transport: boolean | ActorWebNodeTransportOptions | undefined
+): ActorWebNodeTransportOptions | undefined {
+  return transport === true ? { listen: true } : transport || undefined;
+}
+
+function resolveTopologyPeerUrls<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
+  topology: TTopology,
+  peers: Partial<Record<keyof TTopology['nodes'] & string, string>> | undefined
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(peers ?? {}).flatMap(([nodeKey, url]) => {
+      if (!url) {
+        return [];
+      }
+
+      const nodeDefinition = topology.nodes[nodeKey];
+      if (!nodeDefinition) {
+        throw new Error(`Unknown Actor-Web peer node "${nodeKey}".`);
+      }
+
+      return [[nodeDefinition.address, url]];
+    })
+  );
+}
+
+function resolveTopologyNodeAddresses<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
+  topology: TTopology,
+  nodeKeys: readonly (keyof TTopology['nodes'] & string)[]
+): string[] {
+  return nodeKeys.map((nodeKey) => {
+    const nodeDefinition = topology.nodes[nodeKey];
+    if (!nodeDefinition) {
+      throw new Error(`Unknown Actor-Web peer node "${nodeKey}".`);
+    }
+
+    return nodeDefinition.address;
+  });
+}
+
 export async function serveActorWebNode<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
   topology: TTopology,
   options: ServeActorWebNodeOptions<TTopology>
@@ -152,11 +205,17 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
   const nodeDefinition = getActorWebNodeDefinition(topology, options.node);
 
   const host = options.host ?? '127.0.0.1';
-  const transportListen = options.transport?.listen;
+  const gatewayOptions = normalizeGatewayOptions(options.gateway);
+  const transportOptions = normalizeTransportOptions(options.transport);
+  const topologyPeers = resolveTopologyPeerUrls(topology, options.peers);
+  const transportListen = transportOptions?.listen;
   const transport = createNodeWebSocketMessageTransport({
     nodeAddress: nodeDefinition.address,
-    heartbeatIntervalMs: options.transport?.heartbeatIntervalMs ?? 0,
-    heartbeatTimeoutMs: options.transport?.heartbeatTimeoutMs,
+    peers: topologyPeers,
+    peerUrlResolver: transportOptions?.peerUrlResolver,
+    connectTimeoutMs: transportOptions?.connectTimeoutMs,
+    heartbeatIntervalMs: transportOptions?.heartbeatIntervalMs ?? 0,
+    heartbeatTimeoutMs: transportOptions?.heartbeatTimeoutMs,
     ...(transportListen
       ? {
           listen: {
@@ -170,10 +229,11 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
     nodeAddress: nodeDefinition.address,
     transport,
     ...(options.tools ? { tools: options.tools } : {}),
+    toolAccess: createActorWebNodeToolAccess(topology, options.node),
   });
   const actors = new Map<string, ActorRef<unknown, ActorMessage>>();
   const exposedActorKeys = new Set<string>(
-    options.gateway?.expose ??
+    gatewayOptions?.expose ??
       getOwnedActorWebActors(topology, options.node)
         .filter(([, actorDescriptor]) => actorDescriptor.gateway)
         .map(([key]) => key)
@@ -185,7 +245,7 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
 
   const hub = createRuntimeGatewayHub({
     resolveScope: async (scope) => {
-      const customSource = await options.gateway?.resolveScope?.(scope, {});
+      const customSource = await gatewayOptions?.resolveScope?.(scope, {});
       if (customSource) {
         return customSource;
       }
@@ -227,17 +287,24 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
 
     await spawnOwnedActorWebActors(system, topology, options.node, actors, options.tools);
 
-    if (options.gateway) {
+    if (gatewayOptions) {
       const { WebSocketServer } = await import('ws');
       const created = await createWebSocketServer(WebSocketServer as WebSocketServerConstructor, {
-        host: options.gateway.host ?? host,
-        port: options.gateway.port ?? 0,
+        host: gatewayOptions.host ?? host,
+        port: gatewayOptions.port ?? 0,
       });
       gatewayServer = created.server;
       gatewayUrl = created.url;
       gatewayServer.on('connection', (socket) => {
         hub.attach(new ActorWebNodeGatewayConnection(socket));
       });
+    }
+
+    const connectTargets = options.connect
+      ? resolveTopologyNodeAddresses(topology, options.connect)
+      : Object.keys(topologyPeers);
+    if (connectTargets.length > 0) {
+      await system.join(connectTargets);
     }
 
     running = true;

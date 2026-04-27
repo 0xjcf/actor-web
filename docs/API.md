@@ -744,6 +744,10 @@ import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-co
 export const logistics = defineActorWebTopology({
   contractVersion: '1.0.0',
 
+  tools: {
+    'routing.plan': tool('routing.plan', { description: 'Plan carrier route and ETA.' }),
+  },
+
   nodes: {
     browser: node('logistics-browser-host'),
     server: node('logistics-server-runtime'),
@@ -755,7 +759,7 @@ export const logistics = defineActorWebTopology({
       id: 'logistics-shipment',
       node: 'server',
       behavior: createShipmentBehavior,
-      tools: [tool('routing.plan', { description: 'Plan carrier route and ETA.' })],
+      tools: ['routing.plan'],
       supervision: {
         strategy: 'restart',
         maxRestarts: 3,
@@ -822,6 +826,8 @@ import { logistics } from './logistics.topology';
 
 const node = await serveActorWebNode(logistics, {
   node: 'server',
+  gateway: true,
+  transport: true,
   tools: {
     'routing.plan': async (input, context) => {
       return {
@@ -829,12 +835,6 @@ const node = await serveActorWebNode(logistics, {
         plannedBy: context.actorId,
       };
     },
-  },
-  transport: {
-    listen: true,
-  },
-  gateway: {
-    expose: ['shipment'],
   },
 });
 
@@ -857,9 +857,13 @@ the served node and can use `node.getActor(...)`, `node.system`, and
 Actors can declare required tool ports in topology with `tool(...)`. Node and
 browser-worker runners receive concrete implementations through `tools`. Missing
 required tools fail at node startup, before the actor is spawned. Actor behavior
-handlers call implementations through `dependencies.tools.execute(...)`, which
-keeps AI/agent capabilities explicit and injectable instead of hidden behind
-global services.
+handlers call implementations through the `tools` handler parameter or
+`dependencies.tools.execute(...)`, which keeps AI/agent capabilities explicit and
+injectable instead of hidden behind global services.
+
+`gateway: true` exposes owned actors that declare `actor.gateway` metadata.
+`transport: true` opens a localhost WebSocket listener on an ephemeral port.
+Use object options only when deployment details need to override the defaults.
 
 ### `startActorWebNode(topology, options)`
 
@@ -874,14 +878,13 @@ import { logistics } from './logistics.topology';
 
 const worker = await startActorWebNode(logistics, {
   node: 'worker',
+  peers: {
+    server: 'ws://127.0.0.1:4101',
+  },
   tools: {
     'routing.plan': async (input) => input,
   },
   transport: {
-    peers: {
-      [logistics.nodes.server.address]: 'ws://127.0.0.1:4101',
-    },
-    connect: [logistics.nodes.server.address],
     heartbeatIntervalMs: 5000,
     heartbeatTimeoutMs: 15000,
   },
@@ -893,6 +896,9 @@ const routing = worker.getActor('routing');
 `startActorWebNode` is browser-safe and does not open a listener. It only opens
 outbound WebSocket connections, so browser worker runtimes remain explicit
 runtime peers without becoming server nodes.
+
+`peers` uses topology node keys and the runner converts them to node addresses.
+When `connect` is omitted, the runner connects to all configured peers.
 
 ## Runtime Gateway
 

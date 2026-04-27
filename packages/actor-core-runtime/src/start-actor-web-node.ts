@@ -4,6 +4,7 @@ import { createActorSystem } from './actor-system-impl.js';
 import type { ActorToolRegistry } from './actor-tools.js';
 import {
   type ActorWebNodeActorMap,
+  createActorWebNodeToolAccess,
   getActorWebNodeDefinition,
   spawnOwnedActorWebActors,
 } from './actor-web-node-runtime.js';
@@ -34,6 +35,8 @@ export interface StartActorWebNodeOptions<
   TTopology extends ActorWebTopology<ActorWebTopologyInput>,
 > {
   readonly node: keyof TTopology['nodes'] & string;
+  readonly peers?: Partial<Record<keyof TTopology['nodes'] & string, string>>;
+  readonly connect?: readonly (keyof TTopology['nodes'] & string)[];
   readonly transport?: ActorWebBrowserNodeTransportOptions;
   readonly tools?: ActorToolRegistry;
 }
@@ -48,18 +51,57 @@ export interface StartedActorWebNode<TTopology extends ActorWebTopology<ActorWeb
   ): ActorRef<unknown, ActorMessage> | undefined;
 }
 
+function resolveTopologyPeerUrls<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
+  topology: TTopology,
+  peers: Partial<Record<keyof TTopology['nodes'] & string, string>> | undefined
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(peers ?? {}).flatMap(([nodeKey, url]) => {
+      if (!url) {
+        return [];
+      }
+
+      const nodeDefinition = topology.nodes[nodeKey];
+      if (!nodeDefinition) {
+        throw new Error(`Unknown Actor-Web peer node "${nodeKey}".`);
+      }
+
+      return [[nodeDefinition.address, url]];
+    })
+  );
+}
+
+function resolveTopologyNodeAddresses<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
+  topology: TTopology,
+  nodeKeys: readonly (keyof TTopology['nodes'] & string)[]
+): string[] {
+  return nodeKeys.map((nodeKey) => {
+    const nodeDefinition = topology.nodes[nodeKey];
+    if (!nodeDefinition) {
+      throw new Error(`Unknown Actor-Web peer node "${nodeKey}".`);
+    }
+
+    return nodeDefinition.address;
+  });
+}
+
 export async function startActorWebNode<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
   topology: TTopology,
   options: StartActorWebNodeOptions<TTopology>
 ): Promise<StartedActorWebNode<TTopology>> {
   const nodeDefinition = getActorWebNodeDefinition(topology, options.node);
   const transportOptions = options.transport;
+  const topologyPeers = resolveTopologyPeerUrls(topology, options.peers);
+  const transportPeers = {
+    ...(transportOptions?.peers ?? {}),
+    ...topologyPeers,
+  };
   const transport = createBrowserWebSocketMessageTransport({
     nodeAddress: nodeDefinition.address,
     ...(transportOptions?.nodeId ? { nodeId: transportOptions.nodeId } : {}),
     ...(transportOptions?.incarnation ? { incarnation: transportOptions.incarnation } : {}),
     ...(transportOptions?.capabilities ? { capabilities: transportOptions.capabilities } : {}),
-    ...(transportOptions?.peers ? { peers: transportOptions.peers } : {}),
+    ...(Object.keys(transportPeers).length > 0 ? { peers: transportPeers } : {}),
     ...(transportOptions?.peerUrlResolver
       ? { peerUrlResolver: transportOptions.peerUrlResolver }
       : {}),
@@ -81,6 +123,7 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
     nodeAddress: nodeDefinition.address,
     transport,
     ...(options.tools ? { tools: options.tools } : {}),
+    toolAccess: createActorWebNodeToolAccess(topology, options.node),
   });
   const actors: ActorWebNodeActorMap<TTopology> = new Map();
   let running = false;
@@ -94,7 +137,9 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
     await system.start();
     await spawnOwnedActorWebActors(system, topology, options.node, actors, options.tools);
 
-    const connectTargets = transportOptions?.connect ?? Object.keys(transportOptions?.peers ?? {});
+    const connectTargets = options.connect
+      ? resolveTopologyNodeAddresses(topology, options.connect)
+      : (transportOptions?.connect ?? Object.keys(transportPeers));
     if (connectTargets.length > 0) {
       await system.join([...connectTargets]);
     }
