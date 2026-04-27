@@ -4,6 +4,7 @@ import 'ignite-element/renderers/ignite-jsx';
 
 import { type ActorWebSourceHandle, igniteCore } from 'ignite-element/actor-web';
 import type { LogisticsEventLog, LogisticsHostState } from './headless-host';
+import styles from './ignite-headless-host-element.css?raw';
 import {
   cloneTimeline,
   eventRuntime,
@@ -12,22 +13,12 @@ import {
 } from './logistics-view-model';
 import {
   createLogisticsTopologySources,
-  type LogisticsRuntimeHarness,
+  type ShipmentCommand,
   type ShipmentContext,
+  type ShipmentEvent,
 } from './runtime-harness';
 
 export const IGNITE_HEADLESS_HOST_ELEMENT_NAME = 'aw-ignite-headless-host';
-
-type LogisticsElementEvent =
-  | { type: 'draft.destination'; value: string }
-  | { type: 'draft.reference'; value: string }
-  | { type: 'create' }
-  | { type: 'create.quick'; destination: string; reference: string }
-  | { type: 'timeline.next' }
-  | { type: 'timeline.prev' }
-  | { type: 'events.next' }
-  | { type: 'events.prev' }
-  | { type: 'reset' };
 
 interface LogisticsElementState extends LogisticsHostState {
   address: string;
@@ -45,247 +36,35 @@ interface LogisticsElementState extends LogisticsHostState {
   eventPage: number;
 }
 
+interface LogisticsControlTowerViewState extends LogisticsElementState {
+  createShipment(destination?: string, reference?: string): void;
+  updateDraftDestination(value: string): void;
+  updateDraftReference(value: string): void;
+  resetShipment(): void;
+  nextTimelinePage(): void;
+  previousTimelinePage(): void;
+  nextEventPage(): void;
+  previousEventPage(): void;
+}
+
+interface LogisticsElementLocalState {
+  busy: boolean;
+  draftDestination: string;
+  draftReference: string;
+  eventLog: LogisticsEventLog[];
+  timelinePage: number;
+  eventPage: number;
+}
+
 const PAGE_SIZE = 5;
+const localStateByAddress = new Map<string, LogisticsElementLocalState>();
+const eventSubscriptionsByHost = new WeakSet<HTMLElement>();
 
 function configuredRestUrl(): string | undefined {
   const configuredUrl = import.meta.env.VITE_ACTOR_WEB_REST_URL;
   return typeof configuredUrl === 'string' && configuredUrl.trim().length > 0
     ? configuredUrl.replace(/\/$/, '')
     : undefined;
-}
-
-const styles = `
-  :host {
-    display: block;
-    color: #e5eef5;
-    font-family:
-      Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  }
-
-  * { box-sizing: border-box; }
-  button, input, code { font: inherit; }
-
-  .shell {
-    min-height: 100vh;
-    padding: 32px;
-    background:
-      linear-gradient(180deg, rgba(15, 23, 32, 0.96), rgba(8, 12, 18, 0.98)),
-      #081018;
-  }
-
-  .frame {
-    width: min(1220px, 100%);
-    margin: 0 auto;
-    display: grid;
-    gap: 24px;
-  }
-
-  .header {
-    display: grid;
-    gap: 20px;
-    grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.9fr);
-    align-items: start;
-  }
-
-  .eyebrow {
-    margin: 0 0 10px;
-    color: #5eead4;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  h1, h2, h3, p { margin: 0; }
-  h1 { color: #f3f7fa; font-size: clamp(38px, 6vw, 64px); line-height: 1; }
-  h2, h3 { color: #f3f7fa; font-size: 20px; line-height: 1.2; }
-
-  .copy {
-    max-width: 760px;
-    margin-top: 16px;
-    color: #9db0be;
-    font-size: 17px;
-    line-height: 1.55;
-  }
-
-  .summary, .panel {
-    display: grid;
-    gap: 16px;
-    padding: 20px;
-    border: 1px solid rgba(120, 142, 156, 0.18);
-    border-radius: 8px;
-    background: rgba(20, 27, 33, 0.84);
-  }
-
-  .grid {
-    display: grid;
-    gap: 14px 18px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .layout {
-    display: grid;
-    gap: 24px;
-    grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
-    align-items: start;
-  }
-
-  .stack { display: grid; gap: 24px; }
-  .label {
-    color: #7e95a5;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .value {
-    margin-top: 6px;
-    color: #f3f7fa;
-    font-size: 15px;
-    font-weight: 600;
-    line-height: 1.4;
-    overflow-wrap: anywhere;
-  }
-
-  code {
-    color: #cbe7f2;
-    font-family:
-      "SFMono-Regular", SFMono-Regular, ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono",
-      "Courier New", monospace;
-    font-size: 13px;
-  }
-
-  .badge {
-    display: inline-flex;
-    align-items: center;
-    min-height: 28px;
-    padding: 0 12px;
-    border-radius: 999px;
-    background: rgba(94, 234, 212, 0.13);
-    color: #5eead4;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
-
-  .status-idle { background: rgba(96, 165, 250, 0.14); color: #93c5fd; }
-  .status-route-assigned, .status-delivered { background: rgba(16, 185, 129, 0.16); color: #34d399; }
-  .status-route-requested, .status-in-transit { background: rgba(45, 212, 191, 0.14); color: #5eead4; }
-  .status-returned { background: rgba(251, 146, 60, 0.16); color: #fb923c; }
-  .status-busy { background: rgba(245, 158, 11, 0.16); color: #fbbf24; }
-  .transport-disconnected, .transport-degraded { background: rgba(248, 113, 113, 0.16); color: #f87171; }
-
-  .field { display: grid; gap: 8px; }
-  .toolbar { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) auto; }
-  input {
-    width: 100%;
-    min-width: 0;
-    height: 44px;
-    padding: 0 14px;
-    border: 1px solid rgba(120, 142, 156, 0.24);
-    border-radius: 8px;
-    background: rgba(10, 14, 18, 0.9);
-    color: #f3f7fa;
-    outline: none;
-  }
-
-  button {
-    min-height: 42px;
-    padding: 0 14px;
-    border: 1px solid rgba(94, 234, 212, 0.22);
-    border-radius: 8px;
-    background: #0f766e;
-    color: #eff7ff;
-    cursor: pointer;
-    font-weight: 600;
-  }
-
-  button.secondary { background: rgba(38, 48, 57, 0.96); border-color: rgba(120, 142, 156, 0.2); }
-  button.danger { background: rgba(127, 29, 29, 0.22); border-color: rgba(248, 113, 113, 0.18); }
-  button:disabled { cursor: wait; opacity: 0.56; }
-
-  .quick-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
-  .item {
-    display: grid;
-    gap: 6px;
-    padding: 12px 14px;
-    border: 1px solid rgba(120, 142, 156, 0.14);
-    border-radius: 8px;
-    background: rgba(10, 14, 18, 0.72);
-  }
-  .event-item { border-left: 3px solid rgba(120, 142, 156, 0.32); }
-  .tone-server { border-left-color: #2dd4bf; }
-  .tone-worker { border-left-color: #60a5fa; }
-  .tone-lifecycle { border-left-color: #f59e0b; }
-  .tone-provider { border-left-color: #fb7185; }
-  .tone-local { border-left-color: #a78bfa; }
-  .item-heading {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    flex-wrap: wrap;
-  }
-  .runtime-chip {
-    display: inline-flex;
-    min-height: 22px;
-    align-items: center;
-    padding: 0 8px;
-    border-radius: 999px;
-    background: rgba(120, 142, 156, 0.14);
-    color: #cbe7f2;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-  .route-meta {
-    display: grid;
-    gap: 2px;
-    color: #8da1af;
-    font-size: 13px;
-    line-height: 1.45;
-  }
-  .route-grid {
-    display: grid;
-    gap: 10px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .route-card {
-    display: grid;
-    gap: 8px;
-    min-height: 118px;
-    padding: 12px 14px;
-    border: 1px solid rgba(120, 142, 156, 0.14);
-    border-left: 3px solid rgba(120, 142, 156, 0.32);
-    border-radius: 8px;
-    background: rgba(10, 14, 18, 0.72);
-  }
-  .section-head {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .pager { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
-  .pager button { min-height: 34px; padding: 0 10px; }
-  .muted { color: #8da1af; font-size: 13px; line-height: 1.45; }
-  a { color: #5eead4; font-weight: 700; text-decoration: none; }
-
-  @media (max-width: 900px) {
-    .header, .layout, .grid, .toolbar, .quick-grid, .route-grid { grid-template-columns: 1fr; }
-    .shell { padding: 18px; }
-  }
-`;
-
-function cloneState(state: LogisticsElementState): LogisticsElementState {
-  return {
-    ...state,
-    timeline: state.timeline.map((entry) => ({ ...entry })),
-    eventLog: state.eventLog.map((event) => ({ ...event })),
-  };
 }
 
 function renderEvent(event: LogisticsEventLog) {
@@ -326,315 +105,202 @@ function renderTimelineEntry(entry: ShipmentContext['timeline'][number]) {
   );
 }
 
-function projectElementState(
-  context: ShipmentContext,
-  source: LogisticsRuntimeHarness['source'],
-  current?: LogisticsElementState
-): LogisticsElementState {
-  const transport = source.transportStatus();
-
-  return {
-    phase: context.status,
-    shipmentId: context.shipmentId,
-    destination: context.destination,
-    reference: context.reference,
-    status: context.status,
-    carrier: context.carrier,
-    eta: context.eta,
-    routeNotes: context.routeNotes,
-    providerFacility: context.providerFacility,
-    providerSignal: context.providerSignal,
-    providerLoadId: context.providerLoadId,
-    providerNote: context.providerNote,
-    shipmentCount: context.shipmentCount,
-    timeline: cloneTimeline(context.timeline),
-    eventLog: current?.eventLog ?? [],
-    transportState: transport.state,
-    transportReason: transport.reason ?? null,
-    address: source.address.path,
-    busy: current?.busy ?? false,
-    draftDestination: current?.draftDestination ?? 'Chicago warehouse',
-    draftReference: current?.draftReference ?? 'REF-1001',
-    routingAddress: current?.routingAddress ?? null,
-    routingTransportState: current?.routingTransportState ?? 'replaying',
-    routingTransportReason: current?.routingTransportReason ?? null,
-    routingShipmentId: current?.routingShipmentId ?? null,
-    routingCarrier: current?.routingCarrier ?? null,
-    routingEta: current?.routingEta ?? null,
-    routingRouteNotes: current?.routingRouteNotes ?? null,
-    timelinePage: current?.timelinePage ?? 0,
-    eventPage: current?.eventPage ?? 0,
-  };
-}
-
-function createLogisticsSnapshot(
-  source: LogisticsRuntimeHarness['source'],
-  state: LogisticsElementState
-) {
-  return {
-    address: source.address,
-    context: cloneState(state),
-    phase: state.phase,
-    toJSON: () => ({
-      address: source.address,
-      context: cloneState(state),
-      phase: state.phase,
-    }),
-  };
-}
-
 function clampPage(page: number, itemCount: number): number {
   return Math.min(Math.max(0, Math.ceil(itemCount / PAGE_SIZE) - 1), Math.max(0, page));
 }
 
-function createLogisticsControlTowerViewSource(): ActorWebSourceHandle<
-  LogisticsElementState,
-  LogisticsElementEvent
-> {
-  const runtimeSources = createLogisticsTopologySources();
-  const { source, routingSource } = runtimeSources;
-  const listeners = new Set<(snapshot: ReturnType<typeof createLogisticsSnapshot>) => void>();
-  let stopped = false;
-  let state = projectElementState(source.snapshot().context, source);
-
-  const notify = (): void => {
-    if (stopped) {
-      return;
-    }
-    const snapshot = cloneState(state);
-    for (const listener of Array.from(listeners)) {
-      listener(createLogisticsSnapshot(source, snapshot));
-    }
-  };
-
-  const unsubscribeSnapshot = source.subscribe((snapshot) => {
-    state = projectElementState(snapshot.context, source, state);
-    notify();
-  });
-
-  const unsubscribeEvent = source.subscribeEvent(
-    (event) => {
-      state = {
-        ...state,
-        eventLog: [projectEventLogItem(event, source.address.id), ...state.eventLog],
-      };
-      notify();
-    },
-    {
-      types: [
-        'SHIPMENT_CREATED',
-        'ROUTE_REQUESTED',
-        'ROUTE_ASSIGNED',
-        'SHIPMENT_IN_TRANSIT',
-        'SHIPMENT_DELIVERED',
-        'SHIPMENT_RETURNED',
-        'PROVIDER_SIGNAL_RECORDED',
-        'SHIPMENT_RESET',
-      ],
-    }
-  );
-
-  const unsubscribeTransportStatus = source.subscribeTransportStatus((status) => {
+function localStateFor(address: string): LogisticsElementLocalState {
+  let state = localStateByAddress.get(address);
+  if (!state) {
     state = {
-      ...state,
-      transportState: status.state,
-      transportReason: status.reason ?? null,
+      busy: false,
+      draftDestination: 'Chicago warehouse',
+      draftReference: 'REF-1001',
+      eventLog: [],
+      timelinePage: 0,
+      eventPage: 0,
     };
-    notify();
-  });
-
-  let unsubscribeRoutingSnapshot = () => {};
-  let unsubscribeRoutingTransportStatus = () => {};
-  let unsubscribeRoutingEvent = () => {};
-
-  if (routingSource) {
-    const projectRoutingSource = (): void => {
-      const snapshot = routingSource.snapshot();
-      const status = routingSource.transportStatus();
-      state = {
-        ...state,
-        routingAddress: routingSource.address.path,
-        routingTransportState: status.state,
-        routingTransportReason: status.reason ?? null,
-        routingShipmentId: snapshot.context.shipmentId,
-        routingCarrier: snapshot.context.carrier,
-        routingEta: snapshot.context.eta,
-        routingRouteNotes: snapshot.context.routeNotes,
-      };
-    };
-
-    projectRoutingSource();
-
-    unsubscribeRoutingSnapshot = routingSource.subscribe((snapshot) => {
-      state = {
-        ...state,
-        routingAddress: routingSource.address.path,
-        routingShipmentId: snapshot.context.shipmentId,
-        routingCarrier: snapshot.context.carrier,
-        routingEta: snapshot.context.eta,
-        routingRouteNotes: snapshot.context.routeNotes,
-      };
-      notify();
-    });
-
-    unsubscribeRoutingTransportStatus = routingSource.subscribeTransportStatus((status) => {
-      state = {
-        ...state,
-        routingAddress: routingSource.address.path,
-        routingTransportState: status.state,
-        routingTransportReason: status.reason ?? null,
-      };
-      notify();
-    });
-
-    unsubscribeRoutingEvent = routingSource.subscribeEvent(
-      (event) => {
-        state = {
-          ...state,
-          eventLog: [projectEventLogItem(event, routingSource.address.id), ...state.eventLog],
-        };
-        notify();
-      },
-      {
-        types: ['ROUTE_ASSIGNED', 'SHIPMENT_RESET'],
-      }
-    );
+    localStateByAddress.set(address, state);
   }
 
-  const run = async (action: () => Promise<unknown>): Promise<void> => {
-    if (state.busy || stopped) {
-      return;
-    }
-    state = { ...state, busy: true };
-    notify();
-    try {
-      await action();
-    } finally {
-      state = { ...state, busy: false };
-      notify();
-    }
-  };
+  return state;
+}
 
-  const createShipment = async (destination: string, reference?: string): Promise<void> => {
-    const restUrl = configuredRestUrl();
-    if (restUrl) {
-      const response = await fetch(`${restUrl}/shipments`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          shipmentId: `shipment-${Date.now().toString(36)}`,
-          destination,
-          reference,
-        }),
-      });
-      if (!response.ok) {
-        throw new Error(`Shipment REST ingress failed with ${response.status}.`);
-      }
-      return;
-    }
-
-    await source.send({
-      type: 'CREATE_SHIPMENT',
-      shipmentId: `shipment-${Date.now().toString(36)}`,
-      destination,
-      reference,
-    });
-  };
+function createShipmentSourceHandle(): ActorWebSourceHandle<
+  ShipmentContext,
+  ShipmentCommand,
+  ShipmentEvent
+> {
+  const runtimeSources = createLogisticsTopologySources();
 
   return {
-    source: {
-      address: source.address,
-      snapshot() {
-        return createLogisticsSnapshot(source, state);
-      },
-      subscribe(listener) {
-        listeners.add(listener);
-        listener(createLogisticsSnapshot(source, state));
-
-        return () => {
-          listeners.delete(listener);
-        };
-      },
-      transportStatus: source.transportStatus.bind(source),
-      subscribeTransportStatus: source.subscribeTransportStatus.bind(source),
-      async send(event): Promise<void> {
-        switch (event.type) {
-          case 'draft.destination':
-            state = { ...state, draftDestination: event.value };
-            notify();
-            return;
-          case 'draft.reference':
-            state = { ...state, draftReference: event.value };
-            notify();
-            return;
-          case 'create':
-            await run(async () => {
-              const destination = state.draftDestination.trim();
-              if (destination.length === 0) {
-                return;
-              }
-              await createShipment(destination, state.draftReference.trim() || undefined);
-            });
-            return;
-          case 'create.quick':
-            state = {
-              ...state,
-              draftDestination: event.destination,
-              draftReference: event.reference,
-            };
-            notify();
-            await run(() => createShipment(event.destination, event.reference));
-            return;
-          case 'timeline.prev':
-            state = { ...state, timelinePage: Math.max(0, state.timelinePage - 1) };
-            notify();
-            return;
-          case 'timeline.next':
-            state = {
-              ...state,
-              timelinePage: Math.min(
-                Math.max(0, Math.ceil(state.timeline.length / PAGE_SIZE) - 1),
-                state.timelinePage + 1
-              ),
-            };
-            notify();
-            return;
-          case 'events.prev':
-            state = { ...state, eventPage: Math.max(0, state.eventPage - 1) };
-            notify();
-            return;
-          case 'events.next':
-            state = {
-              ...state,
-              eventPage: Math.min(
-                Math.max(0, Math.ceil(state.eventLog.length / PAGE_SIZE) - 1),
-                state.eventPage + 1
-              ),
-            };
-            notify();
-            return;
-          case 'reset':
-            await run(() => source.send({ type: 'RESET_SHIPMENT' }));
-            return;
-        }
-      },
-    },
-    async stop(): Promise<void> {
-      stopped = true;
-      unsubscribeRoutingEvent();
-      unsubscribeRoutingTransportStatus();
-      unsubscribeRoutingSnapshot();
-      unsubscribeTransportStatus();
-      unsubscribeEvent();
-      unsubscribeSnapshot();
-      listeners.clear();
-      await runtimeSources.destroy();
-    },
+    source: runtimeSources.source,
+    stop: runtimeSources.destroy,
   };
 }
 
-const registerIgniteHeadlessHost = igniteCore<LogisticsElementState, LogisticsElementEvent>({
-  source: createLogisticsControlTowerViewSource,
+function forceRender(host: HTMLElement): void {
+  (host as HTMLElement & { forceRender?: () => void }).forceRender?.();
+}
+
+async function createShipment(
+  actor: { send(message: ShipmentCommand): Promise<unknown> },
+  destination: string,
+  reference?: string
+): Promise<void> {
+  const restUrl = configuredRestUrl();
+  const shipmentId = `shipment-${Date.now().toString(36)}`;
+  if (restUrl) {
+    const response = await fetch(`${restUrl}/shipments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        shipmentId,
+        destination,
+        reference,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`Shipment REST ingress failed with ${response.status}.`);
+    }
+    return;
+  }
+
+  await actor.send({
+    type: 'CREATE_SHIPMENT',
+    shipmentId,
+    destination,
+    reference,
+  });
+}
+
+const registerIgniteHeadlessHost = igniteCore({
+  source: createShipmentSourceHandle,
+  states: ({ address, context, phase, transport }) => {
+    const local = localStateFor(address.path);
+    return {
+      phase,
+      shipmentId: context.shipmentId,
+      destination: context.destination,
+      reference: context.reference,
+      status: context.status,
+      carrier: context.carrier,
+      eta: context.eta,
+      routeNotes: context.routeNotes,
+      providerFacility: context.providerFacility,
+      providerSignal: context.providerSignal,
+      providerLoadId: context.providerLoadId,
+      providerNote: context.providerNote,
+      shipmentCount: context.shipmentCount,
+      timeline: cloneTimeline(context.timeline),
+      eventLog: local.eventLog,
+      transportState: transport.state,
+      transportReason: transport.reason ?? null,
+      address: address.path,
+      routingAddress: null,
+      routingTransportState: 'connected' as LogisticsHostState['transportState'],
+      routingTransportReason: null,
+      routingShipmentId: context.shipmentId,
+      routingCarrier: context.carrier,
+      routingEta: context.eta,
+      routingRouteNotes: context.routeNotes,
+      busy: local.busy,
+      draftDestination: local.draftDestination,
+      draftReference: local.draftReference,
+      timelinePage: local.timelinePage,
+      eventPage: local.eventPage,
+    } satisfies LogisticsElementState;
+  },
+  commands: ({ actor, host }) => {
+    const address = actor.address.path;
+    const local = localStateFor(address);
+
+    if (!eventSubscriptionsByHost.has(host)) {
+      eventSubscriptionsByHost.add(host);
+      actor.subscribeEvent?.(
+        (event) => {
+          const nextLocal = localStateFor(address);
+          nextLocal.eventLog = [
+            projectEventLogItem(event, actor.address.id),
+            ...nextLocal.eventLog,
+          ];
+          forceRender(host);
+        },
+        {
+          types: [
+            'SHIPMENT_CREATED',
+            'ROUTE_REQUESTED',
+            'ROUTE_ASSIGNED',
+            'SHIPMENT_IN_TRANSIT',
+            'SHIPMENT_DELIVERED',
+            'SHIPMENT_RETURNED',
+            'PROVIDER_SIGNAL_RECORDED',
+            'SHIPMENT_RESET',
+          ],
+        }
+      );
+    }
+
+    const run = async (action: () => Promise<unknown>): Promise<void> => {
+      if (local.busy) {
+        return;
+      }
+      local.busy = true;
+      forceRender(host);
+      try {
+        await action();
+      } finally {
+        local.busy = false;
+        forceRender(host);
+      }
+    };
+
+    return {
+      updateDraftDestination(value: string): void {
+        local.draftDestination = value;
+        forceRender(host);
+      },
+      updateDraftReference(value: string): void {
+        local.draftReference = value;
+        forceRender(host);
+      },
+      createShipment(destination = local.draftDestination, reference = local.draftReference): void {
+        const trimmedDestination = destination.trim();
+        if (trimmedDestination.length === 0) {
+          return;
+        }
+        local.draftDestination = destination;
+        local.draftReference = reference;
+        void run(() => createShipment(actor, trimmedDestination, reference.trim() || undefined));
+      },
+      resetShipment(): void {
+        void run(() => actor.send({ type: 'RESET_SHIPMENT' }));
+      },
+      previousTimelinePage(): void {
+        local.timelinePage = Math.max(0, local.timelinePage - 1);
+        forceRender(host);
+      },
+      nextTimelinePage(): void {
+        const itemCount = actor.snapshot().context.timeline.length;
+        local.timelinePage = Math.min(
+          Math.max(0, Math.ceil(itemCount / PAGE_SIZE) - 1),
+          local.timelinePage + 1
+        );
+        forceRender(host);
+      },
+      previousEventPage(): void {
+        local.eventPage = Math.max(0, local.eventPage - 1);
+        forceRender(host);
+      },
+      nextEventPage(): void {
+        local.eventPage = Math.min(
+          Math.max(0, Math.ceil(local.eventLog.length / PAGE_SIZE) - 1),
+          local.eventPage + 1
+        );
+        forceRender(host);
+      },
+    };
+  },
   cleanup: true,
 });
 
@@ -643,7 +309,8 @@ export function defineIgniteHeadlessHostElement(): void {
     return;
   }
 
-  registerIgniteHeadlessHost(IGNITE_HEADLESS_HOST_ELEMENT_NAME, ({ state, send }) => {
+  registerIgniteHeadlessHost(IGNITE_HEADLESS_HOST_ELEMENT_NAME, (args) => {
+    const state = args as unknown as LogisticsControlTowerViewState;
     const canCreate = !state.busy && state.draftDestination.trim().length > 0;
     const canReset = !state.busy && (state.shipmentCount > 0 || state.eventLog.length > 0);
     const statusClass = state.busy ? 'badge status-busy' : `badge status-${state.status}`;
@@ -716,17 +383,16 @@ export function defineIgniteHeadlessHostElement(): void {
                         placeholder="Chicago warehouse"
                         disabled={state.busy}
                         onInput={(event: Event) =>
-                          send({
-                            type: 'draft.destination',
-                            value: (event.currentTarget as HTMLInputElement).value,
-                          })
+                          state.updateDraftDestination(
+                            (event.currentTarget as HTMLInputElement).value
+                          )
                         }
                       />
                       <button
                         type="button"
                         id="create-shipment"
                         disabled={!canCreate}
-                        onClick={() => send({ type: 'create' })}
+                        onClick={() => state.createShipment()}
                       >
                         Create
                       </button>
@@ -739,10 +405,7 @@ export function defineIgniteHeadlessHostElement(): void {
                       placeholder="REF-1001"
                       disabled={state.busy}
                       onInput={(event: Event) =>
-                        send({
-                          type: 'draft.reference',
-                          value: (event.currentTarget as HTMLInputElement).value,
-                        })
+                        state.updateDraftReference((event.currentTarget as HTMLInputElement).value)
                       }
                     />
                   </label>
@@ -751,13 +414,7 @@ export function defineIgniteHeadlessHostElement(): void {
                       type="button"
                       class="secondary"
                       disabled={state.busy}
-                      onClick={() =>
-                        send({
-                          type: 'create.quick',
-                          destination: 'Dallas cross-dock',
-                          reference: 'REF-2002',
-                        })
-                      }
+                      onClick={() => state.createShipment('Dallas cross-dock', 'REF-2002')}
                     >
                       Dallas
                     </button>
@@ -765,13 +422,7 @@ export function defineIgniteHeadlessHostElement(): void {
                       type="button"
                       class="secondary"
                       disabled={state.busy}
-                      onClick={() =>
-                        send({
-                          type: 'create.quick',
-                          destination: 'International hub',
-                          reference: 'REF-3003',
-                        })
-                      }
+                      onClick={() => state.createShipment('International hub', 'REF-3003')}
                     >
                       International
                     </button>
@@ -779,7 +430,7 @@ export function defineIgniteHeadlessHostElement(): void {
                       type="button"
                       class="danger"
                       disabled={!canReset}
-                      onClick={() => send({ type: 'reset' })}
+                      onClick={() => state.resetShipment()}
                     >
                       Reset
                     </button>
@@ -980,7 +631,7 @@ export function defineIgniteHeadlessHostElement(): void {
                       type="button"
                       class="secondary"
                       disabled={timelinePage === 0}
-                      onClick={() => send({ type: 'timeline.prev' })}
+                      onClick={() => state.previousTimelinePage()}
                     >
                       Previous
                     </button>
@@ -989,7 +640,7 @@ export function defineIgniteHeadlessHostElement(): void {
                       type="button"
                       class="secondary"
                       disabled={timelinePage + 1 >= timelinePageCount}
-                      onClick={() => send({ type: 'timeline.next' })}
+                      onClick={() => state.nextTimelinePage()}
                     >
                       Next
                     </button>
@@ -1017,7 +668,7 @@ export function defineIgniteHeadlessHostElement(): void {
                       type="button"
                       class="secondary"
                       disabled={eventPage === 0}
-                      onClick={() => send({ type: 'events.prev' })}
+                      onClick={() => state.previousEventPage()}
                     >
                       Previous
                     </button>
@@ -1026,7 +677,7 @@ export function defineIgniteHeadlessHostElement(): void {
                       type="button"
                       class="secondary"
                       disabled={eventPage + 1 >= eventPageCount}
-                      onClick={() => send({ type: 'events.next' })}
+                      onClick={() => state.nextEventPage()}
                     >
                       Next
                     </button>

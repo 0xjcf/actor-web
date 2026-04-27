@@ -108,12 +108,11 @@ const routingSource = logistics.actors.routing.source({
 });
 ```
 
-`ignite-headless-host-element.tsx` still creates a tiny presentation source for
-the single Control Tower screen because that screen combines two Actor-Web
-sources with browser-local draft inputs and pagination. That presentation source
-does not own the runtime connection; it composes the topology-created shipment
-and routing sources before handing them to `igniteCore` from
-`ignite-element/actor-web`.
+`ignite-headless-host-element.tsx` passes the shipment actor source handle
+directly to `igniteCore` from `ignite-element/actor-web`. Browser-local details
+such as form draft values, busy state, event pagination, and timeline pagination
+stay as view state in the element instead of being disguised as an Actor-Web
+source.
 
 `server-runtime-gateway.ts` starts the server node with `serveActorWebNode` and
 uses `serveActorWebHttp(runtime).for(logistics.actors.shipment)` for REST
