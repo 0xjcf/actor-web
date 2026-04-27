@@ -85,18 +85,19 @@ The example is organized around a hexagonal boundary:
   and `headless-host.ts` render and command the actors without owning runtime
   state.
 
-`checkout-contract.ts` remains only as a compatibility barrel for older tests
-and imports.
-
-The example also prototypes the planned topology/source DX:
+The example uses the runtime topology/source DX directly:
 
 ```ts
-const shipmentSource = logistics.actors.shipment.source();
+const source = createActorWebSource(logistics.actors.shipment, {
+  gateway: { url: gatewayUrl },
+});
 ```
 
-That source currently wraps the existing gateway, service-worker, and in-memory
-demo harnesses. It is intentionally example-local until the API shape is ready
-to promote into `@actor-core/runtime` and `ignite-element/actor-web`.
+`server-runtime-gateway.ts` starts the server node with `serveActorWebNode`,
+and `worker-websocket-runtime.ts` starts the worker node with
+`startActorWebNode`. The remaining harness code exists only to choose between
+the full server/worker demo, gateway-only mode, service-worker topology proof,
+and in-memory test fallback.
 
 ## Demo Flow
 
