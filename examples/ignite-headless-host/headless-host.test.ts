@@ -5,7 +5,6 @@ import {
   createLogisticsHostFromSource,
   type LogisticsHost,
 } from './headless-host';
-import { logisticsSources } from './logistics-source-topology';
 import { logistics } from './logistics-topology';
 import {
   createLogisticsRuntimeHarness,
@@ -37,7 +36,7 @@ describe('ignite-headless-host logistics example', () => {
     }
   });
 
-  it('exposes a topology-owned source for the shipment actor', async () => {
+  it('exposes topology-owned actors for the shipment source', async () => {
     expect(logistics.actors.shipment.address.path).toBe(
       'actor://logistics-server-runtime/actor/logistics-shipment'
     );
@@ -52,7 +51,7 @@ describe('ignite-headless-host logistics example', () => {
       children: ['shipment'],
     });
 
-    const sourceHandle = logisticsSources.actors.shipment.source();
+    const sourceHandle = createLogisticsRuntimeHarness();
     host = createLogisticsHostFromSource(sourceHandle.source, {
       destroy: sourceHandle.destroy,
     });
