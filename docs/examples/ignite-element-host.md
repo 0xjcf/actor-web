@@ -85,8 +85,9 @@ The example is organized around a hexagonal boundary:
   and `headless-host.ts` render and command the actors without owning runtime
   state.
 
-The example uses the runtime topology/source DX directly. The Control Tower
-commands and projects the server-owned shipment actor:
+The example uses the runtime topology/source DX directly. Runtime edges are
+created from topology actor descriptors, not from hand-written actor addresses.
+The Control Tower commands and projects the server-owned shipment actor:
 
 ```ts
 const source = logistics.actors.shipment.source({
@@ -106,6 +107,13 @@ const routingSource = logistics.actors.routing.source({
   },
 });
 ```
+
+`ignite-headless-host-element.tsx` still creates a tiny presentation source for
+the single Control Tower screen because that screen combines two Actor-Web
+sources with browser-local draft inputs and pagination. That presentation source
+does not own the runtime connection; it composes the topology-created shipment
+and routing sources before handing them to `igniteCore` from
+`ignite-element/actor-web`.
 
 `server-runtime-gateway.ts` starts the server node with `serveActorWebNode` and
 uses `serveActorWebHttp(runtime).for(logistics.actors.shipment)` for REST

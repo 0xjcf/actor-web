@@ -8,6 +8,7 @@ import {
 import { logistics } from './logistics-topology';
 import {
   createLogisticsRuntimeHarness,
+  createLogisticsTopologySources,
   createServerWorkerDemoRuntimeHarness,
 } from './runtime-harness';
 import { createLogisticsServerGatewayRuntimeHarness } from './server-gateway-client';
@@ -51,7 +52,7 @@ describe('ignite-headless-host logistics example', () => {
       children: ['shipment'],
     });
 
-    const sourceHandle = createLogisticsRuntimeHarness();
+    const sourceHandle = createLogisticsTopologySources();
     host = createLogisticsHostFromSource(sourceHandle.source, {
       destroy: sourceHandle.destroy,
     });

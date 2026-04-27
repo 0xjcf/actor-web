@@ -87,7 +87,8 @@ Current implementation status:
   adapters around a served node.
 - `@actor-core/runtime/browser` exports `startActorWebNode` for topology-owned
   browser worker runtime hosting.
-- `ignite-element/actor-web` remains a target-state API for a later slice.
+- `ignite-element/actor-web` is the first-class Ignite Element adapter entrypoint
+  for Actor-Web sources.
 - The current example uses topology actor `.source(...)` for server gateway
   sources and keeps only the harness code needed for in-memory/service-worker
   fallback behavior.

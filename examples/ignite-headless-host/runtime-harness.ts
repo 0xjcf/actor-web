@@ -29,11 +29,13 @@ import {
 
 export type { ShipmentCommand, ShipmentContext, ShipmentEvent } from './logistics-contract';
 
-export interface LogisticsRuntimeHarness {
+export interface LogisticsRuntimeSources {
   readonly source: IgniteActorSource<ShipmentContext, ShipmentCommand, ShipmentEvent>;
   readonly routingSource?: IgniteActorSource<ShipmentContext, ShipmentCommand, ShipmentEvent>;
   destroy(): Promise<void>;
 }
+
+export type LogisticsRuntimeHarness = LogisticsRuntimeSources;
 
 export interface ServerWorkerDemoRuntimeHarnessOptions {
   gatewayUrl: string;
@@ -455,7 +457,7 @@ function createWebWorkerRuntime(transportUrl: string): { destroy(): Promise<void
   };
 }
 
-export function createLogisticsRuntimeHarness(): LogisticsRuntimeHarness {
+export function createLogisticsTopologySources(): LogisticsRuntimeSources {
   if (serverWorkerDemoRuntimeAvailable()) {
     const gatewayUrl = configuredGatewayUrl();
     const transportUrl = configuredTransportUrl();
@@ -473,4 +475,8 @@ export function createLogisticsRuntimeHarness(): LogisticsRuntimeHarness {
   }
 
   return createInMemoryLogisticsRuntimeHarness();
+}
+
+export function createLogisticsRuntimeHarness(): LogisticsRuntimeHarness {
+  return createLogisticsTopologySources();
 }

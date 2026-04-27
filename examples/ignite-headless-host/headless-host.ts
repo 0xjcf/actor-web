@@ -9,7 +9,7 @@ import {
   type ShipmentContext,
   type ShipmentEvent,
 } from './logistics-contract';
-import { createLogisticsRuntimeHarness } from './runtime-harness';
+import { createLogisticsTopologySources } from './runtime-harness';
 
 export interface LogisticsEventLog {
   type: ShipmentEvent['type'];
@@ -214,6 +214,6 @@ export function createLogisticsHostFromSource(
 }
 
 export function createLogisticsHost(): LogisticsHost {
-  const shipmentSource = createLogisticsRuntimeHarness();
+  const shipmentSource = createLogisticsTopologySources();
   return createLogisticsHostFromSource(shipmentSource.source, { destroy: shipmentSource.destroy });
 }

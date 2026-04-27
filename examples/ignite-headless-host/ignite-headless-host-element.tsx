@@ -11,7 +11,7 @@ import {
   timelineRuntime,
 } from './logistics-view-model';
 import {
-  createLogisticsRuntimeHarness,
+  createLogisticsTopologySources,
   type LogisticsRuntimeHarness,
   type ShipmentContext,
 } from './runtime-harness';
@@ -387,12 +387,12 @@ function clampPage(page: number, itemCount: number): number {
   return Math.min(Math.max(0, Math.ceil(itemCount / PAGE_SIZE) - 1), Math.max(0, page));
 }
 
-function createLogisticsControlTowerSource(): ActorWebSourceHandle<
+function createLogisticsControlTowerViewSource(): ActorWebSourceHandle<
   LogisticsElementState,
   LogisticsElementEvent
 > {
-  const runtimeHarness = createLogisticsRuntimeHarness();
-  const { source, routingSource } = runtimeHarness;
+  const runtimeSources = createLogisticsTopologySources();
+  const { source, routingSource } = runtimeSources;
   const listeners = new Set<(snapshot: ReturnType<typeof createLogisticsSnapshot>) => void>();
   let stopped = false;
   let state = projectElementState(source.snapshot().context, source);
@@ -628,13 +628,13 @@ function createLogisticsControlTowerSource(): ActorWebSourceHandle<
       unsubscribeEvent();
       unsubscribeSnapshot();
       listeners.clear();
-      await runtimeHarness.destroy();
+      await runtimeSources.destroy();
     },
   };
 }
 
 const registerIgniteHeadlessHost = igniteCore<LogisticsElementState, LogisticsElementEvent>({
-  source: createLogisticsControlTowerSource,
+  source: createLogisticsControlTowerViewSource,
   cleanup: true,
 });
 
