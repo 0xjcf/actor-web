@@ -293,22 +293,43 @@ export const createPlannerAgentBehavior = () =>
 This matches FAS’s FSM-as-constraint-map model without creating a separate FSM
 implementation in Actor-Web.
 
+## Implementation Status
+
+Implemented in the first runtime slice:
+
+- `defineActor().withMachine(...).onTransition(...)` for typed transition
+  handler maps.
+- Handler key inference from the command union passed to `defineActor<T>()`.
+- Handler `message` narrowing by transition key.
+- Runtime XState legality checks before transition handler side effects.
+- `onMessage(...)` fallback for messages without transition handlers.
+- Public transition handler types from `@actor-core/runtime` and
+  `@actor-core/runtime/browser`.
+
+Still remaining:
+
+- Transition metadata projection for UI/tooling.
+- Logistics example migration to `onTransition(...)`.
+- FAS agent lifecycle prototype using XState constraints and actor tools.
+
 ## Implementation Slices
 
 ### Slice 1: Builder API
 
-- Add `onTransition(...)` to `UnifiedActorBuilder`.
-- Type handler keys from `TMessage['type']`.
-- Narrow handler `message` by transition key.
-- Preserve current `onMessage(...)` support.
-- Route incoming messages to transition handlers at runtime.
-- Add unit tests for type narrowing and runtime handler execution.
+- Status: implemented.
+- Added `onTransition(...)` to `UnifiedActorBuilder`.
+- Typed handler keys from `TMessage['type']`.
+- Narrowed handler `message` by transition key.
+- Preserved current `onMessage(...)` support.
+- Routed incoming messages to transition handlers at runtime.
+- Added unit tests for runtime handler execution and fallback behavior.
 
 ### Slice 2: XState Validation
 
-- Detect whether the attached machine can accept a message.
-- Reject invalid transitions before running side effects.
-- Add invalid-transition tests.
+- Status: implemented.
+- Detects whether the attached machine can accept a message.
+- Rejects invalid transitions before running side effects.
+- Includes invalid-transition tests.
 - Keep validation runtime-first; compile-time machine event validation can come
   later.
 
