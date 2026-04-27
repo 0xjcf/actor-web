@@ -27,6 +27,7 @@ import type { TypedActorInstance } from './typed-actor-instance.js';
  */
 export type UnifiedMessageHandler<TMsg, TCtx, _TEmitted> = (params: {
   readonly message: TMsg;
+  readonly context: TCtx;
   readonly actor: TypedActorInstance<TCtx>;
   readonly dependencies: ActorDependencies;
   readonly tools: ActorToolbox;
@@ -296,13 +297,15 @@ function createTransitionDispatcher<TMsg extends ActorMessage, TCtx, TEmitted>(
   fallback: UnifiedMessageHandler<TMsg, TCtx, TEmitted> | undefined
 ): UnifiedMessageHandler<TMsg, TCtx, TEmitted> {
   return async (params) => {
+    const context = params.actor.getSnapshot().context;
+    const handlerParams = { ...params, context };
     const handler = handlers[params.message.type as TMsg['type']] as
       | UnifiedMessageHandler<TMsg, TCtx, TEmitted>
       | undefined;
 
     if (!handler) {
       if (fallback) {
-        return fallback(params);
+        return fallback(handlerParams);
       }
 
       throw new Error(`Actor transition "${params.message.type}" does not declare a handler.`);
@@ -324,7 +327,7 @@ function createTransitionDispatcher<TMsg extends ActorMessage, TCtx, TEmitted>(
     }
 
     params.actor.send(params.message);
-    return handler(params);
+    return handler(handlerParams);
   };
 }
 
@@ -336,13 +339,15 @@ function createFSMTransitionDispatcher<TMsg extends ActorMessage, TCtx, TEmitted
   const actorStates = new WeakMap<TypedActorInstance<TCtx>, string>();
 
   return async (params) => {
+    const context = params.actor.getSnapshot().context;
+    const handlerParams = { ...params, context };
     const handler = handlers[params.message.type as TMsg['type']] as
       | UnifiedMessageHandler<TMsg, TCtx, TEmitted>
       | undefined;
 
     if (!handler) {
       if (fallback) {
-        return fallback(params);
+        return fallback(handlerParams);
       }
 
       throw new Error(`Actor transition "${params.message.type}" does not declare a handler.`);
@@ -364,7 +369,7 @@ function createFSMTransitionDispatcher<TMsg extends ActorMessage, TCtx, TEmitted
     const transitionParams = {
       message: params.message,
       state: currentState,
-      context: params.actor.getSnapshot().context,
+      context,
     } as ActorFSMTransitionParams<TMsg, TCtx, string>;
 
     if (normalizedTransition.guard && !normalizedTransition.guard(transitionParams)) {
@@ -377,7 +382,7 @@ function createFSMTransitionDispatcher<TMsg extends ActorMessage, TCtx, TEmitted
         : normalizedTransition.target;
     actorStates.set(params.actor, target);
 
-    return handler(params);
+    return handler(handlerParams);
   };
 }
 

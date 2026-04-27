@@ -32,6 +32,7 @@ const log = Logger.namespace('PURE_BEHAVIOR_HANDLER');
  */
 export type PureMessageHandler<TMessage, TDomainEvent = DomainEvent> = (params: {
   readonly message: TMessage;
+  readonly context?: unknown;
   readonly actor: ActorInstance;
   readonly dependencies: ActorDependencies;
   readonly tools: ActorToolbox;
@@ -131,6 +132,7 @@ export class PureActorBehaviorHandler {
 
       const messagePlan = await behavior.onMessage({
         message,
+        context: actor.getSnapshot().context,
         actor,
         dependencies,
         tools: dependencies.tools,

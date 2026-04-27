@@ -69,9 +69,7 @@ export function createShipmentBehavior() {
   return defineActor<ShipmentCommand>()
     .withContext(createInitialShipmentContext())
     .withFSM(shipmentFSM)
-    .onMessage(({ actor, message }) => {
-      const context = actor.getSnapshot().context;
-
+    .onMessage(({ context, message }) => {
       if (message.type === 'GET_SHIPMENT_COUNT') {
         return { reply: context.shipmentCount };
       }
@@ -79,9 +77,7 @@ export function createShipmentBehavior() {
       return undefined;
     })
     .onTransition({
-      CREATE_SHIPMENT: ({ actor, message }) => {
-        const context = actor.getSnapshot().context;
-
+      CREATE_SHIPMENT: ({ context, message }) => {
         return {
           context: {
             ...context,
@@ -122,9 +118,7 @@ export function createShipmentBehavior() {
         };
       },
 
-      ASSIGN_ROUTE: ({ actor, message }) => {
-        const context = actor.getSnapshot().context;
-
+      ASSIGN_ROUTE: ({ context, message }) => {
         return {
           context: {
             ...context,
@@ -155,8 +149,7 @@ export function createShipmentBehavior() {
         };
       },
 
-      MARK_IN_TRANSIT: ({ actor, message }) => {
-        const context = actor.getSnapshot().context;
+      MARK_IN_TRANSIT: ({ context, message }) => {
         const shipmentId = message.shipmentId ?? context.shipmentId ?? 'unknown-shipment';
 
         return {
@@ -173,8 +166,7 @@ export function createShipmentBehavior() {
         };
       },
 
-      MARK_DELIVERED: ({ actor, message }) => {
-        const context = actor.getSnapshot().context;
+      MARK_DELIVERED: ({ context, message }) => {
         const shipmentId = message.shipmentId ?? context.shipmentId ?? 'unknown-shipment';
 
         return {
@@ -191,8 +183,7 @@ export function createShipmentBehavior() {
         };
       },
 
-      MARK_RETURNED: ({ actor, message }) => {
-        const context = actor.getSnapshot().context;
+      MARK_RETURNED: ({ context, message }) => {
         const shipmentId = message.shipmentId ?? context.shipmentId ?? 'unknown-shipment';
 
         return {
@@ -209,8 +200,7 @@ export function createShipmentBehavior() {
         };
       },
 
-      APPLY_PROVIDER_SIGNAL: ({ actor, message }) => {
-        const context = actor.getSnapshot().context;
+      APPLY_PROVIDER_SIGNAL: ({ context, message }) => {
         const baseContext = message.baseContext ?? context;
         const shipmentId = message.shipmentId ?? baseContext.shipmentId ?? 'unknown-shipment';
         const facility = message.facility ?? providerFacilityForShipment(shipmentId);
@@ -243,9 +233,7 @@ export function createShipmentBehavior() {
         };
       },
 
-      RESET_SHIPMENT: ({ actor }) => {
-        const context = actor.getSnapshot().context;
-
+      RESET_SHIPMENT: ({ context }) => {
         return {
           context: {
             ...createInitialShipmentContext(),
