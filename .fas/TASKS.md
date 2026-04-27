@@ -235,8 +235,8 @@
 
 - Title: Actor-Web transition handler context param
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
