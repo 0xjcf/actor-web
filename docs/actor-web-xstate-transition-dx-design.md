@@ -86,7 +86,12 @@ export const createShipmentBehavior = () =>
     .withContext(createInitialShipmentContext())
     .withFSM(shipmentFSM)
     .onTransition({
-      CREATE_SHIPMENT: async ({ message }) => ({
+      CREATE_SHIPMENT: async ({ context, message }) => ({
+        context: {
+          ...context,
+          shipmentId: message.shipmentId,
+          status: 'route-requested',
+        },
         emit: [{ type: 'SHIPMENT_CREATED', shipmentId: message.shipmentId }],
       }),
     })
@@ -100,11 +105,15 @@ export const createShipmentBehavior = () =>
   defineActor<ShipmentCommand>()
     .withMachine(shipmentMachine)
     .onTransition({
-      CREATE_SHIPMENT: async ({ message }) => ({
+      CREATE_SHIPMENT: async ({ context, message }) => ({
+        context: {
+          ...context,
+          shipmentId: message.shipmentId,
+        },
         emit: [{ type: 'SHIPMENT_CREATED', shipmentId: message.shipmentId }],
       }),
 
-      SCAN_LABEL: async ({ message, dependencies }) => {
+      SCAN_LABEL: async ({ message, tools }) => {
         const scan = await tools.execute('provider.scan.verify', message);
 
         return {
@@ -122,6 +131,19 @@ SCAN_LABEL: async ({ message }) => {
   message.type;
   message.shipmentId;
   message.scanId;
+}
+```
+
+Handlers receive the current context directly. Use `context` for normal domain
+state updates, `tools` for ports/adapters, `dependencies` for runtime
+integration, and `actor` only when runtime actor capabilities are needed.
+
+```ts
+SCAN_LABEL: async ({ context, message, tools, actor }) => {
+  context.status;
+  message.scanId;
+  await tools.execute('provider.scan.verify', message);
+  actor.getSnapshot();
 }
 ```
 
