@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { setup } from 'xstate';
 import { createActorSystem } from '../actor-system-impl.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineActor, defineFSM } from '../unified-actor-builder.js';
 
 type ShipmentCommand =
   | { type: 'CREATE_SHIPMENT'; shipmentId: string }
@@ -43,6 +43,14 @@ const shipmentMachine = setup({
 });
 
 describe('defineActor().onTransition', () => {
+  it('requires a machine or FSM constraint map', () => {
+    expect(() =>
+      defineActor<ShipmentCommand>().onTransition({
+        CREATE_SHIPMENT: () => ({ reply: 'created' }),
+      })
+    ).toThrow('onTransition(...) requires withMachine(...) or withFSM(...)');
+  });
+
   it('dispatches typed transition handlers through the attached XState machine', async () => {
     const behavior = defineActor<ShipmentCommand>()
       .withMachine(shipmentMachine)
@@ -80,7 +88,7 @@ describe('defineActor().onTransition', () => {
     }
   });
 
-  it('rejects invalid transitions before running handler side effects', async () => {
+  it('returns invalid transition values before running handler side effects', async () => {
     let handled = false;
     const behavior = defineActor<ShipmentCommand>()
       .withMachine(shipmentMachine)
@@ -102,7 +110,15 @@ describe('defineActor().onTransition', () => {
           type: 'MARK_DELIVERED',
           shipmentId: 'shipment-1',
         })
-      ).rejects.toThrow('cannot apply transition "MARK_DELIVERED" from state "idle"');
+      ).resolves.toEqual({
+        ok: false,
+        error: {
+          code: 'INVALID_TRANSITION',
+          messageType: 'MARK_DELIVERED',
+          state: 'idle',
+          allowedTransitions: [],
+        },
+      });
       expect(handled).toBe(false);
     } finally {
       await system.stop();
@@ -139,5 +155,93 @@ describe('defineActor().onTransition', () => {
     } finally {
       await system.stop();
     }
+  });
+
+  it('supports lightweight Actor-Web FSM constraint maps', async () => {
+    const shipmentFSM = defineFSM<ShipmentCommand, ShipmentContext, 'idle' | 'created'>({
+      initial: 'idle',
+      states: {
+        idle: {
+          on: {
+            CREATE_SHIPMENT: 'created',
+          },
+        },
+        created: {
+          on: {},
+        },
+      },
+    });
+    const initialContext: ShipmentContext = { shipmentId: null };
+    const behavior = defineActor<ShipmentCommand>()
+      .withContext(initialContext)
+      .withFSM(shipmentFSM)
+      .onTransition({
+        CREATE_SHIPMENT: ({ message, actor }) => ({
+          context: {
+            ...actor.getSnapshot().context,
+            shipmentId: message.shipmentId,
+          },
+          reply: {
+            ok: true,
+            shipmentId: message.shipmentId,
+          },
+        }),
+      })
+      .build();
+
+    const system = createActorSystem({ nodeAddress: 'test-node' });
+    await system.start();
+    try {
+      const actor = await system.spawn(behavior, { id: 'shipment' });
+
+      await expect(
+        actor.ask({
+          type: 'CREATE_SHIPMENT',
+          shipmentId: 'shipment-1',
+        })
+      ).resolves.toEqual({
+        ok: true,
+        shipmentId: 'shipment-1',
+      });
+      await expect(
+        actor.ask({
+          type: 'CREATE_SHIPMENT',
+          shipmentId: 'shipment-2',
+        })
+      ).resolves.toEqual({
+        ok: false,
+        error: {
+          code: 'INVALID_TRANSITION',
+          messageType: 'CREATE_SHIPMENT',
+          state: 'created',
+          allowedTransitions: [],
+        },
+      });
+      expect(actor.getSnapshot().context).toEqual({ shipmentId: 'shipment-1' });
+    } finally {
+      await system.stop();
+    }
+  });
+
+  it('does not allow XState and FSM constraints on the same actor', () => {
+    const shipmentFSM = defineFSM<ShipmentCommand, ShipmentContext, 'idle'>({
+      initial: 'idle',
+      states: {
+        idle: {
+          on: {},
+        },
+      },
+    });
+
+    expect(() =>
+      defineActor<ShipmentCommand>().withMachine(shipmentMachine).withFSM(shipmentFSM)
+    ).toThrow('withMachine(...) and withFSM(...) cannot be used together.');
+
+    expect(() =>
+      defineActor<ShipmentCommand>()
+        .withContext({ shipmentId: null })
+        .withFSM(shipmentFSM)
+        .withMachine(shipmentMachine)
+    ).toThrow('withMachine(...) and withFSM(...) cannot be used together.');
   });
 });
