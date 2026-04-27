@@ -246,8 +246,8 @@
 
 - Title: Logistics example multiple actor sources
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
