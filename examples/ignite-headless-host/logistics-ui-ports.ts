@@ -9,62 +9,7 @@ export interface CreateShipmentInput {
   shipmentId?: string;
 }
 
-interface ShipmentCommandActor {
-  send(message: ShipmentCommand): Promise<unknown>;
-}
-
-export interface LogisticsShipmentPortsOptions {
-  actor: ShipmentCommandActor;
-  restUrl?: string | null;
-  createShipmentId?: () => string;
-}
-
-export function configuredRestUrl(): string | undefined {
-  const configuredUrl = import.meta.env.VITE_ACTOR_WEB_REST_URL;
-  return typeof configuredUrl === 'string' && configuredUrl.trim().length > 0
-    ? configuredUrl.replace(/\/$/, '')
-    : undefined;
-}
-
-async function submitShipment(
-  actor: ShipmentCommandActor,
-  input: CreateShipmentInput,
-  restUrl: string | null,
-  createShipmentId: () => string
-): Promise<void> {
-  const destination = input.destination.trim();
-  if (destination.length === 0) {
-    return;
-  }
-
-  const shipmentId = input.shipmentId ?? createShipmentId();
-  const reference = input.reference?.trim() || undefined;
-
-  if (restUrl) {
-    const response = await fetch(`${restUrl}/shipments`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        shipmentId,
-        destination,
-        reference,
-      }),
-    });
-    if (!response.ok) {
-      throw new Error(`Shipment REST ingress failed with ${response.status}.`);
-    }
-    return;
-  }
-
-  await actor.send({
-    type: 'CREATE_SHIPMENT',
-    shipmentId,
-    destination,
-    reference,
-  });
-}
-
-function createShipmentId(): string {
+export function createShipmentId(): string {
   return `shipment-${Date.now().toString(36)}`;
 }
 
@@ -90,22 +35,5 @@ export const logisticsSources = {
 
   routing(): ActorWebSourceHandle<ShipmentContext, ShipmentCommand, ShipmentEvent> {
     return createSourceHandle(logistics.actors.routing);
-  },
-};
-
-export const logisticsPorts = {
-  shipments(options: LogisticsShipmentPortsOptions) {
-    const restUrl = options.restUrl ?? null;
-    const nextShipmentId = options.createShipmentId ?? createShipmentId;
-
-    return {
-      createShipment(input: CreateShipmentInput): Promise<void> {
-        return submitShipment(options.actor, input, restUrl, nextShipmentId);
-      },
-
-      resetShipment(): Promise<unknown> {
-        return options.actor.send({ type: 'RESET_SHIPMENT' });
-      },
-    };
   },
 };

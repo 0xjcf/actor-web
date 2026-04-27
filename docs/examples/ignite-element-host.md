@@ -115,12 +115,12 @@ read-only Ignite component/source. The UI consumes the inferred Ignite view
 model from the `states` hook instead of wrapping projection data in a custom
 source-shaped adapter.
 
-`logistics-ui-ports.ts` keeps the browser host boundary explicit:
+`logistics-ui-ports.ts` keeps the browser host source boundary explicit:
 `logisticsSources` chooses the correct topology-backed source for the current
-demo mode, while `logisticsPorts.shipments(...)` owns REST-versus-gateway
-command ingress. Browser-local details such as form inputs and latest-event
-display remain element concerns instead of being disguised as Actor-Web source
-state.
+demo mode. Browser-local details such as form inputs and latest-event display
+remain element concerns instead of being disguised as Actor-Web source state.
+Ignite commands send actor messages through the source actor; REST ingress stays
+in the server HTTP adapter and reaches the same actor behavior.
 
 `server-runtime-gateway.ts` starts the server node with `serveActorWebNode` and
 uses `serveActorWebHttp(runtime).for(logistics.actors.shipment)` for REST

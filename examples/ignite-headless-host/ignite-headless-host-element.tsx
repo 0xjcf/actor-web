@@ -5,12 +5,7 @@ import 'ignite-element/renderers/ignite-jsx';
 import { igniteCore } from 'ignite-element/actor-web';
 import type { LogisticsEventLog, LogisticsHostState } from './headless-host';
 import styles from './ignite-headless-host-element.css?raw';
-import {
-  type CreateShipmentInput,
-  configuredRestUrl,
-  logisticsPorts,
-  logisticsSources,
-} from './logistics-ui-ports';
+import { type CreateShipmentInput, createShipmentId, logisticsSources } from './logistics-ui-ports';
 import {
   type ProjectedLogisticsEventLog,
   type ProjectedTimelineEntry,
@@ -139,10 +134,25 @@ const registerIgniteHeadlessHost = igniteCore({
       });
     }
 
-    return logisticsPorts.shipments({
-      actor,
-      restUrl: configuredRestUrl(),
-    });
+    return {
+      createShipment(input: CreateShipmentInput): Promise<unknown> {
+        const destination = input.destination.trim();
+        if (destination.length === 0) {
+          return Promise.resolve();
+        }
+
+        return actor.send({
+          type: 'CREATE_SHIPMENT',
+          shipmentId: input.shipmentId ?? createShipmentId(),
+          destination,
+          reference: input.reference?.trim() || undefined,
+        });
+      },
+
+      resetShipment(): Promise<unknown> {
+        return actor.send({ type: 'RESET_SHIPMENT' });
+      },
+    };
   },
   cleanup: true,
 });
