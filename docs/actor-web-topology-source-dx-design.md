@@ -65,8 +65,8 @@ import { actor, defineActorWebTopology, node, tool } from '@actor-core/runtime/t
 // Browser/presentation source creation and browser worker runtime hosting.
 import { createActorWebSource, startActorWebNode } from '@actor-core/runtime/browser';
 
-// Node/server runtime hosting.
-import { serveActorWebNode } from '@actor-core/runtime/node';
+// Node/server runtime hosting and HTTP ingress adapters.
+import { serveActorWebHttp, serveActorWebNode } from '@actor-core/runtime/node';
 
 // Ignite Element authoring over Actor-Web sources.
 import { igniteCore } from 'ignite-element/actor-web';
@@ -83,6 +83,8 @@ Current implementation status:
   Ignite-compatible projection/control sources.
 - `@actor-core/runtime/node` exports `serveActorWebNode` for topology-owned
   Node/server runtime hosting.
+- `@actor-core/runtime/node` exports `serveActorWebHttp` for route-first HTTP
+  adapters around a served node.
 - `@actor-core/runtime/browser` exports `startActorWebNode` for topology-owned
   browser worker runtime hosting.
 - `ignite-element/actor-web` remains a target-state API for a later slice.
@@ -223,12 +225,37 @@ const server = await serveActorWebNode(logistics, {
   transport: true,
 });
 
-console.log(server.urls);
+const http = await serveActorWebHttp(server)
+  .for(logistics.actors.shipment)
+  .post('/shipments', async (request, response, { actor }) => {
+    const body = request.body as { shipmentId?: string; destination?: string };
+    if (!body.destination) {
+      return response.badRequest({ error: 'destination is required' });
+    }
+
+    const shipmentId = body.shipmentId ?? `shipment-${Date.now().toString(36)}`;
+    await actor.send({
+      type: 'CREATE_SHIPMENT',
+      shipmentId,
+      destination: body.destination,
+    });
+
+    return response.accepted({ shipmentId });
+  })
+  .get('/shipments/count', async (_request, response, { actor }) => {
+    const count = await actor.ask<number>({ type: 'GET_SHIPMENT_COUNT' });
+    return response.ok({ count });
+  })
+  .listen({ port: 4100 });
+
+console.log(http.url);
 ```
 
-REST, provider callbacks, and other ingress ports remain app-owned adapters.
-They can use `server.getActor('shipment')`, `server.system`, and
-`server.transport` to send messages, run asks, or join remote peers.
+REST, provider callbacks, and other ingress ports remain app-owned adapters,
+but `serveActorWebHttp(server)` removes the repeated Node HTTP boilerplate. The
+handler shape is `(request, response, actorWeb)`: `request` is HTTP data,
+`response` owns JSON/status helpers, and `actorWeb` exposes `runtime`,
+`actors`, plus inferred `actor` inside `.for(actorDescriptor)` routes.
 
 The browser worker runs another node:
 
@@ -368,6 +395,7 @@ Recommended API names:
 - `defineActorWebTopology`: declares shared runtime topology.
 - `supervisor`: declares a supervised actor group.
 - `serveActorWebNode`: starts a Node/server runtime node.
+- `serveActorWebHttp`: starts a Node HTTP adapter around a served runtime node.
 - `startActorWebNode`: starts a browser worker runtime node.
 - `createActorWebSource`: creates a browser-safe projection/control source.
 - `igniteCore` from `ignite-element/actor-web`: authoring surface for Actor-Web
@@ -391,6 +419,8 @@ Use address-based source creation when:
 - the integration boundary is a deployed actor address and gateway URL.
 
 Use `serveActorWebNode` only in Node/server entrypoints.
+
+Use `serveActorWebHttp` only in Node/server entrypoints that need HTTP ingress.
 
 Use `startActorWebNode` only in browser worker entrypoints.
 

@@ -93,8 +93,9 @@ const source = createActorWebSource(logistics.actors.shipment, {
 });
 ```
 
-`server-runtime-gateway.ts` starts the server node with `serveActorWebNode`,
-and `worker-websocket-runtime.ts` starts the worker node with
+`server-runtime-gateway.ts` starts the server node with `serveActorWebNode` and
+uses `serveActorWebHttp(runtime).for(logistics.actors.shipment)` for REST
+ingress routes. `worker-websocket-runtime.ts` starts the worker node with
 `startActorWebNode`. The remaining harness code exists only to choose between
 the full server/worker demo, gateway-only mode, service-worker topology proof,
 and in-memory test fallback.

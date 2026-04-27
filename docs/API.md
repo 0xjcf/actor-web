@@ -849,8 +849,8 @@ console.log(node.getGatewayUrl());
 
 `serveActorWebNode` deliberately does not own REST routes, provider callbacks,
 auth, persistence, or business ingress. Those remain hexagonal adapters around
-the served node and can use `node.getActor(...)`, `node.system`, and
-`node.transport`.
+the served node and can use `node.getActor(...)`, `node.system`,
+`node.transport`, or the HTTP builder below.
 
 Actors can declare required tool ports in topology with `tool(...)`. Node and
 browser-worker runners receive concrete implementations through `tools`. Missing
@@ -862,6 +862,70 @@ injectable instead of hidden behind global services.
 `gateway: true` exposes owned actors that declare `actor.gateway` metadata.
 `transport: true` opens a localhost WebSocket listener on an ephemeral port.
 Use object options only when deployment details need to override the defaults.
+
+### `serveActorWebHttp(runtime)`
+
+Node entrypoints can add an HTTP adapter around a served node with
+`serveActorWebHttp`. The builder keeps HTTP request data separate from
+Actor-Web runtime context: handlers receive `(request, response, actorWeb)`.
+
+```typescript
+import { serveActorWebHttp, serveActorWebNode } from '@actor-core/runtime/node';
+import { logistics } from './logistics.topology';
+
+const runtime = await serveActorWebNode(logistics, {
+  node: 'server',
+  gateway: true,
+  transport: true,
+});
+
+const http = await serveActorWebHttp(runtime)
+  .for(logistics.actors.shipment)
+  .post('/shipments', async (request, response, { actor }) => {
+    const body = request.body as {
+      shipmentId?: string;
+      destination?: string;
+      reference?: string;
+    };
+    if (!body.destination) {
+      return response.badRequest({ error: 'destination is required' });
+    }
+
+    const shipmentId = body.shipmentId ?? `shipment-${Date.now().toString(36)}`;
+    await actor.send({
+      type: 'CREATE_SHIPMENT',
+      shipmentId,
+      destination: body.destination,
+      reference: body.reference,
+    });
+
+    return response.accepted({ shipmentId });
+  })
+  .get('/shipments/count', async (_request, response, { actor }) => {
+    const count = await actor.ask<number>({ type: 'GET_SHIPMENT_COUNT' });
+    return response.ok({ count });
+  })
+  .listen({ port: 4100 });
+
+console.log(http.url);
+```
+
+Use unbound routes when an endpoint needs runtime metadata or multiple actors:
+
+```typescript
+serveActorWebHttp(runtime).get('/runtime/status', (_request, response, actorWeb) =>
+  response.ok({
+    gatewayUrl: actorWeb.runtime.getGatewayUrl(),
+    transportUrl: actorWeb.runtime.getTransportUrl(),
+  })
+);
+```
+
+`request` contains HTTP details such as `params`, `query`, `headers`, `body`,
+and the raw Node request. `response` provides JSON helpers such as `ok`,
+`accepted`, `badRequest`, `notFound`, and `noContent`. `actorWeb.actors` is a
+topology-keyed actor map, while `actorWeb.actor` is available only inside
+`.for(actorDescriptor)` routes.
 
 ### `startActorWebNode(topology, options)`
 

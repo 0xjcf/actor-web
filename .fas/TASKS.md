@@ -198,6 +198,17 @@
 - Blast radius: cross-cutting
 - Artifacts: planning=.fas/state/planning.json; taskPacket=.fas/state/task-packet.json; commitPlan=.fas/state/commit-plan.json; verification=.fas/state/verification/latest.json; review=.fas/state/boundary-review-findings.md; workflow=.fas/state/workflows
 
+### Task: Actor-Web HTTP builder server adapter
+
+- Title: Actor-Web HTTP builder server adapter
+- Mode: single-agent
+- Status: implementing
+- Owner: implementer
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: planning=.fas/state/planning.json; taskPacket=.fas/state/task-packet.json; commitPlan=.fas/state/commit-plan.json; verification=.fas/state/verification/latest.json; review=.fas/state/boundary-review-findings.md; workflow=.fas/state/workflows
+
 ## Template
 
 ### Task: `<short task title>`
