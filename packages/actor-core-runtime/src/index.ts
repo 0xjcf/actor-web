@@ -332,8 +332,14 @@ export type {
 } from './types.js';
 // Unified Actor API (NEW - Replaces defineActor/defineActor)
 export {
+  type ActorFSMDefinition,
+  type ActorFSMStateConfig,
+  type ActorFSMTransition,
+  type ActorFSMTransitionInput,
   type ActorSpec,
+  type ActorTransitionErrorValue,
   defineActor,
+  defineFSM,
   UnifiedActorBuilder,
   type UnifiedMessageHandler,
   type UnifiedTransitionHandler,

@@ -1,8 +1,9 @@
-import { defineActor } from '@actor-core/runtime/browser';
+import { defineActor, defineFSM } from '@actor-core/runtime/browser';
 import {
   createInitialShipmentContext,
   type ShipmentCommand,
   type ShipmentContext,
+  type ShipmentStatus,
 } from './logistics-contract';
 import {
   appendTimeline,
@@ -14,17 +15,73 @@ import {
   statusForProviderSignal,
 } from './logistics-provider';
 
+const resetOrCreate = {
+  CREATE_SHIPMENT: 'route-requested',
+  RESET_SHIPMENT: 'idle',
+} as const;
+
+const shipmentFSM = defineFSM<ShipmentCommand, ShipmentContext, ShipmentStatus>({
+  initial: 'idle',
+  states: {
+    idle: {
+      on: resetOrCreate,
+    },
+    accepted: {
+      on: resetOrCreate,
+    },
+    'route-requested': {
+      on: {
+        ...resetOrCreate,
+        ASSIGN_ROUTE: 'route-assigned',
+      },
+    },
+    'route-assigned': {
+      on: {
+        ...resetOrCreate,
+        APPLY_PROVIDER_SIGNAL: {
+          target: ({ message, context }) => statusForProviderSignal(message.signal, context.status),
+        },
+        MARK_IN_TRANSIT: 'in-transit',
+        MARK_DELIVERED: 'delivered',
+        MARK_RETURNED: 'returned',
+      },
+    },
+    'in-transit': {
+      on: {
+        ...resetOrCreate,
+        APPLY_PROVIDER_SIGNAL: {
+          target: ({ message, context }) => statusForProviderSignal(message.signal, context.status),
+        },
+        MARK_DELIVERED: 'delivered',
+        MARK_RETURNED: 'returned',
+      },
+    },
+    delivered: {
+      on: resetOrCreate,
+    },
+    returned: {
+      on: resetOrCreate,
+    },
+  },
+});
+
 export function createShipmentBehavior() {
   return defineActor<ShipmentCommand>()
     .withContext(createInitialShipmentContext())
+    .withFSM(shipmentFSM)
     .onMessage(({ actor, message }) => {
-      const context = actor.getSnapshot().context as ShipmentContext;
+      const context = actor.getSnapshot().context;
 
       if (message.type === 'GET_SHIPMENT_COUNT') {
         return { reply: context.shipmentCount };
       }
 
-      if (message.type === 'CREATE_SHIPMENT') {
+      return undefined;
+    })
+    .onTransition({
+      CREATE_SHIPMENT: ({ actor, message }) => {
+        const context = actor.getSnapshot().context;
+
         return {
           context: {
             ...context,
@@ -63,9 +120,11 @@ export function createShipmentBehavior() {
             },
           ],
         };
-      }
+      },
 
-      if (message.type === 'ASSIGN_ROUTE') {
+      ASSIGN_ROUTE: ({ actor, message }) => {
+        const context = actor.getSnapshot().context;
+
         return {
           context: {
             ...context,
@@ -94,10 +153,12 @@ export function createShipmentBehavior() {
             },
           ],
         };
-      }
+      },
 
-      if (message.type === 'MARK_IN_TRANSIT') {
+      MARK_IN_TRANSIT: ({ actor, message }) => {
+        const context = actor.getSnapshot().context;
         const shipmentId = message.shipmentId ?? context.shipmentId ?? 'unknown-shipment';
+
         return {
           context: {
             ...context,
@@ -110,10 +171,12 @@ export function createShipmentBehavior() {
           },
           emit: [{ type: 'SHIPMENT_IN_TRANSIT', shipmentId }],
         };
-      }
+      },
 
-      if (message.type === 'MARK_DELIVERED') {
+      MARK_DELIVERED: ({ actor, message }) => {
+        const context = actor.getSnapshot().context;
         const shipmentId = message.shipmentId ?? context.shipmentId ?? 'unknown-shipment';
+
         return {
           context: {
             ...context,
@@ -126,10 +189,12 @@ export function createShipmentBehavior() {
           },
           emit: [{ type: 'SHIPMENT_DELIVERED', shipmentId }],
         };
-      }
+      },
 
-      if (message.type === 'MARK_RETURNED') {
+      MARK_RETURNED: ({ actor, message }) => {
+        const context = actor.getSnapshot().context;
         const shipmentId = message.shipmentId ?? context.shipmentId ?? 'unknown-shipment';
+
         return {
           context: {
             ...context,
@@ -142,9 +207,10 @@ export function createShipmentBehavior() {
           },
           emit: [{ type: 'SHIPMENT_RETURNED', shipmentId }],
         };
-      }
+      },
 
-      if (message.type === 'APPLY_PROVIDER_SIGNAL') {
+      APPLY_PROVIDER_SIGNAL: ({ actor, message }) => {
+        const context = actor.getSnapshot().context;
         const baseContext = message.baseContext ?? context;
         const shipmentId = message.shipmentId ?? baseContext.shipmentId ?? 'unknown-shipment';
         const facility = message.facility ?? providerFacilityForShipment(shipmentId);
@@ -175,14 +241,18 @@ export function createShipmentBehavior() {
             event.type === 'PROVIDER_SIGNAL_RECORDED' ? { ...event, facility, loadId } : event
           ),
         };
-      }
+      },
 
-      return {
-        context: {
-          ...createInitialShipmentContext(),
-          shipmentCount: context.shipmentCount,
-        },
-        emit: [{ type: 'SHIPMENT_RESET', shipmentId: context.shipmentId }],
-      };
+      RESET_SHIPMENT: ({ actor }) => {
+        const context = actor.getSnapshot().context;
+
+        return {
+          context: {
+            ...createInitialShipmentContext(),
+            shipmentCount: context.shipmentCount,
+          },
+          emit: [{ type: 'SHIPMENT_RESET', shipmentId: context.shipmentId }],
+        };
+      },
     });
 }

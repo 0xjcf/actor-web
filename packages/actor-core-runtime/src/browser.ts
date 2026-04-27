@@ -103,7 +103,13 @@ export type { InMemoryMessageTransportNetwork } from './testing/in-memory-messag
 export { createInMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';
 export type { ActorSnapshot } from './types.js';
 export {
+  type ActorFSMDefinition,
+  type ActorFSMStateConfig,
+  type ActorFSMTransition,
+  type ActorFSMTransitionInput,
+  type ActorTransitionErrorValue,
   defineActor,
+  defineFSM,
   type UnifiedTransitionHandler,
   type UnifiedTransitionHandlers,
 } from './unified-actor-builder.js';
