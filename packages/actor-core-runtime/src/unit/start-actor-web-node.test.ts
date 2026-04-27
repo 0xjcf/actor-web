@@ -11,13 +11,13 @@ type CounterCommand =
 function createCounterBehavior() {
   return defineActor<CounterCommand>()
     .withContext({ count: 0 })
-    .onMessage(async ({ message, actor, dependencies }) => {
+    .onMessage(async ({ message, actor, tools }) => {
       const context = actor.getSnapshot().context;
       if (message.type === 'GET_COUNT') {
         return { reply: context.count };
       }
       if (message.type === 'RUN_TOOL') {
-        const result = await dependencies.tools.execute<string>('agent.echo', {
+        const result = await tools.execute<string>('agent.echo', {
           value: message.value,
         });
         return { reply: result };
@@ -123,5 +123,23 @@ describe('startActorWebNode', () => {
     await expect(startActorWebNode(topology, { node: 'worker' })).rejects.toThrow(
       'requires unregistered tool'
     );
+  });
+
+  it('rejects unknown topology peer keys', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        worker: node('worker-node'),
+      },
+      actors: {},
+    });
+
+    await expect(
+      startActorWebNode(topology, {
+        node: 'worker',
+        peers: {
+          missing: 'ws://127.0.0.1:1',
+        } as unknown as Partial<Record<'worker', string>>,
+      })
+    ).rejects.toThrow('Unknown Actor-Web peer node "missing"');
   });
 });

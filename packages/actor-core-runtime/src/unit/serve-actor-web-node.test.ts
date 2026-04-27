@@ -8,18 +8,18 @@ import { defineActor } from '../unified-actor-builder.js';
 type CounterCommand =
   | { type: 'INCREMENT' }
   | { type: 'GET_COUNT' }
-  | { type: 'RUN_TOOL'; value: string };
+  | { type: 'RUN_TOOL'; toolName?: string; value: string };
 
 function createCounterBehavior() {
   return defineActor<CounterCommand>()
     .withContext({ count: 0 })
-    .onMessage(async ({ message, actor, dependencies }) => {
+    .onMessage(async ({ message, actor, tools }) => {
       const context = actor.getSnapshot().context;
       if (message.type === 'GET_COUNT') {
         return { reply: context.count };
       }
       if (message.type === 'RUN_TOOL') {
-        const result = await dependencies.tools.execute<string>('agent.echo', {
+        const result = await tools.execute<string>(message.toolName ?? 'agent.echo', {
           value: message.value,
         });
         return { reply: result };
@@ -98,8 +98,8 @@ describe('serveActorWebNode', () => {
 
     const served = await serveActorWebNode(topology, {
       node: 'server',
-      transport: { listen: true },
-      gateway: { expose: ['counter'] },
+      transport: true,
+      gateway: true,
     });
 
     try {
@@ -188,6 +188,7 @@ describe('serveActorWebNode', () => {
           const payload = input as { value: string };
           return `node-tool:${payload.value}`;
         },
+        'agent.secret': () => 'hidden',
       },
     });
 
@@ -195,6 +196,11 @@ describe('serveActorWebNode', () => {
       await expect(
         served.getActor('agent')?.ask<string>({ type: 'RUN_TOOL', value: 'fas' })
       ).resolves.toBe('node-tool:fas');
+      await expect(
+        served
+          .getActor('agent')
+          ?.ask<string>({ type: 'RUN_TOOL', toolName: 'agent.secret', value: 'fas' })
+      ).rejects.toThrow('Actor tool "agent.secret" is not registered.');
     } finally {
       await served.stop();
     }

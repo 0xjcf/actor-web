@@ -47,6 +47,9 @@ describe('Actor-Web topology helpers', () => {
   it('builds actor addresses, node descriptors, and supervisor metadata', () => {
     const logistics = defineActorWebTopology({
       contractVersion: '1.0.0',
+      tools: {
+        'route.plan': tool('route.plan', { description: 'Plan shipment routes.' }),
+      },
       nodes: {
         browser: node('logistics-browser-host'),
         server: node('logistics-server-runtime'),
@@ -61,7 +64,7 @@ describe('Actor-Web topology helpers', () => {
             maxRestarts: 3,
             withinMs: 60_000,
           },
-          tools: [tool('route.plan', { description: 'Plan shipment routes.' })],
+          tools: ['route.plan'],
           gateway: {
             scope: { kind: 'logistics-shipment' },
           },
@@ -84,12 +87,11 @@ describe('Actor-Web topology helpers', () => {
       path: 'actor://logistics-server-runtime/actor/logistics-shipment',
     });
     expect(logistics.actors.shipment.nodeAddress).toBe('logistics-server-runtime');
-    expect(logistics.actors.shipment.tools).toEqual([
-      {
-        name: 'route.plan',
-        description: 'Plan shipment routes.',
-      },
-    ]);
+    expect(logistics.tools['route.plan']).toEqual({
+      name: 'route.plan',
+      description: 'Plan shipment routes.',
+    });
+    expect(logistics.actors.shipment.tools).toEqual(['route.plan']);
     expect(logistics.supervisors.logistics).toMatchObject({
       key: 'logistics',
       nodeAddress: 'logistics-server-runtime',
@@ -144,5 +146,25 @@ describe('Actor-Web topology helpers', () => {
         },
       })
     ).toThrow('references unknown node "worker"');
+  });
+
+  it('rejects actors that reference unknown topology tools when a catalog is declared', () => {
+    expect(() =>
+      defineActorWebTopology({
+        tools: {
+          'route.plan': tool('route.plan'),
+        },
+        nodes: {
+          server: node('server-node'),
+        },
+        actors: {
+          shipment: actor({
+            id: 'shipment',
+            node: 'server',
+            tools: ['missing.tool'],
+          }),
+        },
+      })
+    ).toThrow('references unknown tool "missing.tool"');
   });
 });
