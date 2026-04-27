@@ -2,9 +2,15 @@
 
 import 'ignite-element/renderers/ignite-jsx';
 
-import { type ActorWebSourceHandle, igniteCore } from 'ignite-element/actor-web';
+import { igniteCore } from 'ignite-element/actor-web';
 import type { LogisticsEventLog, LogisticsHostState } from './headless-host';
 import styles from './ignite-headless-host-element.css?raw';
+import {
+  type CreateShipmentInput,
+  configuredRestUrl,
+  logisticsPorts,
+  logisticsSources,
+} from './logistics-ui-ports';
 import {
   type ProjectedLogisticsEventLog,
   type ProjectedTimelineEntry,
@@ -12,12 +18,6 @@ import {
   projectEventLogViewItem,
   projectTimeline,
 } from './logistics-view-model';
-import {
-  createLogisticsTopologySources,
-  type ShipmentCommand,
-  type ShipmentContext,
-  type ShipmentEvent,
-} from './runtime-harness';
 
 export const IGNITE_HEADLESS_HOST_ELEMENT_NAME = 'aw-ignite-headless-host';
 const IGNITE_ROUTING_SOURCE_ELEMENT_NAME = 'aw-logistics-routing-source';
@@ -37,13 +37,6 @@ interface LogisticsElementLocalState {
 const PAGE_SIZE = 5;
 const localStateByAddress = new Map<string, LogisticsElementLocalState>();
 const eventSubscriptionsByHost = new WeakSet<HTMLElement>();
-
-function configuredRestUrl(): string | undefined {
-  const configuredUrl = import.meta.env.VITE_ACTOR_WEB_REST_URL;
-  return typeof configuredUrl === 'string' && configuredUrl.trim().length > 0
-    ? configuredUrl.replace(/\/$/, '')
-    : undefined;
-}
 
 function renderEvent(event: ProjectedLogisticsEventLog) {
   return (
@@ -90,65 +83,26 @@ function localStateFor(address: string): LogisticsElementLocalState {
   return state;
 }
 
-function createShipmentSourceHandle(): ActorWebSourceHandle<
-  ShipmentContext,
-  ShipmentCommand,
-  ShipmentEvent
-> {
-  const runtimeSources = createLogisticsTopologySources();
-
-  return {
-    source: runtimeSources.source,
-    stop: runtimeSources.destroy,
-  };
-}
-
-function createRoutingSourceHandle(): ActorWebSourceHandle<
-  ShipmentContext,
-  ShipmentCommand,
-  ShipmentEvent
-> {
-  const runtimeSources = createLogisticsTopologySources();
-
-  return {
-    source: runtimeSources.routingSource ?? runtimeSources.source,
-    stop: runtimeSources.destroy,
-  };
-}
-
-async function createShipment(
-  actor: { send(message: ShipmentCommand): Promise<unknown> },
-  destination: string,
-  reference?: string
-): Promise<void> {
-  const restUrl = configuredRestUrl();
-  const shipmentId = `shipment-${Date.now().toString(36)}`;
-  if (restUrl) {
-    const response = await fetch(`${restUrl}/shipments`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        shipmentId,
-        destination,
-        reference,
-      }),
-    });
-    if (!response.ok) {
-      throw new Error(`Shipment REST ingress failed with ${response.status}.`);
-    }
-    return;
+function shipmentInputFromFormEvent(event: Event): CreateShipmentInput | null {
+  event.preventDefault();
+  if (!(event.currentTarget instanceof HTMLFormElement)) {
+    return null;
   }
 
-  await actor.send({
-    type: 'CREATE_SHIPMENT',
-    shipmentId,
+  const formData = new FormData(event.currentTarget);
+  const destination = String(formData.get('destination') ?? '').trim();
+  if (destination.length === 0) {
+    return null;
+  }
+
+  return {
     destination,
-    reference,
-  });
+    reference: String(formData.get('reference') ?? '').trim() || undefined,
+  };
 }
 
 const registerIgniteHeadlessHost = igniteCore({
-  source: createShipmentSourceHandle,
+  source: logisticsSources.shipment,
   states: ({ address, context, phase, transport }) => {
     const local = localStateFor(address.path);
     return {
@@ -185,43 +139,16 @@ const registerIgniteHeadlessHost = igniteCore({
       });
     }
 
-    const readInputValue = (selector: string): string => {
-      return host.shadowRoot?.querySelector<HTMLInputElement>(selector)?.value ?? '';
-    };
-
-    return {
-      createShipment(): void {
-        const destination = readInputValue('#shipment-destination');
-        const reference = readInputValue('#shipment-reference');
-        const trimmedDestination = destination.trim();
-        if (trimmedDestination.length === 0) {
-          return;
-        }
-        void createShipment(actor, trimmedDestination, reference.trim() || undefined);
-      },
-      createQuickShipment(destination: string, reference: string): void {
-        const destinationInput =
-          host.shadowRoot?.querySelector<HTMLInputElement>('#shipment-destination');
-        const referenceInput =
-          host.shadowRoot?.querySelector<HTMLInputElement>('#shipment-reference');
-        if (destinationInput) {
-          destinationInput.value = destination;
-        }
-        if (referenceInput) {
-          referenceInput.value = reference;
-        }
-        void createShipment(actor, destination, reference);
-      },
-      resetShipment(): void {
-        void actor.send({ type: 'RESET_SHIPMENT' });
-      },
-    };
+    return logisticsPorts.shipments({
+      actor,
+      restUrl: configuredRestUrl(),
+    });
   },
   cleanup: true,
 });
 
 const registerRoutingSource = igniteCore({
-  source: createRoutingSourceHandle,
+  source: logisticsSources.routing,
   states: ({ address, context, transport }) => ({
     routingAddress: address.path,
     routingTransportState: transport.state,
@@ -240,7 +167,6 @@ function defineRoutingSourceElement(): void {
   }
 
   registerRoutingSource(IGNITE_ROUTING_SOURCE_ELEMENT_NAME, (view) => {
-
     return (
       <section class="panel">
         <style>{styles}</style>
@@ -342,39 +268,60 @@ export function defineIgniteHeadlessHostElement(): void {
               <aside class="stack">
                 <section class="panel">
                   <h2>Create Shipment</h2>
-                  <label class="field">
-                    <span class="label">Destination</span>
-                    <div class="toolbar">
+                  <form
+                    onSubmit={(event: Event) => {
+                      const input = shipmentInputFromFormEvent(event);
+                      if (input) {
+                        void view.createShipment(input);
+                      }
+                    }}
+                  >
+                    <label class="field">
+                      <span class="label">Destination</span>
+                      <div class="toolbar">
+                        <input
+                          id="shipment-destination"
+                          name="destination"
+                          value="Chicago warehouse"
+                          placeholder="Chicago warehouse"
+                        />
+                        <button type="submit" id="create-shipment">
+                          Create
+                        </button>
+                      </div>
+                    </label>
+                    <label class="field">
+                      <span class="label">Reference</span>
                       <input
-                        id="shipment-destination"
-                        value="Chicago warehouse"
-                        placeholder="Chicago warehouse"
+                        id="shipment-reference"
+                        name="reference"
+                        value="REF-1001"
+                        placeholder="REF-1001"
                       />
-                      <button
-                        type="button"
-                        id="create-shipment"
-                        onClick={() => view.createShipment()}
-                      >
-                        Create
-                      </button>
-                    </div>
-                  </label>
-                  <label class="field">
-                    <span class="label">Reference</span>
-                    <input id="shipment-reference" value="REF-1001" placeholder="REF-1001" />
-                  </label>
+                    </label>
+                  </form>
                   <div class="quick-grid">
                     <button
                       type="button"
                       class="secondary"
-                      onClick={() => view.createQuickShipment('Dallas cross-dock', 'REF-2002')}
+                      onClick={() =>
+                        void view.createShipment({
+                          destination: 'Dallas cross-dock',
+                          reference: 'REF-2002',
+                        })
+                      }
                     >
                       Dallas
                     </button>
                     <button
                       type="button"
                       class="secondary"
-                      onClick={() => view.createQuickShipment('International hub', 'REF-3003')}
+                      onClick={() =>
+                        void view.createShipment({
+                          destination: 'International hub',
+                          reference: 'REF-3003',
+                        })
+                      }
                     >
                       International
                     </button>
@@ -382,7 +329,7 @@ export function defineIgniteHeadlessHostElement(): void {
                       type="button"
                       class="danger"
                       disabled={!canReset}
-                      onClick={() => view.resetShipment()}
+                      onClick={() => void view.resetShipment()}
                     >
                       Reset
                     </button>

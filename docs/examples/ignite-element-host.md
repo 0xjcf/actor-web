@@ -78,7 +78,7 @@ The example is organized around a hexagonal boundary:
 - Projection helpers: `logistics-snapshots.ts` and `logistics-view-model.ts`
   keep gateway snapshots and UI route labeling out of actor behavior.
 - Ports/adapters: `server-runtime-gateway.ts`, `server-gateway-client.ts`,
-  `browser-transport.ts`, `worker-runtime.ts`, and
+  `browser-transport.ts`, `logistics-ui-ports.ts`, `worker-runtime.ts`, and
   `worker-websocket-runtime.ts` adapt REST, WebSocket gateway, MessagePort,
   service worker, and Actor-Web transport edges.
 - Ignite hosts: `ignite-headless-host-element.tsx`, `provider-console.tsx`,
@@ -115,8 +115,12 @@ read-only Ignite component/source. The UI consumes the inferred Ignite view
 model from the `states` hook instead of wrapping projection data in a custom
 source-shaped adapter.
 
-Browser-local details such as form inputs and latest-event display remain
-element concerns instead of being disguised as Actor-Web source state.
+`logistics-ui-ports.ts` keeps the browser host boundary explicit:
+`logisticsSources` chooses the correct topology-backed source for the current
+demo mode, while `logisticsPorts.shipments(...)` owns REST-versus-gateway
+command ingress. Browser-local details such as form inputs and latest-event
+display remain element concerns instead of being disguised as Actor-Web source
+state.
 
 `server-runtime-gateway.ts` starts the server node with `serveActorWebNode` and
 uses `serveActorWebHttp(runtime).for(logistics.actors.shipment)` for REST
