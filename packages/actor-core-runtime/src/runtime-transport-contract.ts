@@ -24,6 +24,7 @@ export interface RuntimeTransportFrame<TMessage extends ActorMessage = ActorMess
   protocolVersion: RuntimeTransportProtocolVersion;
   source: RuntimeNodeIdentity;
   destination: RuntimeNodeIdentity;
+  messageId: string;
   sequence: number;
   sentAt: string;
   message: TMessage;
@@ -409,6 +410,14 @@ export function validateRuntimeTransportFrame(
     };
   }
 
+  if (!isNonEmptyString(frame.messageId)) {
+    return {
+      ok: false,
+      code: 'malformed_frame',
+      message: 'Runtime transport frame requires a messageId.',
+    };
+  }
+
   if (!isNonEmptyString(frame.sentAt)) {
     return {
       ok: false,
@@ -488,9 +497,23 @@ export function validateRuntimeTransportHeartbeatFrame(
   return { ok: true };
 }
 
+export function createRuntimeTransportMessageId(input: {
+  source: RuntimeNodeIdentity;
+  destination: RuntimeNodeIdentity;
+  sequence: number;
+}): string {
+  return [
+    input.source.nodeAddress,
+    input.source.incarnation,
+    input.destination.nodeAddress,
+    String(input.sequence),
+  ].join(':');
+}
+
 export function createRuntimeTransportFrame<TMessage extends ActorMessage>(input: {
   source: RuntimeNodeIdentity;
   destination: RuntimeNodeIdentity;
+  messageId?: string;
   sequence: number;
   message: TMessage;
   now?: () => Date;
@@ -499,6 +522,7 @@ export function createRuntimeTransportFrame<TMessage extends ActorMessage>(input
     protocolVersion: RUNTIME_TRANSPORT_PROTOCOL_VERSION,
     source: input.source,
     destination: input.destination,
+    messageId: input.messageId ?? createRuntimeTransportMessageId(input),
     sequence: input.sequence,
     sentAt: (input.now ?? (() => new Date()))().toISOString(),
     message: input.message,

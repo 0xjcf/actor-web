@@ -489,9 +489,10 @@ replay/resync, observability, and backpressure.
 - keep observability dependency-free and in-memory until export/tracing
   semantics are designed
 
-Status: complete for runtime-native telemetry and stats snapshots. Remaining
-production work is auth/security, message id/idempotency, retry/ack semantics,
-durable replay/resync, backpressure enforcement, and durable telemetry export.
+Status: complete for runtime-native telemetry/stats snapshots, auth/security,
+and message ID based duplicate suppression. Remaining production work is
+retry/ack semantics, durable replay/resync, backpressure enforcement, and durable
+telemetry export.
 
 ### Phase 4: Projection hardening
 

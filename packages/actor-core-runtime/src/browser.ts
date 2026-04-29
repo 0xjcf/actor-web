@@ -100,6 +100,7 @@ export {
   createRuntimeTransportHandshakeReject,
   createRuntimeTransportHeartbeatPing,
   createRuntimeTransportHeartbeatPong,
+  createRuntimeTransportMessageId,
   isRuntimeNodeIdentity,
   isSameRuntimeNodeIdentity,
   RUNTIME_TRANSPORT_PROTOCOL_VERSION,

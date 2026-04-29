@@ -102,13 +102,25 @@
 
 - Title: Runtime transport and gateway auth security
 - Mode: 6-agent
-- Status: review
+- Status: done
 - Owner: reviewer
 - Brief: .fas/tasks/runtime-transport-gateway-auth-security.md
 - Verification lane: full
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 - Artifacts: brief=.fas/tasks/runtime-transport-gateway-auth-security.md; verification=.fas/state/verification/latest.json
+
+### Task: Runtime transport message IDs and idempotency
+
+- Title: Runtime transport message IDs and idempotency
+- Mode: 6-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/runtime-transport-message-id-idempotency.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: brief=.fas/tasks/runtime-transport-message-id-idempotency.md; verification=.fas/state/verification/latest.json
 
 ### Task: Logistics control tower demo
 

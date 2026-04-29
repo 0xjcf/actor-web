@@ -34,6 +34,7 @@ export interface BrowserWebSocketMessageTransportOptions {
   connectTimeoutMs?: number;
   heartbeatIntervalMs?: number;
   heartbeatTimeoutMs?: number;
+  idempotencyWindowSize?: number;
   telemetry?: RuntimeTransportTelemetryObserver;
   webSocketFactory?: (url: string) => WebSocket;
   auth?: RuntimeTransportAuthProvider<{
@@ -47,6 +48,8 @@ type BrowserPeerConnection = {
   identity: RuntimeNodeIdentity;
   sequence: number;
   lastReceivedSequence: number;
+  seenMessageIds: string[];
+  seenMessageIdSet: Set<string>;
   lastSeenAt: number;
   heartbeatInterval: ReturnType<typeof setInterval> | null;
   heartbeatTimeout: ReturnType<typeof setTimeout> | null;
@@ -63,6 +66,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
   private readonly connectTimeoutMs: number;
   private readonly heartbeatIntervalMs: number;
   private readonly heartbeatTimeoutMs: number;
+  private readonly idempotencyWindowSize: number;
   private readonly webSocketFactory: (url: string) => WebSocket;
   private readonly stats: RuntimeTransportStats;
 
@@ -76,6 +80,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
     this.connectTimeoutMs = options.connectTimeoutMs ?? 3000;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 15000;
     this.heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? this.heartbeatIntervalMs * 2;
+    this.idempotencyWindowSize = options.idempotencyWindowSize ?? 1024;
     this.webSocketFactory =
       options.webSocketFactory ??
       ((url) => {
@@ -127,6 +132,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       createRuntimeTransportFrame({
         source: this.identity,
         destination: peer.identity,
+        messageId: this.createMessageId(destination, peer.sequence),
         sequence: peer.sequence,
         message,
       })
@@ -309,6 +315,8 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       identity,
       sequence: 0,
       lastReceivedSequence: 0,
+      seenMessageIds: [],
+      seenMessageIdSet: new Set<string>(),
       lastSeenAt: Date.now(),
       heartbeatInterval: null,
       heartbeatTimeout: null,
@@ -380,6 +388,12 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
     }
 
     this.markPeerSeen(sourceNodeAddress, peer.socket);
+    if (this.isDuplicateFrame(peer, runtimeFrame)) {
+      this.recordDuplicateFrameDropped(sourceNodeAddress, peer, runtimeFrame);
+      return;
+    }
+
+    this.rememberMessageId(sourceNodeAddress, peer, runtimeFrame.messageId);
     this.recordFrameReceived(sourceNodeAddress, peer, runtimeFrame);
     this.emitTransportMessage(runtimeFrame.source.nodeAddress, runtimeFrame.message);
   }
@@ -527,6 +541,8 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       connectedPeerCount: 0,
       framesSent: 0,
       framesReceived: 0,
+      duplicateFramesDropped: 0,
+      idempotencyCacheEvictions: 0,
       malformedFramesDropped: 0,
       validationFramesDropped: 0,
       sequenceGapCount: 0,
@@ -547,6 +563,8 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       lastReceivedSequence: 0,
       framesSent: 0,
       framesReceived: 0,
+      duplicateFramesDropped: 0,
+      idempotencyCacheEvictions: 0,
       malformedFramesDropped: 0,
       validationFramesDropped: 0,
       sequenceGapCount: 0,
@@ -695,6 +713,70 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       type: 'frame.received',
       peerNodeAddress: nodeAddress,
       messageType: frame.message.type,
+      sequence: frame.sequence,
+    });
+  }
+
+  private createMessageId(destination: string, sequence: number): string {
+    return [
+      this.identity.nodeAddress,
+      this.identity.incarnation,
+      destination,
+      String(sequence),
+    ].join(':');
+  }
+
+  private isDuplicateFrame(peer: BrowserPeerConnection, frame: RuntimeTransportFrame): boolean {
+    return this.idempotencyWindowSize > 0 && peer.seenMessageIdSet.has(frame.messageId);
+  }
+
+  private rememberMessageId(
+    nodeAddress: string,
+    peer: BrowserPeerConnection,
+    messageId: string
+  ): void {
+    if (this.idempotencyWindowSize <= 0) {
+      return;
+    }
+
+    peer.seenMessageIdSet.add(messageId);
+    peer.seenMessageIds.push(messageId);
+
+    while (peer.seenMessageIds.length > this.idempotencyWindowSize) {
+      const evicted = peer.seenMessageIds.shift();
+      if (!evicted) {
+        continue;
+      }
+
+      peer.seenMessageIdSet.delete(evicted);
+      this.stats.idempotencyCacheEvictions += 1;
+      this.setPeerStats(nodeAddress, {
+        idempotencyCacheEvictions:
+          (this.stats.peers[nodeAddress]?.idempotencyCacheEvictions ?? 0) + 1,
+      });
+      this.emitTelemetry({
+        type: 'idempotency.cache.evicted',
+        peerNodeAddress: nodeAddress,
+        messageId: evicted,
+      });
+    }
+  }
+
+  private recordDuplicateFrameDropped(
+    nodeAddress: string,
+    peer: BrowserPeerConnection,
+    frame: RuntimeTransportFrame
+  ): void {
+    this.stats.duplicateFramesDropped += 1;
+    this.setPeerStats(nodeAddress, {
+      identity: peer.identity,
+      duplicateFramesDropped: (this.stats.peers[nodeAddress]?.duplicateFramesDropped ?? 0) + 1,
+    });
+    this.emitTelemetry({
+      type: 'frame.duplicate',
+      peerNodeAddress: nodeAddress,
+      messageType: frame.message.type,
+      messageId: frame.messageId,
       sequence: frame.sequence,
     });
   }

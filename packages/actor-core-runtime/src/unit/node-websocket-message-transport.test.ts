@@ -263,6 +263,86 @@ describe('NodeWebSocketMessageTransport', () => {
     expect(received).toEqual([{ type: 'WORK', payload: 'ok' }]);
   });
 
+  it('drops duplicate runtime frames before subscriber delivery', async () => {
+    const telemetry: RuntimeTransportTelemetryEvent[] = [];
+    const remote = await createStartedTransport('node-b', {
+      telemetry: (event) => telemetry.push(event),
+    });
+    const remoteUrl = remote.getListeningUrl();
+    if (!remoteUrl) {
+      throw new Error('Expected remote listening URL');
+    }
+    const local = await createStartedTransport('node-a', {
+      peers: { 'node-b': remoteUrl },
+    });
+    const received: string[] = [];
+    const unsubscribe = remote.subscribe((event) => {
+      received.push(event.message.type);
+    });
+
+    await local.connect('node-b');
+    const remotePeer = (
+      remote as unknown as {
+        peers: Map<string, { socket: WebSocket }>;
+      }
+    ).peers.get('node-a');
+    if (!remotePeer) {
+      throw new Error('Expected remote peer');
+    }
+
+    const frame = createRuntimeTransportFrame({
+      source: createRuntimeNodeIdentity({
+        nodeAddress: 'node-a',
+        nodeId: 'node-a',
+        incarnation: 'node-a-boot',
+      }),
+      destination: createRuntimeNodeIdentity({
+        nodeAddress: 'node-b',
+        nodeId: 'node-b',
+        incarnation: 'node-b-boot',
+      }),
+      messageId: 'node-a:node-a-boot:node-b:duplicate-1',
+      sequence: 1,
+      message: { type: 'DUPLICATE_WORK' },
+    });
+
+    const data = Buffer.from(JSON.stringify(frame));
+    (
+      remote as unknown as {
+        handleRuntimeFrame: (sourceNodeAddress: string, socket: WebSocket, data: Buffer) => void;
+      }
+    ).handleRuntimeFrame('node-a', remotePeer.socket, data);
+    (
+      remote as unknown as {
+        handleRuntimeFrame: (sourceNodeAddress: string, socket: WebSocket, data: Buffer) => void;
+      }
+    ).handleRuntimeFrame('node-a', remotePeer.socket, data);
+
+    await waitFor(() => received.includes('DUPLICATE_WORK'), 'Expected first frame');
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+
+    expect(received.filter((type) => type === 'DUPLICATE_WORK')).toHaveLength(1);
+    expect(remote.getPeerStats('node-a')).toMatchObject({
+      framesReceived: 1,
+      duplicateFramesDropped: 1,
+    });
+    expect(remote.getStats()).toMatchObject({
+      framesReceived: 1,
+      duplicateFramesDropped: 1,
+    });
+    expect(telemetry).toContainEqual(
+      expect.objectContaining({
+        type: 'frame.duplicate',
+        peerNodeAddress: 'node-a',
+        messageId: 'node-a:node-a-boot:node-b:duplicate-1',
+      })
+    );
+
+    unsubscribe();
+  });
+
   it('drops malformed runtime frames and emits disconnect', async () => {
     const remote = await createStartedTransport('node-b');
     const remoteUrl = remote.getListeningUrl();

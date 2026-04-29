@@ -11,6 +11,10 @@ import {
   createNodeWebSocketMessageTransport,
   type NodeWebSocketMessageTransport,
 } from '../node-websocket-message-transport.js';
+import {
+  createRuntimeNodeIdentity,
+  createRuntimeTransportFrame,
+} from '../runtime-transport-contract.js';
 import type { RuntimeTransportTelemetryEvent } from '../runtime-transport-telemetry.js';
 import { defineActor } from '../unified-actor-builder.js';
 
@@ -248,6 +252,75 @@ describe('BrowserWebSocketMessageTransport', () => {
 
     unsubscribeBrowser();
     unsubscribeNode();
+  });
+
+  it('drops duplicate runtime frames from a Node peer', async () => {
+    const node = await createStartedNodeTransport('node-b');
+    const nodeUrl = node.getListeningUrl();
+    if (!nodeUrl) {
+      throw new Error('Expected node listening URL');
+    }
+    const telemetry: RuntimeTransportTelemetryEvent[] = [];
+    const browser = createBrowserTransport('worker-a', {
+      telemetry: (event) => telemetry.push(event),
+      peers: { 'node-b': nodeUrl },
+    });
+    const receivedByBrowser: string[] = [];
+    const unsubscribeBrowser = browser.subscribe((event) => {
+      receivedByBrowser.push(event.message.type);
+    });
+
+    await browser.connect('node-b');
+    const nodePeer = (
+      node as unknown as {
+        peers: Map<string, { socket: NodeWebSocket }>;
+      }
+    ).peers.get('worker-a');
+    if (!nodePeer) {
+      throw new Error('Expected Node peer socket');
+    }
+
+    const frame = createRuntimeTransportFrame({
+      source: createRuntimeNodeIdentity({
+        nodeAddress: 'node-b',
+        nodeId: 'node-b',
+        incarnation: 'node-b-boot',
+      }),
+      destination: createRuntimeNodeIdentity({
+        nodeAddress: 'worker-a',
+        nodeId: 'worker-a',
+        incarnation: 'worker-a-boot',
+      }),
+      messageId: 'node-b:node-b-boot:worker-a:duplicate-1',
+      sequence: 1,
+      message: { type: 'DUPLICATE_NODE_FRAME' },
+    });
+
+    nodePeer.socket.send(JSON.stringify(frame));
+    nodePeer.socket.send(JSON.stringify(frame));
+
+    await waitFor(
+      () => receivedByBrowser.includes('DUPLICATE_NODE_FRAME'),
+      'Expected first duplicate test frame'
+    );
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+
+    expect(receivedByBrowser.filter((type) => type === 'DUPLICATE_NODE_FRAME')).toHaveLength(1);
+    expect(browser.getPeerStats('node-b')).toMatchObject({
+      framesReceived: 1,
+      duplicateFramesDropped: 1,
+    });
+    expect(telemetry).toContainEqual(
+      expect.objectContaining({
+        type: 'frame.duplicate',
+        peerNodeAddress: 'node-b',
+        messageId: 'node-b:node-b-boot:worker-a:duplicate-1',
+      })
+    );
+
+    unsubscribeBrowser();
   });
 
   it('uses app-level heartbeat frames against Node WebSocket peers', async () => {

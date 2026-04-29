@@ -5,6 +5,7 @@ import {
   createRuntimeTransportHandshakeAccept,
   createRuntimeTransportHandshakeHello,
   createRuntimeTransportHeartbeatPing,
+  createRuntimeTransportMessageId,
   RUNTIME_TRANSPORT_PROTOCOL_VERSION,
   validateRuntimeNodeIdentity,
   validateRuntimeTransportFrame,
@@ -150,6 +151,27 @@ describe('runtime transport contract', () => {
     });
 
     expect(validateRuntimeTransportFrame(frame, local)).toEqual({ ok: true });
+    expect(frame.messageId).toBe(createRuntimeTransportMessageId(frame));
+  });
+
+  it('rejects runtime frame envelopes without a message id', () => {
+    const local = node('node-a');
+    const remote = node('node-b');
+    const frame = createRuntimeTransportFrame({
+      source: remote,
+      destination: local,
+      sequence: 1,
+      now: fixedNow,
+      message: {
+        type: '__runtime.directory.sync.request',
+        requestId: 'sync-1',
+      },
+    });
+
+    expect(validateRuntimeTransportFrame({ ...frame, messageId: '' }, local)).toMatchObject({
+      ok: false,
+      code: 'malformed_frame',
+    });
   });
 
   it('accepts app-level heartbeat frames for browser transports', () => {
