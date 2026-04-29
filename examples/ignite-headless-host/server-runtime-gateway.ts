@@ -652,6 +652,10 @@ export function createLogisticsRuntimeGatewayServer(
           gatewayUrl: actorWeb.runtime.getGatewayUrl(),
           transportUrl: actorWeb.runtime.getTransportUrl(),
           lifecycleMode,
+          transport: {
+            connectedNodes: actorWeb.runtime.transport.getConnectedNodes(),
+            workerConnected: actorWeb.runtime.transport.isConnected(workerNode),
+          },
           nodes: {
             browserHost: 'thin Ignite host',
             serverRuntime: serverNode,

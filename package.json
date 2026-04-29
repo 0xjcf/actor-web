@@ -43,6 +43,8 @@
     "examples:dev": "vite examples --config examples/vite.config.ts",
     "examples:dev:local": "vite examples --config examples/vite.config.ts --host 127.0.0.1 --port 4173",
     "examples:logistics": "vite-node --config examples/vite.config.ts scripts/dev-logistics-demo.ts",
+    "examples:logistics:server": "vite-node --config examples/vite.config.ts examples/ignite-headless-host/logistics-server-process.ts",
+    "examples:logistics:worker": "vite-node --config examples/vite.config.ts examples/ignite-headless-host/logistics-worker-process.ts",
     "examples:build": "vite build examples --config examples/vite.config.ts",
     "aw": "pnpm --filter @agent-workflow/cli dev",
     "aw:help": "pnpm --filter @agent-workflow/cli dev --help",

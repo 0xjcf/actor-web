@@ -34,38 +34,55 @@ separate processes and, later, separate containers.
 
 ## Stage 1: Multi-Process Localhost
 
-Start by splitting the logistics demo into independent local processes:
+Start by splitting the logistics demo into independent local processes. The
+first implemented slice proves the runtime boundary with separate server and
+worker processes:
 
 ```text
 process 1: logistics server runtime
 process 2: logistics worker runtime
-process 3: provider HQ simulator/runtime
-process 4: Vite browser host
+process 3: Vite browser host
 ```
 
-Recommended scripts:
+Implemented scripts:
 
 ```sh
 pnpm examples:logistics:server
 pnpm examples:logistics:worker
-pnpm examples:logistics:provider
-pnpm examples:logistics:web
-pnpm examples:logistics:multi-process
 ```
 
-The combined script should start all processes, print URLs, and keep the
-existing single-command developer experience for the demo.
+The existing `pnpm examples:logistics` command remains the single-command
+developer path. It starts the server runtime and browser host together, while
+the browser WebWorker connects as the worker runtime. The split process scripts
+are lower-level deployment proof entrypoints.
 
 Expected behavior:
 
 - Server runtime owns `logistics-shipment`.
 - Worker runtime owns `logistics-routing`.
-- Provider runtime or simulator sends provider signals through REST or a
-  provider adapter boundary.
+- Provider HQ remains a server-owned actor controlled through REST or gateway
+  commands in this slice.
 - Browser host consumes shipment projections through the gateway WebSocket.
 - Server and worker communicate over Actor-Web runtime WebSocket transport.
-- Restarting the worker process should visibly degrade and then recover routing
-  status once transport hardening supports it.
+- The worker process uses static runtime peer discovery from
+  `ACTOR_WEB_SERVER_TRANSPORT_URL` to connect to the server transport listener.
+- Restarting the worker process is a follow-up once deployment supervision and
+  operational status panels are added.
+
+Manual run shape:
+
+```sh
+pnpm examples:logistics:server
+```
+
+Copy the `transportUrl` from the `LOGISTICS_SERVER_READY` line, then run:
+
+```sh
+ACTOR_WEB_SERVER_TRANSPORT_URL=<transportUrl> pnpm examples:logistics:worker
+```
+
+Create a shipment through the server REST URL and the server runtime will ask
+the worker-owned routing actor over WebSocket transport.
 
 ## Stage 2: Docker Compose
 
@@ -157,10 +174,13 @@ state or transport implementation details.
 Stage 1 tests:
 
 - Start server and worker as separate local processes.
-- Create shipment through REST and observe gateway updates in the browser host.
+- Create shipment through REST.
 - Verify server asks worker-owned routing actor over real WebSocket transport.
-- Stop worker process and verify degraded status is visible.
-- Restart worker process and verify routing can recover where supported.
+- Verify `/runtime/status` exposes worker transport connectivity.
+- Browser-host gateway observation remains covered by the existing logistics
+  example tests.
+- Stop/restart recovery remains a follow-up once deployment supervision and
+  operational status panels are added.
 
 Stage 2 tests:
 
