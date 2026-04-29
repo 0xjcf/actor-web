@@ -12,6 +12,10 @@ import {
 } from './actor-web-node-runtime.js';
 import { createBrowserWebSocketMessageTransport } from './browser-websocket-message-transport.js';
 import type { RuntimeTransportAuthProvider } from './runtime-auth.js';
+import type {
+  RuntimePeerDiscoveryProvider,
+  RuntimePeerDiscoveryRecord,
+} from './runtime-peer-discovery.js';
 import type { RuntimeTransportTelemetryObserver } from './runtime-transport-telemetry.js';
 import type {
   ActorWebActorContext,
@@ -50,6 +54,7 @@ export interface StartActorWebNodeOptions<
   readonly peers?: Partial<Record<keyof TTopology['nodes'] & string, string>>;
   readonly connect?: readonly (keyof TTopology['nodes'] & string)[];
   readonly transport?: ActorWebBrowserNodeTransportOptions | MessageTransport;
+  readonly discovery?: RuntimePeerDiscoveryProvider;
   readonly tools?: ActorToolRegistry;
 }
 
@@ -126,7 +131,9 @@ function isMessageTransport(value: unknown): value is MessageTransport {
 function createTopologyTransport(
   nodeAddress: string,
   transportOptions: ActorWebBrowserNodeTransportOptions | MessageTransport | undefined,
-  transportPeers: Record<string, string>
+  transportPeers: Record<string, string>,
+  discoveryPeerUrls: ReadonlyMap<string, string>,
+  useDiscoveryPeerUrlResolver: boolean
 ): MessageTransport {
   if (isMessageTransport(transportOptions)) {
     return transportOptions;
@@ -139,8 +146,18 @@ function createTopologyTransport(
     ...(transportOptions?.capabilities ? { capabilities: transportOptions.capabilities } : {}),
     ...(Object.keys(transportPeers).length > 0 ? { peers: transportPeers } : {}),
     ...(transportOptions?.peerUrlResolver
-      ? { peerUrlResolver: transportOptions.peerUrlResolver }
-      : {}),
+      ? {
+          peerUrlResolver: async (nodeAddress) =>
+            transportPeers[nodeAddress] ??
+            discoveryPeerUrls.get(nodeAddress) ??
+            (await transportOptions.peerUrlResolver?.(nodeAddress)),
+        }
+      : useDiscoveryPeerUrlResolver
+        ? {
+            peerUrlResolver: (nodeAddress) =>
+              transportPeers[nodeAddress] ?? discoveryPeerUrls.get(nodeAddress),
+          }
+        : {}),
     ...(transportOptions?.connectTimeoutMs !== undefined
       ? { connectTimeoutMs: transportOptions.connectTimeoutMs }
       : {}),
@@ -182,6 +199,7 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
   const websocketTransportOptions = isMessageTransport(transportOptions)
     ? undefined
     : transportOptions;
+  const discoveryPeerUrls = new Map<string, string>();
   const transportPeers = {
     ...(websocketTransportOptions?.peers ?? {}),
     ...topologyPeers,
@@ -189,7 +207,9 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
   const transport = createTopologyTransport(
     nodeDefinition.address,
     transportOptions,
-    transportPeers
+    transportPeers,
+    discoveryPeerUrls,
+    Boolean(options.discovery)
   );
   const toolAccess = createActorWebNodeToolAccess(topology, options.node);
   const system = createActorSystem({
@@ -208,6 +228,24 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
     options.tools
   );
   let running = false;
+  let unsubscribeDiscovery: (() => void) | undefined;
+
+  const allowedDiscoveryTargets = options.connect
+    ? new Set(resolveTopologyNodeAddresses(topology, options.connect))
+    : null;
+
+  const shouldConnectDiscoveredPeer = (nodeAddress: string): boolean =>
+    nodeAddress !== nodeDefinition.address &&
+    (!allowedDiscoveryTargets || allowedDiscoveryTargets.has(nodeAddress));
+
+  const connectDiscoveredPeer = async (peer: RuntimePeerDiscoveryRecord): Promise<void> => {
+    if (!shouldConnectDiscoveredPeer(peer.nodeAddress)) {
+      return;
+    }
+
+    discoveryPeerUrls.set(peer.nodeAddress, peer.url);
+    await system.join([peer.nodeAddress]);
+  };
 
   const start = async (): Promise<void> => {
     if (running) {
@@ -217,6 +255,23 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
     await (transport as StartableMessageTransport).start?.();
     await system.start();
     await spawnOwnedActorWebActors(system, topology, options.node, actors, options.tools);
+
+    const discoveryPeers = options.discovery ? await options.discovery.getPeers() : [];
+    for (const peer of discoveryPeers) {
+      await connectDiscoveredPeer(peer);
+    }
+    unsubscribeDiscovery = options.discovery?.subscribe?.((event) => {
+      if (event.type === 'peer.unavailable') {
+        discoveryPeerUrls.delete(event.nodeAddress);
+        void transport.disconnect(event.nodeAddress).catch(() => {});
+        return;
+      }
+
+      discoveryPeerUrls.set(event.peer.nodeAddress, event.peer.url);
+      if (shouldConnectDiscoveredPeer(event.peer.nodeAddress)) {
+        void system.join([event.peer.nodeAddress]).catch(() => {});
+      }
+    });
 
     const connectTargets = options.connect
       ? resolveTopologyNodeAddresses(topology, options.connect)
@@ -230,6 +285,9 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
 
   const stop = async (): Promise<void> => {
     running = false;
+    unsubscribeDiscovery?.();
+    unsubscribeDiscovery = undefined;
+    discoveryPeerUrls.clear();
     actors.clear();
     await system.stop();
     const startableTransport = transport as StartableMessageTransport;

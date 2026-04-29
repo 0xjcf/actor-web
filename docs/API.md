@@ -25,8 +25,10 @@ Current guarantees:
 - Gateway streams detect sequence gaps and resync from a bounded in-memory replay
   buffer, falling back to a latest snapshot when the requested range is no
   longer available.
-- Durable replay storage, dynamic discovery, and exported observability remain
-  follow-up hardening slices.
+- Topology runners can use a runtime peer discovery provider instead of only
+  static `peers` maps.
+- Durable replay storage and exported observability remain follow-up hardening
+  slices.
 
 ## Runtime Locations
 
@@ -497,6 +499,23 @@ const worker = await startActorWebNode(logistics, {
 `ws://logistics.example.com/runtime-transport` is the server node's transport
 URL, not the gateway URL. Browser UI sources still use the gateway URL.
 
+For deployments where peer URLs are not known at compile time, use a discovery
+provider:
+
+```ts
+const discovery = createStaticRuntimePeerDiscoveryProvider([
+  {
+    nodeAddress: 'logistics-server-runtime',
+    url: 'ws://logistics.example.com/runtime-transport',
+  },
+]);
+
+await startActorWebNode(logistics, {
+  node: 'worker',
+  discovery,
+});
+```
+
 ### Browser-local service worker topology proof
 
 Use `createMessagePortTransport(...)` when the host page and worker already
@@ -668,6 +687,49 @@ Auth payloads are intentionally small: `{ scheme, token, metadata }`. Do not put
 secrets in metadata. Actor-Web emits auth accept/reject telemetry without echoing
 token values; TLS, certificate management, OAuth, and secret rotation remain
 deployment/application concerns.
+
+### Runtime Peer Discovery
+
+Discovery is a separate runtime port. It tells topology runners where runtime
+peers can be reached; it does not replace `MessageTransport`, gateway sources,
+or HTTP ingress.
+
+```ts
+const discovery = createInMemoryRuntimePeerDiscoveryProvider();
+
+const server = await serveActorWebNode(logistics, {
+  node: 'server',
+  transport: true,
+  discovery,
+});
+
+await startActorWebNode(logistics, {
+  node: 'worker',
+  discovery,
+});
+```
+
+`serveActorWebNode(...)` registers its listening transport URL when one exists
+and unregisters on stop. Both `serveActorWebNode(...)` and
+`startActorWebNode(...)` read discovery snapshots at startup and subscribe to
+peer availability changes.
+
+The public provider shape is intentionally small:
+
+```ts
+interface RuntimePeerDiscoveryProvider {
+  getPeers(): readonly RuntimePeerDiscoveryRecord[] | Promise<readonly RuntimePeerDiscoveryRecord[]>;
+  subscribe?(listener: (event: RuntimePeerDiscoveryEvent) => void): () => void;
+  registerSelf?(peer: RuntimePeerDiscoveryRecord): void | Promise<void>;
+  unregisterSelf?(nodeAddress: string): void | Promise<void>;
+}
+```
+
+Use `createStaticRuntimePeerDiscoveryProvider(...)` for static deployment
+metadata and generated config. Use `createInMemoryRuntimePeerDiscoveryProvider`
+for tests, examples, and local multi-process demos. Production adapters can map
+the same port to Kubernetes, service discovery, a config service, or a broker
+later without changing actor behavior.
 
 ### `serveActorWebHttp(runtime)`
 

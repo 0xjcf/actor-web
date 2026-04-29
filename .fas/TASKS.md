@@ -158,6 +158,18 @@
 - Blast radius: cross-cutting
 - Artifacts: brief=.fas/tasks/runtime-gateway-replay-resync.md; verification=.fas/state/verification/latest.json
 
+### Task: Runtime membership discovery provider
+
+- Title: Runtime membership discovery provider
+- Mode: 6-agent
+- Status: done
+- Owner: reviewer
+- Brief: .fas/tasks/runtime-membership-discovery-provider.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: brief=.fas/tasks/runtime-membership-discovery-provider.md; verification=.fas/state/verification/latest.json
+
 ### Task: Logistics control tower demo
 
 - Title: Logistics control tower demo

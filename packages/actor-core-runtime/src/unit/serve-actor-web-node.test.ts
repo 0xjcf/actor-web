@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import type { RuntimeGatewayServerFrame } from '../runtime-gateway.js';
+import { createInMemoryRuntimePeerDiscoveryProvider } from '../runtime-peer-discovery.js';
 import { serveActorWebNode } from '../serve-actor-web-node.js';
 import { actor, defineActorWebTopology, node, tool } from '../topology.js';
 import { defineActor } from '../unified-actor-builder.js';
@@ -382,5 +383,40 @@ describe('serveActorWebNode', () => {
     } finally {
       await served.stop();
     }
+  });
+
+  it('registers and unregisters listening nodes through discovery', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+      },
+      actors: {
+        serverCounter: actor({
+          id: 'server-counter',
+          node: 'server',
+          behavior: createCounterBehavior,
+        }),
+      },
+    });
+    const discovery = createInMemoryRuntimePeerDiscoveryProvider();
+    const served = await serveActorWebNode(topology, {
+      node: 'server',
+      transport: true,
+      discovery,
+    });
+
+    try {
+      const discoveredPeers = await discovery.getPeers();
+      expect(discoveredPeers).toEqual([
+        {
+          nodeAddress: 'server-node',
+          url: served.getTransportUrl(),
+        },
+      ]);
+    } finally {
+      await served.stop();
+    }
+
+    expect(await discovery.getPeers()).toEqual([]);
   });
 });

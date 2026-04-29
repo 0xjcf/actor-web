@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ActorMessage, MessageTransport } from '../actor-system.js';
+import { createInMemoryRuntimePeerDiscoveryProvider } from '../runtime-peer-discovery.js';
 import { startActorWebNode } from '../start-actor-web-node.js';
 import { actor, defineActorWebTopology, node, tool } from '../topology.js';
 import { defineActor } from '../unified-actor-builder.js';
@@ -12,6 +13,8 @@ type CounterCommand =
 class TestMessageTransport implements MessageTransport {
   started = false;
   stopped = false;
+  connected = new Set<string>();
+  disconnected: string[] = [];
 
   async start(): Promise<void> {
     this.started = true;
@@ -27,17 +30,27 @@ class TestMessageTransport implements MessageTransport {
     return () => {};
   }
 
-  async connect(): Promise<void> {}
+  async connect(address: string): Promise<void> {
+    this.connected.add(address);
+  }
 
-  async disconnect(): Promise<void> {}
+  async disconnect(address: string): Promise<void> {
+    this.connected.delete(address);
+    this.disconnected.push(address);
+  }
 
   getConnectedNodes(): string[] {
-    return [];
+    return Array.from(this.connected);
   }
 
-  isConnected(): boolean {
-    return false;
+  isConnected(address: string): boolean {
+    return this.connected.has(address);
   }
+}
+
+async function flushDiscovery(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 function createCounterBehavior() {
@@ -238,6 +251,52 @@ describe('startActorWebNode', () => {
       await task.send({ type: 'INCREMENT' });
       await workerNode.system.flush();
       await expect(task.ask<number>({ type: 'GET_COUNT' })).resolves.toBe(1);
+    } finally {
+      await workerNode.stop();
+    }
+  });
+
+  it('connects and disconnects peers from a runtime discovery provider', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+        worker: node('worker-node'),
+      },
+      actors: {
+        proof: actor({
+          id: 'proof',
+          node: 'worker',
+          behavior: createCounterBehavior,
+        }),
+      },
+    });
+    const discovery = createInMemoryRuntimePeerDiscoveryProvider([
+      {
+        nodeAddress: 'server-node',
+        url: 'ws://127.0.0.1:4101',
+      },
+    ]);
+    const transport = new TestMessageTransport();
+    const workerNode = await startActorWebNode(topology, {
+      node: 'worker',
+      transport,
+      discovery,
+    });
+
+    try {
+      expect(transport.getConnectedNodes()).toEqual(['server-node']);
+
+      discovery.upsertPeer({
+        nodeAddress: 'server-node',
+        url: 'ws://127.0.0.1:4102',
+      });
+      await flushDiscovery();
+      expect(transport.getConnectedNodes()).toEqual(['server-node']);
+
+      discovery.removePeer('server-node', 'server stopped');
+      await flushDiscovery();
+      expect(transport.getConnectedNodes()).toEqual([]);
+      expect(transport.disconnected).toContain('server-node');
     } finally {
       await workerNode.stop();
     }

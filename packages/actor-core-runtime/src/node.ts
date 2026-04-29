@@ -7,6 +7,16 @@ export type {
   RuntimeTransportAuthResult,
 } from './runtime-auth.js';
 export type {
+  InMemoryRuntimePeerDiscoveryProvider,
+  RuntimePeerDiscoveryEvent,
+  RuntimePeerDiscoveryProvider,
+  RuntimePeerDiscoveryRecord,
+} from './runtime-peer-discovery.js';
+export {
+  createInMemoryRuntimePeerDiscoveryProvider,
+  createStaticRuntimePeerDiscoveryProvider,
+} from './runtime-peer-discovery.js';
+export type {
   ActorWebBoundHttpContext,
   ActorWebBoundHttpHandler,
   ActorWebBoundHttpRouter,

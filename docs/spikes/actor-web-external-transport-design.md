@@ -129,7 +129,8 @@ hexagonal boundary or the actor model.
 
 - the distributed actor directory is still an in-memory replicated cache
 - stable node identity and incarnation are enforced at the WebSocket transport
-  edge, but not yet backed by a membership store or dynamic discovery
+  edge; topology runners now accept a discovery provider, but there is not yet a
+  durable membership store
 - auth is static token/provider hooks; TLS, certificate management, OAuth/OIDC,
   and per-frame signing remain deployment/application concerns
 - actor `send` remains at-most-once by default; internal runtime control traffic
@@ -139,8 +140,9 @@ hexagonal boundary or the actor model.
   latest snapshot
 - `NodeWebSocketMessageTransport` has basic lifecycle and stale-peer handling,
   but is not a fully hardened production transport
-- `BrowserWebSocketMessageTransport` is outbound-only and still depends on
-  static peer URL resolution
+- `BrowserWebSocketMessageTransport` is outbound-only; browser-safe topology
+  runners can consume discovery providers, but browser nodes still cannot listen
+  for inbound peers
 - transport telemetry is in-memory runtime-native observability; it is not yet
   OpenTelemetry integration or durable telemetry export
 
@@ -187,7 +189,7 @@ That means:
 
 ## Remaining Actor-Web Work
 
-1. Runtime membership and discovery across machines
+1. Production discovery adapters backed by deployment infrastructure
 2. Production delivery semantics beyond at-most-once actor `send`
 3. Durable replay providers for projections and events
 4. Shared-contract promotion from mapper to real data-plane wire shape
@@ -382,6 +384,12 @@ Later slice:
 - pluggable membership/discovery provider
 - cloud/container friendly peer discovery
 
+Status: complete for the provider interface and runner integration.
+`serveActorWebNode(...)` can register a listening transport URL, and both
+`serveActorWebNode(...)` and `startActorWebNode(...)` can seed and subscribe to
+discovered peer records. Remaining work is production adapters backed by real
+deployment infrastructure and durable membership state.
+
 ### 4. Delivery semantics
 
 The runtime should define these explicitly:
@@ -471,9 +479,10 @@ Backpressure rules:
 
 Status: complete for localhost/static-peer prove-out. Later slices added
 auth/security, telemetry, idempotency, ack/retry control traffic, bounded
-backpressure, and bounded gateway replay. Remaining production work is dynamic
-discovery, durable replay storage, durable observability export, and
-multi-machine prove-out.
+backpressure, bounded gateway replay, and runtime peer discovery provider
+integration. Remaining production work is deployment-backed discovery adapters,
+durable replay storage, durable observability export, and multi-machine
+prove-out.
 
 ### Phase 3: Identity and membership hardening
 
@@ -482,9 +491,10 @@ multi-machine prove-out.
 - add heartbeat and stale-peer rejection
 - move directory sync to handshake/bootstrap lifecycle
 
-Status: complete for basic static-peer membership hardening. Remaining
-production work is a real membership/discovery provider, durable replay storage,
-durable observability export, and multi-machine prove-out.
+Status: complete for basic membership hardening and pluggable discovery provider
+wiring. Remaining production work is a deployment-backed discovery adapter,
+durable membership state, durable replay storage, durable observability export,
+and multi-machine prove-out.
 
 ### Phase 3.5: Runtime transport observability foundation
 
@@ -499,8 +509,8 @@ Status: complete for runtime-native telemetry/stats snapshots, auth/security,
 message ID based duplicate suppression, and bounded retry/ack handling for
 internal runtime control traffic. Bounded per-peer outbound queues now apply
 backpressure by rejecting sends when the queue is full. Remaining production work
-is durable replay storage, durable telemetry export, dynamic discovery, and
-multi-machine prove-out.
+is durable replay storage, durable telemetry export, deployment-backed discovery,
+and multi-machine prove-out.
 
 ### Phase 4: Projection hardening
 

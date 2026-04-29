@@ -249,6 +249,16 @@ export type {
 } from './runtime-gateway.js';
 export { RuntimeGatewayScopeError } from './runtime-gateway.js';
 export type {
+  InMemoryRuntimePeerDiscoveryProvider,
+  RuntimePeerDiscoveryEvent,
+  RuntimePeerDiscoveryProvider,
+  RuntimePeerDiscoveryRecord,
+} from './runtime-peer-discovery.js';
+export {
+  createInMemoryRuntimePeerDiscoveryProvider,
+  createStaticRuntimePeerDiscoveryProvider,
+} from './runtime-peer-discovery.js';
+export type {
   RuntimeNodeIdentity,
   RuntimeTransportAckFrame,
   RuntimeTransportFrame,

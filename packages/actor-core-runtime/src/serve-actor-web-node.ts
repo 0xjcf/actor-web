@@ -21,6 +21,10 @@ import {
   type RuntimeGatewaySource,
 } from './runtime-gateway.js';
 import type {
+  RuntimePeerDiscoveryProvider,
+  RuntimePeerDiscoveryRecord,
+} from './runtime-peer-discovery.js';
+import type {
   ActorWebActorContext,
   ActorWebActorDescriptor,
   ActorWebActorMessage,
@@ -64,6 +68,7 @@ export interface ServeActorWebNodeOptions<
   readonly transport?: boolean | ActorWebNodeTransportOptions;
   readonly peers?: Partial<Record<keyof TTopology['nodes'] & string, string>>;
   readonly connect?: readonly (keyof TTopology['nodes'] & string)[];
+  readonly discovery?: RuntimePeerDiscoveryProvider;
   readonly tools?: ActorToolRegistry;
 }
 
@@ -244,11 +249,15 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
   const gatewayOptions = normalizeGatewayOptions(options.gateway);
   const transportOptions = normalizeTransportOptions(options.transport);
   const topologyPeers = resolveTopologyPeerUrls(topology, options.peers);
+  const discoveryPeerUrls = new Map<string, string>();
   const transportListen = transportOptions?.listen;
   const transport = createNodeWebSocketMessageTransport({
     nodeAddress: nodeDefinition.address,
     peers: topologyPeers,
-    peerUrlResolver: transportOptions?.peerUrlResolver,
+    peerUrlResolver: async (nodeAddress) =>
+      topologyPeers[nodeAddress] ??
+      discoveryPeerUrls.get(nodeAddress) ??
+      (await transportOptions?.peerUrlResolver?.(nodeAddress)),
     connectTimeoutMs: transportOptions?.connectTimeoutMs,
     heartbeatIntervalMs: transportOptions?.heartbeatIntervalMs ?? 0,
     heartbeatTimeoutMs: transportOptions?.heartbeatTimeoutMs,
@@ -288,6 +297,24 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
   let gatewayServer: WebSocketServerLike | null = null;
   let gatewayUrl: string | null = null;
   let running = false;
+  let unsubscribeDiscovery: (() => void) | undefined;
+
+  const allowedDiscoveryTargets = options.connect
+    ? new Set(resolveTopologyNodeAddresses(topology, options.connect))
+    : null;
+
+  const shouldConnectDiscoveredPeer = (nodeAddress: string): boolean =>
+    nodeAddress !== nodeDefinition.address &&
+    (!allowedDiscoveryTargets || allowedDiscoveryTargets.has(nodeAddress));
+
+  const connectDiscoveredPeer = async (peer: RuntimePeerDiscoveryRecord): Promise<void> => {
+    if (!shouldConnectDiscoveredPeer(peer.nodeAddress)) {
+      return;
+    }
+
+    discoveryPeerUrls.set(peer.nodeAddress, peer.url);
+    await system.join([peer.nodeAddress]);
+  };
 
   const resolveActorGatewaySource = async (
     actorKey: string,
@@ -344,6 +371,15 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
     }
 
     await transport.start();
+
+    const transportUrl = transport.getListeningUrl();
+    if (transportUrl) {
+      await options.discovery?.registerSelf?.({
+        nodeAddress: nodeDefinition.address,
+        url: transportUrl,
+      });
+    }
+
     await system.start();
 
     await spawnOwnedActorWebActors(system, topology, options.node, actors, options.tools);
@@ -361,6 +397,23 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
       });
     }
 
+    const discoveryPeers = options.discovery ? await options.discovery.getPeers() : [];
+    for (const peer of discoveryPeers) {
+      await connectDiscoveredPeer(peer);
+    }
+    unsubscribeDiscovery = options.discovery?.subscribe?.((event) => {
+      if (event.type === 'peer.unavailable') {
+        discoveryPeerUrls.delete(event.nodeAddress);
+        void transport.disconnect(event.nodeAddress).catch(() => {});
+        return;
+      }
+
+      discoveryPeerUrls.set(event.peer.nodeAddress, event.peer.url);
+      if (shouldConnectDiscoveredPeer(event.peer.nodeAddress)) {
+        void system.join([event.peer.nodeAddress]).catch(() => {});
+      }
+    });
+
     const connectTargets = options.connect
       ? resolveTopologyNodeAddresses(topology, options.connect)
       : Object.keys(topologyPeers);
@@ -376,7 +429,12 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
     gatewayServer = null;
     gatewayUrl = null;
     running = false;
+    unsubscribeDiscovery?.();
+    unsubscribeDiscovery = undefined;
+    discoveryPeerUrls.clear();
     actors.clear();
+
+    await options.discovery?.unregisterSelf?.(nodeDefinition.address);
 
     if (activeGatewayServer) {
       await new Promise<void>((resolve, reject) => {
