@@ -15,6 +15,10 @@ export type RuntimeTransportTelemetryEventType =
   | 'frame.received'
   | 'frame.dropped'
   | 'frame.duplicate'
+  | 'frame.ack.sent'
+  | 'frame.ack.received'
+  | 'frame.retry.scheduled'
+  | 'frame.retry.exhausted'
   | 'idempotency.cache.evicted'
   | 'sequence.gap'
   | 'heartbeat.timeout';
@@ -47,6 +51,9 @@ export interface RuntimeTransportPeerStats {
   lastReceivedSequence: number;
   framesSent: number;
   framesReceived: number;
+  framesAcked: number;
+  framesRetried: number;
+  retryExhaustedCount: number;
   duplicateFramesDropped: number;
   idempotencyCacheEvictions: number;
   malformedFramesDropped: number;
@@ -67,6 +74,9 @@ export interface RuntimeTransportStats {
   connectedPeerCount: number;
   framesSent: number;
   framesReceived: number;
+  framesAcked: number;
+  framesRetried: number;
+  retryExhaustedCount: number;
   duplicateFramesDropped: number;
   idempotencyCacheEvictions: number;
   malformedFramesDropped: number;

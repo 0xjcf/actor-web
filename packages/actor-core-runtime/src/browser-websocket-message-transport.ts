@@ -6,6 +6,7 @@ import {
 } from './runtime-auth.js';
 import {
   createRuntimeNodeIdentity,
+  createRuntimeTransportAckFrame,
   createRuntimeTransportFrame,
   createRuntimeTransportHandshakeHello,
   createRuntimeTransportHeartbeatPing,
@@ -13,6 +14,7 @@ import {
   type RuntimeNodeIdentity,
   type RuntimeTransportFrame,
   type RuntimeTransportHandshake,
+  validateRuntimeTransportAckFrame,
   validateRuntimeTransportFrame,
   validateRuntimeTransportHandshake,
   validateRuntimeTransportHeartbeatFrame,
@@ -35,6 +37,8 @@ export interface BrowserWebSocketMessageTransportOptions {
   heartbeatIntervalMs?: number;
   heartbeatTimeoutMs?: number;
   idempotencyWindowSize?: number;
+  ackTimeoutMs?: number;
+  maxAckRetries?: number;
   telemetry?: RuntimeTransportTelemetryObserver;
   webSocketFactory?: (url: string) => WebSocket;
   auth?: RuntimeTransportAuthProvider<{
@@ -50,9 +54,16 @@ type BrowserPeerConnection = {
   lastReceivedSequence: number;
   seenMessageIds: string[];
   seenMessageIdSet: Set<string>;
+  pendingAcks: Map<string, PendingAck>;
   lastSeenAt: number;
   heartbeatInterval: ReturnType<typeof setInterval> | null;
   heartbeatTimeout: ReturnType<typeof setTimeout> | null;
+};
+
+type PendingAck = {
+  frame: RuntimeTransportFrame;
+  retries: number;
+  timer: ReturnType<typeof setTimeout> | null;
 };
 
 const WEB_SOCKET_OPEN = 1;
@@ -67,6 +78,8 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
   private readonly heartbeatIntervalMs: number;
   private readonly heartbeatTimeoutMs: number;
   private readonly idempotencyWindowSize: number;
+  private readonly ackTimeoutMs: number;
+  private readonly maxAckRetries: number;
   private readonly webSocketFactory: (url: string) => WebSocket;
   private readonly stats: RuntimeTransportStats;
 
@@ -81,6 +94,8 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 15000;
     this.heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? this.heartbeatIntervalMs * 2;
     this.idempotencyWindowSize = options.idempotencyWindowSize ?? 1024;
+    this.ackTimeoutMs = options.ackTimeoutMs ?? 1000;
+    this.maxAckRetries = options.maxAckRetries ?? 2;
     this.webSocketFactory =
       options.webSocketFactory ??
       ((url) => {
@@ -127,17 +142,17 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
     }
 
     peer.sequence += 1;
-    this.sendJson(
-      peer.socket,
-      createRuntimeTransportFrame({
-        source: this.identity,
-        destination: peer.identity,
-        messageId: this.createMessageId(destination, peer.sequence),
-        sequence: peer.sequence,
-        message,
-      })
-    );
-    this.recordFrameSent(destination, peer, message.type);
+    const frame = createRuntimeTransportFrame({
+      source: this.identity,
+      destination: peer.identity,
+      messageId: this.createMessageId(destination, peer.sequence),
+      sequence: peer.sequence,
+      message,
+    });
+
+    this.sendJson(peer.socket, frame);
+    this.recordFrameSent(destination, peer, frame);
+    this.trackAckIfRetryable(destination, peer, frame);
   }
 
   subscribe(listener: (event: { source: string; message: ActorMessage }) => void): () => void {
@@ -317,6 +332,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       lastReceivedSequence: 0,
       seenMessageIds: [],
       seenMessageIdSet: new Set<string>(),
+      pendingAcks: new Map<string, PendingAck>(),
       lastSeenAt: Date.now(),
       heartbeatInterval: null,
       heartbeatTimeout: null,
@@ -364,6 +380,10 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       this.handleHeartbeatFrame(sourceNodeAddress, peer, frame);
       return;
     }
+    if (this.isAckFrame(frame)) {
+      this.handleAckFrame(sourceNodeAddress, peer, frame);
+      return;
+    }
 
     const validation = validateRuntimeTransportFrame(frame, this.identity);
     if (!validation.ok) {
@@ -390,12 +410,41 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
     this.markPeerSeen(sourceNodeAddress, peer.socket);
     if (this.isDuplicateFrame(peer, runtimeFrame)) {
       this.recordDuplicateFrameDropped(sourceNodeAddress, peer, runtimeFrame);
+      this.sendAck(sourceNodeAddress, peer, runtimeFrame);
       return;
     }
 
     this.rememberMessageId(sourceNodeAddress, peer, runtimeFrame.messageId);
     this.recordFrameReceived(sourceNodeAddress, peer, runtimeFrame);
+    this.sendAck(sourceNodeAddress, peer, runtimeFrame);
     this.emitTransportMessage(runtimeFrame.source.nodeAddress, runtimeFrame.message);
+  }
+
+  private handleAckFrame(
+    sourceNodeAddress: string,
+    peer: BrowserPeerConnection,
+    frame: unknown
+  ): void {
+    const validation = validateRuntimeTransportAckFrame(frame, this.identity);
+    if (!validation.ok) {
+      this.recordFrameDropped(sourceNodeAddress, validation.code, validation.message);
+      void this.disconnect(sourceNodeAddress);
+      return;
+    }
+
+    const ackFrame = frame as ReturnType<typeof createRuntimeTransportAckFrame>;
+    if (
+      ackFrame.source.nodeAddress !== sourceNodeAddress ||
+      ackFrame.source.nodeId !== peer.identity.nodeId ||
+      ackFrame.source.incarnation !== peer.identity.incarnation
+    ) {
+      this.recordFrameDropped(sourceNodeAddress, 'malformed_frame', 'Runtime ack source mismatch.');
+      void this.disconnect(sourceNodeAddress);
+      return;
+    }
+
+    this.markPeerSeen(sourceNodeAddress, peer.socket);
+    this.clearPendingAck(sourceNodeAddress, peer, ackFrame.messageId);
   }
 
   private handleHeartbeatFrame(
@@ -437,6 +486,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
     emitDisconnected: boolean
   ): void {
     this.clearHeartbeat(peer);
+    this.clearPendingAcks(peer);
     this.peers.delete(nodeAddress);
     peer.socket.close();
     this.recordPeerDisconnected(nodeAddress, peer);
@@ -541,6 +591,9 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       connectedPeerCount: 0,
       framesSent: 0,
       framesReceived: 0,
+      framesAcked: 0,
+      framesRetried: 0,
+      retryExhaustedCount: 0,
       duplicateFramesDropped: 0,
       idempotencyCacheEvictions: 0,
       malformedFramesDropped: 0,
@@ -563,6 +616,9 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       lastReceivedSequence: 0,
       framesSent: 0,
       framesReceived: 0,
+      framesAcked: 0,
+      framesRetried: 0,
+      retryExhaustedCount: 0,
       duplicateFramesDropped: 0,
       idempotencyCacheEvictions: 0,
       malformedFramesDropped: 0,
@@ -665,20 +721,21 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
   private recordFrameSent(
     nodeAddress: string,
     peer: BrowserPeerConnection,
-    messageType: string
+    frame: RuntimeTransportFrame
   ): void {
     this.stats.framesSent += 1;
     this.setPeerStats(nodeAddress, {
       identity: peer.identity,
       lastSentAt: new Date().toISOString(),
-      lastSentSequence: peer.sequence,
+      lastSentSequence: frame.sequence,
       framesSent: (this.stats.peers[nodeAddress]?.framesSent ?? 0) + 1,
     });
     this.emitTelemetry({
       type: 'frame.sent',
       peerNodeAddress: nodeAddress,
-      messageType,
-      sequence: peer.sequence,
+      messageType: frame.message.type,
+      messageId: frame.messageId,
+      sequence: frame.sequence,
     });
   }
 
@@ -713,6 +770,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       type: 'frame.received',
       peerNodeAddress: nodeAddress,
       messageType: frame.message.type,
+      messageId: frame.messageId,
       sequence: frame.sequence,
     });
   }
@@ -774,6 +832,157 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
     });
     this.emitTelemetry({
       type: 'frame.duplicate',
+      peerNodeAddress: nodeAddress,
+      messageType: frame.message.type,
+      messageId: frame.messageId,
+      sequence: frame.sequence,
+    });
+  }
+
+  private isRetryableRuntimeFrame(frame: RuntimeTransportFrame): boolean {
+    return frame.message.type.startsWith('__runtime.');
+  }
+
+  private trackAckIfRetryable(
+    nodeAddress: string,
+    peer: BrowserPeerConnection,
+    frame: RuntimeTransportFrame
+  ): void {
+    if (this.ackTimeoutMs <= 0 || this.maxAckRetries <= 0 || !this.isRetryableRuntimeFrame(frame)) {
+      return;
+    }
+
+    const pending: PendingAck = {
+      frame,
+      retries: 0,
+      timer: null,
+    };
+    peer.pendingAcks.set(frame.messageId, pending);
+    this.armAckRetry(nodeAddress, peer, pending);
+  }
+
+  private armAckRetry(nodeAddress: string, peer: BrowserPeerConnection, pending: PendingAck): void {
+    pending.timer = setTimeout(() => {
+      if (this.peers.get(nodeAddress) !== peer || !peer.pendingAcks.has(pending.frame.messageId)) {
+        return;
+      }
+
+      if (pending.retries >= this.maxAckRetries) {
+        peer.pendingAcks.delete(pending.frame.messageId);
+        this.recordRetryExhausted(nodeAddress, peer, pending.frame);
+        return;
+      }
+
+      pending.retries += 1;
+      this.recordFrameRetryScheduled(nodeAddress, peer, pending.frame);
+      this.sendJson(peer.socket, pending.frame);
+      this.recordFrameSent(nodeAddress, peer, pending.frame);
+      this.armAckRetry(nodeAddress, peer, pending);
+    }, this.ackTimeoutMs);
+  }
+
+  private clearPendingAck(
+    nodeAddress: string,
+    peer: BrowserPeerConnection,
+    messageId: string
+  ): void {
+    const pending = peer.pendingAcks.get(messageId);
+    if (!pending) {
+      return;
+    }
+
+    if (pending.timer) {
+      clearTimeout(pending.timer);
+      pending.timer = null;
+    }
+    peer.pendingAcks.delete(messageId);
+    this.recordFrameAckReceived(nodeAddress, peer, pending.frame);
+  }
+
+  private clearPendingAcks(peer: BrowserPeerConnection): void {
+    for (const pending of peer.pendingAcks.values()) {
+      if (pending.timer) {
+        clearTimeout(pending.timer);
+      }
+    }
+    peer.pendingAcks.clear();
+  }
+
+  private sendAck(
+    nodeAddress: string,
+    peer: BrowserPeerConnection,
+    frame: RuntimeTransportFrame
+  ): void {
+    const ackFrame = createRuntimeTransportAckFrame(
+      this.identity,
+      peer.identity,
+      frame.messageId,
+      frame.sequence
+    );
+    this.sendJson(peer.socket, ackFrame);
+    this.recordFrameAckSent(nodeAddress, frame);
+  }
+
+  private recordFrameAckSent(nodeAddress: string, frame: RuntimeTransportFrame): void {
+    this.emitTelemetry({
+      type: 'frame.ack.sent',
+      peerNodeAddress: nodeAddress,
+      messageType: frame.message.type,
+      messageId: frame.messageId,
+      sequence: frame.sequence,
+    });
+  }
+
+  private recordFrameAckReceived(
+    nodeAddress: string,
+    peer: BrowserPeerConnection,
+    frame: RuntimeTransportFrame
+  ): void {
+    this.stats.framesAcked += 1;
+    this.setPeerStats(nodeAddress, {
+      identity: peer.identity,
+      framesAcked: (this.stats.peers[nodeAddress]?.framesAcked ?? 0) + 1,
+    });
+    this.emitTelemetry({
+      type: 'frame.ack.received',
+      peerNodeAddress: nodeAddress,
+      messageType: frame.message.type,
+      messageId: frame.messageId,
+      sequence: frame.sequence,
+    });
+  }
+
+  private recordFrameRetryScheduled(
+    nodeAddress: string,
+    peer: BrowserPeerConnection,
+    frame: RuntimeTransportFrame
+  ): void {
+    this.stats.framesRetried += 1;
+    this.setPeerStats(nodeAddress, {
+      identity: peer.identity,
+      framesRetried: (this.stats.peers[nodeAddress]?.framesRetried ?? 0) + 1,
+    });
+    this.emitTelemetry({
+      type: 'frame.retry.scheduled',
+      peerNodeAddress: nodeAddress,
+      messageType: frame.message.type,
+      messageId: frame.messageId,
+      sequence: frame.sequence,
+    });
+  }
+
+  private recordRetryExhausted(
+    nodeAddress: string,
+    peer: BrowserPeerConnection,
+    frame: RuntimeTransportFrame
+  ): void {
+    this.stats.retryExhaustedCount += 1;
+    this.setPeerStats(nodeAddress, {
+      identity: peer.identity,
+      retryExhaustedCount: (this.stats.peers[nodeAddress]?.retryExhaustedCount ?? 0) + 1,
+    });
+    this.emitTelemetry({
+      type: 'frame.retry.exhausted',
       peerNodeAddress: nodeAddress,
       messageType: frame.message.type,
       messageId: frame.messageId,
@@ -923,6 +1132,14 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
         typeof frame === 'object' &&
         ((frame as { type?: string }).type === 'runtime.transport.ping' ||
           (frame as { type?: string }).type === 'runtime.transport.pong')
+    );
+  }
+
+  private isAckFrame(frame: unknown): frame is ReturnType<typeof createRuntimeTransportAckFrame> {
+    return Boolean(
+      frame &&
+        typeof frame === 'object' &&
+        (frame as { type?: string }).type === 'runtime.transport.ack'
     );
   }
 }

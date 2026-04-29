@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createRuntimeNodeIdentity,
+  createRuntimeTransportAckFrame,
   createRuntimeTransportFrame,
   createRuntimeTransportHandshakeAccept,
   createRuntimeTransportHandshakeHello,
@@ -8,6 +9,7 @@ import {
   createRuntimeTransportMessageId,
   RUNTIME_TRANSPORT_PROTOCOL_VERSION,
   validateRuntimeNodeIdentity,
+  validateRuntimeTransportAckFrame,
   validateRuntimeTransportFrame,
   validateRuntimeTransportHandshake,
   validateRuntimeTransportHeartbeatFrame,
@@ -169,6 +171,25 @@ describe('runtime transport contract', () => {
     });
 
     expect(validateRuntimeTransportFrame({ ...frame, messageId: '' }, local)).toMatchObject({
+      ok: false,
+      code: 'malformed_frame',
+    });
+  });
+
+  it('accepts valid runtime ack frames for the local destination', () => {
+    const local = node('node-a');
+    const remote = node('node-b');
+    const ack = createRuntimeTransportAckFrame(remote, local, 'message-1', 7, fixedNow);
+
+    expect(validateRuntimeTransportAckFrame(ack, local)).toEqual({ ok: true });
+  });
+
+  it('rejects runtime ack frames without a message id', () => {
+    const local = node('node-a');
+    const remote = node('node-b');
+    const ack = createRuntimeTransportAckFrame(remote, local, 'message-1', 7, fixedNow);
+
+    expect(validateRuntimeTransportAckFrame({ ...ack, messageId: '' }, local)).toMatchObject({
       ok: false,
       code: 'malformed_frame',
     });

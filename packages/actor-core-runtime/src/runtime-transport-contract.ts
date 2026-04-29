@@ -46,6 +46,16 @@ export type RuntimeTransportHeartbeatFrame =
       sentAt: string;
     };
 
+export interface RuntimeTransportAckFrame {
+  type: 'runtime.transport.ack';
+  protocolVersion: RuntimeTransportProtocolVersion;
+  source: RuntimeNodeIdentity;
+  destination: RuntimeNodeIdentity;
+  messageId: string;
+  sequence: number;
+  sentAt: string;
+}
+
 export type RuntimeTransportHandshake =
   | {
       type: 'runtime.handshake.hello';
@@ -497,6 +507,82 @@ export function validateRuntimeTransportHeartbeatFrame(
   return { ok: true };
 }
 
+export function validateRuntimeTransportAckFrame(
+  frame: unknown,
+  localIdentity?: RuntimeNodeIdentity
+): RuntimeTransportValidationResult {
+  if (!isRecord(frame)) {
+    return {
+      ok: false,
+      code: 'malformed_frame',
+      message: 'Runtime transport ack frame must be an object.',
+    };
+  }
+
+  if (frame.type !== 'runtime.transport.ack') {
+    return {
+      ok: false,
+      code: 'malformed_frame',
+      message: 'Runtime transport ack frame requires type runtime.transport.ack.',
+    };
+  }
+
+  if (!hasProtocolVersion(frame.protocolVersion)) {
+    return {
+      ok: false,
+      code: 'incompatible_protocol',
+      message: `Unsupported runtime protocol version: ${String(frame.protocolVersion)}.`,
+    };
+  }
+
+  const sourceValidation = validateRuntimeNodeIdentity(frame.source);
+  if (!sourceValidation.ok) {
+    return sourceValidation;
+  }
+
+  const destinationValidation = validateRuntimeNodeIdentity(frame.destination);
+  if (!destinationValidation.ok) {
+    return destinationValidation;
+  }
+
+  if (
+    localIdentity &&
+    !isSameRuntimeNodeIdentity(frame.destination as RuntimeNodeIdentity, localIdentity)
+  ) {
+    return {
+      ok: false,
+      code: 'malformed_frame',
+      message: 'Runtime transport ack destination does not match the local node.',
+    };
+  }
+
+  if (!isNonEmptyString(frame.messageId)) {
+    return {
+      ok: false,
+      code: 'malformed_frame',
+      message: 'Runtime transport ack requires a messageId.',
+    };
+  }
+
+  if (!Number.isInteger(frame.sequence) || (frame.sequence as number) < 0) {
+    return {
+      ok: false,
+      code: 'malformed_frame',
+      message: 'Runtime transport ack sequence must be a non-negative integer.',
+    };
+  }
+
+  if (!isNonEmptyString(frame.sentAt)) {
+    return {
+      ok: false,
+      code: 'malformed_frame',
+      message: 'Runtime transport ack requires sentAt.',
+    };
+  }
+
+  return { ok: true };
+}
+
 export function createRuntimeTransportMessageId(input: {
   source: RuntimeNodeIdentity;
   destination: RuntimeNodeIdentity;
@@ -526,6 +612,24 @@ export function createRuntimeTransportFrame<TMessage extends ActorMessage>(input
     sequence: input.sequence,
     sentAt: (input.now ?? (() => new Date()))().toISOString(),
     message: input.message,
+  };
+}
+
+export function createRuntimeTransportAckFrame(
+  source: RuntimeNodeIdentity,
+  destination: RuntimeNodeIdentity,
+  messageId: string,
+  sequence: number,
+  now: () => Date = () => new Date()
+): RuntimeTransportAckFrame {
+  return {
+    type: 'runtime.transport.ack',
+    protocolVersion: RUNTIME_TRANSPORT_PROTOCOL_VERSION,
+    source,
+    destination,
+    messageId,
+    sequence,
+    sentAt: now().toISOString(),
   };
 }
 

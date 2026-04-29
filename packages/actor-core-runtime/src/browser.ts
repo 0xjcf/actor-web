@@ -85,6 +85,7 @@ export type {
 } from './runtime-gateway.js';
 export type {
   RuntimeNodeIdentity,
+  RuntimeTransportAckFrame,
   RuntimeTransportFrame,
   RuntimeTransportHandshake,
   RuntimeTransportHandshakeRejectCode,
@@ -94,6 +95,7 @@ export type {
 } from './runtime-transport-contract.js';
 export {
   createRuntimeNodeIdentity,
+  createRuntimeTransportAckFrame,
   createRuntimeTransportFrame,
   createRuntimeTransportHandshakeAccept,
   createRuntimeTransportHandshakeHello,
@@ -105,6 +107,7 @@ export {
   isSameRuntimeNodeIdentity,
   RUNTIME_TRANSPORT_PROTOCOL_VERSION,
   validateRuntimeNodeIdentity,
+  validateRuntimeTransportAckFrame,
   validateRuntimeTransportFrame,
   validateRuntimeTransportHandshake,
   validateRuntimeTransportHeartbeatFrame,

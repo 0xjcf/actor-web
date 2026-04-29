@@ -323,6 +323,41 @@ describe('BrowserWebSocketMessageTransport', () => {
     unsubscribeBrowser();
   });
 
+  it('acks retryable runtime control frames from a Node peer', async () => {
+    const nodeTelemetry: RuntimeTransportTelemetryEvent[] = [];
+    const node = await createStartedNodeTransport('node-b', {
+      telemetry: (event) => nodeTelemetry.push(event),
+    });
+    const nodeUrl = node.getListeningUrl();
+    if (!nodeUrl) {
+      throw new Error('Expected node listening URL');
+    }
+    const browser = createBrowserTransport('worker-a', {
+      peers: { 'node-b': nodeUrl },
+    });
+
+    await browser.connect('node-b');
+    await node.send('worker-a', {
+      type: '__runtime.test.control',
+    } as ActorMessage<{ type: '__runtime.test.control' }>);
+
+    await waitFor(
+      () => node.getPeerStats('worker-a')?.framesAcked === 1,
+      'Expected browser runtime control ack'
+    );
+    expect(node.getPeerStats('worker-a')).toMatchObject({
+      framesAcked: 1,
+      framesRetried: 0,
+    });
+    expect(nodeTelemetry).toContainEqual(
+      expect.objectContaining({
+        type: 'frame.ack.received',
+        peerNodeAddress: 'worker-a',
+        messageType: '__runtime.test.control',
+      })
+    );
+  });
+
   it('uses app-level heartbeat frames against Node WebSocket peers', async () => {
     const node = await createStartedNodeTransport('node-b');
     const nodeUrl = node.getListeningUrl();

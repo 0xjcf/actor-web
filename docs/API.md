@@ -842,17 +842,22 @@ The runtime transport contract exports:
 
 - `RuntimeNodeIdentity`
 - `RuntimeTransportFrame`
+- `RuntimeTransportAckFrame`
 - `RuntimeTransportHandshake`
 - `RuntimeTransportHeartbeatFrame`
 - `createRuntimeTransportMessageId(...)`
 - `RUNTIME_TRANSPORT_PROTOCOL_VERSION`
-- validation helpers for identity, handshake, runtime frames, and heartbeat
-  frames
+- validation helpers for identity, handshake, runtime frames, ack frames, and
+  heartbeat frames
 
 Runtime transport frames include a `messageId`. Node and browser WebSocket
 transports keep a bounded per-peer idempotency cache and drop duplicate frame IDs
-before runtime subscriber delivery. This makes future retry/ack delivery safe to
-add without changing today's actor `send` semantics, which remain at-most-once.
+before runtime subscriber delivery.
+
+Node and browser WebSocket transports also exchange `runtime.transport.ack`
+frames for valid runtime frames. Bounded retry is limited to internal
+`__runtime.*` control traffic. User actor `send` still remains at-most-once by
+default.
 
 Handshake rejection covers:
 
@@ -872,8 +877,8 @@ Runtime-native telemetry is available without adding OpenTelemetry:
 
 Telemetry/stats cover connection state, handshake accept/reject, malformed
 frames, reconnect/disconnect count, heartbeat timeout, frame send/receive count,
-duplicate drops, idempotency cache evictions, validation drops, sequence gaps,
-and last-seen timestamps.
+ack received count, retry count, retry exhaustion, duplicate drops, idempotency
+cache evictions, validation drops, sequence gaps, and last-seen timestamps.
 
 ## Package Boundaries
 

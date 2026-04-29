@@ -490,9 +490,9 @@ replay/resync, observability, and backpressure.
   semantics are designed
 
 Status: complete for runtime-native telemetry/stats snapshots, auth/security,
-and message ID based duplicate suppression. Remaining production work is
-retry/ack semantics, durable replay/resync, backpressure enforcement, and durable
-telemetry export.
+message ID based duplicate suppression, and bounded retry/ack handling for
+internal runtime control traffic. Remaining production work is durable
+replay/resync, backpressure enforcement, and durable telemetry export.
 
 ### Phase 4: Projection hardening
 

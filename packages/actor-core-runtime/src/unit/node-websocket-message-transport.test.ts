@@ -343,6 +343,83 @@ describe('NodeWebSocketMessageTransport', () => {
     unsubscribe();
   });
 
+  it('acks retryable runtime control frames', async () => {
+    const localTelemetry: RuntimeTransportTelemetryEvent[] = [];
+    const remote = await createStartedTransport('node-b');
+    const remoteUrl = remote.getListeningUrl();
+    if (!remoteUrl) {
+      throw new Error('Expected remote listening URL');
+    }
+    const local = await createStartedTransport('node-a', {
+      telemetry: (event) => localTelemetry.push(event),
+      peers: { 'node-b': remoteUrl },
+    });
+
+    await local.connect('node-b');
+    await local.send('node-b', {
+      type: '__runtime.test.control',
+    } as ActorMessage<{ type: '__runtime.test.control' }>);
+
+    await waitFor(
+      () => local.getPeerStats('node-b')?.framesAcked === 1,
+      'Expected runtime control ack'
+    );
+    expect(local.getStats()).toMatchObject({
+      framesAcked: 1,
+      framesRetried: 0,
+      retryExhaustedCount: 0,
+    });
+    expect(localTelemetry).toContainEqual(
+      expect.objectContaining({
+        type: 'frame.ack.received',
+        peerNodeAddress: 'node-b',
+        messageType: '__runtime.test.control',
+      })
+    );
+  });
+
+  it('retries retryable runtime control frames and exhausts when no ack arrives', async () => {
+    const localTelemetry: RuntimeTransportTelemetryEvent[] = [];
+    const remote = await createStartedTransport('node-b');
+    (
+      remote as unknown as {
+        sendAck: (sourceNodeAddress: string, peer: unknown, frame: unknown) => Promise<void>;
+      }
+    ).sendAck = async () => {};
+    const remoteUrl = remote.getListeningUrl();
+    if (!remoteUrl) {
+      throw new Error('Expected remote listening URL');
+    }
+    const local = await createStartedTransport('node-a', {
+      ackTimeoutMs: 5,
+      maxAckRetries: 1,
+      telemetry: (event) => localTelemetry.push(event),
+      peers: { 'node-b': remoteUrl },
+    });
+
+    await local.connect('node-b');
+    await local.send('node-b', {
+      type: '__runtime.test.control',
+    } as ActorMessage<{ type: '__runtime.test.control' }>);
+
+    await waitFor(
+      () => local.getPeerStats('node-b')?.retryExhaustedCount === 1,
+      'Expected retry exhaustion'
+    );
+    expect(local.getPeerStats('node-b')).toMatchObject({
+      framesSent: 2,
+      framesRetried: 1,
+      retryExhaustedCount: 1,
+    });
+    expect(remote.getPeerStats('node-a')).toMatchObject({
+      framesReceived: 1,
+      duplicateFramesDropped: 1,
+    });
+    expect(localTelemetry.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['frame.retry.scheduled', 'frame.retry.exhausted'])
+    );
+  });
+
   it('drops malformed runtime frames and emits disconnect', async () => {
     const remote = await createStartedTransport('node-b');
     const remoteUrl = remote.getListeningUrl();
