@@ -1,4 +1,5 @@
 import type { ActorMessage } from './actor-system.js';
+import type { RuntimeTransportAuthPayload } from './runtime-auth.js';
 
 export const RUNTIME_TRANSPORT_PROTOCOL_VERSION = 'actor-web-runtime/1' as const;
 
@@ -8,7 +9,8 @@ export type RuntimeTransportHandshakeRejectCode =
   | 'missing_identity'
   | 'self_connection'
   | 'incompatible_protocol'
-  | 'malformed_frame';
+  | 'malformed_frame'
+  | 'unauthorized';
 
 export interface RuntimeNodeIdentity {
   nodeAddress: string;
@@ -49,6 +51,7 @@ export type RuntimeTransportHandshake =
       protocolVersion: RuntimeTransportProtocolVersion;
       source: RuntimeNodeIdentity;
       sentAt: string;
+      auth?: RuntimeTransportAuthPayload;
     }
   | {
       type: 'runtime.handshake.accept';
@@ -56,6 +59,7 @@ export type RuntimeTransportHandshake =
       source: RuntimeNodeIdentity;
       destination: RuntimeNodeIdentity;
       sentAt: string;
+      auth?: RuntimeTransportAuthPayload;
     }
   | {
       type: 'runtime.handshake.reject';
@@ -89,6 +93,46 @@ function hasProtocolVersion(value: unknown): value is RuntimeTransportProtocolVe
 
 function hasStringArray(value: unknown): value is readonly string[] {
   return Array.isArray(value) && value.every((entry) => isNonEmptyString(entry));
+}
+
+function hasStringRecord(value: unknown): value is Readonly<Record<string, string>> {
+  return isRecord(value) && Object.values(value).every((entry) => typeof entry === 'string');
+}
+
+function validateRuntimeAuthPayload(value: unknown): RuntimeTransportValidationResult {
+  if (!isRecord(value)) {
+    return {
+      ok: false,
+      code: 'malformed_frame',
+      message: 'Runtime auth payload must be an object.',
+    };
+  }
+
+  if ('scheme' in value && value.scheme !== undefined && !isNonEmptyString(value.scheme)) {
+    return {
+      ok: false,
+      code: 'malformed_frame',
+      message: 'Runtime auth payload scheme must be a non-empty string.',
+    };
+  }
+
+  if ('token' in value && value.token !== undefined && typeof value.token !== 'string') {
+    return {
+      ok: false,
+      code: 'malformed_frame',
+      message: 'Runtime auth payload token must be a string.',
+    };
+  }
+
+  if ('metadata' in value && value.metadata !== undefined && !hasStringRecord(value.metadata)) {
+    return {
+      ok: false,
+      code: 'malformed_frame',
+      message: 'Runtime auth payload metadata must be a string record.',
+    };
+  }
+
+  return { ok: true };
 }
 
 export function validateRuntimeNodeIdentity(value: unknown): RuntimeTransportValidationResult {
@@ -162,27 +206,41 @@ export function createRuntimeNodeIdentity(
 
 export function createRuntimeTransportHandshakeHello(
   source: RuntimeNodeIdentity,
-  now: () => Date = () => new Date()
+  nowOrOptions:
+    | (() => Date)
+    | {
+        auth?: RuntimeTransportAuthPayload;
+        now?: () => Date;
+      } = () => new Date()
 ): RuntimeTransportHandshake {
+  const options = typeof nowOrOptions === 'function' ? { now: nowOrOptions } : nowOrOptions;
   return {
     type: 'runtime.handshake.hello',
     protocolVersion: RUNTIME_TRANSPORT_PROTOCOL_VERSION,
     source,
-    sentAt: now().toISOString(),
+    sentAt: (options.now ?? (() => new Date()))().toISOString(),
+    ...(options.auth ? { auth: options.auth } : {}),
   };
 }
 
 export function createRuntimeTransportHandshakeAccept(
   source: RuntimeNodeIdentity,
   destination: RuntimeNodeIdentity,
-  now: () => Date = () => new Date()
+  nowOrOptions:
+    | (() => Date)
+    | {
+        auth?: RuntimeTransportAuthPayload;
+        now?: () => Date;
+      } = () => new Date()
 ): RuntimeTransportHandshake {
+  const options = typeof nowOrOptions === 'function' ? { now: nowOrOptions } : nowOrOptions;
   return {
     type: 'runtime.handshake.accept',
     protocolVersion: RUNTIME_TRANSPORT_PROTOCOL_VERSION,
     source,
     destination,
-    sentAt: now().toISOString(),
+    sentAt: (options.now ?? (() => new Date()))().toISOString(),
+    ...(options.auth ? { auth: options.auth } : {}),
   };
 }
 
@@ -289,6 +347,13 @@ export function validateRuntimeTransportHandshake(
         code: 'malformed_frame',
         message: 'Runtime handshake accept destination does not match the local node.',
       };
+    }
+  }
+
+  if ('auth' in frame && frame.auth !== undefined) {
+    const authValidation = validateRuntimeAuthPayload(frame.auth);
+    if (!authValidation.ok) {
+      return authValidation;
     }
   }
 

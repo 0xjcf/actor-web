@@ -19,6 +19,11 @@ import {
   createProjectionTransportStatus,
   type ProjectionTransportStatus,
 } from './projection-transport.js';
+import {
+  type RuntimeGatewayAuthProvider,
+  type RuntimeTransportAuthPayload,
+  verifyRuntimeGatewayAuth,
+} from './runtime-auth.js';
 import type { Message } from './types.js';
 
 export interface RuntimeGatewayScopeDescriptor {
@@ -31,6 +36,7 @@ export type RuntimeGatewayErrorCode =
   | 'invalid_scope'
   | 'not_found'
   | 'forbidden'
+  | 'unauthorized'
   | 'bad_sequence'
   | 'internal_error';
 
@@ -47,7 +53,12 @@ export interface RuntimeGatewayEventProjection {
 }
 
 export type RuntimeGatewayClientFrame =
-  | { type: 'hello'; lastConnectionId?: string | null; clientVersion?: string }
+  | {
+      type: 'hello';
+      lastConnectionId?: string | null;
+      clientVersion?: string;
+      auth?: RuntimeTransportAuthPayload;
+    }
   | {
       type: 'subscribe';
       streamId: string;
@@ -102,6 +113,7 @@ export interface RuntimeGatewayConnectionAdapter<TAuthContext = unknown> {
   receive(listener: (frame: RuntimeGatewayClientFrame) => void): () => void;
   onClose(listener: () => void): () => void;
   send(frame: RuntimeGatewayServerFrame): void | Promise<void>;
+  close?(): void | Promise<void>;
 }
 
 export interface RuntimeGatewaySource {
@@ -134,6 +146,10 @@ export interface CreateRuntimeGatewaySourceOptions {
 export interface CreateRuntimeGatewayHubOptions<TAuthContext = unknown> {
   resolveScope: RuntimeGatewayScopeResolver<TAuthContext>;
   heartbeatMs?: number;
+  auth?: RuntimeGatewayAuthProvider<{
+    readonly connectionId: string;
+    readonly clientVersion?: string;
+  }>;
 }
 
 export class RuntimeGatewayScopeError extends Error {
@@ -286,6 +302,9 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
       const connectionId = randomUUID();
       const streams = new Map<string, RuntimeGatewayStreamState>();
       let greeted = false;
+      let authenticatedAuthContext = connection.authContext;
+      const pendingFrames: RuntimeGatewayClientFrame[] = [];
+      let processingFrame = false;
 
       const cleanupStream = (streamId: string): void => {
         const stream = streams.get(streamId);
@@ -348,7 +367,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
 
         let source: RuntimeGatewaySource | null = null;
         try {
-          source = await options.resolveScope(scope, connection.authContext);
+          source = await options.resolveScope(scope, authenticatedAuthContext);
         } catch (error) {
           if (error instanceof RuntimeGatewayScopeError) {
             sendError(error.code, error.message, error.recoverable, streamId);
@@ -594,6 +613,23 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
 
         switch (frame.type) {
           case 'hello':
+            if (options.auth) {
+              const auth = await verifyRuntimeGatewayAuth(options.auth, {
+                auth: frame.auth,
+                connectionId,
+                clientVersion: frame.clientVersion,
+              });
+              if (!auth.ok) {
+                sendError('unauthorized', auth.reason, false);
+                void Promise.resolve(connection.close?.()).catch(() => {});
+                cleanupAll();
+                return;
+              }
+              authenticatedAuthContext =
+                auth.authContext === undefined
+                  ? connection.authContext
+                  : (auth.authContext as TAuthContext);
+            }
             greeted = true;
             send({
               type: 'ready',
@@ -643,8 +679,34 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         }
       };
 
+      const processNextFrame = (): void => {
+        if (processingFrame) {
+          return;
+        }
+
+        const frame = pendingFrames.shift();
+        if (!frame) {
+          return;
+        }
+
+        processingFrame = true;
+        void receiveFrame(frame)
+          .catch((error) => {
+            sendError(
+              'internal_error',
+              error instanceof Error ? error.message : 'Internal gateway frame handling error.',
+              false
+            );
+          })
+          .finally(() => {
+            processingFrame = false;
+            processNextFrame();
+          });
+      };
+
       const unsubscribeReceive = connection.receive((frame) => {
-        void receiveFrame(frame);
+        pendingFrames.push(frame);
+        processNextFrame();
       });
       const unsubscribeClose = connection.onClose(() => {
         cleanupAll();

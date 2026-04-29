@@ -1,6 +1,11 @@
 import WebSocket, { WebSocketServer } from 'ws';
 import type { ActorMessage, MessageTransport } from './actor-system.js';
 import {
+  type RuntimeTransportAuthProvider,
+  resolveRuntimeAuthPayload,
+  verifyRuntimeAuth,
+} from './runtime-auth.js';
+import {
   createRuntimeNodeIdentity,
   createRuntimeTransportFrame,
   createRuntimeTransportHandshakeAccept,
@@ -36,6 +41,10 @@ export interface NodeWebSocketMessageTransportOptions {
   heartbeatIntervalMs?: number;
   heartbeatTimeoutMs?: number;
   telemetry?: RuntimeTransportTelemetryObserver;
+  auth?: RuntimeTransportAuthProvider<{
+    readonly source: RuntimeNodeIdentity;
+    readonly local: RuntimeNodeIdentity;
+  }>;
 }
 
 export type NodeWebSocketPeerState =
@@ -220,7 +229,12 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
     const socket = new WebSocket(url);
     try {
       await this.waitForOpen(socket);
-      await this.sendJson(socket, createRuntimeTransportHandshakeHello(this.identity));
+      await this.sendJson(
+        socket,
+        createRuntimeTransportHandshakeHello(this.identity, {
+          auth: await resolveRuntimeAuthPayload(this.options.auth),
+        })
+      );
       const peerIdentity = await this.waitForHandshakeAccept(socket, address);
       this.registerPeer(socket, peerIdentity);
     } catch (error) {
@@ -312,6 +326,15 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
       return;
     }
 
+    const auth = await this.verifyPeerAuth(frame);
+    if (!auth.ok) {
+      this.recordAuthRejected(frame.source.nodeAddress, auth.reason, frame.source);
+      this.recordHandshakeRejected(frame.source.nodeAddress, auth.reason, frame.source);
+      await this.rejectAndClose(socket, 'unauthorized', auth.reason);
+      return;
+    }
+    this.recordAuthAccepted(frame.source.nodeAddress);
+
     const acceptance = this.canAcceptPeer(frame.source);
     if (!acceptance.ok) {
       if (!this.peers.has(frame.source.nodeAddress)) {
@@ -326,7 +349,12 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
       return;
     }
 
-    await this.sendJson(socket, createRuntimeTransportHandshakeAccept(this.identity, frame.source));
+    await this.sendJson(
+      socket,
+      createRuntimeTransportHandshakeAccept(this.identity, frame.source, {
+        auth: await resolveRuntimeAuthPayload(this.options.auth),
+      })
+    );
     this.registerPeer(socket, frame.source);
   }
 
@@ -380,25 +408,34 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
           return;
         }
 
-        if (frame.source.nodeAddress !== expectedNodeAddress) {
-          cleanup();
-          socket.close();
-          reject(
-            new Error(`Runtime handshake accepted unexpected node ${frame.source.nodeAddress}.`)
-          );
-          return;
-        }
-
-        const acceptance = this.canAcceptPeer(frame.source);
-        if (!acceptance.ok) {
-          cleanup();
-          socket.close();
-          reject(new Error(acceptance.message));
-          return;
-        }
-
         cleanup();
-        resolve(frame.source);
+        void this.verifyPeerAuth(frame).then((auth) => {
+          if (!auth.ok) {
+            socket.close();
+            this.recordAuthRejected(frame.source.nodeAddress, auth.reason, frame.source);
+            reject(new Error(`Runtime handshake rejected: ${auth.reason}`));
+            return;
+          }
+          this.recordAuthAccepted(frame.source.nodeAddress);
+
+          if (frame.source.nodeAddress !== expectedNodeAddress) {
+            socket.close();
+            reject(
+              new Error(`Runtime handshake accepted unexpected node ${frame.source.nodeAddress}.`)
+            );
+            return;
+          }
+
+          const acceptance = this.canAcceptPeer(frame.source);
+          if (!acceptance.ok) {
+            socket.close();
+            reject(new Error(acceptance.message));
+            return;
+          }
+
+          resolve(frame.source);
+        }, reject);
+        return;
       };
 
       socket.on('message', onMessage);
@@ -597,6 +634,19 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
     return { ok: true };
   }
 
+  private async verifyPeerAuth(
+    frame: Extract<
+      RuntimeTransportHandshake,
+      { type: 'runtime.handshake.hello' | 'runtime.handshake.accept' }
+    >
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    return verifyRuntimeAuth(this.options.auth, {
+      auth: frame.auth,
+      source: frame.source,
+      local: this.identity,
+    });
+  }
+
   private setPeerSnapshot(
     nodeAddress: string,
     update: Omit<NodeWebSocketPeerSnapshot, 'nodeAddress'>
@@ -708,6 +758,28 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
     this.emitTelemetry({ type: 'peer.rejected', peerNodeAddress: nodeAddress, reason });
   }
 
+  private recordAuthAccepted(nodeAddress: string): void {
+    this.emitTelemetry({ type: 'auth.accepted', peerNodeAddress: nodeAddress });
+  }
+
+  private recordAuthRejected(
+    nodeAddress: string,
+    reason: string,
+    identity?: RuntimeNodeIdentity
+  ): void {
+    this.setPeerSnapshot(nodeAddress, {
+      state: 'rejected',
+      ...(identity ? { identity } : {}),
+      rejectedReason: reason,
+    });
+    this.setPeerStats(nodeAddress, {
+      state: 'rejected',
+      ...(identity ? { identity } : {}),
+      rejectedReason: reason,
+    });
+    this.emitTelemetry({ type: 'auth.rejected', peerNodeAddress: nodeAddress, reason });
+  }
+
   private recordPeerDisconnected(nodeAddress: string, peer: PeerConnection): void {
     const previous = this.stats.peers[nodeAddress];
     const disconnectedAt = new Date().toISOString();
@@ -776,7 +848,12 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
 
   private recordFrameDropped(
     nodeAddress: string,
-    code: 'malformed_frame' | 'missing_identity' | 'self_connection' | 'incompatible_protocol',
+    code:
+      | 'malformed_frame'
+      | 'missing_identity'
+      | 'self_connection'
+      | 'incompatible_protocol'
+      | 'unauthorized',
     reason: string
   ): void {
     if (code === 'malformed_frame') {

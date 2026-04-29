@@ -177,6 +177,37 @@ describe('createActorWebSource', () => {
     source.close();
   });
 
+  it('sends gateway auth on the hello frame without requiring custom source glue', async () => {
+    const socket = new FakeGatewaySocket();
+    createActorWebSource(
+      {
+        address: 'actor://server-node/actor/shipment',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+          auth: {
+            token: () => 'gateway-secret',
+          },
+        },
+      },
+      {
+        createSocket: () => socket,
+      }
+    );
+
+    socket.open();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(socket.sentFrames[0]).toEqual({
+      type: 'hello',
+      clientVersion: 'actor-web-source',
+      auth: {
+        scheme: 'token',
+        token: 'gateway-secret',
+      },
+    });
+  });
+
   it('merges address-based source params into the gateway scope', () => {
     const socket = new FakeGatewaySocket();
     createActorWebSource(

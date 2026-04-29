@@ -20,8 +20,10 @@ Current guarantees:
 - Runtime-to-runtime transport uses the `MessageTransport` seam.
 - Gateway is a client projection/control channel, not cluster transport.
 - Built-in runtime transport is direct-peer and at-most-once.
-- Auth, durable replay, retry delivery, dynamic discovery, and production
-  backpressure remain follow-up hardening slices.
+- Runtime peers and gateway clients can be authenticated before stream/peer
+  admission.
+- Durable replay, retry delivery, dynamic discovery, and production backpressure
+  remain follow-up hardening slices.
 
 ## Runtime Locations
 
@@ -436,12 +438,21 @@ live state and commands.
 // server.ts
 const server = await serveActorWebNode(logistics, {
   node: 'server',
-  gateway: true,
+  gateway: {
+    auth: {
+      verifyToken: ({ token }) => token === process.env.ACTOR_WEB_GATEWAY_TOKEN,
+    },
+  },
 });
 
 // browser.ts
 const client = createActorWebClient(logistics, {
-  gateway: { url: 'ws://logistics.example.com/gateway' },
+  gateway: {
+    url: 'ws://logistics.example.com/gateway',
+    auth: {
+      token: () => sessionStorage.getItem('actor-web-gateway-token') ?? undefined,
+    },
+  },
 });
 
 const shipmentSource = client.actors.shipment;
@@ -457,7 +468,13 @@ through Actor-Web transport.
 const server = await serveActorWebNode(logistics, {
   node: 'server',
   gateway: true,
-  transport: true,
+  transport: {
+    listen: true,
+    auth: {
+      token: () => process.env.ACTOR_WEB_NODE_TOKEN,
+      verifyToken: ({ token }) => token === process.env.ACTOR_WEB_NODE_TOKEN,
+    },
+  },
 });
 
 // worker.ts
@@ -465,6 +482,11 @@ const worker = await startActorWebNode(logistics, {
   node: 'worker',
   peers: {
     server: 'ws://logistics.example.com/runtime-transport',
+  },
+  transport: {
+    auth: {
+      token: () => workerRuntimeToken,
+    },
   },
 });
 ```
@@ -598,11 +620,51 @@ console.log(server.getTransportUrl());
 `gateway: true` exposes topology actors that declare `gateway: true`.
 `transport: true` opens the runtime-to-runtime WebSocket listener. Use object
 options only when deployment details need explicit ports, hosts, heartbeat
-settings, or peer resolution.
+settings, peer resolution, or auth.
 
 `serveActorWebNode` deliberately does not own REST routes, provider callbacks,
-auth, persistence, or business ingress. Those are application adapters around
-the served node.
+persistence, or business ingress. Those are application adapters around the
+served node. It can enforce gateway and runtime-peer auth because those are
+transport admission concerns.
+
+### Auth Hooks
+
+Auth is optional by default so local examples and tests can run without secrets.
+When configured, runtime peers are verified during the WebSocket handshake before
+peer registration, and gateway clients are verified during `hello` before any
+stream can subscribe, send, or ask.
+
+```ts
+const server = await serveActorWebNode(logistics, {
+  node: 'server',
+  gateway: {
+    auth: {
+      verifyToken: ({ token }) => token === process.env.ACTOR_WEB_GATEWAY_TOKEN,
+    },
+  },
+  transport: {
+    listen: true,
+    auth: {
+      token: () => process.env.ACTOR_WEB_NODE_TOKEN,
+      verifyToken: ({ token }) => token === process.env.ACTOR_WEB_NODE_TOKEN,
+    },
+  },
+});
+
+const client = createActorWebClient(logistics, {
+  gateway: {
+    url: server.getGatewayUrl() ?? '',
+    auth: {
+      token: () => browserSessionToken,
+    },
+  },
+});
+```
+
+Auth payloads are intentionally small: `{ scheme, token, metadata }`. Do not put
+secrets in metadata. Actor-Web emits auth accept/reject telemetry without echoing
+token values; TLS, certificate management, OAuth, and secret rotation remain
+deployment/application concerns.
 
 ### `serveActorWebHttp(runtime)`
 

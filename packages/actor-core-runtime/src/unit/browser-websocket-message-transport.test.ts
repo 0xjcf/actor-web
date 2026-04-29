@@ -154,6 +154,55 @@ describe('BrowserWebSocketMessageTransport', () => {
     });
   });
 
+  it('sends browser transport auth during handshake and rejects invalid tokens', async () => {
+    const nodeTelemetry: RuntimeTransportTelemetryEvent[] = [];
+    const node = await createStartedNodeTransport('node-b', {
+      telemetry: (event) => nodeTelemetry.push(event),
+      auth: {
+        verifyToken: ({ token }) => token === 'browser-secret',
+      },
+    });
+    const nodeUrl = node.getListeningUrl();
+    if (!nodeUrl) {
+      throw new Error('Expected node listening URL');
+    }
+    const browser = createBrowserTransport('worker-a', {
+      peers: { 'node-b': nodeUrl },
+      auth: {
+        token: () => 'browser-secret',
+      },
+    });
+
+    await browser.connect('node-b');
+
+    expect(browser.isConnected('node-b')).toBe(true);
+    expect(nodeTelemetry).toContainEqual(
+      expect.objectContaining({
+        type: 'auth.accepted',
+        nodeAddress: 'node-b',
+        peerNodeAddress: 'worker-a',
+      })
+    );
+
+    await browser.disconnect('node-b');
+    const rejectedBrowser = createBrowserTransport('worker-c', {
+      peers: { 'node-b': nodeUrl },
+      auth: {
+        token: () => 'invalid-browser-secret',
+      },
+    });
+
+    await expect(rejectedBrowser.connect('node-b')).rejects.toThrow('Runtime handshake rejected');
+    expect(nodeTelemetry).toContainEqual(
+      expect.objectContaining({
+        type: 'auth.rejected',
+        nodeAddress: 'node-b',
+        peerNodeAddress: 'worker-c',
+      })
+    );
+    expect(JSON.stringify(nodeTelemetry)).not.toContain('invalid-browser-secret');
+  });
+
   it('sends and receives validated runtime frames through a Node peer', async () => {
     const node = await createStartedNodeTransport('node-b');
     const nodeUrl = node.getListeningUrl();

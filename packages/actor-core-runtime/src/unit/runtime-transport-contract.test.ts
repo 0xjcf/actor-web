@@ -72,6 +72,35 @@ describe('runtime transport contract', () => {
     expect(validateRuntimeTransportHandshake(hello, local)).toEqual({ ok: true });
   });
 
+  it('accepts optional auth metadata on handshakes without exposing it as identity', () => {
+    const local = node('node-a');
+    const remote = node('node-b');
+    const hello = createRuntimeTransportHandshakeHello(remote, {
+      now: fixedNow,
+      auth: { scheme: 'token', token: 'secret-token', metadata: { audience: 'runtime' } },
+    });
+
+    expect(validateRuntimeTransportHandshake(hello, local)).toEqual({ ok: true });
+    expect(hello).toMatchObject({
+      type: 'runtime.handshake.hello',
+      auth: { scheme: 'token', token: 'secret-token', metadata: { audience: 'runtime' } },
+    });
+  });
+
+  it('rejects malformed auth metadata on handshakes', () => {
+    const local = node('node-a');
+    const remote = node('node-b');
+    const hello = {
+      ...createRuntimeTransportHandshakeHello(remote, fixedNow),
+      auth: { token: 123 },
+    };
+
+    expect(validateRuntimeTransportHandshake(hello, local)).toMatchObject({
+      ok: false,
+      code: 'malformed_frame',
+    });
+  });
+
   it('rejects accept handshakes addressed to a different local identity', () => {
     const local = node('node-a');
     const remote = node('node-b');

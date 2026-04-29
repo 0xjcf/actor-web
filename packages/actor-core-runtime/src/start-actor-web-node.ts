@@ -11,6 +11,7 @@ import {
   spawnOwnedActorWebActors,
 } from './actor-web-node-runtime.js';
 import { createBrowserWebSocketMessageTransport } from './browser-websocket-message-transport.js';
+import type { RuntimeTransportAuthProvider } from './runtime-auth.js';
 import type { RuntimeTransportTelemetryObserver } from './runtime-transport-telemetry.js';
 import type {
   ActorWebActorContext,
@@ -33,6 +34,7 @@ export interface ActorWebBrowserNodeTransportOptions {
   readonly heartbeatTimeoutMs?: number;
   readonly telemetry?: RuntimeTransportTelemetryObserver;
   readonly webSocketFactory?: (url: string) => WebSocket;
+  readonly auth?: RuntimeTransportAuthProvider;
 }
 
 type StartableMessageTransport = MessageTransport & {
@@ -149,6 +151,7 @@ function createTopologyTransport(
       ? { heartbeatTimeoutMs: transportOptions.heartbeatTimeoutMs }
       : {}),
     ...(transportOptions?.telemetry ? { telemetry: transportOptions.telemetry } : {}),
+    ...(transportOptions?.auth ? { auth: transportOptions.auth } : {}),
     ...(transportOptions?.webSocketFactory
       ? { webSocketFactory: transportOptions.webSocketFactory }
       : {}),

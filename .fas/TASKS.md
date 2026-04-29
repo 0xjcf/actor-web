@@ -98,6 +98,18 @@
 - Blast radius: cross-cutting
 - Artifacts: brief=.fas/tasks/runtime-transport-observability-foundation.md; verification=.fas/state/verification/latest.json
 
+### Task: Runtime transport and gateway auth security
+
+- Title: Runtime transport and gateway auth security
+- Mode: 6-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/runtime-transport-gateway-auth-security.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: brief=.fas/tasks/runtime-transport-gateway-auth-security.md; verification=.fas/state/verification/latest.json
+
 ### Task: Logistics control tower demo
 
 - Title: Logistics control tower demo

@@ -10,6 +10,7 @@ import {
   createProjectionTransportStatus,
   type ProjectionTransportStatus,
 } from './projection-transport.js';
+import { type RuntimeGatewayAuthProvider, resolveRuntimeAuthPayload } from './runtime-auth.js';
 import type {
   RuntimeGatewayClientFrame,
   RuntimeGatewayEventProjection,
@@ -43,6 +44,7 @@ export type ActorWebSourceGatewayScopeOptions = Omit<RuntimeGatewayScopeDescript
 export interface ActorWebSourceGatewayOptions {
   readonly url: string;
   readonly scope?: ActorWebSourceGatewayScopeOptions;
+  readonly auth?: RuntimeGatewayAuthProvider;
 }
 
 export interface ActorWebSourceOptions {
@@ -266,7 +268,21 @@ function createGatewayBackedSource<
   };
 
   socket.addEventListener('open', () => {
-    sendFrame({ type: 'hello', clientVersion: options.clientVersion ?? 'actor-web-source' });
+    if (!options.gateway.auth) {
+      sendFrame({
+        type: 'hello',
+        clientVersion: options.clientVersion ?? 'actor-web-source',
+      });
+      return;
+    }
+
+    void resolveRuntimeAuthPayload(options.gateway.auth).then((auth) => {
+      sendFrame({
+        type: 'hello',
+        clientVersion: options.clientVersion ?? 'actor-web-source',
+        ...(auth ? { auth } : {}),
+      });
+    }, rejectPending);
   });
 
   socket.addEventListener('message', (event) => {

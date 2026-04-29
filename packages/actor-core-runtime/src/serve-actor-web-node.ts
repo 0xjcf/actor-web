@@ -10,6 +10,7 @@ import {
   spawnOwnedActorWebActors,
 } from './actor-web-node-runtime.js';
 import { createNodeWebSocketMessageTransport } from './node-websocket-message-transport.js';
+import type { RuntimeGatewayAuthProvider, RuntimeTransportAuthProvider } from './runtime-auth.js';
 import {
   createRuntimeGatewayHub,
   createRuntimeGatewaySource,
@@ -32,6 +33,10 @@ export interface ActorWebNodeGatewayOptions<TActorKey extends string = string> {
   readonly port?: number;
   readonly expose?: readonly TActorKey[];
   readonly resolveScope?: RuntimeGatewayScopeResolver<Record<string, never>>;
+  readonly auth?: RuntimeGatewayAuthProvider<{
+    readonly connectionId: string;
+    readonly clientVersion?: string;
+  }>;
 }
 
 export interface ActorWebNodeTransportOptions {
@@ -47,6 +52,7 @@ export interface ActorWebNodeTransportOptions {
   readonly connectTimeoutMs?: number;
   readonly heartbeatIntervalMs?: number;
   readonly heartbeatTimeoutMs?: number;
+  readonly auth?: RuntimeTransportAuthProvider;
 }
 
 export interface ServeActorWebNodeOptions<
@@ -88,6 +94,7 @@ export interface ServedActorWebNode<TTopology extends ActorWebTopology<ActorWebT
 interface WebSocketLike {
   readonly readyState: number;
   send(data: string): void;
+  close(): void;
   on(event: 'message', listener: (data: unknown) => void): void;
   on(event: 'close', listener: () => void): void;
   off(event: 'message', listener: (data: unknown) => void): void;
@@ -146,6 +153,10 @@ class ActorWebNodeGatewayConnection implements RuntimeGatewayConnectionAdapter {
     if (this.socket.readyState === WEB_SOCKET_OPEN) {
       this.socket.send(JSON.stringify(frame));
     }
+  }
+
+  close(): void {
+    this.socket.close();
   }
 }
 
@@ -241,6 +252,7 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
     connectTimeoutMs: transportOptions?.connectTimeoutMs,
     heartbeatIntervalMs: transportOptions?.heartbeatIntervalMs ?? 0,
     heartbeatTimeoutMs: transportOptions?.heartbeatTimeoutMs,
+    ...(transportOptions?.auth ? { auth: transportOptions.auth } : {}),
     ...(transportListen
       ? {
           listen: {
@@ -302,6 +314,7 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
   };
 
   const hub = createRuntimeGatewayHub({
+    ...(gatewayOptions?.auth ? { auth: gatewayOptions.auth } : {}),
     resolveScope: async (scope) => {
       const customSource = await gatewayOptions?.resolveScope?.(scope, {});
       if (customSource) {

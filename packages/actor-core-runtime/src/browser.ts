@@ -63,6 +63,19 @@ export type {
 } from './projection-transport.js';
 export { createProjectionTransportStatus } from './projection-transport.js';
 export type {
+  RuntimeGatewayAuthProvider,
+  RuntimeGatewayAuthResult,
+  RuntimeTransportAuthPayload,
+  RuntimeTransportAuthProvider,
+  RuntimeTransportAuthResult,
+} from './runtime-auth.js';
+export {
+  resolveRuntimeAuthPayload,
+  sanitizeRuntimeAuthPayload,
+  verifyRuntimeAuth,
+  verifyRuntimeGatewayAuth,
+} from './runtime-auth.js';
+export type {
   RuntimeGatewayClientFrame,
   RuntimeGatewayErrorCode,
   RuntimeGatewayEventProjection,

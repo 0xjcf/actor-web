@@ -149,6 +149,64 @@ describe('serveActorWebNode', () => {
     }
   });
 
+  it('applies gateway auth configured on the served topology node', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+      },
+      actors: {
+        counter: actor({
+          id: 'counter',
+          node: 'server',
+          behavior: createCounterBehavior,
+          gateway: true,
+        }),
+      },
+    });
+
+    const served = await serveActorWebNode(topology, {
+      node: 'server',
+      gateway: {
+        auth: {
+          verifyToken: ({ token }) => token === 'gateway-secret',
+        },
+      },
+    });
+
+    try {
+      const rejected = new WebSocket(served.getGatewayUrl() ?? '');
+      const rejectedFrames = collectFrames(rejected);
+      await waitForSocketOpen(rejected);
+      rejected.send(
+        JSON.stringify({
+          type: 'hello',
+          auth: { scheme: 'token', token: 'wrong-gateway-secret' },
+        })
+      );
+      await expect(rejectedFrames.nextFrame()).resolves.toMatchObject({
+        type: 'error',
+        code: 'unauthorized',
+      });
+      rejected.close();
+
+      const accepted = new WebSocket(served.getGatewayUrl() ?? '');
+      const acceptedFrames = collectFrames(accepted);
+      await waitForSocketOpen(accepted);
+      accepted.send(
+        JSON.stringify({
+          type: 'hello',
+          auth: { scheme: 'token', token: 'gateway-secret' },
+        })
+      );
+      await expect(acceptedFrames.nextFrame()).resolves.toMatchObject({
+        type: 'ready',
+      });
+      accepted.close();
+    } finally {
+      await served.stop();
+    }
+  });
+
   it('exposes configured remote topology actors through the node gateway', async () => {
     const topology = defineActorWebTopology({
       nodes: {

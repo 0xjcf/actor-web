@@ -1,5 +1,12 @@
 export type { ActorToolRegistry } from './actor-tools.js';
 export type {
+  RuntimeGatewayAuthProvider,
+  RuntimeGatewayAuthResult,
+  RuntimeTransportAuthPayload,
+  RuntimeTransportAuthProvider,
+  RuntimeTransportAuthResult,
+} from './runtime-auth.js';
+export type {
   ActorWebBoundHttpContext,
   ActorWebBoundHttpHandler,
   ActorWebBoundHttpRouter,

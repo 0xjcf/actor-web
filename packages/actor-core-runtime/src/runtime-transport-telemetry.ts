@@ -9,6 +9,8 @@ export type RuntimeTransportTelemetryEventType =
   | 'peer.rejected'
   | 'handshake.accepted'
   | 'handshake.rejected'
+  | 'auth.accepted'
+  | 'auth.rejected'
   | 'frame.sent'
   | 'frame.received'
   | 'frame.dropped'
@@ -24,6 +26,7 @@ export interface RuntimeTransportTelemetryEvent {
   sequence?: number;
   expectedSequence?: number;
   reason?: string;
+  authSubject?: string;
 }
 
 export type RuntimeTransportTelemetryObserver = (event: RuntimeTransportTelemetryEvent) => void;

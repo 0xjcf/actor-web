@@ -113,6 +113,71 @@ describe('NodeWebSocketMessageTransport', () => {
     });
   });
 
+  it('accepts peers with valid handshake auth and emits auth telemetry', async () => {
+    const telemetry: RuntimeTransportTelemetryEvent[] = [];
+    const remote = await createStartedTransport('node-b', {
+      telemetry: (event) => telemetry.push(event),
+      auth: {
+        verifyToken: ({ token }) => token === 'runtime-secret',
+      },
+    });
+    const remoteUrl = remote.getListeningUrl();
+    if (!remoteUrl) {
+      throw new Error('Expected remote listening URL');
+    }
+    const local = await createStartedTransport('node-a', {
+      peers: { 'node-b': remoteUrl },
+      auth: {
+        token: () => 'runtime-secret',
+      },
+    });
+
+    await local.connect('node-b');
+
+    expect(remote.isConnected('node-a')).toBe(true);
+    expect(telemetry).toContainEqual(
+      expect.objectContaining({
+        type: 'auth.accepted',
+        nodeAddress: 'node-b',
+        peerNodeAddress: 'node-a',
+      })
+    );
+  });
+
+  it('rejects missing or invalid peer auth before registration without leaking tokens', async () => {
+    const telemetry: RuntimeTransportTelemetryEvent[] = [];
+    const remote = await createStartedTransport('node-b', {
+      telemetry: (event) => telemetry.push(event),
+      auth: {
+        verifyToken: ({ token }) => token === 'expected-secret',
+      },
+    });
+    const remoteUrl = remote.getListeningUrl();
+    if (!remoteUrl) {
+      throw new Error('Expected remote listening URL');
+    }
+    const local = await createStartedTransport('node-a', {
+      peers: { 'node-b': remoteUrl },
+      auth: {
+        token: () => 'wrong-secret',
+      },
+    });
+
+    await expect(local.connect('node-b')).rejects.toThrow('Runtime handshake rejected');
+
+    expect(remote.isConnected('node-a')).toBe(false);
+    expect(remote.getPeerState('node-a')).toBe('rejected');
+    expect(telemetry).toContainEqual(
+      expect.objectContaining({
+        type: 'auth.rejected',
+        nodeAddress: 'node-b',
+        peerNodeAddress: 'node-a',
+        reason: 'Authentication rejected.',
+      })
+    );
+    expect(JSON.stringify(telemetry)).not.toContain('wrong-secret');
+  });
+
   it('tracks peer state transitions from connecting to connected to disconnected', async () => {
     const remote = await createStartedTransport('node-b');
     const remoteUrl = remote.getListeningUrl();

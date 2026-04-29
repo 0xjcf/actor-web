@@ -28,6 +28,13 @@ interface CheckoutContext {
 
 const fixedNow = () => new Date('2026-04-23T15:00:00.000Z');
 
+async function flushGatewayFrames(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 const checkoutMachine = setup({
   types: {
     context: {} as CheckoutContext,
@@ -77,6 +84,7 @@ const checkoutMachine = setup({
 interface FakeConnection<TAuthContext = unknown>
   extends RuntimeGatewayConnectionAdapter<TAuthContext> {
   frames: unknown[];
+  closed: boolean;
   push(frame: RuntimeGatewayClientFrame): void;
   close(): void;
 }
@@ -91,6 +99,7 @@ function createFakeConnection<TAuthContext = unknown>(
   return {
     authContext,
     frames,
+    closed: false,
     receive(listener) {
       receiveListeners.add(listener);
       return () => {
@@ -112,6 +121,7 @@ function createFakeConnection<TAuthContext = unknown>(
       }
     },
     close() {
+      this.closed = true;
       for (const listener of Array.from(closeListeners)) {
         listener();
       }
@@ -325,6 +335,82 @@ describe('runtime gateway source', () => {
 });
 
 describe('runtime gateway hub', () => {
+  it('accepts authenticated gateway hello frames and passes auth context to scope resolution', async () => {
+    const source = createFakeSource('ready');
+    const seenAuthContexts: unknown[] = [];
+    const hub = createRuntimeGatewayHub({
+      auth: {
+        verifyToken: ({ token }) =>
+          token === 'gateway-secret'
+            ? { ok: true, authContext: { authorityId: 'auth-from-token' } }
+            : { ok: false, reason: 'Gateway authentication rejected.' },
+      },
+      resolveScope: async (_scope, authContext) => {
+        seenAuthContexts.push(authContext);
+        return source;
+      },
+    });
+    const connection = createFakeConnection({ authorityId: 'connection-default' });
+
+    const detach = hub.attach(connection);
+    connection.push({
+      type: 'hello',
+      auth: { scheme: 'token', token: 'gateway-secret' },
+    });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'fleet-main',
+      scope: { kind: 'fleet-view' },
+    });
+    await flushGatewayFrames();
+
+    expect(connection.closed).toBe(false);
+    expect(connection.frames[0]).toMatchObject({ type: 'ready' });
+    expect(seenAuthContexts).toEqual([{ authorityId: 'auth-from-token' }]);
+
+    detach();
+  });
+
+  it('rejects unauthenticated gateway clients before stream attachment', async () => {
+    const source = createFakeSource('ready');
+    const hub = createRuntimeGatewayHub({
+      auth: {
+        verifyToken: ({ token }) => token === 'gateway-secret',
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({
+      type: 'hello',
+      auth: { scheme: 'token', token: 'wrong-gateway-secret' },
+    });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'fleet-main',
+      scope: { kind: 'fleet-view' },
+    });
+    await flushGatewayFrames();
+
+    expect(connection.closed).toBe(true);
+    expect(source.listenerCounts()).toEqual({
+      snapshots: 0,
+      events: 0,
+      statuses: 0,
+      transitions: 0,
+    });
+    expect(connection.frames).toContainEqual({
+      type: 'error',
+      code: 'unauthorized',
+      message: 'Authentication rejected.',
+      recoverable: false,
+    });
+    expect(JSON.stringify(connection.frames)).not.toContain('wrong-gateway-secret');
+
+    detach();
+  });
+
   it('rejects frames before hello', async () => {
     const hub = createRuntimeGatewayHub({
       resolveScope: async () => createFakeSource(),
@@ -338,7 +424,7 @@ describe('runtime gateway hub', () => {
       scope: { kind: 'fleet-view', params: { authorityId: 'auth-1' } },
     });
 
-    await Promise.resolve();
+    await flushGatewayFrames();
 
     expect(connection.frames).toContainEqual({
       type: 'error',
@@ -374,7 +460,7 @@ describe('runtime gateway hub', () => {
       scope: { kind: 'fleet-view', params: { authorityId: 'auth-1' } },
     });
 
-    await Promise.resolve();
+    await flushGatewayFrames();
 
     expect(connection.frames[0]).toMatchObject({
       type: 'ready',
@@ -424,7 +510,7 @@ describe('runtime gateway hub', () => {
       fromSequence: 2,
     });
 
-    await Promise.resolve();
+    await flushGatewayFrames();
 
     expect(connection.frames[3]).toMatchObject({
       type: 'event',
@@ -498,7 +584,7 @@ describe('runtime gateway hub', () => {
       streamId: 'checkout-main',
       scope: { kind: 'checkout' },
     });
-    await Promise.resolve();
+    await flushGatewayFrames();
 
     connection.push({
       type: 'send',
@@ -512,8 +598,8 @@ describe('runtime gateway hub', () => {
       message: { type: 'GET_COUNT' },
       timeoutMs: 1000,
     });
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushGatewayFrames();
+    await flushGatewayFrames();
 
     expect(source.sentMessages).toEqual([{ type: 'SUBMIT', orderId: 'order-gateway' }]);
     expect(source.askMessages).toEqual([{ type: 'GET_COUNT' }]);
@@ -521,7 +607,9 @@ describe('runtime gateway hub', () => {
       type: 'ack',
       streamId: 'checkout-main',
     });
-    expect(connection.frames).toContainEqual({
+    expect(
+      connection.frames.find((frame) => (frame as { type?: string }).type === 'reply')
+    ).toMatchObject({
       type: 'reply',
       streamId: 'checkout-main',
       requestId: 'request-1',
@@ -551,7 +639,7 @@ describe('runtime gateway hub', () => {
       requestId: 'request-1',
       message: { type: 'GET_COUNT' },
     });
-    await Promise.resolve();
+    await flushGatewayFrames();
 
     expect(source.sentMessages).toEqual([]);
     expect(connection.frames).toContainEqual({
