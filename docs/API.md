@@ -859,6 +859,11 @@ frames for valid runtime frames. Bounded retry is limited to internal
 `__runtime.*` control traffic. User actor `send` still remains at-most-once by
 default.
 
+Both WebSocket transports keep a bounded per-peer outbound queue. The default
+limit is `1024` queued data frames. When the queue is full, `send(...)` rejects
+and the transport emits backpressure telemetry instead of buffering without a
+limit. Ack and heartbeat control frames stay minimal and direct.
+
 Handshake rejection covers:
 
 - missing node identity
@@ -878,7 +883,8 @@ Runtime-native telemetry is available without adding OpenTelemetry:
 Telemetry/stats cover connection state, handshake accept/reject, malformed
 frames, reconnect/disconnect count, heartbeat timeout, frame send/receive count,
 ack received count, retry count, retry exhaustion, duplicate drops, idempotency
-cache evictions, validation drops, sequence gaps, and last-seen timestamps.
+cache evictions, outbound queue depth, backpressure drops, validation drops,
+sequence gaps, and last-seen timestamps.
 
 ## Package Boundaries
 

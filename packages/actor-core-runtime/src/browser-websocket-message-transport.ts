@@ -39,6 +39,7 @@ export interface BrowserWebSocketMessageTransportOptions {
   idempotencyWindowSize?: number;
   ackTimeoutMs?: number;
   maxAckRetries?: number;
+  outboundQueueLimit?: number;
   telemetry?: RuntimeTransportTelemetryObserver;
   webSocketFactory?: (url: string) => WebSocket;
   auth?: RuntimeTransportAuthProvider<{
@@ -55,6 +56,8 @@ type BrowserPeerConnection = {
   seenMessageIds: string[];
   seenMessageIdSet: Set<string>;
   pendingAcks: Map<string, PendingAck>;
+  outboundQueue: OutboundQueueItem[];
+  outboundFlushing: boolean;
   lastSeenAt: number;
   heartbeatInterval: ReturnType<typeof setInterval> | null;
   heartbeatTimeout: ReturnType<typeof setTimeout> | null;
@@ -64,6 +67,13 @@ type PendingAck = {
   frame: RuntimeTransportFrame;
   retries: number;
   timer: ReturnType<typeof setTimeout> | null;
+};
+
+type OutboundQueueItem = {
+  frame: RuntimeTransportFrame;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  trackAck: boolean;
 };
 
 const WEB_SOCKET_OPEN = 1;
@@ -80,6 +90,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
   private readonly idempotencyWindowSize: number;
   private readonly ackTimeoutMs: number;
   private readonly maxAckRetries: number;
+  private readonly outboundQueueLimit: number;
   private readonly webSocketFactory: (url: string) => WebSocket;
   private readonly stats: RuntimeTransportStats;
 
@@ -96,6 +107,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
     this.idempotencyWindowSize = options.idempotencyWindowSize ?? 1024;
     this.ackTimeoutMs = options.ackTimeoutMs ?? 1000;
     this.maxAckRetries = options.maxAckRetries ?? 2;
+    this.outboundQueueLimit = options.outboundQueueLimit ?? 1024;
     this.webSocketFactory =
       options.webSocketFactory ??
       ((url) => {
@@ -150,9 +162,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       message,
     });
 
-    this.sendJson(peer.socket, frame);
-    this.recordFrameSent(destination, peer, frame);
-    this.trackAckIfRetryable(destination, peer, frame);
+    await this.enqueueFrame(destination, peer, frame, true);
   }
 
   subscribe(listener: (event: { source: string; message: ActorMessage }) => void): () => void {
@@ -333,6 +343,8 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       seenMessageIds: [],
       seenMessageIdSet: new Set<string>(),
       pendingAcks: new Map<string, PendingAck>(),
+      outboundQueue: [],
+      outboundFlushing: false,
       lastSeenAt: Date.now(),
       heartbeatInterval: null,
       heartbeatTimeout: null,
@@ -487,6 +499,10 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
   ): void {
     this.clearHeartbeat(peer);
     this.clearPendingAcks(peer);
+    this.rejectQueuedFrames(
+      peer,
+      `Transport ${this.identity.nodeAddress} disconnected from ${nodeAddress}`
+    );
     this.peers.delete(nodeAddress);
     peer.socket.close();
     this.recordPeerDisconnected(nodeAddress, peer);
@@ -594,6 +610,10 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       framesAcked: 0,
       framesRetried: 0,
       retryExhaustedCount: 0,
+      outboundQueueDepth: 0,
+      outboundQueueLimit: this.outboundQueueLimit,
+      outboundFramesDropped: 0,
+      backpressureDropCount: 0,
       duplicateFramesDropped: 0,
       idempotencyCacheEvictions: 0,
       malformedFramesDropped: 0,
@@ -619,6 +639,10 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       framesAcked: 0,
       framesRetried: 0,
       retryExhaustedCount: 0,
+      outboundQueueDepth: 0,
+      outboundQueueLimit: this.outboundQueueLimit,
+      outboundFramesDropped: 0,
+      backpressureDropCount: 0,
       duplicateFramesDropped: 0,
       idempotencyCacheEvictions: 0,
       malformedFramesDropped: 0,
@@ -843,6 +867,149 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
     return frame.message.type.startsWith('__runtime.');
   }
 
+  private enqueueFrame(
+    nodeAddress: string,
+    peer: BrowserPeerConnection,
+    frame: RuntimeTransportFrame,
+    trackAck: boolean
+  ): Promise<void> {
+    if (this.outboundQueueLimit >= 0 && peer.outboundQueue.length >= this.outboundQueueLimit) {
+      const error = new Error(
+        `Transport ${this.identity.nodeAddress} outbound queue to ${nodeAddress} is full.`
+      );
+      this.recordOutboundQueueDropped(nodeAddress, peer, frame, error.message);
+      return Promise.reject(error);
+    }
+
+    const promise = new Promise<void>((resolve, reject) => {
+      peer.outboundQueue.push({ frame, resolve, reject, trackAck });
+    });
+    this.recordOutboundQueueEnqueued(nodeAddress, peer, frame);
+    this.flushOutboundQueue(nodeAddress, peer);
+    return promise;
+  }
+
+  private flushOutboundQueue(nodeAddress: string, peer: BrowserPeerConnection): void {
+    if (peer.outboundFlushing) {
+      return;
+    }
+
+    peer.outboundFlushing = true;
+    try {
+      while (peer.outboundQueue.length > 0) {
+        if (this.peers.get(nodeAddress) !== peer || peer.socket.readyState !== WEB_SOCKET_OPEN) {
+          this.rejectQueuedFrames(
+            peer,
+            `Transport ${this.identity.nodeAddress} is not connected to ${nodeAddress}`
+          );
+          return;
+        }
+
+        const item = peer.outboundQueue.shift();
+        if (!item) {
+          continue;
+        }
+        this.updateOutboundQueueDepth(nodeAddress, peer);
+        try {
+          this.sendJson(peer.socket, item.frame);
+          this.recordFrameSent(nodeAddress, peer, item.frame);
+          if (item.trackAck) {
+            this.trackAckIfRetryable(nodeAddress, peer, item.frame);
+          }
+          item.resolve();
+          this.emitTelemetry({
+            type: 'outbound.queue.drained',
+            peerNodeAddress: nodeAddress,
+            messageType: item.frame.message.type,
+            messageId: item.frame.messageId,
+            queueDepth: peer.outboundQueue.length,
+            queueLimit: this.outboundQueueLimit,
+          });
+        } catch (error) {
+          item.reject(error instanceof Error ? error : new Error('Runtime transport send failed.'));
+          void this.disconnect(nodeAddress);
+          return;
+        }
+      }
+    } finally {
+      peer.outboundFlushing = false;
+      if (peer.outboundQueue.length > 0) {
+        this.flushOutboundQueue(nodeAddress, peer);
+      }
+    }
+  }
+
+  private rejectQueuedFrames(peer: BrowserPeerConnection, reason: string): void {
+    for (const item of peer.outboundQueue.splice(0)) {
+      item.reject(new Error(reason));
+    }
+  }
+
+  private updateOutboundQueueDepth(nodeAddress: string, peer: BrowserPeerConnection): void {
+    this.setPeerStats(nodeAddress, {
+      outboundQueueDepth: peer.outboundQueue.length,
+      outboundQueueLimit: this.outboundQueueLimit,
+    });
+    this.stats.outboundQueueDepth = Array.from(this.peers.values()).reduce(
+      (total, currentPeer) => total + currentPeer.outboundQueue.length,
+      0
+    );
+  }
+
+  private recordOutboundQueueEnqueued(
+    nodeAddress: string,
+    peer: BrowserPeerConnection,
+    frame: RuntimeTransportFrame
+  ): void {
+    this.updateOutboundQueueDepth(nodeAddress, peer);
+    this.emitTelemetry({
+      type: 'outbound.queue.enqueued',
+      peerNodeAddress: nodeAddress,
+      messageType: frame.message.type,
+      messageId: frame.messageId,
+      sequence: frame.sequence,
+      queueDepth: peer.outboundQueue.length,
+      queueLimit: this.outboundQueueLimit,
+    });
+  }
+
+  private recordOutboundQueueDropped(
+    nodeAddress: string,
+    peer: BrowserPeerConnection,
+    frame: RuntimeTransportFrame,
+    reason: string
+  ): void {
+    this.stats.outboundFramesDropped += 1;
+    this.stats.backpressureDropCount += 1;
+    this.setPeerStats(nodeAddress, {
+      identity: peer.identity,
+      outboundQueueDepth: peer.outboundQueue.length,
+      outboundQueueLimit: this.outboundQueueLimit,
+      outboundFramesDropped: (this.stats.peers[nodeAddress]?.outboundFramesDropped ?? 0) + 1,
+      backpressureDropCount: (this.stats.peers[nodeAddress]?.backpressureDropCount ?? 0) + 1,
+    });
+    this.emitTelemetry({
+      type: 'outbound.queue.dropped',
+      peerNodeAddress: nodeAddress,
+      messageType: frame.message.type,
+      messageId: frame.messageId,
+      sequence: frame.sequence,
+      queueDepth: peer.outboundQueue.length,
+      queueLimit: this.outboundQueueLimit,
+      reason,
+    });
+    this.emitTelemetry({
+      type: 'backpressure.applied',
+      peerNodeAddress: nodeAddress,
+      messageType: frame.message.type,
+      messageId: frame.messageId,
+      sequence: frame.sequence,
+      queueDepth: peer.outboundQueue.length,
+      queueLimit: this.outboundQueueLimit,
+      reason,
+    });
+  }
+
   private trackAckIfRetryable(
     nodeAddress: string,
     peer: BrowserPeerConnection,
@@ -875,9 +1042,11 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
 
       pending.retries += 1;
       this.recordFrameRetryScheduled(nodeAddress, peer, pending.frame);
-      this.sendJson(peer.socket, pending.frame);
-      this.recordFrameSent(nodeAddress, peer, pending.frame);
-      this.armAckRetry(nodeAddress, peer, pending);
+      this.enqueueFrame(nodeAddress, peer, pending.frame, false)
+        .then(() => this.armAckRetry(nodeAddress, peer, pending))
+        .catch(() => {
+          void this.disconnect(nodeAddress);
+        });
     }, this.ackTimeoutMs);
   }
 

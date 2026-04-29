@@ -491,8 +491,9 @@ replay/resync, observability, and backpressure.
 
 Status: complete for runtime-native telemetry/stats snapshots, auth/security,
 message ID based duplicate suppression, and bounded retry/ack handling for
-internal runtime control traffic. Remaining production work is durable
-replay/resync, backpressure enforcement, and durable telemetry export.
+internal runtime control traffic. Bounded per-peer outbound queues now apply
+backpressure by rejecting sends when the queue is full. Remaining production work
+is durable replay/resync and durable telemetry export.
 
 ### Phase 4: Projection hardening
 

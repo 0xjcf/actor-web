@@ -358,6 +358,53 @@ describe('BrowserWebSocketMessageTransport', () => {
     );
   });
 
+  it('rejects browser sends when the outbound queue is full', async () => {
+    const node = await createStartedNodeTransport('node-b');
+    const nodeUrl = node.getListeningUrl();
+    if (!nodeUrl) {
+      throw new Error('Expected node listening URL');
+    }
+    const telemetry: RuntimeTransportTelemetryEvent[] = [];
+    const browser = createBrowserTransport('worker-a', {
+      outboundQueueLimit: 1,
+      telemetry: (event) => telemetry.push(event),
+      peers: { 'node-b': nodeUrl },
+    });
+
+    await browser.connect('node-b');
+    const peer = (
+      browser as unknown as {
+        peers: Map<string, { outboundFlushing: boolean }>;
+      }
+    ).peers.get('node-b');
+    if (!peer) {
+      throw new Error('Expected browser peer');
+    }
+    peer.outboundFlushing = true;
+
+    const first = browser.send('node-b', { type: 'QUEUE_ONE' } as ActorMessage);
+    await expect(browser.send('node-b', { type: 'QUEUE_TWO' } as ActorMessage)).rejects.toThrow(
+      'outbound queue to node-b is full'
+    );
+
+    expect(browser.getPeerStats('node-b')).toMatchObject({
+      outboundQueueDepth: 1,
+      outboundFramesDropped: 1,
+      backpressureDropCount: 1,
+    });
+    expect(telemetry.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['outbound.queue.dropped', 'backpressure.applied'])
+    );
+
+    peer.outboundFlushing = false;
+    (
+      browser as unknown as {
+        flushOutboundQueue: (nodeAddress: string, peer: unknown) => void;
+      }
+    ).flushOutboundQueue('node-b', peer);
+    await first;
+  });
+
   it('uses app-level heartbeat frames against Node WebSocket peers', async () => {
     const node = await createStartedNodeTransport('node-b');
     const nodeUrl = node.getListeningUrl();

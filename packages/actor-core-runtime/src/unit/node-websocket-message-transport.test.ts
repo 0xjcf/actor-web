@@ -420,6 +420,51 @@ describe('NodeWebSocketMessageTransport', () => {
     );
   });
 
+  it('rejects sends when the outbound queue is full', async () => {
+    const telemetry: RuntimeTransportTelemetryEvent[] = [];
+    const remote = await createStartedTransport('node-b');
+    const remoteUrl = remote.getListeningUrl();
+    if (!remoteUrl) {
+      throw new Error('Expected remote listening URL');
+    }
+    const local = await createStartedTransport('node-a', {
+      outboundQueueLimit: 1,
+      telemetry: (event) => telemetry.push(event),
+      peers: { 'node-b': remoteUrl },
+    });
+
+    await local.connect('node-b');
+    let releaseSend: (() => void) | undefined;
+    (
+      local as unknown as {
+        sendJson: (socket: WebSocket, frame: unknown) => Promise<void>;
+      }
+    ).sendJson = async () =>
+      new Promise<void>((resolve) => {
+        releaseSend = resolve;
+      });
+
+    const first = local.send('node-b', { type: 'QUEUE_ONE' } as ActorMessage);
+    const second = local.send('node-b', { type: 'QUEUE_TWO' } as ActorMessage);
+    await expect(local.send('node-b', { type: 'QUEUE_THREE' } as ActorMessage)).rejects.toThrow(
+      'outbound queue to node-b is full'
+    );
+
+    expect(local.getPeerStats('node-b')).toMatchObject({
+      outboundQueueDepth: 1,
+      outboundFramesDropped: 1,
+      backpressureDropCount: 1,
+    });
+    expect(telemetry.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['outbound.queue.dropped', 'backpressure.applied'])
+    );
+
+    releaseSend?.();
+    await first;
+    releaseSend?.();
+    await second;
+  });
+
   it('drops malformed runtime frames and emits disconnect', async () => {
     const remote = await createStartedTransport('node-b');
     const remoteUrl = remote.getListeningUrl();

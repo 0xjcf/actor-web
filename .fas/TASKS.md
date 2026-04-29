@@ -126,13 +126,25 @@
 
 - Title: Runtime transport ack and retry semantics
 - Mode: 6-agent
-- Status: review
+- Status: done
 - Owner: reviewer
 - Brief: .fas/tasks/runtime-transport-ack-retry-semantics.md
 - Verification lane: full
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 - Artifacts: brief=.fas/tasks/runtime-transport-ack-retry-semantics.md; verification=.fas/state/verification/latest.json
+
+### Task: Runtime transport bounded queues and backpressure
+
+- Title: Runtime transport bounded queues and backpressure
+- Mode: 6-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/runtime-transport-bounded-queues-backpressure.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: brief=.fas/tasks/runtime-transport-bounded-queues-backpressure.md; verification=.fas/state/verification/latest.json
 
 ### Task: Logistics control tower demo
 

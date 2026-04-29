@@ -19,6 +19,10 @@ export type RuntimeTransportTelemetryEventType =
   | 'frame.ack.received'
   | 'frame.retry.scheduled'
   | 'frame.retry.exhausted'
+  | 'outbound.queue.enqueued'
+  | 'outbound.queue.drained'
+  | 'outbound.queue.dropped'
+  | 'backpressure.applied'
   | 'idempotency.cache.evicted'
   | 'sequence.gap'
   | 'heartbeat.timeout';
@@ -32,6 +36,8 @@ export interface RuntimeTransportTelemetryEvent {
   messageId?: string;
   sequence?: number;
   expectedSequence?: number;
+  queueDepth?: number;
+  queueLimit?: number;
   reason?: string;
   authSubject?: string;
 }
@@ -54,6 +60,10 @@ export interface RuntimeTransportPeerStats {
   framesAcked: number;
   framesRetried: number;
   retryExhaustedCount: number;
+  outboundQueueDepth: number;
+  outboundQueueLimit: number;
+  outboundFramesDropped: number;
+  backpressureDropCount: number;
   duplicateFramesDropped: number;
   idempotencyCacheEvictions: number;
   malformedFramesDropped: number;
@@ -77,6 +87,10 @@ export interface RuntimeTransportStats {
   framesAcked: number;
   framesRetried: number;
   retryExhaustedCount: number;
+  outboundQueueDepth: number;
+  outboundQueueLimit: number;
+  outboundFramesDropped: number;
+  backpressureDropCount: number;
   duplicateFramesDropped: number;
   idempotencyCacheEvictions: number;
   malformedFramesDropped: number;
