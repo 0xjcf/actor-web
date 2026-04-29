@@ -1,5 +1,10 @@
 /// <reference types="node" />
 
+import {
+  createRuntimeTransportTelemetryExporter,
+  createRuntimeTransportTelemetryJsonlFileSink,
+  type RuntimeTransportTelemetryExporter,
+} from '@actor-core/runtime/node';
 import type { LifecycleMode } from './logistics-provider-hq';
 import {
   createLogisticsRuntimeGatewayServer,
@@ -42,14 +47,26 @@ async function stopServer(server: LogisticsRuntimeGatewayServer): Promise<void> 
   await server.stop();
 }
 
+async function stopTelemetry(
+  telemetry: RuntimeTransportTelemetryExporter | undefined
+): Promise<void> {
+  await telemetry?.close();
+}
+
 async function main(): Promise<void> {
   const lifecycleMode = parseLifecycleMode(process.env.LOGISTICS_LIFECYCLE_MODE);
+  const telemetry = process.env.ACTOR_WEB_TELEMETRY_JSONL
+    ? createRuntimeTransportTelemetryExporter({
+        sink: createRuntimeTransportTelemetryJsonlFileSink(process.env.ACTOR_WEB_TELEMETRY_JSONL),
+      })
+    : undefined;
   const server = createLogisticsRuntimeGatewayServer({
     host: process.env.ACTOR_WEB_HOST ?? '127.0.0.1',
     port: parsePort(process.env.ACTOR_WEB_GATEWAY_PORT, DEFAULT_GATEWAY_PORT),
     transportPort: parsePort(process.env.ACTOR_WEB_TRANSPORT_PORT, DEFAULT_TRANSPORT_PORT),
     restPort: parsePort(process.env.ACTOR_WEB_REST_PORT, DEFAULT_REST_PORT),
     lifecycleMode,
+    ...(telemetry ? { transportTelemetry: telemetry.observe } : {}),
   });
 
   await server.start();
@@ -64,6 +81,7 @@ async function main(): Promise<void> {
 
   const shutdown = (): void => {
     void stopServer(server)
+      .then(() => stopTelemetry(telemetry))
       .catch((error) => {
         console.error(error);
         process.exitCode = 1;

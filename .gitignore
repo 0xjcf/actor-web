@@ -50,6 +50,7 @@ pids
 *.pid
 *.seed
 *.pid.lock
+.actor-web/
 
 # Temporary folders
 tmp/

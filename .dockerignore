@@ -1,0 +1,12 @@
+.git
+.fas/state
+.fas/artifacts
+.fas/index
+.fas/memory
+.pnpm-store
+.DS_Store
+node_modules
+dist
+coverage
+.actor-web
+*.log

@@ -94,40 +94,66 @@ the worker-owned routing actor over WebSocket transport.
 
 ## Stage 2: Docker Compose
 
-After multi-process localhost works, add a container topology:
+The Docker Compose prove-out packages the same topology into separate container
+roles:
 
 ```text
 container 1: logistics-server-runtime
 container 2: logistics-worker-runtime
-container 3: provider-hq
-container 4: logistics-web
+container 3: logistics-web
 ```
 
-Example shape:
+Implemented command:
+
+```sh
+pnpm examples:logistics:docker:verify
+```
+
+Manual run shape:
+
+```sh
+docker compose -f docker-compose.logistics.yml up --build
+```
+
+Then open:
+
+```text
+http://127.0.0.1:4173/ignite-headless-host/
+```
+
+The compose topology uses two kinds of URLs:
+
+- Docker-internal runtime transport URL:
+  `ws://server-runtime:4102`
+- Browser-facing URLs published on the host:
+  - REST: `http://127.0.0.1:4100`
+  - gateway: `ws://127.0.0.1:4101`
+  - browser worker transport: `ws://127.0.0.1:4102`
+
+Current compose shape:
 
 ```yaml
 services:
   server-runtime:
-    build: .
+    build: docker/logistics/Dockerfile
     command: pnpm examples:logistics:server
+    environment:
+      ACTOR_WEB_HOST: 0.0.0.0
+      ACTOR_WEB_TELEMETRY_JSONL: /workspace/actor-web/.actor-web/telemetry/server-transport.jsonl
     ports:
       - "4100:4100"
       - "4101:4101"
+      - "4102:4102"
 
   worker-runtime:
-    build: .
+    build: docker/logistics/Dockerfile
     command: pnpm examples:logistics:worker
     environment:
-      ACTOR_WEB_TRANSPORT_URL: ws://server-runtime:4101/runtime
-
-  provider-hq:
-    build: .
-    command: pnpm examples:logistics:provider
-    environment:
-      ACTOR_WEB_REST_URL: http://server-runtime:4100
+      ACTOR_WEB_SERVER_TRANSPORT_URL: ws://server-runtime:4102
+      ACTOR_WEB_TELEMETRY_JSONL: /workspace/actor-web/.actor-web/telemetry/worker-transport.jsonl
 
   web:
-    build: .
+    build: docker/logistics/Dockerfile
     command: pnpm examples:logistics:web
     ports:
       - "4173:4173"
@@ -137,7 +163,19 @@ services:
 ```
 
 The compose file should be treated as a demo deployment artifact, not a
-production reference architecture.
+production reference architecture. Provider HQ remains server-owned in this
+slice; a separate provider runtime/container is still a follow-up.
+
+Troubleshooting:
+
+- If the worker is not connected, check
+  `curl http://127.0.0.1:4100/runtime/status` and confirm
+  `transport.workerConnected` is `true`.
+- If the browser cannot connect, remember that `server-runtime` is Docker DNS
+  and is not reachable from the host browser. Browser env vars should use
+  `127.0.0.1` published ports.
+- If telemetry is missing, check `.actor-web/telemetry/server-transport.jsonl`
+  and `.actor-web/telemetry/worker-transport.jsonl` after the services stop.
 
 ## Stage 3: Multi-Machine Prove-Out
 
@@ -193,9 +231,11 @@ Stage 1 tests:
 Stage 2 tests:
 
 - Start Docker Compose topology.
-- Verify browser host can create shipments through published REST/gateway URLs.
 - Verify worker container connects to server container by service DNS.
-- Verify provider container can update shipment lifecycle.
+- Verify REST shipment ingress through published host REST URL.
+- Verify server asks worker-owned routing actor over real WebSocket transport.
+- Verify server and worker telemetry JSONL files record peer connection events.
+- Browser-host manual verification uses the published web URL.
 
 Stage 3 tests:
 

@@ -1,7 +1,10 @@
 /// <reference types="node" />
 
 import {
+  createRuntimeTransportTelemetryExporter,
+  createRuntimeTransportTelemetryJsonlFileSink,
   createStaticRuntimePeerDiscoveryProvider,
+  type RuntimeTransportTelemetryExporter,
   type ServedActorWebNode,
   serveActorWebNode,
 } from '@actor-core/runtime/node';
@@ -33,8 +36,19 @@ async function stopWorker(worker: ServedActorWebNode<typeof logistics>): Promise
   await worker.stop();
 }
 
+async function stopTelemetry(
+  telemetry: RuntimeTransportTelemetryExporter | undefined
+): Promise<void> {
+  await telemetry?.close();
+}
+
 async function main(): Promise<void> {
   const serverTransportUrl = resolveServerTransportUrl();
+  const telemetry = process.env.ACTOR_WEB_TELEMETRY_JSONL
+    ? createRuntimeTransportTelemetryExporter({
+        sink: createRuntimeTransportTelemetryJsonlFileSink(process.env.ACTOR_WEB_TELEMETRY_JSONL),
+      })
+    : undefined;
   const discovery = createStaticRuntimePeerDiscoveryProvider([
     {
       nodeAddress: serverNode,
@@ -47,6 +61,7 @@ async function main(): Promise<void> {
     transport: {
       heartbeatIntervalMs: 5_000,
       heartbeatTimeoutMs: 15_000,
+      ...(telemetry ? { telemetry: telemetry.observe } : {}),
     },
     discovery,
   });
@@ -60,6 +75,7 @@ async function main(): Promise<void> {
 
   const shutdown = (): void => {
     void stopWorker(worker)
+      .then(() => stopTelemetry(telemetry))
       .catch((error) => {
         console.error(error);
         process.exitCode = 1;

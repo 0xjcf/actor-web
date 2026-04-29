@@ -1,4 +1,7 @@
 import { type ChildProcess, spawn } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 interface LogisticsServerReadyPayload {
@@ -22,19 +25,28 @@ interface ManagedProcess {
 }
 
 const readyProcesses: ManagedProcess[] = [];
+const tempDirectories: string[] = [];
 
 describe('logistics multi-process deployment prove-out', () => {
   afterEach(async () => {
     await Promise.all(readyProcesses.splice(0).map(stopManagedProcess));
+    for (const directory of tempDirectories.splice(0)) {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('routes REST shipments through a worker-owned actor in a separate process', async () => {
+    const telemetryDirectory = mkdtempSync(join(tmpdir(), 'actor-web-logistics-telemetry-'));
+    tempDirectories.push(telemetryDirectory);
+    const serverTelemetryPath = join(telemetryDirectory, 'server-transport.jsonl');
+    const workerTelemetryPath = join(telemetryDirectory, 'worker-transport.jsonl');
     const server = spawnExampleProcess(
       'server',
       ['examples/ignite-headless-host/logistics-server-process.ts'],
       {
         ACTOR_WEB_GATEWAY_PORT: '0',
         ACTOR_WEB_REST_PORT: '0',
+        ACTOR_WEB_TELEMETRY_JSONL: serverTelemetryPath,
         ACTOR_WEB_TRANSPORT_PORT: '0',
         LOGISTICS_LIFECYCLE_MODE: 'manual',
       }
@@ -51,6 +63,7 @@ describe('logistics multi-process deployment prove-out', () => {
       ['examples/ignite-headless-host/logistics-worker-process.ts'],
       {
         ACTOR_WEB_SERVER_TRANSPORT_URL: serverReady.transportUrl,
+        ACTOR_WEB_TELEMETRY_JSONL: workerTelemetryPath,
       }
     );
     readyProcesses.push(worker);
@@ -94,6 +107,10 @@ describe('logistics multi-process deployment prove-out', () => {
         shipment.carrier === 'Northline Express',
       'Expected separate worker process to plan and return a route'
     );
+
+    await Promise.all(readyProcesses.splice(0).map(stopManagedProcess));
+    expect(readFileSync(serverTelemetryPath, 'utf8')).toContain('"type":"peer.connected"');
+    expect(readFileSync(workerTelemetryPath, 'utf8')).toContain('"type":"peer.connected"');
   }, 30_000);
 });
 

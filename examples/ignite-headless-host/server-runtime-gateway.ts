@@ -1,6 +1,10 @@
 /// <reference types="node" />
 
-import type { ActorRef, ActorTransitionErrorValue } from '@actor-core/runtime';
+import type {
+  ActorRef,
+  ActorTransitionErrorValue,
+  RuntimeTransportTelemetryObserver,
+} from '@actor-core/runtime';
 import {
   type ServedActorWebHttp,
   type ServedActorWebNode,
@@ -67,6 +71,7 @@ export interface LogisticsRuntimeGatewayServerOptions {
   lifecyclePackedDelayMs?: number;
   lifecycleShippedDelayMs?: number;
   lifecycleTerminalDelayMs?: number;
+  transportTelemetry?: RuntimeTransportTelemetryObserver;
 }
 
 export interface LogisticsRuntimeGatewayServer {
@@ -694,6 +699,7 @@ export function createLogisticsRuntimeGatewayServer(
             host: options.host ?? '127.0.0.1',
             port: options.transportPort ?? 0,
           },
+          ...(options.transportTelemetry ? { telemetry: options.transportTelemetry } : {}),
         },
         gateway: {
           host: options.host ?? '127.0.0.1',

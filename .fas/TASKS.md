@@ -194,6 +194,18 @@
 - Blast radius: cross-cutting
 - Artifacts: brief=.fas/tasks/runtime-telemetry-export-durable-observability.md; verification=.fas/state/verification/latest.json
 
+### Task: Logistics Docker Compose deployment prove-out
+
+- Title: Logistics Docker Compose deployment prove-out
+- Mode: 6-agent
+- Status: done
+- Owner: reviewer
+- Brief: .fas/tasks/logistics-docker-compose-deployment-prove-out.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: brief=.fas/tasks/logistics-docker-compose-deployment-prove-out.md; verification=.fas/state/verification/latest.json
+
 ### Task: Logistics control tower demo
 
 - Title: Logistics control tower demo
