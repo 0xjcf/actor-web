@@ -33,6 +33,9 @@ describe('logistics multi-process deployment prove-out', () => {
       'server',
       ['examples/ignite-headless-host/logistics-server-process.ts'],
       {
+        ACTOR_WEB_GATEWAY_PORT: '0',
+        ACTOR_WEB_REST_PORT: '0',
+        ACTOR_WEB_TRANSPORT_PORT: '0',
         LOGISTICS_LIFECYCLE_MODE: 'manual',
       }
     );

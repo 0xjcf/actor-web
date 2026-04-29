@@ -66,6 +66,10 @@ Expected behavior:
 - Server and worker communicate over Actor-Web runtime WebSocket transport.
 - The worker process uses static runtime peer discovery from
   `ACTOR_WEB_SERVER_TRANSPORT_URL` to connect to the server transport listener.
+- Local split-process defaults are deterministic:
+  - REST: `http://127.0.0.1:4100`
+  - gateway: `ws://127.0.0.1:4101`
+  - transport: `ws://127.0.0.1:4102`
 - Restarting the worker process is a follow-up once deployment supervision and
   operational status panels are added.
 
@@ -75,11 +79,15 @@ Manual run shape:
 pnpm examples:logistics:server
 ```
 
-Copy the `transportUrl` from the `LOGISTICS_SERVER_READY` line, then run:
+In another terminal, run:
 
 ```sh
-ACTOR_WEB_SERVER_TRANSPORT_URL=<transportUrl> pnpm examples:logistics:worker
+pnpm examples:logistics:worker
 ```
+
+The worker defaults to `ws://127.0.0.1:4102`. Override
+`ACTOR_WEB_SERVER_TRANSPORT_URL` when the server transport listens somewhere
+else.
 
 Create a shipment through the server REST URL and the server runtime will ask
 the worker-owned routing actor over WebSocket transport.

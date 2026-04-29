@@ -15,17 +15,18 @@ interface LogisticsWorkerReadyPayload {
 
 const serverNode = logistics.nodes.server.address;
 const workerNode = logistics.nodes.worker.address;
+const DEFAULT_SERVER_TRANSPORT_PORT = 4102;
 
-function requireServerTransportUrl(): string {
+function resolveServerTransportUrl(): string {
   const url =
     process.env.ACTOR_WEB_SERVER_TRANSPORT_URL ?? process.env.VITE_ACTOR_WEB_TRANSPORT_URL;
-  if (!url) {
-    throw new Error(
-      'Logistics worker process requires ACTOR_WEB_SERVER_TRANSPORT_URL to connect to the server runtime.'
-    );
+  if (url) {
+    return url;
   }
 
-  return url;
+  const host = process.env.ACTOR_WEB_SERVER_HOST ?? process.env.ACTOR_WEB_HOST ?? '127.0.0.1';
+  const port = process.env.ACTOR_WEB_SERVER_TRANSPORT_PORT ?? String(DEFAULT_SERVER_TRANSPORT_PORT);
+  return `ws://${host}:${port}`;
 }
 
 async function stopWorker(worker: ServedActorWebNode<typeof logistics>): Promise<void> {
@@ -33,7 +34,7 @@ async function stopWorker(worker: ServedActorWebNode<typeof logistics>): Promise
 }
 
 async function main(): Promise<void> {
-  const serverTransportUrl = requireServerTransportUrl();
+  const serverTransportUrl = resolveServerTransportUrl();
   const discovery = createStaticRuntimePeerDiscoveryProvider([
     {
       nodeAddress: serverNode,

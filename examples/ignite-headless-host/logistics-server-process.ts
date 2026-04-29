@@ -13,13 +13,17 @@ interface LogisticsServerReadyPayload {
   readonly lifecycleMode: LifecycleMode;
 }
 
-function parsePort(value: string | undefined): number | undefined {
+const DEFAULT_REST_PORT = 4100;
+const DEFAULT_GATEWAY_PORT = 4101;
+const DEFAULT_TRANSPORT_PORT = 4102;
+
+function parsePort(value: string | undefined, fallback: number): number {
   if (!value) {
-    return undefined;
+    return fallback;
   }
 
   const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function parseLifecycleMode(value: string | undefined): LifecycleMode {
@@ -42,9 +46,9 @@ async function main(): Promise<void> {
   const lifecycleMode = parseLifecycleMode(process.env.LOGISTICS_LIFECYCLE_MODE);
   const server = createLogisticsRuntimeGatewayServer({
     host: process.env.ACTOR_WEB_HOST ?? '127.0.0.1',
-    port: parsePort(process.env.ACTOR_WEB_GATEWAY_PORT),
-    transportPort: parsePort(process.env.ACTOR_WEB_TRANSPORT_PORT),
-    restPort: parsePort(process.env.ACTOR_WEB_REST_PORT),
+    port: parsePort(process.env.ACTOR_WEB_GATEWAY_PORT, DEFAULT_GATEWAY_PORT),
+    transportPort: parsePort(process.env.ACTOR_WEB_TRANSPORT_PORT, DEFAULT_TRANSPORT_PORT),
+    restPort: parsePort(process.env.ACTOR_WEB_REST_PORT, DEFAULT_REST_PORT),
     lifecycleMode,
   });
 
