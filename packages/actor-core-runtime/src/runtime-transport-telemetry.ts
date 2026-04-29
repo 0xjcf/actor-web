@@ -44,6 +44,29 @@ export interface RuntimeTransportTelemetryEvent {
 
 export type RuntimeTransportTelemetryObserver = (event: RuntimeTransportTelemetryEvent) => void;
 
+export interface RuntimeTransportTelemetrySink {
+  write(event: RuntimeTransportTelemetryEvent): void | Promise<void>;
+  flush?(): void | Promise<void>;
+  close?(): void | Promise<void>;
+}
+
+export interface RuntimeTransportTelemetryExporter {
+  readonly observe: RuntimeTransportTelemetryObserver;
+  flush(): Promise<void>;
+  close(): Promise<void>;
+  getDroppedEventCount(): number;
+}
+
+export interface RuntimeTransportTelemetryExporterOptions {
+  readonly sink: RuntimeTransportTelemetrySink;
+  readonly onError?: (error: unknown, event: RuntimeTransportTelemetryEvent) => void;
+}
+
+export interface InMemoryRuntimeTransportTelemetrySink extends RuntimeTransportTelemetrySink {
+  getEvents(): readonly RuntimeTransportTelemetryEvent[];
+  clear(): void;
+}
+
 export interface RuntimeTransportPeerStats {
   nodeAddress: string;
   state: 'connecting' | 'connected' | 'disconnecting' | 'disconnected' | 'rejected';
@@ -103,4 +126,76 @@ export interface RuntimeTransportStats {
   heartbeatTimeoutCount: number;
   lastEventAt?: string;
   peers: Record<string, RuntimeTransportPeerStats>;
+}
+
+function cloneTelemetryEvent(
+  event: RuntimeTransportTelemetryEvent
+): RuntimeTransportTelemetryEvent {
+  return { ...event };
+}
+
+export function serializeRuntimeTransportTelemetryEvent(
+  event: RuntimeTransportTelemetryEvent
+): string {
+  return JSON.stringify(cloneTelemetryEvent(event));
+}
+
+export function createInMemoryRuntimeTransportTelemetrySink(
+  initialEvents: readonly RuntimeTransportTelemetryEvent[] = []
+): InMemoryRuntimeTransportTelemetrySink {
+  const events = initialEvents.map(cloneTelemetryEvent);
+
+  return {
+    write(event): void {
+      events.push(cloneTelemetryEvent(event));
+    },
+    getEvents(): readonly RuntimeTransportTelemetryEvent[] {
+      return events.map(cloneTelemetryEvent);
+    },
+    clear(): void {
+      events.length = 0;
+    },
+  };
+}
+
+export function createRuntimeTransportTelemetryExporter(
+  options: RuntimeTransportTelemetryExporterOptions
+): RuntimeTransportTelemetryExporter {
+  let droppedEventCount = 0;
+  let pending = Promise.resolve();
+  let closed = false;
+
+  const observe: RuntimeTransportTelemetryObserver = (event) => {
+    if (closed) {
+      droppedEventCount += 1;
+      return;
+    }
+
+    const snapshot = cloneTelemetryEvent(event);
+    pending = pending
+      .then(async () => {
+        await options.sink.write(snapshot);
+      })
+      .catch((error) => {
+        droppedEventCount += 1;
+        options.onError?.(error, snapshot);
+      });
+  };
+
+  return {
+    observe,
+    async flush(): Promise<void> {
+      await pending;
+      await options.sink.flush?.();
+    },
+    async close(): Promise<void> {
+      closed = true;
+      await pending;
+      await options.sink.flush?.();
+      await options.sink.close?.();
+    },
+    getDroppedEventCount(): number {
+      return droppedEventCount;
+    },
+  };
 }

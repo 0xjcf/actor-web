@@ -123,11 +123,20 @@ export {
   validateRuntimeTransportHeartbeatFrame,
 } from './runtime-transport-contract.js';
 export type {
+  InMemoryRuntimeTransportTelemetrySink,
   RuntimeTransportPeerStats,
   RuntimeTransportStats,
   RuntimeTransportTelemetryEvent,
   RuntimeTransportTelemetryEventType,
+  RuntimeTransportTelemetryExporter,
+  RuntimeTransportTelemetryExporterOptions,
   RuntimeTransportTelemetryObserver,
+  RuntimeTransportTelemetrySink,
+} from './runtime-transport-telemetry.js';
+export {
+  createInMemoryRuntimeTransportTelemetrySink,
+  createRuntimeTransportTelemetryExporter,
+  serializeRuntimeTransportTelemetryEvent,
 } from './runtime-transport-telemetry.js';
 export type {
   ActorWebBrowserNodeTransportOptions,

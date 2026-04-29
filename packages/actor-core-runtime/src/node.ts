@@ -17,6 +17,24 @@ export {
   createStaticRuntimePeerDiscoveryProvider,
 } from './runtime-peer-discovery.js';
 export type {
+  InMemoryRuntimeTransportTelemetrySink,
+  RuntimeTransportPeerStats,
+  RuntimeTransportStats,
+  RuntimeTransportTelemetryEvent,
+  RuntimeTransportTelemetryEventType,
+  RuntimeTransportTelemetryExporter,
+  RuntimeTransportTelemetryExporterOptions,
+  RuntimeTransportTelemetryObserver,
+  RuntimeTransportTelemetrySink,
+} from './runtime-transport-telemetry.js';
+export {
+  createInMemoryRuntimeTransportTelemetrySink,
+  createRuntimeTransportTelemetryExporter,
+  serializeRuntimeTransportTelemetryEvent,
+} from './runtime-transport-telemetry.js';
+export type { RuntimeTransportTelemetryJsonlFileSinkOptions } from './runtime-transport-telemetry-node.js';
+export { createRuntimeTransportTelemetryJsonlFileSink } from './runtime-transport-telemetry-node.js';
+export type {
   ActorWebBoundHttpContext,
   ActorWebBoundHttpHandler,
   ActorWebBoundHttpRouter,

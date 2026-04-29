@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import type { RuntimeGatewayServerFrame } from '../runtime-gateway.js';
 import { createInMemoryRuntimePeerDiscoveryProvider } from '../runtime-peer-discovery.js';
+import {
+  createInMemoryRuntimeTransportTelemetrySink,
+  createRuntimeTransportTelemetryExporter,
+} from '../runtime-transport-telemetry.js';
 import { serveActorWebNode } from '../serve-actor-web-node.js';
 import { actor, defineActorWebTopology, node, tool } from '../topology.js';
 import { defineActor } from '../unified-actor-builder.js';
@@ -418,5 +422,42 @@ describe('serveActorWebNode', () => {
     }
 
     expect(await discovery.getPeers()).toEqual([]);
+  });
+
+  it('passes topology runner transport telemetry to configured exporters', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+      },
+      actors: {
+        serverCounter: actor({
+          id: 'server-counter',
+          node: 'server',
+          behavior: createCounterBehavior,
+        }),
+      },
+    });
+    const sink = createInMemoryRuntimeTransportTelemetrySink();
+    const exporter = createRuntimeTransportTelemetryExporter({ sink });
+    const served = await serveActorWebNode(topology, {
+      node: 'server',
+      transport: {
+        listen: true,
+        telemetry: exporter.observe,
+      },
+    });
+
+    try {
+      await exporter.flush();
+      expect(sink.getEvents()).toContainEqual(
+        expect.objectContaining({
+          type: 'transport.started',
+          nodeAddress: 'server-node',
+        })
+      );
+    } finally {
+      await served.stop();
+      await exporter.close();
+    }
   });
 });

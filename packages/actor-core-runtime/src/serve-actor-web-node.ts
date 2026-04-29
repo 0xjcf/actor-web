@@ -24,6 +24,7 @@ import type {
   RuntimePeerDiscoveryProvider,
   RuntimePeerDiscoveryRecord,
 } from './runtime-peer-discovery.js';
+import type { RuntimeTransportTelemetryObserver } from './runtime-transport-telemetry.js';
 import type {
   ActorWebActorContext,
   ActorWebActorDescriptor,
@@ -57,6 +58,7 @@ export interface ActorWebNodeTransportOptions {
   readonly heartbeatIntervalMs?: number;
   readonly heartbeatTimeoutMs?: number;
   readonly auth?: RuntimeTransportAuthProvider;
+  readonly telemetry?: RuntimeTransportTelemetryObserver;
 }
 
 export interface ServeActorWebNodeOptions<
@@ -261,6 +263,7 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
     connectTimeoutMs: transportOptions?.connectTimeoutMs,
     heartbeatIntervalMs: transportOptions?.heartbeatIntervalMs ?? 0,
     heartbeatTimeoutMs: transportOptions?.heartbeatTimeoutMs,
+    ...(transportOptions?.telemetry ? { telemetry: transportOptions.telemetry } : {}),
     ...(transportOptions?.auth ? { auth: transportOptions.auth } : {}),
     ...(transportListen
       ? {

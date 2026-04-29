@@ -959,12 +959,46 @@ Runtime-native telemetry is available without adding OpenTelemetry:
 - `RuntimeTransportStats`
 - `RuntimeTransportPeerStats`
 - `RuntimeTransportTelemetryObserver`
+- `createRuntimeTransportTelemetryExporter(...)`
+- `createInMemoryRuntimeTransportTelemetrySink(...)`
 
 Telemetry/stats cover connection state, handshake accept/reject, malformed
 frames, reconnect/disconnect count, heartbeat timeout, frame send/receive count,
 ack received count, retry count, retry exhaustion, duplicate drops, idempotency
 cache evictions, outbound queue depth, backpressure drops, validation drops,
 sequence gaps, and last-seen timestamps.
+
+Use the exporter when transport events need to outlive an individual transport
+instance:
+
+```ts
+import {
+  createRuntimeTransportTelemetryExporter,
+  createRuntimeTransportTelemetryJsonlFileSink,
+  serveActorWebNode,
+} from '@actor-core/runtime/node';
+
+const telemetry = createRuntimeTransportTelemetryExporter({
+  sink: createRuntimeTransportTelemetryJsonlFileSink('./runtime-telemetry.jsonl'),
+});
+
+const server = await serveActorWebNode(logistics, {
+  node: 'server',
+  transport: {
+    listen: true,
+    telemetry: telemetry.observe,
+  },
+  gateway: true,
+});
+
+// During shutdown:
+await server.stop();
+await telemetry.close();
+```
+
+The JSONL sink is Node-only. Browser and shared runtime code can use the
+in-memory sink or provide a custom sink that forwards events to the host
+application.
 
 ## Package Boundaries
 

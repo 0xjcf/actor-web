@@ -116,6 +116,8 @@ hexagonal boundary or the actor model.
   - optional telemetry observer callbacks on Node and browser WebSocket
     transports
   - `getStats()` and `getPeerStats(nodeAddress)` snapshots
+  - runtime-native telemetry exporters and sinks
+  - Node JSONL file sink for durable local telemetry evidence
   - connection, handshake, frame send/receive/drop, heartbeat timeout, and
     sequence-gap counters
 - Actor-Web already maps its data plane toward FAS shared contracts:
@@ -143,8 +145,8 @@ hexagonal boundary or the actor model.
 - `BrowserWebSocketMessageTransport` is outbound-only; browser-safe topology
   runners can consume discovery providers, but browser nodes still cannot listen
   for inbound peers
-- transport telemetry is in-memory runtime-native observability; it is not yet
-  OpenTelemetry integration or durable telemetry export
+- transport telemetry has dependency-free exporter/sink primitives and a Node
+  JSONL sink; it is not yet OpenTelemetry integration or a metrics backend
 
 ## Architectural Constraints
 
@@ -502,15 +504,16 @@ and multi-machine prove-out.
   WebSocket transports
 - track handshakes, peer lifecycle, frame send/receive/drop, heartbeat timeout,
   and sequence-gap counters
-- keep observability dependency-free and in-memory until export/tracing
-  semantics are designed
+- keep observability dependency-free; expose durable JSONL export before adding
+  OpenTelemetry or metrics backend adapters
 
 Status: complete for runtime-native telemetry/stats snapshots, auth/security,
 message ID based duplicate suppression, and bounded retry/ack handling for
 internal runtime control traffic. Bounded per-peer outbound queues now apply
-backpressure by rejecting sends when the queue is full. Remaining production work
-is durable replay storage, durable telemetry export, deployment-backed discovery,
-and multi-machine prove-out.
+backpressure by rejecting sends when the queue is full. Runtime telemetry now has
+exporter/sink primitives plus a Node JSONL file sink. Remaining production work
+is durable replay storage, deployment-backed discovery, OpenTelemetry/metrics
+adapters, and multi-machine prove-out.
 
 ### Phase 4: Projection hardening
 

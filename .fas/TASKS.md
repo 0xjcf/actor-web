@@ -182,6 +182,18 @@
 - Blast radius: cross-cutting
 - Artifacts: brief=.fas/tasks/logistics-multi-process-deployment-prove-out.md; verification=.fas/state/verification/latest.json
 
+### Task: Runtime telemetry export and durable observability
+
+- Title: Runtime telemetry export and durable observability
+- Mode: 6-agent
+- Status: done
+- Owner: reviewer
+- Brief: .fas/tasks/runtime-telemetry-export-durable-observability.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: brief=.fas/tasks/runtime-telemetry-export-durable-observability.md; verification=.fas/state/verification/latest.json
+
 ### Task: Logistics control tower demo
 
 - Title: Logistics control tower demo
