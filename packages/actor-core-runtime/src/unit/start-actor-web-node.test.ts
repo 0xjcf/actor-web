@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { ActorMessage, MessageTransport } from '../actor-system.js';
 import { startActorWebNode } from '../start-actor-web-node.js';
 import { actor, defineActorWebTopology, node, tool } from '../topology.js';
 import { defineActor } from '../unified-actor-builder.js';
@@ -7,6 +8,37 @@ type CounterCommand =
   | { type: 'INCREMENT' }
   | { type: 'GET_COUNT' }
   | { type: 'RUN_TOOL'; value: string };
+
+class TestMessageTransport implements MessageTransport {
+  started = false;
+  stopped = false;
+
+  async start(): Promise<void> {
+    this.started = true;
+  }
+
+  async stop(): Promise<void> {
+    this.stopped = true;
+  }
+
+  async send(): Promise<void> {}
+
+  subscribe(): () => void {
+    return () => {};
+  }
+
+  async connect(): Promise<void> {}
+
+  async disconnect(): Promise<void> {}
+
+  getConnectedNodes(): string[] {
+    return [];
+  }
+
+  isConnected(): boolean {
+    return false;
+  }
+}
 
 function createCounterBehavior() {
   return defineActor<CounterCommand>()
@@ -70,16 +102,19 @@ describe('startActorWebNode', () => {
 
     try {
       expect(workerNode.getActor('serverCounter')).toBeUndefined();
+      expect(() => workerNode.requireActor('serverCounter')).toThrow(
+        'Actor-Web node did not spawn actor "serverCounter".'
+      );
       expect(workerNode.getActor('workerCounter')?.address.path).toBe(
         'actor://worker-node/actor/worker-counter'
       );
-      expect(workerNode.transport.getStats().startedAt).toBeTruthy();
+      expect(workerNode.transport.getConnectedNodes()).toEqual([]);
 
-      const counter = workerNode.getActor('workerCounter');
-      await counter?.send({ type: 'INCREMENT' });
+      const counter = workerNode.requireActor('workerCounter');
+      await counter.send({ type: 'INCREMENT' });
       await workerNode.system.flush();
-      await expect(counter?.ask<number>({ type: 'GET_COUNT' })).resolves.toBe(1);
-      await expect(counter?.ask<string>({ type: 'RUN_TOOL', value: 'fas' })).resolves.toBe(
+      await expect(counter.ask<number>({ type: 'GET_COUNT' })).resolves.toBe(1);
+      await expect(counter.ask<string>({ type: 'RUN_TOOL', value: 'fas' })).resolves.toBe(
         'tool:fas'
       );
     } finally {
@@ -103,6 +138,39 @@ describe('startActorWebNode', () => {
     await expect(startActorWebNode(topology, { node: 'worker' })).rejects.toThrow(
       'does not declare behavior'
     );
+  });
+
+  it('starts a topology node with a supplied MessageTransport', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        serviceWorker: node('service-worker-node'),
+      },
+      actors: {
+        proof: actor({
+          id: 'proof',
+          node: 'serviceWorker',
+          behavior: createCounterBehavior,
+        }),
+      },
+    });
+    const transport = new TestMessageTransport();
+    const serviceWorkerNode = await startActorWebNode(topology, {
+      node: 'serviceWorker',
+      transport,
+    });
+
+    try {
+      expect(serviceWorkerNode.transport).toBe(transport);
+      expect(transport.started).toBe(true);
+      const proof = serviceWorkerNode.getActor('proof');
+      await proof?.send({ type: 'INCREMENT' } satisfies ActorMessage);
+      await serviceWorkerNode.system.flush();
+      await expect(proof?.ask<number>({ type: 'GET_COUNT' })).resolves.toBe(1);
+    } finally {
+      await serviceWorkerNode.stop();
+    }
+
+    expect(transport.stopped).toBe(true);
   });
 
   it('rejects owned actors when required tools are not registered', async () => {
@@ -141,5 +209,37 @@ describe('startActorWebNode', () => {
         } as unknown as Partial<Record<'worker', string>>,
       })
     ).rejects.toThrow('Unknown Actor-Web peer node "missing"');
+  });
+
+  it('creates parameterized actor instances from browser-safe topology nodes', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        worker: node('worker-node'),
+      },
+      actors: {
+        task: actor({
+          id: ({ taskId }: { taskId: string }) => `task-${taskId}`,
+          node: 'worker',
+          behavior: createCounterBehavior,
+        }),
+      },
+    });
+    const transport = new TestMessageTransport();
+    const workerNode = await startActorWebNode(topology, {
+      node: 'worker',
+      transport,
+    });
+
+    try {
+      expect(workerNode.getActor('task')).toBeUndefined();
+
+      const task = await workerNode.actors.task.instance({ taskId: 'route-1001' });
+      expect(task.address.path).toBe('actor://worker-node/actor/task-route-1001');
+      await task.send({ type: 'INCREMENT' });
+      await workerNode.system.flush();
+      await expect(task.ask<number>({ type: 'GET_COUNT' })).resolves.toBe(1);
+    } finally {
+      await workerNode.stop();
+    }
   });
 });

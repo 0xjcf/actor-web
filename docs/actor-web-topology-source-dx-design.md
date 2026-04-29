@@ -54,6 +54,27 @@ The topology is shared and declarative. It can be imported by browser, server,
 worker, and tests, but it must not start servers, open sockets, read secrets, or
 bind ports at import time.
 
+## Vocabulary
+
+Use these names consistently across APIs, docs, and examples:
+
+- Node: an actor-owning runtime process from the topology. A backend process,
+  browser WebWorker, or future containerized runtime can each host one topology
+  node.
+- Transport: runtime-to-runtime actor messaging through `MessageTransport`.
+  Direct WebSocket transport is the first implementation, but transport means
+  the inter-node actor channel, not the browser UI channel.
+- Gateway: a client projection/control edge for thin hosts. The current runtime
+  gateway is WebSocket-backed, but gateway means the adapter that lets clients
+  subscribe to snapshots/events and send/ask an exposed actor.
+- Source: an Ignite-compatible projection/control adapter for one actor. A
+  source may be created from shared topology metadata or from generated/address
+  metadata.
+
+This separation keeps hexagonal boundaries intact: topology declares ownership,
+node runners host actors, transports connect runtimes, gateways expose selected
+actors to clients, and sources adapt gateway streams into UI projections.
+
 ## Package Boundaries
 
 Recommended public API boundaries:
@@ -126,18 +147,14 @@ export const logistics = defineActorWebTopology({
         maxRestarts: 3,
         withinMs: 60_000,
       },
-      gateway: {
-        scope: { kind: 'logistics-shipment' },
-      },
+      gateway: true,
     }),
 
     routing: actor({
       id: 'logistics-routing',
       node: 'worker',
       behavior: createRoutingBehavior,
-      gateway: {
-        scope: { kind: 'logistics-routing' },
-      },
+      gateway: true,
     }),
   },
 
@@ -155,7 +172,9 @@ export const logistics = defineActorWebTopology({
 });
 ```
 
-The Ignite component consumes the actor source without explicit generics:
+The Ignite component consumes the actor source without explicit generics.
+`gateway: true` defaults the gateway scope to the topology actor key, so the UI
+only passes the deployed gateway URL in the common case:
 
 ```tsx
 // logistics-control-tower.element.tsx
@@ -168,9 +187,7 @@ import { logistics } from './logistics.topology';
 
 const logisticsControlTower = igniteCore({
   source: logistics.actors.shipment.source({
-    gateway: {
-      url: import.meta.env.VITE_ACTOR_WEB_GATEWAY_URL,
-    },
+    gateway: { url: import.meta.env.VITE_ACTOR_WEB_GATEWAY_URL },
   }),
 
   states: ({ context, transport }) => ({
@@ -258,6 +275,10 @@ handler shape is `(request, response, actorWeb)`: `request` is HTTP data,
 `response` owns JSON/status helpers, and `actorWeb` exposes `runtime`,
 `actors`, plus inferred `actor` inside `.for(actorDescriptor)` routes.
 
+The gateway exposed by `serveActorWebNode` is the client projection/control
+edge. The transport exposed by `serveActorWebNode` is the runtime-to-runtime
+actor messaging edge.
+
 The browser worker runs another node:
 
 ```ts
@@ -330,7 +351,7 @@ export const logistics = defineGeneratedActorWebClient({
   actors: {
     shipment: {
       address: 'actor://logistics-server-runtime/actor/logistics-shipment',
-      gatewayScope: { kind: 'logistics-shipment' },
+      gatewayScope: { kind: 'shipment' },
       commands: ['CREATE_SHIPMENT', 'RESET_SHIPMENT'],
       events: ['SHIPMENT_CREATED', 'SHIPMENT_RESET'],
     },
@@ -397,7 +418,11 @@ Recommended API names:
 - `supervisor`: declares a supervised actor group.
 - `serveActorWebNode`: starts a Node/server runtime node.
 - `serveActorWebHttp`: starts a Node HTTP adapter around a served runtime node.
-- `startActorWebNode`: starts a browser worker runtime node.
+- `startActorWebNode`: starts a browser-safe runtime node, including
+  WebWorker nodes with browser WebSocket transport and Service Worker nodes with
+  an explicit browser-safe `MessageTransport`.
+- `createActorWebClient`: binds a topology to deployed client gateway options
+  and exposes actor sources as `client.actors.name`.
 - `createActorWebSource`: creates a browser-safe projection/control source.
 - `igniteCore` from `ignite-element/actor-web`: authoring surface for Actor-Web
   components.
@@ -423,13 +448,48 @@ Use `serveActorWebNode` only in Node/server entrypoints.
 
 Use `serveActorWebHttp` only in Node/server entrypoints that need HTTP ingress.
 
-Use `startActorWebNode` only in browser worker entrypoints.
+Use `startActorWebNode` only in browser runtime entrypoints. A WebWorker
+normally uses the built-in browser WebSocket transport options. A Service Worker
+or browser-local topology proof can pass a `MessageTransport` implementation so
+the topology node still starts through the same public runner instead of a
+separate harness.
 
 Use `topology.actors.name.source(options)` in browser presentation code when a
-shared topology is available.
+shared topology is available. The helper defaults gateway scope from the actor
+descriptor; pass `gateway.scope` only for an intentional override, such as a
+public generated-client scope that differs from the internal topology key or a
+parameterized virtual-actor scope.
+
+Parameterized sources keep dynamic values under `gateway.scope.params`, while
+`gateway.scope.kind` remains optional when the actor descriptor or address can
+identify the default public scope:
+
+```ts
+const inspections = fleet.actors.vehicleInspections.source({
+  gateway: {
+    url,
+    scope: {
+      params: { fleetId, vehicleId },
+    },
+  },
+});
+```
+
+Use `createActorWebClient(topology, { gateway })` when one browser shell needs
+multiple actor sources from the same deployed gateway. Components can then pass
+`client.actors.shipment` or `client.actors.routing` directly to `igniteCore`.
 
 Use `createActorWebSource({ address, contractVersion, gateway })` when the UI
-cannot import shared topology metadata.
+cannot import shared topology metadata. Address-based sources infer `scope.kind`
+from the actor id unless `gateway.scope.kind` is explicitly supplied.
+
+Command/read split is modeled at the topology boundary, not by requiring a
+custom gateway scope for every source. A single actor source may expose both the
+read projection and command surface when that is the intended public contract.
+When an agentic workflow needs stricter CQRS boundaries, declare separate
+topology actors or generated-client descriptors for the command actor and the
+read projection actor. This keeps the split visible in the actor model while
+preserving the low-boilerplate source API for simple cases.
 
 ## AI And Agentic Workflow Alignment
 
@@ -521,15 +581,15 @@ await startActorWebNode(fas, {
 });
 ```
 
-Agent behaviors access those ports through runtime dependencies:
+Agent behaviors access those ports through the public handler `tools` port:
 
 ```ts
 const createPlannerAgentBehavior = () =>
   defineActor<PlannerMessage>()
     .withContext(initialPlannerContext)
-    .onMessage(async ({ message, dependencies }) => {
+    .onMessage(async ({ message, tools }) => {
       if (message.type === 'PLAN_TASK') {
-        const context = await dependencies.tools.execute('repo.search', {
+        const context = await tools.execute('repo.search', {
           query: message.task,
         });
 

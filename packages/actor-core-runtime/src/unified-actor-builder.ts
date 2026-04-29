@@ -10,7 +10,7 @@
  */
 
 import type { AnyStateMachine, ContextFrom } from 'xstate';
-import type { ActorBehavior, ActorDependencies, ActorMessage, JsonValue } from './actor-system.js';
+import type { ActorBehavior, ActorMessage, JsonValue } from './actor-system.js';
 import type { ActorToolbox } from './actor-tools.js';
 import { registerMachineWithBehavior } from './machine-registry.js';
 import type { DomainEvent, MessagePlan } from './message-plan.js';
@@ -29,7 +29,6 @@ export type UnifiedMessageHandler<TMsg, TCtx, _TEmitted> = (params: {
   readonly message: TMsg;
   readonly context: TCtx;
   readonly actor: TypedActorInstance<TCtx>;
-  readonly dependencies: ActorDependencies;
   readonly tools: ActorToolbox;
 }) =>
   | ActorHandlerResult<TCtx, unknown>
@@ -424,12 +423,11 @@ function getAllowedTransitionsFromSnapshot(snapshot: { toJSON(): object }): read
 /**
  * Main export - unified actor definition function
  */
-export function defineActor<TMsg extends ActorMessage = ActorMessage>(): UnifiedActorBuilder<
-  TMsg,
-  unknown,
-  unknown
-> {
-  return UnifiedActorBuilder.define<TMsg>();
+export function defineActor<
+  TMsg extends ActorMessage = ActorMessage,
+  TEmitted = unknown,
+>(): UnifiedActorBuilder<TMsg, TEmitted, unknown> {
+  return new UnifiedActorBuilder<TMsg, TEmitted, unknown>();
 }
 
 export function defineFSM<

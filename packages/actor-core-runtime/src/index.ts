@@ -43,6 +43,8 @@ export type {
   ActorToolRegistry,
 } from './actor-tools.js';
 export { createActorToolbox } from './actor-tools.js';
+export type { ActorWebClient, ActorWebClientOptions } from './actor-web-client.js';
+export { createActorWebClient } from './actor-web-client.js';
 export {
   type BackoffStrategy,
   BackoffSupervisor,
@@ -202,15 +204,6 @@ export {
   type MessageSerializer,
   TransportSerializer,
 } from './messaging/serialization.js';
-export type {
-  NodeWebSocketMessageTransportOptions,
-  NodeWebSocketPeerSnapshot,
-  NodeWebSocketPeerState,
-} from './node-websocket-message-transport.js';
-export {
-  createNodeWebSocketMessageTransport,
-  NodeWebSocketMessageTransport,
-} from './node-websocket-message-transport.js';
 export type { SubscriberFunction, TeardownLogic } from './observable.js';
 // Observable implementation
 export { CustomObservable } from './observable.js';
@@ -233,23 +226,15 @@ export type {
   ProjectionTransportStatus,
 } from './projection-transport.js';
 export type {
-  CreateRuntimeGatewayHubOptions,
-  CreateRuntimeGatewaySourceOptions,
   RuntimeGatewayClientFrame,
-  RuntimeGatewayConnectionAdapter,
   RuntimeGatewayErrorCode,
   RuntimeGatewayEventProjection,
   RuntimeGatewayScopeDescriptor,
   RuntimeGatewayScopeResolver,
   RuntimeGatewayServerFrame,
   RuntimeGatewaySnapshotProjection,
-  RuntimeGatewaySource,
 } from './runtime-gateway.js';
-export {
-  createRuntimeGatewayHub,
-  createRuntimeGatewaySource,
-  RuntimeGatewayScopeError,
-} from './runtime-gateway.js';
+export { RuntimeGatewayScopeError } from './runtime-gateway.js';
 export type {
   RuntimeNodeIdentity,
   RuntimeTransportFrame,

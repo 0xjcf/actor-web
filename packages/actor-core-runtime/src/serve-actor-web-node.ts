@@ -1,17 +1,15 @@
 import type { ActorRef } from './actor-ref.js';
-import type { ActorMessage, ActorSystem } from './actor-system.js';
+import type { ActorMessage, ActorSystem, MessageTransport } from './actor-system.js';
 import { createActorSystem } from './actor-system-impl.js';
 import type { ActorToolRegistry } from './actor-tools.js';
 import {
+  type ActorWebNodeActorHandles,
+  createActorWebNodeActorHandles,
   createActorWebNodeToolAccess,
   getActorWebNodeDefinition,
-  getOwnedActorWebActors,
   spawnOwnedActorWebActors,
 } from './actor-web-node-runtime.js';
-import {
-  createNodeWebSocketMessageTransport,
-  type NodeWebSocketMessageTransport,
-} from './node-websocket-message-transport.js';
+import { createNodeWebSocketMessageTransport } from './node-websocket-message-transport.js';
 import {
   createRuntimeGatewayHub,
   createRuntimeGatewaySource,
@@ -19,8 +17,15 @@ import {
   type RuntimeGatewayConnectionAdapter,
   RuntimeGatewayScopeError,
   type RuntimeGatewayScopeResolver,
+  type RuntimeGatewaySource,
 } from './runtime-gateway.js';
-import type { ActorWebTopology, ActorWebTopologyInput } from './topology.js';
+import type {
+  ActorWebActorContext,
+  ActorWebActorDescriptor,
+  ActorWebActorMessage,
+  ActorWebTopology,
+  ActorWebTopologyInput,
+} from './topology.js';
 
 export interface ActorWebNodeGatewayOptions<TActorKey extends string = string> {
   readonly host?: string;
@@ -58,14 +63,26 @@ export interface ServeActorWebNodeOptions<
 
 export interface ServedActorWebNode<TTopology extends ActorWebTopology<ActorWebTopologyInput>> {
   readonly system: ActorSystem;
-  readonly transport: NodeWebSocketMessageTransport;
+  readonly transport: MessageTransport;
+  readonly actors: ActorWebNodeActorHandles<TTopology>;
   start(): Promise<void>;
   stop(): Promise<void>;
   getGatewayUrl(): string | null;
   getTransportUrl(): string | null;
   getActor<TKey extends keyof TTopology['actors'] & string>(
     key: TKey
-  ): ActorRef<unknown, ActorMessage> | undefined;
+  ):
+    | ActorRef<
+        ActorWebActorContext<TTopology['actors'][TKey]>,
+        ActorWebActorMessage<TTopology['actors'][TKey]>
+      >
+    | undefined;
+  requireActor<TKey extends keyof TTopology['actors'] & string>(
+    key: TKey
+  ): ActorRef<
+    ActorWebActorContext<TTopology['actors'][TKey]>,
+    ActorWebActorMessage<TTopology['actors'][TKey]>
+  >;
 }
 
 interface WebSocketLike {
@@ -91,6 +108,8 @@ type WebSocketServerConstructor = new (options: {
 }) => WebSocketServerLike;
 
 const WEB_SOCKET_OPEN = 1;
+const GATEWAY_ACTOR_LOOKUP_ATTEMPTS = 20;
+const GATEWAY_ACTOR_LOOKUP_DELAY_MS = 25;
 
 class ActorWebNodeGatewayConnection implements RuntimeGatewayConnectionAdapter {
   readonly authContext = {};
@@ -198,6 +217,12 @@ function resolveTopologyNodeAddresses<TTopology extends ActorWebTopology<ActorWe
   });
 }
 
+function wait(delayMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+}
+
 export async function serveActorWebNode<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
   topology: TTopology,
   options: ServeActorWebNodeOptions<TTopology>
@@ -225,16 +250,25 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
         }
       : {}),
   });
+  const toolAccess = createActorWebNodeToolAccess(topology, options.node);
   const system = createActorSystem({
     nodeAddress: nodeDefinition.address,
     transport,
     ...(options.tools ? { tools: options.tools } : {}),
-    toolAccess: createActorWebNodeToolAccess(topology, options.node),
+    toolAccess,
   });
   const actors = new Map<string, ActorRef<unknown, ActorMessage>>();
+  const actorHandles = createActorWebNodeActorHandles(
+    system,
+    topology,
+    options.node,
+    actors,
+    toolAccess,
+    options.tools
+  );
   const exposedActorKeys = new Set<string>(
     gatewayOptions?.expose ??
-      getOwnedActorWebActors(topology, options.node)
+      Object.entries(topology.actors)
         .filter(([, actorDescriptor]) => actorDescriptor.gateway)
         .map(([key]) => key)
   );
@@ -242,6 +276,30 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
   let gatewayServer: WebSocketServerLike | null = null;
   let gatewayUrl: string | null = null;
   let running = false;
+
+  const resolveActorGatewaySource = async (
+    actorKey: string,
+    actorDescriptor: ActorWebActorDescriptor
+  ): Promise<RuntimeGatewaySource | null> => {
+    let actorRef = actors.get(actorKey);
+    for (let attempt = 0; !actorRef && attempt < GATEWAY_ACTOR_LOOKUP_ATTEMPTS; attempt += 1) {
+      actorRef = await system.lookup(actorDescriptor.address.path);
+      if (!actorRef) {
+        await wait(GATEWAY_ACTOR_LOOKUP_DELAY_MS);
+      }
+    }
+
+    if (!actorRef) {
+      return null;
+    }
+
+    return createRuntimeGatewaySource(actorRef, {
+      workflowId: actorKey,
+      taskId: actorDescriptor.address.id,
+      taskTitle: actorDescriptor.address.id,
+      sourceActor: actorDescriptor.address.path,
+    });
+  };
 
   const hub = createRuntimeGatewayHub({
     resolveScope: async (scope) => {
@@ -260,17 +318,7 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
           continue;
         }
 
-        const actorRef = actors.get(actorKey);
-        if (!actorRef) {
-          return null;
-        }
-
-        return createRuntimeGatewaySource(actorRef, {
-          workflowId: actorKey,
-          taskId: actorDescriptor.id,
-          taskTitle: actorDescriptor.id,
-          sourceActor: actorDescriptor.address.path,
-        });
+        return resolveActorGatewaySource(actorKey, actorDescriptor);
       }
 
       throw new RuntimeGatewayScopeError('invalid_scope', `Unsupported scope ${scope.kind}.`);
@@ -337,6 +385,7 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
   const servedNode: ServedActorWebNode<TTopology> = {
     system,
     transport,
+    actors: actorHandles,
     start,
     stop,
     getGatewayUrl(): string | null {
@@ -346,7 +395,20 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
       return transport.getListeningUrl();
     },
     getActor(key) {
-      return actors.get(key);
+      return actors.get(key) as
+        | ActorRef<
+            ActorWebActorContext<TTopology['actors'][typeof key]>,
+            ActorWebActorMessage<TTopology['actors'][typeof key]>
+          >
+        | undefined;
+    },
+    requireActor(key) {
+      const actor = this.getActor(key);
+      if (!actor) {
+        throw new Error(`Actor-Web node did not spawn actor "${key}".`);
+      }
+
+      return actor;
     },
   };
 

@@ -17,6 +17,8 @@ export type {
   ActorToolRegistry,
 } from './actor-tools.js';
 export { createActorToolbox } from './actor-tools.js';
+export type { ActorWebClient, ActorWebClientOptions } from './actor-web-client.js';
+export { createActorWebClient } from './actor-web-client.js';
 export type {
   ActorWebAddressSourceInput,
   ActorWebGatewaySocket,
@@ -25,11 +27,6 @@ export type {
   ClosableActorWebSource,
 } from './actor-web-source.js';
 export { createActorWebSource } from './actor-web-source.js';
-export type { BrowserWebSocketMessageTransportOptions } from './browser-websocket-message-transport.js';
-export {
-  BrowserWebSocketMessageTransport,
-  createBrowserWebSocketMessageTransport,
-} from './browser-websocket-message-transport.js';
 export { createActorRef } from './create-actor-ref.js';
 export type {
   CreateIgniteActorSourceOptions,
@@ -48,6 +45,18 @@ export {
   isSnapshotSubscribableActorRef,
   isTransportStatusSubscribableActorRef,
 } from './integration/ignite-element-bridge.js';
+export type {
+  MessagePortTransport,
+  MessagePortTransportEnvelope,
+  MessagePortTransportMessageEvent,
+  MessagePortTransportMessageListener,
+  MessagePortTransportOptions,
+  MessagePortTransportPort,
+} from './message-port-transport.js';
+export {
+  createMessagePortTransport,
+  isMessagePortTransportEnvelope,
+} from './message-port-transport.js';
 export type {
   ProjectionTransportState,
   ProjectionTransportStatus,

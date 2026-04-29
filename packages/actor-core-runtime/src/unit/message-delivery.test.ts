@@ -10,31 +10,6 @@ import { withTimerTesting } from '../testing/timer-test-utils.js';
 import { defineActor } from '../unified-actor-builder.js';
 
 describe('Layer 5: Message Delivery to Mailboxes', () => {
-  it('should provide self reference in dependencies', async () => {
-    const system = new ActorSystemImpl({ nodeAddress: 'test-node' });
-    await system.start();
-
-    let capturedSelf: unknown = null;
-
-    const testBehavior = defineActor<ActorMessage>()
-      .onMessage(({ dependencies }) => {
-        capturedSelf = dependencies.self;
-      })
-      .build();
-
-    const actor = await system.spawn(testBehavior, { id: 'test-self' });
-    await actor.send({ type: 'TEST' });
-    await system.flush();
-
-    // Verify self was provided and has expected methods
-    expect(capturedSelf).toBeDefined();
-    expect(capturedSelf).toHaveProperty('send');
-    expect(capturedSelf).toHaveProperty('ask');
-    expect(capturedSelf).toHaveProperty('address');
-
-    await system.stop();
-  });
-
   it('should deliver messages to actor mailboxes via enqueueMessage', async () => {
     const system = new ActorSystemImpl({ nodeAddress: 'test-node' });
     // Remove enableTestMode() to use natural async message processing
@@ -139,8 +114,9 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
     const timerActor = testSystem.getTimerActor();
 
     // Create a slow actor that schedules a delay for each message
+    let slowActor: Awaited<ReturnType<typeof testSystem.spawn>> | null = null;
     const slowActorBehavior = defineActor<ActorMessage>()
-      .onMessage(async ({ message, dependencies }) => {
+      .onMessage(async ({ message }) => {
         if (message.type === 'PROCESS_COMPLETE') {
           // Handle the delayed completion
           // Use type predicate to safely access property
@@ -152,7 +128,11 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
           messageProcessingCount++;
           const processingId = messageProcessingCount;
 
-          // Schedule a delayed completion message using dependencies.self
+          if (!slowActor) {
+            throw new Error('Slow actor reference was not initialized.');
+          }
+
+          // Schedule a delayed completion message through the actor ref owned by the test shell.
           const completionMessage = {
             type: 'PROCESS_COMPLETE',
             originalType: message.type,
@@ -160,7 +140,7 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
           };
 
           await timerActor.schedule(
-            dependencies.self, // Use self reference from dependencies
+            slowActor,
             completionMessage,
             10 // 10ms delay
           );
@@ -168,7 +148,7 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
       })
       .build();
 
-    const slowActor = await testSystem.spawn(slowActorBehavior, { id: 'slow-actor' });
+    slowActor = await testSystem.spawn(slowActorBehavior, { id: 'slow-actor' });
 
     // Send many messages quickly to potentially overflow mailbox
     const messageCount = 20;
@@ -313,9 +293,13 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
     const timerActor = testSystem.getTimerActor();
 
     // Create actors with different processing times
-    const createTimedActor = (id: string, delay: number) => {
+    const createTimedActor = (
+      id: string,
+      delay: number,
+      slot: { ref: Awaited<ReturnType<typeof testSystem.spawn>> | null }
+    ) => {
       return defineActor<ActorMessage>()
-        .onMessage(async ({ message, dependencies }) => {
+        .onMessage(async ({ message }) => {
           if (message.type === 'COMPLETE') {
             // Use type predicate to safely access property
             if ('actorId' in message && typeof message.actorId === 'string') {
@@ -324,21 +308,31 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
           } else {
             processingOrder.push(`${id}-start`);
 
-            // Schedule a delayed completion using dependencies.self
+            if (!slot.ref) {
+              throw new Error(`Actor ref for ${id} was not initialized.`);
+            }
+
+            // Schedule a delayed completion through the actor ref owned by the test shell.
             const completionMessage = {
               type: 'COMPLETE',
               actorId: id,
             };
 
-            await timerActor.schedule(dependencies.self, completionMessage, delay);
+            await timerActor.schedule(slot.ref, completionMessage, delay);
           }
         })
         .build();
     };
 
     // Spawn actors with different delays
-    const fastActor = await testSystem.spawn(createTimedActor('fast', 10), { id: 'fast' });
-    const slowActor = await testSystem.spawn(createTimedActor('slow', 50), { id: 'slow' });
+    const fastSlot: { ref: Awaited<ReturnType<typeof testSystem.spawn>> | null } = { ref: null };
+    const slowSlot: { ref: Awaited<ReturnType<typeof testSystem.spawn>> | null } = { ref: null };
+    const fastBehavior = createTimedActor('fast', 10, fastSlot);
+    const slowBehavior = createTimedActor('slow', 50, slowSlot);
+    fastSlot.ref = await testSystem.spawn(fastBehavior, { id: 'fast' });
+    slowSlot.ref = await testSystem.spawn(slowBehavior, { id: 'slow' });
+    const fastActor = fastSlot.ref;
+    const slowActor = slowSlot.ref;
 
     // Send messages to both actors at the same time
     await Promise.all([fastActor.send({ type: 'PROCESS' }), slowActor.send({ type: 'PROCESS' })]);

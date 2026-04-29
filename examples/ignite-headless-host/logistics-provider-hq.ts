@@ -1,7 +1,18 @@
-import type { ProviderSignal, ShipmentContext, ShipmentStatus } from './logistics-contract';
-import { providerFacilityForShipment, providerLoadIdForShipment } from './logistics-provider';
+import type {
+  ProviderHqContext,
+  ProviderSignal,
+  ProviderSignalCommand,
+  ShipmentContext,
+  ShipmentStatus,
+} from './logistics-contract';
+import {
+  providerFacilityForShipment,
+  providerLoadIdForShipment,
+  providerNoteForSignal,
+} from './logistics-provider';
 
 export type LifecycleMode = 'simulation' | 'manual';
+export const PROVIDER_QUEUE_PAGE_SIZE = 5;
 
 export interface ProviderQueueItem {
   shipmentId: string;
@@ -26,6 +37,19 @@ export interface ProviderStatus {
   queue: ProviderQueueItem[];
 }
 
+export function emptyProviderStatus(mode: LifecycleMode | 'unknown' = 'unknown'): ProviderStatus {
+  return {
+    mode: mode === 'unknown' ? 'simulation' : mode,
+    shipmentId: null,
+    status: null,
+    facility: null,
+    signal: null,
+    loadId: null,
+    note: null,
+    queue: [],
+  };
+}
+
 export function shouldReturnShipment(shipmentId: string): boolean {
   let hash = 0;
   for (let index = 0; index < shipmentId.length; index += 1) {
@@ -45,72 +69,172 @@ export function isProviderSignal(value: unknown): value is ProviderSignal {
   );
 }
 
-export class LogisticsProviderQueue {
-  private readonly providerQueue = new Map<string, ProviderQueueItem>();
-  private readonly shipmentContexts = new Map<string, ShipmentContext>();
+export function providerSignalCommandType(signal: ProviderSignal): ProviderSignalCommand['type'] {
+  return signal;
+}
 
-  upsert(context: ShipmentContext): void {
-    if (!context.shipmentId) {
-      return;
-    }
+export function providerSignalFromCommand(message: ProviderSignalCommand): ProviderSignal {
+  return message.type;
+}
 
-    this.shipmentContexts.set(context.shipmentId, {
-      ...context,
-      timeline: context.timeline.map((entry) => ({ ...entry })),
-    });
+export function isTerminalShipment(status: ShipmentStatus | null | undefined): boolean {
+  return status === 'delivered' || status === 'returned';
+}
 
-    const current = this.providerQueue.get(context.shipmentId);
-    this.providerQueue.set(context.shipmentId, {
-      shipmentId: context.shipmentId,
-      destination: context.destination ?? current?.destination ?? null,
-      reference: context.reference ?? current?.reference ?? null,
+export function expectedProviderSignal(
+  shipment: ShipmentContext | undefined
+): ProviderSignal | 'DELIVERY_CONFIRMED_OR_RETURN_EXCEPTION' | null {
+  if (!shipment || isTerminalShipment(shipment.status)) {
+    return null;
+  }
+
+  if (!shipment.providerSignal) {
+    return 'LABEL_SCANNED';
+  }
+
+  if (shipment.providerSignal === 'LABEL_SCANNED') {
+    return 'PACKED_INTO_TRUCK';
+  }
+
+  if (shipment.providerSignal === 'PACKED_INTO_TRUCK') {
+    return 'OUTBOUND_SCAN';
+  }
+
+  if (shipment.providerSignal === 'OUTBOUND_SCAN') {
+    return 'DELIVERY_CONFIRMED_OR_RETURN_EXCEPTION';
+  }
+
+  return null;
+}
+
+export function providerSignalMatchesExpected(
+  shipment: ShipmentContext | undefined,
+  signal: ProviderSignal
+): boolean {
+  const expected = expectedProviderSignal(shipment);
+  return (
+    expected === signal ||
+    (expected === 'DELIVERY_CONFIRMED_OR_RETURN_EXCEPTION' &&
+      (signal === 'DELIVERY_CONFIRMED' || signal === 'RETURN_EXCEPTION'))
+  );
+}
+
+export function providerSignalExpectationLabel(
+  expected: ReturnType<typeof expectedProviderSignal>
+): string {
+  return expected === 'DELIVERY_CONFIRMED_OR_RETURN_EXCEPTION'
+    ? 'DELIVERY_CONFIRMED or RETURN_EXCEPTION'
+    : (expected ?? 'no further provider signal');
+}
+
+export function clampProviderQueuePage(page: number, queueLength: number): number {
+  return Math.min(page, Math.max(0, Math.ceil(queueLength / PROVIDER_QUEUE_PAGE_SIZE) - 1));
+}
+
+export function providerStatusFrom(
+  mode: LifecycleMode,
+  shipmentContexts: Record<string, ShipmentContext>,
+  selectedShipmentId: string | null
+): ProviderStatus {
+  const queue = Object.values(shipmentContexts)
+    .filter((context) => context.shipmentId)
+    .map((context) => ({
+      shipmentId: context.shipmentId ?? '',
+      destination: context.destination,
+      reference: context.reference,
       status: context.status,
-      facility:
-        context.providerFacility ??
-        current?.facility ??
-        providerFacilityForShipment(context.shipmentId),
-      signal: context.providerSignal ?? current?.signal ?? null,
-      loadId:
-        context.providerLoadId ?? current?.loadId ?? providerLoadIdForShipment(context.shipmentId),
-      note: context.providerNote ?? current?.note ?? null,
-      updatedAt: Date.now(),
-    });
+      facility: context.providerFacility ?? providerFacilityForShipment(context.shipmentId ?? ''),
+      signal: context.providerSignal,
+      loadId: context.providerLoadId ?? providerLoadIdForShipment(context.shipmentId ?? ''),
+      note: context.providerNote,
+      updatedAt:
+        context.timeline.at(-1)?.timestamp ??
+        Number(context.shipmentId?.replace(/\D/g, '').slice(-8) ?? 0),
+    }))
+    .sort((left, right) => right.updatedAt - left.updatedAt);
+  const selected = selectedShipmentId
+    ? queue.find((item) => item.shipmentId === selectedShipmentId)
+    : undefined;
+  const active = queue.find((item) => !isTerminalShipment(item.status));
+  const current = selected ?? active ?? queue[0];
+
+  return {
+    mode,
+    shipmentId: current?.shipmentId ?? null,
+    status: current?.status ?? null,
+    facility: current?.facility ?? null,
+    signal: current?.signal ?? null,
+    loadId: current?.loadId ?? null,
+    note: current?.note ?? null,
+    queue,
+  };
+}
+
+export function createInitialProviderHqContext(): ProviderHqContext {
+  const mode = 'simulation';
+  return {
+    status: emptyProviderStatus(mode),
+    selectedShipmentId: null,
+    queuePage: 0,
+    shipmentContexts: {},
+    busy: false,
+    message: 'Provider HQ ready.',
+  };
+}
+
+export function upsertProviderShipment(
+  context: ProviderHqContext,
+  shipment: ShipmentContext
+): ProviderHqContext {
+  if (!shipment.shipmentId) {
+    return context;
   }
 
-  items(): ProviderQueueItem[] {
-    return Array.from(this.providerQueue.values()).sort(
-      (left, right) => right.updatedAt - left.updatedAt
-    );
-  }
+  const shipmentContexts = {
+    ...context.shipmentContexts,
+    [shipment.shipmentId]: {
+      ...shipment,
+      timeline: shipment.timeline.map((entry) => ({ ...entry })),
+    },
+  };
+  const selectedShipment = context.selectedShipmentId
+    ? shipmentContexts[context.selectedShipmentId]
+    : undefined;
+  const selectedShipmentId =
+    selectedShipment && !isTerminalShipment(selectedShipment.status)
+      ? context.selectedShipmentId
+      : null;
+  const status = providerStatusFrom(context.status.mode, shipmentContexts, selectedShipmentId);
 
-  selectedShipmentId(): string | null {
-    const items = this.items();
-    const active = items.find((item) => item.status !== 'delivered' && item.status !== 'returned');
-    return active?.shipmentId ?? items[0]?.shipmentId ?? null;
-  }
+  return {
+    ...context,
+    status,
+    shipmentContexts,
+    selectedShipmentId,
+    queuePage: clampProviderQueuePage(context.queuePage, status.queue.length),
+    message: `${shipment.shipmentId} queued at Provider HQ.`,
+  };
+}
 
-  contextFor(shipmentId: string): ShipmentContext | undefined {
-    return this.shipmentContexts.get(shipmentId);
-  }
-
-  clear(): void {
-    this.providerQueue.clear();
-    this.shipmentContexts.clear();
-  }
-
-  status(mode: LifecycleMode, snapshot: ShipmentContext | null): ProviderStatus {
-    const selectedShipmentId = this.selectedShipmentId();
-    const queued = selectedShipmentId ? this.providerQueue.get(selectedShipmentId) : undefined;
-
-    return {
-      mode,
-      shipmentId: queued?.shipmentId ?? snapshot?.shipmentId ?? null,
-      status: queued?.status ?? snapshot?.status ?? null,
-      facility: queued?.facility ?? snapshot?.providerFacility ?? null,
-      signal: queued?.signal ?? snapshot?.providerSignal ?? null,
-      loadId: queued?.loadId ?? snapshot?.providerLoadId ?? null,
-      note: queued?.note ?? snapshot?.providerNote ?? null,
-      queue: this.items(),
-    };
-  }
+export function applyProviderSignalToShipment(
+  shipment: ShipmentContext,
+  signal: ProviderSignal,
+  input: { facility?: string; loadId?: string; note?: string } = {}
+): ShipmentContext {
+  const shipmentId = shipment.shipmentId ?? 'unknown-shipment';
+  return {
+    ...shipment,
+    status:
+      signal === 'OUTBOUND_SCAN'
+        ? 'in-transit'
+        : signal === 'DELIVERY_CONFIRMED'
+          ? 'delivered'
+          : signal === 'RETURN_EXCEPTION'
+            ? 'returned'
+            : shipment.status,
+    providerFacility: input.facility ?? providerFacilityForShipment(shipmentId),
+    providerSignal: signal,
+    providerLoadId: input.loadId ?? providerLoadIdForShipment(shipmentId),
+    providerNote: input.note ?? providerNoteForSignal(signal),
+  };
 }

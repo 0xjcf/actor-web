@@ -141,7 +141,7 @@ const initialJsonContext: JsonValue = {
 export const guardianBehavior: ActorBehavior<GuardianMessage, GuardianContext> = {
   context: initialJsonContext,
 
-  async onMessage({
+  onMessage: (async ({
     message,
     actor,
     dependencies,
@@ -149,7 +149,7 @@ export const guardianBehavior: ActorBehavior<GuardianMessage, GuardianContext> =
     message: GuardianMessage;
     actor: ActorInstance;
     dependencies: ActorDependencies;
-  }): Promise<void> {
+  }): Promise<void> => {
     log.debug('🔍 GUARDIAN DEBUG: onMessage called with:', (message as { type: string }).type);
     log.debug('🔍 GUARDIAN DEBUG: Full message:', message);
 
@@ -248,7 +248,7 @@ export const guardianBehavior: ActorBehavior<GuardianMessage, GuardianContext> =
     }
 
     return;
-  },
+  }) as unknown as ActorBehavior<GuardianMessage, GuardianContext>['onMessage'],
 
   supervisionStrategy: {
     onFailure: () => SupervisionDirective.RESTART,

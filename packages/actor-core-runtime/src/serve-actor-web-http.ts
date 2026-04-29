@@ -92,9 +92,9 @@ export interface ActorWebHttpRouter<TTopology extends ActorWebTopology<ActorWebT
   put(path: string, handler: ActorWebHttpHandler<TTopology>): ActorWebHttpRouter<TTopology>;
   patch(path: string, handler: ActorWebHttpHandler<TTopology>): ActorWebHttpRouter<TTopology>;
   delete(path: string, handler: ActorWebHttpHandler<TTopology>): ActorWebHttpRouter<TTopology>;
-  for<TActor extends ActorWebActorDescriptor>(
-    actor: TActor
-  ): ActorWebBoundHttpRouter<TTopology, TActor>;
+  for<TKey extends keyof TTopology['actors'] & string>(
+    actor: TTopology['actors'][TKey]
+  ): ActorWebBoundHttpRouter<TTopology, TTopology['actors'][TKey]>;
   listen(options?: ActorWebHttpListenOptions): Promise<ServedActorWebHttp>;
 }
 
@@ -122,9 +122,9 @@ export interface ActorWebBoundHttpRouter<
     path: string,
     handler: ActorWebBoundHttpHandler<TTopology, TActor>
   ): ActorWebBoundHttpRouter<TTopology, TActor>;
-  for<TNextActor extends ActorWebActorDescriptor>(
-    actor: TNextActor
-  ): ActorWebBoundHttpRouter<TTopology, TNextActor>;
+  for<TKey extends keyof TTopology['actors'] & string>(
+    actor: TTopology['actors'][TKey]
+  ): ActorWebBoundHttpRouter<TTopology, TTopology['actors'][TKey]>;
   listen(options?: ActorWebHttpListenOptions): Promise<ServedActorWebHttp>;
 }
 
@@ -260,21 +260,18 @@ function createActorAccess<TTopology extends ActorWebTopology<ActorWebTopologyIn
 
 function createBoundHandler<
   TTopology extends ActorWebTopology<ActorWebTopologyInput>,
-  TActor extends ActorWebActorDescriptor,
+  TKey extends keyof TTopology['actors'] & string,
 >(
   runtime: ServedActorWebNode<TTopology>,
-  actor: TActor,
-  handler: ActorWebBoundHttpHandler<TTopology, TActor>
+  actor: TTopology['actors'][TKey],
+  handler: ActorWebBoundHttpHandler<TTopology, TTopology['actors'][TKey]>
 ): ActorWebHttpHandler<TTopology> {
   return (request, response, actorWeb) => {
-    const actorRef = runtime.getActor(actor.key as keyof TTopology['actors'] & string);
-    if (!actorRef) {
-      throw new Error(`Actor-Web HTTP route requested unspawned actor "${actor.key}".`);
-    }
+    const actorRef = runtime.requireActor(actor.key as TKey);
 
     return handler(request, response, {
       ...actorWeb,
-      actor: actorRef as ActorRef<ActorWebActorContext<TActor>, ActorWebActorMessage<TActor>>,
+      actor: actorRef,
     });
   };
 }
@@ -299,13 +296,15 @@ export function serveActorWebHttp<TTopology extends ActorWebTopology<ActorWebTop
       addRoute(method, path, handler);
   };
 
-  const boundRouteMethod = <TActor extends ActorWebActorDescriptor>(
-    boundRouter: ActorWebBoundHttpRouter<TTopology, TActor>,
-    actor: TActor,
+  const boundRouteMethod = <TKey extends keyof TTopology['actors'] & string>(
+    boundRouter: ActorWebBoundHttpRouter<TTopology, TTopology['actors'][TKey]>,
+    actor: TTopology['actors'][TKey],
     method: ActorWebHttpMethod
   ) => {
-    return (path: string, handler: ActorWebBoundHttpHandler<TTopology, TActor>) =>
-      addBoundRoute(boundRouter, method, path, createBoundHandler(runtime, actor, handler));
+    return (
+      path: string,
+      handler: ActorWebBoundHttpHandler<TTopology, TTopology['actors'][TKey]>
+    ) => addBoundRoute(boundRouter, method, path, createBoundHandler(runtime, actor, handler));
   };
 
   const addBoundRoute = <TActor extends ActorWebActorDescriptor>(

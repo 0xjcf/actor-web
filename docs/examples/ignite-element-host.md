@@ -8,8 +8,9 @@ The example demonstrates four boundaries:
 
 - **REST ingress:** browser or API clients submit shipments through
   `POST /shipments`.
-- **WebSocket gateway:** the thin Ignite host receives live snapshots, events,
-  status, and replies from more than one actor source.
+- **Runtime gateway:** the thin Ignite host receives live snapshots, events,
+  status, and replies from more than one actor source. The demo gateway is
+  WebSocket-backed, but gateway means the client projection/control edge.
 - **Actor-Web transport:** the server runtime asks a WebWorker-owned routing
   actor for carrier and ETA planning over WebSocket `MessageTransport`.
 - **Service worker topology proof:** browser host and service worker runtime
@@ -27,8 +28,8 @@ The launcher starts the logistics backend and Vite in one process, then injects
 all three runtime URLs:
 
 - `VITE_ACTOR_WEB_REST_URL`: REST command ingress for the Create button.
-- `VITE_ACTOR_WEB_GATEWAY_URL`: WebSocket projection/control gateway for live
-  snapshots and events.
+- `VITE_ACTOR_WEB_GATEWAY_URL`: runtime gateway endpoint for live snapshots,
+  events, status, and actor commands.
 - `VITE_ACTOR_WEB_TRANSPORT_URL`: Actor-Web runtime transport listener used by
   the browser WebWorker routing runtime.
 
@@ -73,23 +74,22 @@ The example is organized around a hexagonal boundary:
   planning.
 - Domain helpers: `logistics-provider.ts` derives deterministic provider
   facilities, loads, notes, and provider signal effects.
-- Adapter-side provider model: `logistics-provider-hq.ts` tracks the external
-  provider queue and manual/simulation status, while
-  `provider-console-adapter.ts` adapts the Provider HQ REST edge for the
-  browser console.
+- Provider actors/model: `logistics-provider-hq.ts` tracks provider queue data,
+  `logistics-provider-hq-behavior.ts` exposes the Provider HQ actor behavior,
+  and `provider-console.tsx` renders the external Provider HQ console.
 - Projection helpers: `logistics-snapshots.ts` and `logistics-view-model.ts`
   keep gateway snapshots and UI route labeling out of actor behavior.
-- Ports/adapters: `server-runtime-gateway.ts`, `server-gateway-client.ts`,
-  `browser-transport.ts`, `logistics-ui-ports.ts`, `provider-console-adapter.ts`,
+- Ports/adapters: `server-runtime-gateway.ts`, `browser-transport.ts`,
   `worker-runtime.ts`, and `worker-websocket-runtime.ts` adapt REST, WebSocket
   gateway, MessagePort, service worker, and Actor-Web transport edges.
-- Ignite hosts: `ignite-headless-host-element.tsx`, `provider-console.tsx`,
-  and `headless-host.ts` render and command the actors without owning runtime
-  state.
+- Ignite hosts: `ignite-headless-host-element.tsx` and `provider-console.tsx`
+  render and command the actors without owning runtime state.
 
 The example uses the runtime topology/source DX directly. Runtime edges are
 created from topology actor descriptors, not from hand-written actor addresses.
-The Control Tower commands and projects the server-owned shipment actor:
+The Control Tower commands and projects the server-owned shipment actor through
+a source. Source means the Ignite-compatible projection/control adapter for one
+actor:
 
 ```ts
 const source = logistics.actors.shipment.source({
@@ -97,15 +97,31 @@ const source = logistics.actors.shipment.source({
 });
 ```
 
-In the full server + worker mode, the same gateway also exposes the worker-owned
-routing actor as a second read-only source so the UI can show distributed
-ownership instead of folding every update into the shipment projection:
+In the full server + worker mode, the same runtime gateway also exposes the
+worker-owned routing actor as a second read-only source so the UI can show
+distributed ownership instead of folding every update into the shipment
+projection. The source helper defaults to the actor descriptor's gateway scope;
+in this example, `gateway: true` uses the topology actor keys `shipment` and
+`routing` as the public gateway scopes. Explicit `scope` is only needed for
+overrides, parameterized subscriptions, or address-based/generated clients:
 
 ```ts
 const routingSource = logistics.actors.routing.source({
+  gateway: { url: gatewayUrl },
+});
+```
+
+When a component needs a scoped projection, keep dynamic values inside
+`gateway.scope.params` and let `kind` default from the topology actor unless the
+gateway intentionally exposes a different public scope:
+
+```ts
+const vehicleInspectionsSource = fleet.actors.vehicleInspections.source({
   gateway: {
     url: gatewayUrl,
-    scope: logistics.actors.routing.gateway?.scope,
+    scope: {
+      params: { fleetId, vehicleId },
+    },
   },
 });
 ```
@@ -117,19 +133,21 @@ read-only Ignite component/source. The UI consumes the inferred Ignite view
 model from the `states` hook instead of wrapping projection data in a custom
 source-shaped adapter.
 
-`logistics-ui-ports.ts` keeps the browser host source boundary explicit:
-`logisticsSources` chooses the correct topology-backed source for the current
-demo mode. Browser-local details such as form inputs and latest-event display
-remain element concerns instead of being disguised as Actor-Web source state.
-Ignite commands send actor messages through the source actor; REST ingress stays
-in the server HTTP adapter and reaches the same actor behavior.
+`logistics-browser-client.ts` binds the shared topology to the deployed gateway
+once with `createActorWebClient(logistics, { gateway })`. Browser-local details
+such as form inputs and latest-event display remain element concerns instead of
+being disguised as Actor-Web source state. Ignite commands send actor messages
+through `logisticsClient.actors.shipment`; REST ingress stays in the server HTTP
+adapter and reaches the same actor behavior.
 
 `server-runtime-gateway.ts` starts the server node with `serveActorWebNode` and
 uses `serveActorWebHttp(runtime).for(logistics.actors.shipment)` for REST
-ingress routes. `worker-websocket-runtime.ts` starts the worker node with
-`startActorWebNode`. The remaining harness code exists only to choose between
-the full server/worker demo, gateway-only mode, service-worker topology proof,
-and in-memory test fallback.
+ingress routes. `worker-websocket-runtime.ts` starts the WebWorker runtime node
+with `startActorWebNode` and the browser runtime transport options.
+`worker-runtime.ts` starts the Service Worker proof node with the same
+`startActorWebNode` API and a `createMessagePortTransport` adapter, so
+service-worker ownership remains part of the shared topology while
+service-worker registration stays in the example browser shell.
 
 ## Demo Flow
 
@@ -156,10 +174,18 @@ lifecycle updates without losing the latest projection.
 
 ## Boundary Guidance
 
-Gateway traffic is the thin host projection/control channel. Actor-Web
-`MessageTransport` is the runtime-to-runtime channel. REST is a conventional
-ingress adapter for clients that do not want to hold a live socket. The service
-worker path remains a browser-local topology proof, not direct production
-server-to-service-worker transport. The browser host submits shipment creation
-intent but does not own in-transit, delivered, or returned lifecycle decisions;
-those updates are server-owned demo signals streamed back over the gateway.
+Use the names consistently:
+
+- Node: an actor-owning runtime process, such as the server runtime or worker
+  runtime.
+- Transport: runtime-to-runtime actor messaging through `MessageTransport`.
+- Gateway: client projection/control edge for thin hosts. This demo backs it
+  with WebSocket, but it is not the same thing as inter-node transport.
+- Source: Ignite-compatible projection/control adapter for one actor.
+
+REST is a conventional ingress adapter for clients that do not want to hold a
+live socket. The service worker path remains a browser-local topology proof, not
+direct production server-to-service-worker transport. The browser host submits
+shipment creation intent but does not own in-transit, delivered, or returned
+lifecycle decisions; those updates are server-owned demo signals streamed back
+over the gateway.

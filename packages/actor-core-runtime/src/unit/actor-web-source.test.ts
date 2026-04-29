@@ -176,4 +176,78 @@ describe('createActorWebSource', () => {
 
     source.close();
   });
+
+  it('merges address-based source params into the gateway scope', () => {
+    const socket = new FakeGatewaySocket();
+    createActorWebSource(
+      {
+        address: 'actor://server-node/actor/vehicle-inspections',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+          scope: {
+            params: {
+              tenantId: 'acme',
+              vehicleId: 'truck-17',
+            },
+          },
+        },
+      },
+      {
+        createSocket: () => socket,
+        streamId: 'vehicle-inspections-stream',
+      }
+    );
+
+    socket.open();
+    socket.receive({
+      type: 'ready',
+      connectionId: 'connection-1',
+      heartbeatMs: 15000,
+      serverTime: '2026-04-25T18:00:00.000Z',
+    });
+
+    expect(socket.sentFrames).toContainEqual({
+      type: 'subscribe',
+      streamId: 'vehicle-inspections-stream',
+      scope: {
+        kind: 'vehicle-inspections',
+        params: {
+          tenantId: 'acme',
+          vehicleId: 'truck-17',
+        },
+      },
+    });
+  });
+
+  it('defaults address-based source scope kind from the actor id', () => {
+    const socket = new FakeGatewaySocket();
+    createActorWebSource(
+      {
+        address: 'actor://server-node/actor/vehicle-inspections',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+        },
+      },
+      {
+        createSocket: () => socket,
+        streamId: 'vehicle-inspections-stream',
+      }
+    );
+
+    socket.open();
+    socket.receive({
+      type: 'ready',
+      connectionId: 'connection-1',
+      heartbeatMs: 15000,
+      serverTime: '2026-04-25T18:00:00.000Z',
+    });
+
+    expect(socket.sentFrames).toContainEqual({
+      type: 'subscribe',
+      streamId: 'vehicle-inspections-stream',
+      scope: {
+        kind: 'vehicle-inspections',
+      },
+    });
+  });
 });

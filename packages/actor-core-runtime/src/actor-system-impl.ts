@@ -268,9 +268,15 @@ function normalizeBehavior<TMessage, TEmitted>(
   // Convert to pure actor behavior format with proper type handling
   return {
     context: behavior.context,
-    onMessage: behavior.onMessage as PureActorBehavior<ActorMessage, ActorMessage>['onMessage'],
-    onStart: behavior.onStart as PureActorBehavior<ActorMessage, ActorMessage>['onStart'],
-    onStop: behavior.onStop as PureActorBehavior<ActorMessage, ActorMessage>['onStop'],
+    onMessage: behavior.onMessage as unknown as PureActorBehavior<
+      ActorMessage,
+      ActorMessage
+    >['onMessage'],
+    onStart: behavior.onStart as unknown as PureActorBehavior<
+      ActorMessage,
+      ActorMessage
+    >['onStart'],
+    onStop: behavior.onStop as unknown as PureActorBehavior<ActorMessage, ActorMessage>['onStop'],
   };
 }
 
@@ -721,7 +727,7 @@ export class ActorSystemImpl implements ActorSystem {
       const spec = behaviorOrBuilder.build();
       actualBehavior = {
         context: spec.initialContext as JsonValue | undefined,
-        onMessage: spec.handler || (() => {}),
+        onMessage: (spec.handler || (() => {})) as unknown as ActorBehavior['onMessage'],
         onStart: spec.startHandler,
         onStop: spec.stopHandler,
       };
@@ -3640,7 +3646,9 @@ export class ActorSystemImpl implements ActorSystem {
       await this.stopActor(new ActorPIDImpl(address, this));
 
       // Respawn with the same behavior and ID
-      await this.spawn(behavior, { id: address.id });
+      await this.spawn(behavior as unknown as ActorBehavior<ActorMessage, unknown>, {
+        id: address.id,
+      });
 
       await this.emitSystemEvent({
         eventType: 'actorRestarted',
@@ -3765,6 +3773,16 @@ export class ActorSystemImpl implements ActorSystem {
       send: async (to: unknown, message: ActorMessage) => {
         if (typeof to === 'object' && to !== null && 'send' in to) {
           await (to as { send: (msg: ActorMessage) => Promise<void> }).send(message);
+          return;
+        }
+
+        if (typeof to === 'string') {
+          const actorRef = await this.lookup(to);
+          if (!actorRef) {
+            throw new Error(`Unable to resolve actor "${to}" for dependency send.`);
+          }
+
+          await actorRef.send(message);
         }
       },
       ask: async <T>(_to: unknown, _message: ActorMessage, _timeout?: number) => {
@@ -3829,7 +3847,10 @@ export class ActorSystemImpl implements ActorSystem {
     });
 
     if (behavior) {
-      this.autoPublishingRegistry.analyzeActorBehavior(publisherId, behavior);
+      this.autoPublishingRegistry.analyzeActorBehavior(
+        publisherId,
+        behavior as unknown as ActorBehavior<ActorMessage, unknown>
+      );
     }
 
     // Add subscriber to the registry

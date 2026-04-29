@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createActorWebSource } from '../actor-web-source.js';
+import { createActorWebClient } from '../actor-web-client.js';
+import { type ActorWebGatewaySocket, createActorWebSource } from '../actor-web-source.js';
 import type { IgniteActorSource } from '../integration/ignite-element-bridge.js';
 import {
   type ActorWebActorContext,
@@ -63,9 +64,7 @@ describe('Actor-Web topology helpers', () => {
             withinMs: 60_000,
           },
           tools: ['route.plan'],
-          gateway: {
-            scope: { kind: 'logistics-shipment' },
-          },
+          gateway: true,
         }),
       },
       supervisors: {
@@ -90,6 +89,7 @@ describe('Actor-Web topology helpers', () => {
       description: 'Plan shipment routes.',
     });
     expect(logistics.actors.shipment.tools).toEqual(['route.plan']);
+    expect(logistics.actors.shipment.gateway?.scope).toEqual({ kind: 'shipment' });
     expect(logistics.supervisors.logistics).toMatchObject({
       key: 'logistics',
       nodeAddress: 'logistics-server-runtime',
@@ -109,7 +109,8 @@ describe('Actor-Web topology helpers', () => {
         addEventListener: () => {},
       }),
     });
-    const explicitSource = createActorWebSource(logistics.actors.shipment, {
+    const explicitSource = createActorWebSource({
+      actor: logistics.actors.shipment,
       gateway: { url: 'ws://example.invalid/gateway' },
       createSocket: () => ({
         readyState: 1,
@@ -130,6 +131,103 @@ describe('Actor-Web topology helpers', () => {
     expect(event.type).toBe('SHIPMENT_CREATED');
     source.close();
     explicitSource.close();
+  });
+
+  it('binds topology actors to a gateway client without explicit generics', () => {
+    const logistics = defineActorWebTopology({
+      contractVersion: '1.0.0',
+      nodes: {
+        server: node('logistics-server-runtime'),
+        serviceWorker: node('logistics-service-worker-runtime'),
+      },
+      actors: {
+        shipment: actor({
+          id: 'logistics-shipment',
+          node: 'server',
+          behavior: createShipmentBehavior,
+          gateway: true,
+        }),
+        serviceWorkerProof: actor({
+          id: 'logistics-service-worker-proof',
+          node: 'serviceWorker',
+          behavior: createShipmentBehavior,
+        }),
+      },
+    });
+    let socketsCreated = 0;
+
+    const client = createActorWebClient(logistics, {
+      gateway: { url: 'ws://example.invalid/gateway' },
+      createSocket: () => {
+        socketsCreated += 1;
+        return {
+          readyState: 1,
+          send: () => {},
+          close: () => {},
+          addEventListener: () => {},
+        };
+      },
+    });
+
+    expect(socketsCreated).toBe(0);
+
+    type InferredContext = ActorWebActorContext<typeof logistics.actors.shipment>;
+    type InferredCommand = ActorWebActorMessage<typeof logistics.actors.shipment>;
+    type InferredEvent = ActorWebActorEvent<typeof logistics.actors.shipment>;
+
+    const typedSource: IgniteActorSource<InferredContext, InferredCommand, InferredEvent> =
+      client.actors.shipment;
+    const sameSource = client.actors.shipment;
+
+    expect(typedSource).toBe(sameSource);
+    expect(typedSource.address.path).toBe(logistics.actors.shipment.address.path);
+    expect(socketsCreated).toBe(1);
+    client.close();
+  });
+
+  it('does not open unused topology client sources', () => {
+    const logistics = defineActorWebTopology({
+      contractVersion: '1.0.0',
+      nodes: {
+        server: node('logistics-server-runtime'),
+        serviceWorker: node('logistics-service-worker-runtime'),
+      },
+      actors: {
+        shipment: actor({
+          id: 'logistics-shipment',
+          node: 'server',
+          behavior: createShipmentBehavior,
+          gateway: true,
+        }),
+        serviceWorkerProof: actor({
+          id: 'logistics-service-worker-proof',
+          node: 'serviceWorker',
+          behavior: createShipmentBehavior,
+        }),
+      },
+    });
+    let socketsCreated = 0;
+
+    const client = createActorWebClient(logistics, {
+      gateway: { url: 'ws://example.invalid/gateway' },
+      createSocket: () => {
+        socketsCreated += 1;
+        return {
+          readyState: 1,
+          send: () => {},
+          close: () => {},
+          addEventListener: () => {},
+        };
+      },
+    });
+
+    expect(Object.keys(client.actors)).toEqual(['shipment', 'serviceWorkerProof']);
+    expect(socketsCreated).toBe(0);
+    expect(client.actors.serviceWorkerProof.address.path).toBe(
+      logistics.actors.serviceWorkerProof.address.path
+    );
+    expect(socketsCreated).toBe(1);
+    client.close();
   });
 
   it('rejects actors and supervisors that reference unknown nodes', () => {
@@ -155,6 +253,22 @@ describe('Actor-Web topology helpers', () => {
         },
       })
     ).toThrow('references unknown node "worker"');
+  });
+
+  it('rejects supervisors that reference unknown child actors', () => {
+    expect(() =>
+      defineActorWebTopology({
+        nodes: {
+          server: node('server-node'),
+        },
+        actors: {
+          shipment: actor({ id: 'shipment', node: 'server' }),
+        },
+        supervisors: {
+          logistics: supervisor({ node: 'server', children: ['missing'] }),
+        },
+      })
+    ).toThrow('references unknown child actor "missing"');
   });
 
   it('rejects actors that reference unknown topology tools when a catalog is declared', () => {
@@ -193,5 +307,105 @@ describe('Actor-Web topology helpers', () => {
     });
 
     expect(topology.tools['route.plan'].name).toBe('route.plan');
+  });
+
+  it('allows explicit gateway scopes for public routing overrides', () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+      },
+      actors: {
+        internalShipmentProjection: actor({
+          id: 'shipment',
+          node: 'server',
+          gateway: {
+            scope: {
+              kind: 'shipment',
+              params: {
+                tenant: 'acme',
+              },
+            },
+          },
+        }),
+      },
+    });
+
+    expect(topology.actors.internalShipmentProjection.gateway?.scope).toEqual({
+      kind: 'shipment',
+      params: {
+        tenant: 'acme',
+      },
+    });
+  });
+
+  it('merges topology actor source params into the actor gateway scope', () => {
+    const logistics = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+      },
+      actors: {
+        vehicleInspections: actor({
+          id: 'vehicle-inspections',
+          node: 'server',
+          behavior: createShipmentBehavior,
+          gateway: true,
+        }),
+      },
+    });
+    const sentFrames: unknown[] = [];
+    let openListener = (): void => {};
+    let messageListener = (_event: MessageEvent<string>): void => {};
+    const socket: ActorWebGatewaySocket = {
+      readyState: 1,
+      send: (data: string) => {
+        sentFrames.push(JSON.parse(data) as unknown);
+      },
+      close: () => {},
+      addEventListener(
+        type: 'open' | 'close' | 'error' | 'message',
+        listener: (() => void) | ((event: Event) => void) | ((event: MessageEvent<string>) => void)
+      ) {
+        if (type === 'open') {
+          openListener = listener as () => void;
+        } else if (type === 'message') {
+          messageListener = listener as (event: MessageEvent<string>) => void;
+        }
+      },
+    };
+    const source = logistics.actors.vehicleInspections.source({
+      gateway: {
+        url: 'ws://example.invalid/gateway',
+        scope: {
+          params: {
+            fleetId: 'fleet-42',
+            vehicleId: 'truck-17',
+          },
+        },
+      },
+      streamId: 'vehicle-inspections-stream',
+      createSocket: () => socket,
+    });
+    openListener();
+    messageListener({
+      data: JSON.stringify({
+        type: 'ready',
+        connectionId: 'connection-1',
+        heartbeatMs: 15000,
+        serverTime: '2026-04-25T18:00:00.000Z',
+      }),
+    } as MessageEvent<string>);
+
+    expect(sentFrames).toContainEqual({
+      type: 'subscribe',
+      streamId: 'vehicle-inspections-stream',
+      scope: {
+        kind: 'vehicleInspections',
+        params: {
+          fleetId: 'fleet-42',
+          vehicleId: 'truck-17',
+        },
+      },
+    });
+    source.close();
   });
 });

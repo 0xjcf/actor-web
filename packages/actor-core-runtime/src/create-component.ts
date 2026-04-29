@@ -355,7 +355,6 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
               await config.behavior.onMessage({
                 message: actorMessage,
                 actor: actorInstanceAdapter,
-                dependencies: actorDependencies,
                 tools: actorDependencies.tools,
               });
             } catch (error) {

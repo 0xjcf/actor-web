@@ -126,10 +126,10 @@ export class FluentBehaviorBuilder<
 
     // Create the runtime ActorBehavior
     const behavior: ActorBehavior<TMsg, TEmitted> = {
-      onMessage: this.handler as (params: {
+      onMessage: this.handler as unknown as (params: {
         readonly message: ActorMessage;
         readonly actor: import('./actor-instance.js').ActorInstance;
-        readonly dependencies: import('./actor-system.js').ActorDependencies;
+        readonly tools: import('./actor-tools.js').ActorToolbox;
       }) => unknown,
       onStart: this.startHandler,
       onStop: this.stopHandler,

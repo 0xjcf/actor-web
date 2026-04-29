@@ -181,15 +181,15 @@ describe.skip('Fluent Builder API Integration', () => {
       // Arrange & Act: Create behavior with type inference
       const behavior = defineActor<CounterMessage>()
         .withContext<CounterContext>({ count: 0, status: 'idle' })
-        .onMessage(({ message, actor, dependencies }) => {
+        .onMessage(({ message, actor, tools }) => {
           // TypeScript should infer all types correctly
           expect(typeof message.type).toBe('string');
           expect(actor).toBeDefined();
-          expect(dependencies).toBeDefined();
+          expect(tools).toBeDefined();
           log.debug('Type inference working correctly', {
             messageType: typeof message.type,
             hasMachine: !!actor,
-            hasDependencies: !!dependencies,
+            hasTools: !!tools,
           });
 
           return undefined;
@@ -198,6 +198,18 @@ describe.skip('Fluent Builder API Integration', () => {
       // Assert: Behavior should be created without type errors
       expect(behavior).toBeDefined();
       expect(typeof behavior.onMessage).toBe('function');
+    });
+
+    it('keeps runtime dependencies out of the public defineActor handler context', () => {
+      defineActor<CounterMessage>()
+        .withContext<CounterContext>({ count: 0, status: 'idle' })
+        .onMessage((params) => {
+          expect(params.tools).toBeDefined();
+          // @ts-expect-error self is an advanced runtime internal, not public handler API.
+          params.self;
+          // @ts-expect-error dependencies are runtime internals, not public handler API.
+          params.dependencies;
+        });
     });
 
     it('should handle malformed message payloads gracefully', async () => {

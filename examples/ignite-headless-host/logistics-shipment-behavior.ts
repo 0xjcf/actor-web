@@ -3,6 +3,7 @@ import {
   createInitialShipmentContext,
   type ShipmentCommand,
   type ShipmentContext,
+  type ShipmentEvent,
   type ShipmentStatus,
 } from './logistics-contract';
 import {
@@ -66,7 +67,7 @@ const shipmentFSM = defineFSM<ShipmentCommand, ShipmentContext, ShipmentStatus>(
 });
 
 export function createShipmentBehavior() {
-  return defineActor<ShipmentCommand>()
+  return defineActor<ShipmentCommand, ShipmentEvent>()
     .withContext(createInitialShipmentContext())
     .withFSM(shipmentFSM)
     .onMessage(({ context, message }) => {
@@ -78,31 +79,33 @@ export function createShipmentBehavior() {
     })
     .onTransition({
       CREATE_SHIPMENT: ({ context, message }) => {
+        const nextContext = {
+          ...context,
+          shipmentId: message.shipmentId,
+          destination: message.destination,
+          reference: message.reference ?? null,
+          status: 'route-requested' as const,
+          carrier: null,
+          eta: null,
+          routeNotes: null,
+          providerFacility: null,
+          providerSignal: null,
+          providerLoadId: null,
+          providerNote: null,
+          shipmentCount: context.shipmentCount + 1,
+          timeline: appendTimeline(
+            context,
+            'Shipment accepted',
+            `${message.shipmentId} to ${message.destination}`,
+            {
+              source: 'Server Shipment Runtime',
+              channel: 'REST command ingress',
+            }
+          ),
+        };
+
         return {
-          context: {
-            ...context,
-            shipmentId: message.shipmentId,
-            destination: message.destination,
-            reference: message.reference ?? null,
-            status: 'route-requested' as const,
-            carrier: null,
-            eta: null,
-            routeNotes: null,
-            providerFacility: null,
-            providerSignal: null,
-            providerLoadId: null,
-            providerNote: null,
-            shipmentCount: context.shipmentCount + 1,
-            timeline: appendTimeline(
-              context,
-              'Shipment accepted',
-              `${message.shipmentId} to ${message.destination}`,
-              {
-                source: 'Server Shipment Runtime',
-                channel: 'REST command ingress',
-              }
-            ),
-          },
+          context: nextContext,
           emit: [
             {
               type: 'SHIPMENT_CREATED',
@@ -119,25 +122,27 @@ export function createShipmentBehavior() {
       },
 
       ASSIGN_ROUTE: ({ context, message }) => {
+        const nextContext = {
+          ...context,
+          shipmentId: message.plan.shipmentId,
+          status: 'route-assigned' as const,
+          carrier: message.plan.carrier,
+          eta: message.plan.eta,
+          routeNotes: message.plan.routeNotes,
+          timeline: appendTimeline(
+            context,
+            'Route assigned',
+            `${message.plan.carrier} arriving ${message.plan.eta}`,
+            {
+              source: 'Worker Routing Runtime',
+              channel: 'Actor-Web transport',
+              note: message.plan.routeNotes,
+            }
+          ),
+        };
+
         return {
-          context: {
-            ...context,
-            shipmentId: message.plan.shipmentId,
-            status: 'route-assigned' as const,
-            carrier: message.plan.carrier,
-            eta: message.plan.eta,
-            routeNotes: message.plan.routeNotes,
-            timeline: appendTimeline(
-              context,
-              'Route assigned',
-              `${message.plan.carrier} arriving ${message.plan.eta}`,
-              {
-                source: 'Worker Routing Runtime',
-                channel: 'Actor-Web transport',
-                note: message.plan.routeNotes,
-              }
-            ),
-          },
+          context: nextContext,
           emit: [
             {
               type: 'ROUTE_ASSIGNED',
@@ -207,26 +212,27 @@ export function createShipmentBehavior() {
         const loadId = message.loadId ?? providerLoadIdForShipment(shipmentId);
         const note = message.note ?? providerNoteForSignal(message.signal);
         const timeline = providerTimeline(message.signal);
+        const nextContext = {
+          ...baseContext,
+          shipmentId,
+          status: statusForProviderSignal(message.signal, baseContext.status),
+          providerFacility: facility,
+          providerSignal: message.signal,
+          providerLoadId: loadId,
+          providerNote: note,
+          shipmentCount: Math.max(context.shipmentCount, baseContext.shipmentCount),
+          timeline: appendTimeline(baseContext, timeline.label, timeline.detail, {
+            source: 'Remote Provider HQ',
+            channel: 'Provider signal -> server runtime -> gateway WS',
+            note,
+            facility,
+            signal: message.signal,
+            loadId,
+          }),
+        };
 
         return {
-          context: {
-            ...baseContext,
-            shipmentId,
-            status: statusForProviderSignal(message.signal, baseContext.status),
-            providerFacility: facility,
-            providerSignal: message.signal,
-            providerLoadId: loadId,
-            providerNote: note,
-            shipmentCount: Math.max(context.shipmentCount, baseContext.shipmentCount),
-            timeline: appendTimeline(baseContext, timeline.label, timeline.detail, {
-              source: 'Remote Provider HQ',
-              channel: 'Provider signal -> server runtime -> gateway WS',
-              note,
-              facility,
-              signal: message.signal,
-              loadId,
-            }),
-          },
+          context: nextContext,
           emit: eventForProviderSignal(message.signal, shipmentId).map((event) =>
             event.type === 'PROVIDER_SIGNAL_RECORDED' ? { ...event, facility, loadId } : event
           ),
@@ -242,5 +248,6 @@ export function createShipmentBehavior() {
           emit: [{ type: 'SHIPMENT_RESET', shipmentId: context.shipmentId }],
         };
       },
-    });
+    })
+    .build();
 }

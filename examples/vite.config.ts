@@ -102,6 +102,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: path.resolve(currentDir, 'index.html'),
+        fasAgentLoop: path.resolve(currentDir, 'fas-agent-loop/index.html'),
         igniteHeadlessHost: path.resolve(currentDir, 'ignite-headless-host/index.html'),
         igniteHeadlessProvider: path.resolve(currentDir, 'ignite-headless-host/provider.html'),
         'ignite-headless-host/ignite-headless-host.sw': path.resolve(

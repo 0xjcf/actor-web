@@ -3,15 +3,14 @@ import {
   createInitialShipmentContext,
   type RoutePlan,
   type ShipmentCommand,
+  type ShipmentEvent,
 } from './logistics-contract';
 import { appendTimeline } from './logistics-provider';
 
 export function createRoutingBehavior() {
-  return defineActor<ShipmentCommand>()
+  return defineActor<ShipmentCommand, ShipmentEvent>()
     .withContext(createInitialShipmentContext())
-    .onMessage(({ actor, message }) => {
-      const context = actor.getSnapshot().context;
-
+    .onMessage(({ context, message }) => {
       if (message.type === 'RESET_SHIPMENT') {
         return {
           context: {
@@ -58,5 +57,6 @@ export function createRoutingBehavior() {
           },
         ],
       };
-    });
+    })
+    .build();
 }

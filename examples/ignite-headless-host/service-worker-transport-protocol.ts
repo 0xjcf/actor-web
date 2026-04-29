@@ -1,5 +1,3 @@
-import type { ActorMessage } from '@actor-core/runtime/browser';
-
 export interface ServiceWorkerTransportBindMessage {
   __actorWebServiceWorkerTransport: true;
   kind: 'bind';
@@ -12,28 +10,6 @@ export interface ServiceWorkerTransportBindAckMessage {
   source: string;
 }
 
-export interface ServiceWorkerTransportConnectMessage {
-  __actorWebServiceWorkerTransport: true;
-  kind: 'connect';
-  source: string;
-  destination: string;
-}
-
-export interface ServiceWorkerTransportDisconnectMessage {
-  __actorWebServiceWorkerTransport: true;
-  kind: 'disconnect';
-  source: string;
-  destination: string;
-}
-
-export interface ServiceWorkerTransportFrameMessage {
-  __actorWebServiceWorkerTransport: true;
-  kind: 'frame';
-  source: string;
-  destination: string;
-  message: ActorMessage;
-}
-
 export interface ServiceWorkerRuntimeShutdownMessage {
   __actorWebServiceWorkerTransport: true;
   kind: 'shutdown';
@@ -43,9 +19,6 @@ export interface ServiceWorkerRuntimeShutdownMessage {
 export type ServiceWorkerTransportEnvelope =
   | ServiceWorkerTransportBindMessage
   | ServiceWorkerTransportBindAckMessage
-  | ServiceWorkerTransportConnectMessage
-  | ServiceWorkerTransportDisconnectMessage
-  | ServiceWorkerTransportFrameMessage
   | ServiceWorkerRuntimeShutdownMessage;
 
 export function isServiceWorkerTransportEnvelope(

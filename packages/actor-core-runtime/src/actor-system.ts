@@ -66,7 +66,11 @@ export interface MessageMap {
 export type CorrelationId = string;
 
 /**
- * Actor dependencies injected into behavior handlers
+ * Internal actor dependencies injected by the runtime.
+ *
+ * Public `defineActor(...)` and `ActorBehavior` handlers should use `message`,
+ * `context`, `tools`, and advanced `actor` access instead of depending on this
+ * plumbing directly.
  * Enhanced for pure actor model with machine + dependencies pattern
  */
 export interface ActorDependencies {
@@ -176,7 +180,7 @@ export interface SupervisionStrategy {
  *
  * This is the single interface for defining actor behaviors following pure actor principles:
  * - No shared context state (state lives in XState machine only)
- * - Message-only communication via machine and dependencies
+ * - Message-only communication through handler results and runtime internals
  * - Returns MessagePlan for declarative communication intentions
  *
  * @template TMessage - The message type this actor handles
@@ -203,13 +207,12 @@ export interface ActorBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>
    *
    * @param params.message - The incoming message to process
    * @param params.actor - Actor instance for state access and transitions
-   * @param params.dependencies - Injected dependencies (actor system, correlation manager, etc.)
+   * @param params.tools - Tool ports assigned to this actor by the topology/node runner
    * @returns MessagePlan describing communication intentions, or void for no action
    */
   readonly onMessage: (params: {
     readonly message: TMessage;
     readonly actor: ActorInstance;
-    readonly dependencies: ActorDependencies;
     readonly tools: ActorToolbox;
   }) => MessagePlan<TEmitted> | Promise<MessagePlan<TEmitted>> | void | Promise<void>;
 
@@ -219,7 +222,6 @@ export interface ActorBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>
    */
   readonly onStart?: (params: {
     readonly actor: ActorInstance;
-    readonly dependencies: ActorDependencies;
     readonly tools: ActorToolbox;
   }) => MessagePlan<TEmitted> | Promise<MessagePlan<TEmitted>> | void | Promise<void>;
 
@@ -229,7 +231,6 @@ export interface ActorBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>
    */
   readonly onStop?: (params: {
     readonly actor: ActorInstance;
-    readonly dependencies: ActorDependencies;
     readonly tools: ActorToolbox;
   }) => Promise<void> | void;
 

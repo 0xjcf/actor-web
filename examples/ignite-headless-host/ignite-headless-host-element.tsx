@@ -3,12 +3,15 @@
 import 'ignite-element/renderers/ignite-jsx';
 
 import { igniteCore } from 'ignite-element/actor-web';
-import type { LogisticsEventLog, LogisticsHostState } from './headless-host';
 import styles from './ignite-headless-host-element.css?raw';
-import { type CreateShipmentInput, createShipmentId, logisticsSources } from './logistics-ui-ports';
+import { logisticsClient } from './logistics-browser-client';
+import { createInitialShipmentContext, type ShipmentContext } from './logistics-contract';
+import { createInitialProviderHqContext } from './logistics-provider-hq';
 import {
+  type LogisticsEventLog,
   type ProjectedLogisticsEventLog,
   type ProjectedTimelineEntry,
+  paginateItems,
   projectEventLogItem,
   projectEventLogViewItem,
   projectTimeline,
@@ -16,22 +19,68 @@ import {
 
 export const IGNITE_HEADLESS_HOST_ELEMENT_NAME = 'aw-ignite-headless-host';
 const IGNITE_ROUTING_SOURCE_ELEMENT_NAME = 'aw-logistics-routing-source';
+const IGNITE_PROVIDER_HQ_SOURCE_ELEMENT_NAME = 'aw-logistics-provider-hq-source';
 
-interface LogisticsElementState extends Omit<LogisticsHostState, 'eventLog' | 'timeline'> {
+interface LogisticsElementState {
   address: string;
+  carrier: string | null;
+  canReset: boolean;
+  canGoToNextEventLogPage: boolean;
+  canGoToNextTimelinePage: boolean;
+  canGoToPreviousEventLogPage: boolean;
+  canGoToPreviousTimelinePage: boolean;
+  destination: string | null;
   eventLog: ProjectedLogisticsEventLog[];
+  eventLogPage: number;
+  eventLogPageCount: number;
+  eventLogTotal: number;
+  eta: string | null;
+  pageSize: number;
+  phase: string;
+  reference: string | null;
+  routeNotes: string | null;
+  shipmentCount: number;
+  shipmentId: string | null;
+  status: ShipmentContext['status'];
   statusBadgeClass: string;
   timeline: ProjectedTimelineEntry[];
+  timelinePage: number;
+  timelinePageCount: number;
+  timelineTotal: number;
   transportBadgeClass: string;
+  transportReason: string | null;
+  transportState: string;
+  visibleEventLog: ProjectedLogisticsEventLog[];
+  visibleTimeline: ProjectedTimelineEntry[];
 }
 
 interface LogisticsElementLocalState {
   eventLog: LogisticsEventLog[];
+  eventLogPage: number;
+  timelinePage: number;
 }
 
 const PAGE_SIZE = 5;
 const localStateByAddress = new Map<string, LogisticsElementLocalState>();
 const eventSubscriptionsByHost = new WeakSet<HTMLElement>();
+
+interface CreateShipmentInput {
+  destination: string;
+  reference?: string | null;
+  shipmentId?: string;
+}
+
+function createShipmentId(): string {
+  return `shipment-${Date.now().toString(36)}`;
+}
+
+function configuredRestUrl(): string | null {
+  const configuredUrl = import.meta.env.VITE_ACTOR_WEB_REST_URL;
+
+  return typeof configuredUrl === 'string' && configuredUrl.trim().length > 0
+    ? configuredUrl
+    : null;
+}
 
 function renderEvent(event: ProjectedLogisticsEventLog) {
   return (
@@ -71,6 +120,8 @@ function localStateFor(address: string): LogisticsElementLocalState {
   if (!state) {
     state = {
       eventLog: [],
+      eventLogPage: 0,
+      timelinePage: 0,
     };
     localStateByAddress.set(address, state);
   }
@@ -97,34 +148,54 @@ function shipmentInputFromFormEvent(event: Event): CreateShipmentInput | null {
 }
 
 const registerIgniteHeadlessHost = igniteCore({
-  source: logisticsSources.shipment,
+  source: logisticsClient.actors.shipment,
   states: ({ address, context, phase, transport }) => {
+    const shipmentContext = context ?? createInitialShipmentContext();
     const local = localStateFor(address.path);
+    const timeline = projectTimeline(shipmentContext.timeline);
+    const eventLog = local.eventLog.map((event) => projectEventLogViewItem(event));
+    const timelinePage = paginateItems(timeline, local.timelinePage, PAGE_SIZE);
+    const eventLogPage = paginateItems(eventLog, local.eventLogPage, PAGE_SIZE);
+    local.timelinePage = timelinePage.page;
+    local.eventLogPage = eventLogPage.page;
+
     return {
       phase,
-      shipmentId: context.shipmentId,
-      destination: context.destination,
-      reference: context.reference,
-      status: context.status,
-      carrier: context.carrier,
-      eta: context.eta,
-      routeNotes: context.routeNotes,
-      providerFacility: context.providerFacility,
-      providerSignal: context.providerSignal,
-      providerLoadId: context.providerLoadId,
-      providerNote: context.providerNote,
-      shipmentCount: context.shipmentCount,
-      timeline: projectTimeline(context.timeline),
-      eventLog: local.eventLog.map((event) => projectEventLogViewItem(event)),
+      shipmentId: shipmentContext.shipmentId,
+      destination: shipmentContext.destination,
+      reference: shipmentContext.reference,
+      status: shipmentContext.status,
+      carrier: shipmentContext.carrier,
+      eta: shipmentContext.eta,
+      routeNotes: shipmentContext.routeNotes,
+      shipmentCount: shipmentContext.shipmentCount,
+      canReset: shipmentContext.shipmentCount > 0 || eventLog.length > 0,
+      timeline,
+      timelinePage: timelinePage.page,
+      timelinePageCount: timelinePage.pageCount,
+      timelineTotal: timelinePage.total,
+      visibleTimeline: timelinePage.items,
+      eventLog,
+      eventLogPage: eventLogPage.page,
+      eventLogPageCount: eventLogPage.pageCount,
+      eventLogTotal: eventLogPage.total,
+      visibleEventLog: eventLogPage.items,
+      pageSize: PAGE_SIZE,
+      canGoToPreviousTimelinePage: timelinePage.canGoToPreviousPage,
+      canGoToNextTimelinePage: timelinePage.canGoToNextPage,
+      canGoToPreviousEventLogPage: eventLogPage.canGoToPreviousPage,
+      canGoToNextEventLogPage: eventLogPage.canGoToNextPage,
       transportState: transport.state,
       transportReason: transport.reason ?? null,
       address: address.path,
-      statusBadgeClass: `badge status-${context.status}`,
+      statusBadgeClass: `badge status-${shipmentContext.status}`,
       transportBadgeClass: `badge transport-${transport.state}`,
     } satisfies LogisticsElementState;
   },
   commands: ({ actor, host }) => {
     const address = actor.address.path;
+    const restUrl = configuredRestUrl();
+    const refreshView = () => actor.send({ type: 'GET_SHIPMENT_COUNT' });
 
     if (!eventSubscriptionsByHost.has(host)) {
       eventSubscriptionsByHost.add(host);
@@ -135,407 +206,562 @@ const registerIgniteHeadlessHost = igniteCore({
     }
 
     return {
-      createShipment(input: CreateShipmentInput): Promise<unknown> {
+      createShipment(input: CreateShipmentInput) {
         const destination = input.destination.trim();
-        if (destination.length === 0) {
-          return Promise.resolve();
+        const shipmentId = input.shipmentId ?? createShipmentId();
+        const reference = input.reference?.trim() || undefined;
+
+        if (restUrl) {
+          return fetch(`${restUrl}/shipments`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              shipmentId,
+              destination,
+              reference,
+            }),
+          }).then((response) => {
+            if (!response.ok) {
+              throw new Error(`Shipment ingress failed with ${response.status}`);
+            }
+          });
         }
 
         return actor.send({
           type: 'CREATE_SHIPMENT',
-          shipmentId: input.shipmentId ?? createShipmentId(),
+          shipmentId,
           destination,
-          reference: input.reference?.trim() || undefined,
+          reference,
         });
       },
 
-      resetShipment(): Promise<unknown> {
+      resetShipment() {
+        const local = localStateFor(address);
+        local.timelinePage = 0;
+        local.eventLogPage = 0;
+        if (restUrl) {
+          return fetch(`${restUrl}/shipments/current/reset`, {
+            method: 'POST',
+          }).then((response) => {
+            if (!response.ok) {
+              throw new Error(`Shipment reset failed with ${response.status}`);
+            }
+          });
+        }
+
         return actor.send({ type: 'RESET_SHIPMENT' });
+      },
+
+      previousTimelinePage() {
+        const local = localStateFor(address);
+        local.timelinePage = Math.max(0, local.timelinePage - 1);
+        return refreshView();
+      },
+
+      nextTimelinePage() {
+        const local = localStateFor(address);
+        local.timelinePage += 1;
+        return refreshView();
+      },
+
+      previousEventLogPage() {
+        const local = localStateFor(address);
+        local.eventLogPage = Math.max(0, local.eventLogPage - 1);
+        return refreshView();
+      },
+
+      nextEventLogPage() {
+        const local = localStateFor(address);
+        local.eventLogPage += 1;
+        return refreshView();
       },
     };
   },
   cleanup: true,
 });
 
-const registerRoutingSource = igniteCore({
-  source: logisticsSources.routing,
-  states: ({ address, context, transport }) => ({
-    routingAddress: address.path,
-    routingTransportState: transport.state,
-    routingTransportReason: transport.reason ?? null,
-    routingShipmentId: context.shipmentId,
-    routingCarrier: context.carrier,
-    routingEta: context.eta,
-    routingRouteNotes: context.routeNotes,
-  }),
+const registerProviderHqSource = igniteCore({
+  source: logisticsClient.actors.providerHq,
+  states: ({ context, transport }) => {
+    const providerContext = context ?? createInitialProviderHqContext();
+    const providerItem = providerContext.status.shipmentId
+      ? providerContext.status.queue.find(
+          (item) => item.shipmentId === providerContext.status.shipmentId
+        )
+      : undefined;
+    return {
+      providerTransportState: transport.state,
+      providerTransportReason: transport.reason ?? null,
+      providerMode: providerContext.status.mode,
+      providerShipmentId: providerContext.status.shipmentId,
+      providerDestination: providerItem?.destination ?? null,
+      providerReference: providerItem?.reference ?? null,
+      providerShipmentStatus: providerContext.status.status,
+      providerFacility: providerContext.status.facility,
+      providerSignal: providerContext.status.signal,
+      providerLoadId: providerContext.status.loadId,
+      providerNote: providerContext.status.note,
+      providerQueueCount: providerContext.status.queue.length,
+    };
+  },
   cleanup: true,
 });
 
-function defineRoutingSourceElement(): void {
-  if (customElements.get(IGNITE_ROUTING_SOURCE_ELEMENT_NAME)) {
-    return;
-  }
-
-  registerRoutingSource(IGNITE_ROUTING_SOURCE_ELEMENT_NAME, (view) => {
-    return (
-      <section class="panel">
-        <style>{styles}</style>
-        <div class="section-head">
-          <h3>Worker Routing Source</h3>
-          <span class={`badge transport-${view.routingTransportState}`}>
-            {view.routingTransportState}
-          </span>
+registerProviderHqSource(IGNITE_PROVIDER_HQ_SOURCE_ELEMENT_NAME, (view) => {
+  return (
+    <section class="panel">
+      <style>{styles}</style>
+      <div class="section-head">
+        <h3>Remote Provider HQ</h3>
+        <span class={`badge transport-${view.providerTransportState}`}>
+          {view.providerTransportState}
+        </span>
+      </div>
+      <div class="grid">
+        <div>
+          <div class="label">Mode</div>
+          <div class="value">{view.providerMode}</div>
         </div>
-        <div class="grid">
-          <div>
-            <div class="label">Actor</div>
-            <div class="value">
-              <code>{view.routingAddress ?? 'not connected'}</code>
+        <div>
+          <div class="label">Queue</div>
+          <div class="value">{view.providerQueueCount}</div>
+        </div>
+        <div>
+          <div class="label">Shipment</div>
+          <div class="value">{view.providerShipmentId ?? 'waiting for shipment'}</div>
+        </div>
+        <div>
+          <div class="label">Status</div>
+          <div class="value">{view.providerShipmentStatus ?? 'none'}</div>
+        </div>
+        <div>
+          <div class="label">Destination</div>
+          <div class="value">{view.providerDestination ?? 'none'}</div>
+        </div>
+        <div>
+          <div class="label">Reference</div>
+          <div class="value">{view.providerReference ?? 'none'}</div>
+        </div>
+        <div>
+          <div class="label">Facility</div>
+          <div class="value">{view.providerFacility ?? 'waiting for scan'}</div>
+        </div>
+        <div>
+          <div class="label">Signal</div>
+          <div class="value">{view.providerSignal ?? 'none'}</div>
+        </div>
+        <div>
+          <div class="label">Truck Load</div>
+          <div class="value">{view.providerLoadId ?? 'unassigned'}</div>
+        </div>
+        <div>
+          <div class="label">Provider Note</div>
+          <div class="value">{view.providerNote ?? 'No provider update yet.'}</div>
+        </div>
+        <div>
+          <div class="label">Transport Reason</div>
+          <div class="value">{view.providerTransportReason ?? 'none'}</div>
+        </div>
+      </div>
+      <a href="./provider.html">Open Provider HQ Console</a>
+    </section>
+  );
+});
+
+const registerRoutingSource = igniteCore({
+  source: logisticsClient.actors.routing,
+  states: ({ address, context, transport }) => {
+    const routingContext = context ?? createInitialShipmentContext();
+    return {
+      routingAddress: address.path,
+      routingTransportState: transport.state,
+      routingTransportReason: transport.reason ?? null,
+      routingShipmentId: routingContext.shipmentId,
+      routingCarrier: routingContext.carrier,
+      routingEta: routingContext.eta,
+      routingRouteNotes: routingContext.routeNotes,
+    };
+  },
+  cleanup: true,
+});
+
+registerRoutingSource(IGNITE_ROUTING_SOURCE_ELEMENT_NAME, (view) => {
+  return (
+    <section class="panel">
+      <style>{styles}</style>
+      <div class="section-head">
+        <h3>Worker Routing Source</h3>
+        <span class={`badge transport-${view.routingTransportState}`}>
+          {view.routingTransportState}
+        </span>
+      </div>
+      <div class="grid">
+        <div>
+          <div class="label">Actor</div>
+          <div class="value">
+            <code>{view.routingAddress ?? 'not connected'}</code>
+          </div>
+        </div>
+        <div>
+          <div class="label">Shipment</div>
+          <div class="value">{view.routingShipmentId ?? 'no route requested'}</div>
+        </div>
+        <div>
+          <div class="label">Carrier</div>
+          <div class="value">{view.routingCarrier ?? 'pending worker plan'}</div>
+        </div>
+        <div>
+          <div class="label">ETA</div>
+          <div class="value">{view.routingEta ?? 'pending'}</div>
+        </div>
+        <div>
+          <div class="label">Route Notes</div>
+          <div class="value">{view.routingRouteNotes ?? 'worker-owned actor source'}</div>
+        </div>
+        <div>
+          <div class="label">Transport Reason</div>
+          <div class="value">{view.routingTransportReason ?? 'none'}</div>
+        </div>
+      </div>
+    </section>
+  );
+});
+
+registerIgniteHeadlessHost(IGNITE_HEADLESS_HOST_ELEMENT_NAME, (view) => {
+  return (
+    <>
+      <style>{styles}</style>
+      <main class="shell">
+        <div class="frame">
+          <header class="header">
+            <div>
+              <p class="eyebrow">Actor-Web Logistics Control Tower</p>
+              <h1>REST ingress, live WebSocket projections, runtime transport</h1>
+              <p class="copy">
+                Create a shipment through the thin Ignite host, watch gateway updates arrive live,
+                and route work to a WebWorker-owned Actor-Web runtime over WebSocket transport.
+              </p>
             </div>
-          </div>
-          <div>
-            <div class="label">Shipment</div>
-            <div class="value">{view.routingShipmentId ?? 'no route requested'}</div>
-          </div>
-          <div>
-            <div class="label">Carrier</div>
-            <div class="value">{view.routingCarrier ?? 'pending worker plan'}</div>
-          </div>
-          <div>
-            <div class="label">ETA</div>
-            <div class="value">{view.routingEta ?? 'pending'}</div>
-          </div>
-          <div>
-            <div class="label">Route Notes</div>
-            <div class="value">{view.routingRouteNotes ?? 'worker-owned actor source'}</div>
-          </div>
-          <div>
-            <div class="label">Transport Reason</div>
-            <div class="value">{view.routingTransportReason ?? 'none'}</div>
-          </div>
-        </div>
-      </section>
-    );
-  });
-}
 
-export function defineIgniteHeadlessHostElement(): void {
-  defineRoutingSourceElement();
-
-  if (customElements.get(IGNITE_HEADLESS_HOST_ELEMENT_NAME)) {
-    return;
-  }
-
-  registerIgniteHeadlessHost(IGNITE_HEADLESS_HOST_ELEMENT_NAME, (view) => {
-    const canReset = view.shipmentCount > 0 || view.eventLog.length > 0;
-    const visibleTimeline = view.timeline.slice(0, PAGE_SIZE);
-    const visibleEvents = view.eventLog.slice(0, PAGE_SIZE);
-
-    return (
-      <>
-        <style>{styles}</style>
-        <main class="shell">
-          <div class="frame">
-            <header class="header">
-              <div>
-                <p class="eyebrow">Actor-Web Logistics Control Tower</p>
-                <h1>REST ingress, live WebSocket projections, runtime transport</h1>
-                <p class="copy">
-                  Create a shipment through the thin Ignite host, watch gateway updates arrive live,
-                  and route work to a WebWorker-owned Actor-Web runtime over WebSocket transport.
-                </p>
+            <section class="summary">
+              <div class="grid">
+                <div>
+                  <div class="label">Shipment Status</div>
+                  <div class="value">
+                    <span class={view.statusBadgeClass}>{view.status}</span>
+                  </div>
+                </div>
+                <div>
+                  <div class="label">Shipments</div>
+                  <div class="value">{view.shipmentCount}</div>
+                </div>
+                <div>
+                  <div class="label">Transport</div>
+                  <div class="value">
+                    <span class={view.transportBadgeClass}>{view.transportState}</span>
+                  </div>
+                </div>
+                <div>
+                  <div class="label">Actor</div>
+                  <div class="value">
+                    <code>{view.address}</code>
+                  </div>
+                </div>
               </div>
+            </section>
+          </header>
 
-              <section class="summary">
+          <section class="layout">
+            <aside class="stack">
+              <section class="panel">
+                <h2>Create Shipment</h2>
+                <form
+                  onSubmit={(event: Event) => {
+                    const input = shipmentInputFromFormEvent(event);
+                    if (input) {
+                      void view.createShipment(input);
+                    }
+                  }}
+                >
+                  <label class="field">
+                    <span class="label">Destination</span>
+                    <div class="toolbar">
+                      <input
+                        id="shipment-destination"
+                        name="destination"
+                        value="Chicago warehouse"
+                        placeholder="Chicago warehouse"
+                      />
+                      <button type="submit" id="create-shipment">
+                        Create
+                      </button>
+                    </div>
+                  </label>
+                  <label class="field">
+                    <span class="label">Reference</span>
+                    <input
+                      id="shipment-reference"
+                      name="reference"
+                      value="REF-1001"
+                      placeholder="REF-1001"
+                    />
+                  </label>
+                </form>
+                <div class="quick-grid">
+                  <button
+                    type="button"
+                    class="secondary"
+                    onClick={() =>
+                      void view.createShipment({
+                        destination: 'Dallas cross-dock',
+                        reference: 'REF-2002',
+                      })
+                    }
+                  >
+                    Dallas
+                  </button>
+                  <button
+                    type="button"
+                    class="secondary"
+                    onClick={() =>
+                      void view.createShipment({
+                        destination: 'International hub',
+                        reference: 'REF-3003',
+                      })
+                    }
+                  >
+                    International
+                  </button>
+                  <button
+                    type="button"
+                    class="danger"
+                    disabled={!view.canReset}
+                    onClick={() => void view.resetShipment()}
+                  >
+                    Reset
+                  </button>
+                </div>
+              </section>
+
+              <section class="panel">
+                <h3>Runtime Topology</h3>
+                <ul class="list">
+                  <li class="item event-item tone-local">
+                    <div class="item-heading">
+                      <span class="runtime-chip">Browser</span>
+                      <strong>Browser Host</strong>
+                    </div>
+                    <span class="muted">Ignite thin projection host; submits REST intent.</span>
+                  </li>
+                  <li class="item event-item tone-server">
+                    <div class="item-heading">
+                      <span class="runtime-chip">Server</span>
+                      <strong>Shipment Directory</strong>
+                    </div>
+                    <span class="muted">
+                      Projects active shipment actors for gateway subscribers.
+                    </span>
+                  </li>
+                  <li class="item event-item tone-lifecycle">
+                    <div class="item-heading">
+                      <span class="runtime-chip">Ops</span>
+                      <strong>Supervisor / Dispatcher / Drivers</strong>
+                    </div>
+                    <span class="muted">
+                      Coordinates shipment child actors, driver assignment, and exceptions.
+                    </span>
+                  </li>
+                  <li class="item event-item tone-provider">
+                    <div class="item-heading">
+                      <span class="runtime-chip">Provider</span>
+                      <strong>Provider HQ + Shipment Actors</strong>
+                    </div>
+                    <span class="muted">
+                      Queues work and routes scans to per-shipment provider FSM actors.
+                    </span>
+                  </li>
+                  <li class="item event-item tone-worker">
+                    <div class="item-heading">
+                      <span class="runtime-chip">Worker</span>
+                      <strong>WebWorker Runtime</strong>
+                    </div>
+                    <span class="muted">Owns routing actor over Actor-Web transport.</span>
+                  </li>
+                  <li class="item event-item tone-local">
+                    <div class="item-heading">
+                      <span class="runtime-chip">Fallback</span>
+                      <strong>Service Worker Runtime</strong>
+                    </div>
+                    <span class="muted">Browser-local MessagePort topology proof.</span>
+                  </li>
+                </ul>
+              </section>
+
+              <aw-logistics-provider-hq-source />
+            </aside>
+
+            <div class="stack">
+              <section class="panel">
+                <h3>Live Shipment Projection</h3>
                 <div class="grid">
                   <div>
-                    <div class="label">Shipment Status</div>
-                    <div class="value">
-                      <span class={view.statusBadgeClass}>{view.status}</span>
-                    </div>
+                    <div class="label">Shipment</div>
+                    <div class="value">{view.shipmentId ?? 'none'}</div>
                   </div>
                   <div>
-                    <div class="label">Shipments</div>
-                    <div class="value">{view.shipmentCount}</div>
+                    <div class="label">Destination</div>
+                    <div class="value">{view.destination ?? 'none'}</div>
                   </div>
                   <div>
-                    <div class="label">Transport</div>
-                    <div class="value">
-                      <span class={view.transportBadgeClass}>{view.transportState}</span>
-                    </div>
+                    <div class="label">Carrier</div>
+                    <div class="value">{view.carrier ?? 'pending'}</div>
                   </div>
                   <div>
-                    <div class="label">Actor</div>
-                    <div class="value">
-                      <code>{view.address}</code>
-                    </div>
+                    <div class="label">ETA</div>
+                    <div class="value">{view.eta ?? 'pending'}</div>
+                  </div>
+                  <div>
+                    <div class="label">Route Notes</div>
+                    <div class="value">{view.routeNotes ?? 'pending route plan'}</div>
+                  </div>
+                  <div>
+                    <div class="label">Transport Reason</div>
+                    <div class="value">{view.transportReason ?? 'none'}</div>
                   </div>
                 </div>
               </section>
-            </header>
 
-            <section class="layout">
-              <aside class="stack">
-                <section class="panel">
-                  <h2>Create Shipment</h2>
-                  <form
-                    onSubmit={(event: Event) => {
-                      const input = shipmentInputFromFormEvent(event);
-                      if (input) {
-                        void view.createShipment(input);
-                      }
-                    }}
+              <aw-logistics-routing-source />
+
+              <section class="panel">
+                <h3>Message Routes</h3>
+                <div class="route-grid">
+                  <div class="route-card tone-server">
+                    <span class="runtime-chip">1 Browser {'->'} Server</span>
+                    <strong>REST command ingress</strong>
+                    <span class="muted">POST /shipments creates shipment intent.</span>
+                  </div>
+                  <div class="route-card tone-worker">
+                    <span class="runtime-chip">2 Server {'->'} Worker</span>
+                    <strong>Route planning ask</strong>
+                    <span class="muted">PLAN_ROUTE over Actor-Web MessageTransport.</span>
+                  </div>
+                  <div class="route-card tone-worker">
+                    <span class="runtime-chip">3 Worker {'->'} Server</span>
+                    <strong>Route plan reply</strong>
+                    <span class="muted">Carrier, ETA, and route notes return to server actor.</span>
+                  </div>
+                  <div class="route-card tone-lifecycle">
+                    <span class="runtime-chip">4 Dispatcher {'->'} Driver</span>
+                    <strong>Driver assignment</strong>
+                    <span class="muted">
+                      Dispatcher records route and driver directory assigns a driver.
+                    </span>
+                  </div>
+                  <div class="route-card tone-lifecycle">
+                    <span class="runtime-chip">5 Shipment actor</span>
+                    <strong>Shipped / delivered / returned</strong>
+                    <span class="muted">
+                      Per-shipment lifecycle actors own status and timeline.
+                    </span>
+                  </div>
+                  <div class="route-card tone-provider">
+                    <span class="runtime-chip">Provider HQ</span>
+                    <strong>Label, truck, and exception scans</strong>
+                    <span class="muted">
+                      Provider HQ routes signals to per-shipment provider FSM actors.
+                    </span>
+                  </div>
+                  <div class="route-card tone-server">
+                    <span class="runtime-chip">6 Server {'->'} Browser</span>
+                    <strong>Gateway WebSocket projection</strong>
+                    <span class="muted">Snapshots, events, status, and replies stream live.</span>
+                  </div>
+                  <div class="route-card tone-local">
+                    <span class="runtime-chip">Fallback</span>
+                    <strong>MessagePort service worker proof</strong>
+                    <span class="muted">Browser-local topology only, not server transport.</span>
+                  </div>
+                </div>
+              </section>
+
+              <section class="panel">
+                <div class="section-head">
+                  <h3>Timeline</h3>
+                  <span class="muted">
+                    Page {view.timelinePage + 1} of {view.timelinePageCount}
+                  </span>
+                </div>
+                <ol class="list">
+                  {view.visibleTimeline.length > 0 ? (
+                    view.visibleTimeline.map((entry) => renderTimelineEntry(entry))
+                  ) : (
+                    <li class="item">
+                      <span class="muted">No shipment activity yet.</span>
+                    </li>
+                  )}
+                </ol>
+                <div class="pager">
+                  <button
+                    type="button"
+                    class="secondary"
+                    disabled={!view.canGoToPreviousTimelinePage}
+                    onClick={() => void view.previousTimelinePage()}
                   >
-                    <label class="field">
-                      <span class="label">Destination</span>
-                      <div class="toolbar">
-                        <input
-                          id="shipment-destination"
-                          name="destination"
-                          value="Chicago warehouse"
-                          placeholder="Chicago warehouse"
-                        />
-                        <button type="submit" id="create-shipment">
-                          Create
-                        </button>
-                      </div>
-                    </label>
-                    <label class="field">
-                      <span class="label">Reference</span>
-                      <input
-                        id="shipment-reference"
-                        name="reference"
-                        value="REF-1001"
-                        placeholder="REF-1001"
-                      />
-                    </label>
-                  </form>
-                  <div class="quick-grid">
-                    <button
-                      type="button"
-                      class="secondary"
-                      onClick={() =>
-                        void view.createShipment({
-                          destination: 'Dallas cross-dock',
-                          reference: 'REF-2002',
-                        })
-                      }
-                    >
-                      Dallas
-                    </button>
-                    <button
-                      type="button"
-                      class="secondary"
-                      onClick={() =>
-                        void view.createShipment({
-                          destination: 'International hub',
-                          reference: 'REF-3003',
-                        })
-                      }
-                    >
-                      International
-                    </button>
-                    <button
-                      type="button"
-                      class="danger"
-                      disabled={!canReset}
-                      onClick={() => void view.resetShipment()}
-                    >
-                      Reset
-                    </button>
-                  </div>
-                </section>
+                    Previous
+                  </button>
+                  <span class="muted">{view.timelineTotal} total timeline entries</span>
+                  <button
+                    type="button"
+                    class="secondary"
+                    disabled={!view.canGoToNextTimelinePage}
+                    onClick={() => void view.nextTimelinePage()}
+                  >
+                    Next
+                  </button>
+                </div>
+              </section>
 
-                <section class="panel">
-                  <h3>Runtime Topology</h3>
-                  <ul class="list">
-                    <li class="item event-item tone-local">
-                      <div class="item-heading">
-                        <span class="runtime-chip">Browser</span>
-                        <strong>Browser Host</strong>
-                      </div>
-                      <span class="muted">Ignite thin projection host; submits REST intent.</span>
+              <section class="panel">
+                <div class="section-head">
+                  <h3>Gateway Event Stream</h3>
+                  <span class="muted">
+                    Page {view.eventLogPage + 1} of {view.eventLogPageCount}
+                  </span>
+                </div>
+                <ol class="list">
+                  {view.visibleEventLog.length > 0 ? (
+                    view.visibleEventLog.map((event) => renderEvent(event))
+                  ) : (
+                    <li class="item">
+                      <span class="muted">No emitted events yet.</span>
                     </li>
-                    <li class="item event-item tone-server">
-                      <div class="item-heading">
-                        <span class="runtime-chip">Server</span>
-                        <strong>Server Runtime</strong>
-                      </div>
-                      <span class="muted">Owns shipment actor, REST ingress, gateway updates.</span>
-                    </li>
-                    <li class="item event-item tone-worker">
-                      <div class="item-heading">
-                        <span class="runtime-chip">Worker</span>
-                        <strong>WebWorker Runtime</strong>
-                      </div>
-                      <span class="muted">Owns routing actor over Actor-Web transport.</span>
-                    </li>
-                    <li class="item event-item tone-local">
-                      <div class="item-heading">
-                        <span class="runtime-chip">Fallback</span>
-                        <strong>Service Worker Runtime</strong>
-                      </div>
-                      <span class="muted">Browser-local MessagePort topology proof.</span>
-                    </li>
-                  </ul>
-                </section>
-
-                <section class="panel">
-                  <h3>Remote Provider HQ</h3>
-                  <div class="grid">
-                    <div>
-                      <div class="label">Facility</div>
-                      <div class="value">{view.providerFacility ?? 'waiting for scan'}</div>
-                    </div>
-                    <div>
-                      <div class="label">Signal</div>
-                      <div class="value">{view.providerSignal ?? 'none'}</div>
-                    </div>
-                    <div>
-                      <div class="label">Truck Load</div>
-                      <div class="value">{view.providerLoadId ?? 'unassigned'}</div>
-                    </div>
-                    <div>
-                      <div class="label">Provider Note</div>
-                      <div class="value">{view.providerNote ?? 'No provider update yet.'}</div>
-                    </div>
-                  </div>
-                  <a href="./provider.html">Open Provider HQ Console</a>
-                </section>
-              </aside>
-
-              <div class="stack">
-                <section class="panel">
-                  <h3>Live Shipment Projection</h3>
-                  <div class="grid">
-                    <div>
-                      <div class="label">Shipment</div>
-                      <div class="value">{view.shipmentId ?? 'none'}</div>
-                    </div>
-                    <div>
-                      <div class="label">Destination</div>
-                      <div class="value">{view.destination ?? 'none'}</div>
-                    </div>
-                    <div>
-                      <div class="label">Carrier</div>
-                      <div class="value">{view.carrier ?? 'pending'}</div>
-                    </div>
-                    <div>
-                      <div class="label">ETA</div>
-                      <div class="value">{view.eta ?? 'pending'}</div>
-                    </div>
-                    <div>
-                      <div class="label">Route Notes</div>
-                      <div class="value">{view.routeNotes ?? 'pending route plan'}</div>
-                    </div>
-                    <div>
-                      <div class="label">Transport Reason</div>
-                      <div class="value">{view.transportReason ?? 'none'}</div>
-                    </div>
-                  </div>
-                </section>
-
-                <aw-logistics-routing-source />
-
-                <section class="panel">
-                  <h3>Message Routes</h3>
-                  <div class="route-grid">
-                    <div class="route-card tone-server">
-                      <span class="runtime-chip">1 Browser {'->'} Server</span>
-                      <strong>REST command ingress</strong>
-                      <span class="muted">POST /shipments creates shipment intent.</span>
-                    </div>
-                    <div class="route-card tone-worker">
-                      <span class="runtime-chip">2 Server {'->'} Worker</span>
-                      <strong>Route planning ask</strong>
-                      <span class="muted">PLAN_ROUTE over Actor-Web MessageTransport.</span>
-                    </div>
-                    <div class="route-card tone-worker">
-                      <span class="runtime-chip">3 Worker {'->'} Server</span>
-                      <strong>Route plan reply</strong>
-                      <span class="muted">
-                        Carrier, ETA, and route notes return to server actor.
-                      </span>
-                    </div>
-                    <div class="route-card tone-lifecycle">
-                      <span class="runtime-chip">4 Server lifecycle</span>
-                      <strong>Shipped / delivered / returned</strong>
-                      <span class="muted">Server-owned timed lifecycle signals.</span>
-                    </div>
-                    <div class="route-card tone-provider">
-                      <span class="runtime-chip">Provider HQ</span>
-                      <strong>Label, truck, and exception scans</strong>
-                      <span class="muted">
-                        External provider signals applied by server runtime.
-                      </span>
-                    </div>
-                    <div class="route-card tone-server">
-                      <span class="runtime-chip">5 Server {'->'} Browser</span>
-                      <strong>Gateway WebSocket projection</strong>
-                      <span class="muted">Snapshots, events, status, and replies stream live.</span>
-                    </div>
-                    <div class="route-card tone-local">
-                      <span class="runtime-chip">Fallback</span>
-                      <strong>MessagePort service worker proof</strong>
-                      <span class="muted">Browser-local topology only, not server transport.</span>
-                    </div>
-                  </div>
-                </section>
-
-                <section class="panel">
-                  <div class="section-head">
-                    <h3>Timeline</h3>
-                    <span class="muted">Latest {PAGE_SIZE}</span>
-                  </div>
-                  <ol class="list">
-                    {visibleTimeline.length > 0 ? (
-                      visibleTimeline.map((entry) => renderTimelineEntry(entry))
-                    ) : (
-                      <li class="item">
-                        <span class="muted">No shipment activity yet.</span>
-                      </li>
-                    )}
-                  </ol>
-                  <div class="pager">
-                    <button type="button" class="secondary" disabled={true}>
-                      Previous
-                    </button>
-                    <span class="muted">{view.timeline.length} total timeline entries</span>
-                    <button type="button" class="secondary" disabled={true}>
-                      Next
-                    </button>
-                  </div>
-                </section>
-
-                <section class="panel">
-                  <div class="section-head">
-                    <h3>Gateway Event Stream</h3>
-                    <span class="muted">Latest {PAGE_SIZE}</span>
-                  </div>
-                  <ol class="list">
-                    {visibleEvents.length > 0 ? (
-                      visibleEvents.map((event) => renderEvent(event))
-                    ) : (
-                      <li class="item">
-                        <span class="muted">No emitted events yet.</span>
-                      </li>
-                    )}
-                  </ol>
-                  <div class="pager">
-                    <button type="button" class="secondary" disabled={true}>
-                      Previous
-                    </button>
-                    <span class="muted">{view.eventLog.length} total gateway events</span>
-                    <button type="button" class="secondary" disabled={true}>
-                      Next
-                    </button>
-                  </div>
-                </section>
-              </div>
-            </section>
-          </div>
-        </main>
-      </>
-    );
-  });
-}
+                  )}
+                </ol>
+                <div class="pager">
+                  <button
+                    type="button"
+                    class="secondary"
+                    disabled={!view.canGoToPreviousEventLogPage}
+                    onClick={() => void view.previousEventLogPage()}
+                  >
+                    Previous
+                  </button>
+                  <span class="muted">{view.eventLogTotal} total gateway events</span>
+                  <button
+                    type="button"
+                    class="secondary"
+                    disabled={!view.canGoToNextEventLogPage}
+                    onClick={() => void view.nextEventLogPage()}
+                  >
+                    Next
+                  </button>
+                </div>
+              </section>
+            </div>
+          </section>
+        </div>
+      </main>
+    </>
+  );
+});

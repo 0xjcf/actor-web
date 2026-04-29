@@ -707,144 +707,150 @@ function createActorBehaviorFromConfig<
     throw new Error('Invalid configuration: context and machine are mutually exclusive');
   }
 
+  const onMessage = async (params: {
+    readonly message: TMessage;
+    readonly actor: ActorInstance;
+    readonly dependencies: ActorDependencies;
+  }) => {
+    try {
+      log.debug('Processing OTP message with enhanced processor', {
+        messageType: (params.message as { type?: string })?.type || 'unknown',
+        hasContext,
+        hasMachine,
+        hasTemplate,
+        actorId: params.dependencies.actorId,
+      });
+
+      // Execute OTP message handler
+      const result = await config.onMessage({
+        message: params.message as TMessage,
+        actor: params.actor,
+        dependencies: params.dependencies,
+      });
+
+      log.debug('🔍 OTP DEBUG: Message handler result', {
+        result,
+        resultType: typeof result,
+        isObject: result && typeof result === 'object',
+        hasContextProperty: result && typeof result === 'object' && 'context' in result,
+        actorId: params.dependencies.actorId,
+      });
+
+      // Handle OTP results (context updates, effects, responses)
+      const isOTPResult =
+        result &&
+        typeof result === 'object' &&
+        ('context' in result ||
+          'reply' in result ||
+          'response' in result ||
+          'emit' in result ||
+          'effects' in result ||
+          'behavior' in result);
+
+      if (isOTPResult) {
+        log.debug('🔍 OTP DEBUG: OTP result detected', {
+          hasContext: 'context' in result,
+          hasResponse: 'response' in result,
+          hasBehavior: 'behavior' in result,
+          hasEffects: 'effects' in result,
+          hasEmit: 'emit' in result,
+          resultKeys: Object.keys(result),
+          actorId: params.dependencies.actorId,
+        });
+
+        // Type assertion after successful type guard check
+        const otpResult = result as import('./otp-types.js').ActorHandlerResult<unknown, unknown>;
+
+        // Process smart defaults (using existing logic)
+        const messageAnalysis = analyzeMessage(params.message as ActorMessage);
+        const smartDefaults = processSmartDefaults(otpResult, messageAnalysis);
+
+        log.debug('OTP result with smart defaults', {
+          hasContext: otpResult.context !== undefined,
+          hasReply: otpResult.reply !== undefined,
+          hasBehavior: otpResult.behavior !== undefined,
+          hasEmit: otpResult.emit !== undefined,
+          responseSource: smartDefaults.responseSource,
+          shouldRespond: smartDefaults.shouldRespond,
+          actorId: params.dependencies.actorId,
+        });
+
+        // Create enhanced result with smart defaults applied
+        const enhancedResult: import('./otp-types.js').ActorHandlerResult<unknown, unknown> = {
+          context: otpResult.context,
+          reply: smartDefaults.shouldRespond ? smartDefaults.finalResponse : otpResult.reply,
+          behavior: otpResult.behavior,
+          // ✅ UNIFIED API DESIGN Phase 2.1: Preserve emit arrays
+          emit: otpResult.emit,
+        };
+
+        // Process OTP patterns (context updates, behavior switching, effects, responses)
+        await otpMessagePlanProcessor.processOTPResult(
+          enhancedResult,
+          params.dependencies.actorId,
+          params.actor,
+          params.dependencies,
+          (params.message as ActorMessage)._correlationId,
+          (params.message as ActorMessage).type // Pass original message type for response compatibility
+        );
+
+        log.debug('🔍 OTP DEBUG: OTP processor called successfully', {
+          actorId: params.dependencies.actorId,
+          messageType: (params.message as ActorMessage).type,
+        });
+
+        // Return undefined - all processing handled by OTP processor
+        return undefined;
+      }
+
+      // Handle MessagePlan returns
+      return result;
+    } catch (error) {
+      log.error('Error in OTP message handler', {
+        error,
+        actorId: params.dependencies.actorId,
+        messageType: (params.message as { type?: string })?.type || 'unknown',
+        correlationId: (params.message as ActorMessage)._correlationId,
+      });
+
+      // For ask patterns (messages with correlationId), send error as response
+      const correlationId = (params.message as ActorMessage)._correlationId;
+      if (correlationId) {
+        // Send error response
+        await otpMessagePlanProcessor.processOTPResult(
+          {
+            context: undefined, // Don't update context on error
+            reply: {
+              error: error instanceof Error ? error.message : 'Unknown error',
+              errorType: 'HANDLER_ERROR',
+            },
+            behavior: undefined,
+          },
+          params.dependencies.actorId,
+          params.actor,
+          params.dependencies,
+          correlationId,
+          'ERROR_RESPONSE' // Use ERROR_RESPONSE type for error responses
+        );
+
+        // Don't re-throw for ask patterns - we've handled it by sending error response
+        return undefined;
+      }
+
+      // Re-throw for non-ask patterns (normal send)
+      throw error;
+    }
+  };
+
   const behavior: ActorBehavior<TMessage, TEmitted> = {
     // Add context if provided
     context: config.context as JsonValue | undefined,
-    // Convert OTP message handler to standard ActorBehavior onMessage
-    onMessage: async (params) => {
-      try {
-        log.debug('Processing OTP message with enhanced processor', {
-          messageType: (params.message as { type?: string })?.type || 'unknown',
-          hasContext,
-          hasMachine,
-          hasTemplate,
-          actorId: params.dependencies.actorId,
-        });
-
-        // Execute OTP message handler
-        const result = await config.onMessage({
-          message: params.message as TMessage,
-          actor: params.actor,
-          dependencies: params.dependencies,
-        });
-
-        log.debug('🔍 OTP DEBUG: Message handler result', {
-          result,
-          resultType: typeof result,
-          isObject: result && typeof result === 'object',
-          hasContextProperty: result && typeof result === 'object' && 'context' in result,
-          actorId: params.dependencies.actorId,
-        });
-
-        // Handle OTP results (context updates, effects, responses)
-        const isOTPResult =
-          result &&
-          typeof result === 'object' &&
-          ('context' in result ||
-            'reply' in result ||
-            'response' in result ||
-            'emit' in result ||
-            'effects' in result ||
-            'behavior' in result);
-
-        if (isOTPResult) {
-          log.debug('🔍 OTP DEBUG: OTP result detected', {
-            hasContext: 'context' in result,
-            hasResponse: 'response' in result,
-            hasBehavior: 'behavior' in result,
-            hasEffects: 'effects' in result,
-            hasEmit: 'emit' in result,
-            resultKeys: Object.keys(result),
-            actorId: params.dependencies.actorId,
-          });
-
-          // Type assertion after successful type guard check
-          const otpResult = result as import('./otp-types.js').ActorHandlerResult<unknown, unknown>;
-
-          // Process smart defaults (using existing logic)
-          const messageAnalysis = analyzeMessage(params.message as ActorMessage);
-          const smartDefaults = processSmartDefaults(otpResult, messageAnalysis);
-
-          log.debug('OTP result with smart defaults', {
-            hasContext: otpResult.context !== undefined,
-            hasReply: otpResult.reply !== undefined,
-            hasBehavior: otpResult.behavior !== undefined,
-            hasEmit: otpResult.emit !== undefined,
-            responseSource: smartDefaults.responseSource,
-            shouldRespond: smartDefaults.shouldRespond,
-            actorId: params.dependencies.actorId,
-          });
-
-          // Create enhanced result with smart defaults applied
-          const enhancedResult: import('./otp-types.js').ActorHandlerResult<unknown, unknown> = {
-            context: otpResult.context,
-            reply: smartDefaults.shouldRespond ? smartDefaults.finalResponse : otpResult.reply,
-            behavior: otpResult.behavior,
-            // ✅ UNIFIED API DESIGN Phase 2.1: Preserve emit arrays
-            emit: otpResult.emit,
-          };
-
-          // Process OTP patterns (context updates, behavior switching, effects, responses)
-          await otpMessagePlanProcessor.processOTPResult(
-            enhancedResult,
-            params.dependencies.actorId,
-            params.actor,
-            params.dependencies,
-            (params.message as ActorMessage)._correlationId,
-            (params.message as ActorMessage).type // Pass original message type for response compatibility
-          );
-
-          log.debug('🔍 OTP DEBUG: OTP processor called successfully', {
-            actorId: params.dependencies.actorId,
-            messageType: (params.message as ActorMessage).type,
-          });
-
-          // Return undefined - all processing handled by OTP processor
-          return undefined;
-        }
-
-        // Handle MessagePlan returns
-        return result;
-      } catch (error) {
-        log.error('Error in OTP message handler', {
-          error,
-          actorId: params.dependencies.actorId,
-          messageType: (params.message as { type?: string })?.type || 'unknown',
-          correlationId: (params.message as ActorMessage)._correlationId,
-        });
-
-        // For ask patterns (messages with correlationId), send error as response
-        const correlationId = (params.message as ActorMessage)._correlationId;
-        if (correlationId) {
-          // Send error response
-          await otpMessagePlanProcessor.processOTPResult(
-            {
-              context: undefined, // Don't update context on error
-              reply: {
-                error: error instanceof Error ? error.message : 'Unknown error',
-                errorType: 'HANDLER_ERROR',
-              },
-              behavior: undefined,
-            },
-            params.dependencies.actorId,
-            params.actor,
-            params.dependencies,
-            correlationId,
-            'ERROR_RESPONSE' // Use ERROR_RESPONSE type for error responses
-          );
-
-          // Don't re-throw for ask patterns - we've handled it by sending error response
-          return undefined;
-        }
-
-        // Re-throw for non-ask patterns (normal send)
-        throw error;
-      }
-    },
-
+    // Convert OTP message handler to standard ActorBehavior onMessage. Runtime
+    // dependency plumbing is intentionally hidden from the public behavior type.
+    onMessage: onMessage as unknown as ActorBehavior<TMessage, TEmitted>['onMessage'],
     // Pass through lifecycle handlers
-    onStart: config.onStart,
-    onStop: config.onStop,
+    onStart: config.onStart as unknown as ActorBehavior<TMessage, TEmitted>['onStart'],
+    onStop: config.onStop as unknown as ActorBehavior<TMessage, TEmitted>['onStop'],
   };
 
   // Template integration (NEW - TASK 2.1.2)

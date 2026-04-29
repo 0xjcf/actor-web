@@ -1,15 +1,15 @@
 /// <reference types="vite/client" />
 
-import type { ActorMessage, MessageTransport } from '@actor-core/runtime/browser';
+import { createMessagePortTransport, type MessagePortTransport } from '@actor-core/runtime/browser';
 import { logistics } from './logistics-topology';
 import {
   isServiceWorkerTransportEnvelope,
   type ServiceWorkerTransportEnvelope,
 } from './service-worker-transport-protocol';
 
-export interface BrowserServiceWorkerTransport extends MessageTransport {
+export interface BrowserServiceWorkerTransport extends MessagePortTransport {
   ready(): Promise<void>;
-  destroy(): Promise<void>;
+  destroy(): void;
 }
 
 function runtimeSupported(): boolean {
@@ -62,20 +62,15 @@ export function serviceWorkerRuntimeAvailable(): boolean {
 }
 
 class ServiceWorkerPageTransport implements BrowserServiceWorkerTransport {
-  private readonly listeners = new Set<
-    (event: { source: string; message: ActorMessage }) => void
-  >();
-  private readonly connections = new Set<string>();
   private readonly workerUrl: URL;
-  private port: MessagePort | null = null;
+  private transport: MessagePortTransport | null = null;
   private registration: ServiceWorkerRegistration | null = null;
   private readyPromise: Promise<void> | null = null;
-  private resolveReady: (() => void) | null = null;
-  private rejectReady: ((error: unknown) => void) | null = null;
   private destroyed = false;
 
   constructor(
     private readonly nodeAddress: string,
+    private readonly peerAddress: string,
     workerUrl: URL
   ) {
     this.workerUrl = workerUrl;
@@ -90,124 +85,39 @@ class ServiceWorkerPageTransport implements BrowserServiceWorkerTransport {
       throw new Error('Service workers are not available in this environment');
     }
 
-    this.readyPromise = new Promise<void>((resolve, reject) => {
-      this.resolveReady = resolve;
-      this.rejectReady = reject;
-    });
-
-    try {
-      this.registration = await navigator.serviceWorker.register(this.workerUrl, {
-        type: 'module',
-        scope: './',
-      });
-      const activeWorker = await waitForActiveWorker(this.registration);
-      const channel = new MessageChannel();
-      this.port = channel.port1;
-      this.port.onmessage = (event: MessageEvent<unknown>) => {
-        this.handleEnvelope(event.data);
-      };
-      this.port.start();
-
-      activeWorker.postMessage(
-        {
-          __actorWebServiceWorkerTransport: true,
-          kind: 'bind',
-          source: this.nodeAddress,
-        },
-        [channel.port2]
-      );
-    } catch (error) {
-      this.rejectReady?.(error);
-      throw error;
-    }
+    this.readyPromise = this.bindServiceWorker();
 
     return this.readyPromise;
   }
 
-  async send(destination: string, message: ActorMessage): Promise<void> {
+  async send(destination: string, message: Parameters<MessagePortTransport['send']>[1]) {
     await this.ready();
-    if (!this.connections.has(destination)) {
-      throw new Error(`Transport ${this.nodeAddress} is not connected to ${destination}`);
-    }
-
-    this.port?.postMessage({
-      __actorWebServiceWorkerTransport: true,
-      kind: 'frame',
-      source: this.nodeAddress,
-      destination,
-      message,
-    } satisfies ServiceWorkerTransportEnvelope);
+    await this.requireTransport().send(destination, message);
   }
 
-  subscribe(listener: (event: { source: string; message: ActorMessage }) => void): () => void {
-    this.listeners.add(listener);
-
-    return () => {
-      this.listeners.delete(listener);
-    };
+  subscribe(listener: Parameters<MessagePortTransport['subscribe']>[0]): () => void {
+    return this.requireTransport().subscribe(listener);
   }
 
-  async connect(address: string): Promise<void> {
+  async connect(address: string = this.peerAddress): Promise<void> {
     await this.ready();
-
-    if (this.connections.has(address)) {
-      return;
-    }
-
-    this.connections.add(address);
-    this.deliver({
-      source: address,
-      message: {
-        type: '__runtime.transport.connected',
-        nodeAddress: address,
-        _timestamp: Date.now(),
-        _version: '1.0.0',
-      } as ActorMessage<{ type: '__runtime.transport.connected'; nodeAddress: string }>,
-    });
-
-    this.port?.postMessage({
-      __actorWebServiceWorkerTransport: true,
-      kind: 'connect',
-      source: this.nodeAddress,
-      destination: address,
-    } satisfies ServiceWorkerTransportEnvelope);
+    await this.requireTransport().connect(address);
   }
 
-  async disconnect(address: string): Promise<void> {
+  async disconnect(address: string = this.peerAddress): Promise<void> {
     await this.ready();
-
-    if (!this.connections.has(address)) {
-      return;
-    }
-
-    this.connections.delete(address);
-    this.deliver({
-      source: address,
-      message: {
-        type: '__runtime.transport.disconnected',
-        nodeAddress: address,
-        _timestamp: Date.now(),
-        _version: '1.0.0',
-      } as ActorMessage<{ type: '__runtime.transport.disconnected'; nodeAddress: string }>,
-    });
-
-    this.port?.postMessage({
-      __actorWebServiceWorkerTransport: true,
-      kind: 'disconnect',
-      source: this.nodeAddress,
-      destination: address,
-    } satisfies ServiceWorkerTransportEnvelope);
+    await this.requireTransport().disconnect(address);
   }
 
   getConnectedNodes(): string[] {
-    return Array.from(this.connections);
+    return this.transport?.getConnectedNodes() ?? [];
   }
 
   isConnected(address: string): boolean {
-    return this.connections.has(address);
+    return this.transport?.isConnected(address) ?? false;
   }
 
-  async destroy(): Promise<void> {
+  destroy(): void {
     if (this.destroyed) {
       return;
     }
@@ -221,62 +131,58 @@ class ServiceWorkerPageTransport implements BrowserServiceWorkerTransport {
       } satisfies ServiceWorkerTransportEnvelope);
     }
 
-    this.port?.close();
-    this.port = null;
-    this.connections.clear();
+    this.transport?.destroy();
+    this.transport = null;
   }
 
-  private handleEnvelope(data: unknown): void {
-    if (!isServiceWorkerTransportEnvelope(data)) {
-      return;
-    }
+  private async bindServiceWorker(): Promise<void> {
+    this.registration = await navigator.serviceWorker.register(this.workerUrl, {
+      type: 'module',
+      scope: './',
+    });
 
-    switch (data.kind) {
-      case 'bind-ack':
-        this.resolveReady?.();
-        this.resolveReady = null;
-        this.rejectReady = null;
-        return;
-      case 'connect':
-        this.connections.add(data.source);
-        this.deliver({
-          source: data.source,
-          message: {
-            type: '__runtime.transport.connected',
-            nodeAddress: data.source,
-            _timestamp: Date.now(),
-            _version: '1.0.0',
-          } as ActorMessage<{ type: '__runtime.transport.connected'; nodeAddress: string }>,
-        });
-        return;
-      case 'disconnect':
-        this.connections.delete(data.source);
-        this.deliver({
-          source: data.source,
-          message: {
-            type: '__runtime.transport.disconnected',
-            nodeAddress: data.source,
-            _timestamp: Date.now(),
-            _version: '1.0.0',
-          } as ActorMessage<{ type: '__runtime.transport.disconnected'; nodeAddress: string }>,
-        });
-        return;
-      case 'frame':
-        this.deliver({
-          source: data.source,
-          message: data.message,
-        });
-        return;
-      case 'bind':
-      case 'shutdown':
-        return;
-    }
+    const activeWorker = await waitForActiveWorker(this.registration);
+    const channel = new MessageChannel();
+    this.transport = createMessagePortTransport({
+      nodeAddress: this.nodeAddress,
+      peerAddress: this.peerAddress,
+      port: channel.port1,
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        channel.port1.removeEventListener('message', handleBindAck);
+        reject(new Error('Timed out waiting for service worker runtime binding'));
+      }, 5000);
+
+      const handleBindAck = (event: MessageEvent<unknown>): void => {
+        if (!isServiceWorkerTransportEnvelope(event.data) || event.data.kind !== 'bind-ack') {
+          return;
+        }
+
+        window.clearTimeout(timeout);
+        channel.port1.removeEventListener('message', handleBindAck);
+        resolve();
+      };
+
+      channel.port1.addEventListener('message', handleBindAck);
+      activeWorker.postMessage(
+        {
+          __actorWebServiceWorkerTransport: true,
+          kind: 'bind',
+          source: this.nodeAddress,
+        } satisfies ServiceWorkerTransportEnvelope,
+        [channel.port2]
+      );
+    });
   }
 
-  private deliver(event: { source: string; message: ActorMessage }): void {
-    for (const listener of Array.from(this.listeners)) {
-      listener(event);
+  private requireTransport(): MessagePortTransport {
+    if (!this.transport) {
+      throw new Error('Service worker runtime transport has not been initialized');
     }
+
+    return this.transport;
   }
 }
 
@@ -286,9 +192,13 @@ export function createBrowserServiceWorkerTransport(): BrowserServiceWorkerTrans
     window.location.href
   );
 
-  return new ServiceWorkerPageTransport(logistics.nodes.browser.address, workerUrl);
+  return new ServiceWorkerPageTransport(
+    logistics.nodes.browser.address,
+    logistics.nodes.serviceWorker.address,
+    workerUrl
+  );
 }
 
 export function serviceWorkerRemoteNode(): string {
-  return logistics.nodes.server.address;
+  return logistics.nodes.serviceWorker.address;
 }

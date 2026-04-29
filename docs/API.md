@@ -1,750 +1,283 @@
-# 🎭 Actor-Web Framework API Reference
-
-> **Framework**: Actor-Web Framework - OTP-style Actors for JavaScript/TypeScript  
-> **Version**: 3.0.0  
-> **Package**: `@actor-core/runtime`  
-> **Status**: Production Ready with Unified Actor API
-
-Runtime gateway APIs are a documented projection/gateway surface. Production
-multi-machine transport still requires the external transport roadmap work.
-
-## 📋 **Table of Contents**
-
-- [Getting Started](#getting-started)
-  - [Unified Actor API](#unified-actor-api-v30)
-  - [Three Actor Types](#three-actor-types-automatically-selected)
-- [Core API](#core-api)
-  - [Actor Creation](#actor-creation)
-  - [Message Handling](#message-handling)
-  - [Event Subscription](#event-subscription)
-- [Pure XState Delay Utilities](#pure-xstate-delay-utilities)
-  - [Architectural Decision](#architectural-decision)
-  - [Delay APIs](#delay-apis)
-  - [OTP-Style Examples](#otp-style-examples)
-- [Advanced Features](#advanced-features)
-  - [Actor-Web Topology And Sources](#actor-web-topology-and-sources)
-  - [Runtime Gateway](#runtime-gateway)
-  - [Runtime Transport Contract](#runtime-transport-contract)
-  - [Virtual Actors](#virtual-actors-actor-corevirtual)
-  - [Event Sourcing](#event-sourcing-actor-corepersistence)
-  - [Security](#security-actor-coresecurity)
-- [Testing](#testing-actor-coretesting)
-
-## 🚀 **Getting Started**
-
-The Actor-Web Framework brings **Erlang OTP-style actor patterns** to JavaScript/TypeScript. Build resilient, fault-tolerant applications using proven patterns from telecom systems, now with a **unified API** for all actor patterns.
-
-### Unified Actor API (v3.0+)
-
-```typescript
-import { createActorSystem, defineActor } from '@actor-core/runtime';
-
-type CounterMessage = 
-  | { type: 'INCREMENT' }
-  | { type: 'DECREMENT' }
-  | { type: 'GET_COUNT'; correlationId?: string };
-
-// Define actor with the unified API - automatically selects optimal implementation
-const counterActor = defineActor<CounterMessage>()
-  .withContext({ count: 0 })
-  .onMessage(({ message, actor }) => {
-    const { count } = actor.getSnapshot().context;
-    
-    switch (message.type) {
-      case 'INCREMENT':
-        return {
-          context: { count: count + 1 },
-          emit: [{ type: 'COUNT_CHANGED', newValue: count + 1 }]
-        };
-        
-      case 'DECREMENT':
-        return {
-          context: { count: count - 1 },
-          emit: [{ type: 'COUNT_CHANGED', newValue: count - 1 }]
-        };
-        
-      case 'GET_COUNT':
-        // Reply for ask pattern
-        return { reply: count };
-    }
-  });
-
-// Create and use the actor system
-const system = await createActorSystem({ nodeAddress: 'localhost:0' });
-await system.start();
-
-const counter = await system.spawn(counterActor, { id: 'counter-1' });
-
-// Send messages
-await counter.send({ type: 'INCREMENT' });
-
-// Ask pattern with automatic correlation
-const count = await counter.ask({ type: 'GET_COUNT' });
-console.log(count); // 1
-
-// Subscribe to events (returns unsubscribe function)
-const unsubscribe = await system.subscribe(counter, {
-  subscriber: loggerActor,
-  events: ['COUNT_CHANGED']
-});
-
-// Later: clean up subscription
-await unsubscribe();
-```
-
-### Three Actor Types (Automatically Selected)
-
-The framework automatically selects the optimal actor implementation based on your usage:
-
-```typescript
-// 1. StatelessActor - For pure message routing (fastest, ~1M msgs/sec)
-const routerActor = defineActor<RouterMessage>()
-  .onMessage(({ message }) => {
-    // No context, just routing logic
-    return { emit: [{ type: 'ROUTED', target: message.destination }] };
-  });
-
-// 2. ContextActor - For state management (fast, ~100K msgs/sec)
-const accountActor = defineActor<AccountMessage>()
-  .withContext({ balance: 0 })
-  .onMessage(({ message, actor }) => {
-    const { balance } = actor.getSnapshot().context;
-    // Update context based on message
-    if (message.type === 'DEPOSIT') {
-      return {
-        context: { balance: balance + message.amount },
-        emit: [{ type: 'BALANCE_CHANGED', newBalance: balance + message.amount }]
-      };
-    }
-  });
-
-// 3. MachineActor - For complex state machines (XState integration, ~30K msgs/sec)
-const workflowActor = defineActor<WorkflowMessage>()
-  .withMachine(workflowMachine)
-  .onMessage(({ message, actor }) => {
-    // Access both XState machine state and context
-    const state = actor.getSnapshot();
-    if (state.matches('pending') && message.type === 'APPROVE') {
-      return {
-        emit: [{ type: 'WORKFLOW_APPROVED', id: message.workflowId }]
-      };
-    }
-  });
-```
-
-// 3. Create and start the actor
-const counter = createActor({
-  machine: counterMachine,
-  behavior: counterBehavior
-});
-
-// Start the actor (required before sending messages)
-counter.start();
-
-// 4. Send messages and use ask pattern
-// Send increment (fire-and-forget)
-counter.send(createMessage('INCREMENT'));
-
-// Ask for current count (request-response)
-const count = await counter.ask(
-  createMessage('GET_COUNT'),
-  { timeout: 1000 }
-);
-
-console.log('Current count:', count); // Logs: Current count: 1
-
-```
-
-### Key Points:
-- **`ask()` returns the `payload` directly**, not a message envelope
-- **Correlation ID is automatic** - framework adds it to the message
-- **Response requires specific format**: `{ type: 'RESPONSE', correlationId, payload, ... }`
-- **Domain events auto fan-out** to both XState machine and event bus
-- **Use `createMessage()` factory** for proper ActorMessage format
-
-## 📡 **OTP-Style Actor Pattern**
-
-The Actor-Web Framework directly mirrors **Erlang OTP patterns**, bringing battle-tested telecom reliability to JavaScript/TypeScript:
-
-### Erlang ↔ Actor-Web Comparison
-
-| Erlang OTP | Actor-Web Framework |
-|------------|-------------------|
-| `Count` argument threading | `context.count` in XState |
-| `receive ... -> counter(NewCount)` | `machine.send()` + state re-entry |
-| `Pid ! {count, NewCount}` | Message plan with `tell` mode |
-| Wildcard clause (`_ -> counter(Count)`) | `return;` (no plan) |
-| `gen_server` behaviors | `defineBehavior()` |
-| Supervisor trees | Built-in supervision strategies |
-
-### Complete OTP-Style Counter Example
-
-```typescript
-// Erlang counter process equivalent
-const counterMachine = createMachine({
-  context: { count: 0 },
-  initial: 'active',
-  states: {
-    active: {
-      on: {
-        INCREMENT: { 
-          actions: assign({ count: ctx => ctx.count + 1 }) 
-        },
-        DECREMENT: { 
-          actions: assign({ count: ctx => ctx.count - 1 }) 
-        },
-        RESET: { 
-          actions: assign({ count: 0 }) 
-        }
-      }
-    }
-  }
-});
-
-const counterBehavior = defineBehavior<CounterMessage>()
-  .withContext({ totalMessages: 0 })
-  .onMessage(({ message, actor }) => {
-    const context = actor.getSnapshot().context;
-    const newContext = { totalMessages: context.totalMessages + 1 };
-    
-    // Equivalent to: receive {get_count, Pid} -> Pid ! {count, Count}
-    if (message.type === 'GET_COUNT' && message.correlationId) {
-      const count = actor.getSnapshot().context.count;
-      
-      // ✅ CORRECT: Emit RESPONSE for ask pattern correlation
-      return {
-        context: newContext,
-        emit: {
-          type: 'RESPONSE',           // Framework expects this type
-          correlationId: message.correlationId,  // Match request ID
-          payload: count,             // This is what ask() returns
-          timestamp: Date.now(),
-          version: '1.0.0'
-        }
-      };
-    }
-    
-    // Equivalent to: receive {increment} -> counter(Count + 1)
-    if (message.type === 'INCREMENT') {
-      // Domain event for state change notification
-      return {
-        context: newContext,
-        emit: {
-          type: 'COUNT_INCREMENTED',
-          previousCount: machine.getSnapshot().context.count,
-          newCount: machine.getSnapshot().context.count + 1
-        }
-      };
-    }
-    
-    // Equivalent to: _ -> counter(Count)  [wildcard clause]
-    return { context: newContext };  // No emission
-  }
-});
-
-// Spawn and use like Erlang processes
-const counter = createActor({ machine: counterMachine, behavior: counterBehavior });
-counter.start();
-
-// Fire-and-forget message (like Erlang: Counter ! increment)
-counter.send(createMessage('INCREMENT'));
-
-// Request-response pattern (like Erlang: Counter ! {get_count, self()})
-const count = await counter.ask(
-  createMessage('GET_COUNT'),
-  { timeout: 5000 }
-);
-console.log('Count is:', count); // Output: Count is: 1
-```
-
-### Why OTP Patterns?
-
-1. **Battle-Tested**: 30+ years of telecom reliability
-2. **Fault Tolerant**: "Let it crash" philosophy with supervision
-3. **Scalable**: Message-passing avoids shared state complexity
-4. **Predictable**: Clear patterns for state management and communication
-5. **Type-Safe**: Full TypeScript support with XState integration
-
-## 🎯 **Core API**
-
-### **Message Plan DSL**
-
-The Message Plan DSL provides a unified, declarative way to handle all actor communication patterns.
-
-#### Message Plan Types
-
-```typescript
-type MessagePlan =
-  | DomainEvent                                    // Fan-out broadcast
-  | SendInstruction                               // Point-to-point command
-  | AskInstruction                                // Request/response
-  | (DomainEvent | SendInstruction | AskInstruction)[];  // Multiple operations
-
-interface DomainEvent {
-  type: string;
-  [key: string]: JsonValue;
-}
-
-interface SendInstruction {
-  to: ActorRef<any>;
-  msg: ActorMessage;
-  mode?: 'fireAndForget' | 'retry(3)' | 'circuitBreaker';
-}
-
-interface AskInstruction<R = unknown> {
-  to: ActorRef<any>;
-  ask: ActorMessage;
-  onOk: DomainEvent | ((response: R) => DomainEvent);
-  onError?: DomainEvent | ((error: Error) => DomainEvent);
-  timeout?: number;
-}
-```
-
-#### Communication Patterns
-
-| Pattern | Description | Example |
-|---------|-------------|---------|
-| **Broadcast** | Fan-out to all interested parties | `return { type: 'USER_LOGGED_IN', userId }` |
-| **Tell** | Fire-and-forget to specific actor | `return { to: logger, msg: { type: 'LOG', text } }` |
-| **Ask** | Request-response with typed reply | `return { to: api, ask: { type: 'FETCH' }, onOk: handleData }` |
-| **Multiple** | Atomic execution of multiple operations | `return [broadcast, tell, ask]` |
-
-### **Component Behaviors**
-
-#### `defineComponentBehavior(config)`
-
-Defines reusable component behavior with the Message Plan DSL.
-
-```typescript
-const behavior = defineComponentBehavior({
-  onMessage: ({ message, actor, dependencies }) => MessagePlan,
-  dependencies: {
-    backend: 'actor://system/backend',
-    validator: 'actor://system/validator'
-  }
-});
-```
-
-**Parameters:**
-
-- `onMessage`: Handler that returns a message plan
-- `dependencies`: Required actor dependencies (resolved at mount)
-
-**Returns:** Component behavior configuration
-
-### **Actor Creation**
-
-#### `createComponent(config)`
-
-Creates a web component backed by an actor with XState machine.
-
-```typescript
-const Component = createComponent({
-  machine: stateMachine,
-  behavior: componentBehavior,
-  template: (state) => string
-});
-```
-
-**Parameters:**
-
-- `machine`: XState state machine for UI logic
-- `behavior`: Component behavior from `defineComponentBehavior`
-- `template`: Template function for rendering
-
-**Returns:** Web component class
-
-## ⏱️ **Pure XState Delay Utilities**
-
-The Actor-Web Framework provides **pure XState-based delay utilities** that eliminate JavaScript timers (`setTimeout`, `setInterval`) while maintaining the actor model's **location transparency** principle.
-
-### **Architectural Decision**
-
-**The Problem**: JavaScript timers violate the pure actor model because:
-
-- `setTimeout`/`setInterval` don't work in all environments (Web Workers, server-side)
-- Timers aren't serializable or location-transparent
-- They create memory leaks if not properly cleaned up
-- Testing becomes non-deterministic
-
-**The Solution**: Two complementary approaches using pure XState patterns:
-
-| Approach | Use Case | API Style |
-|----------|----------|-----------|
-| **Convenience Wrapper** | Drop-in `setTimeout` replacement | `await createActorDelay(ms)` |
-| **Pure Actor Control** | Full lifecycle management | Actor-based with manual control |
-
-### **Delay APIs**
-
-#### `createActorDelay(ms): Promise<void>`
-
-**Promise-based convenience wrapper** - Perfect for simple delays in actor behaviors.
-
-```typescript
-import { createActorDelay } from '@actor-core/runtime/pure-xstate-utilities';
-
-// ✅ PURE ACTOR MODEL: Zero JavaScript timers, location-transparent
-await createActorDelay(1000);  // Wait 1 second using XState 'after' transitions
-```
-
-**Features**:
-
-- **Pure XState**: Uses `after` transitions, no `setTimeout`
-- **Auto-cleanup**: Actor automatically stopped when promise resolves
-- **Location-transparent**: Works everywhere (browser, Workers, Node.js)
-- **Testable**: Deterministic with XState test utilities
-
-#### `createDelayActor(ms)` + `waitForDelayActor(actor)`
-
-**Pure actor approach** - Full control over delay lifecycle with cancellation support.
-
-```typescript
-import { createDelayActor, waitForDelayActor } from '@actor-core/runtime/pure-xstate-utilities';
-
-// Create delay actor (doesn't start automatically)
-const delayActor = createDelayActor(5000);
-delayActor.start();
-
-// Start the delay explicitly
-delayActor.send({ type: 'START' });
-
-// Wait for completion (or cancellation)
-const result = await waitForDelayActor(delayActor);  // 'completed' | 'cancelled'
-
-// Can cancel mid-delay
-delayActor.send({ type: 'CANCEL' });
-delayActor.stop();  // Manual cleanup
-```
-
-**Features**:
-
-- **Full Lifecycle Control**: Manual start, stop, cancel
-- **Inspection**: Can observe actor state during delay
-- **Cancellation**: Interrupt delays gracefully
-- **Composable**: Integrate with other actors and supervision trees
-
-#### `PureXStateTimeoutManager`
-
-**Timeout management service** - Handles multiple concurrent timeouts using pure XState.
-
-```typescript
-import { PureXStateTimeoutManager } from '@actor-core/runtime/pure-xstate-utilities';
-
-const timeoutManager = new PureXStateTimeoutManager();
-
-// Schedule timeout
-const timeoutId = timeoutManager.setTimeout(() => {
-  console.log('Timer fired!');
-}, 2000);
-
-// Cancel if needed
-timeoutManager.clearTimeout(timeoutId);
-
-// Cleanup all timeouts
-timeoutManager.destroy();
-```
-
-### **OTP-Style Examples**
-
-#### **Erlang gen_server with Timeout Pattern**
-
-Classic Erlang OTP pattern - a server that times out waiting for responses:
-
-```erlang
-%% Erlang OTP gen_server with timeout
-handle_call(get_data, From, State) ->
-    spawn_link(fun() ->
-        case fetch_data() of
-            {ok, Data} -> gen_server:reply(From, Data);
-            error -> gen_server:reply(From, {error, timeout})
-        end
-    end),
-    {noreply, State, 5000}.  % 5-second timeout
-
-handle_info(timeout, State) ->
-    {stop, timeout, State}.
-```
-
-**Actor-Web Framework equivalent**:
-
-```typescript
-const serverBehavior = defineBehavior({
-  onMessage: async ({ message, machine, dependencies }) => {
-    if (message.type === 'GET_DATA') {
-      try {
-        // ✅ PURE ACTOR MODEL: XState delay instead of Erlang timeout
-        const timeoutPromise = createActorDelay(5000).then(() => {
-          throw new Error('Server timeout after 5 seconds');
-        });
-        
-        const dataPromise = dependencies.dataSource.ask(
-          createMessage('FETCH_DATA', { requestId: message.correlationId }),
-          { timeout: 4500 }
-        );
-        
-        const data = await Promise.race([dataPromise, timeoutPromise]);
-        
-        // ✅ CURRENT: Return domain event - automatically fans out to machine + emit
-        return {
-          type: 'DATA_FETCHED',
-          requestId: message.correlationId,
-          data: data.payload,
-          timestamp: Date.now()
-        };
-        
-      } catch (error) {
-        // ✅ CURRENT: Error domain event
-        return {
-          type: 'DATA_FETCH_FAILED', 
-          requestId: message.correlationId,
-          error: 'timeout',
-          timestamp: Date.now()
-        };
-      }
-    }
-    
-    return; // Unhandled message - no message plan
-  }
-});
-```
-
-#### **OTP Supervisor with Restart Delays**
-
-Erlang supervisors use exponential backoff for restart strategies:
-
-```erlang
-%% Erlang supervisor with restart delay
-init([]) ->
-    ChildSpec = #{
-        id => worker,
-        start => {worker, start_link, []},
-        restart => permanent,
-        shutdown => 5000,
-        restart_delay => 1000  % 1 second backoff
-    },
-    {ok, {{one_for_one, 5, 10}, [ChildSpec]}}.
-```
-
-**Actor-Web Framework equivalent**:
-
-```typescript
-const supervisorBehavior = defineBehavior({
-  onMessage: async ({ message, actor, dependencies }) => {
-    if (message.type === 'CHILD_CRASHED' && message.payload?.childId) {
-      const { childId, crashReason, childSpec } = message.payload;
-      const context = actor.getSnapshot().context;
-      const restartCount = context.restartCounts[childId] || 0;
-      
-      // Exponential backoff: 1s, 2s, 4s, 8s...
-      const backoffDelay = Math.min(1000 * Math.pow(2, restartCount), 30000);
-      
-      // ✅ PURE ACTOR MODEL: XState delay for restart backoff
-      await createActorDelay(backoffDelay);
-      
-      // ✅ CURRENT: Message Plan DSL with multiple operations
-      return [
-        // Domain event: broadcast restart attempt
-        {
-          type: 'CHILD_RESTARTING',
-          childId,
-          delay: backoffDelay,
-          attempt: restartCount + 1,
-          reason: crashReason
-        },
-        
-        // Ask instruction: spawn new actor
-        {
-          to: dependencies.actorSystem,
-          ask: createMessage('SPAWN_ACTOR', { 
-            spec: childSpec,
-            parentId: machine.getSnapshot().context.supervisorId 
-          }),
-          onOk: (response) => ({
-            type: 'CHILD_RESTARTED',
-            childId,
-            newActorId: response.payload?.actorId,
-            previousCrashes: restartCount + 1
-          }),
-          onError: (error) => ({
-            type: 'RESTART_FAILED',
-            childId,
-            error: error.message,
-            finalAttempt: restartCount >= 5
-          }),
-          timeout: 10000
-        }
-      ];
-    }
-    
-    return;
-  }
-});
-```
-
-#### **Periodic Health Check Service**
-
-OTP applications often include periodic health checks:
-
-```erlang
-%% Erlang periodic health check
-init([]) ->
-    erlang:send_after(30000, self(), health_check),  % 30-second intervals
-    {ok, #state{}}.
-
-handle_info(health_check, State) ->
-    check_system_health(),
-    erlang:send_after(30000, self(), health_check),  % Schedule next check
-    {noreply, State}.
-```
-
-**Actor-Web Framework equivalent**:
-
-```typescript
-const healthMonitorBehavior = defineBehavior({
-  onMessage: async ({ message, actor, dependencies }) => {
-    if (message.type === 'START_MONITORING') {
-      // ✅ PURE ACTOR MODEL: XState interval for periodic checks
-      const stopInterval = createActorInterval(async () => {
-        // Send health check message to self to trigger check
-        actor.send(createMessage('PERFORM_HEALTH_CHECK', {
-          scheduledAt: Date.now(),
-          checkId: `health-${Date.now()}`
-        }));
-      }, 30000);
-      
-      // Store stop function in machine context for cleanup
-      machine.send({
-        type: 'SET_INTERVAL_HANDLE',
-        payload: { intervalStop: stopInterval }
-      });
-      
-      // ✅ CURRENT: Return domain event
-      return {
-        type: 'HEALTH_MONITORING_STARTED',
-        interval: 30000,
-        nextCheck: Date.now() + 30000
-      };
-    }
-    
-    if (message.type === 'PERFORM_HEALTH_CHECK') {
-      const { checkId } = message.payload;
-      
-      // ✅ CURRENT: Ask instruction with proper message format
-      return {
-        to: dependencies.healthService,
-        ask: createMessage('CHECK_SYSTEM_HEALTH', {
-          checkId,
-          timestamp: Date.now(),
-          services: ['database', 'cache', 'external-api']
-        }),
-        onOk: (healthReport) => ({
-          type: 'HEALTH_CHECK_COMPLETED',
-          checkId,
-          status: healthReport.payload?.overallStatus,
-          services: healthReport.payload?.serviceStatuses,
-          responseTime: Date.now() - message.payload.scheduledAt
-        }),
-        onError: (error) => ({
-          type: 'HEALTH_CHECK_FAILED',
-          checkId,
-          error: error.message,
-          timestamp: Date.now()
-        }),
-        timeout: 5000
-      };
-    }
-    
-    if (message.type === 'STOP_MONITORING') {
-      const context = machine.getSnapshot().context;
-      const intervalStop = context.intervalStop;
-      
-      if (intervalStop) {
-        intervalStop(); // Stop the XState interval
-      }
-      
-      // ✅ CURRENT: Return domain event
-      return {
-        type: 'HEALTH_MONITORING_STOPPED',
-        stoppedAt: Date.now(),
-        totalChecksPerformed: context.totalChecks || 0
-      };
-    }
-    
-    return;
-  }
-});
-```
-
-#### **Message Factory Usage**
-
-All examples now use the proper message factory function:
-
-```typescript
-import { createMessage } from '@actor-core/runtime';
-
-// ✅ CURRENT: Proper ActorMessage format
-const message = createMessage('FETCH_DATA', { 
-  userId: '123',
-  requestId: 'req-456' 
-});
-// Creates: { type: 'FETCH_DATA', payload: {...}, timestamp: Date.now(), version: '1.0.0' }
-
-// ✅ CURRENT: Domain events are automatically structured
-return {
-  type: 'USER_DATA_LOADED',
-  userId: '123',
-  data: userData,
-  loadTime: Date.now()
-};
-// Runtime automatically handles fan-out to machine.send() AND emit()
-```
-
-### **Key Benefits of Pure XState Delays**
-
-1. **Location Transparency**: Delays work identically in browser, Workers, Node.js
-2. **Testability**: Deterministic timing with XState test schedulers
-3. **Memory Safety**: Automatic cleanup prevents memory leaks
-4. **Supervision**: Delays participate in actor supervision trees
-5. **Cancellation**: Built-in support for interrupting delays
-6. **Debugging**: XState DevTools can inspect delay state machines
-
-### **Migration from JavaScript Timers**
-
-```typescript
-// ❌ BEFORE: JavaScript timers (violates actor model)
-setTimeout(() => {
-  actor.send({ type: 'DELAYED_ACTION' });
-}, 1000);
-
-const interval = setInterval(() => {
-  checkStatus();
-}, 5000);
-
-// ✅ AFTER: Pure XState utilities (location-transparent)
-await createActorDelay(1000);
-actor.send({ type: 'DELAYED_ACTION' });
-
-const stopInterval = createActorInterval(() => {
-  checkStatus();
-}, 5000);
-```
-
-This ensures your actors follow the pure actor model and can run **anywhere** - browser main thread, Web Workers, server-side, or distributed across multiple machines.
-
-## Actor-Web Topology And Sources
-
-Topology declarations are browser-safe and can be shared by frontend, backend,
-worker, and test code. They describe node ownership, actor addresses, gateway
-scope metadata, and supervisor group metadata without opening sockets or
-starting runtimes.
-
-```typescript
+# Actor-Web Runtime API
+
+Actor-Web provides actor runtimes, topology descriptors, browser/client sources,
+gateway projections, and runtime-to-runtime transports. The public API favors
+typed messages, topology-owned actors, and hexagonal boundaries.
+
+Read this guide in layers:
+
+1. Define actor behavior with `defineActor(...)`.
+2. Declare runtime ownership with `defineActorWebTopology(...)`.
+3. Start actor-owning locations with `serveActorWebNode(...)` or
+   `startActorWebNode(...)`.
+4. Connect thin UIs and dashboards with `createActorWebClient(...)` or
+   `createActorWebSource(...)`.
+5. Add application ingress with `serveActorWebHttp(...)`.
+
+Current guarantees:
+
+- Actor behavior handlers return `{ context, reply, emit }`.
+- Runtime-to-runtime transport uses the `MessageTransport` seam.
+- Gateway is a client projection/control channel, not cluster transport.
+- Built-in runtime transport is direct-peer and at-most-once.
+- Auth, durable replay, retry delivery, dynamic discovery, and production
+  backpressure remain follow-up hardening slices.
+
+## Runtime Locations
+
+Actor-Web treats a distributed application as a topology of logical nodes. A
+node can run in a backend process, browser worker, service worker, CLI process,
+or another machine. Actors belong to nodes, and clients consume actor projections
+through gateway sources.
+
+Use these APIs by location:
+
+| Location | Owns actors? | API |
+| --- | --- | --- |
+| Shared contract package | No runtime | `defineActorWebTopology(...)` |
+| Backend/server process | Yes | `serveActorWebNode(...)` |
+| Backend REST/application ingress | Uses served actors | `serveActorWebHttp(runtime)` |
+| Browser UI / Ignite host | No ActorSystem by default | `createActorWebClient(...)` |
+| Browser/WebWorker runtime location | Yes | `startActorWebNode(...)` |
+| Browser-local worker or service-worker edge | Optional | `createMessagePortTransport(...)` passed to `startActorWebNode(...)` |
+| Separate frontend/backend repos | Usually client-only | `createActorWebSource({ address, contractVersion, gateway })` |
+
+There are two different network channels:
+
+- **Gateway URL**: client projection/control channel for UI, Ignite Element,
+  live command clients, and dashboards.
+- **Transport URL**: runtime-to-runtime channel used by Actor-Web nodes that own
+  actors and exchange actor messages.
+
+Use a gateway source when a page or client wants to observe/control an actor. Use
+`startActorWebNode(...)` or `serveActorWebNode(...)` when that process is an
+Actor-Web runtime location that owns actors.
+
+Recommended imports:
+
+```ts
+// Shared topology and actor behavior.
+import { defineActor, defineFSM } from '@actor-core/runtime';
 import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-core/runtime/topology';
+
+// Browser/client projection and browser worker runtime hosting.
+import { createActorWebClient, createActorWebSource, startActorWebNode } from '@actor-core/runtime/browser';
+
+// Node/server runtime hosting and HTTP ingress.
+import { serveActorWebHttp, serveActorWebNode } from '@actor-core/runtime/node';
+```
+
+## Actor Behavior
+
+### `defineActor()`
+
+Use `defineActor` to define actor behavior. The normal handler context exposes
+only the public capabilities needed for application code:
+
+```ts
+const shipmentBehavior = defineActor()
+  .withContext({
+    shipmentId: null,
+    shipmentCount: 0,
+    status: 'idle',
+    destination: '',
+    carrier: 'pending',
+    eta: 'pending',
+    routeNotes: 'pending route plan',
+    timeline: [],
+  })
+  .onMessage(({ message, context }) => {
+    if (message.type === 'GET_SHIPMENT_COUNT') {
+      return { reply: context.shipmentCount };
+    }
+  })
+  .build();
+```
+
+Handler context:
+
+- `message`: incoming actor message.
+- `context`: current actor context when `.withContext(...)` or
+  `.withMachine(...)` provides one.
+- `tools`: actor tool ports assigned by topology and implemented by the node
+  runner.
+- `actor`: advanced state/machine inspection when needed.
+
+Handler result:
+
+```ts
+return {
+  context: {
+    ...context,
+    status: 'route-assigned',
+  },
+  reply: { ok: true },
+  emit: [{ type: 'ROUTE_ASSIGNED', shipmentId }],
+};
+```
+
+- `context`: replaces this actor's state.
+- `reply`: responds to `ask(...)`.
+- `emit`: publishes facts/events to subscribers and gateway streams.
+
+### `withFSM(...)` and `onTransition(...)`
+
+Use `withFSM(...)` for a small synchronous constraint map. Side effects, tools,
+emits, replies, and context updates stay in `onTransition(...)`.
+
+`withFSM(...)` does not provide actor context by itself. If the actor needs
+domain state, pair it with `withContext(...)` as shown below.
+
+```ts
+const shipmentFSM = defineFSM({
+  initial: 'idle',
+  states: {
+    idle: {
+      on: {
+        CREATE_SHIPMENT: 'route-requested',
+      },
+    },
+    'route-requested': {
+      on: {
+        ASSIGN_ROUTE: 'route-assigned',
+      },
+    },
+    'route-assigned': {
+      on: {
+        MARK_DELIVERED: 'delivered',
+      },
+    },
+    delivered: {},
+  },
+});
+
+const behavior = defineActor()
+  .withContext({
+    shipmentId: null,
+    shipmentCount: 0,
+    status: 'idle',
+    destination: '',
+    carrier: 'pending',
+    eta: 'pending',
+    routeNotes: 'pending route plan',
+    timeline: [],
+  })
+  .withFSM(shipmentFSM)
+  .onTransition({
+    CREATE_SHIPMENT: ({ context }) => ({
+      context: {
+        ...context,
+        status: 'route-requested',
+      },
+      emit: [{ type: 'SHIPMENT_CREATED' }],
+    }),
+  })
+  .build();
+```
+
+Invalid transitions are returned as error values for `ask(...)` instead of being
+thrown by default.
+
+The FSM is a constraint map, not an effect engine. Keep I/O, tool calls,
+actor-to-actor messaging, emitted events, replies, and context updates in actor
+handlers.
+
+### `withMachine(...)`
+
+Use `withMachine(...)` when you need XState features. Do not combine
+`withMachine(...)` and `withFSM(...)` on the same actor.
+
+```ts
+import { createMachine } from 'xstate';
+
+const workflowMachine = createMachine({
+  context: {
+    approved: false,
+  },
+  initial: 'pending',
+  states: {
+    pending: {
+      on: {
+        APPROVE: 'approved',
+      },
+    },
+    approved: {},
+  },
+});
+
+const behavior = defineActor()
+  .withMachine(workflowMachine)
+  .onTransition({
+    APPROVE: ({ context }) => ({
+      context: {
+        ...context,
+        approved: true,
+      },
+      emit: [{ type: 'WORKFLOW_APPROVED' }],
+    }),
+  })
+  .build();
+```
+
+## Topology
+
+### `defineActorWebTopology(...)`
+
+Topology is the shared source of truth for nodes, actors, supervision metadata,
+gateway exposure, and tool requirements.
+
+```ts
+import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-core/runtime/topology';
+
+const shipmentBehavior = defineActor()
+  .withContext({
+    shipmentId: null,
+    shipmentCount: 0,
+    status: 'idle',
+  })
+  .onMessage(({ message, context }) => {
+    if (message.type === 'CREATE_SHIPMENT') {
+      return {
+        context: {
+          ...context,
+          shipmentId: String(message.shipmentId),
+          shipmentCount: context.shipmentCount + 1,
+          status: 'route-requested',
+        },
+        emit: [{ type: 'SHIPMENT_CREATED' }],
+      };
+    }
+  })
+  .build();
+
+const routingBehavior = defineActor()
+  .withContext({
+    carrier: 'pending',
+    eta: 'pending',
+    routeNotes: 'pending worker plan',
+  })
+  .onMessage(({ message, context }) => {
+    if (message.type === 'PLAN_ROUTE') {
+      return {
+        context: {
+          ...context,
+          carrier: 'Northline Express',
+          eta: '24h',
+          routeNotes: `Route through ${String(message.destination)}`,
+        },
+        reply: {
+          carrier: 'Northline Express',
+          eta: '24h',
+          routeNotes: `Route through ${String(message.destination)}`,
+        },
+        emit: [{ type: 'ROUTE_ASSIGNED' }],
+      };
+    }
+  })
+  .build();
 
 export const logistics = defineActorWebTopology({
   contractVersion: '1.0.0',
-
-  tools: [tool('routing.plan', { description: 'Plan carrier route and ETA.' })],
 
   nodes: {
     browser: node('logistics-browser-host'),
@@ -752,25 +285,32 @@ export const logistics = defineActorWebTopology({
     worker: node('logistics-worker-runtime'),
   },
 
+  tools: [tool('routing.plan')],
+
   actors: {
     shipment: actor({
       id: 'logistics-shipment',
       node: 'server',
-      behavior: createShipmentBehavior,
-      tools: ['routing.plan'],
+      behavior: shipmentBehavior,
+      gateway: true,
       supervision: {
         strategy: 'restart',
         maxRestarts: 3,
         withinMs: 60_000,
       },
-      gateway: {
-        scope: { kind: 'logistics-shipment' },
-      },
+    }),
+
+    routing: actor({
+      id: 'logistics-routing',
+      node: 'worker',
+      behavior: routingBehavior,
+      tools: ['routing.plan'],
+      gateway: true,
     }),
   },
 
   supervisors: {
-    logistics: supervisor({
+    serverLogistics: supervisor({
       node: 'server',
       strategy: 'one-for-one',
       children: ['shipment'],
@@ -779,547 +319,502 @@ export const logistics = defineActorWebTopology({
 });
 ```
 
-Browser presentation code can create an Ignite-compatible Actor-Web source from
-that topology actor descriptor:
+Actor descriptors include an inferred address:
 
-```typescript
-import { createActorWebSource } from '@actor-core/runtime/browser';
-import { logistics } from './logistics.topology';
+```ts
+logistics.actors.shipment.address.path;
+// actor://logistics-server-runtime/actor/logistics-shipment
+```
 
-const shipmentSource = createActorWebSource(logistics.actors.shipment, {
-  gateway: {
-    url: import.meta.env.VITE_ACTOR_WEB_GATEWAY_URL,
+The `node` field declares ownership, not import location. For example,
+`shipment` can be defined in a shared package, served by a backend process, and
+projected into a browser UI without the browser owning the actor runtime.
+
+### Supervision
+
+Topology supervision has two levels:
+
+- `actor(... { supervision })` declares the intended failure policy for one
+  actor.
+- `supervisor(...)` declares a process group on one node.
+
+```ts
+supervisors: {
+  serverLogistics: supervisor({
+    node: 'server',
+    strategy: 'one-for-one',
+    children: ['shipment', 'routing'],
+  }),
+}
+```
+
+The topology builder validates supervisor node keys and child actor keys. Current
+runtime enforcement is intentionally basic: actor failures are restarted through
+the runtime's restart guardrails, while topology-specific group strategies such
+as `one-for-all` and `rest-for-one` remain declared metadata until the
+supervision enforcement slice is completed.
+
+### Tools For Agents
+
+Tools are topology ports. Declare them once, assign them to actors, and implement
+them in the node runner that hosts those actors.
+
+Tool access has three layers:
+
+- Root `tools`: the topology-wide catalog and contract.
+- Actor `tools`: the least-privilege allowlist for one actor.
+- Runner `tools`: concrete implementations supplied by the hosting process.
+
+Root tools do not automatically become available to every actor. Actor behavior
+only receives tools explicitly assigned to that actor.
+
+```ts
+const scanShipmentBehavior = defineActor()
+  .withContext({ status: 'idle', latestScan: null })
+  .onMessage(async ({ message, context, tools }) => {
+    if (message.type === 'SCAN_LABEL') {
+      const scan = await tools.execute('provider.scan.verify', message);
+
+      return {
+        context: {
+          ...context,
+          latestScan: scan,
+        },
+        emit: [{ type: 'PROVIDER_SIGNAL_RECORDED' }],
+      };
+    }
+  })
+  .build();
+
+const logistics = defineActorWebTopology({
+  tools: [tool('provider.scan.verify'), tool('route.plan')],
+  nodes: {
+    server: node('logistics-server-runtime'),
+  },
+  actors: {
+    shipment: actor({
+      id: 'logistics-shipment',
+      node: 'server',
+      behavior: scanShipmentBehavior,
+      tools: ['provider.scan.verify', 'route.plan'],
+    }),
+  },
+});
+
+const server = await serveActorWebNode(logistics, {
+  node: 'server',
+  tools: {
+    'provider.scan.verify': async (input) => ({
+      accepted: true,
+      label: String(input.label),
+    }),
+    'route.plan': async (input) => ({
+      carrier: 'Northline Express',
+      eta: '24h',
+      routeNotes: `Route through ${String(input.destination)}`,
+    }),
   },
 });
 ```
 
-For separate repositories or generated clients, use the address-based form:
+Actor behavior uses assigned tools from the handler context. The node runner
+implements those tool ports at the process boundary.
 
-```typescript
-const shipmentSource = createActorWebSource({
-  address: 'actor://logistics-server-runtime/actor/logistics-shipment',
-  contractVersion: '1.0.0',
-  gateway: {
-    url: import.meta.env.VITE_ACTOR_WEB_GATEWAY_URL,
-    scope: { kind: 'logistics-shipment' },
-  },
+This is the recommended agent pattern: the actor owns state, routing, emitted
+facts, and transition constraints; tools are explicit ports for outside
+capabilities such as model calls, scanners, payment providers, search, or
+workflow engines.
+
+## Common Deployment Shapes
+
+### Server-owned actor, thin browser UI
+
+Use this when the server owns the actor lifecycle and the browser only needs
+live state and commands.
+
+```ts
+// server.ts
+const server = await serveActorWebNode(logistics, {
+  node: 'server',
+  gateway: true,
 });
+
+// browser.ts
+const client = createActorWebClient(logistics, {
+  gateway: { url: 'ws://logistics.example.com/gateway' },
+});
+
+const shipmentSource = client.actors.shipment;
 ```
 
-The topology entry point is pure metadata. The browser source helper owns only
-the gateway WebSocket projection/control channel. Node-only transport helpers
-remain exported from `@actor-core/runtime`, and browser-safe transport helpers
-remain exported from `@actor-core/runtime/browser`.
+### Server runtime plus worker runtime
 
-### `serveActorWebNode(topology, options)`
+Use this when different runtime locations own different actors and communicate
+through Actor-Web transport.
 
-Node entrypoints can host one topology node with `@actor-core/runtime/node`.
-The runner starts an actor system for the selected node, spawns topology actors
-owned by that node, optionally opens a Node WebSocket transport listener, and
-optionally exposes selected actors through the runtime gateway WebSocket.
-
-```typescript
-import { serveActorWebNode } from '@actor-core/runtime/node';
-import { logistics } from './logistics.topology';
-
-const node = await serveActorWebNode(logistics, {
+```ts
+// server.ts
+const server = await serveActorWebNode(logistics, {
   node: 'server',
   gateway: true,
   transport: true,
-  tools: {
-    'routing.plan': async (input, context) => {
-      return {
-        ...input,
-        plannedBy: context.actorId,
-      };
-    },
-  },
 });
 
-const shipment = node.getActor('shipment');
-await shipment?.send({
+// worker.ts
+const worker = await startActorWebNode(logistics, {
+  node: 'worker',
+  peers: {
+    server: 'ws://logistics.example.com/runtime-transport',
+  },
+});
+```
+
+`ws://logistics.example.com/runtime-transport` is the server node's transport
+URL, not the gateway URL. Browser UI sources still use the gateway URL.
+
+### Browser-local service worker topology proof
+
+Use `createMessagePortTransport(...)` when the host page and worker already
+share a `MessagePort`. This is useful for browser-local demos, embedded worker
+edges, or service worker proofs.
+
+```ts
+const channel = new MessageChannel();
+
+const transport = createMessagePortTransport({
+  nodeAddress: 'browser-host',
+  peerAddress: 'service-worker-runtime',
+  port: channel.port1,
+});
+
+await startActorWebNode(logistics, {
+  node: 'serviceWorker',
+  transport,
+});
+```
+
+## Client Sources
+
+Use `createActorWebClient(...)` as the default UI/client entrypoint when a
+shared topology is available. It binds gateway configuration once and exposes
+each actor as a source.
+
+```ts
+const client = createActorWebClient(logistics, {
+  gateway: { url: 'ws://127.0.0.1:4100' },
+  clientVersion: 'logistics-ui',
+});
+
+const shipmentSource = client.actors.shipment;
+await shipmentSource.send({
   type: 'CREATE_SHIPMENT',
   shipmentId: 'shipment-1001',
   destination: 'Chicago warehouse',
 });
-
-console.log(node.getTransportUrl());
-console.log(node.getGatewayUrl());
 ```
 
-`serveActorWebNode` deliberately does not own REST routes, provider callbacks,
-auth, persistence, or business ingress. Those remain hexagonal adapters around
-the served node and can use `node.getActor(...)`, `node.system`,
-`node.transport`, or the HTTP builder below.
+An Actor-Web source provides:
 
-Actors can declare required tool ports in topology with `tool(...)`. Node and
-browser-worker runners receive concrete implementations through `tools`. Missing
-required tools fail at node startup, before the actor is spawned. Actor behavior
-handlers call implementations through the `tools` handler parameter or
-`dependencies.tools.execute(...)`, which keeps AI/agent capabilities explicit and
-injectable instead of hidden behind global services.
+- `snapshot()`
+- `subscribe(listener)`
+- `subscribeEvent(listener, options?)`
+- `transportStatus()`
+- `subscribeTransportStatus(listener)`
+- `send(message)`
+- `ask(message, timeout?)`
+- `close()`
 
-`gateway: true` exposes owned actors that declare `actor.gateway` metadata.
-`transport: true` opens a localhost WebSocket listener on an ephemeral port.
-Use object options only when deployment details need to override the defaults.
+### `createActorWebSource(...)`
 
-### `serveActorWebHttp(runtime)`
+Use `createActorWebSource` for explicit or generated-client paths. Prefer the
+single-object shape. This creates a gateway-backed source for a client; it does
+not start an Actor-Web runtime node.
 
-Node entrypoints can add an HTTP adapter around a served node with
-`serveActorWebHttp`. The builder keeps HTTP request data separate from
-Actor-Web runtime context: handlers receive `(request, response, actorWeb)`.
+```ts
+const shipmentSource = createActorWebSource({
+  actor: logistics.actors.shipment,
+  gateway: { url: 'ws://127.0.0.1:4100' },
+});
+```
 
-```typescript
-import { serveActorWebHttp, serveActorWebNode } from '@actor-core/runtime/node';
-import { logistics } from './logistics.topology';
+The topology descriptor convenience is equivalent and useful when the topology
+is already in scope:
 
-const runtime = await serveActorWebNode(logistics, {
+```ts
+const shipmentSource = logistics.actors.shipment.source({
+  gateway: { url: 'ws://127.0.0.1:4100' },
+});
+```
+
+Separate repos can use address metadata instead of the shared TypeScript
+topology:
+
+```ts
+const shipmentSource = createActorWebSource({
+  address: 'actor://logistics-server-runtime/actor/logistics-shipment',
+  contractVersion: '1.0.0',
+  gateway: {
+    url: 'ws://127.0.0.1:4100',
+    scope: {
+      params: { tenantId: 'tenant-a' },
+    },
+  },
+});
+```
+
+### `createActorWebClient(topology, options)`
+
+This is the normal browser/UI entrypoint when the UI does not own an
+ActorSystem. Use direct `createActorWebSource(...)` only when you need one
+source without constructing a full topology client, or when a generated client
+only has address metadata.
+
+## Node And Worker Runners
+
+### `serveActorWebNode(topology, options)`
+
+Starts one topology node in a Node/server environment. Use this in the process
+that owns one or more topology actors.
+
+```ts
+const server = await serveActorWebNode(logistics, {
   node: 'server',
   gateway: true,
   transport: true,
+  tools: {
+    'routing.plan': async (input) => ({
+      carrier: 'Northline Express',
+      eta: '24h',
+      routeNotes: `Route through ${String(input.destination)}`,
+    }),
+  },
 });
 
-const http = await serveActorWebHttp(runtime)
-  .for(logistics.actors.shipment)
-  .post('/shipments', async (request, response, { actor }) => {
-    const body = request.body as {
-      shipmentId?: string;
-      destination?: string;
-      reference?: string;
-    };
-    if (!body.destination) {
-      return response.badRequest({ error: 'destination is required' });
-    }
+const shipment = server.requireActor('shipment');
+console.log(server.getGatewayUrl());
+console.log(server.getTransportUrl());
+```
 
-    const shipmentId = body.shipmentId ?? `shipment-${Date.now().toString(36)}`;
-    await actor.send({
+`gateway: true` exposes topology actors that declare `gateway: true`.
+`transport: true` opens the runtime-to-runtime WebSocket listener. Use object
+options only when deployment details need explicit ports, hosts, heartbeat
+settings, or peer resolution.
+
+`serveActorWebNode` deliberately does not own REST routes, provider callbacks,
+auth, persistence, or business ingress. Those are application adapters around
+the served node.
+
+### `serveActorWebHttp(runtime)`
+
+Use the HTTP builder for explicit REST/application ports. HTTP routes are
+application adapters around a served node; they are not actor transport and they
+do not replace actor messages inside the runtime.
+
+```ts
+const http = await serveActorWebHttp(server)
+  .for(logistics.actors.shipment)
+  .post('/shipments', async (request, response, actorWeb) => {
+    const shipmentId = `shipment-${Date.now()}`;
+
+    await actorWeb.actor.send({
       type: 'CREATE_SHIPMENT',
       shipmentId,
-      destination: body.destination,
-      reference: body.reference,
+      destination: String(request.body.destination),
     });
 
     return response.accepted({ shipmentId });
   })
-  .get('/shipments/count', async (_request, response, { actor }) => {
-    const count = await actor.ask<number>({ type: 'GET_SHIPMENT_COUNT' });
-    return response.ok({ count });
-  })
-  .listen({ port: 4100 });
-
-console.log(http.url);
+  .listen({ host: '127.0.0.1', port: 4100 });
 ```
-
-Use unbound routes when an endpoint needs runtime metadata or multiple actors:
-
-```typescript
-serveActorWebHttp(runtime).get('/runtime/status', (_request, response, actorWeb) =>
-  response.ok({
-    gatewayUrl: actorWeb.runtime.getGatewayUrl(),
-    transportUrl: actorWeb.runtime.getTransportUrl(),
-  })
-);
-```
-
-`request` contains HTTP details such as `params`, `query`, `headers`, `body`,
-and the raw Node request. `response` provides JSON helpers such as `ok`,
-`accepted`, `badRequest`, `notFound`, and `noContent`. `actorWeb.actors` is a
-topology-keyed actor map, while `actorWeb.actor` is available only inside
-`.for(actorDescriptor)` routes.
 
 ### `startActorWebNode(topology, options)`
 
-Browser worker entrypoints can host one topology node with
-`@actor-core/runtime/browser`. The runner starts an actor system for the
-selected node, spawns topology actors owned by that node, creates a browser
-WebSocket transport, and optionally connects to configured peer nodes.
+Starts one topology node in a browser/WebWorker-compatible environment. Use this
+only when that worker/process owns actors from the topology.
 
-```typescript
-import { startActorWebNode } from '@actor-core/runtime/browser';
-import { logistics } from './logistics.topology';
-
+```ts
 const worker = await startActorWebNode(logistics, {
   node: 'worker',
   peers: {
     server: 'ws://127.0.0.1:4101',
   },
-  tools: {
-    'routing.plan': async (input) => input,
-  },
   transport: {
     heartbeatIntervalMs: 5000,
     heartbeatTimeoutMs: 15000,
   },
-});
-
-const routing = worker.getActor('routing');
-```
-
-`startActorWebNode` is browser-safe and does not open a listener. It only opens
-outbound WebSocket connections, so browser worker runtimes remain explicit
-runtime peers without becoming server nodes.
-
-`peers` uses topology node keys and the runner converts them to node addresses.
-When `connect` is omitted, the runner connects to all configured peers.
-
-## Runtime Gateway
-
-The runtime gateway exposes Actor-Web runtime projections and command routing to thin hosts such as browser pages, Ignite custom elements, server handlers, and worker-owned UI adapters. It is a host gateway API, not the production inter-node cluster transport. Distributed runtime ownership still flows through `MessageTransport`.
-
-### `createRuntimeGatewaySource(actorRef, options?)`
-
-Wraps an `ActorRef` as a gateway source. A source provides:
-
-- `snapshot()` for the current runtime snapshot projection.
-- `subscribeSnapshot(listener)` for projected state changes.
-- `subscribeEvent(listener)` for emitted actor events normalized to FAS event envelopes.
-- `transportStatus()` and `subscribeTransportStatus(listener)` for local or remote projection health.
-- `subscribeTransition(listener)` for FAS workflow transition records when phase/status changes are observable.
-- `send(message)` and `ask(message, timeoutMs?)` for command-capable gateway streams.
-
-```typescript
-import { createRuntimeGatewaySource } from '@actor-core/runtime';
-
-const source = createRuntimeGatewaySource(checkoutActor, {
-  workflowId: 'checkout-workflow',
-  taskId: 'checkout-task',
-  taskTitle: 'Checkout runtime stream',
-});
-
-const current = source.snapshot();
-console.log(current.workflowSnapshot.phase);
-
-const unsubscribe = source.subscribeEvent((projection) => {
-  console.log(projection.envelope.type);
-});
-```
-
-`CreateRuntimeGatewaySourceOptions` lets callers set workflow/task metadata, correlation metadata, event kind, source actor, and a deterministic clock for tests. Local refs report `local` transport status. Remote Actor-Web refs surface runtime-backed projection states such as `connected`, `replaying`, `degraded`, and `disconnected`.
-
-### `createRuntimeGatewayHub(options)`
-
-Creates a connection hub that multiplexes gateway streams over an adapter-owned connection. The hub does not create sockets itself. Hosts provide a `RuntimeGatewayConnectionAdapter` with `receive`, `send`, `onClose`, and `authContext`, then attach it to the hub.
-
-```typescript
-import { createRuntimeGatewayHub, RuntimeGatewayScopeError } from '@actor-core/runtime';
-
-const hub = createRuntimeGatewayHub({
-  heartbeatMs: 15000,
-  async resolveScope(scope, authContext) {
-    if (scope.kind !== 'checkout') {
-      throw new RuntimeGatewayScopeError('invalid_scope', 'Unknown runtime scope.');
-    }
-
-    return checkoutGatewaySource;
+  tools: {
+    'routing.plan': async (input) => ({
+      carrier: 'Northline Express',
+      eta: '24h',
+      routeNotes: `Route through ${String(input.destination)}`,
+    }),
   },
 });
-
-const detach = hub.attach(connection);
 ```
 
-Clients must send `hello` before stream frames. The hub responds with `ready`, then accepts `subscribe`, `unsubscribe`, `resync`, `send`, `ask`, and `ping` frames.
+Browser nodes only open outbound WebSocket connections. They do not listen for
+runtime peers.
 
-### Frame Types
+## Gateway
 
-Client frames:
+Gateway is the thin-host projection/control channel. It is used by browser UIs,
+Ignite Element sources, dashboards, and other clients that need live actor
+snapshots or command routing without becoming runtime peers. HTTP/REST ingress
+is a separate application adapter built with `serveActorWebHttp(...)`.
 
-- `hello`: starts the connection and may include a previous connection id or client version.
-- `subscribe`: opens or replaces a stream for a scope descriptor.
-- `unsubscribe`: closes a stream and releases source listeners.
-- `resync`: requests a fresh snapshot for an existing stream.
-- `send`: routes a fire-and-forget actor message through an existing stream.
-- `ask`: routes a request/response actor message through an existing stream with a client `requestId`.
-- `ping`: returns a `pong` with server time.
+Gateway is not runtime transport. Runtime-to-runtime ownership still flows
+through `MessageTransport`.
 
-Server frames:
+Normal applications do not construct gateway hubs directly. Use:
 
-- `ready`: confirms the connection id, heartbeat interval, and server time.
-- `status`: reports projection transport state for a stream.
-- `snapshot`: sends the current FAS workflow snapshot projection.
-- `event`: sends an emitted actor event as a FAS event envelope.
-- `transition`: sends a FAS workflow transition record.
-- `ack`: confirms a `send` command was accepted by the source actor.
-- `reply`: returns an `ask` response for the matching `requestId`.
-- `error`: reports invalid frames, scope failures, sequence problems, or internal resolver failures.
-- `pong`: heartbeat response.
+- `serveActorWebNode(logistics, { gateway: true })` on the runtime owner.
+- `createActorWebClient(logistics, { gateway: { url } })` in the UI/client.
+- `createActorWebSource({ address, contractVersion, gateway })` for generated
+  or separate-repo clients.
 
-### Scopes, Sequencing, and Resync
+Scope descriptors:
 
-`RuntimeGatewayScopeDescriptor` is `{ kind: string; params?: Record<string, string> }`. The application-owned `RuntimeGatewayScopeResolver` maps that descriptor plus the connection `authContext` to a `RuntimeGatewaySource`, or returns `null` when the scope is not found.
-
-Each stream owns a monotonic sequence counter. Snapshot, event, and transition frames increment the stream sequence. Status frames do not increment it. Resync sends a `replaying` status, emits a fresh snapshot with the next sequence, then sends the source's current transport status.
-
-Command frames are scoped to an existing subscribed stream. `send` returns `ack` after the source accepts the message. `ask` returns `reply` with the matching `requestId`. Command failures reuse `error` and include `streamId`, and `requestId` when the failed command was an `ask`.
-
-### Error Codes
-
-Gateway errors use `RuntimeGatewayErrorCode`:
-
-- `invalid_frame`: malformed frame or stream frame sent before `hello`.
-- `invalid_scope`: malformed or unsupported scope descriptor.
-- `not_found`: requested runtime scope or stream was not found.
-- `forbidden`: resolver rejected access for the connection auth context.
-- `bad_sequence`: invalid replay/resync sequence input.
-- `internal_error`: resolver or hub failure that should not be exposed as a domain event.
-
-`RuntimeGatewayScopeError` lets resolvers return scope-specific `invalid_scope`, `not_found`, or `forbidden` failures with a recoverability flag.
-
-## Runtime Transport Contract
-
-The runtime transport contract defines the handshake and frame envelope expected by production inter-node transports. It prepares the direct WebSocket transport path without adding a socket adapter or changing `MessageTransport`.
-
-Public constants and helpers:
-
-- `RUNTIME_TRANSPORT_PROTOCOL_VERSION`: initial runtime protocol compatibility string.
-- `createRuntimeNodeIdentity(...)`: creates a `RuntimeNodeIdentity` with the current protocol version.
-- `createRuntimeTransportHandshakeHello(...)`, `createRuntimeTransportHandshakeAccept(...)`, and `createRuntimeTransportHandshakeReject(...)`: create handshake frames.
-- `createRuntimeTransportFrame(...)`: wraps an internal runtime `ActorMessage` in a transport envelope.
-- `createRuntimeTransportHeartbeatPing(...)` and `createRuntimeTransportHeartbeatPong(...)`: create app-level heartbeat frames for browser/WebWorker transports.
-- `validateRuntimeNodeIdentity(...)`, `validateRuntimeTransportHandshake(...)`, `validateRuntimeTransportFrame(...)`, and `validateRuntimeTransportHeartbeatFrame(...)`: validate identities, handshakes, frame envelopes, and app-level heartbeat frames before accepting peer traffic.
-
-Core public types:
-
-- `RuntimeNodeIdentity`: stable peer identity using `nodeAddress`, `nodeId`, `incarnation`, `protocolVersion`, and optional capabilities.
-- `RuntimeTransportHandshake`: `hello`, `accept`, and `reject` handshake frame union.
-- `RuntimeTransportFrame`: envelope for internal `__runtime.*` control messages.
-- `RuntimeTransportHeartbeatFrame`: `runtime.transport.ping` and `runtime.transport.pong` control frames used when the platform cannot send low-level WebSocket ping/pong frames.
-- `RuntimeTransportHandshakeRejectCode`: rejection codes for missing identity, self-connections, incompatible protocol, and malformed frames.
-- `RuntimeTransportTelemetryEvent`, `RuntimeTransportStats`, `RuntimeTransportPeerStats`, and `RuntimeTransportTelemetryObserver`: runtime-native transport observability types for connection, handshake, frame, drop, heartbeat, and sequence-gap visibility.
-
-Behavioral constraints:
-
-- `nodeAddress` remains the logical address used in actor paths.
-- `nodeId + incarnation` is the stable peer identity key for future stale-peer and replay behavior.
-- Frame validation rejects malformed envelopes, incompatible protocol versions, missing identities, and frames addressed to the wrong local node.
-- Delivery semantics remain at-most-once until a later idempotency/message-id slice.
-
-The in-memory test transport can opt into this contract for runtime tests.
-
-## Node WebSocket Transport
-
-`NodeWebSocketMessageTransport` is the Node-only first external transport prove-out. It implements `MessageTransport` over localhost or network WebSocket connections using the runtime handshake and frame contract. It is exported from `@actor-core/runtime`, not from `@actor-core/runtime/browser`.
-
-```typescript
-import {
-  createActorSystem,
-  createNodeWebSocketMessageTransport,
-} from '@actor-core/runtime';
-
-const nodeB = createNodeWebSocketMessageTransport({
-  nodeAddress: 'node-b',
-  incarnation: 'node-b-boot',
-  listen: { host: '127.0.0.1', port: 0 },
-});
-await nodeB.start();
-
-const nodeA = createNodeWebSocketMessageTransport({
-  nodeAddress: 'node-a',
-  incarnation: 'node-a-boot',
-  listen: { host: '127.0.0.1', port: 0 },
-  peers: {
-    'node-b': nodeB.getListeningUrl() ?? '',
-  },
-});
-await nodeA.start();
-
-const systemA = await createActorSystem({
-  nodeAddress: 'node-a',
-  transport: nodeA,
-});
-await systemA.start();
-await systemA.join(['node-b']);
-```
-
-Lifecycle and membership:
-
-- `start()` opens the optional listener when `listen` is provided.
-- `connect(nodeAddress)` resolves the peer URL, opens a socket, sends handshake hello, validates accept, stores peer identity, and emits `__runtime.transport.connected` after the peer is registered.
-- `send(destination, message)` wraps the message in a `RuntimeTransportFrame`, validates peer state, and sends JSON over the socket.
-- inbound sockets must handshake before runtime frames are accepted.
-- heartbeats use transport-level WebSocket ping/pong after handshake; heartbeat timeout closes the peer and emits `__runtime.transport.disconnected`.
-- same `nodeAddress` plus same `nodeId` and a new `incarnation` replaces the previous socket; same `nodeAddress` plus a different `nodeId` is rejected as an identity conflict.
-- `getPeerState(nodeAddress)`, `getPeerSnapshot(nodeAddress)`, and `getPeerIdentity(nodeAddress)` expose Node-only transport inspection for lifecycle/debugging.
-- socket close/error removes the peer and emits `__runtime.transport.disconnected`.
-- `stop()` closes peers and the listener.
-
-Options:
-
-- `nodeAddress`: logical runtime node address used in actor paths.
-- `nodeId`, `incarnation`, `capabilities`: optional identity fields for the runtime handshake.
-- `listen`: optional `{ host, port }`; use port `0` for ephemeral local tests.
-- `peers`: static mapping of node address to WebSocket URL.
-- `peerUrlResolver`: optional resolver for static or test-managed peer URLs.
-- `connectTimeoutMs`: handshake/open timeout.
-- `heartbeatIntervalMs`, `heartbeatTimeoutMs`: optional heartbeat cadence and timeout in milliseconds. Set the interval to `0` to disable transport heartbeats.
-- `telemetry`: optional observer callback for runtime-native transport telemetry events.
-
-Observability:
-
-- `getStats()` returns a cloned `RuntimeTransportStats` snapshot for aggregate counters and peer stats.
-- `getPeerStats(nodeAddress)` returns a cloned `RuntimeTransportPeerStats` snapshot for one peer.
-- Telemetry events include transport start/stop, peer connect/disconnect/reject, handshake accept/reject, frame send/receive/drop, heartbeat timeout, and sequence gap.
-- Counters are in-memory diagnostic state only; they are not durable replay, retry, or delivery guarantees.
-
-This transport keeps delivery at-most-once and does not yet provide dynamic discovery, auth/security, durable replay, or production backpressure.
-
-## Browser WebSocket Transport
-
-`BrowserWebSocketMessageTransport` is the browser/WebWorker runtime peer adapter. It is exported from `@actor-core/runtime/browser`, opens outbound WebSocket connections only, and reuses the same runtime handshake and frame contract as the Node transport. It is intended for worker-owned Actor-Web runtimes, not for making a thin browser page the default cluster member.
-
-```typescript
-import {
-  createActorSystem,
-  createBrowserWebSocketMessageTransport,
-} from '@actor-core/runtime/browser';
-
-const workerTransport = createBrowserWebSocketMessageTransport({
-  nodeAddress: 'worker-a',
-  incarnation: 'worker-a-boot',
-  peers: {
-    'node-b': 'ws://127.0.0.1:4174',
-  },
-});
-
-const workerSystem = await createActorSystem({
-  nodeAddress: 'worker-a',
-  transport: workerTransport,
-});
-await workerSystem.start();
-await workerSystem.join(['node-b']);
-```
-
-Lifecycle and behavior:
-
-- `connect(nodeAddress)` resolves a static peer URL, opens an outbound browser WebSocket, sends handshake hello, validates accept, stores peer identity, and emits `__runtime.transport.connected`.
-- `send(destination, message)` wraps runtime control traffic in `RuntimeTransportFrame` and sends JSON over the validated socket.
-- inbound runtime frames validate protocol, destination identity, peer identity, sequence, and message shape before delivery to `subscribe` listeners.
-- heartbeats use app-level `runtime.transport.ping` and `runtime.transport.pong` frames because browser WebSockets cannot send low-level ping/pong frames.
-- socket close/error removes the peer and emits `__runtime.transport.disconnected`.
-- `stop()` closes all outbound peer sockets.
-
-Options:
-
-- `nodeAddress`: logical runtime node address used in actor paths.
-- `nodeId`, `incarnation`, `capabilities`: optional identity fields for the runtime handshake.
-- `peers`: static mapping of node address to WebSocket URL.
-- `peerUrlResolver`: optional resolver for static or test-managed peer URLs.
-- `connectTimeoutMs`: handshake/open timeout.
-- `heartbeatIntervalMs`, `heartbeatTimeoutMs`: optional app-level heartbeat cadence and timeout in milliseconds. Set the interval to `0` to disable heartbeats.
-- `telemetry`: optional observer callback for runtime-native transport telemetry events.
-
-Observability:
-
-- `getStats()` returns a cloned `RuntimeTransportStats` snapshot for aggregate counters and peer stats.
-- `getPeerStats(nodeAddress)` returns a cloned `RuntimeTransportPeerStats` snapshot for one peer.
-- Telemetry events mirror the Node transport where browser sockets expose equivalent lifecycle and frame information.
-
-The browser adapter does not include a listener, dynamic discovery, auth/security, durable replay, or production backpressure. Delivery remains at-most-once.
-
-## 📝 **Examples**
-
-### Form Submission Flow
-
-```typescript
-const submitBehavior = defineComponentBehavior({
-  onMessage: ({ message, actor, dependencies }) => {
-    if (message.type === 'SUBMIT_FORM') {
-      return [
-        // 1. Optimistic UI update
-        { type: 'FORM_SUBMITTING', formId: message.formId },
-        
-        // 2. Validate with retry
-        {
-          to: dependencies.validator,
-          msg: { type: 'VALIDATE_FORM', data: message.data },
-          mode: 'retry(3)'
-        },
-        
-        // 3. Save and handle response
-        {
-          to: dependencies.backend,
-          ask: { type: 'SAVE_FORM', data: message.data },
-          onOk: (response) => ({ 
-            type: 'FORM_SAVED', 
-            formId: response.id,
-            timestamp: Date.now()
-          }),
-          onError: { type: 'SAVE_FAILED', formId: message.formId },
-          timeout: 5000
-        }
-      ];
-    }
-  }
-});
-```
-
-### Chat Message Flow
-
-```typescript
-const chatBehavior = defineComponentBehavior({
-  onMessage: ({ message, dependencies }) => {
-    if (message.type === 'SEND_MESSAGE') {
-      return [
-        // Broadcast to all participants
-        { type: 'MESSAGE_SENT', text: message.text, userId: message.userId },
-        
-        // Persist to storage
-        { 
-          to: dependencies.storage,
-          msg: { type: 'STORE_MESSAGE', message }
-        },
-        
-        // Notify presence service
-        { 
-          to: dependencies.presence,
-          msg: { type: 'USER_ACTIVE', userId: message.userId }
-        }
-      ];
-    }
-  }
-});
-```
-
-### Imperative Escape Hatch
-
-For rare cases where imperative calls are needed:
-
-```typescript
-const behavior = defineComponentBehavior({
-  onMessage: async ({ message, dependencies }) => {
-    // Imperative call for telemetry (not part of transaction)
-    dependencies.telemetry.send({ type: 'EVENT_TRACKED', event: message.type });
-    
-    // Return declarative plan for main operations
-    return { type: 'OPERATION_COMPLETE', id: message.id };
-  }
-});
-```
-
-## 🔒 **Atomicity & Durability**
-
-The Message Plan DSL ensures all operations are atomic:
-
-1. **State + Plan persisted together** - No partial execution
-2. **Automatic retries** - Based on configured policies
-3. **Exactly-once delivery** - Through transactional outbox
-4. **Location transparency** - Actors can move between processes
-
-## 🎭 **Actor References**
-
-#### `ActorRef<T>`
-
-Location-transparent reference to an actor.
-
-```typescript
-interface ActorRef<T> {
-  // Identity
-  readonly id: string;
-  readonly address: ActorAddress;
-  
-  // Messaging (used by runtime, not directly)
-  send(message: T): void;
-  ask<R>(message: T, options?: AskOptions): Promise<R>;
+```ts
+{
+  kind: 'shipment',
+  params: { tenantId: 'tenant-a', shipmentId: 'shipment-1001' }
 }
 ```
 
-Actor references are passed as dependencies and used in message plans, but you don't call methods on them directly in the declarative model.
+For normal topology actors, `kind` defaults to the topology actor key.
+`params` exist for advanced routed projections such as tenant, document,
+inspection, or shipment-specific scopes.
+
+Example: a fleet app can expose one `vehicleInspections` actor while allowing a
+dashboard to subscribe to only one vehicle's projection:
+
+```ts
+const inspections = fleet.actors.vehicleInspections.source({
+  gateway: {
+    url: 'wss://fleet.example.com/gateway',
+    scope: {
+      params: {
+        fleetId: host.getAttribute('fleet-id') ?? 'default',
+        vehicleId: host.getAttribute('vehicle-id') ?? 'all',
+      },
+    },
+  },
+});
+```
+
+Use explicit `kind` only when the gateway intentionally exposes a public scope
+that is different from the topology actor key, such as a read-model projection
+or a compatibility alias for a generated client.
+
+## Runtime Transport
+
+### `MessageTransport`
+
+`MessageTransport` is the distributed runtime seam:
+
+```ts
+interface MessageTransport {
+  send(destination: string, message: ActorMessage): Promise<void>;
+  subscribe(listener: (event: { source: string; message: ActorMessage }) => void): () => void;
+  connect(address: string): Promise<void>;
+  disconnect(address: string): Promise<void>;
+  getConnectedNodes(): string[];
+  isConnected(address: string): boolean;
+}
+```
+
+## Built-In Runtime Transport
+
+Application code should start runtime peers through topology runners instead of
+creating concrete WebSocket adapters directly:
+
+```ts
+const server = await serveActorWebNode(logistics, {
+  node: 'server',
+  transport: true,
+});
+
+const worker = await startActorWebNode(logistics, {
+  node: 'worker',
+  peers: {
+    server: server.getTransportUrl() ?? '',
+  },
+});
+```
+
+The direct WebSocket adapters are internal implementation details of those
+runners. Public app code should treat `MessageTransport` as the seam and use
+runner options for host, port, peers, heartbeat settings, telemetry, and
+explicit custom transport injection when needed.
+
+Do not use a runtime transport URL for `createActorWebClient(...)` or
+`createActorWebSource(...)`; sources connect to the gateway URL. Do not use a
+gateway URL for `startActorWebNode(...)` peers; runtime peers connect to
+transport URLs.
+
+## MessagePort Transport
+
+`createMessagePortTransport(options)` adapts an existing `MessagePort` into the
+`MessageTransport` seam. It is exported from `@actor-core/runtime/browser`.
+
+```ts
+const channel = new MessageChannel();
+worker.postMessage({ type: 'bind-runtime-port' }, [channel.port2]);
+
+const transport = createMessagePortTransport({
+  nodeAddress: 'browser-host',
+  peerAddress: 'service-worker-runtime',
+  port: channel.port1,
+});
+
+await transport.connect();
+```
+
+Use this for browser-local topology proofs and embedded runtime edges such as
+page-to-worker, iframe-to-host, or page-to-service-worker links. The app shell
+owns creating and transferring the port.
+
+## Runtime Transport Contract
+
+The runtime transport contract exports:
+
+- `RuntimeNodeIdentity`
+- `RuntimeTransportFrame`
+- `RuntimeTransportHandshake`
+- `RuntimeTransportHeartbeatFrame`
+- `RUNTIME_TRANSPORT_PROTOCOL_VERSION`
+- validation helpers for identity, handshake, runtime frames, and heartbeat
+  frames
+
+Handshake rejection covers:
+
+- missing node identity
+- same-node connections
+- incompatible protocol versions
+- malformed frame envelopes
+
+## Telemetry And Stats
+
+Runtime-native telemetry is available without adding OpenTelemetry:
+
+- `RuntimeTransportTelemetryEvent`
+- `RuntimeTransportStats`
+- `RuntimeTransportPeerStats`
+- `RuntimeTransportTelemetryObserver`
+
+Telemetry/stats cover connection state, handshake accept/reject, malformed
+frames, reconnect/disconnect count, heartbeat timeout, frame send/receive count,
+validation drops, sequence gaps, and last-seen timestamps.
+
+## Package Boundaries
+
+- `@actor-core/runtime`: universal actor behavior, actor system,
+  `MessageTransport`, runtime contracts, telemetry types, and low-level shared
+  types.
+- `@actor-core/runtime/topology`: browser-safe topology descriptor helpers.
+- `@actor-core/runtime/browser`: browser-safe Actor-Web client/source,
+  MessagePort transport, and browser worker runtime hosting.
+- `@actor-core/runtime/node`: Node/server topology runner and HTTP ingress
+  adapter.
+
+Node-only APIs are not exported from the browser entrypoint.

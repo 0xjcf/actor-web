@@ -1,5 +1,10 @@
-import type { LogisticsEventLog } from './headless-host';
 import type { ShipmentContext, ShipmentEvent } from './logistics-contract';
+
+export interface LogisticsEventLog {
+  type: ShipmentEvent['type'];
+  shipmentId: string | null;
+  actorId: string;
+}
 
 export interface RuntimeDisplay {
   source: string;
@@ -15,6 +20,35 @@ export interface ProjectedLogisticsEventLog extends LogisticsEventLog {
 export type ProjectedTimelineEntry = ShipmentContext['timeline'][number] & {
   runtime: RuntimeDisplay;
 };
+
+export interface PaginatedItems<T> {
+  canGoToNextPage: boolean;
+  canGoToPreviousPage: boolean;
+  items: T[];
+  page: number;
+  pageCount: number;
+  total: number;
+}
+
+export function paginateItems<T>(
+  items: readonly T[],
+  requestedPage: number,
+  pageSize: number
+): PaginatedItems<T> {
+  const total = items.length;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(Math.max(0, requestedPage), pageCount - 1);
+  const start = page * pageSize;
+
+  return {
+    canGoToNextPage: page + 1 < pageCount,
+    canGoToPreviousPage: page > 0,
+    items: items.slice(start, start + pageSize),
+    page,
+    pageCount,
+    total,
+  };
+}
 
 export function eventRuntime(eventType: ShipmentEvent['type']): RuntimeDisplay {
   if (eventType === 'ROUTE_ASSIGNED') {

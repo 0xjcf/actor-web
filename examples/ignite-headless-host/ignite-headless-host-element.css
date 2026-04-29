@@ -314,6 +314,12 @@ a {
   text-decoration: none;
 }
 
+aw-logistics-routing-source:not(:defined) {
+  display: block;
+  min-height: 180px;
+  visibility: hidden;
+}
+
 @media (max-width: 900px) {
   .header,
   .layout,

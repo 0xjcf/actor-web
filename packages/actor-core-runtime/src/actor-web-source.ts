@@ -36,9 +36,13 @@ export interface ActorWebGatewaySocket {
   addEventListener(type: 'message', listener: (event: MessageEvent<string>) => void): void;
 }
 
+export type ActorWebSourceGatewayScopeOptions = Omit<RuntimeGatewayScopeDescriptor, 'kind'> & {
+  readonly kind?: string;
+};
+
 export interface ActorWebSourceGatewayOptions {
   readonly url: string;
-  readonly scope?: RuntimeGatewayScopeDescriptor;
+  readonly scope?: ActorWebSourceGatewayScopeOptions;
 }
 
 export interface ActorWebSourceOptions {
@@ -52,7 +56,15 @@ export interface ActorWebAddressSourceInput {
   readonly address: string | ActorWebActorAddress | ActorAddress;
   readonly contractVersion?: string;
   readonly gateway: ActorWebSourceGatewayOptions;
-  readonly scope?: RuntimeGatewayScopeDescriptor;
+  readonly scope?: ActorWebSourceGatewayScopeOptions;
+}
+
+export interface ActorWebActorSourceInput<TActor extends ActorWebActorDescriptor> {
+  readonly actor: TActor;
+  readonly gateway: ActorWebSourceGatewayOptions;
+  readonly streamId?: string;
+  readonly createSocket?: (url: string) => ActorWebGatewaySocket;
+  readonly clientVersion?: string;
 }
 
 export interface ClosableActorWebSource<
@@ -106,6 +118,30 @@ function placeholderSnapshot<TContext>(address: ActorAddress): IgniteActorSource
   };
 
   return actorSnapshotToIgniteSourceSnapshot(address, snapshot);
+}
+
+function mergeScope(
+  scope: RuntimeGatewayScopeDescriptor,
+  override: ActorWebSourceGatewayScopeOptions | undefined
+): RuntimeGatewayScopeDescriptor {
+  if (!override) {
+    return scope;
+  }
+
+  const params =
+    scope.params || override.params
+      ? {
+          ...(scope.params ?? {}),
+          ...(override.params ?? {}),
+        }
+      : undefined;
+
+  return {
+    ...scope,
+    ...override,
+    kind: override.kind ?? scope.kind,
+    ...(params ? { params } : {}),
+  };
 }
 
 function snapshotProjectionToIgniteSnapshot<TContext>(
@@ -384,6 +420,13 @@ function createGatewayBackedSource<
 }
 
 export function createActorWebSource<TActor extends ActorWebActorDescriptor>(
+  input: ActorWebActorSourceInput<TActor>
+): ClosableActorWebSource<
+  ActorWebActorContext<TActor>,
+  ActorWebActorMessage<TActor>,
+  ActorWebActorEvent<TActor>
+>;
+export function createActorWebSource<TActor extends ActorWebActorDescriptor>(
   actorDescriptor: TActor,
   options: ActorWebSourceOptions
 ): ClosableActorWebSource<
@@ -396,19 +439,42 @@ export function createActorWebSource(
   options?: Omit<ActorWebSourceOptions, 'gateway'>
 ): ClosableActorWebSource<unknown, ActorMessage, ActorMessage>;
 export function createActorWebSource(
-  input: ActorWebActorDescriptor | ActorWebAddressSourceInput,
+  input:
+    | ActorWebActorDescriptor
+    | ActorWebActorSourceInput<ActorWebActorDescriptor>
+    | ActorWebAddressSourceInput,
   options?: ActorWebSourceOptions | Omit<ActorWebSourceOptions, 'gateway'>
 ): ClosableActorWebSource<unknown, ActorMessage, ActorMessage> {
+  const isObjectActorInput = 'gateway' in input && 'actor' in input;
   const isAddressInput = 'gateway' in input && 'address' in input && !('nodeAddress' in input);
-  const address = normalizeAddress(input.address);
-  const gateway = isAddressInput ? input.gateway : (options as ActorWebSourceOptions).gateway;
-  const scope =
-    (isAddressInput ? (input.scope ?? input.gateway.scope) : input.gateway?.scope) ??
-    gateway.scope ??
-    ({ kind: address.path } satisfies RuntimeGatewayScopeDescriptor);
+  const actorDescriptor: ActorWebActorDescriptor | undefined = isObjectActorInput
+    ? input.actor
+    : isAddressInput
+      ? undefined
+      : input;
+  let address: ActorAddress;
+  if (isAddressInput) {
+    address = normalizeAddress(input.address);
+  } else if (actorDescriptor) {
+    address = normalizeAddress(actorDescriptor.address);
+  } else {
+    throw new Error('createActorWebSource requires an actor descriptor or actor address.');
+  }
+  const gateway =
+    isAddressInput || isObjectActorInput
+      ? input.gateway
+      : (options as ActorWebSourceOptions).gateway;
+  const descriptorScope = actorDescriptor?.gateway?.scope;
+  const legacyInputScope = isAddressInput ? input.scope : undefined;
+  const inferredScope = {
+    kind: actorDescriptor ? actorDescriptor.key : address.id,
+  } satisfies RuntimeGatewayScopeDescriptor;
+  const baseScope = mergeScope(inferredScope, descriptorScope);
+  const inputScope = mergeScope(baseScope, legacyInputScope);
+  const scope = mergeScope(inputScope, gateway.scope);
 
   return createGatewayBackedSource(address, scope, {
-    ...(options ?? {}),
+    ...(isObjectActorInput ? input : (options ?? {})),
     gateway,
   } as ActorWebSourceOptions);
 }

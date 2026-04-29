@@ -34,8 +34,20 @@ export interface ActorWebNodeDefinition<TAddress extends string = string> {
   readonly address: TAddress;
 }
 
+export type ActorWebActorIdResolver<TParams = unknown> = {
+  bivarianceHack(params: TParams): string;
+}['bivarianceHack'];
+
+export type ActorWebActorId<TParams = unknown> = string | ActorWebActorIdResolver<TParams>;
+
+export type ActorWebActorInstanceParams<TActor> = TActor extends {
+  readonly id: ActorWebActorIdResolver<infer TParams>;
+}
+  ? TParams
+  : never;
+
 export interface ActorWebActorDefinition<
-  TId extends string = string,
+  TId extends ActorWebActorId = string,
   TNode extends string = string,
   TBehavior = unknown,
 > {
@@ -44,9 +56,26 @@ export interface ActorWebActorDefinition<
   readonly behavior?: TBehavior;
   readonly supervision?: ActorWebSupervisionPolicy;
   readonly tools?: readonly ActorWebToolReference[];
-  readonly gateway?: {
-    readonly scope: RuntimeGatewayScopeDescriptor;
-  };
+  readonly gateway?:
+    | boolean
+    | {
+        readonly scope?: RuntimeGatewayScopeDescriptor;
+      };
+}
+
+export interface ActorWebParameterizedActorDefinition<
+  TParams,
+  TNode extends string = string,
+  TBehavior = unknown,
+> extends Omit<
+    ActorWebActorDefinition<
+      ActorWebActorIdResolver<TParams>,
+      TNode,
+      (params: TParams) => TBehavior
+    >,
+    'behavior'
+  > {
+  readonly behavior?: (params: TParams) => TBehavior;
 }
 
 export type ActorWebActorContext<TActor> = TActor extends {
@@ -67,17 +96,13 @@ export type ActorWebActorEvent<TActor> = TActor extends {
   ? ActorWebBehaviorEvent<NonNullable<TBehavior>>
   : ActorMessage;
 
-type ActorWebBehaviorContext<TBehavior> = TBehavior extends (
-  ...args: readonly never[]
-) => infer TReturn
+type ActorWebBehaviorContext<TBehavior> = TBehavior extends (...args: infer _TArgs) => infer TReturn
   ? ActorWebBehaviorContext<TReturn>
   : TBehavior extends { readonly __contextType: infer TContext }
     ? TContext
     : unknown;
 
-type ActorWebBehaviorMessage<TBehavior> = TBehavior extends (
-  ...args: readonly never[]
-) => infer TReturn
+type ActorWebBehaviorMessage<TBehavior> = TBehavior extends (...args: infer _TArgs) => infer TReturn
   ? ActorWebBehaviorMessage<TReturn>
   : TBehavior extends { readonly __messageType: infer TMessage }
     ? TMessage extends ActorMessage
@@ -89,24 +114,31 @@ type ActorWebBehaviorMessage<TBehavior> = TBehavior extends (
         : ActorMessage
       : ActorMessage;
 
-type ActorWebBehaviorEvent<TBehavior> = TBehavior extends (
-  ...args: readonly never[]
-) => infer TReturn
+type ActorWebBehaviorEvent<TBehavior> = TBehavior extends (...args: infer _TArgs) => infer TReturn
   ? ActorWebBehaviorEvent<TReturn>
-  : TBehavior extends ActorBehavior<unknown, infer TEvent>
+  : TBehavior extends ActorBehavior<infer _TMessage, infer TEvent>
     ? TEvent extends ActorMessage
       ? TEvent
       : ActorMessage
     : ActorMessage;
 
 export interface ActorWebActorDescriptor<
-  TId extends string = string,
+  TId extends ActorWebActorId = ActorWebActorId,
   TNode extends string = string,
   TBehavior = unknown,
 > extends ActorWebActorDefinition<TId, TNode, TBehavior> {
   readonly key: string;
   readonly nodeAddress: string;
   readonly address: ActorWebActorAddress;
+  readonly gateway?: {
+    readonly scope: RuntimeGatewayScopeDescriptor;
+  };
+  resolveId(
+    params?: ActorWebActorInstanceParams<ActorWebActorDescriptor<TId, TNode, TBehavior>>
+  ): string;
+  resolveAddress(
+    params?: ActorWebActorInstanceParams<ActorWebActorDescriptor<TId, TNode, TBehavior>>
+  ): ActorWebActorAddress;
   source(
     options: ActorWebSourceOptions
   ): ClosableActorWebSource<
@@ -136,7 +168,10 @@ export type ActorWebTopologyInput = {
   readonly contractVersion?: string;
   readonly tools?: ActorWebToolCatalogInput;
   readonly nodes: Record<string, ActorWebNodeDefinition>;
-  readonly actors: Record<string, ActorWebActorDefinition>;
+  readonly actors: Record<
+    string,
+    ActorWebActorDefinition<ActorWebActorId> | ActorWebParameterizedActorDefinition<unknown>
+  >;
   readonly supervisors?: Record<string, ActorWebSupervisorDefinition>;
 };
 
@@ -174,9 +209,17 @@ export function node<TAddress extends string>(address: TAddress): ActorWebNodeDe
   return { address };
 }
 
-export function actor<TDefinition extends ActorWebActorDefinition>(
+export function actor<TDefinition extends ActorWebActorDefinition<string>>(
   definition: TDefinition
-): TDefinition {
+): TDefinition;
+export function actor<TParams, TNode extends string, TBehavior>(
+  definition: ActorWebParameterizedActorDefinition<TParams, TNode, TBehavior>
+): ActorWebParameterizedActorDefinition<TParams, TNode, TBehavior>;
+export function actor(
+  definition:
+    | ActorWebActorDefinition<ActorWebActorId>
+    | ActorWebParameterizedActorDefinition<unknown>
+): ActorWebActorDefinition<ActorWebActorId> | ActorWebParameterizedActorDefinition<unknown> {
   return definition;
 }
 
@@ -231,22 +274,57 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
         }
       }
 
+      const actorId = definition.id;
+      const resolveId = (params?: unknown): string => {
+        if (typeof actorId === 'function') {
+          if (params === undefined) {
+            throw new Error(`Actor "${key}" requires instance params to resolve its id.`);
+          }
+
+          return actorId(params);
+        }
+
+        return actorId;
+      };
+      const descriptorId = typeof actorId === 'function' ? key : actorId;
+      const resolveAddress = (params?: unknown): ActorWebActorAddress => {
+        const id = resolveId(params);
+        return {
+          id,
+          type: 'actor',
+          node: nodeDefinition.address,
+          path: `actor://${nodeDefinition.address}/actor/${id}`,
+        };
+      };
       const address: ActorWebActorAddress = {
-        id: definition.id,
+        id: descriptorId,
         type: 'actor',
         node: nodeDefinition.address,
-        path: `actor://${nodeDefinition.address}/actor/${definition.id}`,
+        path: `actor://${nodeDefinition.address}/actor/${descriptorId}`,
       };
+      const { gateway: gatewayDefinition, ...actorDefinition } = definition;
+      const gateway =
+        gatewayDefinition === true
+          ? { scope: { kind: key } }
+          : gatewayDefinition
+            ? { scope: gatewayDefinition.scope ?? { kind: key } }
+            : undefined;
 
       return [
         key,
         {
-          ...definition,
+          ...actorDefinition,
           key,
           nodeAddress: nodeDefinition.address,
           address,
-          source(options: ActorWebSourceOptions) {
-            return createActorWebSource(this, options);
+          resolveId,
+          resolveAddress,
+          ...(gateway ? { gateway } : {}),
+          source(options: ActorWebSourceOptions): ClosableActorWebSource {
+            return createActorWebSource({
+              actor: this,
+              ...options,
+            });
           },
         },
       ];
@@ -258,6 +336,11 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
       const nodeDefinition = input.nodes[definition.node];
       if (!nodeDefinition) {
         throw new Error(`Supervisor "${key}" references unknown node "${definition.node}".`);
+      }
+      for (const child of definition.children) {
+        if (!input.actors[child]) {
+          throw new Error(`Supervisor "${key}" references unknown child actor "${child}".`);
+        }
       }
 
       return [

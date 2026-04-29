@@ -84,9 +84,7 @@ describe('serveActorWebNode', () => {
           id: 'counter',
           node: 'server',
           behavior: createCounterBehavior,
-          gateway: {
-            scope: { kind: 'counter' },
-          },
+          gateway: true,
         }),
         workerCounter: actor({
           id: 'worker-counter',
@@ -107,11 +105,14 @@ describe('serveActorWebNode', () => {
       expect(served.getGatewayUrl()).toMatch(/^ws:\/\/127\.0\.0\.1:/);
       expect(served.getActor('counter')?.address.path).toBe('actor://server-node/actor/counter');
       expect(served.getActor('workerCounter')).toBeUndefined();
+      expect(() => served.requireActor('workerCounter')).toThrow(
+        'Actor-Web node did not spawn actor "workerCounter".'
+      );
 
-      const counter = served.getActor('counter');
-      await counter?.send({ type: 'INCREMENT' });
+      const counter = served.requireActor('counter');
+      await counter.send({ type: 'INCREMENT' });
       await served.system.flush();
-      await expect(counter?.ask<number>({ type: 'GET_COUNT' })).resolves.toBe(1);
+      await expect(counter.ask<number>({ type: 'GET_COUNT' })).resolves.toBe(1);
 
       const socket = new WebSocket(served.getGatewayUrl() ?? '');
       const gatewayFrames = collectFrames(socket);
@@ -145,6 +146,84 @@ describe('serveActorWebNode', () => {
       socket.close();
     } finally {
       await served.stop();
+    }
+  });
+
+  it('exposes configured remote topology actors through the node gateway', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+        worker: node('worker-node'),
+      },
+      actors: {
+        serverCounter: actor({
+          id: 'server-counter',
+          node: 'server',
+          behavior: createCounterBehavior,
+        }),
+        workerCounter: actor({
+          id: 'worker-counter',
+          node: 'worker',
+          behavior: createCounterBehavior,
+          gateway: true,
+        }),
+      },
+    });
+
+    const worker = await serveActorWebNode(topology, {
+      node: 'worker',
+      transport: true,
+    });
+    const served = await serveActorWebNode(topology, {
+      node: 'server',
+      transport: true,
+      peers: {
+        worker: worker.getTransportUrl() ?? '',
+      },
+      connect: ['worker'],
+      gateway: {
+        expose: ['workerCounter'],
+      },
+    });
+
+    try {
+      const workerCounter = worker.getActor('workerCounter');
+      await workerCounter?.send({ type: 'INCREMENT' });
+      await worker.system.flush();
+
+      const socket = new WebSocket(served.getGatewayUrl() ?? '');
+      const gatewayFrames = collectFrames(socket);
+      await waitForSocketOpen(socket);
+      socket.send(JSON.stringify({ type: 'hello', clientVersion: 'test' }));
+      const ready = await gatewayFrames.nextFrame();
+      expect(ready.type).toBe('ready');
+
+      socket.send(
+        JSON.stringify({
+          type: 'subscribe',
+          streamId: 'worker-counter-stream',
+          scope: { kind: 'workerCounter' },
+        })
+      );
+      const status = await gatewayFrames.nextFrame();
+      const snapshot = await gatewayFrames.nextFrame();
+      expect(status.type).toBe('status');
+      expect(snapshot).toMatchObject({
+        type: 'snapshot',
+        streamId: 'worker-counter-stream',
+        projection: {
+          address: {
+            path: 'actor://worker-node/actor/worker-counter',
+          },
+          context: {
+            count: 1,
+          },
+        },
+      });
+      socket.close();
+    } finally {
+      await served.stop();
+      await worker.stop();
     }
   });
 
@@ -201,6 +280,47 @@ describe('serveActorWebNode', () => {
           .getActor('agent')
           ?.ask<string>({ type: 'RUN_TOOL', toolName: 'agent.secret', value: 'fas' })
       ).rejects.toThrow('Actor tool "agent.secret" is not registered.');
+    } finally {
+      await served.stop();
+    }
+  });
+
+  it('creates parameterized actor instances from topology actor ids', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+      },
+      actors: {
+        shipment: actor({
+          id: ({ shipmentId }: { shipmentId: string }) => `shipment-${shipmentId}`,
+          node: 'server',
+          behavior: createCounterBehavior,
+          supervision: {
+            strategy: 'restart',
+            maxRestarts: 3,
+            withinMs: 60_000,
+          },
+        }),
+      },
+    });
+
+    const served = await serveActorWebNode(topology, { node: 'server' });
+
+    try {
+      expect(served.getActor('shipment')).toBeUndefined();
+      expect(topology.actors.shipment.resolveAddress({ shipmentId: '1001' })).toMatchObject({
+        id: 'shipment-1001',
+        path: 'actor://server-node/actor/shipment-1001',
+      });
+
+      const first = await served.actors.shipment.instance({ shipmentId: '1001' });
+      const second = await served.actors.shipment.instance({ shipmentId: '1001' });
+      expect(second).toBe(first);
+      expect(first.address.path).toBe('actor://server-node/actor/shipment-1001');
+
+      await first.send({ type: 'INCREMENT' });
+      await served.system.flush();
+      await expect(first.ask<number>({ type: 'GET_COUNT' })).resolves.toBe(1);
     } finally {
       await served.stop();
     }

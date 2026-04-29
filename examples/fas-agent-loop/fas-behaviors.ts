@@ -1,0 +1,446 @@
+import { defineActor, defineFSM } from '@actor-core/runtime';
+import type {
+  FasAgentRole,
+  FasPatch,
+  FasPlan,
+  FasReviewResult,
+  FasSupervisorCommand,
+  FasTaskBoardCommand,
+  FasTaskBoardContext,
+  FasTaskCommand,
+  FasTaskContext,
+  FasTaskEvent,
+  FasTaskPhase,
+  FasTimelineEntry,
+  FasToolInvocation,
+  FasValidationResult,
+  ImplementerAgentCommand,
+  PlannerAgentCommand,
+  ReviewerAgentCommand,
+  VerifierAgentCommand,
+} from './fas-contract';
+import {
+  createInitialTaskBoardContext,
+  createInitialTaskContext,
+  taskContextToSummary,
+} from './fas-contract';
+
+function timelineEntry(input: {
+  label: string;
+  phase: FasTaskPhase;
+  agent: FasAgentRole;
+  detail: string;
+}): FasTimelineEntry {
+  return input;
+}
+
+function toolCall(input: {
+  tool: string;
+  agent: FasAgentRole;
+  taskId: string;
+  ok: boolean;
+  summary: string;
+}): FasToolInvocation {
+  return input;
+}
+
+function appendTimeline(
+  context: Pick<FasTaskContext, 'timeline'>,
+  entry: FasTimelineEntry
+): readonly FasTimelineEntry[] {
+  return [entry, ...context.timeline];
+}
+
+function memoryWrittenEvent(taskId: string): Extract<FasTaskEvent, { type: 'MEMORY_WRITTEN' }> {
+  return {
+    type: 'MEMORY_WRITTEN',
+    taskId,
+  };
+}
+
+function createInitialSupervisorContext(): { readonly submittedTaskIds: readonly string[] } {
+  return {
+    submittedTaskIds: [],
+  };
+}
+
+const taskRunFSM = defineFSM<FasTaskCommand, FasTaskContext, FasTaskPhase>({
+  initial: 'submitted',
+  states: {
+    submitted: {
+      on: {
+        SUBMIT_TASK: 'submitted',
+        REQUEST_PLAN: 'planning',
+        BLOCK_TASK: 'blocked',
+      },
+    },
+    planning: {
+      on: {
+        REQUEST_IMPLEMENTATION: 'implementing',
+        BLOCK_TASK: 'blocked',
+      },
+    },
+    implementing: {
+      on: {
+        REQUEST_VALIDATION: 'validating',
+        BLOCK_TASK: 'blocked',
+      },
+    },
+    validating: {
+      on: {
+        REQUEST_IMPLEMENTATION: 'implementing',
+        REQUEST_REVIEW: ({ message }) => (message.result.approved ? 'completed' : 'implementing'),
+        BLOCK_TASK: 'blocked',
+      },
+    },
+    reviewing: {
+      on: {
+        REQUEST_IMPLEMENTATION: 'implementing',
+        REQUEST_REVIEW: ({ message }) => (message.result.approved ? 'completed' : 'implementing'),
+        COMPLETE_TASK: 'completed',
+        BLOCK_TASK: 'blocked',
+      },
+    },
+    completed: {
+      on: {},
+    },
+    blocked: {
+      on: {},
+    },
+  },
+});
+
+export function createFasSupervisorBehavior() {
+  return defineActor<FasSupervisorCommand>()
+    .withContext(createInitialSupervisorContext())
+    .onMessage(({ message, context }) => {
+      if (message.type === 'GET_SUPERVISOR_STATUS') {
+        return { reply: context };
+      }
+
+      return {
+        context: {
+          submittedTaskIds: [...context.submittedTaskIds, message.taskId],
+        },
+        reply: { ok: true, taskId: message.taskId },
+      };
+    })
+    .build();
+}
+
+export function createTaskBoardBehavior() {
+  return defineActor<FasTaskBoardCommand, FasTaskEvent>()
+    .withContext(createInitialTaskBoardContext())
+    .onMessage(({ message, context }) => {
+      if (message.type === 'GET_DASHBOARD') {
+        return { reply: context };
+      }
+
+      if (message.type === 'SUBMIT_TASK') {
+        const task = taskContextToSummary(createInitialTaskContext(message));
+        const tasks = [task, ...context.tasks.filter((item) => item.taskId !== task.taskId)];
+
+        return {
+          context: {
+            activeTaskId: task.taskId,
+            tasks,
+            timeline: task.timeline,
+            latestToolCall: null,
+            completedCount: tasks.filter((item) => item.phase === 'completed').length,
+            blockedCount: tasks.filter((item) => item.phase === 'blocked').length,
+          } satisfies FasTaskBoardContext,
+          reply: task,
+          emit: [{ type: 'TASK_SUBMITTED', taskId: task.taskId, title: task.title }],
+        };
+      }
+
+      const tasks = [
+        message.task,
+        ...context.tasks.filter((item) => item.taskId !== message.task.taskId),
+      ];
+
+      return {
+        context: {
+          activeTaskId: message.task.taskId,
+          tasks,
+          timeline: message.task.timeline,
+          latestToolCall: message.task.latestToolCall,
+          completedCount: tasks.filter((item) => item.phase === 'completed').length,
+          blockedCount: tasks.filter((item) => item.phase === 'blocked').length,
+        } satisfies FasTaskBoardContext,
+        reply: message.task,
+      };
+    })
+    .build();
+}
+
+export function createTaskRunBehavior(input: {
+  readonly taskId: string;
+  readonly title: string;
+  readonly prompt: string;
+}) {
+  return defineActor<FasTaskCommand, FasTaskEvent>()
+    .withContext(createInitialTaskContext(input))
+    .withFSM(taskRunFSM)
+    .onTransition({
+      SUBMIT_TASK: ({ message }) => {
+        const context = createInitialTaskContext(message);
+        return {
+          context,
+          reply: taskContextToSummary(context),
+          emit: [{ type: 'TASK_SUBMITTED', taskId: message.taskId, title: message.title }],
+        };
+      },
+
+      REQUEST_PLAN: ({ message, context }) => {
+        const nextContext: FasTaskContext = {
+          ...context,
+          phase: 'planning',
+          activeAgent: 'planner',
+          plan: message.plan,
+          timeline: appendTimeline(
+            context,
+            timelineEntry({
+              label: 'Plan created',
+              phase: 'planning',
+              agent: 'planner',
+              detail: message.plan.summary,
+            })
+          ),
+        };
+        return {
+          context: nextContext,
+          reply: taskContextToSummary(nextContext),
+          emit: [{ type: 'PLAN_CREATED', taskId: context.taskId, plan: message.plan }],
+        };
+      },
+
+      REQUEST_IMPLEMENTATION: ({ message, context }) => {
+        const nextContext: FasTaskContext = {
+          ...context,
+          phase: 'implementing',
+          activeAgent: 'implementer',
+          patch: message.patch,
+          latestToolCall: message.toolCall,
+          attempts: context.attempts + 1,
+          timeline: appendTimeline(
+            context,
+            timelineEntry({
+              label: 'Patch created',
+              phase: 'implementing',
+              agent: 'implementer',
+              detail: message.patch.summary,
+            })
+          ),
+        };
+        return {
+          context: nextContext,
+          reply: taskContextToSummary(nextContext),
+          emit: [{ type: 'PATCH_CREATED', taskId: context.taskId, patch: message.patch }],
+        };
+      },
+
+      REQUEST_VALIDATION: ({ message, context }) => {
+        const phase: FasTaskPhase = 'validating';
+        const nextContext: FasTaskContext = {
+          ...context,
+          phase,
+          activeAgent: 'verifier',
+          validation: message.result,
+          latestToolCall: message.toolCall,
+          timeline: appendTimeline(
+            context,
+            timelineEntry({
+              label: message.result.ok ? 'Validation passed' : 'Validation failed',
+              phase,
+              agent: 'verifier',
+              detail: message.result.ok
+                ? `${message.result.command} passed`
+                : message.result.failures.join(', '),
+            })
+          ),
+        };
+        return {
+          context: nextContext,
+          reply: taskContextToSummary(nextContext),
+          emit: [
+            message.result.ok
+              ? { type: 'VALIDATION_PASSED', taskId: context.taskId, result: message.result }
+              : { type: 'VALIDATION_FAILED', taskId: context.taskId, result: message.result },
+          ],
+        };
+      },
+
+      REQUEST_REVIEW: ({ message, context }) => {
+        const phase: FasTaskPhase = message.result.approved ? 'completed' : 'implementing';
+        const nextContext: FasTaskContext = {
+          ...context,
+          phase,
+          activeAgent: 'reviewer',
+          review: message.result,
+          latestToolCall: message.toolCall,
+          timeline: appendTimeline(
+            context,
+            timelineEntry({
+              label: message.result.approved ? 'Review approved' : 'Review rejected',
+              phase,
+              agent: 'reviewer',
+              detail:
+                message.result.findings.length > 0
+                  ? message.result.findings.join(', ')
+                  : 'No review findings',
+            })
+          ),
+        };
+        return {
+          context: nextContext,
+          reply: taskContextToSummary(nextContext),
+          emit: [
+            { type: 'REVIEW_COMPLETED', taskId: context.taskId, result: message.result },
+            ...(message.result.approved ? [memoryWrittenEvent(context.taskId)] : []),
+          ],
+        };
+      },
+
+      COMPLETE_TASK: ({ context }) => {
+        const nextContext: FasTaskContext = {
+          ...context,
+          phase: 'completed',
+          activeAgent: 'supervisor',
+          timeline: appendTimeline(
+            context,
+            timelineEntry({
+              label: 'Task completed',
+              phase: 'completed',
+              agent: 'supervisor',
+              detail: context.title,
+            })
+          ),
+        };
+        return { context: nextContext, reply: taskContextToSummary(nextContext) };
+      },
+
+      BLOCK_TASK: ({ message, context }) => {
+        const nextContext: FasTaskContext = {
+          ...context,
+          phase: 'blocked',
+          activeAgent: 'supervisor',
+          timeline: appendTimeline(
+            context,
+            timelineEntry({
+              label: 'Task blocked',
+              phase: 'blocked',
+              agent: 'supervisor',
+              detail: message.reason,
+            })
+          ),
+        };
+        return {
+          context: nextContext,
+          reply: taskContextToSummary(nextContext),
+          emit: [{ type: 'TASK_BLOCKED', taskId: context.taskId, reason: message.reason }],
+        };
+      },
+    })
+    .build();
+}
+
+export function createPlannerAgentBehavior() {
+  return defineActor<PlannerAgentCommand, FasTaskEvent>()
+    .onMessage(({ message }) => {
+      const plan: FasPlan = {
+        summary: `Plan ${message.taskId} with deterministic FAS stages`,
+        steps: ['inspect task brief', 'prepare patch', 'run verification', 'review diff'],
+      };
+      return {
+        reply: { plan },
+        emit: [{ type: 'PLAN_CREATED', taskId: message.taskId, plan }],
+      };
+    })
+    .build();
+}
+
+export function createImplementerAgentBehavior() {
+  return defineActor<ImplementerAgentCommand, FasTaskEvent>()
+    .onMessage(async ({ message, tools }) => {
+      const patch = await tools.execute<FasPatch>('codex.generate_patch', {
+        taskId: message.taskId,
+        plan: message.plan,
+        attempt: message.attempt,
+      });
+      const invocation = toolCall({
+        tool: 'codex.generate_patch',
+        agent: 'implementer',
+        taskId: message.taskId,
+        ok: true,
+        summary: patch.summary,
+      });
+      return {
+        reply: { patch, toolCall: invocation },
+        emit: [{ type: 'PATCH_CREATED', taskId: message.taskId, patch }],
+      };
+    })
+    .build();
+}
+
+export function createVerifierAgentBehavior() {
+  return defineActor<VerifierAgentCommand, FasTaskEvent>()
+    .onMessage(async ({ message, tools }) => {
+      await tools.execute('repo.diff', {
+        taskId: message.taskId,
+        patch: message.patch,
+      });
+      const result = await tools.execute<FasValidationResult>('verification.run', {
+        taskId: message.taskId,
+        patch: message.patch,
+      });
+      const invocation = toolCall({
+        tool: 'verification.run',
+        agent: 'verifier',
+        taskId: message.taskId,
+        ok: result.ok,
+        summary: result.ok ? 'Verification passed' : result.failures.join(', '),
+      });
+      return {
+        reply: { result, toolCall: invocation },
+        emit: [
+          result.ok
+            ? { type: 'VALIDATION_PASSED', taskId: message.taskId, result }
+            : { type: 'VALIDATION_FAILED', taskId: message.taskId, result },
+        ],
+      };
+    })
+    .build();
+}
+
+export function createReviewerAgentBehavior() {
+  return defineActor<ReviewerAgentCommand, FasTaskEvent>()
+    .onMessage(async ({ message, tools }) => {
+      const result = await tools.execute<FasReviewResult>('review.diff', {
+        taskId: message.taskId,
+        patch: message.patch,
+        validation: message.validation,
+      });
+      if (result.approved) {
+        await tools.execute('memory.write', {
+          taskId: message.taskId,
+          review: result,
+        });
+      }
+      const invocation = toolCall({
+        tool: 'review.diff',
+        agent: 'reviewer',
+        taskId: message.taskId,
+        ok: result.approved,
+        summary: result.approved ? 'Review approved' : result.findings.join(', '),
+      });
+      return {
+        reply: { result, toolCall: invocation },
+        emit: [
+          { type: 'REVIEW_COMPLETED', taskId: message.taskId, result },
+          ...(result.approved ? [memoryWrittenEvent(message.taskId)] : []),
+        ],
+      };
+    })
+    .build();
+}

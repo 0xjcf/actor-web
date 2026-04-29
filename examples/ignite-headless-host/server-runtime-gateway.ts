@@ -1,10 +1,6 @@
 /// <reference types="node" />
 
-import {
-  type ActorRef,
-  createRuntimeGatewaySource,
-  RuntimeGatewayScopeError,
-} from '@actor-core/runtime';
+import type { ActorRef, ActorTransitionErrorValue } from '@actor-core/runtime';
 import {
   type ServedActorWebHttp,
   type ServedActorWebNode,
@@ -12,28 +8,54 @@ import {
   serveActorWebNode,
 } from '@actor-core/runtime/node';
 import type {
+  DispatcherCommand,
+  DispatcherContext,
+  DriverDirectoryCommand,
+  DriverDirectoryContext,
+  LogisticsSupervisorCommand,
+  LogisticsSupervisorContext,
+  ProviderHqCommand,
+  ProviderHqContext,
+  ProviderHqEvent,
+  ProviderShipmentCommand,
+  ProviderShipmentSignalResult,
   ProviderSignal,
   RoutePlan,
   ShipmentCommand,
   ShipmentContext,
+  ShipmentEvent,
 } from './logistics-contract';
-import {
-  providerFacilityForShipment,
-  providerLoadIdForShipment,
-  providerNoteForSignal,
-} from './logistics-provider';
+import { isProviderHqEvent, isShipmentEvent } from './logistics-contract';
 import {
   isProviderSignal,
   type LifecycleMode,
-  LogisticsProviderQueue,
   shouldReturnShipment,
 } from './logistics-provider-hq';
+import {
+  createProviderShipmentSignalRejection,
+  isTransitionError,
+} from './logistics-provider-shipment-behavior';
+import {
+  createDispatchShipmentCommand,
+  createDriverAssignmentCommand,
+  createProviderSignalPlan,
+  createProviderSyncPlan,
+  createRouteAssignmentRecordCommand,
+  createRoutePlanCommand,
+  createShipmentLifecyclePlan,
+} from './logistics-runtime-plans';
 import { logistics } from './logistics-topology';
 
 const shipmentActorDescriptor = logistics.actors.shipment;
 const routingActorDescriptor = logistics.actors.routing;
+const providerHqActorDescriptor = logistics.actors.providerHq;
+const logisticsSupervisorActorDescriptor = logistics.actors.logisticsSupervisor;
+const dispatcherActorDescriptor = logistics.actors.dispatcher;
+const driverDirectoryActorDescriptor = logistics.actors.driverDirectory;
+const serviceWorkerProofActorDescriptor = logistics.actors.serviceWorkerProof;
 const serverNode = logistics.nodes.server.address;
 const workerNode = logistics.nodes.worker.address;
+const serviceWorkerNode = logistics.nodes.serviceWorker.address;
 
 export interface LogisticsRuntimeGatewayServerOptions {
   host?: string;
@@ -59,10 +81,12 @@ function createShipmentId(): string {
   return `shipment-${Date.now().toString(36)}`;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function bodyRecord(body: unknown): Record<string, unknown> {
-  return body && typeof body === 'object' && !Array.isArray(body)
-    ? (body as Record<string, unknown>)
-    : {};
+  return isRecord(body) ? body : {};
 }
 
 function wait(delayMs: number): Promise<void> {
@@ -81,10 +105,19 @@ export function createLogisticsRuntimeGatewayServer(
   const lifecycleTerminalDelayMs = options.lifecycleTerminalDelayMs ?? 20_000;
   let servedNode: ServedActorWebNode<typeof logistics> | null = null;
   let shipmentActor: ActorRef<ShipmentContext, ShipmentCommand> | null = null;
+  let logisticsSupervisorActor: ActorRef<
+    LogisticsSupervisorContext,
+    LogisticsSupervisorCommand
+  > | null = null;
+  let dispatcherActor: ActorRef<DispatcherContext, DispatcherCommand> | null = null;
+  let driverDirectoryActor: ActorRef<DriverDirectoryContext, DriverDirectoryCommand> | null = null;
+  let providerHqActor: ActorRef<ProviderHqContext, ProviderHqCommand> | null = null;
+  const shipmentActors = new Map<string, ActorRef<ShipmentContext, ShipmentCommand>>();
+  const providerShipmentActors = new Map<string, ActorRef<unknown, ProviderShipmentCommand>>();
   let restServer: ServedActorWebHttp | null = null;
   let restUrl: string | null = null;
   const lifecycleTimers = new Set<ReturnType<typeof setTimeout>>();
-  const providerQueue = new LogisticsProviderQueue();
+  const runtimeUnsubscribers = new Set<() => void>();
 
   const system = () => {
     if (!servedNode) {
@@ -130,45 +163,308 @@ export function createLogisticsRuntimeGatewayServer(
     lifecycleTimers.add(timer);
   };
 
+  const projectShipment = async (
+    shipment: ShipmentContext,
+    event?: ShipmentEvent
+  ): Promise<void> => {
+    await shipmentActor?.send({
+      type: 'UPSERT_SHIPMENT_PROJECTION',
+      shipment,
+      event,
+    });
+    await syncShipmentToProviderHq(shipment);
+  };
+
+  const ensureShipmentActor = async (
+    shipmentId: string
+  ): Promise<ActorRef<ShipmentContext, ShipmentCommand>> => {
+    const existing = shipmentActors.get(shipmentId);
+    if (existing) {
+      return existing;
+    }
+
+    if (!servedNode) {
+      throw new Error('Actor-Web server node is not ready.');
+    }
+
+    const actorRef = await servedNode.actors.shipmentLifecycle.instance({ shipmentId });
+    shipmentActors.set(shipmentId, actorRef);
+
+    const unsubscribeSnapshot = actorRef.subscribeSnapshot?.((snapshot) => {
+      if (!snapshot.context.shipmentId) {
+        return;
+      }
+
+      void projectShipment(snapshot.context);
+    });
+    if (unsubscribeSnapshot) {
+      runtimeUnsubscribers.add(unsubscribeSnapshot);
+    }
+
+    const unsubscribeEvents = actorRef.subscribeEvent?.((event) => {
+      if (!isShipmentEvent(event)) {
+        return;
+      }
+
+      const context = actorRef.getSnapshot().context;
+      if (!context.shipmentId) {
+        return;
+      }
+
+      void projectShipment(context, event);
+      if (event.type === 'SHIPMENT_CREATED') {
+        void logisticsSupervisorActor?.send({
+          type: 'OBSERVE_SHIPMENT_CREATED',
+          shipmentId: context.shipmentId,
+        });
+      }
+      if (event.type === 'SHIPMENT_DELIVERED' || event.type === 'SHIPMENT_RETURNED') {
+        if (event.type === 'SHIPMENT_RETURNED') {
+          void logisticsSupervisorActor?.send({
+            type: 'OBSERVE_SHIPMENT_EXCEPTION',
+            shipmentId: context.shipmentId,
+            reason: 'Provider reported return.',
+          });
+        } else {
+          void logisticsSupervisorActor?.send({
+            type: 'OBSERVE_SHIPMENT_COMPLETED',
+            shipmentId: context.shipmentId,
+          });
+        }
+      }
+    });
+    if (unsubscribeEvents) {
+      runtimeUnsubscribers.add(unsubscribeEvents);
+    }
+
+    return actorRef;
+  };
+
   const scheduleShipmentLifecycle = (shipmentId: string): void => {
-    if (lifecycleMode === 'manual') {
+    clearLifecycleTimers();
+    const signalPlan = createShipmentLifecyclePlan({
+      mode: lifecycleMode,
+      shipmentId,
+      delays: {
+        labelMs: lifecycleLabelDelayMs,
+        packedMs: lifecyclePackedDelayMs,
+        shippedMs: lifecycleShippedDelayMs,
+        terminalMs: lifecycleTerminalDelayMs,
+      },
+      terminalSignal: shouldReturnShipment(shipmentId) ? 'RETURN_EXCEPTION' : 'DELIVERY_CONFIRMED',
+    });
+    for (const signal of signalPlan) {
+      scheduleLifecycleUpdate(signal.delayMs, signal.signal, signal.shipmentId);
+    }
+  };
+
+  const ensureProviderShipmentActor = async (
+    context: ShipmentContext
+  ): Promise<ActorRef<unknown, ProviderShipmentCommand> | null> => {
+    if (!context.shipmentId) {
+      return null;
+    }
+
+    const existing = providerShipmentActors.get(context.shipmentId);
+    if (existing) {
+      await existing.send({ type: 'SYNC_PROVIDER_SHIPMENT', shipment: context });
+      return existing;
+    }
+
+    if (!servedNode) {
+      throw new Error('Actor-Web server node is not ready.');
+    }
+
+    const actorRef = await servedNode.actors.providerShipment.instance({
+      shipmentId: context.shipmentId,
+      shipment: context,
+    });
+    await actorRef.send({ type: 'SYNC_PROVIDER_SHIPMENT', shipment: context });
+    providerShipmentActors.set(context.shipmentId, actorRef);
+    return actorRef;
+  };
+
+  const syncShipmentToProviderHq = async (context: ShipmentContext): Promise<void> => {
+    const plan = createProviderSyncPlan(context);
+    if (plan.ensureProviderShipmentActor) {
+      await ensureProviderShipmentActor(context);
+    }
+    if (plan.providerHqCommand) {
+      await providerHqActor?.send(plan.providerHqCommand);
+    }
+  };
+
+  const applyAcceptedProviderSignalToShipment = async (
+    shipment: ShipmentContext,
+    signal: ProviderSignal
+  ): Promise<ShipmentContext> => {
+    if (!shipment.shipmentId) {
+      return shipment;
+    }
+
+    const shipmentLifecycleActor = await ensureShipmentActor(shipment.shipmentId);
+    await shipmentLifecycleActor.send({
+      type: 'APPLY_PROVIDER_SIGNAL',
+      shipmentId: shipment.shipmentId ?? undefined,
+      signal,
+      facility: shipment.providerFacility ?? undefined,
+      loadId: shipment.providerLoadId ?? undefined,
+      note: shipment.providerNote ?? undefined,
+      baseContext: shipment,
+    });
+    await system().flush();
+
+    return shipmentLifecycleActor.getSnapshot().context;
+  };
+
+  const processProviderSignalRequest = async (event: ProviderHqEvent): Promise<void> => {
+    if (event.type !== 'PROVIDER_SIGNAL_REQUESTED' || !providerHqActor) {
       return;
     }
 
-    clearLifecycleTimers();
-    scheduleLifecycleUpdate(lifecycleLabelDelayMs, 'LABEL_SCANNED', shipmentId);
-    scheduleLifecycleUpdate(lifecyclePackedDelayMs, 'PACKED_INTO_TRUCK', shipmentId);
-    scheduleLifecycleUpdate(lifecycleShippedDelayMs, 'OUTBOUND_SCAN', shipmentId);
-    scheduleLifecycleUpdate(
-      lifecycleTerminalDelayMs,
-      shouldReturnShipment(shipmentId) ? 'RETURN_EXCEPTION' : 'DELIVERY_CONFIRMED',
-      shipmentId
+    const providerContext = providerHqActor.getSnapshot().context;
+    const shipment = providerContext.shipmentContexts[event.shipmentId];
+    if (!shipment) {
+      await providerHqActor.send({
+        type: 'REPORT_PROVIDER_SIGNAL_REJECTED',
+        shipmentId: event.shipmentId,
+        signal: event.signal,
+        expected: 'known provider shipment',
+        reason: `${event.signal} rejected. ${event.shipmentId} is not in the Provider HQ queue.`,
+      });
+      return;
+    }
+
+    const providerShipmentActor = await ensureProviderShipmentActor(shipment);
+    if (!providerShipmentActor) {
+      await providerHqActor.send({
+        type: 'REPORT_PROVIDER_SIGNAL_REJECTED',
+        shipmentId: event.shipmentId,
+        signal: event.signal,
+        expected: 'known provider shipment',
+        reason: `${event.signal} rejected. Provider shipment actor is not ready.`,
+      });
+      return;
+    }
+
+    const signalPlan = createProviderSignalPlan({
+      signal: event.signal,
+      explicitShipmentId: event.shipmentId,
+      facility: shipment.providerFacility ?? undefined,
+      loadId: shipment.providerLoadId ?? undefined,
+      note: shipment.providerNote ?? undefined,
+    });
+    if (!signalPlan.ok) {
+      await providerHqActor.send({
+        type: 'REPORT_PROVIDER_SIGNAL_REJECTED',
+        shipmentId: event.shipmentId,
+        signal: event.signal,
+        expected: 'known provider shipment',
+        reason: signalPlan.reason,
+      });
+      return;
+    }
+
+    const result = await providerShipmentActor.ask<
+      ProviderShipmentSignalResult | ActorTransitionErrorValue
+    >(signalPlan.command, 1000);
+
+    if (isTransitionError(result)) {
+      const rejected = createProviderShipmentSignalRejection(shipment, event.signal);
+      await providerHqActor.send({ type: 'REPORT_PROVIDER_SIGNAL_REJECTED', ...rejected });
+      await system().flush();
+      return;
+    }
+
+    if (!result.ok) {
+      await providerHqActor.send({ type: 'REPORT_PROVIDER_SIGNAL_REJECTED', ...result });
+      await system().flush();
+      return;
+    }
+
+    const updatedShipment = await applyAcceptedProviderSignalToShipment(
+      result.shipment,
+      event.signal
     );
+    await providerShipmentActor.send({
+      type: 'SYNC_PROVIDER_SHIPMENT',
+      shipment: updatedShipment,
+    });
+    await providerHqActor.send({
+      type: 'REPORT_PROVIDER_SIGNAL_ACCEPTED',
+      shipment: updatedShipment,
+      signal: event.signal,
+    });
+    await system().flush();
   };
 
-  const upsertProviderQueue = (context: ShipmentContext): void => {
-    providerQueue.upsert(context);
+  const bindRuntimeOrchestration = (): void => {
+    if (!shipmentActor || !providerHqActor || runtimeUnsubscribers.size > 0) {
+      return;
+    }
+
+    const unsubscribeShipmentSnapshot = shipmentActor.subscribeSnapshot?.((snapshot) => {
+      const context = snapshot.context;
+      if (!context.shipmentId) {
+        return;
+      }
+
+      void syncShipmentToProviderHq(context);
+    });
+    if (unsubscribeShipmentSnapshot) {
+      runtimeUnsubscribers.add(unsubscribeShipmentSnapshot);
+    }
+
+    const unsubscribeShipmentEvents = shipmentActor.subscribeEvent?.((event) => {
+      if (event.type === 'SHIPMENT_RESET') {
+        void providerHqActor?.send({ type: 'CLEAR_PROVIDER_QUEUE' });
+      }
+    });
+    if (unsubscribeShipmentEvents) {
+      runtimeUnsubscribers.add(unsubscribeShipmentEvents);
+    }
+
+    const unsubscribeProviderEvents = providerHqActor.subscribeEvent?.((event) => {
+      if (!isProviderHqEvent(event)) {
+        return;
+      }
+
+      if (event.type === 'PROVIDER_MODE_CHANGED') {
+        lifecycleMode = event.mode;
+        clearLifecycleTimers();
+        if (event.mode === 'simulation') {
+          const activeShipmentId = selectedProviderShipmentId();
+          if (activeShipmentId) {
+            scheduleShipmentLifecycle(activeShipmentId);
+          }
+        }
+      }
+
+      void processProviderSignalRequest(event);
+    });
+    if (unsubscribeProviderEvents) {
+      runtimeUnsubscribers.add(unsubscribeProviderEvents);
+    }
   };
 
-  const selectedProviderShipmentId = (): string | null => providerQueue.selectedShipmentId();
+  const unbindRuntimeOrchestration = (): void => {
+    for (const unsubscribe of Array.from(runtimeUnsubscribers)) {
+      unsubscribe();
+      runtimeUnsubscribers.delete(unsubscribe);
+    }
+  };
+
+  const selectedProviderShipmentId = (): string | null =>
+    providerHqActor?.getSnapshot().context.selectedShipmentId ?? null;
 
   const providerStatus = () => {
-    const snapshot = shipmentActor?.getSnapshot().context ?? null;
-    return providerQueue.status(lifecycleMode, snapshot);
+    return providerHqActor?.getSnapshot().context.status ?? null;
   };
 
-  const setLifecycleMode = (nextMode: LifecycleMode): void => {
+  const setLifecycleMode = async (nextMode: LifecycleMode): Promise<void> => {
     lifecycleMode = nextMode;
     clearLifecycleTimers();
-
-    if (nextMode !== 'simulation') {
-      return;
-    }
-
-    const activeShipmentId = selectedProviderShipmentId();
-    if (activeShipmentId) {
-      scheduleShipmentLifecycle(activeShipmentId);
-    }
+    await providerHqActor?.send({ type: 'SET_PROVIDER_MODE', mode: nextMode });
   };
 
   const applyProviderSignal = async (input: {
@@ -178,32 +474,31 @@ export function createLogisticsRuntimeGatewayServer(
     loadId?: string;
     note?: string;
     clearLifecycleTimers?: boolean;
-  }): Promise<ShipmentContext> => {
-    if (!shipmentActor) {
-      throw new Error('Shipment actor is not ready.');
+  }): Promise<ProviderHqContext> => {
+    if (!providerHqActor) {
+      throw new Error('Provider HQ actor is not ready.');
     }
 
     if (input.clearLifecycleTimers !== false) {
       clearLifecycleTimers();
     }
-    const shipmentId = input.shipmentId ?? shipmentActor.getSnapshot().context.shipmentId;
-    if (!shipmentId) {
-      throw new Error('No active shipment is available for provider signal.');
+    const plan = createProviderSignalPlan({
+      signal: input.signal,
+      explicitShipmentId: input.shipmentId,
+      selectedShipmentId: providerHqActor.getSnapshot().context.selectedShipmentId,
+      activeShipmentId: shipmentActor?.getSnapshot().context.shipmentId,
+      facility: input.facility,
+      loadId: input.loadId,
+      note: input.note,
+    });
+    if (!plan.ok) {
+      throw new Error(plan.reason);
     }
 
-    await shipmentActor.send({
-      type: 'APPLY_PROVIDER_SIGNAL',
-      shipmentId,
-      signal: input.signal,
-      facility: input.facility ?? providerFacilityForShipment(shipmentId),
-      loadId: input.loadId ?? providerLoadIdForShipment(shipmentId),
-      note: input.note ?? providerNoteForSignal(input.signal),
-      baseContext: providerQueue.contextFor(shipmentId),
-    });
+    await providerHqActor.send(plan.command);
     await system().flush();
-    upsertProviderQueue(shipmentActor.getSnapshot().context);
 
-    return shipmentActor.getSnapshot().context;
+    return providerHqActor.getSnapshot().context;
   };
 
   const planRouteForShipment = async (input: {
@@ -226,15 +521,7 @@ export function createLogisticsRuntimeGatewayServer(
           routingActorDescriptor.address.path
         );
         if (routingRef) {
-          return await routingRef.ask<RoutePlan>(
-            {
-              type: 'PLAN_ROUTE',
-              shipmentId: input.shipmentId,
-              destination: input.destination,
-              reference: input.reference,
-            },
-            1000
-          );
+          return await routingRef.ask<RoutePlan>(createRoutePlanCommand(input), 1000);
         }
 
         await wait(25);
@@ -251,19 +538,16 @@ export function createLogisticsRuntimeGatewayServer(
     destination: string;
     reference?: string;
   }): Promise<{ shipmentId: string; status: ShipmentContext['status'] }> => {
-    if (!shipmentActor) {
-      throw new Error('Shipment actor is not ready.');
-    }
-
     const shipmentId = input.shipmentId ?? createShipmentId();
-    await shipmentActor.send({
+    const shipmentLifecycleActor = await ensureShipmentActor(shipmentId);
+    await shipmentLifecycleActor.send({
       type: 'CREATE_SHIPMENT',
       shipmentId,
       destination: input.destination,
       reference: input.reference,
     });
     await system().flush();
-    upsertProviderQueue(shipmentActor.getSnapshot().context);
+    await dispatcherActor?.send(createDispatchShipmentCommand({ ...input, shipmentId }));
 
     const plan = await planRouteForShipment({
       shipmentId,
@@ -271,9 +555,24 @@ export function createLogisticsRuntimeGatewayServer(
       reference: input.reference,
     });
     if (plan) {
-      await shipmentActor.send({ type: 'ASSIGN_ROUTE', plan });
+      const driverAssignment = driverDirectoryActor
+        ? await driverDirectoryActor.ask<{ driverId: string }>(
+            createDriverAssignmentCommand({
+              shipmentId,
+              plan,
+              destination: input.destination,
+            }),
+            1000
+          )
+        : { driverId: 'driver-unassigned' };
+      await dispatcherActor?.send(
+        createRouteAssignmentRecordCommand({
+          plan,
+          driverId: driverAssignment.driverId,
+        })
+      );
+      await shipmentLifecycleActor.send({ type: 'ASSIGN_ROUTE', plan });
       await system().flush();
-      upsertProviderQueue(shipmentActor.getSnapshot().context);
       scheduleShipmentLifecycle(shipmentId);
     }
 
@@ -299,8 +598,16 @@ export function createLogisticsRuntimeGatewayServer(
       })
       .post('/shipments/:id/reset', async (_request, response) => {
         clearLifecycleTimers();
-        providerQueue.clear();
+        await providerHqActor?.send({ type: 'CLEAR_PROVIDER_QUEUE' });
         await shipmentActor?.send({ type: 'RESET_SHIPMENT' });
+        for (const actorRef of Array.from(shipmentActors.values())) {
+          await actorRef.stop();
+        }
+        for (const actorRef of Array.from(providerShipmentActors.values())) {
+          await actorRef.stop();
+        }
+        shipmentActors.clear();
+        providerShipmentActors.clear();
         return response.accepted({ status: 'idle' });
       })
       .get('/shipments/current', (_request, response) => {
@@ -313,13 +620,13 @@ export function createLogisticsRuntimeGatewayServer(
       .get('/provider/status', (_request, response) => {
         return response.ok(providerStatus());
       })
-      .post('/provider/mode', (request, response) => {
+      .post('/provider/mode', async (request, response) => {
         const body = bodyRecord(request.body);
         if (body.mode !== 'simulation' && body.mode !== 'manual') {
           return response.badRequest({ error: 'provider mode must be simulation or manual' });
         }
 
-        setLifecycleMode(body.mode);
+        await setLifecycleMode(body.mode);
         return response.accepted(providerStatus());
       })
       .post('/provider/signals', async (request, response) => {
@@ -328,7 +635,7 @@ export function createLogisticsRuntimeGatewayServer(
           return response.badRequest({ error: 'provider signal is required' });
         }
 
-        const snapshot = await applyProviderSignal({
+        await applyProviderSignal({
           shipmentId:
             typeof body.shipmentId === 'string'
               ? body.shipmentId
@@ -338,7 +645,6 @@ export function createLogisticsRuntimeGatewayServer(
           loadId: typeof body.loadId === 'string' ? body.loadId : undefined,
           note: typeof body.note === 'string' ? body.note : undefined,
         });
-        upsertProviderQueue(snapshot);
         return response.accepted(providerStatus());
       })
       .get('/runtime/status', (_request, response, actorWeb) => {
@@ -350,11 +656,16 @@ export function createLogisticsRuntimeGatewayServer(
             browserHost: 'thin Ignite host',
             serverRuntime: serverNode,
             workerRuntime: workerNode,
-            serviceWorkerRuntime: 'browser-local topology proof',
+            serviceWorkerRuntime: serviceWorkerNode,
           },
           actors: {
             shipment: shipmentActorDescriptor.address.path,
             routing: routingActorDescriptor.address.path,
+            providerHq: providerHqActorDescriptor.address.path,
+            logisticsSupervisor: logisticsSupervisorActorDescriptor.address.path,
+            dispatcher: dispatcherActorDescriptor.address.path,
+            driverDirectory: driverDirectoryActorDescriptor.address.path,
+            serviceWorkerProof: serviceWorkerProofActorDescriptor.address.path,
           },
         });
       })
@@ -383,44 +694,15 @@ export function createLogisticsRuntimeGatewayServer(
         gateway: {
           host: options.host ?? '127.0.0.1',
           port: options.port ?? 0,
-          expose: ['shipment'],
-          resolveScope: async (scope) => {
-            const shipmentScope = shipmentActorDescriptor.gateway?.scope.kind;
-            const routingScope = routingActorDescriptor.gateway?.scope.kind;
-            if (scope.kind !== shipmentScope && scope.kind !== routingScope) {
-              throw new RuntimeGatewayScopeError(
-                'invalid_scope',
-                `Unsupported scope ${scope.kind}.`
-              );
-            }
-
-            const isWorkerScope = scope.kind === routingScope;
-            const sourceActor = isWorkerScope ? routingActorDescriptor : shipmentActorDescriptor;
-            let actorRef = await system().lookup(sourceActor.address.path);
-            for (let attempt = 0; !actorRef && attempt < 20; attempt += 1) {
-              await wait(25);
-              actorRef = await system().lookup(sourceActor.address.path);
-            }
-            if (!actorRef) {
-              return null;
-            }
-
-            return createRuntimeGatewaySource(actorRef, {
-              workflowId: isWorkerScope ? 'logistics-routing' : 'logistics-shipment',
-              taskId: sourceActor.id,
-              taskTitle: isWorkerScope ? 'Logistics routing worker' : 'Logistics shipment tracker',
-              sourceActor: sourceActor.address.path,
-            });
-          },
         },
       });
-      shipmentActor =
-        (servedNode.getActor('shipment') as
-          | ActorRef<ShipmentContext, ShipmentCommand>
-          | undefined) ?? null;
-      if (!shipmentActor) {
-        throw new Error('Shipment actor was not spawned by Actor-Web server node.');
-      }
+      shipmentActor = servedNode.requireActor('shipment');
+      logisticsSupervisorActor = servedNode.requireActor('logisticsSupervisor');
+      dispatcherActor = servedNode.requireActor('dispatcher');
+      driverDirectoryActor = servedNode.requireActor('driverDirectory');
+      providerHqActor = servedNode.requireActor('providerHq');
+      bindRuntimeOrchestration();
+      await providerHqActor.send({ type: 'SET_PROVIDER_MODE', mode: lifecycleMode });
 
       await serveRest(servedNode);
     },
@@ -431,7 +713,14 @@ export function createLogisticsRuntimeGatewayServer(
       restServer = null;
       restUrl = null;
       shipmentActor = null;
+      logisticsSupervisorActor = null;
+      dispatcherActor = null;
+      driverDirectoryActor = null;
+      providerHqActor = null;
+      shipmentActors.clear();
+      providerShipmentActors.clear();
       clearLifecycleTimers();
+      unbindRuntimeOrchestration();
 
       if (activeRestServer) {
         await activeRestServer.stop();
