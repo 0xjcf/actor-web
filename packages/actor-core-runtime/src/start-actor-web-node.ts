@@ -16,6 +16,12 @@ import type {
   RuntimePeerDiscoveryProvider,
   RuntimePeerDiscoveryRecord,
 } from './runtime-peer-discovery.js';
+import {
+  getRuntimePeerStatus,
+  getRuntimeTransportStatus,
+  type RuntimePeerStatus,
+  type RuntimeTransportStatus,
+} from './runtime-transport-status.js';
 import type { RuntimeTransportTelemetryObserver } from './runtime-transport-telemetry.js';
 import type {
   ActorWebActorContext,
@@ -47,6 +53,8 @@ type StartableMessageTransport = MessageTransport & {
   destroy?: () => Promise<void> | void;
 };
 
+const DEFAULT_TRANSPORT_HEARTBEAT_INTERVAL_MS = 15_000;
+
 export interface StartActorWebNodeOptions<
   TTopology extends ActorWebTopology<ActorWebTopologyInput>,
 > {
@@ -67,6 +75,8 @@ export interface StartedActorWebNode<
   readonly actors: ActorWebNodeActorHandles<TTopology>;
   start(): Promise<void>;
   stop(): Promise<void>;
+  getTransportStatus(): RuntimeTransportStatus;
+  getPeerStatus(nodeAddress: string): RuntimePeerStatus;
   getActor<TKey extends keyof TTopology['actors'] & string>(
     key: TKey
   ):
@@ -204,6 +214,12 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
     ...(websocketTransportOptions?.peers ?? {}),
     ...topologyPeers,
   };
+  const heartbeatIntervalMs =
+    websocketTransportOptions?.heartbeatIntervalMs ?? DEFAULT_TRANSPORT_HEARTBEAT_INTERVAL_MS;
+  const heartbeatTimeoutMs =
+    websocketTransportOptions?.heartbeatTimeoutMs ?? heartbeatIntervalMs * 2;
+  const transportStatusStaleAfterMs =
+    heartbeatIntervalMs <= 0 ? 0 : heartbeatIntervalMs + heartbeatTimeoutMs;
   const transport = createTopologyTransport(
     nodeDefinition.address,
     transportOptions,
@@ -304,6 +320,16 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
     actors: actorHandles,
     start,
     stop,
+    getTransportStatus(): RuntimeTransportStatus {
+      return getRuntimeTransportStatus(transport, {
+        staleAfterMs: transportStatusStaleAfterMs,
+      });
+    },
+    getPeerStatus(nodeAddress: string): RuntimePeerStatus {
+      return getRuntimePeerStatus(transport, nodeAddress, {
+        staleAfterMs: transportStatusStaleAfterMs,
+      });
+    },
     getActor(key) {
       return actors.get(key) as
         | ActorRef<

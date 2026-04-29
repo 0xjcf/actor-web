@@ -24,6 +24,12 @@ import type {
   RuntimePeerDiscoveryProvider,
   RuntimePeerDiscoveryRecord,
 } from './runtime-peer-discovery.js';
+import {
+  getRuntimePeerStatus,
+  getRuntimeTransportStatus,
+  type RuntimePeerStatus,
+  type RuntimeTransportStatus,
+} from './runtime-transport-status.js';
 import type { RuntimeTransportTelemetryObserver } from './runtime-transport-telemetry.js';
 import type {
   ActorWebActorContext,
@@ -82,6 +88,8 @@ export interface ServedActorWebNode<TTopology extends ActorWebTopology<ActorWebT
   stop(): Promise<void>;
   getGatewayUrl(): string | null;
   getTransportUrl(): string | null;
+  getTransportStatus(): RuntimeTransportStatus;
+  getPeerStatus(nodeAddress: string): RuntimePeerStatus;
   getActor<TKey extends keyof TTopology['actors'] & string>(
     key: TKey
   ):
@@ -124,6 +132,7 @@ type WebSocketServerConstructor = new (options: {
 const WEB_SOCKET_OPEN = 1;
 const GATEWAY_ACTOR_LOOKUP_ATTEMPTS = 20;
 const GATEWAY_ACTOR_LOOKUP_DELAY_MS = 25;
+const DEFAULT_TRANSPORT_HEARTBEAT_INTERVAL_MS = 15_000;
 
 class ActorWebNodeGatewayConnection implements RuntimeGatewayConnectionAdapter {
   readonly authContext = {};
@@ -253,6 +262,11 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
   const topologyPeers = resolveTopologyPeerUrls(topology, options.peers);
   const discoveryPeerUrls = new Map<string, string>();
   const transportListen = transportOptions?.listen;
+  const heartbeatIntervalMs =
+    transportOptions?.heartbeatIntervalMs ?? DEFAULT_TRANSPORT_HEARTBEAT_INTERVAL_MS;
+  const heartbeatTimeoutMs = transportOptions?.heartbeatTimeoutMs ?? heartbeatIntervalMs * 2;
+  const transportStatusStaleAfterMs =
+    heartbeatIntervalMs <= 0 ? 0 : heartbeatIntervalMs + heartbeatTimeoutMs;
   const transport = createNodeWebSocketMessageTransport({
     nodeAddress: nodeDefinition.address,
     peers: topologyPeers,
@@ -261,8 +275,12 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
       discoveryPeerUrls.get(nodeAddress) ??
       (await transportOptions?.peerUrlResolver?.(nodeAddress)),
     connectTimeoutMs: transportOptions?.connectTimeoutMs,
-    heartbeatIntervalMs: transportOptions?.heartbeatIntervalMs ?? 0,
-    heartbeatTimeoutMs: transportOptions?.heartbeatTimeoutMs,
+    ...(transportOptions?.heartbeatIntervalMs !== undefined
+      ? { heartbeatIntervalMs: transportOptions.heartbeatIntervalMs }
+      : {}),
+    ...(transportOptions?.heartbeatTimeoutMs !== undefined
+      ? { heartbeatTimeoutMs: transportOptions.heartbeatTimeoutMs }
+      : {}),
     ...(transportOptions?.telemetry ? { telemetry: transportOptions.telemetry } : {}),
     ...(transportOptions?.auth ? { auth: transportOptions.auth } : {}),
     ...(transportListen
@@ -467,6 +485,16 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
     },
     getTransportUrl(): string | null {
       return transport.getListeningUrl();
+    },
+    getTransportStatus(): RuntimeTransportStatus {
+      return getRuntimeTransportStatus(transport, {
+        staleAfterMs: transportStatusStaleAfterMs,
+      });
+    },
+    getPeerStatus(nodeAddress: string): RuntimePeerStatus {
+      return getRuntimePeerStatus(transport, nodeAddress, {
+        staleAfterMs: transportStatusStaleAfterMs,
+      });
     },
     getActor(key) {
       return actors.get(key) as

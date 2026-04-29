@@ -59,8 +59,6 @@ async function main(): Promise<void> {
     node: 'worker',
     host: process.env.ACTOR_WEB_HOST ?? '127.0.0.1',
     transport: {
-      heartbeatIntervalMs: 5_000,
-      heartbeatTimeoutMs: 15_000,
       ...(telemetry ? { telemetry: telemetry.observe } : {}),
     },
     discovery,
@@ -73,20 +71,22 @@ async function main(): Promise<void> {
   };
   console.log(`LOGISTICS_WORKER_READY ${JSON.stringify(ready)}`);
 
-  const shutdown = (): void => {
-    void stopWorker(worker)
-      .then(() => stopTelemetry(telemetry))
-      .catch((error) => {
-        console.error(error);
-        process.exitCode = 1;
-      })
-      .finally(() => {
-        process.exit();
-      });
-  };
+  const keepAlive = setInterval(() => {}, 60_000);
+  await new Promise<void>((resolve) => {
+    const shutdown = (): void => {
+      clearInterval(keepAlive);
+      void stopWorker(worker)
+        .then(() => stopTelemetry(telemetry))
+        .catch((error) => {
+          console.error(error);
+          process.exitCode = 1;
+        })
+        .finally(resolve);
+    };
 
-  process.once('SIGINT', shutdown);
-  process.once('SIGTERM', shutdown);
+    process.once('SIGINT', shutdown);
+    process.once('SIGTERM', shutdown);
+  });
 }
 
 main().catch((error) => {

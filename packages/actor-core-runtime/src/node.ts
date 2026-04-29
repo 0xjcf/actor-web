@@ -17,6 +17,17 @@ export {
   createStaticRuntimePeerDiscoveryProvider,
 } from './runtime-peer-discovery.js';
 export type {
+  RuntimePeerStatus,
+  RuntimePeerStatusState,
+  RuntimeTransportStatus,
+  RuntimeTransportStatusOptions,
+} from './runtime-transport-status.js';
+export {
+  deriveRuntimePeerStatus,
+  getRuntimePeerStatus,
+  getRuntimeTransportStatus,
+} from './runtime-transport-status.js';
+export type {
   InMemoryRuntimeTransportTelemetrySink,
   RuntimeTransportPeerStats,
   RuntimeTransportStats,

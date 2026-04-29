@@ -22,6 +22,8 @@ Current guarantees:
 - Built-in runtime transport is direct-peer and at-most-once.
 - Runtime peers and gateway clients can be authenticated before stream/peer
   admission.
+- Topology runners expose normalized runtime transport status with peer
+  freshness and heartbeat-derived stale detection.
 - Gateway streams detect sequence gaps and resync from a bounded in-memory replay
   buffer, falling back to a latest snapshot when the requested range is no
   longer available.
@@ -643,6 +645,29 @@ console.log(server.getTransportUrl());
 `transport: true` opens the runtime-to-runtime WebSocket listener. Use object
 options only when deployment details need explicit ports, hosts, heartbeat
 settings, peer resolution, or auth.
+
+Topology runners expose runtime transport status without requiring applications
+to inspect transport internals:
+
+```ts
+const transport = server.getTransportStatus();
+const worker = server.getPeerStatus('logistics-worker-runtime');
+
+if (!worker.connected || !worker.fresh) {
+  console.warn(worker.staleReason ?? worker.rejectedReason ?? 'worker unavailable');
+}
+```
+
+`RuntimePeerStatus` includes `nodeAddress`, `state`, `connected`, `fresh`,
+`lastSeenAt`, `disconnectedAt`, `rejectedReason`, `staleAfterMs`, and
+`staleReason`. `RuntimeTransportStatus` includes normalized `connectedNodes`,
+all known `peers`, and optional `startedAt` / `stoppedAt` timestamps.
+
+When `transport: true` or `transport: { listen: true }` is used,
+`serveActorWebNode(...)` and `startActorWebNode(...)` let the WebSocket
+transport heartbeat defaults apply: 15 seconds interval and 30 seconds timeout.
+Set `heartbeatIntervalMs: 0` explicitly to opt out for tests or custom
+deployment constraints.
 
 `serveActorWebNode` deliberately does not own REST routes, provider callbacks,
 persistence, or business ingress. Those are application adapters around the

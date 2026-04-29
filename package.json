@@ -46,6 +46,8 @@
     "examples:logistics:server": "vite-node --config examples/vite.config.ts examples/ignite-headless-host/logistics-server-process.ts",
     "examples:logistics:worker": "vite-node --config examples/vite.config.ts examples/ignite-headless-host/logistics-worker-process.ts",
     "examples:logistics:web": "vite examples --config examples/vite.config.ts --host 0.0.0.0 --port 4173",
+    "examples:logistics:docker:start": "docker compose -f docker-compose.logistics.yml up --build -d",
+    "examples:logistics:docker:stop": "docker compose -f docker-compose.logistics.yml down --remove-orphans",
     "examples:logistics:docker:verify": "node scripts/verify-logistics-docker-compose.mjs",
     "examples:build": "vite build examples --config examples/vite.config.ts",
     "aw": "pnpm --filter @agent-workflow/cli dev",

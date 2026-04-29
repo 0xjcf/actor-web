@@ -53,6 +53,10 @@ async function main() {
         telemetryFileContains('worker-transport.jsonl', 'peer.connected'),
       'Expected server and worker telemetry JSONL files to include peer connection events'
     );
+    await waitFor(
+      () => containerIsRunning('actor-web-logistics-worker-runtime-1'),
+      'Expected worker runtime container to remain running after routing work completes'
+    );
 
     console.log('Actor-Web logistics Docker Compose smoke passed.');
   } finally {
@@ -96,6 +100,16 @@ function telemetryFileContains(fileName, eventType) {
   return existsSync(filePath) && readFileSync(filePath, 'utf8').includes(`"type":"${eventType}"`);
 }
 
+async function containerIsRunning(containerName) {
+  const status = await capture('docker', [
+    'inspect',
+    containerName,
+    '--format',
+    '{{.State.Status}}',
+  ]);
+  return status.trim() === 'running';
+}
+
 async function waitFor(predicate, message, timeoutMs = 30_000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
@@ -107,6 +121,38 @@ async function waitFor(predicate, message, timeoutMs = 30_000) {
   }
 
   throw new Error(message);
+}
+
+async function capture(command, args) {
+  const result = await new Promise((resolve) => {
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const stdout = [];
+    const stderr = [];
+    child.stdout.on('data', (chunk) => stdout.push(chunk));
+    child.stderr.on('data', (chunk) => stderr.push(chunk));
+    child.on('error', (error) =>
+      resolve({
+        code: 1,
+        stderr: Buffer.from(String(error)),
+        stdout: Buffer.alloc(0),
+      })
+    );
+    child.on('exit', (code) =>
+      resolve({
+        code: code ?? 1,
+        stderr: Buffer.concat(stderr),
+        stdout: Buffer.concat(stdout),
+      })
+    );
+  });
+
+  if (result.code !== 0) {
+    throw new Error(
+      `${command} ${args.join(' ')} failed with exit code ${result.code}: ${result.stderr.toString('utf8')}`
+    );
+  }
+
+  return result.stdout.toString('utf8');
 }
 
 async function run(command, args, options = {}) {

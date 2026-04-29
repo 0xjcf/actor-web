@@ -653,13 +653,18 @@ export function createLogisticsRuntimeGatewayServer(
         return response.accepted(providerStatus());
       })
       .get('/runtime/status', (_request, response, actorWeb) => {
+        const transportStatus = actorWeb.runtime.getTransportStatus();
+        const workerPeer = actorWeb.runtime.getPeerStatus(workerNode);
         return response.ok({
           gatewayUrl: actorWeb.runtime.getGatewayUrl(),
           transportUrl: actorWeb.runtime.getTransportUrl(),
           lifecycleMode,
           transport: {
-            connectedNodes: actorWeb.runtime.transport.getConnectedNodes(),
-            workerConnected: actorWeb.runtime.transport.isConnected(workerNode),
+            connectedNodes: transportStatus.connectedNodes,
+            peers: transportStatus.peers,
+            workerConnected: workerPeer.connected,
+            workerPeerFresh: workerPeer.fresh,
+            workerPeer,
           },
           nodes: {
             browserHost: 'thin Ignite host',

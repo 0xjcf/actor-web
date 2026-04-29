@@ -108,6 +108,16 @@ describe('logistics multi-process deployment prove-out', () => {
       'Expected separate worker process to plan and return a route'
     );
 
+    await stopManagedProcess(worker);
+    await waitForRuntimeStatus(
+      serverReady.restUrl,
+      (status) =>
+        !status.transport.workerConnected &&
+        status.transport.workerPeer?.connected === false &&
+        status.transport.workerPeerFresh === false,
+      'Expected server runtime status to mark stopped worker process disconnected'
+    );
+
     await Promise.all(readyProcesses.splice(0).map(stopManagedProcess));
     expect(readFileSync(serverTelemetryPath, 'utf8')).toContain('"type":"peer.connected"');
     expect(readFileSync(workerTelemetryPath, 'utf8')).toContain('"type":"peer.connected"');
@@ -124,6 +134,7 @@ function spawnExampleProcess(
     ['exec', 'vite-node', '--config', 'examples/vite.config.ts', ...entryArgs],
     {
       cwd: process.cwd(),
+      detached: process.platform !== 'win32',
       env: {
         ...process.env,
         FORCE_COLOR: '0',
@@ -185,31 +196,59 @@ async function waitForReadyLine<T>(
   );
 }
 
-async function stopManagedProcess(process: ManagedProcess): Promise<void> {
-  if (process.child.exitCode !== null || process.child.signalCode !== null) {
+async function stopManagedProcess(managed: ManagedProcess): Promise<void> {
+  if (managed.child.exitCode !== null || managed.child.signalCode !== null) {
     return;
   }
 
-  process.child.kill('SIGTERM');
+  signalManagedProcess(managed, 'SIGTERM');
   await new Promise<void>((resolve) => {
     const timeout = setTimeout(() => {
-      if (process.child.exitCode === null && process.child.signalCode === null) {
-        process.child.kill('SIGKILL');
+      if (managed.child.exitCode === null && managed.child.signalCode === null) {
+        signalManagedProcess(managed, 'SIGKILL');
       }
       resolve();
     }, 2_000);
 
-    process.child.once('exit', () => {
+    managed.child.once('exit', () => {
       clearTimeout(timeout);
       resolve();
     });
   });
 }
 
+function signalManagedProcess(managed: ManagedProcess, signal: NodeJS.Signals): void {
+  if (!managed.child.pid) {
+    return;
+  }
+
+  try {
+    if (process.platform === 'win32') {
+      managed.child.kill(signal);
+      return;
+    }
+
+    process.kill(-managed.child.pid, signal);
+  } catch {
+    // The process may have already exited between the status check and signal.
+  }
+}
+
 interface RuntimeStatusResponse {
   readonly transport: {
     readonly connectedNodes: readonly string[];
     readonly workerConnected: boolean;
+    readonly workerPeerFresh?: boolean;
+    readonly workerPeer?: {
+      readonly state: string;
+      readonly connected: boolean;
+      readonly fresh: boolean;
+      readonly staleAfterMs: number;
+      readonly lastSeenAt?: string;
+      readonly disconnectedAt?: string;
+      readonly rejectedReason?: string;
+      readonly staleReason?: string;
+    };
   };
 }
 
@@ -218,15 +257,20 @@ async function waitForRuntimeStatus(
   predicate: (status: RuntimeStatusResponse) => boolean,
   message: string
 ): Promise<RuntimeStatusResponse> {
-  return waitFor(async () => {
-    const response = await fetch(`${restUrl}/runtime/status`);
-    if (!response.ok) {
-      return undefined;
-    }
+  let lastStatus: RuntimeStatusResponse | undefined;
+  return waitFor(
+    async () => {
+      const response = await fetch(`${restUrl}/runtime/status`);
+      if (!response.ok) {
+        return undefined;
+      }
 
-    const status = (await response.json()) as RuntimeStatusResponse;
-    return predicate(status) ? status : undefined;
-  }, message);
+      const status = (await response.json()) as RuntimeStatusResponse;
+      lastStatus = status;
+      return predicate(status) ? status : undefined;
+    },
+    () => `${message}. Last status: ${JSON.stringify(lastStatus)}`
+  );
 }
 
 interface ShipmentResponse {
@@ -253,7 +297,7 @@ async function waitForShipment(
 
 async function waitFor<T>(
   read: () => Promise<T | undefined>,
-  message: string,
+  message: string | (() => string),
   timeoutMs = 10_000
 ): Promise<T> {
   const startedAt = Date.now();
@@ -266,7 +310,7 @@ async function waitFor<T>(
     await wait(50);
   }
 
-  throw new Error(message);
+  throw new Error(typeof message === 'function' ? message() : message);
 }
 
 function wait(delayMs: number): Promise<void> {

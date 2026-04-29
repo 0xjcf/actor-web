@@ -170,7 +170,12 @@ Troubleshooting:
 
 - If the worker is not connected, check
   `curl http://127.0.0.1:4100/runtime/status` and confirm
-  `transport.workerConnected` is `true`.
+  `transport.workerConnected` is `true` and `transport.workerPeer.fresh` is
+  `true`.
+- If `transport.workerConnected` is `false`, inspect
+  `transport.workerPeer.state`, `transport.workerPeer.disconnectedAt`, and
+  `transport.workerPeer.staleReason`. These values come from Actor-Web runtime
+  status derivation, not from logistics-local freshness rules.
 - If the browser cannot connect, remember that `server-runtime` is Docker DNS
   and is not reachable from the host browser. Browser env vars should use
   `127.0.0.1` published ports.
@@ -235,6 +240,7 @@ Stage 2 tests:
 - Verify REST shipment ingress through published host REST URL.
 - Verify server asks worker-owned routing actor over real WebSocket transport.
 - Verify server and worker telemetry JSONL files record peer connection events.
+- Verify the worker container remains running after route work completes.
 - Browser-host manual verification uses the published web URL.
 
 Stage 3 tests:

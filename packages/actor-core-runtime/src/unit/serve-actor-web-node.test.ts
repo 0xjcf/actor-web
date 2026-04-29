@@ -77,6 +77,26 @@ function collectFrames(socket: WebSocket): { nextFrame(): Promise<RuntimeGateway
   };
 }
 
+async function waitFor<T>(
+  read: () => T | undefined | Promise<T | undefined>,
+  message: string,
+  timeoutMs = 2_000
+): Promise<T> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const value = await read();
+    if (value !== undefined) {
+      return value;
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+  }
+
+  throw new Error(message);
+}
+
 describe('serveActorWebNode', () => {
   it('starts a topology node, spawns owned actors, and exposes a gateway source', async () => {
     const topology = defineActorWebTopology({
@@ -422,6 +442,168 @@ describe('serveActorWebNode', () => {
     }
 
     expect(await discovery.getPeers()).toEqual([]);
+  });
+
+  it('exposes normalized transport and peer status with heartbeat defaults', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+        worker: node('worker-node'),
+      },
+      actors: {
+        serverCounter: actor({
+          id: 'server-counter',
+          node: 'server',
+          behavior: createCounterBehavior,
+        }),
+        workerCounter: actor({
+          id: 'worker-counter',
+          node: 'worker',
+          behavior: createCounterBehavior,
+        }),
+      },
+    });
+    const worker = await serveActorWebNode(topology, {
+      node: 'worker',
+      transport: true,
+    });
+    const served = await serveActorWebNode(topology, {
+      node: 'server',
+      transport: true,
+      peers: {
+        worker: worker.getTransportUrl() ?? '',
+      },
+      connect: ['worker'],
+    });
+
+    try {
+      const peerStatus = await waitFor(() => {
+        const status = served.getPeerStatus('worker-node');
+        return status.connected && status.fresh ? status : undefined;
+      }, 'Expected worker peer to become connected and fresh');
+
+      expect(peerStatus).toMatchObject({
+        nodeAddress: 'worker-node',
+        state: 'connected',
+        connected: true,
+        fresh: true,
+        staleAfterMs: 45_000,
+      });
+      expect(served.getTransportStatus()).toMatchObject({
+        connectedNodes: ['worker-node'],
+        peers: [expect.objectContaining({ nodeAddress: 'worker-node', connected: true })],
+      });
+    } finally {
+      await served.stop();
+      await worker.stop();
+    }
+  });
+
+  it('marks stopped peers disconnected through the runtime status API', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+        worker: node('worker-node'),
+      },
+      actors: {
+        serverCounter: actor({
+          id: 'server-counter',
+          node: 'server',
+          behavior: createCounterBehavior,
+        }),
+        workerCounter: actor({
+          id: 'worker-counter',
+          node: 'worker',
+          behavior: createCounterBehavior,
+        }),
+      },
+    });
+    const worker = await serveActorWebNode(topology, {
+      node: 'worker',
+      transport: true,
+    });
+    const served = await serveActorWebNode(topology, {
+      node: 'server',
+      transport: true,
+      peers: {
+        worker: worker.getTransportUrl() ?? '',
+      },
+      connect: ['worker'],
+    });
+    let workerStopped = false;
+
+    try {
+      await waitFor(
+        () => (served.getPeerStatus('worker-node').connected ? true : undefined),
+        'Expected worker peer to connect before stopping it'
+      );
+
+      await worker.stop();
+      workerStopped = true;
+
+      await waitFor(() => {
+        const status = served.getPeerStatus('worker-node');
+        return !status.connected && !status.fresh ? status : undefined;
+      }, 'Expected stopped worker peer to become disconnected or not fresh');
+      expect(served.getTransportStatus().connectedNodes).not.toContain('worker-node');
+    } finally {
+      await served.stop();
+      if (!workerStopped) {
+        await worker.stop();
+      }
+    }
+  });
+
+  it('preserves explicit heartbeat opt-out in topology runner status', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+        worker: node('worker-node'),
+      },
+      actors: {
+        serverCounter: actor({
+          id: 'server-counter',
+          node: 'server',
+          behavior: createCounterBehavior,
+        }),
+        workerCounter: actor({
+          id: 'worker-counter',
+          node: 'worker',
+          behavior: createCounterBehavior,
+        }),
+      },
+    });
+    const worker = await serveActorWebNode(topology, {
+      node: 'worker',
+      transport: {
+        listen: true,
+        heartbeatIntervalMs: 0,
+      },
+    });
+    const served = await serveActorWebNode(topology, {
+      node: 'server',
+      transport: {
+        listen: true,
+        heartbeatIntervalMs: 0,
+      },
+      peers: {
+        worker: worker.getTransportUrl() ?? '',
+      },
+      connect: ['worker'],
+    });
+
+    try {
+      const peerStatus = await waitFor(() => {
+        const status = served.getPeerStatus('worker-node');
+        return status.connected ? status : undefined;
+      }, 'Expected worker peer to connect with heartbeat disabled');
+
+      expect(peerStatus.staleAfterMs).toBe(0);
+      expect(peerStatus.fresh).toBe(true);
+    } finally {
+      await served.stop();
+      await worker.stop();
+    }
   });
 
   it('passes topology runner transport telemetry to configured exporters', async () => {

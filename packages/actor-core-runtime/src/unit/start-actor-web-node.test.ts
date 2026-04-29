@@ -186,6 +186,43 @@ describe('startActorWebNode', () => {
     expect(transport.stopped).toBe(true);
   });
 
+  it('exposes runtime status for supplied browser-safe transports', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+        serviceWorker: node('service-worker-node'),
+      },
+      actors: {
+        proof: actor({
+          id: 'proof',
+          node: 'serviceWorker',
+          behavior: createCounterBehavior,
+        }),
+      },
+    });
+    const transport = new TestMessageTransport();
+    transport.connected.add('server-node');
+    const serviceWorkerNode = await startActorWebNode(topology, {
+      node: 'serviceWorker',
+      transport,
+    });
+
+    try {
+      expect(serviceWorkerNode.getPeerStatus('server-node')).toMatchObject({
+        nodeAddress: 'server-node',
+        state: 'connected',
+        connected: true,
+        fresh: true,
+        staleAfterMs: 45_000,
+      });
+      expect(serviceWorkerNode.getTransportStatus()).toMatchObject({
+        connectedNodes: ['server-node'],
+      });
+    } finally {
+      await serviceWorkerNode.stop();
+    }
+  });
+
   it('rejects owned actors when required tools are not registered', async () => {
     const topology = defineActorWebTopology({
       nodes: {
