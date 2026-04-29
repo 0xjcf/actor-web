@@ -130,17 +130,19 @@ hexagonal boundary or the actor model.
 - the distributed actor directory is still an in-memory replicated cache
 - stable node identity and incarnation are enforced at the WebSocket transport
   edge, but not yet backed by a membership store or dynamic discovery
-- there is no real network auth/security model
-- `send` and remote subscription delivery do not yet have production-grade
-  delivery guarantees over unreliable networks
-- replay is latest snapshot plus ordered live stream, not durable event replay
+- auth is static token/provider hooks; TLS, certificate management, OAuth/OIDC,
+  and per-frame signing remain deployment/application concerns
+- actor `send` remains at-most-once by default; internal runtime control traffic
+  has bounded ack/retry support
+- gateway projection replay is bounded and in-memory: clients can recover from
+  sequence gaps when the range is still buffered, otherwise they fall back to the
+  latest snapshot
 - `NodeWebSocketMessageTransport` has basic lifecycle and stale-peer handling,
   but is not a fully hardened production transport
 - `BrowserWebSocketMessageTransport` is outbound-only and still depends on
   static peer URL resolution
 - transport telemetry is in-memory runtime-native observability; it is not yet
-  OpenTelemetry integration, durable telemetry export, replay, retry, or
-  backpressure enforcement
+  OpenTelemetry integration or durable telemetry export
 
 ## Architectural Constraints
 
@@ -186,13 +188,12 @@ That means:
 ## Remaining Actor-Web Work
 
 1. Runtime membership and discovery across machines
-2. Production delivery semantics for remote `send` and `ask`
-3. Durable resync source for projections
+2. Production delivery semantics beyond at-most-once actor `send`
+3. Durable replay providers for projections and events
 4. Shared-contract promotion from mapper to real data-plane wire shape
-5. Auth and transport security
-6. Durable telemetry export, tracing, lag, replay, and backpressure
+5. Durable telemetry export, tracing, lag, replay, and backpressure
    observability
-7. Multi-process and multi-machine prove-out beyond localhost
+6. Multi-process and multi-machine prove-out beyond localhost
 
 ## External Transport Options
 
@@ -397,12 +398,15 @@ Do not imply stronger guarantees than the runtime can enforce.
 
 Near-term:
 
-- durable latest snapshot per actor owner, or at least owner-resident latest
-  snapshot that survives transient disconnects
-- reconnect fetches latest snapshot, then resumes ordered live stream
+- gateway-owned bounded replay buffer for ordered snapshots, events, and
+  transitions
+- source-side sequence gap detection and resync request from the first missing
+  sequence
+- latest-snapshot fallback when the requested replay range is unavailable
 
 Later:
 
+- durable latest snapshot per actor owner that survives owner restart
 - optional durable historical event replay where product/runtime needs justify it
 
 ### 6. Shared-contract promotion
@@ -465,9 +469,11 @@ Backpressure rules:
 - keep existing `MessageTransport` port intact
 - support handshake, direct send, ask, and projection streams
 
-Status: complete for localhost/static-peer prove-out. Remaining production work
-is dynamic discovery, auth/security, durable replay/resync, observability, and
-backpressure.
+Status: complete for localhost/static-peer prove-out. Later slices added
+auth/security, telemetry, idempotency, ack/retry control traffic, bounded
+backpressure, and bounded gateway replay. Remaining production work is dynamic
+discovery, durable replay storage, durable observability export, and
+multi-machine prove-out.
 
 ### Phase 3: Identity and membership hardening
 
@@ -477,8 +483,8 @@ backpressure.
 - move directory sync to handshake/bootstrap lifecycle
 
 Status: complete for basic static-peer membership hardening. Remaining
-production work is a real membership/discovery provider, auth/security, durable
-replay/resync, observability, and backpressure.
+production work is a real membership/discovery provider, durable replay storage,
+durable observability export, and multi-machine prove-out.
 
 ### Phase 3.5: Runtime transport observability foundation
 
@@ -493,13 +499,18 @@ Status: complete for runtime-native telemetry/stats snapshots, auth/security,
 message ID based duplicate suppression, and bounded retry/ack handling for
 internal runtime control traffic. Bounded per-peer outbound queues now apply
 backpressure by rejecting sends when the queue is full. Remaining production work
-is durable replay/resync and durable telemetry export.
+is durable replay storage, durable telemetry export, dynamic discovery, and
+multi-machine prove-out.
 
 ### Phase 4: Projection hardening
 
-- durable latest snapshot source per actor owner
-- resubscribe and resync behavior over real disconnects
-- bounded queue/backpressure behavior
+- bounded in-memory gateway replay for projection stream gaps
+- source-side gap detection and `resync` requests
+- latest-snapshot fallback when the replay range is unavailable
+
+Status: complete for bounded gateway replay and latest-snapshot fallback.
+Remaining production work is durable latest snapshot/event replay providers that
+survive owner restart or process loss.
 
 ### Phase 5: Shared-contract wire promotion
 

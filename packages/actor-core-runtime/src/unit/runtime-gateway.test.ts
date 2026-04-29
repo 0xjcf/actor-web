@@ -535,10 +535,18 @@ describe('runtime gateway hub', () => {
         },
       },
       {
-        type: 'snapshot',
+        type: 'event',
         streamId: 'fleet-main',
-        sequence: 4,
-        projection: createGatewaySnapshot('ready', { phase: 'ready' }),
+        sequence: 2,
+      },
+      {
+        type: 'transition',
+        streamId: 'fleet-main',
+        sequence: 3,
+        transition: {
+          fromPhase: 'ready',
+          toPhase: 'submitted',
+        },
       },
       {
         type: 'status',
@@ -565,7 +573,73 @@ describe('runtime gateway hub', () => {
     });
 
     source.emitSnapshot(createGatewaySnapshot('submitted', { phase: 'submitted' }));
-    expect(connection.frames).toHaveLength(8);
+    expect(connection.frames).toHaveLength(9);
+
+    detach();
+  });
+
+  it('falls back to latest snapshot when requested replay range is unavailable', async () => {
+    const source = createFakeSource('ready');
+    const hub = createRuntimeGatewayHub({
+      replayBufferSize: 1,
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'fleet-main',
+      scope: { kind: 'fleet-view' },
+    });
+    await flushGatewayFrames();
+
+    source.emitEvent({
+      address: source.address,
+      envelope: {
+        id: 'event-1',
+        kind: 'fact',
+        type: 'InspectionProgressRecorded',
+        schemaVersion: 1,
+        occurredAt: '2026-04-23T15:00:01.000Z',
+        sourceActor: '/actors/ready',
+        payload: {},
+      },
+    });
+    source.emitTransition({
+      fromPhase: 'ready',
+      toPhase: 'submitted',
+      fromStatus: 'running',
+      toStatus: 'running',
+    });
+
+    const frameCountBeforeResync = connection.frames.length;
+    connection.push({
+      type: 'resync',
+      streamId: 'fleet-main',
+      fromSequence: 2,
+    });
+    await flushGatewayFrames();
+
+    expect(connection.frames.slice(frameCountBeforeResync)).toMatchObject([
+      {
+        type: 'status',
+        streamId: 'fleet-main',
+        status: { state: 'replaying' },
+      },
+      {
+        type: 'snapshot',
+        streamId: 'fleet-main',
+        sequence: 4,
+        projection: createGatewaySnapshot('ready', { phase: 'ready' }),
+      },
+      {
+        type: 'status',
+        streamId: 'fleet-main',
+        status: { state: 'connected' },
+      },
+    ]);
 
     detach();
   });

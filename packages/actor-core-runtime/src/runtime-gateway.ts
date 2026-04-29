@@ -146,6 +146,7 @@ export interface CreateRuntimeGatewaySourceOptions {
 export interface CreateRuntimeGatewayHubOptions<TAuthContext = unknown> {
   resolveScope: RuntimeGatewayScopeResolver<TAuthContext>;
   heartbeatMs?: number;
+  replayBufferSize?: number;
   auth?: RuntimeGatewayAuthProvider<{
     readonly connectionId: string;
     readonly clientVersion?: string;
@@ -283,6 +284,7 @@ export function createRuntimeGatewaySource(
 type RuntimeGatewayStreamState = {
   source: RuntimeGatewaySource;
   sequence: number;
+  replayFrames: RuntimeGatewayReplayFrame[];
   lastSnapshot: RuntimeGatewaySnapshotProjection | null;
   unsubscribeSnapshot: () => void;
   unsubscribeEvent: () => void;
@@ -290,12 +292,24 @@ type RuntimeGatewayStreamState = {
   unsubscribeTransition: () => void;
 };
 
+type RuntimeGatewayReplayFrame = Extract<
+  RuntimeGatewayServerFrame,
+  { type: 'snapshot' | 'event' | 'transition' }
+>;
+
+type RuntimeGatewayReplayFrameDraft = RuntimeGatewayReplayFrame extends infer TFrame
+  ? TFrame extends RuntimeGatewayReplayFrame
+    ? Omit<TFrame, 'sequence'>
+    : never
+  : never;
+
 export function createRuntimeGatewayHub<TAuthContext = unknown>(
   options: CreateRuntimeGatewayHubOptions<TAuthContext>
 ): {
   attach(connection: RuntimeGatewayConnectionAdapter<TAuthContext>): () => void;
 } {
   const heartbeatMs = options.heartbeatMs ?? 15000;
+  const replayBufferSize = options.replayBufferSize ?? 256;
 
   return {
     attach(connection: RuntimeGatewayConnectionAdapter<TAuthContext>): () => void {
@@ -359,6 +373,32 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         return stream.sequence;
       };
 
+      const rememberReplayFrame = (
+        stream: RuntimeGatewayStreamState,
+        frame: RuntimeGatewayReplayFrame
+      ): void => {
+        if (replayBufferSize <= 0) {
+          return;
+        }
+
+        stream.replayFrames.push(frame);
+        while (stream.replayFrames.length > replayBufferSize) {
+          stream.replayFrames.shift();
+        }
+      };
+
+      const sendSequenced = (
+        stream: RuntimeGatewayStreamState,
+        frame: RuntimeGatewayReplayFrameDraft
+      ): void => {
+        const sequencedFrame = {
+          ...frame,
+          sequence: nextSequence(stream),
+        } as RuntimeGatewayReplayFrame;
+        rememberReplayFrame(stream, sequencedFrame);
+        send(sequencedFrame);
+      };
+
       const subscribeStream = async (
         streamId: string,
         scope: RuntimeGatewayScopeDescriptor
@@ -391,6 +431,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         const stream: RuntimeGatewayStreamState = {
           source,
           sequence: 0,
+          replayFrames: [],
           lastSnapshot: null,
           unsubscribeSnapshot: () => {},
           unsubscribeEvent: () => {},
@@ -405,29 +446,26 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
 
         stream.unsubscribeSnapshot = source.subscribeSnapshot((projection) => {
           stream.lastSnapshot = projection;
-          send({
+          sendSequenced(stream, {
             type: 'snapshot',
             streamId,
-            sequence: nextSequence(stream),
             projection,
           });
         });
 
         stream.unsubscribeEvent = source.subscribeEvent((projection) => {
-          send({
+          sendSequenced(stream, {
             type: 'event',
             streamId,
-            sequence: nextSequence(stream),
             projection,
           });
         });
 
         stream.unsubscribeTransition = source.subscribeTransition
           ? source.subscribeTransition((transition) => {
-              send({
+              sendSequenced(stream, {
                 type: 'transition',
                 streamId,
-                sequence: nextSequence(stream),
                 transition,
               });
             })
@@ -450,14 +488,29 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         }
 
         sendStatus(streamId, createProjectionTransportStatus('replaying'));
-        const projection = stream.source.snapshot();
-        stream.lastSnapshot = projection;
-        send({
-          type: 'snapshot',
-          streamId,
-          sequence: nextSequence(stream),
-          projection,
-        });
+        const replayFrames =
+          fromSequence === undefined
+            ? []
+            : stream.replayFrames.filter((frame) => frame.sequence >= fromSequence);
+        const canReplay =
+          fromSequence !== undefined &&
+          replayFrames.length > 0 &&
+          replayFrames[0]?.sequence === fromSequence &&
+          replayFrames.every((frame, index) => frame.sequence === fromSequence + index);
+
+        if (canReplay) {
+          for (const frame of replayFrames) {
+            send(frame);
+          }
+        } else {
+          const projection = stream.source.snapshot();
+          stream.lastSnapshot = projection;
+          sendSequenced(stream, {
+            type: 'snapshot',
+            streamId,
+            projection,
+          });
+        }
         sendStatus(streamId, stream.source.transportStatus());
       };
 

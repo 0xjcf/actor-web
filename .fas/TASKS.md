@@ -138,13 +138,25 @@
 
 - Title: Runtime transport bounded queues and backpressure
 - Mode: 6-agent
-- Status: review
+- Status: done
 - Owner: reviewer
 - Brief: .fas/tasks/runtime-transport-bounded-queues-backpressure.md
 - Verification lane: full
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 - Artifacts: brief=.fas/tasks/runtime-transport-bounded-queues-backpressure.md; verification=.fas/state/verification/latest.json
+
+### Task: Runtime gateway replay and resync
+
+- Title: Runtime gateway replay and resync
+- Mode: 6-agent
+- Status: done
+- Owner: reviewer
+- Brief: .fas/tasks/runtime-gateway-replay-resync.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: brief=.fas/tasks/runtime-gateway-replay-resync.md; verification=.fas/state/verification/latest.json
 
 ### Task: Logistics control tower demo
 

@@ -281,4 +281,125 @@ describe('createActorWebSource', () => {
       },
     });
   });
+
+  it('requests resync when gateway stream sequence gaps are detected', async () => {
+    const socket = new FakeGatewaySocket();
+    const source = createActorWebSource(
+      {
+        address: 'actor://server-node/actor/shipment',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+          scope: { kind: 'shipment' },
+        },
+      },
+      {
+        createSocket: () => socket,
+        streamId: 'shipment-stream',
+      }
+    );
+    const statuses: string[] = [];
+    source.subscribeTransportStatus((status) => {
+      statuses.push(status.state);
+    });
+
+    socket.open();
+    socket.receive({
+      type: 'ready',
+      connectionId: 'connection-1',
+      heartbeatMs: 15000,
+      serverTime: '2026-04-25T18:00:00.000Z',
+    });
+    socket.receive({
+      type: 'snapshot',
+      streamId: 'shipment-stream',
+      sequence: 1,
+      projection: {
+        address: source.address,
+        workflowSnapshot: {
+          workflowId: 'shipment',
+          actorId: 'shipment',
+          taskId: 'shipment',
+          taskTitle: 'Shipment',
+          phase: 'created',
+          status: 'running',
+          createdAt: '2026-04-25T18:00:00.000Z',
+          updatedAt: '2026-04-25T18:00:01.000Z',
+          branchName: null,
+          baseBranch: null,
+          correlationId: 'shipment',
+          lastEventType: null,
+          notes: [],
+          artifacts: {},
+        },
+        value: 'created',
+        context: { shipmentId: 'shipment-1', status: 'created' },
+      },
+    });
+    socket.receive({
+      type: 'event',
+      streamId: 'shipment-stream',
+      sequence: 3,
+      projection: {
+        address: source.address,
+        envelope: {
+          id: 'event-2',
+          kind: 'fact',
+          type: 'SHIPMENT_UPDATED',
+          schemaVersion: 1,
+          occurredAt: '2026-04-25T18:00:02.000Z',
+          sourceActor: source.address.path,
+          payload: {},
+        },
+      },
+    });
+
+    expect(socket.sentFrames).toContainEqual({
+      type: 'resync',
+      streamId: 'shipment-stream',
+      fromSequence: 2,
+    });
+    expect(statuses).toContain('degraded');
+
+    socket.receive({
+      type: 'status',
+      streamId: 'shipment-stream',
+      status: {
+        state: 'replaying',
+        updatedAt: Date.parse('2026-04-25T18:00:02.000Z'),
+      },
+    });
+    socket.receive({
+      type: 'snapshot',
+      streamId: 'shipment-stream',
+      sequence: 4,
+      projection: {
+        address: source.address,
+        workflowSnapshot: {
+          workflowId: 'shipment',
+          actorId: 'shipment',
+          taskId: 'shipment',
+          taskTitle: 'Shipment',
+          phase: 'updated',
+          status: 'running',
+          createdAt: '2026-04-25T18:00:00.000Z',
+          updatedAt: '2026-04-25T18:00:03.000Z',
+          branchName: null,
+          baseBranch: null,
+          correlationId: 'shipment',
+          lastEventType: 'SHIPMENT_UPDATED',
+          notes: [],
+          artifacts: {},
+        },
+        value: 'updated',
+        context: { shipmentId: 'shipment-1', status: 'updated' },
+      },
+    });
+
+    expect(source.snapshot().context).toEqual({
+      shipmentId: 'shipment-1',
+      status: 'updated',
+    });
+
+    source.close();
+  });
 });

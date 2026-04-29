@@ -22,8 +22,11 @@ Current guarantees:
 - Built-in runtime transport is direct-peer and at-most-once.
 - Runtime peers and gateway clients can be authenticated before stream/peer
   admission.
-- Durable replay, retry delivery, dynamic discovery, and production backpressure
-  remain follow-up hardening slices.
+- Gateway streams detect sequence gaps and resync from a bounded in-memory replay
+  buffer, falling back to a latest snapshot when the requested range is no
+  longer available.
+- Durable replay storage, dynamic discovery, and exported observability remain
+  follow-up hardening slices.
 
 ## Runtime Locations
 
@@ -767,6 +770,21 @@ const inspections = fleet.actors.vehicleInspections.source({
 Use explicit `kind` only when the gateway intentionally exposes a public scope
 that is different from the topology actor key, such as a read-model projection
 or a compatibility alias for a generated client.
+
+Gateway replay/resync:
+
+- Each gateway stream is ordered by `sequence`.
+- Gateway-backed sources detect missing sequence numbers, mark transport status
+  as `degraded`, and request `resync` from the first missing sequence.
+- The served gateway keeps a bounded in-memory replay buffer for snapshots,
+  events, and transition frames.
+- If the requested range is still buffered, the gateway replays those frames.
+- If the range is unavailable, the gateway sends a fresh latest snapshot and
+  then resumes live status/events.
+
+This is projection recovery, not durable event storage. If a process restarts or
+the replay buffer has rolled past the missing range, clients recover to the
+latest snapshot.
 
 ## Runtime Transport
 

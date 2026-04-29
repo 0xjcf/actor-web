@@ -6,12 +6,6 @@ import {
   type LogisticsRuntimeGatewayServer,
 } from './server-runtime-gateway';
 
-function flush(): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, 0);
-  });
-}
-
 async function waitFor(predicate: () => boolean, message: string): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if (predicate()) {
@@ -148,8 +142,11 @@ describe('ignite-headless-host element', () => {
     );
 
     resetButton.click();
-    await flush();
-    await flush();
+    await waitFor(
+      () =>
+        Boolean(root.textContent?.includes('idle') && root.textContent.includes('SHIPMENT_RESET')),
+      'Expected shipment reset to update the gateway projection'
+    );
 
     expect(root.textContent).toContain('idle');
     expect(root.textContent).toContain('SHIPMENT_RESET');

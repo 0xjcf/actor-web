@@ -218,6 +218,8 @@ function createGatewayBackedSource<
     reason: 'Connecting to Actor-Web gateway',
   });
   let requestSequence = 0;
+  let lastSequence = 0;
+  let resyncInProgress = false;
 
   const ready = new Promise<void>((resolve, reject) => {
     resolveReady = resolve;
@@ -253,6 +255,34 @@ function createGatewayBackedSource<
 
   const sendFrame = (frame: RuntimeGatewayClientFrame): void => {
     socket.send(JSON.stringify(frame));
+  };
+
+  const acceptSequence = (
+    frame: Extract<RuntimeGatewayServerFrame, { sequence: number }>
+  ): boolean => {
+    const expectedSequence = lastSequence + 1;
+    if (frame.sequence === expectedSequence) {
+      lastSequence = frame.sequence;
+      return true;
+    }
+
+    if (frame.sequence <= lastSequence) {
+      return false;
+    }
+
+    if (resyncInProgress && frame.type === 'snapshot') {
+      lastSequence = frame.sequence;
+      resyncInProgress = false;
+      return true;
+    }
+
+    resyncInProgress = true;
+    currentStatus = createProjectionTransportStatus('degraded', {
+      reason: `Gateway stream sequence gap: expected ${expectedSequence}, received ${frame.sequence}.`,
+    });
+    emitStatus();
+    sendFrame({ type: 'resync', streamId, fromSequence: expectedSequence });
+    return false;
   };
 
   const rejectPending = (error: Error): void => {
@@ -298,6 +328,9 @@ function createGatewayBackedSource<
         sendFrame({ type: 'subscribe', streamId, scope });
         return;
       case 'snapshot':
+        if (!acceptSequence(frame)) {
+          return;
+        }
         currentSnapshot = snapshotProjectionToIgniteSnapshot(
           frame.projection as RuntimeGatewaySnapshotProjection<TContext>
         );
@@ -307,9 +340,15 @@ function createGatewayBackedSource<
         emitSnapshot();
         return;
       case 'event':
+        if (!acceptSequence(frame)) {
+          return;
+        }
         emitEvent(eventProjectionToIgniteEvent<TEvent>(frame.projection));
         return;
       case 'status':
+        if (frame.status.state !== 'replaying') {
+          resyncInProgress = false;
+        }
         currentStatus =
           frame.status.state === 'local'
             ? createProjectionTransportStatus('connected', { updatedAt: frame.status.updatedAt })
@@ -340,6 +379,10 @@ function createGatewayBackedSource<
         return;
       }
       case 'transition':
+        if (!acceptSequence(frame)) {
+          return;
+        }
+        return;
       case 'pong':
         return;
     }
