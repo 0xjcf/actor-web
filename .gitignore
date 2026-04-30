@@ -21,6 +21,7 @@ out/
 .env.production.local
 
 # IDE and Editor files
+.codex/
 .vscode/
 .idea/
 *.swp

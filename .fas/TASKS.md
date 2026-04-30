@@ -470,6 +470,94 @@
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Logistics runtime topology and status panel
+
+- Title: Logistics runtime topology and status panel
+- Mode: 6-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/logistics-runtime-topology-and-status-panel.md
+- Automation mode: advisory
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: roadmap=docs/actor-web-multi-process-deployment-demo-design.md
+
+### Task: Logistics provider runtime and container split
+
+- Title: Logistics provider runtime and container split
+- Mode: 6-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/logistics-provider-runtime-and-container-split.md
+- Automation mode: advisory
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: roadmap=docs/actor-web-multi-process-deployment-demo-design.md
+
+### Task: Runtime durable gateway replay storage
+
+- Title: Runtime durable gateway replay storage
+- Mode: 6-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/runtime-durable-gateway-replay-storage.md
+- Automation mode: advisory
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: roadmap=docs/actor-web-multi-process-deployment-demo-design.md
+
+### Task: Runtime restart-persistent idempotency
+
+- Title: Runtime restart-persistent idempotency
+- Mode: 6-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/runtime-restart-persistent-idempotency.md
+- Automation mode: advisory
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: roadmap=docs/actor-web-multi-process-deployment-demo-design.md
+
+### Task: Production discovery and secure deployment adapters
+
+- Title: Production discovery and secure deployment adapters
+- Mode: 6-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/production-discovery-and-secure-deployment-adapters.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: roadmap=docs/actor-web-multi-process-deployment-demo-design.md
+
+### Task: Logistics multi-machine deployment prove-out
+
+- Title: Logistics multi-machine deployment prove-out
+- Mode: 6-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/logistics-multi-machine-deployment-prove-out.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+- Artifacts: roadmap=docs/actor-web-multi-process-deployment-demo-design.md
+
+### Task: Actor-Web production operations runbooks
+
+- Title: Actor-Web production operations runbooks
+- Mode: 4-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/actor-web-production-operations-runbooks.md
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: contained
+- Artifacts: roadmap=docs/actor-web-multi-process-deployment-demo-design.md
+
 ## Template
 
 ### Task: `<short task title>`
@@ -483,4 +571,4 @@
 - Verification lane: `fast | full | pending-planner` (optional - omit if unknown)
 - Policy sensitivity: `standard | approval-required | ownership-advisory | blocked | deferred` (optional - omit if unknown)
 - Blast radius: `local | contained | cross-cutting` (optional - omit if unknown)
-- Artifacts: `brief=.fas/tasks/<slug>.md; planning=.fas/state/planning.json; taskPacket=.fas/state/task-packet.json; commitPlan=.fas/state/commit-plan.json; verification=.fas/state/verification/latest.json; review=.fas/state/boundary-review-findings.md; workflow=.fas/state/workflows` (optional - omit if unknown)
+- Artifacts: stable task-specific links only, such as `roadmap=docs/<file>.md`, `design=docs/<file>.md`, `runbook=docs/<file>.md`, `verification=.fas/state/verification/<task-specific-file>.json`, `review=<file>`, `pr=<url>`, or `commit=<sha>` (optional - omit if none exist)
