@@ -2,20 +2,22 @@
 
 ## Pure Actor Model Runtime for Actor-Web Framework
 
-**✅ 100% Pure Actor Model Compliant**
+### 100% Pure Actor Model Compliant
 
 This package provides the pure actor model implementation for the Actor-Web Framework, featuring advanced TypeScript design patterns for building resilient, scalable distributed systems with AI agent capabilities.
 
 ### 🚨 Migration Notice
 
-**This is the new pure actor runtime that replaces the legacy framework in `/src/core`.** 
+**This is the new pure actor runtime that replaces the legacy framework in `/src/core`.**
 
 The main framework (`/src/core`) contains architectural violations of the pure actor model:
+
 - Singleton patterns (ReactiveEventBus, GlobalEventDelegation)
 - Direct state access via `getSnapshot()`
 - Shared global state
 
 This package (`@actor-core/runtime`) implements the pure actor model correctly with advanced patterns:
+
 - ✅ **Pure Actor Model** - No singletons, message-only communication
 - ✅ **Capability Security** - Fine-grained permission-based access control
 - ✅ **Virtual Actor System** - Orleans-style caching with location transparency
@@ -26,24 +28,28 @@ This package (`@actor-core/runtime`) implements the pure actor model correctly w
 ### 🌟 Feature Highlights
 
 #### **Unified Actor API**
+
 - **Single `defineActor()` API** - One API for all actor patterns
 - **Three Actor Types** - Stateless, Context-based, Machine-based
 - **OTP Pattern Support** - Context updates, event emission, and replies
 - **Type Inference** - Full TypeScript support with proper context types
 
 #### **Test Synchronization Utilities**
+
 - **Test Mode** - Synchronous message processing for deterministic tests
 - **Flush Method** - Wait for all mailboxes to process
 - **Event Collectors** - Built-in test utilities for event verification
 - **No `setImmediate`** - Clean test code without timing hacks
 
 #### **Pure Actor Model**
+
 - **Message-Only Communication** - No shared state or direct method calls
 - **Location Transparency** - Actors work the same locally or distributed
 - **Auto-Publishing** - Events automatically routed to subscribers
 - **Direct Mailbox Enqueue** - No async boundaries for event delivery
 
 #### **Performance & Architecture**
+
 - **Orleans-Style Caching** - 90%+ cache hit rates
 - **Bounded Mailboxes** - Automatic backpressure handling
 - **Zero `any` Types** - Complete type safety without casting
@@ -156,6 +162,7 @@ const counterActor = defineActor<CounterMessage>()
 ### OTP Handler Patterns
 
 #### Context Updates
+
 ```typescript
 // Return new context to update actor state
 return {
@@ -164,6 +171,7 @@ return {
 ```
 
 #### Event Emission
+
 ```typescript
 // Emit events that subscribers will receive
 return {
@@ -175,6 +183,7 @@ return {
 ```
 
 #### Reply to Ask Pattern
+
 ```typescript
 // Reply directly to ask() calls
 return {
@@ -191,6 +200,7 @@ return {
 #### State-Based Behavior (XState Machines)
 
 **When to use `state.matches` vs `message.type`:**
+
 - **`message.type`** - For deciding what action to take based on incoming message
 - **`state.matches`** - For conditional behavior based on actor's current state
 
@@ -263,16 +273,19 @@ return {
 
 **Following Erlang/Elixir Patterns:**
 In Erlang/Elixir, gen_server callbacks return tuples like:
+
 - `{:reply, reply, new_state}` - Reply and update state
 - `{:noreply, new_state}` - Just update state
 - `{:stop, reason, new_state}` - Stop the actor
 
 Our framework mirrors this with:
+
 - `{ reply, context }` - Reply and update context
 - `{ context }` - Just update context  
 - `{ emit, context }` - Update context and broadcast events
 
 **Keep It Simple:**
+
 - Use `context` to update actor state
 - Use `reply` to respond to ask patterns
 - Use `emit` to broadcast events to subscribers
@@ -396,6 +409,7 @@ console.log('Current balance:', balance); // 50
 ```
 
 ### Testing with Synchronization
+
 ```typescript
 import { defineBehavior, createActor } from '@actor-core/runtime';
 import { setup, assign } from 'xstate';
@@ -464,6 +478,7 @@ console.log('Count:', count.value); // 1
 ```
 
 #### **Zero-Boilerplate Actor Proxies**
+
 ```typescript
 import { createProxyActor, procedures } from '@actor-core/runtime';
 
@@ -488,6 +503,7 @@ subscription.subscribe(update => console.log('User updated:', update));
 ```
 
 #### **Instant Capability Security**
+
 ```typescript
 import { createCapabilitySecuredRef } from '@actor-core/runtime';
 
@@ -503,6 +519,7 @@ await securedActor.ask({ type: 'DELETE_ALL' }); // ❌ Auto-rejected
 ```
 
 #### **Orleans-Style Virtual Actors**
+
 ```typescript
 import { createVirtualActorRef } from '@actor-core/runtime';
 
@@ -514,6 +531,7 @@ const userData = await userActor.ask({ type: 'GET_PROFILE' });
 ```
 
 #### **Bulletproof Supervisor Trees**
+
 ```typescript
 import { createSupervisorTree } from '@actor-core/runtime';
 
@@ -530,6 +548,7 @@ supervisor.start(); // Workers auto-restart on failure
 ```
 
 #### **Smart AI Planning (HTN)**
+
 ```typescript
 import { createHTNPlanner } from '@actor-core/runtime';
 
@@ -550,6 +569,7 @@ const result = await planner.executePlan(plan);
 ```
 
 #### **Composable AI Pipelines**
+
 ```typescript
 import { createPipeline, createActorStage } from '@actor-core/runtime';
 
@@ -563,6 +583,7 @@ const result = await aiPipeline.execute(inputText);
 ```
 
 #### **Intelligent Memory System**
+
 ```typescript
 import { createAgentMemory, createExperience } from '@actor-core/runtime';
 
@@ -594,7 +615,7 @@ const decision = analyzeMemoriesForDecision(memories);
 
 ### Architecture Overview
 
-```
+```text
 @actor-core/runtime
 ├── 🎭 Core Actor System
 │   ├── actor-ref.ts              # Basic actor references
@@ -692,6 +713,7 @@ node dist/examples/hybrid-memory-example.js
 ### Advanced Patterns Guide
 
 #### **Error Handling Strategies**
+
 ```typescript
 // Supervisor with custom restart logic
 const supervisor = createSupervisorTree({
@@ -706,6 +728,7 @@ const supervisor = createSupervisorTree({
 ```
 
 #### **Performance Monitoring**
+
 ```typescript
 // Built-in performance metrics
 const metrics = await actor.ask({ type: 'GET_METRICS' });
@@ -717,6 +740,7 @@ console.log({
 ```
 
 #### **Cross-Environment Deployment**
+
 ```typescript
 // Automatic environment detection
 const adapter = createRuntimeAdapter({
@@ -739,6 +763,7 @@ This package implements cutting-edge patterns for distributed AI systems. Areas 
 ### Research & Inspiration
 
 This implementation draws from:
+
 - **Microsoft Orleans** - Virtual actor model and lifecycle management
 - **Erlang/OTP** - Supervisor trees and "let it crash" philosophy
 - **tRPC** - Type-safe API design patterns

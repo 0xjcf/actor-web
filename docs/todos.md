@@ -1,3 +1,5 @@
+# FAS Agent Product Demo TODOs
+
 Yes. To target the real FAS agent product demo, the work splits across all three repos/layers.
 
 **Actor-Web**
@@ -50,7 +52,7 @@ FAS has the most remaining work for the real product demo:
   - multi-process worker nodes, later
   - distributed workers, later still
 
-**Best Next Sequence**
+## Best Next Sequence
 
 1. Move FAS agent loop from browser-local to server-owned Actor-Web node.
 2. Keep fake deterministic tools, but expose the server task board to the browser through gateway WebSocket.
@@ -62,6 +64,6 @@ FAS has the most remaining work for the real product demo:
 
 The next best slice is:
 
-**Server-Owned FAS Agent Loop Demo with Fake Tools**
+## Server-Owned FAS Agent Loop Demo with Fake Tools
 
 That bridges the current v0 architecture into the real product topology without taking on Codex/shell/Git risk yet.

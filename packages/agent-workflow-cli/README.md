@@ -85,6 +85,7 @@ Create a `.aw-context.json` file in your project root to customize how the CLI a
 ### Configuration Options
 
 #### `patterns`
+
 Define categories of files and how to identify them:
 
 - **`filePatterns`**: Array of glob patterns to match files
@@ -92,6 +93,7 @@ Define categories of files and how to identify them:
 - **`priority`**: Lower numbers appear first in context (1 = highest priority)
 
 #### `analysis`
+
 Control how the analysis is presented:
 
 - **`maxModules`**: Maximum number of categories to show in context
@@ -102,7 +104,7 @@ Control how the analysis is presented:
 
 With proper configuration, your commit messages will have meaningful context:
 
-```
+```text
 feat(frontend): Add user authentication with JWT tokens
 
 Agent: Agent B (Frontend)  
@@ -127,6 +129,7 @@ If no configuration file is provided, the CLI uses sensible defaults:
 ## Usage Examples
 
 ### Basic Save
+
 ```bash
 # Uses intelligent context analysis with generic message
 aw save
@@ -136,12 +139,14 @@ aw save "Add user authentication system"
 ```
 
 ### Ship to Integration
+
 ```bash
 # Validates and ships to integration branch
 aw ship
 ```
 
 ### Check Status
+
 ```bash
 # Shows current agent status and pending changes
 aw status
@@ -161,4 +166,4 @@ pnpm test
 
 # Build for production
 pnpm build
-``` 
+```

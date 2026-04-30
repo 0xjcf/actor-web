@@ -1,3 +1,7 @@
+# Chat Transcript
+
+<!-- markdownlint-disable MD025 MD033 -->
+
 I’m thinking about adding an LLM in a VPS. I feel like this would be a good approach to building software with AI assisted development
 
 You’re not wrong—but you’re also not thinking big enough yet.
@@ -457,7 +461,7 @@ It checks:
 This should run before and after implementation.
 This agent is how FAS becomes more than a wrapper around Codex.
 
-4. Implementer Agent
+1. Implementer Agent
 This is the agent that uses Codex CLI, Claude Code, shell tools, or repo editing tools.
 But it should not decide architecture.
 It receives a plan and executes it.
@@ -479,7 +483,7 @@ This is where the business value comes in.
 Bad AI-generated code is cheap.
 Reviewed, constrained, workflow-safe AI-generated code is valuable.
 
-7. Memory Agent
+1. Memory Agent
 This updates your .fas/memory/* files.
 Examples:
 .fas/memory/architecture.md.fas/memory/decisions.md.fas/memory/incidents.md.fas/memory/patterns.md.fas/memory/pr-feedback.md
@@ -765,7 +769,7 @@ If it fails:
 🔥 Key Insight
 Architecture is enforced at validation time, not “suggested at generation time”
 
-2. Preserve team conventions
+1. Preserve team conventions
 ❌ Docs-only
 naming conventions
 folder structure
@@ -846,7 +850,7 @@ They are still useful—but only for:
 
 - prefer reducers- avoid side effects- use ports/adapters
 
-2. Providing context to LLM tools
+1. Providing context to LLM tools
 Used by:
 Codex CLI
 Claude Code
@@ -926,7 +930,7 @@ Codex CLI
 Claude Code
 👉 This influences generation👉 But does NOT guarantee compliance
 
-2. 🔵 Runtime Layer (FAS Agents)
+1. 🔵 Runtime Layer (FAS Agents)
 This is where rules are enforced
 You implement agents like:
 ArchitectureGuardianAgentPatternEnforcerAgentValidationAgent
@@ -1203,7 +1207,7 @@ Hard to reason about structure
 Fragile (string matching)
 Not great for enforcing architecture
 
-2. 🔹 File-Level Diff
+1. 🔹 File-Level Diff
 { added: ["src/adapters/stripe.ts"], modified: ["src/domain/reducer.ts"], deleted: []}
 ✅ Pros
 Useful for high-level rules
