@@ -10,6 +10,10 @@ export const FAS_AGENT_LOOP_ELEMENT_NAME = 'aw-fas-agent-loop';
 const runtime = await startFasAgentLoopExample();
 const registerFasAgentLoop = runtime.createDashboard();
 
+export async function stopFasAgentLoopElementRuntime(): Promise<void> {
+  await runtime.stop();
+}
+
 function taskInputFromForm(event: Event) {
   event.preventDefault();
   if (!(event.currentTarget instanceof HTMLFormElement)) {

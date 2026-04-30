@@ -460,6 +460,16 @@
 - Blast radius: cross-cutting
 - Artifacts: planning=.fas/state/planning.json; taskPacket=.fas/state/task-packet.json; commitPlan=.fas/state/commit-plan.json; verification=.fas/state/verification/latest.json; review=.fas/state/boundary-review-findings.md; workflow=.fas/state/workflows
 
+### Task: Make examples/fas-agent-loop use real Actor-Web runtime boundaries
+
+- Title: Make examples/fas-agent-loop use real Actor-Web runtime boundaries
+- Mode: single-agent
+- Status: done
+- Owner: implementer
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
 ## Template
 
 ### Task: `<short task title>`

@@ -10,3 +10,7 @@
 [2026-04-30] **Actor-Web docs consistency pass for current runtime guarantees and deployment ro**: Modified 134 source file(s) with 37 test file(s). Files: .dockerignore, .fas-config.json, .../tasks/browser-webworker-websocket-transport.md, ...ogistics-docker-compose-deployment-prove-out.md, ...logistics-multi-process-deployment-prove-out.md (+129 more).
 
 [2026-04-30] **Script modifications for "Actor-Web docs consistency pass for current runtime guarante"**: Changed scripts/check-architecture-boundaries.mjs, scripts/dev-logistics-demo.ts, scripts/verify-logistics-docker-compose.mjs. Prefer thin bash launchers that dispatch into committed typed pipeline or runtime modules instead of embedding inline Node.js heredocs on the golden path.
+
+[2026-04-30] **Make examples/fas-agent-loop use real Actor-Web runtime boundaries**: Modified 134 source file(s) with 37 test file(s). Files: .dockerignore, .fas-config.json, .../tasks/browser-webworker-websocket-transport.md, ...ogistics-docker-compose-deployment-prove-out.md, ...logistics-multi-process-deployment-prove-out.md (+129 more).
+
+[2026-04-30] **Script modifications for "Make examples/fas-agent-loop use real Actor-Web runtime boun"**: Changed scripts/check-architecture-boundaries.mjs, scripts/dev-logistics-demo.ts, scripts/verify-logistics-docker-compose.mjs. Prefer thin bash launchers that dispatch into committed typed pipeline or runtime modules instead of embedding inline Node.js heredocs on the golden path.

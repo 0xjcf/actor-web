@@ -4,7 +4,7 @@ import {
   type SubmitFasTaskInput,
   startFasAgentLoopExample,
 } from './fas-example-runtime';
-import { fasAgentLoop } from './fas-topology';
+import { FAS_COORDINATOR_NODE, FAS_WORKER_NODE, fasAgentLoop } from './fas-topology';
 
 const TEST_TASK: SubmitFasTaskInput = {
   taskId: 'task-1001',
@@ -58,6 +58,27 @@ describe('fas-agent-loop example', () => {
 
   it('runs a deterministic FAS workflow through completion', async () => {
     runtime = await startFasAgentLoopExample();
+    const topology = runtime.getRuntimeTopology();
+
+    expect(topology).toMatchObject({
+      coordinatorNode: FAS_COORDINATOR_NODE,
+      workerNode: FAS_WORKER_NODE,
+      workerPeer: {
+        nodeAddress: FAS_WORKER_NODE,
+        connected: true,
+        fresh: true,
+      },
+      toolPorts: {
+        supervisor: [],
+        planner: [],
+        implementer: ['codex.generate_patch'],
+        verifier: ['repo.diff', 'verification.run'],
+        reviewer: ['review.diff', 'memory.write'],
+      },
+    });
+    expect(topology.gatewayUrl).toMatch(/^ws:\/\/127\.0\.0\.1:/);
+    expect(topology.coordinatorTransportUrl).toMatch(/^ws:\/\/127\.0\.0\.1:/);
+    expect(topology.workerTransportUrl).toMatch(/^ws:\/\/127\.0\.0\.1:/);
 
     const summary = await runtime.runTaskToCompletion(TEST_TASK);
 
@@ -79,6 +100,28 @@ describe('fas-agent-loop example', () => {
     ]);
     expect(runtime.taskBoard.getSnapshot().context.completedCount).toBe(1);
     expect(runtime.tools.state.invocations.map((call) => call.tool)).toContain('memory.write');
+  });
+
+  it('projects the task board through the coordinator gateway source', async () => {
+    runtime = await startFasAgentLoopExample();
+    const source = runtime.createTaskBoardSource();
+
+    try {
+      await waitFor(
+        () => source.transportStatus().state === 'connected',
+        'Expected task board source to connect through the coordinator gateway'
+      );
+
+      expect(source.address.path).toBe('actor://fas-coordinator-runtime/actor/fas-task-board');
+      await source.send({ type: 'SUBMIT_TASK', ...TEST_TASK });
+      await waitFor(
+        () => source.snapshot().context.activeTaskId === TEST_TASK.taskId,
+        'Expected gateway source command to update the task board projection'
+      );
+      expect(source.snapshot().context.tasks).toHaveLength(1);
+    } finally {
+      source.close();
+    }
   });
 
   it('routes validation failures back through implementation before completing', async () => {
@@ -183,13 +226,13 @@ describe('fas-agent-loop example', () => {
         taskCount: 0,
       });
 
-      dashboard.execute('submitTask', TEST_TASK);
+      await runtime.submitTask(TEST_TASK);
       await waitFor(
         () => dashboard.getView().phase === 'submitted',
         'Expected Actor-Web source submission to reach Ignite dashboard view'
       );
 
-      dashboard.execute('runTask', TEST_TASK);
+      await dashboard.execute('runTask', TEST_TASK);
       await waitFor(
         () => dashboard.getView().phase === 'completed',
         'Expected completed task to project into Ignite dashboard view'
@@ -222,33 +265,39 @@ describe('fas-agent-loop example', () => {
   });
 
   it('renders a thin Ignite Element dashboard over the headless FAS runtime', async () => {
-    const { FAS_AGENT_LOOP_ELEMENT_NAME } = await import('./fas-agent-loop-element');
+    const { FAS_AGENT_LOOP_ELEMENT_NAME, stopFasAgentLoopElementRuntime } = await import(
+      './fas-agent-loop-element'
+    );
     const element = document.createElement(FAS_AGENT_LOOP_ELEMENT_NAME);
     document.body.appendChild(element);
 
-    await waitFor(
-      () =>
-        element.shadowRoot?.textContent?.includes('Headless-first agent workflow dashboard') ??
-        false,
-      'Expected FAS agent loop element to render'
-    );
+    try {
+      await waitFor(
+        () =>
+          element.shadowRoot?.textContent?.includes('Headless-first agent workflow dashboard') ??
+          false,
+        'Expected FAS agent loop element to render'
+      );
 
-    expect(element.shadowRoot?.textContent).toContain('Phase');
-    expect(element.shadowRoot?.textContent).toContain('idle');
-    const submitButton = element.shadowRoot?.querySelector<HTMLButtonElement>('button');
-    if (!submitButton) {
-      throw new Error('Expected FAS agent loop submit button.');
+      expect(element.shadowRoot?.textContent).toContain('Phase');
+      expect(element.shadowRoot?.textContent).toContain('idle');
+      const submitButton = element.shadowRoot?.querySelector<HTMLButtonElement>('button');
+      if (!submitButton) {
+        throw new Error('Expected FAS agent loop submit button.');
+      }
+
+      submitButton.click();
+
+      await waitFor(
+        () => element.shadowRoot?.textContent?.includes('completed') ?? false,
+        'Expected UI command to run the FAS agent loop'
+      );
+
+      expect(element.shadowRoot?.textContent).toContain('reviewer');
+      expect(element.shadowRoot?.textContent).toContain('Review approved');
+      expect(element.shadowRoot?.textContent).toContain('review.diff');
+    } finally {
+      await stopFasAgentLoopElementRuntime();
     }
-
-    submitButton.click();
-
-    await waitFor(
-      () => element.shadowRoot?.textContent?.includes('completed') ?? false,
-      'Expected UI command to run the FAS agent loop'
-    );
-
-    expect(element.shadowRoot?.textContent).toContain('reviewer');
-    expect(element.shadowRoot?.textContent).toContain('Review approved');
-    expect(element.shadowRoot?.textContent).toContain('review.diff');
   });
 });

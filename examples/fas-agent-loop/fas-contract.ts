@@ -221,8 +221,11 @@ export function taskContextToSummary(context: FasTaskContext): FasTaskSummary {
   };
 }
 
-export function dashboardViewFromContext(context: FasTaskBoardContext): FasTaskDashboardView {
-  const activeTask = context.tasks.find((task) => task.taskId === context.activeTaskId) ?? null;
+export function dashboardViewFromContext(
+  context: FasTaskBoardContext | undefined
+): FasTaskDashboardView {
+  const board = context ?? createInitialTaskBoardContext();
+  const activeTask = board.tasks.find((task) => task.taskId === board.activeTaskId) ?? null;
   const validationStatus = !activeTask?.validation
     ? 'none'
     : activeTask.validation.ok
@@ -235,15 +238,15 @@ export function dashboardViewFromContext(context: FasTaskBoardContext): FasTaskD
       : 'rejected';
 
   return {
-    activeTaskId: context.activeTaskId,
+    activeTaskId: board.activeTaskId,
     phase: activeTask?.phase ?? 'idle',
     activeAgent: activeTask?.activeAgent ?? 'none',
-    latestToolCall: context.latestToolCall,
+    latestToolCall: board.latestToolCall,
     validationStatus,
     reviewStatus,
-    timeline: activeTask?.timeline ?? context.timeline,
-    taskCount: context.tasks.length,
-    completedCount: context.completedCount,
-    blockedCount: context.blockedCount,
+    timeline: activeTask?.timeline ?? board.timeline,
+    taskCount: board.tasks.length,
+    completedCount: board.completedCount,
+    blockedCount: board.blockedCount,
   };
 }
