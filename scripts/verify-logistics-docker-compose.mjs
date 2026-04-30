@@ -5,6 +5,18 @@ const composeFile = 'docker-compose.logistics.yml';
 const telemetryDir = '.actor-web/telemetry';
 const restUrl = 'http://127.0.0.1:4100';
 const workerService = 'worker-runtime';
+const providerService = 'provider-runtime';
+const providerRuntimeEnabled = process.argv.includes('--provider-runtime');
+const composeEnv = providerRuntimeEnabled
+  ? {
+      ACTOR_WEB_PROVIDER_RUNTIME_ENABLED: '1',
+      ACTOR_WEB_PROVIDER_RUNTIME_SOURCE: 'container',
+      LOGISTICS_LIFECYCLE_MODE: 'simulation',
+    }
+  : {};
+const composeArgs = providerRuntimeEnabled
+  ? ['compose', '-f', composeFile, '--profile', 'provider-runtime']
+  : ['compose', '-f', composeFile];
 
 async function main() {
   await ensureDockerDaemonAvailable();
@@ -12,26 +24,44 @@ async function main() {
   rmSync(telemetryDir, { recursive: true, force: true });
   mkdirSync(telemetryDir, { recursive: true });
 
-  let composeStarted = false;
   try {
     await runCompose(['up', '--build', '-d']);
-    composeStarted = true;
     await waitForWorkerConnected(
       'Expected worker runtime container to connect to server transport'
     );
+    if (providerRuntimeEnabled) {
+      await waitForProviderConnected(
+        'Expected provider runtime container to connect to server transport'
+      );
+    }
 
     await createAndVerifyShipment('shipment-docker-1001', 'DOCKER-1001');
+    if (providerRuntimeEnabled) {
+      await verifyProviderSourceLabel('provider container');
+      await waitFor(async () => {
+        const shipment = await getJson(`${restUrl}/shipments/current`);
+        return shipment?.timeline?.some((entry) => entry?.source === 'provider container');
+      }, 'Expected provider container path to stamp shipment timeline entries');
+    }
 
     await waitFor(
       () =>
         telemetryFileContains('server-transport.jsonl', 'peer.connected') &&
-        telemetryFileContains('worker-transport.jsonl', 'peer.connected'),
-      'Expected server and worker telemetry JSONL files to include peer connection events'
+        telemetryFileContains('worker-transport.jsonl', 'peer.connected') &&
+        (!providerRuntimeEnabled ||
+          telemetryFileContains('provider-transport.jsonl', 'peer.connected')),
+      'Expected runtime telemetry JSONL files to include peer connection events'
     );
     await waitFor(
       () => serviceIsRunning(workerService),
       'Expected worker runtime container to remain running after routing work completes'
     );
+    if (providerRuntimeEnabled) {
+      await waitFor(
+        () => serviceIsRunning(providerService),
+        'Expected provider runtime container to remain running after provider work completes'
+      );
+    }
 
     await runCompose(['stop', workerService]);
     await waitForWorkerDisconnected(
@@ -44,15 +74,36 @@ async function main() {
 
     await runCompose(['up', '-d', workerService]);
     await waitForWorkerConnected('Expected worker runtime container to reconnect after restart');
+    if (providerRuntimeEnabled) {
+      await setProviderMode('manual');
+      await verifyProviderSourceLabel('manual UI');
+    }
     await createAndVerifyShipment('shipment-docker-1002', 'DOCKER-1002');
+
+    if (providerRuntimeEnabled) {
+      await createAndVerifyProviderSignal('shipment-docker-1002', 'LABEL_SCANNED', 'manual UI');
+      await createAndVerifyProviderSignal('shipment-docker-1002', 'PACKED_INTO_TRUCK', 'manual UI');
+      await runCompose(['stop', providerService]);
+      await waitForProviderDisconnected(
+        'Expected server runtime status to mark stopped provider container disconnected'
+      );
+      await waitFor(
+        () => telemetryFileContains('server-transport.jsonl', 'peer.disconnected'),
+        'Expected server telemetry JSONL file to include provider disconnection event'
+      );
+      await runCompose(['up', '-d', providerService]);
+      await waitForProviderConnected(
+        'Expected provider runtime container to reconnect after restart'
+      );
+      await setProviderMode('simulation');
+      await verifyProviderSourceLabel('provider container');
+    }
 
     console.log('Actor-Web logistics Docker Compose smoke passed.');
   } finally {
-    if (composeStarted) {
-      await runCompose(['down', '--remove-orphans'], {
-        allowFailure: true,
-      });
-    }
+    await runCompose(['down', '--remove-orphans'], {
+      allowFailure: true,
+    });
   }
 }
 
@@ -117,6 +168,47 @@ async function createAndVerifyShipment(shipmentId, reference) {
   }, `Expected server runtime to apply worker-owned route plan for ${shipmentId}`);
 }
 
+async function createAndVerifyProviderSignal(shipmentId, signal, expectedSourceLabel) {
+  const response = await fetch(`${restUrl}/provider/signals`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      shipmentId,
+      signal,
+    }),
+  });
+  if (response.status !== 202) {
+    throw new Error(`Expected provider signal ${signal} to return 202, got ${response.status}`);
+  }
+
+  await waitFor(async () => {
+    const shipment = await getJson(`${restUrl}/shipments/current`);
+    const timelineEntry = shipment?.timeline?.[0];
+    return (
+      shipment?.shipmentId === shipmentId &&
+      shipment?.providerSignal === signal &&
+      timelineEntry?.signal === signal &&
+      timelineEntry?.source === expectedSourceLabel
+    );
+  }, `Expected provider signal ${signal} to be applied through ${expectedSourceLabel}`);
+}
+
+async function setProviderMode(mode) {
+  const response = await fetch(`${restUrl}/provider/mode`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  });
+  if (response.status !== 202) {
+    throw new Error(`Expected provider mode ${mode} to return 202, got ${response.status}`);
+  }
+
+  await waitFor(async () => {
+    const status = await getJson(`${restUrl}/provider/status`);
+    return status?.mode === mode;
+  }, `Expected provider mode to become ${mode}`);
+}
+
 async function waitForWorkerConnected(message) {
   await waitFor(async () => {
     const status = await getJson(`${restUrl}/runtime/status`);
@@ -124,6 +216,17 @@ async function waitForWorkerConnected(message) {
       status?.transport?.workerConnected === true &&
       status?.transport?.workerPeer?.connected === true &&
       status?.transport?.workerPeer?.fresh === true
+    );
+  }, message);
+}
+
+async function waitForProviderConnected(message) {
+  await waitFor(async () => {
+    const status = await getJson(`${restUrl}/runtime/status`);
+    return (
+      status?.transport?.providerConnected === true &&
+      status?.transport?.providerPeer?.connected === true &&
+      status?.transport?.providerPeer?.fresh === true
     );
   }, message);
 }
@@ -137,6 +240,24 @@ async function waitForWorkerDisconnected(message) {
       status?.transport?.workerPeerFresh === false
     );
   }, message);
+}
+
+async function waitForProviderDisconnected(message) {
+  await waitFor(async () => {
+    const status = await getJson(`${restUrl}/runtime/status`);
+    return (
+      status?.transport?.providerConnected === false &&
+      status?.transport?.providerPeer?.connected === false &&
+      status?.transport?.providerPeerFresh === false
+    );
+  }, message);
+}
+
+async function verifyProviderSourceLabel(expectedSourceLabel) {
+  await waitFor(async () => {
+    const status = await getJson(`${restUrl}/runtime/status`);
+    return status?.provider?.sourceLabel === expectedSourceLabel;
+  }, `Expected runtime status to expose provider source label ${expectedSourceLabel}`);
 }
 
 async function serviceIsRunning(serviceName) {
@@ -195,12 +316,18 @@ async function capture(command, args) {
 }
 
 async function captureCompose(args) {
-  return capture('docker', ['compose', '-f', composeFile, ...args]);
+  return capture('docker', [...composeArgs, ...args]);
 }
 
 async function run(command, args, options = {}) {
   const result = await new Promise((resolve) => {
-    const child = spawn(command, args, { stdio: 'inherit' });
+    const child = spawn(command, args, {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        ...composeEnv,
+      },
+    });
     child.on('exit', (code) => resolve(code ?? 1));
   });
 
@@ -210,7 +337,7 @@ async function run(command, args, options = {}) {
 }
 
 async function runCompose(args, options = {}) {
-  await run('docker', ['compose', '-f', composeFile, ...args], options);
+  await run('docker', [...composeArgs, ...args], options);
 }
 
 main().catch((error) => {

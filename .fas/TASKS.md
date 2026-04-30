@@ -486,14 +486,13 @@
 
 - Title: Logistics provider runtime and container split
 - Mode: 6-agent
-- Status: backlog
-- Owner: planner
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/logistics-provider-runtime-and-container-split.md
 - Automation mode: advisory
-- Verification lane: full
+- Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
-- Artifacts: roadmap=docs/actor-web-multi-process-deployment-demo-design.md
 
 ### Task: Runtime durable gateway replay storage
 

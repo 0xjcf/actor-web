@@ -40,6 +40,7 @@ type ProviderHqSource = ClosableActorWebSource<
 describe('ignite-headless-host logistics example', () => {
   let gatewayServer: LogisticsRuntimeGatewayServer | undefined;
   let workerNode: StartedActorWebNode<typeof logistics> | undefined;
+  let providerNode: StartedActorWebNode<typeof logistics> | undefined;
   let closeClient: (() => void) | undefined;
 
   afterEach(async () => {
@@ -48,6 +49,10 @@ describe('ignite-headless-host logistics example', () => {
     if (workerNode) {
       await workerNode.stop();
       workerNode = undefined;
+    }
+    if (providerNode) {
+      await providerNode.stop();
+      providerNode = undefined;
     }
     if (gatewayServer) {
       await gatewayServer.stop();
@@ -283,6 +288,269 @@ describe('ignite-headless-host logistics example', () => {
     expect(events.map((event) => event.type)).toContain('PROVIDER_SIGNAL_RECORDED');
   });
 
+  it('routes provider simulation through a separate provider runtime node when enabled', async () => {
+    gatewayServer = createLogisticsRuntimeGatewayServer({
+      lifecycleMode: 'simulation',
+      lifecycleLabelDelayMs: 10,
+      lifecyclePackedDelayMs: 20,
+      lifecycleShippedDelayMs: 30,
+      lifecycleTerminalDelayMs: 120,
+      providerRuntimeEnabled: true,
+      providerRuntimeSource: 'process',
+    });
+    await gatewayServer.start();
+    workerNode = await startTestWorkerNode(requiredTransportUrl(gatewayServer));
+    providerNode = await startTestProviderNode(requiredTransportUrl(gatewayServer));
+    const client = createTestClient(requiredGatewayUrl(gatewayServer));
+    const restUrl = requiredRestUrl(gatewayServer);
+
+    const response = await fetch(`${restUrl}/shipments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        shipmentId: 'shipment-provider-9101',
+        destination: 'Nashville hub',
+        reference: 'PROVIDER-9101',
+      }),
+    });
+
+    expect(response.status).toBe(202);
+    await waitForSource(
+      client.actors.shipment,
+      (context) =>
+        context.shipmentId === 'shipment-provider-9101' &&
+        context.providerSignal !== null &&
+        context.timeline.some((entry) => entry.source === 'simulator process'),
+      'Expected provider runtime node to apply provider-owned simulation signals'
+    );
+
+    await expect(
+      fetch(`${restUrl}/runtime/status`).then((result) => result.json())
+    ).resolves.toMatchObject({
+      provider: {
+        runtimeEnabled: true,
+        sourceLabel: 'simulator process',
+      },
+      transport: {
+        providerConnected: true,
+        providerPeerFresh: true,
+      },
+    });
+  });
+
+  it('fails closed when provider runtime is enabled but unavailable', async () => {
+    gatewayServer = createLogisticsRuntimeGatewayServer({
+      lifecycleMode: 'manual',
+      providerRuntimeEnabled: true,
+      providerRuntimeSource: 'process',
+    });
+    await gatewayServer.start();
+    const client = createTestClient(requiredGatewayUrl(gatewayServer));
+    const restUrl = requiredRestUrl(gatewayServer);
+
+    const response = await fetch(`${restUrl}/shipments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        shipmentId: 'shipment-provider-down-9102',
+        destination: 'Nashville hub',
+        reference: 'PROVIDER-DOWN-9102',
+      }),
+    });
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Provider runtime boundary is enabled but unavailable.',
+    });
+    await waitForProviderSource(
+      client.actors.providerHq,
+      (context) => context.status.queue.length === 0,
+      'Expected Provider HQ queue to remain empty when provider runtime sync fails'
+    );
+  });
+
+  it('preserves the provider source label when shipment reset clears Provider HQ', async () => {
+    gatewayServer = createLogisticsRuntimeGatewayServer({
+      providerRuntimeEnabled: true,
+      providerRuntimeSource: 'container',
+    });
+    await gatewayServer.start();
+    workerNode = await startTestWorkerNode(requiredTransportUrl(gatewayServer));
+    providerNode = await startTestProviderNode(requiredTransportUrl(gatewayServer));
+    const client = createTestClient(requiredGatewayUrl(gatewayServer));
+    const restUrl = requiredRestUrl(gatewayServer);
+
+    const response = await fetch(`${restUrl}/shipments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        shipmentId: 'shipment-provider-reset-9103',
+        destination: 'Phoenix cross-dock',
+        reference: 'PROVIDER-RESET-9103',
+      }),
+    });
+    expect(response.status).toBe(202);
+    await waitForProviderSource(
+      client.actors.providerHq,
+      (context) =>
+        context.status.sourceLabel === 'provider container' &&
+        context.status.queue.some((item) => item.shipmentId === 'shipment-provider-reset-9103'),
+      'Expected Provider HQ to use provider container source before reset'
+    );
+
+    const resetResponse = await fetch(`${restUrl}/shipments/current/reset`, {
+      method: 'POST',
+    });
+
+    expect(resetResponse.status).toBe(202);
+    await waitForProviderSource(
+      client.actors.providerHq,
+      (context) =>
+        context.status.sourceLabel === 'provider container' && context.status.queue.length === 0,
+      'Expected Provider HQ reset to preserve the active provider source label'
+    );
+    await expect(
+      fetch(`${restUrl}/provider/status`).then((result) => result.json())
+    ).resolves.toMatchObject({
+      sourceLabel: 'provider container',
+      queue: [],
+    });
+  });
+
+  it('reports provider runtime signal loss through Provider HQ rejection events', async () => {
+    gatewayServer = createLogisticsRuntimeGatewayServer({
+      lifecycleMode: 'manual',
+      providerRuntimeEnabled: true,
+      providerRuntimeSource: 'process',
+    });
+    await gatewayServer.start();
+    workerNode = await startTestWorkerNode(requiredTransportUrl(gatewayServer));
+    providerNode = await startTestProviderNode(requiredTransportUrl(gatewayServer));
+    const client = createTestClient(requiredGatewayUrl(gatewayServer));
+    const restUrl = requiredRestUrl(gatewayServer);
+    const providerEvents: ProviderHqEvent[] = [];
+    client.actors.providerHq.subscribeEvent((event) => {
+      providerEvents.unshift(event);
+    });
+
+    const response = await fetch(`${restUrl}/shipments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        shipmentId: 'shipment-provider-loss-9104',
+        destination: 'Atlanta hub',
+        reference: 'PROVIDER-LOSS-9104',
+      }),
+    });
+    expect(response.status).toBe(202);
+    await waitForProviderSource(
+      client.actors.providerHq,
+      (context) =>
+        context.status.queue.some((item) => item.shipmentId === 'shipment-provider-loss-9104'),
+      'Expected Provider HQ queue before provider runtime loss'
+    );
+
+    const stoppedProviderNode = providerNode;
+    providerNode = undefined;
+    await stoppedProviderNode.stop();
+
+    const signalResponse = await fetch(`${restUrl}/provider/signals`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        shipmentId: 'shipment-provider-loss-9104',
+        signal: 'LABEL_SCANNED',
+      }),
+    });
+
+    expect(signalResponse.status).toBe(202);
+    await waitForProviderSource(
+      client.actors.providerHq,
+      (context) =>
+        context.message.includes('Provider runtime boundary is enabled but unavailable') &&
+        context.status.queue.some(
+          (item) => item.shipmentId === 'shipment-provider-loss-9104' && item.signal === null
+        ),
+      'Expected Provider HQ to report provider runtime signal loss as a rejection'
+    );
+    expect(providerEvents).toContainEqual(
+      expect.objectContaining({
+        type: 'PROVIDER_SIGNAL_REJECTED',
+        shipmentId: 'shipment-provider-loss-9104',
+        signal: 'LABEL_SCANNED',
+      })
+    );
+  });
+
+  it('rejects out-of-order provider signals through the provider runtime boundary', async () => {
+    gatewayServer = createLogisticsRuntimeGatewayServer({
+      lifecycleMode: 'manual',
+      providerRuntimeEnabled: true,
+      providerRuntimeSource: 'process',
+    });
+    await gatewayServer.start();
+    workerNode = await startTestWorkerNode(requiredTransportUrl(gatewayServer));
+    providerNode = await startTestProviderNode(requiredTransportUrl(gatewayServer));
+    const client = createTestClient(requiredGatewayUrl(gatewayServer));
+    const restUrl = requiredRestUrl(gatewayServer);
+    const providerEvents: ProviderHqEvent[] = [];
+    client.actors.providerHq.subscribeEvent((event) => {
+      providerEvents.unshift(event);
+    });
+
+    const response = await fetch(`${restUrl}/shipments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        shipmentId: 'shipment-provider-order-9105',
+        destination: 'Memphis hub',
+        reference: 'PROVIDER-ORDER-9105',
+      }),
+    });
+    expect(response.status).toBe(202);
+    await waitForProviderSource(
+      client.actors.providerHq,
+      (context) =>
+        context.status.queue.some((item) => item.shipmentId === 'shipment-provider-order-9105'),
+      'Expected Provider HQ queue before provider runtime order test'
+    );
+
+    const signalResponse = await fetch(`${restUrl}/provider/signals`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        shipmentId: 'shipment-provider-order-9105',
+        signal: 'PACKED_INTO_TRUCK',
+      }),
+    });
+
+    expect(signalResponse.status).toBe(202);
+    await waitForProviderSource(
+      client.actors.providerHq,
+      (context) =>
+        context.message.includes(
+          'PACKED_INTO_TRUCK rejected. Next required provider signal is LABEL_SCANNED.'
+        ) &&
+        context.status.queue.some(
+          (item) => item.shipmentId === 'shipment-provider-order-9105' && item.signal === null
+        ),
+      'Expected provider runtime to reject out-of-order provider signal'
+    );
+    await waitForSource(
+      client.actors.shipment,
+      (context) =>
+        context.shipmentId === 'shipment-provider-order-9105' && context.providerSignal === null,
+      'Expected shipment projection not to advance after rejected provider runtime signal'
+    );
+    expect(providerEvents).toContainEqual(
+      expect.objectContaining({
+        type: 'PROVIDER_SIGNAL_REJECTED',
+        shipmentId: 'shipment-provider-order-9105',
+        signal: 'PACKED_INTO_TRUCK',
+      })
+    );
+  });
+
   it('honors gateway-selected manual provider mode and does not auto-select new queue items', async () => {
     gatewayServer = createLogisticsRuntimeGatewayServer({
       lifecycleLabelDelayMs: 10,
@@ -499,13 +767,20 @@ describe('ignite-headless-host logistics example', () => {
     await expect(
       fetch(`${requiredRestUrl(gatewayServer)}/runtime/status`).then((result) => result.json())
     ).resolves.toMatchObject({
+      provider: {
+        runtimeEnabled: false,
+        sourceLabel: 'simulator process',
+      },
       nodes: {
         serverRuntime: 'logistics-server-runtime',
         workerRuntime: 'logistics-worker-runtime',
+        providerRuntime: 'logistics-provider-runtime',
       },
       actors: {
         shipment: 'actor://logistics-server-runtime/actor/logistics-shipment',
         routing: 'actor://logistics-worker-runtime/actor/logistics-routing',
+        providerRuntime:
+          'actor://logistics-provider-runtime/actor/logistics-provider-runtime-manager',
       },
     });
   });
@@ -674,6 +949,22 @@ async function startTestWorkerNode(
     },
     transport: {
       incarnation: `test-worker-${Date.now()}`,
+      heartbeatIntervalMs: 0,
+      webSocketFactory: (url) => new WebSocket(url) as never,
+    },
+  });
+}
+
+async function startTestProviderNode(
+  transportUrl: string
+): Promise<StartedActorWebNode<typeof logistics>> {
+  return startActorWebNode(logistics, {
+    node: 'provider',
+    peers: {
+      server: transportUrl,
+    },
+    transport: {
+      incarnation: `test-provider-${Date.now()}`,
       heartbeatIntervalMs: 0,
       webSocketFactory: (url) => new WebSocket(url) as never,
     },

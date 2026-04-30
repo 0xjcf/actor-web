@@ -295,6 +295,7 @@ const registerProviderHqSource = igniteCore({
       providerTransportState: transport.state,
       providerTransportReason: transport.reason ?? null,
       providerMode: providerContext.status.mode,
+      providerSourceLabel: providerContext.status.sourceLabel,
       providerShipmentId: providerContext.status.shipmentId,
       providerDestination: providerItem?.destination ?? null,
       providerReference: providerItem?.reference ?? null,
@@ -323,6 +324,10 @@ registerProviderHqSource(IGNITE_PROVIDER_HQ_SOURCE_ELEMENT_NAME, (view) => {
         <div>
           <div class="label">Mode</div>
           <div class="value">{view.providerMode}</div>
+        </div>
+        <div>
+          <div class="label">Source</div>
+          <div class="value">{view.providerSourceLabel}</div>
         </div>
         <div>
           <div class="label">Queue</div>

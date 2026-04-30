@@ -5,6 +5,7 @@ import {
   createRuntimeTransportTelemetryJsonlFileSink,
   type RuntimeTransportTelemetryExporter,
 } from '@actor-core/runtime/node';
+import type { ProviderRuntimeSource } from './logistics-contract';
 import type { LifecycleMode } from './logistics-provider-hq';
 import {
   createLogisticsRuntimeGatewayServer,
@@ -16,6 +17,8 @@ interface LogisticsServerReadyPayload {
   readonly gatewayUrl: string;
   readonly transportUrl: string;
   readonly lifecycleMode: LifecycleMode;
+  readonly providerRuntimeEnabled: boolean;
+  readonly providerRuntimeSource: ProviderRuntimeSource;
 }
 
 const DEFAULT_REST_PORT = 4100;
@@ -33,6 +36,14 @@ function parsePort(value: string | undefined, fallback: number): number {
 
 function parseLifecycleMode(value: string | undefined): LifecycleMode {
   return value === 'manual' ? 'manual' : 'simulation';
+}
+
+function parseProviderRuntimeEnabled(value: string | undefined): boolean {
+  return value === '1' || value === 'true';
+}
+
+function parseProviderRuntimeSource(value: string | undefined): ProviderRuntimeSource {
+  return value === 'container' ? 'container' : value === 'process' ? 'process' : 'embedded';
 }
 
 function requireServerUrl(name: string, value: string | null): string {
@@ -55,6 +66,12 @@ async function stopTelemetry(
 
 async function main(): Promise<void> {
   const lifecycleMode = parseLifecycleMode(process.env.LOGISTICS_LIFECYCLE_MODE);
+  const providerRuntimeEnabled = parseProviderRuntimeEnabled(
+    process.env.ACTOR_WEB_PROVIDER_RUNTIME_ENABLED
+  );
+  const providerRuntimeSource = parseProviderRuntimeSource(
+    process.env.ACTOR_WEB_PROVIDER_RUNTIME_SOURCE
+  );
   const telemetry = process.env.ACTOR_WEB_TELEMETRY_JSONL
     ? createRuntimeTransportTelemetryExporter({
         sink: createRuntimeTransportTelemetryJsonlFileSink(process.env.ACTOR_WEB_TELEMETRY_JSONL),
@@ -66,6 +83,8 @@ async function main(): Promise<void> {
     transportPort: parsePort(process.env.ACTOR_WEB_TRANSPORT_PORT, DEFAULT_TRANSPORT_PORT),
     restPort: parsePort(process.env.ACTOR_WEB_REST_PORT, DEFAULT_REST_PORT),
     lifecycleMode,
+    providerRuntimeEnabled,
+    providerRuntimeSource,
     ...(telemetry ? { transportTelemetry: telemetry.observe } : {}),
   });
 
@@ -76,6 +95,8 @@ async function main(): Promise<void> {
     gatewayUrl: requireServerUrl('gateway URL', server.getGatewayUrl()),
     transportUrl: requireServerUrl('transport URL', server.getTransportUrl()),
     lifecycleMode,
+    providerRuntimeEnabled,
+    providerRuntimeSource,
   };
   console.log(`LOGISTICS_SERVER_READY ${JSON.stringify(ready)}`);
 

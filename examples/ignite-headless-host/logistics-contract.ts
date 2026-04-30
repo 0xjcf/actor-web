@@ -144,6 +144,8 @@ export type ShipmentCommand =
       facility?: string;
       loadId?: string;
       note?: string;
+      sourceLabel?: string;
+      channelLabel?: string;
       baseContext?: ShipmentContext;
     };
 
@@ -186,6 +188,7 @@ export function isShipmentEvent(value: unknown): value is ShipmentEvent {
 export type ProviderHqCommand =
   | { type: 'REFRESH_PROVIDER_STATUS' }
   | { type: 'SET_PROVIDER_MODE'; mode: import('./logistics-provider-hq').LifecycleMode }
+  | { type: 'SET_PROVIDER_SOURCE_LABEL'; sourceLabel: ProviderSignalSourceLabel }
   | { type: 'SELECT_PROVIDER_SHIPMENT'; shipmentId: string }
   | { type: 'PROVIDER_QUEUE_NEXT' }
   | { type: 'PROVIDER_QUEUE_PREV' }
@@ -204,6 +207,7 @@ export type ProviderHqCommand =
 export type ProviderHqEvent =
   | { type: 'PROVIDER_STATUS_REFRESHED' }
   | { type: 'PROVIDER_MODE_CHANGED'; mode: import('./logistics-provider-hq').LifecycleMode }
+  | { type: 'PROVIDER_SOURCE_LABEL_CHANGED'; sourceLabel: ProviderSignalSourceLabel }
   | { type: 'PROVIDER_SHIPMENT_SELECTED'; shipmentId: string | null }
   | { type: 'PROVIDER_SIGNAL_REQUESTED'; shipmentId: string; signal: ProviderSignal }
   | { type: 'PROVIDER_SIGNAL_SUBMITTED'; shipmentId: string; signal: ProviderSignal }
@@ -274,6 +278,7 @@ export function isProviderHqEvent(value: unknown): value is ProviderHqEvent {
   return (
     event.type === 'PROVIDER_STATUS_REFRESHED' ||
     event.type === 'PROVIDER_MODE_CHANGED' ||
+    event.type === 'PROVIDER_SOURCE_LABEL_CHANGED' ||
     event.type === 'PROVIDER_SHIPMENT_SELECTED' ||
     (event.type === 'PROVIDER_SIGNAL_REQUESTED' &&
       typeof event.shipmentId === 'string' &&
@@ -303,6 +308,8 @@ export const LOCAL_NODE = 'logistics-browser-host';
 export const REMOTE_NODE = 'logistics-server-runtime';
 export const REMOTE_ACTOR_ID = 'logistics-shipment';
 export const PROVIDER_HQ_ACTOR_ID = 'logistics-provider-hq';
+export const PROVIDER_NODE = 'logistics-provider-runtime';
+export const PROVIDER_RUNTIME_ACTOR_ID = 'logistics-provider-runtime-manager';
 export const LOGISTICS_SUPERVISOR_ACTOR_ID = 'logistics-supervisor';
 export const DISPATCHER_ACTOR_ID = 'logistics-dispatcher';
 export const DRIVER_DIRECTORY_ACTOR_ID = 'logistics-driver-directory';
@@ -310,6 +317,9 @@ export const WORKER_NODE = 'logistics-worker-runtime';
 export const WORKER_ACTOR_ID = 'logistics-routing';
 export const SERVICE_WORKER_NODE = 'logistics-service-worker-runtime';
 export const SERVICE_WORKER_ACTOR_ID = 'logistics-service-worker-proof';
+
+export type ProviderRuntimeSource = 'embedded' | 'process' | 'container';
+export type ProviderSignalSourceLabel = 'manual UI' | 'simulator process' | 'provider container';
 
 export const REMOTE_ADDRESS = {
   id: REMOTE_ACTOR_ID,
@@ -324,6 +334,25 @@ export const PROVIDER_HQ_ADDRESS = {
   node: REMOTE_NODE,
   path: `actor://${REMOTE_NODE}/actor/${PROVIDER_HQ_ACTOR_ID}`,
 } as const;
+
+export const PROVIDER_RUNTIME_ADDRESS = {
+  id: PROVIDER_RUNTIME_ACTOR_ID,
+  type: 'actor',
+  node: PROVIDER_NODE,
+  path: `actor://${PROVIDER_NODE}/actor/${PROVIDER_RUNTIME_ACTOR_ID}`,
+} as const;
+
+export type ProviderRuntimeCommand =
+  | { type: 'SYNC_PROVIDER_RUNTIME_SHIPMENT'; shipment: ShipmentContext }
+  | { type: 'RESET_PROVIDER_RUNTIME' }
+  | {
+      type: 'PROCESS_PROVIDER_RUNTIME_SIGNAL';
+      shipmentId: string;
+      signal: ProviderSignal;
+      facility?: string;
+      loadId?: string;
+      note?: string;
+    };
 
 export const LOGISTICS_SUPERVISOR_ADDRESS = {
   id: LOGISTICS_SUPERVISOR_ACTOR_ID,

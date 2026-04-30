@@ -16,6 +16,7 @@ import {
   expectedProviderSignal,
   isTerminalShipment,
   providerSignalExpectationLabel,
+  providerSignalMatchesExpected,
 } from './logistics-provider-hq';
 
 export type ProviderShipmentWorkflowState =
@@ -123,6 +124,22 @@ function acceptProviderSignal(
   };
 }
 
+export function processProviderShipmentSignal(
+  context: ShipmentContext | undefined,
+  message: ProviderSignalCommand
+): ProviderShipmentSignalResult {
+  const signal = message.type;
+  if (
+    !context ||
+    isTerminalShipment(context.status) ||
+    !providerSignalMatchesExpected(context, signal)
+  ) {
+    return createProviderShipmentSignalRejection(context, signal);
+  }
+
+  return acceptProviderSignal(signal, context, message);
+}
+
 export function createProviderShipmentBehavior(initialContext: ShipmentContext) {
   return defineActor<ProviderShipmentCommand, ProviderShipmentEvent>()
     .withContext(initialContext)
@@ -147,11 +164,7 @@ export function createProviderShipmentBehavior(initialContext: ShipmentContext) 
     })
     .onTransition({
       LABEL_SCANNED: ({ context, message }) => {
-        if (isTerminalShipment(context.status)) {
-          return { reply: createProviderShipmentSignalRejection(context, 'LABEL_SCANNED') };
-        }
-
-        const result = acceptProviderSignal('LABEL_SCANNED', context, message);
+        const result = processProviderShipmentSignal(context, message);
         return {
           context: result.ok ? result.shipment : context,
           reply: result,
@@ -167,7 +180,7 @@ export function createProviderShipmentBehavior(initialContext: ShipmentContext) 
         };
       },
       PACKED_INTO_TRUCK: ({ context, message }) => {
-        const result = acceptProviderSignal('PACKED_INTO_TRUCK', context, message);
+        const result = processProviderShipmentSignal(context, message);
         return {
           context: result.ok ? result.shipment : context,
           reply: result,
@@ -183,7 +196,7 @@ export function createProviderShipmentBehavior(initialContext: ShipmentContext) 
         };
       },
       OUTBOUND_SCAN: ({ context, message }) => {
-        const result = acceptProviderSignal('OUTBOUND_SCAN', context, message);
+        const result = processProviderShipmentSignal(context, message);
         return {
           context: result.ok ? result.shipment : context,
           reply: result,
@@ -199,7 +212,7 @@ export function createProviderShipmentBehavior(initialContext: ShipmentContext) 
         };
       },
       DELIVERY_CONFIRMED: ({ context, message }) => {
-        const result = acceptProviderSignal('DELIVERY_CONFIRMED', context, message);
+        const result = processProviderShipmentSignal(context, message);
         return {
           context: result.ok ? result.shipment : context,
           reply: result,
@@ -215,7 +228,7 @@ export function createProviderShipmentBehavior(initialContext: ShipmentContext) 
         };
       },
       RETURN_EXCEPTION: ({ context, message }) => {
-        const result = acceptProviderSignal('RETURN_EXCEPTION', context, message);
+        const result = processProviderShipmentSignal(context, message);
         return {
           context: result.ok ? result.shipment : context,
           reply: result,

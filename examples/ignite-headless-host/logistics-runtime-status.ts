@@ -19,23 +19,33 @@ export interface LogisticsRuntimeStatusResponse {
   readonly gatewayUrl: string | null;
   readonly transportUrl: string | null;
   readonly lifecycleMode: string;
+  readonly provider: {
+    readonly runtimeEnabled: boolean;
+    readonly runtimeSource: 'embedded' | 'process' | 'container';
+    readonly sourceLabel: string;
+  };
   readonly transport: {
     readonly connectedNodes: readonly string[];
     readonly peers: readonly LogisticsRuntimePeerStatus[];
     readonly workerConnected: boolean;
     readonly workerPeerFresh: boolean;
     readonly workerPeer: LogisticsRuntimePeerStatus;
+    readonly providerConnected: boolean;
+    readonly providerPeerFresh: boolean;
+    readonly providerPeer: LogisticsRuntimePeerStatus;
   };
   readonly nodes: {
     readonly browserHost: string;
     readonly serverRuntime: string;
     readonly workerRuntime: string;
+    readonly providerRuntime: string;
     readonly serviceWorkerRuntime: string;
   };
   readonly actors: {
     readonly shipment: string;
     readonly routing: string;
     readonly providerHq: string;
+    readonly providerRuntime: string;
     readonly logisticsSupervisor: string;
     readonly dispatcher: string;
     readonly driverDirectory: string;
@@ -72,6 +82,7 @@ export interface LogisticsRuntimeNodeView {
 export interface LogisticsRuntimeStatusView {
   readonly sourceLabel: string;
   readonly lifecycleMode: string;
+  readonly providerSourceLabel: string;
   readonly gatewayUrl: string;
   readonly transportUrl: string;
   readonly workerSummaryLabel: string;
@@ -157,14 +168,14 @@ function workerSummaryLabel(
   };
 }
 
-function deriveWorkerNodeStatus(
+function remoteNodeStatus(
   previous: LogisticsRuntimeStatusView | null,
-  response: LogisticsRuntimeStatusResponse
+  currentSummaryLabel: string | null,
+  connected: boolean,
+  fresh: boolean
 ): { label: string; badgeClass: string; recovered: boolean } {
-  const wasDisconnected =
-    previous?.pollingError === null && previous.workerSummaryLabel === 'worker disconnected';
-  const recovered =
-    wasDisconnected && response.transport.workerConnected && response.transport.workerPeerFresh;
+  const wasDisconnected = previous?.pollingError === null && currentSummaryLabel === 'disconnected';
+  const recovered = wasDisconnected && connected && fresh;
 
   if (recovered) {
     return {
@@ -174,7 +185,7 @@ function deriveWorkerNodeStatus(
     };
   }
 
-  if (response.transport.workerConnected && response.transport.workerPeerFresh) {
+  if (connected && fresh) {
     return {
       label: 'Connected',
       badgeClass: 'badge runtime-connected',
@@ -182,7 +193,7 @@ function deriveWorkerNodeStatus(
     };
   }
 
-  if (response.transport.workerConnected) {
+  if (connected) {
     return {
       label: 'Connected / stale',
       badgeClass: 'badge runtime-warning',
@@ -197,6 +208,18 @@ function deriveWorkerNodeStatus(
   };
 }
 
+function deriveWorkerNodeStatus(
+  previous: LogisticsRuntimeStatusView | null,
+  response: LogisticsRuntimeStatusResponse
+): { label: string; badgeClass: string; recovered: boolean } {
+  return remoteNodeStatus(
+    previous,
+    previous?.workerSummaryLabel === 'worker disconnected' ? 'disconnected' : null,
+    response.transport.workerConnected,
+    response.transport.workerPeerFresh
+  );
+}
+
 function createRuntimeNodeViews(
   previous: LogisticsRuntimeStatusView | null,
   response: LogisticsRuntimeStatusResponse
@@ -204,6 +227,22 @@ function createRuntimeNodeViews(
   const workerStatus = deriveWorkerNodeStatus(previous, response);
   const workerPeer = response.transport.workerPeer;
   const browserNodeAddress = logistics.nodes.browser.address;
+  const providerStatus = response.provider.runtimeEnabled
+    ? remoteNodeStatus(
+        previous,
+        previous?.nodes.find((node) => node.id === 'provider-runtime')?.statusLabel ===
+          'Disconnected'
+          ? 'disconnected'
+          : null,
+        response.transport.providerConnected,
+        response.transport.providerPeerFresh
+      )
+    : {
+        label: 'Disabled',
+        badgeClass: 'badge runtime-unavailable',
+        recovered: false,
+      };
+  const providerPeer = response.transport.providerPeer;
 
   return [
     createNodeView({
@@ -272,6 +311,45 @@ function createRuntimeNodeViews(
       rejectedReason: displayValue(workerPeer.rejectedReason),
     }),
     createNodeView({
+      id: 'provider-runtime',
+      chipLabel: 'Provider',
+      chipToneClass: 'tone-provider',
+      title: 'Provider Runtime',
+      processLabel: response.provider.runtimeEnabled
+        ? response.provider.runtimeSource === 'container'
+          ? 'provider-runtime container'
+          : response.provider.runtimeSource === 'process'
+            ? 'Provider runtime process'
+            : 'Embedded provider runtime'
+        : 'provider runtime disabled',
+      nodeAddress: response.nodes.providerRuntime,
+      actorAddresses: [response.actors.providerRuntime],
+      statusLabel: providerStatus.label,
+      statusBadgeClass: providerStatus.badgeClass,
+      detail: response.provider.runtimeEnabled
+        ? `Provider shipment workflow boundary hosted by ${response.provider.runtimeSource}; signal source is ${response.provider.sourceLabel}.`
+        : 'Server-owned provider shipment workflow remains embedded for the simple local path.',
+      peerState: response.provider.runtimeEnabled ? displayValue(providerPeer.state) : 'disabled',
+      connectedLabel: response.provider.runtimeEnabled
+        ? displayBoolean(response.transport.providerConnected)
+        : 'disabled',
+      freshLabel: response.provider.runtimeEnabled
+        ? displayBoolean(response.transport.providerPeerFresh)
+        : 'disabled',
+      lastSeenAt: response.provider.runtimeEnabled
+        ? displayValue(providerPeer.lastSeenAt)
+        : 'unavailable',
+      disconnectedAt: response.provider.runtimeEnabled
+        ? displayValue(providerPeer.disconnectedAt)
+        : 'unavailable',
+      staleReason: response.provider.runtimeEnabled
+        ? displayValue(providerPeer.staleReason)
+        : 'unavailable',
+      rejectedReason: response.provider.runtimeEnabled
+        ? displayValue(providerPeer.rejectedReason)
+        : 'unavailable',
+    }),
+    createNodeView({
       id: 'service-worker-proof',
       chipLabel: 'Proof',
       chipToneClass: 'tone-local',
@@ -300,6 +378,7 @@ export function createInitialLogisticsRuntimeStatusView(): LogisticsRuntimeStatu
   return {
     sourceLabel: runtimeStatusSourceLabel(),
     lifecycleMode: 'unknown',
+    providerSourceLabel: 'unavailable',
     gatewayUrl: 'unavailable',
     transportUrl: 'unavailable',
     workerSummaryLabel: 'worker disconnected',
@@ -349,6 +428,7 @@ export function reduceLogisticsRuntimeStatusView(
   return {
     sourceLabel: runtimeStatusSourceLabel(),
     lifecycleMode: response.lifecycleMode,
+    providerSourceLabel: response.provider.sourceLabel,
     gatewayUrl: displayValue(response.gatewayUrl),
     transportUrl: displayValue(response.transportUrl),
     workerSummaryLabel: workerSummary.label,

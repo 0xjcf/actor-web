@@ -222,8 +222,8 @@ export function createShipmentBehavior() {
           providerNote: note,
           shipmentCount: Math.max(context.shipmentCount, baseContext.shipmentCount),
           timeline: appendTimeline(baseContext, timeline.label, timeline.detail, {
-            source: 'Remote Provider HQ',
-            channel: 'Provider signal -> server runtime -> gateway WS',
+            source: message.sourceLabel ?? 'Remote Provider HQ',
+            channel: message.channelLabel ?? 'Provider signal -> server runtime -> gateway WS',
             note,
             facility,
             signal: message.signal,

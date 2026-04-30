@@ -176,6 +176,11 @@ registerRuntimeStatusPanel(LOGISTICS_RUNTIME_STATUS_PANEL_ELEMENT_NAME, (view) =
           <strong>{view.runtimeStatus.transportUrl}</strong>
           <span class="muted">Panel source {view.runtimeTransportState}</span>
         </div>
+        <div class="route-card tone-provider">
+          <span class="runtime-chip">Provider Source</span>
+          <strong>{view.runtimeStatus.providerSourceLabel}</strong>
+          <span class="muted">Manual UI, simulator process, or provider container.</span>
+        </div>
         {view.runtimeStatus.metrics.map((metric) => (
           <div class="route-card tone-local">
             <span class="runtime-chip">{metric.label}</span>

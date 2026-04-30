@@ -17,6 +17,12 @@ interface LogisticsWorkerReadyPayload {
   readonly connectedNodes: readonly string[];
 }
 
+interface LogisticsProviderReadyPayload {
+  readonly nodeAddress: string;
+  readonly serverTransportUrl: string;
+  readonly connectedNodes: readonly string[];
+}
+
 interface ManagedProcess {
   readonly name: string;
   readonly child: ChildProcess;
@@ -121,6 +127,117 @@ describe('logistics multi-process deployment prove-out', () => {
     await Promise.all(readyProcesses.splice(0).map(stopManagedProcess));
     expect(readFileSync(serverTelemetryPath, 'utf8')).toContain('"type":"peer.connected"');
     expect(readFileSync(workerTelemetryPath, 'utf8')).toContain('"type":"peer.connected"');
+  }, 30_000);
+
+  it('routes provider workflow through a separate provider process when enabled', async () => {
+    const telemetryDirectory = mkdtempSync(join(tmpdir(), 'actor-web-logistics-provider-'));
+    tempDirectories.push(telemetryDirectory);
+    const serverTelemetryPath = join(telemetryDirectory, 'server-transport.jsonl');
+    const workerTelemetryPath = join(telemetryDirectory, 'worker-transport.jsonl');
+    const providerTelemetryPath = join(telemetryDirectory, 'provider-transport.jsonl');
+    const server = spawnExampleProcess(
+      'server',
+      ['examples/ignite-headless-host/logistics-server-process.ts'],
+      {
+        ACTOR_WEB_GATEWAY_PORT: '0',
+        ACTOR_WEB_REST_PORT: '0',
+        ACTOR_WEB_TELEMETRY_JSONL: serverTelemetryPath,
+        ACTOR_WEB_TRANSPORT_PORT: '0',
+        ACTOR_WEB_PROVIDER_RUNTIME_ENABLED: '1',
+        ACTOR_WEB_PROVIDER_RUNTIME_SOURCE: 'process',
+        LOGISTICS_LIFECYCLE_MODE: 'manual',
+      }
+    );
+    readyProcesses.push(server);
+
+    const serverReady = await waitForReadyLine<LogisticsServerReadyPayload>(
+      server,
+      'LOGISTICS_SERVER_READY '
+    );
+
+    const worker = spawnExampleProcess(
+      'worker',
+      ['examples/ignite-headless-host/logistics-worker-process.ts'],
+      {
+        ACTOR_WEB_SERVER_TRANSPORT_URL: serverReady.transportUrl,
+        ACTOR_WEB_TELEMETRY_JSONL: workerTelemetryPath,
+      }
+    );
+    readyProcesses.push(worker);
+
+    const provider = spawnExampleProcess(
+      'provider',
+      ['examples/ignite-headless-host/logistics-provider-process.ts'],
+      {
+        ACTOR_WEB_SERVER_TRANSPORT_URL: serverReady.transportUrl,
+        ACTOR_WEB_TELEMETRY_JSONL: providerTelemetryPath,
+      }
+    );
+    readyProcesses.push(provider);
+
+    await waitForReadyLine<LogisticsWorkerReadyPayload>(worker, 'LOGISTICS_WORKER_READY ');
+    const providerReady = await waitForReadyLine<LogisticsProviderReadyPayload>(
+      provider,
+      'LOGISTICS_PROVIDER_READY '
+    );
+    expect(providerReady).toMatchObject({
+      nodeAddress: 'logistics-provider-runtime',
+      serverTransportUrl: serverReady.transportUrl,
+    });
+
+    await waitForRuntimeStatus(
+      serverReady.restUrl,
+      (status) =>
+        status.transport.workerConnected === true &&
+        status.transport.providerConnected === true &&
+        status.provider?.runtimeEnabled === true &&
+        status.provider?.sourceLabel === 'manual UI',
+      'Expected server runtime to observe worker and provider process transport connections'
+    );
+
+    const response = await fetch(`${serverReady.restUrl}/shipments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        shipmentId: 'shipment-provider-process-1001',
+        destination: 'Chicago warehouse',
+        reference: 'PP-1001',
+      }),
+    });
+    expect(response.status).toBe(202);
+
+    await waitForShipment(
+      serverReady.restUrl,
+      (shipment) =>
+        shipment.shipmentId === 'shipment-provider-process-1001' &&
+        shipment.status === 'route-assigned' &&
+        shipment.providerSignal == null,
+      'Expected provider-enabled manual mode to preserve the existing manual queue stop'
+    );
+
+    const labelResponse = await fetch(`${serverReady.restUrl}/provider/signals`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        shipmentId: 'shipment-provider-process-1001',
+        signal: 'LABEL_SCANNED',
+      }),
+    });
+    expect(labelResponse.status).toBe(202);
+
+    await waitForShipment(
+      serverReady.restUrl,
+      (shipment) =>
+        shipment.shipmentId === 'shipment-provider-process-1001' &&
+        shipment.providerSignal === 'LABEL_SCANNED' &&
+        shipment.timeline?.[0]?.source === 'manual UI',
+      'Expected provider process to own provider-specific signal workflow while preserving manual UI labeling'
+    );
+
+    await Promise.all(readyProcesses.splice(0).map(stopManagedProcess));
+    expect(readFileSync(serverTelemetryPath, 'utf8')).toContain('"type":"peer.connected"');
+    expect(readFileSync(workerTelemetryPath, 'utf8')).toContain('"type":"peer.connected"');
+    expect(readFileSync(providerTelemetryPath, 'utf8')).toContain('"type":"peer.connected"');
   }, 30_000);
 });
 
@@ -235,11 +352,27 @@ function signalManagedProcess(managed: ManagedProcess, signal: NodeJS.Signals): 
 }
 
 interface RuntimeStatusResponse {
+  readonly provider?: {
+    readonly runtimeEnabled?: boolean;
+    readonly sourceLabel?: string;
+  };
   readonly transport: {
     readonly connectedNodes: readonly string[];
     readonly workerConnected: boolean;
     readonly workerPeerFresh?: boolean;
     readonly workerPeer?: {
+      readonly state: string;
+      readonly connected: boolean;
+      readonly fresh: boolean;
+      readonly staleAfterMs: number;
+      readonly lastSeenAt?: string;
+      readonly disconnectedAt?: string;
+      readonly rejectedReason?: string;
+      readonly staleReason?: string;
+    };
+    readonly providerConnected?: boolean;
+    readonly providerPeerFresh?: boolean;
+    readonly providerPeer?: {
       readonly state: string;
       readonly connected: boolean;
       readonly fresh: boolean;
@@ -277,6 +410,10 @@ interface ShipmentResponse {
   readonly shipmentId?: string | null;
   readonly status?: string;
   readonly carrier?: string | null;
+  readonly providerSignal?: string | null;
+  readonly timeline?: Array<{
+    readonly source?: string;
+  }>;
 }
 
 async function waitForShipment(

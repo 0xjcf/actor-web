@@ -80,6 +80,7 @@ const registerProviderConsole = igniteCore({
 
     return {
       status: providerContext.status,
+      providerSourceLabel: providerContext.status.sourceLabel,
       selectedShipmentId: providerContext.selectedShipmentId,
       queuePage: providerContext.queuePage,
       queuePageCount,
@@ -179,7 +180,8 @@ registerProviderConsole(PROVIDER_CONSOLE_ELEMENT_NAME, (view) => {
           </div>
           <p class="copy">
             Simulation lets the server advance shipments. Manual mode lets this provider console
-            process the queue one shipment at a time.
+            process the queue one shipment at a time. Current signal source:{' '}
+            {view.providerSourceLabel}.
           </p>
         </section>
 
@@ -250,6 +252,10 @@ registerProviderConsole(PROVIDER_CONSOLE_ELEMENT_NAME, (view) => {
             <div class="metric">
               <span class="label">Lifecycle Mode</span>
               <span class="value">{view.status.mode}</span>
+            </div>
+            <div class="metric">
+              <span class="label">Signal Source</span>
+              <span class="value">{view.providerSourceLabel}</span>
             </div>
             <div class="metric">
               <span class="label">Shipment</span>

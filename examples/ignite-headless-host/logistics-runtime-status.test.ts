@@ -12,6 +12,11 @@ function createStatusResponse(
     gatewayUrl: 'ws://127.0.0.1:4101',
     transportUrl: 'ws://127.0.0.1:4102',
     lifecycleMode: 'manual',
+    provider: {
+      runtimeEnabled: false,
+      runtimeSource: 'embedded',
+      sourceLabel: 'manual UI',
+    },
     transport: {
       connectedNodes: ['logistics-worker-runtime'],
       peers: [
@@ -34,18 +39,30 @@ function createStatusResponse(
         staleAfterMs: 45_000,
         lastSeenAt: '2026-04-30T15:00:00.000Z',
       },
+      providerConnected: false,
+      providerPeerFresh: false,
+      providerPeer: {
+        nodeAddress: 'logistics-provider-runtime',
+        state: 'disconnected',
+        connected: false,
+        fresh: false,
+        staleAfterMs: 45_000,
+      },
       ...overrides,
     },
     nodes: {
       browserHost: 'thin Ignite host',
       serverRuntime: 'logistics-server-runtime',
       workerRuntime: 'logistics-worker-runtime',
+      providerRuntime: 'logistics-provider-runtime',
       serviceWorkerRuntime: 'logistics-service-worker-runtime',
     },
     actors: {
       shipment: 'actor://logistics-server-runtime/actor/logistics-shipment',
       routing: 'actor://logistics-worker-runtime/actor/logistics-routing',
       providerHq: 'actor://logistics-server-runtime/actor/logistics-provider-hq',
+      providerRuntime:
+        'actor://logistics-provider-runtime/actor/logistics-provider-runtime-manager',
       logisticsSupervisor: 'actor://logistics-server-runtime/actor/logistics-supervisor',
       dispatcher: 'actor://logistics-server-runtime/actor/logistics-dispatcher',
       driverDirectory: 'actor://logistics-server-runtime/actor/logistics-driver-directory',
@@ -73,6 +90,10 @@ describe('logistics runtime status adapter', () => {
       connectedLabel: 'true',
       freshLabel: 'true',
       peerState: 'connected',
+    });
+    expect(view.nodes.find((node) => node.id === 'provider-runtime')).toMatchObject({
+      statusLabel: 'Disabled',
+      processLabel: 'provider runtime disabled',
     });
   });
 
@@ -151,6 +172,87 @@ describe('logistics runtime status adapter', () => {
       statusLabel: 'Recovered',
       connectedLabel: 'true',
       freshLabel: 'true',
+    });
+  });
+
+  it('maps an enabled provider runtime from /runtime/status', () => {
+    const view = reduceLogisticsRuntimeStatusView(createInitialLogisticsRuntimeStatusView(), {
+      ...createStatusResponse({
+        connectedNodes: ['logistics-worker-runtime', 'logistics-provider-runtime'],
+        peers: [
+          {
+            nodeAddress: 'logistics-worker-runtime',
+            state: 'connected',
+            connected: true,
+            fresh: true,
+            staleAfterMs: 45_000,
+            lastSeenAt: '2026-04-30T15:00:00.000Z',
+          },
+          {
+            nodeAddress: 'logistics-provider-runtime',
+            state: 'connected',
+            connected: true,
+            fresh: true,
+            staleAfterMs: 45_000,
+            lastSeenAt: '2026-04-30T15:00:01.000Z',
+          },
+        ],
+        providerConnected: true,
+        providerPeerFresh: true,
+        providerPeer: {
+          nodeAddress: 'logistics-provider-runtime',
+          state: 'connected',
+          connected: true,
+          fresh: true,
+          staleAfterMs: 45_000,
+          lastSeenAt: '2026-04-30T15:00:01.000Z',
+        },
+      }),
+      provider: {
+        runtimeEnabled: true,
+        runtimeSource: 'container',
+        sourceLabel: 'provider container',
+      },
+    });
+
+    expect(view.providerSourceLabel).toBe('provider container');
+    expect(view.nodes.find((node) => node.id === 'provider-runtime')).toMatchObject({
+      statusLabel: 'Connected',
+      connectedLabel: 'true',
+      freshLabel: 'true',
+      processLabel: 'provider-runtime container',
+    });
+  });
+
+  it('keeps provider runtime identity separate from manual signal source', () => {
+    const view = reduceLogisticsRuntimeStatusView(createInitialLogisticsRuntimeStatusView(), {
+      ...createStatusResponse({
+        connectedNodes: ['logistics-worker-runtime', 'logistics-provider-runtime'],
+        providerConnected: true,
+        providerPeerFresh: true,
+        providerPeer: {
+          nodeAddress: 'logistics-provider-runtime',
+          state: 'connected',
+          connected: true,
+          fresh: true,
+          staleAfterMs: 45_000,
+          lastSeenAt: '2026-04-30T15:00:01.000Z',
+        },
+      }),
+      lifecycleMode: 'manual',
+      provider: {
+        runtimeEnabled: true,
+        runtimeSource: 'container',
+        sourceLabel: 'manual UI',
+      },
+    });
+
+    expect(view.providerSourceLabel).toBe('manual UI');
+    expect(view.nodes.find((node) => node.id === 'provider-runtime')).toMatchObject({
+      statusLabel: 'Connected',
+      processLabel: 'provider-runtime container',
+      detail:
+        'Provider shipment workflow boundary hosted by container; signal source is manual UI.',
     });
   });
 });

@@ -1,7 +1,9 @@
 import type {
   ProviderHqContext,
+  ProviderRuntimeSource,
   ProviderSignal,
   ProviderSignalCommand,
+  ProviderSignalSourceLabel,
   ShipmentContext,
   ShipmentStatus,
 } from './logistics-contract';
@@ -28,6 +30,7 @@ export interface ProviderQueueItem {
 
 export interface ProviderStatus {
   mode: LifecycleMode;
+  sourceLabel: ProviderSignalSourceLabel;
   shipmentId: string | null;
   status: ShipmentStatus | null;
   facility: string | null;
@@ -40,6 +43,7 @@ export interface ProviderStatus {
 export function emptyProviderStatus(mode: LifecycleMode | 'unknown' = 'unknown'): ProviderStatus {
   return {
     mode: mode === 'unknown' ? 'simulation' : mode,
+    sourceLabel: 'simulator process',
     shipmentId: null,
     status: null,
     facility: null,
@@ -48,6 +52,17 @@ export function emptyProviderStatus(mode: LifecycleMode | 'unknown' = 'unknown')
     note: null,
     queue: [],
   };
+}
+
+export function resolveProviderSourceLabel(input: {
+  mode: LifecycleMode;
+  runtimeSource: ProviderRuntimeSource;
+}): ProviderSignalSourceLabel {
+  if (input.mode === 'manual') {
+    return 'manual UI';
+  }
+
+  return input.runtimeSource === 'container' ? 'provider container' : 'simulator process';
 }
 
 export function shouldReturnShipment(shipmentId: string): boolean {
@@ -134,7 +149,8 @@ export function clampProviderQueuePage(page: number, queueLength: number): numbe
 export function providerStatusFrom(
   mode: LifecycleMode,
   shipmentContexts: Record<string, ShipmentContext>,
-  selectedShipmentId: string | null
+  selectedShipmentId: string | null,
+  sourceLabel: ProviderSignalSourceLabel
 ): ProviderStatus {
   const queue = Object.values(shipmentContexts)
     .filter((context) => context.shipmentId)
@@ -160,6 +176,7 @@ export function providerStatusFrom(
 
   return {
     mode,
+    sourceLabel,
     shipmentId: current?.shipmentId ?? null,
     status: current?.status ?? null,
     facility: current?.facility ?? null,
@@ -173,7 +190,10 @@ export function providerStatusFrom(
 export function createInitialProviderHqContext(): ProviderHqContext {
   const mode = 'simulation';
   return {
-    status: emptyProviderStatus(mode),
+    status: {
+      ...emptyProviderStatus(mode),
+      sourceLabel: resolveProviderSourceLabel({ mode, runtimeSource: 'embedded' }),
+    },
     selectedShipmentId: null,
     queuePage: 0,
     shipmentContexts: {},
@@ -204,14 +224,19 @@ export function upsertProviderShipment(
     selectedShipment && !isTerminalShipment(selectedShipment.status)
       ? context.selectedShipmentId
       : null;
-  const status = providerStatusFrom(context.status.mode, shipmentContexts, selectedShipmentId);
+  const nextStatus = providerStatusFrom(
+    context.status.mode,
+    shipmentContexts,
+    selectedShipmentId,
+    context.status.sourceLabel
+  );
 
   return {
     ...context,
-    status,
+    status: nextStatus,
     shipmentContexts,
     selectedShipmentId,
-    queuePage: clampProviderQueuePage(context.queuePage, status.queue.length),
+    queuePage: clampProviderQueuePage(context.queuePage, nextStatus.queue.length),
     message: `${shipment.shipmentId} queued at Provider HQ.`,
   };
 }

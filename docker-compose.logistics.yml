@@ -17,7 +17,9 @@ services:
       ACTOR_WEB_GATEWAY_PORT: 4101
       ACTOR_WEB_TRANSPORT_PORT: 4102
       ACTOR_WEB_TELEMETRY_JSONL: /workspace/actor-web/.actor-web/telemetry/server-transport.jsonl
-      LOGISTICS_LIFECYCLE_MODE: manual
+      ACTOR_WEB_PROVIDER_RUNTIME_ENABLED: ${ACTOR_WEB_PROVIDER_RUNTIME_ENABLED:-0}
+      ACTOR_WEB_PROVIDER_RUNTIME_SOURCE: ${ACTOR_WEB_PROVIDER_RUNTIME_SOURCE:-embedded}
+      LOGISTICS_LIFECYCLE_MODE: ${LOGISTICS_LIFECYCLE_MODE:-manual}
     ports:
       - "4100:4100"
       - "4101:4101"
@@ -44,6 +46,21 @@ services:
       ACTOR_WEB_HOST: 0.0.0.0
       ACTOR_WEB_SERVER_TRANSPORT_URL: ws://server-runtime:4102
       ACTOR_WEB_TELEMETRY_JSONL: /workspace/actor-web/.actor-web/telemetry/worker-transport.jsonl
+    volumes:
+      - ./.actor-web/telemetry:/workspace/actor-web/.actor-web/telemetry
+
+  provider-runtime:
+    profiles:
+      - provider-runtime
+    build: *logistics-build
+    command: pnpm examples:logistics:provider
+    depends_on:
+      server-runtime:
+        condition: service_healthy
+    environment:
+      ACTOR_WEB_HOST: 0.0.0.0
+      ACTOR_WEB_SERVER_TRANSPORT_URL: ws://server-runtime:4102
+      ACTOR_WEB_TELEMETRY_JSONL: /workspace/actor-web/.actor-web/telemetry/provider-transport.jsonl
     volumes:
       - ./.actor-web/telemetry:/workspace/actor-web/.actor-web/telemetry
 

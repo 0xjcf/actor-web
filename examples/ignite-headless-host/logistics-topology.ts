@@ -5,6 +5,8 @@ import {
   LOCAL_NODE,
   LOGISTICS_SUPERVISOR_ACTOR_ID,
   PROVIDER_HQ_ACTOR_ID,
+  PROVIDER_NODE,
+  PROVIDER_RUNTIME_ACTOR_ID,
   REMOTE_ACTOR_ID,
   REMOTE_NODE,
   SERVICE_WORKER_ACTOR_ID,
@@ -18,6 +20,7 @@ import {
   createLogisticsSupervisorBehavior,
 } from './logistics-operations-behaviors';
 import { createProviderHqBehavior } from './logistics-provider-hq-behavior';
+import { createProviderRuntimeBehavior } from './logistics-provider-runtime-behavior';
 import { createProviderShipmentBehavior } from './logistics-provider-shipment-behavior';
 import { createRoutingBehavior } from './logistics-routing-behavior';
 import { providerShipmentInstanceId, shipmentLifecycleActorId } from './logistics-runtime-plans';
@@ -32,6 +35,7 @@ export const logistics = defineActorWebTopology({
     browser: node(LOCAL_NODE),
     server: node(REMOTE_NODE),
     worker: node(WORKER_NODE),
+    provider: node(PROVIDER_NODE),
     serviceWorker: node(SERVICE_WORKER_NODE),
   },
 
@@ -127,6 +131,17 @@ export const logistics = defineActorWebTopology({
       },
     }),
 
+    providerRuntime: actor({
+      id: PROVIDER_RUNTIME_ACTOR_ID,
+      node: 'provider',
+      behavior: createProviderRuntimeBehavior,
+      supervision: {
+        strategy: 'restart',
+        maxRestarts: 3,
+        withinMs: 60_000,
+      },
+    }),
+
     serviceWorkerProof: actor({
       id: SERVICE_WORKER_ACTOR_ID,
       node: 'serviceWorker',
@@ -158,6 +173,12 @@ export const logistics = defineActorWebTopology({
       node: 'worker',
       strategy: 'one-for-one',
       children: ['routing'],
+    }),
+
+    providerRuntime: supervisor({
+      node: 'provider',
+      strategy: 'one-for-one',
+      children: ['providerRuntime'],
     }),
 
     serviceWorkerProof: supervisor({

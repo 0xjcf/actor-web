@@ -94,7 +94,25 @@ export function eventRuntime(eventType: ShipmentEvent['type']): RuntimeDisplay {
   };
 }
 
-export function timelineRuntime(label: string): RuntimeDisplay {
+export function timelineRuntime(entry: ShipmentContext['timeline'][number]): RuntimeDisplay {
+  if (entry.source || entry.channel) {
+    return {
+      source: entry.source ?? 'Server Shipment Runtime',
+      via: entry.channel ?? 'gateway WS update',
+      tone:
+        entry.source === 'manual UI' || entry.source === 'provider container'
+          ? 'tone-provider'
+          : entry.source?.includes('Provider')
+            ? 'tone-provider'
+            : entry.source?.includes('Worker')
+              ? 'tone-worker'
+              : entry.source?.includes('Lifecycle')
+                ? 'tone-lifecycle'
+                : 'tone-server',
+    };
+  }
+
+  const label = entry.label;
   if (label === 'Route assigned') {
     return {
       source: 'Worker Routing Runtime',
@@ -147,7 +165,7 @@ export function projectTimelineEntry(
 ): ProjectedTimelineEntry {
   return {
     ...entry,
-    runtime: timelineRuntime(entry.label),
+    runtime: timelineRuntime(entry),
   };
 }
 

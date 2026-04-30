@@ -41,7 +41,8 @@ export function createProviderHqBehavior() {
         const status = providerStatusFrom(
           message.mode,
           context.shipmentContexts,
-          context.selectedShipmentId
+          context.selectedShipmentId,
+          context.status.sourceLabel
         );
         return {
           context: {
@@ -51,6 +52,23 @@ export function createProviderHqBehavior() {
           },
           reply: status,
           emit: [{ type: 'PROVIDER_MODE_CHANGED', mode: message.mode }],
+        };
+      }
+
+      if (message.type === 'SET_PROVIDER_SOURCE_LABEL') {
+        const status = providerStatusFrom(
+          context.status.mode,
+          context.shipmentContexts,
+          context.selectedShipmentId,
+          message.sourceLabel
+        );
+        return {
+          context: {
+            ...context,
+            status,
+          },
+          reply: status,
+          emit: [{ type: 'PROVIDER_SOURCE_LABEL_CHANGED', sourceLabel: message.sourceLabel }],
         };
       }
 
@@ -72,7 +90,8 @@ export function createProviderHqBehavior() {
         const status = providerStatusFrom(
           context.status.mode,
           context.shipmentContexts,
-          message.shipmentId
+          message.shipmentId,
+          context.status.sourceLabel
         );
         return {
           context: {
@@ -144,12 +163,14 @@ export function createProviderHqBehavior() {
       }
 
       if (message.type === 'CLEAR_PROVIDER_QUEUE') {
+        const initialContext = createInitialProviderHqContext();
         return {
           context: {
-            ...createInitialProviderHqContext(),
+            ...initialContext,
             status: {
-              ...createInitialProviderHqContext().status,
+              ...initialContext.status,
               mode: context.status.mode,
+              sourceLabel: context.status.sourceLabel,
             },
             message: 'Provider queue cleared.',
           },

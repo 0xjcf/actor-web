@@ -21,9 +21,12 @@ import type {
   ProviderHqCommand,
   ProviderHqContext,
   ProviderHqEvent,
+  ProviderRuntimeCommand,
+  ProviderRuntimeSource,
   ProviderShipmentCommand,
   ProviderShipmentSignalResult,
   ProviderSignal,
+  ProviderSignalSourceLabel,
   RoutePlan,
   ShipmentCommand,
   ShipmentContext,
@@ -33,6 +36,7 @@ import { isProviderHqEvent, isShipmentEvent } from './logistics-contract';
 import {
   isProviderSignal,
   type LifecycleMode,
+  resolveProviderSourceLabel,
   shouldReturnShipment,
 } from './logistics-provider-hq';
 import {
@@ -53,12 +57,14 @@ import { logistics } from './logistics-topology';
 const shipmentActorDescriptor = logistics.actors.shipment;
 const routingActorDescriptor = logistics.actors.routing;
 const providerHqActorDescriptor = logistics.actors.providerHq;
+const providerRuntimeActorDescriptor = logistics.actors.providerRuntime;
 const logisticsSupervisorActorDescriptor = logistics.actors.logisticsSupervisor;
 const dispatcherActorDescriptor = logistics.actors.dispatcher;
 const driverDirectoryActorDescriptor = logistics.actors.driverDirectory;
 const serviceWorkerProofActorDescriptor = logistics.actors.serviceWorkerProof;
 const serverNode = logistics.nodes.server.address;
 const workerNode = logistics.nodes.worker.address;
+const providerNode = logistics.nodes.provider.address;
 const serviceWorkerNode = logistics.nodes.serviceWorker.address;
 
 export interface LogisticsRuntimeGatewayServerOptions {
@@ -71,6 +77,8 @@ export interface LogisticsRuntimeGatewayServerOptions {
   lifecyclePackedDelayMs?: number;
   lifecycleShippedDelayMs?: number;
   lifecycleTerminalDelayMs?: number;
+  providerRuntimeEnabled?: boolean;
+  providerRuntimeSource?: ProviderRuntimeSource;
   transportTelemetry?: RuntimeTransportTelemetryObserver;
 }
 
@@ -104,6 +112,8 @@ export function createLogisticsRuntimeGatewayServer(
   options: LogisticsRuntimeGatewayServerOptions = {}
 ): LogisticsRuntimeGatewayServer {
   let lifecycleMode = options.lifecycleMode ?? 'simulation';
+  const providerRuntimeEnabled = options.providerRuntimeEnabled ?? false;
+  const providerRuntimeSource = options.providerRuntimeSource ?? 'embedded';
   const lifecycleLabelDelayMs = options.lifecycleLabelDelayMs ?? 2_000;
   const lifecyclePackedDelayMs = options.lifecyclePackedDelayMs ?? 6_000;
   const lifecycleShippedDelayMs = options.lifecycleShippedDelayMs ?? 10_000;
@@ -124,6 +134,21 @@ export function createLogisticsRuntimeGatewayServer(
   const lifecycleTimers = new Set<ReturnType<typeof setTimeout>>();
   const runtimeUnsubscribers = new Set<() => void>();
   const shipmentLifecycleUnsubscribers = new Map<string, Set<() => void>>();
+
+  const providerSourceLabel = (): ProviderSignalSourceLabel =>
+    resolveProviderSourceLabel({
+      mode: lifecycleMode,
+      runtimeSource: providerRuntimeEnabled ? providerRuntimeSource : 'embedded',
+    });
+
+  const providerSignalChannelLabel = (): string =>
+    lifecycleMode === 'manual'
+      ? 'manual UI -> server runtime -> gateway WS'
+      : providerRuntimeEnabled
+        ? providerRuntimeSource === 'container'
+          ? 'provider container -> Actor-Web transport -> server runtime -> gateway WS'
+          : 'simulator process -> Actor-Web transport -> server runtime -> gateway WS'
+        : 'simulator process -> server runtime -> gateway WS';
 
   const system = () => {
     if (!servedNode) {
@@ -323,10 +348,60 @@ export function createLogisticsRuntimeGatewayServer(
     return actorRef;
   };
 
+  const lookupProviderRuntimeActor = async (): Promise<ActorRef<
+    unknown,
+    ProviderRuntimeCommand
+  > | null> => {
+    if (!providerRuntimeEnabled) {
+      return null;
+    }
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (!transport().isConnected(providerNode)) {
+        await wait(25);
+        continue;
+      }
+
+      const providerRuntimeRef = await system().lookup<unknown, ProviderRuntimeCommand>(
+        providerRuntimeActorDescriptor.address.path
+      );
+      if (providerRuntimeRef) {
+        return providerRuntimeRef;
+      }
+
+      await wait(25);
+    }
+
+    return null;
+  };
+
+  const requireProviderRuntimeActor = async (): Promise<
+    ActorRef<unknown, ProviderRuntimeCommand>
+  > => {
+    const providerRuntimeRef = await lookupProviderRuntimeActor();
+    if (!providerRuntimeRef) {
+      throw new Error('Provider runtime boundary is enabled but unavailable.');
+    }
+
+    return providerRuntimeRef;
+  };
+
+  const syncShipmentToProviderRuntime = async (context: ShipmentContext): Promise<void> => {
+    const providerRuntimeRef = await requireProviderRuntimeActor();
+    await providerRuntimeRef.send({
+      type: 'SYNC_PROVIDER_RUNTIME_SHIPMENT',
+      shipment: context,
+    });
+  };
+
   const syncShipmentToProviderHq = async (context: ShipmentContext): Promise<void> => {
     const plan = createProviderSyncPlan(context);
     if (plan.ensureProviderShipmentActor) {
-      await ensureProviderShipmentActor(context);
+      if (providerRuntimeEnabled) {
+        await syncShipmentToProviderRuntime(context);
+      } else {
+        await ensureProviderShipmentActor(context);
+      }
     }
     if (plan.providerHqCommand) {
       await providerHqActor?.send(plan.providerHqCommand);
@@ -349,6 +424,8 @@ export function createLogisticsRuntimeGatewayServer(
       facility: shipment.providerFacility ?? undefined,
       loadId: shipment.providerLoadId ?? undefined,
       note: shipment.providerNote ?? undefined,
+      sourceLabel: providerSourceLabel(),
+      channelLabel: providerSignalChannelLabel(),
       baseContext: shipment,
     });
     await system().flush();
@@ -360,6 +437,17 @@ export function createLogisticsRuntimeGatewayServer(
     if (event.type !== 'PROVIDER_SIGNAL_REQUESTED' || !providerHqActor) {
       return;
     }
+
+    const reportProviderRuntimeSignalRejected = async (reason: string): Promise<void> => {
+      await providerHqActor?.send({
+        type: 'REPORT_PROVIDER_SIGNAL_REJECTED',
+        shipmentId: event.shipmentId,
+        signal: event.signal,
+        expected: 'connected provider runtime',
+        reason,
+      });
+      await system().flush();
+    };
 
     const providerContext = providerHqActor.getSnapshot().context;
     const shipment = providerContext.shipmentContexts[event.shipmentId];
@@ -374,24 +462,11 @@ export function createLogisticsRuntimeGatewayServer(
       return;
     }
 
-    const providerShipmentActor = await ensureProviderShipmentActor(shipment);
-    if (!providerShipmentActor) {
-      await providerHqActor.send({
-        type: 'REPORT_PROVIDER_SIGNAL_REJECTED',
-        shipmentId: event.shipmentId,
-        signal: event.signal,
-        expected: 'known provider shipment',
-        reason: `${event.signal} rejected. Provider shipment actor is not ready.`,
-      });
-      return;
-    }
-
     const signalPlan = createProviderSignalPlan({
       signal: event.signal,
       explicitShipmentId: event.shipmentId,
       facility: shipment.providerFacility ?? undefined,
       loadId: shipment.providerLoadId ?? undefined,
-      note: shipment.providerNote ?? undefined,
     });
     if (!signalPlan.ok) {
       await providerHqActor.send({
@@ -404,9 +479,57 @@ export function createLogisticsRuntimeGatewayServer(
       return;
     }
 
-    const result = await providerShipmentActor.ask<
-      ProviderShipmentSignalResult | ActorTransitionErrorValue
-    >(signalPlan.command, 1000);
+    let result: ProviderShipmentSignalResult | ActorTransitionErrorValue;
+
+    if (providerRuntimeEnabled) {
+      const providerRuntimeRef = await lookupProviderRuntimeActor();
+      if (!providerRuntimeRef) {
+        await reportProviderRuntimeSignalRejected(
+          `${event.signal} rejected. Provider runtime boundary is enabled but unavailable.`
+        );
+        return;
+      }
+
+      try {
+        await providerRuntimeRef.send({
+          type: 'SYNC_PROVIDER_RUNTIME_SHIPMENT',
+          shipment,
+        });
+        result = await providerRuntimeRef.ask<ProviderShipmentSignalResult>(
+          {
+            type: 'PROCESS_PROVIDER_RUNTIME_SIGNAL',
+            shipmentId: event.shipmentId,
+            signal: event.signal,
+            facility: signalPlan.command.facility,
+            loadId: signalPlan.command.loadId,
+            note: signalPlan.command.note,
+          },
+          1000
+        );
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        await reportProviderRuntimeSignalRejected(
+          `${event.signal} rejected. Provider runtime signal processing failed: ${detail}`
+        );
+        return;
+      }
+    } else {
+      const providerShipmentActor = await ensureProviderShipmentActor(shipment);
+      if (!providerShipmentActor) {
+        await providerHqActor.send({
+          type: 'REPORT_PROVIDER_SIGNAL_REJECTED',
+          shipmentId: event.shipmentId,
+          signal: event.signal,
+          expected: 'known provider shipment',
+          reason: `${event.signal} rejected. Provider shipment actor is not ready.`,
+        });
+        return;
+      }
+
+      result = await providerShipmentActor.ask<
+        ProviderShipmentSignalResult | ActorTransitionErrorValue
+      >(signalPlan.command, 1000);
+    }
 
     if (isTransitionError(result)) {
       const rejected = createProviderShipmentSignalRejection(shipment, event.signal);
@@ -425,10 +548,19 @@ export function createLogisticsRuntimeGatewayServer(
       result.shipment,
       event.signal
     );
-    await providerShipmentActor.send({
-      type: 'SYNC_PROVIDER_SHIPMENT',
-      shipment: updatedShipment,
-    });
+    if (providerRuntimeEnabled) {
+      const providerRuntimeRef = await lookupProviderRuntimeActor();
+      await providerRuntimeRef?.send({
+        type: 'SYNC_PROVIDER_RUNTIME_SHIPMENT',
+        shipment: updatedShipment,
+      });
+    } else {
+      const providerShipmentActor = await ensureProviderShipmentActor(updatedShipment);
+      await providerShipmentActor?.send({
+        type: 'SYNC_PROVIDER_SHIPMENT',
+        shipment: updatedShipment,
+      });
+    }
     await providerHqActor.send({
       type: 'REPORT_PROVIDER_SIGNAL_ACCEPTED',
       shipment: updatedShipment,
@@ -448,7 +580,9 @@ export function createLogisticsRuntimeGatewayServer(
         return;
       }
 
-      void syncShipmentToProviderHq(context);
+      void syncShipmentToProviderHq(context).catch((error) => {
+        console.error(error);
+      });
     });
     if (unsubscribeShipmentSnapshot) {
       runtimeUnsubscribers.add(unsubscribeShipmentSnapshot);
@@ -470,6 +604,10 @@ export function createLogisticsRuntimeGatewayServer(
 
       if (event.type === 'PROVIDER_MODE_CHANGED') {
         lifecycleMode = event.mode;
+        void providerHqActor?.send({
+          type: 'SET_PROVIDER_SOURCE_LABEL',
+          sourceLabel: providerSourceLabel(),
+        });
         clearLifecycleTimers();
         if (event.mode === 'simulation') {
           const activeShipmentId = selectedProviderShipmentId();
@@ -479,7 +617,9 @@ export function createLogisticsRuntimeGatewayServer(
         }
       }
 
-      void processProviderSignalRequest(event);
+      void processProviderSignalRequest(event).catch((error) => {
+        console.error(error);
+      });
     });
     if (unsubscribeProviderEvents) {
       runtimeUnsubscribers.add(unsubscribeProviderEvents);
@@ -500,10 +640,18 @@ export function createLogisticsRuntimeGatewayServer(
     return providerHqActor?.getSnapshot().context.status ?? null;
   };
 
+  const syncProviderSourceStatus = async (): Promise<void> => {
+    await providerHqActor?.send({
+      type: 'SET_PROVIDER_SOURCE_LABEL',
+      sourceLabel: providerSourceLabel(),
+    });
+  };
+
   const setLifecycleMode = async (nextMode: LifecycleMode): Promise<void> => {
     lifecycleMode = nextMode;
     clearLifecycleTimers();
     await providerHqActor?.send({ type: 'SET_PROVIDER_MODE', mode: nextMode });
+    await syncProviderSourceStatus();
   };
 
   const applyProviderSignal = async (input: {
@@ -577,6 +725,10 @@ export function createLogisticsRuntimeGatewayServer(
     destination: string;
     reference?: string;
   }): Promise<{ shipmentId: string; status: ShipmentContext['status'] }> => {
+    if (providerRuntimeEnabled) {
+      await requireProviderRuntimeActor();
+    }
+
     const shipmentId = input.shipmentId ?? createShipmentId();
     const shipmentLifecycleActor = await ensureShipmentActor(shipmentId);
     await shipmentLifecycleActor.send({
@@ -625,6 +777,10 @@ export function createLogisticsRuntimeGatewayServer(
       const activeProviderShipmentActors = Array.from(providerShipmentActors.values());
       shipmentActors.clear();
       providerShipmentActors.clear();
+      if (providerRuntimeEnabled) {
+        const providerRuntimeRef = await lookupProviderRuntimeActor();
+        await providerRuntimeRef?.send({ type: 'RESET_PROVIDER_RUNTIME' });
+      }
       await providerHqActor?.send({ type: 'CLEAR_PROVIDER_QUEUE' });
       await shipmentActor?.send({ type: 'RESET_SHIPMENT' });
       await system().flush();
@@ -700,27 +856,38 @@ export function createLogisticsRuntimeGatewayServer(
       .get('/runtime/status', (_request, response, actorWeb) => {
         const transportStatus = actorWeb.runtime.getTransportStatus();
         const workerPeer = actorWeb.runtime.getPeerStatus(workerNode);
+        const providerPeer = actorWeb.runtime.getPeerStatus(providerNode);
         return response.ok({
           gatewayUrl: actorWeb.runtime.getGatewayUrl(),
           transportUrl: actorWeb.runtime.getTransportUrl(),
           lifecycleMode,
+          provider: {
+            runtimeEnabled: providerRuntimeEnabled,
+            runtimeSource: providerRuntimeSource,
+            sourceLabel: providerSourceLabel(),
+          },
           transport: {
             connectedNodes: transportStatus.connectedNodes,
             peers: transportStatus.peers,
             workerConnected: workerPeer.connected,
             workerPeerFresh: workerPeer.fresh,
             workerPeer,
+            providerConnected: providerPeer.connected,
+            providerPeerFresh: providerPeer.fresh,
+            providerPeer,
           },
           nodes: {
             browserHost: 'thin Ignite host',
             serverRuntime: serverNode,
             workerRuntime: workerNode,
+            providerRuntime: providerNode,
             serviceWorkerRuntime: serviceWorkerNode,
           },
           actors: {
             shipment: shipmentActorDescriptor.address.path,
             routing: routingActorDescriptor.address.path,
             providerHq: providerHqActorDescriptor.address.path,
+            providerRuntime: providerRuntimeActorDescriptor.address.path,
             logisticsSupervisor: logisticsSupervisorActorDescriptor.address.path,
             dispatcher: dispatcherActorDescriptor.address.path,
             driverDirectory: driverDirectoryActorDescriptor.address.path,
@@ -763,6 +930,7 @@ export function createLogisticsRuntimeGatewayServer(
       providerHqActor = servedNode.requireActor('providerHq');
       bindRuntimeOrchestration();
       await providerHqActor.send({ type: 'SET_PROVIDER_MODE', mode: lifecycleMode });
+      await syncProviderSourceStatus();
 
       await serveRest(servedNode);
     },
