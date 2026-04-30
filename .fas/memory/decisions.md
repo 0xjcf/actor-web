@@ -8,3 +8,9 @@
 [2026-04-23] **TypeScript**: TypeScript enabled with strict mode.
 
 [2026-04-30] **Commit discipline**: 2-step plan for "Logistics Docker Compose worker restart recovery verificatio". Steps: feat: implement logistics docker compose worker restart recovery verification; test: cover logistics docker compose worker restart recovery verification.
+
+[2026-04-30] **Workflow mode 6-agent** selected for "Actor-Web docs consistency pass for current runtime guarante": Task includes architecture, platform, or shared-contract risk indicators..
+
+[2026-04-30] **Commit discipline**: 3-step plan for "Actor-Web docs consistency pass for current runtime guarante". Steps: feat: implement actor-web docs consistency pass for current runtime guarantees and; test: cover actor-web docs consistency pass for current runtime guarantees and; chore: clean up actor-web docs consistency pass for current runtime guarantees and.
+
+[2026-04-30] **Memory-informed implementation**: 3 high-signal memory entries guided this task. Top entry from patterns.md: "[2026-04-30] **Script modifications for "Logistics Docker Compose worker restart recovery verificati..."

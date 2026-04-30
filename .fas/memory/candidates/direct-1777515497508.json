@@ -3,9 +3,7 @@
   "taskId": "direct-1777515497508",
   "generatedAt": "2026-04-30T02:34:39.525Z",
   "projectName": "actor-web",
-  "sourcePacketIds": [
-    "pkt_direct-1777515497508_learning_20260430023439"
-  ],
+  "sourcePacketIds": ["pkt_direct-1777515497508_learning_20260430023439"],
   "entries": [
     {
       "schemaVersion": 1,
@@ -60,14 +58,10 @@
           ".fas/memory/incidents.md",
           ".fas/memory/integrations.md"
         ],
-        "taskKinds": [
-          "self-improvement"
-        ]
+        "taskKinds": ["self-improvement"]
       },
       "sourceIds": [],
-      "sourcePackets": [
-        "pkt_direct-1777515497508_learning_20260430023439"
-      ],
+      "sourcePackets": ["pkt_direct-1777515497508_learning_20260430023439"],
       "entityIds": [],
       "tags": [],
       "timestamps": {
@@ -189,14 +183,10 @@
           ".fas/memory/incidents.md",
           ".fas/memory/integrations.md"
         ],
-        "taskKinds": [
-          "self-improvement"
-        ]
+        "taskKinds": ["self-improvement"]
       },
       "sourceIds": [],
-      "sourcePackets": [
-        "pkt_direct-1777515497508_learning_20260430023439"
-      ],
+      "sourcePackets": ["pkt_direct-1777515497508_learning_20260430023439"],
       "entityIds": [],
       "tags": [],
       "timestamps": {
@@ -318,14 +308,10 @@
           ".fas/memory/incidents.md",
           ".fas/memory/integrations.md"
         ],
-        "taskKinds": [
-          "self-improvement"
-        ]
+        "taskKinds": ["self-improvement"]
       },
       "sourceIds": [],
-      "sourcePackets": [
-        "pkt_direct-1777515497508_learning_20260430023439"
-      ],
+      "sourcePackets": ["pkt_direct-1777515497508_learning_20260430023439"],
       "entityIds": [],
       "tags": [],
       "timestamps": {

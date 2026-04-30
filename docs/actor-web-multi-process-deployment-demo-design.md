@@ -27,8 +27,9 @@ separate processes and, later, separate containers.
 ## Non-Goals
 
 - Do not start this before the topology/source API prototype is complete.
-- Do not treat the container demo as production-ready until auth, delivery,
-  replay, backpressure, and discovery are hardened.
+- Do not treat the container demo as production-ready; durable replay storage,
+  production deployment adapters, TLS/secret rotation, and operator runbooks
+  remain hardening work.
 - Do not make browser hosts implicit cluster members.
 - Do not replace the current simple `pnpm examples:logistics` developer path.
 
@@ -70,8 +71,8 @@ Expected behavior:
   - REST: `http://127.0.0.1:4100`
   - gateway: `ws://127.0.0.1:4101`
   - transport: `ws://127.0.0.1:4102`
-- Restarting the worker process is a follow-up once deployment supervision and
-  operational status panels are added.
+- Runtime status exposes worker disconnect/recover state; richer deployment
+  supervision panels remain UI hardening.
 
 Manual run shape:
 
@@ -133,33 +134,67 @@ The compose topology uses two kinds of URLs:
 Current compose shape:
 
 ```yaml
+name: actor-web-logistics
+
+x-logistics-build: &logistics-build
+  context: .
+  dockerfile: docker/logistics/Dockerfile
+  additional_contexts:
+    ignite-element: ../ignite-element
+    fas: ../fas
+
 services:
   server-runtime:
-    build: docker/logistics/Dockerfile
+    build: *logistics-build
     command: pnpm examples:logistics:server
     environment:
       ACTOR_WEB_HOST: 0.0.0.0
+      ACTOR_WEB_REST_PORT: 4100
+      ACTOR_WEB_GATEWAY_PORT: 4101
+      ACTOR_WEB_TRANSPORT_PORT: 4102
       ACTOR_WEB_TELEMETRY_JSONL: /workspace/actor-web/.actor-web/telemetry/server-transport.jsonl
+      LOGISTICS_LIFECYCLE_MODE: manual
     ports:
       - "4100:4100"
       - "4101:4101"
       - "4102:4102"
+    volumes:
+      - ./.actor-web/telemetry:/workspace/actor-web/.actor-web/telemetry
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4100/runtime/status').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 2s
+      timeout: 2s
+      retries: 30
 
   worker-runtime:
-    build: docker/logistics/Dockerfile
+    build: *logistics-build
     command: pnpm examples:logistics:worker
+    depends_on:
+      server-runtime:
+        condition: service_healthy
     environment:
+      ACTOR_WEB_HOST: 0.0.0.0
       ACTOR_WEB_SERVER_TRANSPORT_URL: ws://server-runtime:4102
       ACTOR_WEB_TELEMETRY_JSONL: /workspace/actor-web/.actor-web/telemetry/worker-transport.jsonl
+    volumes:
+      - ./.actor-web/telemetry:/workspace/actor-web/.actor-web/telemetry
 
   web:
-    build: docker/logistics/Dockerfile
+    build: *logistics-build
     command: pnpm examples:logistics:web
+    depends_on:
+      server-runtime:
+        condition: service_healthy
+    environment:
+      VITE_ACTOR_WEB_REST_URL: http://127.0.0.1:4100
+      VITE_ACTOR_WEB_GATEWAY_URL: ws://127.0.0.1:4101
+      VITE_ACTOR_WEB_TRANSPORT_URL: ws://127.0.0.1:4102
     ports:
       - "4173:4173"
-    environment:
-      VITE_ACTOR_WEB_GATEWAY_URL: ws://localhost:4100/gateway
-      VITE_ACTOR_WEB_REST_URL: http://localhost:4100
 ```
 
 The compose file should be treated as a demo deployment artifact, not a
@@ -187,8 +222,8 @@ Troubleshooting:
 
 ## Stage 3: Multi-Machine Prove-Out
 
-Once transport hardening is complete, document and test a topology where
-runtime nodes can run on different machines:
+Stage 3 carries the current runtime guarantees into a topology where runtime
+nodes can run on different machines:
 
 ```text
 machine A: logistics server runtime
@@ -197,15 +232,21 @@ machine C: provider integration/runtime
 machine D: browser/PWA clients
 ```
 
-This stage should prove:
+This stage should prove the existing runtime controls under real network and
+operations constraints:
 
-- runtime peer authentication,
-- reconnection and membership behavior,
-- idempotent frame handling,
-- ack/retry behavior where enabled,
-- bounded queues and slow-consumer handling,
-- projection replay/resync after disconnect,
-- operational telemetry and traceability.
+- runtime peer authentication with deployment-managed secrets,
+- reconnection and membership behavior through a production discovery adapter,
+- bounded in-memory duplicate frame suppression during a runtime process
+  lifetime,
+- ack control-frame behavior for runtime control traffic,
+- bounded queues and slow-consumer backpressure telemetry,
+- bounded projection replay/resync after disconnect,
+- exported operational telemetry and traceability.
+
+Durable replay storage, restart-persistent idempotency, and production
+deployment adapters remain the hardening boundary between this demo and a
+production reference architecture.
 
 ## UI Enhancements
 
@@ -233,8 +274,8 @@ Stage 1 tests:
 - Verify `/runtime/status` exposes worker transport connectivity.
 - Browser-host gateway observation remains covered by the existing logistics
   example tests.
-- Stop/restart recovery remains a follow-up once deployment supervision and
-  operational status panels are added.
+- Stop/restart recovery can be validated through runtime status; richer
+  operational panels are separate UI work.
 
 Stage 2 tests:
 
@@ -252,25 +293,27 @@ Stage 3 tests:
 
 - Verify authenticated peer joins and rejected unauthenticated joins.
 - Verify reconnect/resync after browser disconnect.
-- Verify duplicate frames are dropped once idempotency exists.
-- Verify slow consumer/backpressure telemetry once queue limits exist.
+- Verify duplicate runtime frame IDs are dropped by the idempotency cache.
+- Verify slow consumer/backpressure telemetry when bounded queues fill.
 
 ## Relationship To Transport Hardening
 
-This demo should be implemented after these hardening slices are available or
-clearly in progress:
+This demo now relies on current runtime guarantees instead of treating them all
+as future gates:
 
-- topology/source API prototype,
-- gateway/runtime auth,
-- message IDs and idempotency,
-- ack/retry semantics,
-- bounded queues/backpressure,
-- durable replay/resync,
-- membership/discovery,
-- telemetry export or operational metrics.
+- topology/source API,
+- gateway and runtime-peer auth hooks,
+- runtime message IDs and bounded idempotency caches,
+- ack control frames for runtime control traffic,
+- bounded outbound queues with backpressure telemetry,
+- bounded gateway replay/resync,
+- runtime peer discovery providers,
+- runtime telemetry export with the Node JSONL sink,
+- Docker worker restart recovery verification.
 
-Before those slices, the multi-process demo can prove deployment shape, but not
-production transport readiness.
+The remaining hardening boundary is production deployment readiness: durable
+replay storage, production-grade discovery/deployment adapters, TLS and secret
+rotation, rollback guidance, and operations runbooks.
 
 ## Assumptions
 

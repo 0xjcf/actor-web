@@ -29,8 +29,10 @@ Current guarantees:
   longer available.
 - Topology runners can use a runtime peer discovery provider instead of only
   static `peers` maps.
-- Durable replay storage and exported observability remain follow-up hardening
-  slices.
+- Runtime transport telemetry, exporter plumbing, and the Node JSONL sink are
+  available for transport observability.
+- Durable replay storage remains a follow-up hardening slice, distinct from the
+  existing bounded gateway replay/resync path.
 
 ## Runtime Locations
 
@@ -788,7 +790,7 @@ only when that worker/process owns actors from the topology.
 const worker = await startActorWebNode(logistics, {
   node: 'worker',
   peers: {
-    server: 'ws://127.0.0.1:4101',
+    server: 'ws://127.0.0.1:4102',
   },
   transport: {
     heartbeatIntervalMs: 5000,

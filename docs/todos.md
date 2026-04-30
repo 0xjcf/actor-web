@@ -10,7 +10,12 @@ Actor-Web is mostly ready for the demo shape, but a few gaps remain:
 - Browser UI should consume `taskBoard.source({ gateway: { url } })`, not local actors.
 - Real tool port boundaries need to be cleanly injected per actor.
 - Agent/tool execution telemetry should be visible in source projections.
-- Transport is still demo/trusted-environment grade: auth, retries, replay, durable membership, and backpressure remain production hardening work.
+- Transport has moved past demo-only basics: gateway/runtime auth hooks,
+  runtime control-frame retries, bounded gateway replay/resync, and bounded
+  queues with backpressure telemetry exist. Remaining production hardening is
+  durable replay/storage, restart-persistent delivery/idempotency, production
+  discovery/deployment adapters, secret rotation, rollback guidance, and
+  operations runbooks.
 
 For the demo, we can proceed before full transport hardening if it’s local/trusted.
 
