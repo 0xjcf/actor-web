@@ -123,6 +123,7 @@ export function createLogisticsRuntimeGatewayServer(
   let restUrl: string | null = null;
   const lifecycleTimers = new Set<ReturnType<typeof setTimeout>>();
   const runtimeUnsubscribers = new Set<() => void>();
+  const shipmentLifecycleUnsubscribers = new Map<string, Set<() => void>>();
 
   const system = () => {
     if (!servedNode) {
@@ -180,6 +181,33 @@ export function createLogisticsRuntimeGatewayServer(
     await syncShipmentToProviderHq(shipment);
   };
 
+  const trackShipmentLifecycleUnsubscriber = (
+    shipmentId: string,
+    unsubscribe: () => void
+  ): void => {
+    const existing = shipmentLifecycleUnsubscribers.get(shipmentId);
+    if (existing) {
+      existing.add(unsubscribe);
+      return;
+    }
+
+    shipmentLifecycleUnsubscribers.set(shipmentId, new Set([unsubscribe]));
+  };
+
+  const cleanupShipmentLifecycleSubscriptions = (shipmentId: string): void => {
+    const unsubscribers = shipmentLifecycleUnsubscribers.get(shipmentId);
+    if (!unsubscribers) {
+      return;
+    }
+
+    for (const unsubscribe of Array.from(unsubscribers)) {
+      unsubscribe();
+      unsubscribers.delete(unsubscribe);
+    }
+
+    shipmentLifecycleUnsubscribers.delete(shipmentId);
+  };
+
   const ensureShipmentActor = async (
     shipmentId: string
   ): Promise<ActorRef<ShipmentContext, ShipmentCommand>> => {
@@ -199,11 +227,14 @@ export function createLogisticsRuntimeGatewayServer(
       if (!snapshot.context.shipmentId) {
         return;
       }
+      if (shipmentActors.get(snapshot.context.shipmentId) !== actorRef) {
+        return;
+      }
 
       void projectShipment(snapshot.context);
     });
     if (unsubscribeSnapshot) {
-      runtimeUnsubscribers.add(unsubscribeSnapshot);
+      trackShipmentLifecycleUnsubscriber(shipmentId, unsubscribeSnapshot);
     }
 
     const unsubscribeEvents = actorRef.subscribeEvent?.((event) => {
@@ -213,6 +244,9 @@ export function createLogisticsRuntimeGatewayServer(
 
       const context = actorRef.getSnapshot().context;
       if (!context.shipmentId) {
+        return;
+      }
+      if (shipmentActors.get(context.shipmentId) !== actorRef) {
         return;
       }
 
@@ -239,7 +273,7 @@ export function createLogisticsRuntimeGatewayServer(
       }
     });
     if (unsubscribeEvents) {
-      runtimeUnsubscribers.add(unsubscribeEvents);
+      trackShipmentLifecycleUnsubscriber(shipmentId, unsubscribeEvents);
     }
 
     return actorRef;
@@ -585,6 +619,25 @@ export function createLogisticsRuntimeGatewayServer(
   };
 
   const serveRest = async (runtime: ServedActorWebNode<typeof logistics>): Promise<void> => {
+    const resetCurrentShipment = async (): Promise<{ status: 'idle' }> => {
+      clearLifecycleTimers();
+      const activeShipmentActorEntries = Array.from(shipmentActors.entries());
+      const activeProviderShipmentActors = Array.from(providerShipmentActors.values());
+      shipmentActors.clear();
+      providerShipmentActors.clear();
+      await providerHqActor?.send({ type: 'CLEAR_PROVIDER_QUEUE' });
+      await shipmentActor?.send({ type: 'RESET_SHIPMENT' });
+      await system().flush();
+      for (const [shipmentId, actorRef] of activeShipmentActorEntries) {
+        cleanupShipmentLifecycleSubscriptions(shipmentId);
+        await actorRef.stop();
+      }
+      for (const actorRef of activeProviderShipmentActors) {
+        await actorRef.stop();
+      }
+      return { status: 'idle' };
+    };
+
     restServer = await serveActorWebHttp(runtime)
       .for(shipmentActorDescriptor)
       .post('/shipments', async (request, response) => {
@@ -601,19 +654,11 @@ export function createLogisticsRuntimeGatewayServer(
         });
         return response.accepted(result);
       })
+      .post('/shipments/current/reset', async (_request, response) => {
+        return response.accepted(await resetCurrentShipment());
+      })
       .post('/shipments/:id/reset', async (_request, response) => {
-        clearLifecycleTimers();
-        await providerHqActor?.send({ type: 'CLEAR_PROVIDER_QUEUE' });
-        await shipmentActor?.send({ type: 'RESET_SHIPMENT' });
-        for (const actorRef of Array.from(shipmentActors.values())) {
-          await actorRef.stop();
-        }
-        for (const actorRef of Array.from(providerShipmentActors.values())) {
-          await actorRef.stop();
-        }
-        shipmentActors.clear();
-        providerShipmentActors.clear();
-        return response.accepted({ status: 'idle' });
+        return response.accepted(await resetCurrentShipment());
       })
       .get('/shipments/current', (_request, response) => {
         return response.ok(shipmentActor?.getSnapshot().context ?? null);
@@ -734,6 +779,9 @@ export function createLogisticsRuntimeGatewayServer(
       providerHqActor = null;
       shipmentActors.clear();
       providerShipmentActors.clear();
+      for (const shipmentId of Array.from(shipmentLifecycleUnsubscribers.keys())) {
+        cleanupShipmentLifecycleSubscriptions(shipmentId);
+      }
       clearLifecycleTimers();
       unbindRuntimeOrchestration();
 

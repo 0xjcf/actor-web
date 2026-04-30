@@ -157,6 +157,30 @@ code {
   background: rgba(245, 158, 11, 0.16);
   color: #fbbf24;
 }
+.runtime-connected {
+  background: rgba(16, 185, 129, 0.16);
+  color: #34d399;
+}
+.runtime-warning {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+}
+.runtime-disconnected {
+  background: rgba(248, 113, 113, 0.16);
+  color: #f87171;
+}
+.runtime-recovered {
+  background: rgba(59, 130, 246, 0.18);
+  color: #93c5fd;
+}
+.runtime-proof {
+  background: rgba(167, 139, 250, 0.16);
+  color: #c4b5fd;
+}
+.runtime-unavailable {
+  background: rgba(120, 142, 156, 0.18);
+  color: #cbd5e1;
+}
 .transport-disconnected,
 .transport-degraded {
   background: rgba(248, 113, 113, 0.16);
@@ -277,6 +301,11 @@ button:disabled {
   gap: 10px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+.runtime-metrics {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 .route-card {
   display: grid;
   gap: 8px;
@@ -308,6 +337,31 @@ button:disabled {
   font-size: 13px;
   line-height: 1.45;
 }
+.runtime-status-list {
+  gap: 14px;
+}
+.runtime-node {
+  gap: 12px;
+}
+.runtime-node-grid {
+  display: grid;
+  gap: 12px 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.runtime-actor-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: #9db0be;
+}
+.runtime-alert {
+  padding: 10px 12px;
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
 a {
   color: #5eead4;
   font-weight: 700;
@@ -326,7 +380,9 @@ aw-logistics-routing-source:not(:defined) {
   .grid,
   .toolbar,
   .quick-grid,
-  .route-grid {
+  .route-grid,
+  .runtime-metrics,
+  .runtime-node-grid {
     grid-template-columns: 1fr;
   }
   .shell {

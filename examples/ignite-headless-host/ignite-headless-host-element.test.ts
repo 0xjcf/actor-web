@@ -20,6 +20,18 @@ async function waitFor(predicate: () => boolean, message: string): Promise<void>
   throw new Error(message);
 }
 
+function normalizeText(value: string | null | undefined): string {
+  return value?.replace(/\s+/g, ' ').trim() ?? '';
+}
+
+function compactText(value: string | null | undefined): string {
+  return value?.replace(/\s+/g, '').trim() ?? '';
+}
+
+function countOccurrences(value: string, needle: string): number {
+  return value.split(needle).length - 1;
+}
+
 describe('logistics view pagination', () => {
   it('normalizes paginated logistics lists', () => {
     const page = paginateItems(
@@ -77,6 +89,7 @@ describe('ignite-headless-host element', () => {
     }
     Object.assign(import.meta.env, {
       VITE_ACTOR_WEB_GATEWAY_URL: gatewayUrl,
+      VITE_ACTOR_WEB_REST_URL: gatewayServer.getRestUrl(),
     });
     Object.assign(globalThis, { WebSocket });
 
@@ -87,10 +100,27 @@ describe('ignite-headless-host element', () => {
       () => element.shadowRoot?.textContent?.includes('connected') ?? false,
       'Expected logistics element to connect to gateway'
     );
+    const runtimeStatusElement = element.shadowRoot?.querySelector(
+      'aw-logistics-runtime-status-panel'
+    );
+    await waitFor(
+      () =>
+        Boolean(
+          runtimeStatusElement?.shadowRoot?.textContent?.includes('Runtime Operator Panel') &&
+            runtimeStatusElement.shadowRoot.textContent.includes('simulation') &&
+            !runtimeStatusElement.shadowRoot.textContent.includes('Waiting for operator status.')
+        ),
+      'Expected runtime operator panel to load /runtime/status'
+    );
 
     expect(element.shadowRoot?.textContent).toContain('Actor-Web Logistics Control Tower');
     expect(element.shadowRoot?.textContent).toContain('REST ingress');
-    expect(element.shadowRoot?.textContent).toContain('Service Worker Runtime');
+    expect(runtimeStatusElement?.shadowRoot?.textContent).toContain('Service Worker Proof');
+    expect(runtimeStatusElement?.shadowRoot?.textContent).toContain('Runtime Operator Panel');
+    expect(runtimeStatusElement?.shadowRoot?.textContent).toContain('worker disconnected');
+    expect(runtimeStatusElement?.shadowRoot?.textContent).toContain('Connected nodes');
+    expect(runtimeStatusElement?.shadowRoot?.textContent).toContain('Frames sent');
+    expect(runtimeStatusElement?.shadowRoot?.textContent).toContain('unavailable');
     const providerElement = element.shadowRoot?.querySelector('aw-logistics-provider-hq-source');
     await waitFor(
       () => providerElement?.shadowRoot?.textContent?.includes('Remote Provider HQ') ?? false,
@@ -141,15 +171,53 @@ describe('ignite-headless-host element', () => {
       'Expected Provider HQ source to project the queued shipment'
     );
 
-    resetButton.click();
     await waitFor(
       () =>
-        Boolean(root.textContent?.includes('idle') && root.textContent.includes('SHIPMENT_RESET')),
-      'Expected shipment reset to update the gateway projection'
+        Array.from(root.querySelectorAll<HTMLButtonElement>('button')).some(
+          (button) => button.textContent?.includes('Reset') && !button.disabled
+        ),
+      'Expected reset button to become enabled after shipment creation.'
+    );
+    const refreshedResetButton = Array.from(
+      root.querySelectorAll<HTMLButtonElement>('button')
+    ).find((button) => button.textContent?.includes('Reset') && !button.disabled);
+    if (!refreshedResetButton) {
+      throw new Error('Expected enabled reset button after shipment creation.');
+    }
+
+    const liveProjectionPanel = () =>
+      Array.from(root.querySelectorAll<HTMLElement>('section.panel')).find((panel) =>
+        panel.textContent?.includes('Live Shipment Projection')
+      );
+    const eventStreamPanel = () =>
+      Array.from(root.querySelectorAll<HTMLElement>('section.panel')).find((panel) =>
+        panel.textContent?.includes('Gateway Event Stream')
+      );
+    if (!liveProjectionPanel()) {
+      throw new Error('Expected live shipment projection panel to render.');
+    }
+    if (!eventStreamPanel()) {
+      throw new Error('Expected gateway event stream panel to render.');
+    }
+    const resetProjectionText = () => compactText(liveProjectionPanel()?.textContent);
+    const eventStreamText = () => normalizeText(eventStreamPanel()?.textContent);
+
+    refreshedResetButton.click();
+    await waitFor(
+      () =>
+        Boolean(
+          resetProjectionText().includes('Shipmentnone') &&
+            resetProjectionText().includes('Destinationnone') &&
+            resetProjectionText().includes('Carrierpending') &&
+            resetProjectionText().includes('ETApending') &&
+            resetProjectionText().includes('RouteNotespendingrouteplan')
+        ),
+      'Expected shipment reset to clear the live shipment projection'
     );
 
-    expect(root.textContent).toContain('idle');
-    expect(root.textContent).toContain('SHIPMENT_RESET');
+    expect(resetProjectionText()).toContain('Shipmentnone');
+    expect(resetProjectionText()).toContain('Destinationnone');
+    expect(countOccurrences(eventStreamText(), 'SHIPMENT_RESET')).toBe(1);
   });
 
   it('renders the separate provider HQ console page controller', async () => {
@@ -161,6 +229,7 @@ describe('ignite-headless-host element', () => {
     }
     Object.assign(import.meta.env, {
       VITE_ACTOR_WEB_GATEWAY_URL: gatewayUrl,
+      VITE_ACTOR_WEB_REST_URL: gatewayServer.getRestUrl(),
     });
     Object.assign(globalThis, { WebSocket });
 

@@ -7,6 +7,7 @@ import styles from './ignite-headless-host-element.css?raw';
 import { logisticsClient } from './logistics-browser-client';
 import { createInitialShipmentContext, type ShipmentContext } from './logistics-contract';
 import { createInitialProviderHqContext } from './logistics-provider-hq';
+import './logistics-runtime-status-panel';
 import {
   type LogisticsEventLog,
   type ProjectedLogisticsEventLog,
@@ -194,8 +195,7 @@ const registerIgniteHeadlessHost = igniteCore({
   },
   commands: ({ actor, host }) => {
     const address = actor.address.path;
-    const restUrl = configuredRestUrl();
-    const refreshView = () => actor.send({ type: 'GET_SHIPMENT_COUNT' });
+    const requestViewRefresh = () => actor.send({ type: 'GET_SHIPMENT_COUNT' });
 
     if (!eventSubscriptionsByHost.has(host)) {
       eventSubscriptionsByHost.add(host);
@@ -211,6 +211,7 @@ const registerIgniteHeadlessHost = igniteCore({
         const shipmentId = input.shipmentId ?? createShipmentId();
         const reference = input.reference?.trim() || undefined;
 
+        const restUrl = configuredRestUrl();
         if (restUrl) {
           return fetch(`${restUrl}/shipments`, {
             method: 'POST',
@@ -239,6 +240,7 @@ const registerIgniteHeadlessHost = igniteCore({
         const local = localStateFor(address);
         local.timelinePage = 0;
         local.eventLogPage = 0;
+        const restUrl = configuredRestUrl();
         if (restUrl) {
           return fetch(`${restUrl}/shipments/current/reset`, {
             method: 'POST',
@@ -255,25 +257,25 @@ const registerIgniteHeadlessHost = igniteCore({
       previousTimelinePage() {
         const local = localStateFor(address);
         local.timelinePage = Math.max(0, local.timelinePage - 1);
-        return refreshView();
+        return requestViewRefresh();
       },
 
       nextTimelinePage() {
         const local = localStateFor(address);
         local.timelinePage += 1;
-        return refreshView();
+        return requestViewRefresh();
       },
 
       previousEventLogPage() {
         const local = localStateFor(address);
         local.eventLogPage = Math.max(0, local.eventLogPage - 1);
-        return refreshView();
+        return requestViewRefresh();
       },
 
       nextEventLogPage() {
         const local = localStateFor(address);
         local.eventLogPage += 1;
-        return refreshView();
+        return requestViewRefresh();
       },
     };
   },
@@ -543,59 +545,7 @@ registerIgniteHeadlessHost(IGNITE_HEADLESS_HOST_ELEMENT_NAME, (view) => {
                 </div>
               </section>
 
-              <section class="panel">
-                <h3>Runtime Topology</h3>
-                <ul class="list">
-                  <li class="item event-item tone-local">
-                    <div class="item-heading">
-                      <span class="runtime-chip">Browser</span>
-                      <strong>Browser Host</strong>
-                    </div>
-                    <span class="muted">Ignite thin projection host; submits REST intent.</span>
-                  </li>
-                  <li class="item event-item tone-server">
-                    <div class="item-heading">
-                      <span class="runtime-chip">Server</span>
-                      <strong>Shipment Directory</strong>
-                    </div>
-                    <span class="muted">
-                      Projects active shipment actors for gateway subscribers.
-                    </span>
-                  </li>
-                  <li class="item event-item tone-lifecycle">
-                    <div class="item-heading">
-                      <span class="runtime-chip">Ops</span>
-                      <strong>Supervisor / Dispatcher / Drivers</strong>
-                    </div>
-                    <span class="muted">
-                      Coordinates shipment child actors, driver assignment, and exceptions.
-                    </span>
-                  </li>
-                  <li class="item event-item tone-provider">
-                    <div class="item-heading">
-                      <span class="runtime-chip">Provider</span>
-                      <strong>Provider HQ + Shipment Actors</strong>
-                    </div>
-                    <span class="muted">
-                      Queues work and routes scans to per-shipment provider FSM actors.
-                    </span>
-                  </li>
-                  <li class="item event-item tone-worker">
-                    <div class="item-heading">
-                      <span class="runtime-chip">Worker</span>
-                      <strong>WebWorker Runtime</strong>
-                    </div>
-                    <span class="muted">Owns routing actor over Actor-Web transport.</span>
-                  </li>
-                  <li class="item event-item tone-local">
-                    <div class="item-heading">
-                      <span class="runtime-chip">Fallback</span>
-                      <strong>Service Worker Runtime</strong>
-                    </div>
-                    <span class="muted">Browser-local MessagePort topology proof.</span>
-                  </li>
-                </ul>
-              </section>
+              <aw-logistics-runtime-status-panel />
 
               <aw-logistics-provider-hq-source />
             </aside>

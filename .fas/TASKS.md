@@ -474,14 +474,13 @@
 
 - Title: Logistics runtime topology and status panel
 - Mode: 6-agent
-- Status: backlog
-- Owner: planner
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/logistics-runtime-topology-and-status-panel.md
 - Automation mode: advisory
-- Verification lane: full
+- Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
-- Artifacts: roadmap=docs/actor-web-multi-process-deployment-demo-design.md
 
 ### Task: Logistics provider runtime and container split
 
