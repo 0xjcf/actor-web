@@ -53,6 +53,9 @@ When using Codex, treat the synced FAS skills as the Codex counterpart to Cursor
 Use the mode skill in the root session, then follow `.fas/state/agent-orchestration.json` for the exact delegated order.
 In Codex, prefer `.fas/state/codex-orchestration.json` plus `.fas/state/codex-subagents-prompt.md` as the setup surface for agent types, mode hints, and spawn order.
 
+- Use Codex subagents only when the user explicitly requests `4-agent` or `6-agent` mode, or when `.fas/state/codex-orchestration.json` says delegated execution is required.
+- After running `fas implement`, always inspect `.fas/state/codex-orchestration.json` before deciding whether to spawn subagents.
+- If delegated execution is required, spawn only the listed steps, issue a provenance token with `fas spawn-subagent <step-key>`, and record lifecycle progress with `fas record-agent-execution <step-key> <started|heartbeat|handoff|completed|failed|closed> --token <value>`.
 - `fas-implementer` is also the default Codex role skill for `fas_senior_engineer` and `fas_validator`.
 - `fas-reviewer` is also the default Codex role skill for `fas_verifier`, `fas_qa`, `fas_sre`, and `fas_documenter`.
 - Planner artifacts and commit plans remain the source of truth over any generic skill defaults.
