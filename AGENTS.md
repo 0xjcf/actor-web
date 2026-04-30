@@ -64,7 +64,7 @@ In Codex, prefer `.fas/state/codex-orchestration.json` plus `.fas/state/codex-su
 
 Pipeline scripts track task progress using **pipeline owners**: `planner`, `implementer`, `verifier`, `reviewer`. These map to pipeline stages in `current-task.json` and `TASKS.md` and are the same regardless of workflow mode.
 
-The 6-agent **conceptual roles** (Architect, Staff Engineer, Senior Engineer, QA, SRE, Reviewer) describe the *perspectives* the AI simulates within those pipeline stages. They enrich planning and implementation with specialized viewpoints but do not replace the pipeline owner taxonomy. See `agents/registry.md` for the full mapping.
+The 6-agent **conceptual roles** (Architect, Staff Engineer, Senior Engineer, QA, SRE, Reviewer) describe the *perspectives* the AI simulates within those pipeline stages. They enrich planning and implementation with specialized viewpoints but do not replace the pipeline owner taxonomy. See `.fas/agents/registry.md` for the full mapping.
 
 ## Memory-First Workflow
 
