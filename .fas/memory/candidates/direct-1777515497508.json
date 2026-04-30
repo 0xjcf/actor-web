@@ -1,0 +1,398 @@
+{
+  "schemaVersion": 1,
+  "taskId": "direct-1777515497508",
+  "generatedAt": "2026-04-30T02:34:39.525Z",
+  "projectName": "actor-web",
+  "sourcePacketIds": [
+    "pkt_direct-1777515497508_learning_20260430023439"
+  ],
+  "entries": [
+    {
+      "schemaVersion": 1,
+      "id": "mem_pattern_logistics-docker-compose-worker-restart-recovery_2026-04-30-1",
+      "memoryId": "mem_pattern_logistics-docker-compose-worker-restart-recovery_2026-04-30-1",
+      "projectName": "actor-web",
+      "kind": "summary",
+      "category": "pattern",
+      "title": "**Logistics Docker Compose worker restart recovery verification**: Modified 134 source file(s) with 37 test file(s)",
+      "body": "**Logistics Docker Compose worker restart recovery verification**: Modified 134 source file(s) with 37 test file(s). Files: .dockerignore, .fas-config.json, .../tasks/browser-webworker-websocket-transport.md, ...ogistics-docker-compose-deployment-prove-out.md, ...logistics-multi-process-deployment-prove-out.md (+129 more).",
+      "detail": "**Logistics Docker Compose worker restart recovery verification**: Modified 134 source file(s) with 37 test file(s). Files: .dockerignore, .fas-config.json, .../tasks/browser-webworker-websocket-transport.md, ...ogistics-docker-compose-deployment-prove-out.md, ...logistics-multi-process-deployment-prove-out.md (+129 more).",
+      "summary": "**Logistics Docker Compose worker restart recovery verification**: Modified 134 source file(s) with 37 test file(s)",
+      "status": "candidate",
+      "scope": {
+        "project": "actor-web",
+        "repo": "actor-web",
+        "modules": [
+          ".dockerignore",
+          ".fas-config.json",
+          ".fas",
+          "...",
+          "...ogistics-docker-compose-deployment-prove-out.md",
+          "...logistics-multi-process-deployment-prove-out.md",
+          "...ntime-telemetry-export-durable-observability.md",
+          "...untime-transport-bounded-queues-backpressure.md",
+          "...erver-owned-headless-runtime-gateway-example.md",
+          ".gitignore",
+          ".markdownlint.jsonc",
+          "AGENTS.md",
+          "README.md",
+          "architecture.boundaries.json",
+          "biome.json",
+          "docker-compose.logistics.yml",
+          "docker",
+          "docs",
+          "...tor-web-multi-process-deployment-demo-design.md",
+          "examples",
+          "fas.domain-map.json",
+          "package.json",
+          "packages",
+          "pnpm-lock.yaml",
+          "scripts",
+          "tsconfig.json"
+        ],
+        "paths": [
+          ".dockerignore",
+          ".fas-config.json",
+          ".fas/TASKS.md",
+          ".fas/architecture-rules.json",
+          ".fas/memory/architecture.md",
+          ".fas/memory/decisions.md",
+          ".fas/memory/incidents.md",
+          ".fas/memory/integrations.md"
+        ],
+        "taskKinds": [
+          "self-improvement"
+        ]
+      },
+      "sourceIds": [],
+      "sourcePackets": [
+        "pkt_direct-1777515497508_learning_20260430023439"
+      ],
+      "entityIds": [],
+      "tags": [],
+      "timestamps": {
+        "createdAt": "2026-04-30T02:34:39.525Z",
+        "updatedAt": "2026-04-30T02:34:39.525Z",
+        "occurredAt": "2026-04-30T02:34:39.525Z"
+      },
+      "temporal": {
+        "observedAt": "2026-04-30T02:34:39.525Z",
+        "promotedAt": null,
+        "validatedAt": null,
+        "lastConfirmedAt": null
+      },
+      "scores": {
+        "confidence": 0.7,
+        "importance": 0.7,
+        "freshness": 1,
+        "retrievalCount": 0
+      },
+      "citations": [
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".dockerignore",
+          "startLine": 1,
+          "endLine": 12
+        },
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".fas-config.json",
+          "startLine": 1,
+          "endLine": 83
+        },
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".fas/TASKS.md",
+          "startLine": 1,
+          "endLine": 454
+        },
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".fas/architecture-rules.json",
+          "startLine": 1,
+          "endLine": 505
+        },
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".fas/memory/architecture.md",
+          "startLine": 1,
+          "endLine": 6
+        },
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".fas/memory/decisions.md",
+          "startLine": 1,
+          "endLine": 8
+        }
+      ],
+      "relations": {
+        "supersedes": [],
+        "conflictsWith": []
+      },
+      "projection": {
+        "markdownFile": ".fas/memory/patterns.md",
+        "renderedLine": "[2026-04-30] **Logistics Docker Compose worker restart recovery verification**: Modified 134 source file(s) with 37 test file(s). Files: .dockerignore, .fas-config.json, .../tasks/browser-webworker-websocket-transport.md, ...ogistics-docker-compose-deployment-prove-out.md, ...logistics-multi-process-deployment-prove-out.md (+129 more)."
+      },
+      "version": 1,
+      "checksum": "sha256:d0c39d721c1b38b08092f6c4845f6454ba1f729f373ad18e47b23f28bcae1635"
+    },
+    {
+      "schemaVersion": 1,
+      "id": "mem_pattern_script-modifications-for-logistics-docker-compos_2026-04-30-2",
+      "memoryId": "mem_pattern_script-modifications-for-logistics-docker-compos_2026-04-30-2",
+      "projectName": "actor-web",
+      "kind": "procedure",
+      "category": "pattern",
+      "title": "**Script modifications for \"Logistics Docker Compose worker restart recovery verificatio\"**: Changed scripts/check-architecture-boundaries.mjs, scripts/dev-logistics-demo.ts, scrip",
+      "body": "**Script modifications for \"Logistics Docker Compose worker restart recovery verificatio\"**: Changed scripts/check-architecture-boundaries.mjs, scripts/dev-logistics-demo.ts, scripts/verify-logistics-docker-compose.mjs. Prefer thin bash launchers that dispatch into committed typed pipeline or runtime modules instead of embedding inline Node.js heredocs on the golden path.",
+      "detail": "**Script modifications for \"Logistics Docker Compose worker restart recovery verificatio\"**: Changed scripts/check-architecture-boundaries.mjs, scripts/dev-logistics-demo.ts, scripts/verify-logistics-docker-compose.mjs. Prefer thin bash launchers that dispatch into committed typed pipeline or runtime modules instead of embedding inline Node.js heredocs on the golden path.",
+      "summary": "**Script modifications for \"Logistics Docker Compose worker restart recovery verificatio\"**: Changed scripts/check-architecture-boundaries.mjs, scripts/dev-logistics-demo.ts, scrip",
+      "status": "candidate",
+      "scope": {
+        "project": "actor-web",
+        "repo": "actor-web",
+        "modules": [
+          ".dockerignore",
+          ".fas-config.json",
+          ".fas",
+          "...",
+          "...ogistics-docker-compose-deployment-prove-out.md",
+          "...logistics-multi-process-deployment-prove-out.md",
+          "...ntime-telemetry-export-durable-observability.md",
+          "...untime-transport-bounded-queues-backpressure.md",
+          "...erver-owned-headless-runtime-gateway-example.md",
+          ".gitignore",
+          ".markdownlint.jsonc",
+          "AGENTS.md",
+          "README.md",
+          "architecture.boundaries.json",
+          "biome.json",
+          "docker-compose.logistics.yml",
+          "docker",
+          "docs",
+          "...tor-web-multi-process-deployment-demo-design.md",
+          "examples",
+          "fas.domain-map.json",
+          "package.json",
+          "packages",
+          "pnpm-lock.yaml",
+          "scripts",
+          "tsconfig.json"
+        ],
+        "paths": [
+          ".dockerignore",
+          ".fas-config.json",
+          ".fas/TASKS.md",
+          ".fas/architecture-rules.json",
+          ".fas/memory/architecture.md",
+          ".fas/memory/decisions.md",
+          ".fas/memory/incidents.md",
+          ".fas/memory/integrations.md"
+        ],
+        "taskKinds": [
+          "self-improvement"
+        ]
+      },
+      "sourceIds": [],
+      "sourcePackets": [
+        "pkt_direct-1777515497508_learning_20260430023439"
+      ],
+      "entityIds": [],
+      "tags": [],
+      "timestamps": {
+        "createdAt": "2026-04-30T02:34:39.525Z",
+        "updatedAt": "2026-04-30T02:34:39.525Z",
+        "occurredAt": "2026-04-30T02:34:39.525Z"
+      },
+      "temporal": {
+        "observedAt": "2026-04-30T02:34:39.525Z",
+        "promotedAt": null,
+        "validatedAt": null,
+        "lastConfirmedAt": null
+      },
+      "scores": {
+        "confidence": 0.7,
+        "importance": 0.7,
+        "freshness": 1,
+        "retrievalCount": 0
+      },
+      "citations": [
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".dockerignore",
+          "startLine": 1,
+          "endLine": 12
+        },
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".fas-config.json",
+          "startLine": 1,
+          "endLine": 83
+        },
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".fas/TASKS.md",
+          "startLine": 1,
+          "endLine": 454
+        },
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".fas/architecture-rules.json",
+          "startLine": 1,
+          "endLine": 505
+        },
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".fas/memory/architecture.md",
+          "startLine": 1,
+          "endLine": 6
+        },
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".fas/memory/decisions.md",
+          "startLine": 1,
+          "endLine": 8
+        }
+      ],
+      "relations": {
+        "supersedes": [],
+        "conflictsWith": []
+      },
+      "projection": {
+        "markdownFile": ".fas/memory/patterns.md",
+        "renderedLine": "[2026-04-30] **Script modifications for \"Logistics Docker Compose worker restart recovery verificatio\"**: Changed scripts/check-architecture-boundaries.mjs, scripts/dev-logistics-demo.ts, scripts/verify-logistics-docker-compose.mjs. Prefer thin bash launchers that dispatch into committed typed pipeline or runtime modules instead of embedding inline Node.js heredocs on the golden path."
+      },
+      "version": 1,
+      "checksum": "sha256:0e20c31a108b4b7cde79e708592ddc19280641fdfc5338caa9e86b6822bc5b52"
+    },
+    {
+      "schemaVersion": 1,
+      "id": "mem_decision_commit-discipline-2-step-plan-for-logistics-dock_2026-04-30-1",
+      "memoryId": "mem_decision_commit-discipline-2-step-plan-for-logistics-dock_2026-04-30-1",
+      "projectName": "actor-web",
+      "kind": "procedure",
+      "category": "decision",
+      "title": "**Commit discipline**: 2-step plan for \"Logistics Docker Compose worker restart recovery verificatio\"",
+      "body": "**Commit discipline**: 2-step plan for \"Logistics Docker Compose worker restart recovery verificatio\". Steps: feat: implement logistics docker compose worker restart recovery verification; test: cover logistics docker compose worker restart recovery verification.",
+      "detail": "**Commit discipline**: 2-step plan for \"Logistics Docker Compose worker restart recovery verificatio\". Steps: feat: implement logistics docker compose worker restart recovery verification; test: cover logistics docker compose worker restart recovery verification.",
+      "summary": "**Commit discipline**: 2-step plan for \"Logistics Docker Compose worker restart recovery verificatio\"",
+      "status": "candidate",
+      "scope": {
+        "project": "actor-web",
+        "repo": "actor-web",
+        "modules": [
+          ".dockerignore",
+          ".fas-config.json",
+          ".fas",
+          "...",
+          "...ogistics-docker-compose-deployment-prove-out.md",
+          "...logistics-multi-process-deployment-prove-out.md",
+          "...ntime-telemetry-export-durable-observability.md",
+          "...untime-transport-bounded-queues-backpressure.md",
+          "...erver-owned-headless-runtime-gateway-example.md",
+          ".gitignore",
+          ".markdownlint.jsonc",
+          "AGENTS.md",
+          "README.md",
+          "architecture.boundaries.json",
+          "biome.json",
+          "docker-compose.logistics.yml",
+          "docker",
+          "docs",
+          "...tor-web-multi-process-deployment-demo-design.md",
+          "examples",
+          "fas.domain-map.json",
+          "package.json",
+          "packages",
+          "pnpm-lock.yaml",
+          "scripts",
+          "tsconfig.json"
+        ],
+        "paths": [
+          ".dockerignore",
+          ".fas-config.json",
+          ".fas/TASKS.md",
+          ".fas/architecture-rules.json",
+          ".fas/memory/architecture.md",
+          ".fas/memory/decisions.md",
+          ".fas/memory/incidents.md",
+          ".fas/memory/integrations.md"
+        ],
+        "taskKinds": [
+          "self-improvement"
+        ]
+      },
+      "sourceIds": [],
+      "sourcePackets": [
+        "pkt_direct-1777515497508_learning_20260430023439"
+      ],
+      "entityIds": [],
+      "tags": [],
+      "timestamps": {
+        "createdAt": "2026-04-30T02:34:39.525Z",
+        "updatedAt": "2026-04-30T02:34:39.525Z",
+        "occurredAt": "2026-04-30T02:34:39.525Z"
+      },
+      "temporal": {
+        "observedAt": "2026-04-30T02:34:39.525Z",
+        "promotedAt": null,
+        "validatedAt": null,
+        "lastConfirmedAt": null
+      },
+      "scores": {
+        "confidence": 0.7,
+        "importance": 0.8,
+        "freshness": 1,
+        "retrievalCount": 0
+      },
+      "citations": [
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".dockerignore",
+          "startLine": 1,
+          "endLine": 12
+        },
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".fas-config.json",
+          "startLine": 1,
+          "endLine": 83
+        },
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".fas/TASKS.md",
+          "startLine": 1,
+          "endLine": 454
+        },
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".fas/architecture-rules.json",
+          "startLine": 1,
+          "endLine": 505
+        },
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".fas/memory/architecture.md",
+          "startLine": 1,
+          "endLine": 6
+        },
+        {
+          "packetId": "pkt_direct-1777515497508_learning_20260430023439",
+          "path": ".fas/memory/decisions.md",
+          "startLine": 1,
+          "endLine": 8
+        }
+      ],
+      "relations": {
+        "supersedes": [],
+        "conflictsWith": []
+      },
+      "projection": {
+        "markdownFile": ".fas/memory/decisions.md",
+        "renderedLine": "[2026-04-30] **Commit discipline**: 2-step plan for \"Logistics Docker Compose worker restart recovery verificatio\". Steps: feat: implement logistics docker compose worker restart recovery verification; test: cover logistics docker compose worker restart recovery verification."
+      },
+      "version": 1,
+      "checksum": "sha256:a17f7d7a52a466fe65abc5b7c9f07ea9eeb7c40589ce6f9f986e20bb797b71dc"
+    }
+  ]
+}

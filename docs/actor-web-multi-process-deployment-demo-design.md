@@ -181,6 +181,9 @@ Troubleshooting:
   `127.0.0.1` published ports.
 - If telemetry is missing, check `.actor-web/telemetry/server-transport.jsonl`
   and `.actor-web/telemetry/worker-transport.jsonl` after the services stop.
+- The smoke verification stops and restarts `worker-runtime`, then confirms
+  `/runtime/status` reports disconnected and recovered worker peer state before
+  routing another shipment.
 
 ## Stage 3: Multi-Machine Prove-Out
 
@@ -241,6 +244,8 @@ Stage 2 tests:
 - Verify server asks worker-owned routing actor over real WebSocket transport.
 - Verify server and worker telemetry JSONL files record peer connection events.
 - Verify the worker container remains running after route work completes.
+- Stop the worker container, verify `/runtime/status` reports the worker peer as
+  disconnected, restart the worker container, and verify routing recovers.
 - Browser-host manual verification uses the published web URL.
 
 Stage 3 tests:

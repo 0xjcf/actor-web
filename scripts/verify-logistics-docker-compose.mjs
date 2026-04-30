@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 const composeFile = 'docker-compose.logistics.yml';
 const telemetryDir = '.actor-web/telemetry';
 const restUrl = 'http://127.0.0.1:4100';
+const workerService = 'worker-runtime';
 
 async function main() {
   await ensureDockerDaemonAvailable();
@@ -13,39 +14,13 @@ async function main() {
 
   let composeStarted = false;
   try {
-    await run('docker', ['compose', '-f', composeFile, 'up', '--build', '-d']);
+    await runCompose(['up', '--build', '-d']);
     composeStarted = true;
-    await waitFor(async () => {
-      const status = await getJson(`${restUrl}/runtime/status`);
-      return status?.transport?.workerConnected === true;
-    }, 'Expected worker runtime container to connect to server transport');
+    await waitForWorkerConnected(
+      'Expected worker runtime container to connect to server transport'
+    );
 
-    const response = await fetch(`${restUrl}/shipments`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        shipmentId: 'shipment-docker-1001',
-        destination: 'Chicago warehouse',
-        reference: 'DOCKER-1001',
-      }),
-    });
-    if (response.status !== 202) {
-      throw new Error(`Expected shipment create to return 202, got ${response.status}`);
-    }
-
-    const accepted = await response.json();
-    if (accepted.status !== 'route-assigned') {
-      throw new Error(`Expected route-assigned shipment, got ${JSON.stringify(accepted)}`);
-    }
-
-    await waitFor(async () => {
-      const shipment = await getJson(`${restUrl}/shipments/current`);
-      return (
-        shipment?.shipmentId === 'shipment-docker-1001' &&
-        shipment?.status === 'route-assigned' &&
-        typeof shipment?.carrier === 'string'
-      );
-    }, 'Expected server runtime to apply worker-owned route plan');
+    await createAndVerifyShipment('shipment-docker-1001', 'DOCKER-1001');
 
     await waitFor(
       () =>
@@ -54,14 +29,27 @@ async function main() {
       'Expected server and worker telemetry JSONL files to include peer connection events'
     );
     await waitFor(
-      () => containerIsRunning('actor-web-logistics-worker-runtime-1'),
+      () => serviceIsRunning(workerService),
       'Expected worker runtime container to remain running after routing work completes'
     );
+
+    await runCompose(['stop', workerService]);
+    await waitForWorkerDisconnected(
+      'Expected server runtime status to mark stopped worker container disconnected'
+    );
+    await waitFor(
+      () => telemetryFileContains('server-transport.jsonl', 'peer.disconnected'),
+      'Expected server telemetry JSONL file to include worker disconnection event'
+    );
+
+    await runCompose(['up', '-d', workerService]);
+    await waitForWorkerConnected('Expected worker runtime container to reconnect after restart');
+    await createAndVerifyShipment('shipment-docker-1002', 'DOCKER-1002');
 
     console.log('Actor-Web logistics Docker Compose smoke passed.');
   } finally {
     if (composeStarted) {
-      await run('docker', ['compose', '-f', composeFile, 'down', '--remove-orphans'], {
+      await runCompose(['down', '--remove-orphans'], {
         allowFailure: true,
       });
     }
@@ -100,13 +88,64 @@ function telemetryFileContains(fileName, eventType) {
   return existsSync(filePath) && readFileSync(filePath, 'utf8').includes(`"type":"${eventType}"`);
 }
 
-async function containerIsRunning(containerName) {
-  const status = await capture('docker', [
-    'inspect',
-    containerName,
-    '--format',
-    '{{.State.Status}}',
-  ]);
+async function createAndVerifyShipment(shipmentId, reference) {
+  const response = await fetch(`${restUrl}/shipments`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      shipmentId,
+      destination: 'Chicago warehouse',
+      reference,
+    }),
+  });
+  if (response.status !== 202) {
+    throw new Error(`Expected shipment create to return 202, got ${response.status}`);
+  }
+
+  const accepted = await response.json();
+  if (accepted.status !== 'route-assigned') {
+    throw new Error(`Expected route-assigned shipment, got ${JSON.stringify(accepted)}`);
+  }
+
+  await waitFor(async () => {
+    const shipment = await getJson(`${restUrl}/shipments/current`);
+    return (
+      shipment?.shipmentId === shipmentId &&
+      shipment?.status === 'route-assigned' &&
+      typeof shipment?.carrier === 'string'
+    );
+  }, `Expected server runtime to apply worker-owned route plan for ${shipmentId}`);
+}
+
+async function waitForWorkerConnected(message) {
+  await waitFor(async () => {
+    const status = await getJson(`${restUrl}/runtime/status`);
+    return (
+      status?.transport?.workerConnected === true &&
+      status?.transport?.workerPeer?.connected === true &&
+      status?.transport?.workerPeer?.fresh === true
+    );
+  }, message);
+}
+
+async function waitForWorkerDisconnected(message) {
+  await waitFor(async () => {
+    const status = await getJson(`${restUrl}/runtime/status`);
+    return (
+      status?.transport?.workerConnected === false &&
+      status?.transport?.workerPeer?.connected === false &&
+      status?.transport?.workerPeerFresh === false
+    );
+  }, message);
+}
+
+async function serviceIsRunning(serviceName) {
+  const containerId = (await captureCompose(['ps', '-q', serviceName])).trim();
+  if (!containerId) {
+    return false;
+  }
+
+  const status = await capture('docker', ['inspect', containerId, '--format', '{{.State.Status}}']);
   return status.trim() === 'running';
 }
 
@@ -155,6 +194,10 @@ async function capture(command, args) {
   return result.stdout.toString('utf8');
 }
 
+async function captureCompose(args) {
+  return capture('docker', ['compose', '-f', composeFile, ...args]);
+}
+
 async function run(command, args, options = {}) {
   const result = await new Promise((resolve) => {
     const child = spawn(command, args, { stdio: 'inherit' });
@@ -164,6 +207,10 @@ async function run(command, args, options = {}) {
   if (result !== 0 && !options.allowFailure) {
     throw new Error(`${command} ${args.join(' ')} failed with exit code ${result}`);
   }
+}
+
+async function runCompose(args, options = {}) {
+  await run('docker', ['compose', '-f', composeFile, ...args], options);
 }
 
 main().catch((error) => {

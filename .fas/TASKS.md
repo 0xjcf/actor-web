@@ -438,6 +438,17 @@
 - Blast radius: cross-cutting
 - Artifacts: planning=.fas/state/planning.json; taskPacket=.fas/state/task-packet.json; commitPlan=.fas/state/commit-plan.json; verification=.fas/state/verification/latest.json; review=.fas/state/boundary-review-findings.md; workflow=.fas/state/workflows
 
+### Task: Logistics Docker Compose worker restart recovery verification
+
+- Title: Logistics Docker Compose worker restart recovery verification
+- Mode: single-agent
+- Status: done
+- Owner: implementer
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: local
+- Artifacts: planning=.fas/state/planning.json; taskPacket=.fas/state/task-packet.json; commitPlan=.fas/state/commit-plan.json; verification=.fas/state/verification/latest.json; review=.fas/state/boundary-review-findings.md; workflow=.fas/state/workflows
+
 ## Template
 
 ### Task: `<short task title>`
