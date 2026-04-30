@@ -55,7 +55,8 @@ In Codex, prefer `.fas/state/codex-orchestration.json` plus `.fas/state/codex-su
 
 - Use Codex subagents only when the user explicitly requests `4-agent` or `6-agent` mode, or when `.fas/state/codex-orchestration.json` says delegated execution is required.
 - After running `fas implement`, always inspect `.fas/state/codex-orchestration.json` before deciding whether to spawn subagents.
-- If delegated execution is required, spawn only the listed steps, issue a provenance token with `fas spawn-subagent <step-key>`, and record lifecycle progress with `fas record-agent-execution <step-key> <started|heartbeat|handoff|completed|failed|closed> --token <value>`.
+- If delegated execution is required, spawn only the listed steps, issue a provenance token with `fas spawn-subagent <step-key> --json`, and record lifecycle progress with `fas record-agent-execution <step-key> <started|heartbeat|handoff|completed|failed|closed> --token <value>` or `--token-id <id>`.
+- After recording a completed read-only Codex subagent step, close that completed subagent thread before spawning more agents so the root session does not exhaust local thread capacity.
 - `fas-implementer` is also the default Codex role skill for `fas_senior_engineer` and `fas_validator`.
 - `fas-reviewer` is also the default Codex role skill for `fas_verifier`, `fas_qa`, `fas_sre`, and `fas_documenter`.
 - Planner artifacts and commit plans remain the source of truth over any generic skill defaults.
@@ -96,7 +97,7 @@ Only modify files that the current task requires.
 - If an unplanned change is necessary for correctness, note it explicitly in the commit message.
 
 | Rationalization | Why it is wrong |
-| --- | --- |
+|---|---|
 | "I noticed this bug while working nearby, I should fix it now" | File a follow-up task. Unplanned fixes muddy the review and risk regressions. |
 | "This file needs reformatting anyway" | Formatting changes belong in a dedicated `chore` commit or a separate PR. |
 | "It is just one small rename" | Renames ripple through imports you did not plan to test. |
@@ -108,7 +109,7 @@ When you encounter ambiguity, conflicting context, or incomplete requirements, s
 
 Emit a structured block:
 
-```text
+```
 CONFUSION:
 - What: <one-sentence description of the ambiguity>
 - Options:
@@ -142,27 +143,22 @@ Do not continue to the next commit-plan step when the current step has failures.
 These are the most frequent ways agents try to skip FAS guardrails. All of them are wrong.
 
 ### Skipping planning
-
 | "The task is simple, I can skip planning" | The pipeline is the discipline. Simple tasks finish faster through the pipeline, not around it. |
 | "I already know which files to change" | The planner discovers dependency-reachable files and cross-module impacts you will miss. |
 
 ### Skipping verification
-
 | "I already ran the tests individually" | Individual runs do not replace `verify.sh`. The pipeline runs format, lint, typecheck, test, and boundaries as a unit. |
 | "The change is too small to need verification" | Small changes break things. A one-line typo fix can fail formatting. Always verify. |
 
 ### Combining commits
-
 | "These two steps are closely related, I will combine them" | Separate commits let each step be reviewed, reverted, and bisected independently. |
 | "It is faster to do it all at once" | It feels faster until something breaks and you cannot tell which change caused it. |
 
 ### Skipping memory
-
 | "I already know this codebase" | Memory contains incidents, PR feedback, and decisions from other sessions you have no access to. |
 | "The task is narrow, memory is not relevant" | Narrow tasks are where past incidents matter most. |
 
 ### Spike-phase drift
-
 | "I found the answer, let me just fix it" | Spikes are read-only. Fixes go into task briefs for the implementation pipeline. Implementing during a spike bypasses planning, commit discipline, and verification. |
 | "This repo doesn't need bootstrapping" | Bootstrapping produces indexes and memory that make exploration structural. Skipping it degrades spike quality. |
 | "The spike is done after one repo" | Spikes exist because the problem is cross-cutting. Check sibling repos before concluding. |
