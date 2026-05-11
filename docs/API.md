@@ -967,6 +967,16 @@ Runtime transport frames include a `messageId`. Node and browser WebSocket
 transports keep a bounded per-peer idempotency cache and drop duplicate frame IDs
 before runtime subscriber delivery.
 
+When a transport is configured with `idempotencyProvider`, the transport also
+issues an atomic claim keyed by the stable local/peer node identity context plus
+the frame `messageId`. This is opt-in and additive:
+
+- default in-memory duplicate suppression remains unchanged;
+- provider-backed duplicate detection can survive runtime restarts;
+- provider duplicates are acked and dropped;
+- provider claim failures are surfaced through stats/telemetry and the frame is
+  not treated as accepted.
+
 Node and browser WebSocket transports also exchange `runtime.transport.ack`
 frames for valid runtime frames. Bounded retry is limited to internal
 `__runtime.*` control traffic. User actor `send` still remains at-most-once by
@@ -998,8 +1008,17 @@ Runtime-native telemetry is available without adding OpenTelemetry:
 Telemetry/stats cover connection state, handshake accept/reject, malformed
 frames, reconnect/disconnect count, heartbeat timeout, frame send/receive count,
 ack received count, retry count, retry exhaustion, duplicate drops, idempotency
-cache evictions, outbound queue depth, backpressure drops, validation drops,
-sequence gaps, and last-seen timestamps.
+cache evictions, idempotency provider claim/duplicate/error counters, outbound
+queue depth, backpressure drops, validation drops, sequence gaps, and last-seen
+timestamps.
+
+`getRuntimeTransportStatus(...)` and `getRuntimePeerStatus(...)` also expose an
+additive `idempotency` view with:
+
+- cache window size,
+- provider enabled/disabled state,
+- provider claim, duplicate, and error counters,
+- last provider error timestamp/message when applicable.
 
 Use the exporter when transport events need to outlive an individual transport
 instance:

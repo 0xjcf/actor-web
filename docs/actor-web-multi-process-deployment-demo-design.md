@@ -211,6 +211,11 @@ Troubleshooting:
   `transport.workerPeer.state`, `transport.workerPeer.disconnectedAt`, and
   `transport.workerPeer.staleReason`. These values come from Actor-Web runtime
   status derivation, not from logistics-local freshness rules.
+- If routing stops after a worker restart while transport reconnects cleanly,
+  inspect `transport.idempotency`, `transport.workerPeer.idempotency`, and any
+  provider error counters/messages returned by `/runtime/status`. Provider
+  claim failures should remain visible; they are not treated as accepted
+  deliveries.
 - If the browser cannot connect, remember that `server-runtime` is Docker DNS
   and is not reachable from the host browser. Browser env vars should use
   `127.0.0.1` published ports.
@@ -244,9 +249,11 @@ operations constraints:
 - bounded projection replay/resync after disconnect,
 - exported operational telemetry and traceability.
 
-Durable replay storage, restart-persistent idempotency, and production
-deployment adapters remain the hardening boundary between this demo and a
-production reference architecture.
+Durable replay storage and production deployment adapters remain the hardening
+boundary between this demo and a production reference architecture.
+Restart-persistent duplicate suppression is now available as an opt-in
+provider-backed transport capability; it does not change the direct-peer,
+at-most-once transport contract.
 
 ## UI Enhancements
 
@@ -293,7 +300,10 @@ Stage 3 tests:
 
 - Verify authenticated peer joins and rejected unauthenticated joins.
 - Verify reconnect/resync after browser disconnect.
-- Verify duplicate runtime frame IDs are dropped by the idempotency cache.
+- Verify duplicate runtime frame IDs are dropped by the in-memory idempotency
+  cache when no provider is configured.
+- Verify duplicate runtime frame IDs are acked and dropped across runtime
+  restart when a persistent idempotency provider is configured.
 - Verify slow consumer/backpressure telemetry when bounded queues fill.
 
 ## Relationship To Transport Hardening
@@ -303,7 +313,8 @@ as future gates:
 
 - topology/source API,
 - gateway and runtime-peer auth hooks,
-- runtime message IDs and bounded idempotency caches,
+- runtime message IDs, bounded idempotency caches, and opt-in restart-persistent
+  provider claims,
 - ack control frames for runtime control traffic,
 - bounded outbound queues with backpressure telemetry,
 - bounded gateway replay/resync,
@@ -313,7 +324,9 @@ as future gates:
 
 The remaining hardening boundary is production deployment readiness: durable
 replay storage, production-grade discovery/deployment adapters, TLS and secret
-rotation, rollback guidance, and operations runbooks.
+rotation, rollback guidance, and operations runbooks. Runtime idempotency stays
+direct-peer and at-most-once; this demo does not introduce exactly-once
+delivery semantics.
 
 ## Assumptions
 

@@ -9,10 +9,22 @@ export interface LogisticsRuntimePeerStatus {
   readonly connected: boolean;
   readonly fresh: boolean;
   readonly staleAfterMs: number;
+  readonly idempotency: LogisticsRuntimeIdempotencyStatus;
   readonly lastSeenAt?: string;
   readonly disconnectedAt?: string;
   readonly rejectedReason?: string;
   readonly staleReason?: string;
+}
+
+export interface LogisticsRuntimeIdempotencyStatus {
+  readonly windowSize: number;
+  readonly duplicateFramesDropped: number;
+  readonly providerEnabled: boolean;
+  readonly providerClaimCount: number;
+  readonly providerDuplicateCount: number;
+  readonly providerErrorCount: number;
+  readonly lastProviderErrorAt?: string;
+  readonly lastProviderErrorMessage?: string;
 }
 
 export interface LogisticsRuntimeStatusResponse {
@@ -27,6 +39,7 @@ export interface LogisticsRuntimeStatusResponse {
   readonly transport: {
     readonly connectedNodes: readonly string[];
     readonly peers: readonly LogisticsRuntimePeerStatus[];
+    readonly idempotency?: LogisticsRuntimeIdempotencyStatus;
     readonly workerConnected: boolean;
     readonly workerPeerFresh: boolean;
     readonly workerPeer: LogisticsRuntimePeerStatus;
@@ -130,6 +143,21 @@ function createMetricView(
 
 function createUnavailableMetric(label: string): LogisticsRuntimeMetricView {
   return createMetricView(label, 'unavailable', true);
+}
+
+function transportIdempotency(
+  response: LogisticsRuntimeStatusResponse
+): LogisticsRuntimeIdempotencyStatus {
+  return (
+    response.transport.idempotency ?? {
+      windowSize: 0,
+      duplicateFramesDropped: 0,
+      providerEnabled: false,
+      providerClaimCount: 0,
+      providerDuplicateCount: 0,
+      providerErrorCount: 0,
+    }
+  );
 }
 
 function createNodeView(input: LogisticsRuntimeNodeView): LogisticsRuntimeNodeView {
@@ -424,6 +452,7 @@ export function reduceLogisticsRuntimeStatusView(
     response.transport.workerPeerFresh,
     workerStatus.recovered
   );
+  const idempotency = transportIdempotency(response);
 
   return {
     sourceLabel: runtimeStatusSourceLabel(),
@@ -437,8 +466,24 @@ export function reduceLogisticsRuntimeStatusView(
     metrics: [
       createMetricView('Connected nodes', response.transport.connectedNodes.length),
       createMetricView('Known peers', response.transport.peers.length),
-      createUnavailableMetric('Frames sent'),
-      createUnavailableMetric('Frames received'),
+      createMetricView('Duplicate drops', idempotency.duplicateFramesDropped),
+      createMetricView(
+        'Provider idempotency errors',
+        idempotency.providerEnabled ? idempotency.providerErrorCount : 'disabled',
+        !idempotency.providerEnabled
+      ),
+      idempotency.providerEnabled
+        ? createMetricView(
+            'Last provider error at',
+            displayValue(idempotency.lastProviderErrorAt, 'none')
+          )
+        : createUnavailableMetric('Last provider error at'),
+      idempotency.providerEnabled
+        ? createMetricView(
+            'Last provider error message',
+            displayValue(idempotency.lastProviderErrorMessage, 'none')
+          )
+        : createUnavailableMetric('Last provider error message'),
     ],
     nodes: createRuntimeNodeViews(previous, response),
   };

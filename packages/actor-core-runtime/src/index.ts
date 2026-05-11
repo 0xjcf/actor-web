@@ -295,8 +295,24 @@ export {
   validateRuntimeTransportHeartbeatFrame,
 } from './runtime-transport-contract.js';
 export type {
+  InMemoryRuntimeTransportIdempotencyProvider,
+  RuntimeTransportIdempotencyClaimInput,
+  RuntimeTransportIdempotencyClaimOutcome,
+  RuntimeTransportIdempotencyClaimResult,
+  RuntimeTransportIdempotencyFrontCache,
+  RuntimeTransportIdempotencyProvider,
+} from './runtime-transport-idempotency.js';
+export {
+  claimRuntimeTransportFrameIdempotency,
+  createInMemoryRuntimeTransportIdempotencyProvider,
+  createRuntimeTransportIdempotencyClaimInput,
+  createRuntimeTransportIdempotencyFrontCache,
+  createRuntimeTransportIdempotencyScope,
+} from './runtime-transport-idempotency.js';
+export type {
   RuntimePeerStatus,
   RuntimePeerStatusState,
+  RuntimeTransportIdempotencyStatus,
   RuntimeTransportStatus,
   RuntimeTransportStatusOptions,
 } from './runtime-transport-status.js';

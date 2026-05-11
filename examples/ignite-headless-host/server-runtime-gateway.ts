@@ -3,6 +3,8 @@
 import type {
   ActorRef,
   ActorTransitionErrorValue,
+  RuntimePeerStatus,
+  RuntimeTransportStats,
   RuntimeTransportTelemetryObserver,
 } from '@actor-core/runtime';
 import {
@@ -82,6 +84,21 @@ export interface LogisticsRuntimeGatewayServerOptions {
   transportTelemetry?: RuntimeTransportTelemetryObserver;
 }
 
+interface LogisticsRuntimeIdempotencyStatusResponse {
+  readonly windowSize: number;
+  readonly duplicateFramesDropped: number;
+  readonly providerEnabled: boolean;
+  readonly providerClaimCount: number;
+  readonly providerDuplicateCount: number;
+  readonly providerErrorCount: number;
+  readonly lastProviderErrorAt?: string;
+  readonly lastProviderErrorMessage?: string;
+}
+
+interface LogisticsRuntimePeerStatusResponse extends RuntimePeerStatus {
+  readonly idempotency: LogisticsRuntimeIdempotencyStatusResponse;
+}
+
 export interface LogisticsRuntimeGatewayServer {
   start(): Promise<void>;
   stop(): Promise<void>;
@@ -106,6 +123,42 @@ function wait(delayMs: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, delayMs);
   });
+}
+
+function normalizeIdempotencyStatus(
+  status: RuntimePeerStatus['idempotency'],
+  duplicateFramesDropped: number
+): LogisticsRuntimeIdempotencyStatusResponse {
+  return {
+    ...status,
+    duplicateFramesDropped,
+  };
+}
+
+function normalizePeerStatus(
+  peer: RuntimePeerStatus,
+  transportStats?: RuntimeTransportStats
+): LogisticsRuntimePeerStatusResponse {
+  return {
+    ...peer,
+    idempotency: normalizeIdempotencyStatus(
+      peer.idempotency,
+      transportStats?.peers[peer.nodeAddress]?.duplicateFramesDropped ?? 0
+    ),
+  };
+}
+
+function readTransportStats(transport: unknown): RuntimeTransportStats | undefined {
+  if (
+    typeof transport !== 'object' ||
+    transport === null ||
+    !('getStats' in transport) ||
+    typeof transport.getStats !== 'function'
+  ) {
+    return undefined;
+  }
+
+  return transport.getStats();
 }
 
 export function createLogisticsRuntimeGatewayServer(
@@ -855,8 +908,18 @@ export function createLogisticsRuntimeGatewayServer(
       })
       .get('/runtime/status', (_request, response, actorWeb) => {
         const transportStatus = actorWeb.runtime.getTransportStatus();
-        const workerPeer = actorWeb.runtime.getPeerStatus(workerNode);
-        const providerPeer = actorWeb.runtime.getPeerStatus(providerNode);
+        const transportStats = readTransportStats(transport());
+        const peers = transportStatus.peers.map((peer) =>
+          normalizePeerStatus(peer, transportStats)
+        );
+        const workerPeer = normalizePeerStatus(
+          actorWeb.runtime.getPeerStatus(workerNode),
+          transportStats
+        );
+        const providerPeer = normalizePeerStatus(
+          actorWeb.runtime.getPeerStatus(providerNode),
+          transportStats
+        );
         return response.ok({
           gatewayUrl: actorWeb.runtime.getGatewayUrl(),
           transportUrl: actorWeb.runtime.getTransportUrl(),
@@ -868,7 +931,17 @@ export function createLogisticsRuntimeGatewayServer(
           },
           transport: {
             connectedNodes: transportStatus.connectedNodes,
-            peers: transportStatus.peers,
+            peers,
+            idempotency: normalizeIdempotencyStatus(
+              transportStatus.idempotency ?? {
+                windowSize: 0,
+                providerEnabled: false,
+                providerClaimCount: 0,
+                providerDuplicateCount: 0,
+                providerErrorCount: 0,
+              },
+              transportStats?.duplicateFramesDropped ?? 0
+            ),
             workerConnected: workerPeer.connected,
             workerPeerFresh: workerPeer.fresh,
             workerPeer,

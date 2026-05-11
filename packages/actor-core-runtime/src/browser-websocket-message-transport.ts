@@ -19,7 +19,13 @@ import {
   validateRuntimeTransportHandshake,
   validateRuntimeTransportHeartbeatFrame,
 } from './runtime-transport-contract.js';
+import {
+  claimRuntimeTransportFrameIdempotency,
+  createRuntimeTransportIdempotencyFrontCache,
+  type RuntimeTransportIdempotencyProvider,
+} from './runtime-transport-idempotency.js';
 import type {
+  RuntimeTransportDropCode,
   RuntimeTransportPeerStats,
   RuntimeTransportStats,
   RuntimeTransportTelemetryEvent,
@@ -40,6 +46,7 @@ export interface BrowserWebSocketMessageTransportOptions {
   ackTimeoutMs?: number;
   maxAckRetries?: number;
   outboundQueueLimit?: number;
+  idempotencyProvider?: RuntimeTransportIdempotencyProvider;
   telemetry?: RuntimeTransportTelemetryObserver;
   webSocketFactory?: (url: string) => WebSocket;
   auth?: RuntimeTransportAuthProvider<{
@@ -53,8 +60,7 @@ type BrowserPeerConnection = {
   identity: RuntimeNodeIdentity;
   sequence: number;
   lastReceivedSequence: number;
-  seenMessageIds: string[];
-  seenMessageIdSet: Set<string>;
+  idempotencyCache: ReturnType<typeof createRuntimeTransportIdempotencyFrontCache>;
   pendingAcks: Map<string, PendingAck>;
   outboundQueue: OutboundQueueItem[];
   outboundFlushing: boolean;
@@ -340,8 +346,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       identity,
       sequence: 0,
       lastReceivedSequence: 0,
-      seenMessageIds: [],
-      seenMessageIdSet: new Set<string>(),
+      idempotencyCache: createRuntimeTransportIdempotencyFrontCache(this.idempotencyWindowSize),
       pendingAcks: new Map<string, PendingAck>(),
       outboundQueue: [],
       outboundFlushing: false,
@@ -420,13 +425,37 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
     }
 
     this.markPeerSeen(sourceNodeAddress, peer.socket);
-    if (this.isDuplicateFrame(peer, runtimeFrame)) {
-      this.recordDuplicateFrameDropped(sourceNodeAddress, peer, runtimeFrame);
+    const idempotency = await claimRuntimeTransportFrameIdempotency({
+      cache: peer.idempotencyCache,
+      provider: this.options.idempotencyProvider,
+      localNode: this.identity,
+      peerNode: peer.identity,
+      frame: runtimeFrame,
+    });
+
+    if (idempotency.outcome === 'error') {
+      this.recordIdempotencyProviderError(sourceNodeAddress, peer, idempotency);
+      this.recordFrameDropped(
+        sourceNodeAddress,
+        'idempotency_provider_error',
+        'Runtime idempotency provider claim failed.'
+      );
+      await this.disconnect(sourceNodeAddress);
+      return;
+    }
+
+    this.recordIdempotencyCacheEvictions(sourceNodeAddress, idempotency.evictedMessageIds);
+
+    if (idempotency.source === 'provider' && idempotency.outcome === 'accepted') {
+      this.recordIdempotencyProviderClaimed(sourceNodeAddress, peer, idempotency.providerClaim);
+    }
+
+    if (idempotency.outcome === 'duplicate') {
+      this.recordDuplicateFrameDropped(sourceNodeAddress, peer, runtimeFrame, idempotency.source);
       this.sendAck(sourceNodeAddress, peer, runtimeFrame);
       return;
     }
 
-    this.rememberMessageId(sourceNodeAddress, peer, runtimeFrame.messageId);
     this.recordFrameReceived(sourceNodeAddress, peer, runtimeFrame);
     this.sendAck(sourceNodeAddress, peer, runtimeFrame);
     this.emitTransportMessage(runtimeFrame.source.nodeAddress, runtimeFrame.message);
@@ -616,6 +645,11 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       backpressureDropCount: 0,
       duplicateFramesDropped: 0,
       idempotencyCacheEvictions: 0,
+      idempotencyWindowSize: this.idempotencyWindowSize,
+      idempotencyProviderEnabled: Boolean(this.options.idempotencyProvider),
+      idempotencyProviderClaimCount: 0,
+      idempotencyProviderDuplicateCount: 0,
+      idempotencyProviderErrorCount: 0,
       malformedFramesDropped: 0,
       validationFramesDropped: 0,
       sequenceGapCount: 0,
@@ -645,6 +679,11 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       backpressureDropCount: 0,
       duplicateFramesDropped: 0,
       idempotencyCacheEvictions: 0,
+      idempotencyWindowSize: this.idempotencyWindowSize,
+      idempotencyProviderEnabled: Boolean(this.options.idempotencyProvider),
+      idempotencyProviderClaimCount: 0,
+      idempotencyProviderDuplicateCount: 0,
+      idempotencyProviderErrorCount: 0,
       malformedFramesDropped: 0,
       validationFramesDropped: 0,
       sequenceGapCount: 0,
@@ -808,29 +847,11 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
     ].join(':');
   }
 
-  private isDuplicateFrame(peer: BrowserPeerConnection, frame: RuntimeTransportFrame): boolean {
-    return this.idempotencyWindowSize > 0 && peer.seenMessageIdSet.has(frame.messageId);
-  }
-
-  private rememberMessageId(
+  private recordIdempotencyCacheEvictions(
     nodeAddress: string,
-    peer: BrowserPeerConnection,
-    messageId: string
+    evictedMessageIds: readonly string[]
   ): void {
-    if (this.idempotencyWindowSize <= 0) {
-      return;
-    }
-
-    peer.seenMessageIdSet.add(messageId);
-    peer.seenMessageIds.push(messageId);
-
-    while (peer.seenMessageIds.length > this.idempotencyWindowSize) {
-      const evicted = peer.seenMessageIds.shift();
-      if (!evicted) {
-        continue;
-      }
-
-      peer.seenMessageIdSet.delete(evicted);
+    for (const evicted of evictedMessageIds) {
       this.stats.idempotencyCacheEvictions += 1;
       this.setPeerStats(nodeAddress, {
         idempotencyCacheEvictions:
@@ -844,16 +865,80 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
     }
   }
 
+  private recordIdempotencyProviderClaimed(
+    nodeAddress: string,
+    peer: BrowserPeerConnection,
+    claim?: {
+      readonly scope: string;
+      readonly key: string;
+    }
+  ): void {
+    if (!claim) {
+      return;
+    }
+
+    this.stats.idempotencyProviderClaimCount += 1;
+    this.setPeerStats(nodeAddress, {
+      identity: peer.identity,
+      idempotencyProviderClaimCount:
+        (this.stats.peers[nodeAddress]?.idempotencyProviderClaimCount ?? 0) + 1,
+    });
+    this.emitTelemetry({
+      type: 'idempotency.provider.claimed',
+      peerNodeAddress: nodeAddress,
+      idempotencyScope: claim.scope,
+      idempotencyKey: claim.key,
+    });
+  }
+
+  private recordIdempotencyProviderError(
+    nodeAddress: string,
+    peer: BrowserPeerConnection,
+    input: {
+      readonly error: Error;
+      readonly providerClaim: {
+        readonly scope: string;
+        readonly key: string;
+      };
+    }
+  ): void {
+    const erroredAt = new Date().toISOString();
+    this.stats.idempotencyProviderErrorCount += 1;
+    this.stats.lastIdempotencyProviderErrorAt = erroredAt;
+    this.stats.lastIdempotencyProviderErrorMessage = input.error.message;
+    this.setPeerStats(nodeAddress, {
+      identity: peer.identity,
+      idempotencyProviderErrorCount:
+        (this.stats.peers[nodeAddress]?.idempotencyProviderErrorCount ?? 0) + 1,
+      lastIdempotencyProviderErrorAt: erroredAt,
+      lastIdempotencyProviderErrorMessage: input.error.message,
+    });
+    this.emitTelemetry({
+      type: 'idempotency.provider.error',
+      peerNodeAddress: nodeAddress,
+      reason: input.error.message,
+      idempotencyScope: input.providerClaim.scope,
+      idempotencyKey: input.providerClaim.key,
+    });
+  }
+
   private recordDuplicateFrameDropped(
     nodeAddress: string,
     peer: BrowserPeerConnection,
-    frame: RuntimeTransportFrame
+    frame: RuntimeTransportFrame,
+    source: 'memory' | 'provider'
   ): void {
     this.stats.duplicateFramesDropped += 1;
-    this.setPeerStats(nodeAddress, {
+    const update: Partial<Omit<RuntimeTransportPeerStats, 'nodeAddress'>> = {
       identity: peer.identity,
       duplicateFramesDropped: (this.stats.peers[nodeAddress]?.duplicateFramesDropped ?? 0) + 1,
-    });
+    };
+    if (source === 'provider') {
+      this.stats.idempotencyProviderDuplicateCount += 1;
+      update.idempotencyProviderDuplicateCount =
+        (this.stats.peers[nodeAddress]?.idempotencyProviderDuplicateCount ?? 0) + 1;
+    }
+    this.setPeerStats(nodeAddress, update);
     this.emitTelemetry({
       type: 'frame.duplicate',
       peerNodeAddress: nodeAddress,
@@ -861,6 +946,15 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       messageId: frame.messageId,
       sequence: frame.sequence,
     });
+    if (source === 'provider') {
+      this.emitTelemetry({
+        type: 'idempotency.provider.duplicate',
+        peerNodeAddress: nodeAddress,
+        messageType: frame.message.type,
+        messageId: frame.messageId,
+        sequence: frame.sequence,
+      });
+    }
   }
 
   private isRetryableRuntimeFrame(frame: RuntimeTransportFrame): boolean {
@@ -1161,12 +1255,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
 
   private recordFrameDropped(
     nodeAddress: string,
-    code:
-      | 'malformed_frame'
-      | 'missing_identity'
-      | 'self_connection'
-      | 'incompatible_protocol'
-      | 'unauthorized',
+    code: RuntimeTransportDropCode,
     reason: string
   ): void {
     if (code === 'malformed_frame') {
@@ -1174,13 +1263,18 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       this.setPeerStats(nodeAddress, {
         malformedFramesDropped: (this.stats.peers[nodeAddress]?.malformedFramesDropped ?? 0) + 1,
       });
-    } else {
+    } else if (code !== 'idempotency_provider_error') {
       this.stats.validationFramesDropped += 1;
       this.setPeerStats(nodeAddress, {
         validationFramesDropped: (this.stats.peers[nodeAddress]?.validationFramesDropped ?? 0) + 1,
       });
     }
-    this.emitTelemetry({ type: 'frame.dropped', peerNodeAddress: nodeAddress, reason });
+    this.emitTelemetry({
+      type: 'frame.dropped',
+      peerNodeAddress: nodeAddress,
+      reason,
+      dropCode: code,
+    });
   }
 
   private recordHeartbeatTimeout(nodeAddress: string, peer: BrowserPeerConnection): void {

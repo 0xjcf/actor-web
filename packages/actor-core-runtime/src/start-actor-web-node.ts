@@ -16,6 +16,7 @@ import type {
   RuntimePeerDiscoveryProvider,
   RuntimePeerDiscoveryRecord,
 } from './runtime-peer-discovery.js';
+import type { RuntimeTransportIdempotencyProvider } from './runtime-transport-idempotency.js';
 import {
   getRuntimePeerStatus,
   getRuntimeTransportStatus,
@@ -42,6 +43,8 @@ export interface ActorWebBrowserNodeTransportOptions {
   readonly connectTimeoutMs?: number;
   readonly heartbeatIntervalMs?: number;
   readonly heartbeatTimeoutMs?: number;
+  readonly idempotencyWindowSize?: number;
+  readonly idempotencyProvider?: RuntimeTransportIdempotencyProvider;
   readonly telemetry?: RuntimeTransportTelemetryObserver;
   readonly webSocketFactory?: (url: string) => WebSocket;
   readonly auth?: RuntimeTransportAuthProvider;
@@ -176,6 +179,12 @@ function createTopologyTransport(
       : {}),
     ...(transportOptions?.heartbeatTimeoutMs !== undefined
       ? { heartbeatTimeoutMs: transportOptions.heartbeatTimeoutMs }
+      : {}),
+    ...(transportOptions?.idempotencyWindowSize !== undefined
+      ? { idempotencyWindowSize: transportOptions.idempotencyWindowSize }
+      : {}),
+    ...(transportOptions?.idempotencyProvider
+      ? { idempotencyProvider: transportOptions.idempotencyProvider }
       : {}),
     ...(transportOptions?.telemetry ? { telemetry: transportOptions.telemetry } : {}),
     ...(transportOptions?.auth ? { auth: transportOptions.auth } : {}),

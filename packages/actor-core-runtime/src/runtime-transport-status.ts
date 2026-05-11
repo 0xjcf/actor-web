@@ -16,6 +16,17 @@ export interface RuntimePeerStatus {
   readonly disconnectedAt?: string;
   readonly rejectedReason?: string;
   readonly staleReason?: string;
+  readonly idempotency: RuntimeTransportIdempotencyStatus;
+}
+
+export interface RuntimeTransportIdempotencyStatus {
+  readonly windowSize: number;
+  readonly providerEnabled: boolean;
+  readonly providerClaimCount: number;
+  readonly providerDuplicateCount: number;
+  readonly providerErrorCount: number;
+  readonly lastProviderErrorAt?: string;
+  readonly lastProviderErrorMessage?: string;
 }
 
 export interface RuntimeTransportStatus {
@@ -23,6 +34,7 @@ export interface RuntimeTransportStatus {
   readonly peers: readonly RuntimePeerStatus[];
   readonly startedAt?: string;
   readonly stoppedAt?: string;
+  readonly idempotency?: RuntimeTransportIdempotencyStatus;
 }
 
 export interface RuntimeTransportStatusOptions {
@@ -36,6 +48,33 @@ interface RuntimeTransportStatusReadable extends MessageTransport {
 }
 
 const DEFAULT_RUNTIME_TRANSPORT_STATUS_STALE_AFTER_MS = 45_000;
+
+function deriveRuntimeTransportIdempotencyStatus(
+  stats?: Pick<
+    RuntimeTransportPeerStats,
+    | 'idempotencyWindowSize'
+    | 'idempotencyProviderEnabled'
+    | 'idempotencyProviderClaimCount'
+    | 'idempotencyProviderDuplicateCount'
+    | 'idempotencyProviderErrorCount'
+    | 'lastIdempotencyProviderErrorAt'
+    | 'lastIdempotencyProviderErrorMessage'
+  >
+): RuntimeTransportIdempotencyStatus {
+  return {
+    windowSize: stats?.idempotencyWindowSize ?? 0,
+    providerEnabled: stats?.idempotencyProviderEnabled ?? false,
+    providerClaimCount: stats?.idempotencyProviderClaimCount ?? 0,
+    providerDuplicateCount: stats?.idempotencyProviderDuplicateCount ?? 0,
+    providerErrorCount: stats?.idempotencyProviderErrorCount ?? 0,
+    ...(stats?.lastIdempotencyProviderErrorAt
+      ? { lastProviderErrorAt: stats.lastIdempotencyProviderErrorAt }
+      : {}),
+    ...(stats?.lastIdempotencyProviderErrorMessage
+      ? { lastProviderErrorMessage: stats.lastIdempotencyProviderErrorMessage }
+      : {}),
+  };
+}
 
 export function deriveRuntimePeerStatus(
   nodeAddress: string,
@@ -70,6 +109,7 @@ export function deriveRuntimePeerStatus(
     ...(lastSeenAt ? { lastSeenAt } : {}),
     ...(disconnectedAt ? { disconnectedAt } : {}),
     ...(rejectedReason ? { rejectedReason } : {}),
+    idempotency: deriveRuntimeTransportIdempotencyStatus(options.stats),
     ...(!isFresh && options.isConnected && state === 'connected'
       ? {
           staleReason: lastSeenAt
@@ -111,5 +151,6 @@ export function getRuntimeTransportStatus(
     peers,
     ...(stats?.startedAt ? { startedAt: stats.startedAt } : {}),
     ...(stats?.stoppedAt ? { stoppedAt: stats.stoppedAt } : {}),
+    ...(stats ? { idempotency: deriveRuntimeTransportIdempotencyStatus(stats) } : {}),
   };
 }

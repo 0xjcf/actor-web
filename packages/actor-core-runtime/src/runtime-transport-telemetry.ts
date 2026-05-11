@@ -1,5 +1,13 @@
 import type { RuntimeNodeIdentity } from './runtime-transport-contract.js';
 
+export type RuntimeTransportDropCode =
+  | 'malformed_frame'
+  | 'missing_identity'
+  | 'self_connection'
+  | 'incompatible_protocol'
+  | 'unauthorized'
+  | 'idempotency_provider_error';
+
 export type RuntimeTransportTelemetryEventType =
   | 'transport.started'
   | 'transport.stopped'
@@ -24,6 +32,9 @@ export type RuntimeTransportTelemetryEventType =
   | 'outbound.queue.dropped'
   | 'backpressure.applied'
   | 'idempotency.cache.evicted'
+  | 'idempotency.provider.claimed'
+  | 'idempotency.provider.duplicate'
+  | 'idempotency.provider.error'
   | 'sequence.gap'
   | 'heartbeat.timeout';
 
@@ -39,7 +50,10 @@ export interface RuntimeTransportTelemetryEvent {
   queueDepth?: number;
   queueLimit?: number;
   reason?: string;
+  dropCode?: RuntimeTransportDropCode;
   authSubject?: string;
+  idempotencyScope?: string;
+  idempotencyKey?: string;
 }
 
 export type RuntimeTransportTelemetryObserver = (event: RuntimeTransportTelemetryEvent) => void;
@@ -89,6 +103,13 @@ export interface RuntimeTransportPeerStats {
   backpressureDropCount: number;
   duplicateFramesDropped: number;
   idempotencyCacheEvictions: number;
+  idempotencyWindowSize: number;
+  idempotencyProviderEnabled: boolean;
+  idempotencyProviderClaimCount: number;
+  idempotencyProviderDuplicateCount: number;
+  idempotencyProviderErrorCount: number;
+  lastIdempotencyProviderErrorAt?: string;
+  lastIdempotencyProviderErrorMessage?: string;
   malformedFramesDropped: number;
   validationFramesDropped: number;
   sequenceGapCount: number;
@@ -116,6 +137,13 @@ export interface RuntimeTransportStats {
   backpressureDropCount: number;
   duplicateFramesDropped: number;
   idempotencyCacheEvictions: number;
+  idempotencyWindowSize: number;
+  idempotencyProviderEnabled: boolean;
+  idempotencyProviderClaimCount: number;
+  idempotencyProviderDuplicateCount: number;
+  idempotencyProviderErrorCount: number;
+  lastIdempotencyProviderErrorAt?: string;
+  lastIdempotencyProviderErrorMessage?: string;
   malformedFramesDropped: number;
   validationFramesDropped: number;
   sequenceGapCount: number;
