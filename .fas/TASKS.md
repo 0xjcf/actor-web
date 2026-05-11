@@ -498,8 +498,8 @@
 
 - Title: Runtime durable gateway replay storage
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/runtime-durable-gateway-replay-storage.md
 - Automation mode: advisory
 - Verification lane: full
