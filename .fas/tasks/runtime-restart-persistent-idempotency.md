@@ -89,6 +89,7 @@ explicit.
   gateway replay, or stay as a separate contract?
 
 ## Scope Amendments
+
 - Type: architecture-scope
 - Added at: 2026-05-11
 - Trigger: fas_architect identified stale planner scope
@@ -100,6 +101,7 @@ explicit.
 - Follow-up needed: Re-run planner and commit plan after scope amendment before spawning staff engineer.
 
 ## Affected files
+
 - packages/actor-core-runtime/src/runtime-transport-idempotency.ts
 - packages/actor-core-runtime/src/node-websocket-message-transport.ts
 - packages/actor-core-runtime/src/browser-websocket-message-transport.ts
