@@ -511,15 +511,14 @@
 
 - Title: Runtime restart-persistent idempotency
 - Mode: 6-agent
-- Status: backlog
-- Owner: planner
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/runtime-restart-persistent-idempotency.md
 - Automation mode: advisory
 - Verification lane: full
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 - Artifacts: roadmap=docs/actor-web-multi-process-deployment-demo-design.md
-
 ### Task: Production discovery and secure deployment adapters
 
 - Title: Production discovery and secure deployment adapters

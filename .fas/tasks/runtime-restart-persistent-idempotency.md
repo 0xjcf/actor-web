@@ -87,3 +87,36 @@ explicit.
 
 - Should persistent idempotency share storage provider conventions with durable
   gateway replay, or stay as a separate contract?
+
+## Scope Amendments
+- Type: architecture-scope
+- Added at: 2026-05-11
+- Trigger: fas_architect identified stale planner scope
+- Reason: Replace stale low-confidence planner candidates with current runtime transport idempotency, status, test, docs, and logistics projection surfaces before delegated implementation.
+- Added paths: packages/actor-core-runtime/src/runtime-transport-idempotency.ts, packages/actor-core-runtime/src/node-websocket-message-transport.ts, packages/actor-core-runtime/src/browser-websocket-message-transport.ts, packages/actor-core-runtime/src/start-actor-web-node.ts, packages/actor-core-runtime/src/serve-actor-web-node.ts, packages/actor-core-runtime/src/runtime-transport-telemetry.ts, packages/actor-core-runtime/src/runtime-transport-status.ts, packages/actor-core-runtime/src/index.ts, packages/actor-core-runtime/src/browser.ts, packages/actor-core-runtime/src/node.ts, packages/actor-core-runtime/src/unit/node-websocket-message-transport.test.ts, packages/actor-core-runtime/src/unit/browser-websocket-message-transport.test.ts, packages/actor-core-runtime/src/unit/runtime-transport-status.test.ts, packages/actor-core-runtime/src/unit/runtime-transport-telemetry.test.ts, packages/actor-core-runtime/src/unit/start-actor-web-node.test.ts, packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts, docs/API.md, docs/actor-web-multi-process-deployment-demo-design.md, examples/ignite-headless-host/server-runtime-gateway.ts, examples/ignite-headless-host/logistics-runtime-status.ts
+- Evidence source: fas_architect
+- Evidence: fas_architect | .fas/state/agent-orchestration-execution.json | Architect handoff cited duplicate suppression in node/browser transports, runner option seams, telemetry/status surfaces, public exports, docs, and logistics runtime status projection.
+- Accuracy signal: explicit architecture handoff from current source inspection
+- Follow-up needed: Re-run planner and commit plan after scope amendment before spawning staff engineer.
+
+## Affected files
+- packages/actor-core-runtime/src/runtime-transport-idempotency.ts
+- packages/actor-core-runtime/src/node-websocket-message-transport.ts
+- packages/actor-core-runtime/src/browser-websocket-message-transport.ts
+- packages/actor-core-runtime/src/start-actor-web-node.ts
+- packages/actor-core-runtime/src/serve-actor-web-node.ts
+- packages/actor-core-runtime/src/runtime-transport-telemetry.ts
+- packages/actor-core-runtime/src/runtime-transport-status.ts
+- packages/actor-core-runtime/src/index.ts
+- packages/actor-core-runtime/src/browser.ts
+- packages/actor-core-runtime/src/node.ts
+- packages/actor-core-runtime/src/unit/node-websocket-message-transport.test.ts
+- packages/actor-core-runtime/src/unit/browser-websocket-message-transport.test.ts
+- packages/actor-core-runtime/src/unit/runtime-transport-status.test.ts
+- packages/actor-core-runtime/src/unit/runtime-transport-telemetry.test.ts
+- packages/actor-core-runtime/src/unit/start-actor-web-node.test.ts
+- packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts
+- docs/API.md
+- docs/actor-web-multi-process-deployment-demo-design.md
+- examples/ignite-headless-host/server-runtime-gateway.ts
+- examples/ignite-headless-host/logistics-runtime-status.ts
