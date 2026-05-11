@@ -242,12 +242,19 @@ export type {
   RuntimeGatewayClientFrame,
   RuntimeGatewayErrorCode,
   RuntimeGatewayEventProjection,
+  RuntimeGatewayReplayFrame,
+  RuntimeGatewayReplayStorageErrorEvent,
+  RuntimeGatewayReplayStorageProvider,
   RuntimeGatewayScopeDescriptor,
   RuntimeGatewayScopeResolver,
   RuntimeGatewayServerFrame,
   RuntimeGatewaySnapshotProjection,
 } from './runtime-gateway.js';
-export { RuntimeGatewayScopeError } from './runtime-gateway.js';
+export {
+  createRuntimeGatewayHub,
+  createRuntimeGatewaySource,
+  RuntimeGatewayScopeError,
+} from './runtime-gateway.js';
 export type {
   InMemoryRuntimePeerDiscoveryProvider,
   RuntimePeerDiscoveryEvent,
