@@ -119,7 +119,8 @@ describe('ignite-headless-host element', () => {
     expect(runtimeStatusElement?.shadowRoot?.textContent).toContain('Runtime Operator Panel');
     expect(runtimeStatusElement?.shadowRoot?.textContent).toContain('worker disconnected');
     expect(runtimeStatusElement?.shadowRoot?.textContent).toContain('Connected nodes');
-    expect(runtimeStatusElement?.shadowRoot?.textContent).toContain('Frames sent');
+    expect(runtimeStatusElement?.shadowRoot?.textContent).toContain('Duplicate drops');
+    expect(runtimeStatusElement?.shadowRoot?.textContent).toContain('Provider idempotency errors');
     expect(runtimeStatusElement?.shadowRoot?.textContent).toContain('unavailable');
     const providerElement = element.shadowRoot?.querySelector('aw-logistics-provider-hq-source');
     await waitFor(

@@ -764,12 +764,46 @@ describe('ignite-headless-host logistics example', () => {
     gatewayServer = createLogisticsRuntimeGatewayServer();
     await gatewayServer.start();
 
-    await expect(
-      fetch(`${requiredRestUrl(gatewayServer)}/runtime/status`).then((result) => result.json())
-    ).resolves.toMatchObject({
+    const status = await fetch(`${requiredRestUrl(gatewayServer)}/runtime/status`).then((result) =>
+      result.json()
+    );
+
+    expect(status).toMatchObject({
       provider: {
         runtimeEnabled: false,
         sourceLabel: 'simulator process',
+      },
+      transport: {
+        idempotency: {
+          windowSize: 1024,
+          duplicateFramesDropped: 0,
+          providerEnabled: false,
+          providerClaimCount: 0,
+          providerDuplicateCount: 0,
+          providerErrorCount: 0,
+        },
+        workerPeer: {
+          nodeAddress: 'logistics-worker-runtime',
+          idempotency: {
+            windowSize: 0,
+            duplicateFramesDropped: 0,
+            providerEnabled: false,
+            providerClaimCount: 0,
+            providerDuplicateCount: 0,
+            providerErrorCount: 0,
+          },
+        },
+        providerPeer: {
+          nodeAddress: 'logistics-provider-runtime',
+          idempotency: {
+            windowSize: 0,
+            duplicateFramesDropped: 0,
+            providerEnabled: false,
+            providerClaimCount: 0,
+            providerDuplicateCount: 0,
+            providerErrorCount: 0,
+          },
+        },
       },
       nodes: {
         serverRuntime: 'logistics-server-runtime',
@@ -783,6 +817,8 @@ describe('ignite-headless-host logistics example', () => {
           'actor://logistics-provider-runtime/actor/logistics-provider-runtime-manager',
       },
     });
+
+    expect(status.transport.peers).toEqual(expect.any(Array));
   });
 
   function createTestClient(gatewayUrl: string) {

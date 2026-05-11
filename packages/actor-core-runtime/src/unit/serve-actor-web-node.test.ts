@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import type { RuntimeGatewayServerFrame } from '../runtime-gateway.js';
 import { createInMemoryRuntimePeerDiscoveryProvider } from '../runtime-peer-discovery.js';
+import { createInMemoryRuntimeTransportIdempotencyProvider } from '../runtime-transport-idempotency.js';
 import {
   createInMemoryRuntimeTransportTelemetrySink,
   createRuntimeTransportTelemetryExporter,
@@ -496,6 +497,45 @@ describe('serveActorWebNode', () => {
     } finally {
       await served.stop();
       await worker.stop();
+    }
+  });
+
+  it('forwards node transport idempotency options into runtime status', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+      },
+      actors: {
+        counter: actor({
+          id: 'counter',
+          node: 'server',
+          behavior: createCounterBehavior,
+        }),
+      },
+    });
+    const idempotencyProvider = createInMemoryRuntimeTransportIdempotencyProvider();
+    const served = await serveActorWebNode(topology, {
+      node: 'server',
+      transport: {
+        listen: true,
+        heartbeatIntervalMs: 0,
+        idempotencyWindowSize: 32,
+        idempotencyProvider,
+      },
+    });
+
+    try {
+      expect(served.getTransportStatus()).toMatchObject({
+        idempotency: {
+          windowSize: 32,
+          providerEnabled: true,
+          providerClaimCount: 0,
+          providerDuplicateCount: 0,
+          providerErrorCount: 0,
+        },
+      });
+    } finally {
+      await served.stop();
     }
   });
 

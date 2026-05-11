@@ -10,6 +10,7 @@ import {
   createRuntimeTransportFrame,
   RUNTIME_TRANSPORT_PROTOCOL_VERSION,
 } from '../runtime-transport-contract.js';
+import { createInMemoryRuntimeTransportIdempotencyProvider } from '../runtime-transport-idempotency.js';
 import type { RuntimeTransportTelemetryEvent } from '../runtime-transport-telemetry.js';
 
 const transports: NodeWebSocketMessageTransport[] = [];
@@ -309,12 +310,20 @@ describe('NodeWebSocketMessageTransport', () => {
     const data = Buffer.from(JSON.stringify(frame));
     (
       remote as unknown as {
-        handleRuntimeFrame: (sourceNodeAddress: string, socket: WebSocket, data: Buffer) => void;
+        handleRuntimeFrame: (
+          sourceNodeAddress: string,
+          socket: WebSocket,
+          data: Buffer
+        ) => Promise<void>;
       }
     ).handleRuntimeFrame('node-a', remotePeer.socket, data);
     (
       remote as unknown as {
-        handleRuntimeFrame: (sourceNodeAddress: string, socket: WebSocket, data: Buffer) => void;
+        handleRuntimeFrame: (
+          sourceNodeAddress: string,
+          socket: WebSocket,
+          data: Buffer
+        ) => Promise<void>;
       }
     ).handleRuntimeFrame('node-a', remotePeer.socket, data);
 
@@ -340,6 +349,230 @@ describe('NodeWebSocketMessageTransport', () => {
       })
     );
 
+    unsubscribe();
+  });
+
+  it('drops duplicate runtime frames across transport restarts when a provider is configured', async () => {
+    const idempotencyProvider = createInMemoryRuntimeTransportIdempotencyProvider();
+    const firstRemote = await createStartedTransport('node-b', {
+      idempotencyProvider,
+      incarnation: 'node-b-boot',
+    });
+    const firstRemoteUrl = firstRemote.getListeningUrl();
+    if (!firstRemoteUrl) {
+      throw new Error('Expected remote listening URL');
+    }
+    const local = await createStartedTransport('node-a', {
+      peers: { 'node-b': firstRemoteUrl },
+    });
+    const firstReceived: string[] = [];
+    const firstUnsubscribe = firstRemote.subscribe((event) => {
+      firstReceived.push(event.message.type);
+    });
+
+    await local.connect('node-b');
+    const firstRemotePeer = (
+      firstRemote as unknown as {
+        peers: Map<string, { socket: WebSocket }>;
+      }
+    ).peers.get('node-a');
+    if (!firstRemotePeer) {
+      throw new Error('Expected first remote peer');
+    }
+
+    const firstFrame = createRuntimeTransportFrame({
+      source: createRuntimeNodeIdentity({
+        nodeAddress: 'node-a',
+        nodeId: 'node-a',
+        incarnation: 'node-a-boot',
+      }),
+      destination: createRuntimeNodeIdentity({
+        nodeAddress: 'node-b',
+        nodeId: 'node-b',
+        incarnation: 'node-b-boot',
+      }),
+      messageId: 'node-a:node-a-boot:node-b:duplicate-restart-1',
+      sequence: 1,
+      message: { type: 'DUPLICATE_AFTER_RESTART' },
+    });
+
+    await (
+      firstRemote as unknown as {
+        handleRuntimeFrame: (
+          sourceNodeAddress: string,
+          socket: WebSocket,
+          data: Buffer
+        ) => Promise<void>;
+      }
+    ).handleRuntimeFrame('node-a', firstRemotePeer.socket, Buffer.from(JSON.stringify(firstFrame)));
+    await waitFor(
+      () => firstReceived.includes('DUPLICATE_AFTER_RESTART'),
+      'Expected first restart frame'
+    );
+    firstUnsubscribe();
+    await firstRemote.stop();
+
+    const restartedRemote = await createStartedTransport('node-b', {
+      idempotencyProvider,
+      incarnation: 'node-b-restart',
+    });
+    const restartedRemoteUrl = restartedRemote.getListeningUrl();
+    if (!restartedRemoteUrl) {
+      throw new Error('Expected restarted remote listening URL');
+    }
+    const restartedReceived: string[] = [];
+    const restartedUnsubscribe = restartedRemote.subscribe((event) => {
+      restartedReceived.push(event.message.type);
+    });
+
+    await local.disconnect('node-b');
+    (
+      local as unknown as {
+        options: { peers?: Record<string, string> };
+      }
+    ).options.peers = { 'node-b': restartedRemoteUrl };
+    await local.connect('node-b');
+    const restartedRemotePeer = (
+      restartedRemote as unknown as {
+        peers: Map<string, { socket: WebSocket }>;
+      }
+    ).peers.get('node-a');
+    if (!restartedRemotePeer) {
+      throw new Error('Expected restarted remote peer');
+    }
+
+    const duplicateAfterRestart = createRuntimeTransportFrame({
+      source: createRuntimeNodeIdentity({
+        nodeAddress: 'node-a',
+        nodeId: 'node-a',
+        incarnation: 'node-a-boot',
+      }),
+      destination: createRuntimeNodeIdentity({
+        nodeAddress: 'node-b',
+        nodeId: 'node-b',
+        incarnation: 'node-b-restart',
+      }),
+      messageId: 'node-a:node-a-boot:node-b:duplicate-restart-1',
+      sequence: 1,
+      message: { type: 'DUPLICATE_AFTER_RESTART' },
+    });
+
+    await (
+      restartedRemote as unknown as {
+        handleRuntimeFrame: (
+          sourceNodeAddress: string,
+          socket: WebSocket,
+          data: Buffer
+        ) => Promise<void>;
+      }
+    ).handleRuntimeFrame(
+      'node-a',
+      restartedRemotePeer.socket,
+      Buffer.from(JSON.stringify(duplicateAfterRestart))
+    );
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+
+    expect(restartedReceived).not.toContain('DUPLICATE_AFTER_RESTART');
+    expect(restartedRemote.getStats()).toMatchObject({
+      duplicateFramesDropped: 1,
+      idempotencyProviderEnabled: true,
+      idempotencyProviderDuplicateCount: 1,
+    });
+    restartedUnsubscribe();
+  });
+
+  it('surfaces idempotency provider failures without accepting the frame', async () => {
+    const telemetry: RuntimeTransportTelemetryEvent[] = [];
+    const remote = await createStartedTransport('node-b', {
+      telemetry: (event) => telemetry.push(event),
+      idempotencyProvider: {
+        claim() {
+          throw new Error('durable idempotency unavailable');
+        },
+      },
+    });
+    const remoteUrl = remote.getListeningUrl();
+    if (!remoteUrl) {
+      throw new Error('Expected remote listening URL');
+    }
+    const local = await createStartedTransport('node-a', {
+      peers: { 'node-b': remoteUrl },
+    });
+    const received: string[] = [];
+    const unsubscribe = remote.subscribe((event) => {
+      received.push(event.message.type);
+    });
+
+    await local.connect('node-b');
+    const remotePeer = (
+      remote as unknown as {
+        peers: Map<string, { socket: WebSocket }>;
+      }
+    ).peers.get('node-a');
+    if (!remotePeer) {
+      throw new Error('Expected remote peer');
+    }
+
+    const frame = createRuntimeTransportFrame({
+      source: createRuntimeNodeIdentity({
+        nodeAddress: 'node-a',
+        nodeId: 'node-a',
+        incarnation: 'node-a-boot',
+      }),
+      destination: createRuntimeNodeIdentity({
+        nodeAddress: 'node-b',
+        nodeId: 'node-b',
+        incarnation: 'node-b-boot',
+      }),
+      messageId: 'node-a:node-a-boot:node-b:provider-error-1',
+      sequence: 1,
+      message: { type: 'PROVIDER_ERROR_FRAME' },
+    });
+
+    await (
+      remote as unknown as {
+        handleRuntimeFrame: (
+          sourceNodeAddress: string,
+          socket: WebSocket,
+          data: Buffer
+        ) => Promise<void>;
+      }
+    ).handleRuntimeFrame('node-a', remotePeer.socket, Buffer.from(JSON.stringify(frame)));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+
+    expect(received).not.toContain('PROVIDER_ERROR_FRAME');
+    expect(remote.getStats()).toMatchObject({
+      idempotencyProviderEnabled: true,
+      idempotencyProviderErrorCount: 1,
+      lastIdempotencyProviderErrorMessage: 'durable idempotency unavailable',
+      malformedFramesDropped: 0,
+      validationFramesDropped: 0,
+    });
+    expect(remote.getPeerStats('node-a')).toMatchObject({
+      idempotencyProviderErrorCount: 1,
+      malformedFramesDropped: 0,
+      validationFramesDropped: 0,
+    });
+    expect(remote.isConnected('node-a')).toBe(false);
+    expect(telemetry).toContainEqual(
+      expect.objectContaining({
+        type: 'idempotency.provider.error',
+        peerNodeAddress: 'node-a',
+        reason: 'durable idempotency unavailable',
+      })
+    );
+    expect(telemetry).toContainEqual(
+      expect.objectContaining({
+        type: 'frame.dropped',
+        peerNodeAddress: 'node-a',
+        reason: 'Runtime idempotency provider claim failed.',
+        dropCode: 'idempotency_provider_error',
+      })
+    );
     unsubscribe();
   });
 

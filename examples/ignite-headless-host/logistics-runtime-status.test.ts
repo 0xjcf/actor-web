@@ -1,9 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import {
   createInitialLogisticsRuntimeStatusView,
+  type LogisticsRuntimeIdempotencyStatus,
   type LogisticsRuntimeStatusResponse,
   reduceLogisticsRuntimeStatusView,
 } from './logistics-runtime-status';
+
+function createIdempotencyStatus(
+  overrides: Partial<LogisticsRuntimeIdempotencyStatus> = {}
+): LogisticsRuntimeIdempotencyStatus {
+  return {
+    windowSize: 1024,
+    duplicateFramesDropped: 0,
+    providerEnabled: false,
+    providerClaimCount: 0,
+    providerDuplicateCount: 0,
+    providerErrorCount: 0,
+    ...overrides,
+  };
+}
 
 function createStatusResponse(
   overrides: Partial<LogisticsRuntimeStatusResponse['transport']> = {}
@@ -26,9 +41,11 @@ function createStatusResponse(
           connected: true,
           fresh: true,
           staleAfterMs: 45_000,
+          idempotency: createIdempotencyStatus(),
           lastSeenAt: '2026-04-30T15:00:00.000Z',
         },
       ],
+      idempotency: createIdempotencyStatus(),
       workerConnected: true,
       workerPeerFresh: true,
       workerPeer: {
@@ -37,6 +54,7 @@ function createStatusResponse(
         connected: true,
         fresh: true,
         staleAfterMs: 45_000,
+        idempotency: createIdempotencyStatus(),
         lastSeenAt: '2026-04-30T15:00:00.000Z',
       },
       providerConnected: false,
@@ -47,6 +65,7 @@ function createStatusResponse(
         connected: false,
         fresh: false,
         staleAfterMs: 45_000,
+        idempotency: createIdempotencyStatus(),
       },
       ...overrides,
     },
@@ -82,8 +101,10 @@ describe('logistics runtime status adapter', () => {
     expect(view.metrics).toEqual([
       { label: 'Connected nodes', value: '1', unavailable: false },
       { label: 'Known peers', value: '1', unavailable: false },
-      { label: 'Frames sent', value: 'unavailable', unavailable: true },
-      { label: 'Frames received', value: 'unavailable', unavailable: true },
+      { label: 'Duplicate drops', value: '0', unavailable: false },
+      { label: 'Provider idempotency errors', value: 'disabled', unavailable: true },
+      { label: 'Last provider error at', value: 'unavailable', unavailable: true },
+      { label: 'Last provider error message', value: 'unavailable', unavailable: true },
     ]);
     expect(view.nodes.find((node) => node.id === 'worker-runtime')).toMatchObject({
       statusLabel: 'Connected',
@@ -95,6 +116,26 @@ describe('logistics runtime status adapter', () => {
       statusLabel: 'Disabled',
       processLabel: 'provider runtime disabled',
     });
+  });
+
+  it('surfaces duplicate drops from the default in-memory transport status', () => {
+    const view = reduceLogisticsRuntimeStatusView(
+      createInitialLogisticsRuntimeStatusView(),
+      createStatusResponse({
+        idempotency: createIdempotencyStatus({
+          duplicateFramesDropped: 2,
+        }),
+      })
+    );
+
+    expect(view.metrics).toEqual([
+      { label: 'Connected nodes', value: '1', unavailable: false },
+      { label: 'Known peers', value: '1', unavailable: false },
+      { label: 'Duplicate drops', value: '2', unavailable: false },
+      { label: 'Provider idempotency errors', value: 'disabled', unavailable: true },
+      { label: 'Last provider error at', value: 'unavailable', unavailable: true },
+      { label: 'Last provider error message', value: 'unavailable', unavailable: true },
+    ]);
   });
 
   it('maps a disconnected worker runtime from /runtime/status', () => {
@@ -109,6 +150,7 @@ describe('logistics runtime status adapter', () => {
             connected: false,
             fresh: false,
             staleAfterMs: 45_000,
+            idempotency: createIdempotencyStatus(),
             disconnectedAt: '2026-04-30T15:03:00.000Z',
             staleReason: 'heartbeat timed out',
           },
@@ -121,6 +163,7 @@ describe('logistics runtime status adapter', () => {
           connected: false,
           fresh: false,
           staleAfterMs: 45_000,
+          idempotency: createIdempotencyStatus(),
           disconnectedAt: '2026-04-30T15:03:00.000Z',
           staleReason: 'heartbeat timed out',
         },
@@ -149,6 +192,7 @@ describe('logistics runtime status adapter', () => {
             connected: false,
             fresh: false,
             staleAfterMs: 45_000,
+            idempotency: createIdempotencyStatus(),
             disconnectedAt: '2026-04-30T15:03:00.000Z',
           },
         ],
@@ -160,6 +204,7 @@ describe('logistics runtime status adapter', () => {
           connected: false,
           fresh: false,
           staleAfterMs: 45_000,
+          idempotency: createIdempotencyStatus(),
           disconnectedAt: '2026-04-30T15:03:00.000Z',
         },
       })
@@ -186,6 +231,7 @@ describe('logistics runtime status adapter', () => {
             connected: true,
             fresh: true,
             staleAfterMs: 45_000,
+            idempotency: createIdempotencyStatus(),
             lastSeenAt: '2026-04-30T15:00:00.000Z',
           },
           {
@@ -194,6 +240,7 @@ describe('logistics runtime status adapter', () => {
             connected: true,
             fresh: true,
             staleAfterMs: 45_000,
+            idempotency: createIdempotencyStatus(),
             lastSeenAt: '2026-04-30T15:00:01.000Z',
           },
         ],
@@ -205,6 +252,7 @@ describe('logistics runtime status adapter', () => {
           connected: true,
           fresh: true,
           staleAfterMs: 45_000,
+          idempotency: createIdempotencyStatus(),
           lastSeenAt: '2026-04-30T15:00:01.000Z',
         },
       }),
@@ -236,6 +284,7 @@ describe('logistics runtime status adapter', () => {
           connected: true,
           fresh: true,
           staleAfterMs: 45_000,
+          idempotency: createIdempotencyStatus(),
           lastSeenAt: '2026-04-30T15:00:01.000Z',
         },
       }),
@@ -254,5 +303,55 @@ describe('logistics runtime status adapter', () => {
       detail:
         'Provider shipment workflow boundary hosted by container; signal source is manual UI.',
     });
+  });
+
+  it('surfaces transport idempotency metrics when the durable provider is enabled', () => {
+    const view = reduceLogisticsRuntimeStatusView(
+      createInitialLogisticsRuntimeStatusView(),
+      createStatusResponse({
+        idempotency: createIdempotencyStatus({
+          duplicateFramesDropped: 3,
+          providerEnabled: true,
+          providerDuplicateCount: 3,
+          providerErrorCount: 1,
+        }),
+      })
+    );
+
+    expect(view.metrics).toEqual([
+      { label: 'Connected nodes', value: '1', unavailable: false },
+      { label: 'Known peers', value: '1', unavailable: false },
+      { label: 'Duplicate drops', value: '3', unavailable: false },
+      { label: 'Provider idempotency errors', value: '1', unavailable: false },
+      { label: 'Last provider error at', value: 'none', unavailable: false },
+      { label: 'Last provider error message', value: 'none', unavailable: false },
+    ]);
+  });
+
+  it('surfaces the last provider idempotency error details in operator metrics', () => {
+    const view = reduceLogisticsRuntimeStatusView(
+      createInitialLogisticsRuntimeStatusView(),
+      createStatusResponse({
+        idempotency: createIdempotencyStatus({
+          providerEnabled: true,
+          providerErrorCount: 1,
+          lastProviderErrorAt: '2026-04-30T15:04:00.000Z',
+          lastProviderErrorMessage: 'durable idempotency unavailable',
+        }),
+      })
+    );
+
+    expect(view.metrics).toEqual([
+      { label: 'Connected nodes', value: '1', unavailable: false },
+      { label: 'Known peers', value: '1', unavailable: false },
+      { label: 'Duplicate drops', value: '0', unavailable: false },
+      { label: 'Provider idempotency errors', value: '1', unavailable: false },
+      { label: 'Last provider error at', value: '2026-04-30T15:04:00.000Z', unavailable: false },
+      {
+        label: 'Last provider error message',
+        value: 'durable idempotency unavailable',
+        unavailable: false,
+      },
+    ]);
   });
 });

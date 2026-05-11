@@ -15,6 +15,7 @@ import {
   createRuntimeNodeIdentity,
   createRuntimeTransportFrame,
 } from '../runtime-transport-contract.js';
+import { createInMemoryRuntimeTransportIdempotencyProvider } from '../runtime-transport-idempotency.js';
 import type { RuntimeTransportTelemetryEvent } from '../runtime-transport-telemetry.js';
 import { defineActor } from '../unified-actor-builder.js';
 
@@ -320,6 +321,191 @@ describe('BrowserWebSocketMessageTransport', () => {
       })
     );
 
+    unsubscribeBrowser();
+  });
+
+  it('drops duplicate runtime frames across browser transport restarts when a provider is configured', async () => {
+    const node = await createStartedNodeTransport('node-b');
+    const nodeUrl = node.getListeningUrl();
+    if (!nodeUrl) {
+      throw new Error('Expected node listening URL');
+    }
+    const idempotencyProvider = createInMemoryRuntimeTransportIdempotencyProvider();
+    const firstBrowser = createBrowserTransport('worker-a', {
+      incarnation: 'worker-a-boot',
+      idempotencyProvider,
+      peers: { 'node-b': nodeUrl },
+    });
+    const firstReceived: string[] = [];
+    const firstUnsubscribe = firstBrowser.subscribe((event) => {
+      firstReceived.push(event.message.type);
+    });
+
+    await firstBrowser.connect('node-b');
+    const firstNodePeer = (
+      node as unknown as {
+        peers: Map<string, { socket: NodeWebSocket }>;
+      }
+    ).peers.get('worker-a');
+    if (!firstNodePeer) {
+      throw new Error('Expected first browser node peer socket');
+    }
+
+    const firstFrame = createRuntimeTransportFrame({
+      source: createRuntimeNodeIdentity({
+        nodeAddress: 'node-b',
+        nodeId: 'node-b',
+        incarnation: 'node-b-boot',
+      }),
+      destination: createRuntimeNodeIdentity({
+        nodeAddress: 'worker-a',
+        nodeId: 'worker-a',
+        incarnation: 'worker-a-boot',
+      }),
+      messageId: 'node-b:node-b-boot:worker-a:duplicate-restart-1',
+      sequence: 1,
+      message: { type: 'BROWSER_RESTART_DUPLICATE' },
+    });
+
+    firstNodePeer.socket.send(JSON.stringify(firstFrame));
+    await waitFor(
+      () => firstReceived.includes('BROWSER_RESTART_DUPLICATE'),
+      'Expected first browser restart frame'
+    );
+    firstUnsubscribe();
+    await firstBrowser.stop();
+
+    const restartedBrowser = createBrowserTransport('worker-a', {
+      incarnation: 'worker-a-restart',
+      idempotencyProvider,
+      peers: { 'node-b': nodeUrl },
+    });
+    const restartedReceived: string[] = [];
+    const restartedUnsubscribe = restartedBrowser.subscribe((event) => {
+      restartedReceived.push(event.message.type);
+    });
+
+    await restartedBrowser.connect('node-b');
+    const restartedNodePeer = (
+      node as unknown as {
+        peers: Map<string, { socket: NodeWebSocket }>;
+      }
+    ).peers.get('worker-a');
+    if (!restartedNodePeer) {
+      throw new Error('Expected restarted browser node peer socket');
+    }
+
+    const duplicateAfterRestart = createRuntimeTransportFrame({
+      source: createRuntimeNodeIdentity({
+        nodeAddress: 'node-b',
+        nodeId: 'node-b',
+        incarnation: 'node-b-boot',
+      }),
+      destination: createRuntimeNodeIdentity({
+        nodeAddress: 'worker-a',
+        nodeId: 'worker-a',
+        incarnation: 'worker-a-restart',
+      }),
+      messageId: 'node-b:node-b-boot:worker-a:duplicate-restart-1',
+      sequence: 1,
+      message: { type: 'BROWSER_RESTART_DUPLICATE' },
+    });
+
+    restartedNodePeer.socket.send(JSON.stringify(duplicateAfterRestart));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+
+    expect(restartedReceived).not.toContain('BROWSER_RESTART_DUPLICATE');
+    expect(restartedBrowser.getStats()).toMatchObject({
+      duplicateFramesDropped: 1,
+      idempotencyProviderEnabled: true,
+      idempotencyProviderDuplicateCount: 1,
+    });
+    restartedUnsubscribe();
+  });
+
+  it('surfaces browser idempotency provider failures without accepting the frame', async () => {
+    const node = await createStartedNodeTransport('node-b');
+    const nodeUrl = node.getListeningUrl();
+    if (!nodeUrl) {
+      throw new Error('Expected node listening URL');
+    }
+    const telemetry: RuntimeTransportTelemetryEvent[] = [];
+    const browser = createBrowserTransport('worker-a', {
+      telemetry: (event) => telemetry.push(event),
+      idempotencyProvider: {
+        claim() {
+          throw new Error('durable idempotency unavailable');
+        },
+      },
+      peers: { 'node-b': nodeUrl },
+    });
+    const receivedByBrowser: string[] = [];
+    const unsubscribeBrowser = browser.subscribe((event) => {
+      receivedByBrowser.push(event.message.type);
+    });
+
+    await browser.connect('node-b');
+    const nodePeer = (
+      node as unknown as {
+        peers: Map<string, { socket: NodeWebSocket }>;
+      }
+    ).peers.get('worker-a');
+    if (!nodePeer) {
+      throw new Error('Expected Node peer socket');
+    }
+
+    const frame = createRuntimeTransportFrame({
+      source: createRuntimeNodeIdentity({
+        nodeAddress: 'node-b',
+        nodeId: 'node-b',
+        incarnation: 'node-b-boot',
+      }),
+      destination: createRuntimeNodeIdentity({
+        nodeAddress: 'worker-a',
+        nodeId: 'worker-a',
+        incarnation: 'worker-a-boot',
+      }),
+      messageId: 'node-b:node-b-boot:worker-a:provider-error-1',
+      sequence: 1,
+      message: { type: 'BROWSER_PROVIDER_ERROR_FRAME' },
+    });
+
+    nodePeer.socket.send(JSON.stringify(frame));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+
+    expect(receivedByBrowser).not.toContain('BROWSER_PROVIDER_ERROR_FRAME');
+    expect(browser.getStats()).toMatchObject({
+      idempotencyProviderEnabled: true,
+      idempotencyProviderErrorCount: 1,
+      lastIdempotencyProviderErrorMessage: 'durable idempotency unavailable',
+      malformedFramesDropped: 0,
+      validationFramesDropped: 0,
+    });
+    expect(browser.getPeerStats('node-b')).toMatchObject({
+      idempotencyProviderErrorCount: 1,
+      malformedFramesDropped: 0,
+      validationFramesDropped: 0,
+    });
+    expect(browser.isConnected('node-b')).toBe(false);
+    expect(telemetry).toContainEqual(
+      expect.objectContaining({
+        type: 'idempotency.provider.error',
+        peerNodeAddress: 'node-b',
+        reason: 'durable idempotency unavailable',
+      })
+    );
+    expect(telemetry).toContainEqual(
+      expect.objectContaining({
+        type: 'frame.dropped',
+        peerNodeAddress: 'node-b',
+        reason: 'Runtime idempotency provider claim failed.',
+        dropCode: 'idempotency_provider_error',
+      })
+    );
     unsubscribeBrowser();
   });
 

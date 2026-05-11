@@ -61,6 +61,31 @@ describe('runtime transport telemetry export', () => {
     expect(JSON.parse(serializeRuntimeTransportTelemetryEvent(testEvent))).toEqual(testEvent);
   });
 
+  it('preserves additive idempotency telemetry fields during serialization', () => {
+    expect(
+      JSON.parse(
+        serializeRuntimeTransportTelemetryEvent({
+          ...testEvent,
+          type: 'frame.dropped',
+          reason: 'provider unavailable',
+          dropCode: 'idempotency_provider_error',
+          idempotencyScope:
+            'runtime-transport:local:server-node:server-node:peer:worker-node:worker-node',
+          idempotencyKey:
+            'runtime-transport:local:server-node:server-node:peer:worker-node:worker-node:message:message-1',
+        })
+      )
+    ).toMatchObject({
+      type: 'frame.dropped',
+      reason: 'provider unavailable',
+      dropCode: 'idempotency_provider_error',
+      idempotencyScope:
+        'runtime-transport:local:server-node:server-node:peer:worker-node:worker-node',
+      idempotencyKey:
+        'runtime-transport:local:server-node:server-node:peer:worker-node:worker-node:message:message-1',
+    });
+  });
+
   it('writes Node telemetry JSONL files without requiring an observability backend', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'actor-web-telemetry-'));
     tempDirectories.push(directory);

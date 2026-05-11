@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ActorMessage, MessageTransport } from '../actor-system.js';
 import { createInMemoryRuntimePeerDiscoveryProvider } from '../runtime-peer-discovery.js';
+import { createInMemoryRuntimeTransportIdempotencyProvider } from '../runtime-transport-idempotency.js';
 import { startActorWebNode } from '../start-actor-web-node.js';
 import { actor, defineActorWebTopology, node, tool } from '../topology.js';
 import { defineActor } from '../unified-actor-builder.js';
@@ -220,6 +221,44 @@ describe('startActorWebNode', () => {
       });
     } finally {
       await serviceWorkerNode.stop();
+    }
+  });
+
+  it('forwards browser transport idempotency options into runtime status', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        worker: node('worker-node'),
+      },
+      actors: {
+        proof: actor({
+          id: 'proof',
+          node: 'worker',
+          behavior: createCounterBehavior,
+        }),
+      },
+    });
+    const idempotencyProvider = createInMemoryRuntimeTransportIdempotencyProvider();
+    const workerNode = await startActorWebNode(topology, {
+      node: 'worker',
+      transport: {
+        heartbeatIntervalMs: 0,
+        idempotencyWindowSize: 16,
+        idempotencyProvider,
+      },
+    });
+
+    try {
+      expect(workerNode.getTransportStatus()).toMatchObject({
+        idempotency: {
+          windowSize: 16,
+          providerEnabled: true,
+          providerClaimCount: 0,
+          providerDuplicateCount: 0,
+          providerErrorCount: 0,
+        },
+      });
+    } finally {
+      await workerNode.stop();
     }
   });
 

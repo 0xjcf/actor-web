@@ -4,6 +4,7 @@ import {
   deriveRuntimePeerStatus,
   getRuntimePeerStatus,
   getRuntimeTransportStatus,
+  type RuntimeTransportIdempotencyStatus,
 } from '../runtime-transport-status.js';
 import type {
   RuntimeTransportPeerStats,
@@ -66,6 +67,11 @@ function createPeerStats(
     backpressureDropCount: 0,
     duplicateFramesDropped: 0,
     idempotencyCacheEvictions: 0,
+    idempotencyWindowSize: 1024,
+    idempotencyProviderEnabled: false,
+    idempotencyProviderClaimCount: 0,
+    idempotencyProviderDuplicateCount: 0,
+    idempotencyProviderErrorCount: 0,
     malformedFramesDropped: 0,
     validationFramesDropped: 0,
     sequenceGapCount: 0,
@@ -96,6 +102,11 @@ function createTransportStats(
     backpressureDropCount: 0,
     duplicateFramesDropped: 0,
     idempotencyCacheEvictions: 0,
+    idempotencyWindowSize: 1024,
+    idempotencyProviderEnabled: false,
+    idempotencyProviderClaimCount: 0,
+    idempotencyProviderDuplicateCount: 0,
+    idempotencyProviderErrorCount: 0,
     malformedFramesDropped: 0,
     validationFramesDropped: 0,
     sequenceGapCount: 0,
@@ -117,6 +128,18 @@ function cloneTransportStats(stats: RuntimeTransportStats): RuntimeTransportStat
   };
 }
 
+function expectDefaultIdempotencyStatus(
+  status: RuntimeTransportIdempotencyStatus | undefined
+): void {
+  expect(status).toMatchObject({
+    windowSize: 1024,
+    providerEnabled: false,
+    providerClaimCount: 0,
+    providerDuplicateCount: 0,
+    providerErrorCount: 0,
+  });
+}
+
 describe('runtime transport status', () => {
   it('derives connected and fresh peer status from recent peer stats', () => {
     const status = deriveRuntimePeerStatus('worker-node', {
@@ -133,6 +156,7 @@ describe('runtime transport status', () => {
       fresh: true,
       staleAfterMs: 30_000,
     });
+    expectDefaultIdempotencyStatus(status.idempotency);
   });
 
   it('marks connected peers stale when last seen exceeds the freshness window', () => {
@@ -193,12 +217,17 @@ describe('runtime transport status', () => {
     });
 
     expect(status.connectedNodes).toEqual(['fresh-worker']);
+    expectDefaultIdempotencyStatus(status.idempotency);
     expect(status.peers).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           nodeAddress: 'fresh-worker',
           connected: true,
           fresh: true,
+          idempotency: expect.objectContaining({
+            windowSize: 1024,
+            providerEnabled: false,
+          }),
         }),
         expect.objectContaining({
           nodeAddress: 'stale-worker',
@@ -213,5 +242,49 @@ describe('runtime transport status', () => {
         }),
       ])
     );
+  });
+
+  it('surfaces additive idempotency provider status from transport stats', () => {
+    const transport = new StatusTestTransport(['worker-node'], {
+      ...createTransportStats({
+        'worker-node': createPeerStats('worker-node', {
+          idempotencyProviderEnabled: true,
+          idempotencyProviderClaimCount: 2,
+          idempotencyProviderDuplicateCount: 1,
+          idempotencyProviderErrorCount: 1,
+          lastIdempotencyProviderErrorAt: '2026-04-29T10:00:10.000Z',
+          lastIdempotencyProviderErrorMessage: 'provider unavailable',
+        }),
+      }),
+      idempotencyProviderEnabled: true,
+      idempotencyProviderClaimCount: 2,
+      idempotencyProviderDuplicateCount: 1,
+      idempotencyProviderErrorCount: 1,
+      lastIdempotencyProviderErrorAt: '2026-04-29T10:00:10.000Z',
+      lastIdempotencyProviderErrorMessage: 'provider unavailable',
+    });
+
+    expect(getRuntimeTransportStatus(transport)).toMatchObject({
+      idempotency: {
+        windowSize: 1024,
+        providerEnabled: true,
+        providerClaimCount: 2,
+        providerDuplicateCount: 1,
+        providerErrorCount: 1,
+        lastProviderErrorAt: '2026-04-29T10:00:10.000Z',
+        lastProviderErrorMessage: 'provider unavailable',
+      },
+      peers: [
+        expect.objectContaining({
+          nodeAddress: 'worker-node',
+          idempotency: expect.objectContaining({
+            providerEnabled: true,
+            providerClaimCount: 2,
+            providerDuplicateCount: 1,
+            providerErrorCount: 1,
+          }),
+        }),
+      ],
+    });
   });
 });
