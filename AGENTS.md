@@ -56,10 +56,16 @@ In Codex, prefer `.fas/state/codex-orchestration.json` plus `.fas/state/codex-su
 - Use Codex subagents only when the user explicitly requests `4-agent` or `6-agent` mode, or when `.fas/state/codex-orchestration.json` says delegated execution is required.
 - After running `fas implement`, always inspect `.fas/state/codex-orchestration.json` before deciding whether to spawn subagents.
 - If delegated execution is required, spawn only the listed steps, issue a provenance token with `fas spawn-subagent <step-key> --json`, and record lifecycle progress with `fas record-agent-execution <step-key> <started|heartbeat|handoff|completed|failed|closed> --token <value>` or `--token-id <id>`.
+- Record delegated lifecycle events sequentially. Do not parallelize `handoff` and `completed`, and do not record `completed` until the handoff artifact or summary is actually present.
+- Treat a delegated agent's word "completed" as advisory until the root session has checked changed files, verification evidence, and handoff content for that step.
+- When a delegated step appears stalled, request a checkpoint before replacing it. If the agent can still respond, require a partial-state handoff with files touched, verification attempted, blockers, and the next safe resume point.
+- Before a long verification run or when blocked, code-writing delegated agents should proactively return that same partial-state handoff instead of disappearing into a long silence window.
+- Treat stale-running diagnostics as advisory only. They do not auto-close agents; if the checkpoint request fails, inspect partial state and then record `failed` before takeover or reissue. Use `closed` only when intentionally abandoning a still-running non-failed step if the state machine supports that path.
 - After recording a completed read-only Codex subagent step, close that completed subagent thread before spawning more agents so the root session does not exhaust local thread capacity.
 - `fas-implementer` is also the default Codex role skill for `fas_senior_engineer` and `fas_validator`.
 - `fas-reviewer` is also the default Codex role skill for `fas_verifier`, `fas_qa`, `fas_sre`, and `fas_documenter`.
 - Planner artifacts and commit plans remain the source of truth over any generic skill defaults.
+- Handoffs must cite changed files, ChangeSet or planAlignment evidence, verification receipts, and any memory constraints used or intentionally overridden.
 
 ## Pipeline Owners vs Conceptual Roles
 
@@ -76,6 +82,14 @@ After planning, always read `contextualMemory` in `.fas/state/task-packet.json` 
 - **#4+ (supporting)**: Additional context that may inform edge cases or integration points.
 
 If `contextualMemory` references a decision or incident, honor it unless the task explicitly overrides it. When implementation diverges from a memory entry, document why in the commit message.
+
+Shared evidence order:
+
+1. `task-packet.json` `contextualMemory`
+2. `expectedChangeEnvelope`, current `ChangeSet`, `planAlignment`, and refreshed downstream context
+3. Raw `.fas/memory/*.md` projections only as fallback or supporting context
+
+When SQLite-backed `memory_records` are available, treat them as authoritative. Markdown memory files remain the projection or fallback surface until promotion completes.
 
 ## Global Rules
 

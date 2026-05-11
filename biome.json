@@ -66,6 +66,7 @@
       "!**/.fas/queue/**",
       "!**/.fas/scripts/**",
       "!**/.fas/semantic/**",
+      "!**/.fas/memory/candidates/**",
       "!**/.fas/memory/entries/**",
       "!**/.fas/state/**",
       "!**/*.d.ts.map",

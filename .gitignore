@@ -131,17 +131,20 @@ mark-*.js
 # >>> FAS managed ignore block >>>
 # FAS runtime data and local workspace state (generated, do not commit)
 .fas/*
-!.fas/TASKS.md
-!.fas/architecture-rules.json
-!.fas/workspace-dependencies.json
+# Reviewable memory candidates are promoted separately with `fas promote-memory`
 !.fas/memory/
 !.fas/memory/*.md
+.fas/memory/candidates/
 .fas/memory/entries/
 .fas/memory/*.db
 .fas/memory/*.db-shm
 .fas/memory/*.db-wal
+!.fas/TASKS.md
+!.fas/architecture-rules.json
+!.fas/workspace-dependencies.json
 !.fas/tasks/
 .fas/tasks/*
 !.fas/tasks/*.md
+.codex/
 fas
 # <<< FAS managed ignore block <<<
