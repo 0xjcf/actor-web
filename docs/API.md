@@ -24,15 +24,13 @@ Current guarantees:
   admission.
 - Topology runners expose normalized runtime transport status with peer
   freshness and heartbeat-derived stale detection.
-- Gateway streams detect sequence gaps and resync from a bounded in-memory replay
-  buffer, falling back to a latest snapshot when the requested range is no
-  longer available.
+- Gateway streams detect sequence gaps and resync from a bounded replay tail,
+  using in-memory storage by default and optionally restoring that tail from an
+  app-provided durable replay provider.
 - Topology runners can use a runtime peer discovery provider instead of only
   static `peers` maps.
 - Runtime transport telemetry, exporter plumbing, and the Node JSONL sink are
   available for transport observability.
-- Durable replay storage remains a follow-up hardening slice, distinct from the
-  existing bounded gateway replay/resync path.
 
 ## Runtime Locations
 
@@ -865,15 +863,23 @@ Gateway replay/resync:
 - Each gateway stream is ordered by `sequence`.
 - Gateway-backed sources detect missing sequence numbers, mark transport status
   as `degraded`, and request `resync` from the first missing sequence.
-- The served gateway keeps a bounded in-memory replay buffer for snapshots,
-  events, and transition frames.
+- The served gateway keeps a bounded replay tail for snapshots, events, and
+  transition frames.
+- By default that replay tail is in-memory only. `createRuntimeGatewayHub()`
+  also accepts an optional `replayStorage` provider that can load/store the
+  bounded tail by `replaySessionId` plus an internal scoped storage stream key
+  derived from the visible `streamId` and subscription `scope`.
+- Replay storage load/store failures stay non-fatal. Use
+  `onReplayStorageError` if you need an operator hook for degraded durable
+  recovery; those events still report the visible client `streamId`.
 - If the requested range is still buffered, the gateway replays those frames.
 - If the range is unavailable, the gateway sends a fresh latest snapshot and
   then resumes live status/events.
 
-This is projection recovery, not durable event storage. If a process restarts or
-the replay buffer has rolled past the missing range, clients recover to the
-latest snapshot.
+This is projection recovery, not event sourcing, exactly-once delivery, or
+cluster transport. The optional provider only hardens the gateway-owned replay
+tail; if the stored range is unavailable, clients still recover to the latest
+snapshot.
 
 ## Runtime Transport
 

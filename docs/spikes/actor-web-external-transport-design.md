@@ -137,9 +137,10 @@ hexagonal boundary or the actor model.
   and per-frame signing remain deployment/application concerns
 - actor `send` remains at-most-once by default; internal runtime control traffic
   has bounded ack/retry support
-- gateway projection replay is bounded and in-memory: clients can recover from
-  sequence gaps when the range is still buffered, otherwise they fall back to the
-  latest snapshot
+- gateway projection replay now supports an optional durable replay-storage
+  provider on the gateway hub, but the contract is still a bounded projection
+  recovery tail rather than a transport log or event-sourcing system; durable
+  provider keys are scoped by the visible stream id plus subscription scope
 - `NodeWebSocketMessageTransport` has basic lifecycle and stale-peer handling,
   but is not a fully hardened production transport
 - `BrowserWebSocketMessageTransport` is outbound-only; browser-safe topology
@@ -413,6 +414,8 @@ Near-term:
 - source-side sequence gap detection and resync request from the first missing
   sequence
 - latest-snapshot fallback when the requested replay range is unavailable
+- optional durable replay provider for the gateway-owned bounded tail so replay
+  can survive gateway restart without changing the transport contract
 
 Later:
 
@@ -518,12 +521,16 @@ adapters, and multi-machine prove-out.
 ### Phase 4: Projection hardening
 
 - bounded in-memory gateway replay for projection stream gaps
+- optional durable storage for that gateway-owned replay tail
 - source-side gap detection and `resync` requests
 - latest-snapshot fallback when the replay range is unavailable
+- optional `onReplayStorageError` observability hook for non-fatal durable
+  replay load/store failures
 
-Status: complete for bounded gateway replay and latest-snapshot fallback.
-Remaining production work is durable latest snapshot/event replay providers that
-survive owner restart or process loss.
+Status: complete for bounded gateway replay, latest-snapshot fallback, and the
+optional gateway replay-storage provider. Remaining production work is broader
+projection recovery hardening, such as durable latest snapshots/event replay
+where deployment needs justify it.
 
 ### Phase 5: Shared-contract wire promotion
 
