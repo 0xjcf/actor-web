@@ -30,6 +30,14 @@ not runtime cluster transport.
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+## Affected files
+
+- `packages/actor-core-runtime/src/runtime-gateway.ts`
+- `packages/actor-core-runtime/src/unit/runtime-gateway.test.ts`
+- `packages/actor-core-runtime/src/index.ts`
+- `docs/API.md`
+- `docs/spikes/actor-web-external-transport-design.md`
+
 ## Scope
 
 - Add a storage-provider interface for gateway replay frames.
