@@ -135,6 +135,9 @@ hexagonal boundary or the actor model.
   durable membership store
 - auth is static token/provider hooks; TLS, certificate management, OAuth/OIDC,
   and per-frame signing remain deployment/application concerns
+- production discovery adapters should translate deployment-managed endpoint
+  data into `RuntimePeerDiscoveryRecord` values without copying secrets into
+  discovery metadata, runtime status, or transport telemetry
 - actor `send` remains at-most-once by default; internal runtime control traffic
   has bounded ack/retry support
 - gateway projection replay now supports an optional durable replay-storage
@@ -228,6 +231,9 @@ Each Actor-Web node maintains direct connections to peer nodes and exchanges
 
 Best fit for the first real external transport because it matches the current
 runtime port and keeps actor ownership and delivery semantics explicit.
+Deployment-specific discovery should stay behind the peer-discovery port and use
+provider-neutral endpoint normalization rather than hard-coding infrastructure
+SDKs into Actor-Web core.
 
 ### Option B: Broker-backed transport with NATS
 

@@ -750,6 +750,36 @@ interface RuntimePeerDiscoveryProvider {
 }
 ```
 
+When a deployment system gives you endpoint parts instead of a final URL, use
+`createRuntimePeerDiscoveryRecord(...)` to normalize provider-managed host/port
+input into the same `RuntimePeerDiscoveryRecord` shape the runtime already
+consumes:
+
+```ts
+const peer = createRuntimePeerDiscoveryRecord({
+  nodeAddress: 'worker-node',
+  protocol: 'wss',
+  host: 'worker.internal',
+  port: 443,
+  path: '/runtime',
+  metadata: {
+    zone: 'use1',
+    role: 'worker',
+  },
+});
+```
+
+The helper is provider-neutral and deterministic. It is for endpoint mapping,
+not secret distribution. Keep auth secrets in `token` factories and
+`verifyToken` callbacks, not in discovery metadata. Secret-like discovery
+metadata keys are dropped before they become runtime peer records. Secret-like
+query parameter keys are also dropped from both endpoint-part input and raw
+`url` input. Raw URLs must use `ws:` or `wss:` and must not include embedded
+username/password credentials. The helper does not inspect values for
+benign-looking keys, so secrets must stay in auth providers rather than
+discovery inputs. The same public boundary is enforced when records are passed
+directly to static or in-memory discovery providers.
+
 Use `createStaticRuntimePeerDiscoveryProvider(...)` for static deployment
 metadata and generated config. Use `createInMemoryRuntimePeerDiscoveryProvider`
 for tests, examples, and local multi-process demos. Production adapters can map

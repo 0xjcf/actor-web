@@ -255,6 +255,14 @@ Restart-persistent duplicate suppression is now available as an opt-in
 provider-backed transport capability; it does not change the direct-peer,
 at-most-once transport contract.
 
+Actor-Web core stays provider-neutral in this stage. A deployment adapter may
+translate service-discovery output into `RuntimePeerDiscoveryRecord` values, but
+it should not introduce cloud SDKs or provider-owned lifecycle into the runtime.
+Use deployment-managed auth token factories/verifiers for peer admission, keep
+secrets out of discovery metadata and telemetry, and treat TLS termination,
+certificate rotation, and secret rotation as deployment responsibilities outside
+Actor-Web core.
+
 ## UI Enhancements
 
 The logistics control tower should expose the deployment topology clearly:
@@ -299,6 +307,8 @@ Stage 2 tests:
 Stage 3 tests:
 
 - Verify authenticated peer joins and rejected unauthenticated joins.
+- Verify `/runtime/status` exposes rejected peer reasons and stale-peer
+  diagnostics without exposing secrets.
 - Verify reconnect/resync after browser disconnect.
 - Verify duplicate runtime frame IDs are dropped by the in-memory idempotency
   cache when no provider is configured.

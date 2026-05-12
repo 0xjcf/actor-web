@@ -524,8 +524,8 @@
 
 - Title: Production discovery and secure deployment adapters
 - Mode: 6-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/production-discovery-and-secure-deployment-adapters.md
 - Verification lane: full
 - Policy sensitivity: standard

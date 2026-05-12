@@ -57,15 +57,11 @@ contracts without hard-coding one infrastructure provider into the runtime.
 ## Affected files
 
 - packages/actor-core-runtime/src/runtime-peer-discovery.ts
-- packages/actor-core-runtime/src/runtime-auth.ts
-- packages/actor-core-runtime/src/runtime-transport-status.ts
-- packages/actor-core-runtime/src/serve-actor-web-node.ts
-- packages/actor-core-runtime/src/start-actor-web-node.ts
 - packages/actor-core-runtime/src/index.ts
 - packages/actor-core-runtime/src/node.ts
+- packages/actor-core-runtime/src/browser.ts
 - packages/actor-core-runtime/src/unit/runtime-peer-discovery.test.ts
-- packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts
-- packages/actor-core-runtime/src/unit/start-actor-web-node.test.ts
+- packages/actor-core-runtime/src/unit/runtime-transport-status.test.ts
 - packages/actor-core-runtime/src/unit/node-websocket-message-transport.test.ts
 - packages/actor-core-runtime/src/unit/browser-websocket-message-transport.test.ts
 - docs/API.md
