@@ -85,12 +85,14 @@ export type {
 } from './runtime-gateway.js';
 export type {
   InMemoryRuntimePeerDiscoveryProvider,
+  RuntimePeerDiscoveryEndpointInput,
   RuntimePeerDiscoveryEvent,
   RuntimePeerDiscoveryProvider,
   RuntimePeerDiscoveryRecord,
 } from './runtime-peer-discovery.js';
 export {
   createInMemoryRuntimePeerDiscoveryProvider,
+  createRuntimePeerDiscoveryRecord,
   createStaticRuntimePeerDiscoveryProvider,
 } from './runtime-peer-discovery.js';
 export type {
