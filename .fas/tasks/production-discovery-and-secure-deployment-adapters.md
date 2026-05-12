@@ -41,6 +41,37 @@ contracts without hard-coding one infrastructure provider into the runtime.
   responsibilities.
 - Keep tests provider-neutral and avoid a cloud dependency on the default path.
 
+## Scope Amendments
+
+- Type: architecture-scope
+- Added at: 2026-05-12
+- Trigger: fas_architect identified low-confidence retrieval and commit-plan
+  drift toward unrelated CLI/graceful-shutdown files.
+- Decision: keep this slice on runtime discovery/auth/status seams and
+  provider-neutral docs/tests. Do not touch `packages/agent-workflow-cli`.
+- Non-goals confirmed: no cloud-provider SDK, Kubernetes/Consul/Nomad adapter,
+  broker transport, TLS/certificate manager, or multi-machine logistics proof.
+- Follow-up needed: re-run planner and commit planning before spawning the
+  code-writing senior engineer.
+
+## Affected files
+
+- packages/actor-core-runtime/src/runtime-peer-discovery.ts
+- packages/actor-core-runtime/src/runtime-auth.ts
+- packages/actor-core-runtime/src/runtime-transport-status.ts
+- packages/actor-core-runtime/src/serve-actor-web-node.ts
+- packages/actor-core-runtime/src/start-actor-web-node.ts
+- packages/actor-core-runtime/src/index.ts
+- packages/actor-core-runtime/src/node.ts
+- packages/actor-core-runtime/src/unit/runtime-peer-discovery.test.ts
+- packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts
+- packages/actor-core-runtime/src/unit/start-actor-web-node.test.ts
+- packages/actor-core-runtime/src/unit/node-websocket-message-transport.test.ts
+- packages/actor-core-runtime/src/unit/browser-websocket-message-transport.test.ts
+- docs/API.md
+- docs/actor-web-multi-process-deployment-demo-design.md
+- docs/spikes/actor-web-external-transport-design.md
+
 ## Non-Goals
 
 - No production cloud provider implementation unless a small local adapter is
