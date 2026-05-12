@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createInMemoryRuntimePeerDiscoveryProvider,
+  createRuntimePeerDiscoveryRecord,
   createStaticRuntimePeerDiscoveryProvider,
   type RuntimePeerDiscoveryEvent,
 } from '../runtime-peer-discovery.js';
@@ -30,6 +31,47 @@ describe('runtime peer discovery providers', () => {
         },
       },
     ]);
+  });
+
+  it('sanitizes direct records passed to static discovery providers', async () => {
+    const peer = {
+      nodeAddress: 'server-node',
+      url: 'wss://runtime.internal/mesh?role=server&token=drop-me&zone=use1',
+      metadata: {
+        role: 'server',
+        apiKey: 'drop-me',
+      },
+    };
+    const discovery = createStaticRuntimePeerDiscoveryProvider([peer]);
+
+    expect(await discovery.getPeers()).toEqual([
+      {
+        nodeAddress: 'server-node',
+        url: 'wss://runtime.internal/mesh?role=server&zone=use1',
+        metadata: {
+          role: 'server',
+        },
+      },
+    ]);
+    expect(peer).toEqual({
+      nodeAddress: 'server-node',
+      url: 'wss://runtime.internal/mesh?role=server&token=drop-me&zone=use1',
+      metadata: {
+        role: 'server',
+        apiKey: 'drop-me',
+      },
+    });
+  });
+
+  it('rejects invalid direct records passed to static discovery providers', () => {
+    expect(() =>
+      createStaticRuntimePeerDiscoveryProvider([
+        {
+          nodeAddress: 'server-node',
+          url: 'https://runtime.internal/mesh?role=server',
+        },
+      ])
+    ).toThrowError('Runtime peer discovery record url must use ws: or wss:.');
   });
 
   it('emits available, updated, and unavailable events from in-memory discovery', () => {
@@ -75,5 +117,163 @@ describe('runtime peer discovery providers', () => {
         reason: 'node stopped',
       },
     ]);
+  });
+
+  it('normalizes deployment endpoint input into a provider-neutral discovery record', () => {
+    expect(
+      createRuntimePeerDiscoveryRecord({
+        nodeAddress: 'server-node',
+        protocol: 'wss',
+        host: 'runtime.internal',
+        port: 443,
+        path: 'mesh',
+        query: {
+          zone: 'use1',
+          role: 'server',
+          access_token: 'drop-me',
+        },
+        nodeId: 'node-1',
+        incarnation: 'boot-1',
+        protocolVersion: 'actor-web-runtime/1',
+        metadata: {
+          role: 'server',
+          region: 'iad',
+          apiKey: 'drop-me',
+          authorization: 'drop-me-too',
+        },
+      })
+    ).toEqual({
+      nodeAddress: 'server-node',
+      url: 'wss://runtime.internal/mesh?role=server&zone=use1',
+      nodeId: 'node-1',
+      incarnation: 'boot-1',
+      protocolVersion: 'actor-web-runtime/1',
+      metadata: {
+        role: 'server',
+        region: 'iad',
+      },
+    });
+  });
+
+  it('sanitizes secret-like query params from raw discovery urls', () => {
+    expect(
+      createRuntimePeerDiscoveryRecord({
+        nodeAddress: 'server-node',
+        url: 'wss://runtime.internal/mesh?role=server&token=drop-me&zone=use1',
+      })
+    ).toEqual({
+      nodeAddress: 'server-node',
+      url: 'wss://runtime.internal/mesh?role=server&zone=use1',
+    });
+  });
+
+  it('rejects raw discovery urls with unsupported protocols', () => {
+    expect(() =>
+      createRuntimePeerDiscoveryRecord({
+        nodeAddress: 'server-node',
+        url: 'https://runtime.internal/mesh?role=server',
+      })
+    ).toThrowError('Runtime peer discovery record url must use ws: or wss:.');
+  });
+
+  it('rejects raw discovery urls with embedded credentials', () => {
+    expect(() =>
+      createRuntimePeerDiscoveryRecord({
+        nodeAddress: 'server-node',
+        url: 'wss://user:secret@runtime.internal/mesh?role=server',
+      })
+    ).toThrowError('Runtime peer discovery record url must not include embedded credentials.');
+  });
+
+  it('supports self registration and unregistration through the discovery provider port', async () => {
+    const discovery = createInMemoryRuntimePeerDiscoveryProvider();
+
+    discovery.registerSelf?.({
+      nodeAddress: 'server-node',
+      url: 'ws://127.0.0.1:4101',
+    });
+    expect(await discovery.getPeers()).toEqual([
+      {
+        nodeAddress: 'server-node',
+        url: 'ws://127.0.0.1:4101',
+      },
+    ]);
+
+    discovery.unregisterSelf?.('server-node');
+    expect(await discovery.getPeers()).toEqual([]);
+  });
+
+  it('sanitizes direct records passed through in-memory upsert and registerSelf', async () => {
+    const discovery = createInMemoryRuntimePeerDiscoveryProvider();
+    const upsertPeer = {
+      nodeAddress: 'server-node',
+      url: 'wss://runtime.internal/mesh?token=drop-me&zone=use1',
+      metadata: {
+        role: 'server',
+        sessionId: 'drop-me',
+      },
+    };
+    const registerPeer = {
+      nodeAddress: 'worker-node',
+      url: 'wss://worker.internal/runtime?password=drop-me&zone=use1',
+      metadata: {
+        role: 'worker',
+        authorization: 'drop-me',
+      },
+    };
+
+    discovery.upsertPeer(upsertPeer);
+    discovery.registerSelf?.(registerPeer);
+
+    expect(await discovery.getPeers()).toEqual([
+      {
+        nodeAddress: 'server-node',
+        url: 'wss://runtime.internal/mesh?zone=use1',
+        metadata: {
+          role: 'server',
+        },
+      },
+      {
+        nodeAddress: 'worker-node',
+        url: 'wss://worker.internal/runtime?zone=use1',
+        metadata: {
+          role: 'worker',
+        },
+      },
+    ]);
+    expect(upsertPeer).toEqual({
+      nodeAddress: 'server-node',
+      url: 'wss://runtime.internal/mesh?token=drop-me&zone=use1',
+      metadata: {
+        role: 'server',
+        sessionId: 'drop-me',
+      },
+    });
+    expect(registerPeer).toEqual({
+      nodeAddress: 'worker-node',
+      url: 'wss://worker.internal/runtime?password=drop-me&zone=use1',
+      metadata: {
+        role: 'worker',
+        authorization: 'drop-me',
+      },
+    });
+  });
+
+  it('rejects invalid direct records passed through in-memory providers', () => {
+    const discovery = createInMemoryRuntimePeerDiscoveryProvider();
+
+    expect(() =>
+      discovery.upsertPeer({
+        nodeAddress: 'server-node',
+        url: 'wss://user:secret@runtime.internal/mesh?role=server',
+      })
+    ).toThrowError('Runtime peer discovery record url must not include embedded credentials.');
+
+    expect(() =>
+      discovery.registerSelf?.({
+        nodeAddress: 'worker-node',
+        url: 'https://worker.internal/runtime?role=worker',
+      })
+    ).toThrowError('Runtime peer discovery record url must use ws: or wss:.');
   });
 });

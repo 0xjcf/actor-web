@@ -174,7 +174,15 @@ describe('BrowserWebSocketMessageTransport', () => {
     const browser = createBrowserTransport('worker-a', {
       peers: { 'node-b': nodeUrl },
       auth: {
-        token: () => 'browser-secret',
+        token: () => ({
+          scheme: 'bearer',
+          token: 'browser-secret',
+          metadata: {
+            subject: 'browser-worker',
+            apiKey: 'do-not-log',
+            authorization: 'Bearer browser-secret',
+          },
+        }),
       },
     });
 
@@ -188,12 +196,22 @@ describe('BrowserWebSocketMessageTransport', () => {
         peerNodeAddress: 'worker-a',
       })
     );
+    expect(JSON.stringify(nodeTelemetry)).not.toContain('browser-secret');
+    expect(JSON.stringify(nodeTelemetry)).not.toContain('apiKey');
 
     await browser.disconnect('node-b');
     const rejectedBrowser = createBrowserTransport('worker-c', {
       peers: { 'node-b': nodeUrl },
       auth: {
-        token: () => 'invalid-browser-secret',
+        token: () => ({
+          scheme: 'bearer',
+          token: 'invalid-browser-secret',
+          metadata: {
+            subject: 'browser-worker',
+            sessionToken: 'do-not-log',
+            authorization: 'Bearer invalid-browser-secret',
+          },
+        }),
       },
     });
 
@@ -206,6 +224,8 @@ describe('BrowserWebSocketMessageTransport', () => {
       })
     );
     expect(JSON.stringify(nodeTelemetry)).not.toContain('invalid-browser-secret');
+    expect(JSON.stringify(nodeTelemetry)).not.toContain('sessionToken');
+    expect(JSON.stringify(nodeTelemetry)).not.toContain('authorization');
   });
 
   it('sends and receives validated runtime frames through a Node peer', async () => {

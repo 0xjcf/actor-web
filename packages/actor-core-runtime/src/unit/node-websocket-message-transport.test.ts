@@ -129,7 +129,15 @@ describe('NodeWebSocketMessageTransport', () => {
     const local = await createStartedTransport('node-a', {
       peers: { 'node-b': remoteUrl },
       auth: {
-        token: () => 'runtime-secret',
+        token: () => ({
+          scheme: 'bearer',
+          token: 'runtime-secret',
+          metadata: {
+            subject: 'runtime-peer',
+            apiKey: 'do-not-log',
+            authorization: 'Bearer runtime-secret',
+          },
+        }),
       },
     });
 
@@ -143,6 +151,8 @@ describe('NodeWebSocketMessageTransport', () => {
         peerNodeAddress: 'node-a',
       })
     );
+    expect(JSON.stringify(telemetry)).not.toContain('runtime-secret');
+    expect(JSON.stringify(telemetry)).not.toContain('apiKey');
   });
 
   it('rejects missing or invalid peer auth before registration without leaking tokens', async () => {
@@ -160,7 +170,15 @@ describe('NodeWebSocketMessageTransport', () => {
     const local = await createStartedTransport('node-a', {
       peers: { 'node-b': remoteUrl },
       auth: {
-        token: () => 'wrong-secret',
+        token: () => ({
+          scheme: 'bearer',
+          token: 'wrong-secret',
+          metadata: {
+            subject: 'runtime-peer',
+            sessionToken: 'do-not-log',
+            authorization: 'Bearer wrong-secret',
+          },
+        }),
       },
     });
 
@@ -177,6 +195,8 @@ describe('NodeWebSocketMessageTransport', () => {
       })
     );
     expect(JSON.stringify(telemetry)).not.toContain('wrong-secret');
+    expect(JSON.stringify(telemetry)).not.toContain('sessionToken');
+    expect(JSON.stringify(telemetry)).not.toContain('authorization');
   });
 
   it('tracks peer state transitions from connecting to connected to disconnected', async () => {

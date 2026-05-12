@@ -172,6 +172,19 @@ describe('runtime transport status', () => {
     expect(status.staleReason).toBe('Peer has not been seen within 10000ms.');
   });
 
+  it('surfaces a stale diagnostic when connected peers have no last-seen timestamp', () => {
+    const status = deriveRuntimePeerStatus('worker-node', {
+      isConnected: true,
+      stats: createPeerStats('worker-node', {
+        lastSeenAt: undefined,
+      }),
+    });
+
+    expect(status.connected).toBe(false);
+    expect(status.fresh).toBe(false);
+    expect(status.staleReason).toBe('Peer has no last-seen timestamp.');
+  });
+
   it('preserves explicit freshness opt-out when staleAfterMs is zero', () => {
     const status = deriveRuntimePeerStatus('worker-node', {
       isConnected: true,
@@ -193,6 +206,26 @@ describe('runtime transport status', () => {
       state: 'connected',
       connected: true,
       fresh: true,
+    });
+  });
+
+  it('surfaces rejected peer diagnostics from transport stats', () => {
+    const status = deriveRuntimePeerStatus('worker-node', {
+      isConnected: false,
+      stats: createPeerStats('worker-node', {
+        state: 'rejected',
+        disconnectedAt: '2026-04-29T10:00:08.000Z',
+        rejectedReason: 'Authentication rejected.',
+      }),
+    });
+
+    expect(status).toMatchObject({
+      nodeAddress: 'worker-node',
+      state: 'rejected',
+      connected: false,
+      fresh: false,
+      disconnectedAt: '2026-04-29T10:00:08.000Z',
+      rejectedReason: 'Authentication rejected.',
     });
   });
 
