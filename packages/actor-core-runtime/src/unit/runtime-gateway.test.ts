@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { emit, setup } from 'xstate';
 import { createActorRef } from '../create-actor-ref.js';
@@ -39,6 +40,13 @@ async function flushGatewayFrames(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
   await new Promise((resolve) => setTimeout(resolve, 0));
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+async function flushGatewayMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
 }
@@ -93,23 +101,32 @@ interface FakeConnection<TAuthContext = unknown>
   extends RuntimeGatewayConnectionAdapter<TAuthContext> {
   frames: unknown[];
   closed: boolean;
+  sendAttempts: number;
   push(frame: RuntimeGatewayClientFrame): void;
   pushInvalidFrame(event: RuntimeGatewayInvalidFrameEvent): void;
   close(): void;
 }
 
+interface FakeConnectionOptions {
+  sendBehavior?: (frame: unknown, attempt: number) => void | Promise<void>;
+  closeBehavior?: () => void | Promise<void>;
+}
+
 function createFakeConnection<TAuthContext = unknown>(
-  authContext: TAuthContext
+  authContext: TAuthContext,
+  options: FakeConnectionOptions = {}
 ): FakeConnection<TAuthContext> {
   const receiveListeners = new Set<(frame: RuntimeGatewayClientFrame) => void>();
   const invalidFrameListeners = new Set<(event: RuntimeGatewayInvalidFrameEvent) => void>();
   const closeListeners = new Set<() => void>();
   const frames: unknown[] = [];
+  let sendAttempts = 0;
 
   return {
     authContext,
     frames,
     closed: false,
+    sendAttempts: 0,
     receive(listener, onInvalidFrame) {
       receiveListeners.add(listener);
       if (onInvalidFrame) {
@@ -129,6 +146,11 @@ function createFakeConnection<TAuthContext = unknown>(
       };
     },
     send(frame) {
+      sendAttempts += 1;
+      this.sendAttempts = sendAttempts;
+      if (options.sendBehavior) {
+        return options.sendBehavior(frame, sendAttempts);
+      }
       frames.push(frame);
     },
     push(frame) {
@@ -143,6 +165,7 @@ function createFakeConnection<TAuthContext = unknown>(
     },
     close() {
       this.closed = true;
+      void Promise.resolve(options.closeBehavior?.()).catch(() => {});
       for (const listener of Array.from(closeListeners)) {
         listener();
       }
@@ -211,6 +234,60 @@ function createGatewayEvent(
 
 function replayStorageKey(replaySessionId: string, streamId: string): string {
   return `${replaySessionId}::${streamId}`;
+}
+
+function toCanonicalAuthOwnerValue(value: unknown): unknown {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    const normalizedEntries = value.flatMap((entry) => {
+      const normalizedValue = toCanonicalAuthOwnerValue(entry);
+      return normalizedValue === null ? [] : [normalizedValue];
+    });
+    return normalizedEntries.length > 0 ? normalizedEntries : null;
+  }
+
+  if (typeof value === 'object') {
+    const normalizedEntries = Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .flatMap(([key, entryValue]) => {
+        const normalizedValue = toCanonicalAuthOwnerValue(entryValue);
+        return normalizedValue === null ? [] : ([[key, normalizedValue]] as const);
+      });
+
+    return normalizedEntries.length > 0 ? Object.fromEntries(normalizedEntries) : null;
+  }
+
+  return null;
+}
+
+function replayOwnerKey(authContext: unknown): string | null {
+  const canonicalValue = toCanonicalAuthOwnerValue(authContext);
+  if (canonicalValue === null) {
+    return null;
+  }
+
+  return `auth:${createHash('sha256').update(JSON.stringify(canonicalValue)).digest('base64url')}`;
+}
+
+function replaySessionIdForAuth(authContext: unknown, connectionIdOrResumeToken: string): string {
+  const ownerKey = replayOwnerKey(authContext);
+  return ownerKey ? `${ownerKey}::${connectionIdOrResumeToken}` : connectionIdOrResumeToken;
 }
 
 function toCanonicalScopeValue(value: unknown): unknown {
@@ -649,6 +726,53 @@ describe('runtime gateway hub', () => {
     detach();
   });
 
+  it('evicts idle connections server-side and refreshes liveness on ping activity', async () => {
+    vi.useFakeTimers();
+    try {
+      const source = createFakeSource('ready');
+      const hub = createRuntimeGatewayHub({
+        heartbeatMs: 50,
+        resolveScope: async () => source,
+      });
+      const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+      const detach = hub.attach(connection);
+      connection.push({ type: 'hello' });
+      connection.push({
+        type: 'subscribe',
+        streamId: 'fleet-main',
+        scope: { kind: 'fleet-view' },
+      });
+      await flushGatewayMicrotasks();
+
+      await vi.advanceTimersByTimeAsync(40);
+      connection.push({ type: 'ping', sentAt: '2026-04-23T15:00:01.000Z' });
+      await flushGatewayMicrotasks();
+
+      await vi.advanceTimersByTimeAsync(40);
+      expect(connection.closed).toBe(false);
+      expect(source.listenerCounts()).toEqual({
+        snapshots: 1,
+        events: 1,
+        statuses: 1,
+        transitions: 1,
+      });
+
+      await vi.advanceTimersByTimeAsync(11);
+      expect(connection.closed).toBe(true);
+      expect(source.listenerCounts()).toEqual({
+        snapshots: 0,
+        events: 0,
+        statuses: 0,
+        transitions: 0,
+      });
+
+      detach();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('converts adapter-level malformed frames into invalid_frame errors and observer events', async () => {
     const observer = vi.fn<(event: RuntimeGatewayObserverEvent) => void>();
     const hub = createRuntimeGatewayHub({
@@ -678,6 +802,47 @@ describe('runtime gateway hub', () => {
       timestamp: expect.any(String),
       message: 'Gateway frame must be valid JSON.',
       detail: 'Unexpected token } in JSON at position 1',
+    });
+
+    detach();
+  });
+
+  it('terminates the connection after consecutive outbound send failures from sync throws and rejected promises', async () => {
+    const source = createFakeSource('ready');
+    const hub = createRuntimeGatewayHub({
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection(
+      { authorityId: 'auth-1' },
+      {
+        sendBehavior(_frame, attempt) {
+          if (attempt === 1 || attempt === 3) {
+            throw new Error(`sync send failure ${attempt}`);
+          }
+
+          if (attempt === 2) {
+            return Promise.reject(new Error('async send failure'));
+          }
+        },
+      }
+    );
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'fleet-main',
+      scope: { kind: 'fleet-view' },
+    });
+    await flushGatewayFrames();
+
+    expect(connection.sendAttempts).toBe(3);
+    expect(connection.closed).toBe(true);
+    expect(source.listenerCounts()).toEqual({
+      snapshots: 0,
+      events: 0,
+      statuses: 0,
+      transitions: 0,
     });
 
     detach();
@@ -875,7 +1040,11 @@ describe('runtime gateway hub', () => {
     const replaySessionId = 'resume-connection';
     const streamId = 'fleet-main';
     const scope: RuntimeGatewayScopeDescriptor = { kind: 'fleet-view' };
-    const storageKey = scopedReplayStorageKey(replaySessionId, streamId, scope);
+    const storageKey = scopedReplayStorageKey(
+      replaySessionIdForAuth({ authorityId: 'auth-1' }, replaySessionId),
+      streamId,
+      scope
+    );
     const baseSource = createFakeSource('submitted', 'fleet-main');
     const source: RuntimeGatewaySource = {
       ...baseSource,
@@ -961,7 +1130,11 @@ describe('runtime gateway hub', () => {
     await flushGatewayFrames();
 
     const firstConnectionId = (firstConnection.frames[0] as { connectionId: string }).connectionId;
-    const storageKey = scopedReplayStorageKey(firstConnectionId, 'fleet-main', scope);
+    const storageKey = scopedReplayStorageKey(
+      replaySessionIdForAuth({ authorityId: 'auth-1' }, firstConnectionId),
+      'fleet-main',
+      scope
+    );
 
     firstSource.emitEvent(createGatewayEvent(firstSource, 'InspectionProgressRecorded'));
     firstSource.emitTransition({
@@ -1050,6 +1223,209 @@ describe('runtime gateway hub', () => {
     secondDetach();
   });
 
+  it('prevents a different authenticated owner from reusing a prior connection replay session', async () => {
+    const replayStorage = createMapBackedReplayStorageFixture();
+    const scope: RuntimeGatewayScopeDescriptor = { kind: 'fleet-view' };
+    const firstSource = createFakeSource('ready', 'fleet-main');
+    const secondSource = createFakeSource('submitted', 'fleet-main');
+    let resolveScopeCalls = 0;
+    const hub = createRuntimeGatewayHub({
+      replayStorage: replayStorage.provider,
+      resolveScope: async () => {
+        resolveScopeCalls += 1;
+        return resolveScopeCalls === 1 ? firstSource : secondSource;
+      },
+    });
+    const firstConnection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const firstDetach = hub.attach(firstConnection);
+    firstConnection.push({ type: 'hello' });
+    firstConnection.push({
+      type: 'subscribe',
+      streamId: 'fleet-main',
+      scope,
+    });
+    await flushGatewayFrames();
+
+    const firstConnectionId = (firstConnection.frames[0] as { connectionId: string }).connectionId;
+    const authOneStorageKey = scopedReplayStorageKey(
+      replaySessionIdForAuth({ authorityId: 'auth-1' }, firstConnectionId),
+      'fleet-main',
+      scope
+    );
+
+    firstSource.emitEvent(createGatewayEvent(firstSource, 'InspectionProgressRecorded'));
+    await flushGatewayFrames();
+    expect(replayStorage.storage.get(authOneStorageKey)?.map((frame) => frame.sequence)).toEqual([
+      1, 2,
+    ]);
+
+    const secondConnection = createFakeConnection({ authorityId: 'auth-2' });
+    const secondDetach = hub.attach(secondConnection);
+    secondConnection.push({
+      type: 'hello',
+      lastConnectionId: firstConnectionId,
+    });
+    secondConnection.push({
+      type: 'subscribe',
+      streamId: 'fleet-main',
+      scope,
+    });
+    await flushGatewayFrames();
+
+    expect(secondConnection.frames[2]).toMatchObject({
+      type: 'snapshot',
+      streamId: 'fleet-main',
+      sequence: 1,
+      projection: {
+        workflowSnapshot: {
+          phase: 'submitted',
+        },
+      },
+    });
+
+    const frameCountBeforeResync = secondConnection.frames.length;
+    secondConnection.push({
+      type: 'resync',
+      streamId: 'fleet-main',
+      fromSequence: 1,
+    });
+    await flushGatewayFrames();
+
+    expect(secondConnection.frames.slice(frameCountBeforeResync)).toMatchObject([
+      {
+        type: 'status',
+        streamId: 'fleet-main',
+        status: { state: 'replaying' },
+      },
+      {
+        type: 'snapshot',
+        streamId: 'fleet-main',
+        sequence: 1,
+      },
+      {
+        type: 'status',
+        streamId: 'fleet-main',
+        status: { state: 'connected' },
+      },
+    ]);
+    expect(secondConnection.frames.slice(frameCountBeforeResync)).not.toContainEqual(
+      expect.objectContaining({
+        type: 'event',
+        projection: expect.objectContaining({
+          envelope: expect.objectContaining({
+            type: 'InspectionProgressRecorded',
+          }),
+        }),
+      })
+    );
+
+    secondDetach();
+    firstDetach();
+  });
+
+  it('falls back to a fresh replay session when no stable owner key is available', async () => {
+    const replayStorage = createMapBackedReplayStorageFixture();
+    const scope: RuntimeGatewayScopeDescriptor = { kind: 'fleet-view' };
+    const firstSource = createFakeSource('ready', 'fleet-main');
+    const secondSource = createFakeSource('submitted', 'fleet-main');
+    let resolveScopeCalls = 0;
+    const hub = createRuntimeGatewayHub({
+      replayStorage: replayStorage.provider,
+      resolveScope: async () => {
+        resolveScopeCalls += 1;
+        return resolveScopeCalls === 1 ? firstSource : secondSource;
+      },
+    });
+    const firstConnection = createFakeConnection(undefined);
+
+    const firstDetach = hub.attach(firstConnection);
+    firstConnection.push({ type: 'hello' });
+    firstConnection.push({
+      type: 'subscribe',
+      streamId: 'fleet-main',
+      scope,
+    });
+    await flushGatewayFrames();
+
+    const firstConnectionId = (firstConnection.frames[0] as { connectionId: string }).connectionId;
+    const firstStorageKey = scopedReplayStorageKey(firstConnectionId, 'fleet-main', scope);
+
+    firstSource.emitEvent(createGatewayEvent(firstSource, 'InspectionProgressRecorded'));
+    await flushGatewayFrames();
+    expect(replayStorage.storage.get(firstStorageKey)?.map((frame) => frame.sequence)).toEqual([
+      1, 2,
+    ]);
+
+    const secondConnection = createFakeConnection(undefined);
+    const secondDetach = hub.attach(secondConnection);
+    secondConnection.push({
+      type: 'hello',
+      lastConnectionId: firstConnectionId,
+    });
+    secondConnection.push({
+      type: 'subscribe',
+      streamId: 'fleet-main',
+      scope,
+    });
+    await flushGatewayFrames();
+
+    const secondConnectionId = (secondConnection.frames[0] as { connectionId: string })
+      .connectionId;
+    const secondStorageKey = scopedReplayStorageKey(secondConnectionId, 'fleet-main', scope);
+
+    expect(secondConnection.frames[2]).toMatchObject({
+      type: 'snapshot',
+      streamId: 'fleet-main',
+      sequence: 1,
+      projection: {
+        workflowSnapshot: {
+          phase: 'submitted',
+        },
+      },
+    });
+    expect(secondStorageKey).not.toBe(firstStorageKey);
+
+    const frameCountBeforeResync = secondConnection.frames.length;
+    secondConnection.push({
+      type: 'resync',
+      streamId: 'fleet-main',
+      fromSequence: 1,
+    });
+    await flushGatewayFrames();
+
+    expect(secondConnection.frames.slice(frameCountBeforeResync)).toMatchObject([
+      {
+        type: 'status',
+        streamId: 'fleet-main',
+        status: { state: 'replaying' },
+      },
+      {
+        type: 'snapshot',
+        streamId: 'fleet-main',
+        sequence: 1,
+      },
+      {
+        type: 'status',
+        streamId: 'fleet-main',
+        status: { state: 'connected' },
+      },
+    ]);
+    expect(secondConnection.frames.slice(frameCountBeforeResync)).not.toContainEqual(
+      expect.objectContaining({
+        type: 'event',
+        projection: expect.objectContaining({
+          envelope: expect.objectContaining({
+            type: 'InspectionProgressRecorded',
+          }),
+        }),
+      })
+    );
+
+    secondDetach();
+    firstDetach();
+  });
+
   it('serializes async replay persistence so stale store completions cannot overwrite newer tails', async () => {
     const replayStorage = createAsyncMapBackedReplayStorageFixture();
     const scope: RuntimeGatewayScopeDescriptor = { kind: 'fleet-view' };
@@ -1070,7 +1446,11 @@ describe('runtime gateway hub', () => {
     await flushGatewayFrames();
 
     const connectionId = (connection.frames[0] as { connectionId: string }).connectionId;
-    const storageKey = scopedReplayStorageKey(connectionId, 'fleet-main', scope);
+    const storageKey = scopedReplayStorageKey(
+      replaySessionIdForAuth({ authorityId: 'auth-1' }, connectionId),
+      'fleet-main',
+      scope
+    );
 
     source.emitEvent(createGatewayEvent(source, 'InspectionProgressRecorded'));
     source.emitTransition({
@@ -1136,7 +1516,11 @@ describe('runtime gateway hub', () => {
     await flushGatewayFrames();
 
     const replaySessionId = (firstConnection.frames[0] as { connectionId: string }).connectionId;
-    const storageKey = scopedReplayStorageKey(replaySessionId, 'fleet-main', scope);
+    const storageKey = scopedReplayStorageKey(
+      replaySessionIdForAuth({ authorityId: 'auth-1' }, replaySessionId),
+      'fleet-main',
+      scope
+    );
 
     expect(replayStorage.startedStores).toEqual([{ key: storageKey, sequences: [1] }]);
 
@@ -1188,7 +1572,11 @@ describe('runtime gateway hub', () => {
     const replaySessionId = 'resume-connection';
     const streamId = 'fleet-main';
     const scope: RuntimeGatewayScopeDescriptor = { kind: 'fleet-view' };
-    const storageKey = scopedReplayStorageKey(replaySessionId, streamId, scope);
+    const storageKey = scopedReplayStorageKey(
+      replaySessionIdForAuth({ authorityId: 'auth-1' }, replaySessionId),
+      streamId,
+      scope
+    );
     const previousSource = createFakeSource('ready', 'old-scope');
 
     replayStorage.storage.set(storageKey, [
@@ -1300,7 +1688,11 @@ describe('runtime gateway hub', () => {
     const replaySessionId = 'resume-connection';
     const streamId = 'fleet-main';
     const scope: RuntimeGatewayScopeDescriptor = { kind: 'fleet-view' };
-    const storageKey = scopedReplayStorageKey(replaySessionId, streamId, scope);
+    const storageKey = scopedReplayStorageKey(
+      replaySessionIdForAuth({ authorityId: 'auth-1' }, replaySessionId),
+      streamId,
+      scope
+    );
 
     replayStorage.storage.set(storageKey, [
       {
@@ -1411,8 +1803,16 @@ describe('runtime gateway hub', () => {
       kind: 'fleet-view',
       params: { authorityId: 'auth-1', vehicleId: 'vehicle-2' },
     };
-    const firstStorageKey = scopedReplayStorageKey(replaySessionId, streamId, firstScope);
-    const secondStorageKey = scopedReplayStorageKey(replaySessionId, streamId, secondScope);
+    const firstStorageKey = scopedReplayStorageKey(
+      replaySessionIdForAuth({ authorityId: 'auth-1' }, replaySessionId),
+      streamId,
+      firstScope
+    );
+    const secondStorageKey = scopedReplayStorageKey(
+      replaySessionIdForAuth({ authorityId: 'auth-1' }, replaySessionId),
+      streamId,
+      secondScope
+    );
     const sharedActorKey = 'shared-fleet-actor';
     const firstSource = createFakeSource('ready', sharedActorKey);
     const secondSource = createFakeSource('submitted', sharedActorKey);
@@ -1539,9 +1939,17 @@ describe('runtime gateway hub', () => {
     const replayStorage = createMapBackedReplayStorageFixture();
     const onReplayStorageError = vi.fn<(event: RuntimeGatewayReplayStorageErrorEvent) => void>();
     const replaySessionId = 'faulty-connection';
+    const expectedReplaySessionId = replaySessionIdForAuth(
+      { authorityId: 'auth-1' },
+      replaySessionId
+    );
     const streamId = 'fleet-main';
     const scope: RuntimeGatewayScopeDescriptor = { kind: 'fleet-view' };
-    const storageKey = scopedReplayStorageKey(replaySessionId, streamId, scope);
+    const storageKey = scopedReplayStorageKey(
+      replaySessionIdForAuth({ authorityId: 'auth-1' }, replaySessionId),
+      streamId,
+      scope
+    );
     replayStorage.failLoadFor(storageKey);
 
     const source = createFakeSource('ready');
@@ -1570,7 +1978,7 @@ describe('runtime gateway hub', () => {
     expect(onReplayStorageError).toHaveBeenCalledTimes(1);
     expect(onReplayStorageError).toHaveBeenCalledWith({
       operation: 'load',
-      replaySessionId,
+      replaySessionId: expectedReplaySessionId,
       streamId,
       error: expect.any(Error),
     });
@@ -1602,9 +2010,17 @@ describe('runtime gateway hub', () => {
     const replayStorage = createMapBackedReplayStorageFixture();
     const onReplayStorageError = vi.fn<(event: RuntimeGatewayReplayStorageErrorEvent) => void>();
     const replaySessionId = 'faulty-connection';
+    const expectedReplaySessionId = replaySessionIdForAuth(
+      { authorityId: 'auth-1' },
+      replaySessionId
+    );
     const streamId = 'fleet-main';
     const scope: RuntimeGatewayScopeDescriptor = { kind: 'fleet-view' };
-    const storageKey = scopedReplayStorageKey(replaySessionId, streamId, scope);
+    const storageKey = scopedReplayStorageKey(
+      replaySessionIdForAuth({ authorityId: 'auth-1' }, replaySessionId),
+      streamId,
+      scope
+    );
     replayStorage.failStoreFor(storageKey);
 
     const source = createFakeSource('ready');
@@ -1633,7 +2049,7 @@ describe('runtime gateway hub', () => {
     expect(onReplayStorageError).toHaveBeenCalled();
     expect(onReplayStorageError).toHaveBeenNthCalledWith(1, {
       operation: 'store',
-      replaySessionId,
+      replaySessionId: expectedReplaySessionId,
       streamId,
       error: expect.any(Error),
       frameCount: 1,
@@ -1719,7 +2135,11 @@ describe('runtime gateway hub', () => {
     const replaySessionId = 'faulty-connection';
     const streamId = 'fleet-main';
     const scope: RuntimeGatewayScopeDescriptor = { kind: 'fleet-view' };
-    const storageKey = scopedReplayStorageKey(replaySessionId, streamId, scope);
+    const storageKey = scopedReplayStorageKey(
+      replaySessionIdForAuth({ authorityId: 'auth-1' }, replaySessionId),
+      streamId,
+      scope
+    );
     replayStorage.failStoreFor(storageKey);
 
     const source = createFakeSource('ready');

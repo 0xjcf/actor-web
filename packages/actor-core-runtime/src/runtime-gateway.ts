@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { ActorRef } from './actor-ref.js';
 import type { ActorAddress, ActorMessage } from './actor-system.js';
 import {
@@ -316,6 +316,8 @@ type RuntimeGatewayStreamState = {
   unsubscribeTransition: () => void;
 };
 
+const OUTBOUND_SEND_FAILURE_THRESHOLD = 3;
+
 export type RuntimeGatewayReplayFrame = Extract<
   RuntimeGatewayServerFrame,
   { type: 'snapshot' | 'event' | 'transition' }
@@ -349,6 +351,55 @@ type RuntimeGatewayReplayFrameDraft = RuntimeGatewayReplayFrame extends infer TF
 
 function runtimeGatewayReplayStorageKey(replaySessionId: string, streamId: string): string {
   return `${replaySessionId}::${streamId}`;
+}
+
+function toCanonicalAuthOwnerValue(value: unknown): unknown {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    const normalizedEntries = value.flatMap((entry) => {
+      const normalizedValue = toCanonicalAuthOwnerValue(entry);
+      return normalizedValue === null ? [] : [normalizedValue];
+    });
+    return normalizedEntries.length > 0 ? normalizedEntries : null;
+  }
+
+  if (typeof value === 'object') {
+    const normalizedEntries = Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .flatMap(([key, entryValue]) => {
+        const normalizedValue = toCanonicalAuthOwnerValue(entryValue);
+        return normalizedValue === null ? [] : ([[key, normalizedValue]] as const);
+      });
+
+    return normalizedEntries.length > 0 ? Object.fromEntries(normalizedEntries) : null;
+  }
+
+  return null;
+}
+
+function stableRuntimeGatewayAuthOwnerKey(authContext: unknown): string | null {
+  const canonicalValue = toCanonicalAuthOwnerValue(authContext);
+  if (canonicalValue === null) {
+    return null;
+  }
+
+  return `auth:${createHash('sha256').update(JSON.stringify(canonicalValue)).digest('base64url')}`;
 }
 
 function toCanonicalScopeValue(value: unknown): unknown {
@@ -443,10 +494,16 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
       const streams = new Map<string, RuntimeGatewayStreamState>();
       let greeted = false;
       let replaySessionId: string = connectionId;
+      let replayOwnerKey: string | null = stableRuntimeGatewayAuthOwnerKey(connection.authContext);
       let authenticatedAuthContext = connection.authContext;
       const pendingFrames: RuntimeGatewayClientFrame[] = [];
       let processingFrame = false;
       let terminated = false;
+      let idleTimer: ReturnType<typeof setTimeout> | null = null;
+      let nextSendAttemptId = 0;
+      let nextSendOutcomeToProcess = 1;
+      let consecutiveSendFailures = 0;
+      const settledSendOutcomes = new Map<number, 'success' | 'failure'>();
 
       const cleanupStream = (streamId: string): void => {
         const stream = streams.get(streamId);
@@ -485,12 +542,105 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         }
       };
 
+      const clearIdleTimer = (): void => {
+        if (idleTimer === null) {
+          return;
+        }
+
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      };
+
+      const terminateConnection = (): void => {
+        if (terminated) {
+          return;
+        }
+
+        terminated = true;
+        clearIdleTimer();
+        cleanupAll();
+        void Promise.resolve(connection.close?.()).catch(() => {});
+      };
+
+      const armIdleTimer = (): void => {
+        clearIdleTimer();
+        if (terminated || heartbeatMs <= 0) {
+          return;
+        }
+
+        idleTimer = setTimeout(() => {
+          idleTimer = null;
+          terminateConnection();
+        }, heartbeatMs);
+      };
+
+      const markConnectionActive = (): void => {
+        if (terminated) {
+          return;
+        }
+
+        armIdleTimer();
+      };
+
       const send = (frame: RuntimeGatewayServerFrame): void => {
         if (terminated) {
           return;
         }
 
-        void Promise.resolve(connection.send(frame)).catch(() => {});
+        const processSettledSendOutcomes = (): void => {
+          while (!terminated && settledSendOutcomes.has(nextSendOutcomeToProcess)) {
+            const outcome = settledSendOutcomes.get(nextSendOutcomeToProcess);
+            settledSendOutcomes.delete(nextSendOutcomeToProcess);
+            nextSendOutcomeToProcess += 1;
+
+            if (outcome === 'success') {
+              consecutiveSendFailures = 0;
+              continue;
+            }
+
+            consecutiveSendFailures += 1;
+            if (consecutiveSendFailures >= OUTBOUND_SEND_FAILURE_THRESHOLD) {
+              terminateConnection();
+            }
+          }
+        };
+
+        const attemptId = nextSendAttemptId + 1;
+        nextSendAttemptId = attemptId;
+        const recordSendOutcome = (outcome: 'success' | 'failure'): void => {
+          if (terminated) {
+            return;
+          }
+
+          settledSendOutcomes.set(attemptId, outcome);
+          processSettledSendOutcomes();
+        };
+
+        try {
+          void Promise.resolve(connection.send(frame)).then(
+            () => {
+              recordSendOutcome('success');
+            },
+            () => {
+              recordSendOutcome('failure');
+            }
+          );
+        } catch {
+          recordSendOutcome('failure');
+        }
+      };
+
+      const rejectIngress = (
+        code: RuntimeGatewayErrorCode,
+        message: string,
+        event: Omit<RuntimeGatewayObserverEvent, 'connectionId' | 'message'>
+      ): void => {
+        emitObserverEvent({
+          ...event,
+          message,
+        });
+        sendError(code, message, false);
+        terminateConnection();
       };
 
       const sendError = (
@@ -508,29 +658,6 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           message,
           recoverable,
         });
-      };
-
-      const terminateConnection = (): void => {
-        if (terminated) {
-          return;
-        }
-
-        terminated = true;
-        cleanupAll();
-        void Promise.resolve(connection.close?.()).catch(() => {});
-      };
-
-      const rejectIngress = (
-        code: RuntimeGatewayErrorCode,
-        message: string,
-        event: Omit<RuntimeGatewayObserverEvent, 'connectionId' | 'message'>
-      ): void => {
-        emitObserverEvent({
-          ...event,
-          message,
-        });
-        sendError(code, message, false);
-        terminateConnection();
       };
 
       const sendStatus = (streamId: string, status: ProjectionTransportStatus): void => {
@@ -933,7 +1060,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         }
 
         switch (frame.type) {
-          case 'hello':
+          case 'hello': {
             if (options.auth) {
               const auth = await verifyRuntimeGatewayAuth(options.auth, {
                 auth: frame.auth,
@@ -951,7 +1078,14 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
                   : (auth.authContext as TAuthContext);
             }
             greeted = true;
-            replaySessionId = frame.lastConnectionId ?? connectionId;
+            replayOwnerKey = stableRuntimeGatewayAuthOwnerKey(authenticatedAuthContext);
+            const requestedReplaySessionId =
+              typeof frame.lastConnectionId === 'string' && frame.lastConnectionId.trim().length > 0
+                ? frame.lastConnectionId.trim()
+                : connectionId;
+            replaySessionId = replayOwnerKey
+              ? `${replayOwnerKey}::${requestedReplaySessionId}`
+              : connectionId;
             send({
               type: 'ready',
               connectionId,
@@ -959,6 +1093,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
               serverTime: new Date().toISOString(),
             });
             return;
+          }
           case 'ping':
             send({
               type: 'pong',
@@ -1041,6 +1176,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             return;
           }
 
+          markConnectionActive();
           pendingFrames.push(frame);
           processNextFrame();
         },
@@ -1058,10 +1194,15 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
       );
       const unsubscribeClose = connection.onClose(() => {
         terminated = true;
+        clearIdleTimer();
         cleanupAll();
       });
 
+      armIdleTimer();
+
       return () => {
+        terminated = true;
+        clearIdleTimer();
         unsubscribeReceive();
         unsubscribeClose();
         cleanupAll();
