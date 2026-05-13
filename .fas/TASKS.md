@@ -582,10 +582,13 @@
 
 - Title: Enforce runtime gateway liveness and replay security
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/enforce-runtime-gateway-liveness-and-replay-security.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Separate Ignite read-model sources from command surfaces
 

@@ -1,4 +1,4 @@
-# Enforce Runtime Gateway Liveness and Replay Security
+# Enforce runtime gateway liveness and replay security
 
 ## Summary
 
@@ -50,3 +50,22 @@ trusting client-supplied session identifiers without an authenticated binding.
 - `pnpm typecheck`
 - `pnpm lint`
 - `fas validate-task`
+
+## Scope Amendments
+
+- Type: audit-scope-correction
+- Added at: 2026-05-13T20:36:58Z
+- Trigger: fas_architect handoff found generated commit-plan paths pointed at capability-security and FAS verification pipeline files instead of runtime gateway liveness/replay surfaces
+- Reason: Limit implementation to Actor-Web runtime gateway liveness, send-failure cleanup, replay resume binding, and focused gateway tests before code writing
+- Added paths: packages/actor-core-runtime/src/runtime-gateway.ts, packages/actor-core-runtime/src/unit/runtime-gateway.test.ts, packages/actor-core-runtime/src/serve-actor-web-node.ts, packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts
+- Evidence source: fas_architect handoff
+- Evidence: fas_architect handoff | .fas/state/commit-plan.json | planned paths were unrelated to .fas/tasks/enforce-runtime-gateway-liveness-and-replay-security.md
+- Accuracy signal: high
+- Follow-up needed: Regenerate commit plan before fas_staff_engineer and fas_senior_engineer steps
+
+## Affected files
+
+- packages/actor-core-runtime/src/runtime-gateway.ts
+- packages/actor-core-runtime/src/unit/runtime-gateway.test.ts
+- packages/actor-core-runtime/src/serve-actor-web-node.ts
+- packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts
