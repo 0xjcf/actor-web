@@ -582,8 +582,8 @@
 
 - Title: Enforce runtime gateway liveness and replay security
 - Mode: 6-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/enforce-runtime-gateway-liveness-and-replay-security.md
 - Automation mode: advisory
 - Verification lane: fast
@@ -648,6 +648,23 @@
 - Owner: runtime
 - Brief: .fas/tasks/normalize-runtime-gateway-inbound-queue-limit-options.md
 - Automation mode: advisory
+
+### Task: Add runtime gateway send-attempt timeout handling
+
+- Title: Add runtime gateway send-attempt timeout handling
+- Mode: 4-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/add-runtime-gateway-send-attempt-timeout-handling.md
+- Automation mode: advisory
+
+### Task: Plan replay storage compatibility for owner-bound resume keys
+
+- Title: Plan replay storage compatibility for owner-bound resume keys
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/plan-replay-storage-compatibility-for-owner-bound-resume-key.md
 
 ## Template
 
