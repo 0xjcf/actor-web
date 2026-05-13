@@ -773,6 +773,54 @@ describe('runtime gateway hub', () => {
     }
   });
 
+  it('clears the armed idle timer when the adapter reports an external close', async () => {
+    vi.useFakeTimers();
+    try {
+      const source = createFakeSource('ready');
+      const closeBehavior = vi.fn();
+      const hub = createRuntimeGatewayHub({
+        heartbeatMs: 50,
+        resolveScope: async () => source,
+      });
+      const connection = createFakeConnection(
+        { authorityId: 'auth-1' },
+        {
+          closeBehavior,
+        }
+      );
+
+      const detach = hub.attach(connection);
+      connection.push({ type: 'hello' });
+      connection.push({
+        type: 'subscribe',
+        streamId: 'fleet-main',
+        scope: { kind: 'fleet-view' },
+      });
+      await flushGatewayMicrotasks();
+
+      expect(vi.getTimerCount()).toBe(1);
+      connection.close();
+
+      expect(closeBehavior).toHaveBeenCalledTimes(1);
+      expect(source.listenerCounts()).toEqual({
+        snapshots: 0,
+        events: 0,
+        statuses: 0,
+        transitions: 0,
+      });
+      expect(vi.getTimerCount()).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(51);
+
+      expect(closeBehavior).toHaveBeenCalledTimes(1);
+      expect(connection.closed).toBe(true);
+
+      detach();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('converts adapter-level malformed frames into invalid_frame errors and observer events', async () => {
     const observer = vi.fn<(event: RuntimeGatewayObserverEvent) => void>();
     const hub = createRuntimeGatewayHub({
