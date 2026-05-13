@@ -570,8 +570,8 @@
 
 - Title: Harden runtime gateway ingress safety
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/harden-runtime-gateway-ingress-safety.md
 - Automation mode: advisory
 - Verification lane: fast
