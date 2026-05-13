@@ -400,6 +400,11 @@ rotation, rollback guidance, and operations runbooks. Runtime idempotency stays
 direct-peer and at-most-once; this demo does not introduce exactly-once
 delivery semantics.
 
+The production-facing procedures for those remaining responsibilities now live
+in [operations/actor-web-production-operations.md](operations/actor-web-production-operations.md).
+Keep this document focused on proof shape and demo evidence; use the runbook
+for operator actions and production-vs-demo boundary guidance.
+
 ## Assumptions
 
 - The logistics demo remains the flagship Actor-Web integration example.

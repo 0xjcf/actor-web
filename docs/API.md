@@ -1082,6 +1082,11 @@ The JSONL sink is Node-only. Browser and shared runtime code can use the
 in-memory sink or provide a custom sink that forwards events to the host
 application.
 
+For deployment, rollback, secret rotation, stale-peer, replay-recovery,
+duplicate-drop, and backpressure incident procedures for the current direct
+WebSocket transport path, see
+[operations/actor-web-production-operations.md](operations/actor-web-production-operations.md).
+
 ## Package Boundaries
 
 - `@actor-core/runtime`: universal actor behavior, actor system,
