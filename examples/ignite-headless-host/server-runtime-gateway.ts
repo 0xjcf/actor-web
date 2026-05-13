@@ -81,6 +81,9 @@ export interface LogisticsRuntimeGatewayServerOptions {
   lifecycleTerminalDelayMs?: number;
   providerRuntimeEnabled?: boolean;
   providerRuntimeSource?: ProviderRuntimeSource;
+  runtimeAuthToken?: string;
+  gatewayAuthToken?: string;
+  outboundQueueLimit?: number;
   transportTelemetry?: RuntimeTransportTelemetryObserver;
 }
 
@@ -97,6 +100,24 @@ interface LogisticsRuntimeIdempotencyStatusResponse {
 
 interface LogisticsRuntimePeerStatusResponse extends RuntimePeerStatus {
   readonly idempotency: LogisticsRuntimeIdempotencyStatusResponse;
+  readonly outboundQueueDepth?: number;
+  readonly outboundQueueLimit?: number;
+  readonly outboundFramesDropped?: number;
+  readonly backpressureDropCount?: number;
+  readonly handshakeAcceptedCount?: number;
+  readonly handshakeRejectedCount?: number;
+  readonly reconnectCount?: number;
+}
+
+interface LogisticsRuntimeTransportTelemetryStatusResponse {
+  readonly outboundQueueDepth: number;
+  readonly outboundQueueLimit: number;
+  readonly outboundFramesDropped: number;
+  readonly backpressureDropCount: number;
+  readonly duplicateFramesDropped: number;
+  readonly handshakeAcceptedCount: number;
+  readonly handshakeRejectedCount: number;
+  readonly reconnectCount: number;
 }
 
 export interface LogisticsRuntimeGatewayServer {
@@ -139,12 +160,24 @@ function normalizePeerStatus(
   peer: RuntimePeerStatus,
   transportStats?: RuntimeTransportStats
 ): LogisticsRuntimePeerStatusResponse {
+  const peerStats = transportStats?.peers[peer.nodeAddress];
   return {
     ...peer,
     idempotency: normalizeIdempotencyStatus(
       peer.idempotency,
-      transportStats?.peers[peer.nodeAddress]?.duplicateFramesDropped ?? 0
+      peerStats?.duplicateFramesDropped ?? 0
     ),
+    ...(peerStats
+      ? {
+          outboundQueueDepth: peerStats.outboundQueueDepth,
+          outboundQueueLimit: peerStats.outboundQueueLimit,
+          outboundFramesDropped: peerStats.outboundFramesDropped,
+          backpressureDropCount: peerStats.backpressureDropCount,
+          handshakeAcceptedCount: peerStats.handshakeAcceptedCount,
+          handshakeRejectedCount: peerStats.handshakeRejectedCount,
+          reconnectCount: peerStats.reconnectCount,
+        }
+      : {}),
   };
 }
 
@@ -159,6 +192,36 @@ function readTransportStats(transport: unknown): RuntimeTransportStats | undefin
   }
 
   return transport.getStats();
+}
+
+function createSharedSecretAuth(token: string | undefined, rejectionReason: string) {
+  if (!token) {
+    return undefined;
+  }
+
+  return {
+    token,
+    verifyToken: ({ token: presentedToken }: { readonly token?: string }) =>
+      presentedToken === token || {
+        ok: false as const,
+        reason: rejectionReason,
+      },
+  };
+}
+
+function readTransportTelemetryStatus(
+  transportStats?: RuntimeTransportStats
+): LogisticsRuntimeTransportTelemetryStatusResponse {
+  return {
+    outboundQueueDepth: transportStats?.outboundQueueDepth ?? 0,
+    outboundQueueLimit: transportStats?.outboundQueueLimit ?? 0,
+    outboundFramesDropped: transportStats?.outboundFramesDropped ?? 0,
+    backpressureDropCount: transportStats?.backpressureDropCount ?? 0,
+    duplicateFramesDropped: transportStats?.duplicateFramesDropped ?? 0,
+    handshakeAcceptedCount: transportStats?.handshakeAcceptedCount ?? 0,
+    handshakeRejectedCount: transportStats?.handshakeRejectedCount ?? 0,
+    reconnectCount: transportStats?.reconnectCount ?? 0,
+  };
 }
 
 export function createLogisticsRuntimeGatewayServer(
@@ -932,6 +995,7 @@ export function createLogisticsRuntimeGatewayServer(
           transport: {
             connectedNodes: transportStatus.connectedNodes,
             peers,
+            telemetry: readTransportTelemetryStatus(transportStats),
             idempotency: normalizeIdempotencyStatus(
               transportStatus.idempotency ?? {
                 windowSize: 0,
@@ -989,11 +1053,30 @@ export function createLogisticsRuntimeGatewayServer(
             host: options.host ?? '127.0.0.1',
             port: options.transportPort ?? 0,
           },
+          ...(options.outboundQueueLimit !== undefined
+            ? { outboundQueueLimit: options.outboundQueueLimit }
+            : {}),
+          ...(options.runtimeAuthToken
+            ? {
+                auth: createSharedSecretAuth(
+                  options.runtimeAuthToken,
+                  'Shared runtime secret rejected.'
+                ),
+              }
+            : {}),
           ...(options.transportTelemetry ? { telemetry: options.transportTelemetry } : {}),
         },
         gateway: {
           host: options.host ?? '127.0.0.1',
           port: options.port ?? 0,
+          ...(options.gatewayAuthToken
+            ? {
+                auth: createSharedSecretAuth(
+                  options.gatewayAuthToken,
+                  'Gateway authentication rejected.'
+                ),
+              }
+            : {}),
         },
       });
       shipmentActor = servedNode.requireActor('shipment');

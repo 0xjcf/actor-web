@@ -34,6 +34,15 @@ function parsePort(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function parseOptionalNumber(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 function parseLifecycleMode(value: string | undefined): LifecycleMode {
   return value === 'manual' ? 'manual' : 'simulation';
 }
@@ -85,6 +94,9 @@ async function main(): Promise<void> {
     lifecycleMode,
     providerRuntimeEnabled,
     providerRuntimeSource,
+    runtimeAuthToken: process.env.ACTOR_WEB_RUNTIME_AUTH_TOKEN,
+    gatewayAuthToken: process.env.ACTOR_WEB_GATEWAY_AUTH_TOKEN,
+    outboundQueueLimit: parseOptionalNumber(process.env.ACTOR_WEB_TRANSPORT_OUTBOUND_QUEUE_LIMIT),
     ...(telemetry ? { transportTelemetry: telemetry.observe } : {}),
   });
 

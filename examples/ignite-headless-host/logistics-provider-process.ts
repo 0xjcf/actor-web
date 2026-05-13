@@ -19,6 +19,15 @@ interface LogisticsProviderReadyPayload {
 const serverNode = logistics.nodes.server.address;
 const providerNode = logistics.nodes.provider.address;
 
+function parseOptionalNumber(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 function resolveServerTransportUrl(): string {
   const url = process.env.ACTOR_WEB_SERVER_TRANSPORT_URL;
   if (url) {
@@ -40,6 +49,10 @@ async function stopTelemetry(
 
 async function main(): Promise<void> {
   const serverTransportUrl = resolveServerTransportUrl();
+  const runtimeAuthToken = process.env.ACTOR_WEB_RUNTIME_AUTH_TOKEN;
+  const outboundQueueLimit = parseOptionalNumber(
+    process.env.ACTOR_WEB_TRANSPORT_OUTBOUND_QUEUE_LIMIT
+  );
   const telemetry = process.env.ACTOR_WEB_TELEMETRY_JSONL
     ? createRuntimeTransportTelemetryExporter({
         sink: createRuntimeTransportTelemetryJsonlFileSink(process.env.ACTOR_WEB_TELEMETRY_JSONL),
@@ -55,6 +68,19 @@ async function main(): Promise<void> {
     node: 'provider',
     host: process.env.ACTOR_WEB_HOST ?? '127.0.0.1',
     transport: {
+      ...(runtimeAuthToken
+        ? {
+            auth: {
+              token: runtimeAuthToken,
+              verifyToken: ({ token }: { readonly token?: string }) =>
+                token === runtimeAuthToken || {
+                  ok: false as const,
+                  reason: 'Shared runtime secret rejected.',
+                },
+            },
+          }
+        : {}),
+      ...(outboundQueueLimit !== undefined ? { outboundQueueLimit } : {}),
       ...(telemetry ? { telemetry: telemetry.observe } : {}),
     },
     discovery,

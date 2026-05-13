@@ -64,6 +64,7 @@ export interface ActorWebNodeTransportOptions {
   readonly connectTimeoutMs?: number;
   readonly heartbeatIntervalMs?: number;
   readonly heartbeatTimeoutMs?: number;
+  readonly outboundQueueLimit?: number;
   readonly idempotencyWindowSize?: number;
   readonly idempotencyProvider?: RuntimeTransportIdempotencyProvider;
   readonly auth?: RuntimeTransportAuthProvider;
@@ -283,6 +284,9 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
       : {}),
     ...(transportOptions?.heartbeatTimeoutMs !== undefined
       ? { heartbeatTimeoutMs: transportOptions.heartbeatTimeoutMs }
+      : {}),
+    ...(transportOptions?.outboundQueueLimit !== undefined
+      ? { outboundQueueLimit: transportOptions.outboundQueueLimit }
       : {}),
     ...(transportOptions?.idempotencyWindowSize !== undefined
       ? { idempotencyWindowSize: transportOptions.idempotencyWindowSize }
