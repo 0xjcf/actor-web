@@ -582,8 +582,8 @@
 
 - Title: Enforce runtime gateway liveness and replay security
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/enforce-runtime-gateway-liveness-and-replay-security.md
 - Automation mode: advisory
 - Verification lane: fast
