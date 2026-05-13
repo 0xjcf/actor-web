@@ -548,12 +548,12 @@
 
 - Title: Actor-Web production operations runbooks
 - Mode: 4-agent
-- Status: backlog
-- Owner: planner
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/actor-web-production-operations-runbooks.md
 - Verification lane: full
 - Policy sensitivity: standard
-- Blast radius: contained
+- Blast radius: cross-cutting
 - Artifacts: roadmap=docs/actor-web-multi-process-deployment-demo-design.md
 
 ## Template

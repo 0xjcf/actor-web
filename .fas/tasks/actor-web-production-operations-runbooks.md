@@ -44,6 +44,19 @@ their deployment responsibility.
 - Add small diagnostic implementation work only if a missing diagnostic blocks
   useful runbook guidance.
 
+## Affected files
+
+- `docs/operations/actor-web-production-operations.md`
+- `docs/API.md`
+- `docs/actor-web-multi-process-deployment-demo-design.md`
+
+## Out of scope for this slice
+
+- Runtime semantic changes.
+- Cloud-provider-specific deployment guides.
+- Broker-backed transport operations guidance before broker transport exists.
+- New diagnostics unless the runbook cannot be accurate without them.
+
 ## Non-Goals
 
 - No broker-backed transport runbook unless the runtime supports it by then.
