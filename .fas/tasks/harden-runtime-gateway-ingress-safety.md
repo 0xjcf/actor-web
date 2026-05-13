@@ -1,4 +1,4 @@
-# Harden Runtime Gateway Ingress Safety
+# Harden runtime gateway ingress safety
 
 ## Summary
 
@@ -51,3 +51,23 @@ cannot bypass hub validation or grow unbounded in-memory queues.
 - `pnpm typecheck`
 - `pnpm lint`
 - `fas validate-task`
+
+## Scope Amendments
+
+- Type: audit-scope-correction
+- Added at: 2026-05-13T19:38:00Z
+- Trigger: fas_architect handoff found generated commit-plan paths pointed at FAS verification pipeline files instead of runtime gateway ingress surfaces
+- Reason: Limit implementation to Actor-Web runtime gateway ingress safety surfaces before code writing
+- Added paths: packages/actor-core-runtime/src/serve-actor-web-node.ts, packages/actor-core-runtime/src/runtime-gateway.ts, packages/actor-core-runtime/src/unit/runtime-gateway.test.ts, packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts, packages/actor-core-runtime/src/index.ts
+- Evidence source: fas_architect handoff
+- Evidence: fas_architect handoff | .fas/state/commit-plan.json | planned paths were unrelated to .fas/tasks/harden-runtime-gateway-ingress-safety.md
+- Accuracy signal: high
+- Follow-up needed: Regenerate commit plan before fas_staff_engineer and fas_senior_engineer steps
+
+## Affected files
+
+- packages/actor-core-runtime/src/serve-actor-web-node.ts
+- packages/actor-core-runtime/src/runtime-gateway.ts
+- packages/actor-core-runtime/src/unit/runtime-gateway.test.ts
+- packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts
+- packages/actor-core-runtime/src/index.ts

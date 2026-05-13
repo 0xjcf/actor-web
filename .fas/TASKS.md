@@ -570,10 +570,13 @@
 
 - Title: Harden runtime gateway ingress safety
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/harden-runtime-gateway-ingress-safety.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Enforce runtime gateway liveness and replay security
 
