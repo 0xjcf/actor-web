@@ -110,10 +110,28 @@ export type RuntimeGatewayServerFrame =
 
 export interface RuntimeGatewayConnectionAdapter<TAuthContext = unknown> {
   readonly authContext: TAuthContext;
-  receive(listener: (frame: RuntimeGatewayClientFrame) => void): () => void;
+  receive(
+    listener: (frame: RuntimeGatewayClientFrame) => void,
+    onInvalidFrame?: (event: RuntimeGatewayInvalidFrameEvent) => void
+  ): () => void;
   onClose(listener: () => void): () => void;
   send(frame: RuntimeGatewayServerFrame): void | Promise<void>;
   close?(): void | Promise<void>;
+}
+
+export interface RuntimeGatewayInvalidFrameEvent {
+  readonly reason: string;
+  readonly detail?: string;
+}
+
+export interface RuntimeGatewayObserverEvent {
+  readonly type: 'invalid_frame' | 'inbound_queue_overflow';
+  readonly connectionId: string;
+  readonly timestamp: string;
+  readonly message: string;
+  readonly queueDepth?: number;
+  readonly queueLimit?: number;
+  readonly detail?: string;
 }
 
 export interface RuntimeGatewaySource {
@@ -147,8 +165,10 @@ export interface CreateRuntimeGatewayHubOptions<TAuthContext = unknown> {
   resolveScope: RuntimeGatewayScopeResolver<TAuthContext>;
   heartbeatMs?: number;
   replayBufferSize?: number;
+  inboundQueueLimit?: number;
   replayStorage?: RuntimeGatewayReplayStorageProvider;
   onReplayStorageError?: (event: RuntimeGatewayReplayStorageErrorEvent) => void;
+  observer?: (event: RuntimeGatewayObserverEvent) => void;
   auth?: RuntimeGatewayAuthProvider<{
     readonly connectionId: string;
     readonly clientVersion?: string;
@@ -411,8 +431,10 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
 } {
   const heartbeatMs = options.heartbeatMs ?? 15000;
   const replayBufferSize = options.replayBufferSize ?? 256;
+  const inboundQueueLimit = options.inboundQueueLimit ?? 64;
   const replayStorage = options.replayStorage;
   const onReplayStorageError = options.onReplayStorageError;
+  const observer = options.observer;
   const replayPersistQueue = new Map<string, Promise<void>>();
 
   return {
@@ -424,6 +446,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
       let authenticatedAuthContext = connection.authContext;
       const pendingFrames: RuntimeGatewayClientFrame[] = [];
       let processingFrame = false;
+      let terminated = false;
 
       const cleanupStream = (streamId: string): void => {
         const stream = streams.get(streamId);
@@ -439,12 +462,34 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
       };
 
       const cleanupAll = (): void => {
+        pendingFrames.length = 0;
         for (const streamId of Array.from(streams.keys())) {
           cleanupStream(streamId);
         }
       };
 
+      const emitObserverEvent = (
+        event: Omit<RuntimeGatewayObserverEvent, 'connectionId'>
+      ): void => {
+        if (!observer) {
+          return;
+        }
+
+        try {
+          observer({
+            connectionId,
+            ...event,
+          });
+        } catch {
+          // Observer hooks must not make gateway cleanup unsafe.
+        }
+      };
+
       const send = (frame: RuntimeGatewayServerFrame): void => {
+        if (terminated) {
+          return;
+        }
+
         void Promise.resolve(connection.send(frame)).catch(() => {});
       };
 
@@ -463,6 +508,29 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           message,
           recoverable,
         });
+      };
+
+      const terminateConnection = (): void => {
+        if (terminated) {
+          return;
+        }
+
+        terminated = true;
+        cleanupAll();
+        void Promise.resolve(connection.close?.()).catch(() => {});
+      };
+
+      const rejectIngress = (
+        code: RuntimeGatewayErrorCode,
+        message: string,
+        event: Omit<RuntimeGatewayObserverEvent, 'connectionId' | 'message'>
+      ): void => {
+        emitObserverEvent({
+          ...event,
+          message,
+        });
+        sendError(code, message, false);
+        terminateConnection();
       };
 
       const sendStatus = (streamId: string, status: ProjectionTransportStatus): void => {
@@ -570,12 +638,20 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         streamId: string,
         scope: RuntimeGatewayScopeDescriptor
       ): Promise<void> => {
+        if (terminated) {
+          return;
+        }
+
         cleanupStream(streamId);
 
         let source: RuntimeGatewaySource | null = null;
         try {
           source = await options.resolveScope(scope, authenticatedAuthContext);
         } catch (error) {
+          if (terminated) {
+            return;
+          }
+
           if (error instanceof RuntimeGatewayScopeError) {
             sendError(error.code, error.message, error.recoverable, streamId);
             return;
@@ -613,6 +689,10 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         const replayFrames = restoredReplayFramesMatchSource(restoredReplayFrames, source)
           ? restoredReplayFrames
           : [];
+
+        if (terminated) {
+          return;
+        }
 
         const stream: RuntimeGatewayStreamState = {
           replaySessionId,
@@ -862,8 +942,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
               });
               if (!auth.ok) {
                 sendError('unauthorized', auth.reason, false);
-                void Promise.resolve(connection.close?.()).catch(() => {});
-                cleanupAll();
+                terminateConnection();
                 return;
               }
               authenticatedAuthContext =
@@ -922,7 +1001,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
       };
 
       const processNextFrame = (): void => {
-        if (processingFrame) {
+        if (processingFrame || terminated) {
           return;
         }
 
@@ -946,11 +1025,39 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           });
       };
 
-      const unsubscribeReceive = connection.receive((frame) => {
-        pendingFrames.push(frame);
-        processNextFrame();
-      });
+      const unsubscribeReceive = connection.receive(
+        (frame) => {
+          if (terminated) {
+            return;
+          }
+
+          if (pendingFrames.length >= inboundQueueLimit) {
+            rejectIngress('invalid_frame', 'Gateway inbound queue limit exceeded.', {
+              type: 'inbound_queue_overflow',
+              timestamp: new Date().toISOString(),
+              queueDepth: pendingFrames.length,
+              queueLimit: inboundQueueLimit,
+            });
+            return;
+          }
+
+          pendingFrames.push(frame);
+          processNextFrame();
+        },
+        (event) => {
+          if (terminated) {
+            return;
+          }
+
+          rejectIngress('invalid_frame', event.reason, {
+            type: 'invalid_frame',
+            timestamp: new Date().toISOString(),
+            detail: event.detail,
+          });
+        }
+      );
       const unsubscribeClose = connection.onClose(() => {
+        terminated = true;
         cleanupAll();
       });
 

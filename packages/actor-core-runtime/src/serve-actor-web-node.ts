@@ -16,6 +16,8 @@ import {
   createRuntimeGatewaySource,
   type RuntimeGatewayClientFrame,
   type RuntimeGatewayConnectionAdapter,
+  type RuntimeGatewayInvalidFrameEvent,
+  type RuntimeGatewayObserverEvent,
   RuntimeGatewayScopeError,
   type RuntimeGatewayScopeResolver,
   type RuntimeGatewaySource,
@@ -45,6 +47,8 @@ export interface ActorWebNodeGatewayOptions<TActorKey extends string = string> {
   readonly port?: number;
   readonly expose?: readonly TActorKey[];
   readonly resolveScope?: RuntimeGatewayScopeResolver<Record<string, never>>;
+  readonly inboundQueueLimit?: number;
+  readonly observer?: (event: RuntimeGatewayObserverEvent) => void;
   readonly auth?: RuntimeGatewayAuthProvider<{
     readonly connectionId: string;
     readonly clientVersion?: string;
@@ -143,7 +147,10 @@ class ActorWebNodeGatewayConnection implements RuntimeGatewayConnectionAdapter {
 
   constructor(private readonly socket: WebSocketLike) {}
 
-  receive(listener: (frame: RuntimeGatewayClientFrame) => void): () => void {
+  receive(
+    listener: (frame: RuntimeGatewayClientFrame) => void,
+    onInvalidFrame?: (event: RuntimeGatewayInvalidFrameEvent) => void
+  ): () => void {
     const onMessage = (data: unknown): void => {
       const text =
         typeof data === 'string'
@@ -153,7 +160,14 @@ class ActorWebNodeGatewayConnection implements RuntimeGatewayConnectionAdapter {
             : Array.isArray(data)
               ? Buffer.concat(data).toString('utf8')
               : Buffer.from(data as ArrayBuffer).toString('utf8');
-      listener(JSON.parse(text) as RuntimeGatewayClientFrame);
+      try {
+        listener(JSON.parse(text) as RuntimeGatewayClientFrame);
+      } catch (error) {
+        onInvalidFrame?.({
+          reason: 'Gateway frame must be valid JSON.',
+          detail: error instanceof Error ? error.message : String(error),
+        });
+      }
     };
 
     this.socket.on('message', onMessage);
@@ -376,6 +390,10 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
 
   const hub = createRuntimeGatewayHub({
     ...(gatewayOptions?.auth ? { auth: gatewayOptions.auth } : {}),
+    ...(gatewayOptions?.inboundQueueLimit !== undefined
+      ? { inboundQueueLimit: gatewayOptions.inboundQueueLimit }
+      : {}),
+    ...(gatewayOptions?.observer ? { observer: gatewayOptions.observer } : {}),
     resolveScope: async (scope) => {
       const customSource = await gatewayOptions?.resolveScope?.(scope, {});
       if (customSource) {
