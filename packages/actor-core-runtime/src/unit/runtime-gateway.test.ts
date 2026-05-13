@@ -102,9 +102,7 @@ function createFakeConnection<TAuthContext = unknown>(
   authContext: TAuthContext
 ): FakeConnection<TAuthContext> {
   const receiveListeners = new Set<(frame: RuntimeGatewayClientFrame) => void>();
-  const invalidFrameListeners = new Set<
-    (event: RuntimeGatewayInvalidFrameEvent) => void
-  >();
+  const invalidFrameListeners = new Set<(event: RuntimeGatewayInvalidFrameEvent) => void>();
   const closeListeners = new Set<() => void>();
   const frames: unknown[] = [];
 

@@ -48,9 +48,7 @@ function waitForSocketOpen(socket: WebSocket): Promise<void> {
   });
 }
 
-function waitForSocketClose(
-  socket: WebSocket
-): Promise<{ code: number; reason: Buffer }> {
+function waitForSocketClose(socket: WebSocket): Promise<{ code: number; reason: Buffer }> {
   return new Promise((resolve) => {
     socket.once('close', (code, reason) => {
       resolve({ code, reason: Buffer.from(reason) });
