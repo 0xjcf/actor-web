@@ -548,8 +548,8 @@
 
 - Title: Actor-Web production operations runbooks
 - Mode: 4-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/actor-web-production-operations-runbooks.md
 - Verification lane: full
 - Policy sensitivity: standard
