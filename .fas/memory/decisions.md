@@ -18,3 +18,5 @@
 [2026-04-30] **Commit discipline**: 3-step plan for "Make examples/fas-agent-loop use real Actor-Web runtime boun". Steps: feat: implement make examples/fas-agent-loop use real actor-web runtime boundaries; test: cover make examples/fas-agent-loop use real actor-web runtime boundaries; chore: clean up make examples/fas-agent-loop use real actor-web runtime boundaries.
 
 [2026-04-30] **Memory-informed implementation**: 3 high-signal memory entries guided this task. Top entry from patterns.md: "[2026-04-30] **Script modifications for "Actor-Web docs consistency pass for current runtime guarant..."
+
+[2026-05-13T19:35:42Z] [spike:direct-1778699775471] **Spike capture (audit)**: Queue gateway ingress hardening before broader runtime cleanup because | malformed frame handling and unbounded gateway queues are the highest runtime | safety risks. | Treat stale FAS spike state and evidence rollover as a platform/workflow issue, | not a one-off Actor-Web tracker edit.
