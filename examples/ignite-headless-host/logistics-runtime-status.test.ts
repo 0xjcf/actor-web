@@ -36,6 +36,13 @@ function createStatusResponse(
       connectedNodes: ['logistics-worker-runtime'],
       peers: [
         {
+          outboundQueueDepth: 1,
+          outboundQueueLimit: 7,
+          outboundFramesDropped: 0,
+          backpressureDropCount: 0,
+          handshakeAcceptedCount: 1,
+          handshakeRejectedCount: 0,
+          reconnectCount: 0,
           nodeAddress: 'logistics-worker-runtime',
           state: 'connected',
           connected: true,
@@ -45,10 +52,27 @@ function createStatusResponse(
           lastSeenAt: '2026-04-30T15:00:00.000Z',
         },
       ],
+      telemetry: {
+        outboundQueueDepth: 1,
+        outboundQueueLimit: 7,
+        outboundFramesDropped: 0,
+        backpressureDropCount: 0,
+        duplicateFramesDropped: 0,
+        handshakeAcceptedCount: 1,
+        handshakeRejectedCount: 0,
+        reconnectCount: 0,
+      },
       idempotency: createIdempotencyStatus(),
       workerConnected: true,
       workerPeerFresh: true,
       workerPeer: {
+        outboundQueueDepth: 1,
+        outboundQueueLimit: 7,
+        outboundFramesDropped: 0,
+        backpressureDropCount: 0,
+        handshakeAcceptedCount: 1,
+        handshakeRejectedCount: 0,
+        reconnectCount: 0,
         nodeAddress: 'logistics-worker-runtime',
         state: 'connected',
         connected: true,
@@ -101,7 +125,11 @@ describe('logistics runtime status adapter', () => {
     expect(view.metrics).toEqual([
       { label: 'Connected nodes', value: '1', unavailable: false },
       { label: 'Known peers', value: '1', unavailable: false },
+      { label: 'Reconnects', value: '0', unavailable: false },
+      { label: 'Handshake rejects', value: '0', unavailable: false },
       { label: 'Duplicate drops', value: '0', unavailable: false },
+      { label: 'Queue limit', value: '7', unavailable: false },
+      { label: 'Backpressure drops', value: '0', unavailable: false },
       { label: 'Provider idempotency errors', value: 'disabled', unavailable: true },
       { label: 'Last provider error at', value: 'unavailable', unavailable: true },
       { label: 'Last provider error message', value: 'unavailable', unavailable: true },
@@ -122,6 +150,16 @@ describe('logistics runtime status adapter', () => {
     const view = reduceLogisticsRuntimeStatusView(
       createInitialLogisticsRuntimeStatusView(),
       createStatusResponse({
+        telemetry: {
+          outboundQueueDepth: 1,
+          outboundQueueLimit: 7,
+          outboundFramesDropped: 0,
+          backpressureDropCount: 0,
+          duplicateFramesDropped: 2,
+          handshakeAcceptedCount: 1,
+          handshakeRejectedCount: 0,
+          reconnectCount: 0,
+        },
         idempotency: createIdempotencyStatus({
           duplicateFramesDropped: 2,
         }),
@@ -131,7 +169,11 @@ describe('logistics runtime status adapter', () => {
     expect(view.metrics).toEqual([
       { label: 'Connected nodes', value: '1', unavailable: false },
       { label: 'Known peers', value: '1', unavailable: false },
+      { label: 'Reconnects', value: '0', unavailable: false },
+      { label: 'Handshake rejects', value: '0', unavailable: false },
       { label: 'Duplicate drops', value: '2', unavailable: false },
+      { label: 'Queue limit', value: '7', unavailable: false },
+      { label: 'Backpressure drops', value: '0', unavailable: false },
       { label: 'Provider idempotency errors', value: 'disabled', unavailable: true },
       { label: 'Last provider error at', value: 'unavailable', unavailable: true },
       { label: 'Last provider error message', value: 'unavailable', unavailable: true },
@@ -309,6 +351,16 @@ describe('logistics runtime status adapter', () => {
     const view = reduceLogisticsRuntimeStatusView(
       createInitialLogisticsRuntimeStatusView(),
       createStatusResponse({
+        telemetry: {
+          outboundQueueDepth: 2,
+          outboundQueueLimit: 9,
+          outboundFramesDropped: 0,
+          backpressureDropCount: 1,
+          duplicateFramesDropped: 3,
+          handshakeAcceptedCount: 2,
+          handshakeRejectedCount: 1,
+          reconnectCount: 4,
+        },
         idempotency: createIdempotencyStatus({
           duplicateFramesDropped: 3,
           providerEnabled: true,
@@ -321,7 +373,11 @@ describe('logistics runtime status adapter', () => {
     expect(view.metrics).toEqual([
       { label: 'Connected nodes', value: '1', unavailable: false },
       { label: 'Known peers', value: '1', unavailable: false },
+      { label: 'Reconnects', value: '4', unavailable: false },
+      { label: 'Handshake rejects', value: '1', unavailable: false },
       { label: 'Duplicate drops', value: '3', unavailable: false },
+      { label: 'Queue limit', value: '9', unavailable: false },
+      { label: 'Backpressure drops', value: '1', unavailable: false },
       { label: 'Provider idempotency errors', value: '1', unavailable: false },
       { label: 'Last provider error at', value: 'none', unavailable: false },
       { label: 'Last provider error message', value: 'none', unavailable: false },
@@ -344,7 +400,11 @@ describe('logistics runtime status adapter', () => {
     expect(view.metrics).toEqual([
       { label: 'Connected nodes', value: '1', unavailable: false },
       { label: 'Known peers', value: '1', unavailable: false },
+      { label: 'Reconnects', value: '0', unavailable: false },
+      { label: 'Handshake rejects', value: '0', unavailable: false },
       { label: 'Duplicate drops', value: '0', unavailable: false },
+      { label: 'Queue limit', value: '7', unavailable: false },
+      { label: 'Backpressure drops', value: '0', unavailable: false },
       { label: 'Provider idempotency errors', value: '1', unavailable: false },
       { label: 'Last provider error at', value: '2026-04-30T15:04:00.000Z', unavailable: false },
       {
@@ -353,5 +413,75 @@ describe('logistics runtime status adapter', () => {
         unavailable: false,
       },
     ]);
+  });
+
+  it('guards operator-facing transport telemetry from /runtime/status', () => {
+    const view = reduceLogisticsRuntimeStatusView(
+      createInitialLogisticsRuntimeStatusView(),
+      createStatusResponse({
+        peers: [
+          {
+            outboundQueueDepth: 3,
+            outboundQueueLimit: 11,
+            outboundFramesDropped: 1,
+            backpressureDropCount: 2,
+            handshakeAcceptedCount: 3,
+            handshakeRejectedCount: 1,
+            reconnectCount: 5,
+            nodeAddress: 'logistics-worker-runtime',
+            state: 'connected',
+            connected: true,
+            fresh: true,
+            staleAfterMs: 45_000,
+            idempotency: createIdempotencyStatus({ duplicateFramesDropped: 4 }),
+            lastSeenAt: '2026-04-30T15:00:00.000Z',
+          },
+        ],
+        telemetry: {
+          outboundQueueDepth: 3,
+          outboundQueueLimit: 11,
+          outboundFramesDropped: 1,
+          backpressureDropCount: 2,
+          duplicateFramesDropped: 4,
+          handshakeAcceptedCount: 3,
+          handshakeRejectedCount: 1,
+          reconnectCount: 5,
+        },
+        workerPeer: {
+          outboundQueueDepth: 3,
+          outboundQueueLimit: 11,
+          outboundFramesDropped: 1,
+          backpressureDropCount: 2,
+          handshakeAcceptedCount: 3,
+          handshakeRejectedCount: 1,
+          reconnectCount: 5,
+          nodeAddress: 'logistics-worker-runtime',
+          state: 'connected',
+          connected: true,
+          fresh: true,
+          staleAfterMs: 45_000,
+          idempotency: createIdempotencyStatus({ duplicateFramesDropped: 4 }),
+          lastSeenAt: '2026-04-30T15:00:00.000Z',
+        },
+      })
+    );
+
+    expect(view.metrics).toEqual([
+      { label: 'Connected nodes', value: '1', unavailable: false },
+      { label: 'Known peers', value: '1', unavailable: false },
+      { label: 'Reconnects', value: '5', unavailable: false },
+      { label: 'Handshake rejects', value: '1', unavailable: false },
+      { label: 'Duplicate drops', value: '4', unavailable: false },
+      { label: 'Queue limit', value: '11', unavailable: false },
+      { label: 'Backpressure drops', value: '2', unavailable: false },
+      { label: 'Provider idempotency errors', value: 'disabled', unavailable: true },
+      { label: 'Last provider error at', value: 'unavailable', unavailable: true },
+      { label: 'Last provider error message', value: 'unavailable', unavailable: true },
+    ]);
+    expect(view.nodes.find((node) => node.id === 'worker-runtime')).toMatchObject({
+      statusLabel: 'Connected',
+      connectedLabel: 'true',
+      peerState: 'connected',
+    });
   });
 });

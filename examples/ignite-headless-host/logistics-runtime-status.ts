@@ -10,6 +10,13 @@ export interface LogisticsRuntimePeerStatus {
   readonly fresh: boolean;
   readonly staleAfterMs: number;
   readonly idempotency: LogisticsRuntimeIdempotencyStatus;
+  readonly outboundQueueDepth?: number;
+  readonly outboundQueueLimit?: number;
+  readonly outboundFramesDropped?: number;
+  readonly backpressureDropCount?: number;
+  readonly handshakeAcceptedCount?: number;
+  readonly handshakeRejectedCount?: number;
+  readonly reconnectCount?: number;
   readonly lastSeenAt?: string;
   readonly disconnectedAt?: string;
   readonly rejectedReason?: string;
@@ -39,6 +46,16 @@ export interface LogisticsRuntimeStatusResponse {
   readonly transport: {
     readonly connectedNodes: readonly string[];
     readonly peers: readonly LogisticsRuntimePeerStatus[];
+    readonly telemetry?: {
+      readonly outboundQueueDepth: number;
+      readonly outboundQueueLimit: number;
+      readonly outboundFramesDropped: number;
+      readonly backpressureDropCount: number;
+      readonly duplicateFramesDropped: number;
+      readonly handshakeAcceptedCount: number;
+      readonly handshakeRejectedCount: number;
+      readonly reconnectCount: number;
+    };
     readonly idempotency?: LogisticsRuntimeIdempotencyStatus;
     readonly workerConnected: boolean;
     readonly workerPeerFresh: boolean;
@@ -156,6 +173,23 @@ function transportIdempotency(
       providerClaimCount: 0,
       providerDuplicateCount: 0,
       providerErrorCount: 0,
+    }
+  );
+}
+
+function transportTelemetry(
+  response: LogisticsRuntimeStatusResponse
+): NonNullable<LogisticsRuntimeStatusResponse['transport']['telemetry']> {
+  return (
+    response.transport.telemetry ?? {
+      outboundQueueDepth: 0,
+      outboundQueueLimit: 0,
+      outboundFramesDropped: 0,
+      backpressureDropCount: 0,
+      duplicateFramesDropped: 0,
+      handshakeAcceptedCount: 0,
+      handshakeRejectedCount: 0,
+      reconnectCount: 0,
     }
   );
 }
@@ -453,6 +487,7 @@ export function reduceLogisticsRuntimeStatusView(
     workerStatus.recovered
   );
   const idempotency = transportIdempotency(response);
+  const telemetry = transportTelemetry(response);
 
   return {
     sourceLabel: runtimeStatusSourceLabel(),
@@ -466,7 +501,11 @@ export function reduceLogisticsRuntimeStatusView(
     metrics: [
       createMetricView('Connected nodes', response.transport.connectedNodes.length),
       createMetricView('Known peers', response.transport.peers.length),
-      createMetricView('Duplicate drops', idempotency.duplicateFramesDropped),
+      createMetricView('Reconnects', telemetry.reconnectCount),
+      createMetricView('Handshake rejects', telemetry.handshakeRejectedCount),
+      createMetricView('Duplicate drops', telemetry.duplicateFramesDropped),
+      createMetricView('Queue limit', telemetry.outboundQueueLimit),
+      createMetricView('Backpressure drops', telemetry.backpressureDropCount),
       createMetricView(
         'Provider idempotency errors',
         idempotency.providerEnabled ? idempotency.providerErrorCount : 'disabled',
