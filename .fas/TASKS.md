@@ -536,8 +536,8 @@
 
 - Title: Logistics multi-machine deployment prove-out
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/logistics-multi-machine-deployment-prove-out.md
 - Verification lane: full
 - Policy sensitivity: standard
