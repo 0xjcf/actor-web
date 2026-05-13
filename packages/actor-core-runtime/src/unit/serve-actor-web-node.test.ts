@@ -48,6 +48,16 @@ function waitForSocketOpen(socket: WebSocket): Promise<void> {
   });
 }
 
+function waitForSocketClose(
+  socket: WebSocket
+): Promise<{ code: number; reason: Buffer }> {
+  return new Promise((resolve) => {
+    socket.once('close', (code, reason) => {
+      resolve({ code, reason: Buffer.from(reason) });
+    });
+  });
+}
+
 function collectFrames(socket: WebSocket): { nextFrame(): Promise<RuntimeGatewayServerFrame> } {
   const frames: RuntimeGatewayServerFrame[] = [];
   const waiters: Array<(frame: RuntimeGatewayServerFrame) => void> = [];
@@ -228,6 +238,48 @@ describe('serveActorWebNode', () => {
         type: 'ready',
       });
       accepted.close();
+    } finally {
+      await served.stop();
+    }
+  });
+
+  it('fails closed on malformed raw gateway JSON without throwing from the WebSocket callback', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+      },
+      actors: {
+        counter: actor({
+          id: 'counter',
+          node: 'server',
+          behavior: createCounterBehavior,
+          gateway: true,
+        }),
+      },
+    });
+
+    const served = await serveActorWebNode(topology, {
+      node: 'server',
+      gateway: true,
+    });
+
+    try {
+      const socket = new WebSocket(served.getGatewayUrl() ?? '');
+      const gatewayFrames = collectFrames(socket);
+      const closePromise = waitForSocketClose(socket);
+      await waitForSocketOpen(socket);
+
+      socket.send('{"type":"hello"');
+
+      await expect(gatewayFrames.nextFrame()).resolves.toMatchObject({
+        type: 'error',
+        code: 'invalid_frame',
+        message: 'Gateway frame must be valid JSON.',
+        recoverable: false,
+      });
+      await expect(closePromise).resolves.toMatchObject({
+        code: expect.any(Number),
+      });
     } finally {
       await served.stop();
     }

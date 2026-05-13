@@ -11,6 +11,8 @@ import {
   type RuntimeGatewayClientFrame,
   type RuntimeGatewayConnectionAdapter,
   type RuntimeGatewayEventProjection,
+  type RuntimeGatewayInvalidFrameEvent,
+  type RuntimeGatewayObserverEvent,
   type RuntimeGatewayReplayFrame,
   type RuntimeGatewayReplayStorageErrorEvent,
   type RuntimeGatewayReplayStorageProvider,
@@ -92,6 +94,7 @@ interface FakeConnection<TAuthContext = unknown>
   frames: unknown[];
   closed: boolean;
   push(frame: RuntimeGatewayClientFrame): void;
+  pushInvalidFrame(event: RuntimeGatewayInvalidFrameEvent): void;
   close(): void;
 }
 
@@ -99,6 +102,9 @@ function createFakeConnection<TAuthContext = unknown>(
   authContext: TAuthContext
 ): FakeConnection<TAuthContext> {
   const receiveListeners = new Set<(frame: RuntimeGatewayClientFrame) => void>();
+  const invalidFrameListeners = new Set<
+    (event: RuntimeGatewayInvalidFrameEvent) => void
+  >();
   const closeListeners = new Set<() => void>();
   const frames: unknown[] = [];
 
@@ -106,10 +112,16 @@ function createFakeConnection<TAuthContext = unknown>(
     authContext,
     frames,
     closed: false,
-    receive(listener) {
+    receive(listener, onInvalidFrame) {
       receiveListeners.add(listener);
+      if (onInvalidFrame) {
+        invalidFrameListeners.add(onInvalidFrame);
+      }
       return () => {
         receiveListeners.delete(listener);
+        if (onInvalidFrame) {
+          invalidFrameListeners.delete(onInvalidFrame);
+        }
       };
     },
     onClose(listener) {
@@ -124,6 +136,11 @@ function createFakeConnection<TAuthContext = unknown>(
     push(frame) {
       for (const listener of Array.from(receiveListeners)) {
         listener(frame);
+      }
+    },
+    pushInvalidFrame(event) {
+      for (const listener of Array.from(invalidFrameListeners)) {
+        listener(event);
       }
     },
     close() {
@@ -629,6 +646,40 @@ describe('runtime gateway hub', () => {
       code: 'invalid_frame',
       message: 'Send hello before subscribing to runtime streams.',
       recoverable: true,
+    });
+
+    detach();
+  });
+
+  it('converts adapter-level malformed frames into invalid_frame errors and observer events', async () => {
+    const observer = vi.fn<(event: RuntimeGatewayObserverEvent) => void>();
+    const hub = createRuntimeGatewayHub({
+      observer,
+      resolveScope: async () => createFakeSource(),
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.pushInvalidFrame({
+      reason: 'Gateway frame must be valid JSON.',
+      detail: 'Unexpected token } in JSON at position 1',
+    });
+
+    await flushGatewayFrames();
+
+    expect(connection.closed).toBe(true);
+    expect(connection.frames).toContainEqual({
+      type: 'error',
+      code: 'invalid_frame',
+      message: 'Gateway frame must be valid JSON.',
+      recoverable: false,
+    });
+    expect(observer).toHaveBeenCalledWith({
+      type: 'invalid_frame',
+      connectionId: expect.any(String),
+      timestamp: expect.any(String),
+      message: 'Gateway frame must be valid JSON.',
+      detail: 'Unexpected token } in JSON at position 1',
     });
 
     detach();
@@ -1603,6 +1654,64 @@ describe('runtime gateway hub', () => {
       projection: createGatewayEvent(source, 'InspectionProgressRecorded'),
     });
     expect(replayStorage.storage.has(storageKey)).toBe(false);
+
+    detach();
+  });
+
+  it('fails closed when the inbound queue limit is exceeded and reports observer evidence', async () => {
+    let releaseScope: (() => void) | undefined;
+    const scopeReady = new Promise<void>((resolve) => {
+      releaseScope = resolve;
+    });
+    const observer = vi.fn<(event: RuntimeGatewayObserverEvent) => void>();
+    const hub = createRuntimeGatewayHub({
+      inboundQueueLimit: 1,
+      observer,
+      resolveScope: async () => {
+        await scopeReady;
+        return createFakeSource();
+      },
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    await flushGatewayFrames();
+
+    connection.push({
+      type: 'subscribe',
+      streamId: 'fleet-main',
+      scope: { kind: 'fleet-view' },
+    });
+    connection.push({
+      type: 'ping',
+      sentAt: '2026-04-23T15:00:01.000Z',
+    });
+    connection.push({
+      type: 'ping',
+      sentAt: '2026-04-23T15:00:02.000Z',
+    });
+
+    await flushGatewayFrames();
+
+    expect(connection.closed).toBe(true);
+    expect(connection.frames).toContainEqual({
+      type: 'error',
+      code: 'invalid_frame',
+      message: 'Gateway inbound queue limit exceeded.',
+      recoverable: false,
+    });
+    expect(observer).toHaveBeenCalledWith({
+      type: 'inbound_queue_overflow',
+      connectionId: expect.any(String),
+      timestamp: expect.any(String),
+      message: 'Gateway inbound queue limit exceeded.',
+      queueDepth: 1,
+      queueLimit: 1,
+    });
+
+    releaseScope?.();
+    await flushGatewayFrames();
 
     detach();
   });
