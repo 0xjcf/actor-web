@@ -556,6 +556,84 @@
 - Blast radius: cross-cutting
 - Artifacts: roadmap=docs/actor-web-multi-process-deployment-demo-design.md
 
+### Task: Actor-Web post-roadmap project audit
+
+- Title: Actor-Web post-roadmap project audit
+- Mode: single-agent
+- Status: planning
+- Owner: investigator
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Harden runtime gateway ingress safety
+
+- Title: Harden runtime gateway ingress safety
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/harden-runtime-gateway-ingress-safety.md
+- Automation mode: advisory
+
+### Task: Enforce runtime gateway liveness and replay security
+
+- Title: Enforce runtime gateway liveness and replay security
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/enforce-runtime-gateway-liveness-and-replay-security.md
+- Automation mode: advisory
+
+### Task: Separate Ignite read-model sources from command surfaces
+
+- Title: Separate Ignite read-model sources from command surfaces
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/separate-ignite-read-model-sources-from-command-surfaces.md
+
+### Task: Decouple runtime gateway core projection contracts
+
+- Title: Decouple runtime gateway core projection contracts
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/decouple-runtime-gateway-core-projection-contracts.md
+- Automation mode: advisory
+
+### Task: Fix FAS audit spike state and evidence rollover
+
+- Title: Fix FAS audit spike state and evidence rollover
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/fix-fas-audit-spike-state-and-evidence-rollover.md
+
+### Task: Improve FAS audit retrieval and tracker signal
+
+- Title: Improve FAS audit retrieval and tracker signal
+- Mode: 4-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/improve-fas-audit-retrieval-and-tracker-signal.md
+
+### Task: Make runtime ownership and accounting instance-scoped
+
+- Title: Make runtime ownership and accounting instance-scoped
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/make-runtime-ownership-and-accounting-instance-scoped.md
+- Automation mode: advisory
+
+### Task: Clean up stale root package metadata
+
+- Title: Clean up stale root package metadata
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/clean-up-stale-root-package-metadata.md
+
 ## Template
 
 ### Task: `<short task title>`
