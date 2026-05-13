@@ -43,6 +43,53 @@ discovery and security seams.
 - Document which guarantees are proven and which remain operator
   responsibilities.
 
+## Affected files
+
+- examples/ignite-headless-host/logistics-server-process.ts
+- examples/ignite-headless-host/logistics-worker-process.ts
+- examples/ignite-headless-host/logistics-provider-process.ts
+- examples/ignite-headless-host/server-runtime-gateway.ts
+- examples/ignite-headless-host/logistics-runtime-status.ts
+- examples/ignite-headless-host/logistics-runtime-status.test.ts
+- examples/ignite-headless-host/logistics-multiprocess.test.ts
+- packages/actor-core-runtime/src/serve-actor-web-node.ts
+- docs/actor-web-multi-process-deployment-demo-design.md
+
+## Out of scope for this slice
+
+- packages/actor-core-runtime/src/create-actor.ts
+- packages/actor-core-runtime/src/pure-xstate-utilities.ts
+- packages/actor-core-runtime/src/machine-registry.ts
+- packages/actor-core-runtime/src/planning/hierarchical-task-network.ts
+- packages/actor-core-runtime/src/runtime-fanout.ts
+
+## Scope Amendments
+
+- Type: planner-missed
+  Original scope gap: The initial affected file set could not expose server
+  runtime transport auth or deterministic backpressure configuration to the
+  Stage 3 logistics proof.
+  Added paths:
+  - examples/ignite-headless-host/server-runtime-gateway.ts
+  - packages/actor-core-runtime/src/serve-actor-web-node.ts
+  Evidence source: delegated implementation blocker
+  Evidence path: fas_senior_engineer handoff for token tok-b311d5faf9939313faef700a
+  Accuracy signal: implementation-blocker
+  Follow-up: Keep runtime-core changes additive and limited to surfacing
+  existing transport options; do not change transport semantics.
+- Type: reviewer-requested
+  Original scope gap: The Stage 3 proof expanded `/runtime/status` transport
+  telemetry, but the local status adapter contract and fixtures did not guard
+  the new operator-facing shape.
+  Added paths:
+  - examples/ignite-headless-host/logistics-runtime-status.ts
+  - examples/ignite-headless-host/logistics-runtime-status.test.ts
+  Evidence source: delegated reviewer finding
+  Evidence path: fas_reviewer handoff for token tok-37e9a3ed7baeeb2e19b8050d
+  Accuracy signal: review-finding
+  Follow-up: Keep the status adapter projection-only; do not move runtime
+  ownership into Ignite UI code.
+
 ## Non-Goals
 
 - No broker-backed transport.

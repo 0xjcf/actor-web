@@ -237,17 +237,66 @@ machine C: provider integration/runtime
 machine D: browser/PWA clients
 ```
 
-This stage should prove the existing runtime controls under real network and
-operations constraints:
+Implemented automated proof:
+
+```sh
+pnpm exec vitest run --config examples/vitest.config.ts \
+  examples/ignite-headless-host/logistics-multiprocess.test.ts \
+  examples/ignite-headless-host/logistics-runtime-status.test.ts
+```
+
+The Stage 3 logistics proof now keeps the existing thin launcher shape and
+drives the committed typed entrypoints for each role:
+
+- `examples/ignite-headless-host/logistics-server-process.ts`
+- `examples/ignite-headless-host/logistics-worker-process.ts`
+- `examples/ignite-headless-host/logistics-provider-process.ts`
+
+The automated proof covers these deployment-shaped seams without assuming
+Docker-only DNS:
+
+- server runtime, worker runtime, and provider runtime bind loopback/ephemeral
+  ports and exchange explicit transport URLs.
+- browser/PWA clients remain gateway consumers and `/runtime/status` observers,
+  not runtime peers.
+- shared runtime peer auth can be injected through
+  `ACTOR_WEB_RUNTIME_AUTH_TOKEN`; the proof exercises both accepted peer joins
+  and rejected unauthenticated joins.
+- gateway auth can be injected through `ACTOR_WEB_GATEWAY_AUTH_TOKEN`; the
+  browser reconnect/resubscribe proof uses the same boundary a real PWA would.
+- transport queue configuration can be injected through
+  `ACTOR_WEB_TRANSPORT_OUTBOUND_QUEUE_LIMIT`; `/runtime/status` now exports the
+  configured limit plus reconnect, handshake, duplicate-drop, and
+  backpressure-drop counters.
+- worker and provider reconnect behavior is exercised by stopping and
+  restarting the separate processes, then proving routing/provider workflows
+  recover on the restarted peers.
+- exported telemetry remains file-based (`ACTOR_WEB_TELEMETRY_JSONL`) so the
+  proof can assert auth and peer lifecycle events without requiring an external
+  observability backend.
+
+What the Stage 3 automated proof demonstrates today:
 
 - runtime peer authentication with deployment-managed secrets,
-- reconnection and membership behavior through a production discovery adapter,
-- bounded in-memory duplicate frame suppression during a runtime process
-  lifetime,
-- ack control-frame behavior for runtime control traffic,
-- bounded queues and slow-consumer backpressure telemetry,
-- bounded projection replay/resync after disconnect,
-- exported operational telemetry and traceability.
+- reconnect and membership behavior through explicit URL discovery seams,
+- bounded projection replay/resubscribe after browser disconnect,
+- exported operational telemetry and traceability for auth, peer lifecycle, and
+  reconnect counters.
+
+What remains intentionally outside the automated prove-out:
+
+- physical multi-machine network validation such as DNS, mTLS/TLS termination,
+  firewall rules, secret rotation, and host-level process supervision.
+- non-zero duplicate-frame and backpressure counters in the logistics example.
+  Actor-Web transport unit tests already exercise duplicate suppression,
+  outbound queue pressure, and retry semantics directly; Stage 3 exposes those
+  counters and telemetry through `/runtime/status` and JSONL export so
+  operators can validate them during physical multi-machine rehearsals.
+- durable replay storage, restart-persistent duplicate suppression, and
+  production discovery adapters still remain hardening layers rather than demo
+  defaults.
+- browser clients continue to observe through gateway + REST only. They do not
+  join runtime membership directly and should not be treated as transport peers.
 
 Durable replay storage and production deployment adapters remain the hardening
 boundary between this demo and a production reference architecture.
@@ -258,6 +307,19 @@ at-most-once transport contract.
 Actor-Web core stays provider-neutral in this stage. A deployment adapter may
 translate service-discovery output into `RuntimePeerDiscoveryRecord` values, but
 it should not introduce cloud SDKs or provider-owned lifecycle into the runtime.
+
+Recommended manual multi-machine rehearsal:
+
+1. Start the server process on machine A with explicit `ACTOR_WEB_*` ports,
+   optional `ACTOR_WEB_RUNTIME_AUTH_TOKEN`, optional
+   `ACTOR_WEB_GATEWAY_AUTH_TOKEN`, and JSONL telemetry output enabled.
+2. Start the worker and provider processes on machines B and C with
+   `ACTOR_WEB_SERVER_TRANSPORT_URL` pointed at the server listener and the same
+   runtime auth token.
+3. Point browser/PWA clients on machine D at the server REST/gateway URLs only.
+4. Confirm `/runtime/status` reports authenticated peers, reconnect counters,
+   queue-limit telemetry, and exported JSONL auth/peer events before treating
+   the topology as deployment-ready.
 Use deployment-managed auth token factories/verifiers for peer admission, keep
 secrets out of discovery metadata and telemetry, and treat TLS termination,
 certificate rotation, and secret rotation as deployment responsibilities outside
