@@ -570,8 +570,8 @@
 
 - Title: Harden runtime gateway ingress safety
 - Mode: 6-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/harden-runtime-gateway-ingress-safety.md
 - Automation mode: advisory
 - Verification lane: fast
@@ -636,6 +636,15 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/clean-up-stale-root-package-metadata.md
+
+### Task: Normalize runtime gateway inbound queue limit options
+
+- Title: Normalize runtime gateway inbound queue limit options
+- Mode: 4-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/normalize-runtime-gateway-inbound-queue-limit-options.md
+- Automation mode: advisory
 
 ## Template
 
