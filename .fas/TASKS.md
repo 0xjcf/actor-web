@@ -594,8 +594,8 @@
 
 - Title: Separate Ignite read-model sources from command surfaces
 - Mode: 6-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/separate-ignite-read-model-sources-from-command-surfaces.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -668,6 +668,22 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/plan-replay-storage-compatibility-for-owner-bound-resume-key.md
+
+### Task: Reduce duplicate gateway subscriptions for read-model plus command sources
+
+- Title: Reduce duplicate gateway subscriptions for read-model plus command sources
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/reduce-duplicate-gateway-subscriptions-for-read-model-plus-c.md
+
+### Task: Migrate Ignite host docs and examples to read-model defaults
+
+- Title: Migrate Ignite host docs and examples to read-model defaults
+- Mode: 4-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/migrate-ignite-host-docs-and-examples-to-read-model-defaults.md
 
 ## Template
 
