@@ -28,7 +28,7 @@ Actor-Web owns:
 
 Ignite and browser/PWA hosts consume:
 
-- gateway snapshots, events, and commands,
+- gateway snapshots, events, and explicit opt-in command surfaces,
 - `/runtime/status` as an operator-facing read-model feed.
 
 Ignite remains a projection/read-model consumer only. It does not join runtime
@@ -61,8 +61,11 @@ on:
   owns actors and connects outward to transport peers.
 - `serveActorWebHttp(...)`: application ingress adapter for explicit REST
   routes such as `/runtime/status`.
-- `createActorWebClient(...)` and `createActorWebSource(...)`: client/gateway
-  consumers only, not runtime peers.
+- `createActorWebReadModelClient(...)` and
+  `createActorWebReadModelSource(...)`: default client/gateway read-model
+  consumers, not runtime peers.
+- `createActorWebCommandSource(...)`: explicit host-owned gateway command path
+  when a browser or thin host intentionally owns control for an exposed actor.
 - `getTransportStatus()` and `getPeerStatus(nodeAddress)`: runtime-native peer
   health/status accessors.
 - `createRuntimeTransportTelemetryExporter(...)` with
