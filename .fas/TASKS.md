@@ -594,8 +594,8 @@
 
 - Title: Separate Ignite read-model sources from command surfaces
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/separate-ignite-read-model-sources-from-command-surfaces.md
 - Verification lane: fast
 - Policy sensitivity: standard
