@@ -43,8 +43,12 @@ export type {
   ActorToolRegistry,
 } from './actor-tools.js';
 export { createActorToolbox } from './actor-tools.js';
-export type { ActorWebClient, ActorWebClientOptions } from './actor-web-client.js';
-export { createActorWebClient } from './actor-web-client.js';
+export type {
+  ActorWebClient,
+  ActorWebClientOptions,
+  ActorWebReadModelClient,
+} from './actor-web-client.js';
+export { createActorWebClient, createActorWebReadModelClient } from './actor-web-client.js';
 export {
   type BackoffStrategy,
   BackoffSupervisor,
@@ -153,10 +157,14 @@ export {
   actorSnapshotToIgniteSourceSnapshot,
   type CreateIgniteActorSourceOptions,
   createIgniteActorSource,
+  createIgniteCommandSource,
+  createIgniteReadModelSource,
   type EventSubscribableActorRef,
   type IgniteActorSource,
   type IgniteActorSourceEvent,
   type IgniteActorSourceSnapshot,
+  type IgniteCommandSource,
+  type IgniteReadModelSource,
   isEventSubscribableActorRef,
   isSnapshotSubscribableActorRef,
   isTransportStatusSubscribableActorRef,
@@ -240,8 +248,10 @@ export {
 } from './runtime-auth.js';
 export type {
   RuntimeGatewayClientFrame,
+  RuntimeGatewayCommandSource,
   RuntimeGatewayErrorCode,
   RuntimeGatewayEventProjection,
+  RuntimeGatewayReadModelSource,
   RuntimeGatewayReplayFrame,
   RuntimeGatewayReplayStorageErrorEvent,
   RuntimeGatewayReplayStorageProvider,
@@ -251,7 +261,9 @@ export type {
   RuntimeGatewaySnapshotProjection,
 } from './runtime-gateway.js';
 export {
+  createRuntimeGatewayCommandSource,
   createRuntimeGatewayHub,
+  createRuntimeGatewayReadModelSource,
   createRuntimeGatewaySource,
   RuntimeGatewayScopeError,
 } from './runtime-gateway.js';

@@ -1,7 +1,10 @@
 import type { ActorBehavior, ActorMessage } from './actor-system.js';
 import {
   type ActorWebSourceOptions,
+  type ClosableActorWebReadModelSource,
   type ClosableActorWebSource,
+  createActorWebCommandSource,
+  createActorWebReadModelSource,
   createActorWebSource,
 } from './actor-web-source.js';
 import type { RuntimeGatewayScopeDescriptor } from './runtime-gateway.js';
@@ -140,6 +143,19 @@ export interface ActorWebActorDescriptor<
     params?: ActorWebActorInstanceParams<ActorWebActorDescriptor<TId, TNode, TBehavior>>
   ): ActorWebActorAddress;
   source(
+    options: ActorWebSourceOptions
+  ): ClosableActorWebSource<
+    ActorWebBehaviorContext<NonNullable<TBehavior>>,
+    ActorWebBehaviorMessage<NonNullable<TBehavior>>,
+    ActorWebBehaviorEvent<NonNullable<TBehavior>>
+  >;
+  readModel(
+    options: ActorWebSourceOptions
+  ): ClosableActorWebReadModelSource<
+    ActorWebBehaviorContext<NonNullable<TBehavior>>,
+    ActorWebBehaviorEvent<NonNullable<TBehavior>>
+  >;
+  commandSource(
     options: ActorWebSourceOptions
   ): ClosableActorWebSource<
     ActorWebBehaviorContext<NonNullable<TBehavior>>,
@@ -321,6 +337,18 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
           resolveAddress,
           ...(gateway ? { gateway } : {}),
           source(options: ActorWebSourceOptions): ClosableActorWebSource {
+            return createActorWebCommandSource({
+              actor: this,
+              ...options,
+            });
+          },
+          readModel(options: ActorWebSourceOptions): ClosableActorWebReadModelSource {
+            return createActorWebReadModelSource({
+              actor: this,
+              ...options,
+            });
+          },
+          commandSource(options: ActorWebSourceOptions): ClosableActorWebSource {
             return createActorWebSource({
               actor: this,
               ...options,

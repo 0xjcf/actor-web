@@ -2,9 +2,10 @@ import type { ActorEventSubscriptionOptions } from './actor-ref.js';
 import type { ActorAddress, ActorMessage } from './actor-system.js';
 import {
   actorSnapshotToIgniteSourceSnapshot,
-  type IgniteActorSource,
   type IgniteActorSourceEvent,
   type IgniteActorSourceSnapshot,
+  type IgniteCommandSource,
+  type IgniteReadModelSource,
 } from './integration/ignite-element-bridge.js';
 import {
   createProjectionTransportStatus,
@@ -69,13 +70,25 @@ export interface ActorWebActorSourceInput<TActor extends ActorWebActorDescriptor
   readonly clientVersion?: string;
 }
 
-export interface ClosableActorWebSource<
+export interface ClosableActorWebReadModelSource<
+  TContext = unknown,
+  TEvent extends ActorMessage = ActorMessage,
+> extends IgniteReadModelSource<TContext, TEvent> {
+  close(): void;
+}
+
+export interface ClosableActorWebCommandSource<
   TContext = unknown,
   TMessage extends ActorMessage = ActorMessage,
   TEvent extends ActorMessage = ActorMessage,
-> extends IgniteActorSource<TContext, TMessage, TEvent> {
-  close(): void;
-}
+> extends ClosableActorWebReadModelSource<TContext, TEvent>,
+    IgniteCommandSource<TContext, TMessage, TEvent> {}
+
+export type ClosableActorWebSource<
+  TContext = unknown,
+  TMessage extends ActorMessage = ActorMessage,
+  TEvent extends ActorMessage = ActorMessage,
+> = ClosableActorWebCommandSource<TContext, TMessage, TEvent>;
 
 type PendingAsk = {
   resolve(value: unknown): void;
@@ -478,14 +491,45 @@ function createGatewayBackedSource<
   };
 }
 
-export function createActorWebSource<TActor extends ActorWebActorDescriptor>(
+export function createActorWebReadModelSource<TActor extends ActorWebActorDescriptor>(
+  input: ActorWebActorSourceInput<TActor>
+): ClosableActorWebReadModelSource<ActorWebActorContext<TActor>, ActorWebActorEvent<TActor>>;
+export function createActorWebReadModelSource<TActor extends ActorWebActorDescriptor>(
+  actorDescriptor: TActor,
+  options: ActorWebSourceOptions
+): ClosableActorWebReadModelSource<ActorWebActorContext<TActor>, ActorWebActorEvent<TActor>>;
+export function createActorWebReadModelSource(
+  input: ActorWebAddressSourceInput,
+  options?: Omit<ActorWebSourceOptions, 'gateway'>
+): ClosableActorWebReadModelSource<unknown, ActorMessage>;
+export function createActorWebReadModelSource(
+  input:
+    | ActorWebActorDescriptor
+    | ActorWebActorSourceInput<ActorWebActorDescriptor>
+    | ActorWebAddressSourceInput,
+  options?: ActorWebSourceOptions | Omit<ActorWebSourceOptions, 'gateway'>
+): ClosableActorWebReadModelSource<unknown, ActorMessage> {
+  const source = createActorWebCommandSource(input as never, options as never);
+
+  return {
+    address: source.address,
+    snapshot: source.snapshot,
+    subscribe: source.subscribe,
+    subscribeEvent: source.subscribeEvent,
+    transportStatus: source.transportStatus,
+    subscribeTransportStatus: source.subscribeTransportStatus,
+    close: source.close,
+  };
+}
+
+export function createActorWebCommandSource<TActor extends ActorWebActorDescriptor>(
   input: ActorWebActorSourceInput<TActor>
 ): ClosableActorWebSource<
   ActorWebActorContext<TActor>,
   ActorWebActorMessage<TActor>,
   ActorWebActorEvent<TActor>
 >;
-export function createActorWebSource<TActor extends ActorWebActorDescriptor>(
+export function createActorWebCommandSource<TActor extends ActorWebActorDescriptor>(
   actorDescriptor: TActor,
   options: ActorWebSourceOptions
 ): ClosableActorWebSource<
@@ -493,11 +537,11 @@ export function createActorWebSource<TActor extends ActorWebActorDescriptor>(
   ActorWebActorMessage<TActor>,
   ActorWebActorEvent<TActor>
 >;
-export function createActorWebSource(
+export function createActorWebCommandSource(
   input: ActorWebAddressSourceInput,
   options?: Omit<ActorWebSourceOptions, 'gateway'>
 ): ClosableActorWebSource<unknown, ActorMessage, ActorMessage>;
-export function createActorWebSource(
+export function createActorWebCommandSource(
   input:
     | ActorWebActorDescriptor
     | ActorWebActorSourceInput<ActorWebActorDescriptor>
@@ -536,4 +580,33 @@ export function createActorWebSource(
     ...(isObjectActorInput ? input : (options ?? {})),
     gateway,
   } as ActorWebSourceOptions);
+}
+
+export function createActorWebSource<TActor extends ActorWebActorDescriptor>(
+  input: ActorWebActorSourceInput<TActor>
+): ClosableActorWebSource<
+  ActorWebActorContext<TActor>,
+  ActorWebActorMessage<TActor>,
+  ActorWebActorEvent<TActor>
+>;
+export function createActorWebSource<TActor extends ActorWebActorDescriptor>(
+  actorDescriptor: TActor,
+  options: ActorWebSourceOptions
+): ClosableActorWebSource<
+  ActorWebActorContext<TActor>,
+  ActorWebActorMessage<TActor>,
+  ActorWebActorEvent<TActor>
+>;
+export function createActorWebSource(
+  input: ActorWebAddressSourceInput,
+  options?: Omit<ActorWebSourceOptions, 'gateway'>
+): ClosableActorWebSource<unknown, ActorMessage, ActorMessage>;
+export function createActorWebSource(
+  input:
+    | ActorWebActorDescriptor
+    | ActorWebActorSourceInput<ActorWebActorDescriptor>
+    | ActorWebAddressSourceInput,
+  options?: ActorWebSourceOptions | Omit<ActorWebSourceOptions, 'gateway'>
+): ClosableActorWebSource<unknown, ActorMessage, ActorMessage> {
+  return createActorWebCommandSource(input as never, options as never);
 }

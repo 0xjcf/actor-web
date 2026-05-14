@@ -17,16 +17,26 @@ export type {
   ActorToolRegistry,
 } from './actor-tools.js';
 export { createActorToolbox } from './actor-tools.js';
-export type { ActorWebClient, ActorWebClientOptions } from './actor-web-client.js';
-export { createActorWebClient } from './actor-web-client.js';
+export type {
+  ActorWebClient,
+  ActorWebClientOptions,
+  ActorWebReadModelClient,
+} from './actor-web-client.js';
+export { createActorWebClient, createActorWebReadModelClient } from './actor-web-client.js';
 export type {
   ActorWebAddressSourceInput,
   ActorWebGatewaySocket,
   ActorWebSourceGatewayOptions,
   ActorWebSourceOptions,
+  ClosableActorWebCommandSource,
+  ClosableActorWebReadModelSource,
   ClosableActorWebSource,
 } from './actor-web-source.js';
-export { createActorWebSource } from './actor-web-source.js';
+export {
+  createActorWebCommandSource,
+  createActorWebReadModelSource,
+  createActorWebSource,
+} from './actor-web-source.js';
 export { createActorRef } from './create-actor-ref.js';
 export type {
   CreateIgniteActorSourceOptions,
@@ -34,6 +44,8 @@ export type {
   IgniteActorSource,
   IgniteActorSourceEvent,
   IgniteActorSourceSnapshot,
+  IgniteCommandSource,
+  IgniteReadModelSource,
   SnapshotSubscribableActorRef,
   TransportStatusSubscribableActorRef,
 } from './integration/ignite-element-bridge.js';
@@ -41,6 +53,8 @@ export {
   actorEventToIgniteSourceEvent,
   actorSnapshotToIgniteSourceSnapshot,
   createIgniteActorSource,
+  createIgniteCommandSource,
+  createIgniteReadModelSource,
   isEventSubscribableActorRef,
   isSnapshotSubscribableActorRef,
   isTransportStatusSubscribableActorRef,

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { type ActorWebGatewaySocket, createActorWebSource } from '../actor-web-source.js';
+import {
+  type ActorWebGatewaySocket,
+  createActorWebCommandSource,
+  createActorWebReadModelSource,
+  createActorWebSource,
+} from '../actor-web-source.js';
 import type { RuntimeGatewayClientFrame, RuntimeGatewayServerFrame } from '../runtime-gateway.js';
 
 class FakeGatewaySocket implements ActorWebGatewaySocket {
@@ -175,6 +180,44 @@ describe('createActorWebSource', () => {
     expect(statuses).toContain('connected');
 
     source.close();
+  });
+
+  it('keeps browser read-model sources command-free unless the host opts in', async () => {
+    const socket = new FakeGatewaySocket();
+    const source = createActorWebReadModelSource(
+      {
+        address: 'actor://server-node/actor/shipment',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+          scope: { kind: 'shipment' },
+        },
+      },
+      {
+        createSocket: () => socket,
+        streamId: 'shipment-stream',
+      }
+    );
+    const commandSource = createActorWebCommandSource(
+      {
+        address: 'actor://server-node/actor/shipment',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+          scope: { kind: 'shipment' },
+        },
+      },
+      {
+        createSocket: () => socket,
+        streamId: 'shipment-command-stream',
+      }
+    );
+
+    expect('send' in source).toBe(false);
+    expect('ask' in source).toBe(false);
+    expect(typeof commandSource.send).toBe('function');
+    expect(typeof commandSource.ask).toBe('function');
+
+    source.close();
+    commandSource.close();
   });
 
   it('sends gateway auth on the hello frame without requiring custom source glue', async () => {

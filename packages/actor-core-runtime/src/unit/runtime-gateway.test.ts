@@ -7,7 +7,9 @@ import {
   type ProjectionTransportStatus,
 } from '../projection-transport.js';
 import {
+  createRuntimeGatewayCommandSource,
   createRuntimeGatewayHub,
+  createRuntimeGatewayReadModelSource,
   createRuntimeGatewaySource,
   type RuntimeGatewayClientFrame,
   type RuntimeGatewayConnectionAdapter,
@@ -621,6 +623,24 @@ describe('runtime gateway source', () => {
       taskId: 'task-checkout',
     });
     expect(transitions).toEqual([{ fromPhase: 'ready', toPhase: 'submitted' }]);
+  });
+
+  it('separates read-model gateway sources from explicit command sources', async () => {
+    const actor = createActorRef<CheckoutContext, CheckoutCommand>(checkoutMachine, {
+      id: 'gateway-read-model',
+    }) as ReturnType<typeof createActorRef<CheckoutContext, CheckoutCommand>> & { start(): void };
+    actor.start();
+
+    const readModel = createRuntimeGatewayReadModelSource(actor, { now: fixedNow });
+    const commandSource = createRuntimeGatewayCommandSource(actor, { now: fixedNow });
+
+    expect('send' in readModel).toBe(false);
+    expect('ask' in readModel).toBe(false);
+
+    await commandSource.send?.({ type: 'SUBMIT', orderId: 'order-explicit-command' });
+    await actor.stop();
+
+    expect(readModel.snapshot().workflowSnapshot.phase).toBe('submitted');
   });
 });
 

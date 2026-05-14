@@ -8,6 +8,8 @@ import { createActorRef } from '../create-actor-ref.js';
 import {
   actorSnapshotToIgniteSourceSnapshot,
   createIgniteActorSource,
+  createIgniteCommandSource,
+  createIgniteReadModelSource,
 } from '../integration/ignite-element-bridge.js';
 import { createInMemoryMessageTransportNetwork } from '../testing/in-memory-message-transport.js';
 import type { ActorSnapshot } from '../types.js';
@@ -139,6 +141,25 @@ describe('ignite-element bridge', () => {
       { count: 0, phase: 'active' },
       { count: 1, phase: 'active' },
     ]);
+  });
+
+  it('exposes a read-model bridge by default and requires an explicit command helper', async () => {
+    const actor = createActorRef<{ count: number }, CounterMessage>(counterMachine, {
+      id: 'checkout-read-model',
+    }) as ActorRef<{ count: number }, CounterMessage> & { start(): void };
+
+    actor.start();
+
+    const source = createIgniteReadModelSource(actor);
+    const commandSource = createIgniteCommandSource(actor);
+
+    expect('send' in source).toBe(false);
+    expect('ask' in source).toBe(false);
+
+    await commandSource.send({ type: 'INCREMENT' });
+    await actor.stop();
+
+    expect(source.snapshot().context.count).toBe(1);
   });
 
   it('creates an actor source for system.spawn refs with live and stopped snapshots', async () => {

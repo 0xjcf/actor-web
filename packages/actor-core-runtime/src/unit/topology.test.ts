@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createActorWebClient } from '../actor-web-client.js';
+import { createActorWebClient, createActorWebReadModelClient } from '../actor-web-client.js';
 import { type ActorWebGatewaySocket, createActorWebSource } from '../actor-web-source.js';
 import type { IgniteActorSource } from '../integration/ignite-element-bridge.js';
 import {
@@ -185,6 +185,50 @@ describe('Actor-Web topology helpers', () => {
     client.close();
   });
 
+  it('defaults topology read-model helpers to projection-only sources', () => {
+    const logistics = defineActorWebTopology({
+      contractVersion: '1.0.0',
+      nodes: {
+        server: node('logistics-server-runtime'),
+      },
+      actors: {
+        shipment: actor({
+          id: 'logistics-shipment',
+          node: 'server',
+          behavior: createShipmentBehavior,
+          gateway: true,
+        }),
+      },
+    });
+
+    const source = logistics.actors.shipment.readModel({
+      gateway: { url: 'ws://example.invalid/gateway' },
+      createSocket: () => ({
+        readyState: 1,
+        send: () => {},
+        close: () => {},
+        addEventListener: () => {},
+      }),
+    });
+    const commandSource = logistics.actors.shipment.commandSource({
+      gateway: { url: 'ws://example.invalid/gateway' },
+      createSocket: () => ({
+        readyState: 1,
+        send: () => {},
+        close: () => {},
+        addEventListener: () => {},
+      }),
+    });
+
+    expect('send' in source).toBe(false);
+    expect('ask' in source).toBe(false);
+    expect(typeof commandSource.send).toBe('function');
+    expect(typeof commandSource.ask).toBe('function');
+
+    source.close();
+    commandSource.close();
+  });
+
   it('does not open unused topology client sources', () => {
     const logistics = defineActorWebTopology({
       contractVersion: '1.0.0',
@@ -227,6 +271,37 @@ describe('Actor-Web topology helpers', () => {
       logistics.actors.serviceWorkerProof.address.path
     );
     expect(socketsCreated).toBe(1);
+    client.close();
+  });
+
+  it('offers a read-model client for browser projection consumers', () => {
+    const logistics = defineActorWebTopology({
+      contractVersion: '1.0.0',
+      nodes: {
+        server: node('logistics-server-runtime'),
+      },
+      actors: {
+        shipment: actor({
+          id: 'logistics-shipment',
+          node: 'server',
+          behavior: createShipmentBehavior,
+          gateway: true,
+        }),
+      },
+    });
+
+    const client = createActorWebReadModelClient(logistics, {
+      gateway: { url: 'ws://example.invalid/gateway' },
+      createSocket: () => ({
+        readyState: 1,
+        send: () => {},
+        close: () => {},
+        addEventListener: () => {},
+      }),
+    });
+
+    expect('send' in client.actors.shipment).toBe(false);
+    expect('ask' in client.actors.shipment).toBe(false);
     client.close();
   });
 

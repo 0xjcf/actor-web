@@ -1,5 +1,10 @@
 import type { ActorWebGatewaySocket, ActorWebSourceGatewayOptions } from './actor-web-source.js';
-import { type ClosableActorWebSource, createActorWebSource } from './actor-web-source.js';
+import {
+  type ClosableActorWebReadModelSource,
+  type ClosableActorWebSource,
+  createActorWebReadModelSource,
+  createActorWebSource,
+} from './actor-web-source.js';
 import type {
   ActorWebActorContext,
   ActorWebActorEvent,
@@ -25,6 +30,16 @@ export type ActorWebClient<TTopology extends ActorWebTopology<ActorWebTopologyIn
   close(): void;
 };
 
+export type ActorWebReadModelClient<TTopology extends ActorWebTopology<ActorWebTopologyInput>> = {
+  readonly actors: {
+    readonly [K in keyof TTopology['actors']]: ClosableActorWebReadModelSource<
+      ActorWebActorContext<TTopology['actors'][K]>,
+      ActorWebActorEvent<TTopology['actors'][K]>
+    >;
+  };
+  close(): void;
+};
+
 export function createActorWebClient<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
   topology: TTopology,
   options: ActorWebClientOptions
@@ -38,6 +53,41 @@ export function createActorWebClient<TTopology extends ActorWebTopology<ActorWeb
       enumerable: true,
       get() {
         source ??= createActorWebSource({
+          actor,
+          gateway: options.gateway,
+          streamId: `actor-web-${key}`,
+          clientVersion: options.clientVersion,
+          ...(options.createSocket ? { createSocket: options.createSocket } : {}),
+        });
+        openedSources.add(source);
+        return source;
+      },
+    });
+  }
+
+  return {
+    actors,
+    close(): void {
+      for (const source of Array.from(openedSources)) {
+        source.close();
+      }
+      openedSources.clear();
+    },
+  };
+}
+
+export function createActorWebReadModelClient<
+  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
+>(topology: TTopology, options: ActorWebClientOptions): ActorWebReadModelClient<TTopology> {
+  const openedSources = new Set<ClosableActorWebReadModelSource>();
+  const actors = {} as ActorWebReadModelClient<TTopology>['actors'];
+
+  for (const [key, actor] of Object.entries(topology.actors)) {
+    let source: ClosableActorWebReadModelSource | null = null;
+    Object.defineProperty(actors, key, {
+      enumerable: true,
+      get() {
+        source ??= createActorWebReadModelSource({
           actor,
           gateway: options.gateway,
           streamId: `actor-web-${key}`,

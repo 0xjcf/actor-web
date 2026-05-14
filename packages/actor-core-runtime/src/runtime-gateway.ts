@@ -11,7 +11,8 @@ import {
   type FasWorkflowTransitionRecord,
 } from './integration/fas-shared-contracts.js';
 import {
-  createIgniteActorSource,
+  createIgniteCommandSource,
+  createIgniteReadModelSource,
   type IgniteActorSourceEvent,
   type IgniteActorSourceSnapshot,
 } from './integration/ignite-element-bridge.js';
@@ -134,7 +135,7 @@ export interface RuntimeGatewayObserverEvent {
   readonly detail?: string;
 }
 
-export interface RuntimeGatewaySource {
+export interface RuntimeGatewayReadModelSource {
   readonly address: ActorAddress;
   snapshot(): RuntimeGatewaySnapshotProjection;
   subscribeSnapshot(listener: (projection: RuntimeGatewaySnapshotProjection) => void): () => void;
@@ -142,9 +143,14 @@ export interface RuntimeGatewaySource {
   transportStatus(): ProjectionTransportStatus;
   subscribeTransportStatus(listener: (status: ProjectionTransportStatus) => void): () => void;
   subscribeTransition?(listener: (transition: FasWorkflowTransitionRecord) => void): () => void;
+}
+
+export interface RuntimeGatewayCommandSource extends RuntimeGatewayReadModelSource {
   send?(message: Message): Promise<void>;
   ask?<TResponse = unknown>(message: Message, timeoutMs?: number): Promise<TResponse>;
 }
+
+export type RuntimeGatewaySource = RuntimeGatewayCommandSource;
 
 export type RuntimeGatewayScopeResolver<TAuthContext = unknown> = (
   scope: RuntimeGatewayScopeDescriptor,
@@ -189,11 +195,11 @@ export class RuntimeGatewayScopeError extends Error {
   }
 }
 
-export function createRuntimeGatewaySource(
+export function createRuntimeGatewayReadModelSource(
   actorRef: ActorRef<unknown, ActorMessage>,
   options: CreateRuntimeGatewaySourceOptions = {}
-): RuntimeGatewaySource {
-  const source = createIgniteActorSource(actorRef);
+): RuntimeGatewayReadModelSource {
+  const source = createIgniteReadModelSource(actorRef);
   const createdAt = (options.now ?? (() => new Date()))().toISOString();
   let lastEventType: string | null = null;
 
@@ -294,13 +300,32 @@ export function createRuntimeGatewaySource(
         listener(transition);
       });
     },
+  };
+}
+
+export function createRuntimeGatewayCommandSource(
+  actorRef: ActorRef<unknown, ActorMessage>,
+  options: CreateRuntimeGatewaySourceOptions = {}
+): RuntimeGatewayCommandSource {
+  const source = createRuntimeGatewayReadModelSource(actorRef, options);
+  const commandSource = createIgniteCommandSource(actorRef);
+
+  return {
+    ...source,
     async send(message: ActorMessage): Promise<void> {
-      await actorRef.send(message);
+      await commandSource.send(message);
     },
     async ask<TResponse = unknown>(message: Message, timeoutMs?: number): Promise<TResponse> {
-      return actorRef.ask<TResponse>(message, timeoutMs);
+      return commandSource.ask<TResponse>(message, timeoutMs);
     },
   };
+}
+
+export function createRuntimeGatewaySource(
+  actorRef: ActorRef<unknown, ActorMessage>,
+  options: CreateRuntimeGatewaySourceOptions = {}
+): RuntimeGatewaySource {
+  return createRuntimeGatewayCommandSource(actorRef, options);
 }
 
 type RuntimeGatewayStreamState = {

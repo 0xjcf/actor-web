@@ -23,9 +23,8 @@ export interface IgniteActorSourceSnapshot<TContext = unknown> extends ActorSnap
   toJSON(): object;
 }
 
-export interface IgniteActorSource<
+export interface IgniteReadModelSource<
   TContext = unknown,
-  TMessage extends ActorMessage = ActorMessage,
   TEvent extends ActorMessage = ActorMessage,
 > {
   readonly address: ActorAddress;
@@ -37,9 +36,22 @@ export interface IgniteActorSource<
   ): () => void;
   transportStatus(): ProjectionTransportStatus;
   subscribeTransportStatus(listener: (status: ProjectionTransportStatus) => void): () => void;
+}
+
+export interface IgniteCommandSource<
+  TContext = unknown,
+  TMessage extends ActorMessage = ActorMessage,
+  TEvent extends ActorMessage = ActorMessage,
+> extends IgniteReadModelSource<TContext, TEvent> {
   send(message: TMessage): Promise<void>;
   ask<TResponse = JsonValue>(message: TMessage, timeout?: number): Promise<TResponse>;
 }
+
+export type IgniteActorSource<
+  TContext = unknown,
+  TMessage extends ActorMessage = ActorMessage,
+  TEvent extends ActorMessage = ActorMessage,
+> = IgniteCommandSource<TContext, TMessage, TEvent>;
 
 export type IgniteActorSourceEvent<TEvent extends ActorMessage = ActorMessage> = TEvent & {
   address: ActorAddress;
@@ -147,14 +159,14 @@ export function actorEventToIgniteSourceEvent<TEvent extends ActorMessage = Acto
   };
 }
 
-export function createIgniteActorSource<
+export function createIgniteReadModelSource<
   TContext = unknown,
   TMessage extends ActorMessage = ActorMessage,
   TEvent extends ActorMessage = ActorMessage,
 >(
   actorRef: ActorRef<TContext, TMessage>,
   options: CreateIgniteActorSourceOptions<TContext, TEvent> = {}
-): IgniteActorSource<TContext, TMessage, TEvent> {
+): IgniteReadModelSource<TContext, TEvent> {
   const getSnapshot = options.getSnapshot ?? actorRef.getSnapshot.bind(actorRef);
   const subscribeSnapshot =
     options.subscribeSnapshot ??
@@ -218,6 +230,21 @@ export function createIgniteActorSource<
     subscribeTransportStatus(listener: (status: ProjectionTransportStatus) => void): () => void {
       return subscribeTransportStatus(listener);
     },
+  };
+}
+
+export function createIgniteCommandSource<
+  TContext = unknown,
+  TMessage extends ActorMessage = ActorMessage,
+  TEvent extends ActorMessage = ActorMessage,
+>(
+  actorRef: ActorRef<TContext, TMessage>,
+  options: CreateIgniteActorSourceOptions<TContext, TEvent> = {}
+): IgniteCommandSource<TContext, TMessage, TEvent> {
+  const readModel = createIgniteReadModelSource(actorRef, options);
+
+  return {
+    ...readModel,
     send(message: TMessage): Promise<void> {
       return actorRef.send(message);
     },
@@ -225,4 +252,15 @@ export function createIgniteActorSource<
       return actorRef.ask<TResponse>(message as unknown as Message, timeout);
     },
   };
+}
+
+export function createIgniteActorSource<
+  TContext = unknown,
+  TMessage extends ActorMessage = ActorMessage,
+  TEvent extends ActorMessage = ActorMessage,
+>(
+  actorRef: ActorRef<TContext, TMessage>,
+  options: CreateIgniteActorSourceOptions<TContext, TEvent> = {}
+): IgniteActorSource<TContext, TMessage, TEvent> {
+  return createIgniteCommandSource(actorRef, options);
 }
