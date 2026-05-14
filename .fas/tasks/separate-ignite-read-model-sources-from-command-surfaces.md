@@ -67,7 +67,7 @@ and read-model consumer.
 - Added at: 2026-05-14T19:44:00Z
 - Trigger: fas_architect found the corrected plan still omitted public browser/topology source surfaces that export command-capable sources
 - Reason: Include the public Actor-Web source/client/topology/serve surfaces needed to make Ignite read-model consumption projection-only while preserving explicit host-owned command/control opt-in
-- Added paths: packages/actor-core-runtime/src/integration/ignite-element-bridge.ts, packages/actor-core-runtime/src/unit/ignite-element-bridge.test.ts, packages/actor-core-runtime/src/runtime-gateway.ts, packages/actor-core-runtime/src/unit/runtime-gateway.test.ts, packages/actor-core-runtime/src/actor-web-source.ts, packages/actor-core-runtime/src/unit/actor-web-source.test.ts, packages/actor-core-runtime/src/actor-web-client.ts, packages/actor-core-runtime/src/topology.ts, packages/actor-core-runtime/src/unit/topology.test.ts, packages/actor-core-runtime/src/browser.ts, packages/actor-core-runtime/src/serve-actor-web-node.ts, docs/API.md, docs/operations/actor-web-production-operations.md, docs/actor-web-topology-source-dx-design.md
+- Added paths: packages/actor-core-runtime/src/integration/ignite-element-bridge.ts, packages/actor-core-runtime/src/unit/ignite-element-bridge.test.ts, packages/actor-core-runtime/src/runtime-gateway.ts, packages/actor-core-runtime/src/unit/runtime-gateway.test.ts, packages/actor-core-runtime/src/actor-web-source.ts, packages/actor-core-runtime/src/unit/actor-web-source.test.ts, packages/actor-core-runtime/src/actor-web-client.ts, packages/actor-core-runtime/src/topology.ts, packages/actor-core-runtime/src/unit/topology.test.ts, packages/actor-core-runtime/src/browser.ts, packages/actor-core-runtime/src/index.ts, docs/API.md, docs/operations/actor-web-production-operations.md, docs/actor-web-topology-source-dx-design.md
 - Evidence source: fas_architect handoff
 - Evidence: fas_architect handoff | .fas/state/commit-plan.json | commit-plan path details included bridge/gateway/docs, but step list omitted source implementation and public source API files
 - Accuracy signal: high
@@ -87,5 +87,5 @@ and read-model consumer.
 - packages/actor-core-runtime/src/topology.ts
 - packages/actor-core-runtime/src/unit/topology.test.ts
 - packages/actor-core-runtime/src/browser.ts
-- packages/actor-core-runtime/src/serve-actor-web-node.ts
+- packages/actor-core-runtime/src/index.ts
 - docs/actor-web-topology-source-dx-design.md
