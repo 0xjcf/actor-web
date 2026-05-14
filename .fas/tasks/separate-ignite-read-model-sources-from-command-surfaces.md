@@ -1,4 +1,4 @@
-# Separate Ignite Read-Model Sources From Command Surfaces
+# Separate Ignite read-model sources from command surfaces
 
 ## Summary
 
@@ -50,3 +50,24 @@ and read-model consumer.
 - `pnpm typecheck`
 - `pnpm lint`
 - `fas validate-task`
+
+## Scope Amendments
+
+- Type: audit-scope-correction
+- Added at: 2026-05-14T19:40:43Z
+- Trigger: Generated commit plan targeted FAS verification pipeline and logistics tests instead of Ignite read-model, runtime gateway, and docs surfaces cited by the task brief
+- Reason: Limit implementation to Ignite read-model boundary, host-owned command/control gateway behavior, focused bridge/gateway tests, and docs alignment
+- Added paths: packages/actor-core-runtime/src/integration/ignite-element-bridge.ts, packages/actor-core-runtime/src/unit/ignite-element-bridge.test.ts, packages/actor-core-runtime/src/runtime-gateway.ts, packages/actor-core-runtime/src/unit/runtime-gateway.test.ts, docs/API.md, docs/operations/actor-web-production-operations.md
+- Evidence source: root plan review
+- Evidence: root plan review | .fas/state/commit-plan.json | planned paths were unrelated to .fas/tasks/separate-ignite-read-model-sources-from-command-surfaces.md audit evidence
+- Accuracy signal: high
+- Follow-up needed: Regenerate commit plan before fas_architect and fas_senior_engineer steps
+
+## Affected files
+
+- packages/actor-core-runtime/src/integration/ignite-element-bridge.ts
+- packages/actor-core-runtime/src/unit/ignite-element-bridge.test.ts
+- packages/actor-core-runtime/src/runtime-gateway.ts
+- packages/actor-core-runtime/src/unit/runtime-gateway.test.ts
+- docs/API.md
+- docs/operations/actor-web-production-operations.md

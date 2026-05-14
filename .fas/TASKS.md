@@ -594,9 +594,12 @@
 
 - Title: Separate Ignite read-model sources from command surfaces
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/separate-ignite-read-model-sources-from-command-surfaces.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Decouple runtime gateway core projection contracts
 
