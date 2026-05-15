@@ -366,6 +366,7 @@ type RuntimeGatewayStreamState = {
 };
 
 const OUTBOUND_SEND_FAILURE_THRESHOLD = 3;
+const DEFAULT_INBOUND_QUEUE_LIMIT = 64;
 
 export type RuntimeGatewayReplayFrame = Extract<
   RuntimeGatewayServerFrame,
@@ -524,6 +525,18 @@ function restoredReplayFramesMatchSource(
   return false;
 }
 
+function normalizeInboundQueueLimit(value: number | undefined): number {
+  if (value === undefined) {
+    return DEFAULT_INBOUND_QUEUE_LIMIT;
+  }
+
+  if (!Number.isFinite(value) || value <= 0) {
+    return DEFAULT_INBOUND_QUEUE_LIMIT;
+  }
+
+  return value;
+}
+
 export function createRuntimeGatewayHub<TAuthContext = unknown>(
   options: CreateRuntimeGatewayHubOptions<TAuthContext>
 ): {
@@ -531,7 +544,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
 } {
   const heartbeatMs = options.heartbeatMs ?? 15000;
   const replayBufferSize = options.replayBufferSize ?? 256;
-  const inboundQueueLimit = options.inboundQueueLimit ?? 64;
+  const inboundQueueLimit = normalizeInboundQueueLimit(options.inboundQueueLimit);
   const replayStorage = options.replayStorage;
   const onReplayStorageError = options.onReplayStorageError;
   const observer = options.observer;
