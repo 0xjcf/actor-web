@@ -49,7 +49,7 @@ describe('logistics multi-process deployment prove-out', () => {
   afterEach(async () => {
     await Promise.all(readyProcesses.splice(0).map(stopManagedProcess));
     for (const directory of tempDirectories.splice(0)) {
-      rmSync(directory, { recursive: true, force: true });
+      await removeTempDirectory(directory);
     }
   });
 
@@ -601,6 +601,22 @@ async function stopManagedProcess(managed: ManagedProcess): Promise<void> {
       resolve();
     });
   });
+}
+
+async function removeTempDirectory(directory: string): Promise<void> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      rmSync(directory, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      await wait(50);
+    }
+  }
+
+  throw lastError;
 }
 
 function signalManagedProcess(managed: ManagedProcess, signal: NodeJS.Signals): void {
