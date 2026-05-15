@@ -222,8 +222,8 @@
 
 - Title: Actor-Web topology source DX prototype
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: implementing
+- Owner: implementer
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
@@ -629,8 +629,8 @@
 
 - Title: Clean up stale root package metadata
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/clean-up-stale-root-package-metadata.md
 - Verification lane: fast
 - Policy sensitivity: standard

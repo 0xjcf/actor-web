@@ -63,9 +63,14 @@ build, publish, and docs surfaces no longer point at stale root outputs.
 - Added at: 2026-05-15
 - Added paths: pnpm-lock.yaml
 
+- Type: scope-refresh
+- Added at: 2026-05-15
+- Added paths: src/package-metadata.test.ts
+
 ## Affected files
 
 - package.json
 - README.md
 - fas.domain-map.json
 - pnpm-lock.yaml
+- src/package-metadata.test.ts
