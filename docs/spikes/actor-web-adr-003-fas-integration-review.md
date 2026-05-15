@@ -241,7 +241,7 @@ Blueprint evidence is not grounded from a local checkout in this review.
 5. Replace the local `@franchise/shared-contracts` `file:` dependency with shared
    workspace or published-package wiring.
 6. Replace the current in-memory prove-out transport with a real external runtime transport boundary.
-7. Align transport payloads and projection vocabulary directly to the promoted `@franchise/shared-contracts` package source.
+7. Align transport payloads and projection vocabulary to Actor-Web runtime-native core contracts, with `@franchise/shared-contracts` mapping confined to the integration edge.
 8. Add remote-host observability for reconnect, replay, lag, and dropped-subscription behavior once the external transport is in place.
 9. Only after the contract and bridge exist at that wider surface, evaluate whether FAS can delegate a
    narrow runtime workflow to Actor-Web.
