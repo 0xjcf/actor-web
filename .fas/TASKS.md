@@ -640,7 +640,7 @@
 
 - Title: Normalize runtime gateway inbound queue limit options
 - Mode: 4-agent
-- Status: implementing
+- Status: done
 - Owner: implementer
 - Brief: .fas/tasks/normalize-runtime-gateway-inbound-queue-limit-options.md
 - Automation mode: advisory
