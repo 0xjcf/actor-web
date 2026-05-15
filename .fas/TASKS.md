@@ -605,10 +605,13 @@
 
 - Title: Decouple runtime gateway core projection contracts
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/decouple-runtime-gateway-core-projection-contracts.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Fix FAS audit spike state and evidence rollover
 
