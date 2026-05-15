@@ -60,6 +60,16 @@ gateway owns runtime-native contracts and integrations map at the edges.
 - Accuracy signal: high
 - Follow-up needed: FAS phase detection should treat Scope and Acceptance Criteria implementation verbs as stronger than validation keywords in audit follow-up briefs.
 
+- Type: architect-verification-correction
+- Added at: 2026-05-15
+- Trigger: fas_architect found the focused Vitest command used the root vitest.config.ts, which excludes packages/actor-core-runtime tests
+- Reason: Use the package-local Vitest config and include a core projection typecheck proof file in planned scope
+- Added paths: packages/actor-core-runtime/src/runtime-gateway-projection.typecheck.ts
+- Evidence source: fas_architect-handoff
+- Evidence: fas_architect-handoff | .fas/state/codex-orchestration.json | Architect recommended runtime-gateway-projection.ts as the core owner and a typecheck file mirroring fas-shared-contracts.typecheck.ts.
+- Accuracy signal: high
+- Follow-up needed: FAS verification-plan generation should understand package-local test configs in monorepos.
+
 ## Implementation plan
 
 - Define runtime-native runtime gateway projection/event/transition types in core without FAS or Ignite imports
@@ -70,7 +80,7 @@ gateway owns runtime-native contracts and integrations map at the edges.
 
 ## Verification plan
 
-- pnpm exec vitest run --config vitest.config.ts src/unit/runtime-gateway.test.ts src/unit/fas-shared-contracts.test.ts
+- cd packages/actor-core-runtime && pnpm exec vitest run --config vitest.config.ts src/unit/runtime-gateway.test.ts src/unit/fas-shared-contracts.test.ts
 - pnpm test:runtime
 - pnpm typecheck
 - pnpm architecture:check
@@ -88,3 +98,4 @@ gateway owns runtime-native contracts and integrations map at the edges.
 - packages/actor-core-runtime/src/index.ts
 - packages/actor-core-runtime/src/browser.ts
 - docs/spikes/actor-web-adr-003-fas-integration-review.md
+- packages/actor-core-runtime/src/runtime-gateway-projection.typecheck.ts
