@@ -617,7 +617,7 @@
 
 - Title: Make runtime ownership and accounting instance-scoped
 - Mode: 6-agent
-- Status: implementing
+- Status: done
 - Owner: implementer
 - Brief: .fas/tasks/make-runtime-ownership-and-accounting-instance-scoped.md
 - Automation mode: advisory
