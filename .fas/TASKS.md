@@ -613,22 +613,6 @@
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
-### Task: Fix FAS audit spike state and evidence rollover
-
-- Title: Fix FAS audit spike state and evidence rollover
-- Mode: 6-agent
-- Status: queued
-- Owner: runtime
-- Brief: .fas/tasks/fix-fas-audit-spike-state-and-evidence-rollover.md
-
-### Task: Improve FAS audit retrieval and tracker signal
-
-- Title: Improve FAS audit retrieval and tracker signal
-- Mode: 4-agent
-- Status: queued
-- Owner: runtime
-- Brief: .fas/tasks/improve-fas-audit-retrieval-and-tracker-signal.md
-
 ### Task: Make runtime ownership and accounting instance-scoped
 
 - Title: Make runtime ownership and accounting instance-scoped
@@ -687,6 +671,22 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/migrate-ignite-host-docs-and-examples-to-read-model-defaults.md
+
+### Task: Fix FAS audit spike state and evidence rollover
+
+- Title: Fix FAS audit spike state and evidence rollover
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/fix-fas-audit-spike-state-and-evidence-rollover.md
+
+### Task: Improve FAS audit retrieval and tracker signal
+
+- Title: Improve FAS audit retrieval and tracker signal
+- Mode: 4-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/improve-fas-audit-retrieval-and-tracker-signal.md
 
 ## Template
 
