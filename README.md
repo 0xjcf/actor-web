@@ -4,7 +4,7 @@
 
 [![Pure Actor Model](https://img.shields.io/badge/Pure%20Actor%20Model-100%25%20Compliant-green)](https://github.com/0xjcf/actor-web)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue)](https://www.typescriptlang.org/)
-[![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-brightgreen)](./package.json)
+[![Workspace Packages](https://img.shields.io/badge/Workspace-packages%2F*-brightgreen)](./pnpm-workspace.yaml)
 
 ## 🚀 Why Actor-Web?
 
@@ -13,7 +13,7 @@ JavaScript lacks built-in primitives for actor-based concurrency and fault toler
 - **🎯 Pure Actor Model** - No shared state, message-only communication
 - **🌍 Location Transparency** - Actors work identically local or distributed
 - **🛡️ Fault Tolerance** - Supervisor trees with "let it crash" philosophy
-- **📦 Zero Dependencies** - Lightweight, pure TypeScript implementation
+- **📦 Workspace Packages** - Runtime, testing utilities, and workflow CLI ship from `packages/*`
 - **🔄 Unified API** - Single `defineActor()` for all patterns
 
 ## ⚡ Quick Start
@@ -334,6 +334,7 @@ console.log('Created user:', newUser);
 
 ## 📦 Packages
 
+- **`actor-web`** - Private workspace root for scripts, examples, and verification
 - **`@actor-core/runtime`** - Core actor system implementation
 - **`@actor-core/testing`** - Testing utilities and mocks
 - **`@agent-workflow/cli`** - CLI tools for development

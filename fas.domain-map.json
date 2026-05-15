@@ -5,6 +5,17 @@
     "root": "."
   },
   "domains": {
+    "workspace": {
+      "name": "actor-web",
+      "description": "Private workspace root for package orchestration, examples, verification scripts, and repository-level documentation.",
+      "aliases": ["workspace root", "root package", "repo metadata", "package orchestration"],
+      "ownedPaths": ["package.json", "pnpm-workspace.yaml", "tsconfig.json", "README.md"],
+      "entrypoints": ["package.json", "pnpm-workspace.yaml"],
+      "docs": ["README.md"],
+      "tests": [],
+      "boundaries": ["package.json", "pnpm-workspace.yaml", "tsconfig.json"],
+      "dependencies": ["runtime", "testing", "cli"]
+    },
     "runtime": {
       "name": "@actor-core/runtime",
       "description": "Pure actor runtime, lifecycle, supervision, messaging, projections, and FAS contract bridge surfaces for Actor-Web.",

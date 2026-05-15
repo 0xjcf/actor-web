@@ -11,13 +11,6 @@ overrides:
 importers:
 
   .:
-    dependencies:
-      '@actor-core/testing':
-        specifier: workspace:*
-        version: link:packages/actor-core-testing
-      xstate:
-        specifier: 5.30.0
-        version: 5.30.0
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.1.2

@@ -54,11 +54,18 @@ build, publish, and docs surfaces no longer point at stale root outputs.
 - `fas validate-task`
 
 ## Scope Amendments
+
 - Type: scope-refresh
 - Added at: 2026-05-15
 - Added paths: package.json, README.md, fas.domain-map.json
 
+- Type: scope-refresh
+- Added at: 2026-05-15
+- Added paths: pnpm-lock.yaml
+
 ## Affected files
+
 - package.json
 - README.md
 - fas.domain-map.json
+- pnpm-lock.yaml

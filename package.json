@@ -1,19 +1,11 @@
 {
-  "name": "@actor-web/core",
+  "name": "actor-web",
   "version": "0.1.0",
-  "description": "Pure Actor Model framework for building web applications with message-passing architecture",
-  "main": "dist/index.js",
-  "module": "dist/index.mjs",
-  "types": "dist/index.d.ts",
-  "files": [
-    "dist",
-    "src",
-    "README.md",
-    "CHANGELOG.md"
-  ],
+  "private": true,
+  "description": "Workspace for Actor-Web runtime, testing utilities, examples, and agent workflow tooling",
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts",
-    "build:watch": "pnpm build --watch",
+    "build": "pnpm --filter @actor-core/runtime build && pnpm --filter @actor-core/testing build && pnpm --filter @agent-workflow/cli build",
+    "build:watch": "pnpm --filter @actor-core/runtime build:watch",
     "dev": "vitest --watch",
     "test": "pnpm test:dom && pnpm test:runtime && pnpm test:examples",
     "test:dom": "vitest run --passWithNoTests",
@@ -29,8 +21,7 @@
     "format:md": "markdownlint-cli2 --fix --config .markdownlint.jsonc \".fas/TASKS.md\" \".fas/tasks/**/*.md\"",
     "format:md:all": "markdownlint-cli2 --fix --config .markdownlint.jsonc \"*.md\" \".github/**/*.md\" \".fas/TASKS.md\" \".fas/tasks/**/*.md\" \"docs/**/*.md\" \"examples/**/*.md\" \"packages/**/*.md\" \"tests/**/*.md\" \"#**/node_modules/**\" \"#**/dist/**\" \"#.pnpm-store/**\"",
     "typecheck": "tsc --build",
-    "clean": "rm -rf dist",
-    "prepublishOnly": "pnpm clean && pnpm build",
+    "clean": "pnpm --filter @actor-core/runtime clean && pnpm --filter @actor-core/testing clean && rm -rf dist packages/agent-workflow-cli/dist",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest --watch",
     "test:ui": "vitest --ui",
@@ -92,10 +83,6 @@
     "url": "https://github.com/0xjcf/actor-web/issues"
   },
   "homepage": "https://github.com/0xjcf/actor-web#readme",
-  "dependencies": {
-    "@actor-core/testing": "workspace:*",
-    "xstate": "5.30.0"
-  },
   "devDependencies": {
     "@biomejs/biome": "^2.1.2",
     "@types/node": "^20.0.0",
@@ -110,31 +97,8 @@
     "vitest": "^2.1.4",
     "ws": "^8.18.3"
   },
-  "peerDependencies": {
-    "typescript": ">=5.0.0"
-  },
   "engines": {
     "node": ">=18.0.0"
-  },
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
-    },
-    "./core": {
-      "types": "./dist/core/index.d.ts",
-      "import": "./dist/core/index.mjs",
-      "require": "./dist/core/index.js"
-    },
-    "./testing": {
-      "types": "./dist/testing/index.d.ts",
-      "import": "./dist/testing/index.mjs",
-      "require": "./dist/testing/index.js"
-    }
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "pnpm": {
     "overrides": {
