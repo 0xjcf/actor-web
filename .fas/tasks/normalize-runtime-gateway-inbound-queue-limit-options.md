@@ -48,9 +48,17 @@ fail closed on the first frame.
 ## Affected Files
 
 - `packages/actor-core-runtime/src/runtime-gateway.ts`
-- `packages/actor-core-runtime/src/serve-actor-web-node.ts`
 - `packages/actor-core-runtime/src/unit/runtime-gateway.test.ts`
 - `packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts`
+
+## Scope Amendments
+
+- Type: scope-tightening
+- Added at: 2026-05-15
+- Removed paths: packages/actor-core-runtime/src/serve-actor-web-node.ts
+- Reason: verifier and reviewer confirmed the node wrapper already forwards
+  `gateway.inboundQueueLimit`; hub-level normalization plus served-node
+  regression coverage satisfies the brief without a no-op source edit.
 
 ## Verification
 

@@ -640,10 +640,13 @@
 
 - Title: Normalize runtime gateway inbound queue limit options
 - Mode: 4-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/normalize-runtime-gateway-inbound-queue-limit-options.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Add runtime gateway send-attempt timeout handling
 
