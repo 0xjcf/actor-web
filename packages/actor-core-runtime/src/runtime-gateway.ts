@@ -705,6 +705,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           sendAttemptTimeouts.set(
             attemptId,
             setTimeout(() => {
+              // Late settles must not rewrite newer failure accounting once this attempt times out.
               sendAttemptTimeouts.delete(attemptId);
               recordSendOutcome('failure');
             }, OUTBOUND_SEND_ATTEMPT_TIMEOUT_MS)
