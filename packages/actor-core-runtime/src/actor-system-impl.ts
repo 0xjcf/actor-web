@@ -245,18 +245,14 @@ export interface ActorSystemConfig {
   toolAccess?: Record<string, readonly string[]>;
 }
 
-/**
- * Global counter for unique actor IDs
- * In production, this would be replaced with distributed ID generation
- */
-let globalActorIdCounter = 0;
-let globalActorCount = 0;
-
-/**
- * Generate a unique actor ID
- */
-function generateActorId(): string {
-  return `actor-${Date.now()}-${globalActorIdCounter++}`;
+function createSystemInstancePrefix(nodeAddress: string): string {
+  const nodeFragment = nodeAddress
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 24);
+  const entropy = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return nodeFragment ? `${nodeFragment}-${entropy}` : entropy;
 }
 
 /**
@@ -360,8 +356,11 @@ export class ActorSystemImpl implements ActorSystem {
 
   // Test mode flag - when true, messages are processed synchronously
   private testMode = false;
+  private nextActorSequence = 0;
+  private readonly systemInstancePrefix: string;
 
   constructor(private readonly config: ActorSystemConfig) {
+    this.systemInstancePrefix = createSystemInstancePrefix(config.nodeAddress);
     this.directory = new DistributedActorDirectory({
       nodeAddress: config.nodeAddress,
       maxCacheSize: config.directory?.maxCacheSize ?? 10000,
@@ -391,6 +390,16 @@ export class ActorSystemImpl implements ActorSystem {
       // Debug logging is enabled via environment variable
       log.debug('Debug mode enabled');
     }
+  }
+
+  private generateActorId(): string {
+    const actorSequence = this.nextActorSequence;
+    this.nextActorSequence += 1;
+    return `actor-${this.systemInstancePrefix}-${actorSequence}`;
+  }
+
+  private getLocalActorCount(): number {
+    return this.actorInstances.size;
   }
 
   /**
@@ -674,11 +683,9 @@ export class ActorSystemImpl implements ActorSystem {
     this.actorProjectionState.delete(path);
     this.outboundRemoteProjectionSubscribers.delete(path);
 
-    globalActorCount--;
-
     log.debug('Actor stopped', {
       path,
-      totalActors: globalActorCount,
+      totalActors: this.getLocalActorCount(),
     });
 
     await this.emitSystemEvent({
@@ -736,12 +743,12 @@ export class ActorSystemImpl implements ActorSystem {
       actualBehavior = behaviorOrBuilder as ActorBehavior;
     }
 
-    const id = options?.id || generateActorId();
+    const id = options?.id || this.generateActorId();
     const type = 'actor'; // SpawnOptions doesn't have type field
     const path = `actor://${this.config.nodeAddress}/${type}/${id}`;
 
     // Check max actors limit
-    if (this.config.maxActors && globalActorCount >= this.config.maxActors) {
+    if (this.config.maxActors && this.getLocalActorCount() >= this.config.maxActors) {
       throw new Error(`Maximum actor limit reached: ${this.config.maxActors}`);
     }
 
@@ -839,13 +846,11 @@ export class ActorSystemImpl implements ActorSystem {
     // Start message processing loop for this actor
     this.startMessageProcessingLoop(address, normalizedBehavior);
 
-    globalActorCount++;
-
     log.debug('Actor spawned', {
       id,
       type,
       path,
-      totalActors: globalActorCount,
+      totalActors: this.getLocalActorCount(),
     });
 
     await this.emitSystemEvent({
@@ -937,7 +942,7 @@ export class ActorSystemImpl implements ActorSystem {
     const messagesPerSecond = totalUptime > 0 ? totalMessages / totalUptime : 0;
 
     return {
-      totalActors: globalActorCount,
+      totalActors: this.getLocalActorCount(),
       messagesPerSecond,
       uptime: totalUptime,
       clusterState: this.clusterState,

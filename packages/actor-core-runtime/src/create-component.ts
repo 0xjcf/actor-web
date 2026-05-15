@@ -132,6 +132,12 @@ export interface CreateComponentConfig {
    */
   transport?: 'local' | 'worker' | 'websocket';
 
+  /**
+   * Optional host-owned runtime or async runtime provider.
+   * Injected runtimes are used as-is and are never started or stopped implicitly.
+   */
+  runtime?: ActorSystem | (() => Promise<ActorSystem>);
+
   // ============================================================================
   // WEB COMPONENT OPTIONS
   // ============================================================================
@@ -171,30 +177,29 @@ export interface ComponentClass {
   readonly machineId: string;
 
   // Factory methods for programmatic creation
-  create(): ComponentActorElement;
-  createWithDependencies(dependencies: Record<string, ActorRef>): ComponentActorElement;
+  create(options?: ComponentCreationOptions): ComponentActorElement;
+  createWithDependencies(
+    dependencies: Record<string, ActorRef>,
+    options?: ComponentCreationOptions
+  ): ComponentActorElement;
 }
 
-// ============================================================================
-// ACTOR SYSTEM SINGLETON (TRANSITIONAL)
-// ============================================================================
+export interface ComponentCreationOptions {
+  runtime?: ActorSystem | (() => Promise<ActorSystem>);
+}
 
-// Global actor system for components (will be replaced with dependency injection)
-let globalActorSystem: ActorSystem | null = null;
+interface ComponentElementCreationState {
+  dependencies?: Record<string, ActorRef>;
+  runtime?: ActorSystem | (() => Promise<ActorSystem>);
+}
 
-/**
- * Initialize or get the global actor system for components
- */
-async function getActorSystem(): Promise<ActorSystem> {
-  if (!globalActorSystem) {
-    globalActorSystem = createActorSystem({
-      nodeAddress: 'component-node',
-      maxActors: 1000,
-    });
-    await globalActorSystem.start();
-    log.info('Component actor system started');
+async function resolveRuntimeProvider(
+  runtime: ActorSystem | (() => Promise<ActorSystem>)
+): Promise<ActorSystem> {
+  if (typeof runtime === 'function') {
+    return runtime();
   }
-  return globalActorSystem;
+  return runtime;
 }
 
 // ============================================================================
@@ -276,8 +281,32 @@ async function getActorSystem(): Promise<ActorSystem> {
 export function createComponent(config: CreateComponentConfig): ComponentClass {
   const machineId = config.machine.id || 'anonymous-component';
   const tagName = config.tagName || `${machineId}-component`;
+  const elementCreationState = new WeakMap<
+    ComponentActorElementImpl,
+    ComponentElementCreationState
+  >();
+  let fallbackRuntimePromise: Promise<ActorSystem> | null = null;
+  let nextComponentInstanceId = 0;
 
   log.info('Creating component class', { machineId, tagName });
+
+  const createComponentInstanceId = (): string => `component-${nextComponentInstanceId++}`;
+
+  const getFallbackRuntime = async (): Promise<ActorSystem> => {
+    if (!fallbackRuntimePromise) {
+      fallbackRuntimePromise = (async () => {
+        const runtime = createActorSystem({
+          nodeAddress: 'component-node',
+          maxActors: 1000,
+        });
+        await runtime.start();
+        log.info('Component actor system started', { machineId, tagName });
+        return runtime;
+      })();
+    }
+
+    return fallbackRuntimePromise;
+  };
 
   // Create the component actor behavior
   const componentActorConfig: ComponentActorConfig = {
@@ -383,6 +412,8 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
     private _actorPID: ActorRef | null = null;
     private _isActorMounted = false;
     private _shadowRoot: ShadowRoot;
+    private readonly _componentInstanceId = createComponentInstanceId();
+    private _resolvedRuntime: Promise<ActorSystem> | null = null;
 
     constructor() {
       super();
@@ -412,17 +443,34 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
       return this._isActorMounted;
     }
 
+    private getCreationState(): ComponentElementCreationState {
+      return elementCreationState.get(this) ?? {};
+    }
+
+    private async getActorSystem(): Promise<ActorSystem> {
+      if (!this._resolvedRuntime) {
+        const runtimeOverride = this.getCreationState().runtime;
+        this._resolvedRuntime =
+          runtimeOverride !== undefined
+            ? resolveRuntimeProvider(runtimeOverride)
+            : config.runtime !== undefined
+              ? resolveRuntimeProvider(config.runtime)
+              : getFallbackRuntime();
+      }
+
+      return this._resolvedRuntime;
+    }
+
     // Web Component lifecycle
     async connectedCallback(): Promise<void> {
       try {
         log.info('Component connecting to DOM', { machineId });
 
-        // Get actor system
-        const actorSystem = await getActorSystem();
+        const actorSystem = await this.getActorSystem();
 
         // Spawn component actor
         this._actorPID = await actorSystem.spawn(componentBehavior, {
-          id: `${machineId}-${generateComponentId()}`,
+          id: `${machineId}-${this._componentInstanceId}`,
           supervised: true,
         });
 
@@ -436,14 +484,19 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
         // Instead, the actor will access the element directly when needed
         await this._actorPID.send({
           type: 'MOUNT_COMPONENT',
-          elementId: this.id || generateComponentId(),
+          elementId: this.id || this._componentInstanceId,
           hasTemplate: true,
           hasDependencies: !!config.dependencies,
         });
 
         // Resolve dependencies if configured
         if (config.dependencies) {
-          await this.resolveDependencies(config.dependencies);
+          await this.resolveDependencies(actorSystem, config.dependencies);
+        }
+
+        const directDependencies = this.getCreationState().dependencies;
+        if (directDependencies && Object.keys(directDependencies).length > 0) {
+          await this.updateDependencies(directDependencies);
         }
 
         this._isActorMounted = true;
@@ -523,10 +576,12 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
     }
 
     // Private helper methods
-    private async resolveDependencies(dependencies: ComponentDependencies): Promise<void> {
+    private async resolveDependencies(
+      actorSystem: ActorSystem,
+      dependencies: ComponentDependencies
+    ): Promise<void> {
       if (!this._actorPID) return;
 
-      const actorSystem = await getActorSystem();
       const resolvedDependencies: Record<string, ActorRef> = {};
 
       // Resolve each dependency path to an ActorRef
@@ -589,22 +644,23 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
     machineId,
 
     // Factory methods
-    create(): ComponentActorElement {
-      return document.createElement(tagName) as ComponentActorElement;
+    create(options?: ComponentCreationOptions): ComponentActorElement {
+      const element = document.createElement(tagName) as ComponentActorElement;
+      elementCreationState.set(element as ComponentActorElementImpl, {
+        runtime: options?.runtime,
+      });
+      return element;
     },
 
-    createWithDependencies(dependencies: Record<string, ActorRef>): ComponentActorElement {
+    createWithDependencies(
+      dependencies: Record<string, ActorRef>,
+      options?: ComponentCreationOptions
+    ): ComponentActorElement {
       const element = document.createElement(tagName) as ComponentActorElement;
-
-      // Set up dependency injection when component connects
-      element.addEventListener(
-        'connected',
-        async () => {
-          await element.updateDependencies(dependencies);
-        },
-        { once: true }
-      );
-
+      elementCreationState.set(element as ComponentActorElementImpl, {
+        dependencies,
+        runtime: options?.runtime,
+      });
       return element;
     },
   };
@@ -617,11 +673,3 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
-
-/**
- * Generate unique component ID
- */
-let componentIdCounter = 0;
-function generateComponentId(): string {
-  return `component-${componentIdCounter++}`;
-}
