@@ -652,7 +652,7 @@
 
 - Title: Add runtime gateway send-attempt timeout handling
 - Mode: 4-agent
-- Status: implementing
+- Status: done
 - Owner: implementer
 - Brief: .fas/tasks/add-runtime-gateway-send-attempt-timeout-handling.md
 - Automation mode: advisory
