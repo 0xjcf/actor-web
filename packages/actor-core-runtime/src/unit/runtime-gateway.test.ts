@@ -1031,6 +1031,46 @@ describe('runtime gateway hub', () => {
     }
   });
 
+  it('clears pending outbound send timers during manual detach', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const source = createFakeSource('ready');
+      const hangingSend = createDeferred<void>();
+      const hub = createRuntimeGatewayHub({
+        heartbeatMs: 0,
+        resolveScope: async () => source,
+      });
+      const connection = createFakeConnection(
+        { authorityId: 'auth-1' },
+        {
+          sendBehavior() {
+            return hangingSend.promise;
+          },
+        }
+      );
+
+      const detach = hub.attach(connection);
+      connection.push({ type: 'hello' });
+      await flushGatewayMicrotasks();
+
+      expect(connection.sendAttempts).toBe(1);
+      expect(vi.getTimerCount()).toBe(1);
+
+      detach();
+
+      expect(vi.getTimerCount()).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(5000);
+      hangingSend.resolve();
+      await flushGatewayMicrotasks();
+
+      expect(connection.closed).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('preserves ordered async outbound send outcomes when earlier attempts settle later', async () => {
     const source = createFakeSource('ready');
     const readySend = createDeferred<void>();

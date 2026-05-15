@@ -1297,6 +1297,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
       return () => {
         terminated = true;
         clearIdleTimer();
+        clearSendAttemptTimeouts();
         unsubscribeReceive();
         unsubscribeClose();
         cleanupAll();
