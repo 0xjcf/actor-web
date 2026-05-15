@@ -1601,6 +1601,82 @@ describe('runtime gateway hub', () => {
     firstDetach();
   });
 
+  it('does not load legacy plain replay storage for authenticated owner-bound resume keys', async () => {
+    const replayStorage = createMapBackedReplayStorageFixture();
+    const replaySessionId = 'resume-connection';
+    const streamId = 'fleet-main';
+    const scope: RuntimeGatewayScopeDescriptor = { kind: 'fleet-view' };
+    const legacyStorageKey = scopedReplayStorageKey(replaySessionId, streamId, scope);
+    const ownerBoundStorageKey = scopedReplayStorageKey(
+      replaySessionIdForAuth({ authorityId: 'auth-1' }, replaySessionId),
+      streamId,
+      scope
+    );
+    const source = createFakeSource('submitted', 'fleet-main');
+
+    replayStorage.storage.set(legacyStorageKey, [
+      {
+        type: 'snapshot',
+        streamId,
+        sequence: 1,
+        projection: createGatewaySnapshot('ready', { phase: 'legacy-ready' }, 'fleet-main'),
+      },
+      {
+        type: 'event',
+        streamId,
+        sequence: 2,
+        projection: createGatewayEvent(source, 'LegacyReplayRecovered'),
+      },
+    ]);
+
+    const hub = createRuntimeGatewayHub({
+      replayStorage: replayStorage.provider,
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({
+      type: 'hello',
+      lastConnectionId: replaySessionId,
+    });
+    connection.push({
+      type: 'subscribe',
+      streamId,
+      scope,
+    });
+    await flushGatewayFrames();
+
+    expect(connection.frames[2]).toMatchObject({
+      type: 'snapshot',
+      streamId,
+      sequence: 1,
+      projection: {
+        workflowSnapshot: {
+          phase: 'submitted',
+        },
+      },
+    });
+    expect(connection.frames).not.toContainEqual(
+      expect.objectContaining({
+        type: 'event',
+        projection: expect.objectContaining({
+          envelope: expect.objectContaining({
+            type: 'LegacyReplayRecovered',
+          }),
+        }),
+      })
+    );
+    expect(
+      replayStorage.calls.some((call) => call.type === 'load' && call.key === legacyStorageKey)
+    ).toBe(false);
+    expect(
+      replayStorage.calls.some((call) => call.type === 'load' && call.key === ownerBoundStorageKey)
+    ).toBe(true);
+
+    detach();
+  });
+
   it('falls back to a fresh replay session when no stable owner key is available', async () => {
     const replayStorage = createMapBackedReplayStorageFixture();
     const scope: RuntimeGatewayScopeDescriptor = { kind: 'fleet-view' };
