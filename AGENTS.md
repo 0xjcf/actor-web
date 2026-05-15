@@ -67,7 +67,7 @@ In Codex, prefer `.fas/state/codex-orchestration.json` plus `.fas/state/codex-su
 - Planner artifacts and commit plans remain the source of truth over any generic skill defaults.
 - Handoffs must cite changed files, ChangeSet or planAlignment evidence, verification receipts, and any memory constraints used or intentionally overridden.
 - Root session owns process-pressure diagnostics, cleanup decisions, final full verification, ship/closeout, and `fas done`. Delegated agents receive compact machine-risk status only (`available`, `unavailable`, `unavailable-permission`, `yellow`, or `red`) unless their assigned task explicitly owns runtime safety.
-- When Codex reports process-table permission failures from sandboxed Node execution, use approved root-session FAS commands such as `fas runtime process-pressure --stage <stage> --preflight --cleanup-plan`, `fas runtime cleanup --dry-run`, `fas verify --full`, `fas ship`, or `fas done` instead of asking delegated agents to inspect OS processes.
+- When Codex reports process-table permission failures from sandboxed Node execution, use approved root-session FAS commands such as `fas runtime process-pressure --stage <stage> --preflight --cleanup-plan`, `fas runtime cleanup --dry-run`, `fas verify --full`, `fas ship`, or `fas done` instead of asking delegated agents to inspect OS processes. Root-session diagnostics should prefer the approved `fas runtime process-pressure` command path and treat the reported node/shell/root-command attempt chain as the audit surface.
 
 ## Pipeline Owners vs Conceptual Roles
 
