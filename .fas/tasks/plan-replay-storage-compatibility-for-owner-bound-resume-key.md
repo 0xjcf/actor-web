@@ -38,14 +38,23 @@ Follow-up from Enforce runtime gateway liveness and replay security: owner-bound
 
 ## Affected Files
 
-- `packages/actor-core-runtime/src/runtime-gateway.ts`
+- `docs/API.md`
 - `packages/actor-core-runtime/src/unit/runtime-gateway.test.ts`
-- Replay storage provider contract documentation if compatibility behavior is
-  documented instead of implemented.
 
 ## Scope Amendments
 
-- None.
+- Type: plan-correction
+- Added at: 2026-05-15
+- Trigger: fas_architect handoff
+- Reason: The current replay storage contract has no server-trusted owner
+  metadata, legacy-key lookup hook, or migration channel, so a safe dual-read
+  compatibility path cannot be proven without widening the storage contract.
+- Decision: Treat owner-bound replay keys as an intentional fail-closed
+  storage-key rotation for this task. Document rollout and rollback behavior in
+  the public runtime gateway API docs and add a targeted regression test proving
+  authenticated owner-bound resume does not load legacy plain-key replay data.
+- Non-goal: Do not add dual-read compatibility in this task. If rollback must
+  preserve replay continuity, queue a separate storage-contract/migration task.
 
 ## Implementation plan
 
