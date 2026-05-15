@@ -942,12 +942,20 @@ Gateway replay/resync:
   also accepts an optional `replayStorage` provider that can load/store the
   bounded tail by `replaySessionId` plus an internal scoped storage stream key
   derived from the visible `streamId` and subscription `scope`.
+- Authenticated resume uses owner-bound replay session ids as an intentional
+  storage-key rotation. The gateway does not dual-read legacy plain
+  `lastConnectionId` storage keys because that would weaken the owner binding
+  that prevents cross-client replay reuse.
 - Replay storage load/store failures stay non-fatal. Use
   `onReplayStorageError` if you need an operator hook for degraded durable
   recovery; those events still report the visible client `streamId`.
 - If the requested range is still buffered, the gateway replays those frames.
 - If the range is unavailable, the gateway sends a fresh latest snapshot and
   then resumes live status/events.
+- Rolling forward to owner-bound replay keys and then rolling back to older
+  binaries can lose replay continuity for existing sessions. Preserve continuity
+  only by planning a separate replay-storage migration or storage-contract task;
+  this gateway API does not provide a compatibility dual-read path.
 
 This is projection recovery, not event sourcing, exactly-once delivery, or
 cluster transport. The optional provider only hardens the gateway-owned replay
