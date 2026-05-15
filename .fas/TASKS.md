@@ -664,9 +664,12 @@
 
 - Title: Plan replay storage compatibility for owner-bound resume keys
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/plan-replay-storage-compatibility-for-owner-bound-resume-key.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Reduce duplicate gateway subscriptions for read-model plus command sources
 

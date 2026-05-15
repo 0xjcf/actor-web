@@ -36,7 +36,7 @@ Follow-up from Enforce runtime gateway liveness and replay security: owner-bound
 - Immediate key migration without rollback guidance is rejected because it leaves
   operators without a clear recovery story if a release is rolled back.
 
-## Affected areas
+## Affected Files
 
 - `packages/actor-core-runtime/src/runtime-gateway.ts`
 - `packages/actor-core-runtime/src/unit/runtime-gateway.test.ts`
