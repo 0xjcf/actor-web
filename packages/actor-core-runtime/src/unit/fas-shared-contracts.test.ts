@@ -16,6 +16,11 @@ import {
   type FasEventEnvelope,
   type FasWorkflowSnapshot,
 } from '../integration/fas-shared-contracts.js';
+import {
+  actorMessageToRuntimeGatewayEventEnvelope,
+  actorSnapshotsToRuntimeGatewayTransitionRecord,
+  actorSnapshotToRuntimeGatewayWorkflowSnapshot,
+} from '../runtime-gateway-projection.js';
 import type { ActorSnapshot } from '../types.js';
 
 function createSnapshot(
@@ -55,6 +60,16 @@ describe('FAS shared-contracts compatibility', () => {
       taskId: 'task-1',
       causationId: 'cause-1',
     });
+    const coreEnvelope = actorMessageToRuntimeGatewayEventEnvelope(message, {
+      id: 'event-1',
+      kind: 'command',
+      occurredAt: '2026-04-22T12:00:00.000Z',
+      sourceActor: 'actor-1',
+      targetActor: 'actor-2',
+      workflowId: 'workflow-1',
+      taskId: 'task-1',
+      causationId: 'cause-1',
+    });
 
     expect(envelope).toMatchObject({
       id: 'event-1',
@@ -69,6 +84,7 @@ describe('FAS shared-contracts compatibility', () => {
       correlationId: 'corr-1',
       causationId: 'cause-1',
     });
+    expect(envelope).toEqual(coreEnvelope);
     expect(envelope.payload).toEqual({ taskId: 'task-1', retry: false });
   });
 
@@ -101,6 +117,21 @@ describe('FAS shared-contracts compatibility', () => {
       notes: ['ready for verification'],
       artifacts: { review: 'docs/spikes/actor-web-adr-003-fas-integration-review.md' },
     });
+    const coreSnapshot = actorSnapshotToRuntimeGatewayWorkflowSnapshot({
+      snapshot: createSnapshot({ review: 'running' }),
+      workflowId: 'workflow-1',
+      actorId: 'actor-1',
+      taskId: 'task-1',
+      taskTitle: 'Align contracts',
+      createdAt: '2026-04-22T11:00:00.000Z',
+      updatedAt: '2026-04-22T12:00:00.000Z',
+      correlationId: 'corr-1',
+      branchName: 'codex/fas-contracts',
+      baseBranch: 'main',
+      lastEventType: 'WORKFLOW_COMMAND',
+      notes: ['ready for verification'],
+      artifacts: { review: 'docs/spikes/actor-web-adr-003-fas-integration-review.md' },
+    });
 
     expect(snapshot).toEqual({
       workflowId: 'workflow-1',
@@ -118,20 +149,26 @@ describe('FAS shared-contracts compatibility', () => {
       notes: ['ready for verification'],
       artifacts: { review: 'docs/spikes/actor-web-adr-003-fas-integration-review.md' },
     });
+    expect(snapshot).toEqual(coreSnapshot);
   });
 
   it('maps Actor-Web snapshot transitions to FAS transition records', () => {
-    expect(
-      actorSnapshotsToFasTransitionRecord({
-        fromSnapshot: createSnapshot('queued', 'idle'),
-        toSnapshot: createSnapshot('running', 'running'),
-      })
-    ).toEqual({
+    const transition = actorSnapshotsToFasTransitionRecord({
+      fromSnapshot: createSnapshot('queued', 'idle'),
+      toSnapshot: createSnapshot('running', 'running'),
+    });
+    const coreTransition = actorSnapshotsToRuntimeGatewayTransitionRecord({
+      fromSnapshot: createSnapshot('queued', 'idle'),
+      toSnapshot: createSnapshot('running', 'running'),
+    });
+
+    expect(transition).toEqual({
       fromPhase: 'queued',
       toPhase: 'running',
       fromStatus: 'idle',
       toStatus: 'running',
     });
+    expect(transition).toEqual(coreTransition);
   });
 
   it('maps Actor-Web command execution metadata to FAS command execution records', () => {
