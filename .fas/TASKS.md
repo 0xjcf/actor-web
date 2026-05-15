@@ -664,7 +664,7 @@
 
 - Title: Plan replay storage compatibility for owner-bound resume keys
 - Mode: 6-agent
-- Status: implementing
+- Status: done
 - Owner: implementer
 - Brief: .fas/tasks/plan-replay-storage-compatibility-for-owner-bound-resume-key.md
 - Verification lane: fast
