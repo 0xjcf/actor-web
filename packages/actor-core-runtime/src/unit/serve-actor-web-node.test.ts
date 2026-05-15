@@ -283,6 +283,81 @@ describe('serveActorWebNode', () => {
     }
   });
 
+  it('normalizes invalid gateway inbound queue limits to the default safe bound', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+      },
+      actors: {
+        counter: actor({
+          id: 'counter',
+          node: 'server',
+          behavior: createCounterBehavior,
+          gateway: true,
+        }),
+      },
+    });
+
+    const served = await serveActorWebNode(topology, {
+      node: 'server',
+      gateway: {
+        inboundQueueLimit: 0,
+      },
+    });
+
+    try {
+      const socket = new WebSocket(served.getGatewayUrl() ?? '');
+      const gatewayFrames = collectFrames(socket);
+      await waitForSocketOpen(socket);
+      socket.send(JSON.stringify({ type: 'hello', clientVersion: 'test' }));
+      await expect(gatewayFrames.nextFrame()).resolves.toMatchObject({
+        type: 'ready',
+      });
+
+      socket.send(
+        JSON.stringify({
+          type: 'subscribe',
+          streamId: 'counter-stream',
+          scope: { kind: 'counter' },
+        })
+      );
+      await expect(gatewayFrames.nextFrame()).resolves.toMatchObject({
+        type: 'status',
+        streamId: 'counter-stream',
+      });
+      await expect(gatewayFrames.nextFrame()).resolves.toMatchObject({
+        type: 'snapshot',
+        streamId: 'counter-stream',
+      });
+
+      for (let index = 0; index < 3; index += 1) {
+        socket.send(
+          JSON.stringify({
+            type: 'ping',
+            sentAt: `2026-04-23T15:00:0${index}.000Z`,
+          })
+        );
+      }
+
+      await expect(gatewayFrames.nextFrame()).resolves.toMatchObject({
+        type: 'pong',
+        sentAt: '2026-04-23T15:00:00.000Z',
+      });
+      await expect(gatewayFrames.nextFrame()).resolves.toMatchObject({
+        type: 'pong',
+        sentAt: '2026-04-23T15:00:01.000Z',
+      });
+      await expect(gatewayFrames.nextFrame()).resolves.toMatchObject({
+        type: 'pong',
+        sentAt: '2026-04-23T15:00:02.000Z',
+      });
+
+      socket.close();
+    } finally {
+      await served.stop();
+    }
+  });
+
   it('exposes configured remote topology actors through the node gateway', async () => {
     const topology = defineActorWebTopology({
       nodes: {

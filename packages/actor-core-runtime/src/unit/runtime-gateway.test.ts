@@ -2247,6 +2247,64 @@ describe('runtime gateway hub', () => {
     detach();
   });
 
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1])(
+    'normalizes invalid inbound queue limit %p to the safe default',
+    async (invalidLimit) => {
+      let releaseScope: (() => void) | undefined;
+      const scopeReady = new Promise<void>((resolve) => {
+        releaseScope = resolve;
+      });
+      const observer = vi.fn<(event: RuntimeGatewayObserverEvent) => void>();
+      const hub = createRuntimeGatewayHub({
+        inboundQueueLimit: invalidLimit,
+        observer,
+        resolveScope: async () => {
+          await scopeReady;
+          return createFakeSource();
+        },
+      });
+      const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+      const detach = hub.attach(connection);
+      connection.push({ type: 'hello' });
+      await flushGatewayFrames();
+
+      connection.push({
+        type: 'subscribe',
+        streamId: 'fleet-main',
+        scope: { kind: 'fleet-view' },
+      });
+      for (let index = 0; index <= 64; index += 1) {
+        connection.push({
+          type: 'ping',
+          sentAt: `2026-04-23T15:00:${String(index).padStart(2, '0')}.000Z`,
+        });
+      }
+
+      await flushGatewayFrames();
+
+      expect(connection.closed).toBe(true);
+      expect(connection.frames).toContainEqual({
+        type: 'error',
+        code: 'invalid_frame',
+        message: 'Gateway inbound queue limit exceeded.',
+        recoverable: false,
+      });
+      expect(observer).toHaveBeenCalledWith({
+        type: 'inbound_queue_overflow',
+        connectionId: expect.any(String),
+        timestamp: expect.any(String),
+        message: 'Gateway inbound queue limit exceeded.',
+        queueDepth: 64,
+        queueLimit: 64,
+      });
+
+      releaseScope?.();
+      await flushGatewayFrames();
+      detach();
+    }
+  );
+
   it('swallows replay storage error hook failures and keeps the gateway live', async () => {
     const replayStorage = createMapBackedReplayStorageFixture();
     const replaySessionId = 'faulty-connection';
