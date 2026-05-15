@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { emit, setup } from 'xstate';
+import type { ActorRef } from '../actor-ref.js';
 import { createActorRef } from '../create-actor-ref.js';
 import {
   createProjectionTransportStatus,
@@ -644,6 +645,51 @@ describe('runtime gateway source', () => {
     await actor.stop();
 
     expect(readModel.snapshot().workflowSnapshot.phase).toBe('submitted');
+  });
+
+  it('supports snapshot-only actor refs without emitted-event subscriptions', () => {
+    const snapshot = {
+      context: {
+        submittedOrders: [],
+        lastSubmittedOrderId: null,
+      },
+      value: 'ready',
+      status: 'running' as const,
+      matches: (state: string) => state === 'ready',
+      can: () => true,
+      hasTag: () => false,
+      toJSON: () => ({ value: 'ready', status: 'running' }),
+    };
+    const actor = {
+      address: createGatewayAddress('snapshot-only'),
+      getSnapshot: () => snapshot,
+      subscribeSnapshot(listener: (nextSnapshot: typeof snapshot) => void) {
+        listener(snapshot);
+        return () => {};
+      },
+      async send() {},
+      async ask<TResponse = unknown>(): Promise<TResponse> {
+        return { ok: true } as TResponse;
+      },
+      async stop() {},
+      async isAlive() {
+        return true;
+      },
+      async getStats() {
+        return {} as never;
+      },
+    } as unknown as ActorRef<CheckoutContext, CheckoutCommand>;
+
+    const source = createRuntimeGatewayReadModelSource(actor, { now: fixedNow });
+    const events: RuntimeGatewayEventProjection[] = [];
+    const unsubscribeEvent = source.subscribeEvent((event) => {
+      events.push(event);
+    });
+
+    unsubscribeEvent();
+
+    expect(source.snapshot().workflowSnapshot.phase).toBe('ready');
+    expect(events).toEqual([]);
   });
 });
 
