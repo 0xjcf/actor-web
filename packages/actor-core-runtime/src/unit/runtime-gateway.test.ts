@@ -55,6 +55,21 @@ async function flushGatewayMicrotasks(): Promise<void> {
   await Promise.resolve();
 }
 
+function createDeferred<TValue = void>(): {
+  promise: Promise<TValue>;
+  resolve(value: TValue | PromiseLike<TValue>): void;
+  reject(reason?: unknown): void;
+} {
+  let resolve!: (value: TValue | PromiseLike<TValue>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<TValue>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return { promise, resolve, reject };
+}
+
 const checkoutMachine = setup({
   types: {
     context: {} as CheckoutContext,
@@ -963,6 +978,57 @@ describe('runtime gateway hub', () => {
     });
 
     detach();
+  });
+
+  it('treats timed-out outbound sends as ordered failures and terminates after the existing threshold', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const source = createFakeSource('ready');
+      const hangingSend = createDeferred<void>();
+      const hub = createRuntimeGatewayHub({
+        resolveScope: async () => source,
+      });
+      const connection = createFakeConnection(
+        { authorityId: 'auth-1' },
+        {
+          sendBehavior(_frame, attempt) {
+            if (attempt === 2) {
+              return hangingSend.promise;
+            }
+
+            if (attempt === 3 || attempt === 4) {
+              return Promise.reject(new Error(`async send failure ${attempt}`));
+            }
+          },
+        }
+      );
+
+      const detach = hub.attach(connection);
+      connection.push({ type: 'hello' });
+      connection.push({
+        type: 'subscribe',
+        streamId: 'fleet-main',
+        scope: { kind: 'fleet-view' },
+      });
+      await flushGatewayMicrotasks();
+      source.emitEvent(createGatewayEvent(source, 'gateway-event-timeout'));
+      await flushGatewayMicrotasks();
+
+      expect(connection.closed).toBe(false);
+      expect(connection.sendAttempts).toBe(4);
+
+      await vi.advanceTimersByTimeAsync(5000);
+      await flushGatewayMicrotasks();
+
+      expect(connection.closed).toBe(true);
+      hangingSend.resolve();
+      await flushGatewayMicrotasks();
+
+      detach();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('subscribes, fans out frames by stream, supports resync, and cleans up on close', async () => {

@@ -366,6 +366,7 @@ type RuntimeGatewayStreamState = {
 };
 
 const OUTBOUND_SEND_FAILURE_THRESHOLD = 3;
+const OUTBOUND_SEND_ATTEMPT_TIMEOUT_MS = 5000;
 const DEFAULT_INBOUND_QUEUE_LIMIT = 64;
 
 export type RuntimeGatewayReplayFrame = Extract<
@@ -566,6 +567,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
       let nextSendOutcomeToProcess = 1;
       let consecutiveSendFailures = 0;
       const settledSendOutcomes = new Map<number, 'success' | 'failure'>();
+      const sendAttemptTimeouts = new Map<number, ReturnType<typeof setTimeout>>();
 
       const cleanupStream = (streamId: string): void => {
         const stream = streams.get(streamId);
@@ -613,6 +615,23 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         idleTimer = null;
       };
 
+      const clearSendAttemptTimeout = (attemptId: number): void => {
+        const timeout = sendAttemptTimeouts.get(attemptId);
+        if (!timeout) {
+          return;
+        }
+
+        clearTimeout(timeout);
+        sendAttemptTimeouts.delete(attemptId);
+      };
+
+      const clearSendAttemptTimeouts = (): void => {
+        for (const timeout of sendAttemptTimeouts.values()) {
+          clearTimeout(timeout);
+        }
+        sendAttemptTimeouts.clear();
+      };
+
       const terminateConnection = (): void => {
         if (terminated) {
           return;
@@ -620,6 +639,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
 
         terminated = true;
         clearIdleTimer();
+        clearSendAttemptTimeouts();
         cleanupAll();
         void Promise.resolve(connection.close?.()).catch(() => {});
       };
@@ -669,16 +689,26 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
 
         const attemptId = nextSendAttemptId + 1;
         nextSendAttemptId = attemptId;
+        let settled = false;
         const recordSendOutcome = (outcome: 'success' | 'failure'): void => {
-          if (terminated) {
+          if (terminated || settled) {
             return;
           }
 
+          settled = true;
+          clearSendAttemptTimeout(attemptId);
           settledSendOutcomes.set(attemptId, outcome);
           processSettledSendOutcomes();
         };
 
         try {
+          sendAttemptTimeouts.set(
+            attemptId,
+            setTimeout(() => {
+              sendAttemptTimeouts.delete(attemptId);
+              recordSendOutcome('failure');
+            }, OUTBOUND_SEND_ATTEMPT_TIMEOUT_MS)
+          );
           void Promise.resolve(connection.send(frame)).then(
             () => {
               recordSendOutcome('success');
@@ -1257,6 +1287,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
       const unsubscribeClose = connection.onClose(() => {
         terminated = true;
         clearIdleTimer();
+        clearSendAttemptTimeouts();
         cleanupAll();
       });
 
