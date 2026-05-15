@@ -58,7 +58,8 @@ component runtimes can coexist without shared capacity, IDs, or hidden ownership
   though the task brief targets Actor-Web runtime ownership hotspots.
 - Reason: Make the Actor-Web runtime and component ownership scope explicit
   before delegated implementation starts.
-- Added paths: packages/actor-core-runtime/src/actor-system-impl.ts, packages/actor-core-runtime/src/create-component.ts, packages/actor-core-runtime/src/actor-system.ts, packages/actor-core-runtime/src/unit/runtime-ownership.test.ts, packages/actor-core-runtime/src/unit/component-runtime-ownership.test.ts
+- Added paths: packages/actor-core-runtime/src/actor-system-impl.ts, packages/actor-core-runtime/src/create-component.ts, packages/actor-core-runtime/src/unit/runtime-ownership.test.ts, packages/actor-core-runtime/src/unit/component-runtime-ownership.test.ts
+- Removed planned paths: packages/actor-core-runtime/src/actor-system.ts
 - Evidence source: root-plan-review
 - Evidence: root-plan-review | .fas/state/commit-plan.json |
   plannedPathDetails referenced FAS verification files instead of Actor-Web
@@ -94,6 +95,5 @@ component runtimes can coexist without shared capacity, IDs, or hidden ownership
 
 - packages/actor-core-runtime/src/actor-system-impl.ts
 - packages/actor-core-runtime/src/create-component.ts
-- packages/actor-core-runtime/src/actor-system.ts
 - packages/actor-core-runtime/src/unit/runtime-ownership.test.ts
 - packages/actor-core-runtime/src/unit/component-runtime-ownership.test.ts
