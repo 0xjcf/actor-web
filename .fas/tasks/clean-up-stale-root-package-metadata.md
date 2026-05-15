@@ -1,4 +1,4 @@
-# Clean Up Stale Root Package Metadata
+# Clean up stale root package metadata
 
 ## Summary
 
@@ -52,3 +52,13 @@ build, publish, and docs surfaces no longer point at stale root outputs.
 - Package build command selected by the implementation plan
 - `pnpm lint`
 - `fas validate-task`
+
+## Scope Amendments
+- Type: scope-refresh
+- Added at: 2026-05-15
+- Added paths: package.json, README.md, fas.domain-map.json
+
+## Affected files
+- package.json
+- README.md
+- fas.domain-map.json

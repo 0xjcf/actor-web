@@ -629,10 +629,12 @@
 
 - Title: Clean up stale root package metadata
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: planning
+- Owner: planner
 - Brief: .fas/tasks/clean-up-stale-root-package-metadata.md
-
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 ### Task: Normalize runtime gateway inbound queue limit options
 
 - Title: Normalize runtime gateway inbound queue limit options
