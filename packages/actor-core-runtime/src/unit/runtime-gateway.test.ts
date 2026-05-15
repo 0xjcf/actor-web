@@ -1031,6 +1031,60 @@ describe('runtime gateway hub', () => {
     }
   });
 
+  it('preserves ordered async outbound send outcomes when earlier attempts settle later', async () => {
+    const source = createFakeSource('ready');
+    const readySend = createDeferred<void>();
+    const statusSend = createDeferred<void>();
+    const snapshotSend = createDeferred<void>();
+    const eventSend = createDeferred<void>();
+    const attempts = new Map<number, ReturnType<typeof createDeferred<void>>>([
+      [1, readySend],
+      [2, statusSend],
+      [3, snapshotSend],
+      [4, eventSend],
+    ]);
+    const hub = createRuntimeGatewayHub({
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection(
+      { authorityId: 'auth-1' },
+      {
+        sendBehavior(_frame, attempt) {
+          return attempts.get(attempt)?.promise;
+        },
+      }
+    );
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'fleet-main',
+      scope: { kind: 'fleet-view' },
+    });
+    await flushGatewayMicrotasks();
+    source.emitEvent(createGatewayEvent(source, 'gateway-event-ordered'));
+    await flushGatewayMicrotasks();
+
+    snapshotSend.reject(new Error('snapshot failed'));
+    eventSend.reject(new Error('event failed'));
+    await flushGatewayMicrotasks();
+
+    expect(connection.closed).toBe(false);
+
+    readySend.resolve();
+    await flushGatewayMicrotasks();
+
+    expect(connection.closed).toBe(false);
+
+    statusSend.reject(new Error('status failed'));
+    await flushGatewayMicrotasks();
+
+    expect(connection.closed).toBe(true);
+
+    detach();
+  });
+
   it('subscribes, fans out frames by stream, supports resync, and cleans up on close', async () => {
     const source = createFakeSource('ready');
     const hub = createRuntimeGatewayHub({
