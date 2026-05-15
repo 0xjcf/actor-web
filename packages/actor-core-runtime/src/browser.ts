@@ -92,11 +92,30 @@ export {
 export type {
   RuntimeGatewayClientFrame,
   RuntimeGatewayErrorCode,
+  RuntimeGatewayEventEnvelope,
+  RuntimeGatewayEventKind,
   RuntimeGatewayEventProjection,
   RuntimeGatewayScopeDescriptor,
   RuntimeGatewayServerFrame,
   RuntimeGatewaySnapshotProjection,
+  RuntimeGatewayTransitionRecord,
+  RuntimeGatewayWorkflowSnapshot,
 } from './runtime-gateway.js';
+export type {
+  ActorMessageRecord as RuntimeGatewayActorMessageRecord,
+  ActorMessageToRuntimeGatewayEventEnvelopeOptions,
+  ActorRuntimeProjection,
+  ActorSnapshotToRuntimeGatewayWorkflowSnapshotInput,
+  ActorSnapshotTransitionInput as RuntimeGatewaySnapshotTransitionInput,
+} from './runtime-gateway-projection.js';
+export {
+  actorMessageToRuntimeGatewayEventEnvelope,
+  actorRuntimeProjectionToActorSnapshot,
+  actorSnapshotsToRuntimeGatewayTransitionRecord,
+  actorSnapshotToRuntimeGatewayWorkflowSnapshot,
+  deriveRuntimeGatewayPhase,
+  runtimeGatewayEventPayload,
+} from './runtime-gateway-projection.js';
 export type {
   InMemoryRuntimePeerDiscoveryProvider,
   RuntimePeerDiscoveryEndpointInput,

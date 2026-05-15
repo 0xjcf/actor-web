@@ -14,8 +14,8 @@ import {
   createProjectionTransportStatus,
   type ProjectionTransportStatus,
 } from '../projection-transport.js';
+import { deriveRuntimeGatewayPhase } from '../runtime-gateway-projection.js';
 import type { ActorSnapshot, JsonValue, Message } from '../types.js';
-import { actorSnapshotPhase } from './fas-shared-contracts.js';
 
 export interface IgniteActorSourceSnapshot<TContext = unknown> extends ActorSnapshot<TContext> {
   address: ActorAddress;
@@ -131,7 +131,7 @@ export function actorSnapshotToIgniteSourceSnapshot<TContext = unknown>(
   address: ActorAddress,
   snapshot: ActorSnapshot<TContext>
 ): IgniteActorSourceSnapshot<TContext> {
-  const phase = actorSnapshotPhase(snapshot.value);
+  const phase = deriveRuntimeGatewayPhase(snapshot.value);
 
   return {
     ...snapshot,

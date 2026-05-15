@@ -250,6 +250,8 @@ export type {
   RuntimeGatewayClientFrame,
   RuntimeGatewayCommandSource,
   RuntimeGatewayErrorCode,
+  RuntimeGatewayEventEnvelope,
+  RuntimeGatewayEventKind,
   RuntimeGatewayEventProjection,
   RuntimeGatewayReadModelSource,
   RuntimeGatewayReplayFrame,
@@ -259,6 +261,8 @@ export type {
   RuntimeGatewayScopeResolver,
   RuntimeGatewayServerFrame,
   RuntimeGatewaySnapshotProjection,
+  RuntimeGatewayTransitionRecord,
+  RuntimeGatewayWorkflowSnapshot,
 } from './runtime-gateway.js';
 export {
   createRuntimeGatewayCommandSource,
@@ -267,6 +271,21 @@ export {
   createRuntimeGatewaySource,
   RuntimeGatewayScopeError,
 } from './runtime-gateway.js';
+export type {
+  ActorMessageRecord as RuntimeGatewayActorMessageRecord,
+  ActorMessageToRuntimeGatewayEventEnvelopeOptions,
+  ActorRuntimeProjection,
+  ActorSnapshotToRuntimeGatewayWorkflowSnapshotInput,
+  ActorSnapshotTransitionInput as RuntimeGatewaySnapshotTransitionInput,
+} from './runtime-gateway-projection.js';
+export {
+  actorMessageToRuntimeGatewayEventEnvelope,
+  actorRuntimeProjectionToActorSnapshot,
+  actorSnapshotsToRuntimeGatewayTransitionRecord,
+  actorSnapshotToRuntimeGatewayWorkflowSnapshot,
+  deriveRuntimeGatewayPhase,
+  runtimeGatewayEventPayload,
+} from './runtime-gateway-projection.js';
 export type {
   InMemoryRuntimePeerDiscoveryProvider,
   RuntimePeerDiscoveryEndpointInput,

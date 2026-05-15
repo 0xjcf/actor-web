@@ -2,21 +2,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { ActorRef } from './actor-ref.js';
 import type { ActorAddress, ActorMessage } from './actor-system.js';
 import {
-  actorMessageToFasEventEnvelope,
-  actorSnapshotsToFasTransitionRecord,
-  actorSnapshotToFasWorkflowSnapshot,
-  type FasEventEnvelope,
-  type FasMessageKind,
-  type FasWorkflowSnapshot,
-  type FasWorkflowTransitionRecord,
-} from './integration/fas-shared-contracts.js';
-import {
-  createIgniteCommandSource,
-  createIgniteReadModelSource,
-  type IgniteActorSourceEvent,
-  type IgniteActorSourceSnapshot,
-} from './integration/ignite-element-bridge.js';
-import {
   createProjectionTransportStatus,
   type ProjectionTransportStatus,
 } from './projection-transport.js';
@@ -25,6 +10,15 @@ import {
   type RuntimeTransportAuthPayload,
   verifyRuntimeGatewayAuth,
 } from './runtime-auth.js';
+import {
+  actorMessageToRuntimeGatewayEventEnvelope,
+  actorSnapshotsToRuntimeGatewayTransitionRecord,
+  actorSnapshotToRuntimeGatewayWorkflowSnapshot,
+  type RuntimeGatewayEventKind,
+  type RuntimeGatewayEventProjection,
+  type RuntimeGatewaySnapshotProjection,
+  type RuntimeGatewayTransitionRecord,
+} from './runtime-gateway-projection.js';
 import type { Message } from './types.js';
 
 export interface RuntimeGatewayScopeDescriptor {
@@ -41,17 +35,14 @@ export type RuntimeGatewayErrorCode =
   | 'bad_sequence'
   | 'internal_error';
 
-export interface RuntimeGatewaySnapshotProjection<TContext = unknown> {
-  address: ActorAddress;
-  workflowSnapshot: FasWorkflowSnapshot;
-  value: unknown;
-  context: TContext;
-}
-
-export interface RuntimeGatewayEventProjection {
-  address: ActorAddress;
-  envelope: FasEventEnvelope;
-}
+export type {
+  RuntimeGatewayEventEnvelope,
+  RuntimeGatewayEventKind,
+  RuntimeGatewayEventProjection,
+  RuntimeGatewaySnapshotProjection,
+  RuntimeGatewayTransitionRecord,
+  RuntimeGatewayWorkflowSnapshot,
+} from './runtime-gateway-projection.js';
 
 export type RuntimeGatewayClientFrame =
   | {
@@ -90,7 +81,7 @@ export type RuntimeGatewayServerFrame =
       type: 'transition';
       streamId: string;
       sequence: number;
-      transition: FasWorkflowTransitionRecord;
+      transition: RuntimeGatewayTransitionRecord;
     }
   | {
       type: 'status';
@@ -142,7 +133,7 @@ export interface RuntimeGatewayReadModelSource {
   subscribeEvent(listener: (projection: RuntimeGatewayEventProjection) => void): () => void;
   transportStatus(): ProjectionTransportStatus;
   subscribeTransportStatus(listener: (status: ProjectionTransportStatus) => void): () => void;
-  subscribeTransition?(listener: (transition: FasWorkflowTransitionRecord) => void): () => void;
+  subscribeTransition?(listener: (transition: RuntimeGatewayTransitionRecord) => void): () => void;
 }
 
 export interface RuntimeGatewayCommandSource extends RuntimeGatewayReadModelSource {
@@ -162,7 +153,7 @@ export interface CreateRuntimeGatewaySourceOptions {
   taskId?: string;
   taskTitle?: string;
   correlationId?: string;
-  eventKind?: FasMessageKind;
+  eventKind?: RuntimeGatewayEventKind;
   sourceActor?: string;
   now?: () => Date;
 }
@@ -195,30 +186,58 @@ export class RuntimeGatewayScopeError extends Error {
   }
 }
 
+function requireSnapshotSubscription(
+  actorRef: ActorRef<unknown, ActorMessage>
+): (listener: (snapshot: ReturnType<typeof actorRef.getSnapshot>) => void) => () => void {
+  if (typeof actorRef.subscribeSnapshot !== 'function') {
+    throw new Error(
+      'ActorRef does not expose snapshot subscriptions. Use a ref that exposes subscribeSnapshot().'
+    );
+  }
+
+  return actorRef.subscribeSnapshot.bind(actorRef);
+}
+
+function getTransportStatus(actorRef: ActorRef<unknown, ActorMessage>): ProjectionTransportStatus {
+  return actorRef.getTransportStatus?.() ?? createProjectionTransportStatus('local');
+}
+
+function subscribeTransportStatus(
+  actorRef: ActorRef<unknown, ActorMessage>,
+  listener: (status: ProjectionTransportStatus) => void
+): () => void {
+  if (typeof actorRef.subscribeTransportStatus === 'function') {
+    return actorRef.subscribeTransportStatus(listener);
+  }
+
+  listener(getTransportStatus(actorRef));
+  return () => {};
+}
+
 export function createRuntimeGatewayReadModelSource(
   actorRef: ActorRef<unknown, ActorMessage>,
   options: CreateRuntimeGatewaySourceOptions = {}
 ): RuntimeGatewayReadModelSource {
-  const source = createIgniteReadModelSource(actorRef);
+  const subscribeActorSnapshot = requireSnapshotSubscription(actorRef);
   const createdAt = (options.now ?? (() => new Date()))().toISOString();
   let lastEventType: string | null = null;
 
   const toSnapshotProjection = (
-    snapshot: IgniteActorSourceSnapshot<unknown>
+    snapshot: ReturnType<typeof actorRef.getSnapshot>
   ): RuntimeGatewaySnapshotProjection => {
     const updatedAt = (options.now ?? (() => new Date()))().toISOString();
 
     return {
-      address: source.address,
-      workflowSnapshot: actorSnapshotToFasWorkflowSnapshot({
+      address: actorRef.address,
+      workflowSnapshot: actorSnapshotToRuntimeGatewayWorkflowSnapshot({
         snapshot,
-        workflowId: options.workflowId ?? source.address.path,
-        actorId: source.address.id,
-        taskId: options.taskId ?? source.address.id,
-        taskTitle: options.taskTitle ?? source.address.id,
+        workflowId: options.workflowId ?? actorRef.address.path,
+        actorId: actorRef.address.id,
+        taskId: options.taskId ?? actorRef.address.id,
+        taskTitle: options.taskTitle ?? actorRef.address.id,
         createdAt,
         updatedAt,
-        correlationId: options.correlationId ?? source.address.path,
+        correlationId: options.correlationId ?? actorRef.address.path,
         lastEventType,
       }),
       value: snapshot.value,
@@ -226,20 +245,18 @@ export function createRuntimeGatewayReadModelSource(
     };
   };
 
-  const toEventProjection = (
-    event: IgniteActorSourceEvent<ActorMessage>
-  ): RuntimeGatewayEventProjection => {
+  const toEventProjection = (event: ActorMessage): RuntimeGatewayEventProjection => {
     lastEventType = event.type;
 
     return {
-      address: source.address,
-      envelope: actorMessageToFasEventEnvelope(
+      address: actorRef.address,
+      envelope: actorMessageToRuntimeGatewayEventEnvelope(
         event as unknown as ActorMessage & Record<string, unknown>,
         {
           id: randomUUID(),
           kind: options.eventKind ?? 'fact',
           occurredAt: (options.now ?? (() => new Date()))().toISOString(),
-          sourceActor: options.sourceActor ?? source.address.path,
+          sourceActor: options.sourceActor ?? actorRef.address.path,
           workflowId: options.workflowId,
           taskId: options.taskId,
           correlationId: options.correlationId,
@@ -249,20 +266,26 @@ export function createRuntimeGatewayReadModelSource(
   };
 
   return {
-    address: source.address,
+    address: actorRef.address,
     snapshot(): RuntimeGatewaySnapshotProjection {
-      return toSnapshotProjection(source.snapshot());
+      return toSnapshotProjection(actorRef.getSnapshot());
     },
     subscribeSnapshot(
       listener: (projection: RuntimeGatewaySnapshotProjection) => void
     ): () => void {
-      return source.subscribe((snapshot) => {
+      listener(toSnapshotProjection(actorRef.getSnapshot()));
+
+      return subscribeActorSnapshot((snapshot) => {
         listener(toSnapshotProjection(snapshot));
       });
     },
     subscribeEvent(listener: (projection: RuntimeGatewayEventProjection) => void): () => void {
+      if (typeof actorRef.subscribeEvent !== 'function') {
+        return () => {};
+      }
+
       try {
-        return source.subscribeEvent((event) => {
+        return actorRef.subscribeEvent((event) => {
           listener(toEventProjection(event));
         });
       } catch {
@@ -270,21 +293,23 @@ export function createRuntimeGatewayReadModelSource(
       }
     },
     transportStatus(): ProjectionTransportStatus {
-      return source.transportStatus();
+      return getTransportStatus(actorRef);
     },
     subscribeTransportStatus(listener: (status: ProjectionTransportStatus) => void): () => void {
-      return source.subscribeTransportStatus(listener);
+      return subscribeTransportStatus(actorRef, listener);
     },
-    subscribeTransition(listener: (transition: FasWorkflowTransitionRecord) => void): () => void {
-      let previousSnapshot: IgniteActorSourceSnapshot<unknown> | null = null;
+    subscribeTransition(
+      listener: (transition: RuntimeGatewayTransitionRecord) => void
+    ): () => void {
+      let previousSnapshot: ReturnType<typeof actorRef.getSnapshot> | null = actorRef.getSnapshot();
 
-      return source.subscribe((snapshot) => {
+      return subscribeActorSnapshot((snapshot) => {
         if (!previousSnapshot) {
           previousSnapshot = snapshot;
           return;
         }
 
-        const transition = actorSnapshotsToFasTransitionRecord({
+        const transition = actorSnapshotsToRuntimeGatewayTransitionRecord({
           fromSnapshot: previousSnapshot,
           toSnapshot: snapshot,
         });
@@ -308,15 +333,14 @@ export function createRuntimeGatewayCommandSource(
   options: CreateRuntimeGatewaySourceOptions = {}
 ): RuntimeGatewayCommandSource {
   const source = createRuntimeGatewayReadModelSource(actorRef, options);
-  const commandSource = createIgniteCommandSource(actorRef);
 
   return {
     ...source,
     async send(message: ActorMessage): Promise<void> {
-      await commandSource.send(message);
+      await actorRef.send(message);
     },
     async ask<TResponse = unknown>(message: Message, timeoutMs?: number): Promise<TResponse> {
-      return commandSource.ask<TResponse>(message, timeoutMs);
+      return actorRef.ask<TResponse>(message, timeoutMs);
     },
   };
 }
