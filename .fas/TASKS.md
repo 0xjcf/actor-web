@@ -652,10 +652,13 @@
 
 - Title: Add runtime gateway send-attempt timeout handling
 - Mode: 4-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/add-runtime-gateway-send-attempt-timeout-handling.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Plan replay storage compatibility for owner-bound resume keys
 

@@ -42,7 +42,7 @@ Follow-up from Enforce runtime gateway liveness and replay security: outbound se
 - Counting later failures out of order was rejected because it can terminate a
   connection even when an earlier queued send eventually succeeds.
 
-## Affected areas
+## Affected Files
 
 - `packages/actor-core-runtime/src/runtime-gateway.ts`
 - `packages/actor-core-runtime/src/unit/runtime-gateway.test.ts`
