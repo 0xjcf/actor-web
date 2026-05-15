@@ -23,6 +23,7 @@ import {
   RuntimeGatewayScopeError,
   type RuntimeGatewaySnapshotProjection,
   type RuntimeGatewaySource,
+  type RuntimeGatewayWorkflowSnapshot,
 } from '../runtime-gateway.js';
 import type { Message } from '../types.js';
 
@@ -601,7 +602,9 @@ describe('runtime gateway source', () => {
     unsubscribeStatus();
     await actor.stop();
 
-    expect(source.snapshot().workflowSnapshot).toMatchObject({
+    const workflowSnapshot: RuntimeGatewayWorkflowSnapshot = source.snapshot().workflowSnapshot;
+
+    expect(workflowSnapshot).toMatchObject({
       workflowId: 'workflow-checkout',
       taskId: 'task-checkout',
       taskTitle: 'Checkout gateway stream',
