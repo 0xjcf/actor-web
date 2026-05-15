@@ -629,8 +629,8 @@
 
 - Title: Clean up stale root package metadata
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/clean-up-stale-root-package-metadata.md
 - Verification lane: fast
 - Policy sensitivity: standard
