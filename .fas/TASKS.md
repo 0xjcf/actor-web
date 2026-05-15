@@ -617,10 +617,13 @@
 
 - Title: Make runtime ownership and accounting instance-scoped
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/make-runtime-ownership-and-accounting-instance-scoped.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Clean up stale root package metadata
 
