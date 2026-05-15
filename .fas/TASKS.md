@@ -605,7 +605,7 @@
 
 - Title: Decouple runtime gateway core projection contracts
 - Mode: 6-agent
-- Status: implementing
+- Status: done
 - Owner: implementer
 - Brief: .fas/tasks/decouple-runtime-gateway-core-projection-contracts.md
 - Automation mode: advisory
