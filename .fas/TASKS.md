@@ -675,8 +675,8 @@
 
 - Title: Reduce duplicate gateway subscriptions for read-model plus command sources
 - Mode: 6-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/reduce-duplicate-gateway-subscriptions-for-read-model-plus-c.md
 - Verification lane: fast
 - Policy sensitivity: standard

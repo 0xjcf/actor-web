@@ -36,6 +36,8 @@ Follow-up from Separate Ignite read-model sources from command surfaces: the rec
 - `packages/actor-core-runtime/src/actor-web-source.ts`
 - `packages/actor-core-runtime/src/unit/runtime-gateway.test.ts`
 - `packages/actor-core-runtime/src/unit/actor-web-source.test.ts`
+- `packages/actor-core-runtime/src/topology.ts`
+- `packages/actor-core-runtime/src/unit/topology.test.ts`
 - `docs/API.md`
 
 ## Scope Amendments
@@ -66,6 +68,17 @@ Follow-up from Separate Ignite read-model sources from command surfaces: the rec
 - Non-goal: Do not move scope onto every `send` or `ask` frame, do not bypass
   gateway-side scope resolution, and do not widen into socket pooling or
   transport changes.
+
+- Type: QA-retry scope amendment
+- Added at: 2026-05-18
+- Trigger: fas_qa handoff after focused implementation review
+- Reason: The topology convenience helpers are the public API path documented for
+  split read-model plus explicit command-source usage. QA found that
+  `source()` and `commandSource()` needed to preserve the intended compatibility
+  split: legacy `source()` stays full and command-capable, while
+  `commandSource()` uses the new command-only subscribe mode.
+- Added source/test scope: `packages/actor-core-runtime/src/topology.ts` and
+  `packages/actor-core-runtime/src/unit/topology.test.ts`.
 
 ## Implementation plan
 
