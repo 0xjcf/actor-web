@@ -675,9 +675,12 @@
 
 - Title: Reduce duplicate gateway subscriptions for read-model plus command sources
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/reduce-duplicate-gateway-subscriptions-for-read-model-plus-c.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Migrate Ignite host docs and examples to read-model defaults
 
