@@ -337,7 +337,7 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
           resolveAddress,
           ...(gateway ? { gateway } : {}),
           source(options: ActorWebSourceOptions): ClosableActorWebSource {
-            return createActorWebCommandSource({
+            return createActorWebSource({
               actor: this,
               ...options,
             });
@@ -349,7 +349,7 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
             });
           },
           commandSource(options: ActorWebSourceOptions): ClosableActorWebSource {
-            return createActorWebSource({
+            return createActorWebCommandSource({
               actor: this,
               ...options,
             });

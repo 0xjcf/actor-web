@@ -427,13 +427,16 @@ describe('Actor-Web topology helpers', () => {
         }),
       },
     });
-    const sentFrames: unknown[] = [];
+    const sourceFrames: unknown[] = [];
+    const commandFrames: unknown[] = [];
     let openListener = (): void => {};
+    let commandOpenListener = (): void => {};
     let messageListener = (_event: MessageEvent<string>): void => {};
+    let commandMessageListener = (_event: MessageEvent<string>): void => {};
     const socket: ActorWebGatewaySocket = {
       readyState: 1,
       send: (data: string) => {
-        sentFrames.push(JSON.parse(data) as unknown);
+        sourceFrames.push(JSON.parse(data) as unknown);
       },
       close: () => {},
       addEventListener(
@@ -444,6 +447,23 @@ describe('Actor-Web topology helpers', () => {
           openListener = listener as () => void;
         } else if (type === 'message') {
           messageListener = listener as (event: MessageEvent<string>) => void;
+        }
+      },
+    };
+    const commandSocket: ActorWebGatewaySocket = {
+      readyState: 1,
+      send: (data: string) => {
+        commandFrames.push(JSON.parse(data) as unknown);
+      },
+      close: () => {},
+      addEventListener(
+        type: 'open' | 'close' | 'error' | 'message',
+        listener: (() => void) | ((event: Event) => void) | ((event: MessageEvent<string>) => void)
+      ) {
+        if (type === 'open') {
+          commandOpenListener = listener as () => void;
+        } else if (type === 'message') {
+          commandMessageListener = listener as (event: MessageEvent<string>) => void;
         }
       },
     };
@@ -460,6 +480,19 @@ describe('Actor-Web topology helpers', () => {
       streamId: 'vehicle-inspections-stream',
       createSocket: () => socket,
     });
+    const commandSource = logistics.actors.vehicleInspections.commandSource({
+      gateway: {
+        url: 'ws://example.invalid/gateway',
+        scope: {
+          params: {
+            fleetId: 'fleet-42',
+            vehicleId: 'truck-17',
+          },
+        },
+      },
+      streamId: 'vehicle-inspections-command-stream',
+      createSocket: () => commandSocket,
+    });
     openListener();
     messageListener({
       data: JSON.stringify({
@@ -469,8 +502,17 @@ describe('Actor-Web topology helpers', () => {
         serverTime: '2026-04-25T18:00:00.000Z',
       }),
     } as MessageEvent<string>);
+    commandOpenListener();
+    commandMessageListener({
+      data: JSON.stringify({
+        type: 'ready',
+        connectionId: 'connection-2',
+        heartbeatMs: 15000,
+        serverTime: '2026-04-25T18:00:00.000Z',
+      }),
+    } as MessageEvent<string>);
 
-    expect(sentFrames).toContainEqual({
+    expect(sourceFrames).toContainEqual({
       type: 'subscribe',
       streamId: 'vehicle-inspections-stream',
       scope: {
@@ -481,6 +523,19 @@ describe('Actor-Web topology helpers', () => {
         },
       },
     });
+    expect(commandFrames).toContainEqual({
+      type: 'subscribe',
+      streamId: 'vehicle-inspections-command-stream',
+      scope: {
+        kind: 'vehicleInspections',
+        params: {
+          fleetId: 'fleet-42',
+          vehicleId: 'truck-17',
+        },
+      },
+      mode: 'command-only',
+    });
     source.close();
+    commandSource.close();
   });
 });
