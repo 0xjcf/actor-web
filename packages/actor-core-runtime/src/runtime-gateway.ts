@@ -56,6 +56,7 @@ export type RuntimeGatewayClientFrame =
       streamId: string;
       scope: RuntimeGatewayScopeDescriptor;
       fromSequence?: number;
+      mode?: RuntimeGatewaySubscribeMode;
     }
   | { type: 'unsubscribe'; streamId: string }
   | { type: 'resync'; streamId: string; fromSequence?: number }
@@ -142,6 +143,8 @@ export interface RuntimeGatewayCommandSource extends RuntimeGatewayReadModelSour
 }
 
 export type RuntimeGatewaySource = RuntimeGatewayCommandSource;
+
+export type RuntimeGatewaySubscribeMode = 'full' | 'command-only';
 
 export type RuntimeGatewayScopeResolver<TAuthContext = unknown> = (
   scope: RuntimeGatewayScopeDescriptor,
@@ -353,6 +356,7 @@ export function createRuntimeGatewaySource(
 }
 
 type RuntimeGatewayStreamState = {
+  mode: RuntimeGatewaySubscribeMode;
   replaySessionId: string;
   replayStorageStreamId: string;
   source: RuntimeGatewaySource;
@@ -856,7 +860,8 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
 
       const subscribeStream = async (
         streamId: string,
-        scope: RuntimeGatewayScopeDescriptor
+        scope: RuntimeGatewayScopeDescriptor,
+        mode: RuntimeGatewaySubscribeMode = 'full'
       ): Promise<void> => {
         if (terminated) {
           return;
@@ -892,20 +897,21 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         }
 
         const replayStorageStreamId = runtimeGatewayReplayStorageStreamId(streamId, scope);
-        const restoredReplayFrames = replayStorage
-          ? await Promise.resolve()
-              .then(() => replayStorage.loadFrames(replaySessionId, replayStorageStreamId))
-              .then((frames) => trimReplayFrames(frames))
-              .catch((error) => {
-                reportReplayStorageError({
-                  operation: 'load',
-                  replaySessionId,
-                  streamId,
-                  error,
-                });
-                return [];
-              })
-          : [];
+        const restoredReplayFrames =
+          mode === 'full' && replayStorage
+            ? await Promise.resolve()
+                .then(() => replayStorage.loadFrames(replaySessionId, replayStorageStreamId))
+                .then((frames) => trimReplayFrames(frames))
+                .catch((error) => {
+                  reportReplayStorageError({
+                    operation: 'load',
+                    replaySessionId,
+                    streamId,
+                    error,
+                  });
+                  return [];
+                })
+            : [];
         const replayFrames = restoredReplayFramesMatchSource(restoredReplayFrames, source)
           ? restoredReplayFrames
           : [];
@@ -915,6 +921,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         }
 
         const stream: RuntimeGatewayStreamState = {
+          mode,
           replaySessionId,
           replayStorageStreamId,
           source,
@@ -932,32 +939,34 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           sendStatus(streamId, status);
         });
 
-        stream.unsubscribeSnapshot = source.subscribeSnapshot((projection) => {
-          stream.lastSnapshot = projection;
-          sendSequenced(streamId, stream, {
-            type: 'snapshot',
-            streamId,
-            projection,
+        if (mode === 'full') {
+          stream.unsubscribeSnapshot = source.subscribeSnapshot((projection) => {
+            stream.lastSnapshot = projection;
+            sendSequenced(streamId, stream, {
+              type: 'snapshot',
+              streamId,
+              projection,
+            });
           });
-        });
 
-        stream.unsubscribeEvent = source.subscribeEvent((projection) => {
-          sendSequenced(streamId, stream, {
-            type: 'event',
-            streamId,
-            projection,
+          stream.unsubscribeEvent = source.subscribeEvent((projection) => {
+            sendSequenced(streamId, stream, {
+              type: 'event',
+              streamId,
+              projection,
+            });
           });
-        });
 
-        stream.unsubscribeTransition = source.subscribeTransition
-          ? source.subscribeTransition((transition) => {
-              sendSequenced(streamId, stream, {
-                type: 'transition',
-                streamId,
-                transition,
-              });
-            })
-          : () => {};
+          stream.unsubscribeTransition = source.subscribeTransition
+            ? source.subscribeTransition((transition) => {
+                sendSequenced(streamId, stream, {
+                  type: 'transition',
+                  streamId,
+                  transition,
+                });
+              })
+            : () => {};
+        }
       };
 
       const resyncStream = (streamId: string, fromSequence?: number): void => {
@@ -976,6 +985,11 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         }
 
         sendStatus(streamId, createProjectionTransportStatus('replaying'));
+        if (stream.mode === 'command-only') {
+          sendStatus(streamId, stream.source.transportStatus());
+          return;
+        }
+
         const replayFrames =
           fromSequence === undefined
             ? []
@@ -1223,7 +1237,19 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
               sendError('invalid_scope', 'subscribe requires a valid scope descriptor.', true);
               return;
             }
-            await subscribeStream(frame.streamId, frame.scope);
+            if (
+              frame.mode !== undefined &&
+              frame.mode !== 'full' &&
+              frame.mode !== 'command-only'
+            ) {
+              sendError(
+                'invalid_frame',
+                'subscribe mode must be either full or command-only.',
+                true
+              );
+              return;
+            }
+            await subscribeStream(frame.streamId, frame.scope, frame.mode ?? 'full');
             return;
         }
       };

@@ -15,6 +15,7 @@ import { type RuntimeGatewayAuthProvider, resolveRuntimeAuthPayload } from './ru
 import type {
   RuntimeGatewayClientFrame,
   RuntimeGatewayEventProjection,
+  RuntimeGatewaySubscribeMode,
   RuntimeGatewayScopeDescriptor,
   RuntimeGatewayServerFrame,
   RuntimeGatewaySnapshotProjection,
@@ -53,6 +54,11 @@ export interface ActorWebSourceOptions {
   readonly streamId?: string;
   readonly createSocket?: (url: string) => ActorWebGatewaySocket;
   readonly clientVersion?: string;
+}
+
+interface GatewaySourceBehaviorOptions {
+  readonly subscribeMode?: RuntimeGatewaySubscribeMode;
+  readonly readyOnStatus?: boolean;
 }
 
 export interface ActorWebAddressSourceInput {
@@ -212,10 +218,13 @@ function createGatewayBackedSource<
 >(
   address: ActorAddress,
   scope: RuntimeGatewayScopeDescriptor,
-  options: ActorWebSourceOptions
+  options: ActorWebSourceOptions,
+  behavior: GatewaySourceBehaviorOptions = {}
 ): ClosableActorWebSource<TContext, TMessage, TEvent> {
   const streamId = options.streamId ?? `actor-web-${address.id}`;
   const socket = (options.createSocket ?? defaultSocket)(options.gateway.url);
+  const subscribeMode = behavior.subscribeMode ?? 'full';
+  const readyOnStatus = behavior.readyOnStatus ?? false;
   const snapshotListeners = new Set<(snapshot: IgniteActorSourceSnapshot<TContext>) => void>();
   const eventListeners = new Set<{
     listener: (event: IgniteActorSourceEvent<TEvent>) => void;
@@ -338,7 +347,12 @@ function createGatewayBackedSource<
           reason: 'Subscribing to Actor-Web gateway',
         });
         emitStatus();
-        sendFrame({ type: 'subscribe', streamId, scope });
+        sendFrame({
+          type: 'subscribe',
+          streamId,
+          scope,
+          ...(subscribeMode === 'command-only' ? { mode: subscribeMode } : {}),
+        });
         return;
       case 'snapshot':
         if (!acceptSequence(frame)) {
@@ -366,6 +380,11 @@ function createGatewayBackedSource<
           frame.status.state === 'local'
             ? createProjectionTransportStatus('connected', { updatedAt: frame.status.updatedAt })
             : frame.status;
+        if (readyOnStatus) {
+          resolveReady?.();
+          resolveReady = null;
+          rejectReady = null;
+        }
         emitStatus();
         return;
       case 'ack':
@@ -579,7 +598,10 @@ export function createActorWebCommandSource(
   return createGatewayBackedSource(address, scope, {
     ...(isObjectActorInput ? input : (options ?? {})),
     gateway,
-  } as ActorWebSourceOptions);
+  } as ActorWebSourceOptions, {
+    subscribeMode: 'command-only',
+    readyOnStatus: true,
+  });
 }
 
 export function createActorWebSource<TActor extends ActorWebActorDescriptor>(
@@ -608,5 +630,36 @@ export function createActorWebSource(
     | ActorWebAddressSourceInput,
   options?: ActorWebSourceOptions | Omit<ActorWebSourceOptions, 'gateway'>
 ): ClosableActorWebSource<unknown, ActorMessage, ActorMessage> {
-  return createActorWebCommandSource(input as never, options as never);
+  const isObjectActorInput = 'gateway' in input && 'actor' in input;
+  const isAddressInput = 'gateway' in input && 'address' in input && !('nodeAddress' in input);
+  const actorDescriptor: ActorWebActorDescriptor | undefined = isObjectActorInput
+    ? input.actor
+    : isAddressInput
+      ? undefined
+      : input;
+  let address: ActorAddress;
+  if (isAddressInput) {
+    address = normalizeAddress(input.address);
+  } else if (actorDescriptor) {
+    address = normalizeAddress(actorDescriptor.address);
+  } else {
+    throw new Error('createActorWebSource requires an actor descriptor or actor address.');
+  }
+  const gateway =
+    isAddressInput || isObjectActorInput
+      ? input.gateway
+      : (options as ActorWebSourceOptions).gateway;
+  const descriptorScope = actorDescriptor?.gateway?.scope;
+  const legacyInputScope = isAddressInput ? input.scope : undefined;
+  const inferredScope = {
+    kind: actorDescriptor ? actorDescriptor.key : address.id,
+  } satisfies RuntimeGatewayScopeDescriptor;
+  const baseScope = mergeScope(inferredScope, descriptorScope);
+  const inputScope = mergeScope(baseScope, legacyInputScope);
+  const scope = mergeScope(inputScope, gateway.scope);
+
+  return createGatewayBackedSource(address, scope, {
+    ...(isObjectActorInput ? input : (options ?? {})),
+    gateway,
+  } as ActorWebSourceOptions);
 }
