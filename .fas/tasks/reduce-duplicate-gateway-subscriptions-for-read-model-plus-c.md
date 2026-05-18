@@ -49,13 +49,31 @@ Follow-up from Separate Ignite read-model sources from command surfaces: the rec
 - Non-goal: Do not edit FAS platform planner, verification, or commit-plan
   internals for this task.
 
+- Type: architecture-decision
+- Added at: 2026-05-18
+- Trigger: fas_architect handoff
+- Decision: Implement a bounded protocol-plus-source change. Add a
+  backward-compatible gateway subscribe mode where `full` remains the default
+  and explicit command sources can opt into `command-only`.
+- Runtime scope: In `runtime-gateway.ts`, command-only subscribe must still use
+  gateway auth and `resolveScope(scope, authContext)` as the admission boundary,
+  register a stream that supports `send` and `ask`, and skip
+  snapshot/event/transition subscriptions and replay work.
+- Client scope: In `actor-web-source.ts`, explicit command helpers should opt
+  into command-only mode and treat the first successful post-subscribe status as
+  readiness instead of waiting for an initial snapshot. Legacy combined helpers
+  must remain full subscriptions by default.
+- Non-goal: Do not move scope onto every `send` or `ask` frame, do not bypass
+  gateway-side scope resolution, and do not widen into socket pooling or
+  transport changes.
+
 ## Implementation plan
 
 - Inspect current gateway `send`/`ask` command handling and browser command
   source connection behavior.
-- Decide whether the smallest safe path is a command-only gateway subscription,
-  a command frame that carries scope, or documentation-only migration guidance.
-- Implement only the chosen path and preserve existing command-capable helpers.
+- Implement the selected command-only subscribe mode in `runtime-gateway.ts`.
+- Wire explicit browser command sources in `actor-web-source.ts` to use the
+  command-only mode while keeping legacy combined helpers on full mode.
 - Add focused tests proving read-model plus explicit command use avoids a
   duplicate full projection subscription where the new path applies.
 - Update API guidance for hosts that pair read-model clients with command
