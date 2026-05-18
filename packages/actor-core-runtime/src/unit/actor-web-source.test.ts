@@ -220,6 +220,80 @@ describe('createActorWebSource', () => {
     commandSource.close();
   });
 
+  it('keeps read-model subscriptions full while explicit command sources opt into command-only', async () => {
+    const readModelSocket = new FakeGatewaySocket();
+    const commandSocket = new FakeGatewaySocket();
+    const readModel = createActorWebReadModelSource(
+      {
+        address: 'actor://server-node/actor/shipment',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+          scope: { kind: 'shipment' },
+        },
+      },
+      {
+        createSocket: () => readModelSocket,
+        streamId: 'shipment-read-model',
+      }
+    );
+    const commandSource = createActorWebCommandSource(
+      {
+        address: 'actor://server-node/actor/shipment',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+          scope: { kind: 'shipment' },
+        },
+      },
+      {
+        createSocket: () => commandSocket,
+        streamId: 'shipment-command',
+      }
+    );
+
+    readModelSocket.open();
+    readModelSocket.receive({
+      type: 'ready',
+      connectionId: 'read-model-connection',
+      heartbeatMs: 15000,
+      serverTime: '2026-04-25T18:00:00.000Z',
+    });
+    commandSocket.open();
+    commandSocket.receive({
+      type: 'ready',
+      connectionId: 'command-connection',
+      heartbeatMs: 15000,
+      serverTime: '2026-04-25T18:00:00.000Z',
+    });
+    commandSocket.receive({
+      type: 'status',
+      streamId: 'shipment-command',
+      status: {
+        state: 'connected',
+        updatedAt: Date.parse('2026-04-25T18:00:01.000Z'),
+      },
+    });
+
+    const sendPromise = commandSource.send({ type: 'RESET' });
+    await Promise.resolve();
+    commandSocket.receive({ type: 'ack', streamId: 'shipment-command' });
+    await sendPromise;
+
+    expect(readModelSocket.sentFrames).toContainEqual({
+      type: 'subscribe',
+      streamId: 'shipment-read-model',
+      scope: { kind: 'shipment' },
+    });
+    expect(commandSocket.sentFrames).toContainEqual({
+      type: 'subscribe',
+      streamId: 'shipment-command',
+      scope: { kind: 'shipment' },
+      mode: 'command-only',
+    });
+
+    readModel.close();
+    commandSource.close();
+  });
+
   it('sends gateway auth on the hello frame without requiring custom source glue', async () => {
     const socket = new FakeGatewaySocket();
     createActorWebSource(

@@ -1256,6 +1256,88 @@ describe('runtime gateway hub', () => {
     detach();
   });
 
+  it('supports command-only subscriptions without projection listeners or replay frames', async () => {
+    const source = createFakeSource('ready', 'command-only');
+    const replayStorage = {
+      loadFrames: vi.fn<RuntimeGatewayReplayStorageProvider['loadFrames']>(() => []),
+      storeFrames: vi.fn<RuntimeGatewayReplayStorageProvider['storeFrames']>(() => {}),
+    } satisfies RuntimeGatewayReplayStorageProvider;
+    const hub = createRuntimeGatewayHub({
+      replayStorage,
+      resolveScope: async (scope: RuntimeGatewayScopeDescriptor) => {
+        if (scope.kind !== 'fleet-view') {
+          throw new RuntimeGatewayScopeError('invalid_scope', 'Unknown scope kind.');
+        }
+
+        return source;
+      },
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello', clientVersion: 'web-1' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'fleet-command',
+      scope: { kind: 'fleet-view', params: { authorityId: 'auth-1' } },
+      mode: 'command-only',
+    });
+    await flushGatewayFrames();
+
+    expect(source.listenerCounts()).toEqual({
+      snapshots: 0,
+      events: 0,
+      statuses: 1,
+      transitions: 0,
+    });
+    expect(replayStorage.loadFrames).not.toHaveBeenCalled();
+    expect(
+      connection.frames.filter(
+        (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'snapshot' }> =>
+          typeof frame === 'object' && frame !== null && (frame as { type?: string }).type === 'snapshot'
+      )
+    ).toEqual([]);
+
+    connection.push({
+      type: 'send',
+      streamId: 'fleet-command',
+      message: { type: 'SUBMIT', orderId: 'order-command-only' },
+    });
+    connection.push({
+      type: 'ask',
+      streamId: 'fleet-command',
+      requestId: 'request-command-only',
+      message: { type: 'GET_STATUS' },
+    });
+    connection.push({
+      type: 'resync',
+      streamId: 'fleet-command',
+      fromSequence: 1,
+    });
+    await flushGatewayFrames();
+
+    expect(source.sentMessages).toEqual([{ type: 'SUBMIT', orderId: 'order-command-only' }]);
+    expect(source.askMessages).toEqual([{ type: 'GET_STATUS' }]);
+    expect(connection.frames).toContainEqual({
+      type: 'ack',
+      streamId: 'fleet-command',
+    });
+    expect(connection.frames).toContainEqual({
+      type: 'reply',
+      streamId: 'fleet-command',
+      requestId: 'request-command-only',
+      value: { ok: true, messageType: 'GET_STATUS' },
+    });
+    expect(
+      connection.frames.filter(
+        (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'snapshot' }> =>
+          typeof frame === 'object' && frame !== null && (frame as { type?: string }).type === 'snapshot'
+      )
+    ).toEqual([]);
+
+    detach();
+  });
+
   it('falls back to latest snapshot when requested replay range is unavailable', async () => {
     const source = createFakeSource('ready');
     const hub = createRuntimeGatewayHub({
