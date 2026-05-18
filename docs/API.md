@@ -568,6 +568,24 @@ Actor-Web read-model sources provide:
 - `subscribeTransportStatus(listener)`
 - `close()`
 
+When a host needs both live projection state and command/control for the same
+actor, pair the read-model source with an explicit command helper. The
+read-model side stays on the full projection subscription, while the explicit
+command helper uses a lighter command-only gateway subscribe mode so it does
+not open a second snapshot/event/transition stream for the same actor.
+
+```ts
+const client = createActorWebReadModelClient(logistics, {
+  gateway: { url: 'ws://127.0.0.1:4100' },
+  clientVersion: 'logistics-ui',
+});
+
+const shipmentSource = client.actors.shipment;
+const shipmentCommands = logistics.actors.shipment.commandSource({
+  gateway: { url: 'ws://127.0.0.1:4100' },
+});
+```
+
 Use an explicit command helper when the host owns command/control:
 
 ```ts
@@ -600,7 +618,9 @@ await legacyClient.actors.shipment.send({
 
 Use `createActorWebReadModelSource` for explicit or generated-client paths.
 Prefer the single-object shape. This creates a gateway-backed read-model source
-for a client; it does not start an Actor-Web runtime node.
+for a client; it does not start an Actor-Web runtime node. Read-model sources
+always keep the full projection subscription so `snapshot()`,
+`subscribe(listener)`, and `subscribeEvent(...)` remain available.
 
 ```ts
 const shipmentSource = createActorWebReadModelSource({
@@ -635,7 +655,11 @@ const shipmentSource = createActorWebReadModelSource({
 ```
 
 Use `createActorWebCommandSource(...)` or `topology.actors.name.commandSource(...)`
-only when the host intentionally owns command/control for that actor.
+only when the host intentionally owns command/control for that actor. These
+helpers now opt into the gateway's command-only subscribe mode: they still go
+through gateway auth and scope resolution, but they wait for the first
+post-subscribe status instead of an initial snapshot and they do not request
+snapshot/event/transition replay.
 
 ```ts
 const shipmentCommands = createActorWebCommandSource({

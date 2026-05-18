@@ -15,10 +15,10 @@ import { type RuntimeGatewayAuthProvider, resolveRuntimeAuthPayload } from './ru
 import type {
   RuntimeGatewayClientFrame,
   RuntimeGatewayEventProjection,
-  RuntimeGatewaySubscribeMode,
   RuntimeGatewayScopeDescriptor,
   RuntimeGatewayServerFrame,
   RuntimeGatewaySnapshotProjection,
+  RuntimeGatewaySubscribeMode,
 } from './runtime-gateway.js';
 import type {
   ActorWebActorAddress,

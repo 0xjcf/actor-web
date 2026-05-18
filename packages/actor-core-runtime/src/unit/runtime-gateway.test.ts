@@ -22,6 +22,7 @@ import {
   type RuntimeGatewayReplayStorageProvider,
   type RuntimeGatewayScopeDescriptor,
   RuntimeGatewayScopeError,
+  type RuntimeGatewayServerFrame,
   type RuntimeGatewaySnapshotProjection,
   type RuntimeGatewaySource,
   type RuntimeGatewayWorkflowSnapshot,
@@ -1294,7 +1295,9 @@ describe('runtime gateway hub', () => {
     expect(
       connection.frames.filter(
         (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'snapshot' }> =>
-          typeof frame === 'object' && frame !== null && (frame as { type?: string }).type === 'snapshot'
+          typeof frame === 'object' &&
+          frame !== null &&
+          (frame as { type?: string }).type === 'snapshot'
       )
     ).toEqual([]);
 
@@ -1331,7 +1334,9 @@ describe('runtime gateway hub', () => {
     expect(
       connection.frames.filter(
         (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'snapshot' }> =>
-          typeof frame === 'object' && frame !== null && (frame as { type?: string }).type === 'snapshot'
+          typeof frame === 'object' &&
+          frame !== null &&
+          (frame as { type?: string }).type === 'snapshot'
       )
     ).toEqual([]);
 
