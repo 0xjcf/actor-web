@@ -61,6 +61,12 @@ interface GatewaySourceBehaviorOptions {
   readonly readyOnStatus?: boolean;
 }
 
+interface ResolvedGatewayBackedSourceInput {
+  readonly address: ActorAddress;
+  readonly scope: RuntimeGatewayScopeDescriptor;
+  readonly options: ActorWebSourceOptions;
+}
+
 export interface ActorWebAddressSourceInput {
   readonly address: string | ActorWebActorAddress | ActorAddress;
   readonly contractVersion?: string;
@@ -209,6 +215,52 @@ function defaultSocket(url: string): ActorWebGatewaySocket {
   }
 
   return new WebSocket(url);
+}
+
+function resolveGatewayBackedSourceInput(
+  input:
+    | ActorWebActorDescriptor
+    | ActorWebActorSourceInput<ActorWebActorDescriptor>
+    | ActorWebAddressSourceInput,
+  options?: ActorWebSourceOptions | Omit<ActorWebSourceOptions, 'gateway'>
+): ResolvedGatewayBackedSourceInput {
+  const isObjectActorInput = 'gateway' in input && 'actor' in input;
+  const isAddressInput = 'gateway' in input && 'address' in input && !('nodeAddress' in input);
+  const actorDescriptor: ActorWebActorDescriptor | undefined = isObjectActorInput
+    ? input.actor
+    : isAddressInput
+      ? undefined
+      : input;
+  let address: ActorAddress;
+  if (isAddressInput) {
+    address = normalizeAddress(input.address);
+  } else if (actorDescriptor) {
+    address = normalizeAddress(actorDescriptor.address);
+  } else {
+    throw new Error('createActorWebSource requires an actor descriptor or actor address.');
+  }
+
+  const resolvedOptions = {
+    ...(isObjectActorInput ? input : (options ?? {})),
+    gateway:
+      isAddressInput || isObjectActorInput
+        ? input.gateway
+        : (options as ActorWebSourceOptions).gateway,
+  } as ActorWebSourceOptions;
+  const descriptorScope = actorDescriptor?.gateway?.scope;
+  const legacyInputScope = isAddressInput ? input.scope : undefined;
+  const inferredScope = {
+    kind: actorDescriptor ? actorDescriptor.key : address.id,
+  } satisfies RuntimeGatewayScopeDescriptor;
+  const baseScope = mergeScope(inferredScope, descriptorScope);
+  const inputScope = mergeScope(baseScope, legacyInputScope);
+  const scope = mergeScope(inputScope, resolvedOptions.gateway.scope);
+
+  return {
+    address,
+    scope,
+    options: resolvedOptions,
+  };
 }
 
 function createGatewayBackedSource<
@@ -528,7 +580,8 @@ export function createActorWebReadModelSource(
     | ActorWebAddressSourceInput,
   options?: ActorWebSourceOptions | Omit<ActorWebSourceOptions, 'gateway'>
 ): ClosableActorWebReadModelSource<unknown, ActorMessage> {
-  const source = createActorWebCommandSource(input as never, options as never);
+  const resolved = resolveGatewayBackedSourceInput(input, options);
+  const source = createGatewayBackedSource(resolved.address, resolved.scope, resolved.options);
 
   return {
     address: source.address,
@@ -567,38 +620,9 @@ export function createActorWebCommandSource(
     | ActorWebAddressSourceInput,
   options?: ActorWebSourceOptions | Omit<ActorWebSourceOptions, 'gateway'>
 ): ClosableActorWebSource<unknown, ActorMessage, ActorMessage> {
-  const isObjectActorInput = 'gateway' in input && 'actor' in input;
-  const isAddressInput = 'gateway' in input && 'address' in input && !('nodeAddress' in input);
-  const actorDescriptor: ActorWebActorDescriptor | undefined = isObjectActorInput
-    ? input.actor
-    : isAddressInput
-      ? undefined
-      : input;
-  let address: ActorAddress;
-  if (isAddressInput) {
-    address = normalizeAddress(input.address);
-  } else if (actorDescriptor) {
-    address = normalizeAddress(actorDescriptor.address);
-  } else {
-    throw new Error('createActorWebSource requires an actor descriptor or actor address.');
-  }
-  const gateway =
-    isAddressInput || isObjectActorInput
-      ? input.gateway
-      : (options as ActorWebSourceOptions).gateway;
-  const descriptorScope = actorDescriptor?.gateway?.scope;
-  const legacyInputScope = isAddressInput ? input.scope : undefined;
-  const inferredScope = {
-    kind: actorDescriptor ? actorDescriptor.key : address.id,
-  } satisfies RuntimeGatewayScopeDescriptor;
-  const baseScope = mergeScope(inferredScope, descriptorScope);
-  const inputScope = mergeScope(baseScope, legacyInputScope);
-  const scope = mergeScope(inputScope, gateway.scope);
+  const resolved = resolveGatewayBackedSourceInput(input, options);
 
-  return createGatewayBackedSource(address, scope, {
-    ...(isObjectActorInput ? input : (options ?? {})),
-    gateway,
-  } as ActorWebSourceOptions, {
+  return createGatewayBackedSource(resolved.address, resolved.scope, resolved.options, {
     subscribeMode: 'command-only',
     readyOnStatus: true,
   });
@@ -630,36 +654,7 @@ export function createActorWebSource(
     | ActorWebAddressSourceInput,
   options?: ActorWebSourceOptions | Omit<ActorWebSourceOptions, 'gateway'>
 ): ClosableActorWebSource<unknown, ActorMessage, ActorMessage> {
-  const isObjectActorInput = 'gateway' in input && 'actor' in input;
-  const isAddressInput = 'gateway' in input && 'address' in input && !('nodeAddress' in input);
-  const actorDescriptor: ActorWebActorDescriptor | undefined = isObjectActorInput
-    ? input.actor
-    : isAddressInput
-      ? undefined
-      : input;
-  let address: ActorAddress;
-  if (isAddressInput) {
-    address = normalizeAddress(input.address);
-  } else if (actorDescriptor) {
-    address = normalizeAddress(actorDescriptor.address);
-  } else {
-    throw new Error('createActorWebSource requires an actor descriptor or actor address.');
-  }
-  const gateway =
-    isAddressInput || isObjectActorInput
-      ? input.gateway
-      : (options as ActorWebSourceOptions).gateway;
-  const descriptorScope = actorDescriptor?.gateway?.scope;
-  const legacyInputScope = isAddressInput ? input.scope : undefined;
-  const inferredScope = {
-    kind: actorDescriptor ? actorDescriptor.key : address.id,
-  } satisfies RuntimeGatewayScopeDescriptor;
-  const baseScope = mergeScope(inferredScope, descriptorScope);
-  const inputScope = mergeScope(baseScope, legacyInputScope);
-  const scope = mergeScope(inputScope, gateway.scope);
+  const resolved = resolveGatewayBackedSourceInput(input, options);
 
-  return createGatewayBackedSource(address, scope, {
-    ...(isObjectActorInput ? input : (options ?? {})),
-    gateway,
-  } as ActorWebSourceOptions);
+  return createGatewayBackedSource(resolved.address, resolved.scope, resolved.options);
 }
