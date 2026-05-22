@@ -216,6 +216,8 @@ export function createInMemoryRuntimePeerDiscoveryProvider(
 ): InMemoryRuntimePeerDiscoveryProvider {
   const peers = new Map<string, RuntimePeerDiscoveryRecord>();
   const listeners = new Set<(event: RuntimePeerDiscoveryEvent) => void>();
+  const pendingMutations: Array<() => void> = [];
+  let processingMutations = false;
 
   const emit = (event: RuntimePeerDiscoveryEvent): void => {
     const snapshot =
@@ -226,26 +228,60 @@ export function createInMemoryRuntimePeerDiscoveryProvider(
             peer: clonePeer(event.peer),
           };
     for (const listener of Array.from(listeners)) {
-      listener(snapshot);
+      try {
+        listener(snapshot);
+      } catch {
+        // Discovery listeners are observers; one failure must not stall queued mutations.
+      }
+    }
+  };
+
+  const runSerializedMutation = (mutation: () => void): void => {
+    let firstMutationError: unknown;
+    pendingMutations.push(mutation);
+    if (processingMutations) {
+      return;
+    }
+
+    processingMutations = true;
+    try {
+      while (pendingMutations.length > 0) {
+        const nextMutation = pendingMutations.shift();
+        try {
+          nextMutation?.();
+        } catch (error) {
+          firstMutationError ??= error;
+        }
+      }
+    } finally {
+      processingMutations = false;
+    }
+
+    if (firstMutationError !== undefined) {
+      throw firstMutationError;
     }
   };
 
   const upsertPeer = (peer: RuntimePeerDiscoveryRecord): void => {
-    const next = normalizeRuntimePeerDiscoveryRecord(peer);
-    const eventType = peers.has(next.nodeAddress) ? 'peer.updated' : 'peer.available';
-    peers.set(next.nodeAddress, next);
-    emit({ type: eventType, peer: next });
+    runSerializedMutation(() => {
+      const next = normalizeRuntimePeerDiscoveryRecord(peer);
+      const eventType = peers.has(next.nodeAddress) ? 'peer.updated' : 'peer.available';
+      peers.set(next.nodeAddress, next);
+      emit({ type: eventType, peer: next });
+    });
   };
 
   const removePeer = (nodeAddress: string, reason?: string): void => {
-    if (!peers.delete(nodeAddress)) {
-      return;
-    }
+    runSerializedMutation(() => {
+      if (!peers.delete(nodeAddress)) {
+        return;
+      }
 
-    emit({
-      type: 'peer.unavailable',
-      nodeAddress,
-      ...(reason ? { reason } : {}),
+      emit({
+        type: 'peer.unavailable',
+        nodeAddress,
+        ...(reason ? { reason } : {}),
+      });
     });
   };
 

@@ -108,6 +108,7 @@ type PendingAsk = {
 };
 
 type PendingSend = {
+  requestId: string;
   resolve(): void;
   reject(error: Error): void;
 };
@@ -217,6 +218,14 @@ function defaultSocket(url: string): ActorWebGatewaySocket {
   return new WebSocket(url);
 }
 
+function invokeListenerSafely<TValue>(listener: (value: TValue) => void, value: TValue): void {
+  try {
+    listener(value);
+  } catch {
+    // Listener failures must not interrupt gateway delivery fanout.
+  }
+}
+
 function resolveGatewayBackedSourceInput(
   input:
     | ActorWebActorDescriptor
@@ -284,7 +293,8 @@ function createGatewayBackedSource<
   }>();
   const statusListeners = new Set<(status: ProjectionTransportStatus) => void>();
   const pendingAsks = new Map<string, PendingAsk>();
-  let pendingSend: PendingSend | null = null;
+  const pendingSends = new Map<string, PendingSend>();
+  const pendingSendOrder: string[] = [];
   let resolveReady: (() => void) | null = null;
   let rejectReady: ((error: Error) => void) | null = null;
   let currentSnapshot = placeholderSnapshot<TContext>(address);
@@ -303,13 +313,13 @@ function createGatewayBackedSource<
 
   const emitSnapshot = (): void => {
     for (const listener of Array.from(snapshotListeners)) {
-      listener(currentSnapshot);
+      invokeListenerSafely(listener, currentSnapshot);
     }
   };
 
   const emitStatus = (): void => {
     for (const listener of Array.from(statusListeners)) {
-      listener(currentStatus);
+      invokeListenerSafely(listener, currentStatus);
     }
   };
 
@@ -323,7 +333,7 @@ function createGatewayBackedSource<
         continue;
       }
 
-      subscriber.listener(event);
+      invokeListenerSafely(subscriber.listener, event);
     }
   };
 
@@ -363,12 +373,45 @@ function createGatewayBackedSource<
     rejectReady?.(error);
     rejectReady = null;
     resolveReady = null;
-    pendingSend?.reject(error);
-    pendingSend = null;
+    for (const requestId of pendingSendOrder.splice(0)) {
+      pendingSends.get(requestId)?.reject(error);
+      pendingSends.delete(requestId);
+    }
     for (const pending of Array.from(pendingAsks.values())) {
       pending.reject(error);
     }
     pendingAsks.clear();
+  };
+
+  const takePendingSend = (requestId?: string): PendingSend | null => {
+    if (requestId) {
+      const pending = pendingSends.get(requestId) ?? null;
+      if (!pending) {
+        return null;
+      }
+
+      pendingSends.delete(requestId);
+      const orderIndex = pendingSendOrder.indexOf(requestId);
+      if (orderIndex >= 0) {
+        pendingSendOrder.splice(orderIndex, 1);
+      }
+      return pending;
+    }
+
+    while (pendingSendOrder.length > 0) {
+      const nextRequestId = pendingSendOrder.shift();
+      if (!nextRequestId) {
+        break;
+      }
+
+      const pending = pendingSends.get(nextRequestId) ?? null;
+      pendingSends.delete(nextRequestId);
+      if (pending) {
+        return pending;
+      }
+    }
+
+    return null;
   };
 
   socket.addEventListener('open', () => {
@@ -440,8 +483,7 @@ function createGatewayBackedSource<
         emitStatus();
         return;
       case 'ack':
-        pendingSend?.resolve();
-        pendingSend = null;
+        takePendingSend(frame.requestId)?.resolve();
         return;
       case 'reply': {
         const pending = pendingAsks.get(frame.requestId);
@@ -453,9 +495,23 @@ function createGatewayBackedSource<
         const error = new Error(frame.message);
         if (frame.requestId) {
           const pending = pendingAsks.get(frame.requestId);
-          pendingAsks.delete(frame.requestId);
-          pending?.reject(error);
-          return;
+          if (pending) {
+            pendingAsks.delete(frame.requestId);
+            pending.reject(error);
+            return;
+          }
+
+          const pendingSend = takePendingSend(frame.requestId);
+          if (pendingSend) {
+            pendingSend.reject(error);
+            return;
+          }
+        } else {
+          const pendingSend = takePendingSend();
+          if (pendingSend) {
+            pendingSend.reject(error);
+            return;
+          }
         }
         rejectPending(error);
         currentStatus = createProjectionTransportStatus('degraded', { reason: frame.message });
@@ -493,7 +549,7 @@ function createGatewayBackedSource<
     },
     subscribe(listener) {
       snapshotListeners.add(listener);
-      listener(currentSnapshot);
+      invokeListenerSafely(listener, currentSnapshot);
       return () => {
         snapshotListeners.delete(listener);
       };
@@ -510,19 +566,27 @@ function createGatewayBackedSource<
     },
     subscribeTransportStatus(listener) {
       statusListeners.add(listener);
-      listener(currentStatus);
+      invokeListenerSafely(listener, currentStatus);
       return () => {
         statusListeners.delete(listener);
       };
     },
     async send(message: TMessage): Promise<void> {
       await ready;
+      requestSequence += 1;
+      const requestId = `actor-web-source-send-${requestSequence}`;
       await new Promise<void>((resolve, reject) => {
-        pendingSend = { resolve, reject };
+        pendingSends.set(requestId, { requestId, resolve, reject });
+        pendingSendOrder.push(requestId);
         try {
-          sendFrame({ type: 'send', streamId, message: message as unknown as Message });
+          sendFrame({
+            type: 'send',
+            streamId,
+            requestId,
+            message: message as unknown as Message,
+          });
         } catch (error) {
-          pendingSend = null;
+          takePendingSend(requestId);
           reject(error);
         }
       });

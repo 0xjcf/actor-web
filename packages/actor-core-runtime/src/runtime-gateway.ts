@@ -60,7 +60,7 @@ export type RuntimeGatewayClientFrame =
     }
   | { type: 'unsubscribe'; streamId: string }
   | { type: 'resync'; streamId: string; fromSequence?: number }
-  | { type: 'send'; streamId: string; message: Message }
+  | { type: 'send'; streamId: string; requestId?: string; message: Message }
   | { type: 'ask'; streamId: string; requestId: string; message: Message; timeoutMs?: number }
   | { type: 'ping'; sentAt: string };
 
@@ -359,6 +359,9 @@ type RuntimeGatewayStreamState = {
   mode: RuntimeGatewaySubscribeMode;
   replaySessionId: string;
   replayStorageStreamId: string;
+  replayPersistenceToken: symbol;
+  acceptsFrames: boolean;
+  attached: boolean;
   source: RuntimeGatewaySource;
   sequence: number;
   replayFrames: RuntimeGatewayReplayFrame[];
@@ -554,6 +557,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
   const onReplayStorageError = options.onReplayStorageError;
   const observer = options.observer;
   const replayPersistQueue = new Map<string, Promise<void>>();
+  const abortedReplayPersistTokens = new Set<symbol>();
 
   return {
     attach(connection: RuntimeGatewayConnectionAdapter<TAuthContext>): () => void {
@@ -564,7 +568,8 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
       let replayOwnerKey: string | null = stableRuntimeGatewayAuthOwnerKey(connection.authContext);
       let authenticatedAuthContext = connection.authContext;
       const pendingFrames: RuntimeGatewayClientFrame[] = [];
-      let processingFrame = false;
+      const subscribeGenerations = new Map<string, number>();
+      let drainingFrames: Promise<void> | null = null;
       let terminated = false;
       let idleTimer: ReturnType<typeof setTimeout> | null = null;
       let nextSendAttemptId = 0;
@@ -572,25 +577,37 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
       let consecutiveSendFailures = 0;
       const settledSendOutcomes = new Map<number, 'success' | 'failure'>();
       const sendAttemptTimeouts = new Map<number, ReturnType<typeof setTimeout>>();
-
-      const cleanupStream = (streamId: string): void => {
-        const stream = streams.get(streamId);
-        if (!stream) {
-          return;
-        }
-
-        void Promise.resolve(stream.unsubscribeSnapshot()).catch(() => {});
-        void Promise.resolve(stream.unsubscribeEvent()).catch(() => {});
-        void Promise.resolve(stream.unsubscribeStatus()).catch(() => {});
-        void Promise.resolve(stream.unsubscribeTransition()).catch(() => {});
-        streams.delete(streamId);
+      const safeUnsubscribe = (unsubscribe: () => void): void => {
+        try {
+          void Promise.resolve(unsubscribe()).catch(() => {});
+        } catch {}
       };
 
-      const cleanupAll = (): void => {
-        pendingFrames.length = 0;
-        for (const streamId of Array.from(streams.keys())) {
-          cleanupStream(streamId);
+      const cleanupStream = (streamId: string): RuntimeGatewayStreamState | null => {
+        const stream = streams.get(streamId);
+        if (!stream) {
+          return null;
         }
+
+        stream.acceptsFrames = false;
+        streams.delete(streamId);
+        safeUnsubscribe(stream.unsubscribeSnapshot);
+        safeUnsubscribe(stream.unsubscribeEvent);
+        safeUnsubscribe(stream.unsubscribeStatus);
+        safeUnsubscribe(stream.unsubscribeTransition);
+        return stream;
+      };
+
+      const cleanupAll = (): RuntimeGatewayStreamState[] => {
+        pendingFrames.length = 0;
+        const cleanedStreams: RuntimeGatewayStreamState[] = [];
+        for (const streamId of Array.from(streams.keys())) {
+          const stream = cleanupStream(streamId);
+          if (stream) {
+            cleanedStreams.push(stream);
+          }
+        }
+        return cleanedStreams;
       };
 
       const emitObserverEvent = (
@@ -636,7 +653,31 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         sendAttemptTimeouts.clear();
       };
 
-      const terminateConnection = (): void => {
+      const abortReplayPersistence = (
+        activeStreams: readonly RuntimeGatewayStreamState[]
+      ): void => {
+        if (!replayStorage || activeStreams.length === 0) {
+          return;
+        }
+
+        const pendingPersists = activeStreams.flatMap((stream) => {
+          abortedReplayPersistTokens.add(stream.replayPersistenceToken);
+          const replayKey = runtimeGatewayReplayStorageKey(
+            stream.replaySessionId,
+            stream.replayStorageStreamId
+          );
+          const persist = replayPersistQueue.get(replayKey);
+          return persist ? [persist] : [];
+        });
+
+        if (pendingPersists.length === 0) {
+          return;
+        }
+
+        void Promise.allSettled(pendingPersists);
+      };
+
+      const shutdownConnection = (closeConnection: boolean): void => {
         if (terminated) {
           return;
         }
@@ -644,8 +685,11 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         terminated = true;
         clearIdleTimer();
         clearSendAttemptTimeouts();
-        cleanupAll();
-        void Promise.resolve(connection.close?.()).catch(() => {});
+        const cleanedStreams = cleanupAll();
+        abortReplayPersistence(cleanedStreams);
+        if (closeConnection) {
+          void Promise.resolve(connection.close?.()).catch(() => {});
+        }
       };
 
       const armIdleTimer = (): void => {
@@ -656,7 +700,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
 
         idleTimer = setTimeout(() => {
           idleTimer = null;
-          terminateConnection();
+          shutdownConnection(true);
         }, heartbeatMs);
       };
 
@@ -686,7 +730,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
 
             consecutiveSendFailures += 1;
             if (consecutiveSendFailures >= OUTBOUND_SEND_FAILURE_THRESHOLD) {
-              terminateConnection();
+              shutdownConnection(true);
             }
           }
         };
@@ -737,7 +781,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           message,
         });
         sendError(code, message, false);
-        terminateConnection();
+        shutdownConnection(true);
       };
 
       const sendError = (
@@ -813,12 +857,23 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           stream.replayStorageStreamId
         );
         const frames = [...stream.replayFrames];
+        const replayPersistenceToken = stream.replayPersistenceToken;
         const previousPersist = replayPersistQueue.get(replayKey) ?? Promise.resolve();
         const nextPersist = previousPersist
           .catch(() => {})
-          .then(() =>
-            replayStorage.storeFrames(stream.replaySessionId, stream.replayStorageStreamId, frames)
-          )
+          .then(() => {
+            // The current storage contract cannot cancel storeFrames() after it starts,
+            // so teardown only guarantees queued writes are skipped before invocation.
+            if (abortedReplayPersistTokens.has(replayPersistenceToken)) {
+              return;
+            }
+
+            return replayStorage.storeFrames(
+              stream.replaySessionId,
+              stream.replayStorageStreamId,
+              frames
+            );
+          })
           .catch((error) => {
             reportReplayStorageError({
               operation: 'store',
@@ -832,6 +887,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         void nextPersist.finally(() => {
           if (replayPersistQueue.get(replayKey) === nextPersist) {
             replayPersistQueue.delete(replayKey);
+            abortedReplayPersistTokens.delete(replayPersistenceToken);
           }
         });
       };
@@ -843,6 +899,14 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
       ): void => {
         stream.replayFrames = trimReplayFrames([...stream.replayFrames, frame]);
         persistReplayFrames(streamId, stream);
+      };
+
+      const isCurrentStream = (streamId: string, stream: RuntimeGatewayStreamState): boolean => {
+        if (terminated || !stream.acceptsFrames) {
+          return false;
+        }
+
+        return !stream.attached || streams.get(streamId) === stream;
       };
 
       const sendSequenced = (
@@ -867,13 +931,18 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           return;
         }
 
+        const subscribeGeneration = (subscribeGenerations.get(streamId) ?? 0) + 1;
+        subscribeGenerations.set(streamId, subscribeGeneration);
+        const isSubscribeCurrent = (): boolean =>
+          !terminated && subscribeGenerations.get(streamId) === subscribeGeneration;
+
         cleanupStream(streamId);
 
         let source: RuntimeGatewaySource | null = null;
         try {
           source = await options.resolveScope(scope, authenticatedAuthContext);
         } catch (error) {
-          if (terminated) {
+          if (!isSubscribeCurrent()) {
             return;
           }
 
@@ -888,6 +957,10 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             false,
             streamId
           );
+          return;
+        }
+
+        if (!isSubscribeCurrent()) {
           return;
         }
 
@@ -916,7 +989,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           ? restoredReplayFrames
           : [];
 
-        if (terminated) {
+        if (!isSubscribeCurrent()) {
           return;
         }
 
@@ -924,6 +997,9 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           mode,
           replaySessionId,
           replayStorageStreamId,
+          replayPersistenceToken: Symbol(`runtime-gateway-replay:${streamId}`),
+          acceptsFrames: true,
+          attached: false,
           source,
           sequence: replayFrames.at(-1)?.sequence ?? 0,
           replayFrames,
@@ -933,39 +1009,91 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           unsubscribeStatus: () => {},
           unsubscribeTransition: () => {},
         };
+
+        const cleanupDetachedStream = (): void => {
+          stream.acceptsFrames = false;
+          safeUnsubscribe(stream.unsubscribeSnapshot);
+          safeUnsubscribe(stream.unsubscribeEvent);
+          safeUnsubscribe(stream.unsubscribeStatus);
+          safeUnsubscribe(stream.unsubscribeTransition);
+        };
+
+        try {
+          stream.unsubscribeStatus = source.subscribeTransportStatus((status) => {
+            if (!isCurrentStream(streamId, stream)) {
+              return;
+            }
+
+            sendStatus(streamId, status);
+          });
+
+          if (mode === 'full') {
+            stream.unsubscribeSnapshot = source.subscribeSnapshot((projection) => {
+              if (!isCurrentStream(streamId, stream)) {
+                return;
+              }
+
+              stream.lastSnapshot = projection;
+              sendSequenced(streamId, stream, {
+                type: 'snapshot',
+                streamId,
+                projection,
+              });
+            });
+
+            stream.unsubscribeEvent = source.subscribeEvent((projection) => {
+              if (!isCurrentStream(streamId, stream)) {
+                return;
+              }
+
+              sendSequenced(streamId, stream, {
+                type: 'event',
+                streamId,
+                projection,
+              });
+            });
+
+            stream.unsubscribeTransition = source.subscribeTransition
+              ? source.subscribeTransition((transition) => {
+                  if (!isCurrentStream(streamId, stream)) {
+                    return;
+                  }
+
+                  sendSequenced(streamId, stream, {
+                    type: 'transition',
+                    streamId,
+                    transition,
+                  });
+                })
+              : () => {};
+          }
+        } catch (error) {
+          cleanupDetachedStream();
+          if (!isSubscribeCurrent()) {
+            return;
+          }
+
+          sendError(
+            'internal_error',
+            error instanceof Error
+              ? error.message
+              : 'Internal gateway subscription registration error.',
+            false,
+            streamId
+          );
+          return;
+        }
+
+        if (!isSubscribeCurrent()) {
+          cleanupDetachedStream();
+          return;
+        }
+
         streams.set(streamId, stream);
+        stream.attached = true;
 
-        stream.unsubscribeStatus = source.subscribeTransportStatus((status) => {
-          sendStatus(streamId, status);
-        });
-
-        if (mode === 'full') {
-          stream.unsubscribeSnapshot = source.subscribeSnapshot((projection) => {
-            stream.lastSnapshot = projection;
-            sendSequenced(streamId, stream, {
-              type: 'snapshot',
-              streamId,
-              projection,
-            });
-          });
-
-          stream.unsubscribeEvent = source.subscribeEvent((projection) => {
-            sendSequenced(streamId, stream, {
-              type: 'event',
-              streamId,
-              projection,
-            });
-          });
-
-          stream.unsubscribeTransition = source.subscribeTransition
-            ? source.subscribeTransition((transition) => {
-                sendSequenced(streamId, stream, {
-                  type: 'transition',
-                  streamId,
-                  transition,
-                });
-              })
-            : () => {};
+        if (terminated || streams.get(streamId) !== stream) {
+          cleanupDetachedStream();
         }
       };
 
@@ -1025,46 +1153,86 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             (message as { type: string }).type.trim().length > 0
         );
 
-      const commandStream = (streamId: string): RuntimeGatewayStreamState | null => {
+      const normalizeRequestId = (requestId: unknown): string | undefined =>
+        typeof requestId === 'string' && requestId.trim().length > 0 ? requestId : undefined;
+
+      const commandStream = (
+        streamId: string,
+        requestId?: string
+      ): RuntimeGatewayStreamState | null => {
         if (typeof streamId !== 'string' || streamId.trim().length === 0) {
-          sendError('invalid_frame', 'command requires a non-empty streamId.', true);
+          sendError(
+            'invalid_frame',
+            'command requires a non-empty streamId.',
+            true,
+            undefined,
+            requestId
+          );
           return null;
         }
 
         const stream = streams.get(streamId);
         if (!stream) {
-          sendError('not_found', 'Cannot send command to an unsubscribed stream.', true, streamId);
+          sendError(
+            'not_found',
+            'Cannot send command to an unsubscribed stream.',
+            true,
+            streamId,
+            requestId
+          );
           return null;
         }
 
         return stream;
       };
 
-      const sendCommand = async (streamId: string, message: unknown): Promise<void> => {
-        const stream = commandStream(streamId);
+      const sendCommand = async (
+        streamId: string,
+        requestId: unknown,
+        message: unknown
+      ): Promise<void> => {
+        const normalizedRequestId = normalizeRequestId(requestId);
+        const stream = commandStream(streamId, normalizedRequestId);
         if (!stream) {
           return;
         }
 
         if (!isValidMessage(message)) {
-          sendError('invalid_frame', 'send requires a valid actor message.', true, streamId);
+          sendError(
+            'invalid_frame',
+            'send requires a valid actor message.',
+            true,
+            streamId,
+            normalizedRequestId
+          );
           return;
         }
 
         if (!stream.source.send) {
-          sendError('forbidden', 'Runtime scope does not accept commands.', false, streamId);
+          sendError(
+            'forbidden',
+            'Runtime scope does not accept commands.',
+            false,
+            streamId,
+            normalizedRequestId
+          );
           return;
         }
 
         try {
           await stream.source.send(message);
-          send({ type: 'ack', streamId });
+          send({
+            type: 'ack',
+            streamId,
+            ...(normalizedRequestId ? { requestId: normalizedRequestId } : {}),
+          });
         } catch (error) {
           sendError(
             'internal_error',
             error instanceof Error ? error.message : 'Runtime command failed.',
             false,
-            streamId
+            streamId,
+            normalizedRequestId
           );
         }
       };
@@ -1075,12 +1243,13 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         message: unknown,
         timeoutMs?: unknown
       ): Promise<void> => {
-        const stream = commandStream(streamId);
+        const normalizedRequestId = normalizeRequestId(requestId);
+        const stream = commandStream(streamId, normalizedRequestId);
         if (!stream) {
           return;
         }
 
-        if (typeof requestId !== 'string' || requestId.trim().length === 0) {
+        if (!normalizedRequestId) {
           sendError('invalid_frame', 'ask requires a non-empty requestId.', true, streamId);
           return;
         }
@@ -1091,7 +1260,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             'ask requires a valid actor message.',
             true,
             streamId,
-            requestId
+            normalizedRequestId
           );
           return;
         }
@@ -1112,7 +1281,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             'timeoutMs must be a positive integer.',
             true,
             streamId,
-            requestId
+            normalizedRequestId
           );
           return;
         }
@@ -1123,21 +1292,21 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             'Runtime scope does not accept ask commands.',
             false,
             streamId,
-            requestId
+            normalizedRequestId
           );
           return;
         }
 
         try {
           const value = await stream.source.ask(message, normalizedTimeoutMs);
-          send({ type: 'reply', streamId, requestId, value });
+          send({ type: 'reply', streamId, requestId: normalizedRequestId, value });
         } catch (error) {
           sendError(
             'internal_error',
             error instanceof Error ? error.message : 'Runtime ask failed.',
             false,
             streamId,
-            requestId
+            normalizedRequestId
           );
         }
       };
@@ -1176,7 +1345,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
               });
               if (!auth.ok) {
                 sendError('unauthorized', auth.reason, false);
-                terminateConnection();
+                shutdownConnection(true);
                 return;
               }
               authenticatedAuthContext =
@@ -1223,7 +1392,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             resyncStream(frame.streamId, frame.fromSequence);
             return;
           case 'send':
-            await sendCommand(frame.streamId, frame.message);
+            await sendCommand(frame.streamId, frame.requestId, frame.message);
             return;
           case 'ask':
             await askCommand(frame.streamId, frame.requestId, frame.message, frame.timeoutMs);
@@ -1255,28 +1424,33 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
       };
 
       const processNextFrame = (): void => {
-        if (processingFrame || terminated) {
+        if (drainingFrames || terminated) {
           return;
         }
 
-        const frame = pendingFrames.shift();
-        if (!frame) {
-          return;
-        }
+        drainingFrames = (async () => {
+          while (!terminated) {
+            const frame = pendingFrames.shift();
+            if (!frame) {
+              return;
+            }
 
-        processingFrame = true;
-        void receiveFrame(frame)
-          .catch((error) => {
-            sendError(
-              'internal_error',
-              error instanceof Error ? error.message : 'Internal gateway frame handling error.',
-              false
-            );
-          })
-          .finally(() => {
-            processingFrame = false;
+            try {
+              await receiveFrame(frame);
+            } catch (error) {
+              sendError(
+                'internal_error',
+                error instanceof Error ? error.message : 'Internal gateway frame handling error.',
+                false
+              );
+            }
+          }
+        })().finally(() => {
+          drainingFrames = null;
+          if (!terminated && pendingFrames.length > 0) {
             processNextFrame();
-          });
+          }
+        });
       };
 
       const unsubscribeReceive = connection.receive(
@@ -1293,6 +1467,13 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
               queueLimit: inboundQueueLimit,
             });
             return;
+          }
+
+          if (frame.type === 'unsubscribe' && typeof frame.streamId === 'string') {
+            const streamId = frame.streamId.trim();
+            if (streamId.length > 0) {
+              subscribeGenerations.set(streamId, (subscribeGenerations.get(streamId) ?? 0) + 1);
+            }
           }
 
           markConnectionActive();
@@ -1312,21 +1493,15 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         }
       );
       const unsubscribeClose = connection.onClose(() => {
-        terminated = true;
-        clearIdleTimer();
-        clearSendAttemptTimeouts();
-        cleanupAll();
+        shutdownConnection(false);
       });
 
       armIdleTimer();
 
       return () => {
-        terminated = true;
-        clearIdleTimer();
-        clearSendAttemptTimeouts();
         unsubscribeReceive();
         unsubscribeClose();
-        cleanupAll();
+        shutdownConnection(false);
       };
     },
   };
