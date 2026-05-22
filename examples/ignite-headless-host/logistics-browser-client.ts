@@ -21,8 +21,10 @@ function requiredGatewayUrl(): string {
   return gatewayUrl;
 }
 
+const gateway = { url: requiredGatewayUrl() };
+
 export const logisticsClient = createActorWebClient(logistics, {
-  gateway: { url: requiredGatewayUrl() },
+  gateway,
   clientVersion: 'ignite-headless-host',
 });
 

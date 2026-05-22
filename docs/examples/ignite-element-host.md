@@ -87,12 +87,12 @@ The example is organized around a hexagonal boundary:
 
 The example uses the runtime topology/source DX directly. Runtime edges are
 created from topology actor descriptors, not from hand-written actor addresses.
-The Control Tower commands and projects the server-owned shipment actor through
-a source. Source means the Ignite-compatible projection/control adapter for one
-actor:
+The default Ignite host surface is projection-only: the Control Tower projects
+the server-owned shipment actor through a read-model source. Source means the
+Ignite-compatible read-model adapter for one actor:
 
 ```ts
-const source = logistics.actors.shipment.source({
+const source = logistics.actors.shipment.readModel({
   gateway: { url: gatewayUrl },
 });
 ```
@@ -106,7 +106,7 @@ in this example, `gateway: true` uses the topology actor keys `shipment` and
 overrides, parameterized subscriptions, or address-based/generated clients:
 
 ```ts
-const routingSource = logistics.actors.routing.source({
+const routingSource = logistics.actors.routing.readModel({
   gateway: { url: gatewayUrl },
 });
 ```
@@ -116,7 +116,7 @@ When a component needs a scoped projection, keep dynamic values inside
 gateway intentionally exposes a different public scope:
 
 ```ts
-const vehicleInspectionsSource = fleet.actors.vehicleInspections.source({
+const vehicleInspectionsSource = fleet.actors.vehicleInspections.readModel({
   gateway: {
     url: gatewayUrl,
     scope: {
@@ -126,19 +126,45 @@ const vehicleInspectionsSource = fleet.actors.vehicleInspections.source({
 });
 ```
 
-`ignite-headless-host-element.tsx` passes Actor-Web source handles directly to
-`igniteCore` from `ignite-element/actor-web`. The shipment projection drives the
-main Control Tower, and the worker routing actor is rendered as its own
+`ignite-headless-host-element.tsx` passes Actor-Web read-model handles directly
+to `igniteCore` from `ignite-element/actor-web`. The shipment projection drives
+the main Control Tower, and the worker routing actor is rendered as its own
 read-only Ignite component/source. The UI consumes the inferred Ignite view
 model from the `states` hook instead of wrapping projection data in a custom
 source-shaped adapter.
 
 `logistics-browser-client.ts` binds the shared topology to the deployed gateway
-once with `createActorWebClient(logistics, { gateway })`. Browser-local details
+once with `createActorWebClient(logistics, { gateway })` because the current
+`ignite-element/actor-web` adapter expects a command-capable Actor-Web source
+handle. The Ignite host still keeps projection and command ownership together
+inside `igniteCore`: components project actor state through the source, and
+their `commands` definitions send messages through the Ignite-provided `actor`
+handle instead of importing standalone command helpers. Browser-local details
 such as form inputs and latest-event display remain element concerns instead of
-being disguised as Actor-Web source state. Ignite commands send actor messages
-through `logisticsClient.actors.shipment`; REST ingress stays in the server HTTP
+being disguised as Actor-Web source state. REST ingress stays in the server HTTP
 adapter and reaches the same actor behavior.
+
+Use the split like this:
+
+```ts
+const logisticsClient = createActorWebClient(logistics, {
+  gateway: { url: gatewayUrl },
+});
+
+const shipmentSource = logisticsClient.actors.shipment;
+
+const shipmentHost = igniteCore({
+  source: shipmentSource,
+  commands: ({ actor, command }) => ({
+    resetShipment: command(() => actor.send({ type: 'RESET_SHIPMENT' })),
+  }),
+});
+```
+
+Do not inject standalone command-helper objects into Ignite components; keep
+host-owned commands on the Ignite command API. Generic browser clients can still
+use `createActorWebReadModelClient(...)` or `.readModel(...)` where no Ignite
+command surface is required.
 
 `server-runtime-gateway.ts` starts the server node with `serveActorWebNode` and
 uses `serveActorWebHttp(runtime).for(logistics.actors.shipment)` for REST
@@ -181,7 +207,9 @@ Use the names consistently:
 - Transport: runtime-to-runtime actor messaging through `MessageTransport`.
 - Gateway: client projection/control edge for thin hosts. This demo backs it
   with WebSocket, but it is not the same thing as inter-node transport.
-- Source: Ignite-compatible projection/control adapter for one actor.
+- Source: Ignite-compatible read-model adapter for one actor.
+- Commands: Ignite host actions defined inside `igniteCore(...).commands(...)`
+  and routed through the provided `actor` handle for the active source.
 
 REST is a conventional ingress adapter for clients that do not want to hold a
 live socket. The service worker path remains a browser-local topology proof, not

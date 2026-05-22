@@ -193,7 +193,7 @@ const registerIgniteHeadlessHost = igniteCore({
       transportBadgeClass: `badge transport-${transport.state}`,
     } satisfies LogisticsElementState;
   },
-  commands: ({ actor, host }) => {
+  commands: ({ actor, command, host }) => {
     const address = actor.address.path;
     const requestViewRefresh = () => actor.send({ type: 'GET_SHIPMENT_COUNT' });
 
@@ -206,77 +206,109 @@ const registerIgniteHeadlessHost = igniteCore({
     }
 
     return {
-      createShipment(input: CreateShipmentInput) {
-        const destination = input.destination.trim();
-        const shipmentId = input.shipmentId ?? createShipmentId();
-        const reference = input.reference?.trim() || undefined;
+      createShipment: command(
+        (input: CreateShipmentInput) => {
+          const destination = input.destination.trim();
+          const shipmentId = input.shipmentId ?? createShipmentId();
+          const reference = input.reference?.trim() || undefined;
 
-        const restUrl = configuredRestUrl();
-        if (restUrl) {
-          return fetch(`${restUrl}/shipments`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              shipmentId,
-              destination,
-              reference,
-            }),
-          }).then((response) => {
-            if (!response.ok) {
-              throw new Error(`Shipment ingress failed with ${response.status}`);
-            }
+          const restUrl = configuredRestUrl();
+          if (restUrl) {
+            return fetch(`${restUrl}/shipments`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                shipmentId,
+                destination,
+                reference,
+              }),
+            }).then((response) => {
+              if (!response.ok) {
+                throw new Error(`Shipment ingress failed with ${response.status}`);
+              }
+            });
+          }
+
+          return actor.send({
+            type: 'CREATE_SHIPMENT',
+            shipmentId,
+            destination,
+            reference,
           });
+        },
+        {
+          description:
+            'Create a shipment through REST ingress when available, or send the actor command directly for local proof mode.',
         }
+      ),
 
-        return actor.send({
-          type: 'CREATE_SHIPMENT',
-          shipmentId,
-          destination,
-          reference,
-        });
-      },
+      resetShipment: command(
+        () => {
+          const local = localStateFor(address);
+          local.timelinePage = 0;
+          local.eventLogPage = 0;
+          const restUrl = configuredRestUrl();
+          if (restUrl) {
+            return fetch(`${restUrl}/shipments/current/reset`, {
+              method: 'POST',
+            }).then((response) => {
+              if (!response.ok) {
+                throw new Error(`Shipment reset failed with ${response.status}`);
+              }
+            });
+          }
 
-      resetShipment() {
-        const local = localStateFor(address);
-        local.timelinePage = 0;
-        local.eventLogPage = 0;
-        const restUrl = configuredRestUrl();
-        if (restUrl) {
-          return fetch(`${restUrl}/shipments/current/reset`, {
-            method: 'POST',
-          }).then((response) => {
-            if (!response.ok) {
-              throw new Error(`Shipment reset failed with ${response.status}`);
-            }
-          });
+          return actor.send({ type: 'RESET_SHIPMENT' });
+        },
+        {
+          description:
+            'Reset the active shipment and clear the local timeline and event-log pagination state.',
         }
+      ),
 
-        return actor.send({ type: 'RESET_SHIPMENT' });
-      },
+      previousTimelinePage: command(
+        () => {
+          const local = localStateFor(address);
+          local.timelinePage = Math.max(0, local.timelinePage - 1);
+          return requestViewRefresh();
+        },
+        {
+          description: 'Show the previous page of shipment timeline entries.',
+        }
+      ),
 
-      previousTimelinePage() {
-        const local = localStateFor(address);
-        local.timelinePage = Math.max(0, local.timelinePage - 1);
-        return requestViewRefresh();
-      },
+      nextTimelinePage: command(
+        () => {
+          const local = localStateFor(address);
+          local.timelinePage += 1;
+          return requestViewRefresh();
+        },
+        {
+          description: 'Show the next page of shipment timeline entries.',
+        }
+      ),
 
-      nextTimelinePage() {
-        const local = localStateFor(address);
-        local.timelinePage += 1;
-        return requestViewRefresh();
-      },
+      previousEventLogPage: command(
+        () => {
+          const local = localStateFor(address);
+          local.eventLogPage = Math.max(0, local.eventLogPage - 1);
+          return requestViewRefresh();
+        },
+        {
+          description: 'Show the previous page of gateway event-log entries.',
+        }
+      ),
 
-      previousEventLogPage() {
-        const local = localStateFor(address);
-        local.eventLogPage = Math.max(0, local.eventLogPage - 1);
-        return requestViewRefresh();
-      },
-
-      nextEventLogPage() {
-        const local = localStateFor(address);
-        local.eventLogPage += 1;
-        return requestViewRefresh();
-      },
+      nextEventLogPage: command(
+        () => {
+          const local = localStateFor(address);
+          local.eventLogPage += 1;
+          return requestViewRefresh();
+        },
+        {
+          description: 'Show the next page of gateway event-log entries.',
+        }
+      ),
     };
   },
   cleanup: true,
