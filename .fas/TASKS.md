@@ -709,8 +709,8 @@
 
 - Title: Harden Actor-Web source and gateway concurrency
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/harden-actor-web-source-and-gateway-concurrency.md
 - Verification lane: fast
 - Policy sensitivity: standard
