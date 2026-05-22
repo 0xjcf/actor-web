@@ -35,13 +35,22 @@ Covers CodeRabbit runtime critical findings: broken @franchise/shared-contracts 
 
 ## Affected files
 
-- packages/actor-core-runtime/package.json
 - packages/actor-core-runtime/src/actor-context-manager.ts
-- pnpm-lock.yaml
+- packages/actor-core-runtime/src/unit/actor-context-manager.test.ts
+- .fas-config.json
 
 ## Scope Amendments
 
-- None.
+- Type: scope-refresh
+- Added at: 2026-05-22
+- Trigger: verifier-readiness
+- Reason: Dependency resolution was validated against the current checkout instead of requiring package or lockfile edits; acceptance-required fallback coverage required a focused unit test and FAS package-test coverage needed explicit runtime package verification.
+- Added paths: packages/actor-core-runtime/src/unit/actor-context-manager.test.ts, .fas-config.json
+- Removed paths: packages/actor-core-runtime/package.json, pnpm-lock.yaml
+- Evidence source: fas_verifier
+- Evidence: `pnpm install --lockfile-only` was a no-op, `@franchise/shared-contracts` already resolves via `file:../../../fas/packages/shared-contracts`, and `fas validate-task --fast` required the runtime package test command to be explicit. No repo-local FAS test-lane manifest exists in this checkout, so `.fas-config.json` keeps the original `pnpm test` lane and adds an explicit `pnpm --filter @actor-core/runtime test` segment until the heuristic can follow root-script expansion or a dedicated manifest is introduced in a separate scoped task.
+- Accuracy signal: necessary-unplanned-fix
+- Follow-up needed: none
 
 ## Implementation plan
 
@@ -56,6 +65,7 @@ Covers CodeRabbit runtime critical findings: broken @franchise/shared-contracts 
 ## Risks
 
 - Validate generated scope, acceptance criteria, and verification evidence before closeout to avoid workflow drift.
+- `FallbackContextStorage` is a fail-fast fallback when native `AsyncLocalStorage` is unavailable. It preserves synchronous nesting, sync throw cleanup, and async work spawned from the currently executing callback, but it now rejects overlapping top-level async runs with a clear error because isolating sibling continuations safely requires a runtime-level async context primitive or broader instrumentation outside this task's safe scope.
 
 ## Dependencies
 

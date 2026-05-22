@@ -697,8 +697,8 @@
 
 - Title: Fix runtime dependency resolution and async context fallback
 - Mode: 4-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/fix-runtime-dependency-resolution-and-async-context-fallback.md
 - Automation mode: advisory
 - Verification lane: fast
