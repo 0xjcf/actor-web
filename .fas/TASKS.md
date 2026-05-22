@@ -686,8 +686,8 @@
 
 - Title: Migrate Ignite host docs and examples to read-model defaults
 - Mode: 4-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/migrate-ignite-host-docs-and-examples-to-read-model-defaults.md
 - Verification lane: fast
 - Policy sensitivity: standard
