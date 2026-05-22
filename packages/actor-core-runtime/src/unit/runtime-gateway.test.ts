@@ -25,6 +25,7 @@ import {
   type RuntimeGatewayServerFrame,
   type RuntimeGatewaySnapshotProjection,
   type RuntimeGatewaySource,
+  type RuntimeGatewayTransitionRecord,
   type RuntimeGatewayWorkflowSnapshot,
 } from '../runtime-gateway.js';
 import type { Message } from '../types.js';
@@ -572,6 +573,105 @@ function createFakeSource(
         statuses: statusListeners.size,
         transitions: transitionListeners.size,
       };
+    },
+  };
+}
+
+function createThrowingUnsubscribeSource() {
+  const base = createFakeSource('ready', 'throwing-unsubscribe');
+  const state = {
+    snapshots: 0,
+    events: 0,
+    statuses: 0,
+    transitions: 0,
+  };
+
+  return {
+    ...base,
+    subscribeSnapshot(listener: (projection: RuntimeGatewaySnapshotProjection) => void) {
+      state.snapshots += 1;
+      listener(base.snapshot());
+      return () => {
+        state.snapshots -= 1;
+        throw new Error('snapshot unsubscribe failed');
+      };
+    },
+    subscribeEvent(listener: (projection: RuntimeGatewayEventProjection) => void) {
+      state.events += 1;
+      return () => {
+        state.events -= 1;
+        listener(createGatewayEvent(base, 'IGNORED_EVENT'));
+      };
+    },
+    subscribeTransportStatus(listener: (status: ProjectionTransportStatus) => void) {
+      state.statuses += 1;
+      listener(base.transportStatus());
+      return () => {
+        state.statuses -= 1;
+        listener(createProjectionTransportStatus('disconnected'));
+      };
+    },
+    subscribeTransition(listener: (transition: RuntimeGatewayTransitionRecord) => void) {
+      state.transitions += 1;
+      return () => {
+        state.transitions -= 1;
+        listener({
+          fromPhase: 'ready',
+          toPhase: 'closed',
+          fromStatus: 'running',
+          toStatus: 'stopped',
+        });
+      };
+    },
+    listenerCounts() {
+      return { ...state };
+    },
+  };
+}
+
+function createThrowingSubscribeSource() {
+  const base = createFakeSource('ready', 'throwing-subscribe');
+  const state = {
+    snapshots: 0,
+    events: 0,
+    statuses: 0,
+    transitions: 0,
+  };
+
+  return {
+    ...base,
+    subscribeSnapshot(listener: (projection: RuntimeGatewaySnapshotProjection) => void) {
+      state.snapshots += 1;
+      listener(base.snapshot());
+      return () => {
+        state.snapshots -= 1;
+      };
+    },
+    subscribeEvent(listener: (projection: RuntimeGatewayEventProjection) => void) {
+      void listener;
+      throw new Error('event subscribe failed');
+    },
+    subscribeTransportStatus(listener: (status: ProjectionTransportStatus) => void) {
+      state.statuses += 1;
+      listener(base.transportStatus());
+      return () => {
+        state.statuses -= 1;
+      };
+    },
+    subscribeTransition(listener: (transition: RuntimeGatewayTransitionRecord) => void) {
+      state.transitions += 1;
+      return () => {
+        state.transitions -= 1;
+        listener({
+          fromPhase: 'ready',
+          toPhase: 'closed',
+          fromStatus: 'running',
+          toStatus: 'stopped',
+        });
+      };
+    },
+    listenerCounts() {
+      return { ...state };
     },
   };
 }
@@ -1257,6 +1357,194 @@ describe('runtime gateway hub', () => {
     detach();
   });
 
+  it('removes stream state before cleanup and guards each unsubscribe independently', async () => {
+    const source = createThrowingUnsubscribeSource();
+    const hub = createRuntimeGatewayHub({
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'fleet-main',
+      scope: { kind: 'fleet-view' },
+    });
+    await flushGatewayFrames();
+
+    expect(source.listenerCounts()).toEqual({
+      snapshots: 1,
+      events: 1,
+      statuses: 1,
+      transitions: 1,
+    });
+
+    const framesBeforeUnsubscribe = [...connection.frames];
+    connection.push({
+      type: 'unsubscribe',
+      streamId: 'fleet-main',
+    });
+    await flushGatewayFrames();
+
+    expect(source.listenerCounts()).toEqual({
+      snapshots: 0,
+      events: 0,
+      statuses: 0,
+      transitions: 0,
+    });
+    expect(connection.closed).toBe(false);
+    expect(connection.frames).toEqual(framesBeforeUnsubscribe);
+
+    detach();
+  });
+
+  it('does not attach stream listeners when unsubscribe arrives before scope resolution', async () => {
+    const source = createFakeSource('ready');
+    const pendingSource = createDeferred<RuntimeGatewaySource>();
+    const hub = createRuntimeGatewayHub({
+      resolveScope: async () => pendingSource.promise,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'fleet-main',
+      scope: { kind: 'fleet-view' },
+    });
+    await flushGatewayMicrotasks();
+
+    connection.push({
+      type: 'unsubscribe',
+      streamId: 'fleet-main',
+    });
+    pendingSource.resolve(source);
+    await flushGatewayFrames();
+
+    expect(source.listenerCounts()).toEqual({
+      snapshots: 0,
+      events: 0,
+      statuses: 0,
+      transitions: 0,
+    });
+    expect(connection.frames).toEqual([
+      expect.objectContaining({
+        type: 'ready',
+      }),
+    ]);
+
+    detach();
+  });
+
+  it('does not attach stream listeners when unsubscribe arrives before replay hydration resolves', async () => {
+    const source = createFakeSource('ready');
+    const pendingReplay = createDeferred<RuntimeGatewayReplayFrame[]>();
+    const replayStorage = {
+      loadFrames: vi.fn<RuntimeGatewayReplayStorageProvider['loadFrames']>(
+        () => pendingReplay.promise
+      ),
+      storeFrames: vi.fn<RuntimeGatewayReplayStorageProvider['storeFrames']>(() => {}),
+    } satisfies RuntimeGatewayReplayStorageProvider;
+    const hub = createRuntimeGatewayHub({
+      replayStorage,
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'fleet-main',
+      scope: { kind: 'fleet-view' },
+    });
+    await flushGatewayMicrotasks();
+
+    connection.push({
+      type: 'unsubscribe',
+      streamId: 'fleet-main',
+    });
+    pendingReplay.resolve([]);
+    await flushGatewayFrames();
+
+    expect(replayStorage.loadFrames).toHaveBeenCalledOnce();
+    expect(source.listenerCounts()).toEqual({
+      snapshots: 0,
+      events: 0,
+      statuses: 0,
+      transitions: 0,
+    });
+    expect(connection.frames).toEqual([
+      expect.objectContaining({
+        type: 'ready',
+      }),
+    ]);
+
+    detach();
+  });
+
+  it('unwinds partially attached listeners when subscribe registration throws', async () => {
+    const source = createThrowingSubscribeSource();
+    const hub = createRuntimeGatewayHub({
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'fleet-main',
+      scope: { kind: 'fleet-view' },
+    });
+    await flushGatewayFrames();
+
+    expect(source.listenerCounts()).toEqual({
+      snapshots: 0,
+      events: 0,
+      statuses: 0,
+      transitions: 0,
+    });
+    expect(connection.frames).toEqual([
+      expect.objectContaining({
+        type: 'ready',
+      }),
+      expect.objectContaining({
+        type: 'status',
+        streamId: 'fleet-main',
+      }),
+      expect.objectContaining({
+        type: 'snapshot',
+        streamId: 'fleet-main',
+      }),
+      expect.objectContaining({
+        type: 'error',
+        streamId: 'fleet-main',
+        code: 'internal_error',
+        message: 'event subscribe failed',
+        recoverable: false,
+      }),
+    ]);
+
+    connection.push({
+      type: 'unsubscribe',
+      streamId: 'fleet-main',
+    });
+    await flushGatewayFrames();
+
+    expect(source.listenerCounts()).toEqual({
+      snapshots: 0,
+      events: 0,
+      statuses: 0,
+      transitions: 0,
+    });
+    expect(connection.frames).toHaveLength(4);
+
+    detach();
+  });
+
   it('supports command-only subscriptions without projection listeners or replay frames', async () => {
     const source = createFakeSource('ready', 'command-only');
     const replayStorage = {
@@ -1928,6 +2216,54 @@ describe('runtime gateway hub', () => {
     ]);
 
     detach();
+  });
+
+  it('skips queued replay persistence during synchronous detach after the active store settles', async () => {
+    const replayStorage = createAsyncMapBackedReplayStorageFixture();
+    const scope: RuntimeGatewayScopeDescriptor = { kind: 'fleet-view' };
+    const source = createFakeSource('ready');
+    const hub = createRuntimeGatewayHub({
+      replayStorage: replayStorage.provider,
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'fleet-main',
+      scope,
+    });
+    await flushGatewayFrames();
+
+    const connectionId = (connection.frames[0] as { connectionId: string }).connectionId;
+    const storageKey = scopedReplayStorageKey(
+      replaySessionIdForAuth({ authorityId: 'auth-1' }, connectionId),
+      'fleet-main',
+      scope
+    );
+
+    source.emitEvent(createGatewayEvent(source, 'InspectionProgressRecorded'));
+    source.emitTransition({
+      fromPhase: 'ready',
+      toPhase: 'submitted',
+      fromStatus: 'running',
+      toStatus: 'running',
+    });
+    await flushGatewayFrames();
+
+    expect(replayStorage.startedStores).toEqual([{ key: storageKey, sequences: [1] }]);
+
+    detach();
+    replayStorage.resolveNextStore(storageKey);
+    await flushGatewayFrames();
+
+    expect(replayStorage.startedStores).toEqual([{ key: storageKey, sequences: [1] }]);
+    expect(replayStorage.storage.get(storageKey)?.map((frame) => frame.sequence)).toEqual([1]);
+    expect(() => replayStorage.resolveNextStore(storageKey)).toThrowError(
+      `No pending store for ${storageKey}`
+    );
   });
 
   it('serializes replay persistence across overlapping attachments that share a replay session and stream id', async () => {
@@ -2698,6 +3034,7 @@ describe('runtime gateway hub', () => {
     connection.push({
       type: 'send',
       streamId: 'checkout-main',
+      requestId: 'send-request-1',
       message: { type: 'SUBMIT', orderId: 'order-gateway' },
     });
     connection.push({
@@ -2715,6 +3052,7 @@ describe('runtime gateway hub', () => {
     expect(connection.frames).toContainEqual({
       type: 'ack',
       streamId: 'checkout-main',
+      requestId: 'send-request-1',
     });
     expect(
       connection.frames.find((frame) => (frame as { type?: string }).type === 'reply')
@@ -2723,6 +3061,109 @@ describe('runtime gateway hub', () => {
       streamId: 'checkout-main',
       requestId: 'request-1',
       value: { ok: true, messageType: 'GET_COUNT' },
+    });
+
+    detach();
+  });
+
+  it('echoes send request ids on command errors', async () => {
+    const source = createFakeSource('ready');
+    source.send = async () => {
+      throw new Error('command send failed');
+    };
+    const hub = createRuntimeGatewayHub({
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-2',
+      message: { type: 'SUBMIT', orderId: 'order-gateway' },
+    });
+    await flushGatewayFrames();
+
+    expect(connection.frames).toContainEqual({
+      type: 'error',
+      streamId: 'checkout-main',
+      requestId: 'send-request-2',
+      code: 'internal_error',
+      message: 'command send failed',
+      recoverable: false,
+    });
+
+    detach();
+  });
+
+  it('serializes inbound command handling while an earlier frame is still in flight', async () => {
+    const firstSend = createDeferred<void>();
+    const handledMessages: string[] = [];
+    const source = createFakeSource('ready');
+    source.send = async (message) => {
+      handledMessages.push(`start:${message.type}`);
+      if (message.type === 'FIRST') {
+        await firstSend.promise;
+      }
+      handledMessages.push(`finish:${message.type}`);
+    };
+    const hub = createRuntimeGatewayHub({
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-1',
+      message: { type: 'FIRST' },
+    });
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-2',
+      message: { type: 'SECOND' },
+    });
+    await flushGatewayMicrotasks();
+
+    expect(handledMessages).toEqual(['start:FIRST']);
+
+    firstSend.resolve();
+    await flushGatewayFrames();
+
+    expect(handledMessages).toEqual([
+      'start:FIRST',
+      'finish:FIRST',
+      'start:SECOND',
+      'finish:SECOND',
+    ]);
+    expect(connection.frames).toContainEqual({
+      type: 'ack',
+      streamId: 'checkout-main',
+      requestId: 'send-request-1',
+    });
+    expect(connection.frames).toContainEqual({
+      type: 'ack',
+      streamId: 'checkout-main',
+      requestId: 'send-request-2',
     });
 
     detach();
@@ -2740,12 +3181,19 @@ describe('runtime gateway hub', () => {
     connection.push({
       type: 'send',
       streamId: 'missing',
+      requestId: 'missing-send-request',
       message: { type: 'SUBMIT', orderId: 'order-gateway' },
     });
     connection.push({
       type: 'ask',
+      streamId: 'missing',
+      requestId: 'missing-ask-request',
+      message: { type: 'GET_COUNT' },
+    });
+    connection.push({
+      type: 'ask',
       streamId: '',
-      requestId: 'request-1',
+      requestId: 'empty-stream-ask-request',
       message: { type: 'GET_COUNT' },
     });
     await flushGatewayFrames();
@@ -2754,12 +3202,22 @@ describe('runtime gateway hub', () => {
     expect(connection.frames).toContainEqual({
       type: 'error',
       streamId: 'missing',
+      requestId: 'missing-send-request',
       code: 'not_found',
       message: 'Cannot send command to an unsubscribed stream.',
       recoverable: true,
     });
     expect(connection.frames).toContainEqual({
       type: 'error',
+      streamId: 'missing',
+      requestId: 'missing-ask-request',
+      code: 'not_found',
+      message: 'Cannot send command to an unsubscribed stream.',
+      recoverable: true,
+    });
+    expect(connection.frames).toContainEqual({
+      type: 'error',
+      requestId: 'empty-stream-ask-request',
       code: 'invalid_frame',
       message: 'command requires a non-empty streamId.',
       recoverable: true,

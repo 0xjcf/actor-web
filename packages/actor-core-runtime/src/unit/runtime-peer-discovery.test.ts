@@ -276,4 +276,86 @@ describe('runtime peer discovery providers', () => {
       })
     ).toThrowError('Runtime peer discovery record url must use ws: or wss:.');
   });
+
+  it('serializes reentrant mutations so available, updated, and unavailable events stay ordered', async () => {
+    const discovery = createInMemoryRuntimePeerDiscoveryProvider();
+    const events: RuntimePeerDiscoveryEvent[] = [];
+
+    discovery.subscribe?.((event) => {
+      events.push(event);
+
+      if (event.type === 'peer.available') {
+        discovery.upsertPeer({
+          nodeAddress: event.peer.nodeAddress,
+          url: 'ws://127.0.0.1:4102',
+        });
+        discovery.removePeer(event.peer.nodeAddress, 'listener removed');
+      }
+    });
+
+    discovery.upsertPeer({
+      nodeAddress: 'server-node',
+      url: 'ws://127.0.0.1:4101',
+    });
+
+    expect(events).toEqual([
+      {
+        type: 'peer.available',
+        peer: {
+          nodeAddress: 'server-node',
+          url: 'ws://127.0.0.1:4101',
+        },
+      },
+      {
+        type: 'peer.updated',
+        peer: {
+          nodeAddress: 'server-node',
+          url: 'ws://127.0.0.1:4102',
+        },
+      },
+      {
+        type: 'peer.unavailable',
+        nodeAddress: 'server-node',
+        reason: 'listener removed',
+      },
+    ]);
+    expect(await discovery.getPeers()).toEqual([]);
+  });
+
+  it('continues queued reentrant mutations when a listener throws', async () => {
+    const discovery = createInMemoryRuntimePeerDiscoveryProvider();
+    const throwingListenerEvents: string[] = [];
+    const observerEvents: string[] = [];
+
+    discovery.subscribe?.((event) => {
+      throwingListenerEvents.push(event.type);
+
+      if (event.type === 'peer.available') {
+        discovery.upsertPeer({
+          nodeAddress: event.peer.nodeAddress,
+          url: 'ws://127.0.0.1:4102',
+        });
+        throw new Error('listener failed');
+      }
+    });
+    discovery.subscribe?.((event) => {
+      observerEvents.push(event.type);
+    });
+
+    expect(() =>
+      discovery.upsertPeer({
+        nodeAddress: 'server-node',
+        url: 'ws://127.0.0.1:4101',
+      })
+    ).not.toThrow();
+
+    expect(throwingListenerEvents).toEqual(['peer.available', 'peer.updated']);
+    expect(observerEvents).toEqual(['peer.available', 'peer.updated']);
+    expect(await discovery.getPeers()).toEqual([
+      {
+        nodeAddress: 'server-node',
+        url: 'ws://127.0.0.1:4102',
+      },
+    ]);
+  });
 });
