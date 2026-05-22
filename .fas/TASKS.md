@@ -709,9 +709,12 @@
 
 - Title: Harden Actor-Web source and gateway concurrency
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/harden-actor-web-source-and-gateway-concurrency.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Harden Actor-Web node startup and shutdown lifecycle
 

@@ -36,10 +36,15 @@ Covers CodeRabbit runtime concurrency and gateway findings: actor-web-source con
 - packages/actor-core-runtime/src/unit/actor-web-source.test.ts
 - packages/actor-core-runtime/src/unit/runtime-gateway.test.ts
 - packages/actor-core-runtime/src/unit/runtime-peer-discovery.test.ts
+- packages/agent-workflow-cli/package.json
+- pnpm-lock.yaml
 
 ## Scope Amendments
 
-- None.
+- Added `packages/agent-workflow-cli/package.json` and `pnpm-lock.yaml` after fast
+  verification exposed an existing direct `xstate` import in the CLI package
+  without a package-local dependency. The dependency metadata keeps CLI type
+  resolution on the repo-local `xstate@5.30.0` used by `@actor-core/runtime`.
 
 ## Implementation plan
 
