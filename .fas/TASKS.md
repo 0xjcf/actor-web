@@ -697,10 +697,13 @@
 
 - Title: Fix runtime dependency resolution and async context fallback
 - Mode: 4-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/fix-runtime-dependency-resolution-and-async-context-fallback.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Harden Actor-Web source and gateway concurrency
 
