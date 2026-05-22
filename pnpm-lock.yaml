@@ -137,6 +137,9 @@ importers:
       simple-git:
         specifier: ^3.20.0
         version: 3.28.0
+      xstate:
+        specifier: 5.30.0
+        version: 5.30.0
     devDependencies:
       '@types/inquirer':
         specifier: ^9.0.0
