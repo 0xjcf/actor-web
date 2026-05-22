@@ -693,6 +693,89 @@
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Fix runtime dependency resolution and async context fallback
+
+- Title: Fix runtime dependency resolution and async context fallback
+- Mode: 4-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/fix-runtime-dependency-resolution-and-async-context-fallback.md
+- Automation mode: advisory
+
+### Task: Harden Actor-Web source and gateway concurrency
+
+- Title: Harden Actor-Web source and gateway concurrency
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/harden-actor-web-source-and-gateway-concurrency.md
+
+### Task: Harden Actor-Web node startup and shutdown lifecycle
+
+- Title: Harden Actor-Web node startup and shutdown lifecycle
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/harden-actor-web-node-startup-and-shutdown-lifecycle.md
+
+### Task: Fix logistics service worker transport lifecycle
+
+- Title: Fix logistics service worker transport lifecycle
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/fix-logistics-service-worker-transport-lifecycle.md
+
+### Task: Fix logistics verification, auth, and event guards
+
+- Title: Fix logistics verification, auth, and event guards
+- Mode: 4-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/fix-logistics-verification-auth-and-event-guards.md
+
+### Task: Repair FAS workspace dependency and review artifact metadata
+
+- Title: Repair FAS workspace dependency and review artifact metadata
+- Mode: 4-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/repair-fas-workspace-dependency-and-review-artifact-metadata.md
+
+### Task: Complete runtime telemetry and discovery hygiene
+
+- Title: Complete runtime telemetry and discovery hygiene
+- Mode: 4-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/complete-runtime-telemetry-and-discovery-hygiene.md
+- Automation mode: advisory
+
+### Task: Clean up FAS memory and tracker text quality
+
+- Title: Clean up FAS memory and tracker text quality
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/clean-up-fas-memory-and-tracker-text-quality.md
+
+### Task: Refresh Actor-Web documentation accuracy from CodeRabbit review
+
+- Title: Refresh Actor-Web documentation accuracy from CodeRabbit review
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/refresh-actor-web-documentation-accuracy-from-coderabbit-rev.md
+
+### Task: Polish FAS agent loop example cleanup
+
+- Title: Polish FAS agent loop example cleanup
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/polish-fas-agent-loop-example-cleanup.md
+- Automation mode: advisory
+
 ## Template
 
 ### Task: `<short task title>`
