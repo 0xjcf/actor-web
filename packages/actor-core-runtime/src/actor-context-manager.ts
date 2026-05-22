@@ -71,23 +71,94 @@ interface ContextStorage<T> {
   getStore(): T | undefined;
 }
 
-class FallbackContextStorage<T> implements ContextStorage<T> {
+interface FallbackContextFrame<T> {
+  id: symbol;
+  context: T;
+}
+
+/**
+ * Best-effort fallback for environments without AsyncLocalStorage.
+ *
+ * This preserves synchronous nesting plus async work that is spawned from the
+ * currently executing callback, but it rejects overlapping top-level async
+ * runs because they cannot be isolated safely without broader runtime support.
+ */
+export class FallbackContextStorage<T> implements ContextStorage<T> {
   private current: T | undefined;
+  private readonly frames: FallbackContextFrame<T>[] = [];
+  private rootPrevious: T | undefined;
+  private callbackDepth = 0;
 
   run<TResult>(context: T, fn: () => TResult): TResult {
-    const previous = this.current;
+    if (this.callbackDepth === 0 && this.frames.length > 0) {
+      throw new Error(
+        'FallbackContextStorage cannot start overlapping top-level async runs without AsyncLocalStorage'
+      );
+    }
+
+    if (this.frames.length === 0) {
+      this.rootPrevious = this.current;
+    }
+
+    const frame: FallbackContextFrame<T> = {
+      id: Symbol('fallback-context-frame'),
+      context,
+    };
+
+    this.frames.push(frame);
     this.current = context;
+    let shouldReleaseInFinally = true;
 
     try {
-      return fn();
+      this.callbackDepth += 1;
+      const result = fn();
+
+      if (isPromiseLike(result)) {
+        shouldReleaseInFinally = false;
+        return Promise.resolve(result).finally(() => {
+          this.releaseFrame(frame.id);
+        }) as TResult;
+      }
+
+      this.releaseFrame(frame.id);
+      return result;
     } finally {
-      this.current = previous;
+      this.callbackDepth -= 1;
+      if (shouldReleaseInFinally) {
+        this.releaseFrame(frame.id);
+      }
     }
   }
 
   getStore(): T | undefined {
     return this.current;
   }
+
+  private releaseFrame(frameId: symbol): void {
+    const frameIndex = this.frames.findIndex((frame) => frame.id === frameId);
+    if (frameIndex === -1) {
+      return;
+    }
+
+    this.frames.splice(frameIndex, 1);
+
+    if (this.frames.length === 0) {
+      this.current = this.rootPrevious;
+      this.rootPrevious = undefined;
+      return;
+    }
+
+    this.current = this.frames[this.frames.length - 1]?.context;
+  }
+}
+
+function isPromiseLike<T>(value: T | PromiseLike<unknown>): value is PromiseLike<unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'then' in value &&
+    typeof value.then === 'function'
+  );
 }
 
 function createContextStorage<T>(): ContextStorage<T> {
