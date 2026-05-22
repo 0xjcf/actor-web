@@ -1,6 +1,11 @@
-import type { IgniteActorSource } from '@actor-core/runtime/browser';
+import type { ClosableActorWebSource } from '@actor-core/runtime/browser';
 import { igniteCore } from 'ignite-element/actor-web';
-import type { FasTaskBoardCommand, FasTaskBoardContext, FasTaskEvent } from './fas-contract';
+import type {
+  FasTaskBoardCommand,
+  FasTaskBoardContext,
+  FasTaskDashboardView,
+  FasTaskEvent,
+} from './fas-contract';
 import { dashboardViewFromContext } from './fas-contract';
 
 export interface FasDashboardTaskInput {
@@ -19,12 +24,12 @@ export interface FasDashboardRuntimeOptions {
 }
 
 export function createFasTaskDashboard(
-  source: IgniteActorSource<FasTaskBoardContext, FasTaskBoardCommand, FasTaskEvent>,
+  source: ClosableActorWebSource<FasTaskBoardContext, FasTaskBoardCommand, FasTaskEvent>,
   options: FasDashboardRuntimeOptions = {}
 ) {
   return igniteCore({
-    source: () => source,
-    view: ({ snapshot }) => dashboardViewFromContext(snapshot.context),
+    source,
+    view: ({ snapshot }): FasTaskDashboardView => dashboardViewFromContext(snapshot.context),
     commands: ({ actor }): FasDashboardCommands => ({
       submitTask(input) {
         return actor.send({ type: 'SUBMIT_TASK', ...input });

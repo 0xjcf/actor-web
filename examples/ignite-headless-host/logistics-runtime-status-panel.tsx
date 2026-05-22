@@ -142,8 +142,10 @@ function createRuntimeStatusSource(): { source: RuntimeStatusSource; stop(): voi
   };
 }
 
+const runtimeStatusSource = createRuntimeStatusSource();
+
 const registerRuntimeStatusPanel = igniteCore({
-  source: () => createRuntimeStatusSource(),
+  source: runtimeStatusSource,
   states: ({ context, transport }) => ({
     runtimeStatus: context ?? createInitialLogisticsRuntimeStatusView(),
     runtimeTransportState: transport.state,

@@ -57,7 +57,7 @@ const signals: Array<{
 ];
 
 const registerProviderConsole = igniteCore({
-  source: () => logisticsClient.actors.providerHq,
+  source: logisticsClient.actors.providerHq,
   states: ({ context }) => {
     const providerContext = context ?? createInitialProviderHqContext();
     const queuePageCount = Math.max(
@@ -109,25 +109,36 @@ const registerProviderConsole = igniteCore({
       message: string;
     }>(),
   }),
-  commands: ({ actor }) => ({
-    refresh() {
-      return actor.send({ type: 'REFRESH_PROVIDER_STATUS' });
-    },
-    setMode(mode: 'simulation' | 'manual') {
-      return actor.send({ type: 'SET_PROVIDER_MODE', mode });
-    },
-    selectShipment(shipmentId: string) {
-      return actor.send({ type: 'SELECT_PROVIDER_SHIPMENT', shipmentId });
-    },
-    previousQueuePage() {
-      return actor.send({ type: 'PROVIDER_QUEUE_PREV' });
-    },
-    nextQueuePage() {
-      return actor.send({ type: 'PROVIDER_QUEUE_NEXT' });
-    },
-    sendSignal(signal: ProviderSignal, note: string) {
-      return actor.send({ type: providerSignalCommandType(signal), note });
-    },
+  commands: ({ actor, command }) => ({
+    refresh: command(() => actor.send({ type: 'REFRESH_PROVIDER_STATUS' }), {
+      description: 'Refresh the Provider HQ status from the actor-owned queue state.',
+    }),
+    setMode: command(
+      (mode: 'simulation' | 'manual') => actor.send({ type: 'SET_PROVIDER_MODE', mode }),
+      {
+        description: 'Switch the Provider HQ between simulation and manual operator mode.',
+      }
+    ),
+    selectShipment: command(
+      (shipmentId: string) => actor.send({ type: 'SELECT_PROVIDER_SHIPMENT', shipmentId }),
+      {
+        description: 'Select the active shipment in the Provider HQ queue.',
+      }
+    ),
+    previousQueuePage: command(() => actor.send({ type: 'PROVIDER_QUEUE_PREV' }), {
+      description: 'Move to the previous Provider HQ queue page.',
+    }),
+    nextQueuePage: command(() => actor.send({ type: 'PROVIDER_QUEUE_NEXT' }), {
+      description: 'Move to the next Provider HQ queue page.',
+    }),
+    sendSignal: command(
+      (signal: ProviderSignal, note: string) =>
+        actor.send({ type: providerSignalCommandType(signal), note }),
+      {
+        description:
+          'Send the selected provider lifecycle signal to the actor-owned Provider HQ workflow.',
+      }
+    ),
   }),
   effects: (snapshot, prevSnapshot, { emit }) => {
     const message = snapshot.context?.message;
