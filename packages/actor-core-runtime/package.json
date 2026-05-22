@@ -37,6 +37,7 @@
   "license": "MIT",
   "dependencies": {
     "@franchise/shared-contracts": "file:../../../fas/packages/shared-contracts",
+    "@msgpack/msgpack": "^3.1.3",
     "uuid": "^11.1.0",
     "ws": "^8.18.3",
     "xstate": "5.30.0"
