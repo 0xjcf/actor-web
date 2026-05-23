@@ -720,8 +720,8 @@
 
 - Title: Harden Actor-Web node startup and shutdown lifecycle
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/harden-actor-web-node-startup-and-shutdown-lifecycle.md
 - Verification lane: fast
 - Policy sensitivity: standard
