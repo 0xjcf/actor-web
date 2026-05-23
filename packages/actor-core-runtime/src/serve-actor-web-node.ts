@@ -216,6 +216,19 @@ async function createWebSocketServer(
   return { server, url };
 }
 
+async function closeWebSocketServer(server: WebSocketServerLike): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve();
+    });
+  });
+}
+
 function normalizeGatewayOptions<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
   gateway: ServeActorWebNodeOptions<TTopology>['gateway']
 ): ActorWebNodeGatewayOptions<keyof TTopology['actors'] & string> | undefined {
@@ -422,87 +435,158 @@ export async function serveActorWebNode<TTopology extends ActorWebTopology<Actor
       return;
     }
 
-    await transport.start();
+    let transportStarted = false;
+    let systemStarted = false;
+    let registeredSelf = false;
 
-    const transportUrl = transport.getListeningUrl();
-    if (transportUrl) {
-      await options.discovery?.registerSelf?.({
-        nodeAddress: nodeDefinition.address,
-        url: transportUrl,
-      });
-    }
+    try {
+      await transport.start();
+      transportStarted = true;
 
-    await system.start();
+      await system.start();
+      systemStarted = true;
 
-    await spawnOwnedActorWebActors(system, topology, options.node, actors, options.tools);
+      await spawnOwnedActorWebActors(system, topology, options.node, actors, options.tools);
 
-    if (gatewayOptions) {
-      const { WebSocketServer } = await import('ws');
-      const created = await createWebSocketServer(WebSocketServer as WebSocketServerConstructor, {
-        host: gatewayOptions.host ?? host,
-        port: gatewayOptions.port ?? 0,
-      });
-      gatewayServer = created.server;
-      gatewayUrl = created.url;
-      gatewayServer.on('connection', (socket) => {
-        hub.attach(new ActorWebNodeGatewayConnection(socket));
-      });
-    }
-
-    const discoveryPeers = options.discovery ? await options.discovery.getPeers() : [];
-    for (const peer of discoveryPeers) {
-      await connectDiscoveredPeer(peer);
-    }
-    unsubscribeDiscovery = options.discovery?.subscribe?.((event) => {
-      if (event.type === 'peer.unavailable') {
-        discoveryPeerUrls.delete(event.nodeAddress);
-        void transport.disconnect(event.nodeAddress).catch(() => {});
-        return;
+      if (gatewayOptions) {
+        const { WebSocketServer } = await import('ws');
+        const created = await createWebSocketServer(WebSocketServer as WebSocketServerConstructor, {
+          host: gatewayOptions.host ?? host,
+          port: gatewayOptions.port ?? 0,
+        });
+        gatewayServer = created.server;
+        gatewayUrl = created.url;
+        gatewayServer.on('connection', (socket) => {
+          hub.attach(new ActorWebNodeGatewayConnection(socket));
+        });
       }
 
-      discoveryPeerUrls.set(event.peer.nodeAddress, event.peer.url);
-      if (shouldConnectDiscoveredPeer(event.peer.nodeAddress)) {
-        void system.join([event.peer.nodeAddress]).catch(() => {});
+      const discoveryPeers = options.discovery ? await options.discovery.getPeers() : [];
+      for (const peer of discoveryPeers) {
+        await connectDiscoveredPeer(peer);
       }
-    });
+      unsubscribeDiscovery = options.discovery?.subscribe?.((event) => {
+        if (event.type === 'peer.unavailable') {
+          discoveryPeerUrls.delete(event.nodeAddress);
+          void transport.disconnect(event.nodeAddress).catch(() => {});
+          return;
+        }
 
-    const connectTargets = options.connect
-      ? resolveTopologyNodeAddresses(topology, options.connect)
-      : Object.keys(topologyPeers);
-    if (connectTargets.length > 0) {
-      await system.join(connectTargets);
+        discoveryPeerUrls.set(event.peer.nodeAddress, event.peer.url);
+        if (shouldConnectDiscoveredPeer(event.peer.nodeAddress)) {
+          void system.join([event.peer.nodeAddress]).catch(() => {});
+        }
+      });
+
+      const connectTargets = options.connect
+        ? resolveTopologyNodeAddresses(topology, options.connect)
+        : Object.keys(topologyPeers);
+      if (connectTargets.length > 0) {
+        await system.join(connectTargets);
+      }
+
+      const transportUrl = transport.getListeningUrl();
+      if (transportUrl) {
+        await options.discovery?.registerSelf?.({
+          nodeAddress: nodeDefinition.address,
+          url: transportUrl,
+        });
+        registeredSelf = true;
+      }
+
+      running = true;
+    } catch (startupError) {
+      running = false;
+
+      if (registeredSelf) {
+        try {
+          await options.discovery?.unregisterSelf?.(nodeDefinition.address);
+        } catch {}
+      }
+
+      const activeUnsubscribe = unsubscribeDiscovery;
+      unsubscribeDiscovery = undefined;
+      if (activeUnsubscribe) {
+        try {
+          activeUnsubscribe();
+        } catch {}
+      }
+
+      const activeGatewayServer = gatewayServer;
+      gatewayServer = null;
+      gatewayUrl = null;
+      if (activeGatewayServer) {
+        try {
+          await closeWebSocketServer(activeGatewayServer);
+        } catch {}
+      }
+
+      if (systemStarted) {
+        try {
+          await system.stop();
+        } catch {}
+      }
+
+      if (transportStarted) {
+        try {
+          await transport.stop();
+        } catch {}
+      }
+
+      discoveryPeerUrls.clear();
+      actors.clear();
+      throw startupError;
     }
-
-    running = true;
   };
 
   const stop = async (): Promise<void> => {
     const activeGatewayServer = gatewayServer;
+    const activeUnsubscribe = unsubscribeDiscovery;
     gatewayServer = null;
     gatewayUrl = null;
     running = false;
-    unsubscribeDiscovery?.();
     unsubscribeDiscovery = undefined;
+
+    let stopError: unknown;
+
+    if (activeGatewayServer) {
+      try {
+        await closeWebSocketServer(activeGatewayServer);
+      } catch (error) {
+        stopError ??= error;
+      }
+    }
+
+    try {
+      await options.discovery?.unregisterSelf?.(nodeDefinition.address);
+    } catch (error) {
+      stopError ??= error;
+    }
+
+    try {
+      await system.stop();
+    } catch (error) {
+      stopError ??= error;
+    }
+
+    try {
+      await transport.stop();
+    } catch (error) {
+      stopError ??= error;
+    }
+
+    try {
+      activeUnsubscribe?.();
+    } catch (error) {
+      stopError ??= error;
+    }
+
     discoveryPeerUrls.clear();
     actors.clear();
 
-    await options.discovery?.unregisterSelf?.(nodeDefinition.address);
-
-    if (activeGatewayServer) {
-      await new Promise<void>((resolve, reject) => {
-        activeGatewayServer.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-
-          resolve();
-        });
-      });
+    if (stopError) {
+      throw stopError;
     }
-
-    await system.stop();
-    await transport.stop();
   };
 
   const servedNode: ServedActorWebNode<TTopology> = {

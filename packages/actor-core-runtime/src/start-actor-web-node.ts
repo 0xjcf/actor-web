@@ -277,49 +277,112 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
       return;
     }
 
-    await (transport as StartableMessageTransport).start?.();
-    await system.start();
-    await spawnOwnedActorWebActors(system, topology, options.node, actors, options.tools);
+    const startableTransport = transport as StartableMessageTransport;
+    let transportStarted = false;
+    let systemStarted = false;
 
-    const discoveryPeers = options.discovery ? await options.discovery.getPeers() : [];
-    for (const peer of discoveryPeers) {
-      await connectDiscoveredPeer(peer);
-    }
-    unsubscribeDiscovery = options.discovery?.subscribe?.((event) => {
-      if (event.type === 'peer.unavailable') {
-        discoveryPeerUrls.delete(event.nodeAddress);
-        void transport.disconnect(event.nodeAddress).catch(() => {});
-        return;
+    try {
+      await startableTransport.start?.();
+      transportStarted = true;
+
+      await system.start();
+      systemStarted = true;
+
+      await spawnOwnedActorWebActors(system, topology, options.node, actors, options.tools);
+
+      const discoveryPeers = options.discovery ? await options.discovery.getPeers() : [];
+      for (const peer of discoveryPeers) {
+        await connectDiscoveredPeer(peer);
+      }
+      unsubscribeDiscovery = options.discovery?.subscribe?.((event) => {
+        if (event.type === 'peer.unavailable') {
+          discoveryPeerUrls.delete(event.nodeAddress);
+          void transport.disconnect(event.nodeAddress).catch(() => {});
+          return;
+        }
+
+        discoveryPeerUrls.set(event.peer.nodeAddress, event.peer.url);
+        if (shouldConnectDiscoveredPeer(event.peer.nodeAddress)) {
+          void system.join([event.peer.nodeAddress]).catch(() => {});
+        }
+      });
+
+      const connectTargets = options.connect
+        ? resolveTopologyNodeAddresses(topology, options.connect)
+        : (websocketTransportOptions?.connect ?? Object.keys(transportPeers));
+      if (connectTargets.length > 0) {
+        await system.join([...connectTargets]);
       }
 
-      discoveryPeerUrls.set(event.peer.nodeAddress, event.peer.url);
-      if (shouldConnectDiscoveredPeer(event.peer.nodeAddress)) {
-        void system.join([event.peer.nodeAddress]).catch(() => {});
+      running = true;
+    } catch (startupError) {
+      running = false;
+
+      const activeUnsubscribe = unsubscribeDiscovery;
+      unsubscribeDiscovery = undefined;
+      if (activeUnsubscribe) {
+        try {
+          activeUnsubscribe();
+        } catch {}
       }
-    });
 
-    const connectTargets = options.connect
-      ? resolveTopologyNodeAddresses(topology, options.connect)
-      : (websocketTransportOptions?.connect ?? Object.keys(transportPeers));
-    if (connectTargets.length > 0) {
-      await system.join([...connectTargets]);
+      if (systemStarted) {
+        try {
+          await system.stop();
+        } catch {}
+      }
+
+      if (transportStarted) {
+        try {
+          if (startableTransport.stop) {
+            await startableTransport.stop();
+          } else {
+            await startableTransport.destroy?.();
+          }
+        } catch {}
+      }
+
+      discoveryPeerUrls.clear();
+      actors.clear();
+      throw startupError;
     }
-
-    running = true;
   };
 
   const stop = async (): Promise<void> => {
+    const activeUnsubscribe = unsubscribeDiscovery;
     running = false;
-    unsubscribeDiscovery?.();
     unsubscribeDiscovery = undefined;
+
+    const startableTransport = transport as StartableMessageTransport;
+    let stopError: unknown;
+
+    try {
+      await system.stop();
+    } catch (error) {
+      stopError ??= error;
+    }
+
+    try {
+      if (startableTransport.stop) {
+        await startableTransport.stop();
+      } else {
+        await startableTransport.destroy?.();
+      }
+    } catch (error) {
+      stopError ??= error;
+    }
+
+    try {
+      activeUnsubscribe?.();
+    } catch (error) {
+      stopError ??= error;
+    }
+
     discoveryPeerUrls.clear();
     actors.clear();
-    await system.stop();
-    const startableTransport = transport as StartableMessageTransport;
-    if (startableTransport.stop) {
-      await startableTransport.stop();
-    } else {
-      await startableTransport.destroy?.();
+
+    if (stopError) {
+      throw stopError;
     }
   };
 

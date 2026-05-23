@@ -286,13 +286,15 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
     ComponentElementCreationState
   >();
   let fallbackRuntimePromise: Promise<ActorSystem> | null = null;
+  let fallbackRuntimeRefCount = 0;
+  const fallbackRuntimeOwners = new WeakSet<ComponentActorElementImpl>();
   let nextComponentInstanceId = 0;
 
   log.info('Creating component class', { machineId, tagName });
 
   const createComponentInstanceId = (): string => `component-${nextComponentInstanceId++}`;
 
-  const getFallbackRuntime = async (): Promise<ActorSystem> => {
+  const getFallbackRuntime = async (owner: ComponentActorElementImpl): Promise<ActorSystem> => {
     if (!fallbackRuntimePromise) {
       fallbackRuntimePromise = (async () => {
         const runtime = createActorSystem({
@@ -305,7 +307,36 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
       })();
     }
 
-    return fallbackRuntimePromise;
+    const runtime = await fallbackRuntimePromise;
+    if (!fallbackRuntimeOwners.has(owner)) {
+      fallbackRuntimeOwners.add(owner);
+      fallbackRuntimeRefCount += 1;
+    }
+
+    return runtime;
+  };
+
+  const releaseFallbackRuntime = async (owner: ComponentActorElementImpl): Promise<boolean> => {
+    if (!fallbackRuntimeOwners.has(owner)) {
+      return false;
+    }
+
+    fallbackRuntimeOwners.delete(owner);
+    fallbackRuntimeRefCount = Math.max(0, fallbackRuntimeRefCount - 1);
+    if (fallbackRuntimeRefCount > 0) {
+      return true;
+    }
+
+    const runtimePromise = fallbackRuntimePromise;
+    fallbackRuntimePromise = null;
+    if (!runtimePromise) {
+      return true;
+    }
+
+    const runtime = await runtimePromise;
+    await runtime.stop();
+    log.info('Component actor system stopped', { machineId, tagName });
+    return true;
   };
 
   // Create the component actor behavior
@@ -447,6 +478,32 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
       return elementCreationState.get(this) ?? {};
     }
 
+    private usesFallbackRuntime(): boolean {
+      return this.getCreationState().runtime === undefined && config.runtime === undefined;
+    }
+
+    private async releaseOwnedFallbackRuntime(): Promise<void> {
+      if (!this.usesFallbackRuntime()) {
+        return;
+      }
+
+      const released = await releaseFallbackRuntime(this);
+      if (released) {
+        this._resolvedRuntime = null;
+      }
+    }
+
+    private async releaseOwnedFallbackRuntimeBestEffort(): Promise<void> {
+      try {
+        await this.releaseOwnedFallbackRuntime();
+      } catch (error) {
+        log.error('Failed to stop fallback component runtime', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          machineId,
+        });
+      }
+    }
+
     private async getActorSystem(): Promise<ActorSystem> {
       if (!this._resolvedRuntime) {
         const runtimeOverride = this.getCreationState().runtime;
@@ -455,7 +512,7 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
             ? resolveRuntimeProvider(runtimeOverride)
             : config.runtime !== undefined
               ? resolveRuntimeProvider(config.runtime)
-              : getFallbackRuntime();
+              : getFallbackRuntime(this);
       }
 
       return this._resolvedRuntime;
@@ -503,6 +560,16 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
 
         log.info('Component mounted successfully', { machineId });
       } catch (error) {
+        if (this._actorPID) {
+          try {
+            await this._actorPID.stop();
+          } catch {}
+
+          this._actorPID = null;
+        }
+
+        await this.releaseOwnedFallbackRuntimeBestEffort();
+        this._isActorMounted = false;
         log.error('Failed to connect component', {
           error: error instanceof Error ? error.message : 'Unknown error',
           machineId,
@@ -528,9 +595,11 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
         }
 
         this._isActorMounted = false;
+        await this.releaseOwnedFallbackRuntimeBestEffort();
 
         log.info('Component unmounted successfully', { machineId });
       } catch (error) {
+        await this.releaseOwnedFallbackRuntimeBestEffort();
         log.error('Failed to disconnect component', {
           error: error instanceof Error ? error.message : 'Unknown error',
           machineId,
