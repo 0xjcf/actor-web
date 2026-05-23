@@ -720,9 +720,12 @@
 
 - Title: Harden Actor-Web node startup and shutdown lifecycle
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/harden-actor-web-node-startup-and-shutdown-lifecycle.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Fix logistics service worker transport lifecycle
 
