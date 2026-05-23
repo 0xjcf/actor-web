@@ -113,6 +113,7 @@ async function spawnActorWebActorInstance(
   actorKey: string,
   actorDescriptor: ActorWebActorDescriptor,
   actors: Map<string, ActorRef<unknown, ActorMessage>>,
+  inFlightActors: Map<string, Promise<ActorRef<unknown, ActorMessage>>>,
   toolAccess: Record<string, string[]>,
   tools: ActorToolRegistry | undefined,
   params?: unknown
@@ -127,27 +128,41 @@ async function spawnActorWebActorInstance(
     return cached;
   }
 
-  const existing = await system.lookup(address.path);
-  if (existing) {
-    actors.set(cacheKey, existing);
-    if (!isParameterizedActorWebActor(actorDescriptor)) {
-      actors.set(actorKey, existing);
+  const inFlight = inFlightActors.get(cacheKey);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const spawnPromise = (async (): Promise<ActorRef<unknown, ActorMessage>> => {
+    const existing = await system.lookup(address.path);
+    if (existing) {
+      actors.set(cacheKey, existing);
+      if (!isParameterizedActorWebActor(actorDescriptor)) {
+        actors.set(actorKey, existing);
+      }
+
+      return existing;
     }
 
-    return existing;
-  }
+    toolAccess[address.path] = getActorWebRequiredToolNames(actorDescriptor);
+    const actorRef = await system.spawn(materializeActorWebBehavior(actorDescriptor, params), {
+      id: address.id,
+      supervised: Boolean(actorDescriptor.supervision),
+    });
+    actors.set(cacheKey, actorRef);
+    if (!isParameterizedActorWebActor(actorDescriptor)) {
+      actors.set(actorKey, actorRef);
+    }
 
-  toolAccess[address.path] = getActorWebRequiredToolNames(actorDescriptor);
-  const actorRef = await system.spawn(materializeActorWebBehavior(actorDescriptor, params), {
-    id: address.id,
-    supervised: Boolean(actorDescriptor.supervision),
-  });
-  actors.set(cacheKey, actorRef);
-  if (!isParameterizedActorWebActor(actorDescriptor)) {
-    actors.set(actorKey, actorRef);
-  }
+    return actorRef;
+  })();
 
-  return actorRef;
+  inFlightActors.set(cacheKey, spawnPromise);
+  try {
+    return await spawnPromise;
+  } finally {
+    inFlightActors.delete(cacheKey);
+  }
 }
 
 export function createActorWebNodeActorHandles<
@@ -160,6 +175,7 @@ export function createActorWebNodeActorHandles<
   toolAccess: Record<string, string[]>,
   tools?: ActorToolRegistry
 ): ActorWebNodeActorHandles<TTopology> {
+  const inFlightActors = new Map<string, Promise<ActorRef<unknown, ActorMessage>>>();
   return Object.fromEntries(
     Object.entries(topology.actors).map(([actorKey, actorDescriptor]) => {
       const ensureOwned = (): void => {
@@ -189,6 +205,7 @@ export function createActorWebNodeActorHandles<
               actorKey,
               actorDescriptor,
               actors,
+              inFlightActors,
               toolAccess,
               tools,
               params

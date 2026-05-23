@@ -410,8 +410,8 @@ async function handleRequest<TTopology extends ActorWebTopology<ActorWebTopology
 
 function listen(server: Server, options: Required<ActorWebHttpListenOptions>): Promise<string> {
   return new Promise((resolve, reject) => {
-    server.listen(options.port, options.host);
-    server.once('listening', () => {
+    const onListening = (): void => {
+      server.off('error', onError);
       const address = server.address();
       if (!address || typeof address === 'string') {
         reject(new Error('Actor-Web HTTP server did not expose a TCP address.'));
@@ -419,7 +419,14 @@ function listen(server: Server, options: Required<ActorWebHttpListenOptions>): P
       }
 
       resolve(`http://${address.address}:${address.port}`);
-    });
-    server.once('error', reject);
+    };
+    const onError = (error: Error): void => {
+      server.off('listening', onListening);
+      reject(error);
+    };
+
+    server.once('listening', onListening);
+    server.once('error', onError);
+    server.listen(options.port, options.host);
   });
 }
