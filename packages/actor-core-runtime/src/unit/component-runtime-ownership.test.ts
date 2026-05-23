@@ -260,4 +260,82 @@ describe('component runtime ownership', () => {
     expect(fallbackRuntime.spawn).toHaveBeenCalledTimes(2);
     expect(fallbackRuntime.lookup).toHaveBeenCalledTimes(2);
   });
+
+  it('reference-counts the fallback runtime and stops it after the last disconnect only once', async () => {
+    const fallbackRuntime = createRuntimeMock('fallback-runtime');
+    createActorSystemMock.mockReturnValue(fallbackRuntime.runtime);
+
+    const component = createComponent({
+      machine,
+      template,
+    });
+
+    const firstElement = component.create() as InternalComponentElement;
+    const secondElement = component.create() as InternalComponentElement;
+
+    await firstElement.connectedCallback();
+    await secondElement.connectedCallback();
+    await firstElement.disconnectedCallback();
+    await secondElement.disconnectedCallback();
+    await secondElement.disconnectedCallback();
+
+    expect(createActorSystemMock).toHaveBeenCalledTimes(1);
+    expect(fallbackRuntime.start).toHaveBeenCalledTimes(1);
+    expect(fallbackRuntime.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the fallback runtime after a failed connect without over-releasing on later disconnects', async () => {
+    const fallbackRuntime = createRuntimeMock('fallback-runtime');
+    fallbackRuntime.spawn.mockRejectedValueOnce(new Error('spawn failed'));
+    createActorSystemMock.mockReturnValue(fallbackRuntime.runtime);
+
+    const component = createComponent({
+      machine,
+      template,
+    });
+
+    const element = component.create() as InternalComponentElement;
+    await expect(element.connectedCallback()).rejects.toThrow('spawn failed');
+    await element.disconnectedCallback();
+
+    expect(createActorSystemMock).toHaveBeenCalledTimes(1);
+    expect(fallbackRuntime.start).toHaveBeenCalledTimes(1);
+    expect(fallbackRuntime.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the original connect failure when fallback runtime cleanup also fails', async () => {
+    const fallbackRuntime = createRuntimeMock('fallback-runtime');
+    fallbackRuntime.spawn.mockRejectedValueOnce(new Error('spawn failed'));
+    fallbackRuntime.stop.mockRejectedValueOnce(new Error('fallback stop failed'));
+    createActorSystemMock.mockReturnValue(fallbackRuntime.runtime);
+
+    const component = createComponent({
+      machine,
+      template,
+    });
+
+    const element = component.create() as InternalComponentElement;
+    await expect(element.connectedCallback()).rejects.toThrow('spawn failed');
+
+    expect(fallbackRuntime.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reject disconnectedCallback when fallback runtime cleanup fails', async () => {
+    const fallbackRuntime = createRuntimeMock('fallback-runtime');
+    fallbackRuntime.stop.mockRejectedValueOnce(new Error('fallback stop failed'));
+    createActorSystemMock.mockReturnValue(fallbackRuntime.runtime);
+
+    const component = createComponent({
+      machine,
+      template,
+    });
+
+    const element = component.create() as InternalComponentElement;
+    await element.connectedCallback();
+
+    await expect(element.disconnectedCallback()).resolves.toBeUndefined();
+
+    expect(fallbackRuntime.actorRef.stop).toHaveBeenCalledTimes(1);
+    expect(fallbackRuntime.stop).toHaveBeenCalledTimes(1);
+  });
 });

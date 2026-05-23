@@ -1,8 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
+import { createServer } from 'node:http';
+import { describe, expect, it, vi } from 'vitest';
 import { serveActorWebHttp } from '../serve-actor-web-http.js';
 import { serveActorWebNode } from '../serve-actor-web-node.js';
 import { actor, defineActorWebTopology, node } from '../topology.js';
 import { defineActor } from '../unified-actor-builder.js';
+
+vi.mock('node:http', async () => {
+  const actual = await vi.importActual<typeof import('node:http')>('node:http');
+  return {
+    ...actual,
+    createServer: vi.fn(actual.createServer),
+  };
+});
 
 type CounterCommand =
   | { type: 'INCREMENT'; amount?: number }
@@ -42,6 +52,29 @@ const topology = defineActorWebTopology({
     }),
   },
 });
+
+const createServerMock = vi.mocked(createServer);
+
+class FakeHttpServer extends EventEmitter {
+  constructor(
+    private readonly addressValue: ReturnType<ReturnType<typeof createServer>['address']>,
+    private readonly listenImpl: () => void
+  ) {
+    super();
+  }
+
+  listen(_port: number, _host: string): void {
+    this.listenImpl();
+  }
+
+  address() {
+    return this.addressValue;
+  }
+
+  close(callback: (error?: Error) => void): void {
+    callback();
+  }
+}
 
 describe('serveActorWebHttp', () => {
   it('serves route-first HTTP handlers with topology actors and response helpers', async () => {
@@ -109,5 +142,48 @@ describe('serveActorWebHttp', () => {
       await http.stop();
       await runtime.stop();
     }
+  });
+
+  it('removes the opposite one-shot HTTP listen listener after success', async () => {
+    const fakeServer = new FakeHttpServer(
+      { address: '127.0.0.1', family: 'IPv4', port: 4401 },
+      () => {
+        fakeServer.emit('listening');
+      }
+    );
+    createServerMock.mockImplementationOnce(() => fakeServer as never);
+
+    const http = await serveActorWebHttp({
+      getActor: () => undefined,
+      requireActor: () => {
+        throw new Error('not used');
+      },
+    } as never).listen();
+
+    expect(http.url).toBe('http://127.0.0.1:4401');
+    expect(fakeServer.listenerCount('listening')).toBe(0);
+    expect(fakeServer.listenerCount('error')).toBe(0);
+  });
+
+  it('removes the opposite one-shot HTTP listen listener after error', async () => {
+    const fakeServer = new FakeHttpServer(
+      { address: '127.0.0.1', family: 'IPv4', port: 4402 },
+      () => {
+        fakeServer.emit('error', new Error('listen failed'));
+      }
+    );
+    createServerMock.mockImplementationOnce(() => fakeServer as never);
+
+    await expect(
+      serveActorWebHttp({
+        getActor: () => undefined,
+        requireActor: () => {
+          throw new Error('not used');
+        },
+      } as never).listen()
+    ).rejects.toThrow('listen failed');
+
+    expect(fakeServer.listenerCount('listening')).toBe(0);
+    expect(fakeServer.listenerCount('error')).toBe(0);
   });
 });

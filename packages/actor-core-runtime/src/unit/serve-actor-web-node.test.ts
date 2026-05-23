@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
+import type { MessageTransport } from '../actor-system.js';
 import type { RuntimeGatewayServerFrame } from '../runtime-gateway.js';
 import { createInMemoryRuntimePeerDiscoveryProvider } from '../runtime-peer-discovery.js';
 import { createInMemoryRuntimeTransportIdempotencyProvider } from '../runtime-transport-idempotency.js';
@@ -177,7 +178,9 @@ describe('serveActorWebNode', () => {
           },
         },
       });
+      const closePromise = waitForSocketClose(socket);
       socket.close();
+      await closePromise;
     } finally {
       await served.stop();
     }
@@ -221,7 +224,9 @@ describe('serveActorWebNode', () => {
         type: 'error',
         code: 'unauthorized',
       });
+      const rejectedClose = waitForSocketClose(rejected);
       rejected.close();
+      await rejectedClose;
 
       const accepted = new WebSocket(served.getGatewayUrl() ?? '');
       const acceptedFrames = collectFrames(accepted);
@@ -235,7 +240,9 @@ describe('serveActorWebNode', () => {
       await expect(acceptedFrames.nextFrame()).resolves.toMatchObject({
         type: 'ready',
       });
+      const acceptedClose = waitForSocketClose(accepted);
       accepted.close();
+      await acceptedClose;
     } finally {
       await served.stop();
     }
@@ -352,7 +359,9 @@ describe('serveActorWebNode', () => {
         sentAt: '2026-04-23T15:00:02.000Z',
       });
 
+      const closePromise = waitForSocketClose(socket);
       socket.close();
+      await closePromise;
     } finally {
       await served.stop();
     }
@@ -429,7 +438,9 @@ describe('serveActorWebNode', () => {
           },
         },
       });
+      const closePromise = waitForSocketClose(socket);
       socket.close();
+      await closePromise;
     } finally {
       await served.stop();
       await worker.stop();
@@ -452,6 +463,43 @@ describe('serveActorWebNode', () => {
     await expect(serveActorWebNode(topology, { node: 'server' })).rejects.toThrow(
       'does not declare behavior'
     );
+  });
+
+  it('rolls back a partial startup failure before discovery publish and preserves the original error', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+      },
+      actors: {
+        counter: actor({
+          id: 'counter',
+          node: 'server',
+          behavior: createCounterBehavior,
+          gateway: true,
+        }),
+      },
+    });
+    const registerSelf = vi.fn(async () => undefined);
+    const unregisterSelf = vi.fn(async () => undefined);
+
+    await expect(
+      serveActorWebNode(topology, {
+        node: 'server',
+        transport: true,
+        gateway: true,
+        discovery: {
+          getPeers: async () => [],
+          subscribe: () => {
+            throw new Error('subscribe failed');
+          },
+          registerSelf,
+          unregisterSelf,
+        },
+      })
+    ).rejects.toThrow('subscribe failed');
+
+    expect(registerSelf).not.toHaveBeenCalled();
+    expect(unregisterSelf).not.toHaveBeenCalled();
   });
 
   it('injects registered tools into topology-owned node actors', async () => {
@@ -533,6 +581,93 @@ describe('serveActorWebNode', () => {
     } finally {
       await served.stop();
     }
+  });
+
+  it('deduplicates concurrent parameterized actor spawns and clears failed in-flight state', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+      },
+      actors: {
+        shipment: actor({
+          id: ({ shipmentId }: { shipmentId: string }) => `shipment-${shipmentId}`,
+          node: 'server',
+          behavior: createCounterBehavior,
+        }),
+      },
+    });
+    const served = await serveActorWebNode(topology, { node: 'server' });
+
+    await served.start();
+    try {
+      const originalSpawn = served.system.spawn.bind(served.system);
+      const spawnSpy = vi.spyOn(served.system, 'spawn');
+      spawnSpy.mockImplementationOnce(async () => {
+        throw new Error('spawn failed');
+      });
+      spawnSpy.mockImplementation(originalSpawn);
+
+      const [firstFailure, secondFailure] = await Promise.allSettled([
+        served.actors.shipment.instance({ shipmentId: '1001' }),
+        served.actors.shipment.instance({ shipmentId: '1001' }),
+      ]);
+      expect(firstFailure).toMatchObject({
+        status: 'rejected',
+        reason: new Error('spawn failed'),
+      });
+      expect(secondFailure).toMatchObject({
+        status: 'rejected',
+        reason: new Error('spawn failed'),
+      });
+      expect(spawnSpy).toHaveBeenCalledTimes(1);
+
+      const actorRef = await served.actors.shipment.instance({ shipmentId: '1001' });
+      const cachedRef = await served.actors.shipment.instance({ shipmentId: '1001' });
+      expect(actorRef).toBe(cachedRef);
+      expect(spawnSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      await served.stop();
+    }
+  });
+
+  it('clears spawned actor caches only after system and transport shutdown complete', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+      },
+      actors: {
+        counter: actor({
+          id: 'counter',
+          node: 'server',
+          behavior: createCounterBehavior,
+        }),
+      },
+    });
+    const served = await serveActorWebNode(topology, {
+      node: 'server',
+      transport: true,
+    });
+
+    await served.start();
+    const stopOrder: string[] = [];
+    const originalSystemStop = served.system.stop.bind(served.system);
+    const transportWithStop = served.transport as MessageTransport & {
+      stop: () => Promise<void>;
+    };
+    const originalTransportStop = transportWithStop.stop.bind(transportWithStop);
+    vi.spyOn(served.system, 'stop').mockImplementation(async () => {
+      stopOrder.push(`system:${Boolean(served.getActor('counter'))}`);
+      await originalSystemStop();
+    });
+    vi.spyOn(transportWithStop, 'stop').mockImplementation(async () => {
+      stopOrder.push(`transport:${Boolean(served.getActor('counter'))}`);
+      await originalTransportStop();
+    });
+
+    await served.stop();
+
+    expect(stopOrder).toEqual(['system:true', 'transport:true']);
+    expect(served.getActor('counter')).toBeUndefined();
   });
 
   it('registers and unregisters listening nodes through discovery', async () => {

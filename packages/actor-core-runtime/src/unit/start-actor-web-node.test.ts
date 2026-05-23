@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ActorMessage, MessageTransport } from '../actor-system.js';
 import { createInMemoryRuntimePeerDiscoveryProvider } from '../runtime-peer-discovery.js';
 import { createInMemoryRuntimeTransportIdempotencyProvider } from '../runtime-transport-idempotency.js';
@@ -282,6 +282,46 @@ describe('startActorWebNode', () => {
     );
   });
 
+  it('rolls back browser-safe startup failures and unsubscribes discovery state', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+        worker: node('worker-node'),
+      },
+      actors: {
+        proof: actor({
+          id: 'proof',
+          node: 'worker',
+          behavior: createCounterBehavior,
+        }),
+      },
+    });
+    const unsubscribe = vi.fn();
+    const transport = new TestMessageTransport();
+    transport.connect = vi.fn(async (address: string) => {
+      if (address === 'server-node') {
+        throw new Error('connect failed');
+      }
+      transport.connected.add(address);
+    });
+
+    await expect(
+      startActorWebNode(topology, {
+        node: 'worker',
+        connect: ['server'],
+        transport,
+        discovery: {
+          getPeers: async () => [],
+          subscribe: () => unsubscribe,
+        },
+      })
+    ).rejects.toThrow('connect failed');
+
+    expect(transport.started).toBe(true);
+    expect(transport.stopped).toBe(true);
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects unknown topology peer keys', async () => {
     const topology = defineActorWebTopology({
       nodes: {
@@ -376,5 +416,41 @@ describe('startActorWebNode', () => {
     } finally {
       await workerNode.stop();
     }
+  });
+
+  it('clears actor caches only after browser-safe system and transport shutdown complete', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        worker: node('worker-node'),
+      },
+      actors: {
+        proof: actor({
+          id: 'proof',
+          node: 'worker',
+          behavior: createCounterBehavior,
+        }),
+      },
+    });
+    const transport = new TestMessageTransport();
+    const workerNode = await startActorWebNode(topology, {
+      node: 'worker',
+      transport,
+    });
+    const stopOrder: string[] = [];
+    const originalSystemStop = workerNode.system.stop.bind(workerNode.system);
+    const originalTransportStop = transport.stop.bind(transport);
+    vi.spyOn(workerNode.system, 'stop').mockImplementation(async () => {
+      stopOrder.push(`system:${Boolean(workerNode.getActor('proof'))}`);
+      await originalSystemStop();
+    });
+    vi.spyOn(transport, 'stop').mockImplementation(async () => {
+      stopOrder.push(`transport:${Boolean(workerNode.getActor('proof'))}`);
+      await originalTransportStop();
+    });
+
+    await workerNode.stop();
+
+    expect(stopOrder).toEqual(['system:true', 'transport:true']);
+    expect(workerNode.getActor('proof')).toBeUndefined();
   });
 });
