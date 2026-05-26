@@ -14,6 +14,7 @@ import type {
   ShipmentContext,
   ShipmentEvent,
 } from './logistics-contract';
+import { isProviderHqEvent, isShipmentEvent } from './logistics-contract';
 import {
   createDispatchShipmentCommand,
   createDriverAssignmentCommand,
@@ -36,6 +37,18 @@ type ProviderHqSource = ClosableActorWebSource<
   ProviderHqCommand,
   ProviderHqEvent
 >;
+
+interface RuntimeStatusTestShape {
+  readonly transport: {
+    readonly workerConnected: boolean;
+    readonly workerPeer?: {
+      readonly state?: string;
+      readonly connected?: boolean;
+      readonly fresh?: boolean;
+      readonly rejectedReason?: string;
+    };
+  };
+}
 
 describe('ignite-headless-host logistics example', () => {
   let gatewayServer: LogisticsRuntimeGatewayServer | undefined;
@@ -784,6 +797,7 @@ describe('ignite-headless-host logistics example', () => {
         },
         workerPeer: {
           nodeAddress: 'logistics-worker-runtime',
+          fresh: false,
           idempotency: {
             windowSize: 0,
             duplicateFramesDropped: 0,
@@ -795,6 +809,7 @@ describe('ignite-headless-host logistics example', () => {
         },
         providerPeer: {
           nodeAddress: 'logistics-provider-runtime',
+          fresh: false,
           idempotency: {
             windowSize: 0,
             duplicateFramesDropped: 0,
@@ -819,6 +834,121 @@ describe('ignite-headless-host logistics example', () => {
     });
 
     expect(status.transport.peers).toEqual(expect.any(Array));
+  });
+
+  it('rejects missing or length-mismatched shared secrets for gateway and runtime auth', async () => {
+    gatewayServer = createLogisticsRuntimeGatewayServer({
+      runtimeAuthToken: 'runtime-secret',
+      gatewayAuthToken: 'gateway-secret',
+    });
+    await gatewayServer.start();
+
+    await expect(sendGatewayHello(requiredGatewayUrl(gatewayServer))).resolves.toMatchObject({
+      type: 'error',
+      code: 'unauthorized',
+      message: 'Gateway authentication rejected.',
+      recoverable: false,
+    });
+    await expect(
+      sendGatewayHello(requiredGatewayUrl(gatewayServer), 'short')
+    ).resolves.toMatchObject({
+      type: 'error',
+      code: 'unauthorized',
+      message: 'Gateway authentication rejected.',
+      recoverable: false,
+    });
+
+    await expect(
+      startTestWorkerNode(requiredTransportUrl(gatewayServer), {
+        authToken: 'short',
+      })
+    ).rejects.toThrow('Runtime handshake rejected: Shared runtime secret rejected.');
+    const rejectedStatus = await waitForRuntimeStatus<RuntimeStatusTestShape>(
+      requiredRestUrl(gatewayServer),
+      (status) =>
+        status.transport.workerConnected === false &&
+        status.transport.workerPeer?.state === 'rejected' &&
+        status.transport.workerPeer?.rejectedReason === 'Shared runtime secret rejected.',
+      'Expected server runtime to reject a worker with a length-mismatched shared secret'
+    );
+    expect(rejectedStatus.transport.workerPeer?.fresh).toBe(false);
+
+    workerNode = await startTestWorkerNode(requiredTransportUrl(gatewayServer), {
+      authToken: 'runtime-secret',
+    });
+    const acceptedStatus = await waitForRuntimeStatus<RuntimeStatusTestShape>(
+      requiredRestUrl(gatewayServer),
+      (status) =>
+        status.transport.workerConnected === true &&
+        status.transport.workerPeer?.connected === true,
+      'Expected server runtime to accept a worker with the correct shared secret'
+    );
+    expect(acceptedStatus.transport.workerPeer?.fresh).toBe(true);
+  });
+
+  it('validates shipment and provider HQ events by variant-specific required fields', () => {
+    expect(
+      isShipmentEvent({
+        type: 'ROUTE_ASSIGNED',
+        shipmentId: 'shipment-1001',
+        carrier: 'Atlas Freight',
+        eta: '72h',
+      })
+    ).toBe(true);
+    expect(
+      isShipmentEvent({
+        type: 'ROUTE_ASSIGNED',
+        shipmentId: 'shipment-1001',
+        carrier: 'Atlas Freight',
+      })
+    ).toBe(false);
+    expect(
+      isShipmentEvent({
+        type: 'PROVIDER_SIGNAL_RECORDED',
+        shipmentId: 'shipment-1001',
+        signal: 'LABEL_SCANNED',
+        facility: 'Dock 4',
+        loadId: 'load-44',
+      })
+    ).toBe(true);
+    expect(
+      isShipmentEvent({
+        type: 'PROVIDER_SIGNAL_RECORDED',
+        shipmentId: 'shipment-1001',
+        signal: 'LABEL_SCANNED',
+        loadId: 'load-44',
+      })
+    ).toBe(false);
+
+    expect(
+      isProviderHqEvent({
+        type: 'PROVIDER_SOURCE_LABEL_CHANGED',
+        sourceLabel: 'provider container',
+      })
+    ).toBe(true);
+    expect(
+      isProviderHqEvent({
+        type: 'PROVIDER_SOURCE_LABEL_CHANGED',
+        sourceLabel: 'unknown runtime',
+      })
+    ).toBe(false);
+    expect(
+      isProviderHqEvent({
+        type: 'PROVIDER_SIGNAL_REJECTED',
+        shipmentId: 'shipment-1001',
+        signal: 'RETURN_EXCEPTION',
+        expected: 'connected provider runtime',
+        reason: 'Provider runtime boundary is enabled but unavailable.',
+      })
+    ).toBe(true);
+    expect(
+      isProviderHqEvent({
+        type: 'PROVIDER_SIGNAL_REJECTED',
+        shipmentId: 'shipment-1001',
+        signal: 'RETURN_EXCEPTION',
+        expected: 'connected provider runtime',
+      })
+    ).toBe(false);
   });
 
   function createTestClient(gatewayUrl: string) {
@@ -1323,7 +1453,8 @@ describe('service worker transport lifecycle', () => {
 });
 
 async function startTestWorkerNode(
-  transportUrl: string
+  transportUrl: string,
+  options: { readonly authToken?: string } = {}
 ): Promise<StartedActorWebNode<typeof logistics>> {
   return startActorWebNode(logistics, {
     node: 'worker',
@@ -1331,6 +1462,7 @@ async function startTestWorkerNode(
       server: transportUrl,
     },
     transport: {
+      ...(options.authToken ? { auth: { token: options.authToken } } : {}),
       incarnation: `test-worker-${Date.now()}`,
       heartbeatIntervalMs: 0,
       webSocketFactory: (url) => new WebSocket(url) as never,
@@ -1339,7 +1471,8 @@ async function startTestWorkerNode(
 }
 
 async function startTestProviderNode(
-  transportUrl: string
+  transportUrl: string,
+  options: { readonly authToken?: string } = {}
 ): Promise<StartedActorWebNode<typeof logistics>> {
   return startActorWebNode(logistics, {
     node: 'provider',
@@ -1347,6 +1480,7 @@ async function startTestProviderNode(
       server: transportUrl,
     },
     transport: {
+      ...(options.authToken ? { auth: { token: options.authToken } } : {}),
       incarnation: `test-provider-${Date.now()}`,
       heartbeatIntervalMs: 0,
       webSocketFactory: (url) => new WebSocket(url) as never,
@@ -1409,9 +1543,35 @@ async function waitForProviderSource(
   );
 }
 
-async function waitFor(predicate: () => boolean, message: string | (() => string)): Promise<void> {
+async function waitForRuntimeStatus<TStatus>(
+  restUrl: string,
+  predicate: (status: TStatus) => boolean,
+  message: string
+): Promise<TStatus> {
+  let lastStatus: TStatus | undefined;
+  await waitFor(
+    async () => {
+      lastStatus = (await fetch(`${restUrl}/runtime/status`).then((result) =>
+        result.json()
+      )) as TStatus;
+      return predicate(lastStatus);
+    },
+    () => `${message}: ${JSON.stringify(lastStatus)}`
+  );
+
+  if (lastStatus === undefined) {
+    throw new Error(`Expected runtime status from ${restUrl}`);
+  }
+
+  return lastStatus;
+}
+
+async function waitFor(
+  predicate: () => boolean | Promise<boolean>,
+  message: string | (() => string)
+): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (predicate()) {
+    if (await predicate()) {
       return;
     }
 
@@ -1421,6 +1581,43 @@ async function waitFor(predicate: () => boolean, message: string | (() => string
   }
 
   throw new Error(typeof message === 'function' ? message() : message);
+}
+
+async function sendGatewayHello(
+  gatewayUrl: string,
+  authToken?: string
+): Promise<Record<string, unknown>> {
+  const socket = new WebSocket(gatewayUrl);
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      socket.once('open', () => resolve());
+      socket.once('error', reject);
+    });
+
+    const framePromise = new Promise<Record<string, unknown>>((resolve, reject) => {
+      socket.once('message', (data) => {
+        try {
+          resolve(JSON.parse(String(data)) as Record<string, unknown>);
+        } catch (error) {
+          reject(error);
+        }
+      });
+      socket.once('error', reject);
+    });
+
+    socket.send(
+      JSON.stringify({
+        type: 'hello',
+        clientVersion: 'ignite-headless-host-test',
+        ...(authToken ? { auth: { scheme: 'token', token: authToken } } : {}),
+      })
+    );
+
+    return await framePromise;
+  } finally {
+    socket.close();
+  }
 }
 
 class FakeChannelPort {

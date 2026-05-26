@@ -484,4 +484,49 @@ describe('logistics runtime status adapter', () => {
       peerState: 'connected',
     });
   });
+
+  it('surfaces nested worker and provider peer freshness from /runtime/status', () => {
+    const view = reduceLogisticsRuntimeStatusView(createInitialLogisticsRuntimeStatusView(), {
+      ...createStatusResponse({
+        connectedNodes: [],
+        workerConnected: false,
+        workerPeerFresh: false,
+        workerPeer: {
+          nodeAddress: 'logistics-worker-runtime',
+          state: 'rejected',
+          connected: false,
+          fresh: false,
+          staleAfterMs: 45_000,
+          rejectedReason: 'Shared runtime secret rejected.',
+          idempotency: createIdempotencyStatus(),
+        },
+        providerConnected: false,
+        providerPeerFresh: false,
+        providerPeer: {
+          nodeAddress: 'logistics-provider-runtime',
+          state: 'disconnected',
+          connected: false,
+          fresh: false,
+          staleAfterMs: 45_000,
+          idempotency: createIdempotencyStatus(),
+        },
+      }),
+      provider: {
+        runtimeEnabled: true,
+        runtimeSource: 'container',
+        sourceLabel: 'provider container',
+      },
+    });
+
+    expect(view.nodes.find((node) => node.id === 'worker-runtime')).toMatchObject({
+      connectedLabel: 'false',
+      freshLabel: 'false',
+      rejectedReason: 'Shared runtime secret rejected.',
+    });
+    expect(view.nodes.find((node) => node.id === 'provider-runtime')).toMatchObject({
+      connectedLabel: 'false',
+      freshLabel: 'false',
+      statusLabel: 'Disconnected',
+    });
+  });
 });

@@ -742,9 +742,12 @@
 
 - Title: Fix logistics verification, auth, and event guards
 - Mode: 4-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/fix-logistics-verification-auth-and-event-guards.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Repair FAS workspace dependency and review artifact metadata
 
