@@ -19,22 +19,44 @@ const serviceWorkerNode = logistics.nodes.serviceWorker.address;
 class LogisticsServiceWorkerRuntime {
   private transport: MessagePortTransport | null = null;
   private runtimeNode: StartedActorWebNode<typeof logistics, MessagePortTransport> | null = null;
+  private shutdownPromise: Promise<void> | null = null;
+  private lifecycleGeneration = 0;
 
   async bind(source: string, port: MessagePort): Promise<void> {
-    this.transport?.destroy();
-    this.transport = createMessagePortTransport({
+    await this.shutdown();
+
+    const bindGeneration = ++this.lifecycleGeneration;
+    const transport = createMessagePortTransport({
       nodeAddress: serviceWorkerNode,
       peerAddress: source,
       port,
     });
+    this.transport = transport;
 
-    if (!this.runtimeNode) {
-      this.runtimeNode = await startActorWebNode(logistics, {
+    let startedNode: StartedActorWebNode<typeof logistics, MessagePortTransport>;
+    try {
+      startedNode = await startActorWebNode(logistics, {
         node: 'serviceWorker',
-        transport: this.transport,
+        transport,
       });
+    } catch (error) {
+      transport.destroy();
+      if (this.transport === transport) {
+        this.transport = null;
+      }
+      throw error;
     }
 
+    if (bindGeneration !== this.lifecycleGeneration || this.transport !== transport) {
+      if (this.transport === transport) {
+        this.transport = null;
+        transport.destroy();
+      }
+      await startedNode.stop();
+      return;
+    }
+
+    this.runtimeNode = startedNode;
     port.postMessage({
       __actorWebServiceWorkerTransport: true,
       kind: 'bind-ack',
@@ -43,11 +65,26 @@ class LogisticsServiceWorkerRuntime {
   }
 
   async shutdown(): Promise<void> {
-    await this.runtimeNode?.stop();
-    this.runtimeNode = null;
+    if (this.shutdownPromise) {
+      return this.shutdownPromise;
+    }
 
-    this.transport?.destroy();
-    this.transport = null;
+    this.shutdownPromise = (async () => {
+      this.lifecycleGeneration += 1;
+      const currentRuntimeNode = this.runtimeNode;
+      this.runtimeNode = null;
+      await currentRuntimeNode?.stop();
+
+      const currentTransport = this.transport;
+      this.transport = null;
+      currentTransport?.destroy();
+    })();
+
+    try {
+      await this.shutdownPromise;
+    } finally {
+      this.shutdownPromise = null;
+    }
   }
 }
 

@@ -12,6 +12,10 @@ export interface BrowserServiceWorkerTransport extends MessagePortTransport {
   destroy(): void;
 }
 
+function createTransportDestroyedError(): Error {
+  return new Error('Service worker runtime transport has been destroyed');
+}
+
 function runtimeSupported(): boolean {
   return (
     typeof window !== 'undefined' &&
@@ -50,11 +54,7 @@ async function waitForActiveWorker(
     handleStateChange();
   });
 
-  if (!registration.active) {
-    throw new Error('Service worker did not activate');
-  }
-
-  return registration.active;
+  return candidate;
 }
 
 export function serviceWorkerRuntimeAvailable(): boolean {
@@ -66,7 +66,13 @@ class ServiceWorkerPageTransport implements BrowserServiceWorkerTransport {
   private transport: MessagePortTransport | null = null;
   private registration: ServiceWorkerRegistration | null = null;
   private readyPromise: Promise<void> | null = null;
+  private boundWorker: ServiceWorker | null = null;
   private destroyed = false;
+  private pendingBindAbortController: AbortController | null = null;
+  private readonly pendingSubscribers = new Map<
+    Parameters<MessagePortTransport['subscribe']>[0],
+    () => void
+  >();
 
   constructor(
     private readonly nodeAddress: string,
@@ -77,6 +83,10 @@ class ServiceWorkerPageTransport implements BrowserServiceWorkerTransport {
   }
 
   async ready(): Promise<void> {
+    if (this.destroyed) {
+      throw createTransportDestroyedError();
+    }
+
     if (this.readyPromise) {
       return this.readyPromise;
     }
@@ -96,7 +106,18 @@ class ServiceWorkerPageTransport implements BrowserServiceWorkerTransport {
   }
 
   subscribe(listener: Parameters<MessagePortTransport['subscribe']>[0]): () => void {
-    return this.requireTransport().subscribe(listener);
+    const currentTransport = this.transport;
+    if (currentTransport) {
+      return currentTransport.subscribe(listener);
+    }
+
+    this.pendingSubscribers.set(listener, () => {});
+
+    return () => {
+      const unsubscribe = this.pendingSubscribers.get(listener);
+      this.pendingSubscribers.delete(listener);
+      unsubscribe?.();
+    };
   }
 
   async connect(address: string = this.peerAddress): Promise<void> {
@@ -123,8 +144,10 @@ class ServiceWorkerPageTransport implements BrowserServiceWorkerTransport {
     }
 
     this.destroyed = true;
-    if (this.registration?.active) {
-      this.registration.active.postMessage({
+    this.pendingBindAbortController?.abort();
+    this.pendingBindAbortController = null;
+    if (this.boundWorker) {
+      this.boundWorker.postMessage({
         __actorWebServiceWorkerTransport: true,
         kind: 'shutdown',
         source: this.nodeAddress,
@@ -133,48 +156,126 @@ class ServiceWorkerPageTransport implements BrowserServiceWorkerTransport {
 
     this.transport?.destroy();
     this.transport = null;
+    this.boundWorker = null;
+    this.pendingSubscribers.clear();
   }
 
   private async bindServiceWorker(): Promise<void> {
-    this.registration = await navigator.serviceWorker.register(this.workerUrl, {
-      type: 'module',
-      scope: './',
-    });
+    const bindAbortController = new AbortController();
+    this.pendingBindAbortController = bindAbortController;
+    let pendingTransport: MessagePortTransport | null = null;
+    let pendingPortToClose: MessagePort | null = null;
 
-    const activeWorker = await waitForActiveWorker(this.registration);
-    const channel = new MessageChannel();
-    this.transport = createMessagePortTransport({
-      nodeAddress: this.nodeAddress,
-      peerAddress: this.peerAddress,
-      port: channel.port1,
-    });
+    try {
+      this.throwIfDestroyed(bindAbortController.signal);
+      this.registration = await navigator.serviceWorker.register(this.workerUrl, {
+        type: 'module',
+        scope: './',
+      });
+      this.throwIfDestroyed(bindAbortController.signal);
 
-    await new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(() => {
-        channel.port1.removeEventListener('message', handleBindAck);
-        reject(new Error('Timed out waiting for service worker runtime binding'));
-      }, 5000);
+      const activeWorker = await waitForActiveWorker(this.registration);
+      this.throwIfDestroyed(bindAbortController.signal);
+      const channel = new MessageChannel();
+      pendingPortToClose = channel.port2;
+      const transport = createMessagePortTransport({
+        nodeAddress: this.nodeAddress,
+        peerAddress: this.peerAddress,
+        port: channel.port1,
+      });
+      pendingTransport = transport;
+      let bindMessagePosted = false;
 
-      const handleBindAck = (event: MessageEvent<unknown>): void => {
-        if (!isServiceWorkerTransportEnvelope(event.data) || event.data.kind !== 'bind-ack') {
+      await new Promise<void>((resolve, reject) => {
+        const rejectDestroyed = () => {
+          cleanup();
+          if (bindMessagePosted) {
+            activeWorker.postMessage({
+              __actorWebServiceWorkerTransport: true,
+              kind: 'shutdown',
+              source: this.nodeAddress,
+            } satisfies ServiceWorkerTransportEnvelope);
+          }
+          transport.destroy();
+          channel.port2.close?.();
+          reject(createTransportDestroyedError());
+        };
+
+        const cleanup = () => {
+          if (timeout !== null) {
+            window.clearTimeout(timeout);
+            timeout = null;
+          }
+          channel.port1.removeEventListener('message', handleBindAck);
+          bindAbortController.signal.removeEventListener('abort', rejectDestroyed);
+        };
+
+        let timeout: number | null = window.setTimeout(() => {
+          cleanup();
+          transport.destroy();
+          channel.port2.close?.();
+          reject(new Error('Timed out waiting for service worker runtime binding'));
+        }, 5000);
+
+        function handleBindAck(event: MessageEvent<unknown>): void {
+          if (!isServiceWorkerTransportEnvelope(event.data) || event.data.kind !== 'bind-ack') {
+            return;
+          }
+
+          cleanup();
+          resolve();
+        }
+
+        channel.port1.addEventListener('message', handleBindAck);
+        bindAbortController.signal.addEventListener('abort', rejectDestroyed, { once: true });
+
+        if (bindAbortController.signal.aborted) {
+          rejectDestroyed();
           return;
         }
 
-        window.clearTimeout(timeout);
-        channel.port1.removeEventListener('message', handleBindAck);
-        resolve();
-      };
+        activeWorker.postMessage(
+          {
+            __actorWebServiceWorkerTransport: true,
+            kind: 'bind',
+            source: this.nodeAddress,
+          } satisfies ServiceWorkerTransportEnvelope,
+          [channel.port2]
+        );
+        bindMessagePosted = true;
+      });
 
-      channel.port1.addEventListener('message', handleBindAck);
-      activeWorker.postMessage(
-        {
-          __actorWebServiceWorkerTransport: true,
-          kind: 'bind',
-          source: this.nodeAddress,
-        } satisfies ServiceWorkerTransportEnvelope,
-        [channel.port2]
-      );
-    });
+      this.throwIfDestroyed(bindAbortController.signal);
+      this.boundWorker = activeWorker;
+      this.transport = transport;
+      pendingTransport = null;
+      pendingPortToClose = null;
+      this.flushPendingSubscribers();
+    } catch (error) {
+      pendingTransport?.destroy();
+      pendingPortToClose?.close?.();
+      this.transport?.destroy();
+      this.transport = null;
+      this.boundWorker = null;
+      this.pendingSubscribers.clear();
+      throw error;
+    } finally {
+      if (this.pendingBindAbortController === bindAbortController) {
+        this.pendingBindAbortController = null;
+      }
+    }
+  }
+
+  private flushPendingSubscribers(): void {
+    const currentTransport = this.transport;
+    if (!currentTransport || this.pendingSubscribers.size === 0) {
+      return;
+    }
+
+    for (const [listener] of Array.from(this.pendingSubscribers.entries())) {
+      const unsubscribe = currentTransport.subscribe(listener);
+      this.pendingSubscribers.set(listener, unsubscribe);
+    }
   }
 
   private requireTransport(): MessagePortTransport {
@@ -183,6 +284,12 @@ class ServiceWorkerPageTransport implements BrowserServiceWorkerTransport {
     }
 
     return this.transport;
+  }
+
+  private throwIfDestroyed(signal?: AbortSignal): void {
+    if (this.destroyed || signal?.aborted) {
+      throw createTransportDestroyedError();
+    }
   }
 }
 

@@ -21,6 +21,10 @@ export type ServiceWorkerTransportEnvelope =
   | ServiceWorkerTransportBindAckMessage
   | ServiceWorkerRuntimeShutdownMessage;
 
+function isSupportedEnvelopeKind(kind: unknown): kind is ServiceWorkerTransportEnvelope['kind'] {
+  return kind === 'bind' || kind === 'bind-ack' || kind === 'shutdown';
+}
+
 export function isServiceWorkerTransportEnvelope(
   value: unknown
 ): value is ServiceWorkerTransportEnvelope {
@@ -30,6 +34,9 @@ export function isServiceWorkerTransportEnvelope(
     '__actorWebServiceWorkerTransport' in value &&
     (value as { __actorWebServiceWorkerTransport?: boolean }).__actorWebServiceWorkerTransport ===
       true &&
-    'kind' in value
+    'kind' in value &&
+    isSupportedEnvelopeKind((value as { kind?: unknown }).kind) &&
+    'source' in value &&
+    typeof (value as { source?: unknown }).source === 'string'
   );
 }
