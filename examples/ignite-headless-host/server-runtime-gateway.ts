@@ -1,5 +1,6 @@
 /// <reference types="node" />
 
+import { timingSafeEqual } from 'node:crypto';
 import type {
   ActorRef,
   ActorTransitionErrorValue,
@@ -199,13 +200,33 @@ function createSharedSecretAuth(token: string | undefined, rejectionReason: stri
     return undefined;
   }
 
+  const expectedToken = Buffer.from(token, 'utf8');
+
   return {
     token,
-    verifyToken: ({ token: presentedToken }: { readonly token?: string }) =>
-      presentedToken === token || {
-        ok: false as const,
-        reason: rejectionReason,
-      },
+    verifyToken: ({ token: presentedToken }: { readonly token?: string }) => {
+      if (typeof presentedToken !== 'string') {
+        return {
+          ok: false as const,
+          reason: rejectionReason,
+        };
+      }
+
+      const candidateToken = Buffer.from(presentedToken, 'utf8');
+      if (candidateToken.length !== expectedToken.length) {
+        return {
+          ok: false as const,
+          reason: rejectionReason,
+        };
+      }
+
+      return (
+        timingSafeEqual(candidateToken, expectedToken) || {
+          ok: false as const,
+          reason: rejectionReason,
+        }
+      );
+    },
   };
 }
 

@@ -194,6 +194,28 @@ function findForbiddenImport(specifier, rules) {
   return forbiddenImportPrefixes.find((prefix) => specifier.startsWith(prefix));
 }
 
+function validateRuntimePattern(runtimePattern) {
+  if (typeof runtimePattern?.name !== 'string' || runtimePattern.name.trim().length === 0) {
+    return { error: 'Forbidden runtime pattern is missing a non-empty string name.' };
+  }
+
+  if (typeof runtimePattern?.pattern !== 'string' || runtimePattern.pattern.length === 0) {
+    return {
+      error: `Forbidden runtime pattern "${runtimePattern.name}" is missing a non-empty string pattern.`,
+    };
+  }
+
+  try {
+    return { expression: new RegExp(runtimePattern.pattern, 'g') };
+  } catch (error) {
+    return {
+      error: `Forbidden runtime pattern "${runtimePattern.name}" is invalid: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
+  }
+}
+
 async function main() {
   const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
   const deterministicLayer = config.layers?.deterministicDecision;
@@ -246,8 +268,17 @@ async function main() {
     const executableSource = maskSource(source);
 
     for (const runtimePattern of rules.forbiddenRuntimePatterns ?? []) {
-      const pattern = new RegExp(runtimePattern.pattern, 'g');
-      let match = pattern.exec(executableSource);
+      const validatedPattern = validateRuntimePattern(runtimePattern);
+      if ('error' in validatedPattern) {
+        violations.push({
+          file: relativePath(configPath),
+          line: 1,
+          message: validatedPattern.error,
+        });
+        continue;
+      }
+
+      let match = validatedPattern.expression.exec(executableSource);
 
       while (match) {
         violations.push({
@@ -255,7 +286,7 @@ async function main() {
           line: lineNumber(executableSource, match.index),
           message: `Forbidden deterministic runtime access: ${runtimePattern.name}.`,
         });
-        match = pattern.exec(executableSource);
+        match = validatedPattern.expression.exec(executableSource);
       }
     }
   }

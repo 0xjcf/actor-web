@@ -6,10 +6,36 @@ import { createLogisticsRuntimeGatewayServer } from '../examples/ignite-headless
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const examplesDir = path.resolve(rootDir, 'examples');
 const viteConfig = path.resolve(examplesDir, 'vite.config.ts');
+const defaultPort = 4173;
 
 const host = process.env.HOST ?? '127.0.0.1';
-const port = Number.parseInt(process.env.PORT ?? '4173', 10);
 const lifecycleMode = process.env.LIFECYCLE_MODE === 'manual' ? 'manual' : 'simulation';
+
+function resolvePort(rawPort: string | undefined): number {
+  if (rawPort === undefined) {
+    return defaultPort;
+  }
+
+  const trimmedPort = rawPort.trim();
+  if (!/^\d+$/.test(trimmedPort)) {
+    console.warn(
+      `Invalid PORT value "${rawPort}". Falling back to ${defaultPort} for the logistics demo server.`
+    );
+    return defaultPort;
+  }
+
+  const parsedPort = Number(trimmedPort);
+  if (Number.isInteger(parsedPort) && parsedPort >= 1 && parsedPort <= 65_535) {
+    return parsedPort;
+  }
+
+  console.warn(
+    `Invalid PORT value "${rawPort}". Falling back to ${defaultPort} for the logistics demo server.`
+  );
+  return defaultPort;
+}
+
+const port = resolvePort(process.env.PORT);
 
 const gateway = createLogisticsRuntimeGatewayServer({ host, lifecycleMode });
 await gateway.start();

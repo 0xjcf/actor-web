@@ -165,23 +165,55 @@ export type ShipmentEvent =
     }
   | { type: 'SHIPMENT_RESET'; shipmentId: string | null };
 
+function isProviderSignalValue(value: unknown): value is ProviderSignal {
+  return (
+    value === 'LABEL_SCANNED' ||
+    value === 'PACKED_INTO_TRUCK' ||
+    value === 'OUTBOUND_SCAN' ||
+    value === 'DELIVERY_CONFIRMED' ||
+    value === 'RETURN_EXCEPTION'
+  );
+}
+
+function isProviderSourceLabelValue(value: unknown): value is ProviderSignalSourceLabel {
+  return value === 'manual UI' || value === 'simulator process' || value === 'provider container';
+}
+
 export function isShipmentEvent(value: unknown): value is ShipmentEvent {
   if (!value || typeof value !== 'object' || !('type' in value)) {
     return false;
   }
 
-  const event = value as { type: unknown; shipmentId?: unknown };
+  const event = value as {
+    type: unknown;
+    shipmentId?: unknown;
+    destination?: unknown;
+    carrier?: unknown;
+    eta?: unknown;
+    signal?: unknown;
+    facility?: unknown;
+    loadId?: unknown;
+  };
 
   return (
-    ((event.type === 'SHIPMENT_CREATED' ||
-      event.type === 'ROUTE_REQUESTED' ||
-      event.type === 'SHIPMENT_IN_TRANSIT' ||
+    ((event.type === 'SHIPMENT_CREATED' || event.type === 'ROUTE_REQUESTED') &&
+      typeof event.shipmentId === 'string' &&
+      typeof event.destination === 'string') ||
+    (event.type === 'ROUTE_ASSIGNED' &&
+      typeof event.shipmentId === 'string' &&
+      typeof event.carrier === 'string' &&
+      typeof event.eta === 'string') ||
+    ((event.type === 'SHIPMENT_IN_TRANSIT' ||
       event.type === 'SHIPMENT_DELIVERED' ||
       event.type === 'SHIPMENT_RETURNED') &&
       typeof event.shipmentId === 'string') ||
-    event.type === 'ROUTE_ASSIGNED' ||
-    event.type === 'PROVIDER_SIGNAL_RECORDED' ||
-    event.type === 'SHIPMENT_RESET'
+    (event.type === 'PROVIDER_SIGNAL_RECORDED' &&
+      typeof event.shipmentId === 'string' &&
+      isProviderSignalValue(event.signal) &&
+      typeof event.facility === 'string' &&
+      typeof event.loadId === 'string') ||
+    (event.type === 'SHIPMENT_RESET' &&
+      (typeof event.shipmentId === 'string' || event.shipmentId === null))
   );
 }
 
@@ -273,34 +305,35 @@ export function isProviderHqEvent(value: unknown): value is ProviderHqEvent {
     return false;
   }
 
-  const event = value as { type: unknown; shipmentId?: unknown; signal?: unknown };
+  const event = value as {
+    type: unknown;
+    shipmentId?: unknown;
+    signal?: unknown;
+    mode?: unknown;
+    sourceLabel?: unknown;
+    expected?: unknown;
+    reason?: unknown;
+  };
 
   return (
     event.type === 'PROVIDER_STATUS_REFRESHED' ||
-    event.type === 'PROVIDER_MODE_CHANGED' ||
-    event.type === 'PROVIDER_SOURCE_LABEL_CHANGED' ||
-    event.type === 'PROVIDER_SHIPMENT_SELECTED' ||
+    (event.type === 'PROVIDER_MODE_CHANGED' &&
+      (event.mode === 'simulation' || event.mode === 'manual')) ||
+    (event.type === 'PROVIDER_SOURCE_LABEL_CHANGED' &&
+      isProviderSourceLabelValue(event.sourceLabel)) ||
+    (event.type === 'PROVIDER_SHIPMENT_SELECTED' &&
+      (typeof event.shipmentId === 'string' || event.shipmentId === null)) ||
     (event.type === 'PROVIDER_SIGNAL_REQUESTED' &&
       typeof event.shipmentId === 'string' &&
-      (event.signal === 'LABEL_SCANNED' ||
-        event.signal === 'PACKED_INTO_TRUCK' ||
-        event.signal === 'OUTBOUND_SCAN' ||
-        event.signal === 'DELIVERY_CONFIRMED' ||
-        event.signal === 'RETURN_EXCEPTION')) ||
+      isProviderSignalValue(event.signal)) ||
     (event.type === 'PROVIDER_SIGNAL_REJECTED' &&
       (typeof event.shipmentId === 'string' || event.shipmentId === null) &&
-      (event.signal === 'LABEL_SCANNED' ||
-        event.signal === 'PACKED_INTO_TRUCK' ||
-        event.signal === 'OUTBOUND_SCAN' ||
-        event.signal === 'DELIVERY_CONFIRMED' ||
-        event.signal === 'RETURN_EXCEPTION')) ||
+      isProviderSignalValue(event.signal) &&
+      typeof event.expected === 'string' &&
+      typeof event.reason === 'string') ||
     (event.type === 'PROVIDER_SIGNAL_SUBMITTED' &&
       typeof event.shipmentId === 'string' &&
-      (event.signal === 'LABEL_SCANNED' ||
-        event.signal === 'PACKED_INTO_TRUCK' ||
-        event.signal === 'OUTBOUND_SCAN' ||
-        event.signal === 'DELIVERY_CONFIRMED' ||
-        event.signal === 'RETURN_EXCEPTION'))
+      isProviderSignalValue(event.signal))
   );
 }
 
