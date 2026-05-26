@@ -731,8 +731,8 @@
 
 - Title: Fix logistics service worker transport lifecycle
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/fix-logistics-service-worker-transport-lifecycle.md
 - Verification lane: fast
 - Policy sensitivity: standard
