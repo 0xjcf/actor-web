@@ -731,9 +731,12 @@
 
 - Title: Fix logistics service worker transport lifecycle
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/fix-logistics-service-worker-transport-lifecycle.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Fix logistics verification, auth, and event guards
 

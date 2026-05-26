@@ -35,10 +35,11 @@ Covers CodeRabbit logistics critical and major service-worker findings: browser 
 - examples/ignite-headless-host/service-worker-transport-protocol.ts
 - examples/ignite-headless-host/headless-host.test.ts
 - examples/ignite-headless-host/ignite-headless-host-element.test.ts
+- packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts
 
 ## Scope Amendments
 
-- None.
+- 2026-05-26: Added `packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts` as a test-only full-verification blocker fix after `.fas/scripts/verify.sh --full` surfaced an unhandled runtime rejection in `marks stopped peers disconnected through the runtime status API`. Runtime source remains out of scope.
 
 ## Implementation plan
 
