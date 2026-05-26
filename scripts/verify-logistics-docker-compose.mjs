@@ -183,7 +183,7 @@ async function createAndVerifyProviderSignal(shipmentId, signal, expectedSourceL
 
   await waitFor(async () => {
     const shipment = await getJson(`${restUrl}/shipments/current`);
-    const timelineEntry = shipment?.timeline?.[0];
+    const timelineEntry = shipment?.timeline?.find((entry) => entry?.signal === signal);
     return (
       shipment?.shipmentId === shipmentId &&
       shipment?.providerSignal === signal &&
@@ -237,7 +237,7 @@ async function waitForWorkerDisconnected(message) {
     return (
       status?.transport?.workerConnected === false &&
       status?.transport?.workerPeer?.connected === false &&
-      status?.transport?.workerPeerFresh === false
+      status?.transport?.workerPeer?.fresh === false
     );
   }, message);
 }
@@ -248,7 +248,7 @@ async function waitForProviderDisconnected(message) {
     return (
       status?.transport?.providerConnected === false &&
       status?.transport?.providerPeer?.connected === false &&
-      status?.transport?.providerPeerFresh === false
+      status?.transport?.providerPeer?.fresh === false
     );
   }, message);
 }
