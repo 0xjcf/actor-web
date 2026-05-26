@@ -742,8 +742,8 @@
 
 - Title: Fix logistics verification, auth, and event guards
 - Mode: 4-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/fix-logistics-verification-auth-and-event-guards.md
 - Verification lane: fast
 - Policy sensitivity: standard
