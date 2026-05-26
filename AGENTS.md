@@ -62,7 +62,7 @@ In Codex, prefer `.fas/state/codex-orchestration.json` plus `.fas/state/codex-su
 - At the watchdog warning window, request the interrupting checkpoint and wait through the recorded grace deadline. Warning plus no first diff is supporting context only, never enough to replace a code-writing delegate by itself.
 - If the watchdog timeout window arrives with no pending checkpoint, request an urgent interrupting checkpoint first and record its grace deadline before replacement or root takeover.
 - For same-actor retry resume, reissue `fas spawn-subagent <step-key> --json` without `--session-id`; FAS reuses the step's prior session id when one exists. Pass an explicit new `--session-id` only for replacement or root takeover.
-- When recording a retry `started` event, attach `--retry-context <json>` so continuity (`resume-original`, `replacement`, or `root-takeover`), failure class, checkpoint audit evidence, touched files, verification attempt status, next safe resume point, and downstream reconfirmation need are durable on the append-only execution log. For failed-checkpoint replacement or root takeover, keep `replacementReason` explicit and include `checkpointAudit` plus `partialStateInspectedAt`.
+- When recording a retry `started` event, attach `--retry-context <json>` using `kind` (`resume-original`, `replacement`, or `root-takeover`) plus fields such as `failedCommand`, `failureClass`, `filesTouched`, `verificationAttempted`, `nextSafeResumePoint`, and `downstreamReconfirmationNeed` so retry evidence is durable on the append-only execution log. Do not use a legacy `continuity` key. For `replacement` or `root-takeover`, keep `replacementReason` explicit; for failed-checkpoint replacement or root takeover, also include `checkpointAudit` plus `partialStateInspectedAt`.
 - Code-writing delegates should send an early orientation heartbeat after reading the task packet and commit plan, before long source exploration, edits, or verification.
 - Before a long verification run or when blocked, code-writing delegated agents should proactively return that same partial-state handoff instead of disappearing into a long silence window.
 - Treat stale-running diagnostics as advisory only. They do not auto-close agents; if the checkpoint request fails, inspect partial state and then record `failed` before takeover or reissue. Use replacement or root takeover only after failed interrupting checkpoint after grace, missing or unusable handoff, scope drift, repeated bad fixes, context poisoning, or explicit takeover. Use `closed` only when intentionally abandoning a still-running non-failed step if the state machine supports that path.
@@ -71,6 +71,7 @@ In Codex, prefer `.fas/state/codex-orchestration.json` plus `.fas/state/codex-su
 - `fas-reviewer` is also the default Codex role skill for `fas_verifier`, `fas_qa`, `fas_sre`, and `fas_documenter`.
 - Planner artifacts and commit plans remain the source of truth over any generic skill defaults.
 - Handoffs must cite changed files, ChangeSet or planAlignment evidence, verification receipts, and any memory constraints used or intentionally overridden.
+- Delegated `handoff` and `completed` updates should also include compact advisory `Context Feedback` with usefulness, completeness, freshness, and noise ratings or an explicit `not applicable` marker. Prefer `fas record-agent-execution ... --context-feedback-json '<json>'`.
 - Root session owns process-pressure diagnostics, cleanup decisions, final full verification, ship/closeout, and `fas done`. Delegated agents receive compact machine-risk status only (`available`, `unavailable`, `unavailable-permission`, `yellow`, or `red`) unless their assigned task explicitly owns runtime safety.
 - Normal root-owned workflow preflights should stay compact as well; reserve full process-table attempt-chain diagnostics for explicit `fas runtime process-pressure ...` inspection and root logs.
 - When Codex reports process-table permission failures from sandboxed Node execution, use approved root-session FAS commands such as `fas runtime process-pressure --stage task-start --preflight --cleanup-plan` (or the `implement-preflight` alias), `fas runtime cleanup --dry-run`, `fas verify --full`, `fas ship`, or `fas done` instead of asking delegated agents to inspect OS processes. Root-session diagnostics should prefer the approved `fas runtime process-pressure` command path and treat the reported node/shell/root-command attempt chain as the audit surface.
@@ -91,11 +92,16 @@ After planning, always read `contextualMemory` in `.fas/state/task-packet.json` 
 
 If `contextualMemory` references a decision or incident, honor it unless the task explicitly overrides it. When implementation diverges from a memory entry, document why in the commit message.
 
+When task-packet memory is marked stale or only supporting, verify cheap drift-prone facts before treating that memory as current contract truth.
+
+When present, read `contextSubgraph` next. It is a bounded cited one-hop graph that connects scope files, validated memory, domain-map matches, and canonical packet references for the active task. Use it to navigate relationships before widening repo exploration.
+
 Shared evidence order:
 
 1. `task-packet.json` `contextualMemory`
-2. `expectedChangeEnvelope`, current `ChangeSet`, `planAlignment`, and refreshed downstream context
-3. Raw `.fas/memory/*.md` projections only as fallback or supporting context
+2. `task-packet.json` `contextSubgraph`
+3. `expectedChangeEnvelope`, current `ChangeSet`, `planAlignment`, and refreshed downstream context
+4. Raw `.fas/memory/*.md` projections only as fallback or supporting context
 
 When SQLite-backed `memory_records` are available, treat them as authoritative. Markdown memory files remain the projection or fallback surface until promotion completes.
 
