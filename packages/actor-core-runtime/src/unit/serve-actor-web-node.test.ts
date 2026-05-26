@@ -837,6 +837,14 @@ describe('serveActorWebNode', () => {
         () => (served.getPeerStatus('worker-node').connected ? true : undefined),
         'Expected worker peer to connect before stopping it'
       );
+      await waitFor(
+        () => served.system.lookup('actor://worker-node/actor/worker-counter'),
+        'Expected server node to finish syncing the worker directory before stopping the peer'
+      );
+      await waitFor(
+        () => worker.system.lookup('actor://server-node/actor/server-counter'),
+        'Expected worker node to finish syncing the server directory before stopping the peer'
+      );
 
       await worker.stop();
       workerStopped = true;
