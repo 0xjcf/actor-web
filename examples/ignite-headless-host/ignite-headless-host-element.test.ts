@@ -254,4 +254,50 @@ describe('ignite-headless-host element', () => {
 
     expect(element.shadowRoot?.textContent).toContain('Next required signal');
   });
+
+  it('keeps the element import and runtime teardown reusable across remounts', async () => {
+    gatewayServer = createLogisticsRuntimeGatewayServer();
+    await gatewayServer.start();
+    const gatewayUrl = gatewayServer.getGatewayUrl();
+    if (!gatewayUrl) {
+      throw new Error('Expected logistics gateway URL');
+    }
+    Object.assign(import.meta.env, {
+      VITE_ACTOR_WEB_GATEWAY_URL: gatewayUrl,
+      VITE_ACTOR_WEB_REST_URL: gatewayServer.getRestUrl(),
+    });
+    Object.assign(globalThis, { WebSocket });
+
+    const { IGNITE_HEADLESS_HOST_ELEMENT_NAME } = await import('./ignite-headless-host-element');
+    const { logisticsClient, logisticsServiceWorkerRuntime, logisticsWorkerRuntime } = await import(
+      './logistics-browser-client'
+    );
+
+    const firstElement = document.createElement(IGNITE_HEADLESS_HOST_ELEMENT_NAME);
+    document.body.appendChild(firstElement);
+    await waitFor(
+      () =>
+        firstElement.shadowRoot?.textContent?.includes('Actor-Web Logistics Control Tower') ??
+        false,
+      'Expected first logistics element render'
+    );
+    firstElement.remove();
+
+    await Promise.allSettled([
+      Promise.resolve(logisticsServiceWorkerRuntime.destroy()),
+      Promise.resolve(logisticsWorkerRuntime.destroy()),
+      Promise.resolve(logisticsClient.close()),
+    ]);
+
+    const secondElement = document.createElement(IGNITE_HEADLESS_HOST_ELEMENT_NAME);
+    document.body.appendChild(secondElement);
+    await waitFor(
+      () =>
+        secondElement.shadowRoot?.textContent?.includes('Actor-Web Logistics Control Tower') ??
+        false,
+      'Expected second logistics element render after teardown'
+    );
+    expect(secondElement.shadowRoot?.textContent).toContain('REST ingress');
+    expect(secondElement.shadowRoot?.textContent).toContain('Worker -> Server');
+  });
 });

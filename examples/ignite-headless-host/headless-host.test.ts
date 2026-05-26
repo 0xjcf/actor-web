@@ -4,7 +4,7 @@ import {
   type StartedActorWebNode,
   startActorWebNode,
 } from '@actor-core/runtime/browser';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import type {
   ProviderHqCommand,
@@ -975,6 +975,353 @@ describe('logistics runtime planning functions', () => {
   });
 });
 
+describe('service worker transport lifecycle', () => {
+  let restoreBrowserTransportEnv: (() => void) | undefined;
+
+  afterEach(() => {
+    restoreBrowserTransportEnv?.();
+    restoreBrowserTransportEnv = undefined;
+    vi.restoreAllMocks();
+    vi.resetModules();
+    vi.unstubAllGlobals();
+  });
+
+  it('uses the observed activated worker for bind and shutdown', async () => {
+    const candidateWorker = new FakeServiceWorkerHandle('installing');
+    const fallbackActiveWorker = new FakeServiceWorkerHandle('activated');
+    const registration: {
+      active: ServiceWorker | null;
+      installing: ServiceWorker | null;
+      waiting: ServiceWorker | null;
+    } = {
+      active: null,
+      installing: candidateWorker as unknown as ServiceWorker,
+      waiting: null,
+    };
+
+    restoreBrowserTransportEnv = installBrowserTransportTestEnvironment(
+      registration as unknown as ServiceWorkerRegistration
+    );
+    candidateWorker.postMessage.mockImplementation(
+      (message: unknown, transfer?: Transferable[]) => {
+        if ((message as { kind?: string }).kind === 'bind') {
+          const bindPort = transfer?.[0] as unknown as FakeChannelPort | undefined;
+          expect(bindPort?.counterpart?.started).toBe(true);
+          bindPort?.postMessage({
+            __actorWebServiceWorkerTransport: true,
+            kind: 'bind-ack',
+            source: logistics.nodes.serviceWorker.address,
+          });
+        }
+      }
+    );
+
+    const { createBrowserServiceWorkerTransport } = await import('./browser-transport');
+    const transport = createBrowserServiceWorkerTransport();
+
+    const ready = transport.ready();
+    await Promise.resolve();
+    candidateWorker.setState('activated');
+    registration.active = fallbackActiveWorker as unknown as ServiceWorker;
+    await ready;
+    transport.destroy();
+
+    expect(candidateWorker.postMessage).toHaveBeenCalledTimes(2);
+    expect(candidateWorker.postMessage.mock.calls[0]?.[0]).toMatchObject({ kind: 'bind' });
+    expect(candidateWorker.postMessage.mock.calls[1]?.[0]).toMatchObject({ kind: 'shutdown' });
+    expect(fallbackActiveWorker.postMessage).not.toHaveBeenCalled();
+    expect(candidateWorker.listenerCount()).toBe(0);
+  });
+
+  it('buffers subscriptions before ready and honors unsubscribe-before-ready', async () => {
+    const activeWorker = new FakeServiceWorkerHandle('activated');
+    let boundPort: FakeChannelPort | undefined;
+    const registration: {
+      active: ServiceWorker | null;
+      installing: ServiceWorker | null;
+      waiting: ServiceWorker | null;
+    } = {
+      active: activeWorker as unknown as ServiceWorker,
+      installing: null,
+      waiting: null,
+    };
+
+    restoreBrowserTransportEnv = installBrowserTransportTestEnvironment(
+      registration as unknown as ServiceWorkerRegistration
+    );
+    activeWorker.postMessage.mockImplementation((message: unknown, transfer?: Transferable[]) => {
+      if ((message as { kind?: string }).kind !== 'bind') {
+        return;
+      }
+
+      boundPort = transfer?.[0] as unknown as FakeChannelPort | undefined;
+      boundPort?.postMessage({
+        __actorWebServiceWorkerTransport: true,
+        kind: 'bind-ack',
+        source: logistics.nodes.serviceWorker.address,
+      });
+    });
+
+    const { createBrowserServiceWorkerTransport } = await import('./browser-transport');
+    const transport = createBrowserServiceWorkerTransport();
+    const unsubscribedListener = vi.fn();
+    const liveListener = vi.fn();
+
+    const unsubscribeBeforeReady = transport.subscribe(unsubscribedListener);
+    const unsubscribeAfterReady = transport.subscribe(liveListener);
+    unsubscribeBeforeReady();
+
+    await transport.ready();
+    expect(boundPort).toBeDefined();
+
+    boundPort?.postMessage({
+      __actorWebMessagePortTransport: true,
+      kind: 'frame',
+      source: logistics.nodes.serviceWorker.address,
+      destination: logistics.nodes.browser.address,
+      message: {
+        type: 'SERVICE_WORKER_TEST',
+        _timestamp: Date.now(),
+        _version: '1.0.0',
+      },
+    });
+
+    expect(unsubscribedListener).not.toHaveBeenCalled();
+    expect(liveListener).toHaveBeenCalledTimes(1);
+
+    unsubscribeAfterReady();
+    boundPort?.postMessage({
+      __actorWebMessagePortTransport: true,
+      kind: 'frame',
+      source: logistics.nodes.serviceWorker.address,
+      destination: logistics.nodes.browser.address,
+      message: {
+        type: 'SERVICE_WORKER_TEST_2',
+        _timestamp: Date.now(),
+        _version: '1.0.0',
+      },
+    });
+
+    expect(liveListener).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects ready and suppresses late bind-ack when destroy wins the race', async () => {
+    const activeWorker = new FakeServiceWorkerHandle('activated');
+    let bindPort: FakeChannelPort | undefined;
+    const registration: {
+      active: ServiceWorker | null;
+      installing: ServiceWorker | null;
+      waiting: ServiceWorker | null;
+    } = {
+      active: activeWorker as unknown as ServiceWorker,
+      installing: null,
+      waiting: null,
+    };
+
+    restoreBrowserTransportEnv = installBrowserTransportTestEnvironment(
+      registration as unknown as ServiceWorkerRegistration
+    );
+    activeWorker.postMessage.mockImplementation((message: unknown, transfer?: Transferable[]) => {
+      if ((message as { kind?: string }).kind === 'bind') {
+        bindPort = transfer?.[0] as unknown as FakeChannelPort | undefined;
+      }
+    });
+
+    const { createBrowserServiceWorkerTransport } = await import('./browser-transport');
+    const transport = createBrowserServiceWorkerTransport();
+    const listener = vi.fn();
+
+    transport.subscribe(listener);
+    const ready = transport.ready();
+    await waitFor(() => bindPort !== undefined, 'Expected bind message before destroy');
+    transport.destroy();
+
+    await expect(ready).rejects.toThrow('destroyed');
+    bindPort?.postMessage({
+      __actorWebServiceWorkerTransport: true,
+      kind: 'bind-ack',
+      source: logistics.nodes.serviceWorker.address,
+    });
+    await Promise.resolve();
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(transport.getConnectedNodes()).toEqual([]);
+    expect(
+      activeWorker.postMessage.mock.calls.map(([payload]) => (payload as { kind: string }).kind)
+    ).toEqual(['bind', 'shutdown']);
+  });
+
+  it('rebuilds the runtime node and transport on rebind and keeps shutdown idempotent', async () => {
+    const createdTransports = [createMockMessagePortTransport(), createMockMessagePortTransport()];
+    const createMessagePortTransportMock = vi
+      .fn()
+      .mockImplementationOnce(() => createdTransports[0])
+      .mockImplementationOnce(() => createdTransports[1]);
+    const firstNodeStop = vi.fn(async () => {});
+    const secondNodeStop = vi.fn(async () => {});
+    const firstStartup = createDeferred<{ stop(): Promise<void> }>();
+    const secondStartup = createDeferred<{ stop(): Promise<void> }>();
+    const startActorWebNodeMock = vi
+      .fn()
+      .mockImplementationOnce(() => firstStartup.promise)
+      .mockImplementationOnce(() => secondStartup.promise);
+    const serviceWorkerGlobal = createFakeServiceWorkerGlobalScope();
+
+    vi.doMock('@actor-core/runtime/browser', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@actor-core/runtime/browser')>();
+      return {
+        ...actual,
+        createMessagePortTransport: createMessagePortTransportMock,
+        startActorWebNode: startActorWebNodeMock,
+      };
+    });
+    vi.stubGlobal('self', serviceWorkerGlobal);
+
+    const { startLogisticsServiceWorkerRuntime } = await import('./worker-runtime');
+    startLogisticsServiceWorkerRuntime();
+
+    const handleMessage = serviceWorkerGlobal.messageHandler();
+    const firstPort = { postMessage: vi.fn() };
+    const secondPort = { postMessage: vi.fn() };
+    const firstMessagePort = firstPort as unknown as MessagePort;
+    const secondMessagePort = secondPort as unknown as MessagePort;
+
+    const firstBind = dispatchServiceWorkerMessage(
+      handleMessage,
+      {
+        __actorWebServiceWorkerTransport: true,
+        kind: 'bind',
+        source: logistics.nodes.browser.address,
+      },
+      [firstMessagePort]
+    );
+    expect(firstPort.postMessage).not.toHaveBeenCalled();
+    firstStartup.resolve({ stop: firstNodeStop });
+    await firstBind;
+    expect(firstPort.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'bind-ack' })
+    );
+
+    const secondBind = dispatchServiceWorkerMessage(
+      handleMessage,
+      {
+        __actorWebServiceWorkerTransport: true,
+        kind: 'bind',
+        source: logistics.nodes.browser.address,
+      },
+      [secondMessagePort]
+    );
+    expect(firstNodeStop).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    expect(createdTransports[0].destroy).toHaveBeenCalledTimes(1);
+    expect(secondPort.postMessage).not.toHaveBeenCalled();
+    secondStartup.resolve({ stop: secondNodeStop });
+    await secondBind;
+    expect(startActorWebNodeMock).toHaveBeenCalledTimes(2);
+    expect(createMessagePortTransportMock).toHaveBeenCalledTimes(2);
+    expect(secondPort.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'bind-ack' })
+    );
+
+    await dispatchServiceWorkerMessage(handleMessage, {
+      __actorWebServiceWorkerTransport: true,
+      kind: 'shutdown',
+      source: logistics.nodes.browser.address,
+    });
+    await dispatchServiceWorkerMessage(handleMessage, {
+      __actorWebServiceWorkerTransport: true,
+      kind: 'shutdown',
+      source: logistics.nodes.browser.address,
+    });
+
+    expect(secondNodeStop).toHaveBeenCalledTimes(1);
+    expect(createdTransports[1].destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('suppresses bind-ack and cleans up when shutdown wins during pending startup', async () => {
+    const transport = createMockMessagePortTransport();
+    const createMessagePortTransportMock = vi.fn(() => transport);
+    const startup = createDeferred<{ stop(): Promise<void> }>();
+    const startedNodeStop = vi.fn(async () => {});
+    const startActorWebNodeMock = vi.fn(() => startup.promise);
+    const serviceWorkerGlobal = createFakeServiceWorkerGlobalScope();
+
+    vi.doMock('@actor-core/runtime/browser', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@actor-core/runtime/browser')>();
+      return {
+        ...actual,
+        createMessagePortTransport: createMessagePortTransportMock,
+        startActorWebNode: startActorWebNodeMock,
+      };
+    });
+    vi.stubGlobal('self', serviceWorkerGlobal);
+
+    const { startLogisticsServiceWorkerRuntime } = await import('./worker-runtime');
+    startLogisticsServiceWorkerRuntime();
+
+    const handleMessage = serviceWorkerGlobal.messageHandler();
+    const firstPort = { postMessage: vi.fn() };
+    const firstMessagePort = firstPort as unknown as MessagePort;
+
+    const pendingBind = dispatchServiceWorkerMessage(
+      handleMessage,
+      {
+        __actorWebServiceWorkerTransport: true,
+        kind: 'bind',
+        source: logistics.nodes.browser.address,
+      },
+      [firstMessagePort]
+    );
+
+    await waitFor(
+      () => startActorWebNodeMock.mock.calls.length === 1,
+      'Expected service worker startup to begin before shutdown'
+    );
+    await dispatchServiceWorkerMessage(handleMessage, {
+      __actorWebServiceWorkerTransport: true,
+      kind: 'shutdown',
+      source: logistics.nodes.browser.address,
+    });
+
+    expect(transport.destroy).toHaveBeenCalledTimes(1);
+    expect(firstPort.postMessage).not.toHaveBeenCalled();
+
+    startup.resolve({ stop: startedNodeStop });
+    await pendingBind;
+
+    expect(firstPort.postMessage).not.toHaveBeenCalled();
+    expect(startedNodeStop).toHaveBeenCalledTimes(1);
+    expect(transport.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects malformed transport envelopes', async () => {
+    const { isServiceWorkerTransportEnvelope } = await import(
+      './service-worker-transport-protocol'
+    );
+
+    expect(
+      isServiceWorkerTransportEnvelope({
+        __actorWebServiceWorkerTransport: true,
+        kind: 'bind',
+      })
+    ).toBe(false);
+    expect(
+      isServiceWorkerTransportEnvelope({
+        __actorWebServiceWorkerTransport: true,
+        kind: 'unexpected',
+        source: logistics.nodes.browser.address,
+      })
+    ).toBe(false);
+    expect(
+      isServiceWorkerTransportEnvelope({
+        __actorWebServiceWorkerTransport: true,
+        kind: 'shutdown',
+        source: logistics.nodes.browser.address,
+      })
+    ).toBe(true);
+  });
+});
+
 async function startTestWorkerNode(
   transportUrl: string
 ): Promise<StartedActorWebNode<typeof logistics>> {
@@ -1074,4 +1421,177 @@ async function waitFor(predicate: () => boolean, message: string | (() => string
   }
 
   throw new Error(typeof message === 'function' ? message() : message);
+}
+
+class FakeChannelPort {
+  counterpart: FakeChannelPort | null = null;
+  started = false;
+  private readonly listeners = new Set<(event: MessageEvent<unknown>) => void>();
+
+  postMessage(message: unknown): void {
+    this.counterpart?.dispatch(message);
+  }
+
+  start(): void {
+    this.started = true;
+  }
+
+  close(): void {}
+
+  addEventListener(type: 'message', listener: (event: MessageEvent<unknown>) => void): void {
+    if (type === 'message') {
+      this.listeners.add(listener);
+    }
+  }
+
+  removeEventListener(type: 'message', listener: (event: MessageEvent<unknown>) => void): void {
+    if (type === 'message') {
+      this.listeners.delete(listener);
+    }
+  }
+
+  listenerCount(): number {
+    return this.listeners.size;
+  }
+
+  private dispatch(message: unknown): void {
+    for (const listener of this.listeners) {
+      listener({ data: message } as MessageEvent<unknown>);
+    }
+  }
+}
+
+class FakeServiceWorkerHandle {
+  readonly postMessage = vi.fn<(message: unknown, transfer?: Transferable[]) => void>();
+  private readonly listeners = new Set<() => void>();
+
+  constructor(public state: ServiceWorkerState) {}
+
+  addEventListener(type: 'statechange', listener: () => void): void {
+    if (type === 'statechange') {
+      this.listeners.add(listener);
+    }
+  }
+
+  removeEventListener(type: 'statechange', listener: () => void): void {
+    if (type === 'statechange') {
+      this.listeners.delete(listener);
+    }
+  }
+
+  setState(state: ServiceWorkerState): void {
+    this.state = state;
+    for (const listener of this.listeners) {
+      listener();
+    }
+  }
+
+  listenerCount(): number {
+    return this.listeners.size;
+  }
+}
+
+function installBrowserTransportTestEnvironment(
+  registration: ServiceWorkerRegistration
+): () => void {
+  const originalMessageChannel = globalThis.MessageChannel;
+  const originalServiceWorker = Object.getOwnPropertyDescriptor(navigator, 'serviceWorker');
+
+  Object.defineProperty(globalThis, 'MessageChannel', {
+    configurable: true,
+    value: class TestMessageChannel {
+      port1: FakeChannelPort;
+      port2: FakeChannelPort;
+
+      constructor() {
+        this.port1 = new FakeChannelPort();
+        this.port2 = new FakeChannelPort();
+        this.port1.counterpart = this.port2;
+        this.port2.counterpart = this.port1;
+      }
+    },
+  });
+  Object.defineProperty(navigator, 'serviceWorker', {
+    configurable: true,
+    value: {
+      register: vi.fn(async () => registration),
+    },
+  });
+
+  return () => {
+    if (originalMessageChannel) {
+      Object.defineProperty(globalThis, 'MessageChannel', {
+        configurable: true,
+        value: originalMessageChannel,
+      });
+    } else {
+      Reflect.deleteProperty(globalThis, 'MessageChannel');
+    }
+
+    if (originalServiceWorker) {
+      Object.defineProperty(navigator, 'serviceWorker', originalServiceWorker);
+    } else {
+      Reflect.deleteProperty(navigator, 'serviceWorker');
+    }
+  };
+}
+
+function createMockMessagePortTransport() {
+  return {
+    connect: vi.fn(async () => {}),
+    destroy: vi.fn(() => {}),
+    disconnect: vi.fn(async () => {}),
+    getConnectedNodes: vi.fn(() => []),
+    isConnected: vi.fn(() => false),
+    send: vi.fn(async () => {}),
+    subscribe: vi.fn(() => () => {}),
+  };
+}
+
+function createFakeServiceWorkerGlobalScope() {
+  let handler: ((event: ExtendableMessageEvent) => void) | undefined;
+
+  return {
+    addEventListener: vi.fn((type: string, listener: (event: ExtendableMessageEvent) => void) => {
+      if (type === 'message') {
+        handler = listener;
+      }
+    }),
+    messageHandler(): (event: ExtendableMessageEvent) => void {
+      if (!handler) {
+        throw new Error('Expected message handler to be registered.');
+      }
+
+      return handler;
+    },
+  };
+}
+
+async function dispatchServiceWorkerMessage(
+  handler: (event: ExtendableMessageEvent) => void,
+  data: unknown,
+  ports: MessagePort[] = []
+): Promise<void> {
+  let pending: Promise<unknown> | undefined;
+
+  handler({
+    data,
+    ports,
+    waitUntil(value: Promise<unknown>) {
+      pending = Promise.resolve(value);
+    },
+  } as unknown as ExtendableMessageEvent);
+
+  await pending;
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
 }
