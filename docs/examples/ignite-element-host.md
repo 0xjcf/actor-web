@@ -134,37 +134,38 @@ model from the `states` hook instead of wrapping projection data in a custom
 source-shaped adapter.
 
 `logistics-browser-client.ts` binds the shared topology to the deployed gateway
-once with `createActorWebClient(logistics, { gateway })` because the current
-`ignite-element/actor-web` adapter expects a command-capable Actor-Web source
-handle. The Ignite host still keeps projection and command ownership together
-inside `igniteCore`: components project actor state through the source, and
-their `commands` definitions send messages through the Ignite-provided `actor`
-handle instead of importing standalone command helpers. Browser-local details
-such as form inputs and latest-event display remain element concerns instead of
-being disguised as Actor-Web source state. REST ingress stays in the server HTTP
-adapter and reaches the same actor behavior.
+for current demo wiring, but the target `ignite-element/actor-web` contract is
+read-model first. The Ignite host should pass `.readModel(...)` as `source` and
+only opt into `.commandSource(...)` when the component intentionally owns
+command/control. Browser-local details such as form inputs and latest-event
+display remain element concerns instead of being disguised as Actor-Web source
+state. REST ingress stays in the server HTTP adapter and reaches the same actor
+behavior.
 
 Use the split like this:
 
 ```ts
-const logisticsClient = createActorWebClient(logistics, {
-  gateway: { url: gatewayUrl },
-});
-
-const shipmentSource = logisticsClient.actors.shipment;
-
 const shipmentHost = igniteCore({
-  source: shipmentSource,
+  source: ({ host }) =>
+    logistics.actors.shipment.readModel({
+      gateway: { url: gatewayUrl },
+      host,
+    }),
+  commandSource: () =>
+    logistics.actors.shipment.commandSource({
+      gateway: { url: gatewayUrl },
+    }),
   commands: ({ actor, command }) => ({
     resetShipment: command(() => actor.send({ type: 'RESET_SHIPMENT' })),
   }),
 });
 ```
 
-Do not inject standalone command-helper objects into Ignite components; keep
-host-owned commands on the Ignite command API. Generic browser clients can still
-use `createActorWebReadModelClient(...)` or `.readModel(...)` where no Ignite
-command surface is required.
+Do not inject standalone command-helper objects into Ignite components. Keep
+host-owned commands on the Ignite command API through the explicit
+`commandSource` pairing. Generic browser clients can still use
+`createActorWebReadModelClient(...)` or `.readModel(...)` where no Ignite command
+surface is required.
 
 `server-runtime-gateway.ts` starts the server node with `serveActorWebNode` and
 uses `serveActorWebHttp(runtime).for(logistics.actors.shipment)` for REST

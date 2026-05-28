@@ -194,14 +194,14 @@ import 'ignite-element/renderers/ignite-jsx';
 import { igniteCore } from 'ignite-element/actor-web';
 import { logistics } from './logistics.topology';
 
-const shipmentCommands = logistics.actors.shipment.commandSource({
-  gateway: { url: import.meta.env.VITE_ACTOR_WEB_GATEWAY_URL },
-});
-
 const logisticsControlTower = igniteCore({
   source: logistics.actors.shipment.readModel({
     gateway: { url: import.meta.env.VITE_ACTOR_WEB_GATEWAY_URL },
   }),
+  commandSource: () =>
+    logistics.actors.shipment.commandSource({
+      gateway: { url: import.meta.env.VITE_ACTOR_WEB_GATEWAY_URL },
+    }),
 
   states: ({ context, transport }) => ({
     status: context.status,
@@ -212,16 +212,16 @@ const logisticsControlTower = igniteCore({
     connected: transport.state === 'connected',
   }),
 
-  commands: () => ({
+  commands: ({ actor }) => ({
     createShipment: (input: { destination: string; reference?: string }) =>
-      shipmentCommands.send({
+      actor.send({
         type: 'CREATE_SHIPMENT',
         shipmentId: `shipment-${Date.now().toString(36)}`,
         destination: input.destination,
         reference: input.reference,
       }),
 
-    reset: () => shipmentCommands.send({ type: 'RESET_SHIPMENT' }),
+    reset: () => actor.send({ type: 'RESET_SHIPMENT' }),
   }),
 });
 
@@ -507,6 +507,24 @@ stricter CQRS boundaries, declare separate topology actors or generated-client
 descriptors for the command actor and the read projection actor. This keeps the
 split visible in the actor model while preserving the low-boilerplate source
 API for simple cases.
+
+For `ignite-element/actor-web`, the intended pairing is:
+
+```ts
+igniteCore({
+  source: ({ host }) => runtime.dashboard.readModel({ host }),
+  commandSource: () => runtime.dashboard.commandSource(),
+  commands: ({ actor }) => ({
+    approve: (approvalId: string) =>
+      actor.send({ type: 'APPROVE_RECOMMENDATION', approvalId }),
+  }),
+});
+```
+
+`source` is always the live read-model/projection port. `commandSource` is
+optional and only present when the component intentionally owns command/control.
+The Ignite adapter should infer both sides without app-level generic
+annotations and should close Actor-Web sources through `close()` or `stop()`.
 
 ## AI And Agentic Workflow Alignment
 

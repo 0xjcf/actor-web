@@ -569,6 +569,26 @@ Actor-Web read-model sources provide:
 - `subscribeTransportStatus(listener)`
 - `close()`
 
+For Ignite Element, the target API keeps this read-model source as the default
+`source` for `ignite-element/actor-web`. Components that only render live
+projection state should not need a command-capable source:
+
+```ts
+const shipmentCard = igniteCore({
+  source: ({ host }) =>
+    logistics.actors.shipment.readModel({
+      gateway: { url: 'ws://127.0.0.1:4100' },
+      host,
+    }),
+
+  states: ({ context, transport }) => ({
+    shipmentId: context.shipmentId,
+    status: context.status,
+    syncState: transport.state,
+  }),
+});
+```
+
 When a host needs both live projection state and command/control for the same
 actor, pair the read-model source with an explicit command helper. The
 read-model side stays on the full projection subscription, while the explicit
@@ -586,6 +606,32 @@ const shipmentCommands = logistics.actors.shipment.commandSource({
   gateway: { url: 'ws://127.0.0.1:4100' },
 });
 ```
+
+The matching `ignite-element/actor-web` contract should expose that pairing
+without requiring product code to wrap sources or write manual generics:
+
+```ts
+const shipmentCard = igniteCore({
+  source: ({ host }) =>
+    logistics.actors.shipment.readModel({
+      gateway: { url: 'ws://127.0.0.1:4100' },
+      host,
+    }),
+  commandSource: () =>
+    logistics.actors.shipment.commandSource({
+      gateway: { url: 'ws://127.0.0.1:4100' },
+    }),
+
+  commands: ({ actor }) => ({
+    cancel: (shipmentId: string) =>
+      actor.send({ type: 'CANCEL_SHIPMENT', shipmentId }),
+  }),
+});
+```
+
+`ignite-element/actor-web` should treat `close()` as the Actor-Web cleanup hook,
+equivalent to `stop()` for handles, so product code does not need to adapt
+`{ source, stop: () => source.close() }` by hand.
 
 Use an explicit command helper when the host owns command/control:
 
