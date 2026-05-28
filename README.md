@@ -77,7 +77,10 @@ This framework **strictly** follows the pure actor model:
 
 ### What We DON'T Support (By Design)
 
-- ❌ **No Effects** - No async functions or side effects in actors
+- ❌ **No Arbitrary Effects** - Actor logic does not reach directly into I/O,
+  clocks, network clients, databases, or global process state. External effects
+  must go through declared tool ports such as `tools.execute(...)`, with concrete
+  adapters supplied by the runtime boundary.
 - ❌ **No Singletons** - No global state or shared instances
 - ❌ **No Timeouts** - Use actor-based scheduling instead
 - ❌ **No Direct State Access** - Only through messages
