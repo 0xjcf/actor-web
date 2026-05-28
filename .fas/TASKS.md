@@ -753,9 +753,12 @@
 
 - Title: Repair FAS workspace dependency and review artifact metadata
 - Mode: 4-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/repair-fas-workspace-dependency-and-review-artifact-metadata.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Complete runtime telemetry and discovery hygiene
 

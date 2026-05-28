@@ -28,7 +28,13 @@ Follow-up from Separate Ignite read-model sources from command surfaces: the rec
 
 ## Alternatives considered
 
-- List other approaches you evaluated and why they were rejected.
+- Keep the duplicate full-subscription behavior and document the cost.
+  Rejected because the recommended split read-model plus explicit command-source
+  pattern would still pay an avoidable second hello/subscribe/replay cost and
+  tests would keep pinning an inefficient default.
+- Force commands through the existing read-model connection only. Rejected
+  because it couples write readiness to projection lifecycle details and weakens
+  the explicit boundary between read-model consumption and command dispatch.
 
 ## Affected Files
 
@@ -109,11 +115,18 @@ Follow-up from Separate Ignite read-model sources from command surfaces: the rec
 
 ## Dependencies
 
-- List blocking tasks, PRs, docs, or external inputs.
+- None blocking at implementation time. The gateway, source, topology, API, and
+  focused test surfaces all live in this repo and were already available to
+  change together.
+- Follow-up docs and example cleanup can validate downstream consumer guidance,
+  but that is not a blocker for the bounded runtime/client compatibility fix in
+  this task.
 
 ## Open questions
 
-- Capture unresolved decisions that need confirmation before closeout.
+- None. The approved compatibility split is final for this task: legacy
+  command-capable `source()` stays on the full subscription path, while
+  explicit `commandSource()` uses the lighter command-only subscribe mode.
 
 ## Artifact links
 

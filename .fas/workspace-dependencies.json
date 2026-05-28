@@ -42,13 +42,20 @@
   "contracts": {
     "franchise-shared-contracts": {
       "description": "FAS-owned shared vocabulary for event envelopes, workflow snapshots, transition records, command execution records, actor addresses, and orchestration contracts.",
+      "status": "active",
       "producer": "FAS",
       "consumers": ["actor-web", "ignite-element"],
+      "surfacePathStyle": "project-relative",
+      "projectRoots": {
+        "FAS": "../FAS",
+        "actor-web": ".",
+        "ignite-element": "../ignite-element"
+      },
       "surfaces": {
         "FAS": [
-          "../FAS/packages/shared-contracts/package.json",
-          "../FAS/packages/shared-contracts/index.d.ts",
-          "../FAS/packages/shared-contracts/README.md"
+          "packages/shared-contracts/package.json",
+          "packages/shared-contracts/index.d.ts",
+          "packages/shared-contracts/README.md"
         ],
         "actor-web": [
           "packages/actor-core-runtime/package.json",
@@ -56,16 +63,19 @@
           "packages/actor-core-runtime/src/integration/fas-shared-contracts.typecheck.ts",
           "packages/actor-core-runtime/src/unit/fas-shared-contracts.test.ts"
         ],
-        "ignite-element": [
-          "../ignite-element/docs/adr-003-shared-arc.md",
-          "../ignite-element/docs/shared-architecture-model.md"
-        ]
+        "ignite-element": ["docs/adr-003-shared-arc.md", "docs/shared-architecture-model.md"]
       }
     },
     "actor-web-ignite-adapter-target": {
       "description": "Target-state bridge where ignite-element consumes Actor-Web actor snapshots, typed command senders, and event bridge contracts. No runtime adapter implementation exists in Actor-Web yet.",
+      "status": "aspirational",
       "producer": "actor-web",
       "consumers": ["ignite-element"],
+      "surfacePathStyle": "project-relative",
+      "projectRoots": {
+        "actor-web": ".",
+        "ignite-element": "../ignite-element"
+      },
       "surfaces": {
         "actor-web": [
           "docs/examples/ignite-element-host.md",
@@ -73,11 +83,12 @@
           "docs/spikes/actor-web-adr-003-fas-integration-review.md"
         ],
         "ignite-element": [
-          "../ignite-element/docs/adr-003-shared-arc.md",
-          "../ignite-element/docs/shared-architecture-model.md",
-          "../ignite-element/packages/ignite-element/package.json"
+          "docs/adr-003-shared-arc.md",
+          "docs/shared-architecture-model.md",
+          "packages/ignite-element/package.json"
         ]
-      }
+      },
+      "toolingDisposition": "docs-only-target-state"
     }
   }
 }

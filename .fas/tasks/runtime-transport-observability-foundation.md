@@ -41,3 +41,13 @@ transports, and provides immutable stats snapshots for tests and dashboards.
 - `pnpm lint`
 - `pnpm architecture:check`
 - `fas verify`
+
+## Dependencies
+
+- `.fas/tasks/runtime-transport-message-id-idempotency.md` should land first
+  because observability for duplicate suppression, peer-level frame identity,
+  and message-level correlation depends on stable runtime `messageId` handling.
+- `.fas/tasks/runtime-transport-ack-retry-semantics.md` should land first
+  because ack/retry counters, retry exhaustion signals, and pending-ack state
+  are the reliability events this telemetry slice is expected to expose rather
+  than invent independently.
