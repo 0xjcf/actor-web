@@ -46,9 +46,18 @@ export { createActorToolbox } from './actor-tools.js';
 export type {
   ActorWebClient,
   ActorWebClientOptions,
+  ActorWebLocalRuntimeActorSource,
+  ActorWebLocalRuntimeSources,
+  ActorWebLocalRuntimeSourceOptions,
   ActorWebReadModelClient,
+  StartedActorWebLocalRuntime,
+  StartActorWebLocalRuntimeOptions,
 } from './actor-web-client.js';
-export { createActorWebClient, createActorWebReadModelClient } from './actor-web-client.js';
+export {
+  createActorWebClient,
+  createActorWebReadModelClient,
+  startActorWebLocalRuntime,
+} from './actor-web-client.js';
 export {
   type BackoffStrategy,
   BackoffSupervisor,
