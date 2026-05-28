@@ -149,10 +149,10 @@ function shipmentInputFromFormEvent(event: Event): CreateShipmentInput | null {
 }
 
 const registerIgniteHeadlessHost = igniteCore({
-  source: logisticsClient.actors.shipment,
-  states: ({ address, context, phase, transport }) => {
-    const shipmentContext = context ?? createInitialShipmentContext();
-    const local = localStateFor(address.path);
+  source: () => logisticsClient.actors.shipment.sourceHandle(),
+  view: ({ snapshot }) => {
+    const shipmentContext = snapshot.context ?? createInitialShipmentContext();
+    const local = localStateFor(snapshot.address.path);
     const timeline = projectTimeline(shipmentContext.timeline);
     const eventLog = local.eventLog.map((event) => projectEventLogViewItem(event));
     const timelinePage = paginateItems(timeline, local.timelinePage, PAGE_SIZE);
@@ -161,7 +161,7 @@ const registerIgniteHeadlessHost = igniteCore({
     local.eventLogPage = eventLogPage.page;
 
     return {
-      phase,
+      phase: snapshot.phase,
       shipmentId: shipmentContext.shipmentId,
       destination: shipmentContext.destination,
       reference: shipmentContext.reference,
@@ -186,11 +186,11 @@ const registerIgniteHeadlessHost = igniteCore({
       canGoToNextTimelinePage: timelinePage.canGoToNextPage,
       canGoToPreviousEventLogPage: eventLogPage.canGoToPreviousPage,
       canGoToNextEventLogPage: eventLogPage.canGoToNextPage,
-      transportState: transport.state,
-      transportReason: transport.reason ?? null,
-      address: address.path,
+      transportState: snapshot.transport.state,
+      transportReason: snapshot.transport.reason ?? null,
+      address: snapshot.address.path,
       statusBadgeClass: `badge status-${shipmentContext.status}`,
-      transportBadgeClass: `badge transport-${transport.state}`,
+      transportBadgeClass: `badge transport-${snapshot.transport.state}`,
     } satisfies LogisticsElementState;
   },
   commands: ({ actor, command, host }) => {
@@ -315,17 +315,17 @@ const registerIgniteHeadlessHost = igniteCore({
 });
 
 const registerProviderHqSource = igniteCore({
-  source: logisticsClient.actors.providerHq,
-  states: ({ context, transport }) => {
-    const providerContext = context ?? createInitialProviderHqContext();
+  source: () => logisticsClient.actors.providerHq.readModelHandle(),
+  view: ({ snapshot }) => {
+    const providerContext = snapshot.context ?? createInitialProviderHqContext();
     const providerItem = providerContext.status.shipmentId
       ? providerContext.status.queue.find(
           (item) => item.shipmentId === providerContext.status.shipmentId
         )
       : undefined;
     return {
-      providerTransportState: transport.state,
-      providerTransportReason: transport.reason ?? null,
+      providerTransportState: snapshot.transport.state,
+      providerTransportReason: snapshot.transport.reason ?? null,
       providerMode: providerContext.status.mode,
       providerSourceLabel: providerContext.status.sourceLabel,
       providerShipmentId: providerContext.status.shipmentId,
@@ -408,13 +408,13 @@ registerProviderHqSource(IGNITE_PROVIDER_HQ_SOURCE_ELEMENT_NAME, (view) => {
 });
 
 const registerRoutingSource = igniteCore({
-  source: logisticsClient.actors.routing,
-  states: ({ address, context, transport }) => {
-    const routingContext = context ?? createInitialShipmentContext();
+  source: () => logisticsClient.actors.routing.readModelHandle(),
+  view: ({ snapshot }) => {
+    const routingContext = snapshot.context ?? createInitialShipmentContext();
     return {
-      routingAddress: address.path,
-      routingTransportState: transport.state,
-      routingTransportReason: transport.reason ?? null,
+      routingAddress: snapshot.address.path,
+      routingTransportState: snapshot.transport.state,
+      routingTransportReason: snapshot.transport.reason ?? null,
       routingShipmentId: routingContext.shipmentId,
       routingCarrier: routingContext.carrier,
       routingEta: routingContext.eta,
