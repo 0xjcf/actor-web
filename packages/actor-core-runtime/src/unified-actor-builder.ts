@@ -213,8 +213,10 @@ export class UnifiedActorBuilder<
 
   /**
    * Narrow the behavior toolbox to the runtime tool registry supplied by the
-   * node runner. This is type-only: topology still controls least-privilege
-   * access at runtime through each actor's declared tools list.
+   * node runner. This remains the standalone escape hatch when a behavior is
+   * defined outside Actor-Web topology helpers. Topology-authored actors can
+   * instead use actor.withTools<TRegistry>() so the actor's declared allowlist
+   * drives the narrowed toolbox automatically.
    */
   withTools<NewTools extends ActorToolRegistry>(): UnifiedActorBuilder<
     TMsg,

@@ -1,4 +1,5 @@
 import type { ActorBehavior, ActorMessage } from './actor-system.js';
+import type { ActorToolRegistry } from './actor-tools.js';
 import {
   type ActorWebSourceOptions,
   type ClosableActorWebReadModelSource,
@@ -13,6 +14,10 @@ import {
   type RuntimeGatewayScopeDescriptor,
   type RuntimeGatewaySourceHandle,
 } from './runtime-gateway.js';
+import {
+  defineActor as defineTopologyActorBehavior,
+  type UnifiedActorBuilder,
+} from './unified-actor-builder.js';
 
 export type ActorWebSupervisionStrategy = 'restart' | 'resume' | 'stop' | 'escalate';
 
@@ -230,6 +235,40 @@ type ActorWebToolCatalogFromArray<TTools extends readonly ActorWebToolDefinition
   readonly [TTool in TTools[number] as TTool['name']]: TTool;
 };
 
+type ActorWebToolNameFromReference<TTool extends ActorWebToolReference> = TTool extends string
+  ? TTool
+  : TTool extends ActorWebToolDefinition<infer TName>
+    ? TName
+    : never;
+
+type ActorWebToolNamesFromReferences<TTools extends readonly ActorWebToolReference[] | undefined> =
+  TTools extends readonly ActorWebToolReference[]
+    ? ActorWebToolNameFromReference<TTools[number]>
+    : never;
+
+export type ActorWebAllowedToolRegistry<
+  TRegistry extends ActorToolRegistry,
+  TTools extends readonly ActorWebToolReference[] | undefined,
+> = Pick<TRegistry, Extract<ActorWebToolNamesFromReferences<TTools>, keyof TRegistry>>;
+
+export type ActorWebTypedDefineActor<TTools extends ActorToolRegistry> = <
+  TMsg extends ActorMessage = ActorMessage,
+  TEmitted = unknown,
+>() => UnifiedActorBuilder<TMsg, TEmitted, unknown, TTools>;
+
+type ActorWebToolScopedActorDefinition<
+  TRegistry extends ActorToolRegistry,
+  TTools extends readonly ActorWebToolReference[],
+  TId extends ActorWebActorId = string,
+  TNode extends string = string,
+  TBehavior = unknown,
+> = Omit<ActorWebActorDefinition<TId, TNode, TBehavior>, 'behavior' | 'tools'> & {
+  readonly tools: TTools;
+  readonly behavior: (
+    defineActor: ActorWebTypedDefineActor<ActorWebAllowedToolRegistry<TRegistry, TTools>>
+  ) => TBehavior;
+};
+
 type ActorWebTopologyTools<TInput extends ActorWebTopologyInput> = TInput extends {
   readonly tools: infer TTools;
 }
@@ -260,19 +299,51 @@ export function node<TAddress extends string>(address: TAddress): ActorWebNodeDe
   return { address };
 }
 
-export function actor<TDefinition extends ActorWebActorDefinition<string>>(
+function actorDefinition<TDefinition extends ActorWebActorDefinition<string>>(
   definition: TDefinition
 ): TDefinition;
-export function actor<TParams, TNode extends string, TBehavior>(
+function actorDefinition<TParams, TNode extends string, TBehavior>(
   definition: ActorWebParameterizedActorDefinition<TParams, TNode, TBehavior>
 ): ActorWebParameterizedActorDefinition<TParams, TNode, TBehavior>;
-export function actor(
+function actorDefinition(
   definition:
     | ActorWebActorDefinition<ActorWebActorId>
     | ActorWebParameterizedActorDefinition<unknown>
 ): ActorWebActorDefinition<ActorWebActorId> | ActorWebParameterizedActorDefinition<unknown> {
   return definition;
 }
+
+function createToolScopedActor<TRegistry extends ActorToolRegistry>() {
+  return <const TTools extends readonly ActorWebToolReference[], TBehavior>(
+    definition: ActorWebToolScopedActorDefinition<TRegistry, TTools, string, string, TBehavior>
+  ): ActorWebActorDefinition<string, string, TBehavior> & { readonly tools: TTools } => {
+    const defineActor = defineTopologyActorBehavior as ActorWebTypedDefineActor<
+      ActorWebAllowedToolRegistry<TRegistry, TTools>
+    >;
+
+    return actorDefinition({
+      ...definition,
+      behavior: definition.behavior(defineActor),
+    }) as ActorWebActorDefinition<string, string, TBehavior> & { readonly tools: TTools };
+  };
+}
+
+type ActorHelper = {
+  <TDefinition extends ActorWebActorDefinition<string>>(definition: TDefinition): TDefinition;
+  <TParams, TNode extends string, TBehavior>(
+    definition: ActorWebParameterizedActorDefinition<TParams, TNode, TBehavior>
+  ): ActorWebParameterizedActorDefinition<TParams, TNode, TBehavior>;
+  withTools<TRegistry extends ActorToolRegistry>(): <
+    const TTools extends readonly ActorWebToolReference[],
+    TBehavior,
+  >(
+    definition: ActorWebToolScopedActorDefinition<TRegistry, TTools, string, string, TBehavior>
+  ) => ActorWebActorDefinition<string, string, TBehavior> & { readonly tools: TTools };
+};
+
+export const actor: ActorHelper = Object.assign(actorDefinition, {
+  withTools: createToolScopedActor,
+});
 
 export function supervisor<TDefinition extends ActorWebSupervisorDefinition>(
   definition: TDefinition

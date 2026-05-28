@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ActorToolExecutor } from '../actor-tools.js';
 import { createActorToolbox } from '../actor-tools.js';
+import { actor } from '../topology.js';
 
 type ScanInput = { readonly label: string };
 type ScanResult = { readonly accepted: true; readonly label: string };
+type ScanCommand = { readonly type: 'SCAN'; readonly label: string };
 type ScanTools = {
   readonly 'provider.scan.verify': ActorToolExecutor<ScanInput, ScanResult>;
   readonly 'provider.secret': ActorToolExecutor<{ readonly token: string }, string>;
@@ -62,5 +64,56 @@ describe('ActorToolbox', () => {
         token: 'operator-only',
       })
     ).rejects.toThrow('Actor tool "provider.secret" is not registered.');
+  });
+
+  it('narrows topology-authored actor builders from the declared allowlist', async () => {
+    const scan = vi.fn<ScanTools['provider.scan.verify']>((input, context) => ({
+      accepted: true,
+      label: `${context.actorId}:${input.label}`,
+    }));
+    const scanActor = actor.withTools<ScanTools>()({
+      id: 'scanner',
+      node: 'worker',
+      tools: ['provider.scan.verify'] as const,
+      behavior: (defineActor) =>
+        defineActor<ScanCommand, ScanResult>()
+          .onMessage(async ({ message, tools }) => {
+            return {
+              reply: await tools.execute('provider.scan.verify', { label: message.label }),
+            };
+          })
+          .build(),
+    });
+    const toolbox = createActorToolbox<ScanTools>(
+      {
+        'provider.scan.verify': scan,
+        'provider.secret': () => 'hidden',
+      },
+      {
+        actorId: 'actor://worker/actor/scanner',
+        nodeAddress: 'worker',
+      },
+      scanActor.tools
+    );
+
+    const result = await (
+      scanActor.behavior as { onMessage?: (params: unknown) => Promise<unknown> | unknown }
+    )?.onMessage?.({
+      message: { type: 'SCAN', label: 'HVAC' },
+      actor: {
+        id: 'actor://worker/actor/scanner',
+        getSnapshot: () => ({ context: undefined }),
+      },
+      tools: toolbox,
+    });
+
+    expect(scanActor.tools).toEqual(['provider.scan.verify']);
+    expect(result).toMatchObject({
+      reply: {
+        accepted: true,
+        label: 'actor://worker/actor/scanner:HVAC',
+      },
+    });
+    expect(scan).toHaveBeenCalledOnce();
   });
 });

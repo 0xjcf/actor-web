@@ -5,6 +5,7 @@ export type {
   ActorWebActorDescriptor,
   ActorWebActorEvent,
   ActorWebActorMessage,
+  ActorWebAllowedToolRegistry,
   ActorWebNodeDefinition,
   ActorWebSupervisionPolicy,
   ActorWebSupervisionStrategy,
@@ -15,5 +16,6 @@ export type {
   ActorWebToolReference,
   ActorWebTopology,
   ActorWebTopologyInput,
+  ActorWebTypedDefineActor,
 } from './topology.js';
 export { actor, defineActorWebTopology, node, supervisor, tool } from './topology.js';
