@@ -1,5 +1,9 @@
 import { defineActor, defineFSM } from '@actor-core/runtime';
 import type {
+  ActorWebAllowedToolRegistry,
+  ActorWebTypedDefineActor,
+} from '@actor-core/runtime/topology';
+import type {
   FasAgentRole,
   FasPlan,
   FasSupervisorCommand,
@@ -19,9 +23,23 @@ import type {
 import {
   createInitialTaskBoardContext,
   createInitialTaskContext,
+  type FAS_AGENT_TOOL_ACCESS,
   taskContextToSummary,
 } from './fas-contract';
 import type { FasToolRegistry } from './fas-tool-adapters';
+
+type PlannerDefineActor = ActorWebTypedDefineActor<
+  ActorWebAllowedToolRegistry<FasToolRegistry, typeof FAS_AGENT_TOOL_ACCESS.planner>
+>;
+type ImplementerDefineActor = ActorWebTypedDefineActor<
+  ActorWebAllowedToolRegistry<FasToolRegistry, typeof FAS_AGENT_TOOL_ACCESS.implementer>
+>;
+type VerifierDefineActor = ActorWebTypedDefineActor<
+  ActorWebAllowedToolRegistry<FasToolRegistry, typeof FAS_AGENT_TOOL_ACCESS.verifier>
+>;
+type ReviewerDefineActor = ActorWebTypedDefineActor<
+  ActorWebAllowedToolRegistry<FasToolRegistry, typeof FAS_AGENT_TOOL_ACCESS.reviewer>
+>;
 
 function timelineEntry(input: {
   label: string;
@@ -343,7 +361,7 @@ export function createTaskRunBehavior(input: {
     .build();
 }
 
-export function createPlannerAgentBehavior() {
+export function createPlannerAgentBehavior(defineActor: PlannerDefineActor) {
   return defineActor<PlannerAgentCommand, FasTaskEvent>()
     .onMessage(({ message }) => {
       const plan: FasPlan = {
@@ -358,9 +376,8 @@ export function createPlannerAgentBehavior() {
     .build();
 }
 
-export function createImplementerAgentBehavior() {
+export function createImplementerAgentBehavior(defineActor: ImplementerDefineActor) {
   return defineActor<ImplementerAgentCommand, FasTaskEvent>()
-    .withTools<FasToolRegistry>()
     .onMessage(async ({ message, tools }) => {
       const patch = await tools.execute('codex.generate_patch', {
         taskId: message.taskId,
@@ -382,9 +399,8 @@ export function createImplementerAgentBehavior() {
     .build();
 }
 
-export function createVerifierAgentBehavior() {
+export function createVerifierAgentBehavior(defineActor: VerifierDefineActor) {
   return defineActor<VerifierAgentCommand, FasTaskEvent>()
-    .withTools<FasToolRegistry>()
     .onMessage(async ({ message, tools }) => {
       await tools.execute('repo.diff', {
         taskId: message.taskId,
@@ -413,9 +429,8 @@ export function createVerifierAgentBehavior() {
     .build();
 }
 
-export function createReviewerAgentBehavior() {
+export function createReviewerAgentBehavior(defineActor: ReviewerDefineActor) {
   return defineActor<ReviewerAgentCommand, FasTaskEvent>()
-    .withTools<FasToolRegistry>()
     .onMessage(async ({ message, tools }) => {
       const result = await tools.execute('review.diff', {
         taskId: message.taskId,

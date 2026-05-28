@@ -15,11 +15,13 @@ import {
   createVerifierAgentBehavior,
 } from './fas-behaviors';
 import { FAS_AGENT_TOOL_ACCESS, FAS_TOOL_NAMES, type FasTaskContext } from './fas-contract';
+import type { FasToolRegistry } from './fas-tool-adapters';
 
 export const FAS_COORDINATOR_NODE = 'fas-coordinator-runtime';
 export const FAS_WORKER_NODE = 'fas-worker-runtime';
 
 type TaskRunParams = Pick<FasTaskContext, 'taskId' | 'title' | 'prompt'>;
+const fasActor = actor.withTools<FasToolRegistry>();
 
 export const fasAgentLoop = defineActorWebTopology({
   contractVersion: '0.1.0',
@@ -66,7 +68,7 @@ export const fasAgentLoop = defineActorWebTopology({
       },
     }),
 
-    plannerAgent: actor({
+    plannerAgent: fasActor({
       id: 'fas-planner-agent',
       node: 'worker',
       behavior: createPlannerAgentBehavior,
@@ -78,7 +80,7 @@ export const fasAgentLoop = defineActorWebTopology({
       },
     }),
 
-    implementerAgent: actor({
+    implementerAgent: fasActor({
       id: 'fas-implementer-agent',
       node: 'worker',
       behavior: createImplementerAgentBehavior,
@@ -90,7 +92,7 @@ export const fasAgentLoop = defineActorWebTopology({
       },
     }),
 
-    verifierAgent: actor({
+    verifierAgent: fasActor({
       id: 'fas-verifier-agent',
       node: 'worker',
       behavior: createVerifierAgentBehavior,
@@ -102,7 +104,7 @@ export const fasAgentLoop = defineActorWebTopology({
       },
     }),
 
-    reviewerAgent: actor({
+    reviewerAgent: fasActor({
       id: 'fas-reviewer-agent',
       node: 'worker',
       behavior: createReviewerAgentBehavior,
