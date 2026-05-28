@@ -222,8 +222,10 @@ describe('Actor-Web topology helpers', () => {
 
     expect('send' in source).toBe(false);
     expect('ask' in source).toBe(false);
+    expect(typeof source.close).toBe('function');
     expect(typeof commandSource.send).toBe('function');
     expect(typeof commandSource.ask).toBe('function');
+    expect(typeof commandSource.close).toBe('function');
 
     source.close();
     commandSource.close();
