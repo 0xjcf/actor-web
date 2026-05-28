@@ -821,10 +821,13 @@
 
 - Title: Add low-ceremony Actor-Web local runtime source helper
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/add-low-ceremony-actor-web-local-runtime-source-helper.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Improve Actor-Web tool-port execution ergonomics
 

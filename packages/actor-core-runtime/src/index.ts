@@ -47,11 +47,11 @@ export type {
   ActorWebClient,
   ActorWebClientOptions,
   ActorWebLocalRuntimeActorSource,
-  ActorWebLocalRuntimeSources,
   ActorWebLocalRuntimeSourceOptions,
+  ActorWebLocalRuntimeSources,
   ActorWebReadModelClient,
-  StartedActorWebLocalRuntime,
   StartActorWebLocalRuntimeOptions,
+  StartedActorWebLocalRuntime,
 } from './actor-web-client.js';
 export {
   createActorWebClient,

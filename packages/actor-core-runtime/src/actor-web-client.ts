@@ -20,8 +20,8 @@ import {
 } from './testing/in-memory-message-transport.js';
 import type {
   ActorWebActorContext,
-  ActorWebActorEvent,
   ActorWebActorDescriptor,
+  ActorWebActorEvent,
   ActorWebActorMessage,
   ActorWebTopology,
   ActorWebTopologyInput,
@@ -391,11 +391,10 @@ export async function startActorWebLocalRuntime<
   ): ActorWebLocalRuntimeActorSource<TActor> => {
     return {
       readModel(sourceOptions) {
-        let source: ClosableActorWebReadModelSource<
+        const source: ClosableActorWebReadModelSource<
           ActorWebActorContext<TActor>,
           ActorWebActorEvent<TActor>
-        >;
-        source = createClosableLocalReadModelSource(
+        > = createClosableLocalReadModelSource(
           requireActor(actorKey) as unknown as ActorRef<
             ActorWebActorContext<TActor>,
             ActorWebActorMessage<TActor>
@@ -409,12 +408,11 @@ export async function startActorWebLocalRuntime<
         return source;
       },
       commandSource(sourceOptions) {
-        let source: ClosableActorWebCommandSource<
+        const source: ClosableActorWebCommandSource<
           ActorWebActorContext<TActor>,
           ActorWebActorMessage<TActor>,
           ActorWebActorEvent<TActor>
-        >;
-        source = createClosableLocalCommandSource(
+        > = createClosableLocalCommandSource(
           requireActor(actorKey) as unknown as ActorRef<
             ActorWebActorContext<TActor>,
             ActorWebActorMessage<TActor>
