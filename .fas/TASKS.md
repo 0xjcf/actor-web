@@ -806,6 +806,28 @@
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Define the Actor-Web Ignite source API contract
+
+- Title: Define the Actor-Web Ignite source API contract
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/define-the-actor-web-ignite-source-api-contract.md
+### Task: Add low-ceremony Actor-Web local runtime source helper
+
+- Title: Add low-ceremony Actor-Web local runtime source helper
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/add-low-ceremony-actor-web-local-runtime-source-helper.md
+- Automation mode: advisory
+### Task: Improve Actor-Web tool-port execution ergonomics
+
+- Title: Improve Actor-Web tool-port execution ergonomics
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/improve-actor-web-tool-port-execution-ergonomics.md
 ## Template
 
 ### Task: `<short task title>`
