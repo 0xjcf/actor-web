@@ -787,9 +787,12 @@
 
 - Title: Refresh Actor-Web documentation accuracy from CodeRabbit review
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/refresh-actor-web-documentation-accuracy-from-coderabbit-rev.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Polish FAS agent loop example cleanup
 
