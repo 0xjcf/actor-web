@@ -145,15 +145,11 @@ behavior.
 Use the split like this:
 
 ```ts
+const runtime = await startActorWebLocalRuntime(logistics);
+
 const shipmentHost = igniteCore({
-  source: () =>
-    logistics.actors.shipment.readModel({
-      gateway: { url: gatewayUrl },
-    }),
-  commandSource: () =>
-    logistics.actors.shipment.commandSource({
-      gateway: { url: gatewayUrl },
-    }),
+  source: ({ host }) => runtime.shipment.readModel({ host }),
+  commandSource: () => runtime.shipment.commandSource(),
   commands: ({ actor, command }) => ({
     resetShipment: command(() => actor.send({ type: 'RESET_SHIPMENT' })),
   }),
@@ -162,7 +158,10 @@ const shipmentHost = igniteCore({
 
 Do not inject standalone command-helper objects into Ignite components. Keep
 host-owned commands on the Ignite command API through the explicit
-`commandSource` pairing. Generic browser clients can still use
+`commandSource` pairing. For deployed gateway-backed pages, use the same split
+with `logistics.actors.shipment.readModel({ gateway })` and
+`logistics.actors.shipment.commandSource({ gateway })`. Generic browser clients
+can still use
 `createActorWebReadModelClient(...)` or `.readModel(...)` where no Ignite command
 surface is required.
 

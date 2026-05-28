@@ -74,6 +74,7 @@ import {
   createActorWebCommandSource,
   createActorWebReadModelClient,
   createActorWebReadModelSource,
+  startActorWebLocalRuntime,
   startActorWebNode,
 } from '@actor-core/runtime/browser';
 
@@ -631,15 +632,34 @@ const shipmentCard = igniteCore({
 equivalent to `stop()` for handles, so product code does not need to adapt
 `{ source, stop: () => source.close() }` by hand.
 
-Local in-process helpers can use the host-aware factory shape when they need to
-bind source lifetime to the custom element:
+For single-process proofs, use `startActorWebLocalRuntime(...)` instead of
+hand-starting every topology node and manually adapting ActorRefs. It starts the
+selected topology nodes over an in-memory transport network and exposes each
+actor at the top level with the Ignite-friendly source shape:
 
 ```ts
+const runtime = await startActorWebLocalRuntime(logistics, {
+  tools: {
+    'routing.plan': async (input) => ({
+      carrier: 'Northline Express',
+      eta: '24h',
+      routeNotes: `Route through ${String(input.destination)}`,
+    }),
+  },
+});
+
 const dashboard = igniteCore({
   source: ({ host }) => runtime.dashboard.readModel({ host }),
   commandSource: () => runtime.dashboard.commandSource(),
 });
 ```
+
+`readModel({ host })` accepts Ignite's host-context object so product code can
+pass the source factory arguments straight through. `source.close()` closes that
+source's subscriptions; `runtime.stop()` closes every source the runtime opened
+and then stops all started Actor-Web nodes. App-owned runtimes should call
+`runtime.stop()` during teardown. Ignite-owned isolated sources can rely on
+`close()` or an `AbortSignal` passed to `readModel(...)`/`commandSource(...)`.
 
 Use an explicit command helper when the host owns command/control:
 
@@ -958,6 +978,36 @@ const worker = await startActorWebNode(logistics, {
 
 Browser nodes only open outbound WebSocket connections. They do not listen for
 runtime peers.
+
+### `startActorWebLocalRuntime(topology, options?)`
+
+Starts a whole topology, or an explicit subset of nodes, inside one process with
+an in-memory transport network. Use it for demos, product proofs, and local
+Ignite validation where the app owns runtime startup and teardown.
+
+```ts
+const runtime = await startActorWebLocalRuntime(logistics);
+
+const shipmentProjection = runtime.shipment.readModel();
+const shipmentCommands = runtime.shipment.commandSource();
+
+await shipmentCommands.send({
+  type: 'CREATE_SHIPMENT',
+  shipmentId: 'shipment-1001',
+});
+
+await runtime.stop();
+```
+
+The returned runtime exposes:
+
+- `runtime.actorKey.readModel({ host?, signal? })`
+- `runtime.actorKey.commandSource({ host?, signal? })`
+- `runtime.actorKey.actor()`
+- `runtime.actors.actorKey` for the same helpers without top-level access
+- `runtime.nodes` for node handles and focused test flushing
+- `runtime.getActor(key)` / `runtime.requireActor(key)`
+- `runtime.stop()`
 
 ## Gateway
 
