@@ -8,21 +8,40 @@ export type ActorToolExecutor<TInput = unknown, TOutput = unknown> = (
   context: ActorToolExecutionContext
 ) => TOutput | Promise<TOutput>;
 
-export type ActorToolRegistry = Record<string, ActorToolExecutor>;
+export type ActorToolRegistry = Record<string, ActorToolExecutor<never, unknown>>;
+export type UntypedActorToolRegistry = Record<string, ActorToolExecutor<unknown, unknown>>;
 
-export interface ActorToolbox {
+type ActorToolInput<TTool> = TTool extends (
+  input: infer TInput,
+  context: ActorToolExecutionContext
+) => unknown
+  ? TInput
+  : unknown;
+
+type ActorToolOutput<TTool> = TTool extends (
+  input: never,
+  context: ActorToolExecutionContext
+) => infer TOutput
+  ? Awaited<TOutput>
+  : unknown;
+
+export interface ActorToolbox<TTools extends ActorToolRegistry = UntypedActorToolRegistry> {
   has(name: string): boolean;
   list(): string[];
   get(name: string): ActorToolExecutor | undefined;
+  execute<TName extends keyof TTools & string>(
+    name: TName,
+    input: ActorToolInput<TTools[TName]>
+  ): Promise<ActorToolOutput<TTools[TName]>>;
   execute<TOutput = unknown, TInput = unknown>(name: string, input: TInput): Promise<TOutput>;
 }
 
-export function createActorToolbox(
-  registry: ActorToolRegistry | undefined,
+export function createActorToolbox<TTools extends ActorToolRegistry = UntypedActorToolRegistry>(
+  registry: TTools | undefined,
   context: ActorToolExecutionContext,
   allowedToolNames?: readonly string[]
-): ActorToolbox {
-  const tools = registry ?? {};
+): ActorToolbox<TTools> {
+  const tools = (registry ?? {}) as UntypedActorToolRegistry;
   const allowedTools = allowedToolNames ? new Set(allowedToolNames) : null;
 
   const isAllowed = (name: string): boolean => {

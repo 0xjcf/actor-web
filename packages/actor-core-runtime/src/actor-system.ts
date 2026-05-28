@@ -14,7 +14,7 @@
 
 import type { ActorInstance } from './actor-instance.js';
 import type { ActorRef } from './actor-ref.js';
-import type { ActorToolbox } from './actor-tools.js';
+import type { ActorToolbox, ActorToolRegistry, UntypedActorToolRegistry } from './actor-tools.js';
 import type { UniversalTemplate } from './create-actor.js';
 import type { JsonValue, Message } from './types.js';
 import { createActorAddress } from './utils/factories.js';
@@ -186,7 +186,11 @@ export interface SupervisionStrategy {
  * @template TMessage - The message type this actor handles
  * @template TEmitted - The domain events this actor can emit
  */
-export interface ActorBehavior<TMessage = ActorMessage, TEmitted = ActorMessage> {
+export interface ActorBehavior<
+  TMessage = ActorMessage,
+  TEmitted = ActorMessage,
+  TTools extends ActorToolRegistry = UntypedActorToolRegistry,
+> {
   /**
    * Optional type definitions for compile-time validation
    * Inherited from BehaviorActorConfig to support type checking
@@ -213,7 +217,7 @@ export interface ActorBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>
   readonly onMessage: (params: {
     readonly message: TMessage;
     readonly actor: ActorInstance;
-    readonly tools: ActorToolbox;
+    readonly tools: ActorToolbox<TTools>;
   }) => MessagePlan<TEmitted> | Promise<MessagePlan<TEmitted>> | void | Promise<void>;
 
   /**
@@ -222,7 +226,7 @@ export interface ActorBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>
    */
   readonly onStart?: (params: {
     readonly actor: ActorInstance;
-    readonly tools: ActorToolbox;
+    readonly tools: ActorToolbox<TTools>;
   }) => MessagePlan<TEmitted> | Promise<MessagePlan<TEmitted>> | void | Promise<void>;
 
   /**
@@ -231,7 +235,7 @@ export interface ActorBehavior<TMessage = ActorMessage, TEmitted = ActorMessage>
    */
   readonly onStop?: (params: {
     readonly actor: ActorInstance;
-    readonly tools: ActorToolbox;
+    readonly tools: ActorToolbox<TTools>;
   }) => Promise<void> | void;
 
   /**
