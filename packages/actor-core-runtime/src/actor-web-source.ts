@@ -18,8 +18,10 @@ import type {
   RuntimeGatewayScopeDescriptor,
   RuntimeGatewayServerFrame,
   RuntimeGatewaySnapshotProjection,
+  RuntimeGatewaySourceHandle,
   RuntimeGatewaySubscribeMode,
 } from './runtime-gateway.js';
+import { createRuntimeGatewaySourceHandle } from './runtime-gateway.js';
 import type {
   ActorWebActorAddress,
   ActorWebActorContext,
@@ -110,6 +112,38 @@ export type ClosableActorWebSource<
   TMessage extends ActorMessage = ActorMessage,
   TEvent extends ActorMessage = ActorMessage,
 > = ClosableActorWebCommandSource<TContext, TMessage, TEvent>;
+
+export type ClosableActorWebSourceHandle<
+  TContext = unknown,
+  TMessage extends ActorMessage = ActorMessage,
+  TEvent extends ActorMessage = ActorMessage,
+> = RuntimeGatewaySourceHandle<
+  ClosableActorWebReadModelSource<TContext, TEvent>,
+  ClosableActorWebSource<TContext, TMessage, TEvent>
+>;
+
+export function createActorWebSourceHandle<
+  TContext = unknown,
+  TMessage extends ActorMessage = ActorMessage,
+  TEvent extends ActorMessage = ActorMessage,
+>(
+  readModel: ClosableActorWebReadModelSource<TContext, TEvent>,
+  commandSource: Pick<ClosableActorWebSource<TContext, TMessage, TEvent>, 'ask' | 'close' | 'send'>
+): ClosableActorWebSourceHandle<TContext, TMessage, TEvent> {
+  const commandFacade: ClosableActorWebSource<TContext, TMessage, TEvent> = {
+    address: readModel.address,
+    snapshot: () => readModel.snapshot(),
+    subscribe: (listener) => readModel.subscribe(listener),
+    subscribeEvent: (listener, options) => readModel.subscribeEvent(listener, options),
+    transportStatus: () => readModel.transportStatus(),
+    subscribeTransportStatus: (listener) => readModel.subscribeTransportStatus(listener),
+    send: (message) => commandSource.send(message),
+    ask: (message, timeout) => commandSource.ask(message, timeout),
+    close: () => commandSource.close(),
+  };
+
+  return createRuntimeGatewaySourceHandle(readModel, commandFacade);
+}
 
 type PendingAsk = {
   resolve(value: unknown): void;

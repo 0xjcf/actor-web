@@ -144,6 +144,42 @@ export interface RuntimeGatewayCommandSource extends RuntimeGatewayReadModelSour
 
 export type RuntimeGatewaySource = RuntimeGatewayCommandSource;
 
+export type RuntimeGatewaySourceHandle<
+  TSource = RuntimeGatewayReadModelSource,
+  TCommandSource = never,
+> = {
+  readonly source: TSource;
+  stop(): void | Promise<void>;
+} & ([TCommandSource] extends [never]
+  ? { readonly commandSource?: never }
+  : { readonly commandSource: TCommandSource });
+
+export function createRuntimeGatewaySourceHandle<TSource>(
+  source: TSource
+): RuntimeGatewaySourceHandle<TSource, never>;
+export function createRuntimeGatewaySourceHandle<TSource, TCommandSource>(
+  source: TSource,
+  commandSource: TCommandSource
+): RuntimeGatewaySourceHandle<TSource, TCommandSource>;
+export function createRuntimeGatewaySourceHandle<TSource, TCommandSource>(
+  source: TSource,
+  commandSource?: TCommandSource
+): RuntimeGatewaySourceHandle<TSource, TCommandSource> {
+  const closeSource = source as { close?: () => void | Promise<void> };
+  const closeCommandSource = commandSource as { close?: () => void | Promise<void> } | undefined;
+
+  return {
+    source,
+    ...(commandSource ? { commandSource } : {}),
+    async stop(): Promise<void> {
+      await closeSource.close?.();
+      if (commandSource && commandSource !== (source as unknown)) {
+        await closeCommandSource?.close?.();
+      }
+    },
+  } as RuntimeGatewaySourceHandle<TSource, TCommandSource>;
+}
+
 export type RuntimeGatewaySubscribeMode = 'full' | 'command-only';
 
 export type RuntimeGatewayScopeResolver<TAuthContext = unknown> = (

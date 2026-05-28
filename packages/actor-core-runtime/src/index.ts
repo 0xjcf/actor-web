@@ -270,6 +270,7 @@ export type {
   RuntimeGatewayScopeResolver,
   RuntimeGatewayServerFrame,
   RuntimeGatewaySnapshotProjection,
+  RuntimeGatewaySourceHandle,
   RuntimeGatewayTransitionRecord,
   RuntimeGatewayWorkflowSnapshot,
 } from './runtime-gateway.js';
@@ -278,6 +279,7 @@ export {
   createRuntimeGatewayHub,
   createRuntimeGatewayReadModelSource,
   createRuntimeGatewaySource,
+  createRuntimeGatewaySourceHandle,
   RuntimeGatewayScopeError,
 } from './runtime-gateway.js';
 export type {

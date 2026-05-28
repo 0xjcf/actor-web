@@ -6,8 +6,13 @@ import {
   createActorWebCommandSource,
   createActorWebReadModelSource,
   createActorWebSource,
+  createActorWebSourceHandle,
 } from './actor-web-source.js';
-import type { RuntimeGatewayScopeDescriptor } from './runtime-gateway.js';
+import {
+  createRuntimeGatewaySourceHandle,
+  type RuntimeGatewayScopeDescriptor,
+  type RuntimeGatewaySourceHandle,
+} from './runtime-gateway.js';
 
 export type ActorWebSupervisionStrategy = 'restart' | 'resume' | 'stop' | 'escalate';
 
@@ -149,6 +154,19 @@ export interface ActorWebActorDescriptor<
     ActorWebBehaviorMessage<NonNullable<TBehavior>>,
     ActorWebBehaviorEvent<NonNullable<TBehavior>>
   >;
+  sourceHandle(
+    options: ActorWebSourceOptions
+  ): RuntimeGatewaySourceHandle<
+    ClosableActorWebReadModelSource<
+      ActorWebBehaviorContext<NonNullable<TBehavior>>,
+      ActorWebBehaviorEvent<NonNullable<TBehavior>>
+    >,
+    ClosableActorWebSource<
+      ActorWebBehaviorContext<NonNullable<TBehavior>>,
+      ActorWebBehaviorMessage<NonNullable<TBehavior>>,
+      ActorWebBehaviorEvent<NonNullable<TBehavior>>
+    >
+  >;
   /**
    * Preferred Ignite Element projection source. This source exposes live
    * snapshots/events/transport status without requiring command capability.
@@ -158,6 +176,15 @@ export interface ActorWebActorDescriptor<
   ): ClosableActorWebReadModelSource<
     ActorWebBehaviorContext<NonNullable<TBehavior>>,
     ActorWebBehaviorEvent<NonNullable<TBehavior>>
+  >;
+  readModelHandle(
+    options: ActorWebSourceOptions
+  ): RuntimeGatewaySourceHandle<
+    ClosableActorWebReadModelSource<
+      ActorWebBehaviorContext<NonNullable<TBehavior>>,
+      ActorWebBehaviorEvent<NonNullable<TBehavior>>
+    >,
+    never
   >;
   /**
    * Explicit command/control source for hosts that intentionally send or ask.
@@ -350,11 +377,31 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
               ...options,
             });
           },
+          sourceHandle(options: ActorWebSourceOptions) {
+            const readModel = createActorWebReadModelSource({
+              actor: this,
+              ...options,
+            });
+            const commandSource = createActorWebCommandSource({
+              actor: this,
+              ...options,
+            });
+
+            return createActorWebSourceHandle(readModel, commandSource);
+          },
           readModel(options: ActorWebSourceOptions): ClosableActorWebReadModelSource {
             return createActorWebReadModelSource({
               actor: this,
               ...options,
             });
+          },
+          readModelHandle(options: ActorWebSourceOptions) {
+            return createRuntimeGatewaySourceHandle(
+              createActorWebReadModelSource({
+                actor: this,
+                ...options,
+              })
+            );
           },
           commandSource(options: ActorWebSourceOptions): ClosableActorWebSource {
             return createActorWebCommandSource({

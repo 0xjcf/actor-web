@@ -40,11 +40,13 @@ export type {
   ClosableActorWebCommandSource,
   ClosableActorWebReadModelSource,
   ClosableActorWebSource,
+  ClosableActorWebSourceHandle,
 } from './actor-web-source.js';
 export {
   createActorWebCommandSource,
   createActorWebReadModelSource,
   createActorWebSource,
+  createActorWebSourceHandle,
 } from './actor-web-source.js';
 export { createActorRef } from './create-actor-ref.js';
 export type {
@@ -107,9 +109,11 @@ export type {
   RuntimeGatewayScopeDescriptor,
   RuntimeGatewayServerFrame,
   RuntimeGatewaySnapshotProjection,
+  RuntimeGatewaySourceHandle,
   RuntimeGatewayTransitionRecord,
   RuntimeGatewayWorkflowSnapshot,
 } from './runtime-gateway.js';
+export { createRuntimeGatewaySourceHandle } from './runtime-gateway.js';
 export type {
   ActorMessageRecord as RuntimeGatewayActorMessageRecord,
   ActorMessageToRuntimeGatewayEventEnvelopeOptions,

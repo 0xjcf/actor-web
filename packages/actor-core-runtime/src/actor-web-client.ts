@@ -6,13 +6,19 @@ import {
   type ClosableActorWebCommandSource,
   type ClosableActorWebReadModelSource,
   type ClosableActorWebSource,
+  createActorWebCommandSource,
   createActorWebReadModelSource,
   createActorWebSource,
+  createActorWebSourceHandle,
 } from './actor-web-source.js';
 import {
   createIgniteCommandSource,
   createIgniteReadModelSource,
 } from './integration/ignite-element-bridge.js';
+import {
+  createRuntimeGatewaySourceHandle,
+  type RuntimeGatewaySourceHandle,
+} from './runtime-gateway.js';
 import { type StartedActorWebNode, startActorWebNode } from './start-actor-web-node.js';
 import {
   createInMemoryMessageTransportNetwork,
@@ -33,13 +39,29 @@ export interface ActorWebClientOptions {
   readonly clientVersion?: string;
 }
 
+export type ActorWebClientActorSource<TActor extends ActorWebActorDescriptor> =
+  ClosableActorWebSource<
+    ActorWebActorContext<TActor>,
+    ActorWebActorMessage<TActor>,
+    ActorWebActorEvent<TActor>
+  > & {
+    sourceHandle(): RuntimeGatewaySourceHandle<
+      ClosableActorWebReadModelSource<ActorWebActorContext<TActor>, ActorWebActorEvent<TActor>>,
+      ClosableActorWebSource<
+        ActorWebActorContext<TActor>,
+        ActorWebActorMessage<TActor>,
+        ActorWebActorEvent<TActor>
+      >
+    >;
+    readModelHandle(): RuntimeGatewaySourceHandle<
+      ClosableActorWebReadModelSource<ActorWebActorContext<TActor>, ActorWebActorEvent<TActor>>,
+      never
+    >;
+  };
+
 export type ActorWebClient<TTopology extends ActorWebTopology<ActorWebTopologyInput>> = {
   readonly actors: {
-    readonly [K in keyof TTopology['actors']]: ClosableActorWebSource<
-      ActorWebActorContext<TTopology['actors'][K]>,
-      ActorWebActorMessage<TTopology['actors'][K]>,
-      ActorWebActorEvent<TTopology['actors'][K]>
-    >;
+    readonly [K in keyof TTopology['actors']]: ActorWebClientActorSource<TTopology['actors'][K]>;
   };
   close(): void;
 };
@@ -69,9 +91,25 @@ export interface ActorWebLocalRuntimeSourceOptions {
 }
 
 export type ActorWebLocalRuntimeActorSource<TActor extends ActorWebActorDescriptor> = {
+  sourceHandle(
+    options?: ActorWebLocalRuntimeSourceOptions
+  ): RuntimeGatewaySourceHandle<
+    ClosableActorWebReadModelSource<ActorWebActorContext<TActor>, ActorWebActorEvent<TActor>>,
+    ClosableActorWebCommandSource<
+      ActorWebActorContext<TActor>,
+      ActorWebActorMessage<TActor>,
+      ActorWebActorEvent<TActor>
+    >
+  >;
   readModel(
     options?: ActorWebLocalRuntimeSourceOptions
   ): ClosableActorWebReadModelSource<ActorWebActorContext<TActor>, ActorWebActorEvent<TActor>>;
+  readModelHandle(
+    options?: ActorWebLocalRuntimeSourceOptions
+  ): RuntimeGatewaySourceHandle<
+    ClosableActorWebReadModelSource<ActorWebActorContext<TActor>, ActorWebActorEvent<TActor>>,
+    never
+  >;
   commandSource(
     options?: ActorWebLocalRuntimeSourceOptions
   ): ClosableActorWebCommandSource<
@@ -243,7 +281,7 @@ export function createActorWebClient<TTopology extends ActorWebTopology<ActorWeb
   topology: TTopology,
   options: ActorWebClientOptions
 ): ActorWebClient<TTopology> {
-  const openedSources = new Set<ClosableActorWebSource>();
+  const openedSources = new Set<{ close(): void }>();
   const actors = {} as ActorWebClient<TTopology>['actors'];
 
   for (const [key, actor] of Object.entries(topology.actors)) {
@@ -251,15 +289,49 @@ export function createActorWebClient<TTopology extends ActorWebTopology<ActorWeb
     Object.defineProperty(actors, key, {
       enumerable: true,
       get() {
-        source ??= createActorWebSource({
-          actor,
-          gateway: options.gateway,
-          streamId: `actor-web-${key}`,
-          clientVersion: options.clientVersion,
-          ...(options.createSocket ? { createSocket: options.createSocket } : {}),
-        });
+        source ??= Object.assign(
+          createActorWebSource({
+            actor,
+            gateway: options.gateway,
+            streamId: `actor-web-${key}`,
+            clientVersion: options.clientVersion,
+            ...(options.createSocket ? { createSocket: options.createSocket } : {}),
+          }),
+          {
+            sourceHandle() {
+              const readModel = createActorWebReadModelSource({
+                actor,
+                gateway: options.gateway,
+                streamId: `actor-web-${key}-source-handle-read-model`,
+                clientVersion: options.clientVersion,
+                ...(options.createSocket ? { createSocket: options.createSocket } : {}),
+              });
+              const commandSource = createActorWebCommandSource({
+                actor,
+                gateway: options.gateway,
+                streamId: `actor-web-${key}-source-handle-command`,
+                clientVersion: options.clientVersion,
+                ...(options.createSocket ? { createSocket: options.createSocket } : {}),
+              });
+              openedSources.add(readModel);
+              openedSources.add(commandSource);
+              return createActorWebSourceHandle(readModel, commandSource);
+            },
+            readModelHandle() {
+              const readModel = createActorWebReadModelSource({
+                actor,
+                gateway: options.gateway,
+                streamId: `actor-web-${key}-read-model`,
+                clientVersion: options.clientVersion,
+                ...(options.createSocket ? { createSocket: options.createSocket } : {}),
+              });
+              openedSources.add(readModel);
+              return createRuntimeGatewaySourceHandle(readModel);
+            },
+          }
+        );
         openedSources.add(source);
-        return source;
+        return source as ActorWebClient<TTopology>['actors'][typeof key];
       },
     });
   }
@@ -278,7 +350,7 @@ export function createActorWebClient<TTopology extends ActorWebTopology<ActorWeb
 export function createActorWebReadModelClient<
   TTopology extends ActorWebTopology<ActorWebTopologyInput>,
 >(topology: TTopology, options: ActorWebClientOptions): ActorWebReadModelClient<TTopology> {
-  const openedSources = new Set<ClosableActorWebReadModelSource>();
+  const openedSources = new Set<{ close(): void }>();
   const actors = {} as ActorWebReadModelClient<TTopology>['actors'];
 
   for (const [key, actor] of Object.entries(topology.actors)) {
@@ -389,7 +461,13 @@ export async function startActorWebLocalRuntime<
   const createActorSource = <TActor extends ActorWebActorDescriptor>(
     actorKey: keyof TTopology['actors'] & string
   ): ActorWebLocalRuntimeActorSource<TActor> => {
-    return {
+    const sourceApi: ActorWebLocalRuntimeActorSource<TActor> = {
+      sourceHandle(sourceOptions) {
+        return createRuntimeGatewaySourceHandle(
+          sourceApi.readModel(sourceOptions),
+          sourceApi.commandSource(sourceOptions)
+        );
+      },
       readModel(sourceOptions) {
         const source: ClosableActorWebReadModelSource<
           ActorWebActorContext<TActor>,
@@ -406,6 +484,9 @@ export async function startActorWebLocalRuntime<
         );
         openedSources.add(source);
         return source;
+      },
+      readModelHandle(sourceOptions) {
+        return createRuntimeGatewaySourceHandle(sourceApi.readModel(sourceOptions));
       },
       commandSource(sourceOptions) {
         const source: ClosableActorWebCommandSource<
@@ -432,6 +513,7 @@ export async function startActorWebLocalRuntime<
         >;
       },
     };
+    return sourceApi;
   };
 
   const actorSources = Object.fromEntries(
