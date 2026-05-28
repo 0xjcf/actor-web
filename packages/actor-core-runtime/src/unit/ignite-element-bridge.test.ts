@@ -11,6 +11,7 @@ import {
   createIgniteCommandSource,
   createIgniteReadModelSource,
 } from '../integration/ignite-element-bridge.js';
+import { createRuntimeGatewaySourceHandle } from '../runtime-gateway.js';
 import { createInMemoryMessageTransportNetwork } from '../testing/in-memory-message-transport.js';
 import type { ActorSnapshot } from '../types.js';
 import { defineActor } from '../unified-actor-builder.js';
@@ -160,6 +161,28 @@ describe('ignite-element bridge', () => {
     await actor.stop();
 
     expect(source.snapshot().context.count).toBe(1);
+  });
+
+  it('packages projection reads and command access into one Ignite source handle', async () => {
+    const actor = createActorRef<{ count: number }, CounterMessage>(counterMachine, {
+      id: 'checkout-source-handle',
+    }) as ActorRef<{ count: number }, CounterMessage> & { start(): void };
+
+    actor.start();
+
+    const sourceHandle = createRuntimeGatewaySourceHandle(
+      createIgniteReadModelSource(actor),
+      createIgniteCommandSource(actor)
+    );
+
+    expect('send' in sourceHandle.source).toBe(false);
+    expect(typeof sourceHandle.commandSource.send).toBe('function');
+
+    await sourceHandle.commandSource.send({ type: 'INCREMENT' });
+    await actor.stop();
+    await sourceHandle.stop();
+
+    expect(sourceHandle.source.snapshot().context.count).toBe(1);
   });
 
   it('creates an actor source for system.spawn refs with live and stopped snapshots', async () => {

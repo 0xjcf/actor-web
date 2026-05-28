@@ -73,8 +73,9 @@ describe('startActorWebLocalRuntime', () => {
     const runtime = await startActorWebLocalRuntime(logistics);
 
     try {
-      const readModel = runtime.dashboard.readModel({ host: new EventTarget() });
-      const commandSource = runtime.dashboard.commandSource();
+      const sourceHandle = runtime.dashboard.sourceHandle({ host: new EventTarget() });
+      const readModel = sourceHandle.source;
+      const commandSource = sourceHandle.commandSource;
       const snapshots: ShipmentContext[] = [];
 
       readModel.subscribe((snapshot) => {
@@ -98,6 +99,7 @@ describe('startActorWebLocalRuntime', () => {
         shipmentId: 'shipment-1',
         status: 'created',
       });
+      await sourceHandle.stop();
     } finally {
       await runtime.stop();
     }
@@ -145,8 +147,17 @@ describe('startActorWebLocalRuntime', () => {
       DashboardCommand,
       DashboardEvent
     > = runtime.dashboard.commandSource();
+    const sourceHandle = runtime.dashboard.sourceHandle(options);
     const command: DashboardCommand = { type: 'CREATE_SHIPMENT', shipmentId: 'typed' };
     const snapshots: DashboardContext[] = [];
+
+    const sourceHandleReadModel: ClosableActorWebReadModelSource<DashboardContext, DashboardEvent> =
+      sourceHandle.source;
+    const sourceHandleCommandSource: ClosableActorWebSource<
+      DashboardContext,
+      DashboardCommand,
+      DashboardEvent
+    > = sourceHandle.commandSource;
 
     readModel.subscribe((snapshot) => {
       snapshots.push(snapshot.context);
@@ -156,6 +167,8 @@ describe('startActorWebLocalRuntime', () => {
     await runtime.nodes.dashboard?.system.flush();
 
     expect(snapshots).toHaveLength(1);
+    expect(sourceHandleReadModel.snapshot().context.status).toBe('created');
+    expect(sourceHandleCommandSource).toBeDefined();
 
     await runtime.stop();
   });
