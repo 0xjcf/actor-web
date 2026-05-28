@@ -2,15 +2,17 @@
 
 ## Summary
 
-Actor-Web should support two source-authoring paths for Ignite Element:
+Actor-Web should support three source-authoring paths for Ignite Element:
 
 - Shared TypeScript topology for the best developer experience:
   `source: logistics.actors.shipment.readModel()`.
-- Address-based source creation for separate repositories, generated clients, or
-  non-TypeScript consumers:
+- Generated client metadata for polyrepo or cross-language teams:
+  `source: logistics.actors.shipment.readModel({ gateway })`.
+- Address-based source creation for separate repositories or non-TypeScript
+  consumers:
   `createActorWebReadModelSource({ address, contractVersion, gateway })`.
 
-Both paths should preserve hexagonal architecture and actor model topology. The
+All paths should preserve hexagonal architecture and actor model topology. The
 topology stays explicit, actors own behavior, adapters own boundaries, and
 Ignite Element owns projection/rendering.
 
@@ -82,7 +84,7 @@ Recommended public API boundaries:
 
 ```ts
 // Shared, browser-safe topology declarations.
-import { actor, defineActorWebTopology, node, tool } from '@actor-core/runtime/topology';
+import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-core/runtime/topology';
 
 // Browser/presentation source creation and browser worker runtime hosting.
 import {
@@ -128,7 +130,7 @@ TypeScript contract. This is the recommended monorepo and shared package DX.
 
 ```ts
 // logistics.topology.ts
-import { actor, defineActorWebTopology, node, tool } from '@actor-core/runtime/topology';
+import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-core/runtime/topology';
 import { createRoutingBehavior } from './actors/routing.actor';
 import { createShipmentBehavior } from './actors/shipment.actor';
 

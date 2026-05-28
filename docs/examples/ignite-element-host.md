@@ -16,7 +16,7 @@ The example demonstrates four boundaries:
 - **Service worker topology proof:** browser host and service worker runtime
   still communicate through the example-local MessagePort transport.
 
-Runnable prove-out: [`examples/ignite-headless-host/`](/Users/joseflores/Development/actor-web/examples/ignite-headless-host)
+Runnable prove-out: `examples/ignite-headless-host/`
 
 For the full browser demo, use the dedicated launcher:
 

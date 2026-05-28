@@ -364,9 +364,10 @@ supervisors: {
 
 The topology builder validates supervisor node keys and child actor keys. Current
 runtime enforcement is intentionally basic: actor failures are restarted through
-the runtime's restart guardrails, while topology-specific group strategies such
-as `one-for-all` and `rest-for-one` remain declared metadata until the
-supervision enforcement slice is completed.
+the runtime's per-actor restart guardrails. Topology-specific group strategies
+such as `one-for-all` and `rest-for-one` are metadata-only until the supervision
+enforcement slice is completed; today they fall back to independent per-actor
+restart behavior rather than restarting or stopping sibling actors as a group.
 
 ### Tools For Agents
 
