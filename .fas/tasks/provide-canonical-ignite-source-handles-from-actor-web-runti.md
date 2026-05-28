@@ -34,7 +34,11 @@ Support the target consumer API where Ignite receives source: runtime.dashboard(
 - examples/ignite-headless-host
 
 ## Scope Amendments
-- None.
+- Promote `packages/actor-core-runtime/src/actor-web-client.ts` because local runtime actor sources own the target `runtime.dashboard.sourceHandle({ host })` API surface.
+- Promote `packages/actor-core-runtime/src/actor-web-source.ts` because remote Actor-Web handles need one canonical projection-plus-command pairing helper for topology descriptors and generated clients.
+- Promote `packages/actor-core-runtime/src/browser.ts` and `packages/actor-core-runtime/src/index.ts` so the new source-handle types/helpers remain reachable from public package entrypoints.
+- Promote `packages/actor-core-runtime/src/unit/actor-web-local-runtime.test.ts` to cover the local runtime source-handle contract.
+- Treat `examples/ignite-headless-host/ignite-headless-host-element.tsx` as the concrete file under the planned `examples/ignite-headless-host` directory that demonstrates the canonical handle with Ignite.
 
 ## Implementation plan
 - Convert the supplied context into a scoped implementation plan before editing.
