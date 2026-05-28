@@ -29,13 +29,14 @@ Review the current defineActorWebTopology, actor/node/supervisor helpers, tool d
 ## Affected files
 
 - packages/actor-core-runtime/src/topology.ts
+- packages/actor-core-runtime/src/topology-entry.ts
 - packages/actor-core-runtime/src/unified-actor-builder.ts
 - packages/actor-core-runtime/src/unit/actor-tools.test.ts
 - examples/fas-agent-loop
 
 ## Scope Amendments
 
-- None.
+- Added `packages/actor-core-runtime/src/topology-entry.ts` so the new topology helper types remain available through the public `@actor-core/runtime/topology` entrypoint used by the examples.
 
 ## Implementation plan
 
