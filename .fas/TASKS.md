@@ -810,8 +810,8 @@
 
 - Title: Define the Actor-Web Ignite source API contract
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/define-the-actor-web-ignite-source-api-contract.md
 - Verification lane: fast
 - Policy sensitivity: standard
