@@ -46,6 +46,7 @@ describe('fas-agent-loop example', () => {
     expect(fasAgentLoop.actors.taskRun.resolveAddress(TEST_TASK).path).toBe(
       'actor://fas-coordinator-runtime/actor/fas-task-task-1001'
     );
+    expect(fasAgentLoop.actors.plannerAgent.tools).toEqual([]);
     expect(fasAgentLoop.actors.implementerAgent.tools).toEqual(['codex.generate_patch']);
     expect(fasAgentLoop.actors.verifierAgent.tools).toEqual(['repo.diff', 'verification.run']);
     expect(fasAgentLoop.actors.reviewerAgent.tools).toEqual(['review.diff', 'memory.write']);
