@@ -776,8 +776,8 @@
 
 - Title: Clean up FAS memory and tracker text quality
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/clean-up-fas-memory-and-tracker-text-quality.md
 - Verification lane: fast
 - Policy sensitivity: standard
