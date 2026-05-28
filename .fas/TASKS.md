@@ -844,7 +844,7 @@
 
 - Title: Provide canonical Ignite source handles from Actor-Web runtime topology
 - Mode: single-agent
-- Status: implementing
+- Status: done
 - Owner: implementer
 - Brief: .fas/tasks/provide-canonical-ignite-source-handles-from-actor-web-runti.md
 - Automation mode: advisory
