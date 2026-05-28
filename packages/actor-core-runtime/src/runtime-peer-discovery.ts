@@ -147,6 +147,7 @@ function sanitizeRuntimePeerDiscoveryUrl(urlInput: string): string {
   }
 
   sanitizeRuntimePeerDiscoverySearchParams(url);
+  url.hash = '';
   if (url.pathname === '/' && hasAuthorityOnlyRuntimePeerDiscoveryUrl(urlInput)) {
     const search = url.search.length > 0 ? url.search : '';
     return `${url.protocol}//${url.host}${search}`;

@@ -58,10 +58,12 @@ export interface RuntimeTransportTelemetryEvent {
 
 export type RuntimeTransportTelemetryObserver = (event: RuntimeTransportTelemetryEvent) => void;
 
+export type RuntimeTransportTelemetrySinkResult = void | Promise<void>;
+
 export interface RuntimeTransportTelemetrySink {
-  write(event: RuntimeTransportTelemetryEvent): void | Promise<void>;
-  flush?(): void | Promise<void>;
-  close?(): void | Promise<void>;
+  write(event: RuntimeTransportTelemetryEvent): RuntimeTransportTelemetrySinkResult;
+  flush?(): RuntimeTransportTelemetrySinkResult;
+  close?(): RuntimeTransportTelemetrySinkResult;
 }
 
 export interface RuntimeTransportTelemetryExporter {

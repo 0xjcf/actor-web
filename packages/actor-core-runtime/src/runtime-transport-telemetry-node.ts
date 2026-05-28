@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type {
   RuntimeTransportTelemetryEvent,
@@ -15,17 +15,19 @@ export function createRuntimeTransportTelemetryJsonlFileSink(
   options: RuntimeTransportTelemetryJsonlFileSinkOptions = {}
 ): RuntimeTransportTelemetrySink {
   const directory = dirname(filePath);
-  if (!existsSync(directory)) {
-    mkdirSync(directory, { recursive: true });
-  }
-
-  if (!options.append) {
-    writeFileSync(filePath, '');
-  }
+  const initialized = mkdir(directory, { recursive: true }).then(async () => {
+    if (!options.append) {
+      await writeFile(filePath, '');
+    }
+  });
 
   return {
-    write(event: RuntimeTransportTelemetryEvent): void {
-      appendFileSync(filePath, `${serializeRuntimeTransportTelemetryEvent(event)}\n`);
+    async write(event: RuntimeTransportTelemetryEvent): Promise<void> {
+      await initialized;
+      await appendFile(filePath, `${serializeRuntimeTransportTelemetryEvent(event)}\n`);
+    },
+    async flush(): Promise<void> {
+      await initialized;
     },
   };
 }

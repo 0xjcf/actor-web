@@ -167,6 +167,18 @@ describe('runtime peer discovery providers', () => {
     });
   });
 
+  it('strips hash fragments from sanitized raw discovery urls', () => {
+    expect(
+      createRuntimePeerDiscoveryRecord({
+        nodeAddress: 'server-node',
+        url: 'wss://runtime.internal/mesh?role=server&zone=use1#runtime-secret',
+      })
+    ).toEqual({
+      nodeAddress: 'server-node',
+      url: 'wss://runtime.internal/mesh?role=server&zone=use1',
+    });
+  });
+
   it('rejects raw discovery urls with unsupported protocols', () => {
     expect(() =>
       createRuntimePeerDiscoveryRecord({
@@ -355,6 +367,47 @@ describe('runtime peer discovery providers', () => {
       {
         nodeAddress: 'server-node',
         url: 'ws://127.0.0.1:4102',
+      },
+    ]);
+  });
+
+  it('emits available then updated deterministically across concurrent upserts', async () => {
+    const discovery = createInMemoryRuntimePeerDiscoveryProvider();
+    const events: RuntimePeerDiscoveryEvent[] = [];
+
+    discovery.subscribe?.((event) => {
+      events.push(event);
+    });
+
+    await Promise.all([
+      Promise.resolve().then(() =>
+        discovery.upsertPeer({
+          nodeAddress: 'server-node',
+          url: 'ws://127.0.0.1:4101',
+        })
+      ),
+      Promise.resolve().then(() =>
+        discovery.upsertPeer({
+          nodeAddress: 'server-node',
+          url: 'ws://127.0.0.1:4102',
+        })
+      ),
+    ]);
+
+    expect(events).toEqual([
+      {
+        type: 'peer.available',
+        peer: {
+          nodeAddress: 'server-node',
+          url: 'ws://127.0.0.1:4101',
+        },
+      },
+      {
+        type: 'peer.updated',
+        peer: {
+          nodeAddress: 'server-node',
+          url: 'ws://127.0.0.1:4102',
+        },
       },
     ]);
   });

@@ -764,10 +764,13 @@
 
 - Title: Complete runtime telemetry and discovery hygiene
 - Mode: 4-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/complete-runtime-telemetry-and-discovery-hygiene.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Clean up FAS memory and tracker text quality
 

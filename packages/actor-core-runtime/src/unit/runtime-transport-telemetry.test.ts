@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -102,7 +103,7 @@ describe('runtime transport telemetry export', () => {
     });
     await exporter.close();
 
-    const lines = readFileSync(filePath, 'utf8').trim().split('\n');
+    const lines = (await readFile(filePath, 'utf8')).trim().split('\n');
     expect(lines.map((line) => JSON.parse(line))).toEqual([
       testEvent,
       {
@@ -112,5 +113,22 @@ describe('runtime transport telemetry export', () => {
         messageId: 'message-1',
       },
     ]);
+  });
+
+  it('initializes append-disabled Node telemetry sinks through async fs APIs', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'actor-web-telemetry-'));
+    tempDirectories.push(directory);
+    const filePath = join(directory, 'transport.jsonl');
+    await writeFile(filePath, 'stale-data\n');
+
+    const sink = createRuntimeTransportTelemetryJsonlFileSink(filePath);
+    await sink.flush?.();
+
+    expect(await readFile(filePath, 'utf8')).toBe('');
+
+    await sink.write(testEvent);
+    expect((await readFile(filePath, 'utf8')).trim()).toBe(
+      serializeRuntimeTransportTelemetryEvent(testEvent)
+    );
   });
 });
