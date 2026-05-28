@@ -385,8 +385,19 @@ Root tools do not automatically become available to every actor. Actor behavior
 only receives tools explicitly assigned to that actor.
 
 ```ts
+import type { ActorToolExecutor } from '@actor-core/runtime';
+
+type ScanInput = { label: string; destination: string };
+type ScanResult = { accepted: boolean; label: string };
+type RouteResult = { carrier: string; eta: string; routeNotes: string };
+type LogisticsTools = {
+  'provider.scan.verify': ActorToolExecutor<ScanInput, ScanResult>;
+  'route.plan': ActorToolExecutor<ScanInput, RouteResult>;
+};
+
 const scanShipmentBehavior = defineActor()
   .withContext({ status: 'idle', latestScan: null })
+  .withTools<LogisticsTools>()
   .onMessage(async ({ message, context, tools }) => {
     if (message.type === 'SCAN_LABEL') {
       const scan = await tools.execute('provider.scan.verify', message);
@@ -434,7 +445,11 @@ const server = await serveActorWebNode(logistics, {
 ```
 
 Actor behavior uses assigned tools from the handler context. The node runner
-implements those tool ports at the process boundary.
+implements those tool ports at the process boundary. `withTools<TRegistry>()`
+is type-only; it makes `tools.execute(...)` infer tool payload and result
+shapes, while topology actor `tools` still controls runtime least-privilege
+access. A runner can register additional tools, but an actor cannot execute a
+tool that is not assigned to that actor.
 
 This is the recommended agent pattern: the actor owns state, routing, emitted
 facts, and transition constraints; tools are explicit ports for outside

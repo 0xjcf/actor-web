@@ -1,4 +1,4 @@
-import type { ActorToolRegistry } from '@actor-core/runtime';
+import type { ActorToolExecutor } from '@actor-core/runtime';
 import type {
   FasPatch,
   FasPlan,
@@ -19,9 +19,45 @@ export interface DeterministicFasToolState {
 }
 
 export interface DeterministicFasTools {
-  readonly registry: ActorToolRegistry;
+  readonly registry: FasToolRegistry;
   readonly state: DeterministicFasToolState;
 }
+
+export type GeneratePatchInput = {
+  readonly taskId: string;
+  readonly plan: FasPlan;
+  readonly attempt: number;
+};
+
+export type PatchToolInput = {
+  readonly taskId: string;
+  readonly patch: FasPatch;
+};
+
+export type ReviewToolInput = {
+  readonly taskId: string;
+  readonly patch: FasPatch;
+  readonly validation: FasValidationResult;
+};
+
+export type MemoryWriteInput = {
+  readonly taskId: string;
+  readonly review: FasReviewResult;
+};
+
+export type FasToolRegistry = {
+  readonly 'codex.generate_patch': ActorToolExecutor<GeneratePatchInput, FasPatch>;
+  readonly 'repo.diff': ActorToolExecutor<
+    PatchToolInput,
+    { readonly patchId: string; readonly files: readonly string[] }
+  >;
+  readonly 'verification.run': ActorToolExecutor<PatchToolInput, FasValidationResult>;
+  readonly 'review.diff': ActorToolExecutor<ReviewToolInput, FasReviewResult>;
+  readonly 'memory.write': ActorToolExecutor<
+    MemoryWriteInput,
+    { readonly ok: true; readonly taskId: string }
+  >;
+};
 
 function nextResult<T>(results: readonly T[] | undefined, index: number, fallback: T): T {
   return results?.[index] ?? fallback;
@@ -178,95 +214,97 @@ export function createDeterministicFasTools(
     }
   };
 
-  return {
-    registry: {
-      'codex.generate_patch': (input) => {
-        failIfRequested('codex.generate_patch');
-        const value = requireImplementerInput(input);
-        const patch: FasPatch = {
-          patchId: `${value.taskId}-patch-${value.attempt}`,
-          changedFiles: [`examples/fas-agent-loop/${value.taskId}.patch.ts`],
-          summary: `Generated deterministic patch ${value.attempt} for ${value.taskId}`,
-        };
-        record({
-          tool: 'codex.generate_patch',
-          agent: 'implementer',
-          taskId: value.taskId,
-          ok: true,
-          summary: patch.summary,
-        });
-        return patch;
-      },
-
-      'repo.diff': (input) => {
-        failIfRequested('repo.diff');
-        const value = requirePatchInput(input, 'repo.diff');
-        record({
-          tool: 'repo.diff',
-          agent: 'verifier',
-          taskId: value.taskId,
-          ok: true,
-          summary: `Read diff for ${value.patch.patchId}`,
-        });
-        return {
-          patchId: value.patch.patchId,
-          files: value.patch.changedFiles,
-        };
-      },
-
-      'verification.run': (input) => {
-        failIfRequested('verification.run');
-        const value = requirePatchInput(input, 'verification.run');
-        const result = nextResult<FasValidationResult>(options.validationResults, validationIndex, {
-          ok: true,
-          command: 'pnpm test:examples',
-          failures: [],
-        });
-        validationIndex += 1;
-        record({
-          tool: 'verification.run',
-          agent: 'verifier',
-          taskId: value.taskId,
-          ok: result.ok,
-          summary: result.ok ? 'Verification passed' : result.failures.join(', '),
-        });
-        return result;
-      },
-
-      'review.diff': (input) => {
-        failIfRequested('review.diff');
-        const value = requireReviewInput(input);
-        const result = nextResult<FasReviewResult>(options.reviewResults, reviewIndex, {
-          approved: true,
-          findings: [],
-        });
-        reviewIndex += 1;
-        record({
-          tool: 'review.diff',
-          agent: 'reviewer',
-          taskId: value.taskId,
-          ok: result.approved,
-          summary: result.approved ? 'Review approved' : result.findings.join(', '),
-        });
-        return result;
-      },
-
-      'memory.write': (input) => {
-        failIfRequested('memory.write');
-        const value = requireMemoryInput(input);
-        record({
-          tool: 'memory.write',
-          agent: 'reviewer',
-          taskId: value.taskId,
-          ok: true,
-          summary: 'Stored workflow outcome in deterministic memory adapter',
-        });
-        return {
-          ok: true,
-          taskId: value.taskId,
-        };
-      },
+  const registry: FasToolRegistry = {
+    'codex.generate_patch': (input) => {
+      failIfRequested('codex.generate_patch');
+      const value = requireImplementerInput(input);
+      const patch: FasPatch = {
+        patchId: `${value.taskId}-patch-${value.attempt}`,
+        changedFiles: [`examples/fas-agent-loop/${value.taskId}.patch.ts`],
+        summary: `Generated deterministic patch ${value.attempt} for ${value.taskId}`,
+      };
+      record({
+        tool: 'codex.generate_patch',
+        agent: 'implementer',
+        taskId: value.taskId,
+        ok: true,
+        summary: patch.summary,
+      });
+      return patch;
     },
+
+    'repo.diff': (input) => {
+      failIfRequested('repo.diff');
+      const value = requirePatchInput(input, 'repo.diff');
+      record({
+        tool: 'repo.diff',
+        agent: 'verifier',
+        taskId: value.taskId,
+        ok: true,
+        summary: `Read diff for ${value.patch.patchId}`,
+      });
+      return {
+        patchId: value.patch.patchId,
+        files: value.patch.changedFiles,
+      };
+    },
+
+    'verification.run': (input) => {
+      failIfRequested('verification.run');
+      const value = requirePatchInput(input, 'verification.run');
+      const result = nextResult<FasValidationResult>(options.validationResults, validationIndex, {
+        ok: true,
+        command: 'pnpm test:examples',
+        failures: [],
+      });
+      validationIndex += 1;
+      record({
+        tool: 'verification.run',
+        agent: 'verifier',
+        taskId: value.taskId,
+        ok: result.ok,
+        summary: result.ok ? 'Verification passed' : result.failures.join(', '),
+      });
+      return result;
+    },
+
+    'review.diff': (input) => {
+      failIfRequested('review.diff');
+      const value = requireReviewInput(input);
+      const result = nextResult<FasReviewResult>(options.reviewResults, reviewIndex, {
+        approved: true,
+        findings: [],
+      });
+      reviewIndex += 1;
+      record({
+        tool: 'review.diff',
+        agent: 'reviewer',
+        taskId: value.taskId,
+        ok: result.approved,
+        summary: result.approved ? 'Review approved' : result.findings.join(', '),
+      });
+      return result;
+    },
+
+    'memory.write': (input) => {
+      failIfRequested('memory.write');
+      const value = requireMemoryInput(input);
+      record({
+        tool: 'memory.write',
+        agent: 'reviewer',
+        taskId: value.taskId,
+        ok: true,
+        summary: 'Stored workflow outcome in deterministic memory adapter',
+      });
+      return {
+        ok: true,
+        taskId: value.taskId,
+      };
+    },
+  };
+
+  return {
+    registry,
     state: {
       get invocations() {
         return invocations;

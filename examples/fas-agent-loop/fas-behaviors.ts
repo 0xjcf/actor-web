@@ -1,9 +1,7 @@
 import { defineActor, defineFSM } from '@actor-core/runtime';
 import type {
   FasAgentRole,
-  FasPatch,
   FasPlan,
-  FasReviewResult,
   FasSupervisorCommand,
   FasTaskBoardCommand,
   FasTaskBoardContext,
@@ -13,7 +11,6 @@ import type {
   FasTaskPhase,
   FasTimelineEntry,
   FasToolInvocation,
-  FasValidationResult,
   ImplementerAgentCommand,
   PlannerAgentCommand,
   ReviewerAgentCommand,
@@ -24,6 +21,7 @@ import {
   createInitialTaskContext,
   taskContextToSummary,
 } from './fas-contract';
+import type { FasToolRegistry } from './fas-tool-adapters';
 
 function timelineEntry(input: {
   label: string;
@@ -362,8 +360,9 @@ export function createPlannerAgentBehavior() {
 
 export function createImplementerAgentBehavior() {
   return defineActor<ImplementerAgentCommand, FasTaskEvent>()
+    .withTools<FasToolRegistry>()
     .onMessage(async ({ message, tools }) => {
-      const patch = await tools.execute<FasPatch>('codex.generate_patch', {
+      const patch = await tools.execute('codex.generate_patch', {
         taskId: message.taskId,
         plan: message.plan,
         attempt: message.attempt,
@@ -385,12 +384,13 @@ export function createImplementerAgentBehavior() {
 
 export function createVerifierAgentBehavior() {
   return defineActor<VerifierAgentCommand, FasTaskEvent>()
+    .withTools<FasToolRegistry>()
     .onMessage(async ({ message, tools }) => {
       await tools.execute('repo.diff', {
         taskId: message.taskId,
         patch: message.patch,
       });
-      const result = await tools.execute<FasValidationResult>('verification.run', {
+      const result = await tools.execute('verification.run', {
         taskId: message.taskId,
         patch: message.patch,
       });
@@ -415,8 +415,9 @@ export function createVerifierAgentBehavior() {
 
 export function createReviewerAgentBehavior() {
   return defineActor<ReviewerAgentCommand, FasTaskEvent>()
+    .withTools<FasToolRegistry>()
     .onMessage(async ({ message, tools }) => {
-      const result = await tools.execute<FasReviewResult>('review.diff', {
+      const result = await tools.execute('review.diff', {
         taskId: message.taskId,
         patch: message.patch,
         validation: message.validation,
