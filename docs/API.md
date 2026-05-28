@@ -575,10 +575,9 @@ projection state should not need a command-capable source:
 
 ```ts
 const shipmentCard = igniteCore({
-  source: ({ host }) =>
+  source: () =>
     logistics.actors.shipment.readModel({
       gateway: { url: 'ws://127.0.0.1:4100' },
-      host,
     }),
 
   states: ({ context, transport }) => ({
@@ -612,10 +611,9 @@ without requiring product code to wrap sources or write manual generics:
 
 ```ts
 const shipmentCard = igniteCore({
-  source: ({ host }) =>
+  source: () =>
     logistics.actors.shipment.readModel({
       gateway: { url: 'ws://127.0.0.1:4100' },
-      host,
     }),
   commandSource: () =>
     logistics.actors.shipment.commandSource({
@@ -632,6 +630,16 @@ const shipmentCard = igniteCore({
 `ignite-element/actor-web` should treat `close()` as the Actor-Web cleanup hook,
 equivalent to `stop()` for handles, so product code does not need to adapt
 `{ source, stop: () => source.close() }` by hand.
+
+Local in-process helpers can use the host-aware factory shape when they need to
+bind source lifetime to the custom element:
+
+```ts
+const dashboard = igniteCore({
+  source: ({ host }) => runtime.dashboard.readModel({ host }),
+  commandSource: () => runtime.dashboard.commandSource(),
+});
+```
 
 Use an explicit command helper when the host owns command/control:
 

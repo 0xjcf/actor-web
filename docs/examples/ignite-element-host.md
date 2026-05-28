@@ -146,10 +146,9 @@ Use the split like this:
 
 ```ts
 const shipmentHost = igniteCore({
-  source: ({ host }) =>
+  source: () =>
     logistics.actors.shipment.readModel({
       gateway: { url: gatewayUrl },
-      host,
     }),
   commandSource: () =>
     logistics.actors.shipment.commandSource({

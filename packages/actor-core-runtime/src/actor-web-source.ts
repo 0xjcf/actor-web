@@ -86,9 +86,18 @@ export interface ClosableActorWebReadModelSource<
   TContext = unknown,
   TEvent extends ActorMessage = ActorMessage,
 > extends IgniteReadModelSource<TContext, TEvent> {
+  /**
+   * Closes the client projection source. Ignite Element adapters should treat
+   * this as the Actor-Web cleanup hook when they own a source instance.
+   */
   close(): void;
 }
 
+/**
+ * Command-capable source for hosts that intentionally own command/control.
+ * Prefer ClosableActorWebReadModelSource for projection-only Ignite components
+ * and pair it with this surface only when send/ask is part of the component API.
+ */
 export interface ClosableActorWebCommandSource<
   TContext = unknown,
   TMessage extends ActorMessage = ActorMessage,

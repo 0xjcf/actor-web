@@ -149,12 +149,20 @@ export interface ActorWebActorDescriptor<
     ActorWebBehaviorMessage<NonNullable<TBehavior>>,
     ActorWebBehaviorEvent<NonNullable<TBehavior>>
   >;
+  /**
+   * Preferred Ignite Element projection source. This source exposes live
+   * snapshots/events/transport status without requiring command capability.
+   */
   readModel(
     options: ActorWebSourceOptions
   ): ClosableActorWebReadModelSource<
     ActorWebBehaviorContext<NonNullable<TBehavior>>,
     ActorWebBehaviorEvent<NonNullable<TBehavior>>
   >;
+  /**
+   * Explicit command/control source for hosts that intentionally send or ask.
+   * Pair with readModel(...) instead of making every projection command-capable.
+   */
   commandSource(
     options: ActorWebSourceOptions
   ): ClosableActorWebSource<

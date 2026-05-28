@@ -30,6 +30,10 @@ export type ActorWebClient<TTopology extends ActorWebTopology<ActorWebTopologyIn
   close(): void;
 };
 
+/**
+ * Projection-only client for UI and Ignite Element hosts. This is the default
+ * browser/client surface when a shared topology is available.
+ */
 export type ActorWebReadModelClient<TTopology extends ActorWebTopology<ActorWebTopologyInput>> = {
   readonly actors: {
     readonly [K in keyof TTopology['actors']]: ClosableActorWebReadModelSource<
