@@ -798,10 +798,13 @@
 
 - Title: Polish FAS agent loop example cleanup
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/polish-fas-agent-loop-example-cleanup.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ## Template
 
