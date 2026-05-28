@@ -833,8 +833,8 @@
 
 - Title: Improve Actor-Web tool-port execution ergonomics
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/improve-actor-web-tool-port-execution-ergonomics.md
 - Verification lane: fast
 - Policy sensitivity: standard
