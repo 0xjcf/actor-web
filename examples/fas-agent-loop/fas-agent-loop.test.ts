@@ -297,6 +297,7 @@ describe('fas-agent-loop example', () => {
       expect(element.shadowRoot?.textContent).toContain('Review approved');
       expect(element.shadowRoot?.textContent).toContain('review.diff');
     } finally {
+      element.remove();
       await stopFasAgentLoopElementRuntime();
     }
   });
