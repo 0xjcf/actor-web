@@ -753,7 +753,7 @@
 
 - Title: Repair FAS workspace dependency and review artifact metadata
 - Mode: 4-agent
-- Status: implementing
+- Status: done
 - Owner: implementer
 - Brief: .fas/tasks/repair-fas-workspace-dependency-and-review-artifact-metadata.md
 - Verification lane: fast
