@@ -248,7 +248,7 @@ Blueprint evidence is not grounded from a local checkout in this review.
 
 ## Verification Run
 
-Run on 2026-04-23:
+Historical spike evidence from 2026-04-23:
 
 - `pnpm architecture:check`: passed across five deterministic decision files.
 - `pnpm --dir packages/actor-core-runtime exec vitest run

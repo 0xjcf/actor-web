@@ -23,8 +23,8 @@ Actor-Web now has:
   `packages/actor-core-runtime/src/actor-system-impl.ts`
 - shared-contract mapping in
   `packages/actor-core-runtime/src/integration/fas-shared-contracts.ts`
-- a browser prove-out where the runtime is owned by a service worker and the
-  page is the thin host
+- a browser-local prove-out where the runtime is owned by a service worker and
+  the page is the thin host
 - a gateway projection API at
   `packages/actor-core-runtime/src/runtime-gateway.ts`
 
