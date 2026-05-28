@@ -810,9 +810,13 @@
 
 - Title: Define the Actor-Web Ignite source API contract
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/define-the-actor-web-ignite-source-api-contract.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
 ### Task: Add low-ceremony Actor-Web local runtime source helper
 
 - Title: Add low-ceremony Actor-Web local runtime source helper
@@ -821,6 +825,7 @@
 - Owner: runtime
 - Brief: .fas/tasks/add-low-ceremony-actor-web-local-runtime-source-helper.md
 - Automation mode: advisory
+
 ### Task: Improve Actor-Web tool-port execution ergonomics
 
 - Title: Improve Actor-Web tool-port execution ergonomics
@@ -828,6 +833,7 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/improve-actor-web-tool-port-execution-ergonomics.md
+
 ## Template
 
 ### Task: `<short task title>`
