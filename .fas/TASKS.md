@@ -764,8 +764,8 @@
 
 - Title: Complete runtime telemetry and discovery hygiene
 - Mode: 4-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/complete-runtime-telemetry-and-discovery-hygiene.md
 - Automation mode: advisory
 - Verification lane: fast
