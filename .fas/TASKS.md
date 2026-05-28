@@ -776,9 +776,12 @@
 
 - Title: Clean up FAS memory and tracker text quality
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/clean-up-fas-memory-and-tracker-text-quality.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Refresh Actor-Web documentation accuracy from CodeRabbit review
 
