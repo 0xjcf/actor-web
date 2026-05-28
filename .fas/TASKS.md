@@ -844,10 +844,14 @@
 
 - Title: Provide canonical Ignite source handles from Actor-Web runtime topology
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/provide-canonical-ignite-source-handles-from-actor-web-runti.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
 ### Task: Reduce Actor-Web topology and tool typing ceremony
 
 - Title: Reduce Actor-Web topology and tool typing ceremony
@@ -855,6 +859,7 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/reduce-actor-web-topology-and-tool-typing-ceremony.md
+
 ## Template
 
 ### Task: `<short task title>`
