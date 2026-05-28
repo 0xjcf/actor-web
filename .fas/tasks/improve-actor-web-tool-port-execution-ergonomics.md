@@ -30,15 +30,30 @@ Make declared Actor-Web tool ports the natural way to call product adapters from
 
 - packages/actor-core-runtime/src/actor-tools.ts
 - packages/actor-core-runtime/src/actor-system.ts
-- packages/actor-core-runtime/src/create-actor.ts
-- packages/actor-core-runtime/src/topology.ts
+- packages/actor-core-runtime/src/unified-actor-builder.ts
 - packages/actor-core-runtime/src/unit
 - docs/API.md
 - examples/fas-agent-loop
 
 ## Scope Amendments
 
-- None.
+- Type: scope-repair
+- Added at: 2026-05-28
+- Trigger: typed tool execution implementation
+- Reason: `defineActor()` is implemented by `unified-actor-builder.ts`, so adding `withTools<TRegistry>()` requires changing that builder even though the initial generated scope named the older create-actor surface.
+- Added paths: packages/actor-core-runtime/src/unified-actor-builder.ts
+- Evidence source: implementation dependency trace
+- Evidence: FAS example behaviors import `defineActor` from the runtime public API; the exported implementation path is `packages/actor-core-runtime/src/unified-actor-builder.ts`.
+- Accuracy signal: `pnpm typecheck` passed after adding the typed builder method.
+
+- Type: scope-narrowing
+- Added at: 2026-05-28
+- Trigger: validate-task closeout readiness
+- Reason: The typed toolbox change did not require edits to the legacy create-actor builder or topology descriptor validation; topology already enforces declared tool names and node runners already enforce least-privilege access.
+- Removed paths: packages/actor-core-runtime/src/create-actor.ts, packages/actor-core-runtime/src/topology.ts
+- Evidence source: implementation and focused tests
+- Evidence: Changes landed in actor-tools, actor-system, unified-actor-builder, examples, docs, and unit tests; focused runtime tests covered topology/start/serve behavior without topology source edits.
+- Accuracy signal: `fas validate-task` passed verification and reported only missing planned files for the untouched create-actor/topology paths.
 
 ## Implementation plan
 

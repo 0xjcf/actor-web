@@ -833,9 +833,12 @@
 
 - Title: Improve Actor-Web tool-port execution ergonomics
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/improve-actor-web-tool-port-execution-ergonomics.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ## Template
 
