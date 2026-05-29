@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ActorToolExecutor } from '../actor-tools.js';
 import { createActorToolbox } from '../actor-tools.js';
-import { actor } from '../topology.js';
+import { actor, defineActorWebTopology, node, tool } from '../topology.js';
 
 type ScanInput = { readonly label: string };
 type ScanResult = { readonly accepted: true; readonly label: string };
 type ScanCommand = { readonly type: 'SCAN'; readonly label: string };
+type ShipmentParams = { readonly shipmentId: string };
 type ScanTools = {
   readonly 'provider.scan.verify': ActorToolExecutor<ScanInput, ScanResult>;
   readonly 'provider.secret': ActorToolExecutor<{ readonly token: string }, string>;
@@ -84,6 +85,30 @@ describe('ActorToolbox', () => {
           })
           .build(),
     });
+    const shipmentActor = actor.withTools<ScanTools>()({
+      id: ({ shipmentId }: ShipmentParams) => `shipment-${shipmentId}`,
+      node: 'worker',
+      tools: ['provider.scan.verify'] as const,
+      behavior: (_params: ShipmentParams, defineActor) =>
+        defineActor<ScanCommand, ScanResult>()
+          .onMessage(async ({ message, tools }) => {
+            return {
+              reply: await tools.execute('provider.scan.verify', { label: message.label }),
+            };
+          })
+          .build(),
+    });
+    const topology = defineActorWebTopology({
+      tools: [tool('provider.scan.verify')],
+      nodes: {
+        worker: node('worker'),
+      },
+      actors: {
+        scanner: scanActor,
+        shipment: shipmentActor,
+      },
+    });
+    const nodeKey: 'worker' = topology.actors.scanner.node;
     const toolbox = createActorToolbox<ScanTools>(
       {
         'provider.scan.verify': scan,
@@ -107,6 +132,8 @@ describe('ActorToolbox', () => {
       tools: toolbox,
     });
 
+    expect(nodeKey).toBe('worker');
+    expect(topology.actors.shipment.resolveId({ shipmentId: '1001' })).toBe('shipment-1001');
     expect(scanActor.tools).toEqual(['provider.scan.verify']);
     expect(result).toMatchObject({
       reply: {
