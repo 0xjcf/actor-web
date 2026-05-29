@@ -18,7 +18,7 @@ import {
 import {
   createRuntimeGatewaySourceHandle,
   type RuntimeGatewaySourceHandle,
-} from './runtime-gateway.js';
+} from './runtime-gateway-shared.js';
 import { type StartedActorWebNode, startActorWebNode } from './start-actor-web-node.js';
 import {
   createInMemoryMessageTransportNetwork,

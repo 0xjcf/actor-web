@@ -101,25 +101,16 @@ export {
   verifyRuntimeGatewayAuth,
 } from './runtime-auth.js';
 export type {
-  RuntimeGatewayClientFrame,
-  RuntimeGatewayErrorCode,
-  RuntimeGatewayEventEnvelope,
-  RuntimeGatewayEventKind,
-  RuntimeGatewayEventProjection,
-  RuntimeGatewayScopeDescriptor,
-  RuntimeGatewayServerFrame,
-  RuntimeGatewaySnapshotProjection,
-  RuntimeGatewaySourceHandle,
-  RuntimeGatewayTransitionRecord,
-  RuntimeGatewayWorkflowSnapshot,
-} from './runtime-gateway.js';
-export { createRuntimeGatewaySourceHandle } from './runtime-gateway.js';
-export type {
   ActorMessageRecord as RuntimeGatewayActorMessageRecord,
   ActorMessageToRuntimeGatewayEventEnvelopeOptions,
   ActorRuntimeProjection,
   ActorSnapshotToRuntimeGatewayWorkflowSnapshotInput,
   ActorSnapshotTransitionInput as RuntimeGatewaySnapshotTransitionInput,
+  RuntimeGatewayEventEnvelope,
+  RuntimeGatewayEventProjection,
+  RuntimeGatewaySnapshotProjection,
+  RuntimeGatewayTransitionRecord,
+  RuntimeGatewayWorkflowSnapshot,
 } from './runtime-gateway-projection.js';
 export {
   actorMessageToRuntimeGatewayEventEnvelope,
@@ -129,6 +120,15 @@ export {
   deriveRuntimeGatewayPhase,
   runtimeGatewayEventPayload,
 } from './runtime-gateway-projection.js';
+export type {
+  RuntimeGatewayClientFrame,
+  RuntimeGatewayErrorCode,
+  RuntimeGatewayEventKind,
+  RuntimeGatewayScopeDescriptor,
+  RuntimeGatewayServerFrame,
+  RuntimeGatewaySourceHandle,
+} from './runtime-gateway-shared.js';
+export { createRuntimeGatewaySourceHandle } from './runtime-gateway-shared.js';
 export type {
   InMemoryRuntimePeerDiscoveryProvider,
   RuntimePeerDiscoveryEndpointInput,

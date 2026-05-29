@@ -13,7 +13,7 @@ import {
   createRuntimeGatewaySourceHandle,
   type RuntimeGatewayScopeDescriptor,
   type RuntimeGatewaySourceHandle,
-} from './runtime-gateway.js';
+} from './runtime-gateway-shared.js';
 import {
   defineActor as defineTopologyActorBehavior,
   type UnifiedActorBuilder,

@@ -13,15 +13,17 @@ import {
 } from './projection-transport.js';
 import { type RuntimeGatewayAuthProvider, resolveRuntimeAuthPayload } from './runtime-auth.js';
 import type {
-  RuntimeGatewayClientFrame,
   RuntimeGatewayEventProjection,
+  RuntimeGatewaySnapshotProjection,
+} from './runtime-gateway-projection.js';
+import type {
+  RuntimeGatewayClientFrame,
   RuntimeGatewayScopeDescriptor,
   RuntimeGatewayServerFrame,
-  RuntimeGatewaySnapshotProjection,
   RuntimeGatewaySourceHandle,
   RuntimeGatewaySubscribeMode,
-} from './runtime-gateway.js';
-import { createRuntimeGatewaySourceHandle } from './runtime-gateway.js';
+} from './runtime-gateway-shared.js';
+import { createRuntimeGatewaySourceHandle } from './runtime-gateway-shared.js';
 import type {
   ActorWebActorAddress,
   ActorWebActorContext,
