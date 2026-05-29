@@ -867,9 +867,12 @@
 
 - Title: Make Actor-Web browser entrypoint free of Node crypto shims
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/make-actor-web-browser-entrypoint-free-of-node-crypto-shims.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Add topology source factory for Actor-Web Ignite DX
 
