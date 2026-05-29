@@ -7,3 +7,5 @@ Append external API contracts, auth mechanisms, rate limits, SDK versions, and k
 [2026-04-22] **External APIs**: No network API, OAuth, OIDC, SSO, webhook, or rate-limit contract is currently evidenced in Actor-Web source.
 
 [2026-04-23] **Auth integrations**: OAuth/OIDC/SSO files found at `packages/actor-core-runtime/src/otp-message-plan-processor.ts`.
+
+[2026-05-29] **Actor-Web/Ignite integration boundary**: Actor-Web owns actor topology, runtime lifecycle, source handles, and command transport. Ignite owns projection and UI command binding. Target usage is `igniteCore({ source: topology.source("business"), view: ({ context }) => ..., commands: ({ actor, command }) => ({ reviewApproval: command((approvalItemId) => actor.send({ type: "REQUEST_APPROVAL_REVIEW", approvalItemId })) }) })`. Commands belong inside Ignite's `commands: ({ actor, command }) => ...` callback and should use `actor.send`/`actor.ask`; do not inject standalone command-helper objects. Consumer-facing UI should not import or declare `ActorWebSourceHandle` generics, custom runtime interfaces, or custom element runtime injection types; domain protocol types stay at the actor/domain boundary.

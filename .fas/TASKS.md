@@ -863,6 +863,22 @@
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Make Actor-Web browser entrypoint free of Node crypto shims
+
+- Title: Make Actor-Web browser entrypoint free of Node crypto shims
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/make-actor-web-browser-entrypoint-free-of-node-crypto-shims.md
+
+### Task: Add topology source factory for Actor-Web Ignite DX
+
+- Title: Add topology source factory for Actor-Web Ignite DX
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/add-topology-source-factory-for-actor-web-ignite-dx.md
+
 ## Template
 
 ### Task: `<short task title>`
