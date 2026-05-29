@@ -867,8 +867,8 @@
 
 - Title: Make Actor-Web browser entrypoint free of Node crypto shims
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/make-actor-web-browser-entrypoint-free-of-node-crypto-shims.md
 - Verification lane: fast
 - Policy sensitivity: standard
