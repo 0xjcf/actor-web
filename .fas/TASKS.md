@@ -856,8 +856,8 @@
 
 - Title: Reduce Actor-Web topology and tool typing ceremony
 - Mode: 4-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/reduce-actor-web-topology-and-tool-typing-ceremony.md
 - Verification lane: fast
 - Policy sensitivity: standard
