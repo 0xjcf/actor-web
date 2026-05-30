@@ -231,6 +231,64 @@ describe('Actor-Web topology helpers', () => {
     commandSource.close();
   });
 
+  it('provides a typed topology source factory for ignite-compatible source handles', async () => {
+    const logistics = defineActorWebTopology({
+      contractVersion: '1.0.0',
+      nodes: {
+        server: node('logistics-server-runtime'),
+      },
+      actors: {
+        shipment: actor({
+          id: 'logistics-shipment',
+          node: 'server',
+          behavior: createShipmentBehavior,
+          gateway: true,
+        }),
+      },
+    });
+    const closes: string[] = [];
+    let socketIndex = 0;
+    const sourceFactory = logistics.source('shipment');
+    type FactoryHandle = ReturnType<typeof sourceFactory>;
+    type ExpectedHandle = ReturnType<typeof logistics.actors.shipment.sourceHandle>;
+    type SourceActorKey = Parameters<typeof logistics.source>[0];
+    type SourceFactoryInput = Parameters<typeof sourceFactory>[0];
+
+    const sourceHandle: FactoryHandle = sourceFactory({
+      gateway: { url: 'ws://example.invalid/gateway' },
+      createSocket: () => {
+        socketIndex += 1;
+        const socketName = socketIndex === 1 ? 'readModel' : 'command';
+        return {
+          readyState: 1,
+          send: () => {},
+          close: () => {
+            closes.push(socketName);
+          },
+          addEventListener: () => {},
+        };
+      },
+    });
+    const expectedHandle: ExpectedHandle = sourceHandle;
+    const validActorKey: SourceActorKey = 'shipment';
+
+    // @ts-expect-error invalid actor keys must stay a type error
+    const invalidActorKey: SourceActorKey = 'missing';
+    // @ts-expect-error declared topologies require gateway-backed source options
+    const invalidHostOnlyOptions: SourceFactoryInput = { host: new EventTarget() };
+
+    expect(sourceHandle.source.address.path).toBe(logistics.actors.shipment.address.path);
+    expect(typeof sourceHandle.commandSource.send).toBe('function');
+    expect(expectedHandle.commandSource).toBe(sourceHandle.commandSource);
+    expect(validActorKey).toBe('shipment');
+    expect(invalidActorKey).toBe('missing');
+    expect(invalidHostOnlyOptions).toHaveProperty('host');
+
+    await sourceHandle.stop();
+
+    expect(closes).toEqual(['readModel', 'command']);
+  });
+
   it('does not open unused topology client sources', () => {
     const logistics = defineActorWebTopology({
       contractVersion: '1.0.0',

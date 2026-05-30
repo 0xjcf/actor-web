@@ -172,4 +172,47 @@ describe('startActorWebLocalRuntime', () => {
 
     await runtime.stop();
   });
+
+  it('routes runtime topology source factories through the existing local source-handle cleanup path', async () => {
+    const logistics = createLogisticsTopology();
+    const runtime = await startActorWebLocalRuntime(logistics);
+
+    try {
+      const sourceFactory = runtime.topology.source('dashboard');
+      type RuntimeSourceFactoryInput = Parameters<typeof sourceFactory>[0];
+      const localSourceOptions: RuntimeSourceFactoryInput = { host: new EventTarget() };
+      const sourceHandle = sourceFactory(localSourceOptions);
+      const snapshots: ShipmentContext[] = [];
+
+      sourceHandle.source.subscribe((snapshot) => {
+        snapshots.push(snapshot.context);
+      });
+
+      expect(typeof sourceHandle.commandSource.send).toBe('function');
+      expect(snapshots).toHaveLength(1);
+
+      await sourceHandle.commandSource.send({
+        type: 'CREATE_SHIPMENT',
+        shipmentId: 'before-stop',
+      });
+      await runtime.nodes.dashboard?.system.flush();
+
+      expect(snapshots.at(-1)).toEqual({
+        shipmentId: 'before-stop',
+        status: 'created',
+      });
+
+      await sourceHandle.stop();
+
+      await runtime.dashboard.commandSource().send({
+        type: 'CREATE_SHIPMENT',
+        shipmentId: 'after-stop',
+      });
+      await runtime.nodes.dashboard?.system.flush();
+
+      expect(snapshots).toHaveLength(2);
+    } finally {
+      await runtime.stop();
+    }
+  });
 });
