@@ -878,9 +878,12 @@
 
 - Title: Add topology source factory for Actor-Web Ignite DX
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/add-topology-source-factory-for-actor-web-ignite-dx.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ## Template
 
