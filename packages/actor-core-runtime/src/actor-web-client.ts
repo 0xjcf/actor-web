@@ -1,8 +1,13 @@
 import type { ActorEventSubscriptionOptions, ActorRef } from './actor-ref.js';
 import type { ActorMessage, MessageTransport } from './actor-system.js';
 import type { ActorToolRegistry } from './actor-tools.js';
-import type { ActorWebGatewaySocket, ActorWebSourceGatewayOptions } from './actor-web-source.js';
+import type {
+  ActorWebGatewaySocket,
+  ActorWebSourceGatewayOptions,
+  ActorWebSourceOptions,
+} from './actor-web-source.js';
 import {
+  type ActorWebSourceFactoryContext,
   type ClosableActorWebCommandSource,
   type ClosableActorWebReadModelSource,
   type ClosableActorWebSource,
@@ -10,6 +15,7 @@ import {
   createActorWebReadModelSource,
   createActorWebSource,
   createActorWebSourceHandle,
+  hasActorWebSourceGatewayOptions,
 } from './actor-web-source.js';
 import {
   createIgniteCommandSource,
@@ -80,14 +86,12 @@ export type ActorWebReadModelClient<TTopology extends ActorWebTopology<ActorWebT
   close(): void;
 };
 
-export interface ActorWebLocalRuntimeSourceOptions {
+export interface ActorWebLocalRuntimeSourceOptions extends ActorWebSourceFactoryContext {
   /**
    * Ignite Element passes the host into source factories. Actor-Web accepts it
    * so product code can use `readModel({ host })` without adapter glue; source
    * cleanup is still governed by close(), AbortSignal, or runtime.stop().
    */
-  readonly host?: EventTarget;
-  readonly signal?: AbortSignal;
 }
 
 export type ActorWebLocalRuntimeActorSource<TActor extends ActorWebActorDescriptor> = {
@@ -127,6 +131,27 @@ export type ActorWebLocalRuntimeSources<TTopology extends ActorWebTopology<Actor
     >;
   };
 
+export type ActorWebLocalRuntimeTopologySourceFactory<TActor extends ActorWebActorDescriptor> = {
+  bivarianceHack(
+    options?: ActorWebSourceOptions | ActorWebLocalRuntimeSourceOptions
+  ): RuntimeGatewaySourceHandle<
+    ClosableActorWebReadModelSource<ActorWebActorContext<TActor>, ActorWebActorEvent<TActor>>,
+    ClosableActorWebCommandSource<
+      ActorWebActorContext<TActor>,
+      ActorWebActorMessage<TActor>,
+      ActorWebActorEvent<TActor>
+    >
+  >;
+}['bivarianceHack'];
+
+export type ActorWebLocalRuntimeTopology<
+  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
+> = Omit<TTopology, 'source'> & {
+  source<TKey extends keyof TTopology['actors'] & string>(
+    key: TKey
+  ): ActorWebLocalRuntimeTopologySourceFactory<TTopology['actors'][TKey]>;
+};
+
 export interface StartActorWebLocalRuntimeOptions<
   TTopology extends ActorWebTopology<ActorWebTopologyInput>,
 > {
@@ -137,7 +162,7 @@ export interface StartActorWebLocalRuntimeOptions<
 
 export type StartedActorWebLocalRuntime<TTopology extends ActorWebTopology<ActorWebTopologyInput>> =
   ActorWebLocalRuntimeSources<TTopology> & {
-    readonly topology: TTopology;
+    readonly topology: ActorWebLocalRuntimeTopology<TTopology>;
     readonly nodes: Partial<
       Record<keyof TTopology['nodes'] & string, StartedActorWebNode<TTopology, MessageTransport>>
     >;
@@ -522,8 +547,26 @@ export async function startActorWebLocalRuntime<
       createActorSource(actorKey as keyof TTopology['actors'] & string),
     ])
   ) as ActorWebLocalRuntimeSources<TTopology>;
+  const runtimeTopology = Object.assign({}, topology, {
+    source<TKey extends keyof TTopology['actors'] & string>(key: TKey) {
+      const localSource = actorSources[key];
+      const remoteSource = topology.source(key);
+
+      return ((options?: ActorWebSourceOptions | ActorWebLocalRuntimeSourceOptions) => {
+        if (hasActorWebSourceGatewayOptions(options)) {
+          return remoteSource(options);
+        }
+
+        return localSource.sourceHandle(options);
+      }) as ActorWebLocalRuntimeTopology<TTopology>['source'] extends (
+        actorKey: typeof key
+      ) => infer TFactory
+        ? TFactory
+        : never;
+    },
+  }) as ActorWebLocalRuntimeTopology<TTopology>;
   const runtimeBase = {
-    topology,
+    topology: runtimeTopology,
     nodes: Object.fromEntries(startedNodes) as Partial<
       Record<keyof TTopology['nodes'] & string, StartedActorWebNode<TTopology, MessageTransport>>
     >,

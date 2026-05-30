@@ -60,6 +60,11 @@ export interface ActorWebSourceOptions {
   readonly clientVersion?: string;
 }
 
+export interface ActorWebSourceFactoryContext {
+  readonly host?: EventTarget;
+  readonly signal?: AbortSignal;
+}
+
 interface GatewaySourceBehaviorOptions {
   readonly subscribeMode?: RuntimeGatewaySubscribeMode;
   readonly readyOnStatus?: boolean;
@@ -123,6 +128,10 @@ export type ClosableActorWebSourceHandle<
   ClosableActorWebReadModelSource<TContext, TEvent>,
   ClosableActorWebSource<TContext, TMessage, TEvent>
 >;
+
+export function hasActorWebSourceGatewayOptions(value: unknown): value is ActorWebSourceOptions {
+  return typeof value === 'object' && value !== null && 'gateway' in value;
+}
 
 export function createActorWebSourceHandle<
   TContext = unknown,

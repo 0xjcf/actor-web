@@ -216,6 +216,21 @@ export interface ActorWebSupervisorDescriptor<TNode extends string = string>
   readonly nodeAddress: string;
 }
 
+export type ActorWebTopologySourceFactoryInput = ActorWebSourceOptions;
+
+export type ActorWebTopologySourceFactory<TActor extends ActorWebActorDescriptor> = {
+  bivarianceHack(
+    options: ActorWebTopologySourceFactoryInput
+  ): RuntimeGatewaySourceHandle<
+    ClosableActorWebReadModelSource<ActorWebActorContext<TActor>, ActorWebActorEvent<TActor>>,
+    ClosableActorWebSource<
+      ActorWebActorContext<TActor>,
+      ActorWebActorMessage<TActor>,
+      ActorWebActorEvent<TActor>
+    >
+  >;
+}['bivarianceHack'];
+
 export type ActorWebToolCatalogInput =
   | readonly ActorWebToolDefinition[]
   | Record<string, ActorWebToolDefinition>;
@@ -352,6 +367,15 @@ export type ActorWebTopology<TInput extends ActorWebTopologyInput> = {
   readonly supervisors: {
     readonly [K in keyof NonNullable<TInput['supervisors']>]: ActorWebSupervisorDescriptor;
   };
+  source<TKey extends keyof TInput['actors'] & string>(
+    key: TKey
+  ): ActorWebTopologySourceFactory<
+    ActorWebActorDescriptor<
+      TInput['actors'][TKey]['id'],
+      TInput['actors'][TKey]['node'],
+      TInput['actors'][TKey] extends { readonly behavior?: infer TBehavior } ? TBehavior : unknown
+    >
+  >;
 };
 
 export function node<TAddress extends string>(address: TAddress): ActorWebNodeDefinition<TAddress> {
@@ -589,5 +613,17 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
     nodes: input.nodes,
     actors: actors as ActorWebTopology<TInput>['actors'],
     supervisors: supervisors as ActorWebTopology<TInput>['supervisors'],
+    source(key) {
+      const actorDescriptor = actors[key];
+      if (!actorDescriptor) {
+        throw new Error(`Actor-Web topology does not define actor "${String(key)}".`);
+      }
+
+      return ((options: ActorWebTopologySourceFactoryInput) => {
+        return actorDescriptor.sourceHandle(options);
+      }) as ActorWebTopology<TInput>['source'] extends (actorKey: typeof key) => infer TFactory
+        ? TFactory
+        : never;
+    },
   };
 }
