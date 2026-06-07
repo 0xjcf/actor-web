@@ -946,8 +946,8 @@
 
 - Title: Docs D2: Concepts section
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/docs-d2-concepts-section.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -957,8 +957,8 @@
 
 - Title: Docs D3: API Reference + actor-core-testing README
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/docs-d3-api-reference-actor-core-testing-readme.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -968,8 +968,8 @@
 
 - Title: Docs D4: Guides (absorbs queued ignite-integration docs task)
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/docs-d4-guides-absorbs-queued-ignite-integration-docs-task.md
 - Automation mode: advisory
 - Verification lane: fast
@@ -980,8 +980,8 @@
 
 - Title: Docs D5: Getting Started completion + Operations + Community
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/docs-d5-getting-started-completion-operations-community.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -999,8 +999,8 @@
 
 - Title: Docs D1: scaffold VitePress docs site and token-driven design system (walking skeleton). Add a docs/site VitePress workspace package (+ pnpm-workspace.yaml, root docs:* scripts), establish .vitepress/theme/tokens.css (dark-first, both themes, 6/8/12 radius scale, distinct accent — amber #f5a623 pending sign-off), full IA sidebar nav, three real seed pages (Overview: What is Actor-Web?; Getting Started: Your first actor; Concepts: Subscriptions & events), wire @shikijs/vitepress-twoslash typechecked code samples, and port the WCAG AA contrast/a11y guardrail into CI. Foundational docs task; unblocks D2-D6. See docs/actor-web-documentation-plan.md
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/docs-d1-scaffold-vitepress-docs-site-and-token-driven-desig.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -1013,6 +1013,17 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/docs-add-playwright-wcag-aa-contrast-guardrail-markdownli.md
+
+### Task: Docs D1: scaffold VitePress docs site and token-driven design system (walking skeleton). Add a docs/site VitePress workspace package (+ pnpm-workspace.yaml, root docs:* scripts), establish .vitepress/theme/tokens.css (dark-first, both themes, 6/8/12 radius scale, distinct accent — amber #f5a623 pending sign-off), full IA sidebar nav, three real seed pages (Overview: What is Actor-Web?; Getting Started: Your first actor; Concepts: Subscriptions & events), wire @shikijs/vitepress-twoslash typechecked code samples, and port the WCAG AA contrast/a11y guardrail into CI. Foundational docs task; unblocks D2-D6. See docs/actor-web-documentation-plan.md.
+
+- Title: Docs D1: scaffold VitePress docs site and token-driven design system (walking skeleton). Add a docs/site VitePress workspace package (+ pnpm-workspace.yaml, root docs:* scripts), establish .vitepress/theme/tokens.css (dark-first, both themes, 6/8/12 radius scale, distinct accent — amber #f5a623 pending sign-off), full IA sidebar nav, three real seed pages (Overview: What is Actor-Web?; Getting Started: Your first actor; Concepts: Subscriptions & events), wire @shikijs/vitepress-twoslash typechecked code samples, and port the WCAG AA contrast/a11y guardrail into CI. Foundational docs task; unblocks D2-D6. See docs/actor-web-documentation-plan.md.
+- Mode: single-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/docs-d1-scaffold-vitepress-docs-site-and-token-driven-desig.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ## Template
 
