@@ -20,6 +20,7 @@ export default defineConfig({
       { text: 'Overview', link: '/overview/what-is-actor-web' },
       { text: 'Getting Started', link: '/getting-started/your-first-actor' },
       { text: 'Concepts', link: '/concepts/actors-and-behaviors' },
+      { text: 'Guides', link: '/guides/ignite-element' },
       { text: 'API', link: '/api/' },
     ],
     sidebar: [
@@ -43,6 +44,16 @@ export default defineConfig({
           { text: 'Sources & the gateway', link: '/concepts/sources-and-gateway' },
           { text: 'Tools', link: '/concepts/tools' },
           { text: 'Transport & multi-node', link: '/concepts/transport' },
+        ],
+      },
+      {
+        text: 'Guides',
+        items: [
+          { text: 'Ignite Element integration', link: '/guides/ignite-element' },
+          { text: 'Using XState machines', link: '/guides/xstate-transitions' },
+          { text: 'Coordinating actors', link: '/guides/coordinating-actors' },
+          { text: 'Multi-process deployment', link: '/guides/multi-process-deployment' },
+          { text: 'Testing actors', link: '/guides/testing-actors' },
         ],
       },
       {
