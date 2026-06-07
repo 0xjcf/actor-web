@@ -968,10 +968,13 @@
 
 - Title: Docs D4: Guides (absorbs queued ignite-integration docs task)
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/docs-d4-guides-absorbs-queued-ignite-integration-docs-task.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Docs D5: Getting Started completion + Operations + Community
 
