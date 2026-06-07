@@ -7,8 +7,7 @@
   "scripts": {
     "dev": "vitepress dev",
     "build": "vitepress build",
-    "preview": "vitepress preview",
-    "check:contrast": "node scripts/check-contrast.mjs"
+    "preview": "vitepress preview"
   },
   "devDependencies": {
     "@actor-core/runtime": "workspace:*",

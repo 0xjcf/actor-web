@@ -60,7 +60,6 @@
 }
 
 /* Geometry: interactive chrome reads from the shared radius scale. */
-.dark .VPButton,
 .VPButton {
   border-radius: var(--radius-md);
 }
