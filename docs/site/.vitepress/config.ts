@@ -22,6 +22,7 @@ export default defineConfig({
       { text: 'Concepts', link: '/concepts/actors-and-behaviors' },
       { text: 'Guides', link: '/guides/ignite-element' },
       { text: 'API', link: '/api/' },
+      { text: 'Community', link: '/community' },
     ],
     sidebar: [
       {
@@ -30,7 +31,11 @@ export default defineConfig({
       },
       {
         text: 'Getting Started',
-        items: [{ text: 'Your first actor', link: '/getting-started/your-first-actor' }],
+        items: [
+          { text: 'Installation', link: '/getting-started/installation' },
+          { text: 'Your first actor', link: '/getting-started/your-first-actor' },
+          { text: 'Topology & local runtime', link: '/getting-started/topology-and-runtime' },
+        ],
       },
       {
         text: 'Concepts',
@@ -65,6 +70,14 @@ export default defineConfig({
           { text: 'Runtimes', link: '/api/runtimes' },
           { text: '@actor-core/testing', link: '/api/testing' },
         ],
+      },
+      {
+        text: 'Operations',
+        items: [{ text: 'Production operations', link: '/operations/production' }],
+      },
+      {
+        text: 'Community',
+        items: [{ text: 'Community & support', link: '/community' }],
       },
     ],
     socialLinks: [{ icon: 'github', link: 'https://github.com/0xjcf/actor-web' }],
