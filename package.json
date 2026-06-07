@@ -47,7 +47,7 @@
     "docs:dev": "pnpm --filter docs-site dev",
     "docs:build": "pnpm --filter docs-site build",
     "docs:preview": "pnpm --filter docs-site preview",
-    "docs:contrast": "pnpm --filter docs-site check:contrast",
+    "test:docs": "pnpm --filter docs-site build",
     "aw": "pnpm --filter @agent-workflow/cli dev",
     "aw:help": "pnpm --filter @agent-workflow/cli dev --help",
     "aw:init": "pnpm --filter @agent-workflow/cli dev init",
