@@ -19,7 +19,8 @@ export default defineConfig({
     nav: [
       { text: 'Overview', link: '/overview/what-is-actor-web' },
       { text: 'Getting Started', link: '/getting-started/your-first-actor' },
-      { text: 'Concepts', link: '/concepts/subscriptions-and-events' },
+      { text: 'Concepts', link: '/concepts/actors-and-behaviors' },
+      { text: 'API', link: '/api/' },
     ],
     sidebar: [
       {
@@ -42,6 +43,16 @@ export default defineConfig({
           { text: 'Sources & the gateway', link: '/concepts/sources-and-gateway' },
           { text: 'Tools', link: '/concepts/tools' },
           { text: 'Transport & multi-node', link: '/concepts/transport' },
+        ],
+      },
+      {
+        text: 'API Reference',
+        items: [
+          { text: 'Overview', link: '/api/' },
+          { text: 'defineActor', link: '/api/define-actor' },
+          { text: 'Topology', link: '/api/topology' },
+          { text: 'Runtimes', link: '/api/runtimes' },
+          { text: '@actor-core/testing', link: '/api/testing' },
         ],
       },
     ],
