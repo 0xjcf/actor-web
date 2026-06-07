@@ -1,4 +1,4 @@
-# Docs D1: scaffold VitePress docs site and token-driven desig
+# Docs D1: scaffold VitePress docs site and token-driven design system (walking skeleton). Add a docs/site VitePress workspace package (+ pnpm-workspace.yaml, root docs:* scripts), establish .vitepress/theme/tokens.css (dark-first, both themes, 6/8/12 radius scale, distinct accent — amber #f5a623 pending sign-off), full IA sidebar nav, three real seed pages (Overview: What is Actor-Web?; Getting Started: Your first actor; Concepts: Subscriptions & events), wire @shikijs/vitepress-twoslash typechecked code samples, and port the WCAG AA contrast/a11y guardrail into CI. Foundational docs task; unblocks D2-D6. See docs/actor-web-documentation-plan.md
 
 ## Source
 
