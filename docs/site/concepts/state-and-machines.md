@@ -1,0 +1,66 @@
+---
+title: State & machines
+description: Context state, XState machines, and lightweight FSM constraint maps.
+---
+
+# State & machines
+
+An actor's state is its `context`. How transitions between states are governed is
+your choice: plain context updates, a full XState machine, or a lightweight FSM
+constraint map.
+
+## Plain context
+
+The simplest model returns the next `context` from each handler:
+
+```ts
+const counter = defineActor<{ type: 'INC' }>()
+  .withContext({ count: 0 })
+  .onMessage(({ context }) => ({ context: { count: context.count + 1 } }))
+  .build();
+```
+
+## XState machines
+
+For real state-machine semantics — guarded transitions, hierarchical states —
+attach an XState machine with `withMachine`, then handle each event in
+`onTransition`:
+
+```ts
+defineActor<CompareEvent>()
+  .withMachine(compareMachine)
+  .onTransition({
+    ACCEPT_FORK: ({ actor }) => ({ reply: actor.getSnapshot().value }),
+    REPLAY:      ({ actor }) => ({ reply: actor.getSnapshot().value }),
+  })
+  .build();
+```
+
+The machine decides whether a transition is legal; the runtime rejects
+impossible transitions before your handler runs.
+
+## Lightweight FSM constraint maps
+
+When you want transition constraints without pulling in XState, `withFSM` takes a
+small `{ initial, states }` map:
+
+```ts
+const fsm = defineFSM({
+  initial: 'design',
+  states: {
+    design:    { on: { ADVANCE: 'implement' } },
+    implement: { on: { ADVANCE: 'review' } },
+    review:    { on: {} },
+  },
+});
+```
+
+The FSM is intentionally **pure and synchronous** — it only constrains which
+transitions are allowed. I/O, emits, replies, and context updates belong in the
+`onTransition` handlers, never in the FSM itself.
+
+## The rule
+
+State *shape* lives in `context`. State *transitions* are constrained by the
+machine/FSM. Side effects live in handlers. Keeping those separated is what makes
+behaviors testable without a running system.

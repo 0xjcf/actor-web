@@ -32,7 +32,17 @@ export default defineConfig({
       },
       {
         text: 'Concepts',
-        items: [{ text: 'Subscriptions & events', link: '/concepts/subscriptions-and-events' }],
+        items: [
+          { text: 'Actors & behaviors', link: '/concepts/actors-and-behaviors' },
+          { text: 'Messages — send, ask, emit', link: '/concepts/messages' },
+          { text: 'State & machines', link: '/concepts/state-and-machines' },
+          { text: 'Subscriptions & events', link: '/concepts/subscriptions-and-events' },
+          { text: 'Topology, nodes & supervisors', link: '/concepts/topology' },
+          { text: 'Supervision & fault tolerance', link: '/concepts/supervision' },
+          { text: 'Sources & the gateway', link: '/concepts/sources-and-gateway' },
+          { text: 'Tools', link: '/concepts/tools' },
+          { text: 'Transport & multi-node', link: '/concepts/transport' },
+        ],
       },
     ],
     socialLinks: [{ icon: 'github', link: 'https://github.com/0xjcf/actor-web' }],
