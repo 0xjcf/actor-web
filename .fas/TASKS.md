@@ -957,9 +957,12 @@
 
 - Title: Docs D3: API Reference + actor-core-testing README
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/docs-d3-api-reference-actor-core-testing-readme.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Docs D4: Guides (absorbs queued ignite-integration docs task)
 
