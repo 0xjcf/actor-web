@@ -1,0 +1,20 @@
+{
+  "name": "docs-site",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Actor-Web documentation site (VitePress).",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview",
+    "check:contrast": "node scripts/check-contrast.mjs"
+  },
+  "devDependencies": {
+    "@actor-core/runtime": "workspace:*",
+    "@shikijs/vitepress-twoslash": "^3.2.1",
+    "typescript": "^5.6.0",
+    "vitepress": "^1.6.3",
+    "vue": "^3.5.13"
+  }
+}

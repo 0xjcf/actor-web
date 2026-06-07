@@ -1,0 +1,66 @@
+/*
+ * Actor-Web docs design system — token-driven, dark-first.
+ *
+ * Mirrors ignite-element's architecture (shared dark background, slate text
+ * ramp, 6/8/12 radius scale) but with Actor-Web's own accent: amber.
+ * Every brand/surface token is defined for BOTH themes so nothing falls
+ * through to an un-themed VitePress default. Accent hue is the only thing that
+ * diverges from ignite-element (cyan).
+ *
+ * See docs/actor-web-documentation-plan.md (Design system).
+ */
+
+:root {
+  /* Shared radius scale */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* Light theme — accent is darkened amber so text/links clear WCAG AA on white */
+  --vp-c-brand-1: #8a5a00; /* links / accent text  (>= 4.5:1 on #fff) */
+  --vp-c-brand-2: #6e4800; /* hover                                   */
+  --vp-c-brand-3: #f5a623; /* solid fills (dark ink on top)           */
+  --vp-c-brand-soft: rgba(245, 166, 35, 0.16);
+
+  --vp-button-brand-text: #1a1204;
+  --vp-button-brand-bg: #f5a623;
+  --vp-button-brand-hover-bg: #ffb733;
+}
+
+.dark {
+  /* Surfaces — shared dark background family */
+  --vp-c-bg: #0d1324;
+  --vp-c-bg-alt: #0c1223;
+  --vp-c-bg-elv: #0f182e;
+  --vp-c-bg-soft: #0f182e;
+
+  /* Text ramp */
+  --vp-c-text-1: #e8edf7;
+  --vp-c-text-2: #c5d0de;
+  --vp-c-text-3: #8a98ad;
+
+  /* Dividers / borders */
+  --vp-c-divider: #223049;
+  --vp-c-border: #223049;
+  --vp-c-gutter: #0a0f1c;
+
+  /* Amber accent — #f5a623 is ~8.9:1 on #0d1324 (clears AA text) */
+  --vp-c-brand-1: #f5a623;
+  --vp-c-brand-2: #ffc15c;
+  --vp-c-brand-3: #f5a623;
+  --vp-c-brand-soft: rgba(245, 166, 35, 0.14);
+
+  --vp-button-brand-text: #1a1204;
+  --vp-button-brand-bg: #f5a623;
+  --vp-button-brand-hover-bg: #ffc15c;
+
+  /* Home hero gradient uses the accent ramp */
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #f5a623, #ffc15c);
+}
+
+/* Geometry: interactive chrome reads from the shared radius scale. */
+.dark .VPButton,
+.VPButton {
+  border-radius: var(--radius-md);
+}
