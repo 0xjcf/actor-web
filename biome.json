@@ -61,6 +61,8 @@
       "!**/dist/**",
       "!**/node_modules/**",
       "!**/.vitepress/cache/**",
+      "!**/.mcp.json",
+      "!**/.cursor/**",
       "!**/.fas/agents/**",
       "!**/.fas/index/**",
       "!**/.fas/prompts/**",

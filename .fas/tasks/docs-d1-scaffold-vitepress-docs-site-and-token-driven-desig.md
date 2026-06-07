@@ -1,4 +1,4 @@
-# Add declarative subscriptions to defineActorWebTopology
+# Docs D1: scaffold VitePress docs site and token-driven desig
 
 ## Source
 
@@ -6,18 +6,12 @@ Created with `fas create-task` on 2026-06-07.
 
 ## Problem
 
-Subscriptions design T2 (primary DX win). Add declarative subscriptions: [{from, to[], events[]}] to ActorWebTopologyInput/defineActorWebTopology; wire on node start, unwire on stop(); type-check from/to against actor ids. Closes the system-restart durability gap (in-memory registry loses subscriptions today). Builds on T1's batch path. See docs/actor-web-declarative-subscriptions-design.md (T2).
+Docs D1: scaffold VitePress docs site and token-driven design system (walking skeleton). Add a docs/site VitePress workspace package (+ pnpm-workspace.yaml, root docs:* scripts), establish .vitepress/theme/tokens.css (dark-first, both themes, 6/8/12 radius scale, distinct accent — amber #f5a623 pending sign-off), full IA sidebar nav, three real seed pages (Overview: What is Actor-Web?; Getting Started: Your first actor; Concepts: Subscriptions & events), wire @shikijs/vitepress-twoslash typechecked code samples, and port the WCAG AA contrast/a11y guardrail into CI. Foundational docs task; unblocks D2-D6. See docs/actor-web-documentation-plan.md.
 
 ## Acceptance criteria
 
-- The new functionality works as described.
-- Existing behavior is not broken.
-- TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
-- TDD: every production code change in the change set is covered by an added or updated test.
-- DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.
 - The work is tracked in `.fas/TASKS.md`.
 - The task has a clear implementation and verification plan before execution starts.
-- The task is queued in `.fas/queue/tasks.json` for the runtime.
 
 ## Proposed solution
 
@@ -29,9 +23,10 @@ Subscriptions design T2 (primary DX win). Add declarative subscriptions: [{from,
 
 ## Affected files
 
-- packages/actor-core-runtime/src/topology.ts
-- packages/actor-core-runtime/src/actor-web-client.ts
-- packages/actor-core-runtime/src/start-actor-web-node.ts
+- docs/site
+- pnpm-workspace.yaml
+- package.json
+- .github/workflows
 
 ## Scope Amendments
 

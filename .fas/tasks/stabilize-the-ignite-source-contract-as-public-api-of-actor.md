@@ -1,12 +1,15 @@
 # Stabilize the Ignite source contract as public API of @actor
 
 ## Source
+
 Created with `fas create-task` on 2026-06-06.
 
 ## Problem
+
 Cross-repo alignment with ignite-element (spike: ../ignite-element/.fas/state/spikes/agent-runtime-api-review.md, decisions C8/C9/C12). The IgniteReadModelSource/IgniteCommandSource/IgniteActorSourceSnapshot types in packages/actor-core-runtime/src/integration/ignite-element-bridge.ts are about to become the single source of truth that ignite-element imports (it will delete its hand-copy and add @actor-core/runtime as an optional peerDep). Actions: (1) confirm these types + the ClosableActorWeb* extensions are intentionally exported from the package index as stable public API; (2) C9 — ensure IgniteActorSourceSnapshot (or its ActorSnapshot base) declares the optional source-native helpers matches?/can?/hasTag? so ignite consumes them from one place; (3) C12 — standardize source teardown on close() (keep stop() for adapter lifecycle only); (4) add a contract-conformance test so drift breaks the build; (5) changeset + release so ignite-element can depend on the published version.
 
 ## Automation admission
+
 - Expected operator value: Improves operator leverage around "Stabilize the Ignite source contract as public API of @actor-core/runtime" by reducing manual coordination, repetitive execution, or trust gaps.
 - Observability surface: Use authoritative FAS surfaces such as `fas runtime status`, `fas runtime watch`, workflow logs, receipts, or notifications to show whether the automation is active, quiet, stalled, blocked, or complete.
 - Recovery path: A human can abort, retry, recover, or rerun this workflow without leaving stale queue, lease, branch, or current-task state.
@@ -14,6 +17,7 @@ Cross-repo alignment with ignite-element (spike: ../ignite-element/.fas/state/sp
 - Promotion criteria: Promote beyond advisory only after dogfood runs prove clear operator value, trustworthy observability, and bounded recovery.
 
 ## Acceptance criteria
+
 - Ignite*Source + snapshot types exported as documented public API
 - snapshot helpers matches/can/hasTag present on the canonical type
 - source teardown standardized on close()
@@ -27,37 +31,47 @@ Cross-repo alignment with ignite-element (spike: ../ignite-element/.fas/state/sp
 - The task is queued in `.fas/queue/tasks.json` for the runtime.
 
 ## Proposed solution
+
 - Use the supplied problem context, acceptance criteria, and affected-file hints to draft the concrete implementation approach during planning.
 
 ## Alternatives considered
+
 - None recorded at task creation. Add rejected approaches during planning if scope tradeoffs appear.
 
 ## Affected files
+
 - packages/actor-core-runtime/src/integration/ignite-element-bridge.ts
 - packages/actor-core-runtime/src/actor-web-source.ts
 - packages/actor-core-runtime/src/index.ts
 
 ## Scope Amendments
+
 - None.
 
 ## Implementation plan
+
 - Convert the supplied context into a scoped implementation plan before editing.
 - Refresh affected-file scope before implementation if the generated hints are incomplete.
 
 ## Verification plan
+
 - Run `fas validate-task` for the inner-loop verification gate.
 - Run `.fas/scripts/verify.sh --full` at the final release-quality gate when tracked files change.
 
 ## Risks
+
 - Validate generated scope, acceptance criteria, and verification evidence before closeout to avoid workflow drift.
 
 ## Dependencies
+
 - None known at task creation.
 
 ## Open questions
+
 - None captured at task creation.
 
 ## Artifact links
+
 - Planning: `.fas/state/planning.json`
 - Task packet: `.fas/state/task-packet.json`
 - Commit plan: `.fas/state/commit-plan.json`

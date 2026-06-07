@@ -893,6 +893,7 @@
 - Owner: runtime
 - Brief: .fas/tasks/stabilize-the-ignite-source-contract-as-public-api-of-actor.md
 - Automation mode: advisory
+
 ### Task: Docs: document the ignite-element integration surface (readModel/commandSource/sourceHandle + opts)
 
 - Title: Docs: document the ignite-element integration surface (readModel/commandSource/sourceHandle + opts)
@@ -900,6 +901,7 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/docs-document-the-ignite-element-integration-surface-readm.md
+
 ### Task: Add batch subscribers[] overload to system.subscribe
 
 - Title: Add batch subscribers[] overload to system.subscribe
@@ -907,6 +909,7 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/add-batch-subscribers-overload-to-system-subscribe.md
+
 ### Task: Add declarative subscriptions to defineActorWebTopology
 
 - Title: Add declarative subscriptions to defineActorWebTopology
@@ -914,6 +917,7 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/add-declarative-subscriptions-to-defineactorwebtopology.md
+
 ### Task: Type subscription events against publisher emitted-event union
 
 - Title: Type subscription events against publisher emitted-event union
@@ -921,6 +925,7 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/type-subscription-events-against-publisher-emitted-event-uni.md
+
 ### Task: Delete unused EventBrokerActor; lock AutoPublishingRegistry as canonical
 
 - Title: Delete unused EventBrokerActor; lock AutoPublishingRegistry as canonical
@@ -928,6 +933,7 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/delete-unused-eventbrokeractor-lock-autopublishingregistry.md
+
 ### Task: Docs D1: scaffold VitePress site + design system (walking skeleton)
 
 - Title: Docs D1: scaffold VitePress site + design system (walking skeleton)
@@ -935,6 +941,7 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/docs-d1-scaffold-vitepress-site-design-system-walking-sk.md
+
 ### Task: Docs D2: Concepts section
 
 - Title: Docs D2: Concepts section
@@ -942,6 +949,7 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/docs-d2-concepts-section.md
+
 ### Task: Docs D3: API Reference + actor-core-testing README
 
 - Title: Docs D3: API Reference + actor-core-testing README
@@ -949,6 +957,7 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/docs-d3-api-reference-actor-core-testing-readme.md
+
 ### Task: Docs D4: Guides (absorbs queued ignite-integration docs task)
 
 - Title: Docs D4: Guides (absorbs queued ignite-integration docs task)
@@ -957,6 +966,7 @@
 - Owner: runtime
 - Brief: .fas/tasks/docs-d4-guides-absorbs-queued-ignite-integration-docs-task.md
 - Automation mode: advisory
+
 ### Task: Docs D5: Getting Started completion + Operations + Community
 
 - Title: Docs D5: Getting Started completion + Operations + Community
@@ -964,6 +974,7 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/docs-d5-getting-started-completion-operations-community.md
+
 ### Task: Docs D6: deploy site (GitHub Pages) + decide versioning/llms-txt
 
 - Title: Docs D6: deploy site (GitHub Pages) + decide versioning/llms-txt
@@ -971,6 +982,26 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/docs-d6-deploy-site-github-pages-decide-versioning-llms.md
+
+### Task: Docs D1: scaffold VitePress docs site and token-driven design system (walking skeleton). Add a docs/site VitePress workspace package (+ pnpm-workspace.yaml, root docs:* scripts), establish .vitepress/theme/tokens.css (dark-first, both themes, 6/8/12 radius scale, distinct accent — amber #f5a623 pending sign-off), full IA sidebar nav, three real seed pages (Overview: What is Actor-Web?; Getting Started: Your first actor; Concepts: Subscriptions & events), wire @shikijs/vitepress-twoslash typechecked code samples, and port the WCAG AA contrast/a11y guardrail into CI. Foundational docs task; unblocks D2-D6. See docs/actor-web-documentation-plan.md
+
+- Title: Docs D1: scaffold VitePress docs site and token-driven design system (walking skeleton). Add a docs/site VitePress workspace package (+ pnpm-workspace.yaml, root docs:* scripts), establish .vitepress/theme/tokens.css (dark-first, both themes, 6/8/12 radius scale, distinct accent — amber #f5a623 pending sign-off), full IA sidebar nav, three real seed pages (Overview: What is Actor-Web?; Getting Started: Your first actor; Concepts: Subscriptions & events), wire @shikijs/vitepress-twoslash typechecked code samples, and port the WCAG AA contrast/a11y guardrail into CI. Foundational docs task; unblocks D2-D6. See docs/actor-web-documentation-plan.md.
+- Mode: single-agent
+- Status: implementing
+- Owner: implementer
+- Brief: .fas/tasks/docs-d1-scaffold-vitepress-docs-site-and-token-driven-desig.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Docs: add Playwright WCAG AA contrast guardrail + markdownlint coverage for the VitePress site
+
+- Title: Docs: add Playwright WCAG AA contrast guardrail + markdownlint coverage for the VitePress site
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/docs-add-playwright-wcag-aa-contrast-guardrail-markdownli.md
+
 ## Template
 
 ### Task: `<short task title>`

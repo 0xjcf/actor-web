@@ -1,4 +1,4 @@
-# Add declarative subscriptions to defineActorWebTopology
+# Docs: add Playwright WCAG AA contrast guardrail + markdownli
 
 ## Source
 
@@ -6,7 +6,7 @@ Created with `fas create-task` on 2026-06-07.
 
 ## Problem
 
-Subscriptions design T2 (primary DX win). Add declarative subscriptions: [{from, to[], events[]}] to ActorWebTopologyInput/defineActorWebTopology; wire on node start, unwire on stop(); type-check from/to against actor ids. Closes the system-restart durability gap (in-memory registry loses subscriptions today). Builds on T1's batch path. See docs/actor-web-declarative-subscriptions-design.md (T2).
+Deferred from Docs D1. (1) Port ignite-element's check-contrast.mjs as docs/site/scripts/check-contrast.mjs: render the built site in Playwright Chromium, assert WCAG AA in both themes (>=3:1 UI/large, >=4.5:1 body text) across nav, sidebar, TOC, inline code, links, callouts; plus a geometry check that interactive controls use the --radius-* tokens. Retarget selectors to VitePress DOM (.VPNav, .VPSidebar, .vp-doc a, .vp-doc :not(pre) > code). Add a docs:contrast root script + wire into .github/workflows/docs.yml. (2) Extend markdownlint to docs/site with a VitePress-aware config (disable MD025 front_matter_title, MD041 for the hero home page, MD033 for VitePress components; exclude docs/site/node_modules and .vitepress) and add docs/site to the lint:md glob. See docs/actor-web-documentation-plan.md (Design system: a11y guardrail).
 
 ## Acceptance criteria
 
@@ -29,9 +29,10 @@ Subscriptions design T2 (primary DX win). Add declarative subscriptions: [{from,
 
 ## Affected files
 
-- packages/actor-core-runtime/src/topology.ts
-- packages/actor-core-runtime/src/actor-web-client.ts
-- packages/actor-core-runtime/src/start-actor-web-node.ts
+- docs/site/scripts/check-contrast.mjs
+- .github/workflows/docs.yml
+- package.json
+- .markdownlint.jsonc
 
 ## Scope Amendments
 

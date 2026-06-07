@@ -1,12 +1,15 @@
 # Docs D4: Guides (absorbs queued ignite-integration docs task
 
 ## Source
+
 Created with `fas create-task` on 2026-06-07.
 
 ## Problem
+
 Documentation plan D4. Guides: Ignite Element integration, xstate transitions, multi-process deployment, coordinating actors (choreography via emit), testing. NOTE overlap: this absorbs the already-queued task 'Docs: document the ignite-element integration surface' (task-1780800650668) once the site exists; sequence together. Depends on D1. See docs/actor-web-documentation-plan.md.
 
 ## Automation admission
+
 - Expected operator value: Improves operator leverage around "Docs D4: Guides (absorbs queued ignite-integration docs task)" by reducing manual coordination, repetitive execution, or trust gaps.
 - Observability surface: Use authoritative FAS surfaces such as `fas runtime status`, `fas runtime watch`, workflow logs, receipts, or notifications to show whether the automation is active, quiet, stalled, blocked, or complete.
 - Recovery path: A human can abort, retry, recover, or rerun this workflow without leaving stale queue, lease, branch, or current-task state.
@@ -14,6 +17,7 @@ Documentation plan D4. Guides: Ignite Element integration, xstate transitions, m
 - Promotion criteria: Promote beyond advisory only after dogfood runs prove clear operator value, trustworthy observability, and bounded recovery.
 
 ## Acceptance criteria
+
 - The change is verified and does not introduce regressions.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
@@ -23,35 +27,45 @@ Documentation plan D4. Guides: Ignite Element integration, xstate transitions, m
 - The task is queued in `.fas/queue/tasks.json` for the runtime.
 
 ## Proposed solution
+
 - Use the supplied problem context, acceptance criteria, and affected-file hints to draft the concrete implementation approach during planning.
 
 ## Alternatives considered
+
 - None recorded at task creation. Add rejected approaches during planning if scope tradeoffs appear.
 
 ## Affected files
+
 - docs/site
 
 ## Scope Amendments
+
 - None.
 
 ## Implementation plan
+
 - Convert the supplied context into a scoped implementation plan before editing.
 - Refresh affected-file scope before implementation if the generated hints are incomplete.
 
 ## Verification plan
+
 - Run `fas validate-task` for the inner-loop verification gate.
 - Run `.fas/scripts/verify.sh --full` at the final release-quality gate when tracked files change.
 
 ## Risks
+
 - Validate generated scope, acceptance criteria, and verification evidence before closeout to avoid workflow drift.
 
 ## Dependencies
+
 - None known at task creation.
 
 ## Open questions
+
 - None captured at task creation.
 
 ## Artifact links
+
 - Planning: `.fas/state/planning.json`
 - Task packet: `.fas/state/task-packet.json`
 - Commit plan: `.fas/state/commit-plan.json`
