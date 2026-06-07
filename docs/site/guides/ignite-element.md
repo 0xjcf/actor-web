@@ -24,9 +24,9 @@ const registerCompare = igniteCore({
   // project snapshot context into UI state
   view: ({ context }) => ({ outcome: context.outcome, selected: context.selected }),
   // bind UI actions to actor messages
-  commands: ({ actor, command }) => ({
-    acceptFork: command(() => actor.send({ type: 'ACCEPT_FORK' })),
-    selectFork: command(() => actor.send({ type: 'SELECT_FORK' })),
+  commands: ({ actor }) => ({
+    acceptFork: () => actor.send({ type: 'ACCEPT_FORK' }),
+    selectFork: () => actor.send({ type: 'SELECT_FORK' }),
   }),
 });
 
@@ -50,9 +50,9 @@ granted to every projection by default. See
 - Keep `view` inline for small mappings: `({ context }) => ({ ... })`. Reach for
   a projection helper only when the view composes multiple slices or
   loading/error rules.
-- Put commands **inside** the `commands: ({ actor, command }) => ...` callback
-  using `actor.send` / `actor.ask`. Don't inject standalone command-helper
-  objects.
+- Put commands **inside** the `commands: ({ actor }) => ...` callback using
+  `actor.send` / `actor.ask`. Each command is a plain function — no wrapper
+  helper.
 - Don't import runtime source-handle generics or custom runtime interfaces into
   UI code. Domain protocol types stay at the actor/domain boundary.
 
