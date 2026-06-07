@@ -980,9 +980,12 @@
 
 - Title: Docs D5: Getting Started completion + Operations + Community
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/docs-d5-getting-started-completion-operations-community.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Docs D6: deploy site (GitHub Pages) + decide versioning/llms-txt
 
