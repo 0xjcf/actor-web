@@ -946,9 +946,12 @@
 
 - Title: Docs D2: Concepts section
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/docs-d2-concepts-section.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Docs D3: API Reference + actor-core-testing README
 
