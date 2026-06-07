@@ -14,12 +14,12 @@ authored with `defineActor`.
 `defineActor` is a small fluent builder. You declare the message union, optional
 state, and a handler:
 
-```ts
+```ts twoslash
 import { defineActor } from '@actor-core/runtime';
 
 type Msg = { type: 'PING' } | { type: 'RESET' };
 
-const pinger = defineActor<Msg>()
+export const pinger = defineActor<Msg>()
   .withContext({ pings: 0 })
   .onMessage(({ message, context }) =>
     message.type === 'PING'
