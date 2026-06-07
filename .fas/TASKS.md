@@ -993,6 +993,7 @@
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
+
 ### Task: Docs: add Playwright WCAG AA contrast guardrail + markdownlint coverage for the VitePress site
 
 - Title: Docs: add Playwright WCAG AA contrast guardrail + markdownlint coverage for the VitePress site
