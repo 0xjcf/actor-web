@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import { type StartedActorWebNode, startActorWebNode } from '@actor-core/runtime/browser';
+import { type StartedActorWebNode, startActorWebNode } from '@actor-web/runtime/browser';
 import { logistics } from './logistics-topology';
 
 declare const self: DedicatedWorkerGlobalScope;

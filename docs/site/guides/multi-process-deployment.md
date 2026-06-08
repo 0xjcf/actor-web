@@ -12,7 +12,7 @@ wired does.
 ## Serve a node
 
 ```ts
-import { serveActorWebNode } from '@actor-core/runtime/node';
+import { serveActorWebNode } from '@actor-web/runtime/node';
 
 // Worker process
 const worker = await serveActorWebNode(topology, {

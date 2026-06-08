@@ -1,5 +1,5 @@
 /**
- * @agent-workflow/cli - Agent-Centric Development Workflow CLI
+ * @actor-web/cli - Agent-Centric Development Workflow CLI
  * Programmatic API exports for integration with other tools and frameworks
  *
  * @version 0.1.0-alpha

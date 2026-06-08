@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { Logger } from '@actor-core/runtime';
+import { Logger } from '@actor-web/runtime';
 import { type SimpleGit, simpleGit } from 'simple-git';
 import { type AgentWorktreeConfig, loadAgentConfig } from './agent-config.js';
 

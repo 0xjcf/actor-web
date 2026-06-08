@@ -1,15 +1,15 @@
 ---
-title: "@actor-core/testing"
+title: "@actor-web/testing"
 description: State-machine analysis helpers for machine-based actors.
 ---
 
-# `@actor-core/testing`
+# `@actor-web/testing`
 
 Structural test helpers for the XState machines that drive machine-based actors —
 catch unreachable states and report transition coverage.
 
 ```bash
-pnpm add -D @actor-core/testing
+pnpm add -D @actor-web/testing
 ```
 
 ## `analyzeStateMachine(machine)`

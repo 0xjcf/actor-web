@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import { createMessagePortTransport, type MessagePortTransport } from '@actor-core/runtime/browser';
+import { createMessagePortTransport, type MessagePortTransport } from '@actor-web/runtime/browser';
 import { logistics } from './logistics-topology';
 import {
   isServiceWorkerTransportEnvelope,

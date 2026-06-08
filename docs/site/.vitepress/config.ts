@@ -11,7 +11,7 @@ export default defineConfig({
   lastUpdated: true,
   // Deployment base (e.g. GitHub Pages "/actor-web/") is decided in docs task D6.
   markdown: {
-    // Typecheck every ```ts twoslash fence against the real @actor-core/runtime
+    // Typecheck every ```ts twoslash fence against the real @actor-web/runtime
     // types at build time — drift breaks the build.
     codeTransformers: [transformerTwoslash()],
   },
@@ -68,7 +68,7 @@ export default defineConfig({
           { text: 'defineActor', link: '/api/define-actor' },
           { text: 'Topology', link: '/api/topology' },
           { text: 'Runtimes', link: '/api/runtimes' },
-          { text: '@actor-core/testing', link: '/api/testing' },
+          { text: '@actor-web/testing', link: '/api/testing' },
         ],
       },
       {

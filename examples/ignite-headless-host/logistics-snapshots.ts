@@ -1,5 +1,5 @@
-import type { ActorSnapshot, IgniteActorSourceSnapshot } from '@actor-core/runtime/browser';
-import { actorSnapshotToIgniteSourceSnapshot } from '@actor-core/runtime/browser';
+import type { ActorSnapshot, IgniteActorSourceSnapshot } from '@actor-web/runtime/browser';
+import { actorSnapshotToIgniteSourceSnapshot } from '@actor-web/runtime/browser';
 import { createInitialShipmentContext, type ShipmentContext } from './logistics-contract';
 import { logistics } from './logistics-topology';
 

@@ -14,22 +14,22 @@ export default defineConfig({
   resolve: {
     alias: [
       {
-        find: '@actor-core/runtime/browser',
+        find: '@actor-web/runtime/browser',
         replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/browser.ts'),
       },
       {
-        find: '@actor-core/runtime/node',
+        find: '@actor-web/runtime/node',
         replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/node.ts'),
       },
       {
-        find: '@actor-core/runtime/topology',
+        find: '@actor-web/runtime/topology',
         replacement: path.resolve(
           actorWebRoot,
           'packages/actor-core-runtime/src/topology-entry.ts'
         ),
       },
       {
-        find: '@actor-core/runtime',
+        find: '@actor-web/runtime',
         replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/index.ts'),
       },
       {

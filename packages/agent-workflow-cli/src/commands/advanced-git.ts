@@ -7,7 +7,7 @@
  */
 
 import * as path from 'node:path';
-import { Logger } from '@actor-core/runtime';
+import { Logger } from '@actor-web/runtime';
 import chalk from 'chalk';
 
 const log = Logger.namespace('ADVANCED_GIT_COMMANDS');

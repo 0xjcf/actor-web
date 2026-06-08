@@ -18,7 +18,7 @@
  * Supervision: XState built-in supervision
  */
 
-import { defineActor, Logger } from '@actor-core/runtime';
+import { defineActor, Logger } from '@actor-web/runtime';
 import { type SimpleGit, simpleGit } from 'simple-git';
 import { assign, fromPromise, setup } from 'xstate';
 

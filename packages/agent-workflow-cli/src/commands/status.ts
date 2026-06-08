@@ -1,4 +1,4 @@
-import { Logger } from '@actor-core/runtime';
+import { Logger } from '@actor-web/runtime';
 import chalk from 'chalk';
 import { GitOperations } from '../core/git-operations.js';
 import { findRepoRoot } from '../core/repo-root-finder.js';

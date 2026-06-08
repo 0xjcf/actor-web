@@ -1,4 +1,4 @@
-import type { ActorToolExecutor } from '@actor-core/runtime';
+import type { ActorToolExecutor } from '@actor-web/runtime';
 import type {
   FasPatch,
   FasPlan,

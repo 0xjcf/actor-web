@@ -1,5 +1,5 @@
 import { createInterface } from 'node:readline';
-import { Logger } from '@actor-core/runtime';
+import { Logger } from '@actor-web/runtime';
 import chalk from 'chalk';
 
 const log = Logger.namespace('SAVE_COMMAND');

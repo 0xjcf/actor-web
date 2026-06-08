@@ -3,7 +3,7 @@ import {
   createActorWebClient,
   type StartedActorWebNode,
   startActorWebNode,
-} from '@actor-core/runtime/browser';
+} from '@actor-web/runtime/browser';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import type {
@@ -1297,8 +1297,8 @@ describe('service worker transport lifecycle', () => {
       .mockImplementationOnce(() => secondStartup.promise);
     const serviceWorkerGlobal = createFakeServiceWorkerGlobalScope();
 
-    vi.doMock('@actor-core/runtime/browser', async (importOriginal) => {
-      const actual = await importOriginal<typeof import('@actor-core/runtime/browser')>();
+    vi.doMock('@actor-web/runtime/browser', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@actor-web/runtime/browser')>();
       return {
         ...actual,
         createMessagePortTransport: createMessagePortTransportMock,
@@ -1376,8 +1376,8 @@ describe('service worker transport lifecycle', () => {
     const startActorWebNodeMock = vi.fn(() => startup.promise);
     const serviceWorkerGlobal = createFakeServiceWorkerGlobalScope();
 
-    vi.doMock('@actor-core/runtime/browser', async (importOriginal) => {
-      const actual = await importOriginal<typeof import('@actor-core/runtime/browser')>();
+    vi.doMock('@actor-web/runtime/browser', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@actor-web/runtime/browser')>();
       return {
         ...actual,
         createMessagePortTransport: createMessagePortTransportMock,

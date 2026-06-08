@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { Logger } from '@actor-core/runtime';
+import { Logger } from '@actor-web/runtime';
 import chalk from 'chalk';
 import inquirer from 'inquirer';
 

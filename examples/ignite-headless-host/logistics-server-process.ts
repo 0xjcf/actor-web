@@ -4,7 +4,7 @@ import {
   createRuntimeTransportTelemetryExporter,
   createRuntimeTransportTelemetryJsonlFileSink,
   type RuntimeTransportTelemetryExporter,
-} from '@actor-core/runtime/node';
+} from '@actor-web/runtime/node';
 import type { ProviderRuntimeSource } from './logistics-contract';
 import type { LifecycleMode } from './logistics-provider-hq';
 import {

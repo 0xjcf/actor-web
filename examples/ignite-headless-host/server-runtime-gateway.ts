@@ -7,13 +7,13 @@ import type {
   RuntimePeerStatus,
   RuntimeTransportStats,
   RuntimeTransportTelemetryObserver,
-} from '@actor-core/runtime';
+} from '@actor-web/runtime';
 import {
   type ServedActorWebHttp,
   type ServedActorWebNode,
   serveActorWebHttp,
   serveActorWebNode,
-} from '@actor-core/runtime/node';
+} from '@actor-web/runtime/node';
 import type {
   DispatcherCommand,
   DispatcherContext,

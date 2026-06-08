@@ -26,9 +26,9 @@ describe('root package metadata', () => {
   });
 
   it('builds workspace packages instead of a missing root source entrypoint', () => {
-    expect(packageJson.scripts?.build).toContain('@actor-core/runtime');
-    expect(packageJson.scripts?.build).toContain('@actor-core/testing');
-    expect(packageJson.scripts?.build).toContain('@agent-workflow/cli');
+    expect(packageJson.scripts?.build).toContain('@actor-web/runtime');
+    expect(packageJson.scripts?.build).toContain('@actor-web/testing');
+    expect(packageJson.scripts?.build).toContain('@actor-web/cli');
     expect(packageJson.scripts?.build).not.toContain('src/index.ts');
   });
 });

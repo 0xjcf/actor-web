@@ -1,4 +1,4 @@
-import type { ClosableActorWebSource } from '@actor-core/runtime/browser';
+import type { ClosableActorWebSource } from '@actor-web/runtime/browser';
 import { igniteCore } from 'ignite-element/actor-web';
 import type {
   FasTaskBoardCommand,

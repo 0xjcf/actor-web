@@ -10,7 +10,7 @@ A **topology** is a declarative description of your system: which runtime
 It's the one place that owns placement and lifecycle.
 
 ```ts
-import { defineActorWebTopology, actor, node, supervisor, tool } from '@actor-core/runtime/topology';
+import { defineActorWebTopology, actor, node, supervisor, tool } from '@actor-web/runtime/topology';
 
 export const topology = defineActorWebTopology({
   contractVersion: '0.1.0',

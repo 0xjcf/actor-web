@@ -1,8 +1,8 @@
-import { defineActor, defineFSM } from '@actor-core/runtime';
+import { defineActor, defineFSM } from '@actor-web/runtime';
 import type {
   ActorWebAllowedToolRegistry,
   ActorWebTypedDefineActor,
-} from '@actor-core/runtime/topology';
+} from '@actor-web/runtime/topology';
 import type {
   FasAgentRole,
   FasPlan,

@@ -1,4 +1,4 @@
-import { defineActor } from '@actor-core/runtime/browser';
+import { defineActor } from '@actor-web/runtime/browser';
 import {
   PROVIDER_HQ_ADDRESS,
   type ProviderHqCommand,

@@ -91,7 +91,7 @@ hexagonal boundary or the actor model.
   - stale socket frame suppression after peer replacement
 - browser/WebWorker runtime transport now covers:
   - `BrowserWebSocketMessageTransport` exported from
-    `@actor-core/runtime/browser`
+    `@actor-web/runtime/browser`
   - outbound-only browser WebSocket peer connections
   - reuse of the runtime handshake and frame envelope contract
   - app-level `runtime.transport.ping` and `runtime.transport.pong` heartbeat

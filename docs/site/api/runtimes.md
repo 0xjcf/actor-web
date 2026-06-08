@@ -10,7 +10,7 @@ A topology is inert until it runs. There are two ways to run one.
 ## `startActorWebLocalRuntime(topology, opts?)`
 
 ```ts
-import { startActorWebLocalRuntime } from '@actor-core/runtime';
+import { startActorWebLocalRuntime } from '@actor-web/runtime';
 
 const runtime = await startActorWebLocalRuntime(topology, { tools });
 ```
@@ -28,7 +28,7 @@ Returns a started runtime with:
 ## `serveActorWebNode(topology, opts)` <Badge type="warning" text="node" />
 
 ```ts
-import { serveActorWebNode } from '@actor-core/runtime/node';
+import { serveActorWebNode } from '@actor-web/runtime/node';
 
 const node = await serveActorWebNode(topology, {
   node: 'worker',
@@ -50,7 +50,7 @@ Returns `{ system, transport, actors, requireActor, getGatewayUrl, getTransportU
 ## `serveActorWebHttp(...)` <Badge type="warning" text="node" />
 
 A REST ingress adapter that maps HTTP routes onto actor `send`/`ask`, for
-exposing actors over HTTP. See `@actor-core/runtime/node`.
+exposing actors over HTTP. See `@actor-web/runtime/node`.
 
 ## See also
 

@@ -376,8 +376,8 @@ Implemented:
 - Runtime XState and FSM legality checks before transition handler side effects.
 - Structured invalid-transition values instead of default domain throws.
 - `onMessage(...)` fallback for messages without transition handlers.
-- Public FSM and transition handler types from `@actor-core/runtime` and
-  `@actor-core/runtime/browser`.
+- Public FSM and transition handler types from `@actor-web/runtime` and
+  `@actor-web/runtime/browser`.
 - Logistics shipment actor migrated to `withFSM(...).onTransition(...)`.
 
 Still remaining:

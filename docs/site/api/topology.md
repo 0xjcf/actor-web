@@ -7,7 +7,7 @@ description: defineActorWebTopology, the actor/node/supervisor/tool DSL, and sou
 
 ```ts
 import { defineActorWebTopology, actor, node, supervisor, tool }
-  from '@actor-core/runtime/topology';
+  from '@actor-web/runtime/topology';
 ```
 
 ## `defineActorWebTopology(input)`
@@ -83,5 +83,5 @@ For consumers outside the topology's TypeScript project:
 
 ```ts
 import { createActorWebReadModelSource, createActorWebCommandSource }
-  from '@actor-core/runtime/browser';
+  from '@actor-web/runtime/browser';
 ```

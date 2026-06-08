@@ -1,4 +1,4 @@
-import { defineActor, defineFSM } from '@actor-core/runtime/browser';
+import { defineActor, defineFSM } from '@actor-web/runtime/browser';
 import {
   createInitialShipmentContext,
   type ShipmentCommand,

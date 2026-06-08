@@ -263,7 +263,7 @@ Historical spike evidence from 2026-04-23:
 ## Residual Risks
 
 - The current Actor-Web package name and export story is inconsistent in examples
-  and package metadata (`@actor-web/core` versus `@actor-core/runtime`).
+  and package metadata (`@actor-web/core` versus `@actor-web/runtime`).
 - The repo contains old agent-workflow CLI code that overlaps with FAS concepts but
   is not the same as FAS's current contract model.
 - Direct clock/random reads may be acceptable in execution boundaries, but this

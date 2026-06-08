@@ -13,7 +13,7 @@ a **topology** and start a **runtime**.
 ## 1. Declare a topology
 
 ```ts
-import { defineActorWebTopology, actor, node } from '@actor-core/runtime/topology';
+import { defineActorWebTopology, actor, node } from '@actor-web/runtime/topology';
 
 export const topology = defineActorWebTopology({
   nodes: { local: node('local') },
@@ -29,7 +29,7 @@ export const topology = defineActorWebTopology({
 browser and tests:
 
 ```ts
-import { startActorWebLocalRuntime } from '@actor-core/runtime';
+import { startActorWebLocalRuntime } from '@actor-web/runtime';
 
 const runtime = await startActorWebLocalRuntime(topology);
 ```

@@ -1,4 +1,4 @@
-# @actor-core/runtime
+# @actor-web/runtime
 
 ## Pure Actor Model Runtime for Actor-Web Framework
 
@@ -16,7 +16,7 @@ The main framework (`/src/core`) contains architectural violations of the pure a
 - Direct state access via `getSnapshot()`
 - Shared global state
 
-This package (`@actor-core/runtime`) implements the pure actor model correctly with advanced patterns:
+This package (`@actor-web/runtime`) implements the pure actor model correctly with advanced patterns:
 
 - ✅ **Pure Actor Model** - No singletons, message-only communication
 - ✅ **Capability Security** - Fine-grained permission-based access control
@@ -58,7 +58,7 @@ This package (`@actor-core/runtime`) implements the pure actor model correctly w
 ## ⚡ Quick Start
 
 ```typescript
-import { createProxyActor, procedures } from '@actor-core/runtime';
+import { createProxyActor, procedures } from '@actor-web/runtime';
 
 // 1. Define what your actor can do
 const chatRouter = {
@@ -84,7 +84,7 @@ That's it! No manual event handling, no correlation IDs, no boilerplate. Just pu
 ### Actor System
 
 ```typescript
-import { createActorSystem } from '@actor-core/runtime';
+import { createActorSystem } from '@actor-web/runtime';
 
 // Create and start the actor system
 const system = await createActorSystem({ nodeAddress: 'localhost:0' });
@@ -113,7 +113,7 @@ await system.flush();     // Wait for all messages
 ### Defining Actors
 
 ```typescript
-import { defineActor } from '@actor-core/runtime';
+import { defineActor } from '@actor-web/runtime';
 
 // Define message types
 type CounterMessage = 
@@ -311,7 +311,7 @@ return {
 ### Complete Banking Example
 
 ```typescript
-import { createActorSystem, defineActor } from '@actor-core/runtime';
+import { createActorSystem, defineActor } from '@actor-web/runtime';
 
 // Define a bank account actor
 type AccountMessage = 
@@ -411,7 +411,7 @@ console.log('Current balance:', balance); // 50
 ### Testing with Synchronization
 
 ```typescript
-import { defineBehavior, createActor } from '@actor-core/runtime';
+import { defineBehavior, createActor } from '@actor-web/runtime';
 import { setup, assign } from 'xstate';
 
 // Define XState machine for state management
@@ -480,7 +480,7 @@ console.log('Count:', count.value); // 1
 #### **Zero-Boilerplate Actor Proxies**
 
 ```typescript
-import { createProxyActor, procedures } from '@actor-core/runtime';
+import { createProxyActor, procedures } from '@actor-web/runtime';
 
 // Define router with type safety
 const userRouter = {
@@ -505,7 +505,7 @@ subscription.subscribe(update => console.log('User updated:', update));
 #### **Instant Capability Security**
 
 ```typescript
-import { createCapabilitySecuredRef } from '@actor-core/runtime';
+import { createCapabilitySecuredRef } from '@actor-web/runtime';
 
 // Secure any actor in one line
 const securedActor = createCapabilitySecuredRef(actor, {
@@ -521,7 +521,7 @@ await securedActor.ask({ type: 'DELETE_ALL' }); // ❌ Auto-rejected
 #### **Orleans-Style Virtual Actors**
 
 ```typescript
-import { createVirtualActorRef } from '@actor-core/runtime';
+import { createVirtualActorRef } from '@actor-web/runtime';
 
 // Auto-cached actors with lifecycle management
 const userActor = createVirtualActorRef('user', userId, userBehavior);
@@ -533,7 +533,7 @@ const userData = await userActor.ask({ type: 'GET_PROFILE' });
 #### **Bulletproof Supervisor Trees**
 
 ```typescript
-import { createSupervisorTree } from '@actor-core/runtime';
+import { createSupervisorTree } from '@actor-web/runtime';
 
 // Fault tolerance in 5 lines
 const supervisor = createSupervisorTree({
@@ -550,7 +550,7 @@ supervisor.start(); // Workers auto-restart on failure
 #### **Smart AI Planning (HTN)**
 
 ```typescript
-import { createHTNPlanner } from '@actor-core/runtime';
+import { createHTNPlanner } from '@actor-web/runtime';
 
 // Intelligent task decomposition
 const planner = createHTNPlanner();
@@ -571,7 +571,7 @@ const result = await planner.executePlan(plan);
 #### **Composable AI Pipelines**
 
 ```typescript
-import { createPipeline, createActorStage } from '@actor-core/runtime';
+import { createPipeline, createActorStage } from '@actor-web/runtime';
 
 // Build AI workflows with actors
 const aiPipeline = createPipeline({ name: 'content-processor' })
@@ -585,7 +585,7 @@ const result = await aiPipeline.execute(inputText);
 #### **Intelligent Memory System**
 
 ```typescript
-import { createAgentMemory, createExperience } from '@actor-core/runtime';
+import { createAgentMemory, createExperience } from '@actor-web/runtime';
 
 // Three-layer memory: cache + vectors + knowledge graph
 const memory = createAgentMemory();
@@ -616,7 +616,7 @@ const decision = analyzeMemoriesForDecision(memories);
 ### Architecture Overview
 
 ```text
-@actor-core/runtime
+@actor-web/runtime
 ├── 🎭 Core Actor System
 │   ├── actor-ref.ts              # Basic actor references
 │   ├── create-actor-ref.ts       # Actor factory functions
@@ -650,7 +650,7 @@ const decision = analyzeMemoriesForDecision(memories);
 ### Testing Patterns
 
 ```typescript
-import { createEventCollectorBehavior } from '@actor-core/runtime';
+import { createEventCollectorBehavior } from '@actor-web/runtime';
 
 // Enable test mode for deterministic behavior
 system.enableTestMode();

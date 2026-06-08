@@ -66,8 +66,8 @@ Recommended imports:
 
 ```ts
 // Shared topology and actor behavior.
-import { defineActor, defineFSM } from '@actor-core/runtime';
-import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-core/runtime/topology';
+import { defineActor, defineFSM } from '@actor-web/runtime';
+import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
 
 // Browser/client projection and browser worker runtime hosting.
 import {
@@ -76,10 +76,10 @@ import {
   createActorWebReadModelSource,
   startActorWebLocalRuntime,
   startActorWebNode,
-} from '@actor-core/runtime/browser';
+} from '@actor-web/runtime/browser';
 
 // Node/server runtime hosting and HTTP ingress.
-import { serveActorWebHttp, serveActorWebNode } from '@actor-core/runtime/node';
+import { serveActorWebHttp, serveActorWebNode } from '@actor-web/runtime/node';
 ```
 
 ## Actor Behavior
@@ -242,7 +242,7 @@ Topology is the shared source of truth for nodes, actors, supervision metadata,
 gateway exposure, and tool requirements.
 
 ```ts
-import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-core/runtime/topology';
+import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
 
 const shipmentBehavior = defineActor()
   .withContext({
@@ -385,7 +385,7 @@ Root tools do not automatically become available to every actor. Actor behavior
 only receives tools explicitly assigned to that actor.
 
 ```ts
-import type { ActorToolExecutor } from '@actor-core/runtime';
+import type { ActorToolExecutor } from '@actor-web/runtime';
 
 type ScanInput = { label: string; destination: string };
 type ScanResult = { accepted: boolean; label: string };
@@ -1156,7 +1156,7 @@ transport URLs.
 ## MessagePort Transport
 
 `createMessagePortTransport(options)` adapts an existing `MessagePort` into the
-`MessageTransport` seam. It is exported from `@actor-core/runtime/browser`.
+`MessageTransport` seam. It is exported from `@actor-web/runtime/browser`.
 
 ```ts
 const channel = new MessageChannel();
@@ -1254,7 +1254,7 @@ import {
   createRuntimeTransportTelemetryExporter,
   createRuntimeTransportTelemetryJsonlFileSink,
   serveActorWebNode,
-} from '@actor-core/runtime/node';
+} from '@actor-web/runtime/node';
 
 const telemetry = createRuntimeTransportTelemetryExporter({
   sink: createRuntimeTransportTelemetryJsonlFileSink('./runtime-telemetry.jsonl'),
@@ -1285,13 +1285,13 @@ WebSocket transport path, see
 
 ## Package Boundaries
 
-- `@actor-core/runtime`: universal actor behavior, actor system,
+- `@actor-web/runtime`: universal actor behavior, actor system,
   `MessageTransport`, runtime contracts, telemetry types, and low-level shared
   types.
-- `@actor-core/runtime/topology`: browser-safe topology descriptor helpers.
-- `@actor-core/runtime/browser`: browser-safe Actor-Web client/source,
+- `@actor-web/runtime/topology`: browser-safe topology descriptor helpers.
+- `@actor-web/runtime/browser`: browser-safe Actor-Web client/source,
   MessagePort transport, and browser worker runtime hosting.
-- `@actor-core/runtime/node`: Node/server topology runner and HTTP ingress
+- `@actor-web/runtime/node`: Node/server topology runner and HTTP ingress
   adapter.
 
 Node-only APIs are not exported from the browser entrypoint.

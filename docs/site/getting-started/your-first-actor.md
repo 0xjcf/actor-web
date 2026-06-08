@@ -6,7 +6,7 @@ description: Build a counter actor with defineActor and run it on a local runtim
 # Your first actor
 
 We'll build the smallest useful actor — a counter — and drive it. Every code
-block on this page is **type-checked against the real `@actor-core/runtime`
+block on this page is **type-checked against the real `@actor-web/runtime`
 types** when the site builds, so what you see compiles.
 
 ## 1. Define the behavior
@@ -16,7 +16,7 @@ union it accepts, give it an initial `context`, and handle each message by
 returning the next `context`.
 
 ```ts twoslash
-import { defineActor } from '@actor-core/runtime';
+import { defineActor } from '@actor-web/runtime';
 
 // The messages this actor accepts.
 type CounterMessage = { type: 'INCREMENT' } | { type: 'DECREMENT' };
@@ -55,7 +55,7 @@ A handler returns an `ActorHandlerResult`, any of these fields:
   [Subscriptions & events](/concepts/subscriptions-and-events).
 
 ```ts twoslash
-import { defineActor } from '@actor-core/runtime';
+import { defineActor } from '@actor-web/runtime';
 // ---cut---
 type CounterMessage = { type: 'INCREMENT' } | { type: 'DECREMENT' };
 

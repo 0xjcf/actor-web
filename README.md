@@ -19,11 +19,11 @@ JavaScript lacks built-in primitives for actor-based concurrency and fault toler
 ## ⚡ Quick Start
 
 ```bash
-npm install @actor-core/runtime
+npm install @actor-web/runtime
 ```
 
 ```typescript
-import { createActorSystem, defineActor } from '@actor-core/runtime';
+import { createActorSystem, defineActor } from '@actor-web/runtime';
 
 // Define an actor with the unified API
 const counterActor = defineActor<{ type: 'INCREMENT' | 'GET_COUNT' }>()
@@ -338,9 +338,9 @@ console.log('Created user:', newUser);
 ## 📦 Packages
 
 - **`actor-web`** - Private workspace root for scripts, examples, and verification
-- **`@actor-core/runtime`** - Core actor system implementation
-- **`@actor-core/testing`** - Testing utilities and mocks
-- **`@agent-workflow/cli`** - CLI tools for development
+- **`@actor-web/runtime`** - Core actor system implementation
+- **`@actor-web/testing`** - Testing utilities and mocks
+- **`@actor-web/cli`** - CLI tools for development
 
 ## 🚫 Common Anti-Patterns
 
@@ -407,7 +407,7 @@ const actor = defineActor()
 ## 🧪 Testing
 
 ```typescript
-import { createActorSystem, createEventCollectorBehavior } from '@actor-core/runtime';
+import { createActorSystem, createEventCollectorBehavior } from '@actor-web/runtime';
 
 describe('Counter Actor', () => {
   it('should increment and emit events', async () => {

@@ -8,9 +8,9 @@ sidebar:
 # Installation
 
 ```bash
-pnpm add @actor-core/runtime
+pnpm add @actor-web/runtime
 # optional: state-machine test helpers
-pnpm add -D @actor-core/testing
+pnpm add -D @actor-web/testing
 ```
 
 Actor-Web targets modern browsers and Node. Messages and events must be
@@ -23,11 +23,11 @@ in Node built-ins:
 
 | Import | Use for |
 | --- | --- |
-| `@actor-core/runtime` | Core: `defineActor`, messages, local runtime. |
-| `@actor-core/runtime/topology` | `defineActorWebTopology` and the DSL. |
-| `@actor-core/runtime/browser` | Browser-safe sources & clients. |
-| `@actor-core/runtime/node` | `serveActorWebNode`, HTTP ingress — server only. |
-| `@actor-core/testing` | XState machine analysis helpers. |
+| `@actor-web/runtime` | Core: `defineActor`, messages, local runtime. |
+| `@actor-web/runtime/topology` | `defineActorWebTopology` and the DSL. |
+| `@actor-web/runtime/browser` | Browser-safe sources & clients. |
+| `@actor-web/runtime/node` | `serveActorWebNode`, HTTP ingress — server only. |
+| `@actor-web/testing` | XState machine analysis helpers. |
 
 See the [API entry-point map](/api/) for what each exports.
 

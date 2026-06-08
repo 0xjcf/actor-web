@@ -84,17 +84,17 @@ Recommended public API boundaries:
 
 ```ts
 // Shared, browser-safe topology declarations.
-import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-core/runtime/topology';
+import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
 
 // Browser/presentation source creation and browser worker runtime hosting.
 import {
   createActorWebCommandSource,
   createActorWebReadModelSource,
   startActorWebNode,
-} from '@actor-core/runtime/browser';
+} from '@actor-web/runtime/browser';
 
 // Node/server runtime hosting and HTTP ingress adapters.
-import { serveActorWebHttp, serveActorWebNode } from '@actor-core/runtime/node';
+import { serveActorWebHttp, serveActorWebNode } from '@actor-web/runtime/node';
 
 // Ignite Element authoring over Actor-Web sources.
 import { igniteCore } from 'ignite-element/actor-web';
@@ -105,17 +105,17 @@ side obvious.
 
 Current implementation status:
 
-- `@actor-core/runtime/topology` exports the browser-safe topology declaration
+- `@actor-web/runtime/topology` exports the browser-safe topology declaration
   helpers, descriptor types, and actor descriptor `.readModel(...)` /
   `.commandSource(...)` conveniences.
-- `@actor-core/runtime/browser` exports `createActorWebReadModelSource` for
+- `@actor-web/runtime/browser` exports `createActorWebReadModelSource` for
   gateway-backed Ignite-compatible read-model sources and
   `createActorWebCommandSource` for explicit host-owned command/control.
-- `@actor-core/runtime/node` exports `serveActorWebNode` for topology-owned
+- `@actor-web/runtime/node` exports `serveActorWebNode` for topology-owned
   Node/server runtime hosting.
-- `@actor-core/runtime/node` exports `serveActorWebHttp` for route-first HTTP
+- `@actor-web/runtime/node` exports `serveActorWebHttp` for route-first HTTP
   adapters around a served node.
-- `@actor-core/runtime/browser` exports `startActorWebNode` for topology-owned
+- `@actor-web/runtime/browser` exports `startActorWebNode` for topology-owned
   browser worker runtime hosting.
 - `ignite-element/actor-web` is the first-class Ignite Element adapter entrypoint
   for Actor-Web sources.
@@ -130,7 +130,7 @@ TypeScript contract. This is the recommended monorepo and shared package DX.
 
 ```ts
 // logistics.topology.ts
-import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-core/runtime/topology';
+import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
 import { createRoutingBehavior } from './actors/routing.actor';
 import { createShipmentBehavior } from './actors/shipment.actor';
 
@@ -247,7 +247,7 @@ The Node server runs one node from the same topology:
 
 ```ts
 // server.ts
-import { serveActorWebNode } from '@actor-core/runtime/node';
+import { serveActorWebNode } from '@actor-web/runtime/node';
 import { logistics } from './logistics.topology';
 
 const server = await serveActorWebNode(logistics, {
@@ -296,7 +296,7 @@ The browser worker runs another node:
 
 ```ts
 // worker-runtime.ts
-import { startActorWebNode } from '@actor-core/runtime/browser';
+import { startActorWebNode } from '@actor-web/runtime/browser';
 import { logistics } from './logistics.topology';
 
 const transportUrl = new URL(self.location.href).searchParams.get('transportUrl') ?? '';
@@ -322,7 +322,7 @@ Use this path when the UI cannot import the shared TypeScript topology:
 - the UI only knows a deployed actor address and gateway URL.
 
 ```ts
-import { createActorWebReadModelSource } from '@actor-core/runtime/browser';
+import { createActorWebReadModelSource } from '@actor-web/runtime/browser';
 
 const shipmentSource = createActorWebReadModelSource({
   address: 'actor://logistics-server-runtime/actor/logistics-shipment',
@@ -533,7 +533,7 @@ agent should not require a separate runtime model; it should be an actor with
 isolated state, explicit messages, emitted events, supervision, and topology.
 
 ```ts
-import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-core/runtime/topology';
+import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
 
 export const fas = defineActorWebTopology({
   contractVersion: '1.0.0',

@@ -5,7 +5,7 @@
  * actor model principles. It uses the available actor-core-runtime types.
  */
 
-import { Logger } from '@actor-core/runtime';
+import { Logger } from '@actor-web/runtime';
 import { type SimpleGit, simpleGit } from 'simple-git';
 
 // Create scoped logger

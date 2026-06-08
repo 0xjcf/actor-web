@@ -19,7 +19,7 @@
  * Supervision: Restart strategy with retry limits
  */
 
-import { type ActorRef, createActorRef, Logger } from '@actor-core/runtime';
+import { type ActorRef, createActorRef, Logger } from '@actor-web/runtime';
 import { assign, emit, setup } from 'xstate';
 
 // Use scoped logger for input-actor

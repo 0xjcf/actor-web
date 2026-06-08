@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { Logger } from '@actor-core/runtime';
+import { Logger } from '@actor-web/runtime';
 
 const log = Logger.namespace('REPO_ROOT_FINDER');
 

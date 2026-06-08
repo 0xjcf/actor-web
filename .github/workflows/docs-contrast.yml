@@ -38,9 +38,9 @@ jobs:
       - name: Lint docs-site markdown
         run: pnpm docs:lint:md
 
-      # Twoslash resolves @actor-core/runtime to its built type declarations.
+      # Twoslash resolves @actor-web/runtime to its built type declarations.
       - name: Build runtime type declarations
-        run: pnpm --filter @actor-core/runtime build
+        run: pnpm --filter @actor-web/runtime build
 
       - name: Install Playwright Chromium
         run: pnpm --filter docs-site exec playwright install --with-deps chromium

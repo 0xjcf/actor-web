@@ -20,7 +20,7 @@
     "types": ["node"],
     "baseUrl": "../..",
     "paths": {
-      "@actor-core/runtime": ["packages/actor-core-runtime/src/index.ts"]
+      "@actor-web/runtime": ["packages/actor-core-runtime/src/index.ts"]
     }
   },
   "include": ["src/**/*"],

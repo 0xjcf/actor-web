@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import { createActorWebClient } from '@actor-core/runtime/browser';
+import { createActorWebClient } from '@actor-web/runtime/browser';
 import {
   createBrowserServiceWorkerTransport,
   serviceWorkerRemoteNode,

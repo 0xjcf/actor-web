@@ -3,7 +3,7 @@
  * @description Utilities for statically analyzing XState machine configs
  */
 
-import { Logger } from '@actor-core/runtime';
+import { Logger } from '@actor-web/runtime';
 import type { AnyStateMachine } from 'xstate';
 
 const log = Logger.namespace('STATE_MACHINE_ANALYSIS');

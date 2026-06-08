@@ -1,4 +1,4 @@
-import { actor, defineActorWebTopology, node, supervisor } from '@actor-core/runtime/topology';
+import { actor, defineActorWebTopology, node, supervisor } from '@actor-web/runtime/topology';
 import {
   DISPATCHER_ACTOR_ID,
   DRIVER_DIRECTORY_ACTOR_ID,

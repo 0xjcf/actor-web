@@ -5,7 +5,7 @@ import {
   type MessagePortTransport,
   type StartedActorWebNode,
   startActorWebNode,
-} from '@actor-core/runtime/browser';
+} from '@actor-web/runtime/browser';
 import { logistics } from './logistics-topology';
 import {
   isServiceWorkerTransportEnvelope,

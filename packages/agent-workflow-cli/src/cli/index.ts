@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { Logger } from '@actor-core/runtime';
+import { Logger } from '@actor-web/runtime';
 import chalk from 'chalk';
 import { program } from 'commander';
 

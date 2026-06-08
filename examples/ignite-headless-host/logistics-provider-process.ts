@@ -7,7 +7,7 @@ import {
   type RuntimeTransportTelemetryExporter,
   type ServedActorWebNode,
   serveActorWebNode,
-} from '@actor-core/runtime/node';
+} from '@actor-web/runtime/node';
 import { logistics } from './logistics-topology';
 
 interface LogisticsProviderReadyPayload {

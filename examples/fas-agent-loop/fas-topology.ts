@@ -1,10 +1,4 @@
-import {
-  actor,
-  defineActorWebTopology,
-  node,
-  supervisor,
-  tool,
-} from '@actor-core/runtime/topology';
+import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
 import {
   createFasSupervisorBehavior,
   createImplementerAgentBehavior,

@@ -1,5 +1,5 @@
 {
-  "name": "@actor-core/runtime",
+  "name": "@actor-web/runtime",
   "version": "0.1.0",
   "description": "Core actor model runtime for universal actor-based applications",
   "type": "module",

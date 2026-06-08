@@ -9,12 +9,12 @@
  * and use message-passing for actor communication.
  */
 
-import { Logger } from '@actor-core/runtime';
+import { Logger } from '@actor-web/runtime';
 import {
   analyzeStateMachine,
   assertNoUnreachableStates,
   generateCoverageReport,
-} from '@actor-core/testing';
+} from '@actor-web/testing';
 import chalk from 'chalk';
 
 const log = Logger.namespace('STATE_MACHINE_ANALYSIS');

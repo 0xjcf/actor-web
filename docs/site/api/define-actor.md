@@ -6,7 +6,7 @@ description: The behavior builder API — withContext, withMachine, onMessage, o
 # `defineActor`
 
 ```ts
-import { defineActor } from '@actor-core/runtime';
+import { defineActor } from '@actor-web/runtime';
 
 defineActor<TMessage, TEmitted?>(): UnifiedActorBuilder
 ```

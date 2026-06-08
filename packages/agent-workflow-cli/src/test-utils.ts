@@ -4,7 +4,7 @@
  * @author Agent A - CLI Actor Migration Phase (Actor Model Compliant)
  */
 
-import type { ActorRef } from '@actor-core/runtime';
+import type { ActorRef } from '@actor-web/runtime';
 import type { ActorMessage } from '../../actor-core-runtime/src/actor-system.js';
 
 /**

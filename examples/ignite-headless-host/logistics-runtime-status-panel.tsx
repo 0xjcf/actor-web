@@ -5,7 +5,7 @@ import 'ignite-element/renderers/ignite-jsx';
 import {
   createProjectionTransportStatus,
   type IgniteActorSource,
-} from '@actor-core/runtime/browser';
+} from '@actor-web/runtime/browser';
 import { igniteCore } from 'ignite-element/actor-web';
 import styles from './ignite-headless-host-element.css?raw';
 import {

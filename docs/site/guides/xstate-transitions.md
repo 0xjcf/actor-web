@@ -28,7 +28,7 @@ export const compareMachine = createMachine({
 ## 2. Attach it and handle transitions
 
 ```ts
-import { defineActor } from '@actor-core/runtime';
+import { defineActor } from '@actor-web/runtime';
 
 const compare = defineActor<CompareEvent>()
   .withMachine(compareMachine)
@@ -55,5 +55,5 @@ XState dependency while keeping the same `onTransition` ergonomics.
 
 ## Test it
 
-Use [`@actor-core/testing`](/api/testing) to assert a machine has no unreachable
+Use [`@actor-web/testing`](/api/testing) to assert a machine has no unreachable
 states and to report transition coverage.

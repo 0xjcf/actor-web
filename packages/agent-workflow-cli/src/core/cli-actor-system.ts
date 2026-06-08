@@ -2,7 +2,7 @@
  * CLI Actor System
  *
  * Provides a CLI-specific actor system implementation that uses the proper
- * ActorSystem from @actor-core/runtime instead of ad-hoc actor creation.
+ * ActorSystem from @actor-web/runtime instead of ad-hoc actor creation.
  */
 
 import {
@@ -11,7 +11,7 @@ import {
   type ActorSystemConfig,
   createActorSystem,
   Logger,
-} from '@actor-core/runtime';
+} from '@actor-web/runtime';
 import { createGitActor } from '../actors/git-actor.js';
 
 // Create scoped logger for CLI actor system

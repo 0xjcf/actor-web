@@ -1,6 +1,6 @@
 import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { Logger } from '@actor-core/runtime';
+import { Logger } from '@actor-web/runtime';
 
 const log = Logger.namespace('VALIDATION_SERVICE');
 

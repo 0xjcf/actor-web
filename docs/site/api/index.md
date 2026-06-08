@@ -1,6 +1,6 @@
 ---
 title: API Reference
-description: The public entry points of @actor-core/runtime and @actor-core/testing.
+description: The public entry points of @actor-web/runtime and @actor-web/testing.
 ---
 
 # API Reference
@@ -12,11 +12,11 @@ the narrowest one that fits — browser code should not pull in Node entry point
 
 | Import | Use for |
 | --- | --- |
-| `@actor-core/runtime` | Core: [`defineActor`](/api/define-actor), messages, runtime client. |
-| `@actor-core/runtime/topology` | [`defineActorWebTopology`](/api/topology) and the `actor`/`node`/`supervisor`/`tool` DSL. |
-| `@actor-core/runtime/browser` | Browser-safe sources & clients (no Node built-ins). |
-| `@actor-core/runtime/node` | [`serveActorWebNode`](/api/runtimes), HTTP ingress — server only. |
-| `@actor-core/testing` | [State-machine analysis](/api/testing) test helpers. |
+| `@actor-web/runtime` | Core: [`defineActor`](/api/define-actor), messages, runtime client. |
+| `@actor-web/runtime/topology` | [`defineActorWebTopology`](/api/topology) and the `actor`/`node`/`supervisor`/`tool` DSL. |
+| `@actor-web/runtime/browser` | Browser-safe sources & clients (no Node built-ins). |
+| `@actor-web/runtime/node` | [`serveActorWebNode`](/api/runtimes), HTTP ingress — server only. |
+| `@actor-web/testing` | [State-machine analysis](/api/testing) test helpers. |
 
 ## Map
 
@@ -25,7 +25,7 @@ the narrowest one that fits — browser code should not pull in Node entry point
 - **[Topology](/api/topology)** — declare nodes, actors, supervisors, tools, and
   the source factories each actor exposes.
 - **[Runtimes](/api/runtimes)** — start a local runtime or serve a node.
-- **[`@actor-core/testing`](/api/testing)** — analyze XState machines used by
+- **[`@actor-web/testing`](/api/testing)** — analyze XState machines used by
   machine-based actors.
 
 These pages document signatures. For the *why* behind each idea, see

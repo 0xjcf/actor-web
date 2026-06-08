@@ -1,4 +1,4 @@
-# @actor-core/testing
+# @actor-web/testing
 
 Testing utilities for [Actor-Web](../actor-core-runtime) applications.
 
@@ -10,7 +10,7 @@ code.
 ## Install
 
 ```bash
-pnpm add -D @actor-core/testing
+pnpm add -D @actor-web/testing
 ```
 
 ## API
@@ -21,7 +21,7 @@ Statically analyze a machine and return how many states it defines, how many are
 reachable, and which (if any) are unreachable.
 
 ```ts
-import { analyzeStateMachine } from '@actor-core/testing';
+import { analyzeStateMachine } from '@actor-web/testing';
 
 const result = analyzeStateMachine(compareMachine);
 // result.totalStates, result.reachableStates, result.unreachableStates
@@ -38,7 +38,7 @@ Test assertion — throws if the machine has any unreachable states. Drop it int
 unit test to guard a machine against dead states:
 
 ```ts
-import { assertNoUnreachableStates } from '@actor-core/testing';
+import { assertNoUnreachableStates } from '@actor-web/testing';
 
 it('has no unreachable states', () => {
   assertNoUnreachableStates(compareMachine, 'compare');
@@ -64,4 +64,4 @@ interface StateAnalysisResult {
 ## See also
 
 - [Actor-Web docs — Testing actors](https://github.com/0xjcf/actor-web)
-- [`@actor-core/runtime`](../actor-core-runtime)
+- [`@actor-web/runtime`](../actor-core-runtime)

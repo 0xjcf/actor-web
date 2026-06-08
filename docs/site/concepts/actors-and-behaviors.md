@@ -15,7 +15,7 @@ authored with `defineActor`.
 state, and a handler:
 
 ```ts twoslash
-import { defineActor } from '@actor-core/runtime';
+import { defineActor } from '@actor-web/runtime';
 
 type Msg = { type: 'PING' } | { type: 'RESET' };
 

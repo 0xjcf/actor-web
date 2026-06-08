@@ -1,5 +1,5 @@
 {
-  "name": "@actor-core/testing",
+  "name": "@actor-web/testing",
   "version": "0.1.0",
   "description": "Testing utilities for actor-core applications including state machine analysis",
   "type": "module",
@@ -33,7 +33,7 @@
   "author": "Actor-Core Team",
   "license": "MIT",
   "dependencies": {
-    "@actor-core/runtime": "workspace:*",
+    "@actor-web/runtime": "workspace:*",
     "xstate": "5.30.0",
     "@xstate/graph": "^2.0.0"
   },

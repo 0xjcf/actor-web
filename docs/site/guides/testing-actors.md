@@ -47,10 +47,10 @@ await source.ask({ type: 'INCREMENT' });
 ## Analyze the machine
 
 For machine-based actors, guard the state machine itself with
-[`@actor-core/testing`](/api/testing):
+[`@actor-web/testing`](/api/testing):
 
 ```ts
-import { assertNoUnreachableStates } from '@actor-core/testing';
+import { assertNoUnreachableStates } from '@actor-web/testing';
 
 it('compare machine has no dead states', () => {
   assertNoUnreachableStates(compareMachine, 'compare');
@@ -59,4 +59,4 @@ it('compare machine has no dead states', () => {
 
 ## See also
 
-- [Actors & behaviors](/concepts/actors-and-behaviors) · [`@actor-core/testing`](/api/testing)
+- [Actors & behaviors](/concepts/actors-and-behaviors) · [`@actor-web/testing`](/api/testing)

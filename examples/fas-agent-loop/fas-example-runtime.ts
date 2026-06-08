@@ -2,9 +2,9 @@ import type {
   ActorRef,
   ActorWebGatewaySocket,
   ClosableActorWebSource,
-} from '@actor-core/runtime/browser';
-import type { ServedActorWebNode } from '@actor-core/runtime/node';
-import { serveActorWebNode } from '@actor-core/runtime/node';
+} from '@actor-web/runtime/browser';
+import type { ServedActorWebNode } from '@actor-web/runtime/node';
+import { serveActorWebNode } from '@actor-web/runtime/node';
 import type {
   FasAgentRole,
   FasPatch,

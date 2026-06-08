@@ -2,7 +2,7 @@ name: Docs
 
 # Build the VitePress docs site. The build runs @shikijs/vitepress-twoslash,
 # which type-checks every ```ts twoslash sample against the real
-# @actor-core/runtime types — so doc drift fails the build.
+# @actor-web/runtime types — so doc drift fails the build.
 #
 # Note: GitHub automation may be disabled for this repo (see .fas-config.json
 # runtimeGitHubEnabled). This workflow is correct and dormant until CI is on.
@@ -32,8 +32,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Twoslash resolves @actor-core/runtime to its built type declarations.
+      # Twoslash resolves @actor-web/runtime to its built type declarations.
       - name: Build runtime type declarations
-        run: pnpm --filter @actor-core/runtime build
+        run: pnpm --filter @actor-web/runtime build
       - name: Build docs (twoslash typecheck gate)
         run: pnpm run test:docs

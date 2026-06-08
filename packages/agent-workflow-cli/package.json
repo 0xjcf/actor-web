@@ -1,5 +1,5 @@
 {
-  "name": "@agent-workflow/cli",
+  "name": "@actor-web/cli",
   "version": "0.1.0-alpha",
   "description": "Agent-centric development workflow automation",
   "main": "dist/index.js",
@@ -26,8 +26,8 @@
   "author": "Actor-Web Team",
   "license": "MIT",
   "dependencies": {
-    "@actor-core/runtime": "workspace:*",
-    "@actor-core/testing": "workspace:*",
+    "@actor-web/runtime": "workspace:*",
+    "@actor-web/testing": "workspace:*",
     "commander": "^11.1.0",
     "chalk": "^5.3.0",
     "inquirer": "^9.2.12",

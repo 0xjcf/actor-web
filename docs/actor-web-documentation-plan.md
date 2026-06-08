@@ -3,7 +3,7 @@
 ## Summary
 
 Actor-Web has strong raw material — design docs, two real examples, and a
-comprehensive `@actor-core/runtime` README — but no navigable, learning-oriented
+comprehensive `@actor-web/runtime` README — but no navigable, learning-oriented
 documentation site. A newcomer (or a returning maintainer) has no front door.
 
 This plan establishes a **VitePress** documentation site in a dedicated
@@ -63,8 +63,8 @@ Open Questions).
 - `packages/actor-core-testing/README.md` is **missing**.
 - Two strong examples seed tutorials:
   `examples/fas-agent-loop/*`, `examples/ignite-headless-host/*`.
-- pnpm monorepo (`pnpm-workspace.yaml`); packages `@actor-core/runtime`,
-  `@actor-core/testing`, `@agent-workflow/cli`.
+- pnpm monorepo (`pnpm-workspace.yaml`); packages `@actor-web/runtime`,
+  `@actor-web/testing`, `@actor-web/cli`.
 - Public entry points (`packages/actor-core-runtime/package.json` `exports`):
   `.`, `./browser`, `./topology`, `./node`.
 
@@ -94,7 +94,7 @@ Open Questions).
   `docs:dev` / `docs:build` / `docs:preview`.
 - **Typechecked samples** via `@shikijs/vitepress-twoslash` — the VitePress-native
   equivalent of ignite-element's `check-doc-examples.mjs`. Twoslash compiles
-  fenced TS against the real `@actor-core/runtime` types at build time, surfaces
+  fenced TS against the real `@actor-web/runtime` types at build time, surfaces
   hover types, and fails the build on drift. Fences opt out with a `twoslash`
   off-marker where a sample is intentionally partial.
 - **markdownlint** — already configured (`.markdownlint.jsonc`,
@@ -195,12 +195,12 @@ written fresh.
     `actor-web-multi-process-deployment-demo-design.md`,
     `spikes/actor-web-external-transport-design.md`
 - **API Reference**
-  - `@actor-core/runtime` (`.`) — *seeded from* `API.md` + export inventory
-  - `@actor-core/runtime/topology` — topology DSL (`actor`/`node`/`supervisor`/
+  - `@actor-web/runtime` (`.`) — *seeded from* `API.md` + export inventory
+  - `@actor-web/runtime/topology` — topology DSL (`actor`/`node`/`supervisor`/
     `tool`, `defineActorWebTopology`)
-  - `@actor-core/runtime/browser` — sources/clients
-  - `@actor-core/runtime/node` — `serveActorWebNode`, HTTP ingress
-  - `@actor-core/testing` — *net-new* (also add the missing package README)
+  - `@actor-web/runtime/browser` — sources/clients
+  - `@actor-web/runtime/node` — `serveActorWebNode`, HTTP ingress
+  - `@actor-web/testing` — *net-new* (also add the missing package README)
 - **Guides**
   - Ignite Element integration — *seeded from*
     `docs/examples/ignite-element-host.md`, north-star doc
@@ -253,7 +253,7 @@ Each is a separate task/commit through the FAS pipeline.
 - **D2. Concepts section** — port the remaining concept pages from design docs +
   runtime README.
 - **D3. API Reference** — expand `API.md` into per-entry-point reference; add
-  `@actor-core/testing` README + page.
+  `@actor-web/testing` README + page.
 - **D4. Guides** — port integration/xstate/multi-process/testing guides from
   design docs + examples.
 - **D5. Getting Started completion + Operations + Community** — finish tutorials,

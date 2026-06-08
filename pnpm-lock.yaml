@@ -51,7 +51,7 @@ importers:
 
   docs/site:
     devDependencies:
-      '@actor-core/runtime':
+      '@actor-web/runtime':
         specifier: workspace:*
         version: link:../../packages/actor-core-runtime
       '@playwright/test':
@@ -112,7 +112,7 @@ importers:
 
   packages/actor-core-testing:
     dependencies:
-      '@actor-core/runtime':
+      '@actor-web/runtime':
         specifier: workspace:*
         version: link:../actor-core-runtime
       '@xstate/graph':
@@ -140,10 +140,10 @@ importers:
 
   packages/agent-workflow-cli:
     dependencies:
-      '@actor-core/runtime':
+      '@actor-web/runtime':
         specifier: workspace:*
         version: link:../actor-core-runtime
-      '@actor-core/testing':
+      '@actor-web/testing':
         specifier: workspace:*
         version: link:../actor-core-testing
       chalk:

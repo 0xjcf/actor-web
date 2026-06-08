@@ -1,8 +1,4 @@
-import {
-  type ActorTransitionErrorValue,
-  defineActor,
-  defineFSM,
-} from '@actor-core/runtime/browser';
+import { type ActorTransitionErrorValue, defineActor, defineFSM } from '@actor-web/runtime/browser';
 import type {
   ProviderShipmentCommand,
   ProviderShipmentEvent,

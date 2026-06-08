@@ -183,7 +183,7 @@ describe('CLI Commands Integration Tests', () => {
         const { getCLIInfo } = await import('../index.js');
         const cliInfo = await getCLIInfo();
         expect(cliInfo).toBeDefined();
-        expect(cliInfo.name).toBe('@agent-workflow/cli');
+        expect(cliInfo.name).toBe('@actor-web/cli');
         expect(cliInfo.description).toContain('Agent-centric');
         expect(Array.isArray(cliInfo.features)).toBe(true);
       } catch (error) {
