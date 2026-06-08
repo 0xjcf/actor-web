@@ -914,8 +914,8 @@
 
 - Title: Add declarative subscriptions to defineActorWebTopology
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/add-declarative-subscriptions-to-defineactorwebtopology.md
 - Verification lane: fast
 - Policy sensitivity: standard
