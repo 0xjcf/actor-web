@@ -914,9 +914,12 @@
 
 - Title: Add declarative subscriptions to defineActorWebTopology
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/add-declarative-subscriptions-to-defineactorwebtopology.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Type subscription events against publisher emitted-event union
 
