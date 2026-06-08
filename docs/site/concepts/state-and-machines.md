@@ -32,6 +32,10 @@ resolves with the snapshot.
 const compare = defineActor<CompareEvent>().withMachine(compareMachine).build();
 ```
 
+Domain events can be emitted from the machine: an XState v5 `emit(...)` action is
+bridged onto the actor's event stream, reaching subscribers and the agent runtime
+just like a handler's `emit` (see [Subscriptions & events](/concepts/subscriptions-and-events)).
+
 Add an `onTransition` handler only for an event that needs an imperative effect;
 un-handled events keep the default:
 

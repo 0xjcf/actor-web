@@ -26,6 +26,15 @@ an `ask`). Emitted events are delivered straight into each subscriber's mailbox
 as ordinary messages — "events are just messages," the same model as Erlang/OTP
 and Akka.
 
+Machine-backed actors can emit from the machine itself: an XState v5 `emit(...)`
+action is bridged onto the same stream, so a `withMachine` actor announces domain
+events with no handler.
+
+```ts
+// inside the machine — emit a domain event as a transition action
+MERGE: { target: 'resolved', actions: emit(() => ({ type: 'OUTCOME_RESOLVED', outcome: 'merged' })) }
+```
+
 ## Reacting to another actor's events
 
 An actor becomes a subscriber by being wired to a publisher. Today that wiring
