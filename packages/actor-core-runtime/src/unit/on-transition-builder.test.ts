@@ -246,3 +246,117 @@ describe('defineActor().onTransition', () => {
     ).toThrow('withMachine(...) and withFSM(...) cannot be used together.');
   });
 });
+
+describe('defineActor() default machine/FSM behaviors (no handlers)', () => {
+  it('builds a machine-backed actor with no handlers: transitions and resolves ask with the snapshot', async () => {
+    const behavior = defineActor<ShipmentCommand>().withMachine(shipmentMachine).build();
+
+    const system = createActorSystem({ nodeAddress: 'test-node' });
+    await system.start();
+    try {
+      const actor = await system.spawn(behavior, { id: 'shipment' });
+
+      await expect(
+        actor.ask({ type: 'CREATE_SHIPMENT', shipmentId: 'shipment-1' })
+      ).resolves.toEqual({ value: 'created', context: { shipmentId: null } });
+      expect(actor.getSnapshot().matches('created')).toBe(true);
+    } finally {
+      await system.stop();
+    }
+  });
+
+  it('rejects illegal transitions for a no-handler machine actor', async () => {
+    const behavior = defineActor<ShipmentCommand>().withMachine(shipmentMachine).build();
+
+    const system = createActorSystem({ nodeAddress: 'test-node' });
+    await system.start();
+    try {
+      const actor = await system.spawn(behavior, { id: 'shipment' });
+
+      await expect(
+        actor.ask({ type: 'MARK_DELIVERED', shipmentId: 'shipment-1' })
+      ).resolves.toEqual({
+        ok: false,
+        error: {
+          code: 'INVALID_TRANSITION',
+          messageType: 'MARK_DELIVERED',
+          state: 'idle',
+          allowedTransitions: [],
+        },
+      });
+    } finally {
+      await system.stop();
+    }
+  });
+
+  it('builds an FSM-backed actor with no handlers: transitions and resolves ask with the snapshot', async () => {
+    const shipmentFSM = defineFSM<ShipmentCommand, ShipmentContext, 'idle' | 'created'>({
+      initial: 'idle',
+      states: {
+        idle: { on: { CREATE_SHIPMENT: 'created' } },
+        created: { on: {} },
+      },
+    });
+    const behavior = defineActor<ShipmentCommand>()
+      .withContext({ shipmentId: null })
+      .withFSM(shipmentFSM)
+      .build();
+
+    const system = createActorSystem({ nodeAddress: 'test-node' });
+    await system.start();
+    try {
+      const actor = await system.spawn(behavior, { id: 'shipment' });
+
+      await expect(
+        actor.ask({ type: 'CREATE_SHIPMENT', shipmentId: 'shipment-1' })
+      ).resolves.toEqual({ value: 'created', context: { shipmentId: null } });
+
+      await expect(
+        actor.ask({ type: 'CREATE_SHIPMENT', shipmentId: 'shipment-2' })
+      ).resolves.toEqual({
+        ok: false,
+        error: {
+          code: 'INVALID_TRANSITION',
+          messageType: 'CREATE_SHIPMENT',
+          state: 'created',
+          allowedTransitions: [],
+        },
+      });
+    } finally {
+      await system.stop();
+    }
+  });
+
+  it('applies the default for events without an explicit onTransition handler', async () => {
+    const behavior = defineActor<ShipmentCommand>()
+      .withMachine(shipmentMachine)
+      .onTransition({
+        MARK_DELIVERED: ({ actor }) => ({
+          reply: { delivered: true, state: actor.getSnapshot().value },
+        }),
+      })
+      .build();
+
+    const system = createActorSystem({ nodeAddress: 'test-node' });
+    await system.start();
+    try {
+      const actor = await system.spawn(behavior, { id: 'shipment' });
+
+      // CREATE_SHIPMENT has no explicit handler -> default transition + snapshot reply.
+      await expect(
+        actor.ask({ type: 'CREATE_SHIPMENT', shipmentId: 'shipment-1' })
+      ).resolves.toEqual({ value: 'created', context: { shipmentId: null } });
+
+      // MARK_DELIVERED has an explicit handler.
+      await expect(
+        actor.ask({ type: 'MARK_DELIVERED', shipmentId: 'shipment-1' })
+      ).resolves.toEqual({ delivered: true, state: 'delivered' });
+    } finally {
+      await system.stop();
+    }
+  });
+
+  it('still requires a handler when no machine/FSM is attached', () => {
+    expect(() => defineActor<ShipmentCommand>().build()).toThrow('A handler is required');
+  });
+});
