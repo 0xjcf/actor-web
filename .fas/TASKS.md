@@ -1079,6 +1079,17 @@
 - Brief: .fas/tasks/docs-headless-agent-runtime-page-refresh-ignite-guide-to.md
 - Automation mode: advisory
 
+### Task: Rename package scope to @actor-web
+
+- Title: Rename package scope to @actor-web
+- Mode: single-agent
+- Status: implementing
+- Owner: implementer
+- Brief: .fas/tasks/rename-package-scope-to-actor-web.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
 ## Template
 
 ### Task: `<short task title>`
