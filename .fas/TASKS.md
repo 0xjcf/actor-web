@@ -925,8 +925,8 @@
 
 - Title: Type subscription events against publisher emitted-event union
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/type-subscription-events-against-publisher-emitted-event-uni.md
 - Verification lane: fast
 - Policy sensitivity: standard
