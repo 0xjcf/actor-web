@@ -310,7 +310,6 @@ export class ActorSystemImpl implements ActorSystem {
   private systemEventActorAddress?: ActorAddress;
   private clusterEventActorAddress?: ActorAddress;
   // ✅ PURE ACTOR MODEL: Core system service actors
-  private eventBrokerActorAddress?: ActorAddress;
   private discoveryServiceActorAddress?: ActorAddress;
 
   private running = false;
@@ -3804,13 +3803,6 @@ export class ActorSystemImpl implements ActorSystem {
       logger: Logger.namespace(`ACTOR_${actorId}`),
       correlationManager: this.correlationManager,
     };
-  }
-
-  /**
-   * Get the Event Broker Actor address
-   */
-  getEventBrokerAddress(): ActorAddress | undefined {
-    return this.eventBrokerActorAddress;
   }
 
   /**
