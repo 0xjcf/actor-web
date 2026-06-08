@@ -144,6 +144,27 @@ export class MachineActor<
       }
     });
 
+    // Bridge XState v5 emitted events (emit(...) actions) into the actor system
+    // so machine-authored domain events reach subscribers, UI subscribeEvent, and
+    // the agent runtime — the same distribution path as ActorHandlerResult.emit.
+    this.actor.on('*', (emitted: unknown) => {
+      if (
+        this.dependencies.emit &&
+        typeof emitted === 'object' &&
+        emitted !== null &&
+        'type' in emitted
+      ) {
+        // Stamp the actor-message envelope so the event is delivered with its
+        // payload intact (the system preserves recognized ActorMessages as-is
+        // rather than nesting them under eventPayload).
+        this.dependencies.emit({
+          _timestamp: Date.now(),
+          _version: '1.0.0',
+          ...(emitted as Record<string, unknown>),
+        } as ActorMessage);
+      }
+    });
+
     // Start the actor
     this.actor.start();
     this.snapshot = this.buildSnapshot(this.actor.getSnapshot());
