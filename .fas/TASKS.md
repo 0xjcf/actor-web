@@ -1060,8 +1060,8 @@
 
 - Title: Allow plain-value behaviors in actor() without the tool-typing curry
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/allow-plain-value-behaviors-in-actor-without-the-tool-typi.md
 - Verification lane: fast
 - Policy sensitivity: standard
