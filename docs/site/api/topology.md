@@ -18,12 +18,29 @@ defineActorWebTopology({
   nodes: Record<string, NodeDefinition>;
   actors: Record<string, ActorDefinition>;
   supervisors?: Record<string, SupervisorDefinition>;
+  subscriptions?: SubscriptionDefinition[];
   tools?: ToolReference[];
 }): ActorWebTopology
 ```
 
-Declares the system's nodes, actors, supervisors, and tool catalog. Returns a
-typed topology whose `actors` carry source factories (below).
+Declares the system's nodes, actors, supervisors, tool catalog, and event
+subscriptions. Returns a typed topology whose `actors` carry source factories
+(below).
+
+### `subscriptions`
+
+Declare which actors receive which actors' emitted events. The runtime wires
+these on start and tears them down on stop (durable across restart).
+
+```ts
+subscriptions: [
+  { from: 'compare', to: ['actorSystem', 'pipeline'], events: ['OUTCOME_RESOLVED'] },
+]
+```
+
+`from` is a publisher actor key; `to` is one key or an array (fan-out); `events`
+filters by type (omit for all). See
+[Subscriptions & events](/concepts/subscriptions-and-events).
 
 ## DSL builders
 

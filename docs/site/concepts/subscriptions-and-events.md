@@ -64,10 +64,12 @@ Because the producer only emits, it stays ignorant of its consumers
 Both are built from the same `emit` + subscription primitives. Reach for a
 coordinator only when a rule genuinely spans several actors.
 
-::: tip Coming soon: declarative subscriptions
+## Declarative subscriptions
+
 Wiring subscriptions imperatively at startup is easy to lose track of — and
-in-memory subscriptions don't survive a full runtime restart. Declaring them in
-the topology makes the wiring durable and type-checked:
+in-memory subscriptions don't survive a full runtime restart. Declare them in the
+topology instead: the runtime wires them on start and tears them down on stop, so
+the wiring is durable (re-established on every start) and type-checked.
 
 ```ts
 defineActorWebTopology({
@@ -78,8 +80,10 @@ defineActorWebTopology({
 });
 ```
 
-This API is in design; track it in the Actor-Web subscriptions design doc.
-:::
+`from`/`to` are actor keys (`to` accepts one key or an array for fan-out);
+`events` filters by type (omit for all events from `from`). This is the preferred
+path; `system.subscribe(...)` remains the imperative escape hatch for dynamic
+wiring.
 
 ## See also
 
