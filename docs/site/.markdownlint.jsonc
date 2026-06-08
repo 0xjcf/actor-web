@@ -1,0 +1,7 @@
+{
+  // VitePress markdown is Vue-powered, so inline HTML and components (e.g.
+  // <Badge>, custom containers) are expected here. Inherit the repo-wide rules
+  // but allow inline HTML for the docs site only.
+  "extends": "../../.markdownlint.jsonc",
+  "MD033": false
+}
