@@ -28,10 +28,8 @@ Subscriptions design T3. Type the subscription events filter against the publish
 
 ## Affected files
 
-- packages/actor-core-runtime/src/auto-publishing.ts
 - packages/actor-core-runtime/src/topology.ts
-- packages/actor-core-runtime/src/unified-actor-builder.ts
-- docs/site/concepts/subscriptions-and-events.md
+- packages/actor-core-runtime/src/unit/topology-subscriptions.test.ts
 - docs/site/api/topology.md
 
 ## Scope Amendments

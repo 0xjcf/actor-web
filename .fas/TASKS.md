@@ -925,9 +925,12 @@
 
 - Title: Type subscription events against publisher emitted-event union
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/type-subscription-events-against-publisher-emitted-event-uni.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Delete unused EventBrokerActor; lock AutoPublishingRegistry as canonical
 
