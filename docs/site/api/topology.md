@@ -38,8 +38,10 @@ subscriptions: [
 ]
 ```
 
-`from` is a publisher actor key; `to` is one key or an array (fan-out); `events`
-filters by type (omit for all). See
+`from` and `to` are checked against the topology's actor keys (`to` is one key or
+an array for fan-out); `events` is type-checked against the `from` actor's
+emitted-event types — a typo or an event the publisher never emits is a
+compile-time error (omit for all events). See
 [Subscriptions & events](/concepts/subscriptions-and-events).
 
 ## DSL builders
