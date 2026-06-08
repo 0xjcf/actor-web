@@ -110,26 +110,57 @@ const compareFSM = defineFSM<CompareEvent, CompareContext, CompareState>({
   },
 });
 
-const resolve = (context: CompareContext, outcome: CompareOutcome) => ({
-  context: { ...context, outcome },
-  emit: [{ type: "OUTCOME_RESOLVED" as const, outcome }],
-});
-
 export const compareBehavior = defineActor<CompareEvent, CompareEmitted>()
   .withContext(INITIAL_COMPARE_CONTEXT)
   .withFSM(compareFSM)
   .onTransition({
     SELECT_ORIGINAL: ({ context }) => ({ context: { ...context, selected: "original" } }),
     SELECT_FORK:     ({ context }) => ({ context: { ...context, selected: "fork" } }),
-    KEEP_ORIGINAL:   ({ context }) => resolve(context, "kept-original"),
-    ACCEPT_FORK:     ({ context }) => resolve(context, "accepted-fork"),
-    MERGE:           ({ context }) => resolve(context, "merged"),
-    APPROVE:         ({ context }) => resolve(context, "approved"),
-    SEND_TO_REVIEWER:({ context }) => resolve(context, "sent-to-reviewer"),
+    KEEP_ORIGINAL:   ({ context }) => ({ context: { ...context, outcome: "kept-original" },    emit: [{ type: "OUTCOME_RESOLVED", outcome: "kept-original" }] }),
+    ACCEPT_FORK:     ({ context }) => ({ context: { ...context, outcome: "accepted-fork" },     emit: [{ type: "OUTCOME_RESOLVED", outcome: "accepted-fork" }] }),
+    MERGE:           ({ context }) => ({ context: { ...context, outcome: "merged" },            emit: [{ type: "OUTCOME_RESOLVED", outcome: "merged" }] }),
+    APPROVE:         ({ context }) => ({ context: { ...context, outcome: "approved" },          emit: [{ type: "OUTCOME_RESOLVED", outcome: "approved" }] }),
+    SEND_TO_REVIEWER:({ context }) => ({ context: { ...context, outcome: "sent-to-reviewer" },  emit: [{ type: "OUTCOME_RESOLVED", outcome: "sent-to-reviewer" }] }),
     REPLAY:          ({ context }) => ({ context: { ...context, selected: null, outcome: null } }),
   })
   .build();
 ```
+
+> A handler returns the same `ActorHandlerResult` — `{ context?, reply?, emit? }` —
+> as `onMessage` (see below); `emit` is an array. Extracting a local helper to
+> dedupe repeated results is fine, but it's user code, not API — the canonical
+> shape is the explicit `{ context, emit }` object above.
+
+### `onMessage` — no machine, and the fallback
+
+`onMessage` is the gen_server catch-all and is fully supported. Use it for
+actors that are **not** machine/FSM-backed, and as the **fallback** alongside
+`onTransition`. It returns the same `ActorHandlerResult` shape.
+
+```ts
+// (a) onMessage only — no machine; switch on message.type yourself
+defineActor<CounterMsg>()
+  .withContext({ count: 0 })
+  .onMessage(({ message, context }) =>
+    message.type === "INCREMENT"
+      ? { context: { count: context.count + 1 }, emit: [{ type: "COUNTED", count: context.count + 1 }] }
+      : { context: { count: 0 } })
+  .build();
+
+// (c) both — onTransition for specific events, onMessage as the catch-all
+defineActor<E>().withFSM(fsm)
+  .onTransition({ MERGE: ({ context }) => ({ context, emit: [/* … */] }) })
+  .onMessage(({ actor }) => ({ reply: actor.getSnapshot().value }))   // fallback for the rest
+  .build();
+```
+
+The transition dispatcher already falls back to `onMessage` for events without an
+`onTransition` entry. Task A1 adds an *implicit* default (transition + snapshot
+reply) so the trivial fallback isn't even needed.
+
+**One result shape everywhere.** `onMessage` and every `onTransition` handler
+return the same `ActorHandlerResult` (`{ context?, reply?, emit? }`) — or a
+`MessagePlan` to message peers. `emit` is always an array.
 
 ### Machine vs FSM — two first-class targets
 
@@ -308,6 +339,11 @@ const resolved = await compare.ask({ type: "MERGE" });   // resolves with snapsh
   message narrowing and lazy per-event effects (mirrors XState `on:`, Redux
   reducers, Elixir/Erlang per-message handlers). `commands`/`view` keep the
   single-callback shape because they are projections.
+- One handler result shape everywhere: `onMessage` and `onTransition` both
+  return `ActorHandlerResult` (`{ context?, reply?, emit? }`, `emit` an array) or
+  a `MessagePlan`. `onMessage` stays first-class (non-machine actors + fallback).
+  Canonical examples show the explicit `{ context, emit }` object — no
+  result-hiding helpers in the docs.
 - Coordination: `emit` + declarative `subscriptions` (choreography default).
 
 ## Status
