@@ -71,11 +71,24 @@ export const compareMachine = setup({
 Add `.onTransition({ SOME_EVENT })` back **only** for an imperative effect the
 machine can't express.
 
-### `withFSM` (no XState) — handlers own context + emit
+### `withFSM` — strict constraint mapping (first-class target)
 
-The FSM constraint map has transitions + guards but **no actions/assign**, so
-context updates and `emit` move into the `onTransition` handler (the Erlang/Akka
-shape). `emit` is a field on the handler result — engine-agnostic, works today.
+`withFSM` is **not** a fallback for "no XState." It is the right target whenever
+the **legal transition matrix is the thing you must get exactly right**:
+
+- The FSM map *is* the spec — a flat, exhaustive, reviewable declaration of
+  `state → allowed events → target (+ guard)`, and nothing else.
+- **No hidden behavior.** It carries no `assign`/`emit`/`invoke`/nested states,
+  so "what is *legal*" (the map) stays physically separated from "what
+  *happens*" (the handlers). The constraint surface is auditable on its own.
+- **Illegal transitions are rejected, not ignored.** An event with no entry in
+  the current state surfaces an explicit `INVALID_TRANSITION` (and an
+  `ACTOR_TRANSITION_REJECTED` event) rather than a silent no-op — exactly what
+  you want when "this transition must be impossible" is a correctness rule.
+
+Because the FSM has no actions, context updates and `emit` move into the
+`onTransition` handler (the Erlang/Akka shape). `emit` is a field on the handler
+result — engine-agnostic, works today.
 
 ```ts
 const compareFSM = defineFSM<CompareEvent, CompareContext, CompareState>({
@@ -118,14 +131,19 @@ export const compareBehavior = defineActor<CompareEvent, CompareEmitted>()
   .build();
 ```
 
-### Machine vs FSM — same downstream
+### Machine vs FSM — two first-class targets
 
-| | `withMachine` (XState) | `withFSM` (no XState) |
+Both are deliberate choices, picked by **intent** — not default-vs-fallback.
+
+| | `withMachine` (XState) | `withFSM` (strict constraints) |
 |---|---|---|
-| Transitions/guards | machine | FSM map |
+| Choose when | rich engine: hierarchy, parallel states, `assign`/`emit`/`invoke` | the legal transition matrix must be exact, minimal, auditable |
+| Transitions/guards | machine | FSM map (the spec) |
 | Context updates | machine (`assign`) | handler (`{ context }`) |
 | `emit` | machine (`emit(...)`) | handler (`{ emit: [...] }`) |
+| Illegal transitions | machine semantics | **rejected** — explicit `INVALID_TRANSITION` + `ACTOR_TRANSITION_REJECTED` |
 | Handlers needed | none (override for imperative effects) | one per **effect-bearing** event |
+| Effects vs legality | entangled in the machine | **separated** — map = legality, handlers = effects |
 | Dependency | XState | none — portable |
 
 Both feed `subscribe`, declarative `subscriptions`, and the ignite agent runtime
@@ -279,10 +297,17 @@ const resolved = await compare.ask({ type: "MERGE" });   // resolves with snapsh
 ## Decisions (locked)
 
 - Use existing primitives only; fix defaults, no new sugar.
-- `withMachine` and `withFSM` are both first-class; emit in machine (XState) or
-  handler (engine-agnostic) respectively; identical downstream.
+- `withMachine` and `withFSM` are both first-class targets chosen by intent:
+  `withMachine` for XState's rich engine (effects in the machine), `withFSM` for
+  a strict, minimal, auditable constraint matrix with enforced legality (effects
+  in handlers). Identical downstream.
 - Hybrid event model: actor emits auto-bridge; `effects` additive.
 - Commands: authored names + `send` helper; `Command | (payload) => Command`.
+- `onTransition` stays **keyed per event** (`{ EVENT: ({ message, context }) =>
+  result }`) — it is a dispatch, not a projection, so it preserves per-event
+  message narrowing and lazy per-event effects (mirrors XState `on:`, Redux
+  reducers, Elixir/Erlang per-message handlers). `commands`/`view` keep the
+  single-callback shape because they are projections.
 - Coordination: `emit` + declarative `subscriptions` (choreography default).
 
 ## Status
