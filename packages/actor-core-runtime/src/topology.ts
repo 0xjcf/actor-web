@@ -235,6 +235,19 @@ export type ActorWebToolCatalogInput =
   | readonly ActorWebToolDefinition[]
   | Record<string, ActorWebToolDefinition>;
 
+/**
+ * Declares that a publisher actor's emitted events should be delivered to one or
+ * more subscriber actors. Wired by the runtime on start and torn down on stop,
+ * so the wiring is durable across restarts (unlike imperative system.subscribe).
+ * `from`/`to` reference actor keys in the topology; `events` filters by event
+ * type (omit/empty = all events from `from`).
+ */
+export interface ActorWebSubscriptionDefinition {
+  readonly from: string;
+  readonly to: string | readonly string[];
+  readonly events?: readonly string[];
+}
+
 export type ActorWebTopologyInput = {
   readonly contractVersion?: string;
   readonly tools?: ActorWebToolCatalogInput;
@@ -244,6 +257,7 @@ export type ActorWebTopologyInput = {
     ActorWebActorDefinition<ActorWebActorId> | ActorWebParameterizedActorDefinition<unknown>
   >;
   readonly supervisors?: Record<string, ActorWebSupervisorDefinition>;
+  readonly subscriptions?: readonly ActorWebSubscriptionDefinition[];
 };
 
 type ActorWebToolCatalogFromArray<TTools extends readonly ActorWebToolDefinition[]> = {
@@ -367,6 +381,7 @@ export type ActorWebTopology<TInput extends ActorWebTopologyInput> = {
   readonly supervisors: {
     readonly [K in keyof NonNullable<TInput['supervisors']>]: ActorWebSupervisorDescriptor;
   };
+  readonly subscriptions: readonly ActorWebSubscriptionDefinition[];
   source<TKey extends keyof TInput['actors'] & string>(
     key: TKey
   ): ActorWebTopologySourceFactory<
@@ -613,6 +628,7 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
     nodes: input.nodes,
     actors: actors as ActorWebTopology<TInput>['actors'],
     supervisors: supervisors as ActorWebTopology<TInput>['supervisors'],
+    subscriptions: input.subscriptions ?? [],
     source(key) {
       const actorDescriptor = actors[key];
       if (!actorDescriptor) {

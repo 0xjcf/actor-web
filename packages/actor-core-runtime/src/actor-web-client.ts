@@ -483,6 +483,38 @@ export async function startActorWebLocalRuntime<
     return actorRef;
   };
 
+  // Wire topology-declared subscriptions: deliver each publisher's emitted events
+  // to its declared subscriber(s). Re-established from the topology on every start
+  // (durable across restart) and torn down in stop().
+  const subscriptionTeardowns: Array<() => Promise<void> | void> = [];
+  const hostNodeFor = (key: keyof TTopology['actors'] & string) => {
+    for (const startedNode of startedNodes.values()) {
+      if (startedNode.getActor(key)) {
+        return startedNode;
+      }
+    }
+    throw new Error(`Actor-Web local runtime did not start actor "${key}".`);
+  };
+  for (const subscription of topology.subscriptions) {
+    const fromKey = subscription.from as keyof TTopology['actors'] & string;
+    const publisher = requireActor(fromKey) as unknown as ActorRef;
+    const publisherSystem = hostNodeFor(fromKey).system;
+    const subscriberKeys =
+      typeof subscription.to === 'string' ? [subscription.to] : subscription.to;
+    for (const toKey of subscriberKeys) {
+      const subscriber = requireActor(
+        toKey as keyof TTopology['actors'] & string
+      ) as unknown as ActorRef;
+      const teardown = await publisherSystem.subscribe(publisher, {
+        subscriber,
+        ...(subscription.events && subscription.events.length > 0
+          ? { events: [...subscription.events] }
+          : {}),
+      });
+      subscriptionTeardowns.push(teardown);
+    }
+  }
+
   const createActorSource = <TActor extends ActorWebActorDescriptor>(
     actorKey: keyof TTopology['actors'] & string
   ): ActorWebLocalRuntimeActorSource<TActor> => {
@@ -572,6 +604,11 @@ export async function startActorWebLocalRuntime<
     >,
     actors: actorSources,
     async stop(): Promise<void> {
+      for (const teardown of subscriptionTeardowns.reverse()) {
+        await teardown();
+      }
+      subscriptionTeardowns.length = 0;
+
       for (const source of Array.from(openedSources)) {
         source.close();
       }
