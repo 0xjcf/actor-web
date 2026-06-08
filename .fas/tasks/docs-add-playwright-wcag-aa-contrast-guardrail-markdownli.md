@@ -1,4 +1,4 @@
-# Docs: add Playwright WCAG AA contrast guardrail + markdownli
+# Docs: add Playwright WCAG AA contrast guardrail + markdownlint coverage for the VitePress site
 
 ## Source
 
@@ -30,9 +30,12 @@ Deferred from Docs D1. (1) Port ignite-element's check-contrast.mjs as docs/site
 ## Affected files
 
 - docs/site/scripts/check-contrast.mjs
-- .github/workflows/docs.yml
+- docs/site/package.json
+- docs/site/.markdownlint.jsonc
 - package.json
+- pnpm-lock.yaml
 - .markdownlint.jsonc
+- .github/workflows/docs-contrast.yml
 
 ## Scope Amendments
 

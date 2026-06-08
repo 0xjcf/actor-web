@@ -1019,9 +1019,12 @@
 
 - Title: Docs: add Playwright WCAG AA contrast guardrail + markdownlint coverage for the VitePress site
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/docs-add-playwright-wcag-aa-contrast-guardrail-markdownli.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Docs D1 — scaffold VitePress docs site (direct closeout)
 
