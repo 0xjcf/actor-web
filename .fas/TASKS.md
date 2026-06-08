@@ -914,8 +914,8 @@
 
 - Title: Add declarative subscriptions to defineActorWebTopology
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/add-declarative-subscriptions-to-defineactorwebtopology.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -925,8 +925,8 @@
 
 - Title: Type subscription events against publisher emitted-event union
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/type-subscription-events-against-publisher-emitted-event-uni.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -936,8 +936,8 @@
 
 - Title: Delete unused EventBrokerActor; lock AutoPublishingRegistry as canonical
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/delete-unused-eventbrokeractor-lock-autopublishingregistry.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -1038,8 +1038,8 @@
 
 - Title: Default machine/FSM behaviors: build() with no handlers
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/default-machine-fsm-behaviors-build-with-no-handlers.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -1049,8 +1049,8 @@
 
 - Title: Bridge XState machine emit to actor emit/subscribe stream
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/bridge-xstate-machine-emit-to-actor-emit-subscribe-stream.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -1060,8 +1060,8 @@
 
 - Title: Allow plain-value behaviors in actor() without the tool-typing curry
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/allow-plain-value-behaviors-in-actor-without-the-tool-typi.md
 - Verification lane: fast
 - Policy sensitivity: standard
