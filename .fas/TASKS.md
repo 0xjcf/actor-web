@@ -936,8 +936,8 @@
 
 - Title: Delete unused EventBrokerActor; lock AutoPublishingRegistry as canonical
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/delete-unused-eventbrokeractor-lock-autopublishingregistry.md
 - Verification lane: fast
 - Policy sensitivity: standard
