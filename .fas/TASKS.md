@@ -1029,8 +1029,8 @@
 
 - Title: Default machine/FSM behaviors: build() with no handlers
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/default-machine-fsm-behaviors-build-with-no-handlers.md
 - Verification lane: fast
 - Policy sensitivity: standard
