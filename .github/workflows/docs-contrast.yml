@@ -1,0 +1,49 @@
+name: Docs Contrast & Lint
+
+# Renders the built VitePress docs site in headless Chromium and fails the PR if
+# any key chrome/content selector drops below WCAG AA contrast in either theme,
+# and lints the site markdown. Scoped to PRs that touch docs/site so non-docs PRs
+# don't pay the browser cost.
+#
+# Note: GitHub automation may be disabled for this repo (see .fas-config.json
+# runtimeGitHubEnabled). This workflow is correct and dormant until CI is on.
+
+on:
+  pull_request:
+    paths:
+      - 'docs/site/**'
+      - 'packages/actor-core-runtime/**'
+      - '.github/workflows/docs-contrast.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/site/**'
+      - '.github/workflows/docs-contrast.yml'
+  workflow_dispatch:
+
+jobs:
+  contrast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Lint docs-site markdown
+        run: pnpm docs:lint:md
+
+      # Twoslash resolves @actor-core/runtime to its built type declarations.
+      - name: Build runtime type declarations
+        run: pnpm --filter @actor-core/runtime build
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter docs-site exec playwright install --with-deps chromium
+
+      - name: Build docs site and check theme contrast (WCAG AA, both themes)
+        run: pnpm docs:contrast
