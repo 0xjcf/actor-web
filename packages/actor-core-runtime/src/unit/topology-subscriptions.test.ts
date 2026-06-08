@@ -82,4 +82,34 @@ describe('topology declarative subscriptions', () => {
       await runtime.stop();
     }
   });
+
+  it('constrains subscription from/to/events at compile time', () => {
+    const actors = {
+      emitter: actor({ id: 'emitter', node: 'local', behavior: createEmitter }),
+      collector: actor({ id: 'collector', node: 'local', behavior: createCollector }),
+    };
+
+    // Valid: PONG is in the emitter's emitted-event union.
+    defineActorWebTopology({
+      nodes: { local: node('local') },
+      actors,
+      subscriptions: [{ from: 'emitter', to: 'collector', events: ['PONG'] }],
+    });
+
+    defineActorWebTopology({
+      nodes: { local: node('local') },
+      actors,
+      // @ts-expect-error - 'NOPE' is not an event the emitter emits
+      subscriptions: [{ from: 'emitter', to: 'collector', events: ['NOPE'] }],
+    });
+
+    defineActorWebTopology({
+      nodes: { local: node('local') },
+      actors,
+      // @ts-expect-error - 'ghost' is not an actor key
+      subscriptions: [{ from: 'ghost', to: 'collector', events: ['PONG'] }],
+    });
+
+    expect(true).toBe(true);
+  });
 });
