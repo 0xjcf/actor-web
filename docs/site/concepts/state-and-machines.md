@@ -23,21 +23,29 @@ const counter = defineActor<{ type: 'INC' }>()
 ## XState machines
 
 For real state-machine semantics — guarded transitions, hierarchical states —
-attach an XState machine with `withMachine`, then handle each event in
-`onTransition`:
+attach an XState machine with `withMachine`. The machine **is** the behavior, so
+no handlers are required: each event transitions the machine and `ask(...)`
+resolves with the snapshot.
+
+```ts
+// the machine owns transitions, guards, and (via XState actions) effects
+const compare = defineActor<CompareEvent>().withMachine(compareMachine).build();
+```
+
+Add an `onTransition` handler only for an event that needs an imperative effect;
+un-handled events keep the default:
 
 ```ts
 defineActor<CompareEvent>()
   .withMachine(compareMachine)
   .onTransition({
-    ACCEPT_FORK: ({ actor }) => ({ reply: actor.getSnapshot().value }),
-    REPLAY:      ({ actor }) => ({ reply: actor.getSnapshot().value }),
+    MERGE: ({ context }) => ({ context, emit: [{ type: 'MERGED' }] }),
   })
   .build();
 ```
 
 The machine decides whether a transition is legal; the runtime rejects
-impossible transitions before your handler runs.
+impossible transitions before any handler runs.
 
 ## Lightweight FSM constraint maps
 
@@ -57,7 +65,9 @@ const fsm = defineFSM({
 
 The FSM is intentionally **pure and synchronous** — it only constrains which
 transitions are allowed. I/O, emits, replies, and context updates belong in the
-`onTransition` handlers, never in the FSM itself.
+`onTransition` handlers, never in the FSM itself. A pure transition needs no
+handler (the default resolves `ask(...)` with the new state); write a handler for
+any event that updates context or emits.
 
 ## The rule
 

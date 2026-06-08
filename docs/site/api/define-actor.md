@@ -24,12 +24,27 @@ emit.
 | `.withFSM(fsm)` | Drive state with a lightweight FSM constraint map. |
 | `.withTools<TRegistry>()` | Narrow the tool registry (standalone actors). |
 | `.onMessage(handler)` | Catch-all message handler. |
-| `.onTransition({ TYPE: handler })` | Per-message handlers (requires a machine/FSM). |
+| `.onTransition({ TYPE: handler })` | Per-message handlers (requires a machine/FSM). Optional — see below. |
 | `.onStart(fn)` / `.onStop(fn)` | Lifecycle hooks. |
 | `.build()` | Produce the `ActorBehavior`. |
 
 `withMachine` and `withFSM` are mutually exclusive. `onTransition` requires one
 of them.
+
+### Default behavior (no handlers)
+
+With a machine or FSM attached, handlers are **optional**: an event with no
+explicit handler transitions the machine/FSM and resolves `ask(...)` with the
+snapshot (`{ value, context }`); illegal transitions are rejected. So a
+machine-backed actor can be the whole behavior:
+
+```ts
+const compare = defineActor<CompareEvent>().withMachine(compareMachine).build();
+```
+
+`build()` requires *either* a handler (`onMessage`/`onTransition`) *or* an
+attached machine/FSM. A machine event without a handler falls through to this
+default; `onMessage` still serves as the fallback for non-transition messages.
 
 ## The handler
 
