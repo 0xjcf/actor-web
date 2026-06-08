@@ -491,8 +491,30 @@ function normalizeActorWebToolCatalog(
   return tools as Record<string, ActorWebToolDefinition>;
 }
 
+/** The `type` literal union a publisher actor can emit (falls back to string). */
+type ActorWebEmittedEventType<TActorDefinition> = ActorWebActorEvent<TActorDefinition> extends {
+  readonly type: infer TType extends string;
+}
+  ? TType
+  : string;
+
+/**
+ * A subscription entry whose `from`/`to` are actor keys and whose `events` are
+ * constrained to the `from` actor's emitted-event types. Expressed as a union of
+ * per-publisher shapes so `events` is checked against the chosen `from`.
+ */
+type ActorWebTypedSubscription<TActors> = {
+  [K in keyof TActors & string]: {
+    readonly from: K;
+    readonly to: (keyof TActors & string) | readonly (keyof TActors & string)[];
+    readonly events?: readonly ActorWebEmittedEventType<TActors[K]>[];
+  };
+}[keyof TActors & string];
+
 export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
-  input: TInput
+  input: TInput & {
+    readonly subscriptions?: readonly ActorWebTypedSubscription<TInput['actors']>[];
+  }
 ): ActorWebTopology<TInput> {
   const toolCatalog = normalizeActorWebToolCatalog(input.tools);
   const actors = Object.fromEntries(
