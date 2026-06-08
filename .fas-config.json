@@ -11,7 +11,7 @@
   "formatCheckCommand": "pnpm exec biome format .",
   "formatFixCommand": "pnpm format",
   "typecheckCommand": "pnpm typecheck",
-  "testCommand": "pnpm test && pnpm --filter @actor-core/runtime test",
+  "testCommand": "pnpm test && pnpm --filter @actor-web/runtime test",
   "replayCommand": "",
   "verifyScriptMode": "platform",
   "domainKnowledgeMapFile": "fas.domain-map.json",

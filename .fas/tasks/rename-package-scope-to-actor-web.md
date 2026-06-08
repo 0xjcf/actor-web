@@ -29,6 +29,7 @@ Re-scope all published packages to match the project name (and mirror ignite-ele
 
 ## Affected files
 
+- .fas-config.json
 - .github/workflows/docs-contrast.yml
 - .github/workflows/docs.yml
 - README.md
