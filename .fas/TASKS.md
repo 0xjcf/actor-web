@@ -936,9 +936,12 @@
 
 - Title: Delete unused EventBrokerActor; lock AutoPublishingRegistry as canonical
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/delete-unused-eventbrokeractor-lock-autopublishingregistry.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Docs D1: scaffold VitePress site + design system (walking skeleton)
 
