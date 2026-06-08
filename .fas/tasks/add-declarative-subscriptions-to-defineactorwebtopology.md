@@ -32,10 +32,14 @@ Subscriptions design T2 (primary DX win). Add declarative subscriptions: [{from,
 - packages/actor-core-runtime/src/topology.ts
 - packages/actor-core-runtime/src/actor-web-client.ts
 - packages/actor-core-runtime/src/start-actor-web-node.ts
+- docs/site/concepts/subscriptions-and-events.md
+- docs/site/api/topology.md
 
 ## Scope Amendments
 
-- None.
+- Type: scope-refresh
+- Added at: 2026-06-08
+- Added paths: docs/site/concepts/subscriptions-and-events.md, docs/site/api/topology.md
 
 ## Implementation plan
 

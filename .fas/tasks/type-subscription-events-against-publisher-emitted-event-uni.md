@@ -1,4 +1,4 @@
-# Type subscription events against publisher emitted-event uni
+# Type subscription events against publisher emitted-event union
 
 ## Source
 
@@ -31,10 +31,14 @@ Subscriptions design T3. Type the subscription events filter against the publish
 - packages/actor-core-runtime/src/auto-publishing.ts
 - packages/actor-core-runtime/src/topology.ts
 - packages/actor-core-runtime/src/unified-actor-builder.ts
+- docs/site/concepts/subscriptions-and-events.md
+- docs/site/api/topology.md
 
 ## Scope Amendments
 
-- None.
+- Type: scope-refresh
+- Added at: 2026-06-08
+- Added paths: docs/site/concepts/subscriptions-and-events.md, docs/site/api/topology.md
 
 ## Implementation plan
 

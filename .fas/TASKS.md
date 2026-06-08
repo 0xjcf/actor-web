@@ -1014,7 +1014,7 @@
 - Owner: runtime
 - Brief: .fas/tasks/docs-add-playwright-wcag-aa-contrast-guardrail-markdownli.md
 
-### Task: Docs D1: scaffold VitePress docs site and token-driven design system (walking skeleton). Add a docs/site VitePress workspace package (+ pnpm-workspace.yaml, root docs:* scripts), establish .vitepress/theme/tokens.css (dark-first, both themes, 6/8/12 radius scale, distinct accent — amber #f5a623 pending sign-off), full IA sidebar nav, three real seed pages (Overview: What is Actor-Web?; Getting Started: Your first actor; Concepts: Subscriptions & events), wire @shikijs/vitepress-twoslash typechecked code samples, and port the WCAG AA contrast/a11y guardrail into CI. Foundational docs task; unblocks D2-D6. See docs/actor-web-documentation-plan.md.
+### Task: Docs D1: scaffold VitePress docs site and token-driven design system (walking skeleton). Add a docs/site VitePress workspace package (+ pnpm-workspace.yaml, root docs:* scripts), establish .vitepress/theme/tokens.css (dark-first, both themes, 6/8/12 radius scale, distinct accent — amber #f5a623 pending sign-off), full IA sidebar nav, three real seed pages (Overview: What is Actor-Web?; Getting Started: Your first actor; Concepts: Subscriptions & events), wire @shikijs/vitepress-twoslash typechecked code samples, and port the WCAG AA contrast/a11y guardrail into CI. Foundational docs task; unblocks D2-D6. See docs/actor-web-documentation-plan.md
 
 - Title: Docs D1: scaffold VitePress docs site and token-driven design system (walking skeleton). Add a docs/site VitePress workspace package (+ pnpm-workspace.yaml, root docs:* scripts), establish .vitepress/theme/tokens.css (dark-first, both themes, 6/8/12 radius scale, distinct accent — amber #f5a623 pending sign-off), full IA sidebar nav, three real seed pages (Overview: What is Actor-Web?; Getting Started: Your first actor; Concepts: Subscriptions & events), wire @shikijs/vitepress-twoslash typechecked code samples, and port the WCAG AA contrast/a11y guardrail into CI. Foundational docs task; unblocks D2-D6. See docs/actor-web-documentation-plan.md.
 - Mode: single-agent
@@ -1024,6 +1024,39 @@
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
+
+### Task: Default machine/FSM behaviors: build() with no handlers
+
+- Title: Default machine/FSM behaviors: build() with no handlers
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/default-machine-fsm-behaviors-build-with-no-handlers.md
+
+### Task: Bridge XState machine emit to actor emit/subscribe stream
+
+- Title: Bridge XState machine emit to actor emit/subscribe stream
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/bridge-xstate-machine-emit-to-actor-emit-subscribe-stream.md
+
+### Task: Allow plain-value behaviors in actor() without the tool-typing curry
+
+- Title: Allow plain-value behaviors in actor() without the tool-typing curry
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/allow-plain-value-behaviors-in-actor-without-the-tool-typi.md
+
+### Task: Docs: headless agent runtime page + refresh ignite guide to target API
+
+- Title: Docs: headless agent runtime page + refresh ignite guide to target API
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/docs-headless-agent-runtime-page-refresh-ignite-guide-to.md
+- Automation mode: advisory
 
 ## Template
 

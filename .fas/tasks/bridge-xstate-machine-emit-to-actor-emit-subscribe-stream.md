@@ -1,17 +1,16 @@
-# Add batch subscribers[] overload to system.subscribe
+# Bridge XState machine emit to actor emit/subscribe stream
 
 ## Source
 
-Created with `fas create-task` on 2026-06-07.
+Created with `fas create-task` on 2026-06-08.
 
 ## Problem
 
-Subscriptions design T1. Add a subscribers: ActorRef[] batch overload to system.subscribe alongside the singular form; loop addSubscriber per subscriber. Removes call-site redundancy when fanning one event to many actors. Independent/foundational, no deps. See docs/actor-web-declarative-subscriptions-design.md (T1).
+Actor DX design (docs/actor-web-actor-dx-design.md). Route XState v5 machine emit(...) actions into the actor's emitted-event stream so they reach AutoPublishingRegistry subscribers (and UI subscribeEvent / ignite agent runtime) the same way ActorHandlerResult.emit does. Lets withMachine actors emit domain events (e.g. OUTCOME_RESOLVED) with zero handlers. The FSM/handler path already works via ActorHandlerResult.emit.
 
 ## Acceptance criteria
 
-- The new functionality works as described.
-- Existing behavior is not broken.
+- The change is verified and does not introduce regressions.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
 - DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.
@@ -29,16 +28,17 @@ Subscriptions design T1. Add a subscribers: ActorRef[] batch overload to system.
 
 ## Affected files
 
-- packages/actor-core-runtime/src/actor-system.ts
+- packages/actor-core-runtime/src/unified-actor-builder.ts
 - packages/actor-core-runtime/src/actor-system-impl.ts
-- packages/actor-core-runtime/src/auto-publishing.ts
+- packages/actor-core-runtime/src/machine-registry.ts
 - docs/site/concepts/subscriptions-and-events.md
+- docs/site/concepts/state-and-machines.md
 
 ## Scope Amendments
 
 - Type: scope-refresh
 - Added at: 2026-06-08
-- Added paths: docs/site/concepts/subscriptions-and-events.md
+- Added paths: docs/site/concepts/subscriptions-and-events.md, docs/site/concepts/state-and-machines.md
 
 ## Implementation plan
 

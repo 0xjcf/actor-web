@@ -1,17 +1,24 @@
-# Add batch subscribers[] overload to system.subscribe
+# Docs: headless agent runtime page + refresh ignite guide to
 
 ## Source
 
-Created with `fas create-task` on 2026-06-07.
+Created with `fas create-task` on 2026-06-08.
 
 ## Problem
 
-Subscriptions design T1. Add a subscribers: ActorRef[] batch overload to system.subscribe alongside the singular form; loop addSubscriber per subscriber. Removes call-site redundancy when fanning one event to many actors. Independent/foundational, no deps. See docs/actor-web-declarative-subscriptions-design.md (T1).
+Actor DX design (docs/actor-web-actor-dx-design.md). Net-new published page: every igniteCore(...) is also a headless agent runtime (execute/getState/getView/on/watch) that drives an actor with no DOM, and the actor's domain emits surface as runtime events. Also refresh docs/site/guides/ignite-element.md to the target command shape commands: ({ send }) => ({ name: send(msg) }). No implementation task owns this net-new page, hence a dedicated docs task. SEQUENCE AFTER ignite-element I1 (send helper) and I2 (event auto-bridge) ship; document only shipped API. Add the page to the Guides nav in .vitepress/config.ts.
+
+## Automation admission
+
+- Expected operator value: Improves operator leverage around "Docs: headless agent runtime page + refresh ignite guide to target API" by reducing manual coordination, repetitive execution, or trust gaps.
+- Observability surface: Use authoritative FAS surfaces such as `fas runtime status`, `fas runtime watch`, workflow logs, receipts, or notifications to show whether the automation is active, quiet, stalled, blocked, or complete.
+- Recovery path: A human can abort, retry, recover, or rerun this workflow without leaving stale queue, lease, branch, or current-task state.
+- Autonomy mode: advisory
+- Promotion criteria: Promote beyond advisory only after dogfood runs prove clear operator value, trustworthy observability, and bounded recovery.
 
 ## Acceptance criteria
 
-- The new functionality works as described.
-- Existing behavior is not broken.
+- The change is verified and does not introduce regressions.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
 - DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.
@@ -29,16 +36,13 @@ Subscriptions design T1. Add a subscribers: ActorRef[] batch overload to system.
 
 ## Affected files
 
-- packages/actor-core-runtime/src/actor-system.ts
-- packages/actor-core-runtime/src/actor-system-impl.ts
-- packages/actor-core-runtime/src/auto-publishing.ts
-- docs/site/concepts/subscriptions-and-events.md
+- docs/site/guides/agent-runtime.md
+- docs/site/guides/ignite-element.md
+- docs/site/.vitepress/config.ts
 
 ## Scope Amendments
 
-- Type: scope-refresh
-- Added at: 2026-06-08
-- Added paths: docs/site/concepts/subscriptions-and-events.md
+- None.
 
 ## Implementation plan
 
