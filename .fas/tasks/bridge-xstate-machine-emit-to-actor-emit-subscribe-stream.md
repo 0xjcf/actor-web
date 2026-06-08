@@ -28,9 +28,8 @@ Actor DX design (docs/actor-web-actor-dx-design.md). Route XState v5 machine emi
 
 ## Affected files
 
-- packages/actor-core-runtime/src/unified-actor-builder.ts
-- packages/actor-core-runtime/src/actor-system-impl.ts
-- packages/actor-core-runtime/src/machine-registry.ts
+- packages/actor-core-runtime/src/machine-actor.ts
+- packages/actor-core-runtime/src/unit/machine-actor-emit.test.ts
 - docs/site/concepts/subscriptions-and-events.md
 - docs/site/concepts/state-and-machines.md
 
@@ -39,6 +38,10 @@ Actor DX design (docs/actor-web-actor-dx-design.md). Route XState v5 machine emi
 - Type: scope-refresh
 - Added at: 2026-06-08
 - Added paths: docs/site/concepts/subscriptions-and-events.md, docs/site/concepts/state-and-machines.md
+
+- Type: scope-refresh
+- Added at: 2026-06-08
+- Added paths: packages/actor-core-runtime/src/machine-actor.ts, packages/actor-core-runtime/src/unit/machine-actor-emit.test.ts
 
 ## Implementation plan
 

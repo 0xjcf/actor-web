@@ -1040,9 +1040,12 @@
 
 - Title: Bridge XState machine emit to actor emit/subscribe stream
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/bridge-xstate-machine-emit-to-actor-emit-subscribe-stream.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Allow plain-value behaviors in actor() without the tool-typing curry
 
