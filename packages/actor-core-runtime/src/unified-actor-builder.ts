@@ -292,19 +292,40 @@ export class UnifiedActorBuilder<
    */
   build(): ActorSpec<TMsg, TCtx, TEmitted, TTools> &
     ActorBehavior<TMsg, TEmitted, TTools> & { __contextType: TCtx; __messageType: TMsg } {
-    if (!this.spec.handler) {
-      throw new Error('Message handler is required. Call onMessage() before build().');
-    }
-
     if (this.spec.transitionHandlers && !this.spec.machine && !this.spec.fsm) {
       throw new Error('onTransition(...) requires withMachine(...) or withFSM(...).');
+    }
+
+    // A machine/FSM-backed actor needs no handlers: synthesize a default dispatcher
+    // that runs each legal transition and resolves ask(...) with { value, context }.
+    // Explicit onMessage/onTransition handlers, when present, take precedence; any
+    // event without an explicit handler falls through to this same default.
+    let handler = this.spec.handler;
+    if (!handler) {
+      if (this.spec.machine) {
+        handler = createTransitionDispatcher<TMsg, TCtx, TEmitted, TTools>(
+          this.spec.machine,
+          {},
+          undefined
+        );
+      } else if (this.spec.fsm) {
+        handler = createFSMTransitionDispatcher<TMsg, TCtx, TEmitted, TTools>(
+          this.spec.fsm,
+          {},
+          undefined
+        );
+      } else {
+        throw new Error(
+          'A handler is required. Call onMessage(...), or attach a machine with withMachine(...)/withFSM(...), before build().'
+        );
+      }
     }
 
     // Create the runtime ActorBehavior
     // Note: The handler type mismatch is due to TypedActorInstance vs ActorInstance
     // This is safe because TypedActorInstance is a compile-time helper that doesn't exist at runtime
     const behavior: ActorBehavior<TMsg, TEmitted, TTools> = {
-      onMessage: this.spec.handler as unknown as ActorBehavior<TMsg, TEmitted, TTools>['onMessage'],
+      onMessage: handler as unknown as ActorBehavior<TMsg, TEmitted, TTools>['onMessage'],
       onStart: this.spec.startHandler,
       onStop: this.spec.stopHandler,
       context:
@@ -321,12 +342,17 @@ export class UnifiedActorBuilder<
     const builtBehavior = {
       ...this.spec,
       ...behavior,
+      handler,
       __contextType: this.spec.initialContext as TCtx,
       __messageType: {} as TMsg,
     } as ActorSpec<TMsg, TCtx, TEmitted, TTools> &
       ActorBehavior<TMsg, TEmitted, TTools> & { __contextType: TCtx; __messageType: TMsg };
 
-    if (this.spec.machine && this.spec.transitionHandlers) {
+    // Register the machine when transition handlers drive it, or when no explicit
+    // handler was supplied (the synthesized default dispatcher drives the machine).
+    // A withMachine(...) + onMessage(...) actor keeps its prior behavior (the
+    // onMessage handler owns dispatch; the machine is not auto-registered).
+    if (this.spec.machine && (this.spec.transitionHandlers || !this.spec.handler)) {
       registerMachineWithBehavior(
         builtBehavior as unknown as ActorBehavior<TMsg, TEmitted>,
         this.spec.machine
@@ -354,12 +380,10 @@ function createTransitionDispatcher<
       | UnifiedMessageHandler<TMsg, TCtx, TEmitted, TTools>
       | undefined;
 
-    if (!handler) {
-      if (fallback) {
-        return fallback(handlerParams);
-      }
-
-      throw new Error(`Actor transition "${params.message.type}" does not declare a handler.`);
+    // No per-event transition handler: defer to the onMessage fallback, which
+    // handles queries / non-transition messages without transition gating.
+    if (!handler && fallback) {
+      return fallback(handlerParams);
     }
 
     if (!machine) {
@@ -378,7 +402,17 @@ function createTransitionDispatcher<
     }
 
     params.actor.send(params.message);
-    return handler(handlerParams);
+
+    if (handler) {
+      return handler(handlerParams);
+    }
+
+    // No handler and no fallback: default to transition + resolve ask(...) with
+    // the post-transition snapshot.
+    const resolved = params.actor.getSnapshot();
+    return {
+      reply: { value: resolved.value, context: resolved.context },
+    } as ActorHandlerResult<TCtx, unknown>;
   };
 }
 
@@ -401,12 +435,10 @@ function createFSMTransitionDispatcher<
       | UnifiedMessageHandler<TMsg, TCtx, TEmitted, TTools>
       | undefined;
 
-    if (!handler) {
-      if (fallback) {
-        return fallback(handlerParams);
-      }
-
-      throw new Error(`Actor transition "${params.message.type}" does not declare a handler.`);
+    // No per-event transition handler: defer to the onMessage fallback, which
+    // handles queries / non-transition messages without transition gating.
+    if (!handler && fallback) {
+      return fallback(handlerParams);
     }
 
     const currentState = actorStates.get(params.actor) ?? fsm.initial;
@@ -437,6 +469,14 @@ function createFSMTransitionDispatcher<
         ? normalizedTransition.target(transitionParams)
         : normalizedTransition.target;
     actorStates.set(params.actor, target);
+
+    // No explicit handler or onMessage fallback: default to transition +
+    // resolve ask(...) with the new FSM state and unchanged context.
+    if (!handler) {
+      return {
+        reply: { value: target, context },
+      } as ActorHandlerResult<TCtx, unknown>;
+    }
 
     return handler(handlerParams);
   };

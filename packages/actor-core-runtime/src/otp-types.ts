@@ -86,6 +86,10 @@ export interface ActorHandlerResult<TContext, TResponse = void> {
    *   emit: [{ type: 'WITHDRAWAL_COMPLETED' }]     // 1-to-many broadcast
    * };
    * ```
+   *
+   * Default: a machine/FSM-backed actor with no explicit handler for an event
+   * transitions and resolves `ask(...)` with the snapshot (`{ value, context }`).
+   * Provide `reply` to override that default.
    */
   reply?: TResponse;
 

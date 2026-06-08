@@ -65,7 +65,10 @@ declarative `MessagePlan` for talking to other actors.
 - **Context-based** — `withContext`; the OTP `gen_server` pattern, returning the
   next `context`.
 - **Machine-based** — `withMachine`/`withFSM`; transitions are constrained by a
-  state machine, side effects live in `onTransition`.
+  state machine. Handlers are optional: an event with no handler transitions and
+  resolves `ask(...)` with the snapshot, so `defineActor().withMachine(m).build()`
+  can be the whole behavior. Add an `onTransition` handler only for events that
+  emit or do I/O.
 
 All three share the same handler signature, so you can start simple and add a
 machine later without rewriting handlers.
