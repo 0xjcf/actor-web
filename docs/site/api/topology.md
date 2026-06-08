@@ -53,6 +53,11 @@ compile-time error (omit for all events). See
 | `supervisor({ node, strategy, children })` | A restart group. `strategy`: `one-for-one` \| `one-for-all` \| `rest-for-one` \| `escalate`. |
 | `tool(name)` | Declares a usable tool. |
 
+`behavior` accepts either a built behavior value (`defineActor(...).build()`) or a
+factory. Pass the plain value for tool-free actors; reach for
+`actor.withTools<TRegistry>()` with a `(defineActor) => …` factory only when the
+actor calls tools.
+
 `supervision` is `{ strategy, maxRestarts, withinMs }`. See
 [Supervision](/concepts/supervision).
 
