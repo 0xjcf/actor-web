@@ -1029,9 +1029,12 @@
 
 - Title: Default machine/FSM behaviors: build() with no handlers
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/default-machine-fsm-behaviors-build-with-no-handlers.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Bridge XState machine emit to actor emit/subscribe stream
 
