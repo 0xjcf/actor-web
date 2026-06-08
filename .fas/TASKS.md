@@ -1060,9 +1060,12 @@
 
 - Title: Allow plain-value behaviors in actor() without the tool-typing curry
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/allow-plain-value-behaviors-in-actor-without-the-tool-typi.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Docs: headless agent runtime page + refresh ignite guide to target API
 

@@ -28,8 +28,7 @@ Actor DX design (docs/actor-web-actor-dx-design.md). Let actor({ id, node, behav
 
 ## Affected files
 
-- packages/actor-core-runtime/src/topology.ts
-- docs/site/concepts/topology.md
+- packages/actor-core-runtime/src/unit/topology-plain-behavior.test.ts
 - docs/site/api/topology.md
 
 ## Scope Amendments
