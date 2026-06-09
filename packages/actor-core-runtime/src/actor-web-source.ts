@@ -13,10 +13,6 @@ import {
 } from './projection-transport.js';
 import { type RuntimeGatewayAuthProvider, resolveRuntimeAuthPayload } from './runtime-auth.js';
 import type {
-  RuntimeGatewayEventProjection,
-  RuntimeGatewaySnapshotProjection,
-} from './runtime-gateway-projection.js';
-import type {
   RuntimeGatewayClientFrame,
   RuntimeGatewayScopeDescriptor,
   RuntimeGatewayServerFrame,
@@ -24,6 +20,7 @@ import type {
   RuntimeGatewaySubscribeMode,
 } from './runtime-gateway-shared.js';
 import { createRuntimeGatewaySourceHandle } from './runtime-gateway-shared.js';
+import type { ActorEventProjection, ActorSnapshotProjection } from './runtime-projection.js';
 import type {
   ActorWebActorAddress,
   ActorWebActorContext,
@@ -227,25 +224,25 @@ function mergeScope(
 }
 
 function snapshotProjectionToSourceSnapshot<TContext>(
-  projection: RuntimeGatewaySnapshotProjection<TContext>
+  projection: ActorSnapshotProjection<TContext>
 ): ActorSourceSnapshot<TContext> {
   return actorSnapshotToSourceSnapshot(projection.address, {
     context: projection.context,
     value: projection.value,
-    status: projection.workflowSnapshot.status as ActorSnapshot<TContext>['status'],
-    matches: (state: string) => state === projection.workflowSnapshot.phase,
-    can: () => projection.workflowSnapshot.status === 'running',
+    status: projection.snapshot.status as ActorSnapshot<TContext>['status'],
+    matches: (state: string) => state === projection.snapshot.stateLabel,
+    can: () => projection.snapshot.status === 'running',
     hasTag: () => false,
     toJSON: () => ({
       context: projection.context,
       value: projection.value,
-      status: projection.workflowSnapshot.status,
+      status: projection.snapshot.status,
     }),
   });
 }
 
 function eventProjectionToSourceEvent<TEvent extends ActorMessage>(
-  projection: RuntimeGatewayEventProjection
+  projection: ActorEventProjection
 ): ActorSourceEvent<TEvent> {
   const event = {
     type: projection.envelope.type,
@@ -508,7 +505,7 @@ function createGatewayBackedSource<
           return;
         }
         currentSnapshot = snapshotProjectionToSourceSnapshot(
-          frame.projection as RuntimeGatewaySnapshotProjection<TContext>
+          frame.projection as ActorSnapshotProjection<TContext>
         );
         resolveReady?.();
         resolveReady = null;

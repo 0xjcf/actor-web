@@ -15,7 +15,7 @@ import {
   createProjectionTransportStatus,
   type ProjectionTransportStatus,
 } from '../projection-transport.js';
-import { deriveRuntimeGatewayPhase } from '../runtime-gateway-projection.js';
+import { deriveStateLabel } from '../runtime-projection.js';
 import type { ActorSnapshot, JsonValue, Message } from '../types.js';
 
 export interface ActorSourceSnapshot<TContext = unknown> extends ActorSnapshot<TContext> {
@@ -132,7 +132,7 @@ export function actorSnapshotToSourceSnapshot<TContext = unknown>(
   address: ActorAddress,
   snapshot: ActorSnapshot<TContext>
 ): ActorSourceSnapshot<TContext> {
-  const phase = deriveRuntimeGatewayPhase(snapshot.value);
+  const phase = deriveStateLabel(snapshot.value);
 
   return {
     ...snapshot,

@@ -8,13 +8,16 @@ import {
   type ProjectionTransportStatus,
 } from '../projection-transport.js';
 import {
+  type ActorEventProjection,
+  type ActorRuntimeSnapshot,
+  type ActorSnapshotProjection,
+  type ActorTransitionRecord,
   createRuntimeGatewayCommandSource,
   createRuntimeGatewayHub,
   createRuntimeGatewayReadModelSource,
   createRuntimeGatewaySource,
   type RuntimeGatewayClientFrame,
   type RuntimeGatewayConnectionAdapter,
-  type RuntimeGatewayEventProjection,
   type RuntimeGatewayInvalidFrameEvent,
   type RuntimeGatewayObserverEvent,
   type RuntimeGatewayReplayFrame,
@@ -23,10 +26,7 @@ import {
   type RuntimeGatewayScopeDescriptor,
   RuntimeGatewayScopeError,
   type RuntimeGatewayServerFrame,
-  type RuntimeGatewaySnapshotProjection,
   type RuntimeGatewaySource,
-  type RuntimeGatewayTransitionRecord,
-  type RuntimeGatewayWorkflowSnapshot,
 } from '../runtime-gateway.js';
 import type { Message } from '../types.js';
 
@@ -198,28 +198,21 @@ function createGatewaySnapshot(
   phase: string,
   context: Record<string, unknown>,
   actorKey = phase
-): RuntimeGatewaySnapshotProjection {
+): ActorSnapshotProjection {
   return {
     address: {
       id: `actor-${actorKey}`,
       type: 'actor',
       path: `/actors/${actorKey}`,
     },
-    workflowSnapshot: {
-      workflowId: `workflow-${phase}`,
+    snapshot: {
       actorId: `actor-${phase}`,
-      taskId: `task-${phase}`,
-      taskTitle: `Task ${phase}`,
-      phase,
+      stateLabel: phase,
       status: 'running',
       createdAt: '2026-04-23T15:00:00.000Z',
       updatedAt: '2026-04-23T15:00:00.000Z',
-      branchName: null,
-      baseBranch: null,
       correlationId: `corr-${phase}`,
       lastEventType: null,
-      notes: [],
-      artifacts: {},
     },
     value: phase,
     context,
@@ -238,7 +231,7 @@ function createGatewayEvent(
   source: RuntimeGatewaySource,
   type: string,
   occurredAt = '2026-04-23T15:00:01.000Z'
-): RuntimeGatewayEventProjection {
+): ActorEventProjection {
   return {
     address: source.address,
     envelope: {
@@ -468,11 +461,11 @@ function createFakeSource(
   initialPhase = 'ready',
   actorKey = initialPhase
 ): RuntimeGatewaySource & {
-  emitSnapshot(snapshot: RuntimeGatewaySnapshotProjection): void;
-  emitEvent(projection: RuntimeGatewayEventProjection): void;
+  emitSnapshot(snapshot: ActorSnapshotProjection): void;
+  emitEvent(projection: ActorEventProjection): void;
   emitTransition(transition: {
-    fromPhase: string;
-    toPhase: string;
+    fromState: string;
+    toState: string;
     fromStatus: string;
     toStatus: string;
   }): void;
@@ -486,13 +479,13 @@ function createFakeSource(
   let currentStatus = createProjectionTransportStatus('connected');
   const sentMessages: unknown[] = [];
   const askMessages: unknown[] = [];
-  const snapshotListeners = new Set<(projection: RuntimeGatewaySnapshotProjection) => void>();
-  const eventListeners = new Set<(projection: RuntimeGatewayEventProjection) => void>();
+  const snapshotListeners = new Set<(projection: ActorSnapshotProjection) => void>();
+  const eventListeners = new Set<(projection: ActorEventProjection) => void>();
   const statusListeners = new Set<(status: ProjectionTransportStatus) => void>();
   const transitionListeners = new Set<
     (transition: {
-      fromPhase: string;
-      toPhase: string;
+      fromState: string;
+      toState: string;
       fromStatus: string;
       toStatus: string;
     }) => void
@@ -588,7 +581,7 @@ function createThrowingUnsubscribeSource() {
 
   return {
     ...base,
-    subscribeSnapshot(listener: (projection: RuntimeGatewaySnapshotProjection) => void) {
+    subscribeSnapshot(listener: (projection: ActorSnapshotProjection) => void) {
       state.snapshots += 1;
       listener(base.snapshot());
       return () => {
@@ -596,7 +589,7 @@ function createThrowingUnsubscribeSource() {
         throw new Error('snapshot unsubscribe failed');
       };
     },
-    subscribeEvent(listener: (projection: RuntimeGatewayEventProjection) => void) {
+    subscribeEvent(listener: (projection: ActorEventProjection) => void) {
       state.events += 1;
       return () => {
         state.events -= 1;
@@ -611,13 +604,13 @@ function createThrowingUnsubscribeSource() {
         listener(createProjectionTransportStatus('disconnected'));
       };
     },
-    subscribeTransition(listener: (transition: RuntimeGatewayTransitionRecord) => void) {
+    subscribeTransition(listener: (transition: ActorTransitionRecord) => void) {
       state.transitions += 1;
       return () => {
         state.transitions -= 1;
         listener({
-          fromPhase: 'ready',
-          toPhase: 'closed',
+          fromState: 'ready',
+          toState: 'closed',
           fromStatus: 'running',
           toStatus: 'stopped',
         });
@@ -640,14 +633,14 @@ function createThrowingSubscribeSource() {
 
   return {
     ...base,
-    subscribeSnapshot(listener: (projection: RuntimeGatewaySnapshotProjection) => void) {
+    subscribeSnapshot(listener: (projection: ActorSnapshotProjection) => void) {
       state.snapshots += 1;
       listener(base.snapshot());
       return () => {
         state.snapshots -= 1;
       };
     },
-    subscribeEvent(listener: (projection: RuntimeGatewayEventProjection) => void) {
+    subscribeEvent(listener: (projection: ActorEventProjection) => void) {
       void listener;
       throw new Error('event subscribe failed');
     },
@@ -658,13 +651,13 @@ function createThrowingSubscribeSource() {
         state.statuses -= 1;
       };
     },
-    subscribeTransition(listener: (transition: RuntimeGatewayTransitionRecord) => void) {
+    subscribeTransition(listener: (transition: ActorTransitionRecord) => void) {
       state.transitions += 1;
       return () => {
         state.transitions -= 1;
         listener({
-          fromPhase: 'ready',
-          toPhase: 'closed',
+          fromState: 'ready',
+          toState: 'closed',
           fromStatus: 'running',
           toStatus: 'stopped',
         });
@@ -684,15 +677,12 @@ describe('runtime gateway source', () => {
     actor.start();
 
     const source = createRuntimeGatewaySource(actor, {
-      workflowId: 'workflow-checkout',
-      taskId: 'task-checkout',
-      taskTitle: 'Checkout gateway stream',
       now: fixedNow,
     });
 
-    const snapshots: RuntimeGatewaySnapshotProjection[] = [];
-    const events: RuntimeGatewayEventProjection[] = [];
-    const transitions: Array<{ fromPhase: string; toPhase: string }> = [];
+    const snapshots: ActorSnapshotProjection[] = [];
+    const events: ActorEventProjection[] = [];
+    const transitions: Array<{ fromState: string; toState: string }> = [];
     const statuses: string[] = [];
 
     const unsubscribeSnapshot = source.subscribeSnapshot((projection) => {
@@ -703,8 +693,8 @@ describe('runtime gateway source', () => {
     });
     const unsubscribeTransition = source.subscribeTransition?.((transition) => {
       transitions.push({
-        fromPhase: transition.fromPhase,
-        toPhase: transition.toPhase,
+        fromState: transition.fromState,
+        toState: transition.toState,
       });
     });
     const unsubscribeStatus = source.subscribeTransportStatus((status) => {
@@ -719,18 +709,15 @@ describe('runtime gateway source', () => {
     unsubscribeStatus();
     await actor.stop();
 
-    const workflowSnapshot: RuntimeGatewayWorkflowSnapshot = source.snapshot().workflowSnapshot;
+    const snapshot: ActorRuntimeSnapshot = source.snapshot().snapshot;
 
-    expect(workflowSnapshot).toMatchObject({
-      workflowId: 'workflow-checkout',
-      taskId: 'task-checkout',
-      taskTitle: 'Checkout gateway stream',
-      phase: 'submitted',
+    expect(snapshot).toMatchObject({
+      stateLabel: 'submitted',
       status: 'stopped',
     });
     expect(source.transportStatus().state).toBe('local');
     expect(statuses).toEqual(['local']);
-    expect(snapshots.map((projection) => projection.workflowSnapshot.phase)).toEqual([
+    expect(snapshots.map((projection) => projection.snapshot.stateLabel)).toEqual([
       'ready',
       'submitted',
     ]);
@@ -739,10 +726,8 @@ describe('runtime gateway source', () => {
       kind: 'fact',
       type: 'CHECKOUT_SUBMITTED',
       sourceActor: '/actors/gateway-checkout',
-      workflowId: 'workflow-checkout',
-      taskId: 'task-checkout',
     });
-    expect(transitions).toEqual([{ fromPhase: 'ready', toPhase: 'submitted' }]);
+    expect(transitions).toEqual([{ fromState: 'ready', toState: 'submitted' }]);
   });
 
   it('separates read-model gateway sources from explicit command sources', async () => {
@@ -760,7 +745,7 @@ describe('runtime gateway source', () => {
     await commandSource.send?.({ type: 'SUBMIT', orderId: 'order-explicit-command' });
     await actor.stop();
 
-    expect(readModel.snapshot().workflowSnapshot.phase).toBe('submitted');
+    expect(readModel.snapshot().snapshot.stateLabel).toBe('submitted');
   });
 
   it('supports snapshot-only actor refs without emitted-event subscriptions', () => {
@@ -797,14 +782,14 @@ describe('runtime gateway source', () => {
     } as unknown as ActorRef<CheckoutContext, CheckoutCommand>;
 
     const source = createRuntimeGatewayReadModelSource(actor, { now: fixedNow });
-    const events: RuntimeGatewayEventProjection[] = [];
+    const events: ActorEventProjection[] = [];
     const unsubscribeEvent = source.subscribeEvent((event) => {
       events.push(event);
     });
 
     unsubscribeEvent();
 
-    expect(source.snapshot().workflowSnapshot.phase).toBe('ready');
+    expect(source.snapshot().snapshot.stateLabel).toBe('ready');
     expect(events).toEqual([]);
   });
 });
@@ -1268,16 +1253,16 @@ describe('runtime gateway hub', () => {
       streamId: 'fleet-main',
       sequence: 1,
       projection: {
-        workflowSnapshot: {
-          phase: 'ready',
+        snapshot: {
+          stateLabel: 'ready',
         },
       },
     });
 
     source.emitEvent(createGatewayEvent(source, 'InspectionProgressRecorded'));
     source.emitTransition({
-      fromPhase: 'ready',
-      toPhase: 'submitted',
+      fromState: 'ready',
+      toState: 'submitted',
       fromStatus: 'running',
       toStatus: 'running',
     });
@@ -1301,8 +1286,8 @@ describe('runtime gateway hub', () => {
       streamId: 'fleet-main',
       sequence: 3,
       transition: {
-        fromPhase: 'ready',
-        toPhase: 'submitted',
+        fromState: 'ready',
+        toState: 'submitted',
       },
     });
     expect(connection.frames.slice(statusFrameCountBeforeResync)).toMatchObject([
@@ -1323,8 +1308,8 @@ describe('runtime gateway hub', () => {
         streamId: 'fleet-main',
         sequence: 3,
         transition: {
-          fromPhase: 'ready',
-          toPhase: 'submitted',
+          fromState: 'ready',
+          toState: 'submitted',
         },
       },
       {
@@ -1650,8 +1635,8 @@ describe('runtime gateway hub', () => {
 
     source.emitEvent(createGatewayEvent(source, 'InspectionProgressRecorded'));
     source.emitTransition({
-      fromPhase: 'ready',
-      toPhase: 'submitted',
+      fromState: 'ready',
+      toState: 'submitted',
       fromStatus: 'running',
       toStatus: 'running',
     });
@@ -1752,8 +1737,8 @@ describe('runtime gateway hub', () => {
       streamId,
       sequence: 3,
       projection: {
-        workflowSnapshot: {
-          phase: 'submitted',
+        snapshot: {
+          stateLabel: 'submitted',
         },
       },
     });
@@ -1790,8 +1775,8 @@ describe('runtime gateway hub', () => {
 
     firstSource.emitEvent(createGatewayEvent(firstSource, 'InspectionProgressRecorded'));
     firstSource.emitTransition({
-      fromPhase: 'ready',
-      toPhase: 'submitted',
+      fromState: 'ready',
+      toState: 'submitted',
       fromStatus: 'running',
       toStatus: 'running',
     });
@@ -1827,8 +1812,8 @@ describe('runtime gateway hub', () => {
       streamId: 'fleet-main',
       sequence: 4,
       projection: {
-        workflowSnapshot: {
-          phase: 'submitted',
+        snapshot: {
+          stateLabel: 'submitted',
         },
       },
     });
@@ -1930,8 +1915,8 @@ describe('runtime gateway hub', () => {
       streamId: 'fleet-main',
       sequence: 1,
       projection: {
-        workflowSnapshot: {
-          phase: 'submitted',
+        snapshot: {
+          stateLabel: 'submitted',
         },
       },
     });
@@ -2027,8 +2012,8 @@ describe('runtime gateway hub', () => {
       streamId,
       sequence: 1,
       projection: {
-        workflowSnapshot: {
-          phase: 'submitted',
+        snapshot: {
+          stateLabel: 'submitted',
         },
       },
     });
@@ -2107,8 +2092,8 @@ describe('runtime gateway hub', () => {
       streamId: 'fleet-main',
       sequence: 1,
       projection: {
-        workflowSnapshot: {
-          phase: 'submitted',
+        snapshot: {
+          stateLabel: 'submitted',
         },
       },
     });
@@ -2182,8 +2167,8 @@ describe('runtime gateway hub', () => {
 
     source.emitEvent(createGatewayEvent(source, 'InspectionProgressRecorded'));
     source.emitTransition({
-      fromPhase: 'ready',
-      toPhase: 'submitted',
+      fromState: 'ready',
+      toState: 'submitted',
       fromStatus: 'running',
       toStatus: 'running',
     });
@@ -2246,8 +2231,8 @@ describe('runtime gateway hub', () => {
 
     source.emitEvent(createGatewayEvent(source, 'InspectionProgressRecorded'));
     source.emitTransition({
-      fromPhase: 'ready',
-      toPhase: 'submitted',
+      fromState: 'ready',
+      toState: 'submitted',
       fromStatus: 'running',
       toStatus: 'running',
     });
@@ -2395,8 +2380,8 @@ describe('runtime gateway hub', () => {
       sequence: 1,
       projection: {
         address: createGatewayAddress('new-scope'),
-        workflowSnapshot: {
-          phase: 'submitted',
+        snapshot: {
+          stateLabel: 'submitted',
         },
       },
     });
@@ -2476,8 +2461,8 @@ describe('runtime gateway hub', () => {
         streamId,
         sequence: 9,
         transition: {
-          fromPhase: 'ready',
-          toPhase: 'submitted',
+          fromState: 'ready',
+          toState: 'submitted',
           fromStatus: 'running',
           toStatus: 'running',
         },
@@ -2509,8 +2494,8 @@ describe('runtime gateway hub', () => {
       sequence: 1,
       projection: {
         address: createGatewayAddress('new-scope'),
-        workflowSnapshot: {
-          phase: 'submitted',
+        snapshot: {
+          stateLabel: 'submitted',
         },
       },
     });
@@ -2641,8 +2626,8 @@ describe('runtime gateway hub', () => {
       sequence: 1,
       projection: {
         address: createGatewayAddress(sharedActorKey),
-        workflowSnapshot: {
-          phase: 'submitted',
+        snapshot: {
+          stateLabel: 'submitted',
         },
       },
     });

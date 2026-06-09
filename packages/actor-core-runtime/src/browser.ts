@@ -101,29 +101,9 @@ export {
   verifyRuntimeGatewayAuth,
 } from './runtime-auth.js';
 export type {
-  ActorMessageRecord as RuntimeGatewayActorMessageRecord,
-  ActorMessageToRuntimeGatewayEventEnvelopeOptions,
-  ActorRuntimeProjection,
-  ActorSnapshotToRuntimeGatewayWorkflowSnapshotInput,
-  ActorSnapshotTransitionInput as RuntimeGatewaySnapshotTransitionInput,
-  RuntimeGatewayEventEnvelope,
-  RuntimeGatewayEventProjection,
-  RuntimeGatewaySnapshotProjection,
-  RuntimeGatewayTransitionRecord,
-  RuntimeGatewayWorkflowSnapshot,
-} from './runtime-gateway-projection.js';
-export {
-  actorMessageToRuntimeGatewayEventEnvelope,
-  actorRuntimeProjectionToActorSnapshot,
-  actorSnapshotsToRuntimeGatewayTransitionRecord,
-  actorSnapshotToRuntimeGatewayWorkflowSnapshot,
-  deriveRuntimeGatewayPhase,
-  runtimeGatewayEventPayload,
-} from './runtime-gateway-projection.js';
-export type {
+  ActorProjectionEventKind,
   RuntimeGatewayClientFrame,
   RuntimeGatewayErrorCode,
-  RuntimeGatewayEventKind,
   RuntimeGatewayScopeDescriptor,
   RuntimeGatewayServerFrame,
   RuntimeGatewaySourceHandle,
@@ -141,6 +121,26 @@ export {
   createRuntimePeerDiscoveryRecord,
   createStaticRuntimePeerDiscoveryProvider,
 } from './runtime-peer-discovery.js';
+export type {
+  ActorEventEnvelope,
+  ActorEventEnvelopeOptions,
+  ActorEventProjection,
+  ActorMessageRecord as RuntimeGatewayActorMessageRecord,
+  ActorRuntimeProjection,
+  ActorRuntimeSnapshot,
+  ActorRuntimeSnapshotInput,
+  ActorSnapshotProjection,
+  ActorTransitionInput as RuntimeGatewaySnapshotTransitionInput,
+  ActorTransitionRecord,
+} from './runtime-projection.js';
+export {
+  actorEventPayload,
+  actorMessageToEventEnvelope,
+  actorRuntimeProjectionToActorSnapshot,
+  actorSnapshotsToTransitionRecord,
+  actorSnapshotToRuntimeSnapshot,
+  deriveStateLabel,
+} from './runtime-projection.js';
 export type {
   RuntimeNodeIdentity,
   RuntimeTransportAckFrame,

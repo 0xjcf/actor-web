@@ -1,11 +1,11 @@
 import type { ProjectionTransportStatus } from './projection-transport.js';
 import type { RuntimeTransportAuthPayload } from './runtime-auth.js';
 import type {
-  RuntimeGatewayEventKind,
-  RuntimeGatewayEventProjection,
-  RuntimeGatewaySnapshotProjection,
-  RuntimeGatewayTransitionRecord,
-} from './runtime-gateway-projection.js';
+  ActorEventProjection,
+  ActorProjectionEventKind,
+  ActorSnapshotProjection,
+  ActorTransitionRecord,
+} from './runtime-projection.js';
 import type { Message } from './types.js';
 
 export interface RuntimeGatewayScopeDescriptor {
@@ -48,19 +48,19 @@ export type RuntimeGatewayServerFrame =
       type: 'snapshot';
       streamId: string;
       sequence: number;
-      projection: RuntimeGatewaySnapshotProjection;
+      projection: ActorSnapshotProjection;
     }
   | {
       type: 'event';
       streamId: string;
       sequence: number;
-      projection: RuntimeGatewayEventProjection;
+      projection: ActorEventProjection;
     }
   | {
       type: 'transition';
       streamId: string;
       sequence: number;
-      transition: RuntimeGatewayTransitionRecord;
+      transition: ActorTransitionRecord;
     }
   | {
       type: 'status';
@@ -114,4 +114,4 @@ export function createRuntimeGatewaySourceHandle<TSource, TCommandSource>(
 
 export type RuntimeGatewaySubscribeMode = 'full' | 'command-only';
 
-export type { RuntimeGatewayEventKind };
+export type { ActorProjectionEventKind };

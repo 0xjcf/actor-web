@@ -1,106 +1,97 @@
+/**
+ * @module actor-core/runtime/runtime-projection
+ * @description Neutral runtime projection contracts for cross-node snapshot/event
+ * replication and gateway projections. These shapes carry only generic actor
+ * runtime concepts (state value, status, state label, timestamps, event
+ * type/payload) — no workflow/task/command vocabulary. Application layers that
+ * need richer semantics map from these on their own side.
+ */
+
 import type { ActorAddress, ActorMessage } from './actor-system.js';
 import type { ActorSnapshot } from './types.js';
 
-export type RuntimeGatewayEventKind = 'command' | 'fact' | 'timer';
+export type ActorProjectionEventKind = 'command' | 'fact' | 'timer';
 
-export interface RuntimeGatewayEventEnvelope<
+export interface ActorEventEnvelope<
   TPayload extends Record<string, unknown> = Record<string, unknown>,
 > {
   id: string;
-  kind: RuntimeGatewayEventKind;
+  kind: ActorProjectionEventKind;
   type: string;
   schemaVersion: 1;
   occurredAt: string;
   sourceActor: string;
   targetActor?: string;
-  workflowId?: string;
-  taskId?: string;
   correlationId?: string;
   causationId?: string;
   payload: TPayload;
 }
 
-export interface RuntimeGatewayWorkflowSnapshot {
-  workflowId: string;
+export interface ActorRuntimeSnapshot {
   actorId: string;
-  taskId: string;
-  taskTitle: string;
-  phase: string;
   status: string;
+  stateLabel: string;
   createdAt: string;
   updatedAt: string;
-  branchName: string | null;
-  baseBranch: string | null;
   correlationId: string;
   lastEventType: string | null;
-  notes: string[];
-  artifacts: Record<string, string>;
 }
 
-export interface RuntimeGatewayTransitionRecord {
-  fromPhase: string;
-  toPhase: string;
+export interface ActorTransitionRecord {
+  fromState: string;
+  toState: string;
   fromStatus: string;
   toStatus: string;
 }
 
-export interface RuntimeGatewaySnapshotProjection<TContext = unknown> {
+export interface ActorSnapshotProjection<TContext = unknown> {
   address: ActorAddress;
-  workflowSnapshot: RuntimeGatewayWorkflowSnapshot;
+  snapshot: ActorRuntimeSnapshot;
   value: unknown;
   context: TContext;
 }
 
-export interface RuntimeGatewayEventProjection<
+export interface ActorEventProjection<
   TPayload extends Record<string, unknown> = Record<string, unknown>,
 > {
   address: ActorAddress;
-  envelope: RuntimeGatewayEventEnvelope<TPayload>;
+  envelope: ActorEventEnvelope<TPayload>;
 }
 
 export type ActorMessageRecord = ActorMessage<{ type: string } & Record<string, unknown>>;
 
-export interface ActorMessageToRuntimeGatewayEventEnvelopeOptions {
+export interface ActorEventEnvelopeOptions {
   id: string;
-  kind: RuntimeGatewayEventKind;
+  kind: ActorProjectionEventKind;
   occurredAt: string;
   sourceActor: string;
   targetActor?: string;
-  workflowId?: string;
-  taskId?: string;
   correlationId?: string;
   causationId?: string;
 }
 
-export interface ActorSnapshotToRuntimeGatewayWorkflowSnapshotInput<TContext = unknown> {
+export interface ActorRuntimeSnapshotInput<TContext = unknown> {
   snapshot: ActorSnapshot<TContext>;
-  workflowId: string;
   actorId: string;
-  taskId: string;
-  taskTitle: string;
   createdAt: string;
   updatedAt: string;
   correlationId: string;
-  phase?: string;
+  stateLabel?: string;
   status?: string;
-  branchName?: string | null;
-  baseBranch?: string | null;
   lastEventType?: string | null;
-  notes?: readonly string[];
-  artifacts?: Readonly<Record<string, string>>;
 }
 
-export interface ActorSnapshotTransitionInput {
+export interface ActorTransitionInput {
   fromSnapshot: Pick<ActorSnapshot, 'value' | 'status'>;
   toSnapshot: Pick<ActorSnapshot, 'value' | 'status'>;
-  fromPhase?: string;
-  toPhase?: string;
+  fromState?: string;
+  toState?: string;
   fromStatus?: string;
   toStatus?: string;
 }
 
 export interface ActorRuntimeProjection<TContext = unknown> {
-  workflowSnapshot: RuntimeGatewayWorkflowSnapshot;
+  snapshot: ActorRuntimeSnapshot;
   value: unknown;
   context: TContext;
 }
@@ -113,7 +104,7 @@ const ACTOR_ENVELOPE_FIELDS = new Set([
   '_sender',
 ]);
 
-export function runtimeGatewayEventPayload(message: ActorMessageRecord): Record<string, unknown> {
+export function actorEventPayload(message: ActorMessageRecord): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(message)) {
@@ -125,30 +116,24 @@ export function runtimeGatewayEventPayload(message: ActorMessageRecord): Record<
   return payload;
 }
 
-export function actorMessageToRuntimeGatewayEventEnvelope(
+export function actorMessageToEventEnvelope(
   message: ActorMessageRecord,
-  options: ActorMessageToRuntimeGatewayEventEnvelopeOptions
-): RuntimeGatewayEventEnvelope {
-  const envelope: RuntimeGatewayEventEnvelope = {
+  options: ActorEventEnvelopeOptions
+): ActorEventEnvelope {
+  const envelope: ActorEventEnvelope = {
     id: options.id,
     kind: options.kind,
     type: message.type,
     schemaVersion: 1,
     occurredAt: options.occurredAt,
     sourceActor: options.sourceActor,
-    payload: runtimeGatewayEventPayload(message),
+    payload: actorEventPayload(message),
   };
 
   const correlationId = message._correlationId ?? options.correlationId;
 
   if (options.targetActor !== undefined) {
     envelope.targetActor = options.targetActor;
-  }
-  if (options.workflowId !== undefined) {
-    envelope.workflowId = options.workflowId;
-  }
-  if (options.taskId !== undefined) {
-    envelope.taskId = options.taskId;
   }
   if (correlationId !== undefined) {
     envelope.correlationId = correlationId;
@@ -160,9 +145,7 @@ export function actorMessageToRuntimeGatewayEventEnvelope(
   return envelope;
 }
 
-export function runtimeGatewayEventEnvelopeToActorMessage(
-  envelope: RuntimeGatewayEventEnvelope
-): ActorMessageRecord {
+export function eventEnvelopeToActorMessage(envelope: ActorEventEnvelope): ActorMessageRecord {
   return {
     type: envelope.type,
     ...(envelope.payload ?? {}),
@@ -172,7 +155,7 @@ export function runtimeGatewayEventEnvelopeToActorMessage(
   };
 }
 
-export function deriveRuntimeGatewayPhase(value: unknown): string {
+export function deriveStateLabel(value: unknown): string {
   if (typeof value === 'string') {
     return value;
   }
@@ -186,7 +169,7 @@ export function deriveRuntimeGatewayPhase(value: unknown): string {
   }
 
   if (Array.isArray(value)) {
-    return value.length > 0 ? value.map(deriveRuntimeGatewayPhase).join('.') : 'array';
+    return value.length > 0 ? value.map(deriveStateLabel).join('.') : 'array';
   }
 
   if (typeof value === 'object') {
@@ -196,41 +179,32 @@ export function deriveRuntimeGatewayPhase(value: unknown): string {
       return 'object';
     }
 
-    return entries
-      .map(([key, childValue]) => `${key}.${deriveRuntimeGatewayPhase(childValue)}`)
-      .join('.');
+    return entries.map(([key, childValue]) => `${key}.${deriveStateLabel(childValue)}`).join('.');
   }
 
   return 'unknown';
 }
 
-export function actorSnapshotToRuntimeGatewayWorkflowSnapshot<TContext = unknown>(
-  input: ActorSnapshotToRuntimeGatewayWorkflowSnapshotInput<TContext>
-): RuntimeGatewayWorkflowSnapshot {
+export function actorSnapshotToRuntimeSnapshot<TContext = unknown>(
+  input: ActorRuntimeSnapshotInput<TContext>
+): ActorRuntimeSnapshot {
   return {
-    workflowId: input.workflowId,
     actorId: input.actorId,
-    taskId: input.taskId,
-    taskTitle: input.taskTitle,
-    phase: input.phase ?? deriveRuntimeGatewayPhase(input.snapshot.value),
     status: input.status ?? input.snapshot.status,
+    stateLabel: input.stateLabel ?? deriveStateLabel(input.snapshot.value),
     createdAt: input.createdAt,
     updatedAt: input.updatedAt,
-    branchName: input.branchName ?? null,
-    baseBranch: input.baseBranch ?? null,
     correlationId: input.correlationId,
     lastEventType: input.lastEventType ?? null,
-    notes: [...(input.notes ?? [])],
-    artifacts: { ...(input.artifacts ?? {}) },
   };
 }
 
-export function actorSnapshotsToRuntimeGatewayTransitionRecord(
-  input: ActorSnapshotTransitionInput
-): RuntimeGatewayTransitionRecord {
+export function actorSnapshotsToTransitionRecord(
+  input: ActorTransitionInput
+): ActorTransitionRecord {
   return {
-    fromPhase: input.fromPhase ?? deriveRuntimeGatewayPhase(input.fromSnapshot.value),
-    toPhase: input.toPhase ?? deriveRuntimeGatewayPhase(input.toSnapshot.value),
+    fromState: input.fromState ?? deriveStateLabel(input.fromSnapshot.value),
+    toState: input.toState ?? deriveStateLabel(input.toSnapshot.value),
     fromStatus: input.fromStatus ?? input.fromSnapshot.status,
     toStatus: input.toStatus ?? input.toSnapshot.status,
   };
@@ -241,14 +215,14 @@ export function actorRuntimeProjectionToActorSnapshot<TContext = unknown>(
 ): ActorSnapshot<TContext> {
   const value = projection.value;
   const context = projection.context;
-  const status = projection.workflowSnapshot.status as ActorSnapshot<TContext>['status'];
-  const phase = projection.workflowSnapshot.phase;
+  const status = projection.snapshot.status as ActorSnapshot<TContext>['status'];
+  const stateLabel = projection.snapshot.stateLabel;
 
   return {
     value,
     context,
     status,
-    matches: (state: string) => state === phase || state === deriveRuntimeGatewayPhase(value),
+    matches: (state: string) => state === stateLabel || state === deriveStateLabel(value),
     can: () => status === 'running',
     hasTag: () => false,
     toJSON: () => ({

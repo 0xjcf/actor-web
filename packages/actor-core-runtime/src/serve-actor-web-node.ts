@@ -394,9 +394,6 @@ export async function serveNode<TTopology extends ActorWebTopology<ActorWebTopol
     }
 
     return createRuntimeGatewaySource(actorRef, {
-      workflowId: actorKey,
-      taskId: actorDescriptor.address.id,
-      taskTitle: actorDescriptor.address.id,
       sourceActor: actorDescriptor.address.path,
     });
   };

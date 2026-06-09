@@ -5,10 +5,10 @@
 
 import type { ActorAddress, ActorMessage, ActorStats } from './actor-system.js';
 import type {
-  RuntimeGatewayEventEnvelope,
-  RuntimeGatewayTransitionRecord,
-  RuntimeGatewayWorkflowSnapshot,
-} from './runtime-gateway-projection.js';
+  ActorEventEnvelope,
+  ActorRuntimeSnapshot,
+  ActorTransitionRecord,
+} from './runtime-projection.js';
 
 export interface RuntimeDirectoryEntry {
   address: ActorAddress;
@@ -19,18 +19,18 @@ export interface RuntimeDirectoryEntry {
 
 export interface RuntimeSnapshotProjection<TContext = unknown> {
   address: ActorAddress;
-  workflowSnapshot: RuntimeGatewayWorkflowSnapshot;
+  snapshot: ActorRuntimeSnapshot;
   value: unknown;
   context: TContext;
   sequence: number;
-  transition?: RuntimeGatewayTransitionRecord;
+  transition?: ActorTransitionRecord;
 }
 
 export interface RuntimeEventProjection<
   TPayload extends Record<string, unknown> = Record<string, unknown>,
 > {
   address: ActorAddress;
-  envelope: RuntimeGatewayEventEnvelope<TPayload>;
+  envelope: ActorEventEnvelope<TPayload>;
   sequence: number;
 }
 

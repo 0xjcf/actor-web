@@ -6,15 +6,6 @@ import {
   type ProjectionTransportStatus,
 } from './projection-transport.js';
 import { type RuntimeGatewayAuthProvider, verifyRuntimeGatewayAuth } from './runtime-auth.js';
-import {
-  actorMessageToRuntimeGatewayEventEnvelope,
-  actorSnapshotsToRuntimeGatewayTransitionRecord,
-  actorSnapshotToRuntimeGatewayWorkflowSnapshot,
-  type RuntimeGatewayEventKind,
-  type RuntimeGatewayEventProjection,
-  type RuntimeGatewaySnapshotProjection,
-  type RuntimeGatewayTransitionRecord,
-} from './runtime-gateway-projection.js';
 import type {
   RuntimeGatewayClientFrame,
   RuntimeGatewayErrorCode,
@@ -22,16 +13,17 @@ import type {
   RuntimeGatewayServerFrame,
   RuntimeGatewaySubscribeMode,
 } from './runtime-gateway-shared.js';
+import {
+  type ActorEventProjection,
+  type ActorProjectionEventKind,
+  type ActorSnapshotProjection,
+  type ActorTransitionRecord,
+  actorMessageToEventEnvelope,
+  actorSnapshotsToTransitionRecord,
+  actorSnapshotToRuntimeSnapshot,
+} from './runtime-projection.js';
 import type { Message } from './types.js';
 
-export type {
-  RuntimeGatewayEventEnvelope,
-  RuntimeGatewayEventKind,
-  RuntimeGatewayEventProjection,
-  RuntimeGatewaySnapshotProjection,
-  RuntimeGatewayTransitionRecord,
-  RuntimeGatewayWorkflowSnapshot,
-} from './runtime-gateway-projection.js';
 export type {
   RuntimeGatewayClientFrame,
   RuntimeGatewayErrorCode,
@@ -41,6 +33,14 @@ export type {
   RuntimeGatewaySubscribeMode,
 } from './runtime-gateway-shared.js';
 export { createRuntimeGatewaySourceHandle } from './runtime-gateway-shared.js';
+export type {
+  ActorEventEnvelope,
+  ActorEventProjection,
+  ActorProjectionEventKind,
+  ActorRuntimeSnapshot,
+  ActorSnapshotProjection,
+  ActorTransitionRecord,
+} from './runtime-projection.js';
 
 export interface RuntimeGatewayConnectionAdapter<TAuthContext = unknown> {
   readonly authContext: TAuthContext;
@@ -70,12 +70,12 @@ export interface RuntimeGatewayObserverEvent {
 
 export interface RuntimeGatewayReadModelSource {
   readonly address: ActorAddress;
-  snapshot(): RuntimeGatewaySnapshotProjection;
-  subscribeSnapshot(listener: (projection: RuntimeGatewaySnapshotProjection) => void): () => void;
-  subscribeEvent(listener: (projection: RuntimeGatewayEventProjection) => void): () => void;
+  snapshot(): ActorSnapshotProjection;
+  subscribeSnapshot(listener: (projection: ActorSnapshotProjection) => void): () => void;
+  subscribeEvent(listener: (projection: ActorEventProjection) => void): () => void;
   transportStatus(): ProjectionTransportStatus;
   subscribeTransportStatus(listener: (status: ProjectionTransportStatus) => void): () => void;
-  subscribeTransition?(listener: (transition: RuntimeGatewayTransitionRecord) => void): () => void;
+  subscribeTransition?(listener: (transition: ActorTransitionRecord) => void): () => void;
 }
 
 export interface RuntimeGatewayCommandSource extends RuntimeGatewayReadModelSource {
@@ -91,11 +91,8 @@ export type RuntimeGatewayScopeResolver<TAuthContext = unknown> = (
 ) => Promise<RuntimeGatewaySource | null>;
 
 export interface CreateRuntimeGatewaySourceOptions {
-  workflowId?: string;
-  taskId?: string;
-  taskTitle?: string;
   correlationId?: string;
-  eventKind?: RuntimeGatewayEventKind;
+  eventKind?: ActorProjectionEventKind;
   sourceActor?: string;
   now?: () => Date;
 }
@@ -166,17 +163,14 @@ export function createRuntimeGatewayReadModelSource(
 
   const toSnapshotProjection = (
     snapshot: ReturnType<typeof actorRef.getSnapshot>
-  ): RuntimeGatewaySnapshotProjection => {
+  ): ActorSnapshotProjection => {
     const updatedAt = (options.now ?? (() => new Date()))().toISOString();
 
     return {
       address: actorRef.address,
-      workflowSnapshot: actorSnapshotToRuntimeGatewayWorkflowSnapshot({
+      snapshot: actorSnapshotToRuntimeSnapshot({
         snapshot,
-        workflowId: options.workflowId ?? actorRef.address.path,
         actorId: actorRef.address.id,
-        taskId: options.taskId ?? actorRef.address.id,
-        taskTitle: options.taskTitle ?? actorRef.address.id,
         createdAt,
         updatedAt,
         correlationId: options.correlationId ?? actorRef.address.path,
@@ -187,20 +181,18 @@ export function createRuntimeGatewayReadModelSource(
     };
   };
 
-  const toEventProjection = (event: ActorMessage): RuntimeGatewayEventProjection => {
+  const toEventProjection = (event: ActorMessage): ActorEventProjection => {
     lastEventType = event.type;
 
     return {
       address: actorRef.address,
-      envelope: actorMessageToRuntimeGatewayEventEnvelope(
+      envelope: actorMessageToEventEnvelope(
         event as unknown as ActorMessage & Record<string, unknown>,
         {
           id: randomUUID(),
           kind: options.eventKind ?? 'fact',
           occurredAt: (options.now ?? (() => new Date()))().toISOString(),
           sourceActor: options.sourceActor ?? actorRef.address.path,
-          workflowId: options.workflowId,
-          taskId: options.taskId,
           correlationId: options.correlationId,
         }
       ),
@@ -209,19 +201,17 @@ export function createRuntimeGatewayReadModelSource(
 
   return {
     address: actorRef.address,
-    snapshot(): RuntimeGatewaySnapshotProjection {
+    snapshot(): ActorSnapshotProjection {
       return toSnapshotProjection(actorRef.getSnapshot());
     },
-    subscribeSnapshot(
-      listener: (projection: RuntimeGatewaySnapshotProjection) => void
-    ): () => void {
+    subscribeSnapshot(listener: (projection: ActorSnapshotProjection) => void): () => void {
       listener(toSnapshotProjection(actorRef.getSnapshot()));
 
       return subscribeActorSnapshot((snapshot) => {
         listener(toSnapshotProjection(snapshot));
       });
     },
-    subscribeEvent(listener: (projection: RuntimeGatewayEventProjection) => void): () => void {
+    subscribeEvent(listener: (projection: ActorEventProjection) => void): () => void {
       if (typeof actorRef.subscribeEvent !== 'function') {
         return () => {};
       }
@@ -240,9 +230,7 @@ export function createRuntimeGatewayReadModelSource(
     subscribeTransportStatus(listener: (status: ProjectionTransportStatus) => void): () => void {
       return subscribeTransportStatus(actorRef, listener);
     },
-    subscribeTransition(
-      listener: (transition: RuntimeGatewayTransitionRecord) => void
-    ): () => void {
+    subscribeTransition(listener: (transition: ActorTransitionRecord) => void): () => void {
       let previousSnapshot: ReturnType<typeof actorRef.getSnapshot> | null = actorRef.getSnapshot();
 
       return subscribeActorSnapshot((snapshot) => {
@@ -251,14 +239,14 @@ export function createRuntimeGatewayReadModelSource(
           return;
         }
 
-        const transition = actorSnapshotsToRuntimeGatewayTransitionRecord({
+        const transition = actorSnapshotsToTransitionRecord({
           fromSnapshot: previousSnapshot,
           toSnapshot: snapshot,
         });
         previousSnapshot = snapshot;
 
         if (
-          transition.fromPhase === transition.toPhase &&
+          transition.fromState === transition.toState &&
           transition.fromStatus === transition.toStatus
         ) {
           return;
@@ -304,7 +292,7 @@ type RuntimeGatewayStreamState = {
   source: RuntimeGatewaySource;
   sequence: number;
   replayFrames: RuntimeGatewayReplayFrame[];
-  lastSnapshot: RuntimeGatewaySnapshotProjection | null;
+  lastSnapshot: ActorSnapshotProjection | null;
   unsubscribeSnapshot: () => void;
   unsubscribeEvent: () => void;
   unsubscribeStatus: () => void;
@@ -775,7 +763,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
 
       const latestSnapshotFromFrames = (
         frames: RuntimeGatewayReplayFrame[]
-      ): RuntimeGatewaySnapshotProjection | null => {
+      ): ActorSnapshotProjection | null => {
         for (let index = frames.length - 1; index >= 0; index -= 1) {
           const frame = frames[index];
           if (frame?.type === 'snapshot') {

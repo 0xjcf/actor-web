@@ -1,17 +1,17 @@
 /**
- * @module actor-core/runtime/unit/runtime-gateway-projection.test
+ * @module actor-core/runtime/unit/runtime-projection.test
  * @description Coverage for the neutral runtime projection/envelope mappings.
  */
 
 import { describe, expect, it } from 'vitest';
 import {
-  actorMessageToRuntimeGatewayEventEnvelope,
-  actorSnapshotsToRuntimeGatewayTransitionRecord,
-  actorSnapshotToRuntimeGatewayWorkflowSnapshot,
-  deriveRuntimeGatewayPhase,
-  runtimeGatewayEventEnvelopeToActorMessage,
-  runtimeGatewayEventPayload,
-} from '../runtime-gateway-projection.js';
+  actorEventPayload,
+  actorMessageToEventEnvelope,
+  actorSnapshotsToTransitionRecord,
+  actorSnapshotToRuntimeSnapshot,
+  deriveStateLabel,
+  eventEnvelopeToActorMessage,
+} from '../runtime-projection.js';
 import type { ActorSnapshot } from '../types.js';
 
 function createSnapshot(
@@ -29,11 +29,11 @@ function createSnapshot(
   };
 }
 
-describe('runtime gateway projection mappings', () => {
-  it('maps Actor-Web messages to runtime event envelopes', () => {
+describe('runtime projection mappings', () => {
+  it('maps Actor-Web messages to neutral event envelopes', () => {
     const message = {
-      type: 'WORKFLOW_COMMAND',
-      taskId: 'task-1',
+      type: 'SHIPMENT_DISPATCHED',
+      lane: 'east',
       retry: false,
       _timestamp: 101,
       _version: '1',
@@ -41,31 +41,27 @@ describe('runtime gateway projection mappings', () => {
       _sender: { id: 'actor-1', type: 'worker', path: '/actor-1' },
     };
 
-    const envelope = actorMessageToRuntimeGatewayEventEnvelope(message, {
+    const envelope = actorMessageToEventEnvelope(message, {
       id: 'event-1',
       kind: 'command',
       occurredAt: '2026-04-22T12:00:00.000Z',
       sourceActor: 'actor-1',
       targetActor: 'actor-2',
-      workflowId: 'workflow-1',
-      taskId: 'task-1',
       causationId: 'cause-1',
     });
 
-    expect(envelope).toMatchObject({
+    expect(envelope).toEqual({
       id: 'event-1',
       kind: 'command',
-      type: 'WORKFLOW_COMMAND',
+      type: 'SHIPMENT_DISPATCHED',
       schemaVersion: 1,
       occurredAt: '2026-04-22T12:00:00.000Z',
       sourceActor: 'actor-1',
       targetActor: 'actor-2',
-      workflowId: 'workflow-1',
-      taskId: 'task-1',
       correlationId: 'corr-1',
       causationId: 'cause-1',
+      payload: { lane: 'east', retry: false },
     });
-    expect(envelope.payload).toEqual({ taskId: 'task-1', retry: false });
   });
 
   it('round-trips an envelope back to an Actor-Web message', () => {
@@ -77,20 +73,20 @@ describe('runtime gateway projection mappings', () => {
       _correlationId: 'corr-2',
       _sender: { id: 'actor-2', type: 'system', path: '/actor-2' },
     };
-    const envelope = actorMessageToRuntimeGatewayEventEnvelope(message, {
+    const envelope = actorMessageToEventEnvelope(message, {
       id: 'event-2',
       kind: 'fact',
       occurredAt: '2026-04-22T12:00:00.000Z',
       sourceActor: 'actor-2',
     });
-    const restored = runtimeGatewayEventEnvelopeToActorMessage(envelope);
+    const restored = eventEnvelopeToActorMessage(envelope);
 
     expect(restored).toMatchObject({ type: 'FACT_RECORDED', value: 42, _correlationId: 'corr-2' });
   });
 
   it('strips Actor-Web envelope fields from event payloads', () => {
     expect(
-      runtimeGatewayEventPayload({
+      actorEventPayload({
         type: 'FACT_RECORDED',
         value: 42,
         _timestamp: 200,
@@ -101,57 +97,43 @@ describe('runtime gateway projection mappings', () => {
     ).toEqual({ value: 42 });
   });
 
-  it('maps Actor-Web snapshots to runtime workflow snapshots', () => {
-    const snapshot = actorSnapshotToRuntimeGatewayWorkflowSnapshot({
+  it('maps Actor-Web snapshots to neutral runtime snapshots', () => {
+    const snapshot = actorSnapshotToRuntimeSnapshot({
       snapshot: createSnapshot({ review: 'running' }),
-      workflowId: 'workflow-1',
       actorId: 'actor-1',
-      taskId: 'task-1',
-      taskTitle: 'Align contracts',
       createdAt: '2026-04-22T11:00:00.000Z',
       updatedAt: '2026-04-22T12:00:00.000Z',
       correlationId: 'corr-1',
-      branchName: 'fas/contracts',
-      baseBranch: 'main',
-      lastEventType: 'WORKFLOW_COMMAND',
-      notes: ['ready for verification'],
-      artifacts: { review: 'docs/spikes/actor-web-adr-003-fas-integration-review.md' },
+      lastEventType: 'SHIPMENT_DISPATCHED',
     });
 
     expect(snapshot).toEqual({
-      workflowId: 'workflow-1',
       actorId: 'actor-1',
-      taskId: 'task-1',
-      taskTitle: 'Align contracts',
-      phase: 'review.running',
       status: 'running',
+      stateLabel: 'review.running',
       createdAt: '2026-04-22T11:00:00.000Z',
       updatedAt: '2026-04-22T12:00:00.000Z',
-      branchName: 'fas/contracts',
-      baseBranch: 'main',
       correlationId: 'corr-1',
-      lastEventType: 'WORKFLOW_COMMAND',
-      notes: ['ready for verification'],
-      artifacts: { review: 'docs/spikes/actor-web-adr-003-fas-integration-review.md' },
+      lastEventType: 'SHIPMENT_DISPATCHED',
     });
   });
 
-  it('maps Actor-Web snapshot transitions to runtime transition records', () => {
-    const transition = actorSnapshotsToRuntimeGatewayTransitionRecord({
+  it('maps Actor-Web snapshot transitions to neutral transition records', () => {
+    const transition = actorSnapshotsToTransitionRecord({
       fromSnapshot: createSnapshot('queued', 'idle'),
       toSnapshot: createSnapshot('running', 'running'),
     });
 
     expect(transition).toEqual({
-      fromPhase: 'queued',
-      toPhase: 'running',
+      fromState: 'queued',
+      toState: 'running',
       fromStatus: 'idle',
       toStatus: 'running',
     });
   });
 
-  it('derives readable phases without runtime effects', () => {
-    expect(deriveRuntimeGatewayPhase({ parent: { child: 'ready' } })).toBe('parent.child.ready');
-    expect(deriveRuntimeGatewayPhase(null)).toBe('unknown');
+  it('derives readable state labels without runtime effects', () => {
+    expect(deriveStateLabel({ parent: { child: 'ready' } })).toBe('parent.child.ready');
+    expect(deriveStateLabel(null)).toBe('unknown');
   });
 });
