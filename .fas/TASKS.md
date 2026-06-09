@@ -885,9 +885,9 @@
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
-### Task: Stabilize the Ignite source contract as public API of @actor-core/runtime
+### Task: Stabilize the Ignite source contract (neutral actor-web source API; adapter owned by ignite-element)
 
-- Title: Stabilize the Ignite source contract as public API of @actor-core/runtime
+- Title: Stabilize the Ignite source contract (neutral actor-web source API; adapter owned by ignite-element)
 - Mode: single-agent
 - Status: queued
 - Owner: runtime
@@ -1129,6 +1129,24 @@
 - Owner: runtime
 - Brief: .fas/tasks/publish-the-first-npm-release-of-actor-web-runtime-test.md
 - Automation mode: advisory
+
+### Task: [fas-studio] Fix extensionless ESM relative imports in actor-system-guardian (breaks Node ESM consumers)
+
+- Title: [fas-studio] Fix extensionless ESM relative imports in actor-system-guardian (breaks Node ESM consumers)
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/fas-studio-fix-extensionless-esm-relative-imports-in-actor.md
+
+### Task: Neutralize actor-web runtime projection/transport contract and remove the FAS bridge + @franchise dependency
+
+- Title: Neutralize actor-web runtime projection/transport contract and remove the FAS bridge + @franchise dependency
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/neutralize-actor-web-runtime-projection-transport-contract-a.md
+- Automation mode: advisory
+
 ## Template
 
 ### Task: `<short task title>`

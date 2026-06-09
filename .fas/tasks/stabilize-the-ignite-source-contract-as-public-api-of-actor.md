@@ -1,4 +1,4 @@
-# Stabilize the Ignite source contract as public API of @actor
+# Stabilize the Ignite source contract (neutral actor-web source API; adapter owned by ignite-element)
 
 ## Source
 
@@ -6,7 +6,7 @@ Created with `fas create-task` on 2026-06-06.
 
 ## Problem
 
-Cross-repo alignment with ignite-element (spike: ../ignite-element/.fas/state/spikes/agent-runtime-api-review.md, decisions C8/C9/C12). The IgniteReadModelSource/IgniteCommandSource/IgniteActorSourceSnapshot types in packages/actor-core-runtime/src/integration/ignite-element-bridge.ts are about to become the single source of truth that ignite-element imports (it will delete its hand-copy and add @actor-core/runtime as an optional peerDep). Actions: (1) confirm these types + the ClosableActorWeb* extensions are intentionally exported from the package index as stable public API; (2) C9 — ensure IgniteActorSourceSnapshot (or its ActorSnapshot base) declares the optional source-native helpers matches?/can?/hasTag? so ignite consumes them from one place; (3) C12 — standardize source teardown on close() (keep stop() for adapter lifecycle only); (4) add a contract-conformance test so drift breaks the build; (5) changeset + release so ignite-element can depend on the published version.
+REFRAMED by docs/actor-web-decoupling-design.md (2026-06-09). Original plan made actor-web the source of truth for Ignite*types with ignite-element importing actor-web as a peerDep — WRONG direction: it makes ignite-element depend on actor-web and breaks 'ignite-element usable standalone'. Correct design: (1) actor-web exposes NEUTRAL source types (rename Ignite* -> Actor*: ActorReadModelSource/ActorCommandSource/ActorSource) and DELETES integration/ignite-element-bridge.ts; actor-web no longer references Ignite. (2) ignite-element KEEPS its @ignite-element/adapters ActorWebAdapter as the canonical seam owner. (3) Define the source shape once: either keep ignite's structural hand-copy (zero dep), or have @ignite-element/adapters import actor-web's neutral source types as an OPTIONAL peerDependency (adapters package only — ignite-element CORE stays standalone). Either way the dependency edge is ignite-adapters -> actor-web, never ignite-core -> actor-web. This task now covers the actor-web side: neutralize the source API + delete the ignite bridge. See the design doc for the full cross-repo plan.
 
 ## Automation admission
 
