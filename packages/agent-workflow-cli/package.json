@@ -1,6 +1,7 @@
 {
   "name": "@actor-web/cli",
   "version": "0.1.0-alpha",
+  "private": true,
   "description": "Agent-centric development workflow automation",
   "main": "dist/index.js",
   "type": "module",
