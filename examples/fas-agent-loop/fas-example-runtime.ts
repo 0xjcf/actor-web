@@ -4,7 +4,7 @@ import type {
   ClosableActorWebSource,
 } from '@actor-web/runtime/browser';
 import type { ServedActorWebNode } from '@actor-web/runtime/node';
-import { serveActorWebNode } from '@actor-web/runtime/node';
+import { serveNode } from '@actor-web/runtime/node';
 import type {
   FasAgentRole,
   FasPatch,
@@ -209,12 +209,12 @@ export async function startFasAgentLoopExample(
   options: FasAgentLoopExampleOptions = {}
 ): Promise<FasAgentLoopExampleRuntime> {
   const tools = createDeterministicFasTools(options.tools);
-  const worker = await serveActorWebNode(fasAgentLoop, {
+  const worker = await serveNode(fasAgentLoop, {
     node: 'worker',
     transport: true,
     tools: tools.registry,
   });
-  const coordinator = await serveActorWebNode(fasAgentLoop, {
+  const coordinator = await serveNode(fasAgentLoop, {
     node: 'coordinator',
     transport: true,
     peers: {

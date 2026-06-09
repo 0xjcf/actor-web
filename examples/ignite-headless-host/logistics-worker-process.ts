@@ -6,7 +6,7 @@ import {
   createStaticRuntimePeerDiscoveryProvider,
   type RuntimeTransportTelemetryExporter,
   type ServedActorWebNode,
-  serveActorWebNode,
+  serveNode,
 } from '@actor-web/runtime/node';
 import { logistics } from './logistics-topology';
 
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
       url: serverTransportUrl,
     },
   ]);
-  const worker = await serveActorWebNode(logistics, {
+  const worker = await serveNode(logistics, {
     node: 'worker',
     host: process.env.ACTOR_WEB_HOST ?? '127.0.0.1',
     transport: {

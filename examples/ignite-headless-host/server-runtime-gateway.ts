@@ -12,7 +12,7 @@ import {
   type ServedActorWebHttp,
   type ServedActorWebNode,
   serveActorWebHttp,
-  serveActorWebNode,
+  serveNode,
 } from '@actor-web/runtime/node';
 import type {
   DispatcherCommand,
@@ -1066,7 +1066,7 @@ export function createLogisticsRuntimeGatewayServer(
         return;
       }
 
-      servedNode = await serveActorWebNode(logistics, {
+      servedNode = await serveNode(logistics, {
         node: 'server',
         host: options.host ?? '127.0.0.1',
         transport: {

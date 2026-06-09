@@ -30,7 +30,7 @@ export type ActorWebNodeActorHandle<TActor> = ActorWebActorInstanceParams<TActor
 /**
  * Low-level actor handles for a single started topology node.
  * Product proofs that want Ignite-friendly local read-model/command sources
- * should use startActorWebLocalRuntime(...) from actor-web-client instead of
+ * should use startRuntime(...) from actor-web-client instead of
  * adapting these handles by hand.
  */
 export type ActorWebNodeActorHandles<TTopology extends ActorWebTopology<ActorWebTopologyInput>> = {

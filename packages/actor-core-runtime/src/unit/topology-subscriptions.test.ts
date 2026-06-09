@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { emit, setup } from 'xstate';
-import { startActorWebLocalRuntime } from '../actor-web-client.js';
+import { startRuntime } from '../actor-web-client.js';
 import { actor, defineActorWebTopology, node } from '../topology.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
@@ -49,7 +49,7 @@ describe('topology declarative subscriptions', () => {
       subscriptions: [{ from: 'emitter', to: 'collector', events: ['PONG'] }],
     });
 
-    const runtime = await startActorWebLocalRuntime(topology);
+    const runtime = await startRuntime(topology);
     try {
       await runtime.requireActor('emitter').send({ type: 'PING' });
       await runtime.nodes.local?.system.flush();
@@ -71,7 +71,7 @@ describe('topology declarative subscriptions', () => {
       subscriptions: [{ from: 'emitter', to: ['collectorA', 'collectorB'], events: ['PONG'] }],
     });
 
-    const runtime = await startActorWebLocalRuntime(topology);
+    const runtime = await startRuntime(topology);
     try {
       await runtime.requireActor('emitter').send({ type: 'PING' });
       await runtime.nodes.local?.system.flush();

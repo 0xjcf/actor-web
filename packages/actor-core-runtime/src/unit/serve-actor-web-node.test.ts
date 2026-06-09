@@ -8,7 +8,7 @@ import {
   createInMemoryRuntimeTransportTelemetrySink,
   createRuntimeTransportTelemetryExporter,
 } from '../runtime-transport-telemetry.js';
-import { serveActorWebNode } from '../serve-actor-web-node.js';
+import { serveNode } from '../serve-actor-web-node.js';
 import { actor, defineActorWebTopology, node, tool } from '../topology.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
@@ -107,7 +107,7 @@ async function waitFor<T>(
   throw new Error(message);
 }
 
-describe('serveActorWebNode', () => {
+describe('serveNode', () => {
   it('starts a topology node, spawns owned actors, and exposes a gateway source', async () => {
     const topology = defineActorWebTopology({
       nodes: {
@@ -129,7 +129,7 @@ describe('serveActorWebNode', () => {
       },
     });
 
-    const served = await serveActorWebNode(topology, {
+    const served = await serveNode(topology, {
       node: 'server',
       transport: true,
       gateway: true,
@@ -201,7 +201,7 @@ describe('serveActorWebNode', () => {
       },
     });
 
-    const served = await serveActorWebNode(topology, {
+    const served = await serveNode(topology, {
       node: 'server',
       gateway: {
         auth: {
@@ -263,7 +263,7 @@ describe('serveActorWebNode', () => {
       },
     });
 
-    const served = await serveActorWebNode(topology, {
+    const served = await serveNode(topology, {
       node: 'server',
       gateway: true,
     });
@@ -305,7 +305,7 @@ describe('serveActorWebNode', () => {
       },
     });
 
-    const served = await serveActorWebNode(topology, {
+    const served = await serveNode(topology, {
       node: 'server',
       gateway: {
         inboundQueueLimit: 0,
@@ -388,11 +388,11 @@ describe('serveActorWebNode', () => {
       },
     });
 
-    const worker = await serveActorWebNode(topology, {
+    const worker = await serveNode(topology, {
       node: 'worker',
       transport: true,
     });
-    const served = await serveActorWebNode(topology, {
+    const served = await serveNode(topology, {
       node: 'server',
       transport: true,
       peers: {
@@ -460,7 +460,7 @@ describe('serveActorWebNode', () => {
       },
     });
 
-    await expect(serveActorWebNode(topology, { node: 'server' })).rejects.toThrow(
+    await expect(serveNode(topology, { node: 'server' })).rejects.toThrow(
       'does not declare behavior'
     );
   });
@@ -483,7 +483,7 @@ describe('serveActorWebNode', () => {
     const unregisterSelf = vi.fn(async () => undefined);
 
     await expect(
-      serveActorWebNode(topology, {
+      serveNode(topology, {
         node: 'server',
         transport: true,
         gateway: true,
@@ -517,7 +517,7 @@ describe('serveActorWebNode', () => {
       },
     });
 
-    const served = await serveActorWebNode(topology, {
+    const served = await serveNode(topology, {
       node: 'server',
       tools: {
         'agent.echo': (input) => {
@@ -561,7 +561,7 @@ describe('serveActorWebNode', () => {
       },
     });
 
-    const served = await serveActorWebNode(topology, { node: 'server' });
+    const served = await serveNode(topology, { node: 'server' });
 
     try {
       expect(served.getActor('shipment')).toBeUndefined();
@@ -596,7 +596,7 @@ describe('serveActorWebNode', () => {
         }),
       },
     });
-    const served = await serveActorWebNode(topology, { node: 'server' });
+    const served = await serveNode(topology, { node: 'server' });
 
     await served.start();
     try {
@@ -643,7 +643,7 @@ describe('serveActorWebNode', () => {
         }),
       },
     });
-    const served = await serveActorWebNode(topology, {
+    const served = await serveNode(topology, {
       node: 'server',
       transport: true,
     });
@@ -684,7 +684,7 @@ describe('serveActorWebNode', () => {
       },
     });
     const discovery = createInMemoryRuntimePeerDiscoveryProvider();
-    const served = await serveActorWebNode(topology, {
+    const served = await serveNode(topology, {
       node: 'server',
       transport: true,
       discovery,
@@ -724,11 +724,11 @@ describe('serveActorWebNode', () => {
         }),
       },
     });
-    const worker = await serveActorWebNode(topology, {
+    const worker = await serveNode(topology, {
       node: 'worker',
       transport: true,
     });
-    const served = await serveActorWebNode(topology, {
+    const served = await serveNode(topology, {
       node: 'server',
       transport: true,
       peers: {
@@ -774,7 +774,7 @@ describe('serveActorWebNode', () => {
       },
     });
     const idempotencyProvider = createInMemoryRuntimeTransportIdempotencyProvider();
-    const served = await serveActorWebNode(topology, {
+    const served = await serveNode(topology, {
       node: 'server',
       transport: {
         listen: true,
@@ -818,11 +818,11 @@ describe('serveActorWebNode', () => {
         }),
       },
     });
-    const worker = await serveActorWebNode(topology, {
+    const worker = await serveNode(topology, {
       node: 'worker',
       transport: true,
     });
-    const served = await serveActorWebNode(topology, {
+    const served = await serveNode(topology, {
       node: 'server',
       transport: true,
       peers: {
@@ -881,14 +881,14 @@ describe('serveActorWebNode', () => {
         }),
       },
     });
-    const worker = await serveActorWebNode(topology, {
+    const worker = await serveNode(topology, {
       node: 'worker',
       transport: {
         listen: true,
         heartbeatIntervalMs: 0,
       },
     });
-    const served = await serveActorWebNode(topology, {
+    const served = await serveNode(topology, {
       node: 'server',
       transport: {
         listen: true,
@@ -929,7 +929,7 @@ describe('serveActorWebNode', () => {
     });
     const sink = createInMemoryRuntimeTransportTelemetrySink();
     const exporter = createRuntimeTransportTelemetryExporter({ sink });
-    const served = await serveActorWebNode(topology, {
+    const served = await serveNode(topology, {
       node: 'server',
       transport: {
         listen: true,

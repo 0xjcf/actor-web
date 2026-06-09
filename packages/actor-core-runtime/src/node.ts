@@ -85,4 +85,4 @@ export type {
   ServeActorWebNodeOptions,
   ServedActorWebNode,
 } from './serve-actor-web-node.js';
-export { serveActorWebNode } from './serve-actor-web-node.js';
+export { serveNode } from './serve-actor-web-node.js';

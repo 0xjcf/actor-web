@@ -281,7 +281,7 @@ function wait(delayMs: number): Promise<void> {
   });
 }
 
-export async function serveActorWebNode<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
+export async function serveNode<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
   topology: TTopology,
   options: ServeActorWebNodeOptions<TTopology>
 ): Promise<ServedActorWebNode<TTopology>> {

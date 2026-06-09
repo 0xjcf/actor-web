@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   type ActorWebLocalRuntimeSourceOptions,
   type StartedActorWebLocalRuntime,
-  startActorWebLocalRuntime,
+  startRuntime,
 } from '../actor-web-client.js';
 import type {
   ClosableActorWebReadModelSource,
@@ -67,10 +67,10 @@ function createLogisticsTopology() {
   });
 }
 
-describe('startActorWebLocalRuntime', () => {
+describe('startRuntime', () => {
   it('starts a local topology and exposes top-level Ignite read-model and command sources', async () => {
     const logistics = createLogisticsTopology();
-    const runtime = await startActorWebLocalRuntime(logistics);
+    const runtime = await startRuntime(logistics);
 
     try {
       const sourceHandle = runtime.dashboard.sourceHandle({ host: new EventTarget() });
@@ -107,7 +107,7 @@ describe('startActorWebLocalRuntime', () => {
 
   it('cleans local source subscriptions and stops all started nodes', async () => {
     const logistics = createLogisticsTopology();
-    const runtime = await startActorWebLocalRuntime(logistics);
+    const runtime = await startRuntime(logistics);
     const readModel = runtime.dashboard.readModel();
     const commandSource = runtime.dashboard.commandSource();
     const snapshots: ShipmentContext[] = [];
@@ -131,8 +131,7 @@ describe('startActorWebLocalRuntime', () => {
 
   it('supports AbortSignal cleanup and preserves actor source inference', async () => {
     const logistics = createLogisticsTopology();
-    const runtime: StartedActorWebLocalRuntime<typeof logistics> =
-      await startActorWebLocalRuntime(logistics);
+    const runtime: StartedActorWebLocalRuntime<typeof logistics> = await startRuntime(logistics);
     const controller = new AbortController();
     const options: ActorWebLocalRuntimeSourceOptions = { signal: controller.signal };
 
@@ -175,7 +174,7 @@ describe('startActorWebLocalRuntime', () => {
 
   it('routes runtime topology source factories through the existing local source-handle cleanup path', async () => {
     const logistics = createLogisticsTopology();
-    const runtime = await startActorWebLocalRuntime(logistics);
+    const runtime = await startRuntime(logistics);
 
     try {
       const sourceFactory = runtime.topology.source('dashboard');

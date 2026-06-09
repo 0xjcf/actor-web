@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { startActorWebLocalRuntime } from '../actor-web-client.js';
+import { startRuntime } from '../actor-web-client.js';
 import { actor, defineActorWebTopology, node } from '../topology.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
@@ -20,7 +20,7 @@ describe('actor() accepts a plain built behavior value (no factory)', () => {
       },
     });
 
-    const runtime = await startActorWebLocalRuntime(topology);
+    const runtime = await startRuntime(topology);
     try {
       const counter = runtime.requireActor('counter');
       await counter.send({ type: 'INCREMENT' });
@@ -47,7 +47,7 @@ describe('actor() accepts a plain built behavior value (no factory)', () => {
       },
     });
 
-    const runtime = await startActorWebLocalRuntime(topology);
+    const runtime = await startRuntime(topology);
     try {
       const counter = runtime.requireActor('counter');
       await counter.send({ type: 'INCREMENT' });

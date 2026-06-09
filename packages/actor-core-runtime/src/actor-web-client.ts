@@ -407,9 +407,7 @@ export function createActorWebReadModelClient<
   };
 }
 
-export async function startActorWebLocalRuntime<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
->(
+export async function startRuntime<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
   topology: TTopology,
   options: StartActorWebLocalRuntimeOptions<TTopology> = {}
 ): Promise<StartedActorWebLocalRuntime<TTopology>> {

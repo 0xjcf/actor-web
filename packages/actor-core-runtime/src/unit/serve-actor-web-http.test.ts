@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { createServer } from 'node:http';
 import { describe, expect, it, vi } from 'vitest';
 import { serveActorWebHttp } from '../serve-actor-web-http.js';
-import { serveActorWebNode } from '../serve-actor-web-node.js';
+import { serveNode } from '../serve-actor-web-node.js';
 import { actor, defineActorWebTopology, node } from '../topology.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
@@ -78,7 +78,7 @@ class FakeHttpServer extends EventEmitter {
 
 describe('serveActorWebHttp', () => {
   it('serves route-first HTTP handlers with topology actors and response helpers', async () => {
-    const runtime = await serveActorWebNode(topology, { node: 'server' });
+    const runtime = await serveNode(topology, { node: 'server' });
     const http = await serveActorWebHttp(runtime)
       .post('/counters/:id', async (request, response, { actors }) => {
         const body = request.body as { amount?: number };
@@ -113,7 +113,7 @@ describe('serveActorWebHttp', () => {
   });
 
   it('infers a selected actor for .for() bound routes', async () => {
-    const runtime = await serveActorWebNode(topology, { node: 'server' });
+    const runtime = await serveNode(topology, { node: 'server' });
     const http = await serveActorWebHttp(runtime)
       .for(topology.actors.counter)
       .put('/counter', async (request, response, { actor }) => {

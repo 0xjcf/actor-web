@@ -56,7 +56,7 @@ export type {
 export {
   createActorWebClient,
   createActorWebReadModelClient,
-  startActorWebLocalRuntime,
+  startRuntime,
 } from './actor-web-client.js';
 export {
   type BackoffStrategy,
