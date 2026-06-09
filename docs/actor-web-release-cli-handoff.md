@@ -119,21 +119,23 @@ stable `latest` exists (this is why ignite-element can ship `3.0.0-beta.3`). You
 stale).** Then remove `private: true`, add cli to the changeset `fixed` group,
 align its version (`0.1.0-alpha`→`0.1.0`), and it can join a later release. Run
 `pnpm --filter @actor-web/cli test`. Three clusters:
-   - **`src/actors/git-actor.test.ts` (29)** — `gitActor.start/.stop/.send/.getSnapshot
-     is not a function`. `createGitActor(baseDir)` returns a **behavior**
-     (`defineBehavior()…`); the real CLI (`src/core/cli-actor-system.ts`)
-     correctly does `system.spawn(createGitActor())` → `ActorRef`. The tests are
-     stale (old class-actor API). Rewrite them to spawn the behavior via
-     `createActorSystem` and assert the `ActorRef` (or test
-     `cliSystem.createGitActor()` which returns an `ActorRef`).
-   - **`src/integration/cli-commands.test.ts` (7)** — `ReferenceError: log is not
-     defined` (test bug: `log.debug` used without importing/defining `log`) +
-     `Command failed: npx tsx …/cli/index.ts --version|--help` (the CLI entry
-     fails to run via tsx — investigate ESM in `src/cli/index.ts`; likely a
-     `require`-in-ESM or extensionless-import issue).
-   - **`src/commands/ship.test.ts` (5)** — "Loop Detection" state-machine
-     transition tests; investigate.
-   Do this on a `fas/fix-cli-tests` branch + PR. Keep `verify.sh --full` green.
+
+- **`src/actors/git-actor.test.ts` (29)** — `gitActor.start/.stop/.send/.getSnapshot
+  is not a function`. `createGitActor(baseDir)` returns a **behavior**
+  (`defineBehavior()…`); the real CLI (`src/core/cli-actor-system.ts`) correctly
+  does `system.spawn(createGitActor())` → `ActorRef`. The tests are stale (old
+  class-actor API). Rewrite them to spawn the behavior via `createActorSystem`
+  and assert the `ActorRef` (or test `cliSystem.createGitActor()` which returns
+  an `ActorRef`).
+- **`src/integration/cli-commands.test.ts` (7)** — `ReferenceError: log is not
+  defined` (test bug: `log.debug` used without importing/defining `log`) +
+  `Command failed: npx tsx …/cli/index.ts --version|--help` (the CLI entry fails
+  to run via tsx — investigate ESM in `src/cli/index.ts`; likely a
+  `require`-in-ESM or extensionless-import issue).
+- **`src/commands/ship.test.ts` (5)** — "Loop Detection" state-machine
+  transition tests; investigate.
+
+Do this on a `fas/fix-cli-tests` branch + PR. Keep `verify.sh --full` green.
 
 **2. Docs (actor-web-local, low cross-repo).** The queue has: "Docs: ignite-element
    integration surface" and "Docs: headless agent runtime page + refresh ignite
@@ -144,18 +146,19 @@ align its version (`0.1.0-alpha`→`0.1.0`), and it can join a later release. Ru
    test:docs`) type-checks every ```ts twoslash``` fence.
 
 **3. Cross-repo `[decouple]` adoption (in the sibling repos, after publish).**
-   See `docs/actor-web-decoupling-design.md` §"Per-repo task breakdown":
-   - `../fas`: move `@actor-core/runtime`→`@actor-web/runtime` as an
-     `optionalDependency`/`peerDependency` (its `src/runtime/actor-web/fas-task-bridge.ts`
-     already lazy-resolves it); rewrite the bridge to map actor-web's **neutral**
-     projections/events ↔ `@franchise/shared-contracts`. Tagged `[decouple]` in
-     `../fas`'s queue.
-   - `../ignite-element`: keep its `@ignite-element/adapters` `ActorWebAdapter` as
-     the seam owner; optionally consume actor-web's neutral source types as an
-     optional peerDep in the adapters package only (never ignite-core). Tagged
-     `[decouple]` in `../ignite-element`'s queue.
-   - `../fas-studio`: update imports (it consumes all three). Has rename + ESM
-     chips already.
+See `docs/actor-web-decoupling-design.md` §"Per-repo task breakdown":
+
+- `../fas`: move `@actor-core/runtime`→`@actor-web/runtime` as an
+  `optionalDependency`/`peerDependency` (its
+  `src/runtime/actor-web/fas-task-bridge.ts` already lazy-resolves it); rewrite
+  the bridge to map actor-web's **neutral** projections/events ↔
+  `@franchise/shared-contracts`. Tagged `[decouple]` in `../fas`'s queue.
+- `../ignite-element`: keep its `@ignite-element/adapters` `ActorWebAdapter` as
+  the seam owner; optionally consume actor-web's neutral source types as an
+  optional peerDep in the adapters package only (never ignite-core). Tagged
+  `[decouple]` in `../ignite-element`'s queue.
+- `../fas-studio`: update imports (it consumes all three). Has rename + ESM
+  chips already.
 
 **4. Optional**: dismiss the marginal "Add batch `subscribers[]` overload" queue
    task; consider a **Changesets GitHub Action** so releases happen via a
