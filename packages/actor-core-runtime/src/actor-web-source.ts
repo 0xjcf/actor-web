@@ -1,12 +1,12 @@
 import type { ActorEventSubscriptionOptions } from './actor-ref.js';
 import type { ActorAddress, ActorMessage } from './actor-system.js';
 import {
-  actorSnapshotToIgniteSourceSnapshot,
-  type IgniteActorSourceEvent,
-  type IgniteActorSourceSnapshot,
-  type IgniteCommandSource,
-  type IgniteReadModelSource,
-} from './integration/ignite-element-bridge.js';
+  type ActorCommandSource,
+  type ActorReadModelSource,
+  type ActorSourceEvent,
+  type ActorSourceSnapshot,
+  actorSnapshotToSourceSnapshot,
+} from './integration/actor-source.js';
 import {
   createProjectionTransportStatus,
   type ProjectionTransportStatus,
@@ -94,9 +94,9 @@ export interface ActorWebActorSourceInput<TActor extends ActorWebActorDescriptor
 export interface ClosableActorWebReadModelSource<
   TContext = unknown,
   TEvent extends ActorMessage = ActorMessage,
-> extends IgniteReadModelSource<TContext, TEvent> {
+> extends ActorReadModelSource<TContext, TEvent> {
   /**
-   * Closes the client projection source. Ignite Element adapters should treat
+   * Closes the client projection source. projection-source adapters should treat
    * this as the Actor-Web cleanup hook when they own a source instance.
    */
   close(): void;
@@ -104,7 +104,7 @@ export interface ClosableActorWebReadModelSource<
 
 /**
  * Command-capable source for hosts that intentionally own command/control.
- * Prefer ClosableActorWebReadModelSource for projection-only Ignite components
+ * Prefer ClosableActorWebReadModelSource for projection-only components
  * and pair it with this surface only when send/ask is part of the component API.
  */
 export interface ClosableActorWebCommandSource<
@@ -112,7 +112,7 @@ export interface ClosableActorWebCommandSource<
   TMessage extends ActorMessage = ActorMessage,
   TEvent extends ActorMessage = ActorMessage,
 > extends ClosableActorWebReadModelSource<TContext, TEvent>,
-    IgniteCommandSource<TContext, TMessage, TEvent> {}
+    ActorCommandSource<TContext, TMessage, TEvent> {}
 
 export type ClosableActorWebSource<
   TContext = unknown,
@@ -184,7 +184,7 @@ function normalizeAddress(address: string | ActorWebActorAddress | ActorAddress)
   };
 }
 
-function placeholderSnapshot<TContext>(address: ActorAddress): IgniteActorSourceSnapshot<TContext> {
+function placeholderSnapshot<TContext>(address: ActorAddress): ActorSourceSnapshot<TContext> {
   const snapshot: ActorSnapshot<TContext> = {
     context: undefined as TContext,
     value: 'unknown',
@@ -199,7 +199,7 @@ function placeholderSnapshot<TContext>(address: ActorAddress): IgniteActorSource
     }),
   };
 
-  return actorSnapshotToIgniteSourceSnapshot(address, snapshot);
+  return actorSnapshotToSourceSnapshot(address, snapshot);
 }
 
 function mergeScope(
@@ -226,10 +226,10 @@ function mergeScope(
   };
 }
 
-function snapshotProjectionToIgniteSnapshot<TContext>(
+function snapshotProjectionToSourceSnapshot<TContext>(
   projection: RuntimeGatewaySnapshotProjection<TContext>
-): IgniteActorSourceSnapshot<TContext> {
-  return actorSnapshotToIgniteSourceSnapshot(projection.address, {
+): ActorSourceSnapshot<TContext> {
+  return actorSnapshotToSourceSnapshot(projection.address, {
     context: projection.context,
     value: projection.value,
     status: projection.workflowSnapshot.status as ActorSnapshot<TContext>['status'],
@@ -244,9 +244,9 @@ function snapshotProjectionToIgniteSnapshot<TContext>(
   });
 }
 
-function eventProjectionToIgniteEvent<TEvent extends ActorMessage>(
+function eventProjectionToSourceEvent<TEvent extends ActorMessage>(
   projection: RuntimeGatewayEventProjection
-): IgniteActorSourceEvent<TEvent> {
+): ActorSourceEvent<TEvent> {
   const event = {
     type: projection.envelope.type,
     ...(projection.envelope.payload ?? {}),
@@ -340,9 +340,9 @@ function createGatewayBackedSource<
   const socket = (options.createSocket ?? defaultSocket)(options.gateway.url);
   const subscribeMode = behavior.subscribeMode ?? 'full';
   const readyOnStatus = behavior.readyOnStatus ?? false;
-  const snapshotListeners = new Set<(snapshot: IgniteActorSourceSnapshot<TContext>) => void>();
+  const snapshotListeners = new Set<(snapshot: ActorSourceSnapshot<TContext>) => void>();
   const eventListeners = new Set<{
-    listener: (event: IgniteActorSourceEvent<TEvent>) => void;
+    listener: (event: ActorSourceEvent<TEvent>) => void;
     types?: readonly string[];
   }>();
   const statusListeners = new Set<(status: ProjectionTransportStatus) => void>();
@@ -377,7 +377,7 @@ function createGatewayBackedSource<
     }
   };
 
-  const emitEvent = (event: IgniteActorSourceEvent<TEvent>): void => {
+  const emitEvent = (event: ActorSourceEvent<TEvent>): void => {
     for (const subscriber of Array.from(eventListeners)) {
       if (
         subscriber.types &&
@@ -507,7 +507,7 @@ function createGatewayBackedSource<
         if (!acceptSequence(frame)) {
           return;
         }
-        currentSnapshot = snapshotProjectionToIgniteSnapshot(
+        currentSnapshot = snapshotProjectionToSourceSnapshot(
           frame.projection as RuntimeGatewaySnapshotProjection<TContext>
         );
         resolveReady?.();
@@ -519,7 +519,7 @@ function createGatewayBackedSource<
         if (!acceptSequence(frame)) {
           return;
         }
-        emitEvent(eventProjectionToIgniteEvent<TEvent>(frame.projection));
+        emitEvent(eventProjectionToSourceEvent<TEvent>(frame.projection));
         return;
       case 'status':
         if (frame.status.state !== 'replaying') {

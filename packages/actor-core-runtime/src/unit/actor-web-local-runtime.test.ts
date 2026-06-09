@@ -68,7 +68,7 @@ function createLogisticsTopology() {
 }
 
 describe('startRuntime', () => {
-  it('starts a local topology and exposes top-level Ignite read-model and command sources', async () => {
+  it('starts a local topology and exposes top-level read-model and command sources', async () => {
     const logistics = createLogisticsTopology();
     const runtime = await startRuntime(logistics);
 

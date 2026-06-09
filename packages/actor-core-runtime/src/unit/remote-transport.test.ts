@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { setup } from 'xstate';
 import { ActorSystemImpl } from '../actor-system-impl.js';
-import { createIgniteActorSource } from '../integration/ignite-element-bridge.js';
+import { createActorSource } from '../integration/actor-source.js';
 import { createRuntimeNodeIdentity } from '../runtime-transport-contract.js';
 import {
   createInMemoryMessageTransportNetwork,
@@ -142,9 +142,7 @@ describe('remote runtime transport', () => {
       throw new Error('Expected remote ref after directory sync');
     }
 
-    const source = createIgniteActorSource<CheckoutContext, CheckoutMessage, CheckoutEvent>(
-      remoteRef
-    );
+    const source = createActorSource<CheckoutContext, CheckoutMessage, CheckoutEvent>(remoteRef);
     const snapshots: Array<{ phase: string; count: number; status: string }> = [];
     const events: string[] = [];
     const statuses: string[] = [];
@@ -263,9 +261,7 @@ describe('remote runtime transport', () => {
       throw new Error('Expected remote ref for reconnect test');
     }
 
-    const source = createIgniteActorSource<CheckoutContext, CheckoutMessage, CheckoutEvent>(
-      remoteRef
-    );
+    const source = createActorSource<CheckoutContext, CheckoutMessage, CheckoutEvent>(remoteRef);
     const statuses: string[] = [];
     const events: string[] = [];
     const unsubscribeStatus = source.subscribeTransportStatus((status) => {
@@ -327,9 +323,7 @@ describe('remote runtime transport', () => {
       throw new Error('Expected remote ref for gap test');
     }
 
-    const source = createIgniteActorSource<CheckoutContext, CheckoutMessage, CheckoutEvent>(
-      remoteRef
-    );
+    const source = createActorSource<CheckoutContext, CheckoutMessage, CheckoutEvent>(remoteRef);
     const statuses: string[] = [];
     const unsubscribeStatus = source.subscribeTransportStatus((status) => {
       statuses.push(status.state);

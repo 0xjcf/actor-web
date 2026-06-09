@@ -2,10 +2,7 @@
 
 import 'ignite-element/renderers/ignite-jsx';
 
-import {
-  createProjectionTransportStatus,
-  type IgniteActorSource,
-} from '@actor-web/runtime/browser';
+import { type ActorSource, createProjectionTransportStatus } from '@actor-web/runtime/browser';
 import { igniteCore } from 'ignite-element/actor-web';
 import styles from './ignite-headless-host-element.css?raw';
 import {
@@ -24,7 +21,7 @@ interface RuntimeStatusCommand {
   readonly type: 'REFRESH_RUNTIME_STATUS';
 }
 
-type RuntimeStatusSource = IgniteActorSource<
+type RuntimeStatusSource = ActorSource<
   LogisticsRuntimeStatusView,
   RuntimeStatusCommand,
   { type: 'RUNTIME_STATUS_REFRESHED' }

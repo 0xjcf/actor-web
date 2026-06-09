@@ -50,26 +50,26 @@ export {
 } from './actor-web-source.js';
 export { createActorRef } from './create-actor-ref.js';
 export type {
-  CreateIgniteActorSourceOptions,
+  ActorCommandSource,
+  ActorReadModelSource,
+  ActorSource,
+  ActorSourceEvent,
+  ActorSourceSnapshot,
+  CreateActorSourceOptions,
   EventSubscribableActorRef,
-  IgniteActorSource,
-  IgniteActorSourceEvent,
-  IgniteActorSourceSnapshot,
-  IgniteCommandSource,
-  IgniteReadModelSource,
   SnapshotSubscribableActorRef,
   TransportStatusSubscribableActorRef,
-} from './integration/ignite-element-bridge.js';
+} from './integration/actor-source.js';
 export {
-  actorEventToIgniteSourceEvent,
-  actorSnapshotToIgniteSourceSnapshot,
-  createIgniteActorSource,
-  createIgniteCommandSource,
-  createIgniteReadModelSource,
+  actorEventToSourceEvent,
+  actorSnapshotToSourceSnapshot,
+  createActorCommandSource,
+  createActorReadModelSource,
+  createActorSource,
   isEventSubscribableActorRef,
   isSnapshotSubscribableActorRef,
   isTransportStatusSubscribableActorRef,
-} from './integration/ignite-element-bridge.js';
+} from './integration/actor-source.js';
 export type {
   MessagePortTransport,
   MessagePortTransportEnvelope,

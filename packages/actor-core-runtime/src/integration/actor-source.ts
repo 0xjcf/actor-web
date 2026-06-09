@@ -1,9 +1,10 @@
 /**
- * @module actor-core/runtime/integration/ignite-element-bridge
- * @description Minimal host bridge for ignite-element style adapters.
+ * @module actor-core/runtime/integration/actor-source
+ * @description Neutral actor source: read-model and command source factories for
+ * projection/UI host adapters.
  *
- * This bridge keeps Actor-Web responsible for actor lifecycle, typed commands, and
- * runtime snapshots while letting host layers derive their own UI projections.
+ * Keeps Actor-Web responsible for actor lifecycle, typed commands, and runtime
+ * snapshots while letting host layers derive their own UI projections.
  * It can also accept explicit remote snapshot/event transport for foreign sources
  * or non-Actor-Web runtimes that do not participate in the runtime node registry.
  */
@@ -17,43 +18,43 @@ import {
 import { deriveRuntimeGatewayPhase } from '../runtime-gateway-projection.js';
 import type { ActorSnapshot, JsonValue, Message } from '../types.js';
 
-export interface IgniteActorSourceSnapshot<TContext = unknown> extends ActorSnapshot<TContext> {
+export interface ActorSourceSnapshot<TContext = unknown> extends ActorSnapshot<TContext> {
   address: ActorAddress;
   phase: string;
   toJSON(): object;
 }
 
-export interface IgniteReadModelSource<
+export interface ActorReadModelSource<
   TContext = unknown,
   TEvent extends ActorMessage = ActorMessage,
 > {
   readonly address: ActorAddress;
-  snapshot(): IgniteActorSourceSnapshot<TContext>;
-  subscribe(listener: (snapshot: IgniteActorSourceSnapshot<TContext>) => void): () => void;
+  snapshot(): ActorSourceSnapshot<TContext>;
+  subscribe(listener: (snapshot: ActorSourceSnapshot<TContext>) => void): () => void;
   subscribeEvent(
-    listener: (event: IgniteActorSourceEvent<TEvent>) => void,
+    listener: (event: ActorSourceEvent<TEvent>) => void,
     options?: ActorEventSubscriptionOptions
   ): () => void;
   transportStatus(): ProjectionTransportStatus;
   subscribeTransportStatus(listener: (status: ProjectionTransportStatus) => void): () => void;
 }
 
-export interface IgniteCommandSource<
+export interface ActorCommandSource<
   TContext = unknown,
   TMessage extends ActorMessage = ActorMessage,
   TEvent extends ActorMessage = ActorMessage,
-> extends IgniteReadModelSource<TContext, TEvent> {
+> extends ActorReadModelSource<TContext, TEvent> {
   send(message: TMessage): Promise<void>;
   ask<TResponse = JsonValue>(message: TMessage, timeout?: number): Promise<TResponse>;
 }
 
-export type IgniteActorSource<
+export type ActorSource<
   TContext = unknown,
   TMessage extends ActorMessage = ActorMessage,
   TEvent extends ActorMessage = ActorMessage,
-> = IgniteCommandSource<TContext, TMessage, TEvent>;
+> = ActorCommandSource<TContext, TMessage, TEvent>;
 
-export type IgniteActorSourceEvent<TEvent extends ActorMessage = ActorMessage> = TEvent & {
+export type ActorSourceEvent<TEvent extends ActorMessage = ActorMessage> = TEvent & {
   address: ActorAddress;
   toJSON(): object;
 };
@@ -84,7 +85,7 @@ export interface TransportStatusSubscribableActorRef<
   subscribeTransportStatus(listener: (status: ProjectionTransportStatus) => void): () => void;
 }
 
-export interface CreateIgniteActorSourceOptions<
+export interface CreateActorSourceOptions<
   TContext = unknown,
   TEvent extends ActorMessage = ActorMessage,
 > {
@@ -127,10 +128,10 @@ export function isTransportStatusSubscribableActorRef<
   );
 }
 
-export function actorSnapshotToIgniteSourceSnapshot<TContext = unknown>(
+export function actorSnapshotToSourceSnapshot<TContext = unknown>(
   address: ActorAddress,
   snapshot: ActorSnapshot<TContext>
-): IgniteActorSourceSnapshot<TContext> {
+): ActorSourceSnapshot<TContext> {
   const phase = deriveRuntimeGatewayPhase(snapshot.value);
 
   return {
@@ -145,10 +146,10 @@ export function actorSnapshotToIgniteSourceSnapshot<TContext = unknown>(
   };
 }
 
-export function actorEventToIgniteSourceEvent<TEvent extends ActorMessage = ActorMessage>(
+export function actorEventToSourceEvent<TEvent extends ActorMessage = ActorMessage>(
   address: ActorAddress,
   event: TEvent
-): IgniteActorSourceEvent<TEvent> {
+): ActorSourceEvent<TEvent> {
   return {
     ...event,
     address,
@@ -159,14 +160,14 @@ export function actorEventToIgniteSourceEvent<TEvent extends ActorMessage = Acto
   };
 }
 
-export function createIgniteReadModelSource<
+export function createActorReadModelSource<
   TContext = unknown,
   TMessage extends ActorMessage = ActorMessage,
   TEvent extends ActorMessage = ActorMessage,
 >(
   actorRef: ActorRef<TContext, TMessage>,
-  options: CreateIgniteActorSourceOptions<TContext, TEvent> = {}
-): IgniteReadModelSource<TContext, TEvent> {
+  options: CreateActorSourceOptions<TContext, TEvent> = {}
+): ActorReadModelSource<TContext, TEvent> {
   const getSnapshot = options.getSnapshot ?? actorRef.getSnapshot.bind(actorRef);
   const subscribeSnapshot =
     options.subscribeSnapshot ??
@@ -194,34 +195,34 @@ export function createIgniteReadModelSource<
 
   if (!subscribeSnapshot) {
     throw new Error(
-      'ActorRef does not expose snapshot subscriptions. Pass createIgniteActorSource(..., { getSnapshot, subscribeSnapshot }) or use a ref that exposes subscribeSnapshot().'
+      'ActorRef does not expose snapshot subscriptions. Pass createActorSource(..., { getSnapshot, subscribeSnapshot }) or use a ref that exposes subscribeSnapshot().'
     );
   }
 
   return {
     address: actorRef.address,
-    snapshot(): IgniteActorSourceSnapshot<TContext> {
-      return actorSnapshotToIgniteSourceSnapshot(actorRef.address, getSnapshot());
+    snapshot(): ActorSourceSnapshot<TContext> {
+      return actorSnapshotToSourceSnapshot(actorRef.address, getSnapshot());
     },
-    subscribe(listener: (snapshot: IgniteActorSourceSnapshot<TContext>) => void): () => void {
-      listener(actorSnapshotToIgniteSourceSnapshot(actorRef.address, getSnapshot()));
+    subscribe(listener: (snapshot: ActorSourceSnapshot<TContext>) => void): () => void {
+      listener(actorSnapshotToSourceSnapshot(actorRef.address, getSnapshot()));
 
       return subscribeSnapshot((snapshot) => {
-        listener(actorSnapshotToIgniteSourceSnapshot(actorRef.address, snapshot));
+        listener(actorSnapshotToSourceSnapshot(actorRef.address, snapshot));
       });
     },
     subscribeEvent(
-      listener: (event: IgniteActorSourceEvent<TEvent>) => void,
+      listener: (event: ActorSourceEvent<TEvent>) => void,
       eventOptions: ActorEventSubscriptionOptions = {}
     ): () => void {
       if (!subscribeActorEvent) {
         throw new Error(
-          'ActorRef does not expose emitted-event subscriptions. Pass createIgniteActorSource(..., { subscribeEvent }) or use a ref that exposes subscribeEvent().'
+          'ActorRef does not expose emitted-event subscriptions. Pass createActorSource(..., { subscribeEvent }) or use a ref that exposes subscribeEvent().'
         );
       }
 
       return subscribeActorEvent((event) => {
-        listener(actorEventToIgniteSourceEvent(actorRef.address, event));
+        listener(actorEventToSourceEvent(actorRef.address, event));
       }, eventOptions);
     },
     transportStatus(): ProjectionTransportStatus {
@@ -233,15 +234,15 @@ export function createIgniteReadModelSource<
   };
 }
 
-export function createIgniteCommandSource<
+export function createActorCommandSource<
   TContext = unknown,
   TMessage extends ActorMessage = ActorMessage,
   TEvent extends ActorMessage = ActorMessage,
 >(
   actorRef: ActorRef<TContext, TMessage>,
-  options: CreateIgniteActorSourceOptions<TContext, TEvent> = {}
-): IgniteCommandSource<TContext, TMessage, TEvent> {
-  const readModel = createIgniteReadModelSource(actorRef, options);
+  options: CreateActorSourceOptions<TContext, TEvent> = {}
+): ActorCommandSource<TContext, TMessage, TEvent> {
+  const readModel = createActorReadModelSource(actorRef, options);
 
   return {
     ...readModel,
@@ -254,13 +255,13 @@ export function createIgniteCommandSource<
   };
 }
 
-export function createIgniteActorSource<
+export function createActorSource<
   TContext = unknown,
   TMessage extends ActorMessage = ActorMessage,
   TEvent extends ActorMessage = ActorMessage,
 >(
   actorRef: ActorRef<TContext, TMessage>,
-  options: CreateIgniteActorSourceOptions<TContext, TEvent> = {}
-): IgniteActorSource<TContext, TMessage, TEvent> {
-  return createIgniteCommandSource(actorRef, options);
+  options: CreateActorSourceOptions<TContext, TEvent> = {}
+): ActorSource<TContext, TMessage, TEvent> {
+  return createActorCommandSource(actorRef, options);
 }

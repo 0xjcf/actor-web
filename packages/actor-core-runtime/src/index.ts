@@ -139,24 +139,24 @@ export type { DirectoryConfig } from './distributed-actor-directory.js';
 // Phase 1: Distributed Actor Directory and System
 export { DistributedActorDirectory } from './distributed-actor-directory.js';
 export {
-  actorEventToIgniteSourceEvent,
-  actorSnapshotToIgniteSourceSnapshot,
-  type CreateIgniteActorSourceOptions,
-  createIgniteActorSource,
-  createIgniteCommandSource,
-  createIgniteReadModelSource,
+  type ActorCommandSource,
+  type ActorReadModelSource,
+  type ActorSource,
+  type ActorSourceEvent,
+  type ActorSourceSnapshot,
+  actorEventToSourceEvent,
+  actorSnapshotToSourceSnapshot,
+  type CreateActorSourceOptions,
+  createActorCommandSource,
+  createActorReadModelSource,
+  createActorSource,
   type EventSubscribableActorRef,
-  type IgniteActorSource,
-  type IgniteActorSourceEvent,
-  type IgniteActorSourceSnapshot,
-  type IgniteCommandSource,
-  type IgniteReadModelSource,
   isEventSubscribableActorRef,
   isSnapshotSubscribableActorRef,
   isTransportStatusSubscribableActorRef,
   type SnapshotSubscribableActorRef,
   type TransportStatusSubscribableActorRef,
-} from './integration/ignite-element-bridge.js';
+} from './integration/actor-source.js';
 export type { ScopedLogger } from './logger.js';
 // Logger utility
 export {

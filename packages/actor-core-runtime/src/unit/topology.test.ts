@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createActorWebClient, createActorWebReadModelClient } from '../actor-web-client.js';
 import { type ActorWebGatewaySocket, createActorWebSource } from '../actor-web-source.js';
-import type { IgniteActorSource } from '../integration/ignite-element-bridge.js';
+import type { ActorSource } from '../integration/actor-source.js';
 import {
   type ActorWebActorContext,
   type ActorWebActorEvent,
@@ -119,7 +119,7 @@ describe('Actor-Web topology helpers', () => {
         addEventListener: () => {},
       }),
     });
-    const typedSource: IgniteActorSource<InferredContext, InferredCommand, InferredEvent> = source;
+    const typedSource: ActorSource<InferredContext, InferredCommand, InferredEvent> = source;
     const context: InferredContext = { shipmentId: null, status: 'idle' };
     const command: InferredCommand = { type: 'CREATE_SHIPMENT', shipmentId: 'shipment-1' };
     const event: InferredEvent = { type: 'SHIPMENT_CREATED' };
@@ -175,7 +175,7 @@ describe('Actor-Web topology helpers', () => {
     type InferredCommand = ActorWebActorMessage<typeof logistics.actors.shipment>;
     type InferredEvent = ActorWebActorEvent<typeof logistics.actors.shipment>;
 
-    const typedSource: IgniteActorSource<InferredContext, InferredCommand, InferredEvent> =
+    const typedSource: ActorSource<InferredContext, InferredCommand, InferredEvent> =
       client.actors.shipment;
     const sameSource = client.actors.shipment;
 
@@ -231,7 +231,7 @@ describe('Actor-Web topology helpers', () => {
     commandSource.close();
   });
 
-  it('provides a typed topology source factory for ignite-compatible source handles', async () => {
+  it('provides a typed topology source factory for projection-compatible source handles', async () => {
     const logistics = defineActorWebTopology({
       contractVersion: '1.0.0',
       nodes: {

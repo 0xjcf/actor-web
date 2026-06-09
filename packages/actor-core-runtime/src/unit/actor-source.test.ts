@@ -6,11 +6,11 @@ import type { ActorMessage } from '../actor-system.js';
 import { ActorSystemImpl } from '../actor-system-impl.js';
 import { createActorRef } from '../create-actor-ref.js';
 import {
-  actorSnapshotToIgniteSourceSnapshot,
-  createIgniteActorSource,
-  createIgniteCommandSource,
-  createIgniteReadModelSource,
-} from '../integration/ignite-element-bridge.js';
+  actorSnapshotToSourceSnapshot,
+  createActorCommandSource,
+  createActorReadModelSource,
+  createActorSource,
+} from '../integration/actor-source.js';
 import { createRuntimeGatewaySourceHandle } from '../runtime-gateway.js';
 import { createInMemoryMessageTransportNetwork } from '../testing/in-memory-message-transport.js';
 import type { ActorSnapshot } from '../types.js';
@@ -63,7 +63,7 @@ function createSnapshot<TContext>(
   };
 }
 
-describe('ignite-element bridge', () => {
+describe('actor source', () => {
   it('projects Actor-Web snapshots into host-ready snapshots with address and phase', () => {
     const address = {
       id: 'checkout',
@@ -71,7 +71,7 @@ describe('ignite-element bridge', () => {
       path: '/actors/checkout',
     };
 
-    const projection = actorSnapshotToIgniteSourceSnapshot(
+    const projection = actorSnapshotToSourceSnapshot(
       address,
       createSnapshot('active', { count: 1 })
     );
@@ -122,7 +122,7 @@ describe('ignite-element bridge', () => {
 
     actor.start();
 
-    const source = createIgniteActorSource(actor);
+    const source = createActorSource(actor);
     const snapshots: Array<{ count: number; phase: string }> = [];
     const unsubscribe = source.subscribe((snapshot) => {
       snapshots.push({
@@ -151,8 +151,8 @@ describe('ignite-element bridge', () => {
 
     actor.start();
 
-    const source = createIgniteReadModelSource(actor);
-    const commandSource = createIgniteCommandSource(actor);
+    const source = createActorReadModelSource(actor);
+    const commandSource = createActorCommandSource(actor);
 
     expect('send' in source).toBe(false);
     expect('ask' in source).toBe(false);
@@ -163,7 +163,7 @@ describe('ignite-element bridge', () => {
     expect(source.snapshot().context.count).toBe(1);
   });
 
-  it('packages projection reads and command access into one Ignite source handle', async () => {
+  it('packages projection reads and command access into one source handle', async () => {
     const actor = createActorRef<{ count: number }, CounterMessage>(counterMachine, {
       id: 'checkout-source-handle',
     }) as ActorRef<{ count: number }, CounterMessage> & { start(): void };
@@ -171,8 +171,8 @@ describe('ignite-element bridge', () => {
     actor.start();
 
     const sourceHandle = createRuntimeGatewaySourceHandle(
-      createIgniteReadModelSource(actor),
-      createIgniteCommandSource(actor)
+      createActorReadModelSource(actor),
+      createActorCommandSource(actor)
     );
 
     expect('send' in sourceHandle.source).toBe(false);
@@ -215,7 +215,7 @@ describe('ignite-element bridge', () => {
       const actor = (await system.spawn(behavior, {
         id: 'checkout-system',
       })) as ActorRef<{ count: number }, CounterMessage>;
-      const source = createIgniteActorSource(actor);
+      const source = createActorSource(actor);
       const snapshots: Array<{ count: number; phase: string; status: string }> = [];
       const unsubscribe = source.subscribe((snapshot) => {
         snapshots.push({
@@ -268,7 +268,7 @@ describe('ignite-element bridge', () => {
       }),
     } as ActorRef<{ count: number }, CounterMessage>;
 
-    const source = createIgniteActorSource<{ count: number }, CounterMessage, CheckoutEvent>(
+    const source = createActorSource<{ count: number }, CounterMessage, CheckoutEvent>(
       remoteActor,
       {
         getSnapshot: () => remoteSnapshot,
@@ -378,7 +378,7 @@ describe('ignite-element bridge', () => {
         throw new Error('Expected remote ref from distributed lookup');
       }
 
-      const source = createIgniteActorSource<
+      const source = createActorSource<
         { submittedOrders: string[] },
         CheckoutMessage,
         CheckoutEvent
@@ -453,7 +453,7 @@ describe('ignite-element bridge', () => {
       const actor = (await system.spawn(behavior, {
         id: 'headless-checkout',
       })) as ActorRef<{ submittedOrders: string[] }, CheckoutMessage>;
-      const source = createIgniteActorSource<
+      const source = createActorSource<
         { submittedOrders: string[] },
         CheckoutMessage,
         CheckoutEvent

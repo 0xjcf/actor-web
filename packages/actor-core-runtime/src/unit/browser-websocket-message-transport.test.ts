@@ -6,7 +6,7 @@ import {
   type BrowserWebSocketMessageTransport,
   createBrowserWebSocketMessageTransport,
 } from '../browser-websocket-message-transport.js';
-import { createIgniteActorSource } from '../integration/ignite-element-bridge.js';
+import { createActorSource } from '../integration/actor-source.js';
 import {
   createNodeWebSocketMessageTransport,
   type NodeWebSocketMessageTransport,
@@ -671,9 +671,7 @@ describe('BrowserWebSocketMessageTransport', () => {
       throw new Error('Expected remote ref after browser WebSocket directory sync');
     }
 
-    const source = createIgniteActorSource<CheckoutContext, CheckoutMessage, CheckoutEvent>(
-      remoteRef
-    );
+    const source = createActorSource<CheckoutContext, CheckoutMessage, CheckoutEvent>(remoteRef);
     const snapshots: number[] = [];
     const events: string[] = [];
     const unsubscribeSnapshot = source.subscribe((snapshot) => {

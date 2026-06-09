@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { setup } from 'xstate';
 import { ActorSystemImpl } from '../actor-system-impl.js';
-import { createIgniteActorSource } from '../integration/ignite-element-bridge.js';
+import { createActorSource } from '../integration/actor-source.js';
 import {
   createNodeWebSocketMessageTransport,
   type NodeWebSocketMessageTransport,
@@ -117,7 +117,7 @@ describe('Node WebSocket runtime transport', () => {
     remoteTransport = undefined;
   });
 
-  it('supports directory sync, remote send/ask, and Ignite projections over localhost WebSockets', async () => {
+  it('supports directory sync, remote send/ask, and projections over localhost WebSockets', async () => {
     remoteTransport = createNodeWebSocketMessageTransport({
       nodeAddress: 'node-b',
       incarnation: 'node-b-boot',
@@ -160,9 +160,7 @@ describe('Node WebSocket runtime transport', () => {
       throw new Error('Expected remote ref after WebSocket directory sync');
     }
 
-    const source = createIgniteActorSource<CheckoutContext, CheckoutMessage, CheckoutEvent>(
-      remoteRef
-    );
+    const source = createActorSource<CheckoutContext, CheckoutMessage, CheckoutEvent>(remoteRef);
     const snapshots: number[] = [];
     const events: string[] = [];
     const unsubscribeSnapshot = source.subscribe((snapshot) => {

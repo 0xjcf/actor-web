@@ -18,9 +18,9 @@ import {
   hasActorWebSourceGatewayOptions,
 } from './actor-web-source.js';
 import {
-  createIgniteCommandSource,
-  createIgniteReadModelSource,
-} from './integration/ignite-element-bridge.js';
+  createActorCommandSource,
+  createActorReadModelSource,
+} from './integration/actor-source.js';
 import {
   createRuntimeGatewaySourceHandle,
   type RuntimeGatewaySourceHandle,
@@ -73,7 +73,7 @@ export type ActorWebClient<TTopology extends ActorWebTopology<ActorWebTopologyIn
 };
 
 /**
- * Projection-only client for UI and Ignite Element hosts. This is the default
+ * Projection-only client for UI and projection hosts. This is the default
  * browser/client surface when a shared topology is available.
  */
 export type ActorWebReadModelClient<TTopology extends ActorWebTopology<ActorWebTopologyInput>> = {
@@ -88,7 +88,7 @@ export type ActorWebReadModelClient<TTopology extends ActorWebTopology<ActorWebT
 
 export interface ActorWebLocalRuntimeSourceOptions extends ActorWebSourceFactoryContext {
   /**
-   * Ignite Element passes the host into source factories. Actor-Web accepts it
+   * Projection hosts pass the host into source factories. Actor-Web accepts it
    * so product code can use `readModel({ host })` without adapter glue; source
    * cleanup is still governed by close(), AbortSignal, or runtime.stop().
    */
@@ -215,7 +215,7 @@ function createClosableLocalReadModelSource<
   options: ActorWebLocalRuntimeSourceOptions | undefined,
   onClose: () => void
 ): ClosableActorWebReadModelSource<TContext, TEvent> {
-  const source = createIgniteReadModelSource<TContext, TMessage, TEvent>(actorRef);
+  const source = createActorReadModelSource<TContext, TMessage, TEvent>(actorRef);
   const subscriptions = new Set<() => void>();
   let cleanupAbort = () => {};
   let closed = false;
@@ -288,7 +288,7 @@ function createClosableLocalCommandSource<
   options: ActorWebLocalRuntimeSourceOptions | undefined,
   onClose: () => void
 ): ClosableActorWebCommandSource<TContext, TMessage, TEvent> {
-  const commandSource = createIgniteCommandSource<TContext, TMessage, TEvent>(actorRef);
+  const commandSource = createActorCommandSource<TContext, TMessage, TEvent>(actorRef);
   const readModel = createClosableLocalReadModelSource<TContext, TMessage, TEvent>(
     actorRef,
     options,

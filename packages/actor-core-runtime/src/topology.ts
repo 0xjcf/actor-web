@@ -177,7 +177,7 @@ export interface ActorWebActorDescriptor<
     >
   >;
   /**
-   * Preferred Ignite Element projection source. This source exposes live
+   * Preferred projection source. This source exposes live
    * snapshots/events/transport status without requiring command capability.
    */
   readModel(
