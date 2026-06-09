@@ -1,4 +1,4 @@
-# Neutralize actor-web runtime projection/transport contract a
+# [decouple] Neutralize actor-web transport/projection contract; remove FAS bridge + @franchise dep
 
 ## Source
 

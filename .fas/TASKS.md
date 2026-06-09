@@ -885,9 +885,9 @@
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
-### Task: Stabilize the Ignite source contract (neutral actor-web source API; adapter owned by ignite-element)
+### Task: [decouple] Neutralize actor-web source API (rename Ignite*-> Actor*); delete the ignite bridge
 
-- Title: Stabilize the Ignite source contract (neutral actor-web source API; adapter owned by ignite-element)
+- Title: [decouple] Neutralize actor-web source API (rename Ignite*-> Actor*); delete the ignite bridge
 - Mode: single-agent
 - Status: queued
 - Owner: runtime
@@ -1138,9 +1138,9 @@
 - Owner: runtime
 - Brief: .fas/tasks/fas-studio-fix-extensionless-esm-relative-imports-in-actor.md
 
-### Task: Neutralize actor-web runtime projection/transport contract and remove the FAS bridge + @franchise dependency
+### Task: [decouple] Neutralize actor-web transport/projection contract; remove FAS bridge + @franchise dep
 
-- Title: Neutralize actor-web runtime projection/transport contract and remove the FAS bridge + @franchise dependency
+- Title: [decouple] Neutralize actor-web transport/projection contract; remove FAS bridge + @franchise dep
 - Mode: single-agent
 - Status: queued
 - Owner: runtime

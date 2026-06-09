@@ -1,4 +1,4 @@
-# Stabilize the Ignite source contract (neutral actor-web source API; adapter owned by ignite-element)
+# [decouple] Neutralize actor-web source API (rename Ignite*-> Actor*); delete the ignite bridge
 
 ## Source
 
