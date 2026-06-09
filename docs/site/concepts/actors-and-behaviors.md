@@ -1,25 +1,25 @@
 ---
 title: Actors & behaviors
-description: What an actor is in Actor-Web, and how defineActor authors its behavior.
+description: What an actor is in Actor-Web, and how defineBehavior authors its behavior.
 ---
 
 # Actors & behaviors
 
 An **actor** is an isolated unit of state that processes one message at a time.
 Its **behavior** is the function that decides what happens for each message —
-authored with `defineActor`.
+authored with `defineBehavior`.
 
 ## The builder
 
-`defineActor` is a small fluent builder. You declare the message union, optional
+`defineBehavior` is a small fluent builder. You declare the message union, optional
 state, and a handler:
 
 ```ts twoslash
-import { defineActor } from '@actor-web/runtime';
+import { defineBehavior } from '@actor-web/runtime';
 
 type Msg = { type: 'PING' } | { type: 'RESET' };
 
-export const pinger = defineActor<Msg>()
+export const pinger = defineBehavior<Msg>()
   .withContext({ pings: 0 })
   .onMessage(({ message, context }) =>
     message.type === 'PING'
@@ -66,7 +66,7 @@ declarative `MessagePlan` for talking to other actors.
   next `context`.
 - **Machine-based** — `withMachine`/`withFSM`; transitions are constrained by a
   state machine. Handlers are optional: an event with no handler transitions and
-  resolves `ask(...)` with the snapshot, so `defineActor().withMachine(m).build()`
+  resolves `ask(...)` with the snapshot, so `defineBehavior().withMachine(m).build()`
   can be the whole behavior. Add an `onTransition` handler only for events that
   emit or do I/O.
 

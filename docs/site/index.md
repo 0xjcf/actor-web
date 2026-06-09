@@ -19,5 +19,5 @@ features:
   - title: Topology-declared runtime
     details: Declare nodes, actors, and supervisors once. The runtime owns placement, lifecycle, and (soon) inter-actor subscriptions.
   - title: Type-safe messages & events
-    details: Message and event unions flow from defineActor through the topology to your UI sources — checked end to end.
+    details: Message and event unions flow from defineBehavior through the topology to your UI sources — checked end to end.
 ---

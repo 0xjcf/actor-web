@@ -12,7 +12,7 @@ the narrowest one that fits — browser code should not pull in Node entry point
 
 | Import | Use for |
 | --- | --- |
-| `@actor-web/runtime` | Core: [`defineActor`](/api/define-actor), messages, runtime client. |
+| `@actor-web/runtime` | Core: [`defineBehavior`](/api/define-behavior), messages, runtime client. |
 | `@actor-web/runtime/topology` | [`defineActorWebTopology`](/api/topology) and the `actor`/`node`/`supervisor`/`tool` DSL. |
 | `@actor-web/runtime/browser` | Browser-safe sources & clients (no Node built-ins). |
 | `@actor-web/runtime/node` | [`serveActorWebNode`](/api/runtimes), HTTP ingress — server only. |
@@ -20,7 +20,7 @@ the narrowest one that fits — browser code should not pull in Node entry point
 
 ## Map
 
-- **[`defineActor`](/api/define-actor)** — author a behavior (the builder, the
+- **[`defineBehavior`](/api/define-behavior)** — author a behavior (the builder, the
   handler shape, return results).
 - **[Topology](/api/topology)** — declare nodes, actors, supervisors, tools, and
   the source factories each actor exposes.

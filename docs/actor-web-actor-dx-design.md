@@ -2,7 +2,7 @@
 
 ## Summary
 
-Author actors with the **existing** primitives — `defineActor`,
+Author actors with the **existing** primitives — `defineBehavior`,
 `defineActorWebTopology`, `igniteCore`, `spawn`, `subscribe` — and make their
 *defaults* match the systems Actor-Web draws from (XState, Erlang/OTP, Elixir,
 Akka). No new sugar functions. The boilerplate in today's consumers (e.g.
@@ -24,7 +24,7 @@ newcomer who knows XState + OTP already knows the API.
 
 | Primitive | Lineage | Default that removes boilerplate |
 |---|---|---|
-| `defineActor` + machine/FSM | Akka `Behaviors`, Erlang `gen_statem`, XState machine-as-actor | The machine/FSM **is** the behavior. No handler required; `ask` resolves with the snapshot; an event with no override just transitions. |
+| `defineBehavior` + machine/FSM | Akka `Behaviors`, Erlang `gen_statem`, XState machine-as-actor | The machine/FSM **is** the behavior. No handler required; `ask` resolves with the snapshot; an event with no override just transitions. |
 | `defineActorWebTopology` | OTP supervision tree, Akka guardian | Static actors + supervisors declared; behaviors are plain values. |
 | `spawn` | Erlang `spawn_link`, Akka `context.spawn`, XState `spawnChild` | Dynamic / per-entity actors — use it instead of a new "dynamic actor" API. |
 | `subscribe` | Phoenix.PubSub, Akka EventStream, Erlang `monitor` | `emit` → `subscribe` delivers to other actors; declarative topology `subscriptions` is OTP-style wiring over the same primitive. |
@@ -39,10 +39,10 @@ state. Actor-Web should *run* it, not make you restate it.
 
 ```ts
 // behaviors.ts — no per-event handlers; defaults: transition + ask resolves with snapshot
-export const compareBehavior     = defineActor<CompareEvent>().withMachine(compareMachine).build();
-export const pipelineBehavior    = defineActor<PipelineEvent>().withMachine(pipelineMachine).build();
-export const decisionsBehavior   = defineActor<DecisionsEvent>().withMachine(decisionsMachine).build();
-export const actorSystemBehavior = defineActor<ActorSystemEvent>().withMachine(actorSystemMachine).build();
+export const compareBehavior     = defineBehavior<CompareEvent>().withMachine(compareMachine).build();
+export const pipelineBehavior    = defineBehavior<PipelineEvent>().withMachine(pipelineMachine).build();
+export const decisionsBehavior   = defineBehavior<DecisionsEvent>().withMachine(decisionsMachine).build();
+export const actorSystemBehavior = defineBehavior<ActorSystemEvent>().withMachine(actorSystemMachine).build();
 ```
 
 Domain events are emitted *from the machine* (XState v5 `emit`), so the behavior
@@ -110,7 +110,7 @@ const compareFSM = defineFSM<CompareEvent, CompareContext, CompareState>({
   },
 });
 
-export const compareBehavior = defineActor<CompareEvent, CompareEmitted>()
+export const compareBehavior = defineBehavior<CompareEvent, CompareEmitted>()
   .withContext(INITIAL_COMPARE_CONTEXT)
   .withFSM(compareFSM)
   .onTransition({
@@ -139,7 +139,7 @@ actors that are **not** machine/FSM-backed, and as the **fallback** alongside
 
 ```ts
 // (a) onMessage only — no machine; switch on message.type yourself
-defineActor<CounterMsg>()
+defineBehavior<CounterMsg>()
   .withContext({ count: 0 })
   .onMessage(({ message, context }) =>
     message.type === "INCREMENT"
@@ -148,7 +148,7 @@ defineActor<CounterMsg>()
   .build();
 
 // (c) both — onTransition for specific events, onMessage as the catch-all
-defineActor<E>().withFSM(fsm)
+defineBehavior<E>().withFSM(fsm)
   .onTransition({ MERGE: ({ context }) => ({ context, emit: [/* … */] }) })
   .onMessage(({ actor }) => ({ reply: actor.getSnapshot().value }))   // fallback for the rest
   .build();
@@ -199,7 +199,7 @@ transition — no coordinator code, no shell.
 ## Topology — drop the curry
 
 Tool-free actors take a plain behavior value; the tool-typing curry
-(`actor.withTools<R>()` + `(defineActor) => …`) stays only as the escape hatch
+(`actor.withTools<R>()` + `(defineBehavior) => …`) stays only as the escape hatch
 for actors that actually call a tool.
 
 ```ts
@@ -308,7 +308,7 @@ const resolved = await compare.ask({ type: "MERGE" });   // resolves with snapsh
 
 ## What Actor-Web must implement (all "fix the defaults," no new API)
 
-1. `defineActor().withMachine(m).build()` and `.withFSM(f).build()` legal with
+1. `defineBehavior().withMachine(m).build()` and `.withFSM(f).build()` legal with
    **no** handlers; default = transition + `ask` resolves with snapshot.
 2. Bridge XState v5 machine `emit` → the actor's emit/`subscribe` stream
    (`ActorHandlerResult.emit` already covers the FSM/handler path).

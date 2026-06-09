@@ -40,7 +40,7 @@ hand-rolls edge detection with a `reacted` boolean, and `send`s commands to
 (it mixes a pure decision with I/O in the shell, contrary to Functional Core /
 Imperative Shell) and it bypasses the actor model entirely.
 
-`defineActor` already supports OTP-style reaction. A handler can return a
+`defineBehavior` already supports OTP-style reaction. A handler can return a
 `MessagePlan` of directed `tell`s (`message-plan.ts:111`), or — better for
 decoupling — `emit` a domain event that subscriber actors receive as a normal
 mailbox message (`actor-system-impl.ts:2424`: "events are just messages...
@@ -139,7 +139,7 @@ original motivating example.
 
 `events` is currently `string[]` with no relationship to what the publisher can
 emit. Derive the allowed set from the publisher behavior's emitted-event union
-(the `TEmitted` phantom already threaded through `defineActor` /
+(the `TEmitted` phantom already threaded through `defineBehavior` /
 `UnifiedActorBuilder`, `unified-actor-builder.ts:314-317`). In the declarative
 form this is checkable at the topology call site; in the imperative form it
 narrows `TEventType`.

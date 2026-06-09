@@ -40,7 +40,7 @@ Ignite Element owns projection/rendering.
 Actor-Web examples and product apps should map files to these layers:
 
 - Domain contract: commands, events, context, value objects, and actor IDs.
-- Actor behavior: `defineActor(...)` state transitions and actor-to-actor
+- Actor behavior: `defineBehavior(...)` state transitions and actor-to-actor
   messaging.
 - Topology: runtime nodes, actor ownership, addresses, and gateway scopes.
 - Supervision: restart policies and process groups for actors that should fail,
@@ -620,7 +620,7 @@ Agent behaviors access those ports through the public handler `tools` port:
 
 ```ts
 const createPlannerAgentBehavior = () =>
-  defineActor<PlannerMessage>()
+  defineBehavior<PlannerMessage>()
     .withContext(initialPlannerContext)
     .onMessage(async ({ message, tools }) => {
       if (message.type === 'PLAN_TASK') {

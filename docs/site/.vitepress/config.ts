@@ -65,7 +65,7 @@ export default defineConfig({
         text: 'API Reference',
         items: [
           { text: 'Overview', link: '/api/' },
-          { text: 'defineActor', link: '/api/define-actor' },
+          { text: 'defineBehavior', link: '/api/define-behavior' },
           { text: 'Topology', link: '/api/topology' },
           { text: 'Runtimes', link: '/api/runtimes' },
           { text: '@actor-web/testing', link: '/api/testing' },

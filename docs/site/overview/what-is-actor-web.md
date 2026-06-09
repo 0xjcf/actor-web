@@ -20,7 +20,7 @@ recovery, and location transparency.
 - **Actor** — an isolated unit of computation with its own state (`context`),
   processing one message at a time.
 - **Behavior** — what an actor _does_ with each message, authored with
-  [`defineActor`](/getting-started/your-first-actor). A handler can update its
+  [`defineBehavior`](/getting-started/your-first-actor). A handler can update its
   own state, reply to an `ask`, emit events, or send messages to other actors.
 - **Topology** — a declarative description of your system: which nodes exist,
   which actors run where, and how they are supervised

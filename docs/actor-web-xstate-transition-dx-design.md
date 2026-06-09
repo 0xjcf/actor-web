@@ -18,8 +18,8 @@ forces too much manual wiring:
 
 - XState can constrain legal lifecycle transitions for richer statecharts.
 - Actor-Web FSM maps can constrain simple workflows without requiring XState.
-- `defineActor().withMachine(...)` can attach a machine to an actor behavior.
-- `defineActor().onMessage(...)` can handle commands, emit events, and call
+- `defineBehavior().withMachine(...)` can attach a machine to an actor behavior.
+- `defineBehavior().onMessage(...)` can handle commands, emit events, and call
   tools.
 - Topology can declare runtime ownership and required tools.
 
@@ -82,7 +82,7 @@ const shipmentFSM = defineFSM<ShipmentCommand, ShipmentContext, ShipmentStatus>(
 });
 
 export const createShipmentBehavior = () =>
-  defineActor<ShipmentCommand>()
+  defineBehavior<ShipmentCommand>()
     .withContext(createInitialShipmentContext())
     .withFSM(shipmentFSM)
     .onTransition({
@@ -102,7 +102,7 @@ For a richer XState statechart:
 
 ```ts
 export const createShipmentBehavior = () =>
-  defineActor<ShipmentCommand>()
+  defineBehavior<ShipmentCommand>()
     .withMachine(shipmentMachine)
     .onTransition({
       CREATE_SHIPMENT: async ({ context, message }) => ({
@@ -185,7 +185,7 @@ const shipmentMachine = setup({
 ## Type Inference
 
 The first implementation should infer from the command union passed to
-`defineActor<TCommand>()`.
+`defineBehavior<TCommand>()`.
 
 ```ts
 type TransitionHandlers<TCommand extends { type: string }, TContext, TEvent> = {
@@ -344,7 +344,7 @@ const agentMachine = setup({
 });
 
 export const createPlannerAgentBehavior = () =>
-  defineActor<AgentRunCommand>()
+  defineBehavior<AgentRunCommand>()
     .withMachine(agentMachine)
     .onTransition({
       START_TASK: async ({ message, dependencies }) => {
@@ -367,11 +367,11 @@ implementation in Actor-Web.
 
 Implemented:
 
-- `defineActor().withMachine(...).onTransition(...)` for typed transition
+- `defineBehavior().withMachine(...).onTransition(...)` for typed transition
   handler maps.
-- `defineFSM(...)` and `defineActor().withFSM(...)` for lightweight pure
+- `defineFSM(...)` and `defineBehavior().withFSM(...)` for lightweight pure
   constraint maps.
-- Handler key inference from the command union passed to `defineActor<T>()`.
+- Handler key inference from the command union passed to `defineBehavior<T>()`.
 - Handler `message` narrowing by transition key.
 - Runtime XState and FSM legality checks before transition handler side effects.
 - Structured invalid-transition values instead of default domain throws.
@@ -446,8 +446,8 @@ Still remaining:
   - missing handler fallback works when `onMessage(...)` exists,
   - invalid transition rejects before side effects.
 - Regression tests:
-  - existing `defineActor().onMessage(...)` behavior remains unchanged,
-  - existing `defineActor().withMachine(...).onMessage(...)` behavior remains
+  - existing `defineBehavior().onMessage(...)` behavior remains unchanged,
+  - existing `defineBehavior().withMachine(...).onMessage(...)` behavior remains
     unchanged,
   - topology runners still inject tools.
 

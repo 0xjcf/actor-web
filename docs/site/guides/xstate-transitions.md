@@ -28,9 +28,9 @@ export const compareMachine = createMachine({
 ## 2. Attach it and handle transitions
 
 ```ts
-import { defineActor } from '@actor-web/runtime';
+import { defineBehavior } from '@actor-web/runtime';
 
-const compare = defineActor<CompareEvent>()
+const compare = defineBehavior<CompareEvent>()
   .withMachine(compareMachine)
   .onTransition({
     ACCEPT_FORK: ({ actor }) => ({ reply: actor.getSnapshot().value }),

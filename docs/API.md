@@ -6,7 +6,7 @@ typed messages, topology-owned actors, and hexagonal boundaries.
 
 Read this guide in layers:
 
-1. Define actor behavior with `defineActor(...)`.
+1. Define actor behavior with `defineBehavior(...)`.
 2. Declare runtime ownership with `defineActorWebTopology(...)`.
 3. Start actor-owning locations with `serveActorWebNode(...)` or
    `startActorWebNode(...)`.
@@ -66,7 +66,7 @@ Recommended imports:
 
 ```ts
 // Shared topology and actor behavior.
-import { defineActor, defineFSM } from '@actor-web/runtime';
+import { defineBehavior, defineFSM } from '@actor-web/runtime';
 import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
 
 // Browser/client projection and browser worker runtime hosting.
@@ -84,13 +84,13 @@ import { serveActorWebHttp, serveActorWebNode } from '@actor-web/runtime/node';
 
 ## Actor Behavior
 
-### `defineActor()`
+### `defineBehavior()`
 
-Use `defineActor` to define actor behavior. The normal handler context exposes
+Use `defineBehavior` to define actor behavior. The normal handler context exposes
 only the public capabilities needed for application code:
 
 ```ts
-const shipmentBehavior = defineActor()
+const shipmentBehavior = defineBehavior()
   .withContext({
     shipmentId: null,
     shipmentCount: 0,
@@ -166,7 +166,7 @@ const shipmentFSM = defineFSM({
   },
 });
 
-const behavior = defineActor()
+const behavior = defineBehavior()
   .withContext({
     shipmentId: null,
     shipmentCount: 0,
@@ -220,7 +220,7 @@ const workflowMachine = createMachine({
   },
 });
 
-const behavior = defineActor()
+const behavior = defineBehavior()
   .withMachine(workflowMachine)
   .onTransition({
     APPROVE: ({ context }) => ({
@@ -244,7 +244,7 @@ gateway exposure, and tool requirements.
 ```ts
 import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
 
-const shipmentBehavior = defineActor()
+const shipmentBehavior = defineBehavior()
   .withContext({
     shipmentId: null,
     shipmentCount: 0,
@@ -265,7 +265,7 @@ const shipmentBehavior = defineActor()
   })
   .build();
 
-const routingBehavior = defineActor()
+const routingBehavior = defineBehavior()
   .withContext({
     carrier: 'pending',
     eta: 'pending',
@@ -395,7 +395,7 @@ type LogisticsTools = {
   'route.plan': ActorToolExecutor<ScanInput, RouteResult>;
 };
 
-const scanShipmentBehavior = defineActor()
+const scanShipmentBehavior = defineBehavior()
   .withContext({ status: 'idle', latestScan: null })
   .withTools<LogisticsTools>()
   .onMessage(async ({ message, context, tools }) => {

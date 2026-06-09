@@ -1,6 +1,6 @@
 ---
 title: Your first actor
-description: Build a counter actor with defineActor and run it on a local runtime.
+description: Build a counter actor with defineBehavior and run it on a local runtime.
 ---
 
 # Your first actor
@@ -11,17 +11,17 @@ types** when the site builds, so what you see compiles.
 
 ## 1. Define the behavior
 
-An actor's behavior is authored with `defineActor`. You declare the message
+An actor's behavior is authored with `defineBehavior`. You declare the message
 union it accepts, give it an initial `context`, and handle each message by
 returning the next `context`.
 
 ```ts twoslash
-import { defineActor } from '@actor-web/runtime';
+import { defineBehavior } from '@actor-web/runtime';
 
 // The messages this actor accepts.
 type CounterMessage = { type: 'INCREMENT' } | { type: 'DECREMENT' };
 
-export const counter = defineActor<CounterMessage>()
+export const counter = defineBehavior<CounterMessage>()
   .withContext({ count: 0 })
   .onMessage(({ message, context }) => {
     switch (message.type) {
@@ -55,11 +55,11 @@ A handler returns an `ActorHandlerResult`, any of these fields:
   [Subscriptions & events](/concepts/subscriptions-and-events).
 
 ```ts twoslash
-import { defineActor } from '@actor-web/runtime';
+import { defineBehavior } from '@actor-web/runtime';
 // ---cut---
 type CounterMessage = { type: 'INCREMENT' } | { type: 'DECREMENT' };
 
-const counter = defineActor<CounterMessage>()
+const counter = defineBehavior<CounterMessage>()
   .withContext({ count: 0 })
   .onMessage(({ message, context }) => {
     if (message.type === 'INCREMENT') {

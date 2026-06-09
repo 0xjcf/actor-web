@@ -176,7 +176,7 @@ written fresh.
   - Your first actor (counter) — *net-new*
   - Topology + local runtime — *net-new*, references `startActorWebLocalRuntime`
 - **Concepts**
-  - Actors & behaviors (`defineActor`) — *seeded from* runtime README,
+  - Actors & behaviors (`defineBehavior`) — *seeded from* runtime README,
     xstate design doc
   - Messages: `send` / `ask` / `emit` / `MessagePlan` — *seeded from* runtime
     README, message-plan source

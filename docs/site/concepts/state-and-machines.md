@@ -14,7 +14,7 @@ constraint map.
 The simplest model returns the next `context` from each handler:
 
 ```ts
-const counter = defineActor<{ type: 'INC' }>()
+const counter = defineBehavior<{ type: 'INC' }>()
   .withContext({ count: 0 })
   .onMessage(({ context }) => ({ context: { count: context.count + 1 } }))
   .build();
@@ -29,7 +29,7 @@ resolves with the snapshot.
 
 ```ts
 // the machine owns transitions, guards, and (via XState actions) effects
-const compare = defineActor<CompareEvent>().withMachine(compareMachine).build();
+const compare = defineBehavior<CompareEvent>().withMachine(compareMachine).build();
 ```
 
 Domain events can be emitted from the machine: an XState v5 `emit(...)` action is
@@ -40,7 +40,7 @@ Add an `onTransition` handler only for an event that needs an imperative effect;
 un-handled events keep the default:
 
 ```ts
-defineActor<CompareEvent>()
+defineBehavior<CompareEvent>()
   .withMachine(compareMachine)
   .onTransition({
     MERGE: ({ context }) => ({ context, emit: [{ type: 'MERGED' }] }),

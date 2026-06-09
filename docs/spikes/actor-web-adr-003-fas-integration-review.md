@@ -67,7 +67,7 @@ ignite-element docs only.
 | Layer | Actor-Web current evidence | Current ownership reading |
 | --- | --- | --- |
 | Intent | `ActorMessage`, `ActorEnvelope`, `BaseEventObject`, `WorkflowCommand`-like user messages in examples | Actor-Web carries intent as typed messages. It does not own product-domain or FAS workflow meaning. |
-| Deterministic decision | `defineActor`, behavior handlers, XState machine integration, message-plan processing, `architecture.boundaries.json` deterministic decision paths | Actor-local decisions are supported. The first committed map covers message-plan, fan-out, component behavior, type-helper, and validation surfaces. |
+| Deterministic decision | `defineBehavior`, behavior handlers, XState machine integration, message-plan processing, `architecture.boundaries.json` deterministic decision paths | Actor-local decisions are supported. The first committed map covers message-plan, fan-out, component behavior, type-helper, and validation surfaces. |
 | Workflow and lifecycle | `ActorStatus`, `ActorSnapshot`, `ActorSystem`, `ActorRef`, `Supervisor`, guardian actor, event collectors | Actor lifecycle is a strong current fit. FAS task lifecycle is not owned here yet. |
 | Imperative execution over time | bounded mailboxes, runtime adapters, transports, timers, scheduler, retry/supervision code | Actor-Web has runtime machinery, but some execution concerns still mix direct clock/random/environment reads with logic surfaces. |
 | Projection | snapshots, `getSnapshot`, event collectors, system stats, transport stats | Actor-Web exposes actor/runtime projections. It does not expose FAS workflow read models. |

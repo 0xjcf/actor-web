@@ -1,14 +1,14 @@
 ---
-title: defineActor
+title: defineBehavior
 description: The behavior builder API — withContext, withMachine, onMessage, onTransition, build.
 ---
 
-# `defineActor`
+# `defineBehavior`
 
 ```ts
-import { defineActor } from '@actor-web/runtime';
+import { defineBehavior } from '@actor-web/runtime';
 
-defineActor<TMessage, TEmitted?>(): UnifiedActorBuilder
+defineBehavior<TMessage, TEmitted?>(): UnifiedActorBuilder
 ```
 
 Creates a fluent builder for an actor behavior. `TMessage` is the union of
@@ -39,7 +39,7 @@ snapshot (`{ value, context }`); illegal transitions are rejected. So a
 machine-backed actor can be the whole behavior:
 
 ```ts
-const compare = defineActor<CompareEvent>().withMachine(compareMachine).build();
+const compare = defineBehavior<CompareEvent>().withMachine(compareMachine).build();
 ```
 
 `build()` requires *either* a handler (`onMessage`/`onTransition`) *or* an

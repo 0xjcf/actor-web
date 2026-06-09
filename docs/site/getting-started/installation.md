@@ -23,7 +23,7 @@ in Node built-ins:
 
 | Import | Use for |
 | --- | --- |
-| `@actor-web/runtime` | Core: `defineActor`, messages, local runtime. |
+| `@actor-web/runtime` | Core: `defineBehavior`, messages, local runtime. |
 | `@actor-web/runtime/topology` | `defineActorWebTopology` and the DSL. |
 | `@actor-web/runtime/browser` | Browser-safe sources & clients. |
 | `@actor-web/runtime/node` | `serveActorWebNode`, HTTP ingress — server only. |
