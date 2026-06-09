@@ -1090,6 +1090,16 @@
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Rename defineActor builder to defineBehavior
+
+- Title: Rename defineActor builder to defineBehavior
+- Mode: single-agent
+- Status: implementing
+- Owner: implementer
+- Brief: .fas/tasks/rename-defineactor-builder-to-definebehavior.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 ## Template
 
 ### Task: `<short task title>`
