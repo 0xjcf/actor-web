@@ -1121,9 +1121,9 @@
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
-### Task: Publish the first npm release of @actor-web/* (runtime, testing, cli)
+### Task: Publish the first npm release: @actor-web/runtime + @actor-web/testing 0.1.0 (cli held)
 
-- Title: Publish the first npm release of @actor-web/* (runtime, testing, cli)
+- Title: Publish the first npm release: @actor-web/runtime + @actor-web/testing 0.1.0 (cli held)
 - Mode: single-agent
 - Status: queued
 - Owner: runtime

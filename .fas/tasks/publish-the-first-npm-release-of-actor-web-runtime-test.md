@@ -1,4 +1,4 @@
-# Publish the first npm release of @actor-web/* (runtime, testing, cli)
+# Publish the first npm release: @actor-web/runtime + @actor-web/testing 0.1.0 (cli held)
 
 ## Source
 
