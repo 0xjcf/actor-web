@@ -26,7 +26,7 @@ emit.
 | `.onMessage(handler)` | Catch-all message handler. |
 | `.onTransition({ TYPE: handler })` | Per-message handlers (requires a machine/FSM). Optional — see below. |
 | `.onStart(fn)` / `.onStop(fn)` | Lifecycle hooks. |
-| `.build()` | Produce the `ActorBehavior`. |
+| `.build()` | Produce the `ActorBehavior`. **Optional** — see below. |
 
 `withMachine` and `withFSM` are mutually exclusive. `onTransition` requires one
 of them.
@@ -39,12 +39,23 @@ snapshot (`{ value, context }`); illegal transitions are rejected. So a
 machine-backed actor can be the whole behavior:
 
 ```ts
-const compare = defineBehavior<CompareEvent>().withMachine(compareMachine).build();
+const compare = defineBehavior<CompareEvent>().withMachine(compareMachine);
 ```
 
-`build()` requires *either* a handler (`onMessage`/`onTransition`) *or* an
-attached machine/FSM. A machine event without a handler falls through to this
-default; `onMessage` still serves as the fallback for non-transition messages.
+`onMessage` still serves as the fallback for non-transition messages.
+
+### `.build()` is optional
+
+`actor({ behavior })` and `system.spawn(...)` accept the builder directly and
+build it under the hood, so you can drop the trailing `.build()`:
+
+```ts
+actor({ id: 'compare', node: 'local', behavior: defineBehavior<CompareEvent>().withMachine(compareMachine) });
+```
+
+Call `.build()` explicitly only when you need the materialized `ActorBehavior`
+value (for example to inspect or reuse it). Building requires *either* a handler
+(`onMessage`/`onTransition`) *or* an attached machine/FSM.
 
 ## The handler
 
