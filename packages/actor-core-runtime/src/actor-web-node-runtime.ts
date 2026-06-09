@@ -67,16 +67,26 @@ export function materializeActorWebBehavior(
   }
 
   const resolved = typeof behavior === 'function' ? behavior(params) : behavior;
+  // Accept an un-built behavior builder (e.g. defineBehavior().withMachine(m))
+  // and build it under the hood so `.build()` stays optional. A factory may also
+  // return a builder, so this runs after factory resolution.
+  const built =
+    resolved &&
+    typeof resolved === 'object' &&
+    'build' in resolved &&
+    typeof (resolved as { build?: unknown }).build === 'function'
+      ? (resolved as { build: () => unknown }).build()
+      : resolved;
   if (
-    !resolved ||
-    typeof resolved !== 'object' ||
-    !('onMessage' in resolved) ||
-    typeof resolved.onMessage !== 'function'
+    !built ||
+    typeof built !== 'object' ||
+    !('onMessage' in built) ||
+    typeof built.onMessage !== 'function'
   ) {
     throw new Error(`Actor "${actorDescriptor.key}" behavior did not resolve to ActorBehavior.`);
   }
 
-  return resolved as ActorBehavior<ActorMessage, ActorMessage>;
+  return built as ActorBehavior<ActorMessage, ActorMessage>;
 }
 
 export function getActorWebRequiredToolNames(actorDescriptor: ActorWebActorDescriptor): string[] {

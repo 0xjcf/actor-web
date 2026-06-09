@@ -1,4 +1,4 @@
-import { defineActor } from '@actor-web/runtime/browser';
+import { defineBehavior } from '@actor-web/runtime/browser';
 import {
   PROVIDER_HQ_ADDRESS,
   type ProviderHqCommand,
@@ -26,7 +26,7 @@ function isProviderSignalCommand(message: ProviderHqCommand): message is Provide
 }
 
 export function createProviderHqBehavior() {
-  return defineActor<ProviderHqCommand, ProviderHqEvent>()
+  return defineBehavior<ProviderHqCommand, ProviderHqEvent>()
     .withContext(createInitialProviderHqContext())
     .onMessage(({ context, message }) => {
       if (message.type === 'REFRESH_PROVIDER_STATUS') {

@@ -76,8 +76,8 @@ describe('ActorToolbox', () => {
       id: 'scanner',
       node: 'worker',
       tools: ['provider.scan.verify'] as const,
-      behavior: (defineActor) =>
-        defineActor<ScanCommand, ScanResult>()
+      behavior: (defineBehavior) =>
+        defineBehavior<ScanCommand, ScanResult>()
           .onMessage(async ({ message, tools }) => {
             return {
               reply: await tools.execute('provider.scan.verify', { label: message.label }),
@@ -89,8 +89,8 @@ describe('ActorToolbox', () => {
       id: ({ shipmentId }: ShipmentParams) => `shipment-${shipmentId}`,
       node: 'worker',
       tools: ['provider.scan.verify'] as const,
-      behavior: (_params: ShipmentParams, defineActor) =>
-        defineActor<ScanCommand, ScanResult>()
+      behavior: (_params: ShipmentParams, defineBehavior) =>
+        defineBehavior<ScanCommand, ScanResult>()
           .onMessage(async ({ message, tools }) => {
             return {
               reply: await tools.execute('provider.scan.verify', { label: message.label }),

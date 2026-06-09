@@ -1,4 +1,4 @@
-import { defineActor, defineFSM } from '@actor-web/runtime/browser';
+import { defineBehavior, defineFSM } from '@actor-web/runtime/browser';
 import {
   createInitialShipmentContext,
   type ShipmentCommand,
@@ -67,7 +67,7 @@ const shipmentFSM = defineFSM<ShipmentCommand, ShipmentContext, ShipmentStatus>(
 });
 
 export function createShipmentBehavior() {
-  return defineActor<ShipmentCommand, ShipmentEvent>()
+  return defineBehavior<ShipmentCommand, ShipmentEvent>()
     .withContext(createInitialShipmentContext())
     .withFSM(shipmentFSM)
     .onMessage(({ context, message }) => {

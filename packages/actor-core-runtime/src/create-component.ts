@@ -47,7 +47,7 @@ function safeJsonSerialize(data: unknown): JsonValue {
 /**
  * Component configuration for the unified createComponent API
  *
- * Uses defineActor() + clean component properties for consistent developer experience
+ * Uses defineBehavior() + clean component properties for consistent developer experience
  */
 export interface CreateComponentConfig {
   // ============================================================================
@@ -65,16 +65,16 @@ export interface CreateComponentConfig {
   template: TemplateFunction;
 
   // ============================================================================
-  // UNIFIED API - Use defineActor for actor logic
+  // UNIFIED API - Use defineBehavior for actor logic
   // ============================================================================
 
   /**
-   * Actor behavior created with defineActor() for cross-actor communication
+   * Actor behavior created with defineBehavior() for cross-actor communication
    *
    * @example
    * ```typescript
    * // 1. Create reusable behavior with standard actor API
-   * const formBehavior = defineActor({
+   * const formBehavior = defineBehavior({
    *   onMessage: ({ message, machine }) => {
    *     const context = machine.getSnapshot().context;
    *     switch (message.type) {
@@ -209,7 +209,7 @@ async function resolveRuntimeProvider(
 /**
  * Create a Web Component backed by a Pure Actor - Unified API
  *
- * This API provides a consistent developer experience by using defineActor()
+ * This API provides a consistent developer experience by using defineBehavior()
  * for actor logic and clean component-specific properties at the top level.
  *
  * @example
@@ -238,7 +238,7 @@ async function resolveRuntimeProvider(
 `;
  *
  * // 🔌 3. Behavior ― standard actor behavior
- * const formBehavior = defineActor({
+ * const formBehavior = defineBehavior({
  *   onMessage: ({ message, machine }) => {
  *     const context = machine.getSnapshot().context;
  *     switch (message.type) {

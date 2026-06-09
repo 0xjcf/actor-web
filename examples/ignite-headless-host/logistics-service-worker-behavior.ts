@@ -1,4 +1,4 @@
-import { defineActor } from '@actor-web/runtime/browser';
+import { defineBehavior } from '@actor-web/runtime/browser';
 import {
   createInitialServiceWorkerProofContext,
   type ServiceWorkerProofCommand,
@@ -6,7 +6,7 @@ import {
 } from './logistics-contract';
 
 export function createServiceWorkerProofBehavior() {
-  return defineActor<ServiceWorkerProofCommand, ServiceWorkerProofEvent>()
+  return defineBehavior<ServiceWorkerProofCommand, ServiceWorkerProofEvent>()
     .withContext(createInitialServiceWorkerProofContext())
     .onMessage(({ context, message }) => {
       if (message.type !== 'PING_SERVICE_WORKER') {

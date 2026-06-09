@@ -26,7 +26,7 @@
  *
  * await system.start();
  *
- * const actor = await system.spawn(defineActor({
+ * const actor = await system.spawn(defineBehavior({
  *   machine: myMachine,
  *   onMessage: async ({ message, machine, dependencies }) => {
  *     // Pure actor behavior with MessagePlan response
@@ -451,7 +451,7 @@ export class ActorSystemImpl implements ActorSystem {
     // ✅ PURE ACTOR MODEL: Spawn core system actors
 
     log.debug('Spawning system event actor');
-    // Spawn system event actor (updated to use defineActor)
+    // Spawn system event actor (updated to use defineBehavior)
     const systemEventBehavior = createSystemEventActor();
     const systemEventActor = await this.spawn(systemEventBehavior, {
       id: 'system-event-actor',

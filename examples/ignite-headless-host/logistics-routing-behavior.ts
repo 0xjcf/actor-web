@@ -1,4 +1,4 @@
-import { defineActor } from '@actor-web/runtime/browser';
+import { defineBehavior } from '@actor-web/runtime/browser';
 import {
   createInitialShipmentContext,
   type RoutePlan,
@@ -8,7 +8,7 @@ import {
 import { appendTimeline } from './logistics-provider';
 
 export function createRoutingBehavior() {
-  return defineActor<ShipmentCommand, ShipmentEvent>()
+  return defineBehavior<ShipmentCommand, ShipmentEvent>()
     .withContext(createInitialShipmentContext())
     .onMessage(({ context, message }) => {
       if (message.type === 'RESET_SHIPMENT') {

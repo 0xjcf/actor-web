@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { setup } from 'xstate';
 import { createActorSystem } from '../actor-system-impl.js';
-import { defineActor, defineFSM } from '../unified-actor-builder.js';
+import { defineBehavior, defineFSM } from '../unified-actor-builder.js';
 
 type ShipmentCommand =
   | { type: 'CREATE_SHIPMENT'; shipmentId: string }
@@ -42,17 +42,17 @@ const shipmentMachine = setup({
   },
 });
 
-describe('defineActor().onTransition', () => {
+describe('defineBehavior().onTransition', () => {
   it('requires a machine or FSM constraint map', () => {
     expect(() =>
-      defineActor<ShipmentCommand>().onTransition({
+      defineBehavior<ShipmentCommand>().onTransition({
         CREATE_SHIPMENT: () => ({ reply: 'created' }),
       })
     ).toThrow('onTransition(...) requires withMachine(...) or withFSM(...)');
   });
 
   it('dispatches typed transition handlers through the attached XState machine', async () => {
-    const behavior = defineActor<ShipmentCommand>()
+    const behavior = defineBehavior<ShipmentCommand>()
       .withMachine(shipmentMachine)
       .onTransition({
         CREATE_SHIPMENT: ({ message, actor }) => {
@@ -90,7 +90,7 @@ describe('defineActor().onTransition', () => {
 
   it('returns invalid transition values before running handler side effects', async () => {
     let handled = false;
-    const behavior = defineActor<ShipmentCommand>()
+    const behavior = defineBehavior<ShipmentCommand>()
       .withMachine(shipmentMachine)
       .onTransition({
         MARK_DELIVERED: () => {
@@ -126,7 +126,7 @@ describe('defineActor().onTransition', () => {
   });
 
   it('falls back to onMessage for messages without transition handlers', async () => {
-    const behavior = defineActor<ShipmentCommand>()
+    const behavior = defineBehavior<ShipmentCommand>()
       .withMachine(shipmentMachine)
       .onMessage(({ message, context, actor }) => {
         if (message.type === 'GET_STATUS') {
@@ -173,7 +173,7 @@ describe('defineActor().onTransition', () => {
       },
     });
     const initialContext: ShipmentContext = { shipmentId: null };
-    const behavior = defineActor<ShipmentCommand>()
+    const behavior = defineBehavior<ShipmentCommand>()
       .withContext(initialContext)
       .withFSM(shipmentFSM)
       .onTransition({
@@ -235,11 +235,11 @@ describe('defineActor().onTransition', () => {
     });
 
     expect(() =>
-      defineActor<ShipmentCommand>().withMachine(shipmentMachine).withFSM(shipmentFSM)
+      defineBehavior<ShipmentCommand>().withMachine(shipmentMachine).withFSM(shipmentFSM)
     ).toThrow('withMachine(...) and withFSM(...) cannot be used together.');
 
     expect(() =>
-      defineActor<ShipmentCommand>()
+      defineBehavior<ShipmentCommand>()
         .withContext({ shipmentId: null })
         .withFSM(shipmentFSM)
         .withMachine(shipmentMachine)
@@ -247,9 +247,9 @@ describe('defineActor().onTransition', () => {
   });
 });
 
-describe('defineActor() default machine/FSM behaviors (no handlers)', () => {
+describe('defineBehavior() default machine/FSM behaviors (no handlers)', () => {
   it('builds a machine-backed actor with no handlers: transitions and resolves ask with the snapshot', async () => {
-    const behavior = defineActor<ShipmentCommand>().withMachine(shipmentMachine).build();
+    const behavior = defineBehavior<ShipmentCommand>().withMachine(shipmentMachine).build();
 
     const system = createActorSystem({ nodeAddress: 'test-node' });
     await system.start();
@@ -266,7 +266,7 @@ describe('defineActor() default machine/FSM behaviors (no handlers)', () => {
   });
 
   it('rejects illegal transitions for a no-handler machine actor', async () => {
-    const behavior = defineActor<ShipmentCommand>().withMachine(shipmentMachine).build();
+    const behavior = defineBehavior<ShipmentCommand>().withMachine(shipmentMachine).build();
 
     const system = createActorSystem({ nodeAddress: 'test-node' });
     await system.start();
@@ -297,7 +297,7 @@ describe('defineActor() default machine/FSM behaviors (no handlers)', () => {
         created: { on: {} },
       },
     });
-    const behavior = defineActor<ShipmentCommand>()
+    const behavior = defineBehavior<ShipmentCommand>()
       .withContext({ shipmentId: null })
       .withFSM(shipmentFSM)
       .build();
@@ -328,7 +328,7 @@ describe('defineActor() default machine/FSM behaviors (no handlers)', () => {
   });
 
   it('applies the default for events without an explicit onTransition handler', async () => {
-    const behavior = defineActor<ShipmentCommand>()
+    const behavior = defineBehavior<ShipmentCommand>()
       .withMachine(shipmentMachine)
       .onTransition({
         MARK_DELIVERED: ({ actor }) => ({
@@ -357,6 +357,6 @@ describe('defineActor() default machine/FSM behaviors (no handlers)', () => {
   });
 
   it('still requires a handler when no machine/FSM is attached', () => {
-    expect(() => defineActor<ShipmentCommand>().build()).toThrow('A handler is required');
+    expect(() => defineBehavior<ShipmentCommand>().build()).toThrow('A handler is required');
   });
 });

@@ -14,7 +14,7 @@ import {
   type TemplateFunction,
 } from '../component-actor.js';
 import { Logger } from '../logger.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 const log = Logger.namespace('XSTATE_BRIDGE_TEST');
 
@@ -163,7 +163,7 @@ describe.skip('XState Bridge Integration', () => {
       const collectedEvents: ActorMessage[] = [];
 
       // Create collector using the working pattern from event emission tests
-      const collectorBehavior = defineActor<ActorMessage>()
+      const collectorBehavior = defineBehavior<ActorMessage>()
         .onMessage(({ message }) => {
           collectedEvents.push(message);
         })

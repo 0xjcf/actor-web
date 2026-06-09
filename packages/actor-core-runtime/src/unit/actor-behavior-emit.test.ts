@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ActorMessage } from '../actor-system.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 describe.skip('Layer 1: Actor Behavior Definition - Emit', () => {
   it('should build actor behavior with emit capability', () => {
@@ -20,7 +20,7 @@ describe.skip('Layer 1: Actor Behavior Definition - Emit', () => {
     }
 
     // Build actor behavior that emits events
-    const counterBehavior = defineActor<IncrementMessage>()
+    const counterBehavior = defineBehavior<IncrementMessage>()
       .withContext<CounterContext>({ count: 0 })
       .onMessage(({ message, actor }) => {
         if (message.type === 'INCREMENT') {
@@ -61,7 +61,7 @@ describe.skip('Layer 1: Actor Behavior Definition - Emit', () => {
       value: number;
     }
 
-    const behavior = defineActor<TriggerMessage>()
+    const behavior = defineBehavior<TriggerMessage>()
       .withContext<TestContext>({ value: 0 })
       .onMessage(({ message }) => {
         if (message.type === 'TRIGGER') {
@@ -96,7 +96,7 @@ describe.skip('Layer 1: Actor Behavior Definition - Emit', () => {
       status: 'idle' | 'running' | 'stopped';
     }
 
-    const behavior = defineActor<ControlMessage>()
+    const behavior = defineBehavior<ControlMessage>()
       .withContext<StatusContext>({ status: 'idle' })
       .onMessage(({ message, actor }) => {
         const currentStatus = actor.getSnapshot().context.status;
@@ -137,7 +137,7 @@ describe.skip('Layer 1: Actor Behavior Definition - Emit', () => {
       threshold: number;
     }
 
-    const behavior = defineActor<ThresholdMessage>()
+    const behavior = defineBehavior<ThresholdMessage>()
       .withContext<ThresholdContext>({ total: 0, threshold: 100 })
       .onMessage(({ message, actor }) => {
         if (message.type === 'ADD') {

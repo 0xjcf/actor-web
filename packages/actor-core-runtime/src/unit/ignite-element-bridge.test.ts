@@ -14,7 +14,7 @@ import {
 import { createRuntimeGatewaySourceHandle } from '../runtime-gateway.js';
 import { createInMemoryMessageTransportNetwork } from '../testing/in-memory-message-transport.js';
 import type { ActorSnapshot } from '../types.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 type CounterMessage = ActorMessage<{ type: 'INCREMENT' } | { type: 'RESET' }>;
 type CheckoutMessage = ActorMessage<{ type: 'SUBMIT'; orderId: string } | { type: 'GET_COUNT' }>;
@@ -190,7 +190,7 @@ describe('ignite-element bridge', () => {
     await system.start();
 
     try {
-      const behavior = defineActor<CounterMessage>()
+      const behavior = defineBehavior<CounterMessage>()
         .withMachine(counterMachine)
         .onMessage(({ message, actor }) => {
           const snapshot = actor.getSnapshot();
@@ -347,7 +347,7 @@ describe('ignite-element bridge', () => {
     await Promise.all([localSystem.start(), remoteSystem.start()]);
 
     try {
-      const behavior = defineActor<CheckoutMessage>()
+      const behavior = defineBehavior<CheckoutMessage>()
         .withContext({ submittedOrders: [] as string[] })
         .onMessage(({ message, actor }) => {
           const context = actor.getSnapshot().context as { submittedOrders: string[] };
@@ -432,7 +432,7 @@ describe('ignite-element bridge', () => {
     await system.start();
 
     try {
-      const behavior = defineActor<CheckoutMessage>()
+      const behavior = defineBehavior<CheckoutMessage>()
         .withContext({ submittedOrders: [] as string[] })
         .onMessage(({ message, actor }) => {
           const context = actor.getSnapshot().context as { submittedOrders: string[] };

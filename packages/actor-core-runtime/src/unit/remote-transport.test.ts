@@ -7,7 +7,7 @@ import {
   createInMemoryMessageTransportNetwork,
   type InMemoryTransportFrame,
 } from '../testing/in-memory-message-transport.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 type CheckoutMessage =
   | { type: 'SUBMIT'; orderId: string }
@@ -56,7 +56,7 @@ const checkoutMachine = setup({
 });
 
 function createCheckoutBehavior() {
-  return defineActor<CheckoutMessage>()
+  return defineBehavior<CheckoutMessage>()
     .withMachine(checkoutMachine)
     .onMessage(({ actor, message }) => {
       const context = actor.getSnapshot().context as CheckoutContext;

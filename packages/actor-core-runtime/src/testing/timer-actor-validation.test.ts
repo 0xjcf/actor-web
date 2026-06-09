@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { ActorSystemImpl } from '../actor-system-impl.js';
 import type { CancelScheduledMessage, ScheduleMessage } from '../actors/timer-actor.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 import { withTimerTesting } from './timer-test-utils.js';
 
 describe.skip('Timer Actor Implementation', () => {
@@ -19,7 +19,7 @@ describe.skip('Timer Actor Implementation', () => {
 
     const messages: string[] = [];
 
-    const testActor = defineActor()
+    const testActor = defineBehavior()
       .withContext({ messages })
       .onMessage(({ message }) => {
         messages.push(message.type);
@@ -66,7 +66,7 @@ describe.skip('Timer Actor Implementation', () => {
 
     const messages: string[] = [];
 
-    const testActor = defineActor()
+    const testActor = defineBehavior()
       .withContext({ messages: [] as string[] })
       .onMessage(({ message }) => {
         messages.push(message.type);
@@ -101,7 +101,7 @@ describe.skip('Timer Actor Implementation', () => {
 
     const messages: string[] = [];
 
-    const testActor = defineActor()
+    const testActor = defineBehavior()
       .onMessage(({ message }) => {
         messages.push(message.type);
         return {};
@@ -155,7 +155,7 @@ describe.skip('Timer Actor Implementation', () => {
     await system.start();
     const testSystem = await withTimerTesting(system);
 
-    const testActor = defineActor()
+    const testActor = defineBehavior()
       .onMessage(() => {
         return {};
       })

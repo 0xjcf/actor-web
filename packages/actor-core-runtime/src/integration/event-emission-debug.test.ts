@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ActorMessage } from '../actor-system.js';
 import { ActorSystemImpl } from '../actor-system-impl.js';
 import { Logger } from '../logger.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 const log = Logger.namespace('TEST');
 describe('Event Emission - Debug Multiple Subscribers', () => {
@@ -29,7 +29,7 @@ describe('Event Emission - Debug Multiple Subscribers', () => {
 
     // Create publisher that emits one event
     const publisher = await system.spawn(
-      defineActor<ActorMessage>()
+      defineBehavior<ActorMessage>()
         .onMessage(({ message }) => {
           if (message.type === 'TRIGGER') {
             return {
@@ -43,7 +43,7 @@ describe('Event Emission - Debug Multiple Subscribers', () => {
 
     // Create first subscriber
     const sub1 = await system.spawn(
-      defineActor<ActorMessage>()
+      defineBehavior<ActorMessage>()
         .onMessage(({ message }) => {
           log.debug('SUB1 received:', message.type);
           sub1Events.push(message);
@@ -55,7 +55,7 @@ describe('Event Emission - Debug Multiple Subscribers', () => {
 
     // Create second subscriber
     const sub2 = await system.spawn(
-      defineActor<ActorMessage>()
+      defineBehavior<ActorMessage>()
         .onMessage(({ message }) => {
           log.debug('SUB2 received:', message.type);
           sub2Events.push(message);

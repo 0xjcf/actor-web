@@ -14,7 +14,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ActorMessage, ActorSystem } from '../actor-system.js';
 import { createActorSystem } from '../actor-system-impl.js';
-import { defineActor } from '../index.js';
+import { defineBehavior } from '../index.js';
 import { Logger } from '../logger.js';
 import { createActorDelay } from '../pure-xstate-utilities.js';
 
@@ -85,7 +85,7 @@ describe.skip('Fluent Builder API Integration', () => {
       log.debug('Testing smart defaults pattern');
 
       // Arrange: Create counter behavior with smart defaults
-      const behavior = defineActor<CounterMessage>()
+      const behavior = defineBehavior<CounterMessage>()
         .withContext<CounterContext>({ count: 0, status: 'idle' })
         .onMessage(({ message, actor }) => {
           const context = actor.getSnapshot().context as CounterContext;
@@ -120,7 +120,7 @@ describe.skip('Fluent Builder API Integration', () => {
       log.debug('Testing explicit response pattern');
 
       // Arrange: Create behavior with explicit response
-      const behavior = defineActor<CounterMessage>()
+      const behavior = defineBehavior<CounterMessage>()
         .withContext<CounterContext>({ count: 0, status: 'idle' })
         .onMessage(({ message }) => {
           if (message.type === 'SET_VALUE') {
@@ -156,7 +156,7 @@ describe.skip('Fluent Builder API Integration', () => {
       log.debug('Testing graceful handling of undefined returns');
 
       // Arrange: Create behavior that returns undefined
-      const behavior = defineActor<CounterMessage>()
+      const behavior = defineBehavior<CounterMessage>()
         .withContext<CounterContext>({ count: 0, status: 'idle' })
         .onMessage(() => {
           log.debug('Handler returning undefined');
@@ -179,7 +179,7 @@ describe.skip('Fluent Builder API Integration', () => {
       log.debug('Testing type safety in builder chain');
 
       // Arrange & Act: Create behavior with type inference
-      const behavior = defineActor<CounterMessage>()
+      const behavior = defineBehavior<CounterMessage>()
         .withContext<CounterContext>({ count: 0, status: 'idle' })
         .onMessage(({ message, actor, tools }) => {
           // TypeScript should infer all types correctly
@@ -200,8 +200,8 @@ describe.skip('Fluent Builder API Integration', () => {
       expect(typeof behavior.onMessage).toBe('function');
     });
 
-    it('keeps runtime dependencies out of the public defineActor handler context', () => {
-      defineActor<CounterMessage>()
+    it('keeps runtime dependencies out of the public defineBehavior handler context', () => {
+      defineBehavior<CounterMessage>()
         .withContext<CounterContext>({ count: 0, status: 'idle' })
         .onMessage((params) => {
           expect(params.tools).toBeDefined();
@@ -215,7 +215,7 @@ describe.skip('Fluent Builder API Integration', () => {
     it('should handle malformed message payloads gracefully', async () => {
       log.debug('Testing malformed payload handling');
 
-      const behavior = defineActor<CounterMessage>()
+      const behavior = defineBehavior<CounterMessage>()
         .withContext<CounterContext>({ count: 0, status: 'idle' })
         .onMessage(({ message }) => {
           try {
@@ -263,7 +263,7 @@ describe.skip('Fluent Builder API Integration', () => {
     it('should handle concurrent ask patterns efficiently', async () => {
       log.debug('Testing concurrent ask patterns');
 
-      const behavior = defineActor<CounterMessage>()
+      const behavior = defineBehavior<CounterMessage>()
         .withContext<CounterContext>({ count: 0, status: 'idle' })
         .onMessage(({ message, actor }) => {
           const context = actor.getSnapshot().context as CounterContext;
@@ -309,7 +309,7 @@ describe.skip('Fluent Builder API Integration', () => {
       log.debug('Testing high-frequency message processing');
 
       let processedCount = 0;
-      const behavior = defineActor<CounterMessage>()
+      const behavior = defineBehavior<CounterMessage>()
         .withContext<CounterContext>({ count: 0, status: 'idle', processedItems: [] })
         .onMessage(({ message, actor }) => {
           const context = actor.getSnapshot().context as CounterContext;
@@ -368,7 +368,7 @@ describe.skip('Fluent Builder API Integration', () => {
     it('should handle actor lifecycle events properly', async () => {
       log.debug('Testing actor lifecycle events');
 
-      const behavior = defineActor<CounterMessage>()
+      const behavior = defineBehavior<CounterMessage>()
         .withContext<CounterContext>({ count: 0, status: 'idle' })
         .onMessage(({ message }) => {
           if (message.type === 'GET_COUNT') {
@@ -394,7 +394,7 @@ describe.skip('Fluent Builder API Integration', () => {
       log.debug('Testing error recovery patterns');
 
       let errorCount = 0;
-      const behavior = defineActor<CounterMessage>()
+      const behavior = defineBehavior<CounterMessage>()
         .withContext<CounterContext>({ count: 0, status: 'idle' })
         .onMessage(({ message, actor }) => {
           const context = actor.getSnapshot().context as CounterContext;
@@ -447,7 +447,7 @@ describe.skip('Fluent Builder API Integration', () => {
       log.debug('Testing ActorHandlerResult processing with comprehensive logging');
 
       // Arrange: Create behavior that definitely returns ActorHandlerResult
-      const behavior = defineActor<CounterMessage>()
+      const behavior = defineBehavior<CounterMessage>()
         .withContext<CounterContext>({ count: 0, status: 'idle' })
         .onMessage(({ message }) => {
           log.debug('Handler received message', { type: message.type });

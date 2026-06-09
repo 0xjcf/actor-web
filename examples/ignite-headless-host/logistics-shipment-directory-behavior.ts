@@ -1,4 +1,4 @@
-import { defineActor } from '@actor-web/runtime/browser';
+import { defineBehavior } from '@actor-web/runtime/browser';
 import {
   createInitialShipmentContext,
   type ShipmentCommand,
@@ -8,7 +8,7 @@ import {
 import { appendTimeline } from './logistics-provider';
 
 export function createShipmentDirectoryBehavior() {
-  return defineActor<ShipmentCommand, ShipmentEvent>()
+  return defineBehavior<ShipmentCommand, ShipmentEvent>()
     .withContext(createInitialShipmentContext())
     .onMessage(({ context, message }) => {
       if (message.type === 'GET_SHIPMENT_COUNT') {

@@ -196,7 +196,7 @@ export type MessageOfSpec<B> = B extends BehaviorSpec<infer M, unknown, unknown,
  * Create a new fluent behavior builder
  * This is the main entry point for users
  */
-export function defineActor<TMsg extends ActorMessage = ActorMessage>(): FluentBehaviorBuilder<
+export function defineBehavior<TMsg extends ActorMessage = ActorMessage>(): FluentBehaviorBuilder<
   TMsg,
   unknown,
   unknown,

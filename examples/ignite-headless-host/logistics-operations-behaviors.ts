@@ -1,4 +1,4 @@
-import { defineActor } from '@actor-web/runtime/browser';
+import { defineBehavior } from '@actor-web/runtime/browser';
 import {
   createInitialDispatcherContext,
   createInitialDriverDirectoryContext,
@@ -21,7 +21,7 @@ function driverIdForShipment(shipmentId: string): string {
 }
 
 export function createLogisticsSupervisorBehavior() {
-  return defineActor<LogisticsSupervisorCommand, LogisticsSupervisorEvent>()
+  return defineBehavior<LogisticsSupervisorCommand, LogisticsSupervisorEvent>()
     .withContext(createInitialLogisticsSupervisorContext())
     .onMessage(({ context, message }) => {
       if (message.type === 'OBSERVE_SHIPMENT_CREATED') {
@@ -66,7 +66,7 @@ export function createLogisticsSupervisorBehavior() {
 }
 
 export function createDispatcherBehavior() {
-  return defineActor<DispatcherCommand, DispatcherEvent>()
+  return defineBehavior<DispatcherCommand, DispatcherEvent>()
     .withContext(createInitialDispatcherContext())
     .onMessage(({ context, message }) => {
       if (message.type === 'DISPATCH_SHIPMENT') {
@@ -111,7 +111,7 @@ export function createDispatcherBehavior() {
 }
 
 export function createDriverDirectoryBehavior() {
-  return defineActor<DriverDirectoryCommand, DriverDirectoryEvent>()
+  return defineBehavior<DriverDirectoryCommand, DriverDirectoryEvent>()
     .withContext(createInitialDriverDirectoryContext())
     .onMessage(({ context, message }) => {
       const driverId = driverIdForShipment(message.shipmentId);

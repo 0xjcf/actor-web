@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { emit, setup } from 'xstate';
 import { createActorSystem } from '../actor-system-impl.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 type PingEvent = { type: 'PING' };
 type PongEmitted = { type: 'PONG'; seq: number };
@@ -30,7 +30,7 @@ const emittingMachine = setup({
 
 describe('MachineActor XState emit bridge', () => {
   it('forwards machine emit(...) domain events to subscribeEvent listeners', async () => {
-    const behavior = defineActor<PingEvent, PongEmitted>().withMachine(emittingMachine).build();
+    const behavior = defineBehavior<PingEvent, PongEmitted>().withMachine(emittingMachine).build();
 
     const system = createActorSystem({ nodeAddress: 'test-node' });
     await system.start();
@@ -56,10 +56,10 @@ describe('MachineActor XState emit bridge', () => {
   });
 
   it('delivers machine emit(...) events to a subscribed actor via system.subscribe', async () => {
-    const publisher = defineActor<PingEvent, PongEmitted>().withMachine(emittingMachine).build();
+    const publisher = defineBehavior<PingEvent, PongEmitted>().withMachine(emittingMachine).build();
 
     type CollectorMsg = PongEmitted;
-    const collector = defineActor<CollectorMsg>()
+    const collector = defineBehavior<CollectorMsg>()
       .withContext({ pongs: [] as number[] })
       .onMessage(({ message, context }) =>
         message.type === 'PONG' ? { context: { pongs: [...context.pongs, message.seq] } } : {}

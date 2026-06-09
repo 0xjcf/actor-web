@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { ActorMessage } from '../actor-system.js';
 import { ActorSystemImpl } from '../actor-system-impl.js';
 import { withTimerTesting } from '../testing/timer-test-utils.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 describe('Layer 5: Message Delivery to Mailboxes', () => {
   it('should deliver messages to actor mailboxes via enqueueMessage', async () => {
@@ -18,7 +18,7 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
     // Track messages received by the actor
     const receivedMessages: ActorMessage[] = [];
 
-    const receiverBehavior = defineActor<ActorMessage>()
+    const receiverBehavior = defineBehavior<ActorMessage>()
       .onMessage(({ message }) => {
         receivedMessages.push(message);
         // Stateless actors don't need to return anything
@@ -56,7 +56,7 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
     const subscriberMessages: ActorMessage[] = [];
 
     // Create a publisher that emits events
-    const publisherBehavior = defineActor<ActorMessage>()
+    const publisherBehavior = defineBehavior<ActorMessage>()
       .onMessage(({ message }) => {
         if (message.type === 'EMIT_EVENT') {
           return {
@@ -67,7 +67,7 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
       .build();
 
     // Create a subscriber that collects messages
-    const subscriberBehavior = defineActor<ActorMessage>()
+    const subscriberBehavior = defineBehavior<ActorMessage>()
       .onMessage(({ message }) => {
         subscriberMessages.push(message);
         // Stateless actors don't need to return anything
@@ -115,7 +115,7 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
 
     // Create a slow actor that schedules a delay for each message
     let slowActor: Awaited<ReturnType<typeof testSystem.spawn>> | null = null;
-    const slowActorBehavior = defineActor<ActorMessage>()
+    const slowActorBehavior = defineBehavior<ActorMessage>()
       .onMessage(async ({ message }) => {
         if (message.type === 'PROCESS_COMPLETE') {
           // Handle the delayed completion
@@ -183,14 +183,14 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
     const actor1Messages: ActorMessage[] = [];
     const actor2Messages: ActorMessage[] = [];
 
-    const actor1Behavior = defineActor<ActorMessage>()
+    const actor1Behavior = defineBehavior<ActorMessage>()
       .onMessage(({ message }) => {
         actor1Messages.push(message);
         // Stateless actors don't need to return anything
       })
       .build();
 
-    const actor2Behavior = defineActor<ActorMessage>()
+    const actor2Behavior = defineBehavior<ActorMessage>()
       .onMessage(({ message }) => {
         actor2Messages.push(message);
         // Stateless actors don't need to return anything
@@ -226,7 +226,7 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
     await system.start();
 
     // Create an actor
-    const actorBehavior = defineActor<ActorMessage>()
+    const actorBehavior = defineBehavior<ActorMessage>()
       .onMessage(() => {
         // Stateless actors don't need to return anything
       })
@@ -252,7 +252,7 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
     // Track message order
     const messageOrder: number[] = [];
 
-    const orderTestBehavior = defineActor<ActorMessage>()
+    const orderTestBehavior = defineBehavior<ActorMessage>()
       .onMessage(({ message }) => {
         if ('order' in message && typeof message.order === 'number') {
           messageOrder.push(message.order);
@@ -298,7 +298,7 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
       delay: number,
       slot: { ref: Awaited<ReturnType<typeof testSystem.spawn>> | null }
     ) => {
-      return defineActor<ActorMessage>()
+      return defineBehavior<ActorMessage>()
         .onMessage(async ({ message }) => {
           if (message.type === 'COMPLETE') {
             // Use type predicate to safely access property

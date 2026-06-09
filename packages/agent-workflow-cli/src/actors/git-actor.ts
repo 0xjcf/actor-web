@@ -2,13 +2,13 @@
  * Git Actor - State-Based Implementation
  *
  * This actor manages git operations using proper state-based actor patterns.
- * Uses modern framework APIs: defineActor + createActor pattern.
+ * Uses modern framework APIs: defineBehavior + createActor pattern.
  *
  * STANDARDIZED ACTOR PATTERN IMPLEMENTATION
  * =======================================
  *
  * This actor follows the unified actor standardization patterns:
- * 1. Uses defineActor().withMachine() for XState integration
+ * 1. Uses defineBehavior().withMachine() for XState integration
  * 2. Uses createActor() for actor instance creation
  * 3. Supports ask() pattern for request/response
  * 4. ActorInstance interface for proper async/await patterns
@@ -18,7 +18,7 @@
  * Supervision: XState built-in supervision
  */
 
-import { defineActor, Logger } from '@actor-web/runtime';
+import { defineBehavior, Logger } from '@actor-web/runtime';
 import { type SimpleGit, simpleGit } from 'simple-git';
 import { assign, fromPromise, setup } from 'xstate';
 
@@ -190,19 +190,19 @@ export const gitActorMachine = setup({
 });
 
 // ============================================================================
-// MODERN PUBLIC API IMPLEMENTATION - Using defineActor + createActor
+// MODERN PUBLIC API IMPLEMENTATION - Using defineBehavior + createActor
 // ============================================================================
 
 /**
  * Create GitActor behavior using the PUBLIC API pattern
  *
  * Following the correct public framework APIs:
- * 1. ✅ defineActor().withMachine().onMessage() for behavior
+ * 1. ✅ defineBehavior().withMachine().onMessage() for behavior
  * 2. ✅ Actor instances are created by spawning through ActorSystem
  * 3. ✅ No internal APIs or direct actor creation
  */
 export function createGitActorBehavior(baseDir?: string) {
-  return defineActor()
+  return defineBehavior()
     .withMachine(gitActorMachine)
     .onMessage(({ message, actor }) => {
       log.debug('GitActor received message via public API', {

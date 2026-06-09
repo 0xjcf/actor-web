@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActorMessage } from '../actor-system.js';
 import { type ActorSystemConfig, createActorSystem } from '../actor-system-impl.js';
-import { defineActor } from '../index.js';
+import { defineBehavior } from '../index.js';
 import { Logger } from '../logger.js';
 import { createActorDelay } from '../pure-xstate-utilities.js';
 
@@ -55,7 +55,7 @@ describe('Async Messaging with Mailboxes', () => {
     const processedMessages: string[] = [];
 
     // ✅ PURE ACTOR MODEL: Use context-based actor for ask pattern support
-    const slowActor = defineActor<ActorMessage>()
+    const slowActor = defineBehavior<ActorMessage>()
       .withContext({ processedMessages: [] as string[], slowMessageProcessed: false })
       .onMessage(async ({ message, actor }) => {
         const context = actor.getSnapshot().context;
@@ -95,7 +95,7 @@ describe('Async Messaging with Mailboxes', () => {
 
   it('should handle high volume of messages without errors', async () => {
     // Create a slow actor that will cause mailbox to fill up
-    const slowActor = defineActor<ActorMessage>()
+    const slowActor = defineBehavior<ActorMessage>()
       .withContext({ processedCount: 0 })
       .onMessage(async ({ message, actor }) => {
         const context = actor.getSnapshot().context;
@@ -134,7 +134,7 @@ describe('Async Messaging with Mailboxes', () => {
   });
 
   it('should maintain message ordering within an actor', async () => {
-    const orderActor = defineActor<TestMessage>()
+    const orderActor = defineBehavior<TestMessage>()
       .withContext({ receivedMessages: [] as number[] })
       .onMessage(({ message, actor }) => {
         const context = actor.getSnapshot().context;
@@ -177,7 +177,7 @@ describe('Async Messaging with Mailboxes', () => {
     const actor2Messages: string[] = [];
 
     const createSlowActor = (messages: string[]) =>
-      defineActor<TestMessage>()
+      defineBehavior<TestMessage>()
         .withContext({ messages: [] as string[] })
         .onMessage(async ({ message, actor }) => {
           const context = actor.getSnapshot().context;

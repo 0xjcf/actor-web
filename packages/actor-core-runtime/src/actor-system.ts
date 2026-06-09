@@ -68,7 +68,7 @@ export type CorrelationId = string;
 /**
  * Internal actor dependencies injected by the runtime.
  *
- * Public `defineActor(...)` and `ActorBehavior` handlers should use `message`,
+ * Public `defineBehavior(...)` and `ActorBehavior` handlers should use `message`,
  * `context`, `tools`, and advanced `actor` access instead of depending on this
  * plumbing directly.
  * Enhanced for pure actor model with machine + dependencies pattern

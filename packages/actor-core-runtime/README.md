@@ -29,7 +29,7 @@ This package (`@actor-web/runtime`) implements the pure actor model correctly wi
 
 #### **Unified Actor API**
 
-- **Single `defineActor()` API** - One API for all actor patterns
+- **Single `defineBehavior()` API** - One API for all actor patterns
 - **Three Actor Types** - Stateless, Context-based, Machine-based
 - **OTP Pattern Support** - Context updates, event emission, and replies
 - **Type Inference** - Full TypeScript support with proper context types
@@ -113,7 +113,7 @@ await system.flush();     // Wait for all messages
 ### Defining Actors
 
 ```typescript
-import { defineActor } from '@actor-web/runtime';
+import { defineBehavior } from '@actor-web/runtime';
 
 // Define message types
 type CounterMessage = 
@@ -123,7 +123,7 @@ type CounterMessage =
   | { type: 'RESET'; value: number };
 
 // Define actor with OTP patterns
-const counterActor = defineActor<CounterMessage>()
+const counterActor = defineBehavior<CounterMessage>()
   .withContext({ count: 0 })
   .onMessage(({ message, actor }) => {
     const { count } = actor.getSnapshot().context;
@@ -205,7 +205,7 @@ return {
 - **`state.matches`** - For conditional behavior based on actor's current state
 
 ```typescript
-const orderActor = defineActor<OrderMessage>()
+const orderActor = defineBehavior<OrderMessage>()
   .withMachine(orderMachine)
   .onMessage(({ message, actor }) => {
     const snapshot = actor.getSnapshot();
@@ -311,7 +311,7 @@ return {
 ### Complete Banking Example
 
 ```typescript
-import { createActorSystem, defineActor } from '@actor-web/runtime';
+import { createActorSystem, defineBehavior } from '@actor-web/runtime';
 
 // Define a bank account actor
 type AccountMessage = 
@@ -320,7 +320,7 @@ type AccountMessage =
   | { type: 'GET_BALANCE' }
   | { type: 'TRANSFER'; to: string; amount: number };
 
-const accountActor = defineActor<AccountMessage>()
+const accountActor = defineBehavior<AccountMessage>()
   .withContext({ 
     balance: 0, 
     transactions: []

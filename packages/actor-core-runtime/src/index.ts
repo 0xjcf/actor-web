@@ -429,7 +429,7 @@ export type {
   Subscription,
   SupervisionStrategy,
 } from './types.js';
-// Unified Actor API (NEW - Replaces defineActor/defineActor)
+// Unified Actor API (NEW - Replaces defineBehavior/defineBehavior)
 export {
   type ActorFSMDefinition,
   type ActorFSMStateConfig,
@@ -437,7 +437,7 @@ export {
   type ActorFSMTransitionInput,
   type ActorSpec,
   type ActorTransitionErrorValue,
-  defineActor,
+  defineBehavior,
   defineFSM,
   UnifiedActorBuilder,
   type UnifiedMessageHandler,

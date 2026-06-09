@@ -4,7 +4,7 @@
  */
 
 import type { ActorMessage, ActorSystem } from '../actor-system.js';
-import { defineActor } from '../index.js';
+import { defineBehavior } from '../index.js';
 import { Logger } from '../logger.js';
 import type { BaselineMetrics, OptimizationImpact, RegressionReport } from './index.js';
 import { MemoryMonitor } from './memory-monitor.js';
@@ -160,7 +160,7 @@ export class PerformanceBenchmark {
     const times: number[] = [];
 
     // Simple test behavior using fluent API - types automatically inferred!
-    const testBehavior = defineActor<ActorMessage>()
+    const testBehavior = defineBehavior<ActorMessage>()
       .withContext({})
       .onMessage(() => {
         // Fire-and-forget pattern for performance testing
@@ -195,7 +195,7 @@ export class PerformanceBenchmark {
     const iterations = 100;
     const times: number[] = [];
 
-    const testBehavior = defineActor<ActorMessage>()
+    const testBehavior = defineBehavior<ActorMessage>()
       .withContext({})
       .onMessage(() => {
         // Fire-and-forget for creation performance testing
@@ -229,7 +229,7 @@ export class PerformanceBenchmark {
 
     // Create test actor
     let processedCount = 0;
-    const testBehavior = defineActor<ActorMessage>()
+    const testBehavior = defineBehavior<ActorMessage>()
       .withContext({})
       .onMessage(({ message }) => {
         if (message.type === 'TEST_MESSAGE') {
@@ -271,7 +271,7 @@ export class PerformanceBenchmark {
     const iterations = 100;
     const times: number[] = [];
 
-    const testBehavior = defineActor<ActorMessage>()
+    const testBehavior = defineBehavior<ActorMessage>()
       .withContext({})
       .onMessage(() => {
         // Fire-and-forget for ask latency testing - simplified
@@ -307,7 +307,7 @@ export class PerformanceBenchmark {
     const start = process.hrtime.bigint();
 
     // Simulate some load
-    const testBehavior = defineActor<ActorMessage>()
+    const testBehavior = defineBehavior<ActorMessage>()
       .withContext({})
       .onMessage(() => {
         // Fire-and-forget for memory monitoring

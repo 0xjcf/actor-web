@@ -2,7 +2,7 @@
 
 Testing utilities for [Actor-Web](../actor-core-runtime) applications.
 
-Actor-Web behaviors can be driven by XState machines (`defineActor().withMachine(...)`).
+Actor-Web behaviors can be driven by XState machines (`defineBehavior().withMachine(...)`).
 This package helps you test those machines structurally — finding unreachable
 states and reporting transition coverage — so a state can't silently become dead
 code.

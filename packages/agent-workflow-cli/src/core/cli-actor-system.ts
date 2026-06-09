@@ -75,7 +75,7 @@ class CLIActorSystem {
   /**
    * Create a GitActor using modern fluent API pattern
    *
-   * Uses the modernized GitActor with defineActor().withMachine().onMessage()
+   * Uses the modernized GitActor with defineBehavior().withMachine().onMessage()
    * Spawns the actor through the ActorSystem for proper lifecycle management.
    * Even local actors benefit from the actor system's services:
    * - Message queueing and delivery

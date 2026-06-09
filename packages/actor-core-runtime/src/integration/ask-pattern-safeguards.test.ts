@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActorSystem } from '../actor-system.js';
 import { type ActorSystemImpl, createActorSystem } from '../actor-system-impl.js';
 import { AskPatternTimeout } from '../ask-pattern-safeguards.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 describe.skip('Ask Pattern Safeguards - Integration', () => {
   let system: ActorSystem;
@@ -25,7 +25,7 @@ describe.skip('Ask Pattern Safeguards - Integration', () => {
   describe.skip('Timeout Behavior', () => {
     it('should timeout when actor does not reply', async () => {
       // Create an actor that doesn't return a reply
-      const NoReplyActor = defineActor()
+      const NoReplyActor = defineBehavior()
         .withContext({ count: 0 })
         .onMessage(({ message, actor }) => {
           const context = actor.getSnapshot().context;
@@ -57,7 +57,7 @@ describe.skip('Ask Pattern Safeguards - Integration', () => {
 
     it('should work correctly when actor returns reply', async () => {
       // Create an actor that returns a reply
-      const ReplyActor = defineActor()
+      const ReplyActor = defineBehavior()
         .withContext({ count: 0 })
         .onMessage(({ message, actor }) => {
           const context = actor.getSnapshot().context;
@@ -98,7 +98,7 @@ describe.skip('Ask Pattern Safeguards - Integration', () => {
       const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       // Create an actor that doesn't return a reply
-      const WarningActor = defineActor()
+      const WarningActor = defineBehavior()
         .withContext({ data: 'test' })
         .onMessage(({ message, actor }) => {
           const context = actor.getSnapshot().context;
@@ -133,7 +133,7 @@ describe.skip('Ask Pattern Safeguards - Integration', () => {
 
     it('should work with any message type', async () => {
       // Test with various message types, not just GET_*
-      const CustomActor = defineActor()
+      const CustomActor = defineBehavior()
         .withContext({ users: ['Alice', 'Bob'] })
         .onMessage(({ message, actor }) => {
           const context = actor.getSnapshot().context;
@@ -177,7 +177,7 @@ describe.skip('Ask Pattern Safeguards - Integration', () => {
 
     it('should handle custom timeout values', async () => {
       // Test timeout behavior without actual delays
-      const TestActor = defineActor()
+      const TestActor = defineBehavior()
         .withContext({ requestCount: 0 })
         .onMessage(({ message, actor }) => {
           const context = actor.getSnapshot().context;

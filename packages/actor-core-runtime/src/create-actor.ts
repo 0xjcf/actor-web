@@ -506,7 +506,7 @@ export class TemplateBehaviorBuilder<TMessage = ActorMessage, TEmitted = ActorMe
 
   /**
    * Add context after template definition
-   * Allows: defineActor().withTemplate().withContext().onMessage()
+   * Allows: defineBehavior().withTemplate().withContext().onMessage()
    */
   withContext<TContext>(
     initialContext: TContext
@@ -519,7 +519,7 @@ export class TemplateBehaviorBuilder<TMessage = ActorMessage, TEmitted = ActorMe
 
   /**
    * Add machine after template definition
-   * Allows: defineActor().withTemplate().withMachine().onMessage()
+   * Allows: defineBehavior().withTemplate().withMachine().onMessage()
    */
   withMachine(machine: AnyStateMachine): TemplateMachineBehaviorBuilder<TMessage, TEmitted> {
     return new TemplateMachineBehaviorBuilder<TMessage, TEmitted>(this.template, machine);
@@ -527,7 +527,7 @@ export class TemplateBehaviorBuilder<TMessage = ActorMessage, TEmitted = ActorMe
 
   /**
    * Define message handler directly after template
-   * Allows: defineActor().withTemplate().onMessage()
+   * Allows: defineBehavior().withTemplate().onMessage()
    */
   onMessage(
     handler: OTPMessageHandler<TMessage, unknown, unknown, TEmitted>
@@ -908,7 +908,7 @@ function createActorBehaviorFromConfig<
  * @example
  * ```typescript
  * // Pure actor behavior config
- * const behavior = defineActor({
+ * const behavior = defineBehavior({
  *   onMessage: async ({ message, machine, dependencies }) => {
  *     // Process message using machine state and dependencies
  *     const currentState = machine.getSnapshot();
@@ -926,7 +926,7 @@ function createActorBehaviorFromConfig<
  * });
  *
  * // XState machine config
- * const xstateBehavior = defineActor({
+ * const xstateBehavior = defineBehavior({
  *   machine: counterMachine,
  *   input: { count: 0 }
  * });

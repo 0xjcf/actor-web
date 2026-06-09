@@ -7,7 +7,7 @@
  */
 
 import { setup } from 'xstate';
-import { defineActor } from '../create-actor.js';
+import { defineBehavior } from '../create-actor.js';
 
 // ============================================================================
 // DEMO MESSAGE TYPES
@@ -28,7 +28,7 @@ interface RoutingMessage {
 // PATTERN 1: PURE ROUTING (STATELESS)
 // ============================================================================
 
-export const emailRouter = defineActor<RoutingMessage>().onMessage(({ message }) => {
+export const emailRouter = defineBehavior<RoutingMessage>().onMessage(({ message }) => {
   switch (message.type) {
     case 'ROUTE_EMAIL':
       return [
@@ -51,7 +51,7 @@ export const emailRouter = defineActor<RoutingMessage>().onMessage(({ message })
 // PATTERN 2: OTP-STYLE (EXPLICIT CONTEXT MANAGEMENT)
 // ============================================================================
 
-export const otpCounter = defineActor<CounterMessage>()
+export const otpCounter = defineBehavior<CounterMessage>()
   .withContext({ count: 0, lastUpdated: Date.now() })
   .onMessage(({ message, context }) => {
     switch (message.type) {
@@ -129,7 +129,7 @@ const counterMachine = setup({
   },
 });
 
-export const xstateCounter = defineActor<CounterMessage>()
+export const xstateCounter = defineBehavior<CounterMessage>()
   .withMachine(counterMachine)
   .onMessage(({ message, actor }) => {
     const state = actor.getSnapshot();

@@ -17,7 +17,7 @@ import {
 } from '../runtime-transport-contract.js';
 import { createInMemoryRuntimeTransportIdempotencyProvider } from '../runtime-transport-idempotency.js';
 import type { RuntimeTransportTelemetryEvent } from '../runtime-transport-telemetry.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 type CheckoutMessage =
   | { type: 'SUBMIT'; orderId: string }
@@ -39,7 +39,7 @@ function createBrowserSocket(url: string): WebSocket {
 }
 
 function createCheckoutBehavior() {
-  return defineActor<CheckoutMessage>()
+  return defineBehavior<CheckoutMessage>()
     .withContext<CheckoutContext>({
       submittedOrders: [],
       lastSubmittedOrderId: null,

@@ -228,7 +228,7 @@ export {
   type ActorFSMTransition,
   type ActorFSMTransitionInput,
   type ActorTransitionErrorValue,
-  defineActor,
+  defineBehavior,
   defineFSM,
   type UnifiedTransitionHandler,
   type UnifiedTransitionHandlers,

@@ -1,4 +1,8 @@
-import { type ActorTransitionErrorValue, defineActor, defineFSM } from '@actor-web/runtime/browser';
+import {
+  type ActorTransitionErrorValue,
+  defineBehavior,
+  defineFSM,
+} from '@actor-web/runtime/browser';
 import type {
   ProviderShipmentCommand,
   ProviderShipmentEvent,
@@ -137,7 +141,7 @@ export function processProviderShipmentSignal(
 }
 
 export function createProviderShipmentBehavior(initialContext: ShipmentContext) {
-  return defineActor<ProviderShipmentCommand, ProviderShipmentEvent>()
+  return defineBehavior<ProviderShipmentCommand, ProviderShipmentEvent>()
     .withContext(initialContext)
     .withFSM(providerShipmentFSM)
     .onMessage(({ message }) => {

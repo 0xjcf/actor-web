@@ -16,7 +16,7 @@ import {
   type ActorSystemImpl,
   createActorSystem,
 } from '../actor-system-impl.js';
-import { defineActor } from '../index.js';
+import { defineBehavior } from '../index.js';
 import { Logger } from '../logger.js';
 import type { Message } from '../types.js';
 
@@ -31,7 +31,7 @@ describe('Actor Event Emission', () => {
   async function createEventSubscriber(id: string) {
     const receivedEvents: ActorMessage[] = [];
     const subscriber = await system.spawn(
-      defineActor<ActorMessage>()
+      defineBehavior<ActorMessage>()
         .onMessage(({ message }) => {
           log.debug(`📥 ${id.toUpperCase()}: Received`, message.type);
           receivedEvents.push(message);
@@ -85,7 +85,7 @@ describe('Actor Event Emission', () => {
         count: number;
       }
 
-      const counterBehavior = defineActor<CounterMessage>()
+      const counterBehavior = defineBehavior<CounterMessage>()
         .withContext<CounterContext>({ count: 0 })
         .onMessage(({ message, actor }) => {
           const ctx = actor.getSnapshot().context;
@@ -263,7 +263,7 @@ describe('Actor Event Emission', () => {
         },
       });
 
-      const loggerBehavior = defineActor<LogMessage | GetStatusMessage>()
+      const loggerBehavior = defineBehavior<LogMessage | GetStatusMessage>()
         .withMachine(loggerMachine)
         .onMessage(({ message }) => {
           log.debug('🔍 LOGGER BEHAVIOR: onMessage called', {
@@ -429,7 +429,7 @@ describe('Actor Event Emission', () => {
         },
       });
 
-      const behavior = defineActor<ActorMessage>()
+      const behavior = defineBehavior<ActorMessage>()
         .withMachine(valueMachine)
         .onMessage(({ message, actor }) => {
           if (message.type === 'INCREMENT') {
@@ -502,7 +502,7 @@ describe('Actor Event Emission', () => {
         },
       });
 
-      const batchBehavior = defineActor<ActorMessage>()
+      const batchBehavior = defineBehavior<ActorMessage>()
         .withMachine(batchMachine)
         .onMessage(({ message, actor }) => {
           log.debug('🔄 BATCH PROCESSOR: Message received', {
@@ -580,7 +580,7 @@ describe('Actor Event Emission', () => {
       // ✅ PURE ACTOR MODEL: Use simple subscriber for collecting events
       const collectedEvents: ActorMessage[] = [];
       const subscriber = await system.spawn(
-        defineActor<ActorMessage>()
+        defineBehavior<ActorMessage>()
           .onMessage(({ message }) => {
             log.debug('🔄 SUBSCRIBER: Received event', message.type);
             collectedEvents.push(message);
@@ -638,7 +638,7 @@ describe('Actor Event Emission', () => {
 
   describe('Event Message Format', () => {
     it('should properly format emitted events as ActorMessages', async () => {
-      const behavior = defineActor<ActorMessage>()
+      const behavior = defineBehavior<ActorMessage>()
         .withContext({})
         .onMessage(({ message }) => {
           if (message.type === 'TRIGGER') {
@@ -696,7 +696,7 @@ describe('Actor Event Emission', () => {
     });
 
     it('should preserve ActorMessage format if event is already formatted', async () => {
-      const behavior = defineActor<ActorMessage>()
+      const behavior = defineBehavior<ActorMessage>()
         .withContext({})
         .onMessage(({ message }) => {
           if (message.type === 'TRIGGER') {

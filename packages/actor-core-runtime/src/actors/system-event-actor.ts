@@ -16,7 +16,7 @@ import { Logger } from '../logger.js';
 import type { DomainEvent } from '../message-plan.js';
 import { createSendInstruction } from '../message-plan.js';
 import type { BaseEventObject } from '../types.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 import { generateCorrelationId } from '../utils/factories.js';
 import { createNullActorRef } from '../utils/null-actor.js';
 
@@ -158,7 +158,7 @@ export function createSystemEventActor(
   systemEventState.eventHistory = [];
   systemEventState.maxHistorySize = maxHistorySize;
 
-  return defineActor<SystemEventActorMessage>()
+  return defineBehavior<SystemEventActorMessage>()
     .onMessage(async ({ message, actor }) => {
       log.info('System event actor processing message', {
         type: message.type,

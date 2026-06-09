@@ -26,7 +26,7 @@
 
 import type { ActorMessage } from '../actor-system.js';
 import { Logger } from '../logger.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 const log = Logger.namespace('EVENT_COLLECTOR');
 
@@ -124,10 +124,10 @@ const waiterTimeouts = new Map<string, NodeJS.Timeout>();
  * The event collector uses pure actor patterns to collect events via message passing.
  * It responds to control messages and collects all other ActorMessages as events.
  *
- * ✅ Uses defineActor().withContext() for proper context persistence
+ * ✅ Uses defineBehavior().withContext() for proper context persistence
  */
 export function createEventCollectorBehavior() {
-  return defineActor<ActorMessage>()
+  return defineBehavior<ActorMessage>()
     .withContext<EventCollectorContext>({
       collectedEvents: [],
       totalReceived: 0,

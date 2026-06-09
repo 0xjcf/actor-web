@@ -13,7 +13,7 @@ import type { ActorMessage } from '../actor-system.js';
 import { Logger } from '../logger.js';
 import { createSendInstruction, type SendInstruction } from '../message-plan.js';
 import type { Message } from '../types.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 const log = Logger.namespace('TIMER_ACTOR');
 
@@ -80,7 +80,7 @@ export interface TimerActorState {
 // ============================================================================
 
 export const createTimerActor = (testMode = false) => {
-  return defineActor<TimerActorMessage>()
+  return defineBehavior<TimerActorMessage>()
     .withContext({
       currentTime: testMode ? 0 : Date.now(),
       scheduledMessages: new Map() as Map<string, ScheduledItem>,

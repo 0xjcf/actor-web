@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { serveActorWebHttp } from '../serve-actor-web-http.js';
 import { serveActorWebNode } from '../serve-actor-web-node.js';
 import { actor, defineActorWebTopology, node } from '../topology.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 vi.mock('node:http', async () => {
   const actual = await vi.importActual<typeof import('node:http')>('node:http');
@@ -24,7 +24,7 @@ interface CounterContext {
 }
 
 function createCounterBehavior() {
-  return defineActor<CounterCommand>()
+  return defineBehavior<CounterCommand>()
     .withContext<CounterContext>({ count: 0 })
     .onMessage(({ message, actor }) => {
       const context = actor.getSnapshot().context;

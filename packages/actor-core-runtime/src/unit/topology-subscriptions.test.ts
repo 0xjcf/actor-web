@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { emit, setup } from 'xstate';
 import { startActorWebLocalRuntime } from '../actor-web-client.js';
 import { actor, defineActorWebTopology, node } from '../topology.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 type PingEvent = { type: 'PING' };
 type PongEmitted = { type: 'PONG'; seq: number };
@@ -26,11 +26,11 @@ const emitterMachine = setup({
 });
 
 function createEmitter() {
-  return defineActor<PingEvent, PongEmitted>().withMachine(emitterMachine).build();
+  return defineBehavior<PingEvent, PongEmitted>().withMachine(emitterMachine).build();
 }
 
 function createCollector() {
-  return defineActor<PongEmitted>()
+  return defineBehavior<PongEmitted>()
     .withContext({ pongs: [] as number[] })
     .onMessage(({ message, context }) =>
       message.type === 'PONG' ? { context: { pongs: [...context.pongs, message.seq] } } : {}

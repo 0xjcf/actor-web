@@ -1,4 +1,4 @@
-import { defineActor } from '@actor-web/runtime/browser';
+import { defineBehavior } from '@actor-web/runtime/browser';
 import type {
   ProviderRuntimeCommand,
   ProviderShipmentSignalResult,
@@ -17,7 +17,7 @@ function createInitialProviderRuntimeContext(): ProviderRuntimeContext {
 }
 
 export function createProviderRuntimeBehavior() {
-  return defineActor<ProviderRuntimeCommand>()
+  return defineBehavior<ProviderRuntimeCommand>()
     .withContext(createInitialProviderRuntimeContext())
     .onMessage(({ context, message }) => {
       if (message.type === 'RESET_PROVIDER_RUNTIME') {

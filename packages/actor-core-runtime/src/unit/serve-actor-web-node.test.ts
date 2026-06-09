@@ -10,7 +10,7 @@ import {
 } from '../runtime-transport-telemetry.js';
 import { serveActorWebNode } from '../serve-actor-web-node.js';
 import { actor, defineActorWebTopology, node, tool } from '../topology.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 type CounterCommand =
   | { type: 'INCREMENT' }
@@ -18,7 +18,7 @@ type CounterCommand =
   | { type: 'RUN_TOOL'; toolName?: string; value: string };
 
 function createCounterBehavior() {
-  return defineActor<CounterCommand>()
+  return defineBehavior<CounterCommand>()
     .withContext({ count: 0 })
     .onMessage(async ({ message, actor, tools }) => {
       const context = actor.getSnapshot().context;

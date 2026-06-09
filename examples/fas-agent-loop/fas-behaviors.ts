@@ -1,4 +1,4 @@
-import { defineActor, defineFSM } from '@actor-web/runtime';
+import { defineBehavior, defineFSM } from '@actor-web/runtime';
 import type {
   ActorWebAllowedToolRegistry,
   ActorWebTypedDefineActor,
@@ -127,7 +127,7 @@ const taskRunFSM = defineFSM<FasTaskCommand, FasTaskContext, FasTaskPhase>({
 });
 
 export function createFasSupervisorBehavior() {
-  return defineActor<FasSupervisorCommand>()
+  return defineBehavior<FasSupervisorCommand>()
     .withContext(createInitialSupervisorContext())
     .onMessage(({ message, context }) => {
       if (message.type === 'GET_SUPERVISOR_STATUS') {
@@ -145,7 +145,7 @@ export function createFasSupervisorBehavior() {
 }
 
 export function createTaskBoardBehavior() {
-  return defineActor<FasTaskBoardCommand, FasTaskEvent>()
+  return defineBehavior<FasTaskBoardCommand, FasTaskEvent>()
     .withContext(createInitialTaskBoardContext())
     .onMessage(({ message, context }) => {
       if (message.type === 'GET_DASHBOARD') {
@@ -195,7 +195,7 @@ export function createTaskRunBehavior(input: {
   readonly title: string;
   readonly prompt: string;
 }) {
-  return defineActor<FasTaskCommand, FasTaskEvent>()
+  return defineBehavior<FasTaskCommand, FasTaskEvent>()
     .withContext(createInitialTaskContext(input))
     .withFSM(taskRunFSM)
     .onTransition({
@@ -361,8 +361,8 @@ export function createTaskRunBehavior(input: {
     .build();
 }
 
-export function createPlannerAgentBehavior(defineActor: PlannerDefineActor) {
-  return defineActor<PlannerAgentCommand, FasTaskEvent>()
+export function createPlannerAgentBehavior(defineBehavior: PlannerDefineActor) {
+  return defineBehavior<PlannerAgentCommand, FasTaskEvent>()
     .onMessage(({ message }) => {
       const plan: FasPlan = {
         summary: `Plan ${message.taskId} with deterministic FAS stages`,
@@ -376,8 +376,8 @@ export function createPlannerAgentBehavior(defineActor: PlannerDefineActor) {
     .build();
 }
 
-export function createImplementerAgentBehavior(defineActor: ImplementerDefineActor) {
-  return defineActor<ImplementerAgentCommand, FasTaskEvent>()
+export function createImplementerAgentBehavior(defineBehavior: ImplementerDefineActor) {
+  return defineBehavior<ImplementerAgentCommand, FasTaskEvent>()
     .onMessage(async ({ message, tools }) => {
       const patch = await tools.execute('codex.generate_patch', {
         taskId: message.taskId,
@@ -399,8 +399,8 @@ export function createImplementerAgentBehavior(defineActor: ImplementerDefineAct
     .build();
 }
 
-export function createVerifierAgentBehavior(defineActor: VerifierDefineActor) {
-  return defineActor<VerifierAgentCommand, FasTaskEvent>()
+export function createVerifierAgentBehavior(defineBehavior: VerifierDefineActor) {
+  return defineBehavior<VerifierAgentCommand, FasTaskEvent>()
     .onMessage(async ({ message, tools }) => {
       await tools.execute('repo.diff', {
         taskId: message.taskId,
@@ -429,8 +429,8 @@ export function createVerifierAgentBehavior(defineActor: VerifierDefineActor) {
     .build();
 }
 
-export function createReviewerAgentBehavior(defineActor: ReviewerDefineActor) {
-  return defineActor<ReviewerAgentCommand, FasTaskEvent>()
+export function createReviewerAgentBehavior(defineBehavior: ReviewerDefineActor) {
+  return defineBehavior<ReviewerAgentCommand, FasTaskEvent>()
     .onMessage(async ({ message, tools }) => {
       const result = await tools.execute('review.diff', {
         taskId: message.taskId,

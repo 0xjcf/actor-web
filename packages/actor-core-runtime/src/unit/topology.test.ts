@@ -12,7 +12,7 @@ import {
   supervisor,
   tool,
 } from '../topology.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 type ShipmentCommand = { type: 'CREATE_SHIPMENT'; shipmentId: string } | { type: 'RESET' };
 
@@ -22,7 +22,7 @@ interface ShipmentContext {
 }
 
 function createShipmentBehavior() {
-  return defineActor<ShipmentCommand>()
+  return defineBehavior<ShipmentCommand>()
     .withContext<ShipmentContext>({ shipmentId: null, status: 'idle' })
     .onMessage(({ message, actor }) => {
       const context = actor.getSnapshot().context;

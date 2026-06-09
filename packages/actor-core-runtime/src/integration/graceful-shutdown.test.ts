@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActorBehavior, ActorMessage } from '../actor-system.js';
 import { type ActorSystemConfig, createActorSystem } from '../actor-system-impl.js';
-import { defineActor } from '../index.js';
+import { defineBehavior } from '../index.js';
 import { Logger } from '../logger.js';
 import { createActorDelay } from '../pure-xstate-utilities.js';
 
@@ -73,7 +73,7 @@ describe('Graceful Shutdown and Lifecycle Management', () => {
     it('should call onStop for all actors during shutdown', async () => {
       const onStopCalls: string[] = [];
 
-      // ✅ PURE ACTOR MODEL: Use new defineActor API without context
+      // ✅ PURE ACTOR MODEL: Use new defineBehavior API without context
       const createBehavior = (id: string): ActorBehavior => ({
         onMessage: async () => undefined,
         onStop: async () => {
@@ -110,8 +110,8 @@ describe('Graceful Shutdown and Lifecycle Management', () => {
       let finalState = 'idle';
       let processedSuccessfully = false;
 
-      // ✅ PURE ACTOR MODEL: Use defineActor with context for OTP-style reply pattern
-      const behavior = defineActor<ActorMessage>()
+      // ✅ PURE ACTOR MODEL: Use defineBehavior with context for OTP-style reply pattern
+      const behavior = defineBehavior<ActorMessage>()
         .withContext({ state: 'idle' })
         .onMessage(async ({ message, actor }) => {
           log.debug('🔍 TEST DEBUG: Actor received message', {
@@ -396,8 +396,8 @@ describe('Graceful Shutdown and Lifecycle Management', () => {
     it('should call onStart only once per actor', async () => {
       let onStartCalledCount = 0;
 
-      // ✅ PURE ACTOR MODEL: Use defineActor with context tracking message count
-      const behavior = defineActor<ActorMessage>()
+      // ✅ PURE ACTOR MODEL: Use defineBehavior with context tracking message count
+      const behavior = defineBehavior<ActorMessage>()
         .withContext({ messageCount: 0 })
         .onMessage(async ({ message, actor }) => {
           const context = actor.getSnapshot().context as { messageCount: number };

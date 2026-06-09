@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ActorMessage } from '../actor-system.js';
 import { ActorSystemImpl } from '../actor-system-impl.js';
 import { Logger } from '../logger.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 const log = Logger.namespace('TEST');
 describe('Event Emission - Layered Integration Tests', () => {
@@ -35,7 +35,7 @@ describe('Event Emission - Layered Integration Tests', () => {
       // Track messages received
       const receivedMessages: ActorMessage[] = [];
 
-      const actorBehavior = defineActor<ActorMessage>()
+      const actorBehavior = defineBehavior<ActorMessage>()
         .onMessage(({ message }) => {
           receivedMessages.push(message);
         })
@@ -54,7 +54,7 @@ describe('Event Emission - Layered Integration Tests', () => {
 
   describe('Layer 2: Event Emission from Actor Behavior', () => {
     it('should return emit array from message handler', async () => {
-      const emittingBehavior = defineActor<ActorMessage>()
+      const emittingBehavior = defineBehavior<ActorMessage>()
         .onMessage(({ message }) => {
           if (message.type === 'TRIGGER') {
             return {
@@ -83,7 +83,7 @@ describe('Event Emission - Layered Integration Tests', () => {
       // For now, let's create a collector actor that we'll use in the next layer
       const collectedEvents: ActorMessage[] = [];
 
-      const collectorBehavior = defineActor<ActorMessage>()
+      const collectorBehavior = defineBehavior<ActorMessage>()
         .onMessage(({ message }) => {
           collectedEvents.push(message);
         })
@@ -92,7 +92,7 @@ describe('Event Emission - Layered Integration Tests', () => {
       await system.spawn(collectorBehavior, { id: 'collector' });
 
       // Create emitter that emits events
-      const emitterBehavior = defineActor<ActorMessage>()
+      const emitterBehavior = defineBehavior<ActorMessage>()
         .onMessage(({ message }) => {
           if (message.type === 'EMIT_TEST') {
             return {
@@ -118,7 +118,7 @@ describe('Event Emission - Layered Integration Tests', () => {
       const collectedEvents: ActorMessage[] = [];
 
       // Create collector first
-      const collectorBehavior = defineActor<ActorMessage>()
+      const collectorBehavior = defineBehavior<ActorMessage>()
         .onMessage(({ message }) => {
           collectedEvents.push(message);
         })
@@ -127,7 +127,7 @@ describe('Event Emission - Layered Integration Tests', () => {
       const collector = await system.spawn(collectorBehavior, { id: 'subscriber' });
 
       // Create publisher
-      const publisherBehavior = defineActor<ActorMessage>()
+      const publisherBehavior = defineBehavior<ActorMessage>()
         .onMessage(({ message }) => {
           if (message.type === 'PUBLISH') {
             return {
@@ -166,7 +166,7 @@ describe('Event Emission - Layered Integration Tests', () => {
 
       // Create two subscribers
       const subscriber1 = await system.spawn(
-        defineActor<ActorMessage>()
+        defineBehavior<ActorMessage>()
           .onMessage(({ message }) => {
             subscriber1Events.push(message);
           })
@@ -175,7 +175,7 @@ describe('Event Emission - Layered Integration Tests', () => {
       );
 
       const subscriber2 = await system.spawn(
-        defineActor<ActorMessage>()
+        defineBehavior<ActorMessage>()
           .onMessage(({ message }) => {
             subscriber2Events.push(message);
           })
@@ -185,7 +185,7 @@ describe('Event Emission - Layered Integration Tests', () => {
 
       // Create publisher
       const publisher = await system.spawn(
-        defineActor<ActorMessage>()
+        defineBehavior<ActorMessage>()
           .onMessage(({ message }) => {
             if (message.type === 'BROADCAST') {
               return {

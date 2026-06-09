@@ -15,7 +15,7 @@ import {
   type RuntimeGatewaySourceHandle,
 } from './runtime-gateway-shared.js';
 import {
-  defineActor as defineTopologyActorBehavior,
+  defineBehavior as defineTopologyActorBehavior,
   type UnifiedActorBuilder,
 } from './unified-actor-builder.js';
 
@@ -129,11 +129,15 @@ type ActorWebBehaviorMessage<TBehavior> = TBehavior extends (...args: infer _TAr
 
 type ActorWebBehaviorEvent<TBehavior> = TBehavior extends (...args: infer _TArgs) => infer TReturn
   ? ActorWebBehaviorEvent<TReturn>
-  : TBehavior extends ActorBehavior<infer _TMessage, infer TEvent>
-    ? TEvent extends ActorMessage
-      ? TEvent
+  : TBehavior extends { readonly __emittedType: infer TEmitted }
+    ? TEmitted extends ActorMessage
+      ? TEmitted
       : ActorMessage
-    : ActorMessage;
+    : TBehavior extends ActorBehavior<infer _TMessage, infer TEvent>
+      ? TEvent extends ActorMessage
+        ? TEvent
+        : ActorMessage
+      : ActorMessage;
 
 export interface ActorWebActorDescriptor<
   TId extends ActorWebActorId = ActorWebActorId,
@@ -294,7 +298,7 @@ type ActorWebToolScopedActorDefinition<
 > = Omit<ActorWebActorDefinition<TId, TNode, TBehavior>, 'behavior' | 'tools'> & {
   readonly tools: TTools;
   readonly behavior: (
-    defineActor: ActorWebTypedDefineActor<ActorWebAllowedToolRegistry<TRegistry, TTools>>
+    defineBehavior: ActorWebTypedDefineActor<ActorWebAllowedToolRegistry<TRegistry, TTools>>
   ) => TBehavior;
 };
 
@@ -308,7 +312,7 @@ type ActorWebToolScopedParameterizedActorDefinition<
   readonly tools: TTools;
   readonly behavior: (
     params: TParams,
-    defineActor: ActorWebTypedDefineActor<ActorWebAllowedToolRegistry<TRegistry, TTools>>
+    defineBehavior: ActorWebTypedDefineActor<ActorWebAllowedToolRegistry<TRegistry, TTools>>
   ) => TBehavior;
 };
 
@@ -417,30 +421,30 @@ function createToolScopedActor<TRegistry extends ActorToolRegistry>() {
     Record<string, unknown> & {
       id: string | ((params: unknown) => string);
       behavior:
-        | ((defineActor: RuntimeDefineActor) => unknown)
-        | ((params: unknown, defineActor: RuntimeDefineActor) => unknown);
+        | ((defineBehavior: RuntimeDefineActor) => unknown)
+        | ((params: unknown, defineBehavior: RuntimeDefineActor) => unknown);
     }
   >;
   const scopedActor = (definition: RuntimeDefinition) => {
-    const defineActor = defineTopologyActorBehavior as RuntimeDefineActor;
+    const defineBehavior = defineTopologyActorBehavior as RuntimeDefineActor;
 
     if (typeof definition.id === 'function') {
       const parameterizedBehavior = definition.behavior as (
         params: unknown,
-        defineActor: RuntimeDefineActor
+        defineBehavior: RuntimeDefineActor
       ) => unknown;
 
       return actorDefinition({
         ...definition,
-        behavior: (params: unknown) => parameterizedBehavior(params, defineActor),
+        behavior: (params: unknown) => parameterizedBehavior(params, defineBehavior),
       } as ActorWebParameterizedActorDefinition<unknown, string, unknown>);
     }
 
-    const behavior = definition.behavior as (defineActor: RuntimeDefineActor) => unknown;
+    const behavior = definition.behavior as (defineBehavior: RuntimeDefineActor) => unknown;
 
     return actorDefinition({
       ...definition,
-      behavior: behavior(defineActor),
+      behavior: behavior(defineBehavior),
     } as ActorWebActorDefinition<string, string, unknown>);
   };
 

@@ -5,7 +5,7 @@
 
 import { createActorSystem } from '../actor-system-impl.js';
 import { Logger } from '../logger.js';
-import { defineActor } from '../unified-actor-builder.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 const log = Logger.namespace('FLAT_MESSAGE_DEMO');
 
@@ -38,7 +38,7 @@ interface UserContext {
 // CREATE ACTOR WITH FLAT MESSAGE HANDLING
 // ============================================================================
 
-const userBehavior = defineActor<UserMessage>()
+const userBehavior = defineBehavior<UserMessage>()
   .withContext<UserContext>({
     users: new Map([
       ['user-1', { id: 'user-1', name: 'Alice', email: 'alice@example.com' }],

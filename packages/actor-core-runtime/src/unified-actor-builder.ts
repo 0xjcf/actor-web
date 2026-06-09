@@ -150,6 +150,13 @@ export class UnifiedActorBuilder<
   TCtx,
   TTools extends ActorToolRegistry = UntypedActorToolRegistry,
 > {
+  // Phantom type carriers so an un-built builder passed directly as a topology
+  // `behavior` still exposes its context/message/emitted types to the
+  // ActorWebBehavior* inference helpers. `declare` emits no runtime field.
+  declare readonly __contextType: TCtx;
+  declare readonly __messageType: TMsg;
+  declare readonly __emittedType: TEmitted;
+
   constructor(private readonly spec: ActorSpec<TMsg, TCtx, TEmitted, TTools> = {}) {}
 
   /**
@@ -520,7 +527,7 @@ function getAllowedTransitionsFromSnapshot(snapshot: { toJSON(): object }): read
 /**
  * Main export - unified actor definition function
  */
-export function defineActor<
+export function defineBehavior<
   TMsg extends ActorMessage = ActorMessage,
   TEmitted = unknown,
   TTools extends ActorToolRegistry = UntypedActorToolRegistry,
