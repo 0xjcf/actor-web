@@ -5,10 +5,10 @@
 
 import type { ActorAddress, ActorMessage, ActorStats } from './actor-system.js';
 import type {
-  FasEventEnvelope,
-  FasWorkflowSnapshot,
-  FasWorkflowTransitionRecord,
-} from './integration/fas-shared-contracts.js';
+  RuntimeGatewayEventEnvelope,
+  RuntimeGatewayTransitionRecord,
+  RuntimeGatewayWorkflowSnapshot,
+} from './runtime-gateway-projection.js';
 
 export interface RuntimeDirectoryEntry {
   address: ActorAddress;
@@ -19,18 +19,18 @@ export interface RuntimeDirectoryEntry {
 
 export interface RuntimeSnapshotProjection<TContext = unknown> {
   address: ActorAddress;
-  workflowSnapshot: FasWorkflowSnapshot;
+  workflowSnapshot: RuntimeGatewayWorkflowSnapshot;
   value: unknown;
   context: TContext;
   sequence: number;
-  transition?: FasWorkflowTransitionRecord;
+  transition?: RuntimeGatewayTransitionRecord;
 }
 
 export interface RuntimeEventProjection<
   TPayload extends Record<string, unknown> = Record<string, unknown>,
 > {
   address: ActorAddress;
-  envelope: FasEventEnvelope<TPayload>;
+  envelope: RuntimeGatewayEventEnvelope<TPayload>;
   sequence: number;
 }
 

@@ -139,29 +139,6 @@ export type { DirectoryConfig } from './distributed-actor-directory.js';
 // Phase 1: Distributed Actor Directory and System
 export { DistributedActorDirectory } from './distributed-actor-directory.js';
 export {
-  type ActorMessageRecord,
-  type ActorSnapshotToFasWorkflowSnapshotInput,
-  type ActorSnapshotTransitionInput,
-  type ActorWebCommandExecutionInput,
-  type ActorWebToFasEventEnvelopeOptions,
-  actorAddressToFasActorAddress,
-  actorCommandExecutionToFasRecord,
-  actorMessagePayload,
-  actorMessageToFasEventEnvelope,
-  actorSnapshotPhase,
-  actorSnapshotsToFasTransitionRecord,
-  actorSnapshotToFasWorkflowSnapshot,
-  type FasActorAddress,
-  type FasArtifactReference,
-  type FasCommandExecutionRecord,
-  type FasCommandExecutionStatus,
-  type FasCorrelationContext,
-  type FasEventEnvelope,
-  type FasMessageKind,
-  type FasWorkflowSnapshot,
-  type FasWorkflowTransitionRecord,
-} from './integration/fas-shared-contracts.js';
-export {
   actorEventToIgniteSourceEvent,
   actorSnapshotToIgniteSourceSnapshot,
   type CreateIgniteActorSourceOptions,
@@ -295,6 +272,7 @@ export {
   actorSnapshotsToRuntimeGatewayTransitionRecord,
   actorSnapshotToRuntimeGatewayWorkflowSnapshot,
   deriveRuntimeGatewayPhase,
+  runtimeGatewayEventEnvelopeToActorMessage,
   runtimeGatewayEventPayload,
 } from './runtime-gateway-projection.js';
 export type {

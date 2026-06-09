@@ -68,13 +68,6 @@ import { ContextActor } from './context-actor.js';
 import { type CorrelationManager, createCorrelationManager } from './correlation-manager.js';
 import { DistributedActorDirectory } from './distributed-actor-directory.js';
 import type { FluentBehaviorBuilder } from './fluent-behavior-builder.js';
-import {
-  actorMessageToFasEventEnvelope,
-  actorRuntimeProjectionToActorSnapshot,
-  actorSnapshotsToFasTransitionRecord,
-  actorSnapshotToFasWorkflowSnapshot,
-  fasEventEnvelopeToActorMessage,
-} from './integration/fas-shared-contracts.js';
 import { Logger } from './logger.js';
 import { MachineActor } from './machine-actor.js';
 import { getMachineFromBehavior } from './machine-registry.js';
@@ -96,6 +89,13 @@ import {
 import { type PureActorBehavior, PureActorBehaviorHandler } from './pure-behavior-handler.js';
 // ✅ PURE ACTOR MODEL: Import XState-based timeout management
 import { PureXStateTimeoutManager } from './pure-xstate-utilities.js';
+import {
+  actorMessageToRuntimeGatewayEventEnvelope,
+  actorRuntimeProjectionToActorSnapshot,
+  actorSnapshotsToRuntimeGatewayTransitionRecord,
+  actorSnapshotToRuntimeGatewayWorkflowSnapshot,
+  runtimeGatewayEventEnvelopeToActorMessage,
+} from './runtime-gateway-projection.js';
 import {
   isRuntimeProtocolMessage,
   type RuntimeDirectoryEntry,
@@ -2754,7 +2754,7 @@ export class ActorSystemImpl implements ActorSystem {
     sequence = this.currentActorProjectionSequence(address.path)
   ): RuntimeSnapshotProjection {
     const projectionState = this.getActorProjectionState(address.path);
-    const workflowSnapshot = actorSnapshotToFasWorkflowSnapshot({
+    const workflowSnapshot = actorSnapshotToRuntimeGatewayWorkflowSnapshot({
       snapshot,
       workflowId: address.path,
       actorId: address.id,
@@ -2769,7 +2769,7 @@ export class ActorSystemImpl implements ActorSystem {
     const transition =
       previousSnapshot &&
       (previousSnapshot.status !== snapshot.status || previousSnapshot.value !== snapshot.value)
-        ? actorSnapshotsToFasTransitionRecord({
+        ? actorSnapshotsToRuntimeGatewayTransitionRecord({
             fromSnapshot: previousSnapshot,
             toSnapshot: snapshot,
           })
@@ -2792,16 +2792,19 @@ export class ActorSystemImpl implements ActorSystem {
   ): RuntimeEventProjection {
     return {
       address,
-      envelope: actorMessageToFasEventEnvelope(event as typeof event & Record<string, unknown>, {
-        id: `${address.path}:event:${sequence}`,
-        kind: 'fact',
-        occurredAt: new Date(event._timestamp ?? Date.now()).toISOString(),
-        sourceActor: address.path,
-        workflowId: address.path,
-        taskId: address.id,
-        correlationId:
-          event._correlationId ?? this.getActorProjectionState(address.path).correlationId,
-      }),
+      envelope: actorMessageToRuntimeGatewayEventEnvelope(
+        event as typeof event & Record<string, unknown>,
+        {
+          id: `${address.path}:event:${sequence}`,
+          kind: 'fact',
+          occurredAt: new Date(event._timestamp ?? Date.now()).toISOString(),
+          sourceActor: address.path,
+          workflowId: address.path,
+          taskId: address.id,
+          correlationId:
+            event._correlationId ?? this.getActorProjectionState(address.path).correlationId,
+        }
+      ),
       sequence,
     };
   }
@@ -2867,7 +2870,7 @@ export class ActorSystemImpl implements ActorSystem {
       }
     }
 
-    const event = fasEventEnvelopeToActorMessage(payload.envelope);
+    const event = runtimeGatewayEventEnvelopeToActorMessage(payload.envelope);
     for (const subscriber of Array.from(watcher.eventSubscribers)) {
       if (
         subscriber.types &&

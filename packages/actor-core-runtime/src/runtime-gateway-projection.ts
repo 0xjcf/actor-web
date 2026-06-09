@@ -160,6 +160,18 @@ export function actorMessageToRuntimeGatewayEventEnvelope(
   return envelope;
 }
 
+export function runtimeGatewayEventEnvelopeToActorMessage(
+  envelope: RuntimeGatewayEventEnvelope
+): ActorMessageRecord {
+  return {
+    type: envelope.type,
+    ...(envelope.payload ?? {}),
+    _timestamp: Date.parse(envelope.occurredAt) || 0,
+    _version: String(envelope.schemaVersion),
+    ...(envelope.correlationId !== undefined ? { _correlationId: envelope.correlationId } : {}),
+  };
+}
+
 export function deriveRuntimeGatewayPhase(value: unknown): string {
   if (typeof value === 'string') {
     return value;

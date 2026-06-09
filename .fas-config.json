@@ -26,8 +26,7 @@
   "behaviorBoundaries": {
     "functionalCore": [
       "packages/actor-core-runtime/src/type-helpers.ts",
-      "packages/actor-core-runtime/src/utils/validation.ts",
-      "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts"
+      "packages/actor-core-runtime/src/utils/validation.ts"
     ],
     "shell": [
       "packages/actor-core-runtime/src/actor-instance.ts",
