@@ -75,5 +75,17 @@
       "!**/*.d.ts.map",
       "!**/*.js.map"
     ]
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["packages/actor-core-runtime/src/**/*.ts"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "useImportExtensions": "error"
+          }
+        }
+      }
+    }
+  ]
 }

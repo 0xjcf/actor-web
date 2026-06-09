@@ -8,7 +8,7 @@
  * - Actor directory integration point
  */
 
-import type { ActorInstance } from './actor-instance';
+import type { ActorInstance } from './actor-instance.js';
 import type { ActorRef } from './actor-ref.js';
 import type {
   ActorAddress,
@@ -17,8 +17,8 @@ import type {
   ActorMessage,
   ActorSystem,
   JsonValue,
-} from './actor-system';
-import { SupervisionDirective } from './actor-system';
+} from './actor-system.js';
+import { SupervisionDirective } from './actor-system.js';
 import { Logger } from './logger.js';
 import { generateActorId, generateSystemId } from './utils/factories.js';
 
