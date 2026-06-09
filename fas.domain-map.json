@@ -17,7 +17,7 @@
       "dependencies": ["runtime", "testing", "cli"]
     },
     "runtime": {
-      "name": "@actor-core/runtime",
+      "name": "@actor-web/runtime",
       "description": "Pure actor runtime, lifecycle, supervision, messaging, projections, and FAS contract bridge surfaces for Actor-Web.",
       "aliases": [
         "actor-web runtime",
@@ -48,7 +48,7 @@
       "dependencies": []
     },
     "testing": {
-      "name": "@actor-core/testing",
+      "name": "@actor-web/testing",
       "description": "Testing utilities and XState graph analysis helpers that extend the runtime package.",
       "aliases": ["actor testing", "state machine analysis", "xstate graph", "test utilities"],
       "ownedPaths": ["packages/actor-core-testing/"],
@@ -63,7 +63,7 @@
       "dependencies": ["runtime"]
     },
     "cli": {
-      "name": "@agent-workflow/cli",
+      "name": "@actor-web/cli",
       "description": "Agent workflow CLI commands, git/worktree orchestration, and validation helpers built on the runtime and testing packages.",
       "aliases": ["aw", "agent workflow", "git actor", "worktree cli", "workflow cli"],
       "ownedPaths": ["packages/agent-workflow-cli/"],

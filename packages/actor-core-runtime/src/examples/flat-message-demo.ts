@@ -116,7 +116,7 @@ const userBehavior = defineBehavior<UserMessage>()
       }
 
       default:
-        return { context };
+        return {};
     }
   });
 // .build();

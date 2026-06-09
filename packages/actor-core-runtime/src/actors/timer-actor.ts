@@ -177,7 +177,7 @@ export const createTimerActor = (testMode = false) => {
             return { context: updatedContext };
           } catch (error) {
             console.error('❌ Error in SCHEDULE handler:', error);
-            return { context };
+            return {};
           }
         }
 
@@ -258,7 +258,7 @@ export const createTimerActor = (testMode = false) => {
             return { context: finalContext };
           } catch (error) {
             console.error('❌ Error in ADVANCE_TIME handler:', error);
-            return { context };
+            return {};
           }
         }
 
@@ -306,7 +306,7 @@ export const createTimerActor = (testMode = false) => {
         }
 
         default:
-          return { context };
+          return {};
       }
     })
     .build();
