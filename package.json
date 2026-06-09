@@ -21,7 +21,7 @@
     "format:md": "markdownlint-cli2 --fix --config .markdownlint.jsonc \".fas/TASKS.md\" \".fas/tasks/**/*.md\"",
     "format:md:all": "markdownlint-cli2 --fix --config .markdownlint.jsonc \"*.md\" \".github/**/*.md\" \".fas/TASKS.md\" \".fas/tasks/**/*.md\" \"docs/**/*.md\" \"examples/**/*.md\" \"packages/**/*.md\" \"tests/**/*.md\" \"#**/node_modules/**\" \"#**/dist/**\" \"#.pnpm-store/**\"",
     "typecheck": "tsc --build",
-    "clean": "pnpm --filter @actor-web/runtime clean && pnpm --filter @actor-web/testing clean && rm -rf dist packages/agent-workflow-cli/dist",
+    "clean": "pnpm --filter @actor-web/runtime clean && pnpm --filter @actor-web/testing clean && pnpm --filter @actor-web/cli clean && rm -rf dist packages/*/*.tsbuildinfo",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest --watch",
     "test:ui": "vitest --ui",

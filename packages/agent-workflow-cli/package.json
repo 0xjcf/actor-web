@@ -12,7 +12,8 @@
     "build": "tsc",
     "dev": "tsx src/cli/index.ts",
     "start": "node dist/cli/index.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "clean": "rm -rf dist *.tsbuildinfo"
   },
   "keywords": [
     "git",
