@@ -1100,6 +1100,17 @@
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
+
+### Task: Rename runtime entry points startActorWebLocalRuntime to startRuntime and serveActorWebNode to serveNode
+
+- Title: Rename runtime entry points startActorWebLocalRuntime to startRuntime and serveActorWebNode to serveNode
+- Mode: single-agent
+- Status: implementing
+- Owner: implementer
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
 ## Template
 
 ### Task: `<short task title>`
