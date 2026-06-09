@@ -8,11 +8,12 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist",
-    "src",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts src/browser.ts src/topology-entry.ts src/node.ts --format cjs,esm && tsc --emitDeclarationOnly",
+    "build": "tsup src/index.ts src/browser.ts src/topology-entry.ts src/node.ts --format cjs,esm && tsc --emitDeclarationOnly && node ../../scripts/verify-exports.mjs .",
     "build:watch": "pnpm build --watch",
     "dev": "vitest --watch",
     "test": "vitest run",
@@ -74,5 +75,17 @@
       "import": "./dist/node.js",
       "require": "./dist/node.cjs"
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xjcf/actor-web.git",
+    "directory": "packages/actor-core-runtime"
+  },
+  "homepage": "https://github.com/0xjcf/actor-web#readme",
+  "bugs": {
+    "url": "https://github.com/0xjcf/actor-web/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

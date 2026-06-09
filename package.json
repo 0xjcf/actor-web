@@ -65,7 +65,10 @@
     "utils:date-fix": "./scripts/date-utils.sh fix-all",
     "utils:commit-config": "./scripts/commit-config.sh validate",
     "utils:commit-sample": "./scripts/commit-config.sh create-sample",
-    "utils:validate-dates": "pnpm --filter @actor-web/cli dev validate-dates"
+    "utils:validate-dates": "pnpm --filter @actor-web/cli dev validate-dates",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "pnpm build && changeset publish"
   },
   "keywords": [
     "actor-model",
@@ -91,6 +94,7 @@
   "homepage": "https://github.com/0xjcf/actor-web#readme",
   "devDependencies": {
     "@biomejs/biome": "^2.1.2",
+    "@changesets/cli": "^2.29.8",
     "@types/node": "^20.0.0",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^2.1.4",

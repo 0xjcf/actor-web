@@ -43,5 +43,22 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xjcf/actor-web.git",
+    "directory": "packages/agent-workflow-cli"
+  },
+  "homepage": "https://github.com/0xjcf/actor-web#readme",
+  "bugs": {
+    "url": "https://github.com/0xjcf/actor-web/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ]
 }
