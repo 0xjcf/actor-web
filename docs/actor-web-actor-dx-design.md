@@ -39,11 +39,15 @@ state. Actor-Web should *run* it, not make you restate it.
 
 ```ts
 // behaviors.ts — no per-event handlers; defaults: transition + ask resolves with snapshot
-export const compareBehavior     = defineBehavior<CompareEvent>().withMachine(compareMachine).build();
-export const pipelineBehavior    = defineBehavior<PipelineEvent>().withMachine(pipelineMachine).build();
-export const decisionsBehavior   = defineBehavior<DecisionsEvent>().withMachine(decisionsMachine).build();
-export const actorSystemBehavior = defineBehavior<ActorSystemEvent>().withMachine(actorSystemMachine).build();
+export const compareBehavior     = defineBehavior<CompareEvent>().withMachine(compareMachine);
+export const pipelineBehavior    = defineBehavior<PipelineEvent>().withMachine(pipelineMachine);
+export const decisionsBehavior   = defineBehavior<DecisionsEvent>().withMachine(decisionsMachine);
+export const actorSystemBehavior = defineBehavior<ActorSystemEvent>().withMachine(actorSystemMachine);
 ```
+
+`.build()` is **optional**: `actor({ behavior })` and `spawn` accept the builder
+directly and build it under the hood. Call `.build()` explicitly only when you
+need the materialized `ActorBehavior` value.
 
 Domain events are emitted *from the machine* (XState v5 `emit`), so the behavior
 stays empty:
