@@ -94,7 +94,7 @@ import {
 } from '@actor-web/runtime/browser';
 
 // Node/server runtime hosting and HTTP ingress adapters.
-import { serveActorWebHttp, serveActorWebNode } from '@actor-web/runtime/node';
+import { serveActorWebHttp, serveNode } from '@actor-web/runtime/node';
 
 // Ignite Element authoring over Actor-Web sources.
 import { igniteCore } from 'ignite-element/actor-web';
@@ -111,7 +111,7 @@ Current implementation status:
 - `@actor-web/runtime/browser` exports `createActorWebReadModelSource` for
   gateway-backed Ignite-compatible read-model sources and
   `createActorWebCommandSource` for explicit host-owned command/control.
-- `@actor-web/runtime/node` exports `serveActorWebNode` for topology-owned
+- `@actor-web/runtime/node` exports `serveNode` for topology-owned
   Node/server runtime hosting.
 - `@actor-web/runtime/node` exports `serveActorWebHttp` for route-first HTTP
   adapters around a served node.
@@ -247,10 +247,10 @@ The Node server runs one node from the same topology:
 
 ```ts
 // server.ts
-import { serveActorWebNode } from '@actor-web/runtime/node';
+import { serveNode } from '@actor-web/runtime/node';
 import { logistics } from './logistics.topology';
 
-const server = await serveActorWebNode(logistics, {
+const server = await serveNode(logistics, {
   node: 'server',
   gateway: true,
   transport: true,
@@ -288,8 +288,8 @@ handler shape is `(request, response, actorWeb)`: `request` is HTTP data,
 `response` owns JSON/status helpers, and `actorWeb` exposes `runtime`,
 `actors`, plus inferred `actor` inside `.for(actorDescriptor)` routes.
 
-The gateway exposed by `serveActorWebNode` is the client projection/control
-edge. The transport exposed by `serveActorWebNode` is the runtime-to-runtime
+The gateway exposed by `serveNode` is the client projection/control
+edge. The transport exposed by `serveNode` is the runtime-to-runtime
 actor messaging edge.
 
 The browser worker runs another node:
@@ -429,7 +429,7 @@ Recommended API names:
 
 - `defineActorWebTopology`: declares shared runtime topology.
 - `supervisor`: declares a supervised actor group.
-- `serveActorWebNode`: starts a Node/server runtime node.
+- `serveNode`: starts a Node/server runtime node.
 - `serveActorWebHttp`: starts a Node HTTP adapter around a served runtime node.
 - `startActorWebNode`: starts a browser-safe runtime node, including
   WebWorker nodes with browser WebSocket transport and Service Worker nodes with
@@ -458,7 +458,7 @@ Use address-based source creation when:
 - the source comes from generated metadata,
 - the integration boundary is a deployed actor address and gateway URL.
 
-Use `serveActorWebNode` only in Node/server entrypoints.
+Use `serveNode` only in Node/server entrypoints.
 
 Use `serveActorWebHttp` only in Node/server entrypoints that need HTTP ingress.
 

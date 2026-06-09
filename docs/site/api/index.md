@@ -15,7 +15,7 @@ the narrowest one that fits — browser code should not pull in Node entry point
 | `@actor-web/runtime` | Core: [`defineBehavior`](/api/define-behavior), messages, runtime client. |
 | `@actor-web/runtime/topology` | [`defineActorWebTopology`](/api/topology) and the `actor`/`node`/`supervisor`/`tool` DSL. |
 | `@actor-web/runtime/browser` | Browser-safe sources & clients (no Node built-ins). |
-| `@actor-web/runtime/node` | [`serveActorWebNode`](/api/runtimes), HTTP ingress — server only. |
+| `@actor-web/runtime/node` | [`serveNode`](/api/runtimes), HTTP ingress — server only. |
 | `@actor-web/testing` | [State-machine analysis](/api/testing) test helpers. |
 
 ## Map

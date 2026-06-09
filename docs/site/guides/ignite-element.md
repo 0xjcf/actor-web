@@ -58,6 +58,6 @@ granted to every projection by default. See
 
 ## Local vs gateway
 
-For a browser-local runtime, get sources from `startActorWebLocalRuntime(...)`.
+For a browser-local runtime, get sources from `startRuntime(...)`.
 For a server-owned runtime, point the source at the gateway URL
 (`{ gateway: { url } }`) — the UI code is identical either way.

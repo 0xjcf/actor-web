@@ -174,7 +174,7 @@ written fresh.
 - **Getting Started**
   - Installation — *net-new (small)*
   - Your first actor (counter) — *net-new*
-  - Topology + local runtime — *net-new*, references `startActorWebLocalRuntime`
+  - Topology + local runtime — *net-new*, references `startRuntime`
 - **Concepts**
   - Actors & behaviors (`defineBehavior`) — *seeded from* runtime README,
     xstate design doc
@@ -199,7 +199,7 @@ written fresh.
   - `@actor-web/runtime/topology` — topology DSL (`actor`/`node`/`supervisor`/
     `tool`, `defineActorWebTopology`)
   - `@actor-web/runtime/browser` — sources/clients
-  - `@actor-web/runtime/node` — `serveActorWebNode`, HTTP ingress
+  - `@actor-web/runtime/node` — `serveNode`, HTTP ingress
   - `@actor-web/testing` — *net-new* (also add the missing package README)
 - **Guides**
   - Ignite Element integration — *seeded from*

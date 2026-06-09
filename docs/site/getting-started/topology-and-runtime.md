@@ -25,13 +25,13 @@ export const topology = defineActorWebTopology({
 
 ## 2. Start a local runtime
 
-`startActorWebLocalRuntime` runs the whole topology in-process — perfect for the
+`startRuntime` runs the whole topology in-process — perfect for the
 browser and tests:
 
 ```ts
-import { startActorWebLocalRuntime } from '@actor-web/runtime';
+import { startRuntime } from '@actor-web/runtime';
 
-const runtime = await startActorWebLocalRuntime(topology);
+const runtime = await startRuntime(topology);
 ```
 
 ## 3. Drive the actor

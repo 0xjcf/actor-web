@@ -15,7 +15,7 @@ Use a local runtime and the actor's command source. `ask` resolves after the
 message is processed, so you can assert the next snapshot:
 
 ```ts
-const runtime = await startActorWebLocalRuntime(topology);
+const runtime = await startRuntime(topology);
 const counter = runtime.actors.counter.commandSource();
 
 await counter.ask({ type: 'INCREMENT' });

@@ -26,7 +26,7 @@ in Node built-ins:
 | `@actor-web/runtime` | Core: `defineBehavior`, messages, local runtime. |
 | `@actor-web/runtime/topology` | `defineActorWebTopology` and the DSL. |
 | `@actor-web/runtime/browser` | Browser-safe sources & clients. |
-| `@actor-web/runtime/node` | `serveActorWebNode`, HTTP ingress — server only. |
+| `@actor-web/runtime/node` | `serveNode`, HTTP ingress — server only. |
 | `@actor-web/testing` | XState machine analysis helpers. |
 
 See the [API entry-point map](/api/) for what each exports.

@@ -282,7 +282,7 @@ shipment: actor({
 Node runners provide implementations:
 
 ```ts
-await serveActorWebNode(logistics, {
+await serveNode(logistics, {
   node: 'server',
   tools: {
     'provider.scan.verify': providerScanVerify,

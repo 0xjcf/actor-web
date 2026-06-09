@@ -43,7 +43,7 @@ Use the correct lane for the question you are answering:
 | --- | --- | --- |
 | Demo Compose | Local container proof only | `docker compose -f docker-compose.logistics.yml up --build`, `pnpm examples:logistics:docker:verify` |
 | Stage 3 proof | Deterministic multi-process/multi-machine seam proof | `pnpm exec vitest run --config examples/vitest.config.ts examples/ignite-headless-host/logistics-multiprocess.test.ts examples/ignite-headless-host/logistics-runtime-status.test.ts` |
-| Production runtime | Real deployment responsibility | Use `serveActorWebNode(...)` for Node runtime owners such as server/worker/provider peers, reserve `startActorWebNode(...)` for browser or worker-runtime locations, use `serveActorWebHttp(...)` for explicit HTTP ingress, and keep auth/TLS/secrets plus rollout/rollback in deployment-owned procedures |
+| Production runtime | Real deployment responsibility | Use `serveNode(...)` for Node runtime owners such as server/worker/provider peers, reserve `startActorWebNode(...)` for browser or worker-runtime locations, use `serveActorWebHttp(...)` for explicit HTTP ingress, and keep auth/TLS/secrets plus rollout/rollback in deployment-owned procedures |
 
 Do not use Docker Compose as proof of production readiness. It validates the
 direct transport seam and restart recovery shape, but TLS termination,
@@ -55,7 +55,7 @@ strategy remain deployment responsibilities.
 These are the current repository-owned surfaces the logistics roadmap depends
 on:
 
-- `serveActorWebNode(...)`: starts a Node runtime owner, optional gateway, and
+- `serveNode(...)`: starts a Node runtime owner, optional gateway, and
   optional transport listener.
 - `startActorWebNode(...)`: starts a browser-safe or worker-runtime peer that
   owns actors and connects outward to transport peers.
@@ -80,8 +80,8 @@ for the current demo and Stage 3 proof boundary.
 
 The supported production shape for this runbook is:
 
-1. Actor-owning Node runtime started with `serveActorWebNode(...)`.
-2. Node worker/provider runtime peers started with `serveActorWebNode(...)`
+1. Actor-owning Node runtime started with `serveNode(...)`.
+2. Node worker/provider runtime peers started with `serveNode(...)`
    and explicit discovery or transport URLs; browser or worker-runtime peers
    use `startActorWebNode(...)` where that runtime shape is actually deployed.
 3. Browser/PWA clients pointed only at the REST and gateway URLs.

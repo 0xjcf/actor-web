@@ -145,7 +145,7 @@ behavior.
 Use the split like this:
 
 ```ts
-const runtime = await startActorWebLocalRuntime(logistics);
+const runtime = await startRuntime(logistics);
 
 const shipmentHost = igniteCore({
   source: ({ host }) => runtime.shipment.readModel({ host }),
@@ -165,7 +165,7 @@ can still use
 `createActorWebReadModelClient(...)` or `.readModel(...)` where no Ignite command
 surface is required.
 
-`server-runtime-gateway.ts` starts the server node with `serveActorWebNode` and
+`server-runtime-gateway.ts` starts the server node with `serveNode` and
 uses `serveActorWebHttp(runtime).for(logistics.actors.shipment)` for REST
 ingress routes. `worker-websocket-runtime.ts` starts the WebWorker runtime node
 with `startActorWebNode` and the browser runtime transport options.

@@ -394,8 +394,8 @@ Later slice:
 - cloud/container friendly peer discovery
 
 Status: complete for the provider interface and runner integration.
-`serveActorWebNode(...)` can register a listening transport URL, and both
-`serveActorWebNode(...)` and `startActorWebNode(...)` can seed and subscribe to
+`serveNode(...)` can register a listening transport URL, and both
+`serveNode(...)` and `startActorWebNode(...)` can seed and subscribe to
 discovered peer records. Remaining work is production adapters backed by real
 deployment infrastructure and durable membership state.
 

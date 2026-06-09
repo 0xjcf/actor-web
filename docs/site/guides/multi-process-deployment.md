@@ -1,6 +1,6 @@
 ---
 title: Multi-process deployment
-description: Run one topology across several nodes with serveActorWebNode, transport, and a gateway.
+description: Run one topology across several nodes with serveNode, transport, and a gateway.
 ---
 
 # Multi-process deployment
@@ -12,17 +12,17 @@ wired does.
 ## Serve a node
 
 ```ts
-import { serveActorWebNode } from '@actor-web/runtime/node';
+import { serveNode } from '@actor-web/runtime/node';
 
 // Worker process
-const worker = await serveActorWebNode(topology, {
+const worker = await serveNode(topology, {
   node: 'worker',
   transport: true,
   tools: toolRegistry,
 });
 
 // Coordinator process — connects to the worker, exposes a gateway for UIs
-const coordinator = await serveActorWebNode(topology, {
+const coordinator = await serveNode(topology, {
   node: 'coordinator',
   transport: true,
   peers: { worker: worker.getTransportUrl() },

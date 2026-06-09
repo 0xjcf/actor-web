@@ -46,6 +46,6 @@ mailbox or a [transport](/concepts/transport) hop.
 
 ## Running a topology
 
-`startActorWebLocalRuntime(topology)` spins up a single-node runtime (ideal for
-the browser and tests); `serveActorWebNode(topology, { node })` serves a node
+`startRuntime(topology)` spins up a single-node runtime (ideal for
+the browser and tests); `serveNode(topology, { node })` serves a node
 with optional gateway/transport for multi-process deployments.

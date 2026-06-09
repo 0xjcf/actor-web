@@ -8,7 +8,7 @@ Read this guide in layers:
 
 1. Define actor behavior with `defineBehavior(...)`.
 2. Declare runtime ownership with `defineActorWebTopology(...)`.
-3. Start actor-owning locations with `serveActorWebNode(...)` or
+3. Start actor-owning locations with `serveNode(...)` or
    `startActorWebNode(...)`.
 4. Connect thin UIs and dashboards with `createActorWebReadModelClient(...)` or
    `createActorWebReadModelSource(...)`.
@@ -44,7 +44,7 @@ Use these APIs by location:
 | Location | Owns actors? | API |
 | --- | --- | --- |
 | Shared contract package | No runtime | `defineActorWebTopology(...)` |
-| Backend/server process | Yes | `serveActorWebNode(...)` |
+| Backend/server process | Yes | `serveNode(...)` |
 | Backend REST/application ingress | Uses served actors | `serveActorWebHttp(runtime)` |
 | Browser UI / Ignite host | No ActorSystem by default | `createActorWebReadModelClient(...)` |
 | Browser/WebWorker runtime location | Yes | `startActorWebNode(...)` |
@@ -59,7 +59,7 @@ There are two different network channels:
   actors and exchange actor messages.
 
 Use a gateway source when a page or client wants to observe/control an actor. Use
-`startActorWebNode(...)` or `serveActorWebNode(...)` when that process is an
+`startActorWebNode(...)` or `serveNode(...)` when that process is an
 Actor-Web runtime location that owns actors.
 
 Recommended imports:
@@ -74,12 +74,12 @@ import {
   createActorWebCommandSource,
   createActorWebReadModelClient,
   createActorWebReadModelSource,
-  startActorWebLocalRuntime,
+  startRuntime,
   startActorWebNode,
 } from '@actor-web/runtime/browser';
 
 // Node/server runtime hosting and HTTP ingress.
-import { serveActorWebHttp, serveActorWebNode } from '@actor-web/runtime/node';
+import { serveActorWebHttp, serveNode } from '@actor-web/runtime/node';
 ```
 
 ## Actor Behavior
@@ -428,7 +428,7 @@ const logistics = defineActorWebTopology({
   },
 });
 
-const server = await serveActorWebNode(logistics, {
+const server = await serveNode(logistics, {
   node: 'server',
   tools: {
     'provider.scan.verify': async (input) => ({
@@ -465,7 +465,7 @@ live state and commands.
 
 ```ts
 // server.ts
-const server = await serveActorWebNode(logistics, {
+const server = await serveNode(logistics, {
   node: 'server',
   gateway: {
     auth: {
@@ -494,7 +494,7 @@ through Actor-Web transport.
 
 ```ts
 // server.ts
-const server = await serveActorWebNode(logistics, {
+const server = await serveNode(logistics, {
   node: 'server',
   gateway: true,
   transport: {
@@ -647,13 +647,13 @@ const shipmentCard = igniteCore({
 equivalent to `stop()` for handles, so product code does not need to adapt
 `{ source, stop: () => source.close() }` by hand.
 
-For single-process proofs, use `startActorWebLocalRuntime(...)` instead of
+For single-process proofs, use `startRuntime(...)` instead of
 hand-starting every topology node and manually adapting ActorRefs. It starts the
 selected topology nodes over an in-memory transport network and exposes each
 actor at the top level with the Ignite-friendly source shape:
 
 ```ts
-const runtime = await startActorWebLocalRuntime(logistics, {
+const runtime = await startRuntime(logistics, {
   tools: {
     'routing.plan': async (input) => ({
       carrier: 'Northline Express',
@@ -774,13 +774,13 @@ client only has address metadata.
 
 ## Node And Worker Runners
 
-### `serveActorWebNode(topology, options)`
+### `serveNode(topology, options)`
 
 Starts one topology node in a Node/server environment. Use this in the process
 that owns one or more topology actors.
 
 ```ts
-const server = await serveActorWebNode(logistics, {
+const server = await serveNode(logistics, {
   node: 'server',
   gateway: true,
   transport: true,
@@ -821,12 +821,12 @@ if (!worker.connected || !worker.fresh) {
 all known `peers`, and optional `startedAt` / `stoppedAt` timestamps.
 
 When `transport: true` or `transport: { listen: true }` is used,
-`serveActorWebNode(...)` and `startActorWebNode(...)` let the WebSocket
+`serveNode(...)` and `startActorWebNode(...)` let the WebSocket
 transport heartbeat defaults apply: 15 seconds interval and 30 seconds timeout.
 Set `heartbeatIntervalMs: 0` explicitly to opt out for tests or custom
 deployment constraints.
 
-`serveActorWebNode` deliberately does not own REST routes, provider callbacks,
+`serveNode` deliberately does not own REST routes, provider callbacks,
 persistence, or business ingress. Those are application adapters around the
 served node. It can enforce gateway and runtime-peer auth because those are
 transport admission concerns.
@@ -839,7 +839,7 @@ peer registration, and gateway clients are verified during `hello` before any
 stream can subscribe, send, or ask.
 
 ```ts
-const server = await serveActorWebNode(logistics, {
+const server = await serveNode(logistics, {
   node: 'server',
   gateway: {
     auth: {
@@ -879,7 +879,7 @@ or HTTP ingress.
 ```ts
 const discovery = createInMemoryRuntimePeerDiscoveryProvider();
 
-const server = await serveActorWebNode(logistics, {
+const server = await serveNode(logistics, {
   node: 'server',
   transport: true,
   discovery,
@@ -891,8 +891,8 @@ await startActorWebNode(logistics, {
 });
 ```
 
-`serveActorWebNode(...)` registers its listening transport URL when one exists
-and unregisters on stop. Both `serveActorWebNode(...)` and
+`serveNode(...)` registers its listening transport URL when one exists
+and unregisters on stop. Both `serveNode(...)` and
 `startActorWebNode(...)` read discovery snapshots at startup and subscribe to
 peer availability changes.
 
@@ -994,14 +994,14 @@ const worker = await startActorWebNode(logistics, {
 Browser nodes only open outbound WebSocket connections. They do not listen for
 runtime peers.
 
-### `startActorWebLocalRuntime(topology, options?)`
+### `startRuntime(topology, options?)`
 
 Starts a whole topology, or an explicit subset of nodes, inside one process with
 an in-memory transport network. Use it for demos, product proofs, and local
 Ignite validation where the app owns runtime startup and teardown.
 
 ```ts
-const runtime = await startActorWebLocalRuntime(logistics);
+const runtime = await startRuntime(logistics);
 
 const shipmentProjection = runtime.shipment.readModel();
 const shipmentCommands = runtime.shipment.commandSource();
@@ -1036,7 +1036,7 @@ through `MessageTransport`.
 
 Normal applications do not construct gateway hubs directly. Use:
 
-- `serveActorWebNode(logistics, { gateway: true })` on the runtime owner.
+- `serveNode(logistics, { gateway: true })` on the runtime owner.
 - `createActorWebReadModelClient(logistics, { gateway: { url } })` in the UI/client.
 - `createActorWebReadModelSource({ address, contractVersion, gateway })` for generated
   or separate-repo clients.
@@ -1129,7 +1129,7 @@ Application code should start runtime peers through topology runners instead of
 creating concrete WebSocket adapters directly:
 
 ```ts
-const server = await serveActorWebNode(logistics, {
+const server = await serveNode(logistics, {
   node: 'server',
   transport: true,
 });
@@ -1253,14 +1253,14 @@ instance:
 import {
   createRuntimeTransportTelemetryExporter,
   createRuntimeTransportTelemetryJsonlFileSink,
-  serveActorWebNode,
+  serveNode,
 } from '@actor-web/runtime/node';
 
 const telemetry = createRuntimeTransportTelemetryExporter({
   sink: createRuntimeTransportTelemetryJsonlFileSink('./runtime-telemetry.jsonl'),
 });
 
-const server = await serveActorWebNode(logistics, {
+const server = await serveNode(logistics, {
   node: 'server',
   transport: {
     listen: true,
