@@ -1111,6 +1111,16 @@
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Remove redundant context returns and audit package names in docs
+
+- Title: Remove redundant context returns and audit package names in docs
+- Mode: single-agent
+- Status: implementing
+- Owner: implementer
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
 ## Template
 
 ### Task: `<short task title>`
