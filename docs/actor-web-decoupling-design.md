@@ -6,6 +6,21 @@ Proposed (2026-06-09). Pre-1.0, nothing published yet. This is the architecture
 to land **before** the first npm release, because every item here is a
 public-API / wire-contract decision we would otherwise be stuck supporting.
 
+### Progress
+
+- **actor-web side: COMPLETE** (on `main`, each change verified with `verify.sh --full`):
+  1. Seam B — removed the FAS bridge + `@franchise/shared-contracts` dependency
+     (cycle broken).
+  2. Seam A — `Ignite*` → `Actor*` source API; `ignite-element-bridge.ts` →
+     `actor-source.ts`; actor-web references neither Ignite nor FAS.
+  3. Projection contract neutralized — `runtime-gateway-projection.ts` →
+     `runtime-projection.ts`; dropped workflow/task vocabulary; `phase` →
+     `stateLabel`.
+- **Pending (own repos, `[decouple]`-tagged tasks):** FAS (optional/peer dep +
+  neutral-contract `fas-task-bridge`), ignite-element (own the adapter; optional
+  peerDep), fas-studio (import updates). These were blocked on the actor-web
+  changes above and are now unblocked.
+
 ## Summary
 
 `@actor-web/runtime` is currently the **hub**: it reaches *down* into two
