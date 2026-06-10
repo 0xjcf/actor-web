@@ -1239,6 +1239,15 @@
 - Owner: planner
 - Brief: .fas/tasks/release-prep-0-2-0-ship-actor-web-agent-decide-the-publi.md
 
+### Task: Docs: refresh root + runtime READMEs to the real post-rename API (remove fictional feature claims)
+
+- Title: Docs: refresh root + runtime READMEs to the real post-rename API (remove fictional feature claims)
+- Mode: 4-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/docs-refresh-root-runtime-readmes-to-the-real-post-rename.md
+- Automation mode: advisory
+
 ## Template
 
 ### Task: `<short task title>`
