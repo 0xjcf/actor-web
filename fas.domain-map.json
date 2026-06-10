@@ -64,24 +64,24 @@
     },
     "cli": {
       "name": "@actor-web/cli",
-      "description": "Agent workflow CLI commands, git/worktree orchestration, and validation helpers built on the runtime and testing packages.",
-      "aliases": ["aw", "agent workflow", "git actor", "worktree cli", "workflow cli"],
+      "description": "actor-web runtime host CLI (work in progress). Being reconceived as a terminal host for the runtime (serve/spawn/send/watch); currently a stub. See docs/actor-web-cli-runtime-host-design.md.",
+      "aliases": ["actor-web cli", "runtime host", "cli"],
       "ownedPaths": ["packages/agent-workflow-cli/"],
       "entrypoints": [
         "packages/agent-workflow-cli/package.json",
         "packages/agent-workflow-cli/src/index.ts",
         "packages/agent-workflow-cli/src/cli/index.ts"
       ],
-      "docs": ["packages/agent-workflow-cli/README.md"],
+      "docs": [
+        "packages/agent-workflow-cli/README.md",
+        "docs/actor-web-cli-runtime-host-design.md"
+      ],
       "tests": [
         "packages/agent-workflow-cli/tests",
-        "packages/agent-workflow-cli/src/actors/git-actor.test.ts",
-        "packages/agent-workflow-cli/src/actors/input-actor.test.ts",
-        "packages/agent-workflow-cli/src/commands/ship.test.ts",
-        "packages/agent-workflow-cli/src/integration/cli-commands.test.ts"
+        "packages/agent-workflow-cli/src/index.test.ts"
       ],
       "boundaries": ["packages/agent-workflow-cli/"],
-      "dependencies": ["runtime", "testing"]
+      "dependencies": ["runtime"]
     }
   },
   "workspaceContracts": [
@@ -99,7 +99,7 @@
     {
       "name": "testing-analysis-api",
       "producer": "testing",
-      "consumers": ["cli"],
+      "consumers": [],
       "surfaces": [
         "packages/actor-core-testing/package.json",
         "packages/actor-core-testing/src/index.ts",
