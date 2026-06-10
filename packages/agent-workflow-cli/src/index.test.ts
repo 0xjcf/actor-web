@@ -9,10 +9,10 @@ describe('@actor-web/cli stub', () => {
     expect(info.version).toMatch(/^\d+\.\d+\.\d+/);
   });
 
-  it('exposes a work-in-progress CLI info surface with no commands yet', async () => {
+  it('describes the v0 runtime-host surface', async () => {
     const cli = await getCLIInfo();
     expect(cli.name).toBe('@actor-web/cli');
-    expect(cli.status).toBe('work-in-progress');
-    expect(cli.commands).toHaveLength(0);
+    expect(cli.status).toBe('v0-in-process-host');
+    expect(cli.commands).toContain('serve');
   });
 });

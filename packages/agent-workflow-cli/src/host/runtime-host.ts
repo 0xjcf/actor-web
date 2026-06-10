@@ -357,8 +357,12 @@ export async function executeCommand(
 
     case 'send': {
       const target = rest[0];
-      const json = trimmed.slice(trimmed.indexOf(target ?? '') + (target?.length ?? 0)).trim();
-      if (!target || !json) {
+      if (!target) {
+        return { ok: false, lines: ['Usage: send <target> <json>'] };
+      }
+      const targetStart = trimmed.indexOf(target, command.length);
+      const json = trimmed.slice(targetStart + target.length).trim();
+      if (!json) {
         return { ok: false, lines: ['Usage: send <target> <json>'] };
       }
       const result = await host.send(target, json);
@@ -370,7 +374,9 @@ export async function executeCommand(
       if (!target) {
         return { ok: false, lines: ['Usage: ask <target> <json> [timeoutMs]'] };
       }
-      let remainder = trimmed.slice(trimmed.indexOf(target) + target.length).trim();
+      let remainder = trimmed
+        .slice(trimmed.indexOf(target, command.length) + target.length)
+        .trim();
       let timeoutMs: number | undefined;
       const trailingTimeout = remainder.match(/\s(\d+)$/);
       if (trailingTimeout && !remainder.endsWith('}')) {
