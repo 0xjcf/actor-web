@@ -6,16 +6,14 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "composite": true
+    "composite": true,
+    "types": ["node"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.test.tsx"],
   "references": [
     {
       "path": "../actor-core-runtime"
-    },
-    {
-      "path": "../actor-core-testing"
     }
   ]
 }
