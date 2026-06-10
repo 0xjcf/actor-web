@@ -8,7 +8,7 @@
 A terminal console over the actor-web runtime — start a runtime node, spawn
 actors/agents, send/ask messages, and watch their event streams from the shell:
 
-```
+```bash
 actor-web serve ./topology.ts --node worker
 actor-web spawn ./behaviors/researcher.ts --id r1
 actor-web send  actor://worker/agent/r1 '{"type":"START"}'

@@ -34,7 +34,7 @@ chatbot is an *agent you drive*. An actor-runtime agent is an *agent you
 deploy*. Concretely:
 
 | Dimension | Chatbot coding agent (Claude Code, Codex, Cursor) | Actor-runtime agent (actor-web) |
-|---|---|---|
+| --- | --- | --- |
 | **Lifetime** | Ephemeral — lives for a turn/session; dies between prompts | Persistent process with durable identity (`actor://node/type/id`) and a mailbox |
 | **Driver** | Human-in-the-loop, synchronous; you steer each turn | Autonomous — triggered by events, schedules, or other agents |
 | **Concurrency** | One primary agent; subagents are ad-hoc, in-memory, unsupervised | Many isolated actors, private state, no shared-memory races, mailbox backpressure |
@@ -71,7 +71,7 @@ wrapping Claude Code.
 
 ## Where this sits
 
-```
+```text
         ┌─────────────────────────────────────────────┐
         │  FAS  (control plane)                          │
         │  • defines agent roles, behaviors, boundaries  │
@@ -136,7 +136,7 @@ lets non-agent consumers use the runtime/CLI without pulling in an LLM SDK.
 
 ### Package layout
 
-```
+```text
 @actor-web/runtime   general actor runtime — NO LLM dependency
         ▲
         │ depends on
@@ -157,7 +157,7 @@ not a hard dependency.
 
 A minimal, kubectl-for-actors shape:
 
-```
+```bash
 actor-web serve ./topology.ts --node worker [--gateway] [--transport]
     # host a runtime node from a topology; optionally expose a WS gateway
     # and/or accept peer connections
