@@ -1185,6 +1185,13 @@
 - Owner: runtime
 - Brief: .fas/tasks/publish-actor-web-cli-to-npm-deferred-until-the-runtime-ho.md
 - Automation mode: advisory
+### Task: Extend markdown lint coverage to docs/ and packages/ in the verify path
+
+- Title: Extend markdown lint coverage to docs/ and packages/ in the verify path
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/extend-markdown-lint-coverage-to-docs-and-packages-in-the.md
 ## Template
 
 ### Task: `<short task title>`
