@@ -1,6 +1,11 @@
 import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { Logger } from '@actor-web/runtime';
 import { describe, expect, test } from 'vitest';
+
+// Scoped logger so the "acceptable non-ES-module error" branches below can record
+// context without throwing a ReferenceError when a command exits non-zero.
+const log = Logger.namespace('CLI_COMMANDS_TEST');
 
 // CLI path for testing
 const CLI_PATH = resolve(__dirname, '../cli/index.ts');
@@ -54,8 +59,9 @@ describe('CLI Commands Integration Tests', () => {
   describe('Core Workflow Commands', () => {
     test('aw:save command should execute without ES module errors', async () => {
       try {
-        // Note: This may fail due to git state, but should not fail due to ES modules
-        const output = execSync(`${CLI_CMD} save "test: ES module validation"`, {
+        // Use --dry-run so the integration test never mutates the working repo;
+        // the ES-module load path is still fully exercised.
+        const output = execSync(`${CLI_CMD} save --dry-run "test: ES module validation"`, {
           encoding: 'utf-8',
           timeout: 10000,
           cwd: process.cwd(),
@@ -77,7 +83,7 @@ describe('CLI Commands Integration Tests', () => {
 
     test('aw:ship command should execute without ES module errors', async () => {
       try {
-        const output = execSync(`${CLI_CMD} ship`, {
+        const output = execSync(`${CLI_CMD} ship --dry-run`, {
           encoding: 'utf-8',
           timeout: 10000,
           cwd: process.cwd(),
