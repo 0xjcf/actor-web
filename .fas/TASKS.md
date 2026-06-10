@@ -1151,10 +1151,13 @@
 
 - Title: actor-web CLI v0: in-process runtime host (serve/spawn/send/watch)
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/actor-web-cli-v0-in-process-runtime-host-serve-spawn-send.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: actor-web CLI v1: @actor-web/agent package (llm tool + agent-loop) + agent hosting
 
@@ -1197,6 +1200,15 @@
 - Status: backlog
 - Owner: planner
 - Brief: .fas/tasks/extend-markdown-lint-coverage-to-docs-and-packages-in-the.md
+
+### Task: Runtime: silence system-event dead letters during startRuntime stop()
+
+- Title: Runtime: silence system-event dead letters during startRuntime stop()
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/runtime-silence-system-event-dead-letters-during-startrunti.md
+- Automation mode: advisory
 
 ## Template
 
