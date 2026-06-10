@@ -1147,6 +1147,57 @@
 - Brief: .fas/tasks/neutralize-actor-web-runtime-projection-transport-contract-a.md
 - Automation mode: advisory
 
+### Task: actor-web CLI v0: in-process runtime host (serve/spawn/send/watch)
+
+- Title: actor-web CLI v0: in-process runtime host (serve/spawn/send/watch)
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/actor-web-cli-v0-in-process-runtime-host-serve-spawn-send.md
+- Automation mode: advisory
+
+### Task: actor-web CLI v1: @actor-web/agent package (llm tool + agent-loop) + agent hosting
+
+- Title: actor-web CLI v1: @actor-web/agent package (llm tool + agent-loop) + agent hosting
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/actor-web-cli-v1-actor-web-agent-package-llm-tool-agent.md
+- Automation mode: advisory
+
+### Task: actor-web CLI v2: distributed hosting (--gateway/--transport/connect)
+
+- Title: actor-web CLI v2: distributed hosting (--gateway/--transport/connect)
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/actor-web-cli-v2-distributed-hosting-gateway-transport.md
+
+### Task: actor-web CLI v3: FAS control-plane integration
+
+- Title: actor-web CLI v3: FAS control-plane integration
+- Mode: 6-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/actor-web-cli-v3-fas-control-plane-integration.md
+
+### Task: Publish @actor-web/cli to npm (deferred until the runtime host has a real surface)
+
+- Title: Publish @actor-web/cli to npm (deferred until the runtime host has a real surface)
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/publish-actor-web-cli-to-npm-deferred-until-the-runtime-ho.md
+- Automation mode: advisory
+
+### Task: Extend markdown lint coverage to docs/ and packages/ in the verify path
+
+- Title: Extend markdown lint coverage to docs/ and packages/ in the verify path
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/extend-markdown-lint-coverage-to-docs-and-packages-in-the.md
+
 ## Template
 
 ### Task: `<short task title>`
