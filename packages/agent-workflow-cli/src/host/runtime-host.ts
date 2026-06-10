@@ -71,7 +71,10 @@ function parseMessage(messageJson: string): HostResult<ActorMessage & Message> {
   try {
     parsed = JSON.parse(messageJson);
   } catch (error) {
-    return { ok: false, error: `Invalid JSON: ${error instanceof Error ? error.message : String(error)}` };
+    return {
+      ok: false,
+      error: `Invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     return { ok: false, error: 'Message must be a JSON object with a string "type" field' };
@@ -374,9 +377,7 @@ export async function executeCommand(
       if (!target) {
         return { ok: false, lines: ['Usage: ask <target> <json> [timeoutMs]'] };
       }
-      let remainder = trimmed
-        .slice(trimmed.indexOf(target, command.length) + target.length)
-        .trim();
+      let remainder = trimmed.slice(trimmed.indexOf(target, command.length) + target.length).trim();
       let timeoutMs: number | undefined;
       const trailingTimeout = remainder.match(/\s(\d+)$/);
       if (trailingTimeout && !remainder.endsWith('}')) {

@@ -9,6 +9,7 @@
  * @author Actor-Web Team
  */
 
+export { type LoadModuleOptions, type LoadResult, loadModuleExport } from './host/load-module.js';
 // Runtime host (v0)
 export {
   type CommandContext,
@@ -20,7 +21,6 @@ export {
   type HostResult,
   type RuntimeHost,
 } from './host/runtime-host.js';
-export { type LoadModuleOptions, type LoadResult, loadModuleExport } from './host/load-module.js';
 
 // Package metadata (ES module-compatible)
 export {
