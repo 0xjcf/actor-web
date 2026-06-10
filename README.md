@@ -340,7 +340,7 @@ console.log('Created user:', newUser);
 - **`actor-web`** - Private workspace root for scripts, examples, and verification
 - **`@actor-web/runtime`** - Core actor system implementation
 - **`@actor-web/testing`** - Testing utilities and mocks
-- **`@actor-web/cli`** - CLI tools for development
+- **`@actor-web/cli`** - actor-web runtime host CLI (work in progress)
 
 ## 🚫 Common Anti-Patterns
 

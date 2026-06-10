@@ -2,12 +2,11 @@
   "name": "@actor-web/cli",
   "version": "0.1.0-alpha",
   "private": true,
-  "description": "Agent-centric development workflow automation",
+  "description": "actor-web runtime host CLI (work in progress)",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "agent-workflow": "dist/cli/index.js",
-    "aw": "dist/cli/index.js"
+    "actor-web": "dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -17,28 +16,21 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "keywords": [
-    "git",
-    "worktree",
-    "workflow",
-    "agent",
-    "collaboration",
-    "validation",
-    "multi-agent"
+    "actor",
+    "actor-model",
+    "runtime",
+    "cli",
+    "actor-web"
   ],
   "author": "Actor-Web Team",
   "license": "MIT",
   "dependencies": {
     "@actor-web/runtime": "workspace:*",
-    "@actor-web/testing": "workspace:*",
-    "commander": "^11.1.0",
     "chalk": "^5.3.0",
-    "inquirer": "^9.2.12",
-    "simple-git": "^3.20.0",
-    "xstate": "5.30.0"
+    "commander": "^11.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@types/inquirer": "^9.0.0",
     "tsx": "^4.6.0",
     "typescript": "^5.3.0",
     "vitest": "^1.0.0"
