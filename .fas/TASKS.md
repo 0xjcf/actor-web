@@ -1147,6 +1147,16 @@
 - Brief: .fas/tasks/neutralize-actor-web-runtime-projection-transport-contract-a.md
 - Automation mode: advisory
 
+### Task: Fix @actor-web/cli failing tests (41): modernize git-actor tests to spawn-based ActorRef contract, fix log-undefined test bug, fix CLI entry tsx ESM failures
+
+- Title: Fix @actor-web/cli failing tests (41): modernize git-actor tests to spawn-based ActorRef contract, fix log-undefined test bug, fix CLI entry tsx ESM failures
+- Mode: single-agent
+- Status: commit-planning
+- Owner: planner
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
 ## Template
 
 ### Task: `<short task title>`
