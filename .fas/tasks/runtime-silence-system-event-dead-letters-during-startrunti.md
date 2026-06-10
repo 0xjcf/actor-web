@@ -1,4 +1,4 @@
-# Runtime: silence system-event dead letters during startRunti
+# Runtime: silence system-event dead letters during startRuntime stop()
 
 ## Source
 

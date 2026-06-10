@@ -20,6 +20,7 @@ export {
   type HostActorEntry,
   type HostResult,
   type RuntimeHost,
+  splitExecScript,
 } from './host/runtime-host.js';
 
 // Package metadata (ES module-compatible)

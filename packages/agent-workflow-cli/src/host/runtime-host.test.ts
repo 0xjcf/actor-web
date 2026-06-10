@@ -20,7 +20,12 @@ import {
 } from '@actor-web/runtime';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { loadModuleExport } from './load-module';
-import { createRuntimeHost, executeCommand, type RuntimeHost } from './runtime-host';
+import {
+  createRuntimeHost,
+  executeCommand,
+  type RuntimeHost,
+  splitExecScript,
+} from './runtime-host';
 
 type CounterMsg = { type: 'INCREMENT' } | { type: 'GET_COUNT' };
 
@@ -294,6 +299,35 @@ describe('spawnFromFile', () => {
     if (!spawned.ok) {
       expect(spawned.error).toContain('Module not found');
     }
+  });
+});
+
+// ============================================================================
+// EXEC SCRIPT SPLITTING
+// ============================================================================
+
+describe('splitExecScript', () => {
+  it('splits commands on semicolons and trims whitespace', () => {
+    expect(splitExecScript('ls;  help ; exit')).toEqual(['ls', 'help', 'exit']);
+  });
+
+  it('drops empty segments', () => {
+    expect(splitExecScript('; ls;; help ;')).toEqual(['ls', 'help']);
+  });
+
+  it('keeps semicolons inside double-quoted JSON strings', () => {
+    expect(splitExecScript('send a {"text":"a;b"}; ls')).toEqual(['send a {"text":"a;b"}', 'ls']);
+  });
+
+  it('keeps semicolons inside single-quoted regions', () => {
+    expect(splitExecScript("send a 'x;y'; ls")).toEqual(["send a 'x;y'", 'ls']);
+  });
+
+  it('honors backslash escapes inside strings', () => {
+    expect(splitExecScript('send a {"text":"say \\";\\" ok"}; ls')).toEqual([
+      'send a {"text":"say \\";\\" ok"}',
+      'ls',
+    ]);
   });
 });
 

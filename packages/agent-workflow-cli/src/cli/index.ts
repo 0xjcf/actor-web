@@ -21,6 +21,7 @@ import {
   createRuntimeHostFromFile,
   executeCommand,
   type RuntimeHost,
+  splitExecScript,
 } from '../host/runtime-host.js';
 import { getDescriptionSync, getVersionSync, initializePackageInfo } from '../package-info.js';
 
@@ -37,6 +38,9 @@ async function shutdown(host: RuntimeHost, watches: Map<string, () => void>): Pr
     unsubscribe();
   }
   watches.clear();
+  // Drain queued work before stopping so a `send` immediately followed by
+  // exit still lands — keeps the REPL and --exec shutdown paths identical.
+  await host.flush();
   await host.stop();
 }
 
@@ -47,11 +51,7 @@ async function shutdown(host: RuntimeHost, watches: Map<string, () => void>): Pr
 async function runExecScript(host: RuntimeHost, script: string): Promise<boolean> {
   const watches = new Map<string, () => void>();
   let allOk = true;
-  for (const rawCommand of script.split(';')) {
-    const command = rawCommand.trim();
-    if (!command) {
-      continue;
-    }
+  for (const command of splitExecScript(script)) {
     const outcome = await executeCommand(host, command, watches, {
       onEvent: (target, event) =>
         console.log(`${chalk.cyan(`[${target}]`)} ${JSON.stringify(event)}`),
@@ -64,7 +64,6 @@ async function runExecScript(host: RuntimeHost, script: string): Promise<boolean
       break;
     }
   }
-  await host.flush();
   await shutdown(host, watches);
   return allOk;
 }
@@ -105,10 +104,15 @@ function runConsole(host: RuntimeHost, nodeLabel: string): void {
   });
 
   rl.on('close', () => {
-    void shutdown(host, watches).then(() => {
-      console.log(chalk.gray('Host stopped.'));
-      process.exit(0);
-    });
+    void shutdown(host, watches)
+      .then(() => {
+        console.log(chalk.gray('Host stopped.'));
+        process.exit(0);
+      })
+      .catch((error) => {
+        log.error('Failed to stop host', error);
+        process.exit(1);
+      });
   });
 }
 

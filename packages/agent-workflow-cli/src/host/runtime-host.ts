@@ -309,6 +309,52 @@ const HELP_LINES = [
 ];
 
 /**
+ * Split an `--exec` script into console commands on semicolons, ignoring
+ * semicolons inside single/double-quoted regions (and backslash escapes) so
+ * JSON payloads like `send a {"text":"a;b"}` survive intact.
+ */
+export function splitExecScript(script: string): string[] {
+  const commands: string[] = [];
+  let current = '';
+  let quote: '"' | "'" | null = null;
+  let escaped = false;
+
+  for (const char of script) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      current += char;
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      current += char;
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+    if (char === ';') {
+      commands.push(current);
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  commands.push(current);
+
+  return commands.map((command) => command.trim()).filter((command) => command.length > 0);
+}
+
+/**
  * Execute one console line against a host. Shared by the REPL, `--exec`, and
  * tests. Watch subscriptions are tracked per-`watches` map so `unwatch` and
  * shutdown can release them.
