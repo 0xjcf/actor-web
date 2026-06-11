@@ -951,3 +951,80 @@ describe('serveNode', () => {
     }
   });
 });
+
+type ReceiverQuery = { type: 'GET_RECEIVED' } | { type: 'COUNT_CHANGED'; count: number };
+
+function createReceiverBehavior() {
+  return defineBehavior<ReceiverQuery>()
+    .withContext({ received: 0 })
+    .onMessage(({ message, actor }) => {
+      const context = actor.getSnapshot().context;
+      if (message.type === 'GET_RECEIVED') {
+        return { reply: context.received };
+      }
+
+      return { context: { received: context.received + 1 } };
+    })
+    .build();
+}
+
+describe('serveNode topology subscriptions', () => {
+  it('wires same-node topology subscriptions and delivers emitted events', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+      },
+      actors: {
+        publisher: actor({
+          id: 'publisher',
+          node: 'server',
+          behavior: createCounterBehavior,
+        }),
+        receiver: actor({
+          id: 'receiver',
+          node: 'server',
+          behavior: createReceiverBehavior,
+        }),
+      },
+      subscriptions: [{ from: 'publisher', to: ['receiver'], events: ['COUNT_CHANGED'] }],
+    });
+
+    const server = await serveNode(topology, { node: 'server' });
+
+    try {
+      const publisher = server.requireActor('publisher');
+      const receiver = server.requireActor('receiver');
+      await publisher.send({ type: 'INCREMENT' });
+      await server.system.flush();
+      await expect(receiver.ask<number>({ type: 'GET_RECEIVED' })).resolves.toBe(1);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it('fails loudly when a subscription spans nodes', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+        worker: node('worker-node'),
+      },
+      actors: {
+        publisher: actor({
+          id: 'publisher',
+          node: 'server',
+          behavior: createCounterBehavior,
+        }),
+        receiver: actor({
+          id: 'receiver',
+          node: 'worker',
+          behavior: createReceiverBehavior,
+        }),
+      },
+      subscriptions: [{ from: 'publisher', to: ['receiver'] }],
+    });
+
+    await expect(serveNode(topology, { node: 'server' })).rejects.toThrow(
+      'spans nodes "server" and "worker"'
+    );
+  });
+});
