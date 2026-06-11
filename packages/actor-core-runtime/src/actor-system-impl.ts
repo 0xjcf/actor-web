@@ -455,7 +455,6 @@ export class ActorSystemImpl implements ActorSystem {
     const systemEventBehavior = createSystemEventActor();
     const systemEventActor = await this.spawn(systemEventBehavior, {
       id: 'system-event-actor',
-      supervised: false,
     });
     this.systemEventActorAddress = systemEventActor.address;
 

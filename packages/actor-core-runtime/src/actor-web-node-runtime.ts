@@ -161,9 +161,10 @@ async function spawnActorWebActorInstance(
     }
 
     toolAccess[address.path] = getActorWebRequiredToolNames(actorDescriptor);
+    // Per-actor supervision policies from the topology are not yet consumed at
+    // spawn time — failed actors restart under the system-wide defaults.
     const actorRef = await system.spawn(materializeActorWebBehavior(actorDescriptor, params), {
       id: address.id,
-      supervised: Boolean(actorDescriptor.supervision),
     });
     actors.set(cacheKey, actorRef);
     if (!isParameterizedActorWebActor(actorDescriptor)) {
@@ -250,7 +251,6 @@ export async function spawnOwnedActorWebActors<
     validateActorWebRequiredTools(actorDescriptor, tools);
     const actorRef = await system.spawn(materializeActorWebBehavior(actorDescriptor), {
       id: actorDescriptor.resolveId(),
-      supervised: Boolean(actorDescriptor.supervision),
     });
     actors.set(actorKey, actorRef);
   }

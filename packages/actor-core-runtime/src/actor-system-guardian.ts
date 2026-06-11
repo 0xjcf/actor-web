@@ -461,7 +461,6 @@ export async function createGuardianActor(actorSystem: ActorSystem): Promise<Act
   // The guardian uses external state, so we can spawn it directly
   const guardianRef = await actorSystem.spawn(guardianBehavior, {
     id: 'guardian',
-    supervised: false, // Guardian is not supervised by anyone
   });
 
   log.debug(`✅ Guardian actor created and registered at ${guardianRef.address.path}`);

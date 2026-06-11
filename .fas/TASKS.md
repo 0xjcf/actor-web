@@ -1243,8 +1243,8 @@
 
 - Title: Docs: refresh root + runtime READMEs to the real post-rename API (remove fictional feature claims)
 - Mode: 4-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/docs-refresh-root-runtime-readmes-to-the-real-post-rename.md
 - Automation mode: advisory
 
@@ -1343,12 +1343,32 @@
 
 - Title: Docs: refresh root + runtime READMEs to the real post-rename
 - Mode: single-agent
-- Status: implementing
+- Status: done
 - Owner: implementer
 - Brief: .fas/tasks/docs-refresh-root-runtime-readmes-to-the-real-post-rename.md
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
+
+### Task: SpawnOptions API honesty: remove unread fields (persistState, timeout, retries) and decide supervised semantics
+
+- Title: SpawnOptions API honesty: remove unread fields (persistState, timeout, retries) and decide supervised semantics
+- Mode: single-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/spawnoptions-api-honesty-remove-unread-fields-persiststate.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Wire per-actor topology supervision policies into the runtime failure path
+
+- Title: Wire per-actor topology supervision policies into the runtime failure path
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/wire-per-actor-topology-supervision-policies-into-the-runtim.md
+- Automation mode: advisory
 
 ## Template
 

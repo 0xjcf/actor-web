@@ -146,14 +146,17 @@ export interface ActorEnvelope {
 export type ActorMessage<T extends { type: string } = { type: string }> = T & ActorEnvelope;
 
 /**
- * Actor spawn options
+ * Actor spawn options.
+ *
+ * `id` is the only spawn option the runtime consumes. Failed actors are
+ * restarted by the system-wide supervision defaults (bounded restarts with
+ * backoff); per-actor supervision policies and restart opt-out are not yet
+ * honored at spawn time. (Former `supervised`/`persistState`/`timeout`/
+ * `retries` fields were removed — they were declared but never read, which
+ * misrepresented the spawn contract.)
  */
 export interface SpawnOptions {
   readonly id?: string;
-  readonly supervised?: boolean;
-  readonly persistState?: boolean;
-  readonly timeout?: number;
-  readonly retries?: number;
 }
 
 /**
