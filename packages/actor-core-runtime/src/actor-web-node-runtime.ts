@@ -255,3 +255,92 @@ export async function spawnOwnedActorWebActors<
     actors.set(actorKey, actorRef);
   }
 }
+
+export type ActorWebSubscriptionTeardown = () => Promise<void> | void;
+
+function requireSubscriptionActorDescriptor<
+  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
+>(
+  topology: TTopology,
+  actorKey: string,
+  role: 'publisher' | 'subscriber'
+): ActorWebActorDescriptor {
+  const actorDescriptor = topology.actors[actorKey];
+  if (!actorDescriptor) {
+    throw new Error(
+      `Topology subscription references unknown ${role} actor "${actorKey}". Declare the actor in the topology before subscribing it.`
+    );
+  }
+
+  if (isParameterizedActorWebActor(actorDescriptor)) {
+    throw new Error(
+      `Topology subscription references parameterized ${role} actor "${actorKey}". Parameterized actors spawn on demand and cannot be wired declaratively; subscribe their instances imperatively via system.subscribe instead.`
+    );
+  }
+
+  return actorDescriptor;
+}
+
+/**
+ * Wire topology-declared subscriptions for one started node.
+ *
+ * Ownership policy per (from, to) pair:
+ * - both actors owned by this node: wired through system.subscribe
+ * - neither actor owned by this node: skipped — the owning node wires the pair
+ *   when it starts
+ * - pair spans this node and another: fail loudly, because cross-node
+ *   subscription delivery is not supported and silently dropping declared
+ *   choreography hides workflow wiring from operators
+ *
+ * Returns teardown functions the host must run on stop (and on failed start)
+ * so start/stop wiring stays paired.
+ */
+export async function wireOwnedActorWebSubscriptions<
+  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
+>(
+  system: ActorSystem,
+  topology: TTopology,
+  nodeKey: keyof TTopology['nodes'] & string,
+  actors: ActorWebNodeActorMap<TTopology>
+): Promise<ActorWebSubscriptionTeardown[]> {
+  const teardowns: ActorWebSubscriptionTeardown[] = [];
+  for (const subscription of topology.subscriptions) {
+    const fromKey = subscription.from;
+    const subscriberKeys =
+      typeof subscription.to === 'string' ? [subscription.to] : subscription.to;
+    for (const toKey of subscriberKeys) {
+      const fromDescriptor = requireSubscriptionActorDescriptor(topology, fromKey, 'publisher');
+      const toDescriptor = requireSubscriptionActorDescriptor(topology, toKey, 'subscriber');
+      const ownsPublisher = fromDescriptor.node === nodeKey;
+      const ownsSubscriber = toDescriptor.node === nodeKey;
+      if (!ownsPublisher && !ownsSubscriber) {
+        continue;
+      }
+
+      if (ownsPublisher !== ownsSubscriber) {
+        throw new Error(
+          `Topology subscription "${fromKey}" -> "${toKey}" spans nodes "${String(fromDescriptor.node)}" and "${String(toDescriptor.node)}". Cross-node subscription delivery is not supported; co-locate the pair on one node or relay the events through an actor on the subscriber's node.`
+        );
+      }
+
+      const publisher = actors.get(fromKey);
+      const subscriber = actors.get(toKey);
+      if (!publisher || !subscriber) {
+        const missingKey = publisher ? toKey : fromKey;
+        throw new Error(
+          `Actor-Web node "${String(nodeKey)}" did not spawn actor "${missingKey}" required by topology subscription "${fromKey}" -> "${toKey}".`
+        );
+      }
+
+      const teardown = await system.subscribe(publisher, {
+        subscriber,
+        ...(subscription.events && subscription.events.length > 0
+          ? { events: [...subscription.events] }
+          : {}),
+      });
+      teardowns.push(teardown);
+    }
+  }
+
+  return teardowns;
+}

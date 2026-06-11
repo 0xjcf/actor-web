@@ -454,3 +454,164 @@ describe('startActorWebNode', () => {
     expect(workerNode.getActor('proof')).toBeUndefined();
   });
 });
+
+type SubscriberQuery = { type: 'GET_RECEIVED' } | { type: 'COUNT_CHANGED'; count: number };
+
+function createReceiverBehavior() {
+  return defineBehavior<SubscriberQuery>()
+    .withContext({ received: 0 })
+    .onMessage(({ message, actor }) => {
+      const context = actor.getSnapshot().context;
+      if (message.type === 'GET_RECEIVED') {
+        return { reply: context.received };
+      }
+
+      return { context: { received: context.received + 1 } };
+    })
+    .build();
+}
+
+describe('startActorWebNode topology subscriptions', () => {
+  it('wires same-node topology subscriptions and delivers emitted events', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        worker: node('worker-node'),
+      },
+      actors: {
+        publisher: actor({
+          id: 'publisher',
+          node: 'worker',
+          behavior: createCounterBehavior,
+        }),
+        receiver: actor({
+          id: 'receiver',
+          node: 'worker',
+          behavior: createReceiverBehavior,
+        }),
+      },
+      subscriptions: [{ from: 'publisher', to: ['receiver'], events: ['COUNT_CHANGED'] }],
+    });
+
+    const workerNode = await startActorWebNode(topology, {
+      node: 'worker',
+      transport: new TestMessageTransport(),
+    });
+
+    try {
+      const publisher = workerNode.requireActor('publisher');
+      const receiver = workerNode.requireActor('receiver');
+      await publisher.send({ type: 'INCREMENT' });
+      await workerNode.system.flush();
+      await expect(receiver.ask<number>({ type: 'GET_RECEIVED' })).resolves.toBe(1);
+    } finally {
+      await workerNode.stop();
+    }
+  });
+
+  it('re-establishes topology subscriptions when the node restarts', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        worker: node('worker-node'),
+      },
+      actors: {
+        publisher: actor({
+          id: 'publisher',
+          node: 'worker',
+          behavior: createCounterBehavior,
+        }),
+        receiver: actor({
+          id: 'receiver',
+          node: 'worker',
+          behavior: createReceiverBehavior,
+        }),
+      },
+      subscriptions: [{ from: 'publisher', to: ['receiver'] }],
+    });
+
+    const workerNode = await startActorWebNode(topology, {
+      node: 'worker',
+      transport: new TestMessageTransport(),
+    });
+
+    try {
+      await workerNode.stop();
+      await workerNode.start();
+
+      const publisher = workerNode.requireActor('publisher');
+      const receiver = workerNode.requireActor('receiver');
+      await publisher.send({ type: 'INCREMENT' });
+      await workerNode.system.flush();
+      await expect(receiver.ask<number>({ type: 'GET_RECEIVED' })).resolves.toBe(1);
+    } finally {
+      await workerNode.stop();
+    }
+  });
+
+  it('skips subscriptions owned entirely by other nodes', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+        worker: node('worker-node'),
+      },
+      actors: {
+        serverPublisher: actor({
+          id: 'server-publisher',
+          node: 'server',
+          behavior: createCounterBehavior,
+        }),
+        serverReceiver: actor({
+          id: 'server-receiver',
+          node: 'server',
+          behavior: createReceiverBehavior,
+        }),
+        workerCounter: actor({
+          id: 'worker-counter',
+          node: 'worker',
+          behavior: createCounterBehavior,
+        }),
+      },
+      subscriptions: [{ from: 'serverPublisher', to: ['serverReceiver'] }],
+    });
+
+    const workerNode = await startActorWebNode(topology, {
+      node: 'worker',
+      transport: new TestMessageTransport(),
+    });
+
+    try {
+      expect(workerNode.getActor('workerCounter')).toBeDefined();
+      expect(workerNode.getActor('serverPublisher')).toBeUndefined();
+    } finally {
+      await workerNode.stop();
+    }
+  });
+
+  it('fails loudly when a subscription spans nodes', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+        worker: node('worker-node'),
+      },
+      actors: {
+        publisher: actor({
+          id: 'publisher',
+          node: 'worker',
+          behavior: createCounterBehavior,
+        }),
+        receiver: actor({
+          id: 'receiver',
+          node: 'server',
+          behavior: createReceiverBehavior,
+        }),
+      },
+      subscriptions: [{ from: 'publisher', to: ['receiver'] }],
+    });
+
+    await expect(
+      startActorWebNode(topology, {
+        node: 'worker',
+        transport: new TestMessageTransport(),
+      })
+    ).rejects.toThrow('spans nodes "worker" and "server"');
+  });
+});

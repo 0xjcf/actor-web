@@ -4,10 +4,12 @@ import { createActorSystem } from './actor-system-impl.js';
 import type { ActorToolRegistry } from './actor-tools.js';
 import {
   type ActorWebNodeActorHandles,
+  type ActorWebSubscriptionTeardown,
   createActorWebNodeActorHandles,
   createActorWebNodeToolAccess,
   getActorWebNodeDefinition,
   spawnOwnedActorWebActors,
+  wireOwnedActorWebSubscriptions,
 } from './actor-web-node-runtime.js';
 import { createNodeWebSocketMessageTransport } from './node-websocket-message-transport.js';
 import type { RuntimeGatewayAuthProvider, RuntimeTransportAuthProvider } from './runtime-auth.js';
@@ -359,6 +361,21 @@ export async function serveNode<TTopology extends ActorWebTopology<ActorWebTopol
   let gatewayUrl: string | null = null;
   let running = false;
   let unsubscribeDiscovery: (() => void) | undefined;
+  let subscriptionTeardowns: ActorWebSubscriptionTeardown[] = [];
+
+  const teardownTopologySubscriptions = async (
+    onError: (error: unknown) => void
+  ): Promise<void> => {
+    const activeTeardowns = subscriptionTeardowns;
+    subscriptionTeardowns = [];
+    for (const teardown of activeTeardowns) {
+      try {
+        await teardown();
+      } catch (error) {
+        onError(error);
+      }
+    }
+  };
 
   const allowedDiscoveryTargets = options.connect
     ? new Set(resolveTopologyNodeAddresses(topology, options.connect))
@@ -444,6 +461,12 @@ export async function serveNode<TTopology extends ActorWebTopology<ActorWebTopol
       systemStarted = true;
 
       await spawnOwnedActorWebActors(system, topology, options.node, actors, options.tools);
+      subscriptionTeardowns = await wireOwnedActorWebSubscriptions(
+        system,
+        topology,
+        options.node,
+        actors
+      );
 
       if (gatewayOptions) {
         const { WebSocketServer } = await import('ws');
@@ -518,6 +541,8 @@ export async function serveNode<TTopology extends ActorWebTopology<ActorWebTopol
         } catch {}
       }
 
+      await teardownTopologySubscriptions(() => {});
+
       if (systemStarted) {
         try {
           await system.stop();
@@ -559,6 +584,10 @@ export async function serveNode<TTopology extends ActorWebTopology<ActorWebTopol
     } catch (error) {
       stopError ??= error;
     }
+
+    await teardownTopologySubscriptions((error) => {
+      stopError ??= error;
+    });
 
     try {
       await system.stop();

@@ -70,7 +70,9 @@ The remaining friction is entirely in *declaring the wiring*.
 | Subscriptions are **lost on system restart** (in-memory registry) | `actor-system-impl.ts:355,380` |
 | `analyzeActorBehavior` is conservative: any `onMessage` actor "might emit"; types not introspected | `auto-publishing.ts:123-147` |
 | `EventBrokerActor` (topics + wildcards + cross-node design) is **never spawned, zero tests** | `event-broker-actor.ts`; `getEventBrokerAddress()` returns `undefined` |
-| Declarative/batch subscriptions are an **open question** in the topology DX doc | `actor-web-topology-source-dx-design.md:673-694` |
+| Declarative `subscriptions` block **implemented** on `defineActorWebTopology` | `topology.ts:249-264` |
+| Topology subscriptions wired and torn down by the local runtime client **and** both node hosts (`serveNode`, `startActorWebNode`); re-established on every start | `actor-web-client.ts:484-514`; `actor-web-node-runtime.ts` (`wireOwnedActorWebSubscriptions`) |
+| Node hosts wire same-node pairs only: pairs owned by other nodes are skipped (wired by the owning node), node-spanning pairs **fail loudly at start** — cross-node delivery is unsupported | `actor-web-node-runtime.ts` (`wireOwnedActorWebSubscriptions`); `unit/serve-actor-web-node.test.ts`, `unit/start-actor-web-node.test.ts` |
 | `emit` reaches inter-actor subscribers **and** UI `subscribeEvent` off the same stream | `integration/ignite-element-bridge.ts:213-226` |
 | `ignite-element` re-renders on snapshots; events require explicit `subscribeEvent` | `integration/ignite-element-bridge.ts`; FAS `compare-view.tsx` |
 | FAS local runtime exposes `.system` via `runtime.nodes.local.system`; refs via `runtime.requireActor(key)` | `start-actor-web-node.ts:76`, `actor-web-client.ts:163-185` |
