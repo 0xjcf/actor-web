@@ -1332,8 +1332,8 @@
 
 - Title: Fix docs-site discrepancies from 2026-06-11 audit (supervision persistence claim, stale subscriptions hero)
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/fix-docs-site-discrepancies-from-2026-06-11-audit-supervisi.md
 - Verification lane: fast
 - Policy sensitivity: standard
