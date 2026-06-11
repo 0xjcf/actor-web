@@ -1271,13 +1271,15 @@
 
 - Title: Resolve unenforced SendInstruction delivery modes (retry(3), guaranteed)
 - Mode: single-agent
-- Status: review
+- Status: done
 - Owner: reviewer
 - Brief: .fas/tasks/resolve-unenforced-sendinstruction-delivery-modes-retry-3.md
 - Automation mode: advisory
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
+- Artifacts: pr=<https://github.com/0xjcf/actor-web/pull/21>; verification=.fas/state/verification/latest.json
+- Note: status set to done manually after PR #21 merged — task passed validate/review but was superseded as current task by the docs-deploy task before `fas done` could run (no batch snapshot existed)
 
 ### Task: Author the lattice contract design doc (artifact store + dependency activation)
 
@@ -1319,8 +1321,8 @@
 
 - Title: Deploy VitePress docs to GitHub Pages at /actor-web/ subpath
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/deploy-vitepress-docs-to-github-pages-at-actor-web-subpath.md
 - Verification lane: fast
 - Policy sensitivity: standard

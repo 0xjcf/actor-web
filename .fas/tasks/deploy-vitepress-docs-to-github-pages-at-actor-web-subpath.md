@@ -27,10 +27,19 @@ Deploy VitePress docs to GitHub Pages at /actor-web/ subpath
 - .github/workflows/docs.yml
 - .github/workflows/docs-contrast.yml
 - README.md
+- packages/actor-core-runtime/src/message-plan.ts
+- packages/actor-core-runtime/src/otp-message-plan-processor.ts
+- packages/actor-core-runtime/src/unit/message-plan.test.ts
+- packages/actor-core-runtime/src/unit/message-plan.unit.test.ts
+- docs/site/concepts/messages.md
+- docs/site/api/define-behavior.md
+- .fas/memory/decisions.md
+- .fas/memory/pr-feedback.md
+- .fas/memory/incidents.md
 
 ## Scope Amendments
 
-- None.
+- 2026-06-11 (closeout-window accounting, not implementation scope): PR #22 (this task) merged to main BEFORE PR #21 (the already-validated "Resolve unenforced SendInstruction delivery modes" task), so the closeout diff window `workflowStartHeadSha..HEAD` unavoidably contains PR #21's files (message-plan.ts, otp-message-plan-processor.ts, two message-plan test files, two docs-site pages, three memory files). Those files belong to the completed sibling task, were reviewed and merged through its own pipeline, and were NOT touched by this task's implementation (which changed only the four files listed first). Added here solely so the NO_UNPLANNED_SOURCE_FILES closeout gate reflects the interleaved-merge reality — the platform-side fix (derive the closeout window from the PR's own merge commit first-parent diff) is filed in the FAS repo queue (2026-06-11).
 
 ## Implementation plan
 
