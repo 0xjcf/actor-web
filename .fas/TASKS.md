@@ -1262,8 +1262,8 @@
 
 - Title: Wire topology-declared subscriptions in serveNode and startActorWebNode (spike brief)
 - Mode: single-agent
-- Status: backlog
-- Owner: planner
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/topology-declared-subscriptions-are-wired-only-in-the-local.md
 - Automation mode: advisory
 

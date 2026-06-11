@@ -1,4 +1,4 @@
-# Wire topology-declared subscriptions in serveNode and startA
+# Wire topology-declared subscriptions in serveNode and startActorWebNode
 
 ## Source
 
