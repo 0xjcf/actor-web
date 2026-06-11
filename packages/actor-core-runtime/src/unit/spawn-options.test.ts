@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { createActorSystem } from '../actor-system-impl.js';
 import type { SpawnOptions } from '../actor-system.js';
+import { createActorSystem } from '../actor-system-impl.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
 function createEchoBehavior() {
