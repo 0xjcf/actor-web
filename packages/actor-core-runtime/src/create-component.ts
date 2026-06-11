@@ -528,7 +528,6 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
         // Spawn component actor
         this._actorPID = await actorSystem.spawn(componentBehavior, {
           id: `${machineId}-${this._componentInstanceId}`,
-          supervised: true,
         });
 
         log.info('Component actor spawned', {
