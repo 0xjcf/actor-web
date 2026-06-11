@@ -1,4 +1,4 @@
-# Wire per-actor topology supervision policies into the runtim
+# Wire topology supervisor trees into the runtime failure path
 
 ## Source
 
@@ -6,15 +6,11 @@ Created with `fas create-task` on 2026-06-11.
 
 ## Problem
 
-Found during the SpawnOptions honesty task (2026-06-11). The topology DSL accepts per-actor supervision policies — actor({ supervision: { strategy: 'restart', maxRestarts: 3, withinMs: 60_000 } }) — and docs/site/concepts/supervision.md documents them as bounding restarts, but the runtime never consumes them: spawnActorWebActorInstance/spawnOwnedActorWebActors (actor-web-node-runtime.ts) used to collapse the policy to supervised: Boolean(...) (now removed), and applySupervisionStrategy (actor-system-impl.ts:3563) hardcodes directive 'restart' with the global MAX_RESTART_ATTEMPTS=3 / RESTART_WINDOW_MS=30000 constants for every failed actor. Custom maxRestarts/withinMs/strategy values are silently ignored — note the docs example (3 per 60s) differs from the actual global (3 per 30s).
-
-SCOPE (split decision, 2026-06-11, human-approved): this task is PER-ACTOR POLICY WIRING ONLY — run as **4-agent mode** (pass `--mode 4-agent` explicitly at bootstrap; a known FAS platform bug silently drops queued task modes at implement bootstrap). Topology `supervisor()` TREES (one-for-one/one-for-all/rest-for-one across children) are a separate 6-agent task: `.fas/tasks/wire-topology-supervisor-trees-into-the-runtime-failure-path.md` — do NOT implement tree semantics here.
-
-Implement: thread the ActorWebSupervisionPolicy from the actor descriptor through spawn (pass the policy object, not a boolean — see decisions.md 2026-06-11), store per-actor policy in the system, and have applySupervisionStrategy honor strategy/maxRestarts/withinMs with the global constants as fallback defaults. Define `resume` precisely before coding it (skip the failed message and continue with current state? mailbox handling?) — if its semantics can't be pinned cheaply, land restart/stop/escalate and file resume separately rather than guessing. Include a deliberate story for system actors (guardian and system-event actor previously passed supervised: false expecting no restart — decide with behavioral tests for the system-actor failure path). Update supervision.md restart-policies section to match what lands (including the 3-per-30s vs 3-per-60s default discrepancy). Acceptance: behavioral tests prove a custom maxRestarts/withinMs is honored, an exceeded policy applies its declared strategy, and an actor with no policy keeps system defaults.
+Companion to the per-actor policy task (split decision 2026-06-11, human-approved; per-actor runs 4-agent, this runs 6-AGENT — architecture-gated, and pass --mode 6-agent explicitly at bootstrap because a known FAS platform bug silently drops queued task modes). Topology supervisor() declarations — supervisor({ node, strategy: 'one-for-one' | 'one-for-all' | 'rest-for-one' | 'escalate', children: [...] }) (topology.ts:211-215) — are accepted by the DSL, documented in docs/site/concepts/supervision.md, used in examples/fas-agent-loop/fas-topology.ts and the root README, but NEVER consumed by any runtime host: zero references to topology.supervisors in serve-actor-web-node.ts, start-actor-web-node.ts, actor-web-node-runtime.ts, or actor-web-client.ts. The standalone Supervisor/SupervisorTree classes (src/actors/supervisor.ts, supervisor-tree.ts) predate the topology DSL and are not connected to it. ARCHITECTURE QUESTIONS (for the architect step): (1) reuse the standalone classes vs implement tree semantics directly in the system failure path (spike lean: direct implementation; the classes predate the current architecture); (2) restart ordering and in-flight message handling for one-for-all/rest-for-one multi-actor restarts (children's mailboxes are destroyed — define what happens to subscribers and pending asks during a group restart); (3) interaction with per-actor policies (child policy bounds individual restarts; tree strategy decides blast radius — define precedence when both fire); (4) escalate semantics: child failure becomes the supervisor's failure re-evaluated under its policy — define the top-of-tree behavior (system stop? loud event?). DEPENDS ON: per-actor policy wiring (.fas/tasks/wire-per-actor-topology-supervision-policies-into-the-runtim.md) — tree strategies act on top of the per-actor restart machinery. Acceptance: behavioral tests prove one-for-one isolates, one-for-all restarts all children on a single failure, rest-for-one restarts only later-declared children, and escalate propagates; fas-agent-loop's declared supervisors actually supervise; supervision.md tree section matches reality.
 
 ## Automation admission
 
-- Expected operator value: Improves operator leverage around "Wire per-actor topology supervision policies into the runtime failure path" by reducing manual coordination, repetitive execution, or trust gaps.
+- Expected operator value: Improves operator leverage around "Wire topology supervisor trees into the runtime failure path" by reducing manual coordination, repetitive execution, or trust gaps.
 - Observability surface: Use authoritative FAS surfaces such as `fas runtime status`, `fas runtime watch`, workflow logs, receipts, or notifications to show whether the automation is active, quiet, stalled, blocked, or complete.
 - Recovery path: A human can abort, retry, recover, or rerun this workflow without leaving stale queue, lease, branch, or current-task state.
 - Autonomy mode: advisory
@@ -42,7 +38,9 @@ Implement: thread the ActorWebSupervisionPolicy from the actor descriptor throug
 
 - packages/actor-core-runtime/src/actor-system-impl.ts
 - packages/actor-core-runtime/src/actor-web-node-runtime.ts
-- packages/actor-core-runtime/src/actor-system.ts
+- packages/actor-core-runtime/src/serve-actor-web-node.ts
+- packages/actor-core-runtime/src/start-actor-web-node.ts
+- packages/actor-core-runtime/src/topology.ts
 - docs/site/concepts/supervision.md
 
 ## Scope Amendments

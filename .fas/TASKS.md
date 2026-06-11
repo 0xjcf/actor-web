@@ -1354,8 +1354,8 @@
 
 - Title: SpawnOptions API honesty: remove unread fields (persistState, timeout, retries) and decide supervised semantics
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/spawnoptions-api-honesty-remove-unread-fields-persiststate.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -1364,10 +1364,20 @@
 ### Task: Wire per-actor topology supervision policies into the runtime failure path
 
 - Title: Wire per-actor topology supervision policies into the runtime failure path
-- Mode: single-agent
+- Mode: 4-agent
 - Status: backlog
 - Owner: planner
 - Brief: .fas/tasks/wire-per-actor-topology-supervision-policies-into-the-runtim.md
+- Automation mode: advisory
+- Note: split decision 2026-06-11 — per-actor policies here (4-agent), supervisor trees in the companion 6-agent task; pass --mode 4-agent explicitly at bootstrap (platform bug drops queued modes)
+
+### Task: Wire topology supervisor trees into the runtime failure path
+
+- Title: Wire topology supervisor trees into the runtime failure path
+- Mode: 6-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/wire-topology-supervisor-trees-into-the-runtime-failure-path.md
 - Automation mode: advisory
 
 ## Template
