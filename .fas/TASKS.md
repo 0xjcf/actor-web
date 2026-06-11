@@ -1323,6 +1323,14 @@
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Fix docs-site discrepancies from 2026-06-11 audit (supervision persistence claim, stale subscriptions hero)
+
+- Title: Fix docs-site discrepancies from 2026-06-11 audit (supervision persistence claim, stale subscriptions hero)
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/fix-docs-site-discrepancies-from-2026-06-11-audit-supervisi.md
+
 ## Template
 
 ### Task: `<short task title>`
