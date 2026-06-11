@@ -1,11 +1,15 @@
 /**
  * @file spawn-options.test.ts
- * @description Pins the SpawnOptions contract: `id` is the only spawn option.
+ * @description Pins the SpawnOptions contract: `id` plus an optional
+ * per-actor `supervision` policy object.
  *
  * SpawnOptions once declared supervised/persistState/timeout/retries, none of
  * which the runtime ever read. The type-level assertions below keep removed
  * fields from silently returning without an implementation behind them (the
  * `@ts-expect-error` lines fail the typecheck lane if the fields reappear).
+ * `supervision` carries the policy object — never a boolean (decisions.md
+ * 2026-06-11) — and is honored by the runtime failure path (see
+ * supervision-policy.test.ts for the behavioral pins).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -51,6 +55,23 @@ describe('SpawnOptions contract', () => {
     }
   });
 
+  it('spawns with a supervision policy object', async () => {
+    const system = await createActorSystem({ nodeAddress: 'localhost:0' });
+    await system.start();
+
+    try {
+      const options: SpawnOptions = {
+        id: 'echo-supervised',
+        supervision: { strategy: 'restart', maxRestarts: 1, withinMs: 60_000 },
+      };
+      const ref = await system.spawn(createEchoBehavior(), options);
+      expect(ref.address.id).toBe('echo-supervised');
+      await expect(ref.ask({ type: 'PING' })).resolves.toBe(0);
+    } finally {
+      await system.stop();
+    }
+  });
+
   it('rejects the removed fields at the type level', () => {
     // @ts-expect-error supervised was never read by the runtime and is removed
     const supervised: SpawnOptions = { supervised: false };
@@ -62,5 +83,17 @@ describe('SpawnOptions contract', () => {
     const retries: SpawnOptions = { retries: 3 };
 
     expect([supervised, persist, timeout, retries]).toBeDefined();
+  });
+
+  it('constrains supervision to a policy object at the type level', () => {
+    const policy: SpawnOptions = {
+      supervision: { strategy: 'stop' },
+    };
+    // @ts-expect-error supervision carries the policy object, never a boolean
+    const boolPolicy: SpawnOptions = { supervision: true };
+    // @ts-expect-error strategy must be restart | resume | stop | escalate
+    const badStrategy: SpawnOptions = { supervision: { strategy: 'reboot' } };
+
+    expect([policy, boolPolicy, badStrategy]).toBeDefined();
   });
 });
