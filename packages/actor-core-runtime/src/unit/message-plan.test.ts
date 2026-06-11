@@ -305,9 +305,15 @@ describe('createSendInstruction', () => {
     expect(isSendInstruction(instruction)).toBe(true);
   });
 
-  it('should create send instructions with custom mode', () => {
-    const instruction = createSendInstruction(mockActorRef, validActorMessage, 'retry(3)');
-    expect(instruction.mode).toBe('retry(3)');
+  it('should create send instructions with explicit fireAndForget mode', () => {
+    const instruction = createSendInstruction(mockActorRef, validActorMessage, 'fireAndForget');
+    expect(instruction.mode).toBe('fireAndForget');
+  });
+
+  it('should accept a send instruction literal without mode (optional, defaults at runtime)', () => {
+    const instruction: SendInstruction = { to: mockActorRef, tell: validActorMessage };
+    expect(instruction.mode).toBeUndefined();
+    expect(isSendInstruction(instruction)).toBe(true);
   });
 });
 

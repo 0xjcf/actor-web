@@ -131,7 +131,7 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
       expect(isSendInstruction(sendInstruction)).toBe(true);
     });
 
-    it('should create SendInstruction with custom mode', () => {
+    it('should create SendInstruction with explicit fireAndForget mode', () => {
       const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
         address: { id: 'test-actor', type: 'test', path: '/test-actor' },
         send: async () => {},
@@ -144,9 +144,9 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
         version: '1.0.0',
       };
 
-      const sendInstruction = createSendInstruction(mockActorRef, message, 'retry(3)');
+      const sendInstruction = createSendInstruction(mockActorRef, message, 'fireAndForget');
 
-      expect(sendInstruction.mode).toBe('retry(3)');
+      expect(sendInstruction.mode).toBe('fireAndForget');
       expect(isSendInstruction(sendInstruction)).toBe(true);
     });
 
