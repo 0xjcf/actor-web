@@ -1248,6 +1248,65 @@
 - Brief: .fas/tasks/docs-refresh-root-runtime-readmes-to-the-real-post-rename.md
 - Automation mode: advisory
 
+### Task: Investigate stigmergic lattice coordination for Actor-Web: can agents coordinate via shared artifacts/facts/dependency signals instead of a central orchestrator, and how should orchestrated + lattice modes coexist (primitives, activation model, lattice-as-actor, artifact model, discovery, failure recovery, alignment with actor principles)?
+
+- Title: Investigate stigmergic lattice coordination for Actor-Web: can agents coordinate via shared artifacts/facts/dependency signals instead of a central orchestrator, and how should orchestrated + lattice modes coexist (primitives, activation model, lattice-as-actor, artifact model, discovery, failure recovery, alignment with actor principles)?
+- Mode: single-agent
+- Status: commit-planning
+- Owner: planner
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Topology-declared subscriptions are wired only in the local runtime client (actor-web-client.ts:496-514); serveNode and startActorWebNode ignore topology.subscriptions, so multi-node topologies silently drop declared choreography wiring. severity=high repo=actor-web — prerequisite hardening for any lattice work.
+
+- Title: Topology-declared subscriptions are wired only in the local runtime client (actor-web-client.ts:496-514); serveNode and startActorWebNode ignore topology.subscriptions, so multi-node topologies silently drop declared choreography wiring. severity=high repo=actor-web — prerequisite hardening for any lattice work.
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/topology-declared-subscriptions-are-wired-only-in-the-local.md
+- Automation mode: advisory
+### Task: SendInstruction delivery modes retry(3) and guaranteed are declared in types (message-plan.ts:72-79) but unenforced in plan-interpreter.ts:270-305 — misleading API honesty issue that becomes acute once activation correctness matters. Decide: implement minimal retry or remove the modes from the public types. severity=medium repo=actor-web.
+
+- Title: SendInstruction delivery modes retry(3) and guaranteed are declared in types (message-plan.ts:72-79) but unenforced in plan-interpreter.ts:270-305 — misleading API honesty issue that becomes acute once activation correctness matters. Decide: implement minimal retry or remove the modes from the public types. severity=medium repo=actor-web.
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/sendinstruction-delivery-modes-retry-3-and-guaranteed-are-d.md
+- Automation mode: advisory
+### Task: No persistent artifact/fact store or dependency-activation primitive exists (no blackboard, no saga, no fact registry — only transient emit). Needs a lattice contract design doc (protocol messages, artifact versioning, activation state machine with activationId ack/re-emit, journal strategy) before implementation; architecture-gated. severity=medium repo=actor-web.
+
+- Title: No persistent artifact/fact store or dependency-activation primitive exists (no blackboard, no saga, no fact registry — only transient emit). Needs a lattice contract design doc (protocol messages, artifact versioning, activation state machine with activationId ack/re-emit, journal strategy) before implementation; architecture-gated. severity=medium repo=actor-web.
+- Mode: 6-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/no-persistent-artifact-fact-store-or-dependency-activation-p.md
+### Task: Event sourcing module is vestigial (event-sourcing.ts exported but unwired; integration test skipped). Decide whether to promote it as the lattice journal backend or scope a journal inside the lattice package and deprecate the module. severity=low repo=actor-web.
+
+- Title: Event sourcing module is vestigial (event-sourcing.ts exported but unwired; integration test skipped). Decide whether to promote it as the lattice journal backend or scope a journal inside the lattice package and deprecate the module. severity=low repo=actor-web.
+- Mode: 6-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/event-sourcing-module-is-vestigial-event-sourcing-ts-export.md
+### Task: Add lattice-mode coordination example beside fas-agent-loop (orchestration baseline + stigmergic lattice + hybrid)
+
+- Title: Add lattice-mode coordination example beside fas-agent-loop (orchestration baseline + stigmergic lattice + hybrid)
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/add-lattice-mode-coordination-example-beside-fas-agent-loop.md
+- Automation mode: advisory
+### Task: Wire topology-declared subscriptions in serveNode and startActorWebNode
+
+- Title: Wire topology-declared subscriptions in serveNode and startActorWebNode
+- Mode: single-agent
+- Status: implementing
+- Owner: implementer
+- Brief: .fas/tasks/wire-topology-declared-subscriptions-in-servenode-and-starta.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
 ## Template
 
 ### Task: `<short task title>`
