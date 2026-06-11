@@ -1331,6 +1331,14 @@
 - Owner: planner
 - Brief: .fas/tasks/fix-docs-site-discrepancies-from-2026-06-11-audit-supervisi.md
 
+### Task: SpawnOptions API honesty: remove unread fields (persistState, timeout, retries) and decide supervised semantics
+
+- Title: SpawnOptions API honesty: remove unread fields (persistState, timeout, retries) and decide supervised semantics
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/spawnoptions-api-honesty-remove-unread-fields-persiststate.md
+
 ## Template
 
 ### Task: `<short task title>`
