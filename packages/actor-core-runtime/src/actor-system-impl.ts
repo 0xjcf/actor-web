@@ -53,6 +53,8 @@ import type {
   ActorMessage,
   ActorPID,
   ActorStats,
+  ActorSupervisionPolicy,
+  ActorSupervisionStrategy,
   ActorSystem,
   ClusterState,
   MessageTransport,
@@ -176,10 +178,85 @@ const scheduleMacrotask: MacrotaskScheduler = (() => {
 
 const log = Logger.namespace('ACTOR_SYSTEM');
 
-// Supervision strategy constants
+// Supervision strategy constants — system-wide defaults applied to actors
+// spawned without a per-actor supervision policy.
 const MAX_RESTART_ATTEMPTS = 3;
 const RESTART_WINDOW_MS = 30000; // 30 seconds
 const RESTART_BACKOFF_MS = 1000; // 1 second
+
+const SUPPORTED_SUPERVISION_STRATEGIES: readonly ActorSupervisionStrategy[] = [
+  'restart',
+  'resume',
+  'stop',
+  'escalate',
+];
+
+/**
+ * Input facts for a supervision decision: the failed actor's policy (if any)
+ * and its restart bookkeeping.
+ */
+export interface SupervisionDecisionInput {
+  readonly policy?: ActorSupervisionPolicy;
+  readonly restartCount: number;
+  readonly lastRestartTimeMs: number;
+  readonly nowMs: number;
+}
+
+/**
+ * The supervision decision for one failure:
+ *
+ * - `restart` — respawn the actor; `restartCount` is the effective count
+ *   after window expiry is applied, `maxRestarts` is the effective bound.
+ * - `stop-permanent` — the restart bound was exceeded; stop for good.
+ * - `stop` — the policy says never restart.
+ * - `escalate` — stop and emit a distinct escalation event (supervisor-tree
+ *   propagation is not wired yet).
+ * - `resume` — keep the actor running with its current state; the failed
+ *   message is skipped.
+ */
+export type SupervisionDecision =
+  | { readonly kind: 'restart'; readonly restartCount: number; readonly maxRestarts: number }
+  | {
+      readonly kind: 'stop-permanent';
+      readonly restartCount: number;
+      readonly maxRestarts: number;
+    }
+  | { readonly kind: 'stop' }
+  | { readonly kind: 'escalate' }
+  | { readonly kind: 'resume' };
+
+/**
+ * Pure decision core for the supervision failure path. Deterministic — the
+ * caller supplies the clock and restart bookkeeping; the imperative shell
+ * (`applySupervisionStrategy`) executes the returned decision.
+ *
+ * `maxRestarts`/`withinMs` from the policy bound the `restart` strategy and
+ * fall back to the system-wide defaults (3 restarts within 30 seconds).
+ */
+export function resolveSupervisionDecision(input: SupervisionDecisionInput): SupervisionDecision {
+  const strategy = input.policy?.strategy ?? 'restart';
+
+  if (strategy === 'stop') {
+    return { kind: 'stop' };
+  }
+  if (strategy === 'escalate') {
+    return { kind: 'escalate' };
+  }
+  if (strategy === 'resume') {
+    return { kind: 'resume' };
+  }
+
+  const maxRestarts = input.policy?.maxRestarts ?? MAX_RESTART_ATTEMPTS;
+  const withinMs = input.policy?.withinMs ?? RESTART_WINDOW_MS;
+  const windowExpired = input.restartCount > 0 && input.nowMs - input.lastRestartTimeMs > withinMs;
+  const effectiveCount = windowExpired ? 0 : input.restartCount;
+
+  if (effectiveCount >= maxRestarts) {
+    return { kind: 'stop-permanent', restartCount: effectiveCount, maxRestarts };
+  }
+
+  return { kind: 'restart', restartCount: effectiveCount, maxRestarts };
+}
 
 /**
  * Directory configuration for actor lookup
@@ -324,6 +401,7 @@ export class ActorSystemImpl implements ActorSystem {
   private actorStarted = new Map<string, boolean>(); // Track whether onStart has been called
   private actorRestartCounts = new Map<string, number>(); // Track restart attempts per actor
   private actorLastRestartTime = new Map<string, number>(); // Track last restart time per actor
+  private actorSupervisionPolicies = new Map<string, ActorSupervisionPolicy>(); // Per-actor policy from SpawnOptions.supervision
 
   // ✅ PURE ACTOR MODEL: XState timeout manager for system scheduling
   private systemTimeoutManager = new PureXStateTimeoutManager();
@@ -682,9 +760,12 @@ export class ActorSystemImpl implements ActorSystem {
     this.actors.delete(path);
     this.actorStarted.delete(path);
 
-    // Clean up restart tracking
+    // Clean up restart tracking and the per-actor supervision policy. A
+    // supervised restart re-passes the policy through spawn and restores the
+    // restart bookkeeping after the respawn (see restartActorWithLimits).
     this.actorRestartCounts.delete(path);
     this.actorLastRestartTime.delete(path);
+    this.actorSupervisionPolicies.delete(path);
 
     // Unregister from directory
     await this.directory.unregister(address);
@@ -765,6 +846,20 @@ export class ActorSystemImpl implements ActorSystem {
     }
 
     const address: ActorAddress = { id, type, path };
+
+    // Store the per-actor supervision policy so the failure path can honor
+    // strategy/maxRestarts/withinMs. Validate the strategy at runtime for
+    // non-TypeScript consumers — silently accepting an unknown strategy would
+    // fall back to defaults and misrepresent the policy contract.
+    if (options?.supervision) {
+      if (!SUPPORTED_SUPERVISION_STRATEGIES.includes(options.supervision.strategy)) {
+        throw new Error(
+          `Unsupported supervision strategy "${String(options.supervision.strategy)}" for actor "${id}". ` +
+            `Supported strategies: ${SUPPORTED_SUPERVISION_STRATEGIES.join(', ')}.`
+        );
+      }
+      this.actorSupervisionPolicies.set(path, options.supervision);
+    }
 
     // Store the behavior with type-safe normalization
     const normalizedBehavior = normalizeBehavior(actualBehavior as ActorBehavior<unknown, unknown>);
@@ -3555,9 +3650,11 @@ export class ActorSystemImpl implements ActorSystem {
   }
 
   /**
-   * Apply supervision strategy to an actor based on an error.
-   * This method is called when a message processing fails.
-   * It determines the appropriate supervision directive and handles it.
+   * Apply the supervision strategy to a failed actor.
+   * Called when message processing throws. The pure decision core
+   * (resolveSupervisionDecision) picks the directive from the actor's
+   * per-actor policy (with system defaults as fallback); this method
+   * executes it.
    */
   private async applySupervisionStrategy(address: ActorAddress, error: unknown): Promise<void> {
     const behavior = this.actors.get(address.path);
@@ -3566,73 +3663,93 @@ export class ActorSystemImpl implements ActorSystem {
       return;
     }
 
-    // Check restart limits to prevent infinite restart loops
-    const now = Date.now();
-    const currentRestartCount = this.actorRestartCounts.get(address.path) || 0;
-    const lastRestartTime = this.actorLastRestartTime.get(address.path) || 0;
+    const policy = this.actorSupervisionPolicies.get(address.path);
+    const decision = resolveSupervisionDecision({
+      policy,
+      restartCount: this.actorRestartCounts.get(address.path) || 0,
+      lastRestartTimeMs: this.actorLastRestartTime.get(address.path) || 0,
+      nowMs: Date.now(),
+    });
+    const errorMessage = error instanceof Error ? error.message : String(error);
 
-    // Reset restart count if enough time has passed
-    if (now - lastRestartTime > RESTART_WINDOW_MS) {
-      this.actorRestartCounts.set(address.path, 0);
-    }
-
-    // Check if we've exceeded restart limits
-    if (currentRestartCount >= MAX_RESTART_ATTEMPTS) {
-      log.error('Actor exceeded restart limits, stopping permanently', {
-        path: address.path,
-        restartCount: currentRestartCount,
-        maxAttempts: MAX_RESTART_ATTEMPTS,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      // Stop the actor permanently to prevent memory leaks
-      await this.stopActor(new ActorPIDImpl(address, this));
-      await this.emitSystemEvent({
-        eventType: 'actorStopped',
-        timestamp: Date.now(),
-        data: { address: address.path, reason: 'max-restarts-exceeded' },
-      });
-      return;
-    }
-
-    // ✅ PURE ACTOR MODEL: Default supervision strategy with restart limits
-    const supervisionDirective = 'restart' as 'restart' | 'stop' | 'escalate' | 'resume';
-
-    log.warn('Actor failed, applying supervision directive with restart limits', {
+    log.warn('Actor failed, applying supervision decision', {
       path: address.path,
-      directive: supervisionDirective,
-      restartCount: currentRestartCount,
-      maxAttempts: MAX_RESTART_ATTEMPTS,
-      error: error instanceof Error ? error.message : String(error),
+      strategy: policy?.strategy ?? 'restart',
+      decision: decision.kind,
+      error: errorMessage,
     });
 
-    // Apply the directive using if-else to avoid TypeScript switch narrowing issues
-    if (supervisionDirective === 'restart') {
-      log.warn('Actor failed, applying restart directive', {
-        path: address.path,
-        restartAttempt: currentRestartCount + 1,
-      });
-      await this.restartActorWithLimits(address, behavior);
-    } else if (supervisionDirective === 'stop') {
-      log.error('Actor failed, applying stop directive', { path: address.path });
-      await this.stopActor(new ActorPIDImpl(address, this));
-      await this.emitSystemEvent({
-        eventType: 'actorStopped',
-        timestamp: Date.now(),
-        data: { address: address.path, reason: 'supervision-stop' },
-      });
-    } else if (supervisionDirective === 'escalate') {
-      log.warn('Actor failed, escalating to guardian', { path: address.path });
-      await this.notifyGuardianOfFailure(address, error);
-    } else if (supervisionDirective === 'resume') {
-      log.warn('Actor failed, applying resume directive', { path: address.path });
-      await this.resumeActor(address);
-    } else {
-      log.error('Unknown supervision directive, defaulting to restart with limits', {
-        path: address.path,
-        directive: supervisionDirective,
-      });
-      await this.restartActorWithLimits(address, behavior);
+    switch (decision.kind) {
+      case 'restart': {
+        // Sync any window-expiry reset back into the tracked count before
+        // the restart path increments it.
+        this.actorRestartCounts.set(address.path, decision.restartCount);
+        log.warn('Actor failed, applying restart directive', {
+          path: address.path,
+          restartAttempt: decision.restartCount + 1,
+          maxRestarts: decision.maxRestarts,
+        });
+        await this.restartActorWithLimits(address, behavior);
+        return;
+      }
+      case 'stop-permanent': {
+        log.error('Actor exceeded restart limits, stopping permanently', {
+          path: address.path,
+          restartCount: decision.restartCount,
+          maxAttempts: decision.maxRestarts,
+          error: errorMessage,
+        });
+        // Stop the actor permanently to prevent restart loops and memory leaks
+        await this.stopActor(new ActorPIDImpl(address, this));
+        await this.emitSystemEvent({
+          eventType: 'actorStopped',
+          timestamp: Date.now(),
+          data: { address: address.path, reason: 'max-restarts-exceeded' },
+        });
+        return;
+      }
+      case 'stop': {
+        log.error('Actor failed, applying stop directive', { path: address.path });
+        await this.stopActor(new ActorPIDImpl(address, this));
+        await this.emitSystemEvent({
+          eventType: 'actorStopped',
+          timestamp: Date.now(),
+          data: { address: address.path, reason: 'supervision-stop' },
+        });
+        return;
+      }
+      case 'escalate': {
+        // Supervisor trees are not wired yet — propagating the failure
+        // across topology supervisor() children (one-for-one/one-for-all/
+        // rest-for-one) is the companion 6-agent task. Until that lands,
+        // escalate means: stop the failed actor and emit a distinct
+        // escalation event so operators and future supervisors can observe
+        // the unhandled failure.
+        log.warn('Actor failed, escalating (stop + escalation event)', { path: address.path });
+        await this.stopActor(new ActorPIDImpl(address, this));
+        await this.emitSystemEvent({
+          eventType: 'actorEscalated',
+          timestamp: Date.now(),
+          data: { address: address.path, reason: 'supervision-escalate', error: errorMessage },
+        });
+        return;
+      }
+      case 'resume': {
+        // This failure path runs inside the actor's processing loop after
+        // the failed message was already dequeued: returning without a stop
+        // or restart resumes the actor in place — current state and the rest
+        // of the mailbox are preserved, only the failed message is skipped.
+        log.warn('Actor failed, resuming with current state (failed message skipped)', {
+          path: address.path,
+          error: errorMessage,
+        });
+        await this.emitSystemEvent({
+          eventType: 'actorResumed',
+          timestamp: Date.now(),
+          data: { address: address.path, reason: 'supervision-resume', error: errorMessage },
+        });
+        return;
+      }
     }
   }
 
@@ -3645,10 +3762,9 @@ export class ActorSystemImpl implements ActorSystem {
   ): Promise<void> {
     const now = Date.now();
     const currentRestartCount = this.actorRestartCounts.get(address.path) || 0;
-
-    // Update restart tracking
-    this.actorRestartCounts.set(address.path, currentRestartCount + 1);
-    this.actorLastRestartTime.set(address.path, now);
+    // Capture the per-actor policy before stopActor clears per-path
+    // bookkeeping, so the respawn keeps the same supervision contract.
+    const supervisionPolicy = this.actorSupervisionPolicies.get(address.path);
 
     // Add exponential backoff delay to prevent rapid restart loops
     const backoffDelay = RESTART_BACKOFF_MS * 2 ** currentRestartCount;
@@ -3666,10 +3782,18 @@ export class ActorSystemImpl implements ActorSystem {
       // Stop the current actor
       await this.stopActor(new ActorPIDImpl(address, this));
 
-      // Respawn with the same behavior and ID
+      // Respawn with the same behavior, ID, and supervision policy
       await this.spawn(behavior as unknown as ActorBehavior<ActorMessage, unknown>, {
         id: address.id,
+        supervision: supervisionPolicy,
       });
+
+      // stopActor clears restart bookkeeping as part of normal teardown;
+      // restore it after the respawn so maxRestarts/withinMs stay bounded
+      // across the actor's restart history instead of resetting on every
+      // restart.
+      this.actorRestartCounts.set(address.path, currentRestartCount + 1);
+      this.actorLastRestartTime.set(address.path, now);
 
       await this.emitSystemEvent({
         eventType: 'actorRestarted',
@@ -3692,34 +3816,6 @@ export class ActorSystemImpl implements ActorSystem {
       });
       // Escalate restart failure
       await this.notifyGuardianOfFailure(address, restartError);
-    }
-  }
-  /**
-   * Resume an actor by reactivating its message processing loop
-   */
-  private async resumeActor(address: ActorAddress): Promise<void> {
-    const behavior = this.actors.get(address.path);
-    if (!behavior) {
-      log.error('Cannot resume actor, behavior not found', { path: address.path });
-      return;
-    }
-
-    const isProcessing = this.actorProcessingActive.get(address.path) || false;
-    const hasLoop = this.actorProcessingLoops.get(address.path) || false;
-
-    if (hasLoop && !isProcessing) {
-      // The loop exists but is idle, wake it up
-      this.actorProcessingActive.set(address.path, true);
-      queueMicrotask(() => this.processActorMessages(address, behavior));
-      log.info('Actor processing loop resumed', { path: address.path });
-    } else {
-      log.warn('Actor processing loop already active or missing, restarting actor', {
-        path: address.path,
-        isProcessing,
-        hasLoop,
-      });
-      // If can't resume, restart instead
-      await this.restartActorWithLimits(address, behavior);
     }
   }
 

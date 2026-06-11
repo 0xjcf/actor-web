@@ -146,17 +146,46 @@ export interface ActorEnvelope {
 export type ActorMessage<T extends { type: string } = { type: string }> = T & ActorEnvelope;
 
 /**
+ * Per-actor supervision strategy applied when an actor's message handler
+ * throws.
+ *
+ * - `restart` — stop and respawn the actor (fresh state) with exponential
+ *   backoff, bounded by `maxRestarts` within `withinMs`.
+ * - `resume` — keep the actor running with its current state; the failed
+ *   message is skipped and the rest of the mailbox is preserved.
+ * - `stop` — stop the actor on the first failure; no restarts.
+ * - `escalate` — stop the actor and emit a distinct `actorEscalated` system
+ *   event. Supervisor-tree propagation is not implemented yet.
+ */
+export type ActorSupervisionStrategy = 'restart' | 'resume' | 'stop' | 'escalate';
+
+/**
+ * Per-actor supervision policy consumed by the runtime failure path.
+ *
+ * `maxRestarts`/`withinMs` bound the `restart` strategy; when omitted, the
+ * system-wide defaults apply (3 restarts within 30 seconds). Exceeding the
+ * bound stops the actor permanently. The topology DSL's
+ * `ActorWebSupervisionPolicy` is an alias of this type.
+ */
+export interface ActorSupervisionPolicy {
+  readonly strategy: ActorSupervisionStrategy;
+  readonly maxRestarts?: number;
+  readonly withinMs?: number;
+}
+
+/**
  * Actor spawn options.
  *
- * `id` is the only spawn option the runtime consumes. Failed actors are
- * restarted by the system-wide supervision defaults (bounded restarts with
- * backoff); per-actor supervision policies and restart opt-out are not yet
- * honored at spawn time. (Former `supervised`/`persistState`/`timeout`/
- * `retries` fields were removed — they were declared but never read, which
- * misrepresented the spawn contract.)
+ * `id` names the actor; `supervision` attaches a per-actor supervision
+ * policy that the runtime failure path honors (strategy plus restart
+ * bounds). Actors spawned without a policy restart under the system-wide
+ * defaults (3 restarts within 30 seconds, exponential backoff). (Former
+ * `supervised`/`persistState`/`timeout`/`retries` fields were removed — they
+ * were declared but never read, which misrepresented the spawn contract.)
  */
 export interface SpawnOptions {
   readonly id?: string;
+  readonly supervision?: ActorSupervisionPolicy;
 }
 
 /**
