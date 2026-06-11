@@ -1,4 +1,4 @@
-# SpawnOptions API honesty: remove unread fields (persistState
+# SpawnOptions API honesty: remove unread fields (persistState, timeout, retries) and decide supervised semantics
 
 ## Source
 
@@ -26,10 +26,14 @@ SpawnOptions API honesty: remove unread fields (persistState, timeout, retries) 
 - packages/actor-core-runtime/src/actor-system.ts
 - packages/actor-core-runtime/src/actor-system-impl.ts
 - packages/actor-core-runtime/src/actor-web-node-runtime.ts
+- packages/actor-core-runtime/src/actor-system-guardian.ts
+- packages/actor-core-runtime/src/create-component.ts
+- packages/actor-core-runtime/src/unit/spawn-options.test.ts
+- .fas/memory/decisions.md
 
 ## Scope Amendments
 
-- None.
+- 2026-06-11: Added `actor-system-guardian.ts` and `create-component.ts` — both passed the removed `supervised` field at spawn call sites and needed the one-line cleanup; added the new `unit/spawn-options.test.ts` (type-level contract pins) and `.fas/memory/decisions.md` (decision record). `supervised` was REMOVED rather than honored: its semantics are entangled with per-actor topology supervision-policy wiring (the policy object is collapsed to a dropped Boolean today), filed as the follow-up "Wire per-actor topology supervision policies into the runtime failure path".
 
 ## Implementation plan
 
