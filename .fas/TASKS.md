@@ -1354,8 +1354,8 @@
 
 - Title: SpawnOptions API honesty: remove unread fields (persistState, timeout, retries) and decide supervised semantics
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/spawnoptions-api-honesty-remove-unread-fields-persiststate.md
 - Verification lane: fast
 - Policy sensitivity: standard
