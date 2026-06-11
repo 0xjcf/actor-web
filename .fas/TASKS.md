@@ -1163,8 +1163,8 @@
 
 - Title: actor-web CLI v1: @actor-web/agent package (llm tool + agent-loop) + agent hosting
 - Mode: single-agent
-- Status: backlog
-- Owner: planner
+- Status: queued
+- Owner: runtime
 - Brief: .fas/tasks/actor-web-cli-v1-actor-web-agent-package-llm-tool-agent.md
 - Automation mode: advisory
 
@@ -1205,9 +1205,47 @@
 
 - Title: Runtime: silence system-event dead letters during startRuntime stop()
 - Mode: single-agent
+- Status: implementing
+- Owner: implementer
+- Brief: .fas/tasks/runtime-silence-system-event-dead-letters-during-startrunti.md
+- Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Runtime: prove supervision restart under failure (regression coverage)
+
+- Title: Runtime: prove supervision restart under failure (regression coverage)
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/runtime-prove-supervision-restart-under-failure-regression.md
+- Automation mode: advisory
+
+### Task: Runtime: tool execution timeout/cancellation + real-async tool e2e coverage
+
+- Title: Runtime: tool execution timeout/cancellation + real-async tool e2e coverage
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/runtime-tool-execution-timeout-cancellation-real-async-to.md
+- Automation mode: advisory
+
+### Task: Release prep 0.2.0: ship @actor-web/agent + decide the public package facade
+
+- Title: Release prep 0.2.0: ship @actor-web/agent + decide the public package facade
+- Mode: single-agent
 - Status: backlog
 - Owner: planner
-- Brief: .fas/tasks/runtime-silence-system-event-dead-letters-during-startrunti.md
+- Brief: .fas/tasks/release-prep-0-2-0-ship-actor-web-agent-decide-the-publi.md
+
+### Task: Docs: refresh root + runtime READMEs to the real post-rename API (remove fictional feature claims)
+
+- Title: Docs: refresh root + runtime READMEs to the real post-rename API (remove fictional feature claims)
+- Mode: 4-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/docs-refresh-root-runtime-readmes-to-the-real-post-rename.md
 - Automation mode: advisory
 
 ## Template
