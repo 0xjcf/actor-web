@@ -526,9 +526,15 @@ export class ActorSystemImpl implements ActorSystem {
     // Execute shutdown handlers
     const shutdownPromises = Array.from(this.shutdownHandlers).map((handler) => handler());
 
-    // Stop all actors gracefully
+    // Stop all actors gracefully — except the system event actor, which must
+    // outlive its peers so their actorStopping/actorStopped emissions still
+    // have a live mailbox to land in (otherwise every stop dead-letters).
+    const systemEventPath = this.systemEventActorAddress?.path;
     const stopPromises: Promise<void>[] = [];
     for (const [path, _behavior] of Array.from(this.actors)) {
+      if (path === systemEventPath) {
+        continue;
+      }
       const actor = await this.lookup(path);
       if (actor) {
         stopPromises.push(this.stopActor(actor));
@@ -551,6 +557,16 @@ export class ActorSystemImpl implements ActorSystem {
       log.error('Error during shutdown', { error });
     }
 
+    // Emit the final event while the system event actor is still alive, then
+    // stop it last — after this point no actor remains to emit about.
+    await this.emitSystemEvent({ eventType: 'stopped', timestamp: Date.now() });
+    if (systemEventPath) {
+      const systemEventActor = await this.lookup(systemEventPath);
+      if (systemEventActor) {
+        await this.stopActor(systemEventActor);
+      }
+    }
+
     // Stop the system timeout manager
     this.systemTimeoutManager.destroy();
 
@@ -563,8 +579,6 @@ export class ActorSystemImpl implements ActorSystem {
     }
 
     // Cleanup request manager - handled automatically on system shutdown
-
-    await this.emitSystemEvent({ eventType: 'stopped', timestamp: Date.now() });
   }
 
   /**
@@ -1008,6 +1022,15 @@ export class ActorSystemImpl implements ActorSystem {
   private async emitSystemEvent(event: SystemEventPayload): Promise<void> {
     if (!this.systemEventActorAddress) {
       log.debug('Skipping system event emission before system event actor initialization', {
+        eventType: event.eventType,
+      });
+      return;
+    }
+
+    // Once the system event actor's mailbox is gone (its own teardown, or a
+    // direct stop), emitting would only produce dead letters — skip quietly.
+    if (!this.actorMailboxes.has(this.systemEventActorAddress.path)) {
+      log.debug('Skipping system event emission after system event actor shutdown', {
         eventType: event.eventType,
       });
       return;

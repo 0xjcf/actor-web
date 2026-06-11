@@ -67,6 +67,40 @@ describe('Graceful Shutdown and Lifecycle Management', () => {
       await system.stop();
       expect(system.isRunning()).toBe(false);
     });
+
+    it('produces no dead letters on a clean spawn/emit/flush/stop cycle', async () => {
+      // Regression: stopping the system used to stop the system event actor
+      // concurrently with its peers, so every actorStopping/actorStopped
+      // emission (and the final 'stopped' event) dead-lettered against the
+      // already-gone system event actor mailbox.
+      const emitter = defineBehavior<{ type: 'PING' }>()
+        .withContext({ count: 0 })
+        .onMessage(({ message, context }) => {
+          if (message.type === 'PING') {
+            const count = context.count + 1;
+            return { context: { count }, emit: [{ type: 'PONGED', count }] };
+          }
+          return {};
+        })
+        .build();
+
+      const actorA = await system.spawn(emitter, { id: 'dead-letter-probe-a' });
+      await system.spawn(emitter, { id: 'dead-letter-probe-b' });
+
+      await actorA.send({ type: 'PING' });
+      await system.flush();
+
+      await system.stop();
+
+      // Reach into the internal queue: a clean shutdown must not dead-letter
+      // anything, system events included.
+      const deadLetters = (
+        system as unknown as {
+          deadLetterQueue: { getAll(): ReadonlyArray<{ messageType: string; reason: string }> };
+        }
+      ).deadLetterQueue.getAll();
+      expect(deadLetters).toEqual([]);
+    });
   });
 
   describe('Actor Lifecycle During Shutdown', () => {
