@@ -1316,8 +1316,8 @@
 
 - Title: Deploy VitePress docs to GitHub Pages at /actor-web/ subpath
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/deploy-vitepress-docs-to-github-pages-at-actor-web-subpath.md
 - Verification lane: fast
 - Policy sensitivity: standard
