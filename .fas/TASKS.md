@@ -1243,8 +1243,8 @@
 
 - Title: Docs: refresh root + runtime READMEs to the real post-rename API (remove fictional feature claims)
 - Mode: 4-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/docs-refresh-root-runtime-readmes-to-the-real-post-rename.md
 - Automation mode: advisory
 
@@ -1343,7 +1343,7 @@
 
 - Title: Docs: refresh root + runtime READMEs to the real post-rename
 - Mode: single-agent
-- Status: implementing
+- Status: done
 - Owner: implementer
 - Brief: .fas/tasks/docs-refresh-root-runtime-readmes-to-the-real-post-rename.md
 - Verification lane: fast
