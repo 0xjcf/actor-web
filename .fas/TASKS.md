@@ -1262,8 +1262,8 @@
 
 - Title: Wire topology-declared subscriptions in serveNode and startActorWebNode (spike brief)
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/topology-declared-subscriptions-are-wired-only-in-the-local.md
 - Automation mode: advisory
 
@@ -1271,10 +1271,13 @@
 
 - Title: Resolve unenforced SendInstruction delivery modes (retry(3), guaranteed)
 - Mode: single-agent
-- Status: backlog
-- Owner: planner
-- Brief: .fas/tasks/sendinstruction-delivery-modes-retry-3-and-guaranteed-are-d.md
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/resolve-unenforced-sendinstruction-delivery-modes-retry-3.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Author the lattice contract design doc (artifact store + dependency activation)
 
@@ -1305,7 +1308,7 @@
 
 - Title: Wire topology-declared subscriptions in serveNode and startActorWebNode
 - Mode: single-agent
-- Status: implementing
+- Status: done
 - Owner: implementer
 - Brief: .fas/tasks/wire-topology-declared-subscriptions-in-servenode-and-starta.md
 - Verification lane: fast

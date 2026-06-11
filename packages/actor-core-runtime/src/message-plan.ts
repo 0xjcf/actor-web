@@ -74,8 +74,15 @@ export interface SendInstruction {
   readonly to: ActorRef<unknown>;
   /** Message to send */
   readonly tell: Message;
-  /** Delivery mode */
-  readonly mode: 'fireAndForget' | 'retry(3)' | 'guaranteed';
+  /**
+   * Delivery mode. Optional — defaults to `'fireAndForget'`, the only mode.
+   * The transport is at-most-once: the message is enqueued to the target
+   * mailbox once and never retried or acknowledged. For reliability, use the
+   * ask pattern with a timeout, or an application-level ack protocol.
+   * (Former `retry(3)`/`guaranteed` modes were removed — they were declared but
+   * never enforced, which misrepresented the delivery guarantee.)
+   */
+  readonly mode?: 'fireAndForget';
 }
 
 /**
@@ -222,7 +229,7 @@ export function isJsonSerializable(value: unknown): value is JsonValue {
 export function createSendInstruction(
   to: ActorRef<unknown>,
   tell: Message,
-  mode: 'fireAndForget' | 'retry(3)' | 'guaranteed' = 'fireAndForget'
+  mode: 'fireAndForget' = 'fireAndForget'
 ): SendInstruction {
   return { to, tell, mode };
 }
