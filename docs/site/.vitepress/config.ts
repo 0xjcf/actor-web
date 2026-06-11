@@ -9,7 +9,12 @@ export default defineConfig({
     'Pure actor model for JavaScript/TypeScript — location-transparent actors, inspired by Erlang/OTP.',
   cleanUrls: true,
   lastUpdated: true,
-  // Deployment base (e.g. GitHub Pages "/actor-web/") is decided in docs task D6.
+  // GitHub Pages project site: deployed by .github/workflows/docs.yml to
+  // https://0xjcf.github.io/actor-web/ — base must match the repo subpath.
+  base: '/actor-web/',
+  sitemap: {
+    hostname: 'https://0xjcf.github.io/actor-web/',
+  },
   markdown: {
     // Typecheck every ```ts twoslash fence against the real @actor-web/runtime
     // types at build time — drift breaks the build.

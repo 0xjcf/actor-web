@@ -1,11 +1,15 @@
 name: Docs
 
-# Build the VitePress docs site. The build runs @shikijs/vitepress-twoslash,
-# which type-checks every ```ts twoslash sample against the real
-# @actor-web/runtime types — so doc drift fails the build.
+# Build the VitePress docs site and deploy it to GitHub Pages.
 #
-# Note: GitHub automation may be disabled for this repo (see .fas-config.json
-# runtimeGitHubEnabled). This workflow is correct and dormant until CI is on.
+# The build runs @shikijs/vitepress-twoslash, which type-checks every
+# ```ts twoslash sample against the real @actor-web/runtime types — so doc
+# drift fails the build (and therefore blocks the deploy).
+#
+# Deploys publish to https://0xjcf.github.io/actor-web/ (Pages source must be
+# set to "GitHub Actions" in the repo settings). Runtime changes are included
+# in the push trigger because twoslash bakes type info into the rendered
+# pages — without a rebuild, published hover-types go stale.
 
 on:
   pull_request:
@@ -17,7 +21,9 @@ on:
     branches: [main]
     paths:
       - 'docs/site/**'
+      - 'packages/actor-core-runtime/**'
       - '.github/workflows/docs.yml'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -37,3 +43,27 @@ jobs:
         run: pnpm --filter @actor-web/runtime build
       - name: Build docs (twoslash typecheck gate)
         run: pnpm run test:docs
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/site/.vitepress/dist
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    # Queue production deploys instead of cancelling one mid-flight.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

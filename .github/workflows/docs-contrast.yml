@@ -3,10 +3,8 @@ name: Docs Contrast & Lint
 # Renders the built VitePress docs site in headless Chromium and fails the PR if
 # any key chrome/content selector drops below WCAG AA contrast in either theme,
 # and lints the site markdown. Scoped to PRs that touch docs/site so non-docs PRs
-# don't pay the browser cost.
-#
-# Note: GitHub automation may be disabled for this repo (see .fas-config.json
-# runtimeGitHubEnabled). This workflow is correct and dormant until CI is on.
+# don't pay the browser cost. Because main is PR-protected, this check gates
+# what can reach the Pages deploy in docs.yml.
 
 on:
   pull_request:
