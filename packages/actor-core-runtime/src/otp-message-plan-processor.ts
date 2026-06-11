@@ -360,13 +360,13 @@ export class OTPMessagePlanProcessor extends DefaultMessagePlanProcessor {
           continue;
         }
 
-        // 🎯 FIX: Check if this is a SendInstruction (has 'to', 'tell', 'mode' fields)
+        // 🎯 FIX: Check if this is a SendInstruction (has 'to' and 'tell' fields)
         if (isSendInstruction(message)) {
           log.debug('🔍 EMIT ARRAY DEBUG: Detected SendInstruction, processing as direct message', {
             actorId,
             targetActor: message.to,
             messageType: message.tell?.type,
-            mode: message.mode,
+            mode: message.mode ?? 'fireAndForget',
           });
 
           // Process as SendInstruction - send message directly to target actor
