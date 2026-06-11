@@ -29,6 +29,9 @@ Wire topology-declared subscriptions in serveNode and startActorWebNode
 - packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts
 - packages/actor-core-runtime/src/unit/start-actor-web-node.test.ts
 - docs/actor-web-declarative-subscriptions-design.md
+- .fas/memory/architecture.md
+- .fas/memory/decisions.md
+- .fas/memory/incidents.md
 
 ## Scope Amendments
 
