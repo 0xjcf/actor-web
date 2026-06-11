@@ -2,9 +2,12 @@
 
 > **Pure Actor Model for JavaScript/TypeScript** - Build resilient, distributed systems with location-transparent actors, inspired by Erlang/OTP
 
+[![Docs](https://img.shields.io/badge/Docs-0xjcf.github.io%2Factor--web-blue)](https://0xjcf.github.io/actor-web/)
 [![Pure Actor Model](https://img.shields.io/badge/Pure%20Actor%20Model-100%25%20Compliant-green)](https://github.com/0xjcf/actor-web)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue)](https://www.typescriptlang.org/)
 [![Workspace Packages](https://img.shields.io/badge/Workspace-packages%2F*-brightgreen)](./pnpm-workspace.yaml)
+
+**📚 Documentation: [0xjcf.github.io/actor-web](https://0xjcf.github.io/actor-web/)**
 
 ## 🚀 Why Actor-Web?
 
