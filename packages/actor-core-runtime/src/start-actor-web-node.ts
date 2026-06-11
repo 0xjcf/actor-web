@@ -5,10 +5,12 @@ import type { ActorToolRegistry } from './actor-tools.js';
 import {
   type ActorWebNodeActorHandles,
   type ActorWebNodeActorMap,
+  type ActorWebSubscriptionTeardown,
   createActorWebNodeActorHandles,
   createActorWebNodeToolAccess,
   getActorWebNodeDefinition,
   spawnOwnedActorWebActors,
+  wireOwnedActorWebSubscriptions,
 } from './actor-web-node-runtime.js';
 import { createBrowserWebSocketMessageTransport } from './browser-websocket-message-transport.js';
 import type { RuntimeTransportAuthProvider } from './runtime-auth.js';
@@ -254,6 +256,21 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
   );
   let running = false;
   let unsubscribeDiscovery: (() => void) | undefined;
+  let subscriptionTeardowns: ActorWebSubscriptionTeardown[] = [];
+
+  const teardownTopologySubscriptions = async (
+    onError: (error: unknown) => void
+  ): Promise<void> => {
+    const activeTeardowns = subscriptionTeardowns;
+    subscriptionTeardowns = [];
+    for (const teardown of activeTeardowns) {
+      try {
+        await teardown();
+      } catch (error) {
+        onError(error);
+      }
+    }
+  };
 
   const allowedDiscoveryTargets = options.connect
     ? new Set(resolveTopologyNodeAddresses(topology, options.connect))
@@ -289,6 +306,12 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
       systemStarted = true;
 
       await spawnOwnedActorWebActors(system, topology, options.node, actors, options.tools);
+      subscriptionTeardowns = await wireOwnedActorWebSubscriptions(
+        system,
+        topology,
+        options.node,
+        actors
+      );
 
       const discoveryPeers = options.discovery ? await options.discovery.getPeers() : [];
       for (const peer of discoveryPeers) {
@@ -326,6 +349,8 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
         } catch {}
       }
 
+      await teardownTopologySubscriptions(() => {});
+
       if (systemStarted) {
         try {
           await system.stop();
@@ -355,6 +380,10 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
 
     const startableTransport = transport as StartableMessageTransport;
     let stopError: unknown;
+
+    await teardownTopologySubscriptions((error) => {
+      stopError ??= error;
+    });
 
     try {
       await system.stop();
