@@ -23,14 +23,16 @@ Wire topology-declared subscriptions in serveNode and startActorWebNode
 
 ## Affected files
 
-- packages/actor-core-runtime/src/actor-web-client.ts
 - packages/actor-core-runtime/src/serve-actor-web-node.ts
 - packages/actor-core-runtime/src/start-actor-web-node.ts
 - packages/actor-core-runtime/src/actor-web-node-runtime.ts
+- packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts
+- packages/actor-core-runtime/src/unit/start-actor-web-node.test.ts
+- docs/actor-web-declarative-subscriptions-design.md
 
 ## Scope Amendments
 
-- None.
+- 2026-06-11: Removed `packages/actor-core-runtime/src/actor-web-client.ts` from scope — its subscription wiring (lines 484-514) already works for the multi-node in-process local runtime and needed no change; the shared helper landed in `actor-web-node-runtime.ts` instead, consumed by both node hosts. Added the two host unit-test files and the declarative-subscriptions design doc (current-state refresh) that the implementation touched.
 
 ## Implementation plan
 

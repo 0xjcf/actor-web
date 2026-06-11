@@ -1311,7 +1311,6 @@
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
-
 ## Template
 
 ### Task: `<short task title>`
