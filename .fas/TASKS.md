@@ -1278,6 +1278,7 @@
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
+
 ### Task: Author the lattice contract design doc (artifact store + dependency activation)
 
 - Title: Author the lattice contract design doc (artifact store + dependency activation)
