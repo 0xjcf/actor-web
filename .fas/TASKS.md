@@ -1271,8 +1271,8 @@
 
 - Title: Resolve unenforced SendInstruction delivery modes (retry(3), guaranteed)
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/resolve-unenforced-sendinstruction-delivery-modes-retry-3.md
 - Automation mode: advisory
 - Verification lane: fast
