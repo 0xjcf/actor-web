@@ -38,15 +38,17 @@ instruction (or array of them) that the runtime executes:
 
 ```ts
 // point-to-point tell
-{ to: pipelineRef, tell: { type: 'ADVANCE' }, mode: 'fireAndForget' }
+{ to: pipelineRef, tell: { type: 'ADVANCE' } }
 
 // request/response, folded back as a domain event
 { to: peerRef, ask: { type: 'QUERY' }, onOk: (r) => ({ type: 'GOT', r }) }
 ```
 
-`mode` is `'fireAndForget'`, `'retry(3)'`, or `'guaranteed'`. Because the plan is
-*data*, the decision of what to send stays pure and testable; the runtime owns
-the I/O.
+`mode` is optional and defaults to `'fireAndForget'`, the only delivery mode —
+delivery is at-most-once: the message is enqueued to the target mailbox once and
+never retried or acknowledged. For reliability, use the ask pattern with a
+timeout or an application-level ack protocol. Because the plan is *data*, the
+decision of what to send stays pure and testable; the runtime owns the I/O.
 
 ## Directed vs broadcast — when to use which
 

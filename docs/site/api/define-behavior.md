@@ -83,7 +83,7 @@ value (for example to inspect or reuse it). Building requires *either* a handler
 To message other actors, return a send/ask instruction (or array):
 
 ```ts
-{ to: ref, tell: message, mode: 'fireAndForget' | 'retry(3)' | 'guaranteed' }
+{ to: ref, tell: message } // mode?: 'fireAndForget' — optional, the only delivery mode
 { to: ref, ask: message, onOk: (r) => domainEvent, onError?: (e) => domainEvent }
 ```
 
