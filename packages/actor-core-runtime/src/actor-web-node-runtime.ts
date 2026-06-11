@@ -260,7 +260,11 @@ export type ActorWebSubscriptionTeardown = () => Promise<void> | void;
 
 function requireSubscriptionActorDescriptor<
   TTopology extends ActorWebTopology<ActorWebTopologyInput>,
->(topology: TTopology, actorKey: string, role: 'publisher' | 'subscriber'): ActorWebActorDescriptor {
+>(
+  topology: TTopology,
+  actorKey: string,
+  role: 'publisher' | 'subscriber'
+): ActorWebActorDescriptor {
   const actorDescriptor = topology.actors[actorKey];
   if (!actorDescriptor) {
     throw new Error(
