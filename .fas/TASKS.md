@@ -1243,8 +1243,8 @@
 
 - Title: Docs: refresh root + runtime READMEs to the real post-rename API (remove fictional feature claims)
 - Mode: 4-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/docs-refresh-root-runtime-readmes-to-the-real-post-rename.md
 - Automation mode: advisory
 
@@ -1332,9 +1332,20 @@
 
 - Title: Fix docs-site discrepancies from 2026-06-11 audit (supervision persistence claim, stale subscriptions hero)
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/fix-docs-site-discrepancies-from-2026-06-11-audit-supervisi.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Docs: refresh root + runtime READMEs to the real post-rename
+
+- Title: Docs: refresh root + runtime READMEs to the real post-rename
+- Mode: single-agent
+- Status: implementing
+- Owner: implementer
+- Brief: .fas/tasks/docs-refresh-root-runtime-readmes-to-the-real-post-rename.md
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
