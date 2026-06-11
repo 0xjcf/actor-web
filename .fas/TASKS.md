@@ -1271,11 +1271,13 @@
 
 - Title: Resolve unenforced SendInstruction delivery modes (retry(3), guaranteed)
 - Mode: single-agent
-- Status: backlog
-- Owner: planner
-- Brief: .fas/tasks/sendinstruction-delivery-modes-retry-3-and-guaranteed-are-d.md
+- Status: implementing
+- Owner: implementer
+- Brief: .fas/tasks/resolve-unenforced-sendinstruction-delivery-modes-retry-3.md
 - Automation mode: advisory
-
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 ### Task: Author the lattice contract design doc (artifact store + dependency activation)
 
 - Title: Author the lattice contract design doc (artifact store + dependency activation)
