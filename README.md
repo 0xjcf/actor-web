@@ -17,7 +17,7 @@ JavaScript lacks built-in primitives for actor-based concurrency and fault toler
 - **🌍 Location Transparency** - Actors work identically local or distributed
 - **🛡️ Fault Tolerance** - Supervisor trees with "let it crash" philosophy
 - **📦 Workspace Packages** - Runtime, testing utilities, and workflow CLI ship from `packages/*`
-- **🔄 Unified API** - Single `defineActor()` for all patterns
+- **🔄 Unified API** - Single `defineBehavior()` for all patterns
 
 ## ⚡ Quick Start
 
@@ -26,10 +26,10 @@ npm install @actor-web/runtime
 ```
 
 ```typescript
-import { createActorSystem, defineActor } from '@actor-web/runtime';
+import { createActorSystem, defineBehavior } from '@actor-web/runtime';
 
 // Define an actor with the unified API
-const counterActor = defineActor<{ type: 'INCREMENT' | 'GET_COUNT' }>()
+const counterActor = defineBehavior<{ type: 'INCREMENT' | 'GET_COUNT' }>()
   .withContext({ count: 0 })
   .onMessage(({ message, actor }) => {
     const { count } = actor.getSnapshot().context;
@@ -45,7 +45,7 @@ const counterActor = defineActor<{ type: 'INCREMENT' | 'GET_COUNT' }>()
         return { reply: { count } };
     }
   });
-  // Note: .build() is called automatically by the framework
+  // .build() is optional — the framework builds the behavior when you spawn it
 
 // Create and use the actor system
 const system = await createActorSystem({ nodeAddress: 'localhost:0' });
@@ -96,20 +96,20 @@ One API for all actor patterns - no need to choose between different builder typ
 
 ```typescript
 // Stateless actor (pure message router)
-const routerActor = defineActor<RouterMessage>()
+const routerActor = defineBehavior<RouterMessage>()
   .onMessage(({ message }) => {
     return { emit: [{ type: 'ROUTED', to: message.target }] };
   });
 
 // Stateful actor (with context)
-const accountActor = defineActor<AccountMessage>()
+const accountActor = defineBehavior<AccountMessage>()
   .withContext({ balance: 0 })
   .onMessage(({ message, actor }) => {
     // Handle deposits, withdrawals, etc.
   });
 
 // State machine actor (with XState)
-const orderActor = defineActor<OrderMessage>()
+const orderActor = defineBehavior<OrderMessage>()
   .withMachine(orderStateMachine)
   .onMessage(({ message, actor }) => {
     // Handle based on current state
@@ -163,24 +163,30 @@ await system.subscribe(actor, {
 
 ### 4. Supervision Trees
 
-Erlang-style fault tolerance:
+Erlang-style fault tolerance, declared in the topology:
 
 ```typescript
-// Define a supervisor declaratively (Erlang/Elixir OTP style)
-const supervisorBehavior = createSupervisor({
-  strategy: 'one-for-one',      // 'one-for-all' | 'rest-for-one'
-  children: [
-    { id: 'worker-1', behavior: workerBehavior },
-    { id: 'worker-2', behavior: workerBehavior },
-    { id: 'db-pool', behavior: databaseActor }
-  ],
-  maxRestarts: 3,
-  restartWindow: 60000  // 1 minute
-});
+import { actor, defineActorWebTopology, node, supervisor } from '@actor-web/runtime/topology';
 
-// Spawn the supervisor (which automatically starts all children)
-const supervisor = await system.spawn(supervisorBehavior, { 
-  id: 'main-supervisor' 
+const topology = defineActorWebTopology({
+  nodes: { local: node('local-node') },
+  actors: {
+    worker: actor({
+      id: 'worker',
+      node: 'local',
+      behavior: workerBehavior,
+      // Per-actor restart policy bounds crash loops
+      supervision: { strategy: 'restart', maxRestarts: 3, withinMs: 60_000 },
+    }),
+    dbPool: actor({ id: 'db-pool', node: 'local', behavior: databaseActor }),
+  },
+  supervisors: {
+    main: supervisor({
+      node: 'local',
+      strategy: 'one-for-one', // 'one-for-all' | 'rest-for-one' | 'escalate'
+      children: ['worker', 'dbPool'],
+    }),
+  },
 });
 ```
 
@@ -189,7 +195,7 @@ const supervisor = await system.spawn(supervisorBehavior, {
 ### State-Based Behavior (XState Integration)
 
 ```typescript
-const trafficLightActor = defineActor<{ type: 'TIMER' | 'EMERGENCY' }>()
+const trafficLightActor = defineBehavior<{ type: 'TIMER' | 'EMERGENCY' }>()
   .withMachine(trafficLightMachine)
   .onMessage(({ message, actor }) => {
     const snapshot = actor.getSnapshot();
@@ -213,7 +219,7 @@ const trafficLightActor = defineActor<{ type: 'TIMER' | 'EMERGENCY' }>()
 // This maintains actor isolation and enables location transparency
 
 // Create a database actor that manages its own connection pool
-const databaseActor = defineActor<
+const databaseActor = defineBehavior<
   | { type: 'QUERY'; sql: string; params?: any[] }
   | { type: 'INSERT'; table: string; data: Record<string, any> }
   | { type: 'INIT_POOL'; config: any }
@@ -349,14 +355,14 @@ console.log('Created user:', newUser);
 
 ```typescript
 // ❌ NEVER: Direct external calls in actors
-const myActor = defineActor()
+const myActor = defineBehavior()
   .onMessage(async ({ message }) => {
     await database.save(data);  // VIOLATION! Breaks actor isolation
     await fetch('/api/endpoint'); // VIOLATION! Not message-based
   });
 
 // ✅ CORRECT: Create dedicated actors for external systems
-const databaseActor = defineActor<{ type: 'SAVE'; data: any }>()
+const databaseActor = defineBehavior<{ type: 'SAVE'; data: any }>()
   .onMessage(async ({ message }) => {
     // This actor's sole responsibility is database interaction
     await database.save(message.data);
@@ -373,7 +379,7 @@ class MySingleton {
 }
 
 // ✅ CORRECT: State as actor context
-const cacheActor = defineActor<{ type: 'GET' | 'SET'; key: string; value?: any }>()
+const cacheActor = defineBehavior<{ type: 'GET' | 'SET'; key: string; value?: any }>()
   .withContext({ cache: new Map() })
   .onMessage(({ message, actor }) => {
     const { cache } = actor.getSnapshot().context;
@@ -393,14 +399,14 @@ const count = actor.getSnapshot().context.value;  // VIOLATION!
 const { value } = await actor.ask({ type: 'GET_VALUE' });
 
 // ❌ NEVER: Blocking operations
-const actor = defineActor()
+const actor = defineBehavior()
   .onMessage(({ message }) => {
     const result = someSyncBlockingOperation(); // VIOLATION!
     while (condition) { /* busy wait */ }       // VIOLATION!
   });
 
 // ✅ CORRECT: All operations must be async and message-based
-const actor = defineActor()
+const actor = defineBehavior()
   .onMessage(({ message }) => {
     // Delegate to another actor or return immediately
     return { emit: [{ type: 'PROCESS_ASYNC', data: message.data }] };

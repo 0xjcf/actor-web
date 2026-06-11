@@ -109,6 +109,10 @@ const shipmentBehavior = defineBehavior()
   .build();
 ```
 
+`.build()` is optional everywhere it appears in this document — topology
+declarations and `system.spawn(...)` accept an un-built builder and build it
+for you. Examples here call it explicitly only to show the complete chain.
+
 Handler context:
 
 - `message`: incoming actor message.
