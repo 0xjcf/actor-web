@@ -42,11 +42,18 @@ than transient.
 
 ## What survives a restart
 
-A restarted actor starts from its initial context (or its last persisted state
-where configured). Subscriptions registered against a restarted actor are
-preserved when it respawns with the same id. A full *system* restart, by
-contrast, starts fresh — durable state belongs in adapters/stores, not actor
-memory.
+A restarted actor starts from its initial context. Durable state is not yet a
+runtime feature — if state must survive restarts, re-derive it from an external
+source in `onStart`. Restarting to a known-good initial state is deliberate
+("let it crash"): silently resuming the exact state that preceded a crash risks
+restarting straight back into the failure.
+
+Subscriptions split by how they were registered: topology-declared
+`subscriptions` are durable — the runtime re-wires them from the topology on
+every start. Imperative `system.subscribe(...)` registrations survive a
+supervised single-actor restart (same id) but are in-memory and lost on a full
+*system* restart. Either way, durable state belongs in adapters/stores, not
+actor memory.
 
 ## Why this beats defensive coding
 
