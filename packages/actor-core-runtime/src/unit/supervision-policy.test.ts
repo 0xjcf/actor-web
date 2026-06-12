@@ -124,6 +124,14 @@ describe('per-actor supervision policies (behavioral)', () => {
     );
 
     expect(eventsFor(emitSystemEventSpy, 'actorRestarted', path)).toHaveLength(1);
+    // Exactly one terminal actorStopped per stop: one plain stop from the
+    // restart teardown plus exactly one reason-coded permanent stop — the
+    // permanent stop must not double-emit.
+    const stoppedEvents = eventsFor(emitSystemEventSpy, 'actorStopped', path);
+    expect(
+      stoppedEvents.filter((event) => event.data?.reason === 'max-restarts-exceeded')
+    ).toHaveLength(1);
+    expect(stoppedEvents).toHaveLength(2);
     await expect(system.lookup(path)).resolves.toBeFalsy();
   }, 30_000);
 
@@ -145,6 +153,11 @@ describe('per-actor supervision policies (behavioral)', () => {
     );
 
     expect(eventsFor(emitSystemEventSpy, 'actorRestarted', path)).toHaveLength(0);
+    // Exactly one terminal actorStopped, carrying the reason — not a plain
+    // stop plus a second reason-coded duplicate.
+    const stoppedEvents = eventsFor(emitSystemEventSpy, 'actorStopped', path);
+    expect(stoppedEvents).toHaveLength(1);
+    expect(stoppedEvents[0]?.data?.reason).toBe('supervision-stop');
     await expect(system.lookup(path)).resolves.toBeFalsy();
   }, 15_000);
 

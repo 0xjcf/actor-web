@@ -659,9 +659,14 @@ export class ActorSystemImpl implements ActorSystem {
   }
 
   /**
-   * Internal method to stop a specific actor
+   * Internal method to stop a specific actor.
+   *
+   * `reason` tags the terminal `actorStopped` system event (for example
+   * `supervision-stop` or `max-restarts-exceeded`). Exactly one
+   * `actorStopped` event is emitted per stop — callers must not emit their
+   * own; they pass the reason here instead.
    */
-  private async stopActor(pid: ActorPID): Promise<void> {
+  private async stopActor(pid: ActorPID, reason?: string): Promise<void> {
     // Access the address from the PID interface
     const address = pid.address;
     const path = address.path;
@@ -784,7 +789,7 @@ export class ActorSystemImpl implements ActorSystem {
     await this.emitSystemEvent({
       eventType: 'actorStopped',
       timestamp: Date.now(),
-      data: { address: address.path },
+      data: reason !== undefined ? { address: address.path, reason } : { address: address.path },
     });
   }
 
@@ -3712,23 +3717,15 @@ export class ActorSystemImpl implements ActorSystem {
           maxAttempts: decision.maxRestarts,
           error: errorMessage,
         });
-        // Stop the actor permanently to prevent restart loops and memory leaks
-        await this.stopActor(new ActorPIDImpl(address, this));
-        await this.emitSystemEvent({
-          eventType: 'actorStopped',
-          timestamp: Date.now(),
-          data: { address: address.path, reason: 'max-restarts-exceeded' },
-        });
+        // Stop the actor permanently to prevent restart loops and memory
+        // leaks. stopActor emits the single terminal actorStopped event with
+        // this reason.
+        await this.stopActor(new ActorPIDImpl(address, this), 'max-restarts-exceeded');
         return;
       }
       case 'stop': {
         log.error('Actor failed, applying stop directive', { path: address.path });
-        await this.stopActor(new ActorPIDImpl(address, this));
-        await this.emitSystemEvent({
-          eventType: 'actorStopped',
-          timestamp: Date.now(),
-          data: { address: address.path, reason: 'supervision-stop' },
-        });
+        await this.stopActor(new ActorPIDImpl(address, this), 'supervision-stop');
         return;
       }
       case 'escalate': {
