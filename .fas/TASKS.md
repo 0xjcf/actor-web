@@ -1377,10 +1377,13 @@
 
 - Title: Wire topology supervisor trees into the runtime failure path
 - Mode: 6-agent
-- Status: backlog
-- Owner: planner
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/wire-topology-supervisor-trees-into-the-runtime-failure-path.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Supervision observability polish: reason-coded respawn-failure event, error in policy-stop payloads, export policy types
 

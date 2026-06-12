@@ -43,11 +43,18 @@ Companion to the per-actor policy task (split decision 2026-06-11, human-approve
 - packages/actor-core-runtime/src/serve-actor-web-node.ts
 - packages/actor-core-runtime/src/start-actor-web-node.ts
 - packages/actor-core-runtime/src/topology.ts
+- packages/actor-core-runtime/src/unit/supervisor-trees.test.ts
+- packages/actor-core-runtime/src/unit/actor-web-supervisor-wiring.test.ts
 - docs/site/concepts/supervision.md
 
 ## Scope Amendments
 
-- None.
+- 2026-06-12: Added the two new unit test files
+  (`supervisor-trees.test.ts`, `actor-web-supervisor-wiring.test.ts`) per the
+  architecture brief's scope-amendment request — tests are sanctioned by the
+  brief ("plus tests") but were not in the generated affected-file hints.
+  Recorded before implementation start so closeout plan-alignment does not
+  hold on them.
 
 ## Implementation plan
 
