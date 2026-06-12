@@ -7,8 +7,10 @@
  * skip/throw matrix), and host registration through serveNode/startActorWebNode.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { resolveOwnedActorWebSupervisorGroups } from '../actor-web-node-runtime.js';
+import { serveNode } from '../serve-actor-web-node.js';
+import { startActorWebNode } from '../start-actor-web-node.js';
 import { actor, defineActorWebTopology, node, supervisor } from '../topology.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
@@ -157,6 +159,121 @@ describe('resolveOwnedActorWebSupervisorGroups', () => {
       expect(() => resolveOwnedActorWebSupervisorGroups(topology, 'server')).toThrow(
         /Supervisor "volatile" \(.*\) includes parameterized actor "dynamic"/
       );
+    }
+  });
+});
+
+describe('serveNode supervisor wiring', () => {
+  it(
+    'registers owned supervisor groups and drives a group restart end to end',
+    { timeout: 30_000 },
+    async () => {
+      const topology = defineActorWebTopology({
+        nodes: {
+          server: node('serve-supervised-node'),
+        },
+        actors: {
+          alpha: actor({ id: 'alpha', node: 'server', behavior: createCrashableCounter }),
+          beta: actor({ id: 'beta', node: 'server', behavior: createCrashableCounter }),
+        },
+        supervisors: {
+          pair: supervisor({
+            node: 'server',
+            strategy: 'one-for-all',
+            children: ['alpha', 'beta'],
+          }),
+        },
+      });
+
+      const served = await serveNode(topology, {
+        node: 'server',
+        transport: true,
+        gateway: true,
+      });
+
+      try {
+        // biome-ignore lint/suspicious/noExplicitAny: Testing private state requires any
+        const groups = (served.system as any).supervisorGroups as Map<string, unknown>;
+        expect(groups.get('pair')).toEqual({
+          key: 'pair',
+          strategy: 'one-for-all',
+          children: [topology.actors.alpha.address.path, topology.actors.beta.address.path],
+        });
+
+        // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
+        const spy = vi.spyOn(served.system as any, 'emitSystemEvent');
+        const alpha = served.requireActor('alpha');
+        await alpha.send({ type: 'BOOM' });
+
+        const deadline = Date.now() + 15_000;
+        const wanted = new Set([
+          topology.actors.alpha.address.path,
+          topology.actors.beta.address.path,
+        ]);
+        let groupStopSeen = false;
+        for (;;) {
+          const events = spy.mock.calls.map(
+            (call) =>
+              call[0] as {
+                eventType: string;
+                data?: { address?: string; reason?: string };
+              }
+          );
+          groupStopSeen = events.some(
+            (event) =>
+              event.eventType === 'actorStopped' &&
+              event.data?.reason === 'supervisor-group-restart' &&
+              event.data?.address === topology.actors.beta.address.path
+          );
+          const restarted = new Set(
+            events
+              .filter((event) => event.eventType === 'actorRestarted')
+              .map((event) => event.data?.address)
+          );
+          if (groupStopSeen && [...wanted].every((path) => restarted.has(path))) {
+            break;
+          }
+          if (Date.now() > deadline) {
+            throw new Error('Timed out waiting for the serveNode group restart');
+          }
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+
+        expect(groupStopSeen).toBe(true);
+      } finally {
+        await served.stop();
+      }
+    }
+  );
+
+  it('startActorWebNode registers owned supervisor groups', async () => {
+    const topology = defineActorWebTopology({
+      nodes: {
+        worker: node('start-supervised-node'),
+      },
+      actors: {
+        gamma: actor({ id: 'gamma', node: 'worker', behavior: createCrashableCounter }),
+      },
+      supervisors: {
+        solo: supervisor({ node: 'worker', children: ['gamma'] }),
+      },
+    });
+
+    const started = await startActorWebNode(topology, {
+      node: 'worker',
+      transport: { heartbeatIntervalMs: 0 },
+    });
+
+    try {
+      // biome-ignore lint/suspicious/noExplicitAny: Testing private state requires any
+      const groups = (started.system as any).supervisorGroups as Map<string, unknown>;
+      expect(groups.get('solo')).toEqual({
+        key: 'solo',
+        strategy: 'one-for-one',
+        children: [topology.actors.gamma.address.path],
+      });
+    } finally {
+      await started.stop();
     }
   });
 });
