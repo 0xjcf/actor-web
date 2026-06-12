@@ -1,4 +1,4 @@
-# Wire per-actor topology supervision policies into the runtim
+# Wire per-actor topology supervision policies into the runtime failure path
 
 ## Source
 
@@ -6,7 +6,11 @@ Created with `fas create-task` on 2026-06-11.
 
 ## Problem
 
-Found during the SpawnOptions honesty task (2026-06-11). The topology DSL accepts per-actor supervision policies — actor({ supervision: { strategy: 'restart', maxRestarts: 3, withinMs: 60_000 } }) — and docs/site/concepts/supervision.md documents them as bounding restarts, but the runtime never consumes them: spawnActorWebActorInstance/spawnOwnedActorWebActors (actor-web-node-runtime.ts) used to collapse the policy to supervised: Boolean(...) (now removed), and applySupervisionStrategy (actor-system-impl.ts:3563) hardcodes directive 'restart' with the global MAX_RESTART_ATTEMPTS=3 / RESTART_WINDOW_MS=30000 constants for every failed actor. Custom maxRestarts/withinMs/strategy values are silently ignored — note the docs example (3 per 60s) differs from the actual global (3 per 30s). Implement: thread the ActorWebSupervisionPolicy from the actor descriptor through spawn (pass the policy object, not a boolean — see decisions.md 2026-06-11), store per-actor policy in the system, and have applySupervisionStrategy honor strategy/maxRestarts/withinMs with the global constants as fallback defaults. Include an opt-out/stop story for system actors if the design calls for it (guardian and system-event actor previously passed supervised: false expecting no restart — decide deliberately this time, with behavioral tests for the system-actor failure path). Until this lands, the supervision.md restart-policies section overstates per-actor bounds — fix the docs in this task if implementation is deferred. Acceptance: behavioral tests prove a custom maxRestarts/withinMs is honored and an exceeded policy escalates/stops per its strategy.
+Found during the SpawnOptions honesty task (2026-06-11). The topology DSL accepts per-actor supervision policies — actor({ supervision: { strategy: 'restart', maxRestarts: 3, withinMs: 60_000 } }) — and docs/site/concepts/supervision.md documents them as bounding restarts, but the runtime never consumes them: spawnActorWebActorInstance/spawnOwnedActorWebActors (actor-web-node-runtime.ts) used to collapse the policy to supervised: Boolean(...) (now removed), and applySupervisionStrategy (actor-system-impl.ts:3563) hardcodes directive 'restart' with the global MAX_RESTART_ATTEMPTS=3 / RESTART_WINDOW_MS=30000 constants for every failed actor. Custom maxRestarts/withinMs/strategy values are silently ignored — note the docs example (3 per 60s) differs from the actual global (3 per 30s).
+
+SCOPE (split decision, 2026-06-11, human-approved): this task is PER-ACTOR POLICY WIRING ONLY — run as **4-agent mode** (pass `--mode 4-agent` explicitly at bootstrap; a known FAS platform bug silently drops queued task modes at implement bootstrap). Topology `supervisor()` TREES (one-for-one/one-for-all/rest-for-one across children) are a separate 6-agent task: `.fas/tasks/wire-topology-supervisor-trees-into-the-runtime-failure-path.md` — do NOT implement tree semantics here.
+
+Implement: thread the ActorWebSupervisionPolicy from the actor descriptor through spawn (pass the policy object, not a boolean — see decisions.md 2026-06-11), store per-actor policy in the system, and have applySupervisionStrategy honor strategy/maxRestarts/withinMs with the global constants as fallback defaults. Define `resume` precisely before coding it (skip the failed message and continue with current state? mailbox handling?) — if its semantics can't be pinned cheaply, land restart/stop/escalate and file resume separately rather than guessing. Include a deliberate story for system actors (guardian and system-event actor previously passed supervised: false expecting no restart — decide with behavioral tests for the system-actor failure path). Update supervision.md restart-policies section to match what lands (including the 3-per-30s vs 3-per-60s default discrepancy). Acceptance: behavioral tests prove a custom maxRestarts/withinMs is honored, an exceeded policy applies its declared strategy, and an actor with no policy keeps system defaults.
 
 ## Automation admission
 
@@ -39,11 +43,14 @@ Found during the SpawnOptions honesty task (2026-06-11). The topology DSL accept
 - packages/actor-core-runtime/src/actor-system-impl.ts
 - packages/actor-core-runtime/src/actor-web-node-runtime.ts
 - packages/actor-core-runtime/src/actor-system.ts
+- packages/actor-core-runtime/src/topology.ts
+- packages/actor-core-runtime/src/unit/supervision-policy.test.ts
+- packages/actor-core-runtime/src/unit/spawn-options.test.ts
 - docs/site/concepts/supervision.md
 
 ## Scope Amendments
 
-- None.
+- 2026-06-11 (4-agent run, implementer deviations accepted by root): added `topology.ts` (pre-authorized type-unification — `ActorWebSupervisionPolicy`/`ActorWebSupervisionStrategy` now alias the runtime types, preserving the existing import direction), the new `unit/supervision-policy.test.ts` (7 behavioral + 5 pure-core pins), and the extended `unit/spawn-options.test.ts` (supervision option type pins). Two in-file correctness changes inside planned `actor-system-impl.ts`, noted in the feat commit: restart bookkeeping is restored after respawn (stopActor wiped counters, so no restart bound — default or policy — could ever trip), and the dead `resumeActor` helper was removed (its restart fallback contradicted the landed resume semantics). Verifier verdict PASS-WITH-NOTES; reviewer verdict READY-WITH-FOLLOW-UPS (follow-ups filed: supervision-observability-polish brief, release-note item in release-prep brief, trees-caveat first-commit note in the 6-agent tree brief).
 
 ## Implementation plan
 

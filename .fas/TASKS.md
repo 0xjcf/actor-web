@@ -1354,8 +1354,8 @@
 
 - Title: SpawnOptions API honesty: remove unread fields (persistState, timeout, retries) and decide supervised semantics
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/spawnoptions-api-honesty-remove-unread-fields-persiststate.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -1364,11 +1364,31 @@
 ### Task: Wire per-actor topology supervision policies into the runtime failure path
 
 - Title: Wire per-actor topology supervision policies into the runtime failure path
+- Mode: 4-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/wire-per-actor-topology-supervision-policies-into-the-runtim.md
+- Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Wire topology supervisor trees into the runtime failure path
+
+- Title: Wire topology supervisor trees into the runtime failure path
+- Mode: 6-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/wire-topology-supervisor-trees-into-the-runtime-failure-path.md
+- Automation mode: advisory
+
+### Task: Supervision observability polish: reason-coded respawn-failure event, error in policy-stop payloads, export policy types
+
+- Title: Supervision observability polish: reason-coded respawn-failure event, error in policy-stop payloads, export policy types
 - Mode: single-agent
 - Status: backlog
 - Owner: planner
-- Brief: .fas/tasks/wire-per-actor-topology-supervision-policies-into-the-runtim.md
-- Automation mode: advisory
+- Brief: .fas/tasks/supervision-observability-polish-reason-coded-respawn-failu.md
 
 ## Template
 

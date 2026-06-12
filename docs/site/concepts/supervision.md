@@ -25,7 +25,9 @@ supervisor({ node: 'local', strategy: 'one-for-one', children: ['pipeline', 'com
 
 ## Restart policies
 
-A per-actor policy bounds restarts so a crash-loop can't spin forever:
+A per-actor policy controls what the runtime does when an actor's message
+handler throws. Declare it on the topology actor (or pass the same object to
+`system.spawn(behavior, { supervision })`):
 
 ```ts
 actor({
@@ -36,13 +38,30 @@ actor({
 });
 ```
 
-If an actor exceeds `maxRestarts` within `withinMs`, the supervisor stops
-restarting and escalates — the signal that something is genuinely wrong rather
-than transient.
+Four strategies are supported:
+
+- **`restart`** (the default) — stop and respawn the actor with exponential
+  backoff (1s, doubling per attempt), bounded by `maxRestarts` within
+  `withinMs`. Exceeding the bound stops the actor permanently and emits an
+  `actorStopped` system event with reason `max-restarts-exceeded`.
+- **`resume`** — keep the actor running with its current state. The failed
+  message is skipped; the rest of the mailbox is preserved. Emits an
+  `actorResumed` system event.
+- **`stop`** — stop the actor on the first failure; no restarts. Emits an
+  `actorStopped` system event with reason `supervision-stop`.
+- **`escalate`** — stop the actor and emit a distinct `actorEscalated` system
+  event. Handing the failure to a `supervisor()` parent (tree propagation) is
+  not wired into the runtime yet; today the escalation event is the signal.
+
+Actors with no policy restart under the system-wide defaults: **3 restarts
+within 30 seconds**. `maxRestarts`/`withinMs` override those defaults per
+actor — the example above deliberately widens the window to 60 seconds.
 
 ## What survives a restart
 
-A restarted actor starts from its initial context. Durable state is not yet a
+A restarted actor starts from its initial context. Machine-backed actors keep
+their state machine across the restart — the machine restarts at its initial
+state, not as a plain context actor. Durable state is not yet a
 runtime feature — if state must survive restarts, re-derive it from an external
 source in `onStart`. Restarting to a known-good initial state is deliberate
 ("let it crash"): silently resuming the exact state that preceded a crash risks

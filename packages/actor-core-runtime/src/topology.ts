@@ -1,4 +1,9 @@
-import type { ActorBehavior, ActorMessage } from './actor-system.js';
+import type {
+  ActorBehavior,
+  ActorMessage,
+  ActorSupervisionPolicy,
+  ActorSupervisionStrategy,
+} from './actor-system.js';
 import type { ActorToolRegistry } from './actor-tools.js';
 import {
   type ActorWebSourceOptions,
@@ -19,19 +24,19 @@ import {
   type UnifiedActorBuilder,
 } from './unified-actor-builder.js';
 
-export type ActorWebSupervisionStrategy = 'restart' | 'resume' | 'stop' | 'escalate';
+/**
+ * Topology aliases of the runtime supervision types (one definition, shared
+ * by the topology DSL and SpawnOptions). The node runtime threads the policy
+ * from the actor descriptor into `system.spawn(behavior, { supervision })`.
+ */
+export type ActorWebSupervisionStrategy = ActorSupervisionStrategy;
+export type ActorWebSupervisionPolicy = ActorSupervisionPolicy;
 
 export interface ActorWebActorAddress {
   readonly id: string;
   readonly type: 'actor';
   readonly node: string;
   readonly path: string;
-}
-
-export interface ActorWebSupervisionPolicy {
-  strategy: ActorWebSupervisionStrategy;
-  maxRestarts?: number;
-  withinMs?: number;
 }
 
 export interface ActorWebToolDefinition<TName extends string = string> {
