@@ -46,6 +46,13 @@ Release gate (decided 2026-06-12). PRs currently run only docs build + contrast 
   (`pnpm architecture:check`) fails on main because the boundary map still
   references `fas-shared-contracts.ts`/`fas-shared-contracts.typecheck.ts`,
   removed in a81beee. CI cannot ship green without dropping the stale paths.
+- 2026-06-12: Added `packages/actor-core-runtime/src/actor-system-impl.ts` and
+  `packages/actor-core-runtime/src/unit/remote-transport.test.ts` (human-approved).
+  The new CI gate is intermittently red because the runtime's transport
+  subscriber leaks an unhandled rejection when a runtime-protocol handler
+  fails and the error reply cannot be sent (peer disconnected) — surfaced by
+  the headless-host fails-closed test on loaded CI runners. Contain the
+  rejection at the subscription boundary with a logged warning, TDD-first.
 - 2026-06-12: Added the ignite-element@beta migration set (human-approved).
   CI typecheck fails because examples resolve ignite-element through tsconfig
   paths and vite aliases into the sibling `../ignite-element` checkout, which
