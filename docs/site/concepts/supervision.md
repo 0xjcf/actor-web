@@ -23,6 +23,10 @@ A supervisor groups child actors and applies a strategy when one fails:
 supervisor({ node: 'local', strategy: 'one-for-one', children: ['pipeline', 'compare'] })
 ```
 
+> `supervisor()` groups are currently declared and validated by the topology
+> builder but **not yet wired into the runtime failure path** — only the
+> per-actor `supervision` policies below are enforced at runtime.
+
 ## Restart policies
 
 A per-actor policy controls what the runtime does when an actor's message
