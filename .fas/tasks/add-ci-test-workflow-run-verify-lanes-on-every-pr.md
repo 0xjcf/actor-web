@@ -29,10 +29,14 @@ Release gate (decided 2026-06-12). PRs currently run only docs build + contrast 
 ## Affected files
 
 - .github/workflows/ci.yml
+- architecture.boundaries.json
 
 ## Scope Amendments
 
-- None.
+- 2026-06-12: Added `architecture.boundaries.json`. The CI architecture lane
+  (`pnpm architecture:check`) fails on main because the boundary map still
+  references `fas-shared-contracts.ts`/`fas-shared-contracts.typecheck.ts`,
+  removed in a81beee. CI cannot ship green without dropping the stale paths.
 
 ## Implementation plan
 

@@ -1394,9 +1394,12 @@
 
 - Title: Add CI test workflow: run verify lanes on every PR
 - Mode: 4-agent
-- Status: backlog
-- Owner: planner
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/add-ci-test-workflow-run-verify-lanes-on-every-pr.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Implement @actor-web/lattice: LatticeActor, topology lattice()/dependsOn, activation protocol
 
