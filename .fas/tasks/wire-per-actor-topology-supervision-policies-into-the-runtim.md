@@ -1,4 +1,4 @@
-# Wire per-actor topology supervision policies into the runtim
+# Wire per-actor topology supervision policies into the runtime failure path
 
 ## Source
 
@@ -43,11 +43,14 @@ Implement: thread the ActorWebSupervisionPolicy from the actor descriptor throug
 - packages/actor-core-runtime/src/actor-system-impl.ts
 - packages/actor-core-runtime/src/actor-web-node-runtime.ts
 - packages/actor-core-runtime/src/actor-system.ts
+- packages/actor-core-runtime/src/topology.ts
+- packages/actor-core-runtime/src/unit/supervision-policy.test.ts
+- packages/actor-core-runtime/src/unit/spawn-options.test.ts
 - docs/site/concepts/supervision.md
 
 ## Scope Amendments
 
-- None.
+- 2026-06-11 (4-agent run, implementer deviations accepted by root): added `topology.ts` (pre-authorized type-unification — `ActorWebSupervisionPolicy`/`ActorWebSupervisionStrategy` now alias the runtime types, preserving the existing import direction), the new `unit/supervision-policy.test.ts` (7 behavioral + 5 pure-core pins), and the extended `unit/spawn-options.test.ts` (supervision option type pins). Two in-file correctness changes inside planned `actor-system-impl.ts`, noted in the feat commit: restart bookkeeping is restored after respawn (stopActor wiped counters, so no restart bound — default or policy — could ever trip), and the dead `resumeActor` helper was removed (its restart fallback contradicted the landed resume semantics). Verifier verdict PASS-WITH-NOTES; reviewer verdict READY-WITH-FOLLOW-UPS (follow-ups filed: supervision-observability-polish brief, release-note item in release-prep brief, trees-caveat first-commit note in the 6-agent tree brief).
 
 ## Implementation plan
 

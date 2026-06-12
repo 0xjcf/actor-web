@@ -28,6 +28,8 @@ Companion to the per-actor policy task (split decision 2026-06-11, human-approve
 
 ## Proposed solution
 
+- FIRST COMMIT (review finding, 2026-06-11): add a "trees are not wired yet" caveat to the Supervisors section of docs/site/concepts/supervision.md — the per-actor task fixed the Restart policies section, but the Supervisors section above it still reads as functional; this doc caveat then gets removed by this task's final commit when trees actually work.
+- Per-actor groundwork now in place to build on: `resolveSupervisionDecision` pure decision core + `actorSupervisionPolicies` map in actor-system-impl.ts; `escalate` currently means stop + `actorEscalated` system event (the hook point for tree propagation); policy types unified (topology aliases the runtime `ActorSupervisionPolicy`).
 - Use the supplied problem context, acceptance criteria, and affected-file hints to draft the concrete implementation approach during planning.
 
 ## Alternatives considered

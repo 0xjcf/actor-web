@@ -1365,11 +1365,13 @@
 
 - Title: Wire per-actor topology supervision policies into the runtime failure path
 - Mode: 4-agent
-- Status: backlog
-- Owner: planner
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/wire-per-actor-topology-supervision-policies-into-the-runtim.md
 - Automation mode: advisory
-- Note: split decision 2026-06-11 — per-actor policies here (4-agent), supervisor trees in the companion 6-agent task; pass --mode 4-agent explicitly at bootstrap (platform bug drops queued modes)
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Wire topology supervisor trees into the runtime failure path
 
@@ -1379,6 +1381,14 @@
 - Owner: planner
 - Brief: .fas/tasks/wire-topology-supervisor-trees-into-the-runtime-failure-path.md
 - Automation mode: advisory
+
+### Task: Supervision observability polish: reason-coded respawn-failure event, error in policy-stop payloads, export policy types
+
+- Title: Supervision observability polish: reason-coded respawn-failure event, error in policy-stop payloads, export policy types
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/supervision-observability-polish-reason-coded-respawn-failu.md
 
 ## Template
 
