@@ -723,7 +723,6 @@ describe('supervisor group failure path (behavioral)', () => {
       // respawning over a still-live instance would stack a duplicate.
       // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
       const originalStopActor = (system as any).stopActor.bind(system);
-      // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
       const stopSpy = vi
         // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
         .spyOn(system as any, 'stopActor')
