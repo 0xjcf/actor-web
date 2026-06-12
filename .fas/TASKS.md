@@ -889,7 +889,7 @@
 
 - Title: [decouple] Neutralize actor-web source API (rename Ignite*-> Actor*); delete the ignite bridge
 - Mode: single-agent
-- Status: queued
+- Status: done
 - Owner: runtime
 - Brief: .fas/tasks/stabilize-the-ignite-source-contract-as-public-api-of-actor.md
 - Automation mode: advisory
@@ -1000,7 +1000,7 @@
 
 - Title: Docs D6: deploy site (GitHub Pages) + decide versioning/llms-txt
 - Mode: single-agent
-- Status: queued
+- Status: done
 - Owner: runtime
 - Brief: .fas/tasks/docs-d6-deploy-site-github-pages-decide-versioning-llms.md
 
@@ -1134,7 +1134,7 @@
 
 - Title: [fas-studio] Fix extensionless ESM relative imports in actor-system-guardian (breaks Node ESM consumers)
 - Mode: single-agent
-- Status: queued
+- Status: done
 - Owner: runtime
 - Brief: .fas/tasks/fas-studio-fix-extensionless-esm-relative-imports-in-actor.md
 
@@ -1142,7 +1142,7 @@
 
 - Title: [decouple] Neutralize actor-web transport/projection contract; remove FAS bridge + @franchise dep
 - Mode: single-agent
-- Status: queued
+- Status: done
 - Owner: runtime
 - Brief: .fas/tasks/neutralize-actor-web-runtime-projection-transport-contract-a.md
 - Automation mode: advisory
@@ -1365,8 +1365,8 @@
 
 - Title: Wire per-actor topology supervision policies into the runtime failure path
 - Mode: 4-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/wire-per-actor-topology-supervision-policies-into-the-runtim.md
 - Automation mode: advisory
 - Verification lane: fast
@@ -1389,6 +1389,30 @@
 - Status: backlog
 - Owner: planner
 - Brief: .fas/tasks/supervision-observability-polish-reason-coded-respawn-failu.md
+
+### Task: Add CI test workflow: run verify lanes on every PR
+
+- Title: Add CI test workflow: run verify lanes on every PR
+- Mode: 4-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/add-ci-test-workflow-run-verify-lanes-on-every-pr.md
+
+### Task: Implement @actor-web/lattice: LatticeActor, topology lattice()/dependsOn, activation protocol
+
+- Title: Implement @actor-web/lattice: LatticeActor, topology lattice()/dependsOn, activation protocol
+- Mode: 6-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/implement-actor-web-lattice-latticeactor-topology-lattice.md
+
+### Task: Cross-node subscription delivery: forward emitted events to remote-node subscribers
+
+- Title: Cross-node subscription delivery: forward emitted events to remote-node subscribers
+- Mode: 6-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/cross-node-subscription-delivery-forward-emitted-events-to.md
 
 ## Template
 
