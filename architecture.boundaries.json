@@ -134,9 +134,7 @@
     },
     "contractIntegration": {
       "description": "Structural adapters between Actor-Web runtime shapes and cross-repo contract packages.",
-      "paths": [
-        "packages/actor-core-runtime/src/integration"
-      ]
+      "paths": ["packages/actor-core-runtime/src/integration"]
     },
     "projection": {
       "description": "Snapshots, event collectors, statistics, and read-model surfaces.",
