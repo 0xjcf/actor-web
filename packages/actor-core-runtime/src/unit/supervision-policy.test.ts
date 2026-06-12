@@ -19,6 +19,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
+import { createMachine } from 'xstate';
 import type { ActorAddress, ActorSupervisionPolicy } from '../actor-system.js';
 import { ActorSystemImpl, resolveSupervisionDecision } from '../actor-system-impl.js';
 import { defineBehavior } from '../unified-actor-builder.js';
@@ -43,6 +44,27 @@ function createCrashableCounter() {
         return { reply: count };
       }
       throw new Error('induced failure');
+    })
+    .build();
+}
+
+type MachineCrashMessage = { type: 'ADVANCE' } | { type: 'BOOM' };
+
+function createCrashableMachineBehavior() {
+  const machine = createMachine({
+    id: 'crashable-machine',
+    initial: 'idle',
+    states: {
+      idle: { on: { ADVANCE: 'running', BOOM: 'idle' } },
+      running: {},
+    },
+  });
+  return defineBehavior<MachineCrashMessage>()
+    .withMachine(machine)
+    .onTransition({
+      BOOM: () => {
+        throw new Error('induced machine failure');
+      },
     })
     .build();
 }
@@ -270,6 +292,35 @@ describe('per-actor supervision policies (behavioral)', () => {
       })
     ).rejects.toThrow(/positive finite number/);
   });
+
+  it('machine-backed actor is still a machine actor after a supervised restart', async () => {
+    // Machine lookups key on behavior object identity; the restart path must
+    // respawn from the original behavior reference, not the normalized copy,
+    // or the actor silently comes back as a context/stateless actor.
+    const ref = await system.spawn(createCrashableMachineBehavior(), {
+      id: 'machine-crasher',
+      supervision: { strategy: 'restart', maxRestarts: 2, withinMs: 60_000 },
+    });
+    const path = ref.address.path;
+
+    // biome-ignore lint/suspicious/noExplicitAny: pinning the runtime actor kind requires private access
+    expect((system as any).actorInstances.get(path)?.getType()).toBe('machine');
+
+    await ref.send({ type: 'BOOM' });
+    await waitForSystemEvent(
+      emitSystemEventSpy,
+      (event) => event.eventType === 'actorRestarted' && event.data?.address === path,
+      'restart of machine-crasher'
+    );
+
+    // Still a MachineActor after the supervised restart...
+    // biome-ignore lint/suspicious/noExplicitAny: pinning the runtime actor kind requires private access
+    expect((system as any).actorInstances.get(path)?.getType()).toBe('machine');
+
+    // ...and the machine still drives behavior: a legal transition resolves
+    // ask(...) with the post-transition machine snapshot ({ value, context }).
+    await expect(ref.ask({ type: 'ADVANCE' })).resolves.toMatchObject({ value: 'running' });
+  }, 20_000);
 
   it('system-event actor failure path keeps default restart behavior', async () => {
     // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any

@@ -59,7 +59,9 @@ actor — the example above deliberately widens the window to 60 seconds.
 
 ## What survives a restart
 
-A restarted actor starts from its initial context. Durable state is not yet a
+A restarted actor starts from its initial context. Machine-backed actors keep
+their state machine across the restart — the machine restarts at its initial
+state, not as a plain context actor. Durable state is not yet a
 runtime feature — if state must survive restarts, re-derive it from an external
 source in `onStart`. Restarting to a known-good initial state is deliberate
 ("let it crash"): silently resuming the exact state that preceded a crash risks

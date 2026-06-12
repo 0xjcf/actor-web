@@ -402,6 +402,12 @@ export class ActorSystemImpl implements ActorSystem {
   private actorRestartCounts = new Map<string, number>(); // Track restart attempts per actor
   private actorLastRestartTime = new Map<string, number>(); // Track last restart time per actor
   private actorSupervisionPolicies = new Map<string, ActorSupervisionPolicy>(); // Per-actor policy from SpawnOptions.supervision
+  // Original (pre-normalization) behavior per actor path. Machine lookups key
+  // on behavior object identity (machine-registry WeakMap), and normalization
+  // produces a fresh object — so a supervised restart must respawn from the
+  // original reference or a machine-backed actor would silently come back as
+  // a context/stateless actor.
+  private actorOriginalBehaviors = new Map<string, ActorBehavior<unknown, unknown>>();
 
   // ✅ PURE ACTOR MODEL: XState timeout manager for system scheduling
   private systemTimeoutManager = new PureXStateTimeoutManager();
@@ -763,6 +769,7 @@ export class ActorSystemImpl implements ActorSystem {
 
     // Remove from local actors
     this.actors.delete(path);
+    this.actorOriginalBehaviors.delete(path);
     this.actorStarted.delete(path);
 
     // Clean up restart tracking and the per-actor supervision policy. A
@@ -882,6 +889,10 @@ export class ActorSystemImpl implements ActorSystem {
     // Store the behavior with type-safe normalization
     const normalizedBehavior = normalizeBehavior(actualBehavior as ActorBehavior<unknown, unknown>);
     this.actors.set(path, normalizedBehavior);
+    // Keep the original reference so a supervised restart can respawn from it
+    // (machine registrations key on this object's identity, which
+    // normalizeBehavior does not preserve).
+    this.actorOriginalBehaviors.set(path, actualBehavior as ActorBehavior<unknown, unknown>);
 
     // ✅ PURE ACTOR MODEL: Create appropriate actor type based on behavior
     const existingMachine = getMachineFromBehavior(
@@ -3772,9 +3783,14 @@ export class ActorSystemImpl implements ActorSystem {
   ): Promise<void> {
     const now = Date.now();
     const currentRestartCount = this.actorRestartCounts.get(address.path) || 0;
-    // Capture the per-actor policy before stopActor clears per-path
-    // bookkeeping, so the respawn keeps the same supervision contract.
+    // Capture the per-actor policy and the original behavior reference before
+    // stopActor clears per-path bookkeeping. The respawn must use the
+    // original (pre-normalization) behavior: machine registrations key on its
+    // object identity, so respawning from the normalized copy would restart a
+    // machine-backed actor as a context/stateless actor. Both captures are
+    // re-stored by spawn itself, so they survive the stop-inside-restart.
     const supervisionPolicy = this.actorSupervisionPolicies.get(address.path);
+    const respawnBehavior = this.actorOriginalBehaviors.get(address.path) ?? behavior;
 
     // Add exponential backoff delay to prevent rapid restart loops
     const backoffDelay = RESTART_BACKOFF_MS * 2 ** currentRestartCount;
@@ -3792,8 +3808,8 @@ export class ActorSystemImpl implements ActorSystem {
       // Stop the current actor
       await this.stopActor(new ActorPIDImpl(address, this));
 
-      // Respawn with the same behavior, ID, and supervision policy
-      await this.spawn(behavior as unknown as ActorBehavior<ActorMessage, unknown>, {
+      // Respawn with the same (original) behavior, ID, and supervision policy
+      await this.spawn(respawnBehavior as unknown as ActorBehavior<ActorMessage, unknown>, {
         id: address.id,
         supervision: supervisionPolicy,
       });
