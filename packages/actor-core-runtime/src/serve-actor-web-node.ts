@@ -8,6 +8,7 @@ import {
   createActorWebNodeActorHandles,
   createActorWebNodeToolAccess,
   getActorWebNodeDefinition,
+  resolveOwnedActorWebSupervisorGroups,
   spawnOwnedActorWebActors,
   wireOwnedActorWebSubscriptions,
 } from './actor-web-node-runtime.js';
@@ -340,6 +341,7 @@ export async function serveNode<TTopology extends ActorWebTopology<ActorWebTopol
     transport,
     ...(options.tools ? { tools: options.tools } : {}),
     toolAccess,
+    supervisors: resolveOwnedActorWebSupervisorGroups(topology, options.node),
   });
   const actors = new Map<string, ActorRef<unknown, ActorMessage>>();
   const actorHandles = createActorWebNodeActorHandles(

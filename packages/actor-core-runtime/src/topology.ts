@@ -223,6 +223,8 @@ export interface ActorWebSupervisorDescriptor<TNode extends string = string>
   extends ActorWebSupervisorDefinition<TNode> {
   readonly key: string;
   readonly nodeAddress: string;
+  /** Defaulted to 'one-for-one' by defineActorWebTopology when omitted. */
+  readonly strategy: 'one-for-one' | 'one-for-all' | 'rest-for-one' | 'escalate';
 }
 
 export type ActorWebTopologySourceFactoryInput = ActorWebSourceOptions;
@@ -637,8 +639,16 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
         throw new Error(`Supervisor "${key}" references unknown node "${definition.node}".`);
       }
       for (const child of definition.children) {
-        if (!input.actors[child]) {
+        const childDefinition = input.actors[child];
+        if (!childDefinition) {
           throw new Error(`Supervisor "${key}" references unknown child actor "${child}".`);
+        }
+        // Group restarts are node-local: a cross-node child would silently
+        // never be supervised, so reject it at definition time.
+        if (childDefinition.node !== definition.node) {
+          throw new Error(
+            `Supervisor "${key}" on node "${definition.node}" references child actor "${child}" on node "${String(childDefinition.node)}". Supervisor children must run on the supervisor's node.`
+          );
         }
       }
 
@@ -648,6 +658,7 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
           ...definition,
           key,
           nodeAddress: nodeDefinition.address,
+          strategy: definition.strategy ?? 'one-for-one',
         },
       ];
     })

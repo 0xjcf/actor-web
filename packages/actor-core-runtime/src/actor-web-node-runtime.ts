@@ -1,6 +1,8 @@
 import type { ActorRef } from './actor-ref.js';
 import type { ActorBehavior, ActorMessage, ActorSystem } from './actor-system.js';
+import type { SupervisorGroupConfig } from './actor-system-impl.js';
 import type { ActorToolRegistry } from './actor-tools.js';
+import { Logger } from './logger.js';
 import type {
   ActorWebActorContext,
   ActorWebActorDescriptor,
@@ -10,6 +12,8 @@ import type {
   ActorWebTopology,
   ActorWebTopologyInput,
 } from './topology.js';
+
+const log = Logger.namespace('ACTOR_WEB_NODE_RUNTIME');
 
 export type ActorWebNodeActorMap<_TTopology extends ActorWebTopology<ActorWebTopologyInput>> = Map<
   string,
@@ -343,4 +347,56 @@ export async function wireOwnedActorWebSubscriptions<
   }
 
   return teardowns;
+}
+
+/**
+ * Resolve the topology supervisor() groups owned by a node into the runtime's
+ * SupervisorGroupConfig shape: children become spawn paths in declaration
+ * order.
+ *
+ * Parameterized children (id is a function) spawn on demand, so their
+ * descriptor address is not a real spawn path: they are skipped with a
+ * warning in `one-for-one` groups (each instance is still covered by its
+ * per-actor policy), and rejected in widening/escalate groups because a
+ * statically unknowable member silently changes the blast radius.
+ */
+export function resolveOwnedActorWebSupervisorGroups<
+  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
+>(topology: TTopology, nodeKey: keyof TTopology['nodes'] & string): SupervisorGroupConfig[] {
+  const groups: SupervisorGroupConfig[] = [];
+
+  for (const [supervisorKey, descriptor] of Object.entries(topology.supervisors ?? {})) {
+    if (descriptor.node !== nodeKey) {
+      continue;
+    }
+
+    const childPaths: string[] = [];
+    for (const childKey of descriptor.children) {
+      const childDescriptor = topology.actors[childKey];
+      if (!childDescriptor) {
+        continue;
+      }
+      if (isParameterizedActorWebActor(childDescriptor)) {
+        if (descriptor.strategy === 'one-for-one') {
+          log.warn(
+            'Skipping parameterized supervisor child; per-actor policies still cover each instance',
+            { supervisor: supervisorKey, child: childKey }
+          );
+          continue;
+        }
+        throw new Error(
+          `Supervisor "${supervisorKey}" (${descriptor.strategy}) includes parameterized actor "${childKey}". Parameterized actors spawn on demand, so a ${descriptor.strategy} group cannot know its blast radius statically; move it out of the group or use one-for-one.`
+        );
+      }
+      childPaths.push(childDescriptor.address.path);
+    }
+
+    groups.push({
+      key: supervisorKey,
+      strategy: descriptor.strategy,
+      children: childPaths,
+    });
+  }
+
+  return groups;
 }

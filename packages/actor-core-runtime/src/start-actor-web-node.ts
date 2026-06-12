@@ -9,6 +9,7 @@ import {
   createActorWebNodeActorHandles,
   createActorWebNodeToolAccess,
   getActorWebNodeDefinition,
+  resolveOwnedActorWebSupervisorGroups,
   spawnOwnedActorWebActors,
   wireOwnedActorWebSubscriptions,
 } from './actor-web-node-runtime.js';
@@ -244,6 +245,7 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
     transport,
     ...(options.tools ? { tools: options.tools } : {}),
     toolAccess,
+    supervisors: resolveOwnedActorWebSupervisorGroups(topology, options.node),
   });
   const actors: ActorWebNodeActorMap<TTopology> = new Map();
   const actorHandles = createActorWebNodeActorHandles(
