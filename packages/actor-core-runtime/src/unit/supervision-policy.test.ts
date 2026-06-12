@@ -222,6 +222,42 @@ describe('per-actor supervision policies (behavioral)', () => {
     ).rejects.toThrow(/restart, resume, stop, escalate/);
   });
 
+  it('rejects a negative or non-integer maxRestarts at spawn time', async () => {
+    // Runtime validation pins for non-TypeScript consumers: maxRestarts must
+    // be a non-negative integer when provided.
+    await expect(
+      system.spawn(createCrashableCounter(), {
+        id: 'bad-max-restarts-negative',
+        supervision: { strategy: 'restart', maxRestarts: -1 },
+      })
+    ).rejects.toThrow(/non-negative integer/);
+
+    await expect(
+      system.spawn(createCrashableCounter(), {
+        id: 'bad-max-restarts-fraction',
+        supervision: { strategy: 'restart', maxRestarts: 1.5 },
+      })
+    ).rejects.toThrow(/non-negative integer/);
+  });
+
+  it('rejects a non-positive or non-finite withinMs at spawn time', async () => {
+    // Runtime validation pins for non-TypeScript consumers: withinMs must be
+    // a positive finite number of milliseconds when provided.
+    await expect(
+      system.spawn(createCrashableCounter(), {
+        id: 'bad-within-ms-zero',
+        supervision: { strategy: 'restart', withinMs: 0 },
+      })
+    ).rejects.toThrow(/positive finite number/);
+
+    await expect(
+      system.spawn(createCrashableCounter(), {
+        id: 'bad-within-ms-nan',
+        supervision: { strategy: 'restart', withinMs: Number.NaN },
+      })
+    ).rejects.toThrow(/positive finite number/);
+  });
+
   it('system-event actor failure path keeps default restart behavior', async () => {
     // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
     const address = (system as any).systemEventActorAddress as ActorAddress;

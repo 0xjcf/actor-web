@@ -858,6 +858,19 @@ export class ActorSystemImpl implements ActorSystem {
             `Supported strategies: ${SUPPORTED_SUPERVISION_STRATEGIES.join(', ')}.`
         );
       }
+      const { maxRestarts, withinMs } = options.supervision;
+      if (maxRestarts !== undefined && (!Number.isInteger(maxRestarts) || maxRestarts < 0)) {
+        throw new Error(
+          `Invalid supervision maxRestarts "${String(maxRestarts)}" for actor "${id}". ` +
+            'Expected a non-negative integer.'
+        );
+      }
+      if (withinMs !== undefined && (!Number.isFinite(withinMs) || withinMs <= 0)) {
+        throw new Error(
+          `Invalid supervision withinMs "${String(withinMs)}" for actor "${id}". ` +
+            'Expected a positive finite number of milliseconds.'
+        );
+      }
       this.actorSupervisionPolicies.set(path, options.supervision);
     }
 
