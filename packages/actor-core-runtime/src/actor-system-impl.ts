@@ -209,8 +209,9 @@ export interface SupervisionDecisionInput {
  *   after window expiry is applied, `maxRestarts` is the effective bound.
  * - `stop-permanent` — the restart bound was exceeded; stop for good.
  * - `stop` — the policy says never restart.
- * - `escalate` — stop and emit a distinct escalation event (supervisor-tree
- *   propagation is not wired yet).
+ * - `escalate` — hand the failure up: in a widening supervisor group the
+ *   shell substitutes a bounded restart; otherwise stop and emit a distinct
+ *   escalation event.
  * - `resume` — keep the actor running with its current state; the failed
  *   message is skipped.
  */
@@ -4076,7 +4077,9 @@ export class ActorSystemImpl implements ActorSystem {
       // restart history (same formula as the single-actor restart path).
       const backoffDelay = RESTART_BACKOFF_MS * 2 ** currentRestartCount;
 
-      log.info('Restarting supervisor group with backoff delay', {
+      // warn, not info: this is the one line carrying group/strategy/members
+      // for a successful group restart, and info is silenced outside dev.
+      log.warn('Restarting supervisor group with backoff delay', {
         group: group.key,
         strategy: group.strategy,
         failedChild: failedAddress.path,
@@ -4089,6 +4092,17 @@ export class ActorSystemImpl implements ActorSystem {
 
       for (const path of stopOrder) {
         if (!captured.has(path)) {
+          continue;
+        }
+        // A member stopped during the backoff window (manual stop, per-actor
+        // policy, racing teardown) already got its single terminal
+        // actorStopped — do not stop it again, and do not resurrect it.
+        if (!this.actors.has(path)) {
+          log.warn('Skipping member stopped during the group restart backoff', {
+            path,
+            group: group.key,
+          });
+          captured.delete(path);
           continue;
         }
         try {

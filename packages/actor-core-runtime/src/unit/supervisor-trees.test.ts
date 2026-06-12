@@ -679,6 +679,36 @@ describe('supervisor group failure path (behavioral)', () => {
   );
 
   it(
+    'group restart neither re-stops nor resurrects a member stopped during the backoff window',
+    { timeout: 20_000 },
+    async () => {
+      const paths = [pathOf('window-a'), pathOf('window-b')];
+      await makeSystem([{ key: 'window', strategy: 'one-for-all', children: paths }]);
+      const crasher = await system.spawn(createCrashableCounter(), { id: 'window-a' });
+      const departing = await system.spawn(createCrashableCounter(), { id: 'window-b' });
+
+      await crasher.send({ type: 'BOOM' });
+      // The group restart is now waiting out its backoff (1s at count 0).
+      // Stop the sibling inside that window — a deliberate stop must win.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await departing.stop();
+      expect(eventsFor(emitSystemEventSpy, 'actorStopped', pathOf('window-b'))).toHaveLength(1);
+
+      await waitForSystemEvent(
+        emitSystemEventSpy,
+        (event) =>
+          event.eventType === 'actorRestarted' && event.data?.address === pathOf('window-a'),
+        'failing child restarts after the backoff'
+      );
+
+      // The departed sibling keeps its single terminal event and stays gone.
+      expect(eventsFor(emitSystemEventSpy, 'actorStopped', pathOf('window-b'))).toHaveLength(1);
+      expect(eventsFor(emitSystemEventSpy, 'actorRestarted', pathOf('window-b'))).toHaveLength(0);
+      await expect(system.lookup(pathOf('window-b'))).resolves.toBeUndefined();
+    }
+  );
+
+  it(
     're-entrancy guard swallows failures during an in-flight group action',
     { timeout: 15_000 },
     async () => {
