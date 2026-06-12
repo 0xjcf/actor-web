@@ -1394,8 +1394,8 @@
 
 - Title: Add CI test workflow: run verify lanes on every PR
 - Mode: 4-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/add-ci-test-workflow-run-verify-lanes-on-every-pr.md
 - Verification lane: fast
 - Policy sensitivity: standard
