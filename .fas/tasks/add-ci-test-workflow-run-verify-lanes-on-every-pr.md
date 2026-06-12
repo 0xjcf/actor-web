@@ -30,6 +30,15 @@ Release gate (decided 2026-06-12). PRs currently run only docs build + contrast 
 
 - .github/workflows/ci.yml
 - architecture.boundaries.json
+- package.json
+- pnpm-lock.yaml
+- tsconfig.json
+- examples/vite.config.ts
+- examples/vitest.config.ts
+- examples/fas-agent-loop/fas-agent-loop-element.tsx
+- examples/ignite-headless-host/ignite-headless-host-element.tsx
+- examples/ignite-headless-host/logistics-runtime-status-panel.tsx
+- examples/ignite-headless-host/provider-console.tsx
 
 ## Scope Amendments
 
@@ -37,6 +46,13 @@ Release gate (decided 2026-06-12). PRs currently run only docs build + contrast 
   (`pnpm architecture:check`) fails on main because the boundary map still
   references `fas-shared-contracts.ts`/`fas-shared-contracts.typecheck.ts`,
   removed in a81beee. CI cannot ship green without dropping the stale paths.
+- 2026-06-12: Added the ignite-element@beta migration set (human-approved).
+  CI typecheck fails because examples resolve ignite-element through tsconfig
+  paths and vite aliases into the sibling `../ignite-element` checkout, which
+  does not exist in CI. Fix: depend on the published `ignite-element@3.0.0-beta.4`
+  and use only its public API — drop the sibling path mappings/aliases and the
+  redundant `ignite-element/renderers/ignite-jsx` side-effect imports (the
+  public adapter entry registers the ignite-jsx render strategy itself).
 
 ## Implementation plan
 
