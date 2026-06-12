@@ -6,7 +6,7 @@ Created with `fas create-task` on 2026-06-12.
 
 ## Problem
 
-Release gate (decided 2026-06-12). PRs currently run only docs build + contrast — the test suite, typecheck, lint, and boundaries run only locally via verify.sh. Add .github/workflows/ci.yml running the verify.sh lanes (format, lint, typecheck, test, architecture drift, behavior boundaries) on pull_request and main push, with pnpm/node setup mirroring docs.yml. Keep it one job or a small matrix; the semantic-index lane can stay local if it needs FAS platform access. Make it a required check once green.
+Release gate (decided 2026-06-12). PRs currently run only docs build + contrast — the test suite, typecheck, lint, and boundaries run only locally via verify.sh. Add .github/workflows/ci.yml running the CI-runnable verify.sh lanes (format, lint, typecheck, test, and the repo-local architecture boundary check) on pull_request and main push, with pnpm/node setup mirroring docs.yml. Keep it one job or a small matrix; the behavior-boundaries and semantic-index lanes stay local because both invoke the FAS platform checkout (../FAS), which CI does not have. Make it a required check once green.
 
 ## Acceptance criteria
 
