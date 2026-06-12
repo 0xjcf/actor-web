@@ -1,7 +1,5 @@
 /** @jsxImportSource ignite-element/jsx */
 
-import 'ignite-element/renderers/ignite-jsx';
-
 import styles from './fas-agent-loop.css?raw';
 import { startFasAgentLoopExample } from './fas-example-runtime';
 

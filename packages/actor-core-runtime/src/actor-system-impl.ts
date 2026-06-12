@@ -509,15 +509,22 @@ export class ActorSystemImpl implements ActorSystem {
     this.running = true;
 
     if (this.config.transport) {
-      this.transportSubscriptionStop = this.config.transport.subscribe(
-        async ({ source, message }) => {
-          if (!isRuntimeProtocolMessage(message)) {
-            return;
-          }
-
-          await this.handleRuntimeProtocolMessage(source, message);
+      // Transports dispatch listeners without awaiting them, so a rejection
+      // here (e.g. an error reply sent to a peer that already disconnected)
+      // would surface as an unhandled rejection instead of a logged fact.
+      this.transportSubscriptionStop = this.config.transport.subscribe(({ source, message }) => {
+        if (!isRuntimeProtocolMessage(message)) {
+          return;
         }
-      );
+
+        void this.handleRuntimeProtocolMessage(source, message).catch((error) => {
+          log.warn('Runtime protocol message handling failed', {
+            source,
+            messageType: message.type,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      });
     }
 
     log.debug('Spawning guardian actor');

@@ -20,8 +20,7 @@
         "packages/actor-core-runtime/src/message-plan.ts",
         "packages/actor-core-runtime/src/runtime-fanout.ts",
         "packages/actor-core-runtime/src/type-helpers.ts",
-        "packages/actor-core-runtime/src/utils/validation.ts",
-        "packages/actor-core-runtime/src/integration/fas-shared-contracts.ts"
+        "packages/actor-core-runtime/src/utils/validation.ts"
       ],
       "rules": {
         "forbiddenImports": [
@@ -135,10 +134,7 @@
     },
     "contractIntegration": {
       "description": "Structural adapters between Actor-Web runtime shapes and cross-repo contract packages.",
-      "paths": [
-        "packages/actor-core-runtime/src/integration",
-        "packages/actor-core-runtime/src/integration/fas-shared-contracts.typecheck.ts"
-      ]
+      "paths": ["packages/actor-core-runtime/src/integration"]
     },
     "projection": {
       "description": "Snapshots, event collectors, statistics, and read-model surfaces.",

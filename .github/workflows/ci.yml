@@ -1,0 +1,54 @@
+name: CI
+
+# Run the verify.sh lanes on every PR and on main pushes: format, lint,
+# typecheck, the full test suite, and the architecture boundary check.
+#
+# Two verify.sh lanes intentionally stay local-only: behavior boundaries and
+# semantic index both invoke the FAS platform checkout (../FAS), which does
+# not exist in CI. The architecture lane runs here via the repo-committed
+# scripts/check-architecture-boundaries.mjs instead.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.4.0
+        with:
+          version: 10
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Workspace packages export from dist/, so tests importing
+      # @actor-web/* need built artifacts first.
+      - name: Build workspace packages
+        run: pnpm build
+      - name: Format check
+        run: pnpm exec biome format .
+      - name: Lint
+        run: pnpm exec biome check . --error-on-warnings
+      - name: Markdown lint
+        run: pnpm lint:md
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Architecture boundaries
+        run: pnpm architecture:check

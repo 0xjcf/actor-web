@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { setup } from 'xstate';
+import type { ActorMessage } from '../actor-system.js';
 import { ActorSystemImpl } from '../actor-system-impl.js';
 import { createActorSource } from '../integration/actor-source.js';
 import { createRuntimeNodeIdentity } from '../runtime-transport-contract.js';
@@ -349,5 +350,58 @@ describe('remote runtime transport', () => {
 
     expect(source.transportStatus().state).toBe('degraded');
     expect(statuses).toContain('degraded');
+  });
+
+  it('contains runtime protocol failures when the error reply cannot be delivered', async () => {
+    const network = createInMemoryMessageTransportNetwork();
+    const remoteTransport = network.createTransport('node-b');
+    remoteSystem = new ActorSystemImpl({
+      nodeAddress: 'node-b',
+      transport: remoteTransport,
+    });
+    await remoteSystem.start();
+
+    const unhandledRejections: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown) => {
+      unhandledRejections.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandledRejection);
+
+    try {
+      // A peer that never completed a connection asks for an actor that does
+      // not exist: the ask fails AND the error reply cannot be sent back, so
+      // both legs of the handler reject. Neither may escape the subscription.
+      const deliver = (
+        remoteTransport as unknown as {
+          deliver(event: { source: string; message: ActorMessage }): void;
+        }
+      ).deliver.bind(remoteTransport);
+
+      deliver({
+        source: 'node-ghost',
+        message: {
+          type: '__runtime.remote.ask.request',
+          requestId: 'ghost-req-1',
+          address: {
+            id: 'missing-actor',
+            type: 'unknown',
+            node: 'node-b',
+            path: 'actor://node-b/missing-actor',
+          },
+          message: { type: 'PING', _timestamp: Date.now(), _version: '1.0.0' },
+          timeout: 50,
+          _timestamp: Date.now(),
+          _version: '1.0.0',
+        } as unknown as ActorMessage,
+      });
+
+      await new Promise((resolve) => {
+        setTimeout(resolve, 300);
+      });
+
+      expect(unhandledRejections).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandledRejection);
+    }
   });
 });
