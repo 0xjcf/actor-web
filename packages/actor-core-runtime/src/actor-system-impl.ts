@@ -259,6 +259,89 @@ export function resolveSupervisionDecision(input: SupervisionDecisionInput): Sup
 }
 
 /**
+ * One topology supervisor() group as registered with the actor system.
+ * `children` are actor PATHS in declaration order (declaration order is the
+ * topology `children` array order, preserved by defineActorWebTopology).
+ */
+export interface SupervisorGroupConfig {
+  readonly key: string;
+  readonly strategy: 'one-for-one' | 'one-for-all' | 'rest-for-one' | 'escalate';
+  readonly children: readonly string[];
+}
+
+/**
+ * Input facts for a tree supervision decision. `childDecision` is the
+ * already-resolved per-actor decision (the caller substitutes
+ * strategy: 'restart' bounds for escalating children in widening groups
+ * before calling, so this core stays pure and clock-free).
+ */
+export interface TreeSupervisionDecisionInput {
+  readonly childDecision: SupervisionDecision;
+  readonly group?: SupervisorGroupConfig;
+  readonly failedChildPath: string;
+}
+
+/**
+ * The group-level decision for one failure:
+ * - `pass-through` — no group, one-for-one, non-member path, or a
+ *   stop/resume child decision (deliberate containment); the per-actor
+ *   path handles it exactly as today.
+ * - `restart-group` — stop `stopOrder` (reverse declaration order), then
+ *   respawn `respawnOrder` (declaration order).
+ * - `give-up-group` — stop ALL children in reverse declaration order and
+ *   emit one actorEscalated; the system itself never stops.
+ */
+export type TreeSupervisionDecision =
+  | { readonly kind: 'pass-through' }
+  | {
+      readonly kind: 'restart-group';
+      readonly stopOrder: readonly string[];
+      readonly respawnOrder: readonly string[];
+    }
+  | {
+      readonly kind: 'give-up-group';
+      readonly stopOrder: readonly string[];
+      readonly reason: 'max-restarts-exceeded' | 'supervisor-escalated';
+    };
+
+/**
+ * Pure decision core for supervisor() group semantics. Deterministic and
+ * clock-free — the shell resolves the per-actor decision first and executes
+ * the returned group action.
+ */
+export function resolveTreeSupervisionDecision(
+  input: TreeSupervisionDecisionInput
+): TreeSupervisionDecision {
+  const { childDecision, group, failedChildPath } = input;
+  if (!group || !group.children.includes(failedChildPath)) {
+    return { kind: 'pass-through' };
+  }
+  if (childDecision.kind === 'stop' || childDecision.kind === 'resume') {
+    return { kind: 'pass-through' };
+  }
+  const allReversed = [...group.children].reverse();
+  if (group.strategy === 'escalate') {
+    return { kind: 'give-up-group', stopOrder: allReversed, reason: 'supervisor-escalated' };
+  }
+  if (group.strategy === 'one-for-one') {
+    return { kind: 'pass-through' };
+  }
+  if (childDecision.kind === 'stop-permanent') {
+    return { kind: 'give-up-group', stopOrder: allReversed, reason: 'max-restarts-exceeded' };
+  }
+  // restart (or a raw escalate, which the shell normally substitutes first):
+  // widen per the group strategy.
+  const failedIndex = group.children.indexOf(failedChildPath);
+  const respawnOrder =
+    group.strategy === 'one-for-all' ? [...group.children] : group.children.slice(failedIndex);
+  return {
+    kind: 'restart-group',
+    stopOrder: [...respawnOrder].reverse(),
+    respawnOrder,
+  };
+}
+
+/**
  * Directory configuration for actor lookup
  */
 export interface DirectoryConfig {
@@ -320,6 +403,12 @@ export interface ActorSystemConfig {
    * Optional per-actor tool allow list keyed by actor path.
    */
   toolAccess?: Record<string, readonly string[]>;
+
+  /**
+   * Topology supervisor groups owned by this node. Children are actor paths
+   * in declaration order.
+   */
+  supervisors?: readonly SupervisorGroupConfig[];
 }
 
 function createSystemInstancePrefix(nodeAddress: string): string {
@@ -408,6 +497,13 @@ export class ActorSystemImpl implements ActorSystem {
   // original reference or a machine-backed actor would silently come back as
   // a context/stateless actor.
   private actorOriginalBehaviors = new Map<string, ActorBehavior<unknown, unknown>>();
+  // Topology supervisor() groups owned by this node (key → group) and the
+  // reverse child-path index. `restartingGroups` is the re-entrancy guard:
+  // failures surfacing from members while their group action is in flight are
+  // logged and swallowed — the group action already covers them.
+  private supervisorGroups = new Map<string, SupervisorGroupConfig>();
+  private actorSupervisorGroupKeys = new Map<string, string>();
+  private restartingGroups = new Set<string>();
 
   // ✅ PURE ACTOR MODEL: XState timeout manager for system scheduling
   private systemTimeoutManager = new PureXStateTimeoutManager();
@@ -444,6 +540,18 @@ export class ActorSystemImpl implements ActorSystem {
 
   constructor(private readonly config: ActorSystemConfig) {
     this.systemInstancePrefix = createSystemInstancePrefix(config.nodeAddress);
+    for (const group of config.supervisors ?? []) {
+      this.supervisorGroups.set(group.key, group);
+      for (const childPath of group.children) {
+        if (this.actorSupervisorGroupKeys.has(childPath)) {
+          log.warn('Actor path declared in multiple supervisor groups; last declaration wins', {
+            path: childPath,
+            group: group.key,
+          });
+        }
+        this.actorSupervisorGroupKeys.set(childPath, group.key);
+      }
+    }
     this.directory = new DistributedActorDirectory({
       nodeAddress: config.nodeAddress,
       maxCacheSize: config.directory?.maxCacheSize ?? 10000,
@@ -3693,6 +3801,15 @@ export class ActorSystemImpl implements ActorSystem {
    * executes it.
    */
   private async applySupervisionStrategy(address: ActorAddress, error: unknown): Promise<void> {
+    const groupKey = this.actorSupervisorGroupKeys.get(address.path);
+    if (groupKey && this.restartingGroups.has(groupKey)) {
+      log.warn('Ignoring failure surfaced while its supervisor group action is in flight', {
+        path: address.path,
+        group: groupKey,
+      });
+      return;
+    }
+
     const behavior = this.actors.get(address.path);
     if (!behavior) {
       log.error('Behavior not found for actor', { path: address.path });
@@ -3714,6 +3831,55 @@ export class ActorSystemImpl implements ActorSystem {
       decision: decision.kind,
       error: errorMessage,
     });
+
+    const group = groupKey ? this.supervisorGroups.get(groupKey) : undefined;
+    // An escalating child inside a widening group hands its failure to the
+    // group, but the group restart must stay bounded by the child's own
+    // maxRestarts/withinMs — substitute a restart-strategy decision so
+    // exhaustion still resolves to stop-permanent (= group give-up).
+    let childDecision = decision;
+    if (
+      decision.kind === 'escalate' &&
+      group &&
+      (group.strategy === 'one-for-all' || group.strategy === 'rest-for-one') &&
+      policy
+    ) {
+      childDecision = resolveSupervisionDecision({
+        policy: { ...policy, strategy: 'restart' },
+        restartCount: this.actorRestartCounts.get(address.path) || 0,
+        lastRestartTimeMs: this.actorLastRestartTime.get(address.path) || 0,
+        nowMs: Date.now(),
+      });
+    }
+    const treeDecision = resolveTreeSupervisionDecision({
+      childDecision,
+      group,
+      failedChildPath: address.path,
+    });
+    if (treeDecision.kind === 'restart-group' && group) {
+      if (childDecision.kind === 'restart') {
+        // Sync any window-expiry reset back into the tracked count before
+        // the group restart path increments it.
+        this.actorRestartCounts.set(address.path, childDecision.restartCount);
+      }
+      await this.restartSupervisorGroup(
+        group,
+        address,
+        treeDecision.stopOrder,
+        treeDecision.respawnOrder
+      );
+      return;
+    }
+    if (treeDecision.kind === 'give-up-group' && group) {
+      await this.stopSupervisorGroup(
+        group,
+        address,
+        treeDecision.stopOrder,
+        treeDecision.reason,
+        error
+      );
+      return;
+    }
 
     switch (decision.kind) {
       case 'restart': {
@@ -3849,6 +4015,207 @@ export class ActorSystemImpl implements ActorSystem {
       });
       // Escalate restart failure
       await this.notifyGuardianOfFailure(address, restartError);
+    }
+  }
+
+  /**
+   * Restart a whole supervisor group after a member failure: stop the
+   * affected members in reverse declaration order, then respawn them in
+   * declaration order from their original behaviors. One backoff wait per
+   * group restart (derived from the failing child's restart history), and
+   * only the failing child's restart counter is consumed — siblings restarted
+   * as collateral keep their reset budgets. No rejection may escape this
+   * driver; per-member failures are logged facts.
+   */
+  private async restartSupervisorGroup(
+    group: SupervisorGroupConfig,
+    failedAddress: ActorAddress,
+    stopOrder: readonly string[],
+    respawnOrder: readonly string[]
+  ): Promise<void> {
+    this.restartingGroups.add(group.key);
+    try {
+      // Capture every member's address, original behavior, and policy BEFORE
+      // any stop — stopActor clears actorOriginalBehaviors and
+      // actorSupervisionPolicies as part of teardown.
+      const captured = new Map<
+        string,
+        {
+          address: ActorAddress;
+          behavior: ActorBehavior<unknown, unknown>;
+          policy: ActorSupervisionPolicy | undefined;
+        }
+      >();
+      for (const path of respawnOrder) {
+        try {
+          const memberAddress = parseActorPath(path);
+          const memberBehavior = this.actorOriginalBehaviors.get(path);
+          if (!memberBehavior) {
+            log.warn('Skipping supervisor group member without an original behavior', {
+              path,
+              group: group.key,
+            });
+            continue;
+          }
+          captured.set(path, {
+            address: memberAddress,
+            behavior: memberBehavior,
+            policy: this.actorSupervisionPolicies.get(path),
+          });
+        } catch (captureError) {
+          log.warn('Skipping supervisor group member with unparseable path', {
+            path,
+            group: group.key,
+            error: captureError instanceof Error ? captureError.message : String(captureError),
+          });
+        }
+      }
+
+      const now = Date.now();
+      const currentRestartCount = this.actorRestartCounts.get(failedAddress.path) || 0;
+      // Single backoff for the whole group, scaled by the failing child's
+      // restart history (same formula as the single-actor restart path).
+      const backoffDelay = RESTART_BACKOFF_MS * 2 ** currentRestartCount;
+
+      log.info('Restarting supervisor group with backoff delay', {
+        group: group.key,
+        strategy: group.strategy,
+        failedChild: failedAddress.path,
+        members: respawnOrder.length,
+        restartAttempt: currentRestartCount + 1,
+        backoffDelayMs: backoffDelay,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, backoffDelay));
+
+      for (const path of stopOrder) {
+        if (!captured.has(path)) {
+          continue;
+        }
+        try {
+          // Teardown emits the single terminal actorStopped with this reason.
+          await this.stopActor(
+            new ActorPIDImpl(parseActorPath(path), this),
+            'supervisor-group-restart'
+          );
+        } catch (stopError) {
+          log.error('Failed to stop supervisor group member', {
+            path,
+            group: group.key,
+            error: stopError instanceof Error ? stopError.message : String(stopError),
+          });
+        }
+      }
+
+      for (const path of respawnOrder) {
+        const member = captured.get(path);
+        if (!member) {
+          continue;
+        }
+        try {
+          await this.spawn(member.behavior as unknown as ActorBehavior<ActorMessage, unknown>, {
+            id: member.address.id,
+            supervision: member.policy,
+          });
+          await this.emitSystemEvent({
+            eventType: 'actorRestarted',
+            timestamp: Date.now(),
+            data: {
+              address: path,
+              restartAttempt: path === failedAddress.path ? currentRestartCount + 1 : 1,
+              supervisor: group.key,
+            },
+          });
+        } catch (respawnError) {
+          log.error('Failed to respawn supervisor group member', {
+            path,
+            group: group.key,
+            error: respawnError instanceof Error ? respawnError.message : String(respawnError),
+          });
+        }
+      }
+
+      // Restore the failing child's restart bookkeeping (stopActor cleared it
+      // during teardown) so its maxRestarts/withinMs bound spans the group
+      // restart. Siblings stay cleared — collateral restarts do not consume
+      // their budgets.
+      if (captured.has(failedAddress.path)) {
+        this.actorRestartCounts.set(failedAddress.path, currentRestartCount + 1);
+        this.actorLastRestartTime.set(failedAddress.path, now);
+      }
+    } catch (groupError) {
+      log.error('Supervisor group restart failed', {
+        group: group.key,
+        failedChild: failedAddress.path,
+        error: groupError instanceof Error ? groupError.message : String(groupError),
+      });
+    } finally {
+      this.restartingGroups.delete(group.key);
+    }
+  }
+
+  /**
+   * Give up on a supervisor group: stop every child in reverse declaration
+   * order with reason-coded terminal events and emit exactly one
+   * actorEscalated for the group. The system itself never stops — hosts and
+   * operators observe the escalation via subscribeToSystemEvents and decide.
+   */
+  private async stopSupervisorGroup(
+    group: SupervisorGroupConfig,
+    failedAddress: ActorAddress,
+    stopOrder: readonly string[],
+    reason: 'max-restarts-exceeded' | 'supervisor-escalated',
+    error: unknown
+  ): Promise<void> {
+    this.restartingGroups.add(group.key);
+    try {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      log.error('Supervisor group giving up: stopping all children', {
+        group: group.key,
+        strategy: group.strategy,
+        failedChild: failedAddress.path,
+        reason,
+        error: errorMessage,
+      });
+
+      for (const path of stopOrder) {
+        const memberReason =
+          reason === 'supervisor-escalated'
+            ? 'supervisor-escalated'
+            : path === failedAddress.path
+              ? 'max-restarts-exceeded'
+              : 'supervisor-max-restarts-exceeded';
+        try {
+          await this.stopActor(new ActorPIDImpl(parseActorPath(path), this), memberReason);
+        } catch (stopError) {
+          log.error('Failed to stop supervisor group member during give-up', {
+            path,
+            group: group.key,
+            error: stopError instanceof Error ? stopError.message : String(stopError),
+          });
+        }
+      }
+
+      await this.emitSystemEvent({
+        eventType: 'actorEscalated',
+        timestamp: Date.now(),
+        data: {
+          address: failedAddress.path,
+          supervisor: group.key,
+          failedChild: failedAddress.path,
+          reason,
+          error: errorMessage,
+        },
+      });
+    } catch (groupError) {
+      log.error('Supervisor group give-up failed', {
+        group: group.key,
+        failedChild: failedAddress.path,
+        error: groupError instanceof Error ? groupError.message : String(groupError),
+      });
+    } finally {
+      this.restartingGroups.delete(group.key);
     }
   }
 
