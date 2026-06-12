@@ -4117,6 +4117,12 @@ export class ActorSystemImpl implements ActorSystem {
             group: group.key,
             error: stopError instanceof Error ? stopError.message : String(stopError),
           });
+          // If the stop failed with the actor still registered, respawning
+          // would stack a second live instance over it — leave the original
+          // in place and keep it out of the respawn set.
+          if (this.actors.has(path)) {
+            captured.delete(path);
+          }
         }
       }
 

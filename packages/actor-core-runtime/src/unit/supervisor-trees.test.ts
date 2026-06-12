@@ -709,6 +709,53 @@ describe('supervisor group failure path (behavioral)', () => {
   );
 
   it(
+    'group restart does not respawn over a member whose stop failed while still registered',
+    { timeout: 20_000 },
+    async () => {
+      const paths = [pathOf('stuck-a'), pathOf('stuck-b')];
+      await makeSystem([{ key: 'stuck', strategy: 'one-for-all', children: paths }]);
+      const crasher = await system.spawn(createCrashableCounter(), { id: 'stuck-a' });
+      const survivor = await system.spawn(createCrashableCounter(), { id: 'stuck-b' });
+      await survivor.send({ type: 'INC' });
+      await system.flush();
+
+      // Induce a stop failure for the sibling that leaves it registered:
+      // respawning over a still-live instance would stack a duplicate.
+      // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
+      const originalStopActor = (system as any).stopActor.bind(system);
+      // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
+      const stopSpy = vi
+        // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
+        .spyOn(system as any, 'stopActor')
+        // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
+        .mockImplementation(async (pid: any, reason?: unknown) => {
+          if (pid?.address?.path === pathOf('stuck-b') && reason === 'supervisor-group-restart') {
+            throw new Error('induced stop failure');
+          }
+          return originalStopActor(pid, reason);
+        });
+
+      try {
+        await crasher.send({ type: 'BOOM' });
+        await waitForSystemEvent(
+          emitSystemEventSpy,
+          (event) =>
+            event.eventType === 'actorRestarted' && event.data?.address === pathOf('stuck-a'),
+          'failing child restarts despite the sibling stop failure'
+        );
+
+        // The sibling must not be respawned over its still-live instance:
+        // no actorRestarted for it, and the ORIGINAL instance (with its
+        // pre-failure state) is still the one registered.
+        expect(eventsFor(emitSystemEventSpy, 'actorRestarted', pathOf('stuck-b'))).toHaveLength(0);
+        await expect(survivor.ask<number>({ type: 'GET' })).resolves.toBe(1);
+      } finally {
+        stopSpy.mockRestore();
+      }
+    }
+  );
+
+  it(
     're-entrancy guard swallows failures during an in-flight group action',
     { timeout: 15_000 },
     async () => {
