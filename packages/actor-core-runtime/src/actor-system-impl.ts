@@ -3913,12 +3913,11 @@ export class ActorSystemImpl implements ActorSystem {
         return;
       }
       case 'escalate': {
-        // Supervisor trees are not wired yet — propagating the failure
-        // across topology supervisor() children (one-for-one/one-for-all/
-        // rest-for-one) is the companion 6-agent task. Until that lands,
-        // escalate means: stop the failed actor and emit a distinct
-        // escalation event so operators and future supervisors can observe
-        // the unhandled failure.
+        // Per-actor escalate for ungrouped actors and one-for-one groups:
+        // stop the failed actor and emit a distinct escalation event so
+        // operators observe the unhandled failure. Widening groups
+        // (one-for-all/rest-for-one) never reach here — their escalate is
+        // substituted into a bounded group restart above.
         log.warn('Actor failed, escalating (stop + escalation event)', { path: address.path });
         await this.stopActor(new ActorPIDImpl(address, this));
         await this.emitSystemEvent({
@@ -4180,6 +4179,17 @@ export class ActorSystemImpl implements ActorSystem {
       });
 
       for (const path of stopOrder) {
+        // Skip members that are no longer registered (already stopped by a
+        // per-actor policy, a manual stop, or a racing teardown): stopActor
+        // would emit a second terminal actorStopped for them, and teardown
+        // owns exactly one terminal event per stop.
+        if (!this.actors.has(path)) {
+          log.warn('Skipping already-stopped supervisor group member during give-up', {
+            path,
+            group: group.key,
+          });
+          continue;
+        }
         const memberReason =
           reason === 'supervisor-escalated'
             ? 'supervisor-escalated'

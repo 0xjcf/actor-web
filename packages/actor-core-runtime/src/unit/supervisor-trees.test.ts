@@ -240,7 +240,9 @@ function createSubscriberBehavior() {
     .onMessage(({ message, actor }) => {
       const { received } = actor.getSnapshot().context;
       if (message.type === 'PINGED') {
-        return { context: { received: received + 1 } };
+        // Auto-publishing delivers events through the ask path; reply so the
+        // delivery does not log a missing-reply warning.
+        return { context: { received: received + 1 }, reply: { ok: true } };
       }
       return { reply: received };
     })
@@ -636,6 +638,43 @@ describe('supervisor group failure path (behavioral)', () => {
       const fresh = await system.spawn(createCrashableCounter(), { id: 'post-escalation' });
       await fresh.send({ type: 'INC' });
       await expect(fresh.ask<number>({ type: 'GET' })).resolves.toBe(1);
+    }
+  );
+
+  it(
+    'give-up skips already-stopped members instead of emitting a second terminal event',
+    { timeout: 20_000 },
+    async () => {
+      const paths = [pathOf('ghost-a'), pathOf('ghost-b')];
+      await makeSystem([{ key: 'ghosts', strategy: 'one-for-all', children: paths }]);
+      const crasher = await system.spawn(createCrashableCounter(), {
+        id: 'ghost-a',
+        supervision: { strategy: 'restart', maxRestarts: 0 },
+      });
+      const departed = await system.spawn(createCrashableCounter(), { id: 'ghost-b' });
+
+      // The sibling stops before the group gives up (e.g. a manual stop or an
+      // earlier per-actor stop policy). Teardown emits its single terminal
+      // actorStopped here.
+      await departed.stop();
+      expect(eventsFor(emitSystemEventSpy, 'actorStopped', pathOf('ghost-b'))).toHaveLength(1);
+
+      await crasher.send({ type: 'BOOM' });
+      await waitForSystemEvent(
+        emitSystemEventSpy,
+        (event) =>
+          event.eventType === 'actorEscalated' &&
+          event.data?.reason === 'max-restarts-exceeded' &&
+          event.data?.supervisor === 'ghosts',
+        'group give-up with an already-stopped member'
+      );
+
+      // The already-stopped member must NOT receive a second terminal event;
+      // its single actorStopped is the one teardown emitted at stop() time.
+      expect(eventsFor(emitSystemEventSpy, 'actorStopped', pathOf('ghost-b'))).toHaveLength(1);
+      expect(
+        eventsFor(emitSystemEventSpy, 'actorStopped', pathOf('ghost-a'))[0]?.data?.reason
+      ).toBe('max-restarts-exceeded');
     }
   );
 
