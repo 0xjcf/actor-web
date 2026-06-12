@@ -1,7 +1,5 @@
 /** @jsxImportSource ignite-element/jsx */
 
-import 'ignite-element/renderers/ignite-jsx';
-
 import { igniteCore } from 'ignite-element/actor-web';
 import { logisticsClient } from './logistics-browser-client';
 import type { ProviderSignal, ProviderSignalCommand } from './logistics-contract';

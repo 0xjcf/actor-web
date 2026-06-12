@@ -1,7 +1,5 @@
 /** @jsxImportSource ignite-element/jsx */
 
-import 'ignite-element/renderers/ignite-jsx';
-
 import { igniteCore } from 'ignite-element/actor-web';
 import styles from './ignite-headless-host-element.css?raw';
 import { logisticsClient } from './logistics-browser-client';

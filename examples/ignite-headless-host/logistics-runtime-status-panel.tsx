@@ -1,7 +1,5 @@
 /** @jsxImportSource ignite-element/jsx */
 
-import 'ignite-element/renderers/ignite-jsx';
-
 import { type ActorSource, createProjectionTransportStatus } from '@actor-web/runtime/browser';
 import { igniteCore } from 'ignite-element/actor-web';
 import styles from './ignite-headless-host-element.css?raw';

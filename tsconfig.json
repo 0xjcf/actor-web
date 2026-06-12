@@ -38,15 +38,7 @@
       "@actor-web/runtime/node": ["./packages/actor-core-runtime/src/node.ts"],
       "@actor-web/runtime/topology": ["./packages/actor-core-runtime/src/topology-entry.ts"],
       "@actor-web/testing": ["./packages/actor-core-testing/src/index.ts"],
-      "@actor-web/cli": ["./packages/agent-workflow-cli/src/index.ts"],
-      "ignite-element": ["../ignite-element/packages/ignite-element/dist/types/index.d.ts"],
-      "ignite-element/*": ["../ignite-element/packages/ignite-element/dist/types/*"],
-      "ignite-adapters": ["../ignite-element/packages/ignite-adapters/dist/types/index.d.ts"],
-      "ignite-adapters/*": ["../ignite-element/packages/ignite-adapters/dist/types/*"],
-      "ignite-core": ["../ignite-element/packages/ignite-core/dist/types/index.d.ts"],
-      "ignite-core/*": ["../ignite-element/packages/ignite-core/dist/types/*"],
-      "ignite-renderer": ["../ignite-element/packages/ignite-renderer/dist/types/index.d.ts"],
-      "ignite-renderer/*": ["../ignite-element/packages/ignite-renderer/dist/types/*"]
+      "@actor-web/cli": ["./packages/agent-workflow-cli/src/index.ts"]
     }
   },
   "include": ["src/**/*", "examples/**/*", "*.js", "*.ts"],
