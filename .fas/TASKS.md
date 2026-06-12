@@ -1365,8 +1365,8 @@
 
 - Title: Wire per-actor topology supervision policies into the runtime failure path
 - Mode: 4-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/wire-per-actor-topology-supervision-policies-into-the-runtim.md
 - Automation mode: advisory
 - Verification lane: fast
