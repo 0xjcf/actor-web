@@ -1514,14 +1514,6 @@
 - Owner: planner
 - Brief: .fas/tasks/add-actor-web-labs-mesh-layer-membership-multi-hop-routi.md
 
-### Task: Implement @actor-web/lattice (artifact + dependency coordination)
-
-- Title: Implement @actor-web/lattice (artifact + dependency coordination)
-- Mode: single-agent
-- Status: backlog
-- Owner: planner
-- Brief: .fas/tasks/implement-actor-web-lattice-artifact-dependency-coordina.md
-
 ### Task: Resolve virtual-actor-system single-node scope
 
 - Title: Resolve virtual-actor-system single-node scope
