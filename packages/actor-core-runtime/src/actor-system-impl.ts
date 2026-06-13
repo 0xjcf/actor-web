@@ -2909,7 +2909,15 @@ export class ActorSystemImpl implements ActorSystem {
         this.removeTopologyRemoteSubscriber(message.publisherPath, source, message.subscriberPath);
         return;
       case '__runtime.topology.event': {
-        const subscriberAddress = parseActorPath(message.subscriberPath);
+        // parseActorPath throws on a malformed path, so guard it here to route a
+        // bad payload to the targeted drop/warn rather than the generic
+        // protocol-error catch.
+        let subscriberAddress: ActorAddress | undefined;
+        try {
+          subscriberAddress = parseActorPath(message.subscriberPath);
+        } catch {
+          subscriberAddress = undefined;
+        }
         if (subscriberAddress) {
           const eventMessage = eventEnvelopeToActorMessage(message.payload.envelope);
           await this.enqueueMessage(subscriberAddress, eventMessage);

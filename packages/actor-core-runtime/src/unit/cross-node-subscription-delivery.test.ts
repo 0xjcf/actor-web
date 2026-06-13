@@ -8,7 +8,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { MessageTransport } from '../actor-system.js';
+import type { ActorMessage, MessageTransport } from '../actor-system.js';
 import { ActorSystemImpl } from '../actor-system-impl.js';
 import { wireOwnedActorWebSubscriptions } from '../actor-web-node-runtime.js';
 import { createActorSource } from '../integration/actor-source.js';
@@ -315,6 +315,49 @@ describe('cross-node topology subscription delivery', () => {
           node: 'ghost-node',
           eventType: 'TICK',
         })
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('drops an inbound topology event with an unparseable subscriber path without throwing', async () => {
+    const network = createInMemoryMessageTransportNetwork();
+    const transport = network.createTransport('node-b');
+    subscriberSystem = new ActorSystemImpl({ nodeAddress: 'node-b', transport });
+    await subscriberSystem.start();
+
+    // parseActorPath throws on a malformed path; the handler must route it to the
+    // targeted drop/warn, not let the throw escape to the generic protocol-error
+    // catch. Inject a raw frame with a bad subscriberPath.
+    const deliver = (
+      transport as unknown as {
+        deliver(event: { source: string; message: ActorMessage }): void;
+      }
+    ).deliver.bind(transport);
+
+    const warnSpy = vi.spyOn(Logger, 'warn');
+    try {
+      deliver({
+        source: 'node-a',
+        message: {
+          type: '__runtime.topology.event',
+          subscriberPath: 'not-a-valid-actor-path',
+          payload: {
+            address: { id: 'x', type: 'actor', node: 'node-a', path: 'p' },
+            envelope: {},
+            sequence: 0,
+          },
+          _timestamp: Date.now(),
+          _version: '1.0.0',
+        } as unknown as ActorMessage,
+      });
+      await subscriberSystem.flush();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        'Dropped cross-node topology event with an unparseable subscriber path',
+        expect.objectContaining({ source: 'node-a', subscriberPath: 'not-a-valid-actor-path' })
       );
     } finally {
       warnSpy.mockRestore();
