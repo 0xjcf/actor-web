@@ -1377,8 +1377,8 @@
 
 - Title: Wire topology supervisor trees into the runtime failure path
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/wire-topology-supervisor-trees-into-the-runtime-failure-path.md
 - Automation mode: advisory
 - Verification lane: fast
