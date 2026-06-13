@@ -1377,10 +1377,13 @@
 
 - Title: Wire topology supervisor trees into the runtime failure path
 - Mode: 6-agent
-- Status: backlog
-- Owner: planner
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/wire-topology-supervisor-trees-into-the-runtime-failure-path.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Supervision observability polish: reason-coded respawn-failure event, error in policy-stop payloads, export policy types
 
@@ -1394,8 +1397,8 @@
 
 - Title: Add CI test workflow: run verify lanes on every PR
 - Mode: 4-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/add-ci-test-workflow-run-verify-lanes-on-every-pr.md
 - Verification lane: fast
 - Policy sensitivity: standard
