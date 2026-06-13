@@ -7,11 +7,13 @@
  * same `handleRuntimeProtocolMessage` path a real node drives.
  */
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MessageTransport } from '../actor-system.js';
 import { ActorSystemImpl } from '../actor-system-impl.js';
+import { wireOwnedActorWebSubscriptions } from '../actor-web-node-runtime.js';
 import { createActorSource } from '../integration/actor-source.js';
 import { createInMemoryMessageTransportNetwork } from '../testing/in-memory-message-transport.js';
+import { actor, defineActorWebTopology, node } from '../topology.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
 type PublisherMessage = { type: 'GO'; n?: number } | { type: 'OTHER' };
@@ -132,7 +134,10 @@ describe('cross-node topology subscription delivery', () => {
     await publisherSystem.flush();
     await subscriberSystem.flush();
 
-    const received = await pollAsk(() => collector.ask<string[]>({ type: 'GET' }), (r) => r.includes('TICK'));
+    const received = await pollAsk(
+      () => collector.ask<string[]>({ type: 'GET' }),
+      (r) => r.includes('TICK')
+    );
     expect(received).toContain('TICK');
   });
 
@@ -156,7 +161,10 @@ describe('cross-node topology subscription delivery', () => {
     await publisherSystem.flush();
     await subscriberSystem.flush();
 
-    const received = await pollAsk(() => collector.ask<string[]>({ type: 'GET' }), (r) => r.includes('TICK'));
+    const received = await pollAsk(
+      () => collector.ask<string[]>({ type: 'GET' }),
+      (r) => r.includes('TICK')
+    );
     expect(received).toContain('TICK');
     expect(received).not.toContain('OTHER_EVENT');
   });
@@ -236,7 +244,10 @@ describe('cross-node topology subscription delivery', () => {
     await publisherSystem.flush();
     await subscriberSystem.flush();
 
-    const received = await pollAsk(() => collector.ask<string[]>({ type: 'GET' }), (r) => r.filter((t) => t === 'TICK').length >= 2);
+    const received = await pollAsk(
+      () => collector.ask<string[]>({ type: 'GET' }),
+      (r) => r.filter((t) => t === 'TICK').length >= 2
+    );
 
     unsubscribeSnapshot();
     unsubscribeStatus();
@@ -272,5 +283,85 @@ describe('cross-node topology subscription delivery', () => {
     // Edge pruned: re-emit after a fresh handshake delivers; the outage emit did not.
     const received = await collector.ask<string[]>({ type: 'GET' });
     expect(received).not.toContain('TICK');
+  });
+});
+
+describe('wireOwnedActorWebSubscriptions cross-node branch', () => {
+  let system: ActorSystemImpl | undefined;
+
+  afterEach(async () => {
+    if (system?.isRunning()) {
+      await system.stop();
+    }
+    system = undefined;
+  });
+
+  function crossNodeTopology() {
+    return defineActorWebTopology({
+      nodes: { server: node('server'), worker: node('worker') },
+      actors: {
+        pub: actor({ id: 'pub', node: 'server', behavior: createPublisherBehavior }),
+        sub: actor({ id: 'sub', node: 'worker', behavior: createCollectorBehavior }),
+      },
+      subscriptions: [{ from: 'pub', to: 'sub', events: ['TICK'] }],
+    });
+  }
+
+  it('throws when a cross-node pair has no transport configured', async () => {
+    system = new ActorSystemImpl({ nodeAddress: 'worker' });
+    await system.start();
+    await expect(
+      wireOwnedActorWebSubscriptions(system, crossNodeTopology(), 'worker', new Map())
+    ).rejects.toThrow(/no runtime transport configured/);
+  });
+
+  it('sends a subscribe handshake from the subscriber-owning node only', async () => {
+    const network = createInMemoryMessageTransportNetwork();
+    system = new ActorSystemImpl({
+      nodeAddress: 'worker',
+      transport: network.createTransport('worker'),
+    });
+    await system.start();
+    // biome-ignore lint/suspicious/noExplicitAny: spying a public method for a call assertion
+    const spy = vi.spyOn(system as any, 'sendTopologySubscribe').mockResolvedValue(async () => {});
+
+    const teardowns = await wireOwnedActorWebSubscriptions(
+      system,
+      crossNodeTopology(),
+      'worker',
+      new Map()
+    );
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        publisherNode: 'server',
+        publisherPath: 'actor://server/actor/pub',
+        subscriberPath: 'actor://worker/actor/sub',
+        events: ['TICK'],
+      })
+    );
+    expect(teardowns).toHaveLength(1);
+  });
+
+  it('is a no-op on the publisher-owning node', async () => {
+    const network = createInMemoryMessageTransportNetwork();
+    system = new ActorSystemImpl({
+      nodeAddress: 'server',
+      transport: network.createTransport('server'),
+    });
+    await system.start();
+    // biome-ignore lint/suspicious/noExplicitAny: spying a public method for a call assertion
+    const spy = vi.spyOn(system as any, 'sendTopologySubscribe');
+
+    const teardowns = await wireOwnedActorWebSubscriptions(
+      system,
+      crossNodeTopology(),
+      'server',
+      new Map()
+    );
+
+    expect(spy).not.toHaveBeenCalled();
+    expect(teardowns).toHaveLength(0);
   });
 });

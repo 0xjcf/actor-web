@@ -322,9 +322,27 @@ export async function wireOwnedActorWebSubscriptions<
       }
 
       if (ownsPublisher !== ownsSubscriber) {
-        throw new Error(
-          `Topology subscription "${fromKey}" -> "${toKey}" spans nodes "${String(fromDescriptor.node)}" and "${String(toDescriptor.node)}". Cross-node subscription delivery is not supported; co-locate the pair on one node or relay the events through an actor on the subscriber's node.`
-        );
+        // Cross-node pair: forward emitted events over the transport. The loud
+        // failure is kept only for topologies with no transport configured.
+        if (!system.isRemoteTransportConfigured()) {
+          throw new Error(
+            `Topology subscription "${fromKey}" -> "${toKey}" spans nodes "${String(fromDescriptor.node)}" and "${String(toDescriptor.node)}" but this node has no runtime transport configured. Cross-node subscription delivery requires a transport; configure one or co-locate the pair.`
+          );
+        }
+        // Only the subscriber-owning node initiates the handshake; the
+        // publisher-owning node is a no-op at start and waits for it.
+        if (ownsSubscriber) {
+          const teardown = await system.sendTopologySubscribe({
+            publisherNode: fromDescriptor.nodeAddress,
+            publisherPath: fromDescriptor.address.path,
+            subscriberPath: toDescriptor.address.path,
+            ...(subscription.events && subscription.events.length > 0
+              ? { events: [...subscription.events] }
+              : {}),
+          });
+          teardowns.push(teardown);
+        }
+        continue;
       }
 
       const publisher = actors.get(fromKey);
