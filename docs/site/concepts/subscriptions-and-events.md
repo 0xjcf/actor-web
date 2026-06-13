@@ -85,6 +85,18 @@ defineActorWebTopology({
 path; `system.subscribe(...)` remains the imperative escape hatch for dynamic
 wiring.
 
+### Cross-node subscriptions
+
+When `from` and `to` live on different nodes, the runtime forwards emitted events
+over the transport: the publisher node delivers each matching event to the
+subscriber actor on the peer node. The subscriber node establishes the edge on
+start and re-establishes it on reconnect, so the wiring stays durable across
+restarts. Delivery is **at-most-once** — see
+[Transport delivery guarantees](/concepts/transport#delivery-guarantees) for what
+happens to events emitted before the handshake or while a peer is down. A
+cross-node subscription requires a configured transport; without one the runtime
+fails loudly at start rather than silently dropping events.
+
 ## See also
 
 - [Your first actor](/getting-started/your-first-actor) — where `emit` is
