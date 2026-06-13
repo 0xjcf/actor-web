@@ -78,7 +78,7 @@ describe('cross-node subscription delivery (multi-node)', () => {
     transportA: MessageTransport;
     transportB: MessageTransport;
     publisher: ActorRef<unknown, PublisherMessage>;
-    collector: ActorRef<{ received: string[] }, CollectorMessage>;
+    collector: ActorRef<unknown, CollectorMessage>;
   }> {
     const transportA = network.createTransport('node-a');
     const transportB = network.createTransport('node-b');
