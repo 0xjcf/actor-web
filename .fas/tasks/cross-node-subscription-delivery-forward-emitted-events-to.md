@@ -30,11 +30,26 @@ RELEASE FEATURE (decided 2026-06-12: ships in the official release alongside the
 - packages/actor-core-runtime/src/actor-web-node-runtime.ts
 - packages/actor-core-runtime/src/actor-system-impl.ts
 - packages/actor-core-runtime/src/serve-actor-web-node.ts
+- packages/actor-core-runtime/src/runtime-transport-protocol.ts
+- packages/actor-core-runtime/src/unit/cross-node-subscription-delivery.test.ts
+- packages/actor-core-runtime/src/unit/cross-node-subscription-integration.test.ts
 - docs/site/concepts/transport.md
+- docs/site/concepts/subscriptions-and-events.md
 
 ## Scope Amendments
 
-- None.
+- 2026-06-13: Added `runtime-transport-protocol.ts` — the three new wire
+  message types (`__runtime.topology.subscribe`/`.event`/`.unsubscribe`) must
+  be added to the `RuntimeProtocolMessage` union; the file was reference-only
+  demoted in planning but editing it is unavoidable for the feature.
+- 2026-06-13: Added the two new unit/integration test files per the architect's
+  scope request (sanctioned by the TDD acceptance criteria but absent from the
+  generated affected-file hints).
+- 2026-06-13: Added `docs/site/concepts/subscriptions-and-events.md` — the brief
+  prose names it; it currently has no cross-node content and needs a short
+  cross-node-subscriptions paragraph pointing at transport.md's delivery
+  guarantees. Architect recommended the amendment over silently editing an
+  out-of-scope file.
 
 ## Implementation plan
 
