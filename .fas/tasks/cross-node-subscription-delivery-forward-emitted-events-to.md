@@ -29,7 +29,7 @@ RELEASE FEATURE (decided 2026-06-12: ships in the official release alongside the
 
 - packages/actor-core-runtime/src/actor-web-node-runtime.ts
 - packages/actor-core-runtime/src/actor-system-impl.ts
-- packages/actor-core-runtime/src/serve-actor-web-node.ts
+- packages/actor-core-runtime/src/actor-system.ts
 - packages/actor-core-runtime/src/runtime-transport-protocol.ts
 - packages/actor-core-runtime/src/unit/cross-node-subscription-delivery.test.ts
 - packages/actor-core-runtime/src/unit/cross-node-subscription-integration.test.ts
@@ -50,6 +50,13 @@ RELEASE FEATURE (decided 2026-06-12: ships in the official release alongside the
   cross-node-subscriptions paragraph pointing at transport.md's delivery
   guarantees. Architect recommended the amendment over silently editing an
   out-of-scope file.
+- 2026-06-13: Replaced `serve-actor-web-node.ts` with `actor-system.ts` in scope.
+  Implementation found the `serve-actor-web-node.ts` `createActorSystem` call
+  needs no change — the topology wiring helper reads transport presence via the
+  new public `ActorSystem.isRemoteTransportConfigured()` method (plus
+  `registerTopologyRemoteSubscriber`/`sendTopologySubscribe`), so the public
+  interface file `actor-system.ts` is edited instead. Publisher-restart reconnect
+  replay is wired in `actor-system-impl.ts` (already in scope), not the host.
 
 ## Implementation plan
 
