@@ -2,7 +2,7 @@
   "fasRoot": "../FAS",
   "projectName": "actor-web",
   "projectType": "node",
-  "branchPrefix": "codex/fas/",
+  "branchPrefix": "fas/",
   "runtimeImplementerCommand": "",
   "runtimeNotificationCommand": "",
   "runtimeGitHubEnabled": false,
