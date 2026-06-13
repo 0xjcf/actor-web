@@ -11,3 +11,5 @@
 [2026-04-23] **Test command**: `pnpm test`. <!-- fas:meta v=1 cf=2026-06-12T16:57:02.974Z -->
 [2026-04-23] **Testing**: Uses Vitest for testing. <!-- fas:meta v=1 cf=2026-06-12T16:57:02.974Z -->
 [2026-04-23] **TypeScript**: TypeScript enabled with strict mode. <!-- fas:meta v=1 cf=2026-06-12T16:57:02.974Z -->
+
+[2026-06-13T15:44:19Z] [spike:direct-1781363862864] **Spike capture (spike-topology-independent-actors)**: ARCH: Actor-Web is already topology-independent at the actor-definition level; the success | criterion is met for local/worker/client-server. Every remaining gap is an additive package | or adapter — none require changing defineBehavior, defineActorWebTopology, the mailbox, or the | message contract. This validates the topology-independence direction. | DECISION: The vision conflates two orthogonal axes. Axis 1 = TRANSPORT / physical connectivity

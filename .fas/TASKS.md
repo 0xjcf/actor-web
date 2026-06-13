@@ -1490,6 +1490,62 @@
 - Owner: planner
 - Brief: .fas/tasks/optional-real-websocket-cross-node-subscription-smoke-test.md
 
+### Task: Add @actor-web/transport-broadcast-channel adapter
+
+- Title: Add @actor-web/transport-broadcast-channel adapter
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/add-actor-web-transport-broadcast-channel-adapter.md
+
+### Task: Add @actor-web/transport-webrtc peer adapter
+
+- Title: Add @actor-web/transport-webrtc peer adapter
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/add-actor-web-transport-webrtc-peer-adapter.md
+
+### Task: Add @actor-web/labs-mesh layer (membership + multi-hop routing + directory propagation)
+
+- Title: Add @actor-web/labs-mesh layer (membership + multi-hop routing + directory propagation)
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/add-actor-web-labs-mesh-layer-membership-multi-hop-routi.md
+
+### Task: Implement @actor-web/lattice (artifact + dependency coordination)
+
+- Title: Implement @actor-web/lattice (artifact + dependency coordination)
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/implement-actor-web-lattice-artifact-dependency-coordina.md
+
+### Task: Resolve virtual-actor-system single-node scope
+
+- Title: Resolve virtual-actor-system single-node scope
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/resolve-virtual-actor-system-single-node-scope.md
+
+### Task: Build three-mode (local/websocket/mesh) Mesh Pong example
+
+- Title: Build three-mode (local/websocket/mesh) Mesh Pong example
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/build-three-mode-local-websocket-mesh-mesh-pong-example.md
+
+### Task: Document at-most-once application send delivery contract
+
+- Title: Document at-most-once application send delivery contract
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/document-at-most-once-application-send-delivery-contract.md
+
 ## Template
 
 ### Task: `<short task title>`

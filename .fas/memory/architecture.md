@@ -5,3 +5,5 @@
 [2026-04-23] **External dependencies** (Node): `@actor-core/testing`, `xstate`, `@biomejs/biome`, `@types/node`, `@vitest/coverage-v8`, `@xstate/graph`, `happy-dom`, `tsup`, `typescript`, `vite` (11 total). <!-- fas:meta v=1 cf=2026-06-11T17:53:20.625Z -->
 [2026-04-23] **Module layout**: `docs/` (examples, spikes), `scripts/`, `src/` (testing), `tests/`. <!-- fas:meta v=1 cf=2026-06-11T17:53:20.625Z -->
 [2026-04-23] **Project type**: Node.js project `@actor-web/core`. <!-- fas:meta v=1 cf=2026-06-11T17:53:20.625Z -->
+
+[2026-06-13T15:44:19Z] [spike:direct-1781363862864] **Spike capture (spike-topology-independent-actors)**: Transport seam is first-class and pluggable: MessageTransport (actor-system.ts:680-712) | with versioned RuntimeTransportFrame envelope + handshake/ack/heartbeat | (runtime-transport-contract.ts:23-83). Implemented transports: in-memory | (testing/in-memory-message-transport.ts), MessagePort (message-port-transport.ts), | browser WebSocket (browser-websocket-message-transport.ts), node WebSocket
