@@ -470,6 +470,20 @@ export class ActorSystemImpl implements ActorSystem {
     string,
     OutboundRemoteProjectionSubscribers
   >();
+  // Publisher-side: cross-node topology subscription edges this node forwards
+  // emitted events to. Keyed on the local publisher actor path. Not persisted —
+  // recovered by subscriber-node re-handshake on reconnect.
+  private topologyRemoteSubscribers = new Map<
+    string,
+    Set<{ node: string; subscriberPath: string; events?: readonly string[] }>
+  >();
+  // Subscriber-side: cross-node edges this node initiated, kept so we can replay
+  // the subscribe handshakes when a publisher node reconnects. Keyed on the
+  // publisher node address. Not persisted.
+  private outboundTopologySubscriptions = new Map<
+    string,
+    Set<{ publisherPath: string; subscriberPath: string; events?: readonly string[] }>
+  >();
   private transportSubscriptionStop: (() => void) | null = null;
 
   // System event and cluster event actors
@@ -2373,6 +2387,7 @@ export class ActorSystemImpl implements ActorSystem {
     this.notifyActorEventSubscribers(address, eventMessage);
     this.emitEventToSubscribers(address, eventMessage);
     void this.publishRemoteActorEvent(address, eventMessage);
+    void this.forwardTopologyEventToRemoteSubscribers(address, eventMessage);
   }
 
   /**
@@ -2880,6 +2895,27 @@ export class ActorSystemImpl implements ActorSystem {
       case '__runtime.remote.event.update':
         this.handleRemoteEventProjection(message.payload);
         return;
+      case '__runtime.topology.subscribe':
+        // `source` (the verified sending node) is the subscriber's node — never
+        // trust a node field in the message body.
+        this.registerTopologyRemoteSubscriber({
+          publisherPath: message.publisherPath,
+          subscriberNode: source,
+          subscriberPath: message.subscriberPath,
+          ...(message.events ? { events: message.events } : {}),
+        });
+        return;
+      case '__runtime.topology.unsubscribe':
+        this.removeTopologyRemoteSubscriber(message.publisherPath, source, message.subscriberPath);
+        return;
+      case '__runtime.topology.event': {
+        const subscriberAddress = parseActorPath(message.subscriberPath);
+        if (subscriberAddress) {
+          const eventMessage = eventEnvelopeToActorMessage(message.payload.envelope);
+          await this.enqueueMessage(subscriberAddress, eventMessage);
+        }
+        return;
+      }
       case '__runtime.remote.stop.request':
         try {
           await this.stopActorInternal(message.address);
@@ -3182,6 +3218,10 @@ export class ActorSystemImpl implements ActorSystem {
       .map((watcher) => this.replayRemoteProjectionWatcher(watcher));
 
     await Promise.allSettled(watcherPromises);
+
+    // Re-establish cross-node topology subscription edges this node initiated to
+    // the reconnected publisher node (publisher-restart recovery, Decision 5).
+    await this.replayOutboundTopologySubscriptions(nodeAddress);
   }
 
   private async handleTransportDisconnected(nodeAddress: string): Promise<void> {
@@ -3220,6 +3260,7 @@ export class ActorSystemImpl implements ActorSystem {
     }
 
     this.removeOutboundRemoteProjectionSubscriptionsForNode(nodeAddress);
+    this.removeTopologyRemoteSubscribersForNode(nodeAddress);
   }
 
   private async replayRemoteProjectionWatcher(watcher: RemoteProjectionWatcher): Promise<void> {
@@ -3678,6 +3719,206 @@ export class ActorSystemImpl implements ActorSystem {
           payload,
           _timestamp: Date.now(),
           _version: '1.0.0',
+        })
+      )
+    );
+  }
+
+  isRemoteTransportConfigured(): boolean {
+    return Boolean(this.config.transport);
+  }
+
+  registerTopologyRemoteSubscriber(options: {
+    publisherPath: string;
+    subscriberNode: string;
+    subscriberPath: string;
+    events?: readonly string[];
+  }): void {
+    let edges = this.topologyRemoteSubscribers.get(options.publisherPath);
+    if (!edges) {
+      edges = new Set();
+      this.topologyRemoteSubscribers.set(options.publisherPath, edges);
+    }
+    // Replace any existing edge for the same (node, subscriberPath) pair so a
+    // re-handshake updates the event filter rather than duplicating the edge.
+    for (const existing of edges) {
+      if (
+        existing.node === options.subscriberNode &&
+        existing.subscriberPath === options.subscriberPath
+      ) {
+        edges.delete(existing);
+      }
+    }
+    edges.add({
+      node: options.subscriberNode,
+      subscriberPath: options.subscriberPath,
+      ...(options.events ? { events: options.events } : {}),
+    });
+  }
+
+  private removeTopologyRemoteSubscriber(
+    publisherPath: string,
+    subscriberNode: string,
+    subscriberPath: string
+  ): void {
+    const edges = this.topologyRemoteSubscribers.get(publisherPath);
+    if (!edges) {
+      return;
+    }
+    for (const existing of edges) {
+      if (existing.node === subscriberNode && existing.subscriberPath === subscriberPath) {
+        edges.delete(existing);
+      }
+    }
+    if (edges.size === 0) {
+      this.topologyRemoteSubscribers.delete(publisherPath);
+    }
+  }
+
+  private removeTopologyRemoteSubscribersForNode(node: string): void {
+    for (const [publisherPath, edges] of Array.from(this.topologyRemoteSubscribers.entries())) {
+      for (const existing of edges) {
+        if (existing.node === node) {
+          edges.delete(existing);
+        }
+      }
+      if (edges.size === 0) {
+        this.topologyRemoteSubscribers.delete(publisherPath);
+      }
+    }
+  }
+
+  /**
+   * Pure: select the cross-node topology edges that should receive an event of
+   * `eventType` from `publisherPath`. No clock, no I/O — the shell supplies the
+   * registered edges and performs the sends.
+   */
+  private matchTopologyRemoteSubscribers(
+    publisherPath: string,
+    eventType: string
+  ): Array<{ node: string; subscriberPath: string }> {
+    const edges = this.topologyRemoteSubscribers.get(publisherPath);
+    if (!edges) {
+      return [];
+    }
+    const matched: Array<{ node: string; subscriberPath: string }> = [];
+    for (const edge of edges) {
+      if (edge.events && edge.events.length > 0 && !edge.events.includes(eventType)) {
+        continue;
+      }
+      matched.push({ node: edge.node, subscriberPath: edge.subscriberPath });
+    }
+    return matched;
+  }
+
+  private async forwardTopologyEventToRemoteSubscribers(
+    address: ActorAddress,
+    event: ActorMessage
+  ): Promise<void> {
+    const matched = this.matchTopologyRemoteSubscribers(address.path, event.type);
+    if (matched.length === 0) {
+      return;
+    }
+    // Sequence 0: the topology channel must NOT consume the projection sequence
+    // counter — doing so would advance it for actors that also have a
+    // createActorSource projection watcher, falsely flipping that watcher to
+    // `degraded` on a gap. Topology delivery is at-most-once direct enqueue and
+    // carries no gap-detection contract, so it borrows a fixed sequence.
+    const payload = this.createEventProjection(address, event, 0);
+
+    await Promise.allSettled(
+      matched.map((edge) =>
+        this.sendTransportMessage(edge.node, {
+          type: '__runtime.topology.event',
+          subscriberPath: edge.subscriberPath,
+          payload,
+          _timestamp: Date.now(),
+          _version: '1.0.0',
+        }).catch((error) => {
+          // A dead peer must never throw into the emit turn or escape as an
+          // unhandled rejection (PR #27 incident). Drop + log.
+          log.warn('Cross-node subscription event dropped', {
+            publisherPath: address.path,
+            subscriberPath: edge.subscriberPath,
+            node: edge.node,
+            eventType: event.type,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        })
+      )
+    );
+  }
+
+  async sendTopologySubscribe(options: {
+    publisherNode: string;
+    publisherPath: string;
+    subscriberPath: string;
+    events?: readonly string[];
+  }): Promise<() => Promise<void>> {
+    let intents = this.outboundTopologySubscriptions.get(options.publisherNode);
+    if (!intents) {
+      intents = new Set();
+      this.outboundTopologySubscriptions.set(options.publisherNode, intents);
+    }
+    const intent = {
+      publisherPath: options.publisherPath,
+      subscriberPath: options.subscriberPath,
+      ...(options.events ? { events: options.events } : {}),
+    };
+    intents.add(intent);
+
+    await this.sendTransportMessage(options.publisherNode, {
+      type: '__runtime.topology.subscribe',
+      publisherPath: options.publisherPath,
+      subscriberPath: options.subscriberPath,
+      ...(options.events ? { events: [...options.events] } : {}),
+      _timestamp: Date.now(),
+      _version: '1.0.0',
+    });
+
+    return async () => {
+      intents?.delete(intent);
+      if (intents && intents.size === 0) {
+        this.outboundTopologySubscriptions.delete(options.publisherNode);
+      }
+      await this.sendTransportMessage(options.publisherNode, {
+        type: '__runtime.topology.unsubscribe',
+        publisherPath: options.publisherPath,
+        subscriberPath: options.subscriberPath,
+        _timestamp: Date.now(),
+        _version: '1.0.0',
+      }).catch((error) => {
+        log.warn('Cross-node subscription unsubscribe failed', {
+          publisherNode: options.publisherNode,
+          publisherPath: options.publisherPath,
+          subscriberPath: options.subscriberPath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    };
+  }
+
+  private async replayOutboundTopologySubscriptions(publisherNode: string): Promise<void> {
+    const intents = this.outboundTopologySubscriptions.get(publisherNode);
+    if (!intents || intents.size === 0) {
+      return;
+    }
+    await Promise.allSettled(
+      Array.from(intents).map((intent) =>
+        this.sendTransportMessage(publisherNode, {
+          type: '__runtime.topology.subscribe',
+          publisherPath: intent.publisherPath,
+          subscriberPath: intent.subscriberPath,
+          ...(intent.events ? { events: [...intent.events] } : {}),
+          _timestamp: Date.now(),
+          _version: '1.0.0',
+        }).catch((error) => {
+          log.warn('Cross-node subscription replay failed', {
+            publisherNode,
+            publisherPath: intent.publisherPath,
+            subscriberPath: intent.subscriberPath,
+            error: error instanceof Error ? error.message : String(error),
+          });
         })
       )
     );

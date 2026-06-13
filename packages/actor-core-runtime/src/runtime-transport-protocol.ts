@@ -141,6 +141,37 @@ export interface RuntimeRemoteEventUpdateMessage extends RuntimeProtocolMessageB
   payload: RuntimeEventProjection;
 }
 
+/**
+ * Cross-node topology subscription handshake. Sent by a subscriber node to the
+ * node hosting `publisherPath` so the publisher node records the edge and
+ * forwards future emits. Carries the subscriber's actor path — the routing
+ * target the projection-stream `RuntimeRemoteEventSubscribeMessage` lacks.
+ */
+export interface RuntimeTopologySubscribeMessage extends RuntimeProtocolMessageBase {
+  type: '__runtime.topology.subscribe';
+  publisherPath: string;
+  subscriberPath: string;
+  events?: string[];
+}
+
+/** Teardown counterpart of {@link RuntimeTopologySubscribeMessage}. */
+export interface RuntimeTopologyUnsubscribeMessage extends RuntimeProtocolMessageBase {
+  type: '__runtime.topology.unsubscribe';
+  publisherPath: string;
+  subscriberPath: string;
+}
+
+/**
+ * A forwarded emitted event for a cross-node topology subscriber. Reuses the
+ * {@link RuntimeEventProjection} envelope and adds the target subscriber path
+ * so the subscriber node can enqueue it into the right local mailbox.
+ */
+export interface RuntimeTopologyEventMessage extends RuntimeProtocolMessageBase {
+  type: '__runtime.topology.event';
+  subscriberPath: string;
+  payload: RuntimeEventProjection;
+}
+
 export interface RuntimeRemoteStopRequestMessage extends RuntimeProtocolMessageBase {
   type: '__runtime.remote.stop.request';
   requestId: string;
@@ -184,6 +215,9 @@ export type RuntimeProtocolMessage =
   | RuntimeRemoteEventSubscribeMessage
   | RuntimeRemoteEventUnsubscribeMessage
   | RuntimeRemoteEventUpdateMessage
+  | RuntimeTopologySubscribeMessage
+  | RuntimeTopologyUnsubscribeMessage
+  | RuntimeTopologyEventMessage
   | RuntimeRemoteStopRequestMessage
   | RuntimeRemoteStopResponseMessage
   | RuntimeRemoteStatsRequestMessage

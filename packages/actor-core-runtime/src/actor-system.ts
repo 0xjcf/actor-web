@@ -541,6 +541,41 @@ export interface ActorSystem {
   join(nodes: string[]): Promise<void>;
 
   /**
+   * True when this system was constructed with a runtime transport, i.e. it can
+   * participate in cross-node delivery. Used by topology wiring to decide
+   * whether a cross-node subscription edge can be established or must throw.
+   */
+  isRemoteTransportConfigured(): boolean;
+
+  /**
+   * Register a cross-node topology subscription edge initiated by a remote
+   * subscriber node. The subscriber node calls this on the publisher's node via
+   * the transport; here it records the edge so future emits forward to it.
+   *
+   * @internal host/topology wiring — not a user-facing subscribe.
+   */
+  registerTopologyRemoteSubscriber(options: {
+    publisherPath: string;
+    subscriberNode: string;
+    subscriberPath: string;
+    events?: readonly string[];
+  }): void;
+
+  /**
+   * Subscriber-node side: send a cross-node topology subscribe handshake to the
+   * node hosting `publisherPath`. Returns a teardown that sends the matching
+   * unsubscribe. Throws if no transport is configured.
+   *
+   * @internal host/topology wiring.
+   */
+  sendTopologySubscribe(options: {
+    publisherNode: string;
+    publisherPath: string;
+    subscriberPath: string;
+    events?: readonly string[];
+  }): Promise<() => Promise<void>>;
+
+  /**
    * Leave the cluster
    */
   leave(): Promise<void>;
