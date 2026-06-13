@@ -1377,8 +1377,8 @@
 
 - Title: Wire topology supervisor trees into the runtime failure path
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/wire-topology-supervisor-trees-into-the-runtime-failure-path.md
 - Automation mode: advisory
 - Verification lane: fast
@@ -1419,6 +1419,47 @@
 - Status: backlog
 - Owner: planner
 - Brief: .fas/tasks/cross-node-subscription-delivery-forward-emitted-events-to.md
+
+### Task: Cap supervision restart backoff with an upper bound and jitter
+
+- Title: Cap supervision restart backoff with an upper bound and jitter
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/cap-supervision-restart-backoff-with-an-upper-bound-and-jitt.md
+
+### Task: Enrich actorRestarted system event with the triggering error
+
+- Title: Enrich actorRestarted system event with the triggering error
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/enrich-actorrestarted-system-event-with-the-triggering-error.md
+
+### Task: Emit a system event for re-entrancy-swallowed supervision failures
+
+- Title: Emit a system event for re-entrancy-swallowed supervision failures
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/emit-a-system-event-for-re-entrancy-swallowed-supervision-fa.md
+
+### Task: Wire topology supervisor groups into the browser-local startRuntime host
+
+- Title: Wire topology supervisor groups into the browser-local startRuntime host
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/wire-topology-supervisor-groups-into-the-browser-local-start.md
+- Automation mode: advisory
+
+### Task: Deprecate and remove the standalone Supervisor and SupervisorTree classes
+
+- Title: Deprecate and remove the standalone Supervisor and SupervisorTree classes
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/deprecate-and-remove-the-standalone-supervisor-and-superviso.md
 
 ## Template
 
