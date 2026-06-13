@@ -1002,7 +1002,7 @@ describe('serveNode topology subscriptions', () => {
     }
   });
 
-  it('fails loudly when a subscription spans nodes', async () => {
+  it('wires a cross-node subscription when a transport is configured', async () => {
     const topology = defineActorWebTopology({
       nodes: {
         server: node('server-node'),
@@ -1023,8 +1023,15 @@ describe('serveNode topology subscriptions', () => {
       subscriptions: [{ from: 'publisher', to: ['receiver'] }],
     });
 
-    await expect(serveNode(topology, { node: 'server' })).rejects.toThrow(
-      'spans nodes "server" and "worker"'
-    );
+    // serveNode always configures a node transport, so a cross-node
+    // subscription now wires instead of failing loudly. Serving the
+    // publisher-owning node is a no-op for the edge (the subscriber node
+    // initiates), so this resolves cleanly.
+    const served = await serveNode(topology, { node: 'server' });
+    try {
+      expect(served.system.isRemoteTransportConfigured()).toBe(true);
+    } finally {
+      await served.stop();
+    }
   });
 });

@@ -1,4 +1,4 @@
-# Cross-node subscription delivery: forward emitted events to
+# Cross-node subscription delivery: forward emitted events to remote-node subscribers
 
 ## Source
 
@@ -29,12 +29,43 @@ RELEASE FEATURE (decided 2026-06-12: ships in the official release alongside the
 
 - packages/actor-core-runtime/src/actor-web-node-runtime.ts
 - packages/actor-core-runtime/src/actor-system-impl.ts
-- packages/actor-core-runtime/src/serve-actor-web-node.ts
+- packages/actor-core-runtime/src/actor-system.ts
+- packages/actor-core-runtime/src/runtime-transport-protocol.ts
+- packages/actor-core-runtime/src/unit/cross-node-subscription-delivery.test.ts
+- packages/actor-core-runtime/src/unit/cross-node-subscription-integration.test.ts
+- packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts
+- packages/actor-core-runtime/src/unit/start-actor-web-node.test.ts
 - docs/site/concepts/transport.md
+- docs/site/concepts/subscriptions-and-events.md
 
 ## Scope Amendments
 
-- None.
+- 2026-06-13: Added `runtime-transport-protocol.ts` — the three new wire
+  message types (`__runtime.topology.subscribe`/`.event`/`.unsubscribe`) must
+  be added to the `RuntimeProtocolMessage` union; the file was reference-only
+  demoted in planning but editing it is unavoidable for the feature.
+- 2026-06-13: Added the two new unit/integration test files per the architect's
+  scope request (sanctioned by the TDD acceptance criteria but absent from the
+  generated affected-file hints).
+- 2026-06-13: Added `docs/site/concepts/subscriptions-and-events.md` — the brief
+  prose names it; it currently has no cross-node content and needs a short
+  cross-node-subscriptions paragraph pointing at transport.md's delivery
+  guarantees. Architect recommended the amendment over silently editing an
+  out-of-scope file.
+- 2026-06-13: Replaced `serve-actor-web-node.ts` with `actor-system.ts` in scope.
+  Implementation found the `serve-actor-web-node.ts` `createActorSystem` call
+  needs no change — the topology wiring helper reads transport presence via the
+  new public `ActorSystem.isRemoteTransportConfigured()` method (plus
+  `registerTopologyRemoteSubscriber`/`sendTopologySubscribe`), so the public
+  interface file `actor-system.ts` is edited instead. Publisher-restart reconnect
+  replay is wired in `actor-system-impl.ts` (already in scope), not the host.
+- 2026-06-13: Added `serve-actor-web-node.test.ts` and `start-actor-web-node.test.ts`
+  — both had a "fails loudly when a subscription spans nodes" test asserting the
+  removed contract. serveNode/startActorWebNode always configure a transport, so
+  cross-node now wires; the tests are rewritten to assert that. Also surfaced a
+  robustness fix: the initial cross-node handshake send is now best-effort
+  (caught + logged) so a subscriber node can start before the publisher node is
+  connected — the recorded intent is replayed on transport-connected.
 
 ## Implementation plan
 

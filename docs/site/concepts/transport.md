@@ -28,6 +28,15 @@ acknowledgement/retry for *control* traffic, but user `send` semantics stay
 at-most-once unless you build stronger guarantees on top. Design behaviors to
 tolerate a dropped message rather than assume exactly-once.
 
+**Cross-node subscription forwarding** carries the same guarantee. When a
+topology `subscription` spans two nodes, the publisher node forwards each
+emitted event to the subscriber actor on the peer node over this transport —
+at-most-once, deduplicated only by the bounded frame window. Events emitted
+before the subscriber's cross-node handshake is established, or while the peer
+is down, are **dropped, not buffered**: there is no replay queue. The
+subscriber node re-establishes the edge on reconnect, but events missed during
+the outage stay missed.
+
 ## Membership & discovery
 
 Nodes find each other through static peer maps or a runtime peer-discovery
@@ -39,6 +48,9 @@ is handled cleanly.
 
 Outbound queues are bounded: a slow or saturated peer can't grow memory without
 limit. Overflow surfaces as a rejected `send` with telemetry, not a silent leak.
+Cross-node subscription forwards ride the same bounded queue: a forward to a
+down or saturated peer drops and is logged, surfacing through the peer status —
+it never blocks the publisher's emit or grows memory.
 
 ## Practical guidance
 
