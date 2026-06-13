@@ -3867,6 +3867,14 @@ export class ActorSystemImpl implements ActorSystem {
     };
     intents.add(intent);
 
+    // A missing transport is the loud no-transport contract (cross-node needs a
+    // transport). With a transport present, the initial handshake is best-effort:
+    // the intent is recorded above and replayed on transport-connected, so a
+    // not-yet-connected publisher node at start must not fail wiring (nodes can
+    // start in any order).
+    if (!this.config.transport) {
+      throw new Error('Actor system transport is not configured');
+    }
     await this.sendTransportMessage(options.publisherNode, {
       type: '__runtime.topology.subscribe',
       publisherPath: options.publisherPath,
@@ -3874,6 +3882,13 @@ export class ActorSystemImpl implements ActorSystem {
       ...(options.events ? { events: [...options.events] } : {}),
       _timestamp: Date.now(),
       _version: '1.0.0',
+    }).catch((error) => {
+      log.warn('Cross-node subscription handshake deferred until peer connects', {
+        publisherNode: options.publisherNode,
+        publisherPath: options.publisherPath,
+        subscriberPath: options.subscriberPath,
+        error: error instanceof Error ? error.message : String(error),
+      });
     });
 
     return async () => {

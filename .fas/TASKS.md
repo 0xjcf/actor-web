@@ -1416,8 +1416,8 @@
 
 - Title: Cross-node subscription delivery: forward emitted events to remote-node subscribers
 - Mode: 6-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/cross-node-subscription-delivery-forward-emitted-events-to.md
 - Verification lane: fast
 - Policy sensitivity: standard
