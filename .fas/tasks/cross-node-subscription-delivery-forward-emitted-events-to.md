@@ -1,4 +1,4 @@
-# Cross-node subscription delivery: forward emitted events to
+# Cross-node subscription delivery: forward emitted events to remote-node subscribers
 
 ## Source
 
