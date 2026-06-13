@@ -12,6 +12,7 @@ import type { MessageTransport } from '../actor-system.js';
 import { ActorSystemImpl } from '../actor-system-impl.js';
 import { wireOwnedActorWebSubscriptions } from '../actor-web-node-runtime.js';
 import { createActorSource } from '../integration/actor-source.js';
+import { Logger } from '../logger.js';
 import { createInMemoryMessageTransportNetwork } from '../testing/in-memory-message-transport.js';
 import { actor, defineActorWebTopology, node } from '../topology.js';
 import { defineBehavior } from '../unified-actor-builder.js';
@@ -283,6 +284,41 @@ describe('cross-node topology subscription delivery', () => {
     // Edge pruned: re-emit after a fresh handshake delivers; the outage emit did not.
     const received = await collector.ask<string[]>({ type: 'GET' });
     expect(received).not.toContain('TICK');
+  });
+
+  it('logs operator-facing telemetry when a forward to an unreachable node fails', async () => {
+    await bootTwoNodes();
+    if (!publisherSystem) throw new Error('systems not booted');
+
+    const publisher = await publisherSystem.spawn(createPublisherBehavior(), { id: 'pub' });
+    // Register an edge to a node the publisher's transport cannot reach, so the
+    // forward send fails — this is the drop the operator must see telemetry for.
+    publisherSystem.registerTopologyRemoteSubscriber({
+      publisherPath: publisher.address.path,
+      subscriberNode: 'ghost-node',
+      subscriberPath: 'actor://ghost-node/actor/sub',
+    });
+
+    // The drop is an operator-facing telemetry contract — pin the warn line so a
+    // refactor cannot silently change the message or fields operators alert on.
+    const warnSpy = vi.spyOn(Logger, 'warn');
+    try {
+      await publisher.send({ type: 'GO', n: 1 });
+      await publisherSystem.flush();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        'Cross-node subscription event dropped',
+        expect.objectContaining({
+          publisherPath: publisher.address.path,
+          subscriberPath: 'actor://ghost-node/actor/sub',
+          node: 'ghost-node',
+          eventType: 'TICK',
+        })
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
 

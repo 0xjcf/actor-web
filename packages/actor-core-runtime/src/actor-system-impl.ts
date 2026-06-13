@@ -2913,6 +2913,11 @@ export class ActorSystemImpl implements ActorSystem {
         if (subscriberAddress) {
           const eventMessage = eventEnvelopeToActorMessage(message.payload.envelope);
           await this.enqueueMessage(subscriberAddress, eventMessage);
+        } else {
+          log.warn('Dropped cross-node topology event with an unparseable subscriber path', {
+            source,
+            subscriberPath: message.subscriberPath,
+          });
         }
         return;
       }
