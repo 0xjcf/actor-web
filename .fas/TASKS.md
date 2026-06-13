@@ -1416,7 +1416,7 @@
 
 - Title: Cross-node subscription delivery: forward emitted events to remote-node subscribers
 - Mode: 6-agent
-- Status: implementing
+- Status: done
 - Owner: implementer
 - Brief: .fas/tasks/cross-node-subscription-delivery-forward-emitted-events-to.md
 - Verification lane: fast
@@ -1463,6 +1463,32 @@
 - Status: backlog
 - Owner: planner
 - Brief: .fas/tasks/deprecate-and-remove-the-standalone-supervisor-and-superviso.md
+
+### Task: Cross-node subscription parity for the browser-local startRuntime path
+
+- Title: Cross-node subscription parity for the browser-local startRuntime path
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/cross-node-subscription-parity-for-the-browser-local-startru.md
+- Automation mode: advisory
+
+### Task: Fan-out and self-loop cross-node subscription edge coverage
+
+- Title: Fan-out and self-loop cross-node subscription edge coverage
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/fan-out-and-self-loop-cross-node-subscription-edge-coverage.md
+- Automation mode: advisory
+
+### Task: Optional real-WebSocket cross-node subscription smoke test (out-of-band from verify)
+
+- Title: Optional real-WebSocket cross-node subscription smoke test (out-of-band from verify)
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/optional-real-websocket-cross-node-subscription-smoke-test.md
 
 ## Template
 
