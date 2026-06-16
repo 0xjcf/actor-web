@@ -1,19 +1,19 @@
-# Add @actor-web/transport-broadcast-channel adapter
+# Transport conformance suite: parametrized MessageTransport c
 
 ## Source
-Created with `fas create-task` on 2026-06-13.
+Created with `fas create-task` on 2026-06-16.
 
 ## Problem
-Spike direct-1781363862864 gap. No BroadcastChannel transport exists for same-origin tabs/workers. Implement MessageTransport (packages/actor-core-runtime/src/actor-system.ts:680-712) as a separate adapter package. Smallest real Axis-1 extension; validates the transport contract suffices for a new mechanism.
+Prerequisite for all new transports (spike direct-1781363862864 readiness audit). No shared conformance suite exists; each transport is tested ad-hoc and the in-memory test transport re-trips the PR#27 unhandled-rejection hazard. Build one parametrized suite every MessageTransport must pass: ack+timeout retry, heartbeat timeout detection, idempotency dedup window, frame ordering/sequence, safe (non-awaited, error-wrapped) listener dispatch, connect/disconnect/isConnected/getConnectedNodes semantics. Run it against browser + node websocket transports and the in-memory transport first to lock current behavior (characterization), so the transport-core extraction can refactor under green.
 
 ## Acceptance criteria
-- The new functionality works as described.
-- Existing behavior is not broken.
+- The change is verified and does not introduce regressions.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
 - DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.
 - The work is tracked in `.fas/TASKS.md`.
 - The task has a clear implementation and verification plan before execution starts.
+- The task is queued in `.fas/queue/tasks.json` for the runtime.
 
 ## Proposed solution
 - Use the supplied problem context, acceptance criteria, and affected-file hints to draft the concrete implementation approach during planning.

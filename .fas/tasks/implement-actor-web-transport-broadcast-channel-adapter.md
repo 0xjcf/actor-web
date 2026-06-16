@@ -1,10 +1,10 @@
-# Add @actor-web/transport-webrtc peer adapter
+# Implement @actor-web/transport-broadcast-channel adapter
 
 ## Source
-Created with `fas create-task` on 2026-06-13.
+Created with `fas create-task` on 2026-06-16.
 
 ## Problem
-Spike direct-1781363862864 gap. No peer/WebRTC transport exists. Implement MessageTransport with a pluggable signaling hook as a separate adapter package.
+Spike direct-1781363862864. Same-origin cross-tab/worker transport over BroadcastChannel, zero server. Implement MessageTransport on the shared transport core; address = channel/peer id (opaque, fits contract). Smallest real Axis-1 transport; proves the extracted core. Today two independent tabs cannot share actors without a websocket server.
 
 ## Acceptance criteria
 - The new functionality works as described.
@@ -14,6 +14,7 @@ Spike direct-1781363862864 gap. No peer/WebRTC transport exists. Implement Messa
 - DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.
 - The work is tracked in `.fas/TASKS.md`.
 - The task has a clear implementation and verification plan before execution starts.
+- The task is queued in `.fas/queue/tasks.json` for the runtime.
 
 ## Proposed solution
 - Use the supplied problem context, acceptance criteria, and affected-file hints to draft the concrete implementation approach during planning.
