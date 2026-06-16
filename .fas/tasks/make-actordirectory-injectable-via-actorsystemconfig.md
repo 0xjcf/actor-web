@@ -1,19 +1,19 @@
-# Add @actor-web/labs-mesh layer (membership + multi-hop routi
+# Make ActorDirectory injectable via ActorSystemConfig
 
 ## Source
-Created with `fas create-task` on 2026-06-13.
+Created with `fas create-task` on 2026-06-16.
 
 ## Problem
-Spike direct-1781363862864 gap. deliverMessageRemote (packages/actor-core-runtime/src/actor-system-impl.ts:4052-4064) sends only to a directly connected node; membership is a static peers list; directory sync is point-to-point. A labs package needs gossip membership, multi-hop next-hop routing over MessageTransport, and cluster-wide directory propagation. Largest item; decide virtual-actor distribution here.
+Mesh prerequisite (spike direct-1781363862864 readiness audit). ActorDirectory is an interface (actor-system.ts:631-671) but ActorSystemImpl hardcodes 'new DistributedActorDirectory(...)' (~line 570). Add config.directory.implementation slot and use 'config.directory?.implementation ?? new DistributedActorDirectory(...)'. Enables a gossip directory to replace the point-to-point one without patching core. Small, foundational.
 
 ## Acceptance criteria
-- The new functionality works as described.
-- Existing behavior is not broken.
+- The change is verified and does not introduce regressions.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
 - DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.
 - The work is tracked in `.fas/TASKS.md`.
 - The task has a clear implementation and verification plan before execution starts.
+- The task is queued in `.fas/queue/tasks.json` for the runtime.
 
 ## Proposed solution
 - Use the supplied problem context, acceptance criteria, and affected-file hints to draft the concrete implementation approach during planning.

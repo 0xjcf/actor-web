@@ -1490,30 +1490,6 @@
 - Owner: planner
 - Brief: .fas/tasks/optional-real-websocket-cross-node-subscription-smoke-test.md
 
-### Task: Add @actor-web/transport-broadcast-channel adapter
-
-- Title: Add @actor-web/transport-broadcast-channel adapter
-- Mode: single-agent
-- Status: backlog
-- Owner: planner
-- Brief: .fas/tasks/add-actor-web-transport-broadcast-channel-adapter.md
-
-### Task: Add @actor-web/transport-webrtc peer adapter
-
-- Title: Add @actor-web/transport-webrtc peer adapter
-- Mode: single-agent
-- Status: backlog
-- Owner: planner
-- Brief: .fas/tasks/add-actor-web-transport-webrtc-peer-adapter.md
-
-### Task: Add @actor-web/labs-mesh layer (membership + multi-hop routing + directory propagation)
-
-- Title: Add @actor-web/labs-mesh layer (membership + multi-hop routing + directory propagation)
-- Mode: single-agent
-- Status: backlog
-- Owner: planner
-- Brief: .fas/tasks/add-actor-web-labs-mesh-layer-membership-multi-hop-routi.md
-
 ### Task: Resolve virtual-actor-system single-node scope
 
 - Title: Resolve virtual-actor-system single-node scope
@@ -1537,6 +1513,71 @@
 - Status: backlog
 - Owner: planner
 - Brief: .fas/tasks/document-at-most-once-application-send-delivery-contract.md
+
+### Task: Transport conformance suite: parametrized MessageTransport contract tests
+
+- Title: Transport conformance suite: parametrized MessageTransport contract tests
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/transport-conformance-suite-parametrized-messagetransport-c.md
+
+### Task: Make ActorDirectory injectable via ActorSystemConfig
+
+- Title: Make ActorDirectory injectable via ActorSystemConfig
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/make-actordirectory-injectable-via-actorsystemconfig.md
+
+### Task: Add next-hop routing hook in deliverMessageRemote
+
+- Title: Add next-hop routing hook in deliverMessageRemote
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/add-next-hop-routing-hook-in-delivermessageremote.md
+
+### Task: Formalize remote node identity and collision protection
+
+- Title: Formalize remote node identity and collision protection
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/formalize-remote-node-identity-and-collision-protection.md
+
+### Task: Extract shared transport core (framing/ack-retry/queue/heartbeat/stats + safe listener dispatch)
+
+- Title: Extract shared transport core (framing/ack-retry/queue/heartbeat/stats + safe listener dispatch)
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/extract-shared-transport-core-framing-ack-retry-queue-heart.md
+- Automation mode: advisory
+
+### Task: Implement @actor-web/transport-broadcast-channel adapter
+
+- Title: Implement @actor-web/transport-broadcast-channel adapter
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/implement-actor-web-transport-broadcast-channel-adapter.md
+
+### Task: Implement @actor-web/transport-webrtc peer adapter
+
+- Title: Implement @actor-web/transport-webrtc peer adapter
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/implement-actor-web-transport-webrtc-peer-adapter.md
+
+### Task: Implement @actor-web/labs-mesh (gossip membership + multi-hop routing + directory propagation)
+
+- Title: Implement @actor-web/labs-mesh (gossip membership + multi-hop routing + directory propagation)
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/implement-actor-web-labs-mesh-gossip-membership-multi-ho.md
 
 ## Template
 
