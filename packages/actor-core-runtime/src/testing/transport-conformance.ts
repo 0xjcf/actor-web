@@ -17,18 +17,18 @@ import { describe, expect, it } from 'vitest';
 import type { ActorMessage, MessageTransport } from '../actor-system.js';
 
 /**
- * Contract features a transport claims to honor. Cases guarded by a `false`
- * flag are skipped, documenting a known gap rather than failing.
+ * Observable contract features a transport claims to honor. Cases guarded by a
+ * `false` flag are skipped, documenting a known gap rather than failing.
+ *
+ * Scope is deliberately the *black-box* contract reachable through the
+ * {@link MessageTransport} interface. Internal reliability behaviors
+ * (ack/retry, idempotency dedup, heartbeat timeout) require fault injection the
+ * interface does not expose and are covered by each transport's own white-box
+ * unit tests, not here.
  */
 export interface TransportConformanceCapabilities {
   /** Messages to a single peer are delivered in send order. */
   readonly ordering: boolean;
-  /** Duplicate frames (same message id) are delivered at most once. */
-  readonly idempotency: boolean;
-  /** Internal frames are acknowledged and retried on ack timeout. */
-  readonly ack: boolean;
-  /** A silent peer is detected and torn down via heartbeat timeout. */
-  readonly heartbeat: boolean;
   /** A throwing or rejecting subscriber neither escapes nor blocks others. */
   readonly safeDispatch: boolean;
 }
