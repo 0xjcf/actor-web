@@ -110,6 +110,7 @@ Acceptance:
 
 ## Depends on
 
-Built only after the transport/mesh track completes: the shared transport core
-(`defineTransport` + `fromDuplex`), `@actor-web/transport-broadcast-channel`,
-`@actor-web/transport-webrtc`, and `@actor-web/labs-mesh`.
+Built after the transports it exercises land: the shared transport core
+(`defineTransport` + `fromDuplex`), `@actor-web/transport-broadcast-channel`, and
+`@actor-web/labs-mesh` (websocket already exists). `@actor-web/transport-webrtc` is a
+sibling transport validated by its own package tests, not gated by this example.
