@@ -1,12 +1,15 @@
 # Transport conformance suite: parametrized MessageTransport c
 
 ## Source
+
 Created with `fas create-task` on 2026-06-16.
 
 ## Problem
+
 Prerequisite for all new transports (spike direct-1781363862864 readiness audit). No shared conformance suite exists; each transport is tested ad-hoc and the in-memory test transport re-trips the PR#27 unhandled-rejection hazard. Build one parametrized suite every MessageTransport must pass: ack+timeout retry, heartbeat timeout detection, idempotency dedup window, frame ordering/sequence, safe (non-awaited, error-wrapped) listener dispatch, connect/disconnect/isConnected/getConnectedNodes semantics. Run it against browser + node websocket transports and the in-memory transport first to lock current behavior (characterization), so the transport-core extraction can refactor under green.
 
 ## Acceptance criteria
+
 - The change is verified and does not introduce regressions.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
@@ -16,35 +19,45 @@ Prerequisite for all new transports (spike direct-1781363862864 readiness audit)
 - The task is queued in `.fas/queue/tasks.json` for the runtime.
 
 ## Proposed solution
+
 - Use the supplied problem context, acceptance criteria, and affected-file hints to draft the concrete implementation approach during planning.
 
 ## Alternatives considered
+
 - None recorded at task creation. Add rejected approaches during planning if scope tradeoffs appear.
 
 ## Affected files
+
 - Scope unknown.
 
 ## Scope Amendments
+
 - None.
 
 ## Implementation plan
+
 - Convert the supplied context into a scoped implementation plan before editing.
 - Refresh affected-file scope before implementation if the generated hints are incomplete.
 
 ## Verification plan
+
 - Run `fas validate-task` for the inner-loop verification gate.
 - Run `.fas/scripts/verify.sh --full` at the final release-quality gate when tracked files change.
 
 ## Risks
+
 - Validate generated scope, acceptance criteria, and verification evidence before closeout to avoid workflow drift.
 
 ## Dependencies
+
 - None known at task creation.
 
 ## Open questions
+
 - None captured at task creation.
 
 ## Artifact links
+
 - Planning: `.fas/state/planning.json`
 - Task packet: `.fas/state/task-packet.json`
 - Commit plan: `.fas/state/commit-plan.json`

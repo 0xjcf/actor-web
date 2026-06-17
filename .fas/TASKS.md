@@ -1510,9 +1510,12 @@
 
 - Title: Transport conformance suite: parametrized MessageTransport contract tests
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/transport-conformance-suite-parametrized-messagetransport-c.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Make ActorDirectory injectable via ActorSystemConfig
 
