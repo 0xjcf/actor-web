@@ -1,4 +1,4 @@
-# Transport conformance suite: parametrized MessageTransport c
+# Transport conformance suite: parametrized MessageTransport contract tests
 
 ## Source
 
@@ -28,11 +28,16 @@ Prerequisite for all new transports (spike direct-1781363862864 readiness audit)
 
 ## Affected files
 
-- Scope unknown.
+- packages/actor-core-runtime/src/testing/transport-conformance.ts
+- packages/actor-core-runtime/src/unit/transport-conformance.test.ts
+- packages/actor-core-runtime/src/unit/transport-conformance-node-ws.test.ts
+- packages/actor-core-runtime/src/unit/transport-conformance-browser-ws.test.ts
 
 ## Scope Amendments
 
-- None.
+- Type: scope-refresh
+- Added at: 2026-06-17
+- Added paths: packages/actor-core-runtime/src/testing/transport-conformance.ts, packages/actor-core-runtime/src/unit/transport-conformance.test.ts, packages/actor-core-runtime/src/unit/transport-conformance-node-ws.test.ts, packages/actor-core-runtime/src/unit/transport-conformance-browser-ws.test.ts
 
 ## Implementation plan
 
