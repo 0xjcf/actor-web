@@ -1498,14 +1498,6 @@
 - Owner: planner
 - Brief: .fas/tasks/resolve-virtual-actor-system-single-node-scope.md
 
-### Task: Build three-mode (local/websocket/mesh) Mesh Pong example
-
-- Title: Build three-mode (local/websocket/mesh) Mesh Pong example
-- Mode: single-agent
-- Status: backlog
-- Owner: planner
-- Brief: .fas/tasks/build-three-mode-local-websocket-mesh-mesh-pong-example.md
-
 ### Task: Document at-most-once application send delivery contract
 
 - Title: Document at-most-once application send delivery contract
@@ -1578,6 +1570,14 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/implement-actor-web-labs-mesh-gossip-membership-multi-ho.md
+
+### Task: Build Mesh Pong example (UI demo + headless transport-parity test)
+
+- Title: Build Mesh Pong example (UI demo + headless transport-parity test)
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/build-mesh-pong-example-ui-demo-headless-transport-parity.md
 
 ## Template
 

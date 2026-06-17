@@ -1,10 +1,10 @@
-# Build three-mode (local/websocket/mesh) Mesh Pong example
+# Build Mesh Pong example (UI demo + headless transport-parity
 
 ## Source
-Created with `fas create-task` on 2026-06-13.
+Created with `fas create-task` on 2026-06-17.
 
 ## Problem
-Spike direct-1781363862864 gap. No example proves the same actors run unchanged across local, websocket, and mesh. examples/ cover only local and websocket (fas-agent-loop, ignite-headless-host). Build Mesh Pong; use it to expose exactly what a mesh transport must provide.
+Spike direct-1781363862864. Terminal validation node for the transport/mesh track. Build examples/mesh-pong per its target-state design at examples/mesh-pong/README.md: ball/paddle/score behaviors defined once (transport-agnostic), one shared defineActorWebTopology, four startup modes (local/websocket/broadcast/mesh) that each change exactly one transport line. Two deliverables: (1) a headless behavior-parity test (mesh-pong.test.ts) that drives the SAME topology with a deterministic ball seed across local + broadcast + websocket(loopback) and asserts identical observable score sequences — this is the CI validation gate for topology independence; (2) a playable UI demo (ui/) with a transport switcher mirroring the spike showcase. Acceptance: behaviors import no transport/runtime/topology module; switching transport changes one line with zero behavior/topology edits; parity test passes for local/broadcast/websocket; mesh mode runs across 3 peers with no server.
 
 ## Acceptance criteria
 - The change is verified and does not introduce regressions.
@@ -13,6 +13,7 @@ Spike direct-1781363862864 gap. No example proves the same actors run unchanged 
 - DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.
 - The work is tracked in `.fas/TASKS.md`.
 - The task has a clear implementation and verification plan before execution starts.
+- The task is queued in `.fas/queue/tasks.json` for the runtime.
 
 ## Proposed solution
 - Use the supplied problem context, acceptance criteria, and affected-file hints to draft the concrete implementation approach during planning.
