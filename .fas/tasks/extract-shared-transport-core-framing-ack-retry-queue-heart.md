@@ -1,4 +1,4 @@
-# Extract shared transport core (framing/ack-retry/queue/heart
+# Extract shared transport core (framing/ack-retry/queue/heartbeat/stats + safe listener dispatch)
 
 ## Source
 Created with `fas create-task` on 2026-06-16.
