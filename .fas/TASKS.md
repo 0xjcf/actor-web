@@ -1541,7 +1541,7 @@
 ### Task: Extract shared transport core (framing/ack-retry/queue/heartbeat/stats + safe listener dispatch)
 
 - Title: Extract shared transport core (framing/ack-retry/queue/heartbeat/stats + safe listener dispatch)
-- Mode: single-agent
+- Mode: 6-agent
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/extract-shared-transport-core-framing-ack-retry-queue-heart.md
