@@ -1582,6 +1582,14 @@
 - Owner: runtime
 - Brief: .fas/tasks/build-mesh-pong-example-ui-demo-headless-transport-parity.md
 
+### Task: Docs: machine-backed actor default dispatcher reply
+
+- Title: Docs: machine-backed actor default dispatcher reply
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/docs-machine-backed-actor-default-dispatcher-reply.md
+
 ## Template
 
 ### Task: `<short task title>`
