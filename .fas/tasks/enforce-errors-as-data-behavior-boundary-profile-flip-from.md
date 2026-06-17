@@ -1,4 +1,4 @@
-# Enforce errors-as-data behavior-boundary profile (flip from
+# Enforce errors-as-data behavior-boundary profile (flip from throwing-adapters)
 
 ## Source
 
