@@ -1510,8 +1510,8 @@
 
 - Title: Transport conformance suite: parametrized MessageTransport contract tests
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/transport-conformance-suite-parametrized-messagetransport-c.md
 - Verification lane: fast
 - Policy sensitivity: standard
