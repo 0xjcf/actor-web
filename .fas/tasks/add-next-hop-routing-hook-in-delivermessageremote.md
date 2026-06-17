@@ -1,12 +1,15 @@
 # Add next-hop routing hook in deliverMessageRemote
 
 ## Source
+
 Created with `fas create-task` on 2026-06-16.
 
 ## Problem
+
 Mesh prerequisite (spike direct-1781363862864 readiness audit). Today deliverMessageRemote (actor-system-impl.ts:4052-4064) sends straight to 'location'; if location is not directly connected it fails (dead-letter/throw) with no relay. Add an optional pluggable router seam: nextHop = router ? await router.resolveNextHop(location,address,connectedNodes) : location; default preserves current direct-send. Enables multi-hop mesh routing without changing actor code.
 
 ## Acceptance criteria
+
 - The new functionality works as described.
 - Existing behavior is not broken.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
@@ -17,35 +20,45 @@ Mesh prerequisite (spike direct-1781363862864 readiness audit). Today deliverMes
 - The task is queued in `.fas/queue/tasks.json` for the runtime.
 
 ## Proposed solution
+
 - Use the supplied problem context, acceptance criteria, and affected-file hints to draft the concrete implementation approach during planning.
 
 ## Alternatives considered
+
 - None recorded at task creation. Add rejected approaches during planning if scope tradeoffs appear.
 
 ## Affected files
+
 - Scope unknown.
 
 ## Scope Amendments
+
 - None.
 
 ## Implementation plan
+
 - Convert the supplied context into a scoped implementation plan before editing.
 - Refresh affected-file scope before implementation if the generated hints are incomplete.
 
 ## Verification plan
+
 - Run `fas validate-task` for the inner-loop verification gate.
 - Run `.fas/scripts/verify.sh --full` at the final release-quality gate when tracked files change.
 
 ## Risks
+
 - Validate generated scope, acceptance criteria, and verification evidence before closeout to avoid workflow drift.
 
 ## Dependencies
+
 - None known at task creation.
 
 ## Open questions
+
 - None captured at task creation.
 
 ## Artifact links
+
 - Planning: `.fas/state/planning.json`
 - Task packet: `.fas/state/task-packet.json`
 - Commit plan: `.fas/state/commit-plan.json`
