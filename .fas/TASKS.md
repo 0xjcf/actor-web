@@ -1545,10 +1545,13 @@
 
 - Title: Extract shared transport core (framing/ack-retry/queue/heartbeat/stats + safe listener dispatch)
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/extract-shared-transport-core-framing-ack-retry-queue-heart.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Implement @actor-web/transport-broadcast-channel adapter
 
@@ -1589,6 +1592,14 @@
 - Status: backlog
 - Owner: planner
 - Brief: .fas/tasks/docs-machine-backed-actor-default-dispatcher-reply.md
+
+### Task: Enforce errors-as-data behavior-boundary profile (flip from throwing-adapters)
+
+- Title: Enforce errors-as-data behavior-boundary profile (flip from throwing-adapters)
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/enforce-errors-as-data-behavior-boundary-profile-flip-from.md
 
 ## Template
 

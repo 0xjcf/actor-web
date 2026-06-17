@@ -26,7 +26,9 @@
   "behaviorBoundaries": {
     "functionalCore": [
       "packages/actor-core-runtime/src/type-helpers.ts",
-      "packages/actor-core-runtime/src/utils/validation.ts"
+      "packages/actor-core-runtime/src/utils/validation.ts",
+      "packages/actor-core-runtime/src/transport/transport-channel.ts",
+      "packages/actor-core-runtime/src/transport/transport-reliability.ts"
     ],
     "shell": [
       "packages/actor-core-runtime/src/actor-instance.ts",
@@ -51,7 +53,9 @@
       "packages/actor-core-runtime/src/actors/supervisor-tree.ts",
       "packages/actor-core-runtime/src/actors/system-event-actor.ts",
       "packages/actor-core-runtime/src/planning/",
-      "packages/actor-core-runtime/src/patterns/"
+      "packages/actor-core-runtime/src/patterns/",
+      "packages/actor-core-runtime/src/transport/transport-core.ts",
+      "packages/actor-core-runtime/src/transport/define-transport.ts"
     ],
     "adapters": [
       "packages/actor-core-runtime/src/runtime/",
