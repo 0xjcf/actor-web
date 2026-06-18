@@ -1610,6 +1610,14 @@
 - Brief: .fas/tasks/fas-studio-runtime-emit-from-a-topology-actor-in-browser.md
 - Automation mode: advisory
 
+### Task: Grow defineTransport into a smart-pipe authoring API (async handshake/auth, native heartbeat, multi-peer server) so webs
+
+- Title: Grow defineTransport into a smart-pipe authoring API (async handshake/auth, native heartbeat, multi-peer server) so webs
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/grow-definetransport-into-a-smart-pipe-authoring-api-async-h.md
+
 ## Template
 
 ### Task: `<short task title>`
