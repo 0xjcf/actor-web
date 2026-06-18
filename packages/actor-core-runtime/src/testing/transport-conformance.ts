@@ -173,5 +173,44 @@ export function describeTransportConformance(harness: TransportConformanceHarnes
         await pair.teardown();
       }
     });
+
+    // The PR#27 root cause at the conformance level: an async subscriber that
+    // returns a rejected promise must neither escape as an unhandled rejection
+    // nor starve healthy siblings. Guarded by the same safeDispatch flag, so it
+    // runs for every transport whose dispatch routes through safeDispatchListener.
+    safeDispatchCase(
+      'isolates an async-rejecting subscriber from healthy subscribers',
+      async () => {
+        const unhandled: unknown[] = [];
+        const onUnhandledRejection = (reason: unknown): void => {
+          unhandled.push(reason);
+        };
+        process.on('unhandledRejection', onUnhandledRejection);
+
+        const pair = await harness.createPair();
+        try {
+          const stopRejecting = pair.b.subscribe(async ({ message }) => {
+            if (message.type === PROBE_TYPE) {
+              throw new Error('conformance: async subscriber boom');
+            }
+          });
+          const inbox = collectProbes(pair.b);
+
+          await pair.a.send(pair.addrB, probe(1));
+          await waitFor(() => inbox.received.length >= 1);
+          expect(inbox.received[0]?.seq).toBe(1);
+
+          // Give any escaped rejection a microtask + macrotask window to surface.
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          expect(unhandled).toHaveLength(0);
+
+          stopRejecting();
+          inbox.stop();
+        } finally {
+          await pair.teardown();
+          process.off('unhandledRejection', onUnhandledRejection);
+        }
+      }
+    );
   });
 }
