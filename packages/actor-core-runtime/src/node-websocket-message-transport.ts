@@ -263,6 +263,18 @@ interface NodeChannelDeps {
     reason: string,
     identity?: RuntimeNodeIdentity
   ) => void;
+  /**
+   * Reports an inbound handshake rejection to the core so its stats/telemetry reflect it
+   * (state='rejected', rejectedReason, handshakeRejectedCount++, auth.rejected /
+   * handshake.rejected / peer.rejected events) — the pre-core acceptInboundConnection ->
+   * recordAuthRejected + recordHandshakeRejected path. `auth` distinguishes a failed shared
+   * secret (emits auth.rejected too) from a structural handshake/identity-conflict rejection.
+   */
+  readonly recordInboundRejected: (
+    nodeAddress: string,
+    reason: string,
+    options: { readonly auth: boolean }
+  ) => void;
 }
 
 /**
@@ -406,12 +418,13 @@ class NodeWebSocketChannel implements TransportChannel {
       local: this.deps.identity,
     });
     if (!auth.ok) {
-      this.deps.emitTelemetry({
-        type: 'auth.rejected',
-        peerNodeAddress: frame.source.nodeAddress,
-        reason: auth.reason,
-      });
+      // Mirror pre-core acceptInboundConnection: record the auth rejection in the node
+      // snapshot view AND in the core's stats/telemetry (auth.rejected + handshake.rejected
+      // + peer.rejected, handshakeRejectedCount++) so getRuntimePeerStatus() sees a rejected
+      // peer with a reason. recordInboundRejected reports the rejection as a fact instead of
+      // letting it escape this handshake promise (the PR#27-class unhandled-rejection hazard).
       this.deps.recordRejectedSnapshot(frame.source.nodeAddress, auth.reason, frame.source);
+      this.deps.recordInboundRejected(frame.source.nodeAddress, auth.reason, { auth: true });
       await this.rejectAndClose(socket, 'unauthorized', auth.reason);
       return;
     }
@@ -423,6 +436,9 @@ class NodeWebSocketChannel implements TransportChannel {
     const acceptance = this.canAcceptPeer(frame.source);
     if (!acceptance.ok) {
       this.deps.recordRejectedSnapshot(frame.source.nodeAddress, acceptance.message, frame.source);
+      this.deps.recordInboundRejected(frame.source.nodeAddress, acceptance.message, {
+        auth: false,
+      });
       await this.rejectAndClose(socket, 'malformed_frame', acceptance.message);
       return;
     }
@@ -643,6 +659,12 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
           ...(identity ? { identity } : {}),
           rejectedReason: reason,
         });
+      },
+      // Route inbound handshake rejections into the core so its stats/telemetry record them
+      // (the pre-core single-class transport did this inline). The core guards against
+      // clobbering a currently-connected peer itself.
+      recordInboundRejected: (nodeAddress, reason, options) => {
+        this.core.recordInboundHandshakeRejection(nodeAddress, reason, options);
       },
     });
 
