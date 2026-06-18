@@ -382,6 +382,13 @@ export type {
   ActorWebTopologyInput,
 } from './topology.js';
 export { actor, defineActorWebTopology, node, supervisor } from './topology.js';
+// Public transport authoring surface (defineTransport / fromDuplex)
+export type {
+  TransportDuplex,
+  TransportFactoryOptions,
+  TransportInstance,
+} from './transport/define-transport.js';
+export { defineTransport, fromDuplex } from './transport/define-transport.js';
 // Type helpers for context and message extraction
 export type {
   ContextOf,

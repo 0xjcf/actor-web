@@ -221,6 +221,12 @@ export type {
 export { startActorWebNode } from './start-actor-web-node.js';
 export type { InMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';
 export { createInMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';
+export type {
+  TransportDuplex,
+  TransportFactoryOptions,
+  TransportInstance,
+} from './transport/define-transport.js';
+export { defineTransport, fromDuplex } from './transport/define-transport.js';
 export type { ActorSnapshot } from './types.js';
 export {
   type ActorFSMDefinition,
