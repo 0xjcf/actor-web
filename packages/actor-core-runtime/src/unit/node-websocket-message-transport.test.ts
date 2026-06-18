@@ -58,6 +58,50 @@ function waitFor(predicate: () => boolean, message: string): Promise<void> {
   });
 }
 
+// PR 2 moved the reliability machinery + receive pipeline into TransportCore. These helpers
+// reach the same private state through the wrapper's `core` so the white-box assertions stay
+// faithful to the post-migration internals: each ws socket is now wrapped in a per-peer
+// PeerLink (peer.link.socket) and inbound frames flow through core.handleInboundPayload
+// (which receives an already-parsed payload, since the PeerLink parses the wire Buffer).
+interface CorePeerView {
+  link: { socket: WebSocket; send(payload: unknown): Promise<void> };
+  identity: ReturnType<typeof createRuntimeNodeIdentity>;
+}
+
+interface CoreView {
+  peers: Map<string, CorePeerView>;
+  handleInboundPayload(
+    sourceNodeAddress: string,
+    link: CorePeerView['link'],
+    payload: unknown
+  ): Promise<void>;
+  sendAck(sourceNodeAddress: string, peer: unknown, frame: unknown): void;
+  armHeartbeatTimeout(nodeAddress: string, peer: unknown): void;
+}
+
+function coreOf(transport: NodeWebSocketMessageTransport): CoreView {
+  return (transport as unknown as { core: CoreView }).core;
+}
+
+function getCorePeer(
+  transport: NodeWebSocketMessageTransport,
+  nodeAddress: string
+): CorePeerView | undefined {
+  return coreOf(transport).peers.get(nodeAddress);
+}
+
+function deliverInbound(
+  transport: NodeWebSocketMessageTransport,
+  sourceNodeAddress: string,
+  frame: unknown
+): Promise<void> {
+  const peer = getCorePeer(transport, sourceNodeAddress);
+  if (!peer) {
+    throw new Error(`Expected core peer ${sourceNodeAddress}`);
+  }
+  return coreOf(transport).handleInboundPayload(sourceNodeAddress, peer.link, frame);
+}
+
 describe('NodeWebSocketMessageTransport', () => {
   afterEach(async () => {
     await Promise.allSettled(transports.splice(0).map((transport) => transport.stop()));
@@ -302,11 +346,7 @@ describe('NodeWebSocketMessageTransport', () => {
     });
 
     await local.connect('node-b');
-    const remotePeer = (
-      remote as unknown as {
-        peers: Map<string, { socket: WebSocket }>;
-      }
-    ).peers.get('node-a');
+    const remotePeer = getCorePeer(remote, 'node-a');
     if (!remotePeer) {
       throw new Error('Expected remote peer');
     }
@@ -327,25 +367,12 @@ describe('NodeWebSocketMessageTransport', () => {
       message: { type: 'DUPLICATE_WORK' },
     });
 
-    const data = Buffer.from(JSON.stringify(frame));
-    (
-      remote as unknown as {
-        handleRuntimeFrame: (
-          sourceNodeAddress: string,
-          socket: WebSocket,
-          data: Buffer
-        ) => Promise<void>;
-      }
-    ).handleRuntimeFrame('node-a', remotePeer.socket, data);
-    (
-      remote as unknown as {
-        handleRuntimeFrame: (
-          sourceNodeAddress: string,
-          socket: WebSocket,
-          data: Buffer
-        ) => Promise<void>;
-      }
-    ).handleRuntimeFrame('node-a', remotePeer.socket, data);
+    // Reliability + the receive pipeline moved into TransportCore (PR 2): deliver the parsed
+    // inbound frame through the core's handleInboundPayload (the per-socket PeerLink parses
+    // Buffer -> unknown before reaching it). Preserves the validate -> idempotency-claim ->
+    // record -> ack -> emit order the old private handleRuntimeFrame exercised.
+    deliverInbound(remote, 'node-a', frame);
+    deliverInbound(remote, 'node-a', frame);
 
     await waitFor(() => received.includes('DUPLICATE_WORK'), 'Expected first frame');
     await new Promise((resolve) => {
@@ -391,11 +418,7 @@ describe('NodeWebSocketMessageTransport', () => {
     });
 
     await local.connect('node-b');
-    const firstRemotePeer = (
-      firstRemote as unknown as {
-        peers: Map<string, { socket: WebSocket }>;
-      }
-    ).peers.get('node-a');
+    const firstRemotePeer = getCorePeer(firstRemote, 'node-a');
     if (!firstRemotePeer) {
       throw new Error('Expected first remote peer');
     }
@@ -416,15 +439,7 @@ describe('NodeWebSocketMessageTransport', () => {
       message: { type: 'DUPLICATE_AFTER_RESTART' },
     });
 
-    await (
-      firstRemote as unknown as {
-        handleRuntimeFrame: (
-          sourceNodeAddress: string,
-          socket: WebSocket,
-          data: Buffer
-        ) => Promise<void>;
-      }
-    ).handleRuntimeFrame('node-a', firstRemotePeer.socket, Buffer.from(JSON.stringify(firstFrame)));
+    await deliverInbound(firstRemote, 'node-a', firstFrame);
     await waitFor(
       () => firstReceived.includes('DUPLICATE_AFTER_RESTART'),
       'Expected first restart frame'
@@ -452,11 +467,7 @@ describe('NodeWebSocketMessageTransport', () => {
       }
     ).options.peers = { 'node-b': restartedRemoteUrl };
     await local.connect('node-b');
-    const restartedRemotePeer = (
-      restartedRemote as unknown as {
-        peers: Map<string, { socket: WebSocket }>;
-      }
-    ).peers.get('node-a');
+    const restartedRemotePeer = getCorePeer(restartedRemote, 'node-a');
     if (!restartedRemotePeer) {
       throw new Error('Expected restarted remote peer');
     }
@@ -477,19 +488,7 @@ describe('NodeWebSocketMessageTransport', () => {
       message: { type: 'DUPLICATE_AFTER_RESTART' },
     });
 
-    await (
-      restartedRemote as unknown as {
-        handleRuntimeFrame: (
-          sourceNodeAddress: string,
-          socket: WebSocket,
-          data: Buffer
-        ) => Promise<void>;
-      }
-    ).handleRuntimeFrame(
-      'node-a',
-      restartedRemotePeer.socket,
-      Buffer.from(JSON.stringify(duplicateAfterRestart))
-    );
+    await deliverInbound(restartedRemote, 'node-a', duplicateAfterRestart);
     await new Promise((resolve) => {
       setTimeout(resolve, 20);
     });
@@ -526,14 +525,6 @@ describe('NodeWebSocketMessageTransport', () => {
     });
 
     await local.connect('node-b');
-    const remotePeer = (
-      remote as unknown as {
-        peers: Map<string, { socket: WebSocket }>;
-      }
-    ).peers.get('node-a');
-    if (!remotePeer) {
-      throw new Error('Expected remote peer');
-    }
 
     const frame = createRuntimeTransportFrame({
       source: createRuntimeNodeIdentity({
@@ -551,15 +542,7 @@ describe('NodeWebSocketMessageTransport', () => {
       message: { type: 'PROVIDER_ERROR_FRAME' },
     });
 
-    await (
-      remote as unknown as {
-        handleRuntimeFrame: (
-          sourceNodeAddress: string,
-          socket: WebSocket,
-          data: Buffer
-        ) => Promise<void>;
-      }
-    ).handleRuntimeFrame('node-a', remotePeer.socket, Buffer.from(JSON.stringify(frame)));
+    await deliverInbound(remote, 'node-a', frame);
     await new Promise((resolve) => {
       setTimeout(resolve, 20);
     });
@@ -634,11 +617,8 @@ describe('NodeWebSocketMessageTransport', () => {
   it('retries retryable runtime control frames and exhausts when no ack arrives', async () => {
     const localTelemetry: RuntimeTransportTelemetryEvent[] = [];
     const remote = await createStartedTransport('node-b');
-    (
-      remote as unknown as {
-        sendAck: (sourceNodeAddress: string, peer: unknown, frame: unknown) => Promise<void>;
-      }
-    ).sendAck = async () => {};
+    // sendAck moved into TransportCore (PR 2); suppress it on the core to force the retry path.
+    coreOf(remote).sendAck = () => {};
     const remoteUrl = remote.getListeningUrl();
     if (!remoteUrl) {
       throw new Error('Expected remote listening URL');
@@ -687,12 +667,14 @@ describe('NodeWebSocketMessageTransport', () => {
     });
 
     await local.connect('node-b');
+    // Raw send moved into the per-peer PeerLink (PR 2); stall it to keep one frame in flight
+    // so the bounded outbound queue fills and the third send is dropped by backpressure.
     let releaseSend: (() => void) | undefined;
-    (
-      local as unknown as {
-        sendJson: (socket: WebSocket, frame: unknown) => Promise<void>;
-      }
-    ).sendJson = async () =>
+    const localPeer = getCorePeer(local, 'node-b');
+    if (!localPeer) {
+      throw new Error('Expected local peer');
+    }
+    localPeer.link.send = () =>
       new Promise<void>((resolve) => {
         releaseSend = resolve;
       });
@@ -733,14 +715,6 @@ describe('NodeWebSocketMessageTransport', () => {
     });
 
     await local.connect('node-b');
-    const remotePeer = (
-      remote as unknown as {
-        peers: Map<string, { socket: WebSocket }>;
-      }
-    ).peers.get('node-a');
-    if (!remotePeer) {
-      throw new Error('Expected remote peer');
-    }
     const source = createRuntimeNodeIdentity({
       nodeAddress: 'node-a',
       nodeId: 'node-a',
@@ -751,26 +725,16 @@ describe('NodeWebSocketMessageTransport', () => {
       nodeId: 'node-b',
       incarnation: 'node-b-boot',
     });
-    (
-      remote as unknown as {
-        handleRuntimeFrame: (sourceNodeAddress: string, socket: WebSocket, data: Buffer) => void;
-      }
-    ).handleRuntimeFrame(
-      'node-a',
-      remotePeer.socket,
-      Buffer.from(
-        JSON.stringify({
-          ...createRuntimeTransportFrame({
-            source,
-            destination,
-            sequence: 1,
-            message: { type: 'INVALID' },
-          }),
-          protocolVersion: RUNTIME_TRANSPORT_PROTOCOL_VERSION,
-          sequence: -1,
-        })
-      )
-    );
+    void deliverInbound(remote, 'node-a', {
+      ...createRuntimeTransportFrame({
+        source,
+        destination,
+        sequence: 1,
+        message: { type: 'INVALID' },
+      }),
+      protocolVersion: RUNTIME_TRANSPORT_PROTOCOL_VERSION,
+      sequence: -1,
+    });
 
     await waitFor(
       () => receivedTypes.includes('__runtime.transport.disconnected'),
@@ -807,40 +771,24 @@ describe('NodeWebSocketMessageTransport', () => {
     });
 
     await local.connect('node-b');
-    const remotePeer = (
-      remote as unknown as {
-        peers: Map<string, { socket: WebSocket }>;
-      }
-    ).peers.get('node-a');
-    if (!remotePeer) {
-      throw new Error('Expected remote peer');
-    }
 
-    (
-      remote as unknown as {
-        handleRuntimeFrame: (sourceNodeAddress: string, socket: WebSocket, data: Buffer) => void;
-      }
-    ).handleRuntimeFrame(
+    void deliverInbound(
+      remote,
       'node-a',
-      remotePeer.socket,
-      Buffer.from(
-        JSON.stringify(
-          createRuntimeTransportFrame({
-            source: createRuntimeNodeIdentity({
-              nodeAddress: 'node-a',
-              nodeId: 'node-a',
-              incarnation: 'node-a-boot',
-            }),
-            destination: createRuntimeNodeIdentity({
-              nodeAddress: 'node-b',
-              nodeId: 'node-b',
-              incarnation: 'node-b-boot',
-            }),
-            sequence: 3,
-            message: { type: 'GAP_FRAME' },
-          })
-        )
-      )
+      createRuntimeTransportFrame({
+        source: createRuntimeNodeIdentity({
+          nodeAddress: 'node-a',
+          nodeId: 'node-a',
+          incarnation: 'node-a-boot',
+        }),
+        destination: createRuntimeNodeIdentity({
+          nodeAddress: 'node-b',
+          nodeId: 'node-b',
+          incarnation: 'node-b-boot',
+        }),
+        sequence: 3,
+        message: { type: 'GAP_FRAME' },
+      })
     );
 
     await waitFor(() => receivedTypes.includes('GAP_FRAME'), 'Expected gap frame delivery');
@@ -878,16 +826,9 @@ describe('NodeWebSocketMessageTransport', () => {
     });
 
     await local.connect('node-b');
-    const peer = (
-      local as unknown as {
-        peers: Map<string, unknown>;
-      }
-    ).peers.get('node-b');
-    (
-      local as unknown as {
-        armHeartbeatTimeout: (nodeAddress: string, peer: unknown) => void;
-      }
-    ).armHeartbeatTimeout('node-b', peer);
+    // The heartbeat engine moved into TransportCore (PR 2); arm the timeout on the core's peer.
+    const peer = getCorePeer(local, 'node-b');
+    coreOf(local).armHeartbeatTimeout('node-b', peer);
 
     await waitFor(() => local.getPeerState('node-b') === 'disconnected', 'Expected timeout');
 
@@ -970,16 +911,11 @@ describe('NodeWebSocketMessageTransport', () => {
     });
 
     await remoteOne.connect('node-a');
-    const remoteOneSocket = (
-      remoteOne as unknown as {
-        peers: Map<
-          string,
-          { socket: WebSocket; identity: ReturnType<typeof createRuntimeNodeIdentity> }
-        >;
-      }
-    ).peers.get('node-a')?.socket;
-    if (!remoteOneSocket) {
-      throw new Error('Expected first remote socket');
+    // local's per-peer PeerLink for node-b BEFORE the replacement — the link the core will
+    // treat as stale once remoteTwo (a newer incarnation) replaces it.
+    const staleLink = getCorePeer(local, 'node-b')?.link;
+    if (!staleLink) {
+      throw new Error('Expected first remote link');
     }
 
     const remoteTwo = await createStartedTransport('node-b', {
@@ -993,31 +929,24 @@ describe('NodeWebSocketMessageTransport', () => {
       'Expected replacement peer'
     );
 
-    (
-      local as unknown as {
-        handleRuntimeFrame: (sourceNodeAddress: string, socket: WebSocket, data: Buffer) => void;
-      }
-    ).handleRuntimeFrame(
+    // Deliver via the stale link: the core ignores it because peer.link !== staleLink.
+    void coreOf(local).handleInboundPayload(
       'node-b',
-      remoteOneSocket,
-      Buffer.from(
-        JSON.stringify(
-          createRuntimeTransportFrame({
-            source: createRuntimeNodeIdentity({
-              nodeAddress: 'node-b',
-              nodeId: 'stable-node-b',
-              incarnation: 'node-b-boot-1',
-            }),
-            destination: createRuntimeNodeIdentity({
-              nodeAddress: 'node-a',
-              nodeId: 'node-a',
-              incarnation: 'node-a-boot',
-            }),
-            sequence: 1,
-            message: { type: 'STALE_SOCKET' },
-          })
-        )
-      )
+      staleLink,
+      createRuntimeTransportFrame({
+        source: createRuntimeNodeIdentity({
+          nodeAddress: 'node-b',
+          nodeId: 'stable-node-b',
+          incarnation: 'node-b-boot-1',
+        }),
+        destination: createRuntimeNodeIdentity({
+          nodeAddress: 'node-a',
+          nodeId: 'node-a',
+          incarnation: 'node-a-boot',
+        }),
+        sequence: 1,
+        message: { type: 'STALE_SOCKET' },
+      })
     );
 
     await remoteTwo.send('node-a', {

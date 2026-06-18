@@ -294,9 +294,12 @@ describe('BrowserWebSocketMessageTransport', () => {
     await browser.connect('node-b');
     const nodePeer = (
       node as unknown as {
-        peers: Map<string, { socket: NodeWebSocket }>;
+        // PR 2 moved the node transport's peer registry into TransportCore; each ws socket
+        // is now wrapped in a per-peer PeerLink (peer.link.socket). The browser↔node interop
+        // assertions still drive raw frames from the node side through that socket.
+        core: { peers: Map<string, { link: { socket: NodeWebSocket } }> };
       }
-    ).peers.get('worker-a');
+    ).core.peers.get('worker-a');
     if (!nodePeer) {
       throw new Error('Expected Node peer socket');
     }
@@ -317,8 +320,8 @@ describe('BrowserWebSocketMessageTransport', () => {
       message: { type: 'DUPLICATE_NODE_FRAME' },
     });
 
-    nodePeer.socket.send(JSON.stringify(frame));
-    nodePeer.socket.send(JSON.stringify(frame));
+    nodePeer.link.socket.send(JSON.stringify(frame));
+    nodePeer.link.socket.send(JSON.stringify(frame));
 
     await waitFor(
       () => receivedByBrowser.includes('DUPLICATE_NODE_FRAME'),
@@ -364,9 +367,12 @@ describe('BrowserWebSocketMessageTransport', () => {
     await firstBrowser.connect('node-b');
     const firstNodePeer = (
       node as unknown as {
-        peers: Map<string, { socket: NodeWebSocket }>;
+        // PR 2 moved the node transport's peer registry into TransportCore; each ws socket
+        // is now wrapped in a per-peer PeerLink (peer.link.socket). The browser↔node interop
+        // assertions still drive raw frames from the node side through that socket.
+        core: { peers: Map<string, { link: { socket: NodeWebSocket } }> };
       }
-    ).peers.get('worker-a');
+    ).core.peers.get('worker-a');
     if (!firstNodePeer) {
       throw new Error('Expected first browser node peer socket');
     }
@@ -387,7 +393,7 @@ describe('BrowserWebSocketMessageTransport', () => {
       message: { type: 'BROWSER_RESTART_DUPLICATE' },
     });
 
-    firstNodePeer.socket.send(JSON.stringify(firstFrame));
+    firstNodePeer.link.socket.send(JSON.stringify(firstFrame));
     await waitFor(
       () => firstReceived.includes('BROWSER_RESTART_DUPLICATE'),
       'Expected first browser restart frame'
@@ -408,9 +414,12 @@ describe('BrowserWebSocketMessageTransport', () => {
     await restartedBrowser.connect('node-b');
     const restartedNodePeer = (
       node as unknown as {
-        peers: Map<string, { socket: NodeWebSocket }>;
+        // PR 2 moved the node transport's peer registry into TransportCore; each ws socket
+        // is now wrapped in a per-peer PeerLink (peer.link.socket). The browser↔node interop
+        // assertions still drive raw frames from the node side through that socket.
+        core: { peers: Map<string, { link: { socket: NodeWebSocket } }> };
       }
-    ).peers.get('worker-a');
+    ).core.peers.get('worker-a');
     if (!restartedNodePeer) {
       throw new Error('Expected restarted browser node peer socket');
     }
@@ -431,7 +440,7 @@ describe('BrowserWebSocketMessageTransport', () => {
       message: { type: 'BROWSER_RESTART_DUPLICATE' },
     });
 
-    restartedNodePeer.socket.send(JSON.stringify(duplicateAfterRestart));
+    restartedNodePeer.link.socket.send(JSON.stringify(duplicateAfterRestart));
     await new Promise((resolve) => {
       setTimeout(resolve, 20);
     });
@@ -469,9 +478,12 @@ describe('BrowserWebSocketMessageTransport', () => {
     await browser.connect('node-b');
     const nodePeer = (
       node as unknown as {
-        peers: Map<string, { socket: NodeWebSocket }>;
+        // PR 2 moved the node transport's peer registry into TransportCore; each ws socket
+        // is now wrapped in a per-peer PeerLink (peer.link.socket). The browser↔node interop
+        // assertions still drive raw frames from the node side through that socket.
+        core: { peers: Map<string, { link: { socket: NodeWebSocket } }> };
       }
-    ).peers.get('worker-a');
+    ).core.peers.get('worker-a');
     if (!nodePeer) {
       throw new Error('Expected Node peer socket');
     }
@@ -492,7 +504,7 @@ describe('BrowserWebSocketMessageTransport', () => {
       message: { type: 'BROWSER_PROVIDER_ERROR_FRAME' },
     });
 
-    nodePeer.socket.send(JSON.stringify(frame));
+    nodePeer.link.socket.send(JSON.stringify(frame));
     await new Promise((resolve) => {
       setTimeout(resolve, 20);
     });
