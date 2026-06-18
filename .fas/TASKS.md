@@ -1601,6 +1601,15 @@
 - Owner: runtime
 - Brief: .fas/tasks/enforce-errors-as-data-behavior-boundary-profile-flip-from.md
 
+### Task: [fas-studio] Runtime: emit from a topology actor in browser-local startRuntime logs 'Actor not found' for the publisher + dead-letters on every cross-actor emit
+
+- Title: [fas-studio] Runtime: emit from a topology actor in browser-local startRuntime logs 'Actor not found' for the publisher + dead-letters on every cross-actor emit
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/fas-studio-runtime-emit-from-a-topology-actor-in-browser.md
+- Automation mode: advisory
+
 ## Template
 
 ### Task: `<short task title>`

@@ -37,11 +37,20 @@ Prerequisite for all new transports (spike direct-1781363862864 readiness audit)
 
 ## Affected files
 
-- Scope unknown.
+- packages/actor-core-runtime/src/transport/transport-channel.ts
+- packages/actor-core-runtime/src/transport/transport-reliability.ts
+- packages/actor-core-runtime/src/transport/transport-core.ts
+- packages/actor-core-runtime/src/transport/define-transport.ts
+- packages/actor-core-runtime/src/unit/transport-reliability.test.ts
+- packages/actor-core-runtime/src/unit/transport-channel.test.ts
+- packages/actor-core-runtime/src/unit/transport-core.test.ts
+- packages/actor-core-runtime/src/unit/define-transport.test.ts
 
 ## Scope Amendments
 
-- None.
+- Type: scope-refresh
+- Added at: 2026-06-18
+- Added paths: packages/actor-core-runtime/src/transport/transport-channel.ts, packages/actor-core-runtime/src/transport/transport-reliability.ts, packages/actor-core-runtime/src/transport/transport-core.ts, packages/actor-core-runtime/src/transport/define-transport.ts, packages/actor-core-runtime/src/unit/transport-reliability.test.ts, packages/actor-core-runtime/src/unit/transport-channel.test.ts, packages/actor-core-runtime/src/unit/transport-core.test.ts, packages/actor-core-runtime/src/unit/define-transport.test.ts
 
 ## Implementation plan
 
