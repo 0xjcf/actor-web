@@ -71,22 +71,71 @@ describe('fromDuplex', () => {
     });
 
     await link.send('hello-wire');
-    // b receives what a posted.
+    // b receives verbatim what a posted (send is a passthrough; the core pre-serializes).
     const fromA: unknown[] = [];
     b.onmessage = (event) => fromA.push(event.data);
     a.postMessage('ping');
     await Promise.resolve();
     expect(fromA).toEqual(['ping']);
 
-    // b -> a is delivered to the link's sink.
-    b.postMessage('pong');
+    // b -> a is delivered to the link's sink as a PARSED object. The core serializes frames
+    // to JSON strings, so the link's parse seam turns the inbound string back into an object
+    // before handing it to the sink (handleInboundPayload expects parsed frames).
+    b.postMessage(JSON.stringify({ wire: 'pong' }));
     await Promise.resolve();
-    expect(inbound).toEqual(['pong']);
+    expect(inbound).toEqual([{ wire: 'pong' }]);
 
     unlisten();
     link.close();
     expect(link.isOpen).toBe(false);
     expect(() => link.close()).not.toThrow();
+  });
+
+  it('parses inbound JSON strings to objects and drops unparseable strings (errors-as-values)', async () => {
+    const { a, b } = createDuplexPair();
+    const link = fromDuplex(a, 'peer-x');
+    const inbound: unknown[] = [];
+    link.receive({
+      onPayload: (payload) => inbound.push(payload),
+      onClosed: () => undefined,
+    });
+
+    // The core serializes outbound frames to JSON strings; the duplex transmits the string
+    // verbatim, so the far end must surface a PARSED object to the core's sink.
+    b.postMessage(JSON.stringify({ hello: 'world' }));
+    // An already-parsed object passes through verbatim.
+    b.postMessage({ already: 'object' });
+    // A non-JSON string is dropped without throwing or disconnecting.
+    b.postMessage('not json {');
+    await Promise.resolve();
+
+    expect(inbound).toEqual([{ hello: 'world' }, { already: 'object' }]);
+  });
+
+  it('buffers inbound payloads that arrive before receive() and drains them FIFO on subscribe (Q4b race)', async () => {
+    const { a, b } = createDuplexPair();
+    const link = fromDuplex(a, 'peer-x');
+
+    // Payloads land BEFORE the core subscribes (the dial-time hello read happens before
+    // the core's authoritative receive()). The native listener is attached eagerly in the
+    // factory body, so these are captured into the pending buffer rather than lost.
+    b.postMessage(JSON.stringify({ seq: 1 }));
+    b.postMessage(JSON.stringify({ seq: 2 }));
+    await Promise.resolve();
+
+    const inbound: unknown[] = [];
+    link.receive({
+      onPayload: (payload) => inbound.push(payload),
+      onClosed: () => undefined,
+    });
+
+    // Drained in FIFO order on subscribe — nothing lost between pre-subscribe and receive().
+    expect(inbound).toEqual([{ seq: 1 }, { seq: 2 }]);
+
+    // Subsequent live payloads continue to flow to the now-set sink.
+    b.postMessage(JSON.stringify({ seq: 3 }));
+    await Promise.resolve();
+    expect(inbound).toEqual([{ seq: 1 }, { seq: 2 }, { seq: 3 }]);
   });
 });
 

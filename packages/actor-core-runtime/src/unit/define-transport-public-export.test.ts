@@ -3,89 +3,100 @@ import { describe, expect, it } from 'vitest';
 import type { ActorMessage } from '../actor-system.js';
 // AC10: the one-line authoring surface must be reachable from the PUBLIC entry point,
 // not the internal transport module path. Import from ../index.js on purpose.
-import { defineTransport, type TransportDuplex } from '../index.js';
+import { defineTransport } from '../index.js';
 
 function userMessage(type: string): ActorMessage {
   return { type, _timestamp: 1, _version: '1.0.0' } as ActorMessage;
 }
 
-// A real postMessage/onmessage/close duplex over a Node worker_threads MessagePort,
-// mirroring message-port-transport.test.ts's createPairedPorts: each MessagePort is a
-// genuine EventTarget duplex. TransportCore serializes frames to JSON strings on send and
-// (per the node-ws PeerLink contract, node-websocket-message-transport.ts:159) expects
-// onPayload to deliver PARSED frame objects, so this author duplex JSON-parses inbound —
-// the minimal, real author-side glue that keeps the round-trip honest without touching any
-// transport/*.ts module.
-function frameDuplex(port: MessagePort): TransportDuplex {
-  return {
-    postMessage(data: unknown): void {
-      port.postMessage(data);
-    },
-    addEventListener(_type: 'message', listener: (event: { data: unknown }) => void): void {
-      port.on('message', (raw) => {
-        listener({ data: typeof raw === 'string' ? JSON.parse(raw) : raw });
-      });
-    },
-    removeEventListener(): void {
-      // Single-use duplex in the test; teardown happens via close().
-    },
-    close(): void {
-      port.close();
-    },
-  };
-}
-
 describe('public transport authoring surface (AC10)', () => {
-  it('authors a transport in one line from the public entry and round-trips a message', async () => {
+  it('authors a transport in ONE line from the public entry and round-trips BOTH directions with default identities', async () => {
     const { port1, port2 } = new MessageChannel();
     try {
-      // The one-liner under test: the author returns the raw medium; defineTransport wires it
-      // through fromDuplex + TransportCore into a MessageTransport factory.
-      const transportFactory = defineTransport<{ port: MessagePort }>(({ port }) =>
-        frameDuplex(port)
-      );
+      // The headline acceptance bar: the author returns the raw MessagePort DIRECTLY.
+      // No fromDuplex call, no JSON.parse glue — defineTransport + fromDuplex own the
+      // parse seam (string -> object) and the symmetric hello handshake internally. A Node
+      // worker_threads MessagePort is a genuine postMessage/onmessage/close duplex.
+      const make = defineTransport<{ port: MessagePort }>(({ port }) => port);
 
+      // Default identities: only `node`/`nodeAddress` differ ('a' / 'b'). NO pinned
+      // incarnation, NO pinned nodeId. The hello handshake exchanges each side's real
+      // identity so inbound source-matching passes despite the Date.now() incarnations.
       // heartbeatIntervalMs: 0 keeps the test deterministic (no background timers).
-      // incarnation: '0' pins a stable identity so the dial-only (non-handshaking) duplex
-      // path's placeholder peer identity (the core derives incarnation '0' for placeholder
-      // peers) matches the real frame source on the far end for inbound source-matching.
-      const a = transportFactory({
-        node: 'a',
-        port: port1,
-        incarnation: '0',
-        heartbeatIntervalMs: 0,
-      });
-      const b = transportFactory({
-        node: 'b',
-        port: port2,
-        incarnation: '0',
-        heartbeatIntervalMs: 0,
-      });
+      const a = make({ node: 'a', port: port1, heartbeatIntervalMs: 0 });
+      const b = make({ node: 'b', port: port2, heartbeatIntervalMs: 0 });
 
-      const received: Array<{ source: string; message: ActorMessage }> = [];
-      b.subscribe((event) => {
-        received.push(event);
-      });
+      const receivedByB: Array<{ source: string; message: ActorMessage }> = [];
+      const receivedByA: Array<{ source: string; message: ActorMessage }> = [];
+      b.subscribe((event) => receivedByB.push(event));
+      a.subscribe((event) => receivedByA.push(event));
 
-      await a.start?.();
-      await b.start?.();
-      // Each side dials the peer at the far end of its own duplex port, so both cores attach
-      // a receive sink to their MessagePort (the dial-only channel wires inbound delivery on
-      // dial). This is the genuine one-line-author topology over a real duplex pair.
-      await b.connect('a');
-      await a.connect('b');
-      await a.send('b', userMessage('GREET'));
+      await a.start();
+      await b.start();
+      // SYMMETRIC: both ends dial. Each connect sends its hello and AWAITS the peer's, so the
+      // two connects must be in flight together — serializing them would deadlock (the first
+      // would wait for a hello the second has not sent yet). This is the documented model:
+      // both ends construct the transport and call connect().
+      await Promise.all([a.connect('b'), b.connect('a')]);
 
-      // Allow the async dispatch cycle through TransportCore's inbound pipeline
-      // (validate -> source-match -> idempotency -> record -> ack -> emit) to settle.
+      await a.send('b', userMessage('GREET_FROM_A'));
+      await b.send('a', userMessage('GREET_FROM_B'));
+
+      // Allow the async inbound pipeline (validate -> source-match -> idempotency ->
+      // record -> ack -> emit) to settle on both cores.
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      // The user message round-tripped end-to-end through TransportCore reliability.
-      expect(received.map((event) => event.message.type)).toContain('GREET');
-      expect(b.getStats().framesReceived).toBeGreaterThanOrEqual(1);
+      // BOTH directions round-trip end-to-end through TransportCore reliability.
+      expect(receivedByB.map((e) => e.message.type)).toContain('GREET_FROM_A');
+      expect(receivedByB.find((e) => e.message.type === 'GREET_FROM_A')?.source).toBe('a');
+      expect(receivedByA.map((e) => e.message.type)).toContain('GREET_FROM_B');
+      expect(receivedByA.find((e) => e.message.type === 'GREET_FROM_B')?.source).toBe('b');
 
-      await a.stop?.();
-      await b.stop?.();
+      // No spurious disconnect during the happy path.
+      expect(a.isConnected('b')).toBe(true);
+      expect(b.isConnected('a')).toBe(true);
+
+      // Disconnect cleanup + idempotency.
+      await a.disconnect('b');
+      expect(a.isConnected('b')).toBe(false);
+      await expect(a.disconnect('b')).resolves.toBeUndefined();
+
+      await a.stop();
+      await b.stop();
+    } finally {
+      port1.close();
+      port2.close();
+    }
+  });
+
+  it('delivers an app frame the peer sends immediately after its dial resolves (pre-subscribe race / Q4b buffer)', async () => {
+    const { port1, port2 } = new MessageChannel();
+    try {
+      const make = defineTransport<{ port: MessagePort }>(({ port }) => port);
+      const a = make({ node: 'a', port: port1, heartbeatIntervalMs: 0 });
+      const b = make({ node: 'b', port: port2, heartbeatIntervalMs: 0 });
+
+      const receivedByB: ActorMessage[] = [];
+      b.subscribe((event) => receivedByB.push(event.message));
+
+      await a.start();
+      await b.start();
+      // Dial both ends together so the helloes are in flight. The instant a's dial resolves,
+      // fire an app frame in the same microtask. b's core may not yet have called receive()
+      // on its link (its dial-time hello read consumed the buffered stream WITHOUT claiming
+      // the authoritative sink), so this frame would be lost WITHOUT the pending buffer.
+      await Promise.all([
+        b.connect('a'),
+        a.connect('b').then(() => a.send('b', userMessage('EARLY'))),
+      ]);
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Proven delivered — drained from the pending buffer, not dropped.
+      expect(receivedByB.map((m) => m.type)).toContain('EARLY');
+
+      await a.stop();
+      await b.stop();
     } finally {
       port1.close();
       port2.close();
