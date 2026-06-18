@@ -36,7 +36,10 @@ describe('resolveAckRetry', () => {
       resolveAckRetry({ attempts: 0, lastSentAtMs: 0 }, 9999, { ackTimeoutMs: 0, maxAckRetries: 2 })
     ).toEqual({ kind: 'give-up' });
     expect(
-      resolveAckRetry({ attempts: 0, lastSentAtMs: 0 }, 9999, { ackTimeoutMs: 1000, maxAckRetries: 0 })
+      resolveAckRetry({ attempts: 0, lastSentAtMs: 0 }, 9999, {
+        ackTimeoutMs: 1000,
+        maxAckRetries: 0,
+      })
     ).toEqual({ kind: 'give-up' });
   });
 });
