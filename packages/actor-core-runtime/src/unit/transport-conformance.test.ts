@@ -1,15 +1,15 @@
 import { createInMemoryMessageTransportNetwork } from '../testing/in-memory-message-transport.js';
 import { describeTransportConformance } from '../testing/transport-conformance.js';
 
-// In-memory transport: synchronous in-process delivery. It preserves send order
-// but dispatches listeners without error isolation (see
-// in-memory-message-transport.ts deliver()), so safeDispatch is declared false.
-// The shared transport core (P2) will own guarded dispatch and flip it to true.
+// In-memory transport: synchronous in-process delivery. It preserves send order.
+// safeDispatch is now true: deliver() routes each listener through the shared
+// safeDispatchListener (PR 4), so a throwing or async-rejecting subscriber no
+// longer escapes or starves siblings.
 describeTransportConformance({
   name: 'in-memory',
   capabilities: {
     ordering: true,
-    safeDispatch: false,
+    safeDispatch: true,
   },
   async createPair() {
     const network = createInMemoryMessageTransportNetwork();
