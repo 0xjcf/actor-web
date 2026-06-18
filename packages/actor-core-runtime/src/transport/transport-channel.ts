@@ -4,6 +4,8 @@
 // safeDispatchListener isolation helper. Types are contracts, not implementations; the
 // only runtime export is a pure function whose sole effect is the injected onError.
 
+import type { RuntimeNodeIdentity } from '../runtime-transport-contract.js';
+
 /**
  * One live raw bidirectional byte/JSON channel to a single peer. The core owns all
  * reliability; a PeerLink only moves opaque payloads and reports raw liveness.
@@ -31,6 +33,15 @@ export interface PeerLink {
    * (node ws native ping). If absent, the core falls back to JSON heartbeat frames (browser).
    */
   readonly heartbeat?: PeerLinkHeartbeat;
+  /**
+   * The fully-handshaked peer identity, when the channel completed the handshake before
+   * surfacing the link (node ws dial/listen exchange the hello/accept identities). When
+   * present the core registers the peer with this exact identity so inbound frame
+   * source-matching and getPeerStats() reflect the real nodeId/incarnation. When absent
+   * the core derives a placeholder identity from {@link remoteAddress} (the address-only
+   * media path).
+   */
+  readonly identity?: RuntimeNodeIdentity;
 }
 
 /** Facts a PeerLink reports up to the core. Adapters return facts; they never throw at the core. */

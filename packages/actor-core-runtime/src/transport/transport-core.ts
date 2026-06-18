@@ -38,7 +38,12 @@ import type {
   RuntimeTransportTelemetryEvent,
   RuntimeTransportTelemetryObserver,
 } from '../runtime-transport-telemetry.js';
-import { type PeerLink, safeDispatchListener, type TransportChannel } from './transport-channel.js';
+import {
+  type PeerLink,
+  safeDispatchListener,
+  type TransportChannel,
+  type TransportListenHandle,
+} from './transport-channel.js';
 import { resolveAckRetry, resolveBackpressure, resolveHeartbeat } from './transport-reliability.js';
 
 /** Injectable timer port. The shell binds the real globals by default; tests inject a fake. */
@@ -127,6 +132,7 @@ export class TransportCore implements MessageTransport {
   private readonly timers: TransportTimers;
   private readonly onListenerError: (error: unknown) => void;
   private readonly stats: RuntimeTransportStats;
+  private listenHandle: TransportListenHandle | null = null;
 
   constructor(private readonly options: TransportCoreOptions) {
     this.identity = options.identity;
@@ -145,23 +151,41 @@ export class TransportCore implements MessageTransport {
 
   // --- lifecycle ------------------------------------------------------------------------
 
-  start(): Promise<void> {
+  async start(): Promise<void> {
+    // Server media (node ws) accept inbound peers; the channel surfaces each already-
+    // handshaked inbound link via onPeer and the core registers it like a dialed peer. The
+    // channel owns the raw handshake (so the wire stays byte-identical), then attaches the
+    // peer identity to the link. Address-only / client-only channels omit listen entirely.
+    if (this.channel.listen && !this.listenHandle) {
+      this.listenHandle = await this.channel.listen((link) => {
+        this.acceptInboundLink(link);
+      });
+    }
     if (!this.stats.startedAt) {
       this.stats.startedAt = this.clock().toISOString();
       this.emitTelemetry({ type: 'transport.started' });
     }
-    return Promise.resolve();
   }
 
   async stop(): Promise<void> {
     for (const [nodeAddress, peer] of Array.from(this.peers.entries())) {
       this.closePeer(nodeAddress, peer, false);
     }
+    const handle = this.listenHandle;
+    this.listenHandle = null;
+    if (handle) {
+      await handle.close();
+    }
     if (this.channel.closeServer) {
       await this.channel.closeServer();
     }
     this.stats.stoppedAt = this.clock().toISOString();
     this.emitTelemetry({ type: 'transport.stopped' });
+  }
+
+  /** The bound listener URL when the channel runs a server (node ws), else null. */
+  getListeningUrl(): string | null {
+    return this.listenHandle?.url ?? null;
   }
 
   getStats(): RuntimeTransportStats {
@@ -225,23 +249,30 @@ export class TransportCore implements MessageTransport {
       throw new Error(`Runtime handshake rejected: ${result.reason}`);
     }
 
-    // PR 1: derive the peer identity from the dialed link's address (no real handshake
-    // yet — that lands with the real channels in PRs 2-3). The auth provider, when
-    // present, still gets a chance to reject the derived peer.
-    const peerIdentity = createRuntimeNodeIdentity({
-      nodeAddress: result.link.remoteAddress,
-      nodeId: result.link.remoteAddress,
-      incarnation: '0',
-    });
+    // The channel surfaces the fully-handshaked peer identity when it completed the
+    // handshake before returning the link (node ws dial exchanges hello/accept identities
+    // and verifies auth itself). When it does not (address-only media), the core derives a
+    // placeholder identity from the dialed link's address. The auth provider, when present,
+    // still gets a chance to reject the derived peer in the placeholder path.
+    const handshaked = Boolean(result.link.identity);
+    const peerIdentity =
+      result.link.identity ??
+      createRuntimeNodeIdentity({
+        nodeAddress: result.link.remoteAddress,
+        nodeId: result.link.remoteAddress,
+        incarnation: '0',
+      });
 
-    const auth = await verifyRuntimeAuth(this.options.auth, {
-      source: peerIdentity,
-      local: this.identity,
-    });
-    if (!auth.ok) {
-      result.link.close();
-      this.recordAuthRejected(address, auth.reason);
-      throw new Error(`Runtime handshake rejected: ${auth.reason}`);
+    if (!handshaked) {
+      const auth = await verifyRuntimeAuth(this.options.auth, {
+        source: peerIdentity,
+        local: this.identity,
+      });
+      if (!auth.ok) {
+        result.link.close();
+        this.recordAuthRejected(address, auth.reason);
+        throw new Error(`Runtime handshake rejected: ${auth.reason}`);
+      }
     }
 
     this.registerPeer(result.link, peerIdentity);
@@ -278,6 +309,21 @@ export class TransportCore implements MessageTransport {
   }
 
   // --- peer lifecycle -------------------------------------------------------------------
+
+  /**
+   * Register an inbound peer surfaced by channel.listen(). The channel completed the raw
+   * inbound handshake (hello/accept + auth) before calling onPeer and attached the peer
+   * identity to the link, so the core registers it directly — mirroring node's
+   * acceptInboundConnection -> registerPeer path. A link without an identity is ignored
+   * (the channel must hand a handshaked inbound link).
+   */
+  private acceptInboundLink(link: PeerLink): void {
+    if (!link.identity) {
+      link.close();
+      return;
+    }
+    this.registerPeer(link, link.identity);
+  }
 
   private registerPeer(link: PeerLink, identity: RuntimeNodeIdentity): void {
     const existing = this.peers.get(identity.nodeAddress);
@@ -492,11 +538,15 @@ export class TransportCore implements MessageTransport {
 
     this.markPeerSeen(sourceNodeAddress, peer.link);
     if (frame.type === 'runtime.transport.ping') {
-      void peer.link.send(
-        JSON.stringify(
-          createRuntimeTransportHeartbeatPong(this.identity, peer.identity, this.clock)
+      peer.link
+        .send(
+          JSON.stringify(
+            createRuntimeTransportHeartbeatPong(this.identity, peer.identity, this.clock)
+          )
         )
-      );
+        .catch(() => {
+          void this.disconnect(sourceNodeAddress);
+        });
     }
   }
 
@@ -521,11 +571,15 @@ export class TransportCore implements MessageTransport {
       if (peer.link.heartbeat) {
         peer.link.heartbeat.ping();
       } else {
-        void peer.link.send(
-          JSON.stringify(
-            createRuntimeTransportHeartbeatPing(this.identity, peer.identity, this.clock)
+        peer.link
+          .send(
+            JSON.stringify(
+              createRuntimeTransportHeartbeatPing(this.identity, peer.identity, this.clock)
+            )
           )
-        );
+          .catch(() => {
+            void this.disconnect(nodeAddress);
+          });
       }
       this.armHeartbeatTimeout(nodeAddress, peer);
     }, this.heartbeatIntervalMs);
@@ -615,6 +669,18 @@ export class TransportCore implements MessageTransport {
     }
 
     peer.outboundFlushing = true;
+    void this.drainOutboundQueue(nodeAddress, peer);
+  }
+
+  /**
+   * Drain the outbound queue ONE send at a time, awaiting each link.send before draining the
+   * next. Mirrors the pre-core node drainOutboundQueue (architecture A5): a single in-flight
+   * send preserves wire ordering AND keeps the queue depth meaningful for backpressure — a
+   * slow send (open link, unresolved send promise) holds the queue so a bounded queue can
+   * fill and reject, exactly as the node transport did. The reentrancy guard
+   * (outboundFlushing + tail re-flush in finally) is preserved.
+   */
+  private async drainOutboundQueue(nodeAddress: string, peer: Peer): Promise<void> {
     try {
       while (peer.outboundQueue.length > 0) {
         if (this.peers.get(nodeAddress) !== peer || !peer.link.isOpen) {
@@ -626,30 +692,27 @@ export class TransportCore implements MessageTransport {
           continue;
         }
         this.updateOutboundQueueDepth(nodeAddress, peer);
-        const sendItem = item;
-        void peer.link
-          .send(JSON.stringify(sendItem.frame))
-          .then(() => {
-            this.recordFrameSent(nodeAddress, peer, sendItem.frame);
-            if (sendItem.trackAck) {
-              this.trackAckIfRetryable(nodeAddress, peer, sendItem.frame);
-            }
-            sendItem.resolve();
-            this.emitTelemetry({
-              type: 'outbound.queue.drained',
-              peerNodeAddress: nodeAddress,
-              messageType: sendItem.frame.message.type,
-              messageId: sendItem.frame.messageId,
-              queueDepth: peer.outboundQueue.length,
-              queueLimit: this.outboundQueueLimit,
-            });
-          })
-          .catch((error) => {
-            sendItem.reject(
-              error instanceof Error ? error : new Error('Runtime transport send failed.')
-            );
-            void this.disconnect(nodeAddress);
+
+        try {
+          await peer.link.send(JSON.stringify(item.frame));
+          this.recordFrameSent(nodeAddress, peer, item.frame);
+          if (item.trackAck) {
+            this.trackAckIfRetryable(nodeAddress, peer, item.frame);
+          }
+          item.resolve();
+          this.emitTelemetry({
+            type: 'outbound.queue.drained',
+            peerNodeAddress: nodeAddress,
+            messageType: item.frame.message.type,
+            messageId: item.frame.messageId,
+            queueDepth: peer.outboundQueue.length,
+            queueLimit: this.outboundQueueLimit,
           });
+        } catch (error) {
+          item.reject(error instanceof Error ? error : new Error('Runtime transport send failed.'));
+          void this.disconnect(nodeAddress);
+          return;
+        }
       }
     } finally {
       peer.outboundFlushing = false;
@@ -776,7 +839,11 @@ export class TransportCore implements MessageTransport {
       frame.sequence,
       this.clock
     );
-    void peer.link.send(JSON.stringify(ackFrame));
+    // A failed ack send (e.g. socket already CLOSING) is a fact, not an escaping rejection:
+    // disconnect the peer, mirroring the pre-core node sendAck().catch(() => disconnect).
+    peer.link.send(JSON.stringify(ackFrame)).catch(() => {
+      void this.disconnect(nodeAddress);
+    });
     this.recordFrameAckSent(nodeAddress, frame);
   }
 
