@@ -13,6 +13,7 @@ import {
   validateRuntimeTransportFrame,
   validateRuntimeTransportHandshake,
 } from '../runtime-transport-contract.js';
+import { safeDispatchListener } from '../transport/transport-channel.js';
 
 export interface InMemoryTransportFrame {
   source: string;
@@ -90,7 +91,12 @@ class InMemoryMessageTransport implements MessageTransport {
 
   deliver(event: { source: string; message: ActorMessage }): void {
     for (const listener of Array.from(this.listeners)) {
-      listener(event);
+      // Route through the shared isolation helper so a throwing or
+      // async-rejecting subscriber can neither escape nor starve siblings
+      // (the PR#27-class fix). This transport has no telemetry sink, so
+      // onError is a deliberate no-op: silent isolation is the intended
+      // behavior here, and onError must never re-throw (errors-as-values).
+      safeDispatchListener(listener, event, () => {});
     }
   }
 
