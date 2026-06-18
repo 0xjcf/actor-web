@@ -197,6 +197,35 @@ export class TransportCore implements MessageTransport {
     return stats ? this.clonePeerStats(stats) : undefined;
   }
 
+  /**
+   * Record an inbound handshake rejection surfaced by a server channel (node ws listen()).
+   * The channel completes the raw inbound handshake and verifies auth before calling
+   * onPeer; when it rejects an inbound peer (bad/missing shared secret, malformed handshake,
+   * identity conflict) it never reaches onPeer, so the core would otherwise never see the
+   * rejection. This re-wires the pre-core node acceptInboundConnection -> recordAuthRejected
+   * + recordHandshakeRejected path so getPeerStats()/getStats() reflect the rejection
+   * (state='rejected', rejectedReason, handshakeRejectedCount) and the same auth.rejected /
+   * handshake.rejected / peer.rejected telemetry is emitted on the server side.
+   *
+   * Errors-as-values: the channel reports the rejection as a fact through this method instead
+   * of letting a rejection escape the inbound handshake promise (the PR#27-class hazard).
+   * A peer that is currently connected is never clobbered to 'rejected' (mirrors the pre-core
+   * inbound guard for a conflicting different-nodeId join).
+   */
+  recordInboundHandshakeRejection(
+    nodeAddress: string,
+    reason: string,
+    options: { readonly auth: boolean } = { auth: false }
+  ): void {
+    if (this.isConnected(nodeAddress)) {
+      return;
+    }
+    if (options.auth) {
+      this.recordAuthRejected(nodeAddress, reason);
+    }
+    this.recordHandshakeRejected(nodeAddress, reason);
+  }
+
   // --- MessageTransport surface ---------------------------------------------------------
 
   async send(destination: string, message: ActorMessage): Promise<void> {
