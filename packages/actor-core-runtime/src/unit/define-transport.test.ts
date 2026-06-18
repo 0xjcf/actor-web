@@ -4,12 +4,12 @@ import {
   type RuntimeTransportFrame,
   validateRuntimeTransportFrame,
 } from '../runtime-transport-contract.js';
-import type { TransportTimers } from '../transport/transport-core.js';
 import {
   defineTransport,
   fromDuplex,
   type TransportDuplex,
 } from '../transport/define-transport.js';
+import type { TransportTimers } from '../transport/transport-core.js';
 
 // defineTransport / fromDuplex authoring specs (engineering brief §1.4, commit 7). The
 // composition root wires an author medium -> fromDuplex/PeerLink -> TransportCore into a
@@ -137,7 +137,7 @@ describe('defineTransport', () => {
 
 describe('defineTransport.server', () => {
   it('builds a MessageTransport factory from a listen author', async () => {
-    const factory = defineTransport.server<Record<string, never>>(() => ({
+    const factory = defineTransport.server<object>(() => ({
       listen: () => undefined,
     }));
     const transport = factory({
