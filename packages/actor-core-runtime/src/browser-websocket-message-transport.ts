@@ -1,3 +1,15 @@
+// Adapter: the browser WebSocket TransportChannel. All reliability machinery (ack/retry,
+// outbound queue, heartbeat engine, stats/telemetry, sequence, dispatch, idempotency) now
+// lives in TransportCore (transport/transport-core.ts); this file is a thin channel that
+// dials peers + runs the client handshake and wraps each WebSocket in a PeerLink. The
+// browser transport is CLIENT-ONLY (it cannot listen), so the channel implements dial()
+// only — no server, no listen()/closeServer(). The PeerLink omits the native heartbeat hook
+// so the core falls back to JSON heartbeat ping/pong frames, keeping the wire byte-identical
+// to the pre-core browser transport. The public createBrowserWebSocketMessageTransport
+// factory and the BrowserWebSocketMessageTransport surface (start/stop, getStats/
+// getPeerStats, send/subscribe/connect/disconnect/isConnected/getConnectedNodes) are
+// preserved verbatim.
+
 import type { ActorMessage, MessageTransport } from './actor-system.js';
 import {
   type RuntimeTransportAuthProvider,
@@ -6,31 +18,25 @@ import {
 } from './runtime-auth.js';
 import {
   createRuntimeNodeIdentity,
-  createRuntimeTransportAckFrame,
-  createRuntimeTransportFrame,
   createRuntimeTransportHandshakeHello,
-  createRuntimeTransportHeartbeatPing,
-  createRuntimeTransportHeartbeatPong,
   type RuntimeNodeIdentity,
-  type RuntimeTransportFrame,
   type RuntimeTransportHandshake,
-  validateRuntimeTransportAckFrame,
-  validateRuntimeTransportFrame,
   validateRuntimeTransportHandshake,
-  validateRuntimeTransportHeartbeatFrame,
 } from './runtime-transport-contract.js';
-import {
-  claimRuntimeTransportFrameIdempotency,
-  createRuntimeTransportIdempotencyFrontCache,
-  type RuntimeTransportIdempotencyProvider,
-} from './runtime-transport-idempotency.js';
+import type { RuntimeTransportIdempotencyProvider } from './runtime-transport-idempotency.js';
 import type {
-  RuntimeTransportDropCode,
   RuntimeTransportPeerStats,
   RuntimeTransportStats,
   RuntimeTransportTelemetryEvent,
   RuntimeTransportTelemetryObserver,
 } from './runtime-transport-telemetry.js';
+import type {
+  DialResult,
+  PeerLink,
+  PeerLinkSink,
+  TransportChannel,
+} from './transport/transport-channel.js';
+import { TransportCore } from './transport/transport-core.js';
 
 export interface BrowserWebSocketMessageTransportOptions {
   nodeAddress: string;
@@ -55,190 +61,174 @@ export interface BrowserWebSocketMessageTransportOptions {
   }>;
 }
 
-type BrowserPeerConnection = {
-  socket: WebSocket;
-  identity: RuntimeNodeIdentity;
-  sequence: number;
-  lastReceivedSequence: number;
-  idempotencyCache: ReturnType<typeof createRuntimeTransportIdempotencyFrontCache>;
-  pendingAcks: Map<string, PendingAck>;
-  outboundQueue: OutboundQueueItem[];
-  outboundFlushing: boolean;
-  lastSeenAt: number;
-  heartbeatInterval: ReturnType<typeof setInterval> | null;
-  heartbeatTimeout: ReturnType<typeof setTimeout> | null;
-};
-
-type PendingAck = {
-  frame: RuntimeTransportFrame;
-  retries: number;
-  timer: ReturnType<typeof setTimeout> | null;
-};
-
-type OutboundQueueItem = {
-  frame: RuntimeTransportFrame;
-  resolve: () => void;
-  reject: (error: Error) => void;
-  trackAck: boolean;
-};
-
 const WEB_SOCKET_OPEN = 1;
 
-export class BrowserWebSocketMessageTransport implements MessageTransport {
-  private readonly listeners = new Set<
-    (event: { source: string; message: ActorMessage }) => void
-  >();
-  private readonly peers = new Map<string, BrowserPeerConnection>();
-  private readonly identity: RuntimeNodeIdentity;
-  private readonly connectTimeoutMs: number;
-  private readonly heartbeatIntervalMs: number;
-  private readonly heartbeatTimeoutMs: number;
-  private readonly idempotencyWindowSize: number;
-  private readonly ackTimeoutMs: number;
-  private readonly maxAckRetries: number;
-  private readonly outboundQueueLimit: number;
-  private readonly webSocketFactory: (url: string) => WebSocket;
-  private readonly stats: RuntimeTransportStats;
+/**
+ * One live browser WebSocket as a PeerLink. The core owns all reliability; this link only
+ * moves opaque JSON payloads (byte-identical to the pre-core sendJson/parseJson) and reports
+ * raw liveness via WebSocket.readyState. It has NO native heartbeat hook, so the core falls
+ * back to JSON heartbeat ping/pong frames — exactly the wire the pre-core browser transport
+ * spoke (no native ws ping/pong is available in the browser DOM WebSocket API).
+ */
+class BrowserWebSocketPeerLink implements PeerLink {
+  private sink: PeerLinkSink | null = null;
+  private closed = false;
 
-  constructor(private readonly options: BrowserWebSocketMessageTransportOptions) {
-    this.identity = createRuntimeNodeIdentity({
-      nodeAddress: options.nodeAddress,
-      nodeId: options.nodeId ?? options.nodeAddress,
-      incarnation: options.incarnation ?? `${Date.now()}`,
-      ...(options.capabilities ? { capabilities: options.capabilities } : {}),
-    });
-    this.connectTimeoutMs = options.connectTimeoutMs ?? 3000;
-    this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 15000;
-    this.heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? this.heartbeatIntervalMs * 2;
-    this.idempotencyWindowSize = options.idempotencyWindowSize ?? 1024;
-    this.ackTimeoutMs = options.ackTimeoutMs ?? 1000;
-    this.maxAckRetries = options.maxAckRetries ?? 2;
-    this.outboundQueueLimit = options.outboundQueueLimit ?? 1024;
-    this.webSocketFactory =
-      options.webSocketFactory ??
-      ((url) => {
-        if (typeof WebSocket === 'undefined') {
-          throw new Error('Browser WebSocket transport requires a global WebSocket constructor.');
-        }
+  constructor(
+    readonly socket: WebSocket,
+    readonly remoteAddress: string,
+    readonly identity: RuntimeNodeIdentity
+  ) {}
 
-        return new WebSocket(url);
-      });
-    this.stats = this.createInitialStats();
+  get isOpen(): boolean {
+    return !this.closed && this.socket.readyState === WEB_SOCKET_OPEN;
   }
 
-  async start(): Promise<void> {
-    if (!this.stats.startedAt) {
-      this.stats.startedAt = new Date().toISOString();
-      this.emitTelemetry({ type: 'transport.started' });
-    }
+  send(payload: unknown): Promise<void> {
+    // The DOM WebSocket.send is fire-and-forget (no completion callback); transmit
+    // synchronously then resolve. The core hands a pre-serialized JSON string, transmitted
+    // verbatim for byte parity with the pre-core sendJson.
+    this.socket.send(typeof payload === 'string' ? payload : JSON.stringify(payload));
     return Promise.resolve();
   }
 
-  async stop(): Promise<void> {
-    for (const [nodeAddress, peer] of Array.from(this.peers.entries())) {
-      this.closePeer(nodeAddress, peer, false);
-    }
-    this.stats.stoppedAt = new Date().toISOString();
-    this.emitTelemetry({ type: 'transport.stopped' });
-  }
-
-  getStats(): RuntimeTransportStats {
-    return this.cloneStats();
-  }
-
-  getPeerStats(nodeAddress: string): RuntimeTransportPeerStats | undefined {
-    const stats = this.stats.peers[nodeAddress];
-    return stats ? this.clonePeerStats(stats) : undefined;
-  }
-
-  async send(destination: string, message: ActorMessage): Promise<void> {
-    const peer = this.peers.get(destination);
-    if (!peer || peer.socket.readyState !== WEB_SOCKET_OPEN) {
-      throw new Error(
-        `Transport ${this.identity.nodeAddress} is not connected to ${destination} (readyState=${peer?.socket.readyState ?? 'missing'})`
-      );
-    }
-
-    peer.sequence += 1;
-    const frame = createRuntimeTransportFrame({
-      source: this.identity,
-      destination: peer.identity,
-      messageId: this.createMessageId(destination, peer.sequence),
-      sequence: peer.sequence,
-      message,
-    });
-
-    await this.enqueueFrame(destination, peer, frame, true);
-  }
-
-  subscribe(listener: (event: { source: string; message: ActorMessage }) => void): () => void {
-    this.listeners.add(listener);
-
+  receive(sink: PeerLinkSink): () => void {
+    this.sink = sink;
+    const onMessage = (event: MessageEvent): void => {
+      // parseJson is async (Blob branch); feed the parsed payload to the core when ready.
+      void parseJson(event.data).then((parsed) => {
+        this.sink?.onPayload(parsed);
+      });
+    };
+    const onClose = (): void => {
+      this.sink?.onClosed('socket closed');
+    };
+    const onError = (): void => {
+      this.sink?.onClosed('socket error');
+    };
+    this.socket.addEventListener('message', onMessage);
+    this.socket.addEventListener('close', onClose);
+    this.socket.addEventListener('error', onError);
     return () => {
-      this.listeners.delete(listener);
+      this.socket.removeEventListener('message', onMessage);
+      this.socket.removeEventListener('close', onClose);
+      this.socket.removeEventListener('error', onError);
+      this.sink = null;
     };
   }
 
-  async connect(address: string): Promise<void> {
-    if (address === this.identity.nodeAddress) {
-      throw new Error('Runtime transport cannot connect a node to itself.');
-    }
-
-    const existing = this.peers.get(address);
-    if (existing?.socket.readyState === WEB_SOCKET_OPEN) {
+  close(): void {
+    // Idempotent; never throws (errors-as-values at the adapter seam).
+    if (this.closed) {
       return;
     }
+    this.closed = true;
+    try {
+      this.socket.close();
+    } catch {
+      // closing an already-closed/erroring socket is a fact, not an error.
+    }
+  }
+}
 
-    const url = await this.resolvePeerUrl(address);
-    if (!url) {
-      this.recordHandshakeRejected(address, `No WebSocket peer URL configured for node ${address}`);
-      throw new Error(`No WebSocket peer URL configured for node ${address}`);
+async function parseJson(data: unknown): Promise<unknown> {
+  try {
+    if (typeof data === 'string') {
+      return JSON.parse(data);
     }
 
-    this.setPeerStats(address, { state: 'connecting' });
-    this.emitTelemetry({ type: 'peer.connecting', peerNodeAddress: address });
-    const socket = this.webSocketFactory(url);
+    if (data instanceof ArrayBuffer) {
+      return JSON.parse(new TextDecoder().decode(data));
+    }
+
+    if (ArrayBuffer.isView(data)) {
+      return JSON.parse(new TextDecoder().decode(data));
+    }
+
+    if (typeof Blob !== 'undefined' && data instanceof Blob) {
+      return JSON.parse(await data.text());
+    }
+
+    return JSON.parse(String(data));
+  } catch {
+    return null;
+  }
+}
+
+function isHandshakeAccept(
+  frame: unknown
+): frame is Extract<RuntimeTransportHandshake, { type: 'runtime.handshake.accept' }> {
+  return Boolean(
+    frame &&
+      typeof frame === 'object' &&
+      (frame as { type?: string }).type === 'runtime.handshake.accept'
+  );
+}
+
+function isHandshakeReject(
+  frame: unknown
+): frame is Extract<RuntimeTransportHandshake, { type: 'runtime.handshake.reject' }> {
+  return Boolean(
+    frame &&
+      typeof frame === 'object' &&
+      (frame as { type?: string }).type === 'runtime.handshake.reject'
+  );
+}
+
+function sendJson(socket: WebSocket, frame: unknown): void {
+  socket.send(JSON.stringify(frame));
+}
+
+interface BrowserChannelDeps {
+  readonly identity: RuntimeNodeIdentity;
+  readonly connectTimeoutMs: number;
+  readonly auth: BrowserWebSocketMessageTransportOptions['auth'];
+  readonly webSocketFactory: (url: string) => WebSocket;
+  /** Resolve a peer URL on demand — reads the live options so a test/caller can rebind it. */
+  readonly resolvePeerUrl: (nodeAddress: string) => Promise<string | undefined>;
+  readonly emitTelemetry: (
+    event: Omit<RuntimeTransportTelemetryEvent, 'nodeAddress' | 'timestamp'>
+  ) => void;
+}
+
+/**
+ * The browser WebSocket TransportChannel. dial() runs the client handshake (open + hello +
+ * waitForHandshakeAccept + auth-verify) and returns a fact-shaped DialResult ({ ok:false,
+ * reason } for "no peer URL", connection failure, or handshake reject) instead of throwing
+ * control-flow. There is NO listen()/closeServer(): the browser transport is client-only,
+ * so the core skips the inbound-peer path entirely. The raw handshake frames are
+ * byte-identical to the pre-core browser transport.
+ */
+class BrowserWebSocketChannel implements TransportChannel {
+  constructor(private readonly deps: BrowserChannelDeps) {}
+
+  async dial(remoteAddress: string): Promise<DialResult> {
+    const url = await this.deps.resolvePeerUrl(remoteAddress);
+    if (!url) {
+      return {
+        ok: false,
+        reason: `No WebSocket peer URL configured for node ${remoteAddress}`,
+      };
+    }
+
+    const socket = this.deps.webSocketFactory(url);
     try {
       await this.waitForOpen(socket);
-      this.sendJson(
+      sendJson(
         socket,
-        createRuntimeTransportHandshakeHello(this.identity, {
-          auth: await resolveRuntimeAuthPayload(this.options.auth),
+        createRuntimeTransportHandshakeHello(this.deps.identity, {
+          auth: await resolveRuntimeAuthPayload(this.deps.auth),
         })
       );
-      const peerIdentity = await this.waitForHandshakeAccept(socket, address);
-      this.registerPeer(socket, peerIdentity);
+      const peerIdentity = await this.waitForHandshakeAccept(socket, remoteAddress);
+      return { ok: true, link: new BrowserWebSocketPeerLink(socket, remoteAddress, peerIdentity) };
     } catch (error) {
       socket.close();
-      this.recordHandshakeRejected(
-        address,
-        error instanceof Error ? error.message : 'Runtime peer connection failed.'
-      );
-      throw error;
+      return {
+        ok: false,
+        reason: error instanceof Error ? error.message : 'Runtime peer connection failed.',
+      };
     }
-  }
-
-  async disconnect(address: string): Promise<void> {
-    const peer = this.peers.get(address);
-    if (!peer) {
-      return;
-    }
-
-    this.closePeer(address, peer, true);
-  }
-
-  getConnectedNodes(): string[] {
-    return Array.from(this.peers.entries())
-      .filter(([, peer]) => peer.socket.readyState === WEB_SOCKET_OPEN)
-      .map(([nodeAddress]) => nodeAddress);
-  }
-
-  isConnected(address: string): boolean {
-    return this.peers.get(address)?.socket.readyState === WEB_SOCKET_OPEN;
-  }
-
-  private async resolvePeerUrl(nodeAddress: string): Promise<string | undefined> {
-    return this.options.peers?.[nodeAddress] ?? this.options.peerUrlResolver?.(nodeAddress);
   }
 
   private async waitForHandshakeAccept(
@@ -251,7 +241,7 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
         cleanup();
         socket.close();
         reject(new Error(`Timed out waiting for runtime handshake from ${expectedNodeAddress}`));
-      }, this.connectTimeoutMs);
+      }, this.deps.connectTimeoutMs);
 
       const cleanup = () => {
         settled = true;
@@ -279,12 +269,12 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
         if (settled) {
           return;
         }
-        void this.parseJson(event.data).then((frame) => {
+        void parseJson(event.data).then((frame) => {
           if (settled) {
             return;
           }
 
-          const validation = validateRuntimeTransportHandshake(frame, this.identity);
+          const validation = validateRuntimeTransportHandshake(frame, this.deps.identity);
           if (!validation.ok) {
             cleanup();
             socket.close();
@@ -292,14 +282,14 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
             return;
           }
 
-          if (this.isHandshakeReject(frame)) {
+          if (isHandshakeReject(frame)) {
             cleanup();
             socket.close();
             reject(new Error(`Runtime handshake rejected: ${frame.message}`));
             return;
           }
 
-          if (!this.isHandshakeAccept(frame)) {
+          if (!isHandshakeAccept(frame)) {
             cleanup();
             socket.close();
             reject(new Error('Expected runtime handshake accept.'));
@@ -307,14 +297,25 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
           }
 
           cleanup();
-          void this.verifyPeerAuth(frame).then((auth) => {
+          void verifyRuntimeAuth(this.deps.auth, {
+            auth: frame.auth,
+            source: frame.source,
+            local: this.deps.identity,
+          }).then((auth) => {
             if (!auth.ok) {
               socket.close();
-              this.recordAuthRejected(frame.source.nodeAddress, auth.reason);
+              this.deps.emitTelemetry({
+                type: 'auth.rejected',
+                peerNodeAddress: frame.source.nodeAddress,
+                reason: auth.reason,
+              });
               reject(new Error(`Runtime handshake rejected: ${auth.reason}`));
               return;
             }
-            this.recordAuthAccepted(frame.source.nodeAddress);
+            this.deps.emitTelemetry({
+              type: 'auth.accepted',
+              peerNodeAddress: frame.source.nodeAddress,
+            });
 
             if (frame.source.nodeAddress !== expectedNodeAddress) {
               socket.close();
@@ -335,989 +336,13 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
     });
   }
 
-  private registerPeer(socket: WebSocket, identity: RuntimeNodeIdentity): void {
-    const existing = this.peers.get(identity.nodeAddress);
-    if (existing && existing.socket !== socket) {
-      this.closePeer(identity.nodeAddress, existing, false);
-    }
-
-    const peer: BrowserPeerConnection = {
-      socket,
-      identity,
-      sequence: 0,
-      lastReceivedSequence: 0,
-      idempotencyCache: createRuntimeTransportIdempotencyFrontCache(this.idempotencyWindowSize),
-      pendingAcks: new Map<string, PendingAck>(),
-      outboundQueue: [],
-      outboundFlushing: false,
-      lastSeenAt: Date.now(),
-      heartbeatInterval: null,
-      heartbeatTimeout: null,
-    };
-    this.peers.set(identity.nodeAddress, peer);
-    this.recordPeerConnected(identity.nodeAddress, identity);
-
-    socket.addEventListener('message', (event) => {
-      void this.handleSocketMessage(identity.nodeAddress, socket, event.data);
-    });
-    socket.addEventListener('close', () => {
-      this.handlePeerClosed(identity.nodeAddress, socket);
-    });
-    socket.addEventListener('error', () => {
-      this.handlePeerClosed(identity.nodeAddress, socket);
-    });
-
-    this.startHeartbeat(identity.nodeAddress, peer);
-    queueMicrotask(() => {
-      if (this.peers.get(identity.nodeAddress) !== peer) {
-        return;
-      }
-
-      this.emitTransportMessage(identity.nodeAddress, {
-        type: '__runtime.transport.connected',
-        nodeAddress: identity.nodeAddress,
-        _timestamp: Date.now(),
-        _version: '1.0.0',
-      } as ActorMessage<{ type: '__runtime.transport.connected'; nodeAddress: string }>);
-    });
-  }
-
-  private async handleSocketMessage(
-    sourceNodeAddress: string,
-    socket: WebSocket,
-    data: unknown
-  ): Promise<void> {
-    const peer = this.peers.get(sourceNodeAddress);
-    if (!peer || peer.socket !== socket || peer.socket.readyState !== WEB_SOCKET_OPEN) {
-      return;
-    }
-
-    const frame = await this.parseJson(data);
-    if (this.isHeartbeatFrame(frame)) {
-      this.handleHeartbeatFrame(sourceNodeAddress, peer, frame);
-      return;
-    }
-    if (this.isAckFrame(frame)) {
-      this.handleAckFrame(sourceNodeAddress, peer, frame);
-      return;
-    }
-
-    const validation = validateRuntimeTransportFrame(frame, this.identity);
-    if (!validation.ok) {
-      this.recordFrameDropped(sourceNodeAddress, validation.code, validation.message);
-      await this.disconnect(sourceNodeAddress);
-      return;
-    }
-
-    const runtimeFrame = frame as RuntimeTransportFrame;
-    if (
-      runtimeFrame.source.nodeAddress !== sourceNodeAddress ||
-      runtimeFrame.source.nodeId !== peer.identity.nodeId ||
-      runtimeFrame.source.incarnation !== peer.identity.incarnation
-    ) {
-      this.recordFrameDropped(
-        sourceNodeAddress,
-        'malformed_frame',
-        'Runtime frame source mismatch.'
-      );
-      await this.disconnect(sourceNodeAddress);
-      return;
-    }
-
-    this.markPeerSeen(sourceNodeAddress, peer.socket);
-    const idempotency = await claimRuntimeTransportFrameIdempotency({
-      cache: peer.idempotencyCache,
-      provider: this.options.idempotencyProvider,
-      localNode: this.identity,
-      peerNode: peer.identity,
-      frame: runtimeFrame,
-    });
-
-    if (idempotency.outcome === 'error') {
-      this.recordIdempotencyProviderError(sourceNodeAddress, peer, idempotency);
-      this.recordFrameDropped(
-        sourceNodeAddress,
-        'idempotency_provider_error',
-        'Runtime idempotency provider claim failed.'
-      );
-      await this.disconnect(sourceNodeAddress);
-      return;
-    }
-
-    this.recordIdempotencyCacheEvictions(sourceNodeAddress, idempotency.evictedMessageIds);
-
-    if (idempotency.source === 'provider' && idempotency.outcome === 'accepted') {
-      this.recordIdempotencyProviderClaimed(sourceNodeAddress, peer, idempotency.providerClaim);
-    }
-
-    if (idempotency.outcome === 'duplicate') {
-      this.recordDuplicateFrameDropped(sourceNodeAddress, peer, runtimeFrame, idempotency.source);
-      this.sendAck(sourceNodeAddress, peer, runtimeFrame);
-      return;
-    }
-
-    this.recordFrameReceived(sourceNodeAddress, peer, runtimeFrame);
-    this.sendAck(sourceNodeAddress, peer, runtimeFrame);
-    this.emitTransportMessage(runtimeFrame.source.nodeAddress, runtimeFrame.message);
-  }
-
-  private handleAckFrame(
-    sourceNodeAddress: string,
-    peer: BrowserPeerConnection,
-    frame: unknown
-  ): void {
-    const validation = validateRuntimeTransportAckFrame(frame, this.identity);
-    if (!validation.ok) {
-      this.recordFrameDropped(sourceNodeAddress, validation.code, validation.message);
-      void this.disconnect(sourceNodeAddress);
-      return;
-    }
-
-    const ackFrame = frame as ReturnType<typeof createRuntimeTransportAckFrame>;
-    if (
-      ackFrame.source.nodeAddress !== sourceNodeAddress ||
-      ackFrame.source.nodeId !== peer.identity.nodeId ||
-      ackFrame.source.incarnation !== peer.identity.incarnation
-    ) {
-      this.recordFrameDropped(sourceNodeAddress, 'malformed_frame', 'Runtime ack source mismatch.');
-      void this.disconnect(sourceNodeAddress);
-      return;
-    }
-
-    this.markPeerSeen(sourceNodeAddress, peer.socket);
-    this.clearPendingAck(sourceNodeAddress, peer, ackFrame.messageId);
-  }
-
-  private handleHeartbeatFrame(
-    sourceNodeAddress: string,
-    peer: BrowserPeerConnection,
-    frame: unknown
-  ): void {
-    const validation = validateRuntimeTransportHeartbeatFrame(frame, this.identity);
-    if (!validation.ok) {
-      this.recordFrameDropped(sourceNodeAddress, validation.code, validation.message);
-      void this.disconnect(sourceNodeAddress);
-      return;
-    }
-    if (!this.isHeartbeatFrame(frame)) {
-      this.recordFrameDropped(sourceNodeAddress, 'malformed_frame', 'Unsupported heartbeat frame.');
-      void this.disconnect(sourceNodeAddress);
-      return;
-    }
-
-    if (
-      frame.source.nodeAddress !== sourceNodeAddress ||
-      frame.source.nodeId !== peer.identity.nodeId ||
-      frame.source.incarnation !== peer.identity.incarnation
-    ) {
-      this.recordFrameDropped(sourceNodeAddress, 'malformed_frame', 'Heartbeat source mismatch.');
-      void this.disconnect(sourceNodeAddress);
-      return;
-    }
-
-    this.markPeerSeen(sourceNodeAddress, peer.socket);
-    if (frame.type === 'runtime.transport.ping') {
-      this.sendJson(peer.socket, createRuntimeTransportHeartbeatPong(this.identity, peer.identity));
-    }
-  }
-
-  private closePeer(
-    nodeAddress: string,
-    peer: BrowserPeerConnection,
-    emitDisconnected: boolean
-  ): void {
-    this.clearHeartbeat(peer);
-    this.clearPendingAcks(peer);
-    this.rejectQueuedFrames(
-      peer,
-      `Transport ${this.identity.nodeAddress} disconnected from ${nodeAddress}`
-    );
-    this.peers.delete(nodeAddress);
-    peer.socket.close();
-    this.recordPeerDisconnected(nodeAddress, peer);
-
-    if (emitDisconnected) {
-      this.emitTransportMessage(nodeAddress, {
-        type: '__runtime.transport.disconnected',
-        nodeAddress,
-        _timestamp: Date.now(),
-        _version: '1.0.0',
-      } as ActorMessage<{ type: '__runtime.transport.disconnected'; nodeAddress: string }>);
-    }
-  }
-
-  private handlePeerClosed(nodeAddress: string, socket: WebSocket): void {
-    const peer = this.peers.get(nodeAddress);
-    if (!peer || peer.socket !== socket) {
-      return;
-    }
-
-    this.closePeer(nodeAddress, peer, true);
-  }
-
-  private startHeartbeat(nodeAddress: string, peer: BrowserPeerConnection): void {
-    if (this.heartbeatIntervalMs <= 0) {
-      return;
-    }
-
-    peer.heartbeatInterval = setInterval(() => {
-      if (peer.socket.readyState !== WEB_SOCKET_OPEN || this.peers.get(nodeAddress) !== peer) {
-        this.clearHeartbeat(peer);
-        return;
-      }
-
-      this.sendJson(peer.socket, createRuntimeTransportHeartbeatPing(this.identity, peer.identity));
-      this.armHeartbeatTimeout(nodeAddress, peer);
-    }, this.heartbeatIntervalMs);
-  }
-
-  private armHeartbeatTimeout(nodeAddress: string, peer: BrowserPeerConnection): void {
-    if (this.heartbeatTimeoutMs <= 0) {
-      return;
-    }
-
-    if (peer.heartbeatTimeout) {
-      clearTimeout(peer.heartbeatTimeout);
-    }
-
-    peer.heartbeatTimeout = setTimeout(() => {
-      if (this.peers.get(nodeAddress) !== peer) {
-        return;
-      }
-
-      this.recordHeartbeatTimeout(nodeAddress, peer);
-      this.closePeer(nodeAddress, peer, true);
-    }, this.heartbeatTimeoutMs);
-  }
-
-  private clearHeartbeat(peer: BrowserPeerConnection): void {
-    if (peer.heartbeatInterval) {
-      clearInterval(peer.heartbeatInterval);
-      peer.heartbeatInterval = null;
-    }
-    if (peer.heartbeatTimeout) {
-      clearTimeout(peer.heartbeatTimeout);
-      peer.heartbeatTimeout = null;
-    }
-  }
-
-  private markPeerSeen(nodeAddress: string, socket: WebSocket): void {
-    const peer = this.peers.get(nodeAddress);
-    if (!peer || peer.socket !== socket) {
-      return;
-    }
-
-    peer.lastSeenAt = Date.now();
-    if (peer.heartbeatTimeout) {
-      clearTimeout(peer.heartbeatTimeout);
-      peer.heartbeatTimeout = null;
-    }
-  }
-
-  private emitTransportMessage(source: string, message: ActorMessage): void {
-    for (const listener of Array.from(this.listeners)) {
-      listener({ source, message });
-    }
-  }
-
-  private async verifyPeerAuth(
-    frame: Extract<RuntimeTransportHandshake, { type: 'runtime.handshake.accept' }>
-  ): Promise<{ ok: true } | { ok: false; reason: string }> {
-    return verifyRuntimeAuth(this.options.auth, {
-      auth: frame.auth,
-      source: frame.source,
-      local: this.identity,
-    });
-  }
-
-  private createInitialStats(): RuntimeTransportStats {
-    return {
-      nodeAddress: this.identity.nodeAddress,
-      connectedPeerCount: 0,
-      framesSent: 0,
-      framesReceived: 0,
-      framesAcked: 0,
-      framesRetried: 0,
-      retryExhaustedCount: 0,
-      outboundQueueDepth: 0,
-      outboundQueueLimit: this.outboundQueueLimit,
-      outboundFramesDropped: 0,
-      backpressureDropCount: 0,
-      duplicateFramesDropped: 0,
-      idempotencyCacheEvictions: 0,
-      idempotencyWindowSize: this.idempotencyWindowSize,
-      idempotencyProviderEnabled: Boolean(this.options.idempotencyProvider),
-      idempotencyProviderClaimCount: 0,
-      idempotencyProviderDuplicateCount: 0,
-      idempotencyProviderErrorCount: 0,
-      malformedFramesDropped: 0,
-      validationFramesDropped: 0,
-      sequenceGapCount: 0,
-      handshakeAcceptedCount: 0,
-      handshakeRejectedCount: 0,
-      disconnectCount: 0,
-      reconnectCount: 0,
-      heartbeatTimeoutCount: 0,
-      peers: {},
-    };
-  }
-
-  private emptyPeerStats(nodeAddress: string): RuntimeTransportPeerStats {
-    return {
-      nodeAddress,
-      state: 'disconnected',
-      lastSentSequence: 0,
-      lastReceivedSequence: 0,
-      framesSent: 0,
-      framesReceived: 0,
-      framesAcked: 0,
-      framesRetried: 0,
-      retryExhaustedCount: 0,
-      outboundQueueDepth: 0,
-      outboundQueueLimit: this.outboundQueueLimit,
-      outboundFramesDropped: 0,
-      backpressureDropCount: 0,
-      duplicateFramesDropped: 0,
-      idempotencyCacheEvictions: 0,
-      idempotencyWindowSize: this.idempotencyWindowSize,
-      idempotencyProviderEnabled: Boolean(this.options.idempotencyProvider),
-      idempotencyProviderClaimCount: 0,
-      idempotencyProviderDuplicateCount: 0,
-      idempotencyProviderErrorCount: 0,
-      malformedFramesDropped: 0,
-      validationFramesDropped: 0,
-      sequenceGapCount: 0,
-      handshakeAcceptedCount: 0,
-      handshakeRejectedCount: 0,
-      disconnectCount: 0,
-      reconnectCount: 0,
-      heartbeatTimeoutCount: 0,
-    };
-  }
-
-  private setPeerStats(
-    nodeAddress: string,
-    update: Partial<Omit<RuntimeTransportPeerStats, 'nodeAddress'>>
-  ): RuntimeTransportPeerStats {
-    const previous = this.stats.peers[nodeAddress] ?? this.emptyPeerStats(nodeAddress);
-    const next = {
-      ...previous,
-      ...update,
-      ...(update.identity ? { identity: { ...update.identity } } : {}),
-    };
-    this.stats.peers[nodeAddress] = next;
-    return next;
-  }
-
-  private emitTelemetry(
-    event: Omit<RuntimeTransportTelemetryEvent, 'nodeAddress' | 'timestamp'>
-  ): void {
-    const timestamp = new Date().toISOString();
-    this.stats.lastEventAt = timestamp;
-    this.options.telemetry?.({
-      nodeAddress: this.identity.nodeAddress,
-      timestamp,
-      ...event,
-    });
-  }
-
-  private recordPeerConnected(nodeAddress: string, identity: RuntimeNodeIdentity): void {
-    const previous = this.stats.peers[nodeAddress];
-    const connectedAt = new Date().toISOString();
-    this.stats.handshakeAcceptedCount += 1;
-    if (previous?.disconnectCount) {
-      this.stats.reconnectCount += 1;
-    }
-    this.setPeerStats(nodeAddress, {
-      state: 'connected',
-      identity,
-      connectedAt,
-      lastSeenAt: connectedAt,
-      handshakeAcceptedCount: (previous?.handshakeAcceptedCount ?? 0) + 1,
-      reconnectCount: previous?.disconnectCount ? (previous?.reconnectCount ?? 0) + 1 : 0,
-      rejectedReason: undefined,
-    });
-    this.refreshConnectedPeerCount();
-    this.emitTelemetry({ type: 'handshake.accepted', peerNodeAddress: nodeAddress });
-    this.emitTelemetry({ type: 'peer.connected', peerNodeAddress: nodeAddress });
-  }
-
-  private recordHandshakeRejected(nodeAddress: string, reason: string): void {
-    const previous = this.stats.peers[nodeAddress];
-    this.stats.handshakeRejectedCount += 1;
-    this.setPeerStats(nodeAddress, {
-      state: 'rejected',
-      handshakeRejectedCount: (previous?.handshakeRejectedCount ?? 0) + 1,
-      rejectedReason: reason,
-    });
-    this.emitTelemetry({ type: 'handshake.rejected', peerNodeAddress: nodeAddress, reason });
-    this.emitTelemetry({ type: 'peer.rejected', peerNodeAddress: nodeAddress, reason });
-  }
-
-  private recordAuthAccepted(nodeAddress: string): void {
-    this.emitTelemetry({ type: 'auth.accepted', peerNodeAddress: nodeAddress });
-  }
-
-  private recordAuthRejected(nodeAddress: string, reason: string): void {
-    this.setPeerStats(nodeAddress, {
-      state: 'rejected',
-      rejectedReason: reason,
-    });
-    this.emitTelemetry({ type: 'auth.rejected', peerNodeAddress: nodeAddress, reason });
-  }
-
-  private recordPeerDisconnected(nodeAddress: string, peer: BrowserPeerConnection): void {
-    const previous = this.stats.peers[nodeAddress];
-    const disconnectedAt = new Date().toISOString();
-    this.stats.disconnectCount += 1;
-    this.setPeerStats(nodeAddress, {
-      state: 'disconnected',
-      identity: peer.identity,
-      disconnectedAt,
-      lastSeenAt: new Date(peer.lastSeenAt).toISOString(),
-      disconnectCount: (previous?.disconnectCount ?? 0) + 1,
-    });
-    this.refreshConnectedPeerCount();
-    this.emitTelemetry({ type: 'peer.disconnected', peerNodeAddress: nodeAddress });
-  }
-
-  private recordFrameSent(
-    nodeAddress: string,
-    peer: BrowserPeerConnection,
-    frame: RuntimeTransportFrame
-  ): void {
-    this.stats.framesSent += 1;
-    this.setPeerStats(nodeAddress, {
-      identity: peer.identity,
-      lastSentAt: new Date().toISOString(),
-      lastSentSequence: frame.sequence,
-      framesSent: (this.stats.peers[nodeAddress]?.framesSent ?? 0) + 1,
-    });
-    this.emitTelemetry({
-      type: 'frame.sent',
-      peerNodeAddress: nodeAddress,
-      messageType: frame.message.type,
-      messageId: frame.messageId,
-      sequence: frame.sequence,
-    });
-  }
-
-  private recordFrameReceived(
-    nodeAddress: string,
-    peer: BrowserPeerConnection,
-    frame: RuntimeTransportFrame
-  ): void {
-    const expectedSequence = peer.lastReceivedSequence + 1;
-    if (frame.sequence > expectedSequence) {
-      this.stats.sequenceGapCount += 1;
-      this.setPeerStats(nodeAddress, {
-        sequenceGapCount: (this.stats.peers[nodeAddress]?.sequenceGapCount ?? 0) + 1,
-      });
-      this.emitTelemetry({
-        type: 'sequence.gap',
-        peerNodeAddress: nodeAddress,
-        sequence: frame.sequence,
-        expectedSequence,
-      });
-    }
-
-    peer.lastReceivedSequence = Math.max(peer.lastReceivedSequence, frame.sequence);
-    this.stats.framesReceived += 1;
-    this.setPeerStats(nodeAddress, {
-      identity: peer.identity,
-      lastReceivedAt: new Date().toISOString(),
-      lastReceivedSequence: peer.lastReceivedSequence,
-      framesReceived: (this.stats.peers[nodeAddress]?.framesReceived ?? 0) + 1,
-    });
-    this.emitTelemetry({
-      type: 'frame.received',
-      peerNodeAddress: nodeAddress,
-      messageType: frame.message.type,
-      messageId: frame.messageId,
-      sequence: frame.sequence,
-    });
-  }
-
-  private createMessageId(destination: string, sequence: number): string {
-    return [
-      this.identity.nodeAddress,
-      this.identity.incarnation,
-      destination,
-      String(sequence),
-    ].join(':');
-  }
-
-  private recordIdempotencyCacheEvictions(
-    nodeAddress: string,
-    evictedMessageIds: readonly string[]
-  ): void {
-    for (const evicted of evictedMessageIds) {
-      this.stats.idempotencyCacheEvictions += 1;
-      this.setPeerStats(nodeAddress, {
-        idempotencyCacheEvictions:
-          (this.stats.peers[nodeAddress]?.idempotencyCacheEvictions ?? 0) + 1,
-      });
-      this.emitTelemetry({
-        type: 'idempotency.cache.evicted',
-        peerNodeAddress: nodeAddress,
-        messageId: evicted,
-      });
-    }
-  }
-
-  private recordIdempotencyProviderClaimed(
-    nodeAddress: string,
-    peer: BrowserPeerConnection,
-    claim?: {
-      readonly scope: string;
-      readonly key: string;
-    }
-  ): void {
-    if (!claim) {
-      return;
-    }
-
-    this.stats.idempotencyProviderClaimCount += 1;
-    this.setPeerStats(nodeAddress, {
-      identity: peer.identity,
-      idempotencyProviderClaimCount:
-        (this.stats.peers[nodeAddress]?.idempotencyProviderClaimCount ?? 0) + 1,
-    });
-    this.emitTelemetry({
-      type: 'idempotency.provider.claimed',
-      peerNodeAddress: nodeAddress,
-      idempotencyScope: claim.scope,
-      idempotencyKey: claim.key,
-    });
-  }
-
-  private recordIdempotencyProviderError(
-    nodeAddress: string,
-    peer: BrowserPeerConnection,
-    input: {
-      readonly error: Error;
-      readonly providerClaim: {
-        readonly scope: string;
-        readonly key: string;
-      };
-    }
-  ): void {
-    const erroredAt = new Date().toISOString();
-    this.stats.idempotencyProviderErrorCount += 1;
-    this.stats.lastIdempotencyProviderErrorAt = erroredAt;
-    this.stats.lastIdempotencyProviderErrorMessage = input.error.message;
-    this.setPeerStats(nodeAddress, {
-      identity: peer.identity,
-      idempotencyProviderErrorCount:
-        (this.stats.peers[nodeAddress]?.idempotencyProviderErrorCount ?? 0) + 1,
-      lastIdempotencyProviderErrorAt: erroredAt,
-      lastIdempotencyProviderErrorMessage: input.error.message,
-    });
-    this.emitTelemetry({
-      type: 'idempotency.provider.error',
-      peerNodeAddress: nodeAddress,
-      reason: input.error.message,
-      idempotencyScope: input.providerClaim.scope,
-      idempotencyKey: input.providerClaim.key,
-    });
-  }
-
-  private recordDuplicateFrameDropped(
-    nodeAddress: string,
-    peer: BrowserPeerConnection,
-    frame: RuntimeTransportFrame,
-    source: 'memory' | 'provider'
-  ): void {
-    this.stats.duplicateFramesDropped += 1;
-    const update: Partial<Omit<RuntimeTransportPeerStats, 'nodeAddress'>> = {
-      identity: peer.identity,
-      duplicateFramesDropped: (this.stats.peers[nodeAddress]?.duplicateFramesDropped ?? 0) + 1,
-    };
-    if (source === 'provider') {
-      this.stats.idempotencyProviderDuplicateCount += 1;
-      update.idempotencyProviderDuplicateCount =
-        (this.stats.peers[nodeAddress]?.idempotencyProviderDuplicateCount ?? 0) + 1;
-    }
-    this.setPeerStats(nodeAddress, update);
-    this.emitTelemetry({
-      type: 'frame.duplicate',
-      peerNodeAddress: nodeAddress,
-      messageType: frame.message.type,
-      messageId: frame.messageId,
-      sequence: frame.sequence,
-    });
-    if (source === 'provider') {
-      this.emitTelemetry({
-        type: 'idempotency.provider.duplicate',
-        peerNodeAddress: nodeAddress,
-        messageType: frame.message.type,
-        messageId: frame.messageId,
-        sequence: frame.sequence,
-      });
-    }
-  }
-
-  private isRetryableRuntimeFrame(frame: RuntimeTransportFrame): boolean {
-    return frame.message.type.startsWith('__runtime.');
-  }
-
-  private enqueueFrame(
-    nodeAddress: string,
-    peer: BrowserPeerConnection,
-    frame: RuntimeTransportFrame,
-    trackAck: boolean
-  ): Promise<void> {
-    if (this.outboundQueueLimit >= 0 && peer.outboundQueue.length >= this.outboundQueueLimit) {
-      const error = new Error(
-        `Transport ${this.identity.nodeAddress} outbound queue to ${nodeAddress} is full.`
-      );
-      this.recordOutboundQueueDropped(nodeAddress, peer, frame, error.message);
-      return Promise.reject(error);
-    }
-
-    const promise = new Promise<void>((resolve, reject) => {
-      peer.outboundQueue.push({ frame, resolve, reject, trackAck });
-    });
-    this.recordOutboundQueueEnqueued(nodeAddress, peer, frame);
-    this.flushOutboundQueue(nodeAddress, peer);
-    return promise;
-  }
-
-  private flushOutboundQueue(nodeAddress: string, peer: BrowserPeerConnection): void {
-    if (peer.outboundFlushing) {
-      return;
-    }
-
-    peer.outboundFlushing = true;
-    try {
-      while (peer.outboundQueue.length > 0) {
-        if (this.peers.get(nodeAddress) !== peer || peer.socket.readyState !== WEB_SOCKET_OPEN) {
-          this.rejectQueuedFrames(
-            peer,
-            `Transport ${this.identity.nodeAddress} is not connected to ${nodeAddress}`
-          );
-          return;
-        }
-
-        const item = peer.outboundQueue.shift();
-        if (!item) {
-          continue;
-        }
-        this.updateOutboundQueueDepth(nodeAddress, peer);
-        try {
-          this.sendJson(peer.socket, item.frame);
-          this.recordFrameSent(nodeAddress, peer, item.frame);
-          if (item.trackAck) {
-            this.trackAckIfRetryable(nodeAddress, peer, item.frame);
-          }
-          item.resolve();
-          this.emitTelemetry({
-            type: 'outbound.queue.drained',
-            peerNodeAddress: nodeAddress,
-            messageType: item.frame.message.type,
-            messageId: item.frame.messageId,
-            queueDepth: peer.outboundQueue.length,
-            queueLimit: this.outboundQueueLimit,
-          });
-        } catch (error) {
-          item.reject(error instanceof Error ? error : new Error('Runtime transport send failed.'));
-          void this.disconnect(nodeAddress);
-          return;
-        }
-      }
-    } finally {
-      peer.outboundFlushing = false;
-      if (peer.outboundQueue.length > 0) {
-        this.flushOutboundQueue(nodeAddress, peer);
-      }
-    }
-  }
-
-  private rejectQueuedFrames(peer: BrowserPeerConnection, reason: string): void {
-    for (const item of peer.outboundQueue.splice(0)) {
-      item.reject(new Error(reason));
-    }
-  }
-
-  private updateOutboundQueueDepth(nodeAddress: string, peer: BrowserPeerConnection): void {
-    this.setPeerStats(nodeAddress, {
-      outboundQueueDepth: peer.outboundQueue.length,
-      outboundQueueLimit: this.outboundQueueLimit,
-    });
-    this.stats.outboundQueueDepth = Array.from(this.peers.values()).reduce(
-      (total, currentPeer) => total + currentPeer.outboundQueue.length,
-      0
-    );
-  }
-
-  private recordOutboundQueueEnqueued(
-    nodeAddress: string,
-    peer: BrowserPeerConnection,
-    frame: RuntimeTransportFrame
-  ): void {
-    this.updateOutboundQueueDepth(nodeAddress, peer);
-    this.emitTelemetry({
-      type: 'outbound.queue.enqueued',
-      peerNodeAddress: nodeAddress,
-      messageType: frame.message.type,
-      messageId: frame.messageId,
-      sequence: frame.sequence,
-      queueDepth: peer.outboundQueue.length,
-      queueLimit: this.outboundQueueLimit,
-    });
-  }
-
-  private recordOutboundQueueDropped(
-    nodeAddress: string,
-    peer: BrowserPeerConnection,
-    frame: RuntimeTransportFrame,
-    reason: string
-  ): void {
-    this.stats.outboundFramesDropped += 1;
-    this.stats.backpressureDropCount += 1;
-    this.setPeerStats(nodeAddress, {
-      identity: peer.identity,
-      outboundQueueDepth: peer.outboundQueue.length,
-      outboundQueueLimit: this.outboundQueueLimit,
-      outboundFramesDropped: (this.stats.peers[nodeAddress]?.outboundFramesDropped ?? 0) + 1,
-      backpressureDropCount: (this.stats.peers[nodeAddress]?.backpressureDropCount ?? 0) + 1,
-    });
-    this.emitTelemetry({
-      type: 'outbound.queue.dropped',
-      peerNodeAddress: nodeAddress,
-      messageType: frame.message.type,
-      messageId: frame.messageId,
-      sequence: frame.sequence,
-      queueDepth: peer.outboundQueue.length,
-      queueLimit: this.outboundQueueLimit,
-      reason,
-    });
-    this.emitTelemetry({
-      type: 'backpressure.applied',
-      peerNodeAddress: nodeAddress,
-      messageType: frame.message.type,
-      messageId: frame.messageId,
-      sequence: frame.sequence,
-      queueDepth: peer.outboundQueue.length,
-      queueLimit: this.outboundQueueLimit,
-      reason,
-    });
-  }
-
-  private trackAckIfRetryable(
-    nodeAddress: string,
-    peer: BrowserPeerConnection,
-    frame: RuntimeTransportFrame
-  ): void {
-    if (this.ackTimeoutMs <= 0 || this.maxAckRetries <= 0 || !this.isRetryableRuntimeFrame(frame)) {
-      return;
-    }
-
-    const pending: PendingAck = {
-      frame,
-      retries: 0,
-      timer: null,
-    };
-    peer.pendingAcks.set(frame.messageId, pending);
-    this.armAckRetry(nodeAddress, peer, pending);
-  }
-
-  private armAckRetry(nodeAddress: string, peer: BrowserPeerConnection, pending: PendingAck): void {
-    pending.timer = setTimeout(() => {
-      if (this.peers.get(nodeAddress) !== peer || !peer.pendingAcks.has(pending.frame.messageId)) {
-        return;
-      }
-
-      if (pending.retries >= this.maxAckRetries) {
-        peer.pendingAcks.delete(pending.frame.messageId);
-        this.recordRetryExhausted(nodeAddress, peer, pending.frame);
-        return;
-      }
-
-      pending.retries += 1;
-      this.recordFrameRetryScheduled(nodeAddress, peer, pending.frame);
-      this.enqueueFrame(nodeAddress, peer, pending.frame, false)
-        .then(() => this.armAckRetry(nodeAddress, peer, pending))
-        .catch(() => {
-          void this.disconnect(nodeAddress);
-        });
-    }, this.ackTimeoutMs);
-  }
-
-  private clearPendingAck(
-    nodeAddress: string,
-    peer: BrowserPeerConnection,
-    messageId: string
-  ): void {
-    const pending = peer.pendingAcks.get(messageId);
-    if (!pending) {
-      return;
-    }
-
-    if (pending.timer) {
-      clearTimeout(pending.timer);
-      pending.timer = null;
-    }
-    peer.pendingAcks.delete(messageId);
-    this.recordFrameAckReceived(nodeAddress, peer, pending.frame);
-  }
-
-  private clearPendingAcks(peer: BrowserPeerConnection): void {
-    for (const pending of peer.pendingAcks.values()) {
-      if (pending.timer) {
-        clearTimeout(pending.timer);
-      }
-    }
-    peer.pendingAcks.clear();
-  }
-
-  private sendAck(
-    nodeAddress: string,
-    peer: BrowserPeerConnection,
-    frame: RuntimeTransportFrame
-  ): void {
-    const ackFrame = createRuntimeTransportAckFrame(
-      this.identity,
-      peer.identity,
-      frame.messageId,
-      frame.sequence
-    );
-    this.sendJson(peer.socket, ackFrame);
-    this.recordFrameAckSent(nodeAddress, frame);
-  }
-
-  private recordFrameAckSent(nodeAddress: string, frame: RuntimeTransportFrame): void {
-    this.emitTelemetry({
-      type: 'frame.ack.sent',
-      peerNodeAddress: nodeAddress,
-      messageType: frame.message.type,
-      messageId: frame.messageId,
-      sequence: frame.sequence,
-    });
-  }
-
-  private recordFrameAckReceived(
-    nodeAddress: string,
-    peer: BrowserPeerConnection,
-    frame: RuntimeTransportFrame
-  ): void {
-    this.stats.framesAcked += 1;
-    this.setPeerStats(nodeAddress, {
-      identity: peer.identity,
-      framesAcked: (this.stats.peers[nodeAddress]?.framesAcked ?? 0) + 1,
-    });
-    this.emitTelemetry({
-      type: 'frame.ack.received',
-      peerNodeAddress: nodeAddress,
-      messageType: frame.message.type,
-      messageId: frame.messageId,
-      sequence: frame.sequence,
-    });
-  }
-
-  private recordFrameRetryScheduled(
-    nodeAddress: string,
-    peer: BrowserPeerConnection,
-    frame: RuntimeTransportFrame
-  ): void {
-    this.stats.framesRetried += 1;
-    this.setPeerStats(nodeAddress, {
-      identity: peer.identity,
-      framesRetried: (this.stats.peers[nodeAddress]?.framesRetried ?? 0) + 1,
-    });
-    this.emitTelemetry({
-      type: 'frame.retry.scheduled',
-      peerNodeAddress: nodeAddress,
-      messageType: frame.message.type,
-      messageId: frame.messageId,
-      sequence: frame.sequence,
-    });
-  }
-
-  private recordRetryExhausted(
-    nodeAddress: string,
-    peer: BrowserPeerConnection,
-    frame: RuntimeTransportFrame
-  ): void {
-    this.stats.retryExhaustedCount += 1;
-    this.setPeerStats(nodeAddress, {
-      identity: peer.identity,
-      retryExhaustedCount: (this.stats.peers[nodeAddress]?.retryExhaustedCount ?? 0) + 1,
-    });
-    this.emitTelemetry({
-      type: 'frame.retry.exhausted',
-      peerNodeAddress: nodeAddress,
-      messageType: frame.message.type,
-      messageId: frame.messageId,
-      sequence: frame.sequence,
-    });
-  }
-
-  private recordFrameDropped(
-    nodeAddress: string,
-    code: RuntimeTransportDropCode,
-    reason: string
-  ): void {
-    if (code === 'malformed_frame') {
-      this.stats.malformedFramesDropped += 1;
-      this.setPeerStats(nodeAddress, {
-        malformedFramesDropped: (this.stats.peers[nodeAddress]?.malformedFramesDropped ?? 0) + 1,
-      });
-    } else if (code !== 'idempotency_provider_error') {
-      this.stats.validationFramesDropped += 1;
-      this.setPeerStats(nodeAddress, {
-        validationFramesDropped: (this.stats.peers[nodeAddress]?.validationFramesDropped ?? 0) + 1,
-      });
-    }
-    this.emitTelemetry({
-      type: 'frame.dropped',
-      peerNodeAddress: nodeAddress,
-      reason,
-      dropCode: code,
-    });
-  }
-
-  private recordHeartbeatTimeout(nodeAddress: string, peer: BrowserPeerConnection): void {
-    this.stats.heartbeatTimeoutCount += 1;
-    this.setPeerStats(nodeAddress, {
-      identity: peer.identity,
-      heartbeatTimeoutCount: (this.stats.peers[nodeAddress]?.heartbeatTimeoutCount ?? 0) + 1,
-    });
-    this.emitTelemetry({ type: 'heartbeat.timeout', peerNodeAddress: nodeAddress });
-  }
-
-  private refreshConnectedPeerCount(): void {
-    this.stats.connectedPeerCount = Array.from(this.peers.values()).filter(
-      (peer) => peer.socket.readyState === WEB_SOCKET_OPEN
-    ).length;
-  }
-
-  private cloneStats(): RuntimeTransportStats {
-    return {
-      ...this.stats,
-      peers: Object.fromEntries(
-        Object.entries(this.stats.peers).map(([nodeAddress, stats]) => [
-          nodeAddress,
-          this.clonePeerStats(stats),
-        ])
-      ),
-    };
-  }
-
-  private clonePeerStats(stats: RuntimeTransportPeerStats): RuntimeTransportPeerStats {
-    return {
-      ...stats,
-      ...(stats.identity ? { identity: { ...stats.identity } } : {}),
-    };
-  }
-
   private waitForOpen(socket: WebSocket): Promise<void> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
         socket.close();
         reject(new Error('Timed out opening WebSocket transport connection.'));
-      }, this.connectTimeoutMs);
+      }, this.deps.connectTimeoutMs);
 
       const cleanup = () => {
         clearTimeout(timeout);
@@ -1337,73 +362,131 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
       socket.addEventListener('error', onError);
     });
   }
+}
 
-  private sendJson(socket: WebSocket, frame: unknown): void {
-    socket.send(JSON.stringify(frame));
+/**
+ * Emits transport telemetry envelopes (nodeAddress + timestamp) through the caller-supplied
+ * observer. Shared by the channel (auth telemetry on the client handshake path) and the core
+ * (everything else) so a single observer sees one consistent event stream — exactly as the
+ * pre-core single-class browser transport did.
+ */
+function createTelemetryEmitter(
+  localNodeAddress: string,
+  telemetry: RuntimeTransportTelemetryObserver | undefined
+): (event: Omit<RuntimeTransportTelemetryEvent, 'nodeAddress' | 'timestamp'>) => void {
+  return (event) => {
+    telemetry?.({
+      nodeAddress: localNodeAddress,
+      timestamp: new Date().toISOString(),
+      ...event,
+    } as RuntimeTransportTelemetryEvent);
+  };
+}
+
+export class BrowserWebSocketMessageTransport implements MessageTransport {
+  private readonly core: TransportCore;
+  private readonly channel: BrowserWebSocketChannel;
+  private readonly identity: RuntimeNodeIdentity;
+
+  // Held so callers/tests that mutate options.peers (e.g. peer-URL rebinding) reach the
+  // SAME object the channel resolves URLs from.
+  private readonly options: BrowserWebSocketMessageTransportOptions;
+
+  constructor(options: BrowserWebSocketMessageTransportOptions) {
+    this.options = options;
+    this.identity = createRuntimeNodeIdentity({
+      nodeAddress: options.nodeAddress,
+      nodeId: options.nodeId ?? options.nodeAddress,
+      incarnation: options.incarnation ?? `${Date.now()}`,
+      ...(options.capabilities ? { capabilities: options.capabilities } : {}),
+    });
+    const emitTelemetry = createTelemetryEmitter(this.identity.nodeAddress, options.telemetry);
+
+    this.channel = new BrowserWebSocketChannel({
+      identity: this.identity,
+      connectTimeoutMs: options.connectTimeoutMs ?? 3000,
+      ...(options.auth ? { auth: options.auth } : { auth: undefined }),
+      webSocketFactory:
+        options.webSocketFactory ??
+        ((url) => {
+          if (typeof WebSocket === 'undefined') {
+            throw new Error('Browser WebSocket transport requires a global WebSocket constructor.');
+          }
+
+          return new WebSocket(url);
+        }),
+      // Reads the live this.options so a caller/test that rebinds options.peers between
+      // connects is honored.
+      resolvePeerUrl: async (nodeAddress) =>
+        this.options.peers?.[nodeAddress] ?? this.options.peerUrlResolver?.(nodeAddress),
+      emitTelemetry,
+    });
+
+    this.core = new TransportCore({
+      identity: this.identity,
+      channel: this.channel,
+      ...(options.connectTimeoutMs !== undefined
+        ? { connectTimeoutMs: options.connectTimeoutMs }
+        : {}),
+      ...(options.heartbeatIntervalMs !== undefined
+        ? { heartbeatIntervalMs: options.heartbeatIntervalMs }
+        : {}),
+      ...(options.heartbeatTimeoutMs !== undefined
+        ? { heartbeatTimeoutMs: options.heartbeatTimeoutMs }
+        : {}),
+      ...(options.idempotencyWindowSize !== undefined
+        ? { idempotencyWindowSize: options.idempotencyWindowSize }
+        : {}),
+      ...(options.ackTimeoutMs !== undefined ? { ackTimeoutMs: options.ackTimeoutMs } : {}),
+      ...(options.maxAckRetries !== undefined ? { maxAckRetries: options.maxAckRetries } : {}),
+      ...(options.outboundQueueLimit !== undefined
+        ? { outboundQueueLimit: options.outboundQueueLimit }
+        : {}),
+      ...(options.idempotencyProvider ? { idempotencyProvider: options.idempotencyProvider } : {}),
+      ...(options.telemetry ? { telemetry: options.telemetry } : {}),
+      ...(options.auth ? { auth: options.auth } : {}),
+    });
   }
 
-  private async parseJson(data: unknown): Promise<unknown> {
-    try {
-      if (typeof data === 'string') {
-        return JSON.parse(data);
-      }
-
-      if (data instanceof ArrayBuffer) {
-        return JSON.parse(new TextDecoder().decode(data));
-      }
-
-      if (ArrayBuffer.isView(data)) {
-        return JSON.parse(new TextDecoder().decode(data));
-      }
-
-      if (typeof Blob !== 'undefined' && data instanceof Blob) {
-        return JSON.parse(await data.text());
-      }
-
-      return JSON.parse(String(data));
-    } catch {
-      return null;
-    }
+  async start(): Promise<void> {
+    // The core emits transport.started/stopped through the shared telemetry observer.
+    await this.core.start();
   }
 
-  private isHandshakeAccept(
-    frame: unknown
-  ): frame is Extract<RuntimeTransportHandshake, { type: 'runtime.handshake.accept' }> {
-    return Boolean(
-      frame &&
-        typeof frame === 'object' &&
-        (frame as { type?: string }).type === 'runtime.handshake.accept'
-    );
+  async stop(): Promise<void> {
+    await this.core.stop();
   }
 
-  private isHandshakeReject(
-    frame: unknown
-  ): frame is Extract<RuntimeTransportHandshake, { type: 'runtime.handshake.reject' }> {
-    return Boolean(
-      frame &&
-        typeof frame === 'object' &&
-        (frame as { type?: string }).type === 'runtime.handshake.reject'
-    );
+  getStats(): RuntimeTransportStats {
+    return this.core.getStats();
   }
 
-  private isHeartbeatFrame(frame: unknown): frame is {
-    type: 'runtime.transport.ping' | 'runtime.transport.pong';
-    source: RuntimeNodeIdentity;
-  } {
-    return Boolean(
-      frame &&
-        typeof frame === 'object' &&
-        ((frame as { type?: string }).type === 'runtime.transport.ping' ||
-          (frame as { type?: string }).type === 'runtime.transport.pong')
-    );
+  getPeerStats(nodeAddress: string): RuntimeTransportPeerStats | undefined {
+    return this.core.getPeerStats(nodeAddress);
   }
 
-  private isAckFrame(frame: unknown): frame is ReturnType<typeof createRuntimeTransportAckFrame> {
-    return Boolean(
-      frame &&
-        typeof frame === 'object' &&
-        (frame as { type?: string }).type === 'runtime.transport.ack'
-    );
+  async send(destination: string, message: ActorMessage): Promise<void> {
+    await this.core.send(destination, message);
+  }
+
+  subscribe(listener: (event: { source: string; message: ActorMessage }) => void): () => void {
+    return this.core.subscribe(listener);
+  }
+
+  async connect(address: string): Promise<void> {
+    await this.core.connect(address);
+  }
+
+  async disconnect(address: string): Promise<void> {
+    await this.core.disconnect(address);
+  }
+
+  getConnectedNodes(): string[] {
+    return this.core.getConnectedNodes();
+  }
+
+  isConnected(address: string): boolean {
+    return this.core.isConnected(address);
   }
 }
 

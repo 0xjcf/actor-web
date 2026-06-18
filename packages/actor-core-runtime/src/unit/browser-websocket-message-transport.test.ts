@@ -38,6 +38,24 @@ function createBrowserSocket(url: string): WebSocket {
   return new NodeWebSocket(url) as unknown as WebSocket;
 }
 
+// PR 3 moved the browser transport's reliability machinery + receive pipeline into
+// TransportCore. This helper reaches the same per-peer state through the wrapper's `core` so
+// the white-box backpressure assertion stays faithful to the post-migration internals: each
+// browser WebSocket is now wrapped in a per-peer PeerLink (peer.link) whose raw send the core
+// awaits while draining the bounded outbound queue.
+interface BrowserCorePeerView {
+  link: { send(payload: unknown): Promise<void> };
+}
+
+function getBrowserCorePeer(
+  transport: BrowserWebSocketMessageTransport,
+  nodeAddress: string
+): BrowserCorePeerView | undefined {
+  return (
+    transport as unknown as { core: { peers: Map<string, BrowserCorePeerView> } }
+  ).core.peers.get(nodeAddress);
+}
+
 function createCheckoutBehavior() {
   return defineBehavior<CheckoutMessage>()
     .withContext<CheckoutContext>({
@@ -590,18 +608,21 @@ describe('BrowserWebSocketMessageTransport', () => {
     });
 
     await browser.connect('node-b');
-    const peer = (
-      browser as unknown as {
-        peers: Map<string, { outboundFlushing: boolean }>;
-      }
-    ).peers.get('node-b');
+    // Raw send moved into the per-peer PeerLink (PR 3); stall it to keep one frame in flight
+    // so the bounded outbound queue fills and the next send is dropped by backpressure.
+    let releaseSend: (() => void) | undefined;
+    const peer = getBrowserCorePeer(browser, 'node-b');
     if (!peer) {
       throw new Error('Expected browser peer');
     }
-    peer.outboundFlushing = true;
+    peer.link.send = () =>
+      new Promise<void>((resolve) => {
+        releaseSend = resolve;
+      });
 
     const first = browser.send('node-b', { type: 'QUEUE_ONE' } as ActorMessage);
-    await expect(browser.send('node-b', { type: 'QUEUE_TWO' } as ActorMessage)).rejects.toThrow(
+    const second = browser.send('node-b', { type: 'QUEUE_TWO' } as ActorMessage);
+    await expect(browser.send('node-b', { type: 'QUEUE_THREE' } as ActorMessage)).rejects.toThrow(
       'outbound queue to node-b is full'
     );
 
@@ -614,13 +635,10 @@ describe('BrowserWebSocketMessageTransport', () => {
       expect.arrayContaining(['outbound.queue.dropped', 'backpressure.applied'])
     );
 
-    peer.outboundFlushing = false;
-    (
-      browser as unknown as {
-        flushOutboundQueue: (nodeAddress: string, peer: unknown) => void;
-      }
-    ).flushOutboundQueue('node-b', peer);
+    releaseSend?.();
     await first;
+    releaseSend?.();
+    await second;
   });
 
   it('uses app-level heartbeat frames against Node WebSocket peers', async () => {
