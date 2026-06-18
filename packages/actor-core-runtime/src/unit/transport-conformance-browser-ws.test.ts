@@ -11,13 +11,14 @@ function browserSocket(url: string): WebSocket {
 // conformance pair is browser-ws (client, a) <-> node-ws (server, b). The browser
 // global WebSocket is supplied via webSocketFactory (the ws package), matching
 // browser-websocket-message-transport.test.ts so the suite runs in plain node.
-// Heartbeats disabled for timing stability; safeDispatch is false — like every
-// transport today it dispatches listeners unguarded, until the transport core (P2).
+// Heartbeats disabled for timing stability; safeDispatch is now true: the browser
+// transport routes dispatch through TransportCore's safeDispatchListener (PR 3), so a
+// throwing or rejecting subscriber no longer escapes or starves siblings.
 describeTransportConformance({
   name: 'browser-websocket',
   capabilities: {
     ordering: true,
-    safeDispatch: false,
+    safeDispatch: true,
   },
   async createPair() {
     const addrA = 'conformance-browser';
