@@ -5,13 +5,14 @@ import { describeTransportConformance } from '../testing/transport-conformance.j
 // preserves send order. Heartbeats are disabled here so the universal cases stay
 // timing-stable; heartbeat/ack/idempotency are internal reliability behaviors
 // covered by node-websocket-message-transport.test.ts (white-box), not the
-// black-box conformance suite. safeDispatch is false — like every transport
-// today it dispatches listeners unguarded, until the shared transport core (P2).
+// black-box conformance suite. safeDispatch is now true: the node transport routes
+// dispatch through TransportCore's safeDispatchListener (PR 2), so a throwing or
+// rejecting subscriber no longer escapes or starves siblings.
 describeTransportConformance({
   name: 'node-websocket',
   capabilities: {
     ordering: true,
-    safeDispatch: false,
+    safeDispatch: true,
   },
   async createPair() {
     const addrA = 'conformance-a';
