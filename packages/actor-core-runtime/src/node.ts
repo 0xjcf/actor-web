@@ -86,3 +86,9 @@ export type {
   ServedActorWebNode,
 } from './serve-actor-web-node.js';
 export { serveNode } from './serve-actor-web-node.js';
+export type {
+  TransportDuplex,
+  TransportFactoryOptions,
+  TransportInstance,
+} from './transport/define-transport.js';
+export { defineTransport, fromDuplex } from './transport/define-transport.js';
