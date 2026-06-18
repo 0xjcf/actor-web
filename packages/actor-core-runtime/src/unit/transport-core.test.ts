@@ -25,26 +25,11 @@ import { TransportCore, type TransportTimers } from '../transport/transport-core
 // FakeTimers. This proves the core owns reliability (ack/retry, queue/backpressure,
 // heartbeat, idempotency, stats projection, safe dispatch) deterministically.
 
-// --- controllable fake clock -------------------------------------------------------------
-
-function createFakeClock(): {
-  now: () => Date;
-  advance: (ms: number) => void;
-  set: (ms: number) => void;
-} {
-  let nowMs = 0;
-  return {
-    now: () => new Date(nowMs),
-    advance: (ms: number) => {
-      nowMs += ms;
-    },
-    set: (ms: number) => {
-      nowMs = ms;
-    },
-  };
-}
-
-// --- controllable fake timers ------------------------------------------------------------
+// --- controllable fake timers + clock ----------------------------------------------------
+// FakeTimers owns the single source of fake time so the shell's clock() and the deciders'
+// `now` argument stay consistent: advancing time fires due timers AND moves the clock that
+// the injected clock() reads. This is what makes ack-retry and heartbeat-timeout
+// deterministic with no wall clock.
 
 interface ScheduledTimer {
   id: number;
@@ -59,7 +44,8 @@ class FakeTimers implements TransportTimers {
   private currentMs = 0;
 
   setTimeout(callback: () => void, ms: number): number {
-    const id = this.nextId++;
+    this.nextId += 1;
+    const id = this.nextId;
     this.timers.set(id, { id, fireAtMs: this.currentMs + ms, intervalMs: null, callback });
     return id;
   }
@@ -71,7 +57,8 @@ class FakeTimers implements TransportTimers {
   }
 
   setInterval(callback: () => void, ms: number): number {
-    const id = this.nextId++;
+    this.nextId += 1;
+    const id = this.nextId;
     this.timers.set(id, { id, fireAtMs: this.currentMs + ms, intervalMs: ms, callback });
     return id;
   }
@@ -80,6 +67,11 @@ class FakeTimers implements TransportTimers {
     if (handle !== undefined) {
       this.timers.delete(handle);
     }
+  }
+
+  /** The injected clock reads this — kept in lockstep with fired timers. */
+  now(): Date {
+    return new Date(this.currentMs);
   }
 
   /** Advance fake time, firing every due timer in chronological order. */
@@ -104,6 +96,11 @@ class FakeTimers implements TransportTimers {
       due.callback();
     }
     this.currentMs = target;
+  }
+
+  /** Move the clock forward WITHOUT firing timers (e.g. to refresh lastSeen before a deadline). */
+  advanceClockOnly(ms: number): void {
+    this.currentMs += ms;
   }
 
   get registeredCount(): number {
@@ -150,12 +147,6 @@ class FakePeerLink implements PeerLink {
   /** Test helper: deliver an already-parsed inbound payload. */
   deliver(payload: unknown): void {
     this.sink?.onPayload(payload);
-  }
-
-  /** Test helper: simulate a remote close. */
-  remoteClose(reason?: string): void {
-    this.isOpen = false;
-    this.sink?.onClosed(reason);
   }
 }
 
@@ -226,7 +217,6 @@ interface Harness {
   link: FakePeerLink;
   channel: FakeTransportChannel;
   timers: FakeTimers;
-  clock: ReturnType<typeof createFakeClock>;
   telemetry: RuntimeTransportTelemetryEvent[];
   onListenerError: ReturnType<typeof vi.fn>;
 }
@@ -249,14 +239,13 @@ async function makeConnectedHarness(
   const link = options.link ?? new FakePeerLink(REMOTE.nodeAddress);
   const channel = new FakeTransportChannel(() => ({ ok: true, link }));
   const timers = new FakeTimers();
-  const clock = createFakeClock();
   const telemetry: RuntimeTransportTelemetryEvent[] = [];
   const onListenerError = vi.fn();
 
   const core = new TransportCore({
     identity: LOCAL,
     channel,
-    clock: clock.now,
+    clock: () => timers.now(),
     timers,
     telemetry: (event) => telemetry.push(event),
     onListenerError,
@@ -277,15 +266,14 @@ async function makeConnectedHarness(
   await core.start();
   await core.connect(REMOTE.nodeAddress);
 
-  return { core, link, channel, timers, clock, telemetry, onListenerError };
+  return { core, link, channel, timers, telemetry, onListenerError };
 }
 
 // =========================================================================================
 
 describe('TransportCore — send pipeline (case 4)', () => {
   it('builds a byte-identical frame and the link receives exactly one serialized payload', async () => {
-    const { core, link, clock } = await makeConnectedHarness();
-    clock.set(0);
+    const { core, link } = await makeConnectedHarness();
 
     await core.send(REMOTE.nodeAddress, userMessage('PING'));
 
@@ -416,7 +404,10 @@ describe('TransportCore — backpressure drop (case 10)', () => {
     const { core, telemetry } = await makeConnectedHarness({ link, outboundQueueLimit: 1 });
     link.isOpen = false; // stall the flush so the queue accumulates
 
-    await core.send(REMOTE.nodeAddress, userMessage('A')).catch(() => undefined);
+    // First send fills the queue to the limit; its promise stays pending (flush stalled)
+    // until cleanup rejects it — do not await it here.
+    const first = core.send(REMOTE.nodeAddress, userMessage('A'));
+    first.catch(() => undefined);
     await expect(core.send(REMOTE.nodeAddress, userMessage('B'))).rejects.toThrow();
 
     expect(core.getStats().outboundFramesDropped).toBe(1);
@@ -468,18 +459,18 @@ describe('TransportCore — heartbeat (case 12)', () => {
   it('uses the native heartbeat hook when present and stays alive on a pong', async () => {
     const heartbeat = new FakeNativeHeartbeat();
     const link = new FakePeerLink(REMOTE.nodeAddress, { heartbeat });
-    const { core, timers, clock } = await makeConnectedHarness({
+    const { core, timers } = await makeConnectedHarness({
       link,
       heartbeatIntervalMs: 1000,
       heartbeatTimeoutMs: 2000,
     });
 
-    timers.advance(1000); // native ping
+    timers.advance(1000); // native ping at t=1000, deadline armed for t=3000
     expect(heartbeat.pingCount).toBe(1);
 
-    clock.advance(1000);
-    heartbeat.signalAlive(); // peer proves alive before the deadline
-    timers.advance(2000);
+    timers.advanceClockOnly(500); // t=1500, still before the deadline
+    heartbeat.signalAlive(); // peer proves alive -> lastSeen=1500, deadline cleared
+    timers.advance(500); // t=2000, before the next deadline -> stays alive
 
     expect(core.getStats().heartbeatTimeoutCount).toBe(0);
     expect(core.isConnected(REMOTE.nodeAddress)).toBe(true);
