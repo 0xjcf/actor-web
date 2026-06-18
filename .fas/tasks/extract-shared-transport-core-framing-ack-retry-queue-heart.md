@@ -45,12 +45,29 @@ Prerequisite for all new transports (spike direct-1781363862864 readiness audit)
 - packages/actor-core-runtime/src/unit/transport-channel.test.ts
 - packages/actor-core-runtime/src/unit/transport-core.test.ts
 - packages/actor-core-runtime/src/unit/define-transport.test.ts
+- packages/actor-core-runtime/src/node-websocket-message-transport.ts
+- packages/actor-core-runtime/src/browser-websocket-message-transport.ts
+- packages/actor-core-runtime/src/testing/in-memory-message-transport.ts
+- packages/actor-core-runtime/src/message-port-transport.ts
+- packages/actor-core-runtime/src/testing/transport-conformance.ts
+- packages/actor-core-runtime/src/unit/transport-conformance.test.ts
+- packages/actor-core-runtime/src/unit/transport-conformance-node-ws.test.ts
+- packages/actor-core-runtime/src/unit/transport-conformance-browser-ws.test.ts
+- packages/actor-core-runtime/src/index.ts
+- packages/actor-core-runtime/src/browser.ts
+- packages/actor-core-runtime/src/node.ts
+- packages/actor-core-runtime/src/unit/node-websocket-message-transport.test.ts
+- packages/actor-core-runtime/src/unit/browser-websocket-message-transport.test.ts
 
 ## Scope Amendments
 
 - Type: scope-refresh
 - Added at: 2026-06-18
 - Added paths: packages/actor-core-runtime/src/transport/transport-channel.ts, packages/actor-core-runtime/src/transport/transport-reliability.ts, packages/actor-core-runtime/src/transport/transport-core.ts, packages/actor-core-runtime/src/transport/define-transport.ts, packages/actor-core-runtime/src/unit/transport-reliability.test.ts, packages/actor-core-runtime/src/unit/transport-channel.test.ts, packages/actor-core-runtime/src/unit/transport-core.test.ts, packages/actor-core-runtime/src/unit/define-transport.test.ts
+
+- Type: scope-refresh
+- Added at: 2026-06-18
+- Added paths: packages/actor-core-runtime/src/transport/transport-channel.ts, packages/actor-core-runtime/src/transport/transport-reliability.ts, packages/actor-core-runtime/src/transport/transport-core.ts, packages/actor-core-runtime/src/transport/define-transport.ts, packages/actor-core-runtime/src/unit/transport-reliability.test.ts, packages/actor-core-runtime/src/unit/transport-channel.test.ts, packages/actor-core-runtime/src/unit/transport-core.test.ts, packages/actor-core-runtime/src/unit/define-transport.test.ts, packages/actor-core-runtime/src/node-websocket-message-transport.ts, packages/actor-core-runtime/src/browser-websocket-message-transport.ts, packages/actor-core-runtime/src/testing/in-memory-message-transport.ts, packages/actor-core-runtime/src/message-port-transport.ts, packages/actor-core-runtime/src/testing/transport-conformance.ts, packages/actor-core-runtime/src/unit/transport-conformance.test.ts, packages/actor-core-runtime/src/unit/transport-conformance-node-ws.test.ts, packages/actor-core-runtime/src/unit/transport-conformance-browser-ws.test.ts, packages/actor-core-runtime/src/index.ts, packages/actor-core-runtime/src/browser.ts, packages/actor-core-runtime/src/node.ts, packages/actor-core-runtime/src/unit/node-websocket-message-transport.test.ts, packages/actor-core-runtime/src/unit/browser-websocket-message-transport.test.ts
 
 ## Implementation plan
 
