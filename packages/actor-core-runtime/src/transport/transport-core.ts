@@ -255,13 +255,20 @@ export class TransportCore implements MessageTransport {
     // placeholder identity from the dialed link's address. The auth provider, when present,
     // still gets a chance to reject the derived peer in the placeholder path.
     const handshaked = Boolean(result.link.identity);
-    const peerIdentity =
-      result.link.identity ??
-      createRuntimeNodeIdentity({
-        nodeAddress: result.link.remoteAddress,
-        nodeId: result.link.remoteAddress,
-        incarnation: '0',
-      });
+    // The link surfaces a structural PeerIdentity (nodeAddress/nodeId/incarnation); the core
+    // normalizes it into a full RuntimeNodeIdentity (filling protocolVersion) so peer
+    // registration and downstream frame source-matching keep the complete handshake identity.
+    const peerIdentity = result.link.identity
+      ? createRuntimeNodeIdentity({
+          nodeAddress: result.link.identity.nodeAddress,
+          nodeId: result.link.identity.nodeId,
+          incarnation: result.link.identity.incarnation,
+        })
+      : createRuntimeNodeIdentity({
+          nodeAddress: result.link.remoteAddress,
+          nodeId: result.link.remoteAddress,
+          incarnation: '0',
+        });
 
     if (!handshaked) {
       const auth = await verifyRuntimeAuth(this.options.auth, {
@@ -322,7 +329,17 @@ export class TransportCore implements MessageTransport {
       link.close();
       return;
     }
-    this.registerPeer(link, link.identity);
+    // Normalize the structural PeerIdentity surfaced by the link into a full
+    // RuntimeNodeIdentity (filling protocolVersion) so the registered peer carries the
+    // complete handshake identity used for inbound frame source-matching and stats.
+    this.registerPeer(
+      link,
+      createRuntimeNodeIdentity({
+        nodeAddress: link.identity.nodeAddress,
+        nodeId: link.identity.nodeId,
+        incarnation: link.identity.incarnation,
+      })
+    );
   }
 
   private registerPeer(link: PeerLink, identity: RuntimeNodeIdentity): void {
