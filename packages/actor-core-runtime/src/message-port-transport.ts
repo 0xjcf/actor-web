@@ -1,4 +1,5 @@
 import type { ActorMessage, MessageTransport } from './actor-system.js';
+import { safeDispatchListener } from './transport/transport-channel.js';
 
 const MESSAGE_PORT_TRANSPORT_MARKER = '__actorWebMessagePortTransport';
 
@@ -231,7 +232,12 @@ class DefaultMessagePortTransport implements MessagePortTransport {
 
   private deliver(event: { source: string; message: ActorMessage }): void {
     for (const listener of Array.from(this.listeners)) {
-      listener(event);
+      // Route through the shared isolation helper so a throwing or
+      // async-rejecting subscriber can neither escape nor starve siblings
+      // (the PR#27-class fix). This transport has no telemetry sink, so
+      // onError is a deliberate no-op: silent isolation is the intended
+      // behavior here, and onError must never re-throw (errors-as-values).
+      safeDispatchListener(listener, event, () => {});
     }
   }
 
