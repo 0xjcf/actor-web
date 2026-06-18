@@ -957,4 +957,83 @@ describe('NodeWebSocketMessageTransport', () => {
     expect(receivedTypes).not.toContain('STALE_SOCKET');
     unsubscribe();
   });
+
+  // GUARD (regression: PR 2 node-ws migration). The pre-core node transport rejected an
+  // inbound peer with a bad/missing shared secret on the SERVER side via
+  // acceptInboundConnection -> recordAuthRejected + recordHandshakeRejected, so the server's
+  // getStats().handshakeRejectedCount and getPeerStats(peer).state/'rejectedReason' reflected
+  // the rejection (exactly what examples/.../headless-host + logistics-multiprocess assert via
+  // getRuntimePeerStatus). The migration wired the channel to reject + close the socket but
+  // never propagated the rejection into the core's stats, so handshakeRejectedCount stayed 0
+  // and the rejected peer was invisible to getPeerStats/getStats. The earlier white-box
+  // "rejects missing or invalid peer auth" case only covered the node-snapshot view + telemetry
+  // (which still worked), so the server-stats regression slipped the gate. This locks the
+  // SERVER's core-stats view of an inbound auth rejection.
+  it('records a server-side inbound auth rejection in core stats and accepts a valid secret', async () => {
+    const serverTelemetry: RuntimeTransportTelemetryEvent[] = [];
+    const server = await createStartedTransport('node-server', {
+      telemetry: (event) => serverTelemetry.push(event),
+      auth: {
+        verifyToken: ({ token }) => token === 'expected-secret',
+      },
+    });
+    const serverUrl = server.getListeningUrl();
+    if (!serverUrl) {
+      throw new Error('Expected server listening URL');
+    }
+
+    // A worker presenting the wrong shared secret: the server must REJECT it inbound.
+    const badWorker = await createStartedTransport('node-bad-worker', {
+      peers: { 'node-server': serverUrl },
+      auth: {
+        token: () => ({ scheme: 'bearer', token: 'wrong-secret' }),
+      },
+    });
+
+    await expect(badWorker.connect('node-server')).rejects.toThrow('Runtime handshake rejected');
+
+    // The server records the rejection in its CORE stats (the facts getRuntimePeerStatus reads):
+    // handshakeRejectedCount incremented + the peer surfaced as 'rejected' with a reason. This
+    // is the exact view the failing example tests poll; it must not silently stay at 0/unknown.
+    await waitFor(
+      () =>
+        (server.getStats().handshakeRejectedCount ?? 0) >= 1 &&
+        server.getPeerStats('node-bad-worker')?.state === 'rejected',
+      'Expected server core stats to record the inbound auth rejection'
+    );
+    expect(server.getStats().handshakeRejectedCount).toBeGreaterThanOrEqual(1);
+    expect(server.getPeerStats('node-bad-worker')).toMatchObject({
+      state: 'rejected',
+      rejectedReason: 'Authentication rejected.',
+    });
+    expect(server.isConnected('node-bad-worker')).toBe(false);
+    expect(server.getPeerState('node-bad-worker')).toBe('rejected');
+
+    // The server emits the inbound rejection telemetry on its own node (auth + handshake +
+    // peer rejected), mirroring the pre-core acceptInboundConnection sequence.
+    const serverEventTypes = serverTelemetry
+      .filter((event) => event.peerNodeAddress === 'node-bad-worker')
+      .map((event) => event.type);
+    expect(serverEventTypes).toContain('auth.rejected');
+    expect(serverEventTypes).toContain('handshake.rejected');
+    expect(serverEventTypes).toContain('peer.rejected');
+    expect(JSON.stringify(serverTelemetry)).not.toContain('wrong-secret');
+
+    // A worker presenting the correct secret is accepted, and the rejection count does not
+    // regress the accepted handshake accounting.
+    const goodWorker = await createStartedTransport('node-good-worker', {
+      peers: { 'node-server': serverUrl },
+      auth: {
+        token: () => ({ scheme: 'bearer', token: 'expected-secret' }),
+      },
+    });
+
+    await goodWorker.connect('node-server');
+
+    expect(server.isConnected('node-good-worker')).toBe(true);
+    expect(server.getPeerStats('node-good-worker')?.state).toBe('connected');
+    expect(server.getStats().handshakeAcceptedCount).toBeGreaterThanOrEqual(1);
+    // The earlier rejection is still recorded; the good join did not erase it.
+    expect(server.getStats().handshakeRejectedCount).toBeGreaterThanOrEqual(1);
+  });
 });
