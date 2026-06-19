@@ -1545,7 +1545,7 @@
 
 - Title: Extract shared transport core (framing/ack-retry/queue/heartbeat/stats + safe listener dispatch)
 - Mode: 6-agent
-- Status: implementing
+- Status: done
 - Owner: implementer
 - Brief: .fas/tasks/extract-shared-transport-core-framing-ack-retry-queue-heart.md
 - Automation mode: advisory
