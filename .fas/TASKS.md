@@ -1558,8 +1558,11 @@
 - Title: Implement @actor-web/transport-broadcast-channel adapter
 - Mode: single-agent
 - Status: queued
-- Owner: runtime
+- Owner: implementer
 - Brief: .fas/tasks/implement-actor-web-transport-broadcast-channel-adapter.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Implement @actor-web/transport-webrtc peer adapter
 
@@ -1617,6 +1620,79 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/grow-definetransport-into-a-smart-pipe-authoring-api-async-h.md
+
+### Task: Make actor addresses opaque and mint them through one canonical factory
+
+- Title: Make actor addresses opaque and mint them through one canonical factory
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/make-actor-addresses-opaque-and-mint-them-through-one-canoni.md
+
+### Task: Unify actor location truth: single directory-backed resolution for send and emit/subscribe
+
+- Title: Unify actor location truth: single directory-backed resolution for send and emit/subscribe
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/unify-actor-location-truth-single-directory-backed-resolutio.md
+
+### Task: Example: declarative topology.subscriptions through a directory-backed runtime
+
+- Title: Example: declarative topology.subscriptions through a directory-backed runtime
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/example-declarative-topology-subscriptions-through-a-directo.md
+- Automation mode: advisory
+
+### Task: Author the @actor-web/labs-mesh design doc (gossip membership, multi-hop, directory propagation)
+
+- Title: Author the @actor-web/labs-mesh design doc (gossip membership, multi-hop, directory propagation)
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/author-the-actor-web-labs-mesh-design-doc-gossip-membership-.md
+
+### Task: Transport: large-payload framing/chunking contract or explicit max-payload with blob-externalization
+
+- Title: Transport: large-payload framing/chunking contract or explicit max-payload with blob-externalization
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/transport-large-payload-framing-chunking-contract-or-explici.md
+
+### Task: Agent transport: stream tool/agent output as a backpressured cross-node stream
+
+- Title: Agent transport: stream tool/agent output as a backpressured cross-node stream
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/agent-transport-stream-tool-agent-output-as-a-backpressured-.md
+
+### Task: Delivery semantics: at-least-once and idempotency for non-idempotent agent tool side-effects
+
+- Title: Delivery semantics: at-least-once and idempotency for non-idempotent agent tool side-effects
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/delivery-semantics-at-least-once-and-idempotency-for-non-ide.md
+
+### Task: Docs honesty pass: scope the location-transparency claim at first mention and reconcile multi-machine status
+
+- Title: Docs honesty pass: scope the location-transparency claim at first mention and reconcile multi-machine status
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/docs-honesty-pass-scope-the-location-transparency-claim-at-f.md
+
+### Task: Post-mesh scoping: membership graduation tier, cross-node supervision boundary, claim gating
+
+- Title: Post-mesh scoping: membership graduation tier, cross-node supervision boundary, claim gating
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/post-mesh-scoping-membership-graduation-tier-cross-node-supe.md
 
 ## Template
 

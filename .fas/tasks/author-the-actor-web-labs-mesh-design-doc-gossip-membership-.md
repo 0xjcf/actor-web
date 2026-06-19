@@ -1,17 +1,16 @@
-# Implement @actor-web/labs-mesh (gossip membership + multi-hop routing + directory propagation)
+# Author the @actor-web/labs-mesh design doc (gossip membership, multi-hop, directory propagation)
 
 ## Source
 
-Created with `fas create-task` on 2026-06-16.
+Created with `fas create-task` on 2026-06-19.
 
 ## Problem
 
-Spike direct-1781363862864. The real Mesh: arbitrary node graph where an actor on A reaches an actor on Z with no direct edge, dynamic join/leave via gossip, cluster-wide directory. Built as a labs package on the injectable directory (P3), the next-hop routing hook (P4), formalized node identity (P5), and the shared transport core (P2) + existing RuntimePeerDiscoveryProvider. broadcastRegister/Unregister/Lookup in distributed-actor-directory.ts are no-op stubs today and propagation is point-to-point only.
+Location-transparency audit L3. The labs-mesh implementation brief is a content-free stub. Author the design first: gossip membership protocol, cluster-wide directory propagation (anti-entropy vs CRDT), multi-hop routing via the next-hop hook, liveness/node-monitor model, partition handling. This is the EPMD/net_kernel analog actor-web lacks (cross-node directory fill broadcastRegister/Unregister/Lookup are TODO no-op stubs in distributed-actor-directory.ts:447-479). Gates the membership/cluster layer.
 
 ## Acceptance criteria
 
-- The new functionality works as described.
-- Existing behavior is not broken.
+- The change is verified and does not introduce regressions.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
 - DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.

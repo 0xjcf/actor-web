@@ -1,17 +1,24 @@
-# Implement @actor-web/labs-mesh (gossip membership + multi-hop routing + directory propagation)
+# Example: declarative topology.subscriptions through a directory-backed runtime
 
 ## Source
 
-Created with `fas create-task` on 2026-06-16.
+Created with `fas create-task` on 2026-06-19.
 
 ## Problem
 
-Spike direct-1781363862864. The real Mesh: arbitrary node graph where an actor on A reaches an actor on Z with no direct edge, dynamic join/leave via gossip, cluster-wide directory. Built as a labs package on the injectable directory (P3), the next-hop routing hook (P4), formalized node identity (P5), and the shared transport core (P2) + existing RuntimePeerDiscoveryProvider. broadcastRegister/Unregister/Lookup in distributed-actor-directory.ts are no-op stubs today and propagation is point-to-point only.
+Location-transparency audit L0. The declarative emit/subscribe path is under-exercised through a directory-backed runtime (fas-agent-loop uses imperative ask/send and declares no subscriptions), which is why the fas-studio dead-letter was caught by a consumer not the framework. Add a framework example exercising declarative topology.subscriptions cross-actor through the directory-backed local runtime, asserting clean delivery. Closes the test-gap behind the unify-location-truth fix.
+
+## Automation admission
+
+- Expected operator value: Improves operator leverage around "Example: declarative topology.subscriptions through a directory-backed runtime" by reducing manual coordination, repetitive execution, or trust gaps.
+- Observability surface: Use authoritative FAS surfaces such as `fas runtime status`, `fas runtime watch`, workflow logs, receipts, or notifications to show whether the automation is active, quiet, stalled, blocked, or complete.
+- Recovery path: A human can abort, retry, recover, or rerun this workflow without leaving stale queue, lease, branch, or current-task state.
+- Autonomy mode: advisory
+- Promotion criteria: Promote beyond advisory only after dogfood runs prove clear operator value, trustworthy observability, and bounded recovery.
 
 ## Acceptance criteria
 
-- The new functionality works as described.
-- Existing behavior is not broken.
+- The change is verified and does not introduce regressions.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
 - DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.

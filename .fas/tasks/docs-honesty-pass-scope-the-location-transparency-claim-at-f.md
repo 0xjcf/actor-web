@@ -1,17 +1,16 @@
-# Implement @actor-web/labs-mesh (gossip membership + multi-hop routing + directory propagation)
+# Docs honesty pass: scope the location-transparency claim at first mention and reconcile multi-machine status
 
 ## Source
 
-Created with `fas create-task` on 2026-06-16.
+Created with `fas create-task` on 2026-06-19.
 
 ## Problem
 
-Spike direct-1781363862864. The real Mesh: arbitrary node graph where an actor on A reaches an actor on Z with no direct edge, dynamic join/leave via gossip, cluster-wide directory. Built as a labs package on the injectable directory (P3), the next-hop routing hook (P4), formalized node identity (P5), and the shared transport core (P2) + existing RuntimePeerDiscoveryProvider. broadcastRegister/Unregister/Lookup in distributed-actor-directory.ts are no-op stubs today and propagation is point-to-point only.
+Location-transparency audit L6. (1) Hero one-liners (README:3,17,76; packages/actor-core-runtime/README.md:3; docs/site/index.md:7) assert distributed and location-transparent flatly; add a first-mention qualifier (across directly-connected nodes; dynamic membership in progress) linking the external-transport status doc. (2) Refresh README:67 (now stale-in-favor: identity/auth/replay/telemetry partly landed). (3) Reconcile the multi-machine prove-out contradiction: TASKS.md:535 done vs external-transport-design.md:204 remaining; state precisely what was proven (multi-process on one host) vs not (true multi-host).
 
 ## Acceptance criteria
 
-- The new functionality works as described.
-- Existing behavior is not broken.
+- The change is verified and does not introduce regressions.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
 - DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.

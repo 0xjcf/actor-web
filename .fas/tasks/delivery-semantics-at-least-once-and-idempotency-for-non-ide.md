@@ -1,17 +1,16 @@
-# Implement @actor-web/labs-mesh (gossip membership + multi-hop routing + directory propagation)
+# Delivery semantics: at-least-once and idempotency for non-idempotent agent tool side-effects
 
 ## Source
 
-Created with `fas create-task` on 2026-06-16.
+Created with `fas create-task` on 2026-06-19.
 
 ## Problem
 
-Spike direct-1781363862864. The real Mesh: arbitrary node graph where an actor on A reaches an actor on Z with no direct edge, dynamic join/leave via gossip, cluster-wide directory. Built as a labs package on the injectable directory (P3), the next-hop routing hook (P4), formalized node identity (P5), and the shared transport core (P2) + existing RuntimePeerDiscoveryProvider. broadcastRegister/Unregister/Lookup in distributed-actor-directory.ts are no-op stubs today and propagation is point-to-point only.
+Location-transparency audit L5 (agent-payload gap, UNOWNED). Application sends are at-most-once (runtime README:77-84); silently dropping a non-idempotent tool side-effect (write file, open PR, send email) is a correctness bug not latency. Add protocol-level ack plus timeout-re-emit plus idempotent activation IDs for side-effecting agent tool calls. Builds on the at-most-once delivery contract.
 
 ## Acceptance criteria
 
-- The new functionality works as described.
-- Existing behavior is not broken.
+- The change is verified and does not introduce regressions.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
 - DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.

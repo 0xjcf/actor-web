@@ -1,12 +1,12 @@
-# Implement @actor-web/labs-mesh (gossip membership + multi-hop routing + directory propagation)
+# Make actor addresses opaque and mint them through one canonical factory
 
 ## Source
 
-Created with `fas create-task` on 2026-06-16.
+Created with `fas create-task` on 2026-06-19.
 
 ## Problem
 
-Spike direct-1781363862864. The real Mesh: arbitrary node graph where an actor on A reaches an actor on Z with no direct edge, dynamic join/leave via gossip, cluster-wide directory. Built as a labs package on the injectable directory (P3), the next-hop routing hook (P4), formalized node identity (P5), and the shared transport core (P2) + existing RuntimePeerDiscoveryProvider. broadcastRegister/Unregister/Lookup in distributed-actor-directory.ts are no-op stubs today and propagation is point-to-point only.
+Location-transparency audit L0. The actor address actor://node/type/id leaks the physical node, the type segment is a hardcoded constant, and minting is duplicated (system.spawn actor-system-impl.ts:982-990 vs topology.ts:559-573); node=local normalization (utils/factories.ts:68; actor-system.ts:759-767) diverges from concrete node strings, a latent transparency leak. Centralize minting in one factory used by spawn and topology; treat the path as an opaque key end-to-end; one canonical local-node normalization. Foundation for the unified directory.
 
 ## Acceptance criteria
 
