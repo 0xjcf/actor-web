@@ -400,13 +400,20 @@ function exchangeHello(
 
     // Send our hello LAST so the observer/timeout are armed before any synchronous peer
     // reply can land. Match how the core serializes frames (a JSON string on the wire).
-    link
-      .send(
-        JSON.stringify(createRuntimeTransportHandshakeHello(localIdentity, { now: options.now }))
-      )
-      .catch((error: unknown) => {
-        finish({ ok: false, reason: `Runtime handshake hello send failed: ${String(error)}` });
-      });
+    // A medium can throw SYNCHRONOUSLY from send() (e.g. postMessage on a closed/invalid
+    // port) before returning its promise, which would bypass the .catch() and escape dial();
+    // the try/catch keeps that an errors-as-values fact (DialResult), never a thrown failure.
+    try {
+      link
+        .send(
+          JSON.stringify(createRuntimeTransportHandshakeHello(localIdentity, { now: options.now }))
+        )
+        .catch((error: unknown) => {
+          finish({ ok: false, reason: `Runtime handshake hello send failed: ${String(error)}` });
+        });
+    } catch (error: unknown) {
+      finish({ ok: false, reason: `Runtime handshake hello send failed: ${String(error)}` });
+    }
   });
 }
 
