@@ -182,6 +182,31 @@ describe('defineTransport', () => {
       factory({ duplex: a, timers: noopTimers })
     ).toThrow(/node/i);
   });
+
+  it('surfaces a synchronous medium send throw as a DialResult fact, not a raw throw (errors-as-values)', async () => {
+    // The author returns a RAW duplex (so the hello handshake runs through exchangeHello). Its
+    // postMessage throws SYNCHRONOUSLY, so link.send() throws before returning its promise —
+    // which would bypass the .catch() and let the throw escape dial(). connect() must instead
+    // reject with the controlled handshake-rejected fact: adapters return facts, and dial never
+    // throws for an expected failure.
+    const throwingDuplex: TransportDuplex = {
+      postMessage() {
+        throw new Error('postMessage boom');
+      },
+      onmessage: null,
+    };
+    const factory = defineTransport<{ duplex: TransportDuplex }>(({ duplex }) => duplex);
+    const transport = factory({
+      node: 'node-a',
+      nodeAddress: 'node-a',
+      duplex: throwingDuplex,
+      timers: noopTimers,
+      heartbeatIntervalMs: 0,
+    });
+
+    await transport.start?.();
+    await expect(transport.connect('peer-b')).rejects.toThrow(/Runtime handshake rejected/i);
+  });
 });
 
 describe('defineTransport.server', () => {
