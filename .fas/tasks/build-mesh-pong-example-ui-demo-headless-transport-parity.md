@@ -1,4 +1,4 @@
-# Build Mesh Pong example (UI demo + headless transport-parity
+# Build Mesh Pong example (UI demo + headless transport-parity test)
 
 ## Source
 

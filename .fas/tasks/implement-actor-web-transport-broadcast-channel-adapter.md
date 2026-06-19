@@ -6,7 +6,7 @@ Created with `fas create-task` on 2026-06-16.
 
 ## Problem
 
-Spike direct-1781363862864. Same-origin cross-tab/worker transport over BroadcastChannel, zero server. Implement MessageTransport on the shared transport core; address = channel/peer id (opaque, fits contract). Smallest real Axis-1 transport; proves the extracted core. Today two independent tabs cannot share actors without a websocket server.
+Location-transparency audit L4. Re-sequenced behind the foundation (unified directory, node identity, membership). BroadcastChannel is an N-way bus, but TransportCore is point-to-point and destination-validates-then-disconnects on mismatch (transport-core.ts:481-501), and defineTransport has no peer discovery. Implement as a bus-aware adapter on TransportCore: one shared channel, route inbound by frame.source, destination-filter-instead-of-disconnect, peer discovery via the membership/RuntimePeerDiscoveryProvider seam (not per-transport ad-hoc). Delivers N-tab same-origin actor sharing, not a 2-tab toy. Same-origin cross-tab/worker, zero server.
 
 ## Acceptance criteria
 

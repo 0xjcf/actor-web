@@ -1,17 +1,16 @@
-# Implement @actor-web/labs-mesh (gossip membership + multi-hop routing + directory propagation)
+# Unify actor location truth: single directory-backed resolution for send and emit/subscribe
 
 ## Source
 
-Created with `fas create-task` on 2026-06-16.
+Created with `fas create-task` on 2026-06-19.
 
 ## Problem
 
-Spike direct-1781363862864. The real Mesh: arbitrary node graph where an actor on A reaches an actor on Z with no direct edge, dynamic join/leave via gossip, cluster-wide directory. Built as a labs package on the injectable directory (P3), the next-hop routing hook (P4), formalized node identity (P5), and the shared transport core (P2) + existing RuntimePeerDiscoveryProvider. broadcastRegister/Unregister/Lookup in distributed-actor-directory.ts are no-op stubs today and propagation is point-to-point only.
+Location-transparency audit L0 ROOT FIX (highest leverage). Two parallel registries are both location truth: DistributedActorDirectory (path to node) and AutoPublishingRegistry (publisherId to direct ActorRef). emitEventToSubscribers (actor-system-impl.ts:2684) reads subscriber refs from auto-publishing, then enqueueMessage re-resolves each subscriber address via directory.lookup (1688) and dead-letters on miss (1700-1701), the verified root of the fas-studio bug. Make the directory the single source of location truth: auto-publishing stores addresses or directory handles not refs; emit delivers through the same address chokepoint as send; reconcile registration so an actor cannot be subscriber or publisher without a directory entry; stop TTL-expiring own-node entries. Regression test: two co-located topology actors with a declarative subscription plus emit asserting zero dead-letters and zero console.error against a real directory-backed runtime.
 
 ## Acceptance criteria
 
-- The new functionality works as described.
-- Existing behavior is not broken.
+- The change is verified and does not introduce regressions.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
 - DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.
