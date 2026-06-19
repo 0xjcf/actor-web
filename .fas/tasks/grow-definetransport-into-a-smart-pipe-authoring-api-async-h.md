@@ -36,7 +36,30 @@ Follow-up from P2 (Extract shared transport core, direct-1781732880945). TWO LAY
 
 ## Scope Amendments
 
-- None.
+- Post-PR5 (2026-06-18): the expanded PR5 (commits 9bffc7f export + 143fc93) ALREADY delivered the
+  dumb-pipe path end-to-end, so this follow-up no longer needs the parse seam or a basic identity
+  handshake. PR5 added to `transport/define-transport.ts`: (a) `fromDuplex` parses inbound JSON
+  strings (drop-on-failure, errors-as-values) and buffers pre-subscribe payloads (FIFO), (b) a
+  SYMMETRIC hello handshake in `defineTransport.dial` reusing `createRuntimeTransportHandshakeHello` /
+  `validateRuntimeTransportHandshake`, bounded by `connectTimeoutMs` on injected timers, setting
+  `link.identity` so the core takes its existing handshaked path (zero core change). So
+  `defineTransport(({ port }) => port)` now round-trips with DEFAULT identities. REMAINING scope for
+  this task: full AUTH handshake on the dumb-pipe path (hello currently carries identity only, no
+  shared-secret verify), native-heartbeat opt-in, a real multi-peer SERVER form, and the smart-pipe
+  media (webrtc signaling, mesh multi-peer). The websocket alias re-authoring still belongs here.
+
+## New sub-items surfaced by P2 closeout review (fold into this task)
+
+- Non-blocking handshake: PR5's symmetric hello requires both ends to `connect()` CONCURRENTLY
+  (serial awaits deadlock — each side awaits the peer's hello). Acceptable for real cross-context
+  peers (they connect independently), but the richer API should offer a non-blocking handshake
+  (dial returns immediately; identity binds on first inbound hello) so serial connect is safe.
+- `defineTransport.server` listen-handle `close()` is currently a no-op (define-transport.ts ~:474) —
+  it does not tear down the author's listener. Fix as part of the multi-peer-server form here.
+- Add a handshake-timeout guard test (the "peer never connects -> connect() rejects after
+  connectTimeoutMs" branch is currently logic-only, untested; the injected-timers seam makes it
+  cheaply deterministic).
+- Replace the unbounded `fromDuplex` pre-subscribe FIFO buffer with bounded backpressure.
 
 ## Implementation plan
 
