@@ -27,6 +27,7 @@ export type {
   ActorBehavior,
   ActorEnvelope,
   ActorMessage,
+  AddressQuery,
   // ActorPID is now internal - use ActorRef instead
   ActorStats,
   ActorSystem,
@@ -459,9 +460,11 @@ export { createTimerDelay, withTimerTesting } from './testing/timer-test-utils.j
 export type { JsonValue } from './types.js';
 // Factory functions from utils/factories.js (consolidated from multiple files)
 export {
+  Address,
   createActorAddress,
   generateActorId,
   generateCorrelationId,
+  parse,
 } from './utils/factories.js';
 // Validation functions from utils/validation.js (consolidated from multiple files)
 export {

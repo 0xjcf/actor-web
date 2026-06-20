@@ -10,7 +10,7 @@
  */
 
 import type { ActorRef } from '../actor-ref.js';
-import type { ActorAddress, ActorMessage } from '../actor-system.js';
+import type { ActorAddress, ActorMessage, AddressQuery } from '../actor-system.js';
 import type { JsonValue } from '../types.js';
 import { isJsonValue } from './validation.js';
 
@@ -54,42 +54,105 @@ export function generateSystemId(): string {
 // ============================================================================
 
 /**
- * Creates actor address for location transparency
+ * Mint a branded actor address. The path IS the address. This is the ONLY
+ * brand-emission site for normal addresses (the reserved guardian sentinel in
+ * actor-system-guardian.ts is the single deliberate exception).
  */
-export function createActorAddress(
-  id: string,
-  node?: string,
-  kind: 'actor' | 'callback' = 'actor'
-): ActorAddress {
+function mint(id: string, node: string | undefined, kind: 'actor' | 'callback'): ActorAddress {
   if (!id || typeof id !== 'string') {
     throw new Error('Actor ID must be a non-empty string'); // KEEP: value-object precondition
   }
-  // `/callback/` is the load-bearing delivery discriminator (parseActorPath matches it
-  // first), so an actor id starting with `callback/` would round-trip back as
+  // `/callback/` is the load-bearing delivery discriminator (the callback regex matches
+  // it first), so an actor id starting with `callback/` would round-trip back as
   // kind:'callback' and misroute. Reserve the prefix for actor-kind ids.
   if (kind === 'actor' && id.startsWith('callback/')) {
     throw new Error(`Actor id must not start with the reserved "callback/" prefix: ${id}`);
+  }
+  // Reserved-id guard (locked): 'guardian' is the well-known system root supervisor id;
+  // no user actor may claim it. The guardian's own address bypasses this via a direct
+  // cast in actor-system-guardian.ts.
+  if (kind === 'actor' && id === 'guardian') {
+    throw new Error('Actor id "guardian" is reserved for the system root supervisor');
   }
   const resolvedNode = node || 'local'; // single node-normalization site; node ALWAYS set
   const path =
     kind === 'callback'
       ? `actor://${resolvedNode}/callback/${id}`
       : `actor://${resolvedNode}/${id}`; // 2-segment for actors (drop redundant /actor/)
-  return { id, kind, node: resolvedNode, path };
+  return path as ActorAddress; // ONLY brand-emission site for normal addresses
+}
+
+/**
+ * The sole smart constructor for actor addresses. Accepts either a raw path
+ * string (re-normalized via `parse`) or a structured input, and returns a total
+ * branded value. Echoes `URL`/`Temporal` `.from`. Only minter.
+ */
+export const Address = {
+  from(input: string | { id: string; kind?: 'actor' | 'callback'; node?: string }): ActorAddress {
+    if (typeof input === 'string') {
+      const { id, kind, node } = parse(input as ActorAddress);
+      return mint(id, node, kind);
+    }
+    return mint(input.id, input.node, input.kind ?? 'actor');
+  },
+} as const;
+
+/**
+ * Boundary helper for structured reads of an address. Hot routing keeps the
+ * `.includes('/callback/')` fast path; use this where id/kind/node are needed.
+ * Pure: no I/O.
+ */
+export function parse(address: ActorAddress): { id: string; kind: 'actor' | 'callback'; node: string } {
+  const cb = address.match(/^actor:\/\/([^/]+)\/callback\/(.+)$/);
+  if (cb) {
+    const [, node, id] = cb;
+    return { id, kind: 'callback', node };
+  }
+  const a = address.match(/^actor:\/\/([^/]+)\/(.+)$/);
+  if (!a) {
+    throw new Error(`Invalid actor address: ${address}`);
+  }
+  const [, node, id] = a;
+  return { id, kind: 'actor', node };
+}
+
+/**
+ * Pure functional-core predicate: does an address satisfy a typed query? Every
+ * provided field must match (conjunction); an empty query matches all.
+ */
+export function matchesAddressQuery(address: ActorAddress, query: AddressQuery): boolean {
+  const { id, kind, node } = parse(address);
+  return (
+    (query.id === undefined || query.id === id) &&
+    (query.kind === undefined || query.kind === kind) &&
+    (query.node === undefined || query.node === node)
+  );
+}
+
+/**
+ * Thin alias so the existing createActorAddress(...) call sites keep compiling.
+ * Prefer `Address.from` for new code.
+ */
+export function createActorAddress(
+  id: string,
+  node?: string,
+  kind: 'actor' | 'callback' = 'actor'
+): ActorAddress {
+  return mint(id, node, kind);
 }
 
 /**
  * Creates local actor address (same node)
  */
 export function createLocalActorAddress(id: string): ActorAddress {
-  return createActorAddress(id, 'local');
+  return mint(id, 'local', 'actor');
 }
 
 /**
  * Creates remote actor address (different node)
  */
 export function createRemoteActorAddress(id: string, node: string): ActorAddress {
-  return createActorAddress(id, node);
+  return mint(id, node, 'actor');
 }
 
 // ============================================================================
