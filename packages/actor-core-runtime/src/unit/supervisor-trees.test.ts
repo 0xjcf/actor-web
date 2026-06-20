@@ -23,9 +23,9 @@ import {
 } from '../actor-system-impl.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
-const PATH_A = 'actor://supervisor-trees-test/actor/a';
-const PATH_B = 'actor://supervisor-trees-test/actor/b';
-const PATH_C = 'actor://supervisor-trees-test/actor/c';
+const PATH_A = 'actor://supervisor-trees-test/a';
+const PATH_B = 'actor://supervisor-trees-test/b';
+const PATH_C = 'actor://supervisor-trees-test/c';
 
 function group(
   strategy: SupervisorGroupConfig['strategy'],
@@ -188,7 +188,7 @@ describe('resolveTreeSupervisionDecision (pure tree core)', () => {
       resolveTreeSupervisionDecision({
         childDecision: RESTART_DECISION,
         group: group('one-for-all'),
-        failedChildPath: 'actor://supervisor-trees-test/actor/stranger',
+        failedChildPath: 'actor://supervisor-trees-test/stranger',
       })
     ).toEqual({ kind: 'pass-through' });
   });
@@ -290,7 +290,7 @@ describe('supervisor group failure path (behavioral)', () => {
   let emitSystemEventSpy: MockInstance<any>;
 
   function pathOf(id: string): string {
-    return `actor://${NODE}/actor/${id}`;
+    return `actor://${NODE}/${id}`;
   }
 
   async function makeSystem(supervisors: SupervisorGroupConfig[]): Promise<void> {
@@ -769,7 +769,7 @@ describe('supervisor group failure path (behavioral)', () => {
       try {
         // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
         await (system as any).applySupervisionStrategy(
-          { id: 'guard-a', type: 'actor', node: NODE, path: pathOf('guard-a') },
+          { id: 'guard-a', kind: 'actor', node: NODE, path: pathOf('guard-a') },
           new Error('induced during group action')
         );
       } finally {

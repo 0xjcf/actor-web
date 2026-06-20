@@ -22,7 +22,7 @@ describe('Layer 2: System Event Actor Processing', () => {
     await system.start();
 
     // System event actor address
-    systemEventActorAddress = { path: 'actor://test-node/actor/system-event-actor' };
+    systemEventActorAddress = { path: 'actor://test-node/system-event-actor' };
   });
 
   afterEach(async () => {
@@ -72,7 +72,7 @@ describe('Layer 2: System Event Actor Processing', () => {
           type: 'EMIT_SYSTEM_EVENT',
           systemEventType: 'actorSpawned',
           systemTimestamp: Date.now(),
-          systemData: { address: 'actor://test-node/actor/test' },
+          systemData: { address: 'actor://test-node/test' },
           _timestamp: Date.now(),
           _version: '1.0.0',
         },
@@ -95,13 +95,13 @@ describe('Layer 2: System Event Actor Processing', () => {
       expect(inst1).toHaveProperty('tell');
       expect(inst1.tell.type).toBe('SYSTEM_EVENT_NOTIFICATION');
       expect(inst1.tell.eventType).toBe('actorSpawned');
-      expect(inst1.tell.data).toEqual({ address: 'actor://test-node/actor/test' });
+      expect(inst1.tell.data).toEqual({ address: 'actor://test-node/test' });
 
       expect(inst2).toHaveProperty('to');
       expect(inst2).toHaveProperty('tell');
       expect(inst2.tell.type).toBe('SYSTEM_EVENT_NOTIFICATION');
       expect(inst2.tell.eventType).toBe('actorSpawned');
-      expect(inst2.tell.data).toEqual({ address: 'actor://test-node/actor/test' });
+      expect(inst2.tell.data).toEqual({ address: 'actor://test-node/test' });
 
       log.info('✅ System event actor returns correct send instructions');
     });

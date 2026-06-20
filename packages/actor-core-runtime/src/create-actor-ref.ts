@@ -144,7 +144,7 @@ class XStateActorRef<TContext = unknown, TMessage extends ActorMessage = ActorMe
   get address(): ActorAddress {
     return {
       id: this._id,
-      type: 'unified',
+      kind: 'actor',
       path: `/actors/${this._id}`,
     };
   }

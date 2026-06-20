@@ -30,7 +30,7 @@ import { isActorMessage, isDomainEvent, isMessagePlan } from '../utils/validatio
 // ============================================================================
 
 const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
-  address: { id: 'test-actor', type: 'test', path: '/test-actor' },
+  address: { id: 'test-actor', kind: 'actor', path: '/test-actor' },
   send: vi.fn().mockResolvedValue(undefined),
   ask: vi.fn().mockResolvedValue({ success: true }),
 });

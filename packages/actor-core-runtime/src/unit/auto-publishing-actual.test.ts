@@ -13,7 +13,7 @@ function createMockActorRef(path: string): ActorRef {
   return {
     address: {
       id: path.split('/').pop() || 'unknown',
-      type: 'test',
+      kind: 'actor',
       path,
       node: 'test-node',
     },

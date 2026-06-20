@@ -79,9 +79,9 @@ describe('Actor-Web topology helpers', () => {
     expect(logistics.nodes.server.address).toBe('logistics-server-runtime');
     expect(logistics.actors.shipment.address).toEqual({
       id: 'logistics-shipment',
-      type: 'actor',
+      kind: 'actor',
       node: 'logistics-server-runtime',
-      path: 'actor://logistics-server-runtime/actor/logistics-shipment',
+      path: 'actor://logistics-server-runtime/logistics-shipment',
     });
     expect(logistics.actors.shipment.nodeAddress).toBe('logistics-server-runtime');
     expect(logistics.tools['route.plan']).toEqual({

@@ -446,9 +446,13 @@ function hasCorrelationId(message: unknown): message is { _correlationId: string
 /**
  * Guardian Actor Address - Well-known system address
  */
+// Guardian keeps a non-uniform well-known address: path is /system/guardian
+// (not the actor:// scheme) and kind is coerced to 'actor' since 'system' is
+// not a valid address kind. Reconciling the guardian + callback address shapes
+// is deferred to the unify-directory task. Do NOT add 'system' to the kind union.
 export const GUARDIAN_ADDRESS: ActorAddress = {
   id: 'guardian',
-  type: 'system',
+  kind: 'actor',
   node: 'local',
   path: '/system/guardian',
 };

@@ -63,7 +63,7 @@ function createActorRef(path: string): ActorRef {
   return {
     address: {
       id: path.split('/').at(-1) ?? path,
-      type: 'actor',
+      kind: 'actor',
       path,
     },
     send: vi.fn(async (_message: ActorMessage<{ type: string }>) => undefined),
@@ -87,7 +87,7 @@ function createRuntimeMock(label: string): {
   stop: ReturnType<typeof vi.fn>;
   actorRef: ActorRef;
 } {
-  const actorRef = createActorRef(`actor://${label}/actor/component-actor`);
+  const actorRef = createActorRef(`actor://${label}/component-actor`);
   const spawn = vi.fn(async () => actorRef);
   const lookup = vi.fn(async (path: string) => createActorRef(path));
   const start = vi.fn(async () => undefined);
@@ -161,7 +161,7 @@ describe('component runtime ownership', () => {
       machine,
       template,
       runtime: runtimeProvider,
-      dependencies: { backend: 'actor://config-runtime/actor/backend' },
+      dependencies: { backend: 'actor://config-runtime/backend' },
     });
 
     const element = component.create() as InternalComponentElement;
@@ -180,7 +180,7 @@ describe('component runtime ownership', () => {
       machine,
       template,
       runtime: configRuntime.runtime,
-      dependencies: { backend: 'actor://override-runtime/actor/backend' },
+      dependencies: { backend: 'actor://override-runtime/backend' },
     });
 
     const element = component.create({
@@ -197,7 +197,7 @@ describe('component runtime ownership', () => {
   it('supports a per-call runtime override for createWithDependencies', async () => {
     const configRuntime = createRuntimeMock('config-runtime');
     const overrideRuntime = createRuntimeMock('override-runtime');
-    const injectedDependency = createActorRef('actor://override-runtime/actor/injected');
+    const injectedDependency = createActorRef('actor://override-runtime/injected');
     const component = createComponent({
       machine,
       template,
@@ -216,7 +216,7 @@ describe('component runtime ownership', () => {
       expect.objectContaining({
         type: 'UPDATE_DEPENDENCIES',
         dependencyRefs: {
-          injected: 'actor://override-runtime/actor/injected',
+          injected: 'actor://override-runtime/injected',
         },
       })
     );
@@ -246,7 +246,7 @@ describe('component runtime ownership', () => {
     const component = createComponent({
       machine,
       template,
-      dependencies: { backend: 'actor://fallback-runtime/actor/backend' },
+      dependencies: { backend: 'actor://fallback-runtime/backend' },
     });
 
     const firstElement = component.create() as InternalComponentElement;

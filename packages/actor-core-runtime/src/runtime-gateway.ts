@@ -437,7 +437,7 @@ function replayFrameAddress(frame: RuntimeGatewayReplayFrame): ActorAddress | nu
 }
 
 function addressesMatch(left: ActorAddress, right: ActorAddress): boolean {
-  return left.id === right.id && left.type === right.type && left.path === right.path;
+  return left.id === right.id && left.kind === right.kind && left.path === right.path;
 }
 
 function restoredReplayFramesMatchSource(

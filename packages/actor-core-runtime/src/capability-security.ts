@@ -390,7 +390,7 @@ export class InMemoryCapabilityRegistry implements CapabilityRegistry {
     // Fall back to mock actor ref for testing or when no virtual actor system is provided
     this.logger.debug('Using mock actor ref (no virtual actor system)', { actorId });
     const mockActorRef: ActorRef<BaseEventObject> = {
-      address: { id: actorId, type: 'mock', path: `/actors/${actorId}` },
+      address: { id: actorId, kind: 'actor', path: `/actors/${actorId}` },
       send: async () => {},
       ask: async <TResponse = JsonValue>() => ({ success: true }) as TResponse,
       stop: async () => {},

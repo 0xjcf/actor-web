@@ -35,7 +35,7 @@ const mockDomainEvent: DomainEvent = {
 
 const createMockActorRef = (): ActorRef =>
   createMockActorRefUtil({
-    address: { id: 'mock-actor', type: 'test', path: '/mock-actor' },
+    address: { id: 'mock-actor', kind: 'actor', path: '/mock-actor' },
     send: vi.fn().mockResolvedValue(undefined),
     ask: vi.fn().mockResolvedValue({ success: true }),
   });

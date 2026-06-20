@@ -80,7 +80,7 @@ describe('Event Emission - Debug Multiple Subscribers', () => {
       };
     }
     const registry = (system as unknown as TestActorSystem).autoPublishingRegistry;
-    const metadata1 = registry.getPublishableActor('actor://test-node/actor/publisher');
+    const metadata1 = registry.getPublishableActor('actor://test-node/publisher');
     log.debug('After sub1 subscription:', {
       subscribers: Array.from(metadata1.subscribers.entries()),
     });
@@ -92,7 +92,7 @@ describe('Event Emission - Debug Multiple Subscribers', () => {
     });
 
     // Check registry state after second subscription
-    const metadata2 = registry.getPublishableActor('actor://test-node/actor/publisher');
+    const metadata2 = registry.getPublishableActor('actor://test-node/publisher');
     log.debug('After sub2 subscription:', {
       subscribers: Array.from(metadata2.subscribers.entries()),
     });

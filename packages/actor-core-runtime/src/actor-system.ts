@@ -97,7 +97,7 @@ export type MessagePlan<_TDomainEvent = unknown> = unknown; // Will be properly 
  */
 export interface ActorAddress {
   readonly id: string;
-  readonly type: string;
+  readonly kind: 'actor' | 'callback';
   readonly node?: string;
   readonly path: string;
 }
@@ -757,13 +757,15 @@ export interface ActorSupervisor {
  * Parse an actor path into an address
  */
 export function parseActorPath(path: string): ActorAddress {
-  const match = path.match(/^actor:\/\/([^/]+)\/([^/]+)\/(.+)$/);
-  if (!match) {
-    throw new Error(`Invalid actor path: ${path}`);
+  const callback = path.match(/^actor:\/\/([^/]+)\/callback\/(.+)$/);
+  if (callback) {
+    const [, node, id] = callback;
+    return createActorAddress(id, node === 'local' ? undefined : node, 'callback');
   }
-
-  const [, node, type, id] = match;
-  return createActorAddress(id, type, node === 'local' ? undefined : node);
+  const actor = path.match(/^actor:\/\/([^/]+)\/(.+)$/);
+  if (!actor) throw new Error(`Invalid actor path: ${path}`);
+  const [, node, id] = actor;
+  return createActorAddress(id, node === 'local' ? undefined : node, 'actor');
 }
 
 /**

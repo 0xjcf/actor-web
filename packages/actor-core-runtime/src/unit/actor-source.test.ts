@@ -67,7 +67,7 @@ describe('actor source', () => {
   it('projects Actor-Web snapshots into host-ready snapshots with address and phase', () => {
     const address = {
       id: 'checkout',
-      type: 'unified',
+      kind: 'actor' as const,
       path: '/actors/checkout',
     };
 
@@ -99,7 +99,7 @@ describe('actor source', () => {
       } as unknown as ActorInstance,
       {
         id: 'typed-counter',
-        type: 'actor',
+        kind: 'actor',
         path: '/actors/typed-counter',
       }
     );
@@ -252,8 +252,8 @@ describe('actor source', () => {
     const remoteActor = {
       address: {
         id: 'checkout-remote',
-        type: 'actor',
-        path: 'actor://remote-node/actor/checkout-remote',
+        kind: 'actor' as const,
+        path: 'actor://remote-node/checkout-remote',
       },
       getSnapshot: () => createSnapshot(undefined, { count: -1 }),
       send: async () => {},

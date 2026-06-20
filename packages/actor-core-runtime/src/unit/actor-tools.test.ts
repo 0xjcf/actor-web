@@ -24,7 +24,7 @@ describe('ActorToolbox', () => {
         'provider.secret': () => 'hidden',
       },
       {
-        actorId: 'actor://worker/actor/scanner',
+        actorId: 'actor://worker/scanner',
         nodeAddress: 'worker',
       },
       ['provider.scan.verify']
@@ -34,12 +34,12 @@ describe('ActorToolbox', () => {
 
     expect(result).toEqual({
       accepted: true,
-      label: 'actor://worker/actor/scanner:HVAC',
+      label: 'actor://worker/scanner:HVAC',
     });
     expect(scan).toHaveBeenCalledWith(
       { label: 'HVAC' },
       {
-        actorId: 'actor://worker/actor/scanner',
+        actorId: 'actor://worker/scanner',
         nodeAddress: 'worker',
       }
     );
@@ -54,7 +54,7 @@ describe('ActorToolbox', () => {
         'provider.secret': () => 'hidden',
       },
       {
-        actorId: 'actor://worker/actor/scanner',
+        actorId: 'actor://worker/scanner',
         nodeAddress: 'worker',
       },
       ['provider.scan.verify']
@@ -115,7 +115,7 @@ describe('ActorToolbox', () => {
         'provider.secret': () => 'hidden',
       },
       {
-        actorId: 'actor://worker/actor/scanner',
+        actorId: 'actor://worker/scanner',
         nodeAddress: 'worker',
       },
       scanActor.tools
@@ -126,7 +126,7 @@ describe('ActorToolbox', () => {
     )?.onMessage?.({
       message: { type: 'SCAN', label: 'HVAC' },
       actor: {
-        id: 'actor://worker/actor/scanner',
+        id: 'actor://worker/scanner',
         getSnapshot: () => ({ context: undefined }),
       },
       tools: toolbox,
@@ -138,7 +138,7 @@ describe('ActorToolbox', () => {
     expect(result).toMatchObject({
       reply: {
         accepted: true,
-        label: 'actor://worker/actor/scanner:HVAC',
+        label: 'actor://worker/scanner:HVAC',
       },
     });
     expect(scan).toHaveBeenCalledOnce();

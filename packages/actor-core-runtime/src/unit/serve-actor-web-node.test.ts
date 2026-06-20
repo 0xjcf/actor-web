@@ -138,7 +138,7 @@ describe('serveNode', () => {
     try {
       expect(served.getTransportUrl()).toMatch(/^ws:\/\/127\.0\.0\.1:/);
       expect(served.getGatewayUrl()).toMatch(/^ws:\/\/127\.0\.0\.1:/);
-      expect(served.getActor('counter')?.address.path).toBe('actor://server-node/actor/counter');
+      expect(served.getActor('counter')?.address.path).toBe('actor://server-node/counter');
       expect(served.getActor('workerCounter')).toBeUndefined();
       expect(() => served.requireActor('workerCounter')).toThrow(
         'Actor-Web node did not spawn actor "workerCounter".'
@@ -171,7 +171,7 @@ describe('serveNode', () => {
         streamId: 'counter-stream',
         projection: {
           address: {
-            path: 'actor://server-node/actor/counter',
+            path: 'actor://server-node/counter',
           },
           context: {
             count: 1,
@@ -431,7 +431,7 @@ describe('serveNode', () => {
         streamId: 'worker-counter-stream',
         projection: {
           address: {
-            path: 'actor://worker-node/actor/worker-counter',
+            path: 'actor://worker-node/worker-counter',
           },
           context: {
             count: 1,
@@ -567,13 +567,13 @@ describe('serveNode', () => {
       expect(served.getActor('shipment')).toBeUndefined();
       expect(topology.actors.shipment.resolveAddress({ shipmentId: '1001' })).toMatchObject({
         id: 'shipment-1001',
-        path: 'actor://server-node/actor/shipment-1001',
+        path: 'actor://server-node/shipment-1001',
       });
 
       const first = await served.actors.shipment.instance({ shipmentId: '1001' });
       const second = await served.actors.shipment.instance({ shipmentId: '1001' });
       expect(second).toBe(first);
-      expect(first.address.path).toBe('actor://server-node/actor/shipment-1001');
+      expect(first.address.path).toBe('actor://server-node/shipment-1001');
 
       await first.send({ type: 'INCREMENT' });
       await served.system.flush();
@@ -838,11 +838,11 @@ describe('serveNode', () => {
         'Expected worker peer to connect before stopping it'
       );
       await waitFor(
-        () => served.system.lookup('actor://worker-node/actor/worker-counter'),
+        () => served.system.lookup('actor://worker-node/worker-counter'),
         'Expected server node to finish syncing the worker directory before stopping the peer'
       );
       await waitFor(
-        () => worker.system.lookup('actor://server-node/actor/server-counter'),
+        () => worker.system.lookup('actor://server-node/server-counter'),
         'Expected worker node to finish syncing the server directory before stopping the peer'
       );
 
