@@ -29,7 +29,7 @@ import type {
   SpawnOptions,
   SupervisionStrategy,
 } from './types.js';
-import { generateActorId } from './utils/factories.js';
+import { createActorAddress, generateActorId } from './utils/factories.js';
 
 /**
  * Type guard for AnyStateMachine
@@ -142,11 +142,7 @@ class XStateActorRef<TContext = unknown, TMessage extends ActorMessage = ActorMe
   }
 
   get address(): ActorAddress {
-    return {
-      id: this._id,
-      kind: 'actor',
-      path: `/actors/${this._id}`,
-    };
+    return createActorAddress(this._id);
   }
 
   get status(): ActorStatus {
