@@ -29,11 +29,72 @@ Location-transparency audit L0. The actor address actor://node/type/id leaks the
 
 ## Affected files
 
-- Scope unknown.
+- packages/actor-core-runtime/src/utils/factories.ts
+- packages/actor-core-runtime/src/actor-system.ts
+- packages/actor-core-runtime/src/actor-system-impl.ts
+- packages/actor-core-runtime/src/topology.ts
+- packages/actor-core-runtime/src/actor-web-source.ts
+- packages/actor-core-runtime/src/distributed-actor-directory.ts
+- packages/actor-core-runtime/src/actor-system-guardian.ts
+- packages/actor-core-runtime/src/unit/actor-address.test.ts
+- packages/actor-core-runtime/src/unit/actor-source.test.ts
+- packages/actor-core-runtime/src/unit/actor-tools.test.ts
+- packages/actor-core-runtime/src/unit/actor-web-source.test.ts
+- packages/actor-core-runtime/src/unit/component-runtime-ownership.test.ts
+- packages/actor-core-runtime/src/unit/cross-node-subscription-delivery.test.ts
+- packages/actor-core-runtime/src/unit/cross-node-subscription-integration.test.ts
+- packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts
+- packages/actor-core-runtime/src/unit/start-actor-web-node.test.ts
+- packages/actor-core-runtime/src/unit/supervisor-trees.test.ts
+- packages/actor-core-runtime/src/unit/system-event-actor-processing.test.ts
+- packages/actor-core-runtime/src/unit/topology.test.ts
+- packages/actor-core-runtime/src/unit/distributed-actor-directory.test.ts
+- packages/actor-core-runtime/src/integration/event-emission-debug.test.ts
+- examples/ignite-headless-host/logistics-contract.ts
+- examples/ignite-headless-host/headless-host.test.ts
+- examples/ignite-headless-host/logistics-runtime-status.test.ts
+- examples/fas-agent-loop/fas-agent-loop.test.ts
+- packages/actor-core-runtime/src/capability-security.ts
+- packages/actor-core-runtime/src/create-actor-ref.ts
+- packages/actor-core-runtime/src/runtime-gateway.ts
+- packages/actor-core-runtime/src/utils/null-actor.ts
+- packages/actor-core-runtime/src/unit/auto-publishing-actual.test.ts
+- packages/actor-core-runtime/src/unit/message-plan.test.ts
+- packages/actor-core-runtime/src/unit/message-plan.unit.test.ts
+- packages/actor-core-runtime/src/unit/plan-interpreter.test.ts
+- packages/actor-core-runtime/src/unit/runtime-gateway.test.ts
+- packages/actor-core-runtime/src/unit/runtime-projection.test.ts
+- packages/actor-core-runtime/src/integration/actor-system-guardian.test.ts
+- packages/actor-core-runtime/src/integration/guardian-integration.test.ts
+- examples/ignite-headless-host/logistics-runtime-status-panel.tsx
 
 ## Scope Amendments
 
-- None.
+- Type: necessary-consumer-update
+- Added at: 2026-06-19
+- Trigger: breaking ActorAddress.type->kind + dropping /actor/ from actor paths
+- Reason: Architect+staff+root verified the full opaque-address surface at HEAD 283a834. Includes a 4th hidden parser (parseAddressKey) and the topology ActorWebActorAddress narrowing. Maintainer approved fixing the 4 first-party examples files in-PR (Option 1) because they are compiled by root tsconfig and run by pnpm test:examples; verify.sh --full requires them green.
+- Added paths: packages/actor-core-runtime/src/utils/factories.ts, packages/actor-core-runtime/src/actor-system.ts, packages/actor-core-runtime/src/actor-system-impl.ts, packages/actor-core-runtime/src/topology.ts, packages/actor-core-runtime/src/actor-web-source.ts, packages/actor-core-runtime/src/distributed-actor-directory.ts, packages/actor-core-runtime/src/actor-system-guardian.ts, packages/actor-core-runtime/src/unit/actor-address.test.ts, packages/actor-core-runtime/src/unit/actor-source.test.ts, packages/actor-core-runtime/src/unit/actor-tools.test.ts, packages/actor-core-runtime/src/unit/actor-web-source.test.ts, packages/actor-core-runtime/src/unit/component-runtime-ownership.test.ts, packages/actor-core-runtime/src/unit/cross-node-subscription-delivery.test.ts, packages/actor-core-runtime/src/unit/cross-node-subscription-integration.test.ts, packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts, packages/actor-core-runtime/src/unit/start-actor-web-node.test.ts, packages/actor-core-runtime/src/unit/supervisor-trees.test.ts, packages/actor-core-runtime/src/unit/system-event-actor-processing.test.ts, packages/actor-core-runtime/src/unit/topology.test.ts, packages/actor-core-runtime/src/unit/distributed-actor-directory.test.ts, packages/actor-core-runtime/src/integration/event-emission-debug.test.ts, examples/ignite-headless-host/logistics-contract.ts, examples/ignite-headless-host/headless-host.test.ts, examples/ignite-headless-host/logistics-runtime-status.test.ts, examples/fas-agent-loop/fas-agent-loop.test.ts
+- Evidence source: 6-agent architect+staff briefs (CONFUSION-A/B/C) + root verification of root package.json test + tsconfig include
+- Evidence: 6-agent architect+staff briefs (CONFUSION-A/B/C) + root verification of root package.json test + tsconfig include
+
+- Type: scope-refresh-promotion
+- Added at: 2026-06-20
+- Trigger: dirty-low-confidence-scope
+- Reason: Promoted dirty low-confidence or dependency-reachable task-packet path(s) into affected scope.
+- Added paths: packages/actor-core-runtime/src/actor-web-source.ts
+- Evidence source: task-packet dirty scope promotion
+- Evidence: task-packet dirty scope promotion | .fas/state/task-packet.json | Promoted dirty path(s): packages/actor-core-runtime/src/actor-web-source.ts
+- Accuracy signal: Path was dirty in git status and present in task-packet low-confidence/dependency-reachable scope.
+
+## Scope Amendments (implementation-discovered consumers)
+
+- Type: necessary-consumer-update
+- Added at: 2026-06-19
+- Trigger: the atomic ActorAddress.type->kind rename makes additional first-party consumers non-compiling that the original brief scope did not enumerate; the package typecheck (tsc over src/**/*) and root typecheck (examples) both flag them.
+- Reason: These are the mechanical fan-out of the LOCKED field rename, not a design change. They mirror the guardian precedent (site 11): non-uniform sentinel/mock addresses ('mock'/'unified'/'null'/'system'/'test'/'worker') coerce their old type to kind:'actor'; runtime-gateway address equality compares kind instead of type. No widening of the kind union. Fixing them is required for fas validate-task (lint/typecheck) and the root gate to go green.
+- Added paths: packages/actor-core-runtime/src/capability-security.ts, packages/actor-core-runtime/src/create-actor-ref.ts, packages/actor-core-runtime/src/runtime-gateway.ts, packages/actor-core-runtime/src/utils/null-actor.ts, packages/actor-core-runtime/src/unit/auto-publishing-actual.test.ts, packages/actor-core-runtime/src/unit/message-plan.test.ts, packages/actor-core-runtime/src/unit/message-plan.unit.test.ts, packages/actor-core-runtime/src/unit/plan-interpreter.test.ts, packages/actor-core-runtime/src/unit/runtime-gateway.test.ts, packages/actor-core-runtime/src/unit/runtime-projection.test.ts, packages/actor-core-runtime/src/integration/actor-system-guardian.test.ts, packages/actor-core-runtime/src/integration/guardian-integration.test.ts, examples/ignite-headless-host/logistics-runtime-status-panel.tsx
+- Evidence: fas validate-task changeset receipt unexpectedFiles (5 source) + planAlignmentSummary.testCoverageFiles (8 test); full package vitest run 558 passed; root pnpm typecheck + pnpm test:examples (51 passed) green.
 
 ## Implementation plan
 
