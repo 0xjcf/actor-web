@@ -67,6 +67,7 @@ Location-transparency audit L0. The actor address actor://node/type/id leaks the
 - packages/actor-core-runtime/src/integration/actor-system-guardian.test.ts
 - packages/actor-core-runtime/src/integration/guardian-integration.test.ts
 - examples/ignite-headless-host/logistics-runtime-status-panel.tsx
+- .changeset/opaque-actor-addresses.md
 
 ## Scope Amendments
 
@@ -86,6 +87,12 @@ Location-transparency audit L0. The actor address actor://node/type/id leaks the
 - Evidence source: task-packet dirty scope promotion
 - Evidence: task-packet dirty scope promotion | .fas/state/task-packet.json | Promoted dirty path(s): packages/actor-core-runtime/src/actor-web-source.ts
 - Accuracy signal: Path was dirty in git status and present in task-packet low-confidence/dependency-reachable scope.
+
+- Type: release-changeset
+- Added at: 2026-06-20
+- Trigger: maintainer-approved minor changeset for the breaking address change
+- Reason: Published @actor-web/runtime uses Changesets; the breaking ActorAddress.type->kind + 2-seg path change needs a minor changeset (0.2.0 release plan). Maintainer chose minor + ship in this PR.
+- Added paths: .changeset/opaque-actor-addresses.md
 
 ## Scope Amendments (implementation-discovered consumers)
 
