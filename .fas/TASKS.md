@@ -1624,10 +1624,13 @@
 ### Task: Make actor addresses opaque and mint them through one canonical factory
 
 - Title: Make actor addresses opaque and mint them through one canonical factory
-- Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Mode: 6-agent
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/make-actor-addresses-opaque-and-mint-them-through-one-canoni.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Unify actor location truth: single directory-backed resolution for send and emit/subscribe
 
