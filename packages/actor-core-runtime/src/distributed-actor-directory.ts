@@ -419,7 +419,10 @@ export class DistributedActorDirectory implements ActorDirectory {
   private parseAddressKey(key: string): ActorAddress | undefined {
     try {
       return parseActorPath(key);
-    } catch {
+    } catch (error) {
+      // A canonical mint always round-trips; a parse failure signals a malformed or
+      // divergent key, so surface it instead of silently dropping it from listings.
+      log.warn('Failed to parse actor directory key', { key, error });
       return undefined;
     }
   }
