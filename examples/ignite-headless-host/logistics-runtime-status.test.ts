@@ -108,7 +108,7 @@ function createStatusResponse(
       logisticsSupervisor: 'actor://logistics-server-runtime/logistics-supervisor',
       dispatcher: 'actor://logistics-server-runtime/logistics-dispatcher',
       driverDirectory: 'actor://logistics-server-runtime/logistics-driver-directory',
-      serviceWorkerProof: 'actor://logistics-service-worker-runtime/service-worker-proof',
+      serviceWorkerProof: 'actor://logistics-service-worker-runtime/logistics-service-worker-proof',
     },
   };
 }
