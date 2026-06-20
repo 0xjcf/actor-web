@@ -1625,8 +1625,8 @@
 
 - Title: Make actor addresses opaque and mint them through one canonical factory
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/make-actor-addresses-opaque-and-mint-them-through-one-canoni.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -1696,6 +1696,25 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/post-mesh-scoping-membership-graduation-tier-cross-node-supe.md
+
+### Task: [actor-web] Wire a CodeRabbit review gate into the FAS reviewer or closeout step so fas done blocks on a clean pass
+
+- Title: [actor-web] Wire a CodeRabbit review gate into the FAS reviewer or closeout step so fas done blocks on a clean pass
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/wire-a-coderabbit-review-gate-into-the-fas-reviewer-or-close.md
+
+### Task: Collapse ActorAddress to an opaque branded path string (Address.from + typed AddressQuery)
+
+- Title: Collapse ActorAddress to an opaque branded path string (Address.from + typed AddressQuery)
+- Mode: 6-agent
+- Status: implementing
+- Owner: implementer
+- Brief: .fas/tasks/collapse-actoraddress-to-an-opaque-branded-path-string-addre.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ## Template
 

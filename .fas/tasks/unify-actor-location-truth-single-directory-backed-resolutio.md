@@ -32,7 +32,7 @@ Location-transparency audit L0 ROOT FIX (highest leverage). Two parallel registr
 
 ## Scope Amendments
 
-- None.
+- **Address-model "A" split into its own predecessor task (2026-06-20):** the branded-path-string migration, `Address.from`, `parse()`, and `AddressQuery`/`find()` are delivered by **`task-1781964585809`** ("Collapse ActorAddress to an opaque branded path string"), which **blocks** this task. This task now *builds on* the finished A address — its scope is the **single directory-backed resolution** core (the fas-studio dead-letter fix): auto-publishing stores addresses/handles not refs, emit delivers through the same address chokepoint as send, registration reconciled so an actor cannot be subscriber/publisher without a directory entry, own-node entries not TTL-expired. Use `directory.find(AddressQuery)` (from the A task) where listing by kind is needed. Rationale: auto-memory `actor-web-address-model-decision`.
 
 ## Implementation plan
 
