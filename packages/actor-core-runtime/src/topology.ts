@@ -560,13 +560,13 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
       const resolveAddress = (params?: unknown): ActorWebActorAddress => {
         const id = resolveId(params);
         const a = createActorAddress(id, nodeDefinition.address);
-        return { id: a.id, kind: 'actor', node: nodeDefinition.address, path: a.path };
+        return { id: a.id, kind: 'actor', node: a.node ?? 'local', path: a.path };
       };
       const built = createActorAddress(descriptorId, nodeDefinition.address);
       const address: ActorWebActorAddress = {
         id: built.id,
         kind: 'actor',
-        node: nodeDefinition.address,
+        node: built.node ?? 'local',
         path: built.path,
       };
       const { gateway: gatewayDefinition, ...actorDefinition } = definition;
