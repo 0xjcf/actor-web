@@ -17,7 +17,7 @@ import type { ActorRef } from './actor-ref.js';
 import type { ActorToolbox, ActorToolRegistry, UntypedActorToolRegistry } from './actor-tools.js';
 import type { UniversalTemplate } from './create-actor.js';
 import type { JsonValue, Message } from './types.js';
-import { createActorAddress } from './utils/factories.js';
+import { createActorAddress, parse } from './utils/factories.js';
 
 export type { JsonValue } from './types.js';
 
@@ -92,14 +92,24 @@ export interface ActorDependencies {
  */
 export type MessagePlan<_TDomainEvent = unknown> = unknown; // Will be properly typed with MessagePlan import
 
+declare const ACTOR_ADDRESS_BRAND: unique symbol;
 /**
- * Actor address that uniquely identifies an actor in the system
+ * Opaque, branded actor address. The path IS the address — there are no separate
+ * id/kind/node fields to drift out of sync. Mint only via `Address.from`
+ * (utils/factories.ts); read structured fields back with `parse`. Hand-built
+ * object literals and raw unbranded strings are compile errors.
  */
-export interface ActorAddress {
-  readonly id: string;
-  readonly kind: 'actor' | 'callback';
+export type ActorAddress = string & { readonly [ACTOR_ADDRESS_BRAND]: 'ActorAddress' };
+
+/**
+ * Typed specification for selecting addresses from the directory. Every provided
+ * field must match (conjunction); an empty query matches all. Future richer
+ * queries belong on labels/metadata, not on the address identity.
+ */
+export interface AddressQuery {
+  readonly id?: string;
+  readonly kind?: 'actor' | 'callback';
   readonly node?: string;
-  readonly path: string;
 }
 
 /**
@@ -645,9 +655,9 @@ export interface ActorDirectory {
   lookup(address: ActorAddress): Promise<string | undefined>;
 
   /**
-   * List all actors of a given type
+   * Find all registered actors matching a typed address query.
    */
-  listByType(type: string): Promise<ActorAddress[]>;
+  find(query: AddressQuery): Promise<ActorAddress[]>;
 
   /**
    * Get all registered actors
@@ -772,7 +782,8 @@ export function parseActorPath(path: string): ActorAddress {
  * Check if an address is local
  */
 export function isLocalAddress(address: ActorAddress): boolean {
-  return !address.node || address.node === 'local';
+  const { node } = parse(address);
+  return !node || node === 'local';
 }
 
 // generateActorId moved to utils/factories.ts
