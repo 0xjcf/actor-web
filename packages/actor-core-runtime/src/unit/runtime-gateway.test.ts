@@ -725,7 +725,7 @@ describe('runtime gateway source', () => {
     expect(events[0]?.envelope).toMatchObject({
       kind: 'fact',
       type: 'CHECKOUT_SUBMITTED',
-      sourceActor: '/actors/gateway-checkout',
+      sourceActor: 'actor://local/gateway-checkout',
     });
     expect(transitions).toEqual([{ fromState: 'ready', toState: 'submitted' }]);
   });
