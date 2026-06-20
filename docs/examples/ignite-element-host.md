@@ -56,9 +56,9 @@ receives fresh snapshots/events over the gateway WebSocket.
 
 - Browser host: Ignite custom element, projection consumer only.
 - Server runtime: owns
-  `actor://logistics-server-runtime/actor/logistics-shipment`.
+  `actor://logistics-server-runtime/logistics-shipment`.
 - WebWorker runtime: owns
-  `actor://logistics-worker-runtime/actor/logistics-routing`.
+  `actor://logistics-worker-runtime/logistics-routing`.
 - Remote Provider HQ: external-system simulation that reports label, truck, and
   delivery/return scan signals back to the server runtime.
 - Service worker runtime: browser-local fallback/topology proof.
