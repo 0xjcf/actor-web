@@ -8,6 +8,7 @@ import type { ActorAddress } from '../actor-system.js';
 import { DistributedActorDirectory } from '../distributed-actor-directory.js';
 import { Logger } from '../logger.js';
 import { createActorDelay } from '../pure-xstate-utilities.js';
+import { Address, parse } from '../utils/factories.js';
 
 const log = Logger.namespace('TEST');
 // import { enableDevMode } from './logger'; // Removed - use pnpm test:debug for verbose output
@@ -16,8 +17,8 @@ const log = Logger.namespace('TEST');
 // Use `pnpm test:debug` for verbose output when needed
 
 function createActorAddress(id: string, type: string, node: string): ActorAddress {
-  void type; // retained for call-site compatibility; addresses are now 2-segment (kind replaces type)
-  return { id, kind: 'actor', node, path: `actor://${node}/${id}` };
+  void type; // retained for call-site compatibility; addresses are now branded strings (kind replaces type)
+  return Address.from({ id, node });
 }
 
 describe.skip('DistributedActorDirectory', () => {
@@ -241,13 +242,16 @@ describe.skip('DistributedActorDirectory', () => {
       await directory.register(address2, 'location2');
       await directory.register(address3, 'location3');
 
-      const type1Actors = await directory.listByType('type1');
-      expect(type1Actors).toHaveLength(2);
-      expect(type1Actors.map((a) => a.id)).toEqual(expect.arrayContaining(['actor1', 'actor2']));
+      // find() queries the typed AddressQuery (id/kind/node); kind:'actor' matches all.
+      const allActors = await directory.find({ kind: 'actor' });
+      expect(allActors).toHaveLength(3);
+      expect(allActors.map((a) => parse(a).id)).toEqual(
+        expect.arrayContaining(['actor1', 'actor2', 'actor3'])
+      );
 
-      const type2Actors = await directory.listByType('type2');
-      expect(type2Actors).toHaveLength(1);
-      expect(type2Actors[0].id).toBe('actor3');
+      const byId = await directory.find({ id: 'actor3' });
+      expect(byId).toHaveLength(1);
+      expect(parse(byId[0] as ActorAddress).id).toBe('actor3');
     });
 
     it('should get all registered actors', async () => {
@@ -272,13 +276,13 @@ describe.skip('DistributedActorDirectory', () => {
 
       expect(allActors.size).toBe(2);
 
-      // Test with actor paths as keys
-      expect(allActors.get(address1.path)).toBe('location1');
-      expect(allActors.get(address2.path)).toBe('location2');
+      // Test with actor paths as keys (the address IS the path).
+      expect(allActors.get(address1)).toBe('location1');
+      expect(allActors.get(address2)).toBe('location2');
 
       // Verify we can find both addresses
-      expect(allActors.has(address1.path)).toBe(true);
-      expect(allActors.has(address2.path)).toBe(true);
+      expect(allActors.has(address1)).toBe(true);
+      expect(allActors.has(address2)).toBe(true);
     });
   });
 

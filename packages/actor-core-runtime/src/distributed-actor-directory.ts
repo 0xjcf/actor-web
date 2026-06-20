@@ -10,11 +10,12 @@
  * 5. Fault tolerance with graceful degradation
  */
 
-import type { ActorAddress, ActorDirectory } from './actor-system.js';
+import type { ActorAddress, ActorDirectory, AddressQuery } from './actor-system.js';
 import { parseActorPath } from './actor-system.js';
 import { Logger } from './logger.js';
 import { createActorInterval } from './pure-xstate-utilities.js';
 import type { RuntimeDirectoryEntry } from './runtime-transport-protocol.js';
+import { matchesAddressQuery } from './utils/factories.js';
 
 // Create scoped logger for distributed directory
 const log = Logger.namespace('DISTRIBUTED_ACTOR_DIRECTORY');
@@ -135,7 +136,7 @@ export class DistributedActorDirectory implements ActorDirectory {
     });
 
     log.debug('Actor registered in distributed directory', {
-      address: address.path,
+      address,
       location,
       registrySize: this.registry.size,
       cacheSize: this.cache.size,
@@ -163,7 +164,7 @@ export class DistributedActorDirectory implements ActorDirectory {
     });
 
     log.debug('Actor unregistered from distributed directory', {
-      address: address.path,
+      address,
       registrySize: this.registry.size,
       cacheSize: this.cache.size,
     });
@@ -185,7 +186,7 @@ export class DistributedActorDirectory implements ActorDirectory {
       this.cacheHits++;
 
       log.debug('Cache hit for actor lookup', {
-        address: address.path,
+        address,
         location: cacheEntry.location,
         hits: cacheEntry.hits,
         hitRate: this.getCacheHitRate(),
@@ -203,14 +204,14 @@ export class DistributedActorDirectory implements ActorDirectory {
     if (registryEntry && registryEntry.ttl > now) {
       location = registryEntry.location;
       log.debug('Found in local registry', {
-        address: address.path,
+        address,
         location,
       });
     } else {
       // Registry entry expired or not found - broadcast lookup request to other nodes
       location = await this.broadcastLookup(address);
       log.debug('Broadcasted lookup for actor', {
-        address: address.path,
+        address,
         location,
       });
     }
@@ -231,14 +232,14 @@ export class DistributedActorDirectory implements ActorDirectory {
       this.cache.set(key, newEntry);
 
       log.debug('Cached actor lookup result', {
-        address: address.path,
+        address,
         location,
         cacheSize: this.cache.size,
       });
     }
 
     log.debug('Cache miss for actor lookup', {
-      address: address.path,
+      address,
       location,
       hitRate: this.getCacheHitRate(),
     });
@@ -247,9 +248,10 @@ export class DistributedActorDirectory implements ActorDirectory {
   }
 
   /**
-   * List all actors of a given type
+   * Find all registered actors matching a typed address query. An empty query
+   * matches every live entry.
    */
-  async listByType(type: string): Promise<ActorAddress[]> {
+  async find(query: AddressQuery): Promise<ActorAddress[]> {
     const addresses: ActorAddress[] = [];
     const now = Date.now();
 
@@ -260,7 +262,7 @@ export class DistributedActorDirectory implements ActorDirectory {
     for (const [key, entry] of this.registry) {
       if (entry.ttl > now) {
         const address = this.parseAddressKey(key);
-        if (address?.kind === type) {
+        if (address && matchesAddressQuery(address, query)) {
           addresses.push(address);
           checkedKeys.add(key);
         }
@@ -271,14 +273,14 @@ export class DistributedActorDirectory implements ActorDirectory {
     for (const [key, entry] of this.cache) {
       if (!checkedKeys.has(key) && entry.ttl > now) {
         const address = this.parseAddressKey(key);
-        if (address?.kind === type) {
+        if (address && matchesAddressQuery(address, query)) {
           addresses.push(address);
         }
       }
     }
 
-    log.debug('Listed actors by type', {
-      type,
+    log.debug('Found actors by query', {
+      query,
       count: addresses.length,
     });
 
@@ -407,10 +409,11 @@ export class DistributedActorDirectory implements ActorDirectory {
   // ============================================================================
 
   /**
-   * Generate cache key from actor address
+   * Generate cache key from actor address. The address IS the path, so the key
+   * is the address itself (identity).
    */
   private getAddressKey(address: ActorAddress): string {
-    return address.path;
+    return address;
   }
 
   /**
@@ -442,7 +445,7 @@ export class DistributedActorDirectory implements ActorDirectory {
     // TODO: Implement actual network broadcast
     // For now, this is a placeholder for local-only operation
     log.debug('Broadcasting actor registration', {
-      address: address.path,
+      address,
       location,
       nodeAddress: this.config.nodeAddress,
     });
@@ -455,7 +458,7 @@ export class DistributedActorDirectory implements ActorDirectory {
     // TODO: Implement actual network broadcast
     // For now, this is a placeholder for local-only operation
     log.debug('Broadcasting actor unregistration', {
-      address: address.path,
+      address,
       nodeAddress: this.config.nodeAddress,
     });
   }
@@ -465,7 +468,7 @@ export class DistributedActorDirectory implements ActorDirectory {
    */
   private async broadcastLookup(address: ActorAddress): Promise<string | undefined> {
     log.debug('Broadcasting actor lookup', {
-      address: address.path,
+      address,
       nodeAddress: this.config.nodeAddress,
     });
 
