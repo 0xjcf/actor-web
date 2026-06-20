@@ -43,6 +43,7 @@ function createRuntimeStatusSource(): { source: RuntimeStatusSource; stop(): voi
     address: {
       id: 'logistics-runtime-status-panel',
       kind: 'actor',
+      node: 'logistics-browser-host',
       path: 'actor://logistics-browser-host/logistics-runtime-status-panel',
     },
     snapshot: () => {
