@@ -342,7 +342,7 @@ Actor descriptors include an inferred address:
 
 ```ts
 logistics.actors.shipment.address.path;
-// actor://logistics-server-runtime/actor/logistics-shipment
+// actor://logistics-server-runtime/logistics-shipment
 ```
 
 The `node` field declares ownership, not import location. For example,
@@ -737,7 +737,7 @@ topology:
 
 ```ts
 const shipmentSource = createActorWebReadModelSource({
-  address: 'actor://logistics-server-runtime/actor/logistics-shipment',
+  address: 'actor://logistics-server-runtime/logistics-shipment',
   contractVersion: '1.0.0',
   gateway: {
     url: 'ws://127.0.0.1:4100',
@@ -757,7 +757,7 @@ snapshot/event/transition replay.
 
 ```ts
 const shipmentCommands = createActorWebCommandSource({
-  address: 'actor://logistics-server-runtime/actor/logistics-shipment',
+  address: 'actor://logistics-server-runtime/logistics-shipment',
   contractVersion: '1.0.0',
   gateway: { url: 'ws://127.0.0.1:4100' },
 });
