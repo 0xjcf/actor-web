@@ -42,8 +42,8 @@ function createRuntimeStatusSource(): { source: RuntimeStatusSource; stop(): voi
   const source: RuntimeStatusSource = {
     address: {
       id: 'logistics-runtime-status-panel',
-      type: 'actor',
-      path: 'actor://logistics-browser-host/actor/logistics-runtime-status-panel',
+      kind: 'actor',
+      path: 'actor://logistics-browser-host/logistics-runtime-status-panel',
     },
     snapshot: () => {
       const phase = context.pollingError ? 'degraded' : 'ready';

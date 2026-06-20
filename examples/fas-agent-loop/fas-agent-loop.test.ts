@@ -38,13 +38,13 @@ describe('fas-agent-loop example', () => {
 
   it('declares coordinator and worker topology with least-privilege agent tools', () => {
     expect(fasAgentLoop.actors.taskBoard.address.path).toBe(
-      'actor://fas-coordinator-runtime/actor/fas-task-board'
+      'actor://fas-coordinator-runtime/fas-task-board'
     );
     expect(fasAgentLoop.actors.taskBoard.gateway).toEqual({
       scope: { kind: 'taskBoard' },
     });
     expect(fasAgentLoop.actors.taskRun.resolveAddress(TEST_TASK).path).toBe(
-      'actor://fas-coordinator-runtime/actor/fas-task-task-1001'
+      'actor://fas-coordinator-runtime/fas-task-task-1001'
     );
     expect(fasAgentLoop.actors.plannerAgent.tools).toEqual([]);
     expect(fasAgentLoop.actors.implementerAgent.tools).toEqual(['codex.generate_patch']);
@@ -113,7 +113,7 @@ describe('fas-agent-loop example', () => {
         'Expected task board source to connect through the coordinator gateway'
       );
 
-      expect(source.address.path).toBe('actor://fas-coordinator-runtime/actor/fas-task-board');
+      expect(source.address.path).toBe('actor://fas-coordinator-runtime/fas-task-board');
       await source.send({ type: 'SUBMIT_TASK', ...TEST_TASK });
       await waitFor(
         () => source.snapshot().context.activeTaskId === TEST_TASK.taskId,
@@ -205,8 +205,8 @@ describe('fas-agent-loop example', () => {
     const first = await runtime.getTask('task-1001');
     const second = await runtime.getTask('task-2002');
 
-    expect(first?.address.path).toBe('actor://fas-coordinator-runtime/actor/fas-task-task-1001');
-    expect(second?.address.path).toBe('actor://fas-coordinator-runtime/actor/fas-task-task-2002');
+    expect(first?.address.path).toBe('actor://fas-coordinator-runtime/fas-task-task-1001');
+    expect(second?.address.path).toBe('actor://fas-coordinator-runtime/fas-task-task-2002');
     expect(first?.getSnapshot().context.title).toBe('Implement deterministic FAS loop');
     expect(second?.getSnapshot().context.title).toBe('Verify isolated task actor');
     expect(runtime.taskBoard.getSnapshot().context.tasks).toHaveLength(2);

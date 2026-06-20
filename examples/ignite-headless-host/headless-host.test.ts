@@ -75,7 +75,7 @@ describe('ignite-headless-host logistics example', () => {
 
   it('declares topology-owned actors and supervision metadata', () => {
     expect(logistics.actors.shipment.address.path).toBe(
-      'actor://logistics-server-runtime/actor/logistics-shipment'
+      'actor://logistics-server-runtime/logistics-shipment'
     );
     expect(logistics.actors.shipment.supervision).toMatchObject({
       strategy: 'restart',
@@ -96,13 +96,13 @@ describe('ignite-headless-host logistics example', () => {
       ],
     });
     expect(logistics.actors.providerHq.address.path).toBe(
-      'actor://logistics-server-runtime/actor/logistics-provider-hq'
+      'actor://logistics-server-runtime/logistics-provider-hq'
     );
     expect(logistics.actors.dispatcher.address.path).toBe(
-      'actor://logistics-server-runtime/actor/logistics-dispatcher'
+      'actor://logistics-server-runtime/logistics-dispatcher'
     );
     expect(logistics.actors.driverDirectory.address.path).toBe(
-      'actor://logistics-server-runtime/actor/logistics-driver-directory'
+      'actor://logistics-server-runtime/logistics-driver-directory'
     );
   });
 
@@ -826,10 +826,9 @@ describe('ignite-headless-host logistics example', () => {
         providerRuntime: 'logistics-provider-runtime',
       },
       actors: {
-        shipment: 'actor://logistics-server-runtime/actor/logistics-shipment',
-        routing: 'actor://logistics-worker-runtime/actor/logistics-routing',
-        providerRuntime:
-          'actor://logistics-provider-runtime/actor/logistics-provider-runtime-manager',
+        shipment: 'actor://logistics-server-runtime/logistics-shipment',
+        routing: 'actor://logistics-worker-runtime/logistics-routing',
+        providerRuntime: 'actor://logistics-provider-runtime/logistics-provider-runtime-manager',
       },
     });
 
@@ -987,7 +986,7 @@ describe('logistics runtime planning functions', () => {
       logistics.actors.shipmentLifecycle.resolveAddress({ shipmentId: 'shipment/a b' })
     ).toMatchObject({
       id: 'logistics-shipment-shipment-a-b',
-      path: 'actor://logistics-server-runtime/actor/logistics-shipment-shipment-a-b',
+      path: 'actor://logistics-server-runtime/logistics-shipment-shipment-a-b',
     });
     expect(shipmentLifecycleActorId({ shipmentId: 'shipment/a b' })).toBe(
       'logistics-shipment-shipment-a-b'

@@ -101,15 +101,14 @@ function createStatusResponse(
       serviceWorkerRuntime: 'logistics-service-worker-runtime',
     },
     actors: {
-      shipment: 'actor://logistics-server-runtime/actor/logistics-shipment',
-      routing: 'actor://logistics-worker-runtime/actor/logistics-routing',
-      providerHq: 'actor://logistics-server-runtime/actor/logistics-provider-hq',
-      providerRuntime:
-        'actor://logistics-provider-runtime/actor/logistics-provider-runtime-manager',
-      logisticsSupervisor: 'actor://logistics-server-runtime/actor/logistics-supervisor',
-      dispatcher: 'actor://logistics-server-runtime/actor/logistics-dispatcher',
-      driverDirectory: 'actor://logistics-server-runtime/actor/logistics-driver-directory',
-      serviceWorkerProof: 'actor://logistics-service-worker-runtime/actor/service-worker-proof',
+      shipment: 'actor://logistics-server-runtime/logistics-shipment',
+      routing: 'actor://logistics-worker-runtime/logistics-routing',
+      providerHq: 'actor://logistics-server-runtime/logistics-provider-hq',
+      providerRuntime: 'actor://logistics-provider-runtime/logistics-provider-runtime-manager',
+      logisticsSupervisor: 'actor://logistics-server-runtime/logistics-supervisor',
+      dispatcher: 'actor://logistics-server-runtime/logistics-dispatcher',
+      driverDirectory: 'actor://logistics-server-runtime/logistics-driver-directory',
+      serviceWorkerProof: 'actor://logistics-service-worker-runtime/service-worker-proof',
     },
   };
 }

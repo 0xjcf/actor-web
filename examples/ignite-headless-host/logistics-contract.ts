@@ -356,23 +356,23 @@ export type ProviderSignalSourceLabel = 'manual UI' | 'simulator process' | 'pro
 
 export const REMOTE_ADDRESS = {
   id: REMOTE_ACTOR_ID,
-  type: 'actor',
+  kind: 'actor',
   node: REMOTE_NODE,
-  path: `actor://${REMOTE_NODE}/actor/${REMOTE_ACTOR_ID}`,
+  path: `actor://${REMOTE_NODE}/${REMOTE_ACTOR_ID}`,
 } as const;
 
 export const PROVIDER_HQ_ADDRESS = {
   id: PROVIDER_HQ_ACTOR_ID,
-  type: 'actor',
+  kind: 'actor',
   node: REMOTE_NODE,
-  path: `actor://${REMOTE_NODE}/actor/${PROVIDER_HQ_ACTOR_ID}`,
+  path: `actor://${REMOTE_NODE}/${PROVIDER_HQ_ACTOR_ID}`,
 } as const;
 
 export const PROVIDER_RUNTIME_ADDRESS = {
   id: PROVIDER_RUNTIME_ACTOR_ID,
-  type: 'actor',
+  kind: 'actor',
   node: PROVIDER_NODE,
-  path: `actor://${PROVIDER_NODE}/actor/${PROVIDER_RUNTIME_ACTOR_ID}`,
+  path: `actor://${PROVIDER_NODE}/${PROVIDER_RUNTIME_ACTOR_ID}`,
 } as const;
 
 export type ProviderRuntimeCommand =
@@ -389,37 +389,37 @@ export type ProviderRuntimeCommand =
 
 export const LOGISTICS_SUPERVISOR_ADDRESS = {
   id: LOGISTICS_SUPERVISOR_ACTOR_ID,
-  type: 'actor',
+  kind: 'actor',
   node: REMOTE_NODE,
-  path: `actor://${REMOTE_NODE}/actor/${LOGISTICS_SUPERVISOR_ACTOR_ID}`,
+  path: `actor://${REMOTE_NODE}/${LOGISTICS_SUPERVISOR_ACTOR_ID}`,
 } as const;
 
 export const DISPATCHER_ADDRESS = {
   id: DISPATCHER_ACTOR_ID,
-  type: 'actor',
+  kind: 'actor',
   node: REMOTE_NODE,
-  path: `actor://${REMOTE_NODE}/actor/${DISPATCHER_ACTOR_ID}`,
+  path: `actor://${REMOTE_NODE}/${DISPATCHER_ACTOR_ID}`,
 } as const;
 
 export const DRIVER_DIRECTORY_ADDRESS = {
   id: DRIVER_DIRECTORY_ACTOR_ID,
-  type: 'actor',
+  kind: 'actor',
   node: REMOTE_NODE,
-  path: `actor://${REMOTE_NODE}/actor/${DRIVER_DIRECTORY_ACTOR_ID}`,
+  path: `actor://${REMOTE_NODE}/${DRIVER_DIRECTORY_ACTOR_ID}`,
 } as const;
 
 export const WORKER_ADDRESS = {
   id: WORKER_ACTOR_ID,
-  type: 'actor',
+  kind: 'actor',
   node: WORKER_NODE,
-  path: `actor://${WORKER_NODE}/actor/${WORKER_ACTOR_ID}`,
+  path: `actor://${WORKER_NODE}/${WORKER_ACTOR_ID}`,
 } as const;
 
 export const SERVICE_WORKER_ADDRESS = {
   id: SERVICE_WORKER_ACTOR_ID,
-  type: 'actor',
+  kind: 'actor',
   node: SERVICE_WORKER_NODE,
-  path: `actor://${SERVICE_WORKER_NODE}/actor/${SERVICE_WORKER_ACTOR_ID}`,
+  path: `actor://${SERVICE_WORKER_NODE}/${SERVICE_WORKER_ACTOR_ID}`,
 } as const;
 
 export function createInitialShipmentContext(): ShipmentContext {
