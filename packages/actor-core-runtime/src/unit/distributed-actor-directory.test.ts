@@ -16,12 +16,8 @@ const log = Logger.namespace('TEST');
 // Use `pnpm test:debug` for verbose output when needed
 
 function createActorAddress(id: string, type: string, node: string): ActorAddress {
-  return {
-    id,
-    type,
-    node,
-    path: `actor://${node}/${type}/${id}`,
-  };
+  void type; // retained for call-site compatibility; addresses are now 2-segment (kind replaces type)
+  return { id, kind: 'actor', node, path: `actor://${node}/${id}` };
 }
 
 describe.skip('DistributedActorDirectory', () => {

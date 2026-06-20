@@ -21,7 +21,7 @@ describe('Guardian Actor Integration', () => {
     // Create mock actor system
     mockActorSystem = {
       spawn: vi.fn().mockResolvedValue({
-        address: { id: 'guardian', type: 'system', node: 'local', path: '/system/guardian' },
+        address: { id: 'guardian', kind: 'actor', node: 'local', path: '/system/guardian' },
         send: vi.fn().mockImplementation((message) => {
           // Track shutdown messages
           if (message.type === 'SHUTDOWN') {
@@ -69,7 +69,7 @@ describe('Guardian Actor Integration', () => {
     it('should create Guardian with correct address', () => {
       expect(guardian.address).toEqual({
         id: 'guardian',
-        type: 'system',
+        kind: 'actor',
         node: 'local',
         path: '/system/guardian',
       });

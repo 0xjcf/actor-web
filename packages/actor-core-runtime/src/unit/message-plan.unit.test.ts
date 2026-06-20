@@ -39,7 +39,7 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
 
     it('should identify SendInstruction correctly', () => {
       const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
-        address: { id: 'actor-123', type: 'test', path: '/actor-123' },
+        address: { id: 'actor-123', kind: 'actor', path: '/actor-123' },
         send: async () => {},
         ask: async <T>(): Promise<T> => ({}) as T,
       });
@@ -58,7 +58,7 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
 
     it('should identify AskInstruction correctly', () => {
       const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
-        address: { id: 'actor-123', type: 'test', path: '/actor-123' },
+        address: { id: 'actor-123', kind: 'actor', path: '/actor-123' },
         send: async () => {},
         ask: async <T>(): Promise<T> => ({}) as T,
       });
@@ -80,7 +80,7 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
       const domainEvent: DomainEvent = { type: 'TEST_EVENT', timestamp: Date.now() };
 
       const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
-        address: { id: '123', type: 'test', path: '/123' },
+        address: { id: '123', kind: 'actor', path: '/123' },
         send: async () => {},
         ask: async <T>(): Promise<T> => ({}) as T,
       });
@@ -111,7 +111,7 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
   describe('Factory Functions', () => {
     it('should create SendInstruction with correct structure', () => {
       const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
-        address: { id: 'test-actor', type: 'test', path: '/test-actor' },
+        address: { id: 'test-actor', kind: 'actor', path: '/test-actor' },
         send: async () => {},
         ask: async <T>(): Promise<T> => ({}) as T,
       });
@@ -133,7 +133,7 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
 
     it('should create SendInstruction with explicit fireAndForget mode', () => {
       const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
-        address: { id: 'test-actor', type: 'test', path: '/test-actor' },
+        address: { id: 'test-actor', kind: 'actor', path: '/test-actor' },
         send: async () => {},
         ask: async <T>(): Promise<T> => ({}) as T,
       });
@@ -152,7 +152,7 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
 
     it('should create AskInstruction with correct structure', () => {
       const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
-        address: { id: 'test-actor', type: 'test', path: '/test-actor' },
+        address: { id: 'test-actor', kind: 'actor', path: '/test-actor' },
         send: async () => {},
         ask: async <T>(): Promise<T> => ({ result: 'success' }) as T,
       });
@@ -181,7 +181,7 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
 
     it('should create AskInstruction with custom timeout', () => {
       const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
-        address: { id: 'test-actor', type: 'test', path: '/test-actor' },
+        address: { id: 'test-actor', kind: 'actor', path: '/test-actor' },
         send: async () => {},
         ask: async <T>(): Promise<T> => ({}) as T,
       });
@@ -208,7 +208,7 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
 
     it('should handle timeout in createAskInstruction', () => {
       const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
-        address: { id: 'test-actor', type: 'test', path: '/test-actor' },
+        address: { id: 'test-actor', kind: 'actor', path: '/test-actor' },
         send: async () => {},
         ask: async <T>(): Promise<T> => ({}) as T,
       });
@@ -235,7 +235,7 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
 
     it('should handle error callback in createAskInstruction', () => {
       const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
-        address: { id: 'test-actor', type: 'test', path: '/test-actor' },
+        address: { id: 'test-actor', kind: 'actor', path: '/test-actor' },
         send: async () => {},
         ask: async <T>(): Promise<T> => ({}) as T,
       });
@@ -262,7 +262,7 @@ describe('MessagePlan Utility Functions (Unit Tests)', () => {
 
     it('should validate both onOk and onError in createAskInstruction', () => {
       const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
-        address: { id: 'test-actor', type: 'test', path: '/test-actor' },
+        address: { id: 'test-actor', kind: 'actor', path: '/test-actor' },
         send: async () => {},
         ask: async <T>(): Promise<T> => ({}) as T,
       });

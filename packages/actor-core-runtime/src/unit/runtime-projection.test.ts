@@ -38,7 +38,7 @@ describe('runtime projection mappings', () => {
       _timestamp: 101,
       _version: '1',
       _correlationId: 'corr-1',
-      _sender: { id: 'actor-1', type: 'worker', path: '/actor-1' },
+      _sender: { id: 'actor-1', kind: 'actor' as const, path: '/actor-1' },
     };
 
     const envelope = actorMessageToEventEnvelope(message, {
@@ -71,7 +71,7 @@ describe('runtime projection mappings', () => {
       _timestamp: 200,
       _version: '1',
       _correlationId: 'corr-2',
-      _sender: { id: 'actor-2', type: 'system', path: '/actor-2' },
+      _sender: { id: 'actor-2', kind: 'actor' as const, path: '/actor-2' },
     };
     const envelope = actorMessageToEventEnvelope(message, {
       id: 'event-2',
@@ -92,7 +92,7 @@ describe('runtime projection mappings', () => {
         _timestamp: 200,
         _version: '1',
         _correlationId: 'corr-2',
-        _sender: { id: 'actor-2', type: 'system', path: '/actor-2' },
+        _sender: { id: 'actor-2', kind: 'actor', path: '/actor-2' },
       })
     ).toEqual({ value: 42 });
   });

@@ -108,7 +108,7 @@ import {
 import { StatelessActor } from './stateless-actor.js';
 import type { ContextOf, MessageOf } from './type-helpers.js';
 import type { ActorSnapshot, JsonValue, Message } from './types.js';
-import { generateCorrelationId } from './utils/factories.js';
+import { createActorAddress, generateCorrelationId } from './utils/factories.js';
 
 // ✅ Define specific message types for type safety
 interface SpawnChildMessage extends ActorMessage {
@@ -979,15 +979,16 @@ export class ActorSystemImpl implements ActorSystem {
     }
 
     const id = options?.id || this.generateActorId();
-    const type = 'actor'; // SpawnOptions doesn't have type field
-    const path = `actor://${this.config.nodeAddress}/${type}/${id}`;
 
     // Check max actors limit
     if (this.config.maxActors && this.getLocalActorCount() >= this.config.maxActors) {
       throw new Error(`Maximum actor limit reached: ${this.config.maxActors}`);
     }
 
-    const address: ActorAddress = { id, type, path };
+    const address = createActorAddress(id, this.config.nodeAddress);
+    // Opaque path key reused for the per-actor registries below (behavior
+    // unchanged: this is the same string the old inline mint produced).
+    const path = address.path;
 
     // Store the per-actor supervision policy so the failure path can honor
     // strategy/maxRestarts/withinMs. Validate the strategy at runtime for
@@ -1114,7 +1115,7 @@ export class ActorSystemImpl implements ActorSystem {
 
     log.debug('Actor spawned', {
       id,
-      type,
+      kind: address.kind,
       path,
       totalActors: this.getLocalActorCount(),
     });

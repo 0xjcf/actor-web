@@ -22,7 +22,7 @@ describe('Guardian Actor - Pure Actor Model', () => {
         id: 'guardian',
         address: {
           id: 'guardian',
-          type: 'system',
+          kind: 'actor',
           node: 'local',
           path: '/system/guardian',
         },
@@ -195,7 +195,7 @@ describe('Guardian Actor - Pure Actor Model', () => {
       expect(guardian).toBeDefined();
       expect(guardian?.address).toEqual({
         id: 'guardian',
-        type: 'system',
+        kind: 'actor',
         node: 'local',
         path: '/system/guardian',
       });

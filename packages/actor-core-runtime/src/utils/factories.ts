@@ -56,36 +56,34 @@ export function generateSystemId(): string {
 /**
  * Creates actor address for location transparency
  */
-export function createActorAddress(id: string, type: string, node?: string): ActorAddress {
+export function createActorAddress(
+  id: string,
+  node?: string,
+  kind: 'actor' | 'callback' = 'actor'
+): ActorAddress {
   if (!id || typeof id !== 'string') {
-    throw new Error('Actor ID must be a non-empty string');
+    throw new Error('Actor ID must be a non-empty string'); // KEEP: value-object precondition
   }
-
-  if (!type || typeof type !== 'string') {
-    throw new Error('Actor type must be a non-empty string');
-  }
-
-  const actualNode = node || 'local';
-  return {
-    id,
-    type,
-    node: actualNode,
-    path: `actor://${actualNode}/${type}/${id}`,
-  };
+  const resolvedNode = node || 'local'; // single node-normalization site; node ALWAYS set
+  const path =
+    kind === 'callback'
+      ? `actor://${resolvedNode}/callback/${id}`
+      : `actor://${resolvedNode}/${id}`; // 2-segment for actors (drop redundant /actor/)
+  return { id, kind, node: resolvedNode, path };
 }
 
 /**
  * Creates local actor address (same node)
  */
-export function createLocalActorAddress(id: string, type: string): ActorAddress {
-  return createActorAddress(id, type, 'local');
+export function createLocalActorAddress(id: string): ActorAddress {
+  return createActorAddress(id, 'local');
 }
 
 /**
  * Creates remote actor address (different node)
  */
-export function createRemoteActorAddress(id: string, type: string, node: string): ActorAddress {
-  return createActorAddress(id, type, node);
+export function createRemoteActorAddress(id: string, node: string): ActorAddress {
+  return createActorAddress(id, node);
 }
 
 // ============================================================================

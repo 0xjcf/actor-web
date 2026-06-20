@@ -23,6 +23,7 @@ import {
   defineBehavior as defineTopologyActorBehavior,
   type UnifiedActorBuilder,
 } from './unified-actor-builder.js';
+import { createActorAddress } from './utils/factories.js';
 
 /**
  * Topology aliases of the runtime supervision types (one definition, shared
@@ -34,7 +35,7 @@ export type ActorWebSupervisionPolicy = ActorSupervisionPolicy;
 
 export interface ActorWebActorAddress {
   readonly id: string;
-  readonly type: 'actor';
+  readonly kind: 'actor';
   readonly node: string;
   readonly path: string;
 }
@@ -558,18 +559,15 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
       const descriptorId = typeof actorId === 'function' ? key : actorId;
       const resolveAddress = (params?: unknown): ActorWebActorAddress => {
         const id = resolveId(params);
-        return {
-          id,
-          type: 'actor',
-          node: nodeDefinition.address,
-          path: `actor://${nodeDefinition.address}/actor/${id}`,
-        };
+        const a = createActorAddress(id, nodeDefinition.address);
+        return { id: a.id, kind: 'actor', node: nodeDefinition.address, path: a.path };
       };
+      const built = createActorAddress(descriptorId, nodeDefinition.address);
       const address: ActorWebActorAddress = {
-        id: descriptorId,
-        type: 'actor',
+        id: built.id,
+        kind: 'actor',
         node: nodeDefinition.address,
-        path: `actor://${nodeDefinition.address}/actor/${descriptorId}`,
+        path: built.path,
       };
       const { gateway: gatewayDefinition, ...actorDefinition } = definition;
       const gateway =

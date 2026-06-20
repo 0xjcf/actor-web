@@ -1,5 +1,6 @@
 import type { ActorEventSubscriptionOptions } from './actor-ref.js';
 import type { ActorAddress, ActorMessage } from './actor-system.js';
+import { parseActorPath } from './actor-system.js';
 import {
   type ActorCommandSource,
   type ActorReadModelSource,
@@ -169,16 +170,7 @@ function normalizeAddress(address: string | ActorWebActorAddress | ActorAddress)
     return address;
   }
 
-  const match = /^actor:\/\/([^/]+)\/actor\/(.+)$/.exec(address);
-  const id = match?.[2] ?? address.split('/').at(-1) ?? address;
-  const node = match?.[1];
-
-  return {
-    id,
-    type: 'actor',
-    ...(node ? { node } : {}),
-    path: address,
-  };
+  return parseActorPath(address);
 }
 
 function placeholderSnapshot<TContext>(address: ActorAddress): ActorSourceSnapshot<TContext> {

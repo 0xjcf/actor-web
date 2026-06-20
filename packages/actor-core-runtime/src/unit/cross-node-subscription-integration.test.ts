@@ -60,8 +60,8 @@ async function pollUntil(
   return received;
 }
 
-const PUB_PATH = 'actor://node-a/actor/pub';
-const SUB_PATH = 'actor://node-b/actor/sub';
+const PUB_PATH = 'actor://node-a/pub';
+const SUB_PATH = 'actor://node-b/sub';
 
 describe('cross-node subscription delivery (multi-node)', () => {
   let nodeA: ActorSystemImpl | undefined;

@@ -53,7 +53,7 @@ describe('createActorWebSource', () => {
     const socket = new FakeGatewaySocket();
     const source = createActorWebSource(
       {
-        address: 'actor://server-node/actor/shipment',
+        address: 'actor://server-node/shipment',
         gateway: {
           url: 'ws://gateway.local/runtime',
           scope: { kind: 'shipment' },
@@ -186,7 +186,7 @@ describe('createActorWebSource', () => {
     const socket = new FakeGatewaySocket();
     const source = createActorWebReadModelSource(
       {
-        address: 'actor://server-node/actor/shipment',
+        address: 'actor://server-node/shipment',
         gateway: {
           url: 'ws://gateway.local/runtime',
           scope: { kind: 'shipment' },
@@ -199,7 +199,7 @@ describe('createActorWebSource', () => {
     );
     const commandSource = createActorWebCommandSource(
       {
-        address: 'actor://server-node/actor/shipment',
+        address: 'actor://server-node/shipment',
         gateway: {
           url: 'ws://gateway.local/runtime',
           scope: { kind: 'shipment' },
@@ -225,7 +225,7 @@ describe('createActorWebSource', () => {
     const commandSocket = new FakeGatewaySocket();
     const readModel = createActorWebReadModelSource(
       {
-        address: 'actor://server-node/actor/shipment',
+        address: 'actor://server-node/shipment',
         gateway: {
           url: 'ws://gateway.local/runtime',
           scope: { kind: 'shipment' },
@@ -238,7 +238,7 @@ describe('createActorWebSource', () => {
     );
     const commandSource = createActorWebCommandSource(
       {
-        address: 'actor://server-node/actor/shipment',
+        address: 'actor://server-node/shipment',
         gateway: {
           url: 'ws://gateway.local/runtime',
           scope: { kind: 'shipment' },
@@ -298,7 +298,7 @@ describe('createActorWebSource', () => {
     const socket = new FakeGatewaySocket();
     createActorWebSource(
       {
-        address: 'actor://server-node/actor/shipment',
+        address: 'actor://server-node/shipment',
         gateway: {
           url: 'ws://gateway.local/runtime',
           auth: {
@@ -329,7 +329,7 @@ describe('createActorWebSource', () => {
     const socket = new FakeGatewaySocket();
     createActorWebSource(
       {
-        address: 'actor://server-node/actor/vehicle-inspections',
+        address: 'actor://server-node/vehicle-inspections',
         gateway: {
           url: 'ws://gateway.local/runtime',
           scope: {
@@ -371,7 +371,7 @@ describe('createActorWebSource', () => {
     const socket = new FakeGatewaySocket();
     createActorWebSource(
       {
-        address: 'actor://server-node/actor/vehicle-inspections',
+        address: 'actor://server-node/vehicle-inspections',
         gateway: {
           url: 'ws://gateway.local/runtime',
         },
@@ -403,7 +403,7 @@ describe('createActorWebSource', () => {
     const socket = new FakeGatewaySocket();
     const source = createActorWebSource(
       {
-        address: 'actor://server-node/actor/shipment',
+        address: 'actor://server-node/shipment',
         gateway: {
           url: 'ws://gateway.local/runtime',
           scope: { kind: 'shipment' },
@@ -510,7 +510,7 @@ describe('createActorWebSource', () => {
     const socket = new FakeGatewaySocket();
     const source = createActorWebSource(
       {
-        address: 'actor://server-node/actor/shipment',
+        address: 'actor://server-node/shipment',
         gateway: {
           url: 'ws://gateway.local/runtime',
           scope: { kind: 'shipment' },
@@ -569,7 +569,7 @@ describe('createActorWebSource', () => {
     const socket = new FakeGatewaySocket();
     const source = createActorWebSource(
       {
-        address: 'actor://server-node/actor/shipment',
+        address: 'actor://server-node/shipment',
         gateway: {
           url: 'ws://gateway.local/runtime',
           scope: { kind: 'shipment' },
@@ -649,7 +649,7 @@ describe('createActorWebSource', () => {
     const socket = new FakeGatewaySocket();
     const source = createActorWebCommandSource(
       {
-        address: 'actor://server-node/actor/shipment',
+        address: 'actor://server-node/shipment',
         gateway: {
           url: 'ws://gateway.local/runtime',
           scope: { kind: 'shipment' },
@@ -694,7 +694,7 @@ describe('createActorWebSource', () => {
     const socket = new FakeGatewaySocket();
     const source = createActorWebCommandSource(
       {
-        address: 'actor://server-node/actor/shipment',
+        address: 'actor://server-node/shipment',
         gateway: {
           url: 'ws://gateway.local/runtime',
           scope: { kind: 'shipment' },

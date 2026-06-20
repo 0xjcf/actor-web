@@ -202,7 +202,7 @@ function createGatewaySnapshot(
   return {
     address: {
       id: `actor-${actorKey}`,
-      type: 'actor',
+      kind: 'actor',
       path: `/actors/${actorKey}`,
     },
     snapshot: {
@@ -222,7 +222,7 @@ function createGatewaySnapshot(
 function createGatewayAddress(actorKey: string) {
   return {
     id: `actor-${actorKey}`,
-    type: 'actor' as const,
+    kind: 'actor' as const,
     path: `/actors/${actorKey}`,
   };
 }

@@ -11,6 +11,7 @@
  */
 
 import type { ActorAddress, ActorDirectory } from './actor-system.js';
+import { parseActorPath } from './actor-system.js';
 import { Logger } from './logger.js';
 import { createActorInterval } from './pure-xstate-utilities.js';
 import type { RuntimeDirectoryEntry } from './runtime-transport-protocol.js';
@@ -259,7 +260,7 @@ export class DistributedActorDirectory implements ActorDirectory {
     for (const [key, entry] of this.registry) {
       if (entry.ttl > now) {
         const address = this.parseAddressKey(key);
-        if (address?.type === type) {
+        if (address?.kind === type) {
           addresses.push(address);
           checkedKeys.add(key);
         }
@@ -270,7 +271,7 @@ export class DistributedActorDirectory implements ActorDirectory {
     for (const [key, entry] of this.cache) {
       if (!checkedKeys.has(key) && entry.ttl > now) {
         const address = this.parseAddressKey(key);
-        if (address?.type === type) {
+        if (address?.kind === type) {
           addresses.push(address);
         }
       }
@@ -417,18 +418,8 @@ export class DistributedActorDirectory implements ActorDirectory {
    */
   private parseAddressKey(key: string): ActorAddress | undefined {
     try {
-      const match = key.match(/^actor:\/\/([^/]+)\/([^/]+)\/(.+)$/);
-      if (!match) return undefined;
-
-      const [, node, type, id] = match;
-      return {
-        id,
-        type,
-        node: node === 'local' ? undefined : node,
-        path: key,
-      };
-    } catch (error) {
-      log.error('Failed to parse address key', { key, error });
+      return parseActorPath(key);
+    } catch {
       return undefined;
     }
   }

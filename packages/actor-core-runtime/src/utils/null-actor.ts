@@ -22,7 +22,7 @@ export function createNullActorRef(id: string): ActorRef<unknown> {
   return {
     address: {
       id,
-      type: 'null',
+      kind: 'actor',
       node: 'local',
       path: `/null/${id}`,
     },

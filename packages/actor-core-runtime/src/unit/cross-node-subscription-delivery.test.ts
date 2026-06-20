@@ -296,7 +296,7 @@ describe('cross-node topology subscription delivery', () => {
     publisherSystem.registerTopologyRemoteSubscriber({
       publisherPath: publisher.address.path,
       subscriberNode: 'ghost-node',
-      subscriberPath: 'actor://ghost-node/actor/sub',
+      subscriberPath: 'actor://ghost-node/sub',
     });
 
     // The drop is an operator-facing telemetry contract — pin the warn line so a
@@ -311,7 +311,7 @@ describe('cross-node topology subscription delivery', () => {
         'Cross-node subscription event dropped',
         expect.objectContaining({
           publisherPath: publisher.address.path,
-          subscriberPath: 'actor://ghost-node/actor/sub',
+          subscriberPath: 'actor://ghost-node/sub',
           node: 'ghost-node',
           eventType: 'TICK',
         })
@@ -344,7 +344,7 @@ describe('cross-node topology subscription delivery', () => {
           type: '__runtime.topology.event',
           subscriberPath: 'not-a-valid-actor-path',
           payload: {
-            address: { id: 'x', type: 'actor', node: 'node-a', path: 'p' },
+            address: { id: 'x', kind: 'actor', node: 'node-a', path: 'p' },
             envelope: {},
             sequence: 0,
           },
@@ -415,8 +415,8 @@ describe('wireOwnedActorWebSubscriptions cross-node branch', () => {
     expect(spy).toHaveBeenCalledWith(
       expect.objectContaining({
         publisherNode: 'server',
-        publisherPath: 'actor://server/actor/pub',
-        subscriberPath: 'actor://worker/actor/sub',
+        publisherPath: 'actor://server/pub',
+        subscriberPath: 'actor://worker/sub',
         events: ['TICK'],
       })
     );
