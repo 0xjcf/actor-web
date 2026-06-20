@@ -64,6 +64,12 @@ export function createActorAddress(
   if (!id || typeof id !== 'string') {
     throw new Error('Actor ID must be a non-empty string'); // KEEP: value-object precondition
   }
+  // `/callback/` is the load-bearing delivery discriminator (parseActorPath matches it
+  // first), so an actor id starting with `callback/` would round-trip back as
+  // kind:'callback' and misroute. Reserve the prefix for actor-kind ids.
+  if (kind === 'actor' && id.startsWith('callback/')) {
+    throw new Error(`Actor id must not start with the reserved "callback/" prefix: ${id}`);
+  }
   const resolvedNode = node || 'local'; // single node-normalization site; node ALWAYS set
   const path =
     kind === 'callback'

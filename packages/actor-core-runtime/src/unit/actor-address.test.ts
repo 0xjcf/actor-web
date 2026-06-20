@@ -70,6 +70,14 @@ describe('createActorAddress (canonical factory)', () => {
     expect(() => createActorAddress('')).toThrow();
     expect(() => createActorAddress('a1', 'n1', 'callback')).not.toThrow();
   });
+
+  it('rejects an actor id colliding with the reserved callback/ prefix', () => {
+    // `/callback/` is the load-bearing delivery discriminator, so an actor id
+    // starting with `callback/` is ambiguous and must be rejected to keep the
+    // mint -> parse round-trip lossless (a real callback kind is still allowed).
+    expect(() => createActorAddress('callback/c1')).toThrow(/reserved/i);
+    expect(() => createActorAddress('c1', 'n1', 'callback')).not.toThrow();
+  });
 });
 
 describe('parseActorPath', () => {
