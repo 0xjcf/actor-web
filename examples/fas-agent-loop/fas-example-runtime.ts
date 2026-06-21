@@ -177,22 +177,22 @@ async function createAgentPorts(coordinator: FasServedNode): Promise<{
   const [planner, implementer, verifier, reviewer] = await Promise.all([
     requireRemoteActor<PlannerAgentRef>(
       coordinator,
-      fasAgentLoop.actors.plannerAgent.address.path,
+      fasAgentLoop.actors.plannerAgent.address,
       'plannerAgent'
     ),
     requireRemoteActor<ImplementerAgentRef>(
       coordinator,
-      fasAgentLoop.actors.implementerAgent.address.path,
+      fasAgentLoop.actors.implementerAgent.address,
       'implementerAgent'
     ),
     requireRemoteActor<VerifierAgentRef>(
       coordinator,
-      fasAgentLoop.actors.verifierAgent.address.path,
+      fasAgentLoop.actors.verifierAgent.address,
       'verifierAgent'
     ),
     requireRemoteActor<ReviewerAgentRef>(
       coordinator,
-      fasAgentLoop.actors.reviewerAgent.address.path,
+      fasAgentLoop.actors.reviewerAgent.address,
       'reviewerAgent'
     ),
   ]);

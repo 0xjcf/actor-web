@@ -1,5 +1,6 @@
 /** @jsxImportSource ignite-element/jsx */
 
+import { Address } from '@actor-web/runtime';
 import { type ActorSource, createProjectionTransportStatus } from '@actor-web/runtime/browser';
 import { igniteCore } from 'ignite-element/actor-web';
 import styles from './ignite-headless-host-element.css?raw';
@@ -40,12 +41,7 @@ function createRuntimeStatusSource(): { source: RuntimeStatusSource; stop(): voi
   let syncInFlight = false;
 
   const source: RuntimeStatusSource = {
-    address: {
-      id: 'logistics-runtime-status-panel',
-      kind: 'actor',
-      node: 'logistics-browser-host',
-      path: 'actor://logistics-browser-host/logistics-runtime-status-panel',
-    },
+    address: Address.from({ id: 'logistics-runtime-status-panel', node: 'logistics-browser-host' }),
     snapshot: () => {
       const phase = context.pollingError ? 'degraded' : 'ready';
       const snapshot = createActorSnapshot(phase, context);

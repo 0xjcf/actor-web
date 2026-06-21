@@ -1,3 +1,5 @@
+import { Address } from '@actor-web/runtime';
+
 export type ShipmentStatus =
   | 'idle'
   | 'accepted'
@@ -354,26 +356,16 @@ export const SERVICE_WORKER_ACTOR_ID = 'logistics-service-worker-proof';
 export type ProviderRuntimeSource = 'embedded' | 'process' | 'container';
 export type ProviderSignalSourceLabel = 'manual UI' | 'simulator process' | 'provider container';
 
-export const REMOTE_ADDRESS = {
-  id: REMOTE_ACTOR_ID,
-  kind: 'actor',
-  node: REMOTE_NODE,
-  path: `actor://${REMOTE_NODE}/${REMOTE_ACTOR_ID}`,
-} as const;
+// Addresses are minted through Address.from so the examples model the opaque
+// branded-string address exactly like the runtime (no drift-prone object literals).
+export const REMOTE_ADDRESS = Address.from({ id: REMOTE_ACTOR_ID, node: REMOTE_NODE });
 
-export const PROVIDER_HQ_ADDRESS = {
-  id: PROVIDER_HQ_ACTOR_ID,
-  kind: 'actor',
-  node: REMOTE_NODE,
-  path: `actor://${REMOTE_NODE}/${PROVIDER_HQ_ACTOR_ID}`,
-} as const;
+export const PROVIDER_HQ_ADDRESS = Address.from({ id: PROVIDER_HQ_ACTOR_ID, node: REMOTE_NODE });
 
-export const PROVIDER_RUNTIME_ADDRESS = {
+export const PROVIDER_RUNTIME_ADDRESS = Address.from({
   id: PROVIDER_RUNTIME_ACTOR_ID,
-  kind: 'actor',
   node: PROVIDER_NODE,
-  path: `actor://${PROVIDER_NODE}/${PROVIDER_RUNTIME_ACTOR_ID}`,
-} as const;
+});
 
 export type ProviderRuntimeCommand =
   | { type: 'SYNC_PROVIDER_RUNTIME_SHIPMENT'; shipment: ShipmentContext }
@@ -387,40 +379,24 @@ export type ProviderRuntimeCommand =
       note?: string;
     };
 
-export const LOGISTICS_SUPERVISOR_ADDRESS = {
+export const LOGISTICS_SUPERVISOR_ADDRESS = Address.from({
   id: LOGISTICS_SUPERVISOR_ACTOR_ID,
-  kind: 'actor',
   node: REMOTE_NODE,
-  path: `actor://${REMOTE_NODE}/${LOGISTICS_SUPERVISOR_ACTOR_ID}`,
-} as const;
+});
 
-export const DISPATCHER_ADDRESS = {
-  id: DISPATCHER_ACTOR_ID,
-  kind: 'actor',
-  node: REMOTE_NODE,
-  path: `actor://${REMOTE_NODE}/${DISPATCHER_ACTOR_ID}`,
-} as const;
+export const DISPATCHER_ADDRESS = Address.from({ id: DISPATCHER_ACTOR_ID, node: REMOTE_NODE });
 
-export const DRIVER_DIRECTORY_ADDRESS = {
+export const DRIVER_DIRECTORY_ADDRESS = Address.from({
   id: DRIVER_DIRECTORY_ACTOR_ID,
-  kind: 'actor',
   node: REMOTE_NODE,
-  path: `actor://${REMOTE_NODE}/${DRIVER_DIRECTORY_ACTOR_ID}`,
-} as const;
+});
 
-export const WORKER_ADDRESS = {
-  id: WORKER_ACTOR_ID,
-  kind: 'actor',
-  node: WORKER_NODE,
-  path: `actor://${WORKER_NODE}/${WORKER_ACTOR_ID}`,
-} as const;
+export const WORKER_ADDRESS = Address.from({ id: WORKER_ACTOR_ID, node: WORKER_NODE });
 
-export const SERVICE_WORKER_ADDRESS = {
+export const SERVICE_WORKER_ADDRESS = Address.from({
   id: SERVICE_WORKER_ACTOR_ID,
-  kind: 'actor',
   node: SERVICE_WORKER_NODE,
-  path: `actor://${SERVICE_WORKER_NODE}/${SERVICE_WORKER_ACTOR_ID}`,
-} as const;
+});
 
 export function createInitialShipmentContext(): ShipmentContext {
   return {

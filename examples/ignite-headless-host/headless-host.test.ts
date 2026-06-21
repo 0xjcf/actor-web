@@ -74,7 +74,7 @@ describe('ignite-headless-host logistics example', () => {
   });
 
   it('declares topology-owned actors and supervision metadata', () => {
-    expect(logistics.actors.shipment.address.path).toBe(
+    expect(logistics.actors.shipment.address).toBe(
       'actor://logistics-server-runtime/logistics-shipment'
     );
     expect(logistics.actors.shipment.supervision).toMatchObject({
@@ -95,13 +95,13 @@ describe('ignite-headless-host logistics example', () => {
         'providerShipment',
       ],
     });
-    expect(logistics.actors.providerHq.address.path).toBe(
+    expect(logistics.actors.providerHq.address).toBe(
       'actor://logistics-server-runtime/logistics-provider-hq'
     );
-    expect(logistics.actors.dispatcher.address.path).toBe(
+    expect(logistics.actors.dispatcher.address).toBe(
       'actor://logistics-server-runtime/logistics-dispatcher'
     );
-    expect(logistics.actors.driverDirectory.address.path).toBe(
+    expect(logistics.actors.driverDirectory.address).toBe(
       'actor://logistics-server-runtime/logistics-driver-directory'
     );
   });
@@ -982,12 +982,10 @@ describe('logistics runtime planning functions', () => {
       timeline: [],
     };
 
-    expect(
-      logistics.actors.shipmentLifecycle.resolveAddress({ shipmentId: 'shipment/a b' })
-    ).toMatchObject({
-      id: 'logistics-shipment-shipment-a-b',
-      path: 'actor://logistics-server-runtime/logistics-shipment-shipment-a-b',
-    });
+    // resolveAddress returns the branded path string; the id is asserted below.
+    expect(logistics.actors.shipmentLifecycle.resolveAddress({ shipmentId: 'shipment/a b' })).toBe(
+      'actor://logistics-server-runtime/logistics-shipment-shipment-a-b'
+    );
     expect(shipmentLifecycleActorId({ shipmentId: 'shipment/a b' })).toBe(
       'logistics-shipment-shipment-a-b'
     );
