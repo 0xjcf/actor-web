@@ -7,16 +7,13 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ActorRef } from '../actor-ref.js';
 import type { ActorBehavior } from '../actor-system.js';
 import { AutoPublishingRegistry } from '../auto-publishing.js';
+import { Address } from '../utils/factories.js';
 
-// Create a mock ActorRef
+// Create a mock ActorRef. Callers pass a full actor:// wire path, so re-brand it
+// through Address.from (the address IS the path; this round-trips id/kind/node).
 function createMockActorRef(path: string): ActorRef {
   return {
-    address: {
-      id: path.split('/').pop() || 'unknown',
-      kind: 'actor',
-      path,
-      node: 'test-node',
-    },
+    address: Address.from(path),
     send: vi.fn(),
     ask: vi.fn(),
     stop: vi.fn(),

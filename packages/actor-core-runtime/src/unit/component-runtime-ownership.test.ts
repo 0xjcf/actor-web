@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMachine } from 'xstate';
 import type { ActorRef } from '../actor-ref.js';
 import type { ActorMessage, ActorSystem } from '../actor-system.js';
+import { Address } from '../utils/factories.js';
 
 vi.mock('../actor-system-impl.js', async () => {
   const actual =
@@ -61,11 +62,8 @@ function installDomGlobals(): void {
 
 function createActorRef(path: string): ActorRef {
   return {
-    address: {
-      id: path.split('/').at(-1) ?? path,
-      kind: 'actor',
-      path,
-    },
+    // The address IS the branded path string under the opaque address model.
+    address: Address.from(path),
     send: vi.fn(async (_message: ActorMessage<{ type: string }>) => undefined),
     ask: vi.fn(async () => ({})),
     stop: vi.fn(async () => undefined),

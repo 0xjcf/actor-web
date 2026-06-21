@@ -98,7 +98,7 @@ export const createTimerActor = (testMode = false) => {
             const scheduleMsg = message as ScheduleMessage;
             log.debug('🔧 Extracted schedule message:', {
               delay: scheduleMsg.delay,
-              targetPath: scheduleMsg.targetActor.address.path,
+              targetPath: scheduleMsg.targetActor.address,
             });
 
             const id = scheduleMsg.id || `scheduled-${context.nextId}`;
@@ -124,7 +124,7 @@ export const createTimerActor = (testMode = false) => {
               delay: scheduleMsg.delay,
               scheduledTime,
               currentTime: context.currentTime,
-              targetPath: scheduleMsg.targetActor.address.path,
+              targetPath: scheduleMsg.targetActor.address,
               testMode: context.testMode,
             });
 

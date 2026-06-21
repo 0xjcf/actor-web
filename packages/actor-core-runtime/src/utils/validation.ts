@@ -39,8 +39,8 @@ export function isActorMessage(value: unknown): value is ActorMessage {
     (!('_timestamp' in obj) || typeof obj._timestamp === 'number') &&
     // If _version exists, it must be a string
     (!('_version' in obj) || typeof obj._version === 'string') &&
-    // If _sender exists, it must be an ActorAddress object
-    (!('_sender' in obj) || (typeof obj._sender === 'object' && obj._sender !== null)) &&
+    // If _sender exists, it must be a branded actor address string (the path IS the address)
+    (!('_sender' in obj) || (typeof obj._sender === 'string' && obj._sender.length > 0)) &&
     // If _correlationId exists, it must be a string
     (!('_correlationId' in obj) || typeof obj._correlationId === 'string')
   );
@@ -179,8 +179,8 @@ export function validateActorMessage(value: unknown): {
     errors.push('Message _correlationId must be a string');
   }
 
-  if ('_sender' in msg && (typeof msg._sender !== 'object' || msg._sender === null)) {
-    errors.push('Message _sender must be an ActorAddress object');
+  if ('_sender' in msg && (typeof msg._sender !== 'string' || msg._sender.length === 0)) {
+    errors.push('Message _sender must be a branded actor address string');
   }
 
   return { isValid: errors.length === 0, errors };

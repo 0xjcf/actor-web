@@ -8,6 +8,7 @@ import { setup } from 'xstate';
 import type { ActorRef } from '../actor-ref.js';
 import { createActorRef } from '../create-actor-ref.js';
 import type { BaseEventObject } from '../types.js';
+import { parse } from '../utils/factories.js';
 import {
   ActorDirectory,
   ConsistentHashPlacementStrategy,
@@ -156,7 +157,7 @@ describe.skip('Virtual Actor System', () => {
     it('should activate actor on first access', () => {
       const actor = system.getActor('user', 'user-123');
       expect(actor).toBeDefined();
-      expect(actor.address.id).toBe('user-user-123');
+      expect(parse(actor.address).id).toBe('user-user-123');
     });
 
     it('should return cached actor on subsequent access', () => {
@@ -181,8 +182,8 @@ describe.skip('Virtual Actor System', () => {
 
       expect(userActor).toBeDefined();
       expect(workflowActor).toBeDefined();
-      expect(userActor.address.id).toBe('user-user-123');
-      expect(workflowActor.address.id).toBe('workflow-workflow-456');
+      expect(parse(userActor.address).id).toBe('user-user-123');
+      expect(parse(workflowActor.address).id).toBe('workflow-workflow-456');
     });
   });
 

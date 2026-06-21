@@ -27,10 +27,10 @@ export type {
   ActorBehavior,
   ActorEnvelope,
   ActorMessage,
-  AddressQuery,
   // ActorPID is now internal - use ActorRef instead
   ActorStats,
   ActorSystem,
+  AddressQuery,
   ClusterState,
   MessageTransport,
   // JsonValue moved to types.js - import from there if needed

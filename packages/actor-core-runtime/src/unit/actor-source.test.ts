@@ -15,6 +15,7 @@ import { createRuntimeGatewaySourceHandle } from '../runtime-gateway.js';
 import { createInMemoryMessageTransportNetwork } from '../testing/in-memory-message-transport.js';
 import type { ActorSnapshot } from '../types.js';
 import { defineBehavior } from '../unified-actor-builder.js';
+import { Address, parse } from '../utils/factories.js';
 
 type CounterMessage = ActorMessage<{ type: 'INCREMENT' } | { type: 'RESET' }>;
 type CheckoutMessage = ActorMessage<{ type: 'SUBMIT'; orderId: string } | { type: 'GET_COUNT' }>;
@@ -65,11 +66,7 @@ function createSnapshot<TContext>(
 
 describe('actor source', () => {
   it('projects Actor-Web snapshots into host-ready snapshots with address and phase', () => {
-    const address = {
-      id: 'checkout',
-      kind: 'actor' as const,
-      path: '/actors/checkout',
-    };
+    const address = Address.from({ id: 'checkout' });
 
     const projection = actorSnapshotToSourceSnapshot(
       address,
@@ -97,11 +94,7 @@ describe('actor source', () => {
         ask: async () => 1,
         stop: async () => {},
       } as unknown as ActorInstance,
-      {
-        id: 'typed-counter',
-        kind: 'actor',
-        path: '/actors/typed-counter',
-      }
+      Address.from({ id: 'typed-counter' })
     );
 
     const observedStates: string[] = [];
@@ -135,7 +128,7 @@ describe('actor source', () => {
     unsubscribe();
     await actor.stop();
 
-    expect(source.address.id).toBe('checkout');
+    expect(parse(source.address).id).toBe('checkout');
     expect(source.snapshot().context.count).toBe(1);
     expect(source.transportStatus().state).toBe('local');
     expect(snapshots).toEqual([
@@ -230,7 +223,7 @@ describe('actor source', () => {
       await actor.stop();
       unsubscribe();
 
-      expect(source.address.id).toBe('checkout-system');
+      expect(parse(source.address).id).toBe('checkout-system');
       expect(source.snapshot().context.count).toBe(1);
       expect(source.snapshot().status).toBe('stopped');
       expect(source.transportStatus().state).toBe('local');
@@ -250,11 +243,7 @@ describe('actor source', () => {
     const eventListeners = new Set<(event: CheckoutEvent) => void>();
 
     const remoteActor = {
-      address: {
-        id: 'checkout-remote',
-        kind: 'actor' as const,
-        path: 'actor://remote-node/checkout-remote',
-      },
+      address: Address.from({ id: 'checkout-remote', node: 'remote-node' }),
       getSnapshot: () => createSnapshot(undefined, { count: -1 }),
       send: async () => {},
       ask: async () => ({ ok: true }),
@@ -305,7 +294,7 @@ describe('actor source', () => {
         events.push({
           type: event.type,
           orderId: event.orderId,
-          addressId: event.address.id,
+          addressId: parse(event.address).id,
         });
       },
       { types: ['CHECKOUT_SUBMITTED'] }
@@ -370,7 +359,7 @@ describe('actor source', () => {
       });
       await localSystem.join(['node-b']);
       const remoteRef = await localSystem.lookup<{ submittedOrders: string[] }, CheckoutMessage>(
-        spawnedRemoteActor.address.path
+        spawnedRemoteActor.address
       );
 
       expect(remoteRef).toBeDefined();
@@ -393,7 +382,7 @@ describe('actor source', () => {
         });
       });
       const unsubscribeEvent = source.subscribeEvent((event) => {
-        events.push(`${event.address.id}:${event.type}:${event.orderId}`);
+        events.push(`${parse(event.address).id}:${event.type}:${event.orderId}`);
       });
       const unsubscribeStatus = source.subscribeTransportStatus((status) => {
         statuses.push(status.state);
@@ -470,7 +459,7 @@ describe('actor source', () => {
       });
       const unsubscribeEvent = source.subscribeEvent(
         (event) => {
-          host.eventLog.push(`${event.address.id}:${event.type}:${event.orderId}`);
+          host.eventLog.push(`${parse(event.address).id}:${event.type}:${event.orderId}`);
         },
         { types: ['CHECKOUT_SUBMITTED'] }
       );

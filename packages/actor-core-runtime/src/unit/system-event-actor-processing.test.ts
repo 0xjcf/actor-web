@@ -8,21 +8,23 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { ActorAddress } from '../actor-system.js';
 import { ActorSystemImpl } from '../actor-system-impl.js';
 import { Logger } from '../logger.js';
+import { Address } from '../utils/factories.js';
 
 const log = Logger.namespace('LAYER2_TEST');
 
 describe('Layer 2: System Event Actor Processing', () => {
   let system: ActorSystemImpl;
-  let systemEventActorAddress: { path: string };
+  let systemEventActorAddress: ActorAddress;
 
   beforeEach(async () => {
     system = new ActorSystemImpl({ nodeAddress: 'test-node' });
     await system.start();
 
-    // System event actor address
-    systemEventActorAddress = { path: 'actor://test-node/system-event-actor' };
+    // System event actor address (the address IS the path).
+    systemEventActorAddress = Address.from('actor://test-node/system-event-actor');
   });
 
   afterEach(async () => {
@@ -48,7 +50,7 @@ describe('Layer 2: System Event Actor Processing', () => {
       // biome-ignore lint/suspicious/noExplicitAny: Testing internal methods
       await (system as any).enqueueMessage(systemEventActorAddress, {
         type: 'SUBSCRIBE',
-        subscriberPath: subscriber1.address.path,
+        subscriberPath: subscriber1.address,
         subscriberRef: subscriber1, // Pass the actual ActorPID
         eventTypes: ['actorSpawned'],
       });
@@ -56,7 +58,7 @@ describe('Layer 2: System Event Actor Processing', () => {
       // biome-ignore lint/suspicious/noExplicitAny: Testing internal methods
       await (system as any).enqueueMessage(systemEventActorAddress, {
         type: 'SUBSCRIBE',
-        subscriberPath: subscriber2.address.path,
+        subscriberPath: subscriber2.address,
         subscriberRef: subscriber2, // Pass the actual ActorPID
         eventTypes: ['actorSpawned', 'actorStopped'],
       });
@@ -122,7 +124,7 @@ describe('Layer 2: System Event Actor Processing', () => {
       // biome-ignore lint/suspicious/noExplicitAny: Testing internal methods
       await (system as any).enqueueMessage(systemEventActorAddress, {
         type: 'SUBSCRIBE',
-        subscriberPath: spawnSubscriber.address.path,
+        subscriberPath: spawnSubscriber.address,
         subscriberRef: spawnSubscriber, // Pass the actual ActorPID
         eventTypes: ['actorSpawned'],
       });
@@ -130,7 +132,7 @@ describe('Layer 2: System Event Actor Processing', () => {
       // biome-ignore lint/suspicious/noExplicitAny: Testing internal methods
       await (system as any).enqueueMessage(systemEventActorAddress, {
         type: 'SUBSCRIBE',
-        subscriberPath: stopSubscriber.address.path,
+        subscriberPath: stopSubscriber.address,
         subscriberRef: stopSubscriber, // Pass the actual ActorPID
         eventTypes: ['actorStopped'],
       });
@@ -188,7 +190,7 @@ describe('Layer 2: System Event Actor Processing', () => {
       // biome-ignore lint/suspicious/noExplicitAny: Testing internal methods
       await (system as any).enqueueMessage(systemEventActorAddress, {
         type: 'SUBSCRIBE',
-        subscriberPath: wildcardSubscriber.address.path,
+        subscriberPath: wildcardSubscriber.address,
         subscriberRef: wildcardSubscriber, // Pass the actual ActorPID
         eventTypes: ['*'], // All events
       });
@@ -230,7 +232,7 @@ describe('Layer 2: System Event Actor Processing', () => {
       // biome-ignore lint/suspicious/noExplicitAny: Testing internal methods
       await (system as any).enqueueMessage(systemEventActorAddress, {
         type: 'SUBSCRIBE',
-        subscriberPath: subscriber.address.path,
+        subscriberPath: subscriber.address,
         subscriberRef: subscriber, // Pass the actual ActorPID
         eventTypes: ['testEvent'],
       });
@@ -258,7 +260,7 @@ describe('Layer 2: System Event Actor Processing', () => {
       // biome-ignore lint/suspicious/noExplicitAny: Testing internal methods
       await (system as any).enqueueMessage(systemEventActorAddress, {
         type: 'UNSUBSCRIBE',
-        subscriberPath: subscriber.address.path,
+        subscriberPath: subscriber.address,
       });
 
       await system.flush();
@@ -295,7 +297,7 @@ describe('Layer 2: System Event Actor Processing', () => {
       // biome-ignore lint/suspicious/noExplicitAny: Testing internal methods
       await (system as any).enqueueMessage(systemEventActorAddress, {
         type: 'SUBSCRIBE',
-        subscriberPath: subscriber.address.path,
+        subscriberPath: subscriber.address,
         subscriberRef: subscriber, // Pass the actual ActorPID
         eventTypes: ['formatTest'],
       });
@@ -345,7 +347,7 @@ describe('Layer 2: System Event Actor Processing', () => {
       // biome-ignore lint/suspicious/noExplicitAny: Testing internal methods
       await (system as any).enqueueMessage(systemEventActorAddress, {
         type: 'SUBSCRIBE',
-        subscriberPath: subscriber.address.path,
+        subscriberPath: subscriber.address,
         subscriberRef: subscriber, // Pass the actual ActorPID
         eventTypes: ['simpleEvent'],
       });
@@ -413,7 +415,7 @@ describe('Layer 2: System Event Actor Processing', () => {
       // biome-ignore lint/suspicious/noExplicitAny: Testing internal methods
       await (system as any).enqueueMessage(systemEventActorAddress, {
         type: 'SUBSCRIBE',
-        subscriberPath: subscriber.address.path,
+        subscriberPath: subscriber.address,
         subscriberRef: subscriber, // Pass the actual ActorPID
         eventTypes: ['duplicateTest'],
       });
@@ -421,7 +423,7 @@ describe('Layer 2: System Event Actor Processing', () => {
       // biome-ignore lint/suspicious/noExplicitAny: Testing internal methods
       await (system as any).enqueueMessage(systemEventActorAddress, {
         type: 'SUBSCRIBE',
-        subscriberPath: subscriber.address.path,
+        subscriberPath: subscriber.address,
         subscriberRef: subscriber, // Pass the actual ActorPID
         eventTypes: ['duplicateTest'],
       });
@@ -468,7 +470,7 @@ describe('Layer 2: System Event Actor Processing', () => {
       // biome-ignore lint/suspicious/noExplicitAny: Testing internal methods
       await (system as any).enqueueMessage(systemEventActorAddress, {
         type: 'SUBSCRIBE',
-        subscriberPath: subscriber.address.path,
+        subscriberPath: subscriber.address,
         subscriberRef: subscriber, // Pass the actual ActorPID
         eventTypes: ['stillWorks'],
       });

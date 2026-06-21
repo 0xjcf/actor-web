@@ -1,6 +1,5 @@
 import type { ActorEventSubscriptionOptions } from './actor-ref.js';
 import type { ActorAddress, ActorMessage } from './actor-system.js';
-import { parseActorPath } from './actor-system.js';
 import {
   type ActorCommandSource,
   type ActorReadModelSource,
@@ -30,6 +29,7 @@ import type {
   ActorWebActorMessage,
 } from './topology.js';
 import type { ActorSnapshot, JsonValue, Message } from './types.js';
+import { Address, parse } from './utils/factories.js';
 
 export interface ActorWebGatewaySocket {
   readonly readyState: number;
@@ -166,11 +166,8 @@ type PendingSend = {
 };
 
 function normalizeAddress(address: string | ActorWebActorAddress | ActorAddress): ActorAddress {
-  if (typeof address !== 'string') {
-    return address;
-  }
-
-  return parseActorPath(address);
+  // Address.from handles both a raw wire path and an already-branded address.
+  return Address.from(address);
 }
 
 function placeholderSnapshot<TContext>(address: ActorAddress): ActorSourceSnapshot<TContext> {
@@ -302,7 +299,7 @@ function resolveGatewayBackedSourceInput(
   const descriptorScope = actorDescriptor?.gateway?.scope;
   const legacyInputScope = isAddressInput ? input.scope : undefined;
   const inferredScope = {
-    kind: actorDescriptor ? actorDescriptor.key : address.id,
+    kind: actorDescriptor ? actorDescriptor.key : parse(address).id,
   } satisfies RuntimeGatewayScopeDescriptor;
   const baseScope = mergeScope(inferredScope, descriptorScope);
   const inputScope = mergeScope(baseScope, legacyInputScope);
@@ -325,7 +322,7 @@ function createGatewayBackedSource<
   options: ActorWebSourceOptions,
   behavior: GatewaySourceBehaviorOptions = {}
 ): ClosableActorWebSource<TContext, TMessage, TEvent> {
-  const streamId = options.streamId ?? `actor-web-${address.id}`;
+  const streamId = options.streamId ?? `actor-web-${parse(address).id}`;
   const socket = (options.createSocket ?? defaultSocket)(options.gateway.url);
   const subscribeMode = behavior.subscribeMode ?? 'full';
   const readyOnStatus = behavior.readyOnStatus ?? false;

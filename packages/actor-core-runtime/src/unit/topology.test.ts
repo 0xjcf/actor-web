@@ -77,12 +77,10 @@ describe('Actor-Web topology helpers', () => {
     });
 
     expect(logistics.nodes.server.address).toBe('logistics-server-runtime');
-    expect(logistics.actors.shipment.address).toEqual({
-      id: 'logistics-shipment',
-      kind: 'actor',
-      node: 'logistics-server-runtime',
-      path: 'actor://logistics-server-runtime/logistics-shipment',
-    });
+    // The actor address is now an opaque branded path string.
+    expect(logistics.actors.shipment.address).toBe(
+      'actor://logistics-server-runtime/logistics-shipment'
+    );
     expect(logistics.actors.shipment.nodeAddress).toBe('logistics-server-runtime');
     expect(logistics.tools['route.plan']).toEqual({
       name: 'route.plan',
@@ -124,8 +122,8 @@ describe('Actor-Web topology helpers', () => {
     const command: InferredCommand = { type: 'CREATE_SHIPMENT', shipmentId: 'shipment-1' };
     const event: InferredEvent = { type: 'SHIPMENT_CREATED' };
 
-    expect(typedSource.address.path).toBe(logistics.actors.shipment.address.path);
-    expect(explicitSource.address.path).toBe(source.address.path);
+    expect(typedSource.address).toBe(logistics.actors.shipment.address);
+    expect(explicitSource.address).toBe(source.address);
     expect(context.status).toBe('idle');
     expect(command.type).toBe('CREATE_SHIPMENT');
     expect(event.type).toBe('SHIPMENT_CREATED');
@@ -180,7 +178,7 @@ describe('Actor-Web topology helpers', () => {
     const sameSource = client.actors.shipment;
 
     expect(typedSource).toBe(sameSource);
-    expect(typedSource.address.path).toBe(logistics.actors.shipment.address.path);
+    expect(typedSource.address).toBe(logistics.actors.shipment.address);
     expect(socketsCreated).toBe(1);
     client.close();
   });
@@ -277,7 +275,7 @@ describe('Actor-Web topology helpers', () => {
     // @ts-expect-error declared topologies require gateway-backed source options
     const invalidHostOnlyOptions: SourceFactoryInput = { host: new EventTarget() };
 
-    expect(sourceHandle.source.address.path).toBe(logistics.actors.shipment.address.path);
+    expect(sourceHandle.source.address).toBe(logistics.actors.shipment.address);
     expect(typeof sourceHandle.commandSource.send).toBe('function');
     expect(expectedHandle.commandSource).toBe(sourceHandle.commandSource);
     expect(validActorKey).toBe('shipment');
@@ -327,8 +325,8 @@ describe('Actor-Web topology helpers', () => {
 
     expect(Object.keys(client.actors)).toEqual(['shipment', 'serviceWorkerProof']);
     expect(socketsCreated).toBe(0);
-    expect(client.actors.serviceWorkerProof.address.path).toBe(
-      logistics.actors.serviceWorkerProof.address.path
+    expect(client.actors.serviceWorkerProof.address).toBe(
+      logistics.actors.serviceWorkerProof.address
     );
     expect(socketsCreated).toBe(1);
     client.close();

@@ -22,15 +22,20 @@ import {
   isSendInstruction,
   type SendInstruction,
 } from '../message-plan.js';
-import { createMockActorRef } from '../utils/factories.js';
-import { isActorMessage, isDomainEvent, isMessagePlan } from '../utils/validation.js';
+import { Address, createMockActorRef } from '../utils/factories.js';
+import {
+  isActorMessage,
+  isDomainEvent,
+  isMessagePlan,
+  validateActorMessage,
+} from '../utils/validation.js';
 
 // ============================================================================
 // TEST FIXTURES
 // ============================================================================
 
 const mockActorRef: ActorRef<ActorMessage> = createMockActorRef({
-  address: { id: 'test-actor', kind: 'actor', path: '/test-actor' },
+  address: Address.from({ id: 'test-actor' }),
   send: vi.fn().mockResolvedValue(undefined),
   ask: vi.fn().mockResolvedValue({ success: true }),
 });
@@ -149,6 +154,21 @@ describe('isActorMessage', () => {
     expect(isActorMessage({})).toBe(false);
     expect(isActorMessage({ data: 'no type' })).toBe(false);
     expect(isActorMessage({ type: 123 })).toBe(false);
+  });
+
+  // _sender is now a branded actor address STRING (the path IS the address). The old
+  // typeof === 'object' check would reject every real message; assert the string contract.
+  it('accepts a branded actor-address string _sender', () => {
+    expect(isActorMessage({ type: 'GREET', _sender: 'actor://local/a1' })).toBe(true);
+    expect(validateActorMessage({ type: 'GREET', _sender: 'actor://local/a1' }).isValid).toBe(true);
+  });
+
+  it('rejects a non-string (legacy object) _sender', () => {
+    expect(isActorMessage({ type: 'GREET', _sender: { id: 'a1' } })).toBe(false);
+    expect(isActorMessage({ type: 'GREET', _sender: '' })).toBe(false);
+    const result = validateActorMessage({ type: 'GREET', _sender: { id: 'a1' } });
+    expect(result.isValid).toBe(false);
+    expect(result.errors).toContain('Message _sender must be a branded actor address string');
   });
 });
 

@@ -8,6 +8,7 @@ import type { ActorRef } from '../actor-ref.js';
 import type { ActorMessage } from '../actor-system.js';
 import { Logger } from '../logger.js';
 import type { BaseEventObject, SupervisionStrategy } from '../types.js';
+import { parse } from '../utils/factories.js';
 import { Supervisor, type SupervisorOptions } from './supervisor.js';
 
 /**
@@ -89,7 +90,7 @@ class SupervisorTreeNodeInternal {
       },
       onRestart: (actorRef, error, attempt) => {
         this.logger.debug('Actor restarted', {
-          actorId: actorRef.address.id,
+          actorId: parse(actorRef.address).id,
           error: error.message,
           attempt,
         });
@@ -128,7 +129,7 @@ class SupervisorTreeNodeInternal {
    */
   supervise(actorRef: ActorRef<BaseEventObject, ActorMessage>): void {
     this.logger.debug('Supervising actor', {
-      actorId: actorRef.address.id,
+      actorId: parse(actorRef.address).id,
       supervisorPath: this.getPath(),
     });
     this.supervisor.supervise(actorRef);
@@ -146,7 +147,7 @@ class SupervisorTreeNodeInternal {
    */
   private handleFailure(actorRef: ActorRef<BaseEventObject, ActorMessage>, error: Error): void {
     this.logger.warn('Actor failure handled', {
-      actorId: actorRef.address.id,
+      actorId: parse(actorRef.address).id,
       error: error.message,
       supervisorPath: this.getPath(),
     });
@@ -154,12 +155,12 @@ class SupervisorTreeNodeInternal {
     if (this.config.strategy === 'escalate' && this.parent) {
       this.logger.debug('Escalating failure to parent', {
         parentId: this.parent.id,
-        actorId: actorRef.address.id,
+        actorId: parse(actorRef.address).id,
       });
       this.parent.handleFailure(actorRef, error);
     } else if (this.config.strategy === 'escalate' && !this.parent) {
       // Root supervisor with escalate strategy - call global handler
-      this.tree.handleUnhandledFailure(error, actorRef.address.id, this.getPath());
+      this.tree.handleUnhandledFailure(error, parse(actorRef.address).id, this.getPath());
     }
   }
 

@@ -15,6 +15,7 @@ import { type ActorSystemConfig, createActorSystem } from '../actor-system-impl.
 import { defineBehavior } from '../index.js';
 import { Logger } from '../logger.js';
 import { createActorDelay } from '../pure-xstate-utilities.js';
+import { parse } from '../utils/factories.js';
 
 const log = Logger.namespace('SHUTDOWN_TEST');
 
@@ -371,12 +372,14 @@ describe('Graceful Shutdown and Lifecycle Management', () => {
 
       // Verify actors exist (excluding system actors)
       const actors = await system.listActors();
-      const userActors = actors.filter(
-        (actor) =>
-          !actor.id.includes('system-event-actor') &&
-          !actor.id.includes('cluster-event-actor') &&
-          actor.id !== 'guardian'
-      );
+      const userActors = actors.filter((actor) => {
+        const { id } = parse(actor);
+        return (
+          !id.includes('system-event-actor') &&
+          !id.includes('cluster-event-actor') &&
+          id !== 'guardian'
+        );
+      });
       expect(userActors).toHaveLength(2);
 
       // Stop the system

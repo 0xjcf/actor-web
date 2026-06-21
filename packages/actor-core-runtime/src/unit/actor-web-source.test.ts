@@ -127,7 +127,7 @@ describe('createActorWebSource', () => {
           type: 'SHIPMENT_CREATED',
           schemaVersion: 1,
           occurredAt: '2026-04-25T18:00:01.000Z',
-          sourceActor: source.address.path,
+          sourceActor: source.address,
           payload: {
             shipmentId: 'shipment-1',
           },
@@ -457,7 +457,7 @@ describe('createActorWebSource', () => {
           type: 'SHIPMENT_UPDATED',
           schemaVersion: 1,
           occurredAt: '2026-04-25T18:00:02.000Z',
-          sourceActor: source.address.path,
+          sourceActor: source.address,
           payload: {},
         },
       },
@@ -630,7 +630,7 @@ describe('createActorWebSource', () => {
           type: 'SHIPMENT_CREATED',
           schemaVersion: 1,
           occurredAt: '2026-04-25T18:00:01.000Z',
-          sourceActor: source.address.path,
+          sourceActor: source.address,
           payload: {
             shipmentId: 'shipment-1',
           },

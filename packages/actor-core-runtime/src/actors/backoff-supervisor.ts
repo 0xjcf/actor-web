@@ -10,6 +10,7 @@ import { Logger } from '../logger.js';
 // ✅ PURE ACTOR MODEL: Import XState-based delay function
 import { createActorDelay } from '../pure-xstate-utilities.js';
 import type { BaseEventObject } from '../types.js';
+import { parse } from '../utils/factories.js';
 import { Supervisor, type SupervisorOptions } from './supervisor.js';
 
 const logger = Logger.namespace('BACKOFF_SUPERVISOR');
@@ -88,7 +89,7 @@ export class BackoffSupervisor extends Supervisor {
     error: Error,
     actorRef: ActorRef<BaseEventObject, ActorMessage>
   ): Promise<void> {
-    const actorId = actorRef.address.id;
+    const actorId = parse(actorRef.address).id;
     // Get or create backoff state
     let state = this.backoffStates.get(actorId);
     if (!state) {
@@ -184,7 +185,7 @@ export class BackoffSupervisor extends Supervisor {
     super.supervise(actorRef);
 
     // Reset backoff state when actor is supervised
-    this.resetBackoff(actorRef.address.id);
+    this.resetBackoff(parse(actorRef.address).id);
   }
 
   /**

@@ -7,6 +7,7 @@
 import type { ActorRef } from '../actor-ref.js';
 import { Logger } from '../logger.js';
 import type { BaseEventObject } from '../types.js';
+import { parse } from '../utils/factories.js';
 
 // ========================================================================================
 // HTN CORE TYPES
@@ -485,7 +486,7 @@ export class HTNPlanner {
       this.logger.debug(`${indent}⚡ Primitive task ready for execution`, {
         taskName: task.name,
         taskId: task.id,
-        executor: task.executor.address.id,
+        executor: parse(task.executor.address).id,
         action: task.action,
         estimatedDuration: task.estimatedDuration,
       });

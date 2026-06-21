@@ -62,7 +62,7 @@ export async function setupTimerActor(system: ActorSystem): Promise<TimerActorRe
     // Add timer-specific methods
     schedule: async (targetActor: ActorRef<unknown>, message: Message, delay: number) => {
       log.debug('🔧 TimerRef.schedule called:', {
-        targetPath: targetActor.address.path,
+        targetPath: targetActor.address,
         messageType: message.type,
         delay,
       });
@@ -72,7 +72,7 @@ export async function setupTimerActor(system: ActorSystem): Promise<TimerActorRe
         message,
         delay,
       };
-      log.debug('📤 Sending SCHEDULE message to:', timerActor.address.path);
+      log.debug('📤 Sending SCHEDULE message to:', timerActor.address);
       await timerActor.send(scheduleMsg);
       log.debug('✅ SCHEDULE message sent');
     },
@@ -93,7 +93,7 @@ export async function setupTimerActor(system: ActorSystem): Promise<TimerActorRe
         type: 'ADVANCE_TIME',
         by: ms,
       };
-      log.debug('📤 Sending ADVANCE_TIME message to:', timerActor.address.path);
+      log.debug('📤 Sending ADVANCE_TIME message to:', timerActor.address);
       await timerActor.send(advanceMsg);
       log.debug('✅ ADVANCE_TIME message sent');
     },

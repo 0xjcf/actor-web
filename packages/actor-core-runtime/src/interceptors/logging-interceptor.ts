@@ -92,7 +92,7 @@ export class LoggingInterceptor implements MessageInterceptor {
       this.buffer.push({
         timestamp: Date.now(),
         messageType: message.type,
-        sender: sender?.path,
+        sender: sender ?? undefined,
         target: undefined, // Will be set in target actor
         size: estimateSize(message),
         phase: 'send',
@@ -111,7 +111,7 @@ export class LoggingInterceptor implements MessageInterceptor {
       this.buffer.push({
         timestamp: Date.now(),
         messageType: message.type,
-        sender: sender?.path || message._sender?.path,
+        sender: sender || message._sender,
         target: context.metadata.get('actorPath') as string,
         size: estimateSize(message),
         phase: 'receive',
@@ -133,8 +133,8 @@ export class LoggingInterceptor implements MessageInterceptor {
       this.buffer.push({
         timestamp: Date.now(),
         messageType: message.type,
-        sender: message._sender?.path,
-        target: actor.path,
+        sender: message._sender,
+        target: actor,
         size: estimateSize(message),
         phase: 'process',
         duration,
@@ -149,8 +149,8 @@ export class LoggingInterceptor implements MessageInterceptor {
     this.buffer.push({
       timestamp: Date.now(),
       messageType: message.type,
-      sender: message._sender?.path,
-      target: actor.path,
+      sender: message._sender,
+      target: actor,
       size: estimateSize(message),
       phase: 'error',
       error: error.message,

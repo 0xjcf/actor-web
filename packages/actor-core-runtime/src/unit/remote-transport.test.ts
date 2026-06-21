@@ -136,7 +136,7 @@ describe('remote runtime transport', () => {
     await localSystem.join(['node-b']);
 
     const remoteRef = await localSystem.lookup<CheckoutContext, CheckoutMessage>(
-      remoteActor.address.path
+      remoteActor.address
     );
     expect(remoteRef).toBeDefined();
     if (!remoteRef) {
@@ -222,7 +222,7 @@ describe('remote runtime transport', () => {
     await localSystem.join(['node-b']);
 
     const remoteRef = await localSystem.lookup<CheckoutContext, CheckoutMessage>(
-      remoteActor.address.path
+      remoteActor.address
     );
     if (!remoteRef) {
       throw new Error('Expected remote ref after handshake-backed directory sync');
@@ -256,7 +256,7 @@ describe('remote runtime transport', () => {
     await localSystem.join(['node-b']);
 
     const remoteRef = await localSystem.lookup<CheckoutContext, CheckoutMessage>(
-      remoteActor.address.path
+      remoteActor.address
     );
     if (!remoteRef) {
       throw new Error('Expected remote ref for reconnect test');
@@ -318,7 +318,7 @@ describe('remote runtime transport', () => {
     await localSystem.join(['node-b']);
 
     const remoteRef = await localSystem.lookup<CheckoutContext, CheckoutMessage>(
-      remoteActor.address.path
+      remoteActor.address
     );
     if (!remoteRef) {
       throw new Error('Expected remote ref for gap test');
@@ -382,12 +382,8 @@ describe('remote runtime transport', () => {
         message: {
           type: '__runtime.remote.ask.request',
           requestId: 'ghost-req-1',
-          address: {
-            id: 'missing-actor',
-            type: 'unknown',
-            node: 'node-b',
-            path: 'actor://node-b/missing-actor',
-          },
+          // The wire address IS the branded path string under the opaque model.
+          address: 'actor://node-b/missing-actor',
           message: { type: 'PING', _timestamp: Date.now(), _version: '1.0.0' },
           timeout: 50,
           _timestamp: Date.now(),

@@ -138,7 +138,7 @@ describe('serveNode', () => {
     try {
       expect(served.getTransportUrl()).toMatch(/^ws:\/\/127\.0\.0\.1:/);
       expect(served.getGatewayUrl()).toMatch(/^ws:\/\/127\.0\.0\.1:/);
-      expect(served.getActor('counter')?.address.path).toBe('actor://server-node/counter');
+      expect(served.getActor('counter')?.address).toBe('actor://server-node/counter');
       expect(served.getActor('workerCounter')).toBeUndefined();
       expect(() => served.requireActor('workerCounter')).toThrow(
         'Actor-Web node did not spawn actor "workerCounter".'
@@ -170,9 +170,7 @@ describe('serveNode', () => {
         type: 'snapshot',
         streamId: 'counter-stream',
         projection: {
-          address: {
-            path: 'actor://server-node/counter',
-          },
+          address: 'actor://server-node/counter',
           context: {
             count: 1,
           },
@@ -430,9 +428,7 @@ describe('serveNode', () => {
         type: 'snapshot',
         streamId: 'worker-counter-stream',
         projection: {
-          address: {
-            path: 'actor://worker-node/worker-counter',
-          },
+          address: 'actor://worker-node/worker-counter',
           context: {
             count: 1,
           },
@@ -565,15 +561,14 @@ describe('serveNode', () => {
 
     try {
       expect(served.getActor('shipment')).toBeUndefined();
-      expect(topology.actors.shipment.resolveAddress({ shipmentId: '1001' })).toMatchObject({
-        id: 'shipment-1001',
-        path: 'actor://server-node/shipment-1001',
-      });
+      expect(topology.actors.shipment.resolveAddress({ shipmentId: '1001' })).toBe(
+        'actor://server-node/shipment-1001'
+      );
 
       const first = await served.actors.shipment.instance({ shipmentId: '1001' });
       const second = await served.actors.shipment.instance({ shipmentId: '1001' });
       expect(second).toBe(first);
-      expect(first.address.path).toBe('actor://server-node/shipment-1001');
+      expect(first.address).toBe('actor://server-node/shipment-1001');
 
       await first.send({ type: 'INCREMENT' });
       await served.system.flush();

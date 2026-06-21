@@ -99,7 +99,7 @@ export class MetricsInterceptor implements MessageInterceptor {
 
   async beforeSend({ message, sender }: BeforeSendParams): Promise<ActorMessage> {
     if (sender) {
-      const metrics = this.getOrCreateMetrics(sender.path);
+      const metrics = this.getOrCreateMetrics(sender);
       metrics.messagesSent++;
       metrics.lastUpdated = Date.now();
     }
@@ -139,7 +139,7 @@ export class MetricsInterceptor implements MessageInterceptor {
     const timing = this.messageTimings.get(message);
     if (timing) {
       const duration = performance.now() - timing.startTime;
-      const metrics = this.getOrCreateMetrics(actor.path);
+      const metrics = this.getOrCreateMetrics(actor);
 
       metrics.messagesProcessed++;
       metrics.processingTimes.push(duration);
@@ -159,7 +159,7 @@ export class MetricsInterceptor implements MessageInterceptor {
   }
 
   async onError({ message, actor }: OnErrorParams): Promise<void> {
-    const metrics = this.getOrCreateMetrics(actor.path);
+    const metrics = this.getOrCreateMetrics(actor);
     metrics.errors++;
     metrics.lastUpdated = Date.now();
 

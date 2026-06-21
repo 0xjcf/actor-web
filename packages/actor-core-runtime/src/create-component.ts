@@ -26,6 +26,7 @@ import {
   type TemplateFunction,
 } from './component-actor.js';
 import { Logger } from './logger.js';
+import { parse } from './utils/factories.js';
 
 const log = Logger.namespace('CREATE_COMPONENT');
 
@@ -532,7 +533,7 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
 
         log.info('Component actor spawned', {
           machineId,
-          actorId: this._actorPID.address.id,
+          actorId: parse(this._actorPID.address).id,
         });
 
         // Mount the component actor with DOM element
@@ -634,7 +635,7 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
       // Convert ActorRef objects to serializable references
       const dependencyRefs: Record<string, string> = {};
       for (const [key, actor] of Object.entries(dependencies)) {
-        dependencyRefs[key] = actor.address.path;
+        dependencyRefs[key] = actor.address;
       }
 
       await this._actorPID.send({

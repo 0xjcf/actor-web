@@ -9,6 +9,7 @@ import type { ActorRef } from './actor-ref.js';
 import { createActorRef } from './create-actor-ref.js';
 import { Logger } from './logger.js';
 import type { BaseEventObject } from './types.js';
+import { parse } from './utils/factories.js';
 
 // ========================================================================================
 // PROXY EVENT TYPES
@@ -202,7 +203,7 @@ export class ActorProxyClient<T extends ActorRouter> {
   constructor(actorRef: ActorRef<unknown>, router: T) {
     this.actorRef = actorRef;
     this.router = router;
-    this.logger.debug('Actor proxy client created', { actorId: actorRef.address.id });
+    this.logger.debug('Actor proxy client created', { actorId: parse(actorRef.address).id });
   }
 
   /**

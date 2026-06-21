@@ -126,7 +126,7 @@ describe('per-actor supervision policies (behavioral)', () => {
       id: 'bounded-crasher',
       supervision: { strategy: 'restart', maxRestarts: 1, withinMs: 60_000 },
     });
-    const path = ref.address.path;
+    const path = ref.address;
 
     await ref.send({ type: 'BOOM' });
     await waitForSystemEvent(
@@ -162,7 +162,7 @@ describe('per-actor supervision policies (behavioral)', () => {
       id: 'stop-on-failure',
       supervision: { strategy: 'stop' },
     });
-    const path = ref.address.path;
+    const path = ref.address;
 
     await ref.send({ type: 'BOOM' });
     await waitForSystemEvent(
@@ -188,7 +188,7 @@ describe('per-actor supervision policies (behavioral)', () => {
       id: 'escalate-on-failure',
       supervision: { strategy: 'escalate' },
     });
-    const path = ref.address.path;
+    const path = ref.address;
 
     await ref.send({ type: 'BOOM' });
     const escalated = await waitForSystemEvent(
@@ -208,7 +208,7 @@ describe('per-actor supervision policies (behavioral)', () => {
       id: 'resume-on-failure',
       supervision: { strategy: 'resume' },
     });
-    const path = ref.address.path;
+    const path = ref.address;
 
     await ref.send({ type: 'INC' });
     await ref.send({ type: 'BOOM' });
@@ -229,7 +229,7 @@ describe('per-actor supervision policies (behavioral)', () => {
 
   it('actor with no policy keeps the default restart behavior', async () => {
     const ref = await system.spawn(createCrashableCounter(), { id: 'default-crasher' });
-    const path = ref.address.path;
+    const path = ref.address;
 
     await ref.send({ type: 'BOOM' });
     await waitForSystemEvent(
@@ -301,7 +301,7 @@ describe('per-actor supervision policies (behavioral)', () => {
       id: 'machine-crasher',
       supervision: { strategy: 'restart', maxRestarts: 2, withinMs: 60_000 },
     });
-    const path = ref.address.path;
+    const path = ref.address;
 
     // biome-ignore lint/suspicious/noExplicitAny: pinning the runtime actor kind requires private access
     expect((system as any).actorInstances.get(path)?.getType()).toBe('machine');
@@ -337,9 +337,9 @@ describe('per-actor supervision policies (behavioral)', () => {
       new Error('induced system actor failure')
     );
 
-    expect(eventsFor(emitSystemEventSpy, 'actorRestarted', address.path)).toHaveLength(1);
+    expect(eventsFor(emitSystemEventSpy, 'actorRestarted', address)).toHaveLength(1);
     // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
-    expect((system as any).actorMailboxes.has(address.path)).toBe(true);
+    expect((system as any).actorMailboxes.has(address)).toBe(true);
 
     // The restarted system-event actor still receives system events.
     emitSystemEventSpy.mockClear();

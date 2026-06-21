@@ -114,8 +114,8 @@ describe('Layer 1: System Event Generation', () => {
         // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
         const [address, message] = enqueueMessageSpy.mock.calls[0] as [any, any];
 
-        // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
-        expect((address as any).path).toContain('system-event-actor');
+        // The address IS the branded path string under the opaque address model.
+        expect(address).toContain('system-event-actor');
         expect(message).toMatchObject({
           type: 'EMIT_SYSTEM_EVENT',
           systemEventType: 'testEvent',
@@ -314,9 +314,8 @@ describe('Layer 1: System Event Generation', () => {
       }
       const [address] = systemEventCall;
 
-      // Should be sent to system event actor
-      // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
-      expect((address as any).path).toContain('system-event-actor');
+      // Should be sent to system event actor: the address IS the branded path string.
+      expect(address).toContain('system-event-actor');
       // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
       expect(address).toBe((system as any).systemEventActorAddress);
 

@@ -728,7 +728,8 @@ describe('supervisor group failure path (behavioral)', () => {
         .spyOn(system as any, 'stopActor')
         // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
         .mockImplementation(async (pid: any, reason?: unknown) => {
-          if (pid?.address?.path === pathOf('stuck-b') && reason === 'supervisor-group-restart') {
+          // pid.address IS the branded path string under the opaque address model.
+          if (pid?.address === pathOf('stuck-b') && reason === 'supervisor-group-restart') {
             throw new Error('induced stop failure');
           }
           return originalStopActor(pid, reason);
@@ -769,7 +770,7 @@ describe('supervisor group failure path (behavioral)', () => {
       try {
         // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
         await (system as any).applySupervisionStrategy(
-          { id: 'guard-a', kind: 'actor', node: NODE, path: pathOf('guard-a') },
+          pathOf('guard-a'),
           new Error('induced during group action')
         );
       } finally {
