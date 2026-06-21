@@ -446,16 +446,12 @@ function hasCorrelationId(message: unknown): message is { _correlationId: string
 /**
  * Guardian Actor Address - Well-known system address
  */
-// Guardian keeps a non-uniform well-known address: path is /system/guardian
-// (not the actor:// scheme) and kind is coerced to 'actor' since 'system' is
-// not a valid address kind. Reconciling the guardian + callback address shapes
-// is deferred to the unify-directory task. Do NOT add 'system' to the kind union.
-export const GUARDIAN_ADDRESS: ActorAddress = {
-  id: 'guardian',
-  kind: 'actor',
-  node: 'local',
-  path: '/system/guardian',
-};
+// Guardian is the root supervisor; under the branded address model its address is
+// uniform (actor://local/guardian, dropping the old /system/guardian special case).
+// The 'guardian' id is reserved by mint() in utils/factories.ts so no user actor can
+// claim it. This constant is the single deliberate reserved-sentinel brand site: it
+// bypasses that guard via a direct cast (Address.from would throw on the reserved id).
+export const GUARDIAN_ADDRESS: ActorAddress = 'actor://local/guardian' as ActorAddress;
 
 /**
  * Creates the Guardian Actor instance
@@ -467,7 +463,7 @@ export async function createGuardianActor(actorSystem: ActorSystem): Promise<Act
     id: 'guardian',
   });
 
-  log.debug(`✅ Guardian actor created and registered at ${guardianRef.address.path}`);
+  log.debug(`✅ Guardian actor created and registered at ${guardianRef.address}`);
 
   return guardianRef;
 }

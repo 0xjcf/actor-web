@@ -8,7 +8,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActorRef } from '../actor-ref.js';
 import type { ActorSystem } from '../actor-system.js';
-import { createGuardianActor } from '../actor-system-guardian.js';
+import { createGuardianActor, GUARDIAN_ADDRESS } from '../actor-system-guardian.js';
 
 describe('Guardian Actor Integration', () => {
   let guardian: ActorRef;
@@ -21,7 +21,7 @@ describe('Guardian Actor Integration', () => {
     // Create mock actor system
     mockActorSystem = {
       spawn: vi.fn().mockResolvedValue({
-        address: { id: 'guardian', kind: 'actor', node: 'local', path: '/system/guardian' },
+        address: GUARDIAN_ADDRESS,
         send: vi.fn().mockImplementation((message) => {
           // Track shutdown messages
           if (message.type === 'SHUTDOWN') {
@@ -67,12 +67,9 @@ describe('Guardian Actor Integration', () => {
 
   describe('Guardian Creation and Basic Operations', () => {
     it('should create Guardian with correct address', () => {
-      expect(guardian.address).toEqual({
-        id: 'guardian',
-        kind: 'actor',
-        node: 'local',
-        path: '/system/guardian',
-      });
+      // Guardian address is uniform under the branded model: actor://local/guardian.
+      expect(guardian.address).toBe(GUARDIAN_ADDRESS);
+      expect(guardian.address).toBe('actor://local/guardian');
     });
 
     it('should be alive after creation', async () => {
