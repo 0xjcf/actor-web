@@ -11,7 +11,7 @@
  */
 
 import type { ActorAddress, ActorDirectory, AddressQuery } from './actor-system.js';
-import { parseActorPath } from './actor-system.js';
+import { isLocalAddress, parseActorPath } from './actor-system.js';
 import { Logger } from './logger.js';
 import { createActorInterval } from './pure-xstate-utilities.js';
 import type { RuntimeDirectoryEntry } from './runtime-transport-protocol.js';
@@ -330,6 +330,12 @@ export class DistributedActorDirectory implements ActorDirectory {
 
       const address = this.parseAddressKey(key);
       if (!address) {
+        continue;
+      }
+      // Node-private (`local`-node) entries such as the guardian are meaningless to
+      // a peer and share a non-unique key across nodes; syncing them would clobber
+      // the peer's own same-keyed entry. Keep them out of cross-node directory sync.
+      if (isLocalAddress(address)) {
         continue;
       }
 

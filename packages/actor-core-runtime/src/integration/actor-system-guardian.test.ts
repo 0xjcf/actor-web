@@ -3,6 +3,7 @@ import type { ActorRef } from '../actor-ref.js';
 import type { ActorSystem } from '../actor-system.js';
 import {
   createGuardianActor,
+  GUARDIAN_ADDRESS,
   type GuardianMessage,
   guardianBehavior,
 } from '../actor-system-guardian.js';
@@ -20,12 +21,7 @@ describe('Guardian Actor - Pure Actor Model', () => {
     mockActorSystem = {
       spawn: vi.fn().mockResolvedValue({
         id: 'guardian',
-        address: {
-          id: 'guardian',
-          kind: 'actor',
-          node: 'local',
-          path: '/system/guardian',
-        },
+        address: GUARDIAN_ADDRESS,
         send: vi.fn(),
         ask: vi.fn(),
         stop: vi.fn(),
@@ -193,12 +189,9 @@ describe('Guardian Actor - Pure Actor Model', () => {
   describe('Guardian Actor Instance', () => {
     it('should create guardian actor instance successfully', async () => {
       expect(guardian).toBeDefined();
-      expect(guardian?.address).toEqual({
-        id: 'guardian',
-        kind: 'actor',
-        node: 'local',
-        path: '/system/guardian',
-      });
+      // Guardian address is uniform under the branded model: actor://local/guardian.
+      expect(guardian?.address).toBe(GUARDIAN_ADDRESS);
+      expect(guardian?.address).toBe('actor://local/guardian');
     });
 
     it('should handle messages through send method', async () => {
