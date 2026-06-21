@@ -500,7 +500,7 @@ export function createLogisticsRuntimeGatewayServer(
       }
 
       const providerRuntimeRef = await system().lookup<unknown, ProviderRuntimeCommand>(
-        providerRuntimeActorDescriptor.address.path
+        providerRuntimeActorDescriptor.address
       );
       if (providerRuntimeRef) {
         return providerRuntimeRef;
@@ -842,7 +842,7 @@ export function createLogisticsRuntimeGatewayServer(
       await system().join([workerNode]);
       for (let attempt = 0; attempt < 20; attempt += 1) {
         const routingRef = await system().lookup<unknown, ShipmentCommand>(
-          routingActorDescriptor.address.path
+          routingActorDescriptor.address
         );
         if (routingRef) {
           return await routingRef.ask<RoutePlan>(createRoutePlanCommand(input), 1000);
@@ -1042,14 +1042,14 @@ export function createLogisticsRuntimeGatewayServer(
             serviceWorkerRuntime: serviceWorkerNode,
           },
           actors: {
-            shipment: shipmentActorDescriptor.address.path,
-            routing: routingActorDescriptor.address.path,
-            providerHq: providerHqActorDescriptor.address.path,
-            providerRuntime: providerRuntimeActorDescriptor.address.path,
-            logisticsSupervisor: logisticsSupervisorActorDescriptor.address.path,
-            dispatcher: dispatcherActorDescriptor.address.path,
-            driverDirectory: driverDirectoryActorDescriptor.address.path,
-            serviceWorkerProof: serviceWorkerProofActorDescriptor.address.path,
+            shipment: shipmentActorDescriptor.address,
+            routing: routingActorDescriptor.address,
+            providerHq: providerHqActorDescriptor.address,
+            providerRuntime: providerRuntimeActorDescriptor.address,
+            logisticsSupervisor: logisticsSupervisorActorDescriptor.address,
+            dispatcher: dispatcherActorDescriptor.address,
+            driverDirectory: driverDirectoryActorDescriptor.address,
+            serviceWorkerProof: serviceWorkerProofActorDescriptor.address,
           },
         });
       })
