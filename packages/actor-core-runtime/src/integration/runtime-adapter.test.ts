@@ -33,6 +33,7 @@ import {
   WorkerTimer,
   WorkerTransport,
 } from '../runtime-adapter.js';
+import { parse } from '../utils/factories.js';
 
 // Mock global objects for testing different environments
 const mockGlobal = {
@@ -215,7 +216,7 @@ describe.skip('Runtime Adapter Pattern', () => {
 
       // Assert
       expect(actorRef).toBeDefined();
-      expect(actorRef.address.id).toBeDefined();
+      expect(parse(actorRef.address).id).toBeDefined();
       expect(actorRef.getSnapshot().status).toBe('idle');
     });
 

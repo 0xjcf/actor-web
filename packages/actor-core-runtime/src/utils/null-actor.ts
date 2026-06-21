@@ -5,6 +5,7 @@
 
 import type { ActorRef } from '../actor-ref.js';
 import type { ActorSnapshot, ActorStatus } from '../types.js';
+import { Address } from './factories.js';
 
 /**
  * Creates a null ActorRef placeholder that can be used in message plans
@@ -20,12 +21,9 @@ export function createNullActorRef(id: string): ActorRef<unknown> {
   const errorMessage = `Null ActorRef (${id}) - should be resolved by system`;
 
   return {
-    address: {
-      id,
-      kind: 'actor',
-      node: 'local',
-      path: `/null/${id}`,
-    },
+    // The null ref's address is minted through the canonical factory so it can
+    // never be a non-uniform literal that drifts from the branded model.
+    address: Address.from({ id }),
 
     // Message sending - these should never be called
     send: () => {

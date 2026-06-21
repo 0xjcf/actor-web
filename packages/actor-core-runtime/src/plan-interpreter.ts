@@ -33,6 +33,7 @@ import {
   // isDomainEvent and isMessagePlan moved to utils/validation.js
   isSendInstruction as validateSendInstruction,
 } from './message-plan.js';
+import { parse } from './utils/factories.js';
 import {
   isDomainEvent as validateDomainEvent,
   isMessagePlan as validateMessagePlan,
@@ -272,7 +273,7 @@ async function processSendInstruction(
   context: RuntimeContext
 ): Promise<void> {
   log.debug('Processing send instruction', {
-    targetActor: instruction.to.address.id,
+    targetActor: parse(instruction.to.address).id,
     messageType: instruction.tell.type,
     mode: instruction.mode || 'fireAndForget',
     actorId: context.actorId,
@@ -288,14 +289,14 @@ async function processSendInstruction(
     await instruction.to.send(instruction.tell);
 
     log.debug('Send instruction completed', {
-      targetActor: instruction.to.address.id,
+      targetActor: parse(instruction.to.address).id,
       messageType: instruction.tell.type,
       actorId: context.actorId,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error('Error in send instruction', {
-      targetActor: instruction.to?.address.id || 'unknown',
+      targetActor: instruction.to ? parse(instruction.to.address).id : 'unknown',
       messageType: instruction.tell?.type || 'unknown',
       error: errorMessage,
       actorId: context.actorId,
@@ -313,7 +314,7 @@ async function processAskInstruction(
   context: RuntimeContext
 ): Promise<PlanExecutionResult> {
   log.debug('Processing ask instruction', {
-    targetActor: instruction.to.address.id,
+    targetActor: parse(instruction.to.address).id,
     messageType: instruction.ask.type,
     timeout: instruction.timeout,
     actorId: context.actorId,
@@ -367,7 +368,7 @@ async function processAskInstruction(
       callbackResult.success = recursiveResult.success && callbackResult.errors.length === 0;
 
       log.debug('Ask instruction completed successfully with callback', {
-        targetActor: instruction.to.address.id,
+        targetActor: parse(instruction.to.address).id,
         messageType: instruction.ask.type,
         callbackEventType: callbackEvent.type,
         actorId: context.actorId,
@@ -375,7 +376,7 @@ async function processAskInstruction(
       });
     } else {
       log.debug('Ask instruction completed successfully without callback', {
-        targetActor: instruction.to.address.id,
+        targetActor: parse(instruction.to.address).id,
         messageType: instruction.ask.type,
         actorId: context.actorId,
       });
@@ -384,7 +385,7 @@ async function processAskInstruction(
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
     log.error('Error in ask instruction', {
-      targetActor: instruction.to?.address.id || 'unknown',
+      targetActor: instruction.to ? parse(instruction.to.address).id : 'unknown',
       messageType: instruction.ask?.type || 'unknown',
       error: errorMessage,
       actorId: context.actorId,
@@ -417,7 +418,7 @@ async function processAskInstruction(
         callbackResult.errors.push(...errorResult.errors);
 
         log.debug('Ask instruction error handled with callback', {
-          targetActor: instruction.to?.address.id || 'unknown',
+          targetActor: instruction.to ? parse(instruction.to.address).id : 'unknown',
           messageType: instruction.ask?.type || 'unknown',
           errorEventType: errorEvent.type,
           actorId: context.actorId,

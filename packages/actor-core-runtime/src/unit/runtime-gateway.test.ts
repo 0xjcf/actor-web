@@ -29,6 +29,7 @@ import {
   type RuntimeGatewaySource,
 } from '../runtime-gateway.js';
 import type { Message } from '../types.js';
+import { Address } from '../utils/factories.js';
 
 type CheckoutCommand = { type: 'SUBMIT'; orderId: string } | { type: 'RESET' };
 type CheckoutEvent = { type: 'CHECKOUT_SUBMITTED'; orderId: string } | { type: 'CHECKOUT_RESET' };
@@ -200,11 +201,7 @@ function createGatewaySnapshot(
   actorKey = phase
 ): ActorSnapshotProjection {
   return {
-    address: {
-      id: `actor-${actorKey}`,
-      kind: 'actor',
-      path: `/actors/${actorKey}`,
-    },
+    address: Address.from({ id: `actor-${actorKey}` }),
     snapshot: {
       actorId: `actor-${phase}`,
       stateLabel: phase,
@@ -220,11 +217,7 @@ function createGatewaySnapshot(
 }
 
 function createGatewayAddress(actorKey: string) {
-  return {
-    id: `actor-${actorKey}`,
-    kind: 'actor' as const,
-    path: `/actors/${actorKey}`,
-  };
+  return Address.from({ id: `actor-${actorKey}` });
 }
 
 function createGatewayEvent(
@@ -240,7 +233,7 @@ function createGatewayEvent(
       type,
       schemaVersion: 1,
       occurredAt,
-      sourceActor: source.address.path,
+      sourceActor: source.address,
       payload: {},
     },
   };
@@ -2438,8 +2431,8 @@ describe('runtime gateway hub', () => {
     expect(
       replayStorage.storage
         .get(storageKey)
-        ?.map((frame) => (frame.type === 'transition' ? null : frame.projection.address.path))
-    ).toEqual(['/actors/new-scope', '/actors/new-scope']);
+        ?.map((frame) => (frame.type === 'transition' ? null : frame.projection.address))
+    ).toEqual([createGatewayAddress('new-scope'), createGatewayAddress('new-scope')]);
 
     detach();
   });

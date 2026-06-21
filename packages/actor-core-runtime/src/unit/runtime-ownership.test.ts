@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ActorSystem } from '../actor-system.js';
 import { createActorSystem } from '../actor-system-impl.js';
+import { parse } from '../utils/factories.js';
 
 const noopBehavior = {
   onMessage: async () => undefined,
@@ -34,8 +35,8 @@ describe('runtime ownership', () => {
     const secondActor = await secondSystem.spawn(noopBehavior);
     const explicitActor = await secondSystem.spawn(noopBehavior, { id: 'explicit-id' });
 
-    expect(firstActor.address.id).not.toBe(secondActor.address.id);
-    expect(explicitActor.address.id).toBe('explicit-id');
+    expect(parse(firstActor.address).id).not.toBe(parse(secondActor.address).id);
+    expect(parse(explicitActor.address).id).toBe('explicit-id');
   });
 
   it('enforces maxActors per system instead of process-wide', async () => {

@@ -20,7 +20,7 @@ import type {
   ActorWebTopologyInput,
   Message,
 } from '@actor-web/runtime';
-import { Logger, startRuntime } from '@actor-web/runtime';
+import { Logger, parse, startRuntime } from '@actor-web/runtime';
 import { loadModuleExport } from './load-module.js';
 
 const log = Logger.namespace('ACTOR_WEB_CLI_HOST');
@@ -97,7 +97,7 @@ function describeStatus(ref: ActorRef): string {
 function toEntry(actor: RegisteredActor): HostActorEntry {
   return {
     key: actor.key,
-    path: actor.ref.address.path,
+    path: actor.ref.address,
     origin: actor.origin,
     status: describeStatus(actor.ref),
   };
@@ -145,7 +145,7 @@ export async function createRuntimeHost(
       return byKey.ref;
     }
     for (const entry of registry.values()) {
-      if (entry.ref.address.path === target || entry.ref.address.id === target) {
+      if (entry.ref.address === target || parse(entry.ref.address).id === target) {
         return entry.ref;
       }
     }
@@ -214,7 +214,7 @@ export async function createRuntimeHost(
           error: `Send failed: ${error instanceof Error ? error.message : String(error)}`,
         };
       }
-      return { ok: true, value: `Sent ${message.value.type} to ${ref.address.path}` };
+      return { ok: true, value: `Sent ${message.value.type} to ${ref.address}` };
     },
 
     async ask(target, messageJson, timeoutMs) {

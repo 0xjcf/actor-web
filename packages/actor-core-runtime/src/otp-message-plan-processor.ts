@@ -13,6 +13,7 @@ import type { MessagePlan, SendInstruction } from './message-plan.js';
 import { DefaultMessagePlanProcessor } from './message-plan-processor.js';
 import type { ActorHandlerResult, BehaviorFunction } from './otp-types.js';
 import { processMessagePlan, type RuntimeContext } from './plan-interpreter.js';
+import { parse } from './utils/factories.js';
 
 const log = Logger.namespace('OTP_MESSAGE_PLAN_PROCESSOR');
 
@@ -375,7 +376,7 @@ export class OTPMessagePlanProcessor extends DefaultMessagePlanProcessor {
             // Use the plan interpreter to process the SendInstruction correctly
             log.debug('🔍 EMIT ARRAY DEBUG: Using plan interpreter to process SendInstruction', {
               actorId,
-              targetActorPath: sendInstruction.to.address.id,
+              targetActorPath: parse(sendInstruction.to.address).id,
               messageType: sendInstruction.tell?.type,
             });
 

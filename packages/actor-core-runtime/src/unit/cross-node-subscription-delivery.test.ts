@@ -126,8 +126,8 @@ describe('cross-node topology subscription delivery', () => {
 
     await subscriberSystem.sendTopologySubscribe({
       publisherNode: 'node-a',
-      publisherPath: publisher.address.path,
-      subscriberPath: collector.address.path,
+      publisherPath: publisher.address,
+      subscriberPath: collector.address,
     });
     await publisherSystem.flush();
 
@@ -151,8 +151,8 @@ describe('cross-node topology subscription delivery', () => {
 
     await subscriberSystem.sendTopologySubscribe({
       publisherNode: 'node-a',
-      publisherPath: publisher.address.path,
-      subscriberPath: collector.address.path,
+      publisherPath: publisher.address,
+      subscriberPath: collector.address,
       events: ['TICK'],
     });
     await publisherSystem.flush();
@@ -195,8 +195,8 @@ describe('cross-node topology subscription delivery', () => {
 
     const teardown = await subscriberSystem.sendTopologySubscribe({
       publisherNode: 'node-a',
-      publisherPath: publisher.address.path,
-      subscriberPath: collector.address.path,
+      publisherPath: publisher.address,
+      subscriberPath: collector.address,
     });
     await publisherSystem.flush();
     await teardown();
@@ -218,9 +218,7 @@ describe('cross-node topology subscription delivery', () => {
     const collector = await subscriberSystem.spawn(createCollectorBehavior(), { id: 'sub' });
 
     // A createActorSource projection watcher on node-b for the same publisher...
-    const remoteRef = await subscriberSystem.lookup<unknown, PublisherMessage>(
-      publisher.address.path
-    );
+    const remoteRef = await subscriberSystem.lookup<unknown, PublisherMessage>(publisher.address);
     if (!remoteRef) throw new Error('expected remote ref to publisher');
     const source = createActorSource<unknown, PublisherMessage, PublisherEvent>(remoteRef);
     const statuses: string[] = [];
@@ -232,8 +230,8 @@ describe('cross-node topology subscription delivery', () => {
     // ...AND a topology subscription edge for the same publisher.
     await subscriberSystem.sendTopologySubscribe({
       publisherNode: 'node-a',
-      publisherPath: publisher.address.path,
-      subscriberPath: collector.address.path,
+      publisherPath: publisher.address,
+      subscriberPath: collector.address,
     });
     await publisherSystem.flush();
     await subscriberSystem.flush();
@@ -269,8 +267,8 @@ describe('cross-node topology subscription delivery', () => {
 
     await subscriberSystem.sendTopologySubscribe({
       publisherNode: 'node-a',
-      publisherPath: publisher.address.path,
-      subscriberPath: collector.address.path,
+      publisherPath: publisher.address,
+      subscriberPath: collector.address,
     });
     await publisherSystem.flush();
 
@@ -294,7 +292,7 @@ describe('cross-node topology subscription delivery', () => {
     // Register an edge to a node the publisher's transport cannot reach, so the
     // forward send fails — this is the drop the operator must see telemetry for.
     publisherSystem.registerTopologyRemoteSubscriber({
-      publisherPath: publisher.address.path,
+      publisherPath: publisher.address,
       subscriberNode: 'ghost-node',
       subscriberPath: 'actor://ghost-node/sub',
     });
@@ -310,7 +308,7 @@ describe('cross-node topology subscription delivery', () => {
         expect.any(String),
         'Cross-node subscription event dropped',
         expect.objectContaining({
-          publisherPath: publisher.address.path,
+          publisherPath: publisher.address,
           subscriberPath: 'actor://ghost-node/sub',
           node: 'ghost-node',
           eventType: 'TICK',

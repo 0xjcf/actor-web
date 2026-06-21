@@ -187,7 +187,7 @@ export class ValidationInterceptor implements MessageInterceptor {
     if (this.options.logFailures) {
       log.warn('Message validation failed', {
         messageType: message.type,
-        sender: sender?.path,
+        sender,
         reason,
         message: this.options.includeMessageInLogs ? message : undefined,
       });

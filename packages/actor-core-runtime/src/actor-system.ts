@@ -17,7 +17,7 @@ import type { ActorRef } from './actor-ref.js';
 import type { ActorToolbox, ActorToolRegistry, UntypedActorToolRegistry } from './actor-tools.js';
 import type { UniversalTemplate } from './create-actor.js';
 import type { JsonValue, Message } from './types.js';
-import { createActorAddress, parse } from './utils/factories.js';
+import { parse } from './utils/factories.js';
 
 export type { JsonValue } from './types.js';
 
@@ -764,18 +764,25 @@ export interface ActorSupervisor {
 // createActorAddress moved to utils/factories.ts
 
 /**
- * Parse an actor path into an address
+ * Parse/normalize an actor path off the wire into a branded address.
+ *
+ * This is the ingress boundary: it faithfully reconstructs an address that
+ * already exists on the wire, so it deliberately does NOT apply `mint`'s
+ * *creation* guards (reserved `guardian` id / `callback/` prefix) — those guard
+ * the construction of NEW identities, whereas a wire address (e.g. the
+ * guardian's own `actor://local/guardian`) must round-trip losslessly. It still
+ * validates the structural shape and rejects malformed input.
  */
 export function parseActorPath(path: string): ActorAddress {
   const callback = path.match(/^actor:\/\/([^/]+)\/callback\/(.+)$/);
   if (callback) {
     const [, node, id] = callback;
-    return createActorAddress(id, node === 'local' ? undefined : node, 'callback');
+    return `actor://${node}/callback/${id}` as ActorAddress;
   }
   const actor = path.match(/^actor:\/\/([^/]+)\/(.+)$/);
   if (!actor) throw new Error(`Invalid actor path: ${path}`);
   const [, node, id] = actor;
-  return createActorAddress(id, node === 'local' ? undefined : node, 'actor');
+  return `actor://${node}/${id}` as ActorAddress;
 }
 
 /**

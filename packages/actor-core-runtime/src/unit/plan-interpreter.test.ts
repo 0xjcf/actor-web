@@ -15,7 +15,7 @@ import {
   processMessagePlan,
   validateRuntimeContext,
 } from '../plan-interpreter.js';
-import { createMockActorRef as createMockActorRefUtil } from '../utils/factories.js';
+import { Address, createMockActorRef as createMockActorRefUtil } from '../utils/factories.js';
 
 // ============================================================================
 // TEST FIXTURES
@@ -35,7 +35,7 @@ const mockDomainEvent: DomainEvent = {
 
 const createMockActorRef = (): ActorRef =>
   createMockActorRefUtil({
-    address: { id: 'mock-actor', kind: 'actor', path: '/mock-actor' },
+    address: Address.from({ id: 'mock-actor' }),
     send: vi.fn().mockResolvedValue(undefined),
     ask: vi.fn().mockResolvedValue({ success: true }),
   });

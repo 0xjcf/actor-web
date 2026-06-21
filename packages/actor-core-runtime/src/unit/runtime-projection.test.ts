@@ -13,6 +13,7 @@ import {
   eventEnvelopeToActorMessage,
 } from '../runtime-projection.js';
 import type { ActorSnapshot } from '../types.js';
+import { Address } from '../utils/factories.js';
 
 function createSnapshot(
   value: unknown,
@@ -38,7 +39,7 @@ describe('runtime projection mappings', () => {
       _timestamp: 101,
       _version: '1',
       _correlationId: 'corr-1',
-      _sender: { id: 'actor-1', kind: 'actor' as const, path: '/actor-1' },
+      _sender: Address.from({ id: 'actor-1' }),
     };
 
     const envelope = actorMessageToEventEnvelope(message, {
@@ -71,7 +72,7 @@ describe('runtime projection mappings', () => {
       _timestamp: 200,
       _version: '1',
       _correlationId: 'corr-2',
-      _sender: { id: 'actor-2', kind: 'actor' as const, path: '/actor-2' },
+      _sender: Address.from({ id: 'actor-2' }),
     };
     const envelope = actorMessageToEventEnvelope(message, {
       id: 'event-2',
@@ -92,7 +93,7 @@ describe('runtime projection mappings', () => {
         _timestamp: 200,
         _version: '1',
         _correlationId: 'corr-2',
-        _sender: { id: 'actor-2', kind: 'actor', path: '/actor-2' },
+        _sender: Address.from({ id: 'actor-2' }),
       })
     ).toEqual({ value: 42 });
   });

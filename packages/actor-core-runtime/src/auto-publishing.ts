@@ -291,7 +291,7 @@ export class AutoPublishingRegistry {
       subscriberEntries: Array.from(metadata.subscribers.entries()).map(([id, info]) => ({
         id,
         eventTypes: info.eventTypes,
-        actorPath: info.actor.address.path,
+        actorPath: info.actor.address,
       })),
     });
 
@@ -307,7 +307,7 @@ export class AutoPublishingRegistry {
       eventType,
       subscriberCount: subscribers.length,
       totalSubscribers: metadata.subscribers.size,
-      subscribers: subscribers.map((s) => s.address.path),
+      subscribers: subscribers.map((s) => s.address),
     });
 
     return subscribers;

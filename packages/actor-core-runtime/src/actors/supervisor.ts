@@ -8,6 +8,7 @@ import type { ActorRef } from '../actor-ref.js';
 import type { ActorMessage } from '../actor-system.js';
 import { createActorDelay } from '../pure-xstate-utilities.js';
 import type { BaseEventObject, SupervisionStrategy } from '../types.js';
+import { parse } from '../utils/factories.js';
 
 /**
  * Supervisor configuration options
@@ -80,7 +81,7 @@ export class Supervisor {
    * Start supervising an actor
    */
   supervise(actorRef: ActorRef<BaseEventObject, ActorMessage>): void {
-    if (this.supervisedActors.has(actorRef.address.id)) {
+    if (this.supervisedActors.has(parse(actorRef.address).id)) {
       return; // Already supervising
     }
 
@@ -91,7 +92,7 @@ export class Supervisor {
       isRestarting: false,
     };
 
-    this.supervisedActors.set(actorRef.address.id, supervised);
+    this.supervisedActors.set(parse(actorRef.address).id, supervised);
   }
 
   /**
@@ -108,7 +109,7 @@ export class Supervisor {
     error: Error,
     actorRef: ActorRef<BaseEventObject, ActorMessage>
   ): Promise<void> {
-    const supervised = this.supervisedActors.get(actorRef.address.id);
+    const supervised = this.supervisedActors.get(parse(actorRef.address).id);
     if (!supervised) {
       return; // Not supervising this actor
     }
@@ -187,7 +188,7 @@ export class Supervisor {
 
     // Check if we've exceeded the restart limit
     if (supervised.restartTimestamps.length >= this.options.maxRestarts) {
-      console.error(`Actor ${supervised.actorRef.address.id} exceeded restart limit`);
+      console.error(`Actor ${parse(supervised.actorRef.address).id} exceeded restart limit`);
       this.options.onFailure(supervised.actorRef, error);
       await this.stopActor(supervised, error);
       return;
@@ -212,7 +213,10 @@ export class Supervisor {
 
       // Restart the actor (restart is handled by the actor system internally)
     } catch (restartError) {
-      console.error(`Failed to restart actor ${supervised.actorRef.address.id}:`, restartError);
+      console.error(
+        `Failed to restart actor ${parse(supervised.actorRef.address).id}:`,
+        restartError
+      );
       this.options.onFailure(supervised.actorRef, error);
       await this.stopActor(supervised, error);
     }
@@ -225,10 +229,10 @@ export class Supervisor {
     try {
       await supervised.actorRef.stop();
     } catch (stopError) {
-      console.error(`Error stopping actor ${supervised.actorRef.address.id}:`, stopError);
+      console.error(`Error stopping actor ${parse(supervised.actorRef.address).id}:`, stopError);
     }
 
-    this.unsupervise(supervised.actorRef.address.id);
+    this.unsupervise(parse(supervised.actorRef.address).id);
     this.options.onFailure(supervised.actorRef, error);
   }
 
@@ -236,7 +240,10 @@ export class Supervisor {
    * Resume actor without restart (ignore the error)
    */
   private async resumeActor(supervised: SupervisedActor, error: Error): Promise<void> {
-    console.warn(`Resuming actor ${supervised.actorRef.address.id} after error:`, error.message);
+    console.warn(
+      `Resuming actor ${parse(supervised.actorRef.address).id} after error:`,
+      error.message
+    );
 
     // Log the error but don't take any action
     this.options.onFailure(supervised.actorRef, error);
@@ -250,7 +257,7 @@ export class Supervisor {
    */
   private async escalateFailure(supervised: SupervisedActor, error: Error): Promise<void> {
     // For now, just log and stop the actor
-    console.error(`Escalating failure for actor ${supervised.actorRef.address.id}:`, error);
+    console.error(`Escalating failure for actor ${parse(supervised.actorRef.address).id}:`, error);
     await this.stopActor(supervised, error);
   }
 }

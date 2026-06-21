@@ -100,7 +100,7 @@ describe('resolveOwnedActorWebSupervisorGroups', () => {
       {
         key: 'serverPair',
         strategy: 'one-for-all',
-        children: [topology.actors.beta.address.path, topology.actors.alpha.address.path],
+        children: [topology.actors.beta.address, topology.actors.alpha.address],
       },
     ]);
   });
@@ -132,7 +132,7 @@ describe('resolveOwnedActorWebSupervisorGroups', () => {
       {
         key: 'workflow',
         strategy: 'one-for-one',
-        children: [topology.actors.coordinator.address.path],
+        children: [topology.actors.coordinator.address],
       },
     ]);
   });
@@ -197,7 +197,7 @@ describe('serveNode supervisor wiring', () => {
         expect(groups.get('pair')).toEqual({
           key: 'pair',
           strategy: 'one-for-all',
-          children: [topology.actors.alpha.address.path, topology.actors.beta.address.path],
+          children: [topology.actors.alpha.address, topology.actors.beta.address],
         });
 
         // biome-ignore lint/suspicious/noExplicitAny: Testing private methods requires any
@@ -206,10 +206,7 @@ describe('serveNode supervisor wiring', () => {
         await alpha.send({ type: 'BOOM' });
 
         const deadline = Date.now() + 15_000;
-        const wanted = new Set([
-          topology.actors.alpha.address.path,
-          topology.actors.beta.address.path,
-        ]);
+        const wanted = new Set([topology.actors.alpha.address, topology.actors.beta.address]);
         let groupStopSeen = false;
         for (;;) {
           const events = spy.mock.calls.map(
@@ -223,7 +220,7 @@ describe('serveNode supervisor wiring', () => {
             (event) =>
               event.eventType === 'actorStopped' &&
               event.data?.reason === 'supervisor-group-restart' &&
-              event.data?.address === topology.actors.beta.address.path
+              event.data?.address === topology.actors.beta.address
           );
           const restarted = new Set(
             events
@@ -270,7 +267,7 @@ describe('serveNode supervisor wiring', () => {
       expect(groups.get('solo')).toEqual({
         key: 'solo',
         strategy: 'one-for-one',
-        children: [topology.actors.gamma.address.path],
+        children: [topology.actors.gamma.address],
       });
     } finally {
       await started.stop();

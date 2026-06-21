@@ -154,7 +154,7 @@ describe('Node WebSocket runtime transport', () => {
 
     await localSystem.join(['node-b']);
     const remoteRef = await localSystem.lookup<CheckoutContext, CheckoutMessage>(
-      remoteActor.address.path
+      remoteActor.address
     );
     if (!remoteRef) {
       throw new Error('Expected remote ref after WebSocket directory sync');
@@ -221,7 +221,7 @@ describe('Node WebSocket runtime transport', () => {
     });
     await localSystem.join(['node-b']);
     const firstRemoteRef = await localSystem.lookup<CheckoutContext, CheckoutMessage>(
-      firstRemoteActor.address.path
+      firstRemoteActor.address
     );
     if (!firstRemoteRef) {
       throw new Error('Expected first remote ref');
@@ -266,7 +266,7 @@ describe('Node WebSocket runtime transport', () => {
     );
 
     const secondRemoteRef = await localSystem.lookup<CheckoutContext, CheckoutMessage>(
-      secondRemoteActor.address.path
+      secondRemoteActor.address
     );
     if (!secondRemoteRef) {
       throw new Error('Expected restarted remote ref');

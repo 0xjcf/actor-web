@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import type { SpawnOptions } from '../actor-system.js';
 import { createActorSystem } from '../actor-system-impl.js';
 import { defineBehavior } from '../unified-actor-builder.js';
+import { parse } from '../utils/factories.js';
 
 function createEchoBehavior() {
   return defineBehavior<{ type: 'PING' }>()
@@ -36,7 +37,7 @@ describe('SpawnOptions contract', () => {
     try {
       const options: SpawnOptions = { id: 'echo-1' };
       const ref = await system.spawn(createEchoBehavior(), options);
-      expect(ref.address.id).toBe('echo-1');
+      expect(parse(ref.address).id).toBe('echo-1');
       await expect(ref.ask({ type: 'PING' })).resolves.toBe(0);
     } finally {
       await system.stop();
@@ -49,7 +50,7 @@ describe('SpawnOptions contract', () => {
 
     try {
       const ref = await system.spawn(createEchoBehavior());
-      expect(ref.address.id).toBeTruthy();
+      expect(parse(ref.address).id).toBeTruthy();
     } finally {
       await system.stop();
     }
@@ -65,7 +66,7 @@ describe('SpawnOptions contract', () => {
         supervision: { strategy: 'restart', maxRestarts: 1, withinMs: 60_000 },
       };
       const ref = await system.spawn(createEchoBehavior(), options);
-      expect(ref.address.id).toBe('echo-supervised');
+      expect(parse(ref.address).id).toBe('echo-supervised');
       await expect(ref.ask({ type: 'PING' })).resolves.toBe(0);
     } finally {
       await system.stop();

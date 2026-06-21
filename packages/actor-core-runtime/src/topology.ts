@@ -1,4 +1,5 @@
 import type {
+  ActorAddress,
   ActorBehavior,
   ActorMessage,
   ActorSupervisionPolicy,
@@ -23,7 +24,7 @@ import {
   defineBehavior as defineTopologyActorBehavior,
   type UnifiedActorBuilder,
 } from './unified-actor-builder.js';
-import { createActorAddress } from './utils/factories.js';
+import { Address } from './utils/factories.js';
 
 /**
  * Topology aliases of the runtime supervision types (one definition, shared
@@ -33,12 +34,9 @@ import { createActorAddress } from './utils/factories.js';
 export type ActorWebSupervisionStrategy = ActorSupervisionStrategy;
 export type ActorWebSupervisionPolicy = ActorSupervisionPolicy;
 
-export interface ActorWebActorAddress {
-  readonly id: string;
-  readonly kind: 'actor';
-  readonly node: string;
-  readonly path: string;
-}
+// The topology DSL's public address type collapses onto the single branded model
+// so the topology/examples surface can't build object literals that drift.
+export type ActorWebActorAddress = ActorAddress;
 
 export interface ActorWebToolDefinition<TName extends string = string> {
   readonly name: TName;
@@ -559,16 +557,12 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
       const descriptorId = typeof actorId === 'function' ? key : actorId;
       const resolveAddress = (params?: unknown): ActorWebActorAddress => {
         const id = resolveId(params);
-        const a = createActorAddress(id, nodeDefinition.address);
-        return { id: a.id, kind: 'actor', node: a.node ?? 'local', path: a.path };
+        return Address.from({ id, node: nodeDefinition.address });
       };
-      const built = createActorAddress(descriptorId, nodeDefinition.address);
-      const address: ActorWebActorAddress = {
-        id: built.id,
-        kind: 'actor',
-        node: built.node ?? 'local',
-        path: built.path,
-      };
+      const address: ActorWebActorAddress = Address.from({
+        id: descriptorId,
+        node: nodeDefinition.address,
+      });
       const { gateway: gatewayDefinition, ...actorDefinition } = definition;
       const gateway =
         gatewayDefinition === true

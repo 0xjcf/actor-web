@@ -23,6 +23,7 @@ import {
   actorSnapshotToRuntimeSnapshot,
 } from './runtime-projection.js';
 import type { Message } from './types.js';
+import { parse } from './utils/factories.js';
 
 export type {
   RuntimeGatewayClientFrame,
@@ -170,10 +171,10 @@ export function createRuntimeGatewayReadModelSource(
       address: actorRef.address,
       snapshot: actorSnapshotToRuntimeSnapshot({
         snapshot,
-        actorId: actorRef.address.id,
+        actorId: parse(actorRef.address).id,
         createdAt,
         updatedAt,
-        correlationId: options.correlationId ?? actorRef.address.path,
+        correlationId: options.correlationId ?? actorRef.address,
         lastEventType,
       }),
       value: snapshot.value,
@@ -192,7 +193,7 @@ export function createRuntimeGatewayReadModelSource(
           id: randomUUID(),
           kind: options.eventKind ?? 'fact',
           occurredAt: (options.now ?? (() => new Date()))().toISOString(),
-          sourceActor: options.sourceActor ?? actorRef.address.path,
+          sourceActor: options.sourceActor ?? actorRef.address,
           correlationId: options.correlationId,
         }
       ),
@@ -437,7 +438,8 @@ function replayFrameAddress(frame: RuntimeGatewayReplayFrame): ActorAddress | nu
 }
 
 function addressesMatch(left: ActorAddress, right: ActorAddress): boolean {
-  return left.id === right.id && left.kind === right.kind && left.path === right.path;
+  // The address IS the path, so identity equality is the whole comparison.
+  return left === right;
 }
 
 function restoredReplayFramesMatchSource(

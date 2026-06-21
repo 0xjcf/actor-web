@@ -402,7 +402,7 @@ export async function serveNode<TTopology extends ActorWebTopology<ActorWebTopol
   ): Promise<RuntimeGatewaySource | null> => {
     let actorRef = actors.get(actorKey);
     for (let attempt = 0; !actorRef && attempt < GATEWAY_ACTOR_LOOKUP_ATTEMPTS; attempt += 1) {
-      actorRef = await system.lookup(actorDescriptor.address.path);
+      actorRef = await system.lookup(actorDescriptor.address);
       if (!actorRef) {
         await wait(GATEWAY_ACTOR_LOOKUP_DELAY_MS);
       }
@@ -413,7 +413,7 @@ export async function serveNode<TTopology extends ActorWebTopology<ActorWebTopol
     }
 
     return createRuntimeGatewaySource(actorRef, {
-      sourceActor: actorDescriptor.address.path,
+      sourceActor: actorDescriptor.address,
     });
   };
 

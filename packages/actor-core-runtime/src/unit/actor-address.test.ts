@@ -96,7 +96,12 @@ describe('Address.from (sole smart constructor)', () => {
   it('rejects unbranded values at the type level (brand is not cosmetic)', () => {
     // A hand-built object literal can no longer masquerade as an ActorAddress.
     // @ts-expect-error address object literals are a compile error under the branded model
-    const fromLiteral: ActorAddress = { id: 'a1', kind: 'actor', node: 'local', path: 'actor://local/a1' };
+    const fromLiteral: ActorAddress = {
+      id: 'a1',
+      kind: 'actor',
+      node: 'local',
+      path: 'actor://local/a1',
+    };
     // A raw string is not branded; only Address.from may mint one.
     // @ts-expect-error a raw string is not a branded ActorAddress
     const fromRaw: ActorAddress = 'actor://local/a1';

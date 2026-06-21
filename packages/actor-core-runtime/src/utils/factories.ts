@@ -102,7 +102,11 @@ export const Address = {
  * `.includes('/callback/')` fast path; use this where id/kind/node are needed.
  * Pure: no I/O.
  */
-export function parse(address: ActorAddress): { id: string; kind: 'actor' | 'callback'; node: string } {
+export function parse(address: ActorAddress): {
+  id: string;
+  kind: 'actor' | 'callback';
+  node: string;
+} {
   const cb = address.match(/^actor:\/\/([^/]+)\/callback\/(.+)$/);
   if (cb) {
     const [, node, id] = cb;

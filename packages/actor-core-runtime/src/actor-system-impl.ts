@@ -60,8 +60,8 @@ import type {
   MessageTransport,
   SpawnOptions,
 } from './actor-system.js';
-import { parseActorPath } from './actor-system.js';
-import { createGuardianActor } from './actor-system-guardian.js';
+import { isLocalAddress, parseActorPath } from './actor-system.js';
+import { createGuardianActor, GUARDIAN_ADDRESS } from './actor-system-guardian.js';
 import { type ActorToolRegistry, createActorToolbox } from './actor-tools.js';
 import { createSystemEventActor, type SystemEventPayload } from './actors/system-event-actor.js';
 // ✅ UNIFIED API DESIGN Phase 2.1: Auto-publishing system for event subscriptions
@@ -108,7 +108,7 @@ import {
 import { StatelessActor } from './stateless-actor.js';
 import type { ContextOf, MessageOf } from './type-helpers.js';
 import type { ActorSnapshot, JsonValue, Message } from './types.js';
-import { createActorAddress, generateCorrelationId } from './utils/factories.js';
+import { createActorAddress, generateCorrelationId, parse } from './utils/factories.js';
 
 // ✅ Define specific message types for type safety
 interface SpawnChildMessage extends ActorMessage {
@@ -656,7 +656,7 @@ export class ActorSystemImpl implements ActorSystem {
     this.guardianActorAddress = guardianActor.address;
 
     log.debug('Guardian actor spawned', {
-      guardianPath: this.guardianActorAddress?.path,
+      guardianPath: this.guardianActorAddress,
       totalActors: this.actors.size,
       totalMailboxes: this.actorMailboxes.size,
       totalProcessingLoops: this.actorProcessingLoops.size,
@@ -673,7 +673,7 @@ export class ActorSystemImpl implements ActorSystem {
     this.systemEventActorAddress = systemEventActor.address;
 
     log.debug('System event actor spawned', {
-      systemEventPath: this.systemEventActorAddress?.path,
+      systemEventPath: this.systemEventActorAddress,
       totalActors: this.actors.size,
       totalMailboxes: this.actorMailboxes.size,
       totalProcessingLoops: this.actorProcessingLoops.size,
@@ -687,8 +687,8 @@ export class ActorSystemImpl implements ActorSystem {
     });
 
     log.info('Actor system started with core services', {
-      guardian: this.guardianActorAddress?.path,
-      systemEventActor: this.systemEventActorAddress?.path,
+      guardian: this.guardianActorAddress,
+      systemEventActor: this.systemEventActorAddress,
       totalActors: this.actors.size,
       totalMailboxes: this.actorMailboxes.size,
       totalProcessingLoops: this.actorProcessingLoops.size,
@@ -742,7 +742,7 @@ export class ActorSystemImpl implements ActorSystem {
     // Stop all actors gracefully — except the system event actor, which must
     // outlive its peers so their actorStopping/actorStopped emissions still
     // have a live mailbox to land in (otherwise every stop dead-letters).
-    const systemEventPath = this.systemEventActorAddress?.path;
+    const systemEventPath = this.systemEventActorAddress;
     const stopPromises: Promise<void>[] = [];
     for (const [path, _behavior] of Array.from(this.actors)) {
       if (path === systemEventPath) {
@@ -805,13 +805,13 @@ export class ActorSystemImpl implements ActorSystem {
   private async stopActor(pid: ActorPID, reason?: string): Promise<void> {
     // Access the address from the PID interface
     const address = pid.address;
-    const path = address.path;
+    const path = address;
 
     // Emit stopping event
     await this.emitSystemEvent({
       eventType: 'actorStopping',
       timestamp: Date.now(),
-      data: { address: address.path },
+      data: { address: address },
     });
 
     // Call onStop if behavior has it
@@ -926,7 +926,7 @@ export class ActorSystemImpl implements ActorSystem {
     await this.emitSystemEvent({
       eventType: 'actorStopped',
       timestamp: Date.now(),
-      data: reason !== undefined ? { address: address.path, reason } : { address: address.path },
+      data: reason !== undefined ? { address: address, reason } : { address: address },
     });
   }
 
@@ -985,10 +985,13 @@ export class ActorSystemImpl implements ActorSystem {
       throw new Error(`Maximum actor limit reached: ${this.config.maxActors}`);
     }
 
-    const address = createActorAddress(id, this.config.nodeAddress);
+    // The guardian id is reserved in mint(), so the system's own root-supervisor
+    // bootstrap uses the deliberate GUARDIAN_ADDRESS sentinel rather than minting.
+    const address =
+      id === 'guardian' ? GUARDIAN_ADDRESS : createActorAddress(id, this.config.nodeAddress);
     // Opaque path key reused for the per-actor registries below (behavior
     // unchanged: this is the same string the old inline mint produced).
-    const path = address.path;
+    const path = address;
 
     // Store the per-actor supervision policy so the failure path can honor
     // strategy/maxRestarts/withinMs. Validate the strategy at runtime for
@@ -1115,7 +1118,7 @@ export class ActorSystemImpl implements ActorSystem {
 
     log.debug('Actor spawned', {
       id,
-      kind: address.kind,
+      kind: parse(address).kind,
       path,
       totalActors: this.getLocalActorCount(),
     });
@@ -1123,15 +1126,15 @@ export class ActorSystemImpl implements ActorSystem {
     await this.emitSystemEvent({
       eventType: 'actorSpawned',
       timestamp: Date.now(),
-      data: { address: address.path },
+      data: { address },
     });
 
     // Notify guardian about the new child (if it's not the guardian itself)
-    if (this.guardianActorAddress && address.id !== 'guardian') {
+    if (this.guardianActorAddress && parse(address).id !== 'guardian') {
       const spawnChildMessage: SpawnChildMessage = {
         type: 'SPAWN_CHILD',
-        childId: address.id,
-        childPath: address.path,
+        childId: parse(address).id,
+        childPath: address,
         supervision: 'resume',
         _timestamp: Date.now(),
         _version: '1.0.0',
@@ -1283,7 +1286,7 @@ export class ActorSystemImpl implements ActorSystem {
 
     // Once the system event actor's mailbox is gone (its own teardown, or a
     // direct stop), emitting would only produce dead letters — skip quietly.
-    if (!this.actorMailboxes.has(this.systemEventActorAddress.path)) {
+    if (!this.actorMailboxes.has(this.systemEventActorAddress)) {
       log.debug('Skipping system event emission after system event actor shutdown', {
         eventType: event.eventType,
       });
@@ -1341,7 +1344,7 @@ export class ActorSystemImpl implements ActorSystem {
 
     log.debug('🔍 SUBSCRIBE TO SYSTEM EVENTS: Sending subscription message', {
       subscriberPath: callbackPath,
-      systemEventActor: this.systemEventActorAddress.path,
+      systemEventActor: this.systemEventActorAddress,
     });
 
     // Send the subscription message
@@ -1438,7 +1441,7 @@ export class ActorSystemImpl implements ActorSystem {
     const id = chain.register(interceptor, options);
     chain.setScope('actor');
     log.debug('Registered actor interceptor', {
-      actor: actor.address.path,
+      actor: actor.address,
       id,
       priority: options?.priority || 0,
     });
@@ -1465,7 +1468,7 @@ export class ActorSystemImpl implements ActorSystem {
 
     const result = chain.unregister(id);
     if (result) {
-      log.debug('Unregistered actor interceptor', { actor: actor.address.path, id });
+      log.debug('Unregistered actor interceptor', { actor: actor.address, id });
     }
     return result;
   }
@@ -1511,7 +1514,7 @@ export class ActorSystemImpl implements ActorSystem {
     messageType: string,
     handler: (message: ActorMessage) => void
   ): () => void {
-    const key = `${address.path}:${messageType}`;
+    const key = `${address}:${messageType}`;
 
     if (!this.subscribers.has(key)) {
       this.subscribers.set(key, new Set());
@@ -1567,7 +1570,7 @@ export class ActorSystemImpl implements ActorSystem {
    */
   async enqueueMessage(address: ActorAddress, message: ActorMessage): Promise<void> {
     log.debug('enqueueMessage called', {
-      actorPath: address.path,
+      actorPath: address,
       messageType: message.type,
       message,
     });
@@ -1594,7 +1597,7 @@ export class ActorSystemImpl implements ActorSystem {
       if (!result.continue || !result.message) {
         log.debug('Message filtered by global interceptor', {
           messageType: message.type,
-          target: address.path,
+          target: address,
         });
         return;
       }
@@ -1619,7 +1622,7 @@ export class ActorSystemImpl implements ActorSystem {
         if (!result.continue || !result.message) {
           log.debug('Message filtered by actor interceptor', {
             messageType: message.type,
-            target: address.path,
+            target: address,
           });
           return;
         }
@@ -1633,18 +1636,18 @@ export class ActorSystemImpl implements ActorSystem {
     this.messageContexts.set(processedMessage, context);
 
     // Check if this is a callback path (for system event subscriptions)
-    if (address.path.includes('/callback/')) {
+    if (address.includes('/callback/')) {
       log.debug('🔍 ENQUEUE MESSAGE DEBUG: Callback path detected', {
-        callbackPath: address.path,
+        callbackPath: address,
         messageType: processedMessage.type,
       });
 
       // Handle callback-based delivery
       if (processedMessage.type === 'SYSTEM_EVENT_NOTIFICATION' && this.systemEventCallbacks) {
-        const callback = this.systemEventCallbacks.get(address.path);
+        const callback = this.systemEventCallbacks.get(address);
         if (callback) {
           log.debug('🔍 ENQUEUE MESSAGE DEBUG: Invoking callback', {
-            callbackPath: address.path,
+            callbackPath: address,
             eventType:
               'eventType' in processedMessage ? processedMessage.eventType : processedMessage.type,
           });
@@ -1680,33 +1683,40 @@ export class ActorSystemImpl implements ActorSystem {
       }
 
       // Callback not found - add to dead letter queue
-      log.warn('Callback not found for path', { path: address.path });
-      this.deadLetterQueue.add(processedMessage, address.path, 'Callback not found', 1);
+      log.warn('Callback not found for path', { path: address });
+      this.deadLetterQueue.add(processedMessage, address, 'Callback not found', 1);
       return;
     }
 
-    // First, check if the actor is local or remote
-    const location = await this.directory.lookup(address);
+    // A `local`-node address (e.g. the guardian sentinel actor://local/guardian)
+    // is node-private: it denotes "the local node" wherever it is evaluated, so it
+    // must always route locally and must never consult the directory location.
+    // Cross-node directory sync can otherwise overwrite the shared `local` key with
+    // a peer's node, which would route the guardian remotely and the peer would
+    // route it straight back — an unbounded transport ping-pong.
+    const location = isLocalAddress(address)
+      ? this.config.nodeAddress
+      : await this.directory.lookup(address);
 
     log.debug('Directory lookup result', {
-      actorPath: address.path,
+      actorPath: address,
       location,
       nodeAddress: this.config.nodeAddress,
     });
 
     if (!location) {
       log.debug('Actor not found in directory', {
-        actorPath: address.path,
+        actorPath: address,
       });
-      log.error('Actor not found', { path: address.path });
-      this.deadLetterQueue.add(processedMessage, address.path, 'Actor not found in directory', 1);
+      log.error('Actor not found', { path: address });
+      this.deadLetterQueue.add(processedMessage, address, 'Actor not found in directory', 1);
       return;
     }
 
     // If remote, deliver to remote actor
     if (location !== this.config.nodeAddress) {
       log.debug('🔍 ENQUEUE MESSAGE DEBUG: Delivering to remote actor', {
-        actorPath: address.path,
+        actorPath: address,
         location,
         nodeAddress: this.config.nodeAddress,
       });
@@ -1715,9 +1725,9 @@ export class ActorSystemImpl implements ActorSystem {
     }
 
     // Local actor - enqueue to mailbox
-    const mailbox = this.actorMailboxes.get(address.path);
+    const mailbox = this.actorMailboxes.get(address);
     log.debug('Local actor mailbox lookup', {
-      actorPath: address.path,
+      actorPath: address,
       hasMailbox: !!mailbox,
       totalMailboxes: this.actorMailboxes.size,
       allMailboxKeys: Array.from(this.actorMailboxes.keys()),
@@ -1725,10 +1735,10 @@ export class ActorSystemImpl implements ActorSystem {
 
     if (!mailbox) {
       log.debug('Mailbox not found', {
-        actorPath: address.path,
+        actorPath: address,
       });
-      log.error('Mailbox not found for actor', { path: address.path });
-      this.deadLetterQueue.add(processedMessage, address.path, 'Mailbox not found for actor', 1);
+      log.error('Mailbox not found for actor', { path: address });
+      this.deadLetterQueue.add(processedMessage, address, 'Mailbox not found for actor', 1);
       return;
     }
 
@@ -1736,28 +1746,28 @@ export class ActorSystemImpl implements ActorSystem {
       const enqueued = mailbox.enqueue(processedMessage);
       if (!enqueued && typeof enqueued === 'boolean') {
         log.warn('Message dropped due to full mailbox', {
-          actor: address.path,
+          actor: address,
           messageType: processedMessage.type,
         });
         this.deadLetterQueue.add(
           processedMessage,
-          address.path,
+          address,
           'Message dropped due to full mailbox',
           1
         );
       } else if (enqueued) {
         // Message was successfully enqueued
         log.debug('🔍 MAILBOX DEBUG: Message enqueued successfully', {
-          actorPath: address.path,
+          actorPath: address,
           messageType: processedMessage.type,
         });
 
         // Check if we need to restart the processing loop
-        const isProcessing = this.actorProcessingActive.get(address.path) || false;
-        const hasLoop = this.actorProcessingLoops.get(address.path) || false;
+        const isProcessing = this.actorProcessingActive.get(address) || false;
+        const hasLoop = this.actorProcessingLoops.get(address) || false;
 
         log.debug('🔍 MAILBOX DEBUG: Checking processing status', {
-          actorPath: address.path,
+          actorPath: address,
           isProcessing,
           hasLoop,
           totalActiveActors: this.actorProcessingActive.size,
@@ -1766,19 +1776,19 @@ export class ActorSystemImpl implements ActorSystem {
 
         if (hasLoop && !isProcessing) {
           // The loop exists but is idle, wake it up
-          const behavior = this.actors.get(address.path);
+          const behavior = this.actors.get(address);
           log.debug('🔍 MAILBOX DEBUG: Waking up idle processing loop', {
-            actorPath: address.path,
+            actorPath: address,
             hasBehavior: !!behavior,
           });
 
           if (behavior) {
             // Double-check to prevent race conditions
             if (
-              this.actorProcessingLoops.get(address.path) &&
-              !this.actorProcessingActive.get(address.path)
+              this.actorProcessingLoops.get(address) &&
+              !this.actorProcessingActive.get(address)
             ) {
-              this.actorProcessingActive.set(address.path, true);
+              this.actorProcessingActive.set(address, true);
               // Yield to the next macrotask to break out of the current processing turn
               scheduleMacrotask(() => this.processActorMessages(address, behavior));
             }
@@ -1787,7 +1797,7 @@ export class ActorSystemImpl implements ActorSystem {
 
         // In test mode, process message immediately
         if (this.testMode) {
-          const behavior = this.actors.get(address.path);
+          const behavior = this.actors.get(address);
           if (behavior && !mailbox.isEmpty()) {
             // Process one message synchronously
             const message = mailbox.dequeue();
@@ -1796,7 +1806,7 @@ export class ActorSystemImpl implements ActorSystem {
                 await this.deliverMessageLocal(address, message);
               } catch (error) {
                 log.error('Error processing message in test mode', {
-                  actor: address.path,
+                  actor: address,
                   messageType: message.type,
                   error: error instanceof Error ? error.message : 'Unknown error',
                 });
@@ -1809,13 +1819,13 @@ export class ActorSystemImpl implements ActorSystem {
       }
     } catch (error) {
       log.error('Failed to enqueue message', {
-        actor: address.path,
+        actor: address,
         messageType: message.type,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       this.deadLetterQueue.add(
         processedMessage,
-        address.path,
+        address,
         `Failed to enqueue message: ${error instanceof Error ? error.message : 'Unknown error'}`,
         1,
         error instanceof Error ? error : undefined
@@ -1831,9 +1841,9 @@ export class ActorSystemImpl implements ActorSystem {
     behavior: PureActorBehavior<ActorMessage, ActorMessage>
   ): void {
     // Mark this actor as having an active processing loop
-    this.actorProcessingLoops.set(address.path, true);
+    this.actorProcessingLoops.set(address, true);
     // Mark as actively processing immediately to prevent race conditions
-    this.actorProcessingActive.set(address.path, true);
+    this.actorProcessingActive.set(address, true);
 
     // Start processing on the next macrotask so browser workers can run this path too
     scheduleMacrotask(() => this.processActorMessages(address, behavior));
@@ -1850,33 +1860,33 @@ export class ActorSystemImpl implements ActorSystem {
     const processId = Math.random().toString(36).substring(7);
 
     log.debug('processActorMessages called', {
-      actorPath: address.path,
+      actorPath: address,
       processId,
       timestamp: startTime,
       activeProcessingCount: this.actorProcessingActive.size,
       totalLoops: this.actorProcessingLoops.size,
-      isProcessingActive: this.actorProcessingActive.get(address.path),
-      hasProcessingLoop: this.actorProcessingLoops.get(address.path),
+      isProcessingActive: this.actorProcessingActive.get(address),
+      hasProcessingLoop: this.actorProcessingLoops.get(address),
     });
 
-    const mailbox = this.actorMailboxes.get(address.path);
-    if (!mailbox || !this.actorProcessingLoops.get(address.path)) {
+    const mailbox = this.actorMailboxes.get(address);
+    if (!mailbox || !this.actorProcessingLoops.get(address)) {
       log.debug('Early exit - no mailbox or loop disabled', {
-        actorPath: address.path,
+        actorPath: address,
         processId,
         hasMailbox: !!mailbox,
-        hasProcessingLoop: !!this.actorProcessingLoops.get(address.path),
+        hasProcessingLoop: !!this.actorProcessingLoops.get(address),
         exitTime: Date.now() - startTime,
       });
-      this.actorProcessingActive.set(address.path, false);
+      this.actorProcessingActive.set(address, false);
       return;
     }
 
     // Mark as actively processing
-    this.actorProcessingActive.set(address.path, true);
+    this.actorProcessingActive.set(address, true);
 
     log.debug('Starting message processing batch', {
-      actorPath: address.path,
+      actorPath: address,
       processId,
       mailboxSize: mailbox.size(),
       isEmpty: mailbox.isEmpty(),
@@ -1888,13 +1898,13 @@ export class ActorSystemImpl implements ActorSystem {
 
     while (
       !mailbox.isEmpty() &&
-      this.actorProcessingLoops.get(address.path) &&
+      this.actorProcessingLoops.get(address) &&
       processed < maxMessages
     ) {
       const message = mailbox.dequeue();
 
       log.debug('Processing message', {
-        actorPath: address.path,
+        actorPath: address,
         processId,
         messageType: message?.type,
         hasMessage: !!message,
@@ -1908,7 +1918,7 @@ export class ActorSystemImpl implements ActorSystem {
           processed++;
         } catch (error) {
           log.error('Error processing message', {
-            actor: address.path,
+            actor: address,
             processId,
             messageType: message.type,
             error: error instanceof Error ? error.message : 'Unknown error',
@@ -1924,20 +1934,20 @@ export class ActorSystemImpl implements ActorSystem {
     // Safety check for infinite loop protection
     if (processed >= maxMessages) {
       log.error('Hit message processing limit - possible infinite loop', {
-        actorPath: address.path,
+        actorPath: address,
         processId,
         processed,
         mailboxSize: mailbox.size(),
       });
-      this.actorProcessingActive.set(address.path, false);
+      this.actorProcessingActive.set(address, false);
       return;
     }
 
     const hasMoreMessages = !mailbox.isEmpty();
-    const shouldContinue = this.actorProcessingLoops.get(address.path);
+    const shouldContinue = this.actorProcessingLoops.get(address);
 
     log.debug('Batch complete, checking continuation', {
-      actorPath: address.path,
+      actorPath: address,
       processId,
       processed,
       hasMoreMessages,
@@ -1949,7 +1959,7 @@ export class ActorSystemImpl implements ActorSystem {
     // Check if there are more messages (could have arrived while processing)
     if (hasMoreMessages && shouldContinue) {
       log.debug('Scheduling next processing round', {
-        actorPath: address.path,
+        actorPath: address,
         processId,
         nextProcessId: 'will-be-generated',
       });
@@ -1958,13 +1968,13 @@ export class ActorSystemImpl implements ActorSystem {
       scheduleMacrotask(() => this.processActorMessages(address, behavior));
     } else {
       log.debug('Processing complete, marking idle', {
-        actorPath: address.path,
+        actorPath: address,
         processId,
         reason: hasMoreMessages ? 'loop disabled' : 'no more messages',
         duration: Date.now() - startTime,
       });
       // No more messages, mark as idle
-      this.actorProcessingActive.set(address.path, false);
+      this.actorProcessingActive.set(address, false);
     }
   }
 
@@ -2000,7 +2010,7 @@ export class ActorSystemImpl implements ActorSystem {
 
     // Create timeout promise with helpful error message
     const { promise: timeoutPromise, cancel: cancelTimeout } = createAskTimeout(
-      address.path,
+      address,
       message.type,
       correlationId,
       timeout
@@ -2042,7 +2052,7 @@ export class ActorSystemImpl implements ActorSystem {
         // Extract response data from flat message structure
         const message = response as ActorMessage;
         log.debug('🔍 ASK PATTERN DEBUG: Processing response', {
-          actorPath: address.path,
+          actorPath: address,
           messageType: message.type,
           hasCorrelationId: !!message._correlationId,
           correlationId: message._correlationId,
@@ -2059,7 +2069,7 @@ export class ActorSystemImpl implements ActorSystem {
         } = message;
 
         log.debug('🔍 ASK PATTERN DEBUG: Extracted response data', {
-          actorPath: address.path,
+          actorPath: address,
           responseData,
           responseDataKeys: Object.keys(responseData),
           hasValueField: 'value' in responseData,
@@ -2069,7 +2079,7 @@ export class ActorSystemImpl implements ActorSystem {
         if (Object.keys(responseData).length === 1 && 'value' in responseData) {
           const value = (responseData as { value: T }).value;
           log.debug('🔍 ASK PATTERN DEBUG: Returning value field', {
-            actorPath: address.path,
+            actorPath: address,
             value,
           });
           return value;
@@ -2079,7 +2089,7 @@ export class ActorSystemImpl implements ActorSystem {
         if (Object.keys(responseData).length === 1 && 'payload' in responseData) {
           const payload = (responseData as { payload: T }).payload;
           log.debug('🔍 ASK PATTERN DEBUG: Returning payload field', {
-            actorPath: address.path,
+            actorPath: address,
             payload,
             isArray: Array.isArray(payload),
           });
@@ -2088,7 +2098,7 @@ export class ActorSystemImpl implements ActorSystem {
 
         // Otherwise return the response data object (excluding envelope fields)
         log.debug('🔍 ASK PATTERN DEBUG: Returning response data object', {
-          actorPath: address.path,
+          actorPath: address,
           responseData,
         });
         return responseData as T;
@@ -2120,7 +2130,7 @@ export class ActorSystemImpl implements ActorSystem {
     }
 
     // Find the actor in our local actors map
-    if (this.actors.has(address.path)) {
+    if (this.actors.has(address)) {
       // Create a temporary PID to call the public stop method
       const pid = new ActorPIDImpl(address, this);
       await this.stopActor(pid);
@@ -2148,7 +2158,7 @@ export class ActorSystemImpl implements ActorSystem {
       return this.requestRemoteActorStats(address);
     }
 
-    const stats = this.actorStats.get(address.path);
+    const stats = this.actorStats.get(address);
     if (!stats) {
       return {
         messagesReceived: 0,
@@ -2170,7 +2180,7 @@ export class ActorSystemImpl implements ActorSystem {
       return this.getOrCreateRemoteProjectionWatcher(address).snapshot;
     }
 
-    return this.getLocalActorSnapshot(address.path);
+    return this.getLocalActorSnapshot(address);
   }
 
   subscribeToActorSnapshots(
@@ -2181,7 +2191,7 @@ export class ActorSystemImpl implements ActorSystem {
       return this.subscribeToRemoteActorSnapshots(address, listener);
     }
 
-    return this.subscribeToLocalActorSnapshots(address.path, listener);
+    return this.subscribeToLocalActorSnapshots(address, listener);
   }
 
   subscribeToActorEvents(
@@ -2193,7 +2203,7 @@ export class ActorSystemImpl implements ActorSystem {
       return this.subscribeToRemoteActorEvents(address, listener, options);
     }
 
-    return this.subscribeToLocalActorEvents(address.path, listener, options);
+    return this.subscribeToLocalActorEvents(address, listener, options);
   }
 
   getActorTransportStatusInternal(address: ActorAddress): ProjectionTransportStatus {
@@ -2284,10 +2294,17 @@ export class ActorSystemImpl implements ActorSystem {
   }
 
   private getAddressNode(address: ActorAddress): string | undefined {
-    return address.node ?? parseActorPath(address.path).node;
+    return parse(address).node;
   }
 
   private isKnownRemoteAddress(address: ActorAddress): boolean {
+    // A `local`-node address (e.g. the guardian sentinel actor://local/guardian)
+    // is node-private: `local` means "this node" wherever evaluated, so it is never
+    // a remote target. Without this guard the ask/stop/stats/snapshot paths route
+    // the guardian off-node and fail with "transport is not configured".
+    if (isLocalAddress(address)) {
+      return false;
+    }
     const node = this.getAddressNode(address);
     return Boolean(node && node !== this.config.nodeAddress);
   }
@@ -2318,7 +2335,7 @@ export class ActorSystemImpl implements ActorSystem {
    */
   private createEventMessage(address: ActorAddress, event: unknown): ActorMessage {
     log.debug('🔍 CREATE EVENT MESSAGE DEBUG: Creating event message', {
-      addressPath: address.path,
+      addressPath: address,
       event,
       eventType: typeof event,
       isActorMessage: this.isActorMessage(event),
@@ -2374,17 +2391,17 @@ export class ActorSystemImpl implements ActorSystem {
     const eventMessage = this.createEventMessage(address, event);
 
     log.debug('🔍 PUBLISH EVENT DEBUG: Publishing actor event', {
-      actorPath: address.path,
+      actorPath: address,
       eventType: eventMessage.type,
     });
 
-    this.updateActorProjectionState(address.path, {
+    this.updateActorProjectionState(address, {
       updatedAt: new Date().toISOString(),
       lastEventType: eventMessage.type,
       correlationId:
-        eventMessage._correlationId ?? this.getActorProjectionState(address.path).correlationId,
+        eventMessage._correlationId ?? this.getActorProjectionState(address).correlationId,
     });
-    this.autoPublishingRegistry.trackEmittedEvent(address.path, eventMessage.type);
+    this.autoPublishingRegistry.trackEmittedEvent(address, eventMessage.type);
     this.notifyActorEventSubscribers(address, eventMessage);
     this.emitEventToSubscribers(address, eventMessage);
     void this.publishRemoteActorEvent(address, eventMessage);
@@ -2396,29 +2413,29 @@ export class ActorSystemImpl implements ActorSystem {
    */
   private async deliverMessageLocal(address: ActorAddress, message: ActorMessage): Promise<void> {
     log.debug('🔍 DELIVER LOCAL DEBUG: deliverMessageLocal called', {
-      actorPath: address.path,
+      actorPath: address,
       messageType: message.type,
     });
 
     log.debug('Delivering message to local actor', {
-      path: address.path,
+      path: address,
       messageType: message.type,
     });
 
-    const behavior = this.actors.get(address.path);
+    const behavior = this.actors.get(address);
     if (!behavior) {
       log.debug('🔍 DELIVER LOCAL DEBUG: Behavior not found', {
-        actorPath: address.path,
+        actorPath: address,
       });
-      throw new Error(`Local actor not found: ${address.path}`);
+      throw new Error(`Local actor not found: ${address}`);
     }
 
     // ✅ PURE ACTOR MODEL: Get stored actor instance and behavior handler
-    const actorInstance = this.actorInstances.get(address.path);
-    const behaviorHandler = this.actorBehaviorHandlers.get(address.path);
+    const actorInstance = this.actorInstances.get(address);
+    const behaviorHandler = this.actorBehaviorHandlers.get(address);
 
     log.debug('🔍 DELIVER LOCAL DEBUG: Actor components lookup', {
-      actorPath: address.path,
+      actorPath: address,
       hasBehavior: !!behavior,
       hasActorInstance: !!actorInstance,
       hasBehaviorHandler: !!behaviorHandler,
@@ -2426,16 +2443,16 @@ export class ActorSystemImpl implements ActorSystem {
 
     if (!actorInstance || !behaviorHandler) {
       log.debug('🔍 DELIVER LOCAL DEBUG: Missing components', {
-        actorPath: address.path,
+        actorPath: address,
         actorInstance: !!actorInstance,
         behaviorHandler: !!behaviorHandler,
       });
-      throw new Error(`Actor instance or behavior handler not found: ${address.path}`);
+      throw new Error(`Actor instance or behavior handler not found: ${address}`);
     }
 
     // ✅ CONTEXT ISOLATION: Establish actor identity boundary
     const actorContext = ActorContextManager.createContext(
-      address.path,
+      address,
       message._correlationId,
       `msg-${Date.now()}`
     );
@@ -2451,7 +2468,7 @@ export class ActorSystemImpl implements ActorSystem {
           behaviorHandler
         );
       },
-      address.path
+      address
     );
   }
 
@@ -2485,7 +2502,7 @@ export class ActorSystemImpl implements ActorSystem {
       if (!result.continue || !result.message) {
         log.debug('Message filtered by global interceptor in receive', {
           messageType: message.type,
-          actor: address.path,
+          actor: address,
         });
         return;
       }
@@ -2518,7 +2535,7 @@ export class ActorSystemImpl implements ActorSystem {
       if (!result.continue || !result.message) {
         log.debug('Message filtered by actor interceptor in receive', {
           messageType: processedMessage.type,
-          actor: address.path,
+          actor: address,
         });
         return;
       }
@@ -2527,22 +2544,22 @@ export class ActorSystemImpl implements ActorSystem {
       context = result.context;
     }
 
-    const stats = this.actorStats.get(address.path);
+    const stats = this.actorStats.get(address);
 
     try {
       // ✅ PURE ACTOR MODEL: Use createActorDependencies method for consistent dependency creation
-      const dependencies = this.createActorDependencies(address.path, actorInstance);
+      const dependencies = this.createActorDependencies(address, actorInstance);
 
       // Call onStart if this is the first time
-      if (!this.actorStarted.get(address.path)) {
+      if (!this.actorStarted.get(address)) {
         log.debug('🔍 PROCESS MESSAGE DEBUG: Calling onStart for first time', {
-          actorPath: address.path,
+          actorPath: address,
           behaviorType: typeof behavior,
           hasOnStart: behavior && 'onStart' in behavior,
           onStartType: behavior && 'onStart' in behavior ? typeof behavior.onStart : 'N/A',
         });
 
-        log.debug('Calling onStart for actor', { path: address.path });
+        log.debug('Calling onStart for actor', { path: address });
 
         await behaviorHandler.handleStart(
           behavior as PureActorBehavior<unknown, ActorMessage>,
@@ -2551,15 +2568,15 @@ export class ActorSystemImpl implements ActorSystem {
         );
 
         log.debug('🔍 PROCESS MESSAGE DEBUG: onStart completed', {
-          actorPath: address.path,
+          actorPath: address,
         });
 
-        this.actorStarted.set(address.path, true);
+        this.actorStarted.set(address, true);
       }
 
       // Update stats
       if (stats) {
-        this.actorStats.set(address.path, {
+        this.actorStats.set(address, {
           ...stats,
           messagesReceived: stats.messagesReceived + 1,
         });
@@ -2567,7 +2584,7 @@ export class ActorSystemImpl implements ActorSystem {
 
       // ✅ PURE ACTOR MODEL: Use behavior handler for message processing
       log.debug('🔍 PROCESS MESSAGE DEBUG: About to call behaviorHandler.handleMessage', {
-        actorPath: address.path,
+        actorPath: address,
         messageType: processedMessage.type,
         behaviorHandlerType: typeof behaviorHandler,
         hasBehaviorHandler: !!behaviorHandler,
@@ -2581,35 +2598,35 @@ export class ActorSystemImpl implements ActorSystem {
       );
 
       const previousSnapshot = this.cloneSnapshot(
-        this.actorSnapshots.get(address.path) ?? actorInstance.getSnapshot()
+        this.actorSnapshots.get(address) ?? actorInstance.getSnapshot()
       );
       const latestSnapshot = actorInstance.getSnapshot();
-      this.updateActorProjectionState(address.path, {
+      this.updateActorProjectionState(address, {
         updatedAt: new Date().toISOString(),
-        correlationId: processedMessage._correlationId ?? address.path,
+        correlationId: processedMessage._correlationId ?? address,
       });
-      this.actorSnapshots.set(address.path, latestSnapshot);
+      this.actorSnapshots.set(address, latestSnapshot);
       const snapshotChanged = !this.snapshotsAreEquivalent(previousSnapshot, latestSnapshot);
       if (snapshotChanged) {
-        this.notifySnapshotSubscribers(address.path, latestSnapshot);
+        this.notifySnapshotSubscribers(address, latestSnapshot);
         await this.publishRemoteSnapshotProjection(address, latestSnapshot, previousSnapshot);
       }
 
       log.debug('🔍 PROCESS MESSAGE DEBUG: behaviorHandler.handleMessage completed', {
-        actorPath: address.path,
+        actorPath: address,
         messageType: processedMessage.type,
       });
 
       // Update processed message stats
       if (stats) {
-        const updatedStats = this.actorStats.get(address.path) || {
+        const updatedStats = this.actorStats.get(address) || {
           messagesReceived: 0,
           messagesProcessed: 0,
           errors: 0,
           uptime: 0,
           startTime: Date.now(),
         };
-        this.actorStats.set(address.path, {
+        this.actorStats.set(address, {
           ...updatedStats,
           messagesProcessed: updatedStats.messagesProcessed + 1,
         });
@@ -2636,7 +2653,7 @@ export class ActorSystemImpl implements ActorSystem {
       }
     } catch (error) {
       log.debug('🔍 PROCESS MESSAGE DEBUG: Error in processMessageWithContext', {
-        actorPath: address.path,
+        actorPath: address,
         messageType: processedMessage.type,
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
@@ -2653,9 +2670,9 @@ export class ActorSystemImpl implements ActorSystem {
 
       // Handle actor processing errors
       if (stats) {
-        const updatedStats = this.actorStats.get(address.path);
+        const updatedStats = this.actorStats.get(address);
         if (updatedStats) {
-          this.actorStats.set(address.path, {
+          this.actorStats.set(address, {
             ...updatedStats,
             errors: updatedStats.errors + 1,
           });
@@ -2663,7 +2680,7 @@ export class ActorSystemImpl implements ActorSystem {
       }
 
       log.error('Error processing message', {
-        actor: address.path,
+        actor: address,
         messageType: message.type,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
@@ -2683,7 +2700,7 @@ export class ActorSystemImpl implements ActorSystem {
    * following Erlang/OTP patterns where Pid ! Message is synchronous enqueue
    */
   private emitEventToSubscribers(address: ActorAddress, eventMessage: ActorMessage): void {
-    const publisherId = address.path;
+    const publisherId = address;
 
     // ✅ UNIFIED API DESIGN Phase 2.1: Use auto-publishing registry for event distribution
     const subscribers = this.autoPublishingRegistry.getSubscribersForEvent(
@@ -2695,7 +2712,7 @@ export class ActorSystemImpl implements ActorSystem {
       publisherId,
       eventType: eventMessage.type,
       subscriberCount: subscribers.length,
-      subscribers: subscribers.map((s) => s.address.path),
+      subscribers: subscribers.map((s) => s.address),
     });
 
     // ✅ DIRECT MAILBOX ENQUEUE: Send event to each subscriber's mailbox directly
@@ -2703,7 +2720,7 @@ export class ActorSystemImpl implements ActorSystem {
     for (const subscriber of subscribers) {
       log.debug('🔍 EMIT EVENT DEBUG: Direct enqueue to subscriber', {
         publisherId,
-        subscriberId: subscriber.address.path,
+        subscriberId: subscriber.address,
         eventType: eventMessage.type,
         eventMessage,
       });
@@ -2715,14 +2732,14 @@ export class ActorSystemImpl implements ActorSystem {
         this.enqueueMessage(subscriber.address, eventMessage).catch((error) => {
           // Log as dead letter if enqueue fails (e.g., mailbox full)
           log.debug('🔍 EMIT EVENT DEBUG: Event dropped (dead letter)', {
-            subscriberId: subscriber.address.path,
+            subscriberId: subscriber.address,
             eventType: eventMessage.type,
             reason: error instanceof Error ? error.message : 'Unknown error',
           });
 
           log.warn('Event dropped - dead letter', {
             publisherId,
-            subscriberId: subscriber.address.path,
+            subscriberId: subscriber.address,
             eventType: eventMessage.type,
             error: error instanceof Error ? error.message : 'Unknown error',
           });
@@ -2731,7 +2748,7 @@ export class ActorSystemImpl implements ActorSystem {
         // Handle any synchronous errors from enqueue attempt
         log.error('Failed to enqueue event', {
           publisherId,
-          subscriberId: subscriber.address.path,
+          subscriberId: subscriber.address,
           eventType: eventMessage.type,
           error: syncError instanceof Error ? syncError.message : 'Unknown error',
         });
@@ -2744,7 +2761,7 @@ export class ActorSystemImpl implements ActorSystem {
    */
   private notifyMessageSubscribers(address: ActorAddress, message: ActorMessage): void {
     // Notify subscribers for all message types
-    const allKey = `${address.path}:*`;
+    const allKey = `${address}:*`;
     const allSubscribers = this.subscribers.get(allKey);
     if (allSubscribers) {
       for (const handler of Array.from(allSubscribers)) {
@@ -2753,7 +2770,7 @@ export class ActorSystemImpl implements ActorSystem {
     }
 
     // Notify subscribers for specific message type
-    const key = `${address.path}:${message.type}`;
+    const key = `${address}:${message.type}`;
     const subscribers = this.subscribers.get(key);
     if (subscribers) {
       for (const handler of Array.from(subscribers)) {
@@ -2774,7 +2791,7 @@ export class ActorSystemImpl implements ActorSystem {
   }
 
   private notifyActorEventSubscribers(address: ActorAddress, event: ActorMessage): void {
-    const subscribers = this.actorEventSubscribers.get(address.path);
+    const subscribers = this.actorEventSubscribers.get(address);
     if (!subscribers) {
       return;
     }
@@ -2864,7 +2881,7 @@ export class ActorSystemImpl implements ActorSystem {
             requestId: message.requestId,
             payload: this.createSnapshotProjection(
               message.address,
-              this.getLocalActorSnapshot(message.address.path)
+              this.getLocalActorSnapshot(message.address)
             ),
             _timestamp: Date.now(),
             _version: '1.0.0',
@@ -3039,13 +3056,13 @@ export class ActorSystemImpl implements ActorSystem {
   }
 
   private getOrCreateRemoteProjectionWatcher(address: ActorAddress): RemoteProjectionWatcher {
-    const existingWatcher = this.remoteProjectionWatchers.get(address.path);
+    const existingWatcher = this.remoteProjectionWatchers.get(address);
     if (existingWatcher) {
       return existingWatcher;
     }
 
     const watcher = this.createRemoteProjectionWatcher(address);
-    this.remoteProjectionWatchers.set(address.path, watcher);
+    this.remoteProjectionWatchers.set(address, watcher);
     return watcher;
   }
 
@@ -3063,12 +3080,12 @@ export class ActorSystemImpl implements ActorSystem {
     address: ActorAddress,
     snapshot: ActorSnapshot<unknown>,
     previousSnapshot?: ActorSnapshot<unknown>,
-    sequence = this.currentActorProjectionSequence(address.path)
+    sequence = this.currentActorProjectionSequence(address)
   ): RuntimeSnapshotProjection {
-    const projectionState = this.getActorProjectionState(address.path);
+    const projectionState = this.getActorProjectionState(address);
     const runtimeSnapshot = actorSnapshotToRuntimeSnapshot({
       snapshot,
-      actorId: address.id,
+      actorId: parse(address).id,
       createdAt: projectionState.createdAt,
       updatedAt: projectionState.updatedAt,
       correlationId: projectionState.correlationId,
@@ -3097,17 +3114,16 @@ export class ActorSystemImpl implements ActorSystem {
   private createEventProjection(
     address: ActorAddress,
     event: ActorMessage,
-    sequence = this.currentActorProjectionSequence(address.path)
+    sequence = this.currentActorProjectionSequence(address)
   ): RuntimeEventProjection {
     return {
       address,
       envelope: actorMessageToEventEnvelope(event as typeof event & Record<string, unknown>, {
-        id: `${address.path}:event:${sequence}`,
+        id: `${address}:event:${sequence}`,
         kind: 'fact',
         occurredAt: new Date(event._timestamp ?? Date.now()).toISOString(),
-        sourceActor: address.path,
-        correlationId:
-          event._correlationId ?? this.getActorProjectionState(address.path).correlationId,
+        sourceActor: address,
+        correlationId: event._correlationId ?? this.getActorProjectionState(address).correlationId,
       }),
       sequence,
     };
@@ -3127,7 +3143,7 @@ export class ActorSystemImpl implements ActorSystem {
           watcher,
           createProjectionTransportStatus('degraded', {
             lastSequence: previousSequence,
-            reason: `Projection sequence gap detected for ${payload.address.path}`,
+            reason: `Projection sequence gap detected for ${payload.address}`,
           })
         );
       }
@@ -3168,7 +3184,7 @@ export class ActorSystemImpl implements ActorSystem {
           watcher,
           createProjectionTransportStatus('degraded', {
             lastSequence: previousSequence,
-            reason: `Projection sequence gap detected for ${payload.address.path}`,
+            reason: `Projection sequence gap detected for ${payload.address}`,
           })
         );
       }
@@ -3476,6 +3492,12 @@ export class ActorSystemImpl implements ActorSystem {
     if (!this.config.transport) {
       return;
     }
+    // Never advertise node-private (`local`-node) actors such as the guardian: the
+    // `local` key is non-unique across nodes, so a peer applying it would clobber
+    // its own same-keyed entry and mis-route the address back to us.
+    if (isLocalAddress(address)) {
+      return;
+    }
 
     const entry: RuntimeDirectoryEntry = {
       address,
@@ -3638,17 +3660,17 @@ export class ActorSystemImpl implements ActorSystem {
     sourceNode: string,
     kind: 'snapshot' | 'event'
   ): Promise<void> {
-    const subscribers = this.outboundRemoteProjectionSubscribers.get(address.path) ?? {
+    const subscribers = this.outboundRemoteProjectionSubscribers.get(address) ?? {
       snapshotNodes: new Set<string>(),
       eventNodes: new Set<string>(),
     };
-    this.outboundRemoteProjectionSubscribers.set(address.path, subscribers);
+    this.outboundRemoteProjectionSubscribers.set(address, subscribers);
 
     if (kind === 'snapshot') {
       subscribers.snapshotNodes.add(sourceNode);
       await this.sendTransportMessage(sourceNode, {
         type: '__runtime.remote.snapshot.update',
-        payload: this.createSnapshotProjection(address, this.getLocalActorSnapshot(address.path)),
+        payload: this.createSnapshotProjection(address, this.getLocalActorSnapshot(address)),
         _timestamp: Date.now(),
         _version: '1.0.0',
       });
@@ -3663,7 +3685,7 @@ export class ActorSystemImpl implements ActorSystem {
     sourceNode: string,
     kind: 'snapshot' | 'event'
   ): void {
-    const subscribers = this.outboundRemoteProjectionSubscribers.get(address.path);
+    const subscribers = this.outboundRemoteProjectionSubscribers.get(address);
     if (!subscribers) {
       return;
     }
@@ -3675,7 +3697,7 @@ export class ActorSystemImpl implements ActorSystem {
     }
 
     if (subscribers.snapshotNodes.size === 0 && subscribers.eventNodes.size === 0) {
-      this.outboundRemoteProjectionSubscribers.delete(address.path);
+      this.outboundRemoteProjectionSubscribers.delete(address);
     }
   }
 
@@ -3697,12 +3719,12 @@ export class ActorSystemImpl implements ActorSystem {
     snapshot: ActorSnapshot<unknown>,
     previousSnapshot?: ActorSnapshot<unknown>
   ): Promise<void> {
-    const subscribers = this.outboundRemoteProjectionSubscribers.get(address.path);
+    const subscribers = this.outboundRemoteProjectionSubscribers.get(address);
     if (!subscribers || subscribers.snapshotNodes.size === 0) {
       return;
     }
 
-    const sequence = this.nextActorProjectionSequence(address.path);
+    const sequence = this.nextActorProjectionSequence(address);
     const payload = this.createSnapshotProjection(address, snapshot, previousSnapshot, sequence);
 
     await Promise.allSettled(
@@ -3718,12 +3740,12 @@ export class ActorSystemImpl implements ActorSystem {
   }
 
   private async publishRemoteActorEvent(address: ActorAddress, event: ActorMessage): Promise<void> {
-    const subscribers = this.outboundRemoteProjectionSubscribers.get(address.path);
+    const subscribers = this.outboundRemoteProjectionSubscribers.get(address);
     if (!subscribers || subscribers.eventNodes.size === 0) {
       return;
     }
 
-    const sequence = this.nextActorProjectionSequence(address.path);
+    const sequence = this.nextActorProjectionSequence(address);
     const payload = this.createEventProjection(address, event, sequence);
 
     await Promise.allSettled(
@@ -3829,7 +3851,7 @@ export class ActorSystemImpl implements ActorSystem {
     address: ActorAddress,
     event: ActorMessage
   ): Promise<void> {
-    const matched = this.matchTopologyRemoteSubscribers(address.path, event.type);
+    const matched = this.matchTopologyRemoteSubscribers(address, event.type);
     if (matched.length === 0) {
       return;
     }
@@ -3852,7 +3874,7 @@ export class ActorSystemImpl implements ActorSystem {
           // A dead peer must never throw into the emit turn or escape as an
           // unhandled rejection (PR #27 incident). Drop + log.
           log.warn('Cross-node subscription event dropped', {
-            publisherPath: address.path,
+            publisherPath: address,
             subscriberPath: edge.subscriberPath,
             node: edge.node,
             eventType: event.type,
@@ -4072,32 +4094,32 @@ export class ActorSystemImpl implements ActorSystem {
    * executes it.
    */
   private async applySupervisionStrategy(address: ActorAddress, error: unknown): Promise<void> {
-    const groupKey = this.actorSupervisorGroupKeys.get(address.path);
+    const groupKey = this.actorSupervisorGroupKeys.get(address);
     if (groupKey && this.restartingGroups.has(groupKey)) {
       log.warn('Ignoring failure surfaced while its supervisor group action is in flight', {
-        path: address.path,
+        path: address,
         group: groupKey,
       });
       return;
     }
 
-    const behavior = this.actors.get(address.path);
+    const behavior = this.actors.get(address);
     if (!behavior) {
-      log.error('Behavior not found for actor', { path: address.path });
+      log.error('Behavior not found for actor', { path: address });
       return;
     }
 
-    const policy = this.actorSupervisionPolicies.get(address.path);
+    const policy = this.actorSupervisionPolicies.get(address);
     const decision = resolveSupervisionDecision({
       policy,
-      restartCount: this.actorRestartCounts.get(address.path) || 0,
-      lastRestartTimeMs: this.actorLastRestartTime.get(address.path) || 0,
+      restartCount: this.actorRestartCounts.get(address) || 0,
+      lastRestartTimeMs: this.actorLastRestartTime.get(address) || 0,
       nowMs: Date.now(),
     });
     const errorMessage = error instanceof Error ? error.message : String(error);
 
     log.warn('Actor failed, applying supervision decision', {
-      path: address.path,
+      path: address,
       strategy: policy?.strategy ?? 'restart',
       decision: decision.kind,
       error: errorMessage,
@@ -4117,21 +4139,21 @@ export class ActorSystemImpl implements ActorSystem {
     ) {
       childDecision = resolveSupervisionDecision({
         policy: { ...policy, strategy: 'restart' },
-        restartCount: this.actorRestartCounts.get(address.path) || 0,
-        lastRestartTimeMs: this.actorLastRestartTime.get(address.path) || 0,
+        restartCount: this.actorRestartCounts.get(address) || 0,
+        lastRestartTimeMs: this.actorLastRestartTime.get(address) || 0,
         nowMs: Date.now(),
       });
     }
     const treeDecision = resolveTreeSupervisionDecision({
       childDecision,
       group,
-      failedChildPath: address.path,
+      failedChildPath: address,
     });
     if (treeDecision.kind === 'restart-group' && group) {
       if (childDecision.kind === 'restart') {
         // Sync any window-expiry reset back into the tracked count before
         // the group restart path increments it.
-        this.actorRestartCounts.set(address.path, childDecision.restartCount);
+        this.actorRestartCounts.set(address, childDecision.restartCount);
       }
       await this.restartSupervisorGroup(
         group,
@@ -4156,9 +4178,9 @@ export class ActorSystemImpl implements ActorSystem {
       case 'restart': {
         // Sync any window-expiry reset back into the tracked count before
         // the restart path increments it.
-        this.actorRestartCounts.set(address.path, decision.restartCount);
+        this.actorRestartCounts.set(address, decision.restartCount);
         log.warn('Actor failed, applying restart directive', {
-          path: address.path,
+          path: address,
           restartAttempt: decision.restartCount + 1,
           maxRestarts: decision.maxRestarts,
         });
@@ -4167,7 +4189,7 @@ export class ActorSystemImpl implements ActorSystem {
       }
       case 'stop-permanent': {
         log.error('Actor exceeded restart limits, stopping permanently', {
-          path: address.path,
+          path: address,
           restartCount: decision.restartCount,
           maxAttempts: decision.maxRestarts,
           error: errorMessage,
@@ -4179,7 +4201,7 @@ export class ActorSystemImpl implements ActorSystem {
         return;
       }
       case 'stop': {
-        log.error('Actor failed, applying stop directive', { path: address.path });
+        log.error('Actor failed, applying stop directive', { path: address });
         await this.stopActor(new ActorPIDImpl(address, this), 'supervision-stop');
         return;
       }
@@ -4189,12 +4211,12 @@ export class ActorSystemImpl implements ActorSystem {
         // operators observe the unhandled failure. Widening groups
         // (one-for-all/rest-for-one) never reach here — their escalate is
         // substituted into a bounded group restart above.
-        log.warn('Actor failed, escalating (stop + escalation event)', { path: address.path });
+        log.warn('Actor failed, escalating (stop + escalation event)', { path: address });
         await this.stopActor(new ActorPIDImpl(address, this));
         await this.emitSystemEvent({
           eventType: 'actorEscalated',
           timestamp: Date.now(),
-          data: { address: address.path, reason: 'supervision-escalate', error: errorMessage },
+          data: { address: address, reason: 'supervision-escalate', error: errorMessage },
         });
         return;
       }
@@ -4204,13 +4226,13 @@ export class ActorSystemImpl implements ActorSystem {
         // or restart resumes the actor in place — current state and the rest
         // of the mailbox are preserved, only the failed message is skipped.
         log.warn('Actor failed, resuming with current state (failed message skipped)', {
-          path: address.path,
+          path: address,
           error: errorMessage,
         });
         await this.emitSystemEvent({
           eventType: 'actorResumed',
           timestamp: Date.now(),
-          data: { address: address.path, reason: 'supervision-resume', error: errorMessage },
+          data: { address: address, reason: 'supervision-resume', error: errorMessage },
         });
         return;
       }
@@ -4225,21 +4247,21 @@ export class ActorSystemImpl implements ActorSystem {
     behavior: PureActorBehavior
   ): Promise<void> {
     const now = Date.now();
-    const currentRestartCount = this.actorRestartCounts.get(address.path) || 0;
+    const currentRestartCount = this.actorRestartCounts.get(address) || 0;
     // Capture the per-actor policy and the original behavior reference before
     // stopActor clears per-path bookkeeping. The respawn must use the
     // original (pre-normalization) behavior: machine registrations key on its
     // object identity, so respawning from the normalized copy would restart a
     // machine-backed actor as a context/stateless actor. Both captures are
     // re-stored by spawn itself, so they survive the stop-inside-restart.
-    const supervisionPolicy = this.actorSupervisionPolicies.get(address.path);
-    const respawnBehavior = this.actorOriginalBehaviors.get(address.path) ?? behavior;
+    const supervisionPolicy = this.actorSupervisionPolicies.get(address);
+    const respawnBehavior = this.actorOriginalBehaviors.get(address) ?? behavior;
 
     // Add exponential backoff delay to prevent rapid restart loops
     const backoffDelay = RESTART_BACKOFF_MS * 2 ** currentRestartCount;
 
     log.info('Restarting actor with backoff delay', {
-      path: address.path,
+      path: address,
       restartAttempt: currentRestartCount + 1,
       backoffDelayMs: backoffDelay,
     });
@@ -4253,7 +4275,7 @@ export class ActorSystemImpl implements ActorSystem {
 
       // Respawn with the same (original) behavior, ID, and supervision policy
       await this.spawn(respawnBehavior as unknown as ActorBehavior<ActorMessage, unknown>, {
-        id: address.id,
+        id: parse(address).id,
         supervision: supervisionPolicy,
       });
 
@@ -4261,25 +4283,25 @@ export class ActorSystemImpl implements ActorSystem {
       // restore it after the respawn so maxRestarts/withinMs stay bounded
       // across the actor's restart history instead of resetting on every
       // restart.
-      this.actorRestartCounts.set(address.path, currentRestartCount + 1);
-      this.actorLastRestartTime.set(address.path, now);
+      this.actorRestartCounts.set(address, currentRestartCount + 1);
+      this.actorLastRestartTime.set(address, now);
 
       await this.emitSystemEvent({
         eventType: 'actorRestarted',
         timestamp: Date.now(),
         data: {
-          address: address.path,
+          address: address,
           restartAttempt: currentRestartCount + 1,
         },
       });
 
       log.info('Actor restarted successfully', {
-        path: address.path,
+        path: address,
         restartAttempt: currentRestartCount + 1,
       });
     } catch (restartError) {
       log.error('Failed to restart actor', {
-        path: address.path,
+        path: address,
         restartAttempt: currentRestartCount + 1,
         error: restartError instanceof Error ? restartError.message : 'Unknown',
       });
@@ -4342,7 +4364,7 @@ export class ActorSystemImpl implements ActorSystem {
       }
 
       const now = Date.now();
-      const currentRestartCount = this.actorRestartCounts.get(failedAddress.path) || 0;
+      const currentRestartCount = this.actorRestartCounts.get(failedAddress) || 0;
       // Single backoff for the whole group, scaled by the failing child's
       // restart history (same formula as the single-actor restart path).
       const backoffDelay = RESTART_BACKOFF_MS * 2 ** currentRestartCount;
@@ -4352,7 +4374,7 @@ export class ActorSystemImpl implements ActorSystem {
       log.warn('Restarting supervisor group with backoff delay', {
         group: group.key,
         strategy: group.strategy,
-        failedChild: failedAddress.path,
+        failedChild: failedAddress,
         members: respawnOrder.length,
         restartAttempt: currentRestartCount + 1,
         backoffDelayMs: backoffDelay,
@@ -4403,7 +4425,7 @@ export class ActorSystemImpl implements ActorSystem {
         }
         try {
           await this.spawn(member.behavior as unknown as ActorBehavior<ActorMessage, unknown>, {
-            id: member.address.id,
+            id: parse(member.address).id,
             supervision: member.policy,
           });
           await this.emitSystemEvent({
@@ -4411,7 +4433,7 @@ export class ActorSystemImpl implements ActorSystem {
             timestamp: Date.now(),
             data: {
               address: path,
-              restartAttempt: path === failedAddress.path ? currentRestartCount + 1 : 1,
+              restartAttempt: path === failedAddress ? currentRestartCount + 1 : 1,
               supervisor: group.key,
             },
           });
@@ -4428,14 +4450,14 @@ export class ActorSystemImpl implements ActorSystem {
       // during teardown) so its maxRestarts/withinMs bound spans the group
       // restart. Siblings stay cleared — collateral restarts do not consume
       // their budgets.
-      if (captured.has(failedAddress.path)) {
-        this.actorRestartCounts.set(failedAddress.path, currentRestartCount + 1);
-        this.actorLastRestartTime.set(failedAddress.path, now);
+      if (captured.has(failedAddress)) {
+        this.actorRestartCounts.set(failedAddress, currentRestartCount + 1);
+        this.actorLastRestartTime.set(failedAddress, now);
       }
     } catch (groupError) {
       log.error('Supervisor group restart failed', {
         group: group.key,
-        failedChild: failedAddress.path,
+        failedChild: failedAddress,
         error: groupError instanceof Error ? groupError.message : String(groupError),
       });
     } finally {
@@ -4463,7 +4485,7 @@ export class ActorSystemImpl implements ActorSystem {
       log.error('Supervisor group giving up: stopping all children', {
         group: group.key,
         strategy: group.strategy,
-        failedChild: failedAddress.path,
+        failedChild: failedAddress,
         reason,
         error: errorMessage,
       });
@@ -4483,7 +4505,7 @@ export class ActorSystemImpl implements ActorSystem {
         const memberReason =
           reason === 'supervisor-escalated'
             ? 'supervisor-escalated'
-            : path === failedAddress.path
+            : path === failedAddress
               ? 'max-restarts-exceeded'
               : 'supervisor-max-restarts-exceeded';
         try {
@@ -4501,9 +4523,9 @@ export class ActorSystemImpl implements ActorSystem {
         eventType: 'actorEscalated',
         timestamp: Date.now(),
         data: {
-          address: failedAddress.path,
+          address: failedAddress,
           supervisor: group.key,
-          failedChild: failedAddress.path,
+          failedChild: failedAddress,
           reason,
           error: errorMessage,
         },
@@ -4511,7 +4533,7 @@ export class ActorSystemImpl implements ActorSystem {
     } catch (groupError) {
       log.error('Supervisor group give-up failed', {
         group: group.key,
-        failedChild: failedAddress.path,
+        failedChild: failedAddress,
         error: groupError instanceof Error ? groupError.message : String(groupError),
       });
     } finally {
@@ -4524,7 +4546,7 @@ export class ActorSystemImpl implements ActorSystem {
    */
   private async notifyGuardianOfFailure(address: ActorAddress, error: unknown): Promise<void> {
     if (!this.guardianActorAddress) {
-      log.error('Cannot escalate failure, Guardian not available', { path: address.path });
+      log.error('Cannot escalate failure, Guardian not available', { path: address });
       return;
     }
 
@@ -4533,8 +4555,8 @@ export class ActorSystemImpl implements ActorSystem {
     try {
       const actorFailedMessage: ActorFailedMessage = {
         type: 'ACTOR_FAILED',
-        actorId: address.id,
-        actorPath: address.path,
+        actorId: parse(address).id,
+        actorPath: address,
         error: errorMessage,
         directive: 'escalate',
         _timestamp: Date.now(),
@@ -4542,10 +4564,10 @@ export class ActorSystemImpl implements ActorSystem {
       };
       await this.enqueueMessage(this.guardianActorAddress, actorFailedMessage);
 
-      log.info('Failure escalated to Guardian', { path: address.path });
+      log.info('Failure escalated to Guardian', { path: address });
     } catch (escalationError) {
       log.error('Failed to escalate to Guardian', {
-        path: address.path,
+        path: address,
         escalationError: escalationError instanceof Error ? escalationError.message : 'Unknown',
       });
     }
@@ -4636,8 +4658,8 @@ export class ActorSystemImpl implements ActorSystem {
       events?: TEventType[];
     }
   ): Promise<() => Promise<void>> {
-    const publisherId = publisher.address.path;
-    const subscriberId = options.subscriber.address.path;
+    const publisherId = publisher.address;
+    const subscriberId = options.subscriber.address;
     const eventTypes = options.events || [];
 
     log.debug('🔍 SUBSCRIBE DEBUG: subscribe() called', {
@@ -4822,7 +4844,7 @@ export class ActorSystemImpl implements ActorSystem {
    * Process the next message for a specific actor
    */
   private async processNextMessage(address: ActorAddress): Promise<void> {
-    const mailbox = this.actorMailboxes.get(address.path);
+    const mailbox = this.actorMailboxes.get(address);
     if (!mailbox) return;
 
     const message = await mailbox.dequeue();
@@ -4844,7 +4866,7 @@ class ActorPIDImpl implements ActorRef {
 
   async send<T extends { type: string }>(message: T): Promise<void> {
     log.debug('🔍 ACTOR PID SEND DEBUG: send() called', {
-      actorAddress: this.address.path,
+      actorAddress: this.address,
       messageType: message.type,
       message,
     });
@@ -4853,12 +4875,12 @@ class ActorPIDImpl implements ActorRef {
       // Fire and forget - enqueue to mailbox
       await this.system.enqueueMessage(this.address, message);
       log.debug('🔍 ACTOR PID SEND DEBUG: enqueueMessage completed', {
-        actorAddress: this.address.path,
+        actorAddress: this.address,
         messageType: message.type,
       });
     } catch (error) {
       log.debug('🔍 ACTOR PID SEND DEBUG: enqueueMessage failed', {
-        actorAddress: this.address.path,
+        actorAddress: this.address,
         messageType: message.type,
         error: error instanceof Error ? error.message : 'Unknown error',
       });

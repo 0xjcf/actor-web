@@ -139,7 +139,7 @@ export class RetryInterceptor implements MessageInterceptor {
     if (this.circuitState === CircuitState.OPEN) {
       log.debug('Circuit breaker is open, not retrying', {
         messageType: message.type,
-        actor: actor.path,
+        actor,
       });
       return;
     }
@@ -181,7 +181,7 @@ export class RetryInterceptor implements MessageInterceptor {
     if (metadata.attempts >= this.maxRetries) {
       log.warn('Max retries exceeded', {
         messageType: message.type,
-        actor: actor.path,
+        actor,
         attempts: metadata.attempts,
         duration: Date.now() - metadata.firstAttemptTime,
       });
@@ -210,7 +210,7 @@ export class RetryInterceptor implements MessageInterceptor {
 
     log.debug('Scheduling retry', {
       messageType: message.type,
-      actor: actor.path,
+      actor,
       attempt: metadata.attempts,
       delay,
       maxRetries: this.maxRetries,
@@ -243,7 +243,7 @@ export class RetryInterceptor implements MessageInterceptor {
 
       try {
         // Re-send the message
-        this.actorSystem.lookup(actor.path).then((actor) => {
+        this.actorSystem.lookup(actor).then((actor) => {
           if (actor) {
             actor.send(message);
           }
@@ -251,7 +251,7 @@ export class RetryInterceptor implements MessageInterceptor {
       } catch (retryError) {
         log.error('Failed to retry message', {
           messageType: message.type,
-          actor: actor.path,
+          actor,
           error: retryError instanceof Error ? retryError.message : String(retryError),
         });
 

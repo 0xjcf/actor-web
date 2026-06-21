@@ -119,7 +119,7 @@ describe('startActorWebNode', () => {
       expect(() => workerNode.requireActor('serverCounter')).toThrow(
         'Actor-Web node did not spawn actor "serverCounter".'
       );
-      expect(workerNode.getActor('workerCounter')?.address.path).toBe(
+      expect(workerNode.getActor('workerCounter')?.address).toBe(
         'actor://worker-node/worker-counter'
       );
       expect(workerNode.transport.getConnectedNodes()).toEqual([]);
@@ -363,7 +363,7 @@ describe('startActorWebNode', () => {
       expect(workerNode.getActor('task')).toBeUndefined();
 
       const task = await workerNode.actors.task.instance({ taskId: 'route-1001' });
-      expect(task.address.path).toBe('actor://worker-node/task-route-1001');
+      expect(task.address).toBe('actor://worker-node/task-route-1001');
       await task.send({ type: 'INCREMENT' });
       await workerNode.system.flush();
       await expect(task.ask<number>({ type: 'GET_COUNT' })).resolves.toBe(1);

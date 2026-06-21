@@ -12,6 +12,7 @@ import type {
   ActorWebTopology,
   ActorWebTopologyInput,
 } from './topology.js';
+import { parse } from './utils/factories.js';
 
 const log = Logger.namespace('ACTOR_WEB_NODE_RUNTIME');
 
@@ -118,7 +119,7 @@ export function createActorWebNodeToolAccess<
 >(topology: TTopology, nodeKey: keyof TTopology['nodes'] & string): Record<string, string[]> {
   return Object.fromEntries(
     getOwnedActorWebActors(topology, nodeKey).map(([, actorDescriptor]) => [
-      actorDescriptor.address.path,
+      actorDescriptor.address,
       getActorWebRequiredToolNames(actorDescriptor),
     ])
   );
@@ -141,7 +142,7 @@ async function spawnActorWebActorInstance(
   validateActorWebRequiredTools(actorDescriptor, tools);
   const address = actorDescriptor.resolveAddress(params as never);
   const cacheKey = isParameterizedActorWebActor(actorDescriptor)
-    ? `${actorKey}:${address.id}`
+    ? `${actorKey}:${parse(address).id}`
     : actorKey;
   const cached = actors.get(cacheKey);
   if (cached) {
@@ -154,7 +155,7 @@ async function spawnActorWebActorInstance(
   }
 
   const spawnPromise = (async (): Promise<ActorRef<unknown, ActorMessage>> => {
-    const existing = await system.lookup(address.path);
+    const existing = await system.lookup(address);
     if (existing) {
       actors.set(cacheKey, existing);
       if (!isParameterizedActorWebActor(actorDescriptor)) {
@@ -164,9 +165,9 @@ async function spawnActorWebActorInstance(
       return existing;
     }
 
-    toolAccess[address.path] = getActorWebRequiredToolNames(actorDescriptor);
+    toolAccess[address] = getActorWebRequiredToolNames(actorDescriptor);
     const actorRef = await system.spawn(materializeActorWebBehavior(actorDescriptor, params), {
-      id: address.id,
+      id: parse(address).id,
       supervision: actorDescriptor.supervision,
     });
     actors.set(cacheKey, actorRef);
@@ -334,8 +335,8 @@ export async function wireOwnedActorWebSubscriptions<
         if (ownsSubscriber) {
           const teardown = await system.sendTopologySubscribe({
             publisherNode: fromDescriptor.nodeAddress,
-            publisherPath: fromDescriptor.address.path,
-            subscriberPath: toDescriptor.address.path,
+            publisherPath: fromDescriptor.address,
+            subscriberPath: toDescriptor.address,
             ...(subscription.events && subscription.events.length > 0
               ? { events: [...subscription.events] }
               : {}),
@@ -406,7 +407,7 @@ export function resolveOwnedActorWebSupervisorGroups<
           `Supervisor "${supervisorKey}" (${descriptor.strategy}) includes parameterized actor "${childKey}". Parameterized actors spawn on demand, so a ${descriptor.strategy} group cannot know its blast radius statically; move it out of the group or use one-for-one.`
         );
       }
-      childPaths.push(childDescriptor.address.path);
+      childPaths.push(childDescriptor.address);
     }
 
     groups.push({

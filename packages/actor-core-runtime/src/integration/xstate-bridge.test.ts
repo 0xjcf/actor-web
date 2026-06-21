@@ -15,6 +15,7 @@ import {
 } from '../component-actor.js';
 import { Logger } from '../logger.js';
 import { defineBehavior } from '../unified-actor-builder.js';
+import { parse } from '../utils/factories.js';
 
 const log = Logger.namespace('XSTATE_BRIDGE_TEST');
 
@@ -157,7 +158,7 @@ describe.skip('XState Bridge Integration', () => {
       const behavior = createComponentActorBehavior(config);
       const pid = await actorSystem.spawn(behavior, { id: 'counter-component' });
 
-      log.debug('Component actor spawned', { actorId: pid.address.id });
+      log.debug('Component actor spawned', { actorId: parse(pid.address).id });
 
       // ✅ CORRECT: Event-driven verification - listen for COMPONENT_MOUNTED
       const collectedEvents: ActorMessage[] = [];
@@ -217,7 +218,7 @@ describe.skip('XState Bridge Integration', () => {
       // Test actual behavior: component actor should be created and addressable
       expect(pid).toBeDefined();
       expect(pid.address).toBeDefined();
-      expect(pid.address.id).toBe('counter-with-bridge');
+      expect(parse(pid.address).id).toBe('counter-with-bridge');
 
       // Test that the component can be queried for basic status
       const isAlive = await pid.isAlive();
@@ -259,7 +260,7 @@ describe.skip('XState Bridge Integration', () => {
       // Test actual behavior: component should handle DOM events and remain responsive
       expect(pid).toBeDefined();
       expect(pid.address).toBeDefined();
-      expect(pid.address.id).toBe('counter-dom-events');
+      expect(parse(pid.address).id).toBe('counter-dom-events');
 
       // Test that component is still alive after DOM event processing
       const isAlive = await pid.isAlive();

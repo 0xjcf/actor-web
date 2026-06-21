@@ -689,12 +689,10 @@ describe('BrowserWebSocketMessageTransport', () => {
 
     await browserSystem.join(['node-b']);
     let remoteRef = await browserSystem.lookup<CheckoutContext, CheckoutMessage>(
-      remoteActor.address.path
+      remoteActor.address
     );
     await waitFor(async () => {
-      remoteRef = await browserSystem.lookup<CheckoutContext, CheckoutMessage>(
-        remoteActor.address.path
-      );
+      remoteRef = await browserSystem.lookup<CheckoutContext, CheckoutMessage>(remoteActor.address);
       return Boolean(remoteRef);
     }, 'Expected remote ref after browser WebSocket directory sync');
     if (!remoteRef) {
