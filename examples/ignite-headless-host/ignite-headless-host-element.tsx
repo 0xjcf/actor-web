@@ -147,7 +147,7 @@ function shipmentInputFromFormEvent(event: Event): CreateShipmentInput | null {
 }
 
 const registerIgniteHeadlessHost = igniteCore({
-  source: () => logisticsClient.actors.shipment.sourceHandle(),
+  source: () => logisticsClient.actors.shipment,
   view: ({ snapshot }) => {
     const shipmentContext = snapshot.context ?? createInitialShipmentContext();
     const local = localStateFor(snapshot.address.path);
@@ -313,7 +313,7 @@ const registerIgniteHeadlessHost = igniteCore({
 });
 
 const registerProviderHqSource = igniteCore({
-  source: () => logisticsClient.actors.providerHq.readModelHandle(),
+  source: () => logisticsClient.actors.providerHq,
   view: ({ snapshot }) => {
     const providerContext = snapshot.context ?? createInitialProviderHqContext();
     const providerItem = providerContext.status.shipmentId
@@ -406,7 +406,7 @@ registerProviderHqSource(IGNITE_PROVIDER_HQ_SOURCE_ELEMENT_NAME, (view) => {
 });
 
 const registerRoutingSource = igniteCore({
-  source: () => logisticsClient.actors.routing.readModelHandle(),
+  source: () => logisticsClient.actors.routing,
   view: ({ snapshot }) => {
     const routingContext = snapshot.context ?? createInitialShipmentContext();
     return {
