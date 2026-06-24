@@ -1725,6 +1725,14 @@
 - Brief: .fas/tasks/resolve-pre-existing-runtime-issues-surfaced-by-coderabbit-o.md
 - Automation mode: advisory
 
+### Task: Complete .address.path migration tail + wire agent-workflow-cli into the test lane (qa-surfaced)
+
+- Title: Complete .address.path migration tail + wire agent-workflow-cli into the test lane (qa-surfaced)
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/complete-address-path-migration-tail-wire-agent-workflow-cli.md
+
 ## Template
 
 ### Task: `<short task title>`
