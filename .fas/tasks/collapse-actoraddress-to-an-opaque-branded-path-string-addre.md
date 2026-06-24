@@ -37,7 +37,6 @@ L0 foundation (locked 2026-06-20, maintainer); gates unify-directory (task-17818
 - packages/actor-core-runtime/src/index.ts
 - packages/actor-core-runtime/src/utils/validation.ts
 - packages/actor-core-runtime/src/topology.ts
-- packages/actor-core-runtime/src/topology-entry.ts
 - packages/actor-core-runtime/src/runtime-gateway.ts
 - packages/actor-core-runtime/src/actor-web-source.ts
 - packages/actor-core-runtime/src/actor-system-guardian.ts
@@ -49,7 +48,7 @@ L0 foundation (locked 2026-06-20, maintainer); gates unify-directory (task-17818
 
 - Type: scope-refresh
 - Added at: 2026-06-20
-- Added paths: packages/actor-core-runtime/src/index.ts, packages/actor-core-runtime/src/utils/validation.ts, packages/actor-core-runtime/src/topology.ts, packages/actor-core-runtime/src/topology-entry.ts, packages/actor-core-runtime/src/runtime-gateway.ts, packages/actor-core-runtime/src/actor-web-source.ts, packages/actor-core-runtime/src/actor-system-guardian.ts, examples/ignite-headless-host/logistics-contract.ts, examples/ignite-headless-host/server-runtime-gateway.ts
+- Added paths: packages/actor-core-runtime/src/index.ts, packages/actor-core-runtime/src/utils/validation.ts, packages/actor-core-runtime/src/topology.ts, packages/actor-core-runtime/src/runtime-gateway.ts, packages/actor-core-runtime/src/actor-web-source.ts, packages/actor-core-runtime/src/actor-system-guardian.ts, examples/ignite-headless-host/logistics-contract.ts, examples/ignite-headless-host/server-runtime-gateway.ts
 
 - Type: scope-refresh
 - Added at: 2026-06-20
@@ -58,6 +57,10 @@ L0 foundation (locked 2026-06-20, maintainer); gates unify-directory (task-17818
 - Type: scope-refresh
 - Added at: 2026-06-24
 - Added paths: packages/actor-core-runtime/src/actor-system-impl.ts, packages/actor-core-runtime/src/actor-proxy.ts, packages/actor-core-runtime/src/plan-interpreter.ts, packages/actor-core-runtime/src/planning/hierarchical-task-network.ts, packages/actor-core-runtime/src/create-component.ts, packages/actor-core-runtime/src/auto-publishing.ts, packages/actor-core-runtime/src/otp-message-plan-processor.ts, packages/actor-core-runtime/src/serve-actor-web-node.ts, packages/actor-core-runtime/src/actor-web-node-runtime.ts, packages/actor-core-runtime/src/actors/supervisor.ts, packages/actor-core-runtime/src/actors/supervisor-tree.ts, packages/actor-core-runtime/src/actors/backoff-supervisor.ts, packages/actor-core-runtime/src/actors/timer-actor.ts, packages/actor-core-runtime/src/interceptors/logging-interceptor.ts, packages/actor-core-runtime/src/interceptors/metrics-interceptor.ts, packages/actor-core-runtime/src/interceptors/retry-interceptor.ts, packages/actor-core-runtime/src/interceptors/validation-interceptor.ts, packages/actor-core-runtime/src/testing/timer-test-utils.ts, packages/agent-workflow-cli/src/host/runtime-host.ts, examples/fas-agent-loop/fas-example-runtime.ts, examples/ignite-headless-host/ignite-headless-host-element.tsx, examples/ignite-headless-host/provider-console.tsx, examples/ignite-headless-host/logistics-runtime-status-panel.tsx
+
+- Type: scope-refresh
+- Added at: 2026-06-24
+- Added paths: .changeset/opaque-address-string.md, docs/API.md, package.json, pnpm-lock.yaml
 
 ## Implementation plan
 
