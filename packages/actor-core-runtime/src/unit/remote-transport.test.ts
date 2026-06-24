@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { setup } from 'xstate';
-import type { ActorMessage } from '../actor-system.js';
+import type { ActorAddress, ActorMessage } from '../actor-system.js';
 import { ActorSystemImpl } from '../actor-system-impl.js';
 import { createActorSource } from '../integration/actor-source.js';
 import { createRuntimeNodeIdentity } from '../runtime-transport-contract.js';
@@ -399,5 +399,52 @@ describe('remote runtime transport', () => {
     } finally {
       process.off('unhandledRejection', onUnhandledRejection);
     }
+  });
+
+  it('does not broadcast a directory unregister for node-private (local) addresses', async () => {
+    const network = createInMemoryMessageTransportNetwork();
+    const localTransport = network.createTransport('node-a');
+    network.createTransport('node-b');
+    localSystem = new ActorSystemImpl({
+      nodeAddress: 'node-a',
+      transport: localTransport,
+    });
+
+    // Capture every outbound transport frame so we can assert exactly which
+    // directory unregisters cross the wire.
+    const sent: Array<{ destination: string; message: ActorMessage }> = [];
+    const realSend = localTransport.send.bind(localTransport);
+    localTransport.send = async (destination: string, message: ActorMessage) => {
+      sent.push({ destination, message });
+      return realSend(destination, message);
+    };
+
+    await localSystem.start();
+    await localTransport.connect('node-b');
+
+    const broadcastUnregister = (
+      localSystem as unknown as {
+        broadcastDirectoryUnregister(address: ActorAddress): Promise<void>;
+      }
+    ).broadcastDirectoryUnregister.bind(localSystem);
+
+    // A `local`-node address (e.g. the guardian) is non-unique across nodes;
+    // unregistering it on a peer would delete that peer's OWN local entry.
+    await broadcastUnregister('actor://local/system/guardian' as ActorAddress);
+    expect(
+      sent.filter((frame) => frame.message.type === '__runtime.directory.unregister')
+    ).toHaveLength(0);
+
+    // A concretely-addressed remote actor must still be unregistered so peers
+    // drop the stale routing entry — the guard discriminates, not suppresses.
+    await broadcastUnregister('actor://node-a/remote-checkout' as ActorAddress);
+    const unregisterFrames = sent.filter(
+      (frame) => frame.message.type === '__runtime.directory.unregister'
+    );
+    expect(unregisterFrames).toHaveLength(1);
+    expect(unregisterFrames[0].destination).toBe('node-b');
+    expect((unregisterFrames[0].message as unknown as { address: string }).address).toBe(
+      'actor://node-a/remote-checkout'
+    );
   });
 });
