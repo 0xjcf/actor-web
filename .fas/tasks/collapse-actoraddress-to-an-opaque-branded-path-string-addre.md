@@ -34,10 +34,26 @@ L0 foundation (locked 2026-06-20, maintainer); gates unify-directory (task-17818
 - packages/actor-core-runtime/src/distributed-actor-directory.ts
 - packages/actor-core-runtime/src/create-actor-ref.ts
 - packages/actor-core-runtime/src/capability-security.ts
+- packages/actor-core-runtime/src/index.ts
+- packages/actor-core-runtime/src/utils/validation.ts
+- packages/actor-core-runtime/src/topology.ts
+- packages/actor-core-runtime/src/topology-entry.ts
+- packages/actor-core-runtime/src/runtime-gateway.ts
+- packages/actor-core-runtime/src/actor-web-source.ts
+- packages/actor-core-runtime/src/actor-system-guardian.ts
+- examples/ignite-headless-host/logistics-contract.ts
+- examples/ignite-headless-host/server-runtime-gateway.ts
+- packages/actor-core-runtime/src/utils/null-actor.ts
 
 ## Scope Amendments
 
-- None.
+- Type: scope-refresh
+- Added at: 2026-06-20
+- Added paths: packages/actor-core-runtime/src/index.ts, packages/actor-core-runtime/src/utils/validation.ts, packages/actor-core-runtime/src/topology.ts, packages/actor-core-runtime/src/topology-entry.ts, packages/actor-core-runtime/src/runtime-gateway.ts, packages/actor-core-runtime/src/actor-web-source.ts, packages/actor-core-runtime/src/actor-system-guardian.ts, examples/ignite-headless-host/logistics-contract.ts, examples/ignite-headless-host/server-runtime-gateway.ts
+
+- Type: scope-refresh
+- Added at: 2026-06-20
+- Added paths: packages/actor-core-runtime/src/utils/null-actor.ts
 
 ## Implementation plan
 
