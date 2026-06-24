@@ -55,6 +55,10 @@ L0 foundation (locked 2026-06-20, maintainer); gates unify-directory (task-17818
 - Added at: 2026-06-20
 - Added paths: packages/actor-core-runtime/src/utils/null-actor.ts
 
+- Type: scope-refresh
+- Added at: 2026-06-24
+- Added paths: packages/actor-core-runtime/src/actor-system-impl.ts, packages/actor-core-runtime/src/actor-proxy.ts, packages/actor-core-runtime/src/plan-interpreter.ts, packages/actor-core-runtime/src/planning/hierarchical-task-network.ts, packages/actor-core-runtime/src/create-component.ts, packages/actor-core-runtime/src/auto-publishing.ts, packages/actor-core-runtime/src/otp-message-plan-processor.ts, packages/actor-core-runtime/src/serve-actor-web-node.ts, packages/actor-core-runtime/src/actor-web-node-runtime.ts, packages/actor-core-runtime/src/actors/supervisor.ts, packages/actor-core-runtime/src/actors/supervisor-tree.ts, packages/actor-core-runtime/src/actors/backoff-supervisor.ts, packages/actor-core-runtime/src/actors/timer-actor.ts, packages/actor-core-runtime/src/interceptors/logging-interceptor.ts, packages/actor-core-runtime/src/interceptors/metrics-interceptor.ts, packages/actor-core-runtime/src/interceptors/retry-interceptor.ts, packages/actor-core-runtime/src/interceptors/validation-interceptor.ts, packages/actor-core-runtime/src/testing/timer-test-utils.ts, packages/agent-workflow-cli/src/host/runtime-host.ts, examples/fas-agent-loop/fas-example-runtime.ts, examples/ignite-headless-host/ignite-headless-host-element.tsx, examples/ignite-headless-host/provider-console.tsx, examples/ignite-headless-host/logistics-runtime-status-panel.tsx
+
 ## Implementation plan
 
 - Convert the supplied context into a scoped implementation plan before editing.
