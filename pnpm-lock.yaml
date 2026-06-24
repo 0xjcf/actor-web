@@ -34,8 +34,8 @@ importers:
         specifier: ^18.0.1
         version: 18.0.1
       ignite-element:
-        specifier: 3.0.0-beta.4
-        version: 3.0.0-beta.4(@actor-web/runtime@0.1.0)(xstate@5.30.0)
+        specifier: 3.0.0-beta.8
+        version: 3.0.0-beta.8(@actor-web/runtime@0.1.0)(xstate@5.30.0)
       markdownlint-cli2:
         specifier: ^0.22.1
         version: 0.22.1
@@ -786,8 +786,8 @@ packages:
   '@iconify/types@2.0.0':
     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
 
-  '@ignite-element/adapters@3.0.0-beta.4':
-    resolution: {integrity: sha512-h6F8Ak3W7GAIiEbIEAdHeFxdUda/8dX0jePwNGTCcBc23m6tKpsfnP9a0qUxAoOlFJ+Cga6ix+FJF394wgdGYw==}
+  '@ignite-element/adapters@3.0.0-beta.8':
+    resolution: {integrity: sha512-K6wD/5FU3Ne57JMQTNf2U945l6B5g6PPiHyUhhDyluuNF6NjI/tONUv4A7E+HXmFBTzTJNVXR6pr2cnSkSrQSg==}
     peerDependencies:
       '@actor-web/runtime': '>=0.1.0'
       '@reduxjs/toolkit': '>=2.3.0'
@@ -806,11 +806,11 @@ packages:
       xstate:
         optional: true
 
-  '@ignite-element/core@3.0.0-beta.4':
-    resolution: {integrity: sha512-MmSl1yP0zUtjX36Qca988mBl4P4I8xBV5vlZ1We29WAIVyz2AfdHQr3uSpMOPGMpbEeXZRLBX0245Aub2jpXNg==}
+  '@ignite-element/core@3.0.0-beta.8':
+    resolution: {integrity: sha512-2N48usCVuAGu4otDpD4DYfBP0kWhS81qK7+ntqGiS4qDBdYJCS1qcZyQP2K2LObDLuD7kNsMwWvBpfJLEXzZpw==}
 
-  '@ignite-element/renderer@3.0.0-beta.4':
-    resolution: {integrity: sha512-p6Y7lXIqtLX/wkJ2ohunf6ZSUNsddsS9pUvGfxxO2sW0E/+VdwVllodfj0ZCGG7lYymmzf9mE2Xge9IOLFHH8Q==}
+  '@ignite-element/renderer@3.0.0-beta.8':
+    resolution: {integrity: sha512-/077lt9w6AscubazhLHxGwihkwTe70/UaUlzE5mDdn1i+ZAQyqY3xzhUd9VJB7/wZ5MCcr4C+njRGVhcO1jL7g==}
     peerDependencies:
       lit-html: '>=3.2.1'
     peerDependenciesMeta:
@@ -1612,13 +1612,14 @@ packages:
     resolution: {integrity: sha512-im9DjEDQ55s9fL4EYzOAv0yMqmMBSZp6G0VvFyTMPKWxiSBHUj9NW/qqLmXUwXrrM7AvqSlTCfvqRb0cM8yYqw==}
     engines: {node: '>=0.10.0'}
 
-  ignite-element@3.0.0-beta.4:
-    resolution: {integrity: sha512-eZTppMbCA6zR0MU4ToTHZyYemeZn8fKV/ENcMDb5IudlMpM8JQIUjTXE10MQu2c/X5sw9EY/+d9oRFYTdMKZRA==}
+  ignite-element@3.0.0-beta.8:
+    resolution: {integrity: sha512-UWxki562Kv26z153XlCtCBcPshW+T5euq+sBo8C7PAQSc+0bsPUqUBpTzKdMgazA/Ay3uCfC55wFMWOdtAev3Q==}
     engines: {node: '>=22'}
     peerDependencies:
       '@reduxjs/toolkit': '>=2.3.0'
       lit-html: '>=3.2.1'
       mobx: '>=6.13.5'
+      react: '>=18'
       redux: '>=5.0.1'
       xstate: '>=5.19.0'
     peerDependenciesMeta:
@@ -1627,6 +1628,8 @@ packages:
       lit-html:
         optional: true
       mobx:
+        optional: true
+      react:
         optional: true
       redux:
         optional: true
@@ -3123,16 +3126,16 @@ snapshots:
 
   '@iconify/types@2.0.0': {}
 
-  '@ignite-element/adapters@3.0.0-beta.4(@actor-web/runtime@0.1.0)(xstate@5.30.0)':
+  '@ignite-element/adapters@3.0.0-beta.8(@actor-web/runtime@0.1.0)(xstate@5.30.0)':
     dependencies:
-      '@ignite-element/core': 3.0.0-beta.4
+      '@ignite-element/core': 3.0.0-beta.8
     optionalDependencies:
       '@actor-web/runtime': 0.1.0
       xstate: 5.30.0
 
-  '@ignite-element/core@3.0.0-beta.4': {}
+  '@ignite-element/core@3.0.0-beta.8': {}
 
-  '@ignite-element/renderer@3.0.0-beta.4': {}
+  '@ignite-element/renderer@3.0.0-beta.8': {}
 
   '@inquirer/external-editor@1.0.3(@types/node@20.19.7)':
     dependencies:
@@ -3990,11 +3993,11 @@ snapshots:
     dependencies:
       safer-buffer: 2.1.2
 
-  ignite-element@3.0.0-beta.4(@actor-web/runtime@0.1.0)(xstate@5.30.0):
+  ignite-element@3.0.0-beta.8(@actor-web/runtime@0.1.0)(xstate@5.30.0):
     dependencies:
-      '@ignite-element/adapters': 3.0.0-beta.4(@actor-web/runtime@0.1.0)(xstate@5.30.0)
-      '@ignite-element/core': 3.0.0-beta.4
-      '@ignite-element/renderer': 3.0.0-beta.4
+      '@ignite-element/adapters': 3.0.0-beta.8(@actor-web/runtime@0.1.0)(xstate@5.30.0)
+      '@ignite-element/core': 3.0.0-beta.8
+      '@ignite-element/renderer': 3.0.0-beta.8
     optionalDependencies:
       xstate: 5.30.0
     transitivePeerDependencies:
