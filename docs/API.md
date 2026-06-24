@@ -341,7 +341,7 @@ export const logistics = defineActorWebTopology({
 Actor descriptors include an inferred address:
 
 ```ts
-logistics.actors.shipment.address.path;
+logistics.actors.shipment.address;
 // actor://logistics-server-runtime/logistics-shipment
 ```
 
