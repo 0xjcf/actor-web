@@ -7,7 +7,6 @@
 import type { ActorRef } from '../actor-ref.js';
 import { Logger } from '../logger.js';
 import type { BaseEventObject } from '../types.js';
-import { parse } from '../utils/factories.js';
 
 // ========================================================================================
 // HTN CORE TYPES
@@ -486,7 +485,9 @@ export class HTNPlanner {
       this.logger.debug(`${indent}⚡ Primitive task ready for execution`, {
         taskName: task.name,
         taskId: task.id,
-        executor: parse(task.executor.address).id,
+        // Log the raw branded address (log-only path): parse() throws on a
+        // malformed address and must never escape from logging.
+        executor: task.executor.address,
         action: task.action,
         estimatedDuration: task.estimatedDuration,
       });

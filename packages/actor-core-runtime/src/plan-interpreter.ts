@@ -272,24 +272,29 @@ async function processSendInstruction(
   instruction: SendInstruction,
   context: RuntimeContext
 ): Promise<void> {
-  log.debug('Processing send instruction', {
-    targetActor: parse(instruction.to.address).id,
-    messageType: instruction.tell.type,
-    mode: instruction.mode || 'fireAndForget',
-    actorId: context.actorId,
-  });
-
   try {
     // Validate target actor
     if (!instruction.to || typeof instruction.to.send !== 'function') {
       throw new Error('Invalid target actor reference in send instruction');
     }
 
+    // Parse inside the try so a malformed address is handled by the existing
+    // error path below rather than throwing eagerly before it; compute the id
+    // once and reuse it for both log lines.
+    const targetActor = parse(instruction.to.address).id;
+
+    log.debug('Processing send instruction', {
+      targetActor,
+      messageType: instruction.tell.type,
+      mode: instruction.mode || 'fireAndForget',
+      actorId: context.actorId,
+    });
+
     // Send message to target actor
     await instruction.to.send(instruction.tell);
 
     log.debug('Send instruction completed', {
-      targetActor: parse(instruction.to.address).id,
+      targetActor,
       messageType: instruction.tell.type,
       actorId: context.actorId,
     });
