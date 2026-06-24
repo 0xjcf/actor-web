@@ -62,11 +62,19 @@ function mint(id: string, node: string | undefined, kind: 'actor' | 'callback'):
   if (!id || typeof id !== 'string') {
     throw new Error('Actor ID must be a non-empty string'); // KEEP: value-object precondition
   }
-  // `/callback/` is the load-bearing delivery discriminator (the callback regex matches
-  // it first), so an actor id starting with `callback/` would round-trip back as
-  // kind:'callback' and misroute. Reserve the prefix for actor-kind ids.
-  if (kind === 'actor' && id.startsWith('callback/')) {
-    throw new Error(`Actor id must not start with the reserved "callback/" prefix: ${id}`);
+  // `node` is a single path segment (parse captures it as [^/]+). A non-string,
+  // empty, or slash-bearing node would mis-split the minted path so it no longer
+  // round-trips through parse(). Reject it at the only brand-emission site.
+  if (node !== undefined && (typeof node !== 'string' || node.length === 0 || node.includes('/'))) {
+    throw new Error(`Actor node must be a single non-empty path segment without "/": ${node}`);
+  }
+  // `/callback/` is the load-bearing delivery discriminator (the callback regex
+  // matches it ANYWHERE in the path), so an actor id starting with `callback/` —
+  // OR embedding a `/callback/` segment mid-string (e.g. `group/callback/sub`) —
+  // would round-trip back as kind:'callback' and misroute. Reserve the segment
+  // (and its prefix form) for actor-kind ids; benign slash-bearing ids stay valid.
+  if (kind === 'actor' && (id.startsWith('callback/') || id.includes('/callback/'))) {
+    throw new Error(`Actor id must not contain the reserved "callback/" segment: ${id}`);
   }
   // Reserved-id guard (locked): 'guardian' is the well-known system root supervisor id;
   // no user actor may claim it. The guardian's own address bypasses this via a direct
