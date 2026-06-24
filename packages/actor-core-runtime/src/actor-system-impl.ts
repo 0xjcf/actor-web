@@ -3522,6 +3522,14 @@ export class ActorSystemImpl implements ActorSystem {
     if (!this.config.transport) {
       return;
     }
+    // Mirror broadcastDirectoryRegister: never advertise/retract node-private
+    // (`local`-node) actors such as the guardian. The `local` key is non-unique
+    // across nodes, so an unregister applied by a peer would delete its OWN
+    // same-keyed local entry (e.g. a stopping guardian wiping every peer's
+    // guardian routing).
+    if (isLocalAddress(address)) {
+      return;
+    }
 
     await Promise.allSettled(
       this.config.transport.getConnectedNodes().map((node) =>
