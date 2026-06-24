@@ -56,7 +56,7 @@ const signals: Array<{
 
 const registerProviderConsole = igniteCore({
   source: logisticsClient.actors.providerHq,
-  states: ({ context }) => {
+  view: ({ context }) => {
     const providerContext = context ?? createInitialProviderHqContext();
     const queuePageCount = Math.max(
       1,
