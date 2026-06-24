@@ -93,6 +93,26 @@ describe('Address.from (sole smart constructor)', () => {
     expect(() => Address.from({ id: 'guardian' })).toThrow(/guardian/i);
   });
 
+  it('rejects a node that is empty or breaks the path with a slash', () => {
+    // `node` is a single path segment (parse captures it as [^/]+); a slash-bearing
+    // node would mis-split the minted path and corrupt round-tripping.
+    expect(() => Address.from({ id: 'a1', node: '' })).toThrow();
+    expect(() => Address.from({ id: 'a1', node: 'a/b' })).toThrow(/node/i);
+    expect(() => Address.from({ id: 'c1', node: 'a/b', kind: 'callback' })).toThrow(/node/i);
+    // A benign single-segment node is still accepted (regression guard).
+    expect(Address.from({ id: 'a1', node: 'n2' })).toBe('actor://n2/a1');
+  });
+
+  it('rejects an actor id that embeds a /callback/ segment (mid-string misroute)', () => {
+    // The start-anchored `callback/` guard above only catches the prefix. An id
+    // like `group/callback/sub` still round-trips back through parse as
+    // kind:'callback' (the callback regex matches `/callback/` anywhere), so the
+    // reserved discriminator segment must be rejected wherever it appears.
+    expect(() => Address.from({ id: 'group/callback/sub' })).toThrow(/callback/i);
+    // Benign hierarchical (slash-bearing) ids without the reserved segment stay valid.
+    expect(Address.from({ id: 'group/sub', node: 'n1' })).toBe('actor://n1/group/sub');
+  });
+
   it('rejects unbranded values at the type level (brand is not cosmetic)', () => {
     // A hand-built object literal can no longer masquerade as an ActorAddress.
     // @ts-expect-error address object literals are a compile error under the branded model
