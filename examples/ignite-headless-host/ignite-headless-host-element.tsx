@@ -1,6 +1,7 @@
 /** @jsxImportSource ignite-element/jsx */
 
-import { igniteCore } from 'ignite-element/actor-web';
+import { type ActorAddress, parse } from '@actor-web/runtime';
+import { type ActorWebAddress, igniteCore } from 'ignite-element/actor-web';
 import styles from './ignite-headless-host-element.css?raw';
 import { logisticsClient } from './logistics-browser-client';
 import { createInitialShipmentContext, type ShipmentContext } from './logistics-contract';
@@ -19,6 +20,17 @@ import {
 export const IGNITE_HEADLESS_HOST_ELEMENT_NAME = 'aw-ignite-headless-host';
 const IGNITE_ROUTING_SOURCE_ELEMENT_NAME = 'aw-logistics-routing-source';
 const IGNITE_PROVIDER_HQ_SOURCE_ELEMENT_NAME = 'aw-logistics-provider-hq-source';
+
+// Actor-Web addresses are opaque branded path strings: the address string IS
+// the path, and structured fields are read back through parse() at the boundary.
+// ignite types snapshot/actor `address` as the tolerant union
+// `string | { id; path; ... }`, so normalize both shapes here instead of
+// scattering casts. At runtime an Actor-Web address is always the branded string.
+const addressPath = (address: ActorWebAddress): string =>
+  typeof address === 'string' ? address : address.path;
+
+const addressId = (address: ActorWebAddress): string =>
+  typeof address === 'string' ? parse(address as ActorAddress).id : address.id;
 
 interface LogisticsElementState {
   address: string;
@@ -150,7 +162,7 @@ const registerIgniteHeadlessHost = igniteCore({
   source: () => logisticsClient.actors.shipment,
   view: ({ snapshot }) => {
     const shipmentContext = snapshot.context ?? createInitialShipmentContext();
-    const local = localStateFor(snapshot.address.path);
+    const local = localStateFor(addressPath(snapshot.address));
     const timeline = projectTimeline(shipmentContext.timeline);
     const eventLog = local.eventLog.map((event) => projectEventLogViewItem(event));
     const timelinePage = paginateItems(timeline, local.timelinePage, PAGE_SIZE);
@@ -186,20 +198,23 @@ const registerIgniteHeadlessHost = igniteCore({
       canGoToNextEventLogPage: eventLogPage.canGoToNextPage,
       transportState: snapshot.transport.state,
       transportReason: snapshot.transport.reason ?? null,
-      address: snapshot.address.path,
+      address: addressPath(snapshot.address),
       statusBadgeClass: `badge status-${shipmentContext.status}`,
       transportBadgeClass: `badge transport-${snapshot.transport.state}`,
     } satisfies LogisticsElementState;
   },
   commands: ({ actor, command, host }) => {
-    const address = actor.address.path;
+    const address = addressPath(actor.address);
     const requestViewRefresh = () => actor.send({ type: 'GET_SHIPMENT_COUNT' });
 
     if (!eventSubscriptionsByHost.has(host)) {
       eventSubscriptionsByHost.add(host);
       actor.subscribeEvent?.((event) => {
         const nextLocal = localStateFor(address);
-        nextLocal.eventLog = [projectEventLogItem(event, actor.address.id), ...nextLocal.eventLog];
+        nextLocal.eventLog = [
+          projectEventLogItem(event, addressId(actor.address)),
+          ...nextLocal.eventLog,
+        ];
       });
     }
 
@@ -410,7 +425,7 @@ const registerRoutingSource = igniteCore({
   view: ({ snapshot }) => {
     const routingContext = snapshot.context ?? createInitialShipmentContext();
     return {
-      routingAddress: snapshot.address.path,
+      routingAddress: addressPath(snapshot.address),
       routingTransportState: snapshot.transport.state,
       routingTransportReason: snapshot.transport.reason ?? null,
       routingShipmentId: routingContext.shipmentId,
