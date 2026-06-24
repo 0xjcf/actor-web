@@ -24,9 +24,15 @@ type RuntimeStatusSource = ActorSource<
   LogisticsRuntimeStatusView,
   RuntimeStatusCommand,
   { type: 'RUNTIME_STATUS_REFRESHED' }
->;
+> & {
+  // beta.8 igniteCore takes a single source and owns its teardown via the
+  // optional close() on ActorWebReadModelSource; fold the former standalone
+  // stop() (interval clear + stopped flag) into it. cleanup: true opts this
+  // shared, consumer-owned source into element-refcount teardown.
+  close(): void;
+};
 
-function createRuntimeStatusSource(): { source: RuntimeStatusSource; stop(): void } {
+function createRuntimeStatusSource(): RuntimeStatusSource {
   // Operator demo surface only: this source owns the /runtime/status side-channel
   // and does not participate in shipment actor state.
   let context = createInitialLogisticsRuntimeStatusView();
@@ -39,6 +45,8 @@ function createRuntimeStatusSource(): { source: RuntimeStatusSource; stop(): voi
   >();
   let stopped = false;
   let syncInFlight = false;
+  // Declared up front so close() can capture the handle the polling loop assigns below.
+  let intervalId = 0;
 
   const source: RuntimeStatusSource = {
     address: Address.from({ id: 'logistics-runtime-status-panel', node: 'logistics-browser-host' }),
@@ -78,6 +86,10 @@ function createRuntimeStatusSource(): { source: RuntimeStatusSource; stop(): voi
     async send(_message) {},
     async ask<Response = unknown>() {
       return undefined as Response;
+    },
+    close() {
+      stopped = true;
+      window.clearInterval(intervalId);
     },
   };
 
@@ -120,25 +132,19 @@ function createRuntimeStatusSource(): { source: RuntimeStatusSource; stop(): voi
     notify();
   };
 
-  const intervalId = window.setInterval(() => {
+  intervalId = window.setInterval(() => {
     void sync();
   }, LOGISTICS_RUNTIME_STATUS_POLL_INTERVAL_MS);
   void sync();
 
-  return {
-    source,
-    stop() {
-      stopped = true;
-      window.clearInterval(intervalId);
-    },
-  };
+  return source;
 }
 
 const runtimeStatusSource = createRuntimeStatusSource();
 
 const registerRuntimeStatusPanel = igniteCore({
   source: runtimeStatusSource,
-  states: ({ context, transport }) => ({
+  view: ({ context, transport }) => ({
     runtimeStatus: context ?? createInitialLogisticsRuntimeStatusView(),
     runtimeTransportState: transport.state,
   }),
