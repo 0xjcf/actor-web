@@ -26,7 +26,6 @@ import {
   type TemplateFunction,
 } from './component-actor.js';
 import { Logger } from './logger.js';
-import { parse } from './utils/factories.js';
 
 const log = Logger.namespace('CREATE_COMPONENT');
 
@@ -533,7 +532,9 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
 
         log.info('Component actor spawned', {
           machineId,
-          actorId: parse(this._actorPID.address).id,
+          // Log-only: the raw address string, never parse(). A malformed address
+          // must not throw here and abort the component mount.
+          actorAddress: this._actorPID.address,
         });
 
         // Mount the component actor with DOM element
