@@ -59,6 +59,12 @@ export function generateSystemId(): string {
  * actor-system-guardian.ts is the single deliberate exception).
  */
 function mint(id: string, node: string | undefined, kind: 'actor' | 'callback'): ActorAddress {
+  // `createActorAddress` is publicly exported, so an untyped JS caller can pass a
+  // bogus 3rd arg. `kind` is the load-bearing delivery discriminator; reject
+  // anything other than actor|callback here rather than silently minting an actor.
+  if (kind !== 'actor' && kind !== 'callback') {
+    throw new Error(`Actor kind must be "actor" or "callback": ${String(kind)}`);
+  }
   if (!id || typeof id !== 'string') {
     throw new Error('Actor ID must be a non-empty string'); // KEEP: value-object precondition
   }

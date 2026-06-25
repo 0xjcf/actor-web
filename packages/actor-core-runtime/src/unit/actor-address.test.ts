@@ -139,6 +139,16 @@ describe('createActorAddress (thin alias kept for existing call sites)', () => {
     expect(createRemoteActorAddress('a1', 'n2')).toBe('actor://n2/a1');
     expect(createActorAddress('c1', 'n1', 'callback')).toBe('actor://n1/callback/c1');
   });
+
+  it('rejects a bogus kind from an untyped caller (fail-fast at the minter)', () => {
+    // createActorAddress is publicly exported, so an untyped JS caller can pass a
+    // bogus 3rd arg. The minter must reject anything other than actor|callback
+    // rather than silently minting it as an actor.
+    expect(() =>
+      // @ts-expect-error kind must be 'actor' | 'callback'; this guards untyped JS callers
+      createActorAddress('a1', 'n1', 'bogus')
+    ).toThrow(/kind/i);
+  });
 });
 
 describe('parse (boundary reader)', () => {
