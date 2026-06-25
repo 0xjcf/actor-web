@@ -6,7 +6,7 @@ Created with `fas create-task` on 2026-06-20. Filed from the **actor-web** proje
 
 ## Problem
 
-PLATFORM change targeting /Users/joseflores/Development/FAS (not actor-web). The CodeRabbit-CLI-before-fas-done gate has been skipped twice (P2, then addr-opacity PR #31) because the autonomous 6-agent flow has no CodeRabbit step and relies on the orchestrator remembering, so the bot leaves post-closeout threads (churn). Add a CodeRabbit pass to the FAS reviewer or closeout step so fas done cannot complete without a clean or explicitly-triaged CodeRabbit review. Until shipped, the orchestrator must run coderabbit review --base main before allowing closeout on every task. Context: actor-web .fas/memory/pr-feedback.md and the coderabbit-pre-mr-review note.
+PLATFORM change targeting the FAS platform repo (not actor-web). The CodeRabbit-CLI-before-fas-done gate has been skipped twice (P2, then addr-opacity PR #31) because the autonomous 6-agent flow has no CodeRabbit step and relies on the orchestrator remembering, so the bot leaves post-closeout threads (churn). Add a CodeRabbit pass to the FAS reviewer or closeout step so fas done cannot complete without a clean or explicitly-triaged CodeRabbit review. Until shipped, the orchestrator must run coderabbit review --base main before allowing closeout on every task. Context: actor-web .fas/memory/pr-feedback.md and the coderabbit-pre-mr-review note.
 
 ## Acceptance criteria
 
