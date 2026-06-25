@@ -197,6 +197,37 @@ describe('parseActorPath (wire/ingress parser)', () => {
   it('throws on a malformed path', () => {
     expect(() => parseActorPath('not-an-actor-path')).toThrow();
   });
+
+  it('rejects an ingress path that embeds a /callback/ segment (mirror the minter)', () => {
+    // Ingress must reject exactly what the minter rejects. A path like
+    // actor://n1/group/callback/sub round-trips back through parse as
+    // kind:'callback' (the callback regex matches `/callback/` anywhere) and
+    // would trip enqueueMessage's `.includes('/callback/')` fast path, so it
+    // must not be admitted as a branded actor address.
+    expect(() => parseActorPath('actor://n1/group/callback/sub')).toThrow(/callback/i);
+  });
+
+  it('admits a valid 2-segment actor path', () => {
+    expect(parseActorPath('actor://n1/orders')).toBe('actor://n1/orders');
+    expect(parse(parseActorPath('actor://n1/orders'))).toEqual({
+      id: 'orders',
+      kind: 'actor',
+      node: 'n1',
+    });
+  });
+
+  it('round-trips a real callback ingress path', () => {
+    const address = parseActorPath('actor://n1/callback/x');
+    expect(address).toBe('actor://n1/callback/x');
+    expect(parse(address)).toEqual({ id: 'x', kind: 'callback', node: 'n1' });
+  });
+
+  it('round-trips the reserved guardian sentinel only on the local node', () => {
+    // The guardian's own wire address must survive ingress even though the
+    // minter reserves the `guardian` id; it is only valid on the local node.
+    expect(parseActorPath('actor://local/guardian')).toBe('actor://local/guardian');
+    expect(() => parseActorPath('actor://other/guardian')).toThrow(/guardian/i);
+  });
 });
 
 describe('matchesAddressQuery (pure functional-core predicate)', () => {

@@ -17,7 +17,7 @@ import type { ActorRef } from './actor-ref.js';
 import type { ActorToolbox, ActorToolRegistry, UntypedActorToolRegistry } from './actor-tools.js';
 import type { UniversalTemplate } from './create-actor.js';
 import type { JsonValue, Message } from './types.js';
-import { parse } from './utils/factories.js';
+import { Address, parse } from './utils/factories.js';
 
 export type { JsonValue } from './types.js';
 
@@ -766,23 +766,31 @@ export interface ActorSupervisor {
 /**
  * Parse/normalize an actor path off the wire into a branded address.
  *
- * This is the ingress boundary: it faithfully reconstructs an address that
- * already exists on the wire, so it deliberately does NOT apply `mint`'s
- * *creation* guards (reserved `guardian` id / `callback/` prefix) — those guard
- * the construction of NEW identities, whereas a wire address (e.g. the
- * guardian's own `actor://local/guardian`) must round-trip losslessly. It still
- * validates the structural shape and rejects malformed input.
+ * This is the ingress boundary, and it must admit exactly what the minter mints:
+ * anything `Address.from` would reject (e.g. an id embedding the reserved
+ * `/callback/` discriminator segment) must NOT be admitted here either, or
+ * `enqueueMessage`'s `.includes('/callback/')` fast path would misroute it. So
+ * ingress routes through the factory rather than hand-casting the brand. The one
+ * deliberate exception is the guardian's own well-known sentinel
+ * `actor://local/guardian`, which the minter reserves but which must still
+ * round-trip losslessly off the wire (and only on the local node).
  */
 export function parseActorPath(path: string): ActorAddress {
   const callback = path.match(/^actor:\/\/([^/]+)\/callback\/(.+)$/);
   if (callback) {
     const [, node, id] = callback;
-    return `actor://${node}/callback/${id}` as ActorAddress;
+    return Address.from({ id, node, kind: 'callback' });
   }
   const actor = path.match(/^actor:\/\/([^/]+)\/(.+)$/);
   if (!actor) throw new Error(`Invalid actor path: ${path}`);
   const [, node, id] = actor;
-  return `actor://${node}/${id}` as ActorAddress;
+  if (id === 'guardian') {
+    // Reserved sentinel: the minter forbids the `guardian` id, but the
+    // guardian's own wire address must survive ingress — only on the local node.
+    if (node !== 'local') throw new Error(`Invalid guardian actor path: ${path}`);
+    return 'actor://local/guardian' as ActorAddress;
+  }
+  return Address.from({ id, node });
 }
 
 /**
