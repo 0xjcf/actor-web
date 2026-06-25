@@ -140,10 +140,12 @@ function createRuntimeStatusSource(): RuntimeStatusSource {
   return source;
 }
 
-const runtimeStatusSource = createRuntimeStatusSource();
-
 const registerRuntimeStatusPanel = igniteCore({
-  source: runtimeStatusSource,
+  // Per-mount factory: igniteCore's refcount teardown calls close() (permanent
+  // stopped = true + interval clear) on last detach, so a single module-scoped
+  // source would be dead on remount. A fresh source per element keeps cleanup: true
+  // (each isolated source is torn down with its element) while surviving remounts.
+  source: () => createRuntimeStatusSource(),
   view: ({ context, transport }) => ({
     runtimeStatus: context ?? createInitialLogisticsRuntimeStatusView(),
     runtimeTransportState: transport.state,
