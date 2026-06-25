@@ -1709,8 +1709,8 @@
 
 - Title: Collapse ActorAddress to an opaque branded path string (Address.from + typed AddressQuery)
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/collapse-actoraddress-to-an-opaque-branded-path-string-addre.md
 - Verification lane: fast
 - Policy sensitivity: standard
