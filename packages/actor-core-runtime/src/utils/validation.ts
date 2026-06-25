@@ -19,6 +19,18 @@ import type { JsonValue } from '../types.js';
 // ============================================================================
 
 /**
+ * Non-throwing predicate: does a string have the shape of a branded actor
+ * address? `_sender` is a branded address string (the path IS the address), so a
+ * non-empty string is not enough — arbitrary text must not pass as a sender.
+ * Covers both `actor://<node>/<id>` and `actor://<node>/callback/<id>` (the
+ * trailing `.+` matches the `callback/<id>` tail). Pure functional-core: no
+ * throw, mirrors the structural regex used by `parse`.
+ */
+export function isActorAddressShape(value: string): boolean {
+  return /^actor:\/\/[^/]+\/.+$/.test(value);
+}
+
+/**
  * Validates that a value is a proper ActorMessage
  * Enforces flat message structure with underscore-prefixed envelope fields
  */
@@ -39,8 +51,10 @@ export function isActorMessage(value: unknown): value is ActorMessage {
     (!('_timestamp' in obj) || typeof obj._timestamp === 'number') &&
     // If _version exists, it must be a string
     (!('_version' in obj) || typeof obj._version === 'string') &&
-    // If _sender exists, it must be a branded actor address string (the path IS the address)
-    (!('_sender' in obj) || (typeof obj._sender === 'string' && obj._sender.length > 0)) &&
+    // If _sender exists, it must be a branded actor address string (the path IS the
+    // address) — a valid address shape, not merely a non-empty string.
+    (!('_sender' in obj) ||
+      (typeof obj._sender === 'string' && isActorAddressShape(obj._sender))) &&
     // If _correlationId exists, it must be a string
     (!('_correlationId' in obj) || typeof obj._correlationId === 'string')
   );
@@ -179,7 +193,7 @@ export function validateActorMessage(value: unknown): {
     errors.push('Message _correlationId must be a string');
   }
 
-  if ('_sender' in msg && (typeof msg._sender !== 'string' || msg._sender.length === 0)) {
+  if ('_sender' in msg && (typeof msg._sender !== 'string' || !isActorAddressShape(msg._sender))) {
     errors.push('Message _sender must be a branded actor address string');
   }
 
