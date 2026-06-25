@@ -170,6 +170,24 @@ describe('isActorMessage', () => {
     expect(result.isValid).toBe(false);
     expect(result.errors).toContain('Message _sender must be a branded actor address string');
   });
+
+  // A non-empty string is not enough: _sender must look like an actor address,
+  // not arbitrary text, so a stray label can't masquerade as a sender.
+  it('rejects a non-empty string _sender that is not an actor-address shape', () => {
+    expect(isActorMessage({ type: 'GREET', _sender: 'not-an-address' })).toBe(false);
+    const result = validateActorMessage({ type: 'GREET', _sender: 'not-an-address' });
+    expect(result.isValid).toBe(false);
+    expect(result.errors).toContain('Message _sender must be a branded actor address string');
+  });
+
+  it('accepts a real branded actor-address and callback-shaped _sender', () => {
+    expect(isActorMessage({ type: 'GREET', _sender: Address.from({ id: 'a1' }) })).toBe(true);
+    expect(isActorMessage({ type: 'GREET', _sender: 'actor://n1/callback/c1' })).toBe(true);
+    expect(
+      validateActorMessage({ type: 'GREET', _sender: Address.from({ id: 'a1', node: 'n2' }) })
+        .isValid
+    ).toBe(true);
+  });
 });
 
 // ============================================================================
