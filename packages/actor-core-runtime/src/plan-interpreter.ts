@@ -33,7 +33,6 @@ import {
   // isDomainEvent and isMessagePlan moved to utils/validation.js
   isSendInstruction as validateSendInstruction,
 } from './message-plan.js';
-import { parse } from './utils/factories.js';
 import {
   isDomainEvent as validateDomainEvent,
   isMessagePlan as validateMessagePlan,
@@ -272,19 +271,18 @@ async function processSendInstruction(
   instruction: SendInstruction,
   context: RuntimeContext
 ): Promise<void> {
+  // Log-only label: the raw address string, never parse(). A malformed address
+  // must flow through the validation guard / onError path below, not throw from
+  // a debug log (and a catch-time reparse could mask the original failure).
+  const targetLabel = instruction.to?.address ?? 'unknown';
   try {
     // Validate target actor
     if (!instruction.to || typeof instruction.to.send !== 'function') {
       throw new Error('Invalid target actor reference in send instruction');
     }
 
-    // Parse inside the try so a malformed address is handled by the existing
-    // error path below rather than throwing eagerly before it; compute the id
-    // once and reuse it for both log lines.
-    const targetActor = parse(instruction.to.address).id;
-
     log.debug('Processing send instruction', {
-      targetActor,
+      targetActor: targetLabel,
       messageType: instruction.tell.type,
       mode: instruction.mode || 'fireAndForget',
       actorId: context.actorId,
@@ -294,14 +292,14 @@ async function processSendInstruction(
     await instruction.to.send(instruction.tell);
 
     log.debug('Send instruction completed', {
-      targetActor,
+      targetActor: targetLabel,
       messageType: instruction.tell.type,
       actorId: context.actorId,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error('Error in send instruction', {
-      targetActor: instruction.to ? parse(instruction.to.address).id : 'unknown',
+      targetActor: targetLabel,
       messageType: instruction.tell?.type || 'unknown',
       error: errorMessage,
       actorId: context.actorId,
@@ -318,8 +316,13 @@ async function processAskInstruction(
   instruction: AskInstruction,
   context: RuntimeContext
 ): Promise<PlanExecutionResult> {
+  // Log-only label: the raw address string, never parse(). Computed BEFORE the
+  // target-validity guard so a malformed AskInstruction reaches the guard (and
+  // its onError flow) instead of throwing from this debug log.
+  const targetLabel = instruction.to?.address ?? 'unknown';
+
   log.debug('Processing ask instruction', {
-    targetActor: parse(instruction.to.address).id,
+    targetActor: targetLabel,
     messageType: instruction.ask.type,
     timeout: instruction.timeout,
     actorId: context.actorId,
@@ -373,7 +376,7 @@ async function processAskInstruction(
       callbackResult.success = recursiveResult.success && callbackResult.errors.length === 0;
 
       log.debug('Ask instruction completed successfully with callback', {
-        targetActor: parse(instruction.to.address).id,
+        targetActor: targetLabel,
         messageType: instruction.ask.type,
         callbackEventType: callbackEvent.type,
         actorId: context.actorId,
@@ -381,7 +384,7 @@ async function processAskInstruction(
       });
     } else {
       log.debug('Ask instruction completed successfully without callback', {
-        targetActor: parse(instruction.to.address).id,
+        targetActor: targetLabel,
         messageType: instruction.ask.type,
         actorId: context.actorId,
       });
@@ -390,7 +393,7 @@ async function processAskInstruction(
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
     log.error('Error in ask instruction', {
-      targetActor: instruction.to ? parse(instruction.to.address).id : 'unknown',
+      targetActor: targetLabel,
       messageType: instruction.ask?.type || 'unknown',
       error: errorMessage,
       actorId: context.actorId,
@@ -423,7 +426,7 @@ async function processAskInstruction(
         callbackResult.errors.push(...errorResult.errors);
 
         log.debug('Ask instruction error handled with callback', {
-          targetActor: instruction.to ? parse(instruction.to.address).id : 'unknown',
+          targetActor: targetLabel,
           messageType: instruction.ask?.type || 'unknown',
           errorEventType: errorEvent.type,
           actorId: context.actorId,
