@@ -13,7 +13,6 @@ import {
   ActorStoppedError,
 } from './actor-ref.js';
 import type { ActorAddress, ActorMessage, ActorStats } from './actor-system.js';
-import type { Supervisor } from './actors/supervisor.js';
 import { Logger } from './logger.js';
 import { XStateRequestResponseManager } from './messaging/request-response.js';
 import {
@@ -57,9 +56,8 @@ class XStateActorRef<TContext = unknown, TMessage extends ActorMessage = ActorMe
   private actor: Actor<AnyStateMachine>;
   private machine: AnyStateMachine;
 
-  // Advanced messaging and supervision
+  // Advanced messaging
   private requestManager: XStateRequestResponseManager;
-  private supervisor?: Supervisor;
 
   // Event emission system - THIS IS THE FIX!
   private eventBus: ActorEventBus<unknown>;
@@ -221,9 +219,6 @@ class XStateActorRef<TContext = unknown, TMessage extends ActorMessage = ActorMe
     // Cleanup advanced features
     this.requestManager.stop();
     this.eventBus.destroy();
-    if (this.supervisor) {
-      this.supervisor.cleanup();
-    }
 
     this.actor.stop();
     this._status = 'stopped';
@@ -441,12 +436,6 @@ class XStateActorRef<TContext = unknown, TMessage extends ActorMessage = ActorMe
       error: (error) => {
         this.logger.error('Actor error', { error, actorId: this.id });
         this._status = 'error';
-
-        // Handle supervision - disabled to avoid type casting
-        // TODO: Make Supervisor generic to work with any ActorRef type
-        // if (this.supervisor) {
-        //   this.supervisor.handleFailure(error as Error, this);
-        // }
       },
       complete: () => {
         this.logger.debug('Actor completed', { actorId: this.id });
