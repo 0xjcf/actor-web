@@ -47,7 +47,7 @@ or a gateway without peers (a single-node server).
 A node resolves peers' actors by address:
 
 ```ts
-const planner = await coordinator.system.lookup(topology.actors.plannerAgent.address.path);
+const planner = await coordinator.system.lookup(topology.actors.plannerAgent.address);
 await planner.ask({ type: 'PLAN_TASK', taskId });
 ```
 
