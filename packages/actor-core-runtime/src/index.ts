@@ -59,14 +59,6 @@ export {
   createActorWebReadModelClient,
   startRuntime,
 } from './actor-web-client.js';
-export {
-  type BackoffStrategy,
-  BackoffSupervisor,
-  type BackoffSupervisorOptions,
-} from './actors/backoff-supervisor.js';
-export type { SupervisorOptions } from './actors/supervisor.js';
-// Supervision
-export { Supervisor } from './actors/supervisor.js';
 // Auto-publishing system (Phase 2.1)
 export {
   AutoPublishingRegistry,
