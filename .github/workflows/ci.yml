@@ -49,6 +49,6 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
       - name: Test
-        run: pnpm test
+        run: pnpm test:all
       - name: Architecture boundaries
         run: pnpm architecture:check
