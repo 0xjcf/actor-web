@@ -170,7 +170,7 @@ describe('createRuntimeHost', () => {
   it('resolves targets by key and by actor:// path', async () => {
     const byKey = host.resolve('counter');
     expect(byKey).toBeDefined();
-    const byPath = host.resolve(byKey?.address.path ?? '');
+    const byPath = host.resolve(byKey?.address ?? '');
     expect(byPath).toBe(byKey);
   });
 
