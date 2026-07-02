@@ -26,6 +26,19 @@ export {
 } from './actor-tool-delivery.js';
 export type { ActorToolRegistry } from './actor-tools.js';
 export type {
+  NodeProviderActor,
+  NodeProviderActorClock,
+  NodeProviderActorCommand,
+  NodeProviderActorFilesystemPort,
+  NodeProviderActorModelCachePort,
+  NodeProviderActorOptions,
+  NodeProviderActorOutputProjection,
+  NodeProviderActorPorts,
+  NodeProviderActorProjection,
+  NodeProviderActorStatus,
+} from './node-provider-actor.js';
+export { createNodeProviderActor } from './node-provider-actor.js';
+export type {
   ChildProcessClaimDuplicateInput,
   ChildProcessClaimDuplicateResult,
   ChildProcessGroupPolicy,
