@@ -1896,8 +1896,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Runtime: child-process effect port contract for fas-local provider hosts
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/runtime-child-process-effect-port-contract-for-fas-local-pro.md
 - Automation mode: advisory
 - Verification lane: fast
