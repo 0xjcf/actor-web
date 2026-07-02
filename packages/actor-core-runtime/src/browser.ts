@@ -11,6 +11,32 @@ export type {
 export type { ActorSystemConfig } from './actor-system-impl.js';
 export { createActorSystem } from './actor-system-impl.js';
 export type {
+  ActorToolDeliveryAck,
+  ActorToolDeliveryAcknowledgeResult,
+  ActorToolDeliveryAckTimeoutDecision,
+  ActorToolDeliveryActivationId,
+  ActorToolDeliveryAttempt,
+  ActorToolDeliveryAttemptResult,
+  ActorToolDeliveryFailure,
+  ActorToolDeliveryFailureCode,
+  ActorToolDeliveryIdempotencyClaimInput,
+  ActorToolDeliveryIdempotencyClaimResult,
+  ActorToolDeliveryIdempotencyKey,
+  ActorToolDeliveryIdempotencyProvider,
+  ActorToolDeliveryParseResult,
+  ActorToolDeliveryReemitCommand,
+  ActorToolDeliveryStatus,
+  InMemoryActorToolDeliveryIdempotencyProvider,
+} from './actor-tool-delivery.js';
+export {
+  createActorToolDeliveryAck,
+  createActorToolDeliveryActivationId,
+  createActorToolDeliveryAttempt,
+  createActorToolDeliveryIdempotencyKey,
+  createInMemoryActorToolDeliveryIdempotencyProvider,
+  evaluateActorToolDeliveryAckTimeout,
+} from './actor-tool-delivery.js';
+export type {
   ActorToolbox,
   ActorToolboxOptions,
   ActorToolExecutionContext,

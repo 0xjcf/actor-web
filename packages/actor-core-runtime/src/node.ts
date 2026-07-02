@@ -1,3 +1,29 @@
+export type {
+  ActorToolDeliveryAck,
+  ActorToolDeliveryAcknowledgeResult,
+  ActorToolDeliveryAckTimeoutDecision,
+  ActorToolDeliveryActivationId,
+  ActorToolDeliveryAttempt,
+  ActorToolDeliveryAttemptResult,
+  ActorToolDeliveryFailure,
+  ActorToolDeliveryFailureCode,
+  ActorToolDeliveryIdempotencyClaimInput,
+  ActorToolDeliveryIdempotencyClaimResult,
+  ActorToolDeliveryIdempotencyKey,
+  ActorToolDeliveryIdempotencyProvider,
+  ActorToolDeliveryParseResult,
+  ActorToolDeliveryReemitCommand,
+  ActorToolDeliveryStatus,
+  InMemoryActorToolDeliveryIdempotencyProvider,
+} from './actor-tool-delivery.js';
+export {
+  createActorToolDeliveryAck,
+  createActorToolDeliveryActivationId,
+  createActorToolDeliveryAttempt,
+  createActorToolDeliveryIdempotencyKey,
+  createInMemoryActorToolDeliveryIdempotencyProvider,
+  evaluateActorToolDeliveryAckTimeout,
+} from './actor-tool-delivery.js';
 export type { ActorToolRegistry } from './actor-tools.js';
 export type {
   ChildProcessClaimDuplicateInput,
