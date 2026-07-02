@@ -1680,9 +1680,12 @@
 
 - Title: Delivery semantics: at-least-once and idempotency for non-idempotent agent tool side-effects
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/delivery-semantics-at-least-once-and-idempotency-for-non-ide.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Docs honesty pass: scope the location-transparency claim at first mention and reconcile multi-machine status
 

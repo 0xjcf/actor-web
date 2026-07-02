@@ -28,11 +28,22 @@ Location-transparency audit L5 (agent-payload gap, UNOWNED). Application sends a
 
 ## Affected files
 
-- Scope unknown.
+- packages/actor-core-runtime/src/actor-tool-delivery.ts
+- packages/actor-core-runtime/src/unit/actor-tool-delivery.test.ts
+- packages/actor-core-runtime/src/index.ts
+- packages/actor-core-runtime/src/browser.ts
+- packages/actor-core-runtime/src/node.ts
 
 ## Scope Amendments
 
-- None.
+- Type: implementation-scope
+- Added at: 2026-07-02
+- Trigger: Planner generated unknown scope for active task
+- Reason: Implementation will add a pure actor-tool delivery semantics contract, fake-port tests, and public entrypoint exports only.
+- Added paths: packages/actor-core-runtime/src/actor-tool-delivery.ts, packages/actor-core-runtime/src/unit/actor-tool-delivery.test.ts, packages/actor-core-runtime/src/index.ts, packages/actor-core-runtime/src/browser.ts, packages/actor-core-runtime/src/node.ts
+- Evidence source: root-session source review
+- Evidence: root-session source review | .fas/state/task-packet.json | Relevant files pointed at actor-tools/topology; safe implementation slice is a pure delivery semantics module plus tests and entrypoint exports.
+- Accuracy signal: explicit root implementation plan before editing
 
 ## Implementation plan
 
