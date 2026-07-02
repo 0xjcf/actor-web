@@ -1896,10 +1896,13 @@ operator explicitly asks for queue mutations.
 
 - Title: Runtime: child-process effect port contract for fas-local provider hosts
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/runtime-child-process-effect-port-contract-for-fas-local-pro.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Runtime: provider lifecycle effect journal for non-replayable process ports
 
