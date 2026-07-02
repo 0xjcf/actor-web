@@ -28,11 +28,31 @@ Location-transparency audit L6. (1) Hero one-liners (README:3,17,76; packages/ac
 
 ## Affected files
 
-- Scope unknown.
+- README.md
+- packages/actor-core-runtime/README.md
+- docs/site/index.md
+- docs/spikes/actor-web-external-transport-design.md
+- src/docs-honesty.test.ts
 
 ## Scope Amendments
 
-- None.
+- Type: scope-refresh
+- Added at: 2026-07-02
+- Trigger: planner-generated scope omitted explicit brief files
+- Reason: The task brief names README.md, packages/actor-core-runtime/README.md, docs/site/index.md, and the external transport design/status doc, but the generated commit plan only included docs/site/index.md and an unrelated test path.
+- Added paths: README.md, packages/actor-core-runtime/README.md, docs/site/index.md, docs/spikes/actor-web-external-transport-design.md
+- Evidence source: task brief and repo search
+- Evidence: task brief and repo search | .fas/tasks/docs-honesty-pass-scope-the-location-transparency-claim-at-f.md | Brief problem cites README:3/17/67/76, packages/actor-core-runtime/README.md:3, docs/site/index.md:7, and external-transport-design.md:204.
+- Accuracy signal: explicit brief path hints verified by rg
+
+- Type: test-guard
+- Added at: 2026-07-02
+- Trigger: docs-only task still needs a regression guard
+- Reason: Add a root Vitest test that locks the scoped location-transparency wording, external transport link, and multi-host status language.
+- Added paths: src/docs-honesty.test.ts
+- Evidence source: current docs patch review
+- Evidence: current docs patch review | .fas/state/commit-plan.json | Commit plan includes a test step without a planned test path after scope refresh.
+- Accuracy signal: new test path is in root vitest include src/**/*.test.ts
 
 ## Implementation plan
 

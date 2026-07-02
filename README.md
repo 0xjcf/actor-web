@@ -1,6 +1,6 @@
 # 🎭 Actor-Web Framework
 
-> **Pure Actor Model for JavaScript/TypeScript** - Build resilient, distributed systems with location-transparent actors, inspired by Erlang/OTP
+> **Pure Actor Model for JavaScript/TypeScript** - Build resilient systems with location-transparent actors across local and directly connected runtime nodes, inspired by Erlang/OTP. Dynamic membership and production multi-machine transport remain in progress; see the [external transport roadmap](./docs/spikes/actor-web-external-transport-design.md).
 
 [![Docs](https://img.shields.io/badge/Docs-0xjcf.github.io%2Factor--web-blue)](https://0xjcf.github.io/actor-web/)
 [![Pure Actor Model](https://img.shields.io/badge/Pure%20Actor%20Model-100%25%20Compliant-green)](https://github.com/0xjcf/actor-web)
@@ -14,7 +14,7 @@
 JavaScript lacks built-in primitives for actor-based concurrency and fault tolerance. **Actor-Web** brings Erlang/OTP's battle-tested patterns to JavaScript with:
 
 - **🎯 Pure Actor Model** - No shared state, message-only communication
-- **🌍 Location Transparency** - Actors work identically local or distributed
+- **🌍 Scoped Location Transparency** - Actor code and refs use the same API locally and across directly connected runtime nodes; dynamic membership and production multi-machine hardening are still roadmap work.
 - **🛡️ Fault Tolerance** - Supervisor trees with "let it crash" philosophy
 - **📦 Workspace Packages** - Runtime, testing utilities, and workflow CLI ship from `packages/*`
 - **🔄 Unified API** - Single `defineBehavior()` for all patterns
@@ -64,7 +64,7 @@ console.log(count); // 1
 - [Ignite host bridge example](./docs/examples/ignite-element-host.md) shows how Ignite consumes Actor-Web snapshots and emitted events from local refs or remote projection refs.
 - [External transport roadmap](./docs/spikes/actor-web-external-transport-design.md) separates what is proven today from the remaining production multi-machine transport work.
 
-The browser/service-worker Ignite demo is a topology prove-out. Production distributed runtime work still needs real inter-node transport, stable node identity, membership, auth/security, delivery guarantees, durable replay, and observability hardening.
+The browser/service-worker Ignite demo is a topology prove-out, and the runtime/gateway transport slice now covers stable node identity at the WebSocket edge, static auth hooks, bounded gateway replay, and dependency-free telemetry sinks. Production distributed runtime work still needs durable membership/discovery, deployment-grade auth/TLS, application-level delivery guarantees beyond at-most-once `send`, broader durable replay/event logging, metrics/tracing integration, and true multi-host rehearsals.
 
 ## 🏛️ Core Principles
 
@@ -73,7 +73,7 @@ The browser/service-worker Ignite demo is a topology prove-out. Production distr
 This framework **strictly** follows the pure actor model:
 
 - ✅ **Message-Only Communication** - No shared state or direct method calls
-- ✅ **Location Transparency** - Same API for local and distributed actors
+- ✅ **Scoped Location Transparency** - Same actor API for local actors and directly connected runtime nodes; true multi-host operation still depends on the external transport roadmap.
 - ✅ **Asynchronous Processing** - No blocking operations
 - ✅ **Fault Isolation** - Actor failures don't cascade
 - ✅ **JSON Serialization** - All messages are network-ready

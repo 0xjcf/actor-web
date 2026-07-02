@@ -1,6 +1,6 @@
 # @actor-web/runtime
 
-> **Pure actor model runtime for JavaScript/TypeScript** — location-transparent actors, supervision trees, and message-only communication, inspired by Erlang/OTP.
+> **Pure actor model runtime for JavaScript/TypeScript** — location-transparent actors across local and directly connected runtime nodes, supervision trees, and message-only communication, inspired by Erlang/OTP. Dynamic membership and production multi-machine transport remain roadmap work; see the [external transport status](https://github.com/0xjcf/actor-web/blob/main/docs/spikes/actor-web-external-transport-design.md).
 
 **📚 Documentation: [0xjcf.github.io/actor-web](https://0xjcf.github.io/actor-web/)**
 
