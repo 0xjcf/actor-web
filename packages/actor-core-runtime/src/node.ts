@@ -121,6 +121,20 @@ export {
   createNodeProviderLifecycleEffectIdempotencyKey,
   createNodeProviderLifecycleEffectRecord,
 } from './node-provider-lifecycle-effect-journal.js';
+export { createNodeSessionActor } from './node-session-actor.js';
+export type {
+  NodeSessionActor,
+  NodeSessionActorCommand,
+  NodeSessionActorProjection,
+  SessionActorFact,
+  SessionActorFailure,
+  SessionActorFailureCode,
+  SessionActorObservedProviderFact,
+  SessionActorProviderProjection,
+  SessionActorSessionProjection,
+  SessionActorTurnProjection,
+} from './node-session-actor-contract.js';
+export { createSessionActorFailure } from './node-session-actor-contract.js';
 export type {
   RuntimeGatewayAuthProvider,
   RuntimeGatewayAuthResult,
