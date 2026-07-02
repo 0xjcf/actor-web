@@ -1911,10 +1911,13 @@ operator explicitly asks for queue mutations.
 
 - Title: Runtime: provider lifecycle effect journal for non-replayable process ports
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/runtime-provider-lifecycle-effect-journal-for-non-replayable.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: ProviderActor conformance tests for fas-local provider lifecycle fake ports
 
