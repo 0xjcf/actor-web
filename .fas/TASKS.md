@@ -1945,10 +1945,13 @@ operator explicitly asks for queue mutations.
 
 - Title: Example: embedded actor-web host behind fas-local-like Runtime APIs
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/example-embedded-actor-web-host-behind-fas-local-like-runtim.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ## Template
 
