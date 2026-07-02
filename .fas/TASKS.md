@@ -1226,8 +1226,8 @@
 
 - Title: Runtime: tool execution timeout/cancellation + real-async tool e2e coverage
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/runtime-tool-execution-timeout-cancellation-real-async-to.md
 - Automation mode: advisory
 - Verification lane: fast
