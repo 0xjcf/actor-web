@@ -39,11 +39,16 @@ export type { ActorSystemConfig } from './actor-system-impl.js';
 export { createActorSystem } from './actor-system-impl.js';
 export type {
   ActorToolbox,
+  ActorToolboxOptions,
   ActorToolExecutionContext,
+  ActorToolExecutionOptions,
   ActorToolExecutor,
+  ActorToolHostContext,
   ActorToolRegistry,
+  ActorToolTimerHandle,
+  ActorToolTimers,
 } from './actor-tools.js';
-export { createActorToolbox } from './actor-tools.js';
+export { ActorToolTimeoutError, createActorToolbox } from './actor-tools.js';
 export type {
   ActorWebClient,
   ActorWebClientOptions,

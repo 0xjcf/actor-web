@@ -26,8 +26,54 @@ allowed to use:
 });
 ```
 
-The toolbox exposes `has(name)`, `list()`, and `execute(name, input)`. Calling a
-tool the actor wasn't granted is an error, not a silent no-op.
+The toolbox exposes `has(name)`, `list()`, and
+`execute(name, input, options?)`. Calling a tool the actor wasn't granted is an
+error, not a silent no-op.
+
+## Timeouts and cancellation
+
+Use `timeoutMs` when a tool can wait on an external system:
+
+```ts
+.onMessage(async ({ message, tools }) => {
+  try {
+    const result = await tools.execute(
+      'verification.run',
+      {
+        taskId: message.taskId,
+        patch: message.patch,
+      },
+      { timeoutMs: 30_000 }
+    );
+    return { reply: { result } };
+  } catch (error) {
+    if ((error as { code?: string }).code === 'ACTOR_TOOL_TIMEOUT') {
+      return { reply: { ok: false, reason: 'verification timed out' } };
+    }
+    throw error;
+  }
+});
+```
+
+Toolboxes may also be created with `defaultTimeoutMs` so actors inherit a
+deadline unless a call provides its own `timeoutMs`.
+
+Each execution receives a fresh `AbortSignal` on the tool context. Tool adapters
+should pass that signal to cancellable APIs such as `fetch`, process runners, or
+model clients:
+
+```ts
+const tools = {
+  'verification.run': async (input, context) => {
+    const response = await fetch(input.url, { signal: context.signal });
+    return { ok: response.ok };
+  },
+};
+```
+
+When the deadline expires, `tools.execute` aborts the signal and rejects with an
+`ActorToolTimeoutError` whose `code` is `ACTOR_TOOL_TIMEOUT`. Treat that timeout
+as data at the actor boundary, then decide whether to retry, block, or continue.
 
 ## Declaring tools
 
