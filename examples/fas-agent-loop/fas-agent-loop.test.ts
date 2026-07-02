@@ -1,3 +1,7 @@
+import type { ActorToolExecutor } from '@actor-web/runtime';
+import { defineBehavior } from '@actor-web/runtime';
+import { startActorWebNode } from '@actor-web/runtime/browser';
+import { actor, defineActorWebTopology, node, tool } from '@actor-web/runtime/topology';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   type FasAgentLoopExampleRuntime,
@@ -12,6 +16,25 @@ const TEST_TASK: SubmitFasTaskInput = {
   prompt: 'Build a headless Actor-Web workflow loop with fake tools.',
 };
 
+type AsyncProbeInput =
+  | { readonly mode: 'delay'; readonly value: string }
+  | { readonly mode: 'hang' };
+type AsyncProbeResult = {
+  readonly value: string;
+  readonly signalProvided: boolean;
+};
+type AsyncProbeCommand =
+  | { readonly type: 'RUN_ASYNC_TOOL'; readonly value: string }
+  | { readonly type: 'RUN_HUNG_TOOL' }
+  | { readonly type: 'PING' };
+type AsyncProbeReply =
+  | AsyncProbeResult
+  | { readonly code: string | undefined }
+  | { readonly pong: true };
+type AsyncProbeTools = {
+  readonly 'fas.async_probe': ActorToolExecutor<AsyncProbeInput, AsyncProbeResult>;
+};
+
 async function waitFor(
   predicate: () => boolean,
   message = 'Timed out waiting for condition'
@@ -24,6 +47,47 @@ async function waitFor(
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error(message);
+}
+
+function createAsyncProbeBehavior() {
+  return defineBehavior<AsyncProbeCommand, AsyncProbeReply>()
+    .onMessage(async ({ message, tools }) => {
+      const executeWithOptions = tools.execute as <TOutput, TInput>(
+        name: string,
+        input: TInput,
+        options: { readonly timeoutMs: number }
+      ) => Promise<TOutput>;
+
+      if (message.type === 'PING') {
+        return { reply: { pong: true } };
+      }
+
+      if (message.type === 'RUN_ASYNC_TOOL') {
+        const result = await executeWithOptions<AsyncProbeResult, AsyncProbeInput>(
+          'fas.async_probe',
+          { mode: 'delay', value: message.value },
+          { timeoutMs: 250 }
+        );
+        return { reply: result };
+      }
+
+      try {
+        await executeWithOptions<AsyncProbeResult, AsyncProbeInput>(
+          'fas.async_probe',
+          { mode: 'hang' },
+          { timeoutMs: 25 }
+        );
+      } catch (error) {
+        return {
+          reply: {
+            code: (error as { readonly code?: string }).code,
+          },
+        };
+      }
+
+      throw new Error('Expected hung async probe tool to time out.');
+    })
+    .build();
 }
 
 describe('fas-agent-loop example', () => {
@@ -101,6 +165,71 @@ describe('fas-agent-loop example', () => {
     ]);
     expect(runtime.taskBoard.getSnapshot().context.completedCount).toBe(1);
     expect(runtime.tools.state.invocations.map((call) => call.tool)).toContain('memory.write');
+  });
+
+  it('keeps a spawned actor responsive after a hung async tool times out', async () => {
+    const asyncProbeActor = actor.withTools<AsyncProbeTools>()({
+      id: 'fas-async-probe',
+      node: 'worker',
+      tools: ['fas.async_probe'] as const,
+      behavior: createAsyncProbeBehavior,
+    });
+    const topology = defineActorWebTopology({
+      nodes: {
+        worker: node('fas-async-tool-worker'),
+      },
+      tools: [tool('fas.async_probe')],
+      actors: {
+        asyncProbe: asyncProbeActor,
+      },
+    });
+    let delayedToolRan = false;
+    let hungToolSignal: AbortSignal | undefined;
+    let hungToolAborted = false;
+    const asyncProbeTools: AsyncProbeTools = {
+      'fas.async_probe': async (input, context) => {
+        if (input.mode === 'delay') {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          delayedToolRan = true;
+          return {
+            value: `async:${input.value}`,
+            signalProvided: context.signal instanceof AbortSignal,
+          };
+        }
+
+        hungToolSignal = context.signal;
+        context.signal.addEventListener('abort', () => {
+          hungToolAborted = true;
+        });
+        return new Promise<AsyncProbeResult>(() => {});
+      },
+    };
+    const worker = await startActorWebNode(topology, {
+      node: 'worker',
+      tools: asyncProbeTools,
+    });
+
+    try {
+      const probe = worker.requireActor('asyncProbe');
+
+      await expect(
+        probe.ask<AsyncProbeReply>({ type: 'RUN_ASYNC_TOOL', value: 'fas' }, 500)
+      ).resolves.toEqual({
+        value: 'async:fas',
+        signalProvided: true,
+      });
+      await expect(probe.ask<AsyncProbeReply>({ type: 'RUN_HUNG_TOOL' }, 500)).resolves.toEqual({
+        code: 'ACTOR_TOOL_TIMEOUT',
+      });
+      await expect(probe.ask<AsyncProbeReply>({ type: 'PING' }, 500)).resolves.toEqual({
+        pong: true,
+      });
+      expect(delayedToolRan).toBe(true);
+      expect(hungToolSignal).toBeInstanceOf(AbortSignal);
+      expect(hungToolAborted).toBe(true);
+    } finally {
+      await worker.stop();
+    }
   });
 
   it('projects the task board through the coordinator gateway source', async () => {
