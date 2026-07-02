@@ -40,10 +40,19 @@ Create the actor-web ADR recommended by .fas/artifacts/spikes/2026-07-01-fas-loc
 
 - docs
 - .fas/artifacts/spikes/2026-07-01-fas-local-actor-system-readiness.md
+- docs/0009-fas-local-runtime-host-substrate-alignment.md
 
 ## Scope Amendments
 
-- None.
+- Type: durable-adr-promotion
+- Added at: 2026-07-02
+- Trigger: final reviewer closeout blocker
+- Reason: Promote the reviewed ADR from ignored .fas/artifacts runtime state into a tracked durable actor-web documentation path before closeout.
+- Added paths: docs/0009-fas-local-runtime-host-substrate-alignment.md
+- Evidence source: fas_reviewer
+- Evidence: fas_reviewer | .fas/state/agent-orchestration-execution.json | Reviewer accepted ADR content but found ignored artifact path insufficient for durable closeout.
+- Accuracy signal: tracked docs path now exists
+- Follow-up needed: Regenerate task-specific verification and review receipts after scope refresh.
 
 ## Implementation plan
 

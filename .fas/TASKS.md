@@ -1881,10 +1881,13 @@ operator explicitly asks for queue mutations.
 
 - Title: ADR: fas-local Runtime Host Substrate Alignment
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/adr-fas-local-runtime-host-substrate-alignment.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Runtime: child-process effect port contract for fas-local provider hosts
 
