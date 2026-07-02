@@ -1934,8 +1934,8 @@ operator explicitly asks for queue mutations.
 
 - Title: SessionActor conformance tests for fas-local session semantics
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/sessionactor-conformance-tests-for-fas-local-session-semanti.md
 - Verification lane: fast
 - Policy sensitivity: standard
