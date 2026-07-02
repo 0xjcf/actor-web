@@ -1934,9 +1934,12 @@ operator explicitly asks for queue mutations.
 
 - Title: SessionActor conformance tests for fas-local session semantics
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/sessionactor-conformance-tests-for-fas-local-session-semanti.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Example: embedded actor-web host behind fas-local-like Runtime APIs
 
