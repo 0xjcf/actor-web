@@ -1691,8 +1691,8 @@
 
 - Title: Docs honesty pass: scope the location-transparency claim at first mention and reconcile multi-machine status
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/docs-honesty-pass-scope-the-location-transparency-claim-at-f.md
 - Verification lane: fast
 - Policy sensitivity: standard
