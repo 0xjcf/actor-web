@@ -223,6 +223,34 @@ export type {
 } from './serve-actor-web-node.js';
 export { serveNode } from './serve-actor-web-node.js';
 export type {
+  EmbeddedRuntimeHostAcquireInput,
+  EmbeddedRuntimeHostAcquireResult,
+  EmbeddedRuntimeHostChatInput,
+  EmbeddedRuntimeHostChatResult,
+  EmbeddedRuntimeHostCompatibilityDisclaimer,
+  EmbeddedRuntimeHostCompatibilityFixture,
+  EmbeddedRuntimeHostCompatibilityFixtureOptions,
+  EmbeddedRuntimeHostCompatibilityProvider,
+  EmbeddedRuntimeHostCompatibilityProviderManager,
+  EmbeddedRuntimeHostCompatibilitySession,
+  EmbeddedRuntimeHostCreateSessionInput,
+  EmbeddedRuntimeHostCreateSessionResult,
+  EmbeddedRuntimeHostInspectResult,
+  EmbeddedRuntimeHostProviderCallCounts,
+  EmbeddedRuntimeHostProviderEvent,
+  EmbeddedRuntimeHostProviderFactEvent,
+  EmbeddedRuntimeHostProviderJournalProjection,
+  EmbeddedRuntimeHostProviderProjection,
+  EmbeddedRuntimeHostProviderProjectionEvent,
+  EmbeddedRuntimeHostRestartResult,
+  EmbeddedRuntimeHostSessionProjection,
+  EmbeddedRuntimeHostStopResult,
+} from './testing/embedded-runtime-host-compatibility-fixture.js';
+export {
+  createEmbeddedRuntimeHostCompatibilityFixture,
+  embeddedRuntimeHostCompatibilityDisclaimer,
+} from './testing/embedded-runtime-host-compatibility-fixture.js';
+export type {
   TransportDuplex,
   TransportFactoryOptions,
   TransportInstance,
