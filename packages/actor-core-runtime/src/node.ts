@@ -78,6 +78,37 @@ export {
   parseProviderLifecycleActivationKey,
 } from './node-provider-lifecycle-contract.js';
 export type {
+  InMemoryNodeProviderLifecycleEffectJournal,
+  NodeProviderLifecycleCancellationRecord,
+  NodeProviderLifecycleCancellationResult,
+  NodeProviderLifecycleDuplicatePreventionRecord,
+  NodeProviderLifecycleEffectClaimInput,
+  NodeProviderLifecycleEffectClaimResult,
+  NodeProviderLifecycleEffectIdempotencyKey,
+  NodeProviderLifecycleEffectJournal,
+  NodeProviderLifecycleEffectJournalEntry,
+  NodeProviderLifecycleEffectKind,
+  NodeProviderLifecycleEffectRecord,
+  NodeProviderLifecycleEffectRecordInput,
+  NodeProviderLifecycleEffectRecordResult,
+  NodeProviderLifecycleEffectReplayResult,
+  NodeProviderLifecycleEffectStatus,
+  NodeProviderLifecycleFilesystemProbeFact,
+  NodeProviderLifecycleFilesystemProbeRecord,
+  NodeProviderLifecycleFilesystemProbeResult,
+  NodeProviderLifecycleModelCacheInspectionFact,
+  NodeProviderLifecycleModelCacheInspectionRecord,
+  NodeProviderLifecycleModelCacheInspectionResult,
+  NodeProviderLifecycleReadinessRecord,
+  NodeProviderLifecycleSignalRecord,
+  NodeProviderLifecycleSpawnRecord,
+} from './node-provider-lifecycle-effect-journal.js';
+export {
+  createInMemoryNodeProviderLifecycleEffectJournal,
+  createNodeProviderLifecycleEffectIdempotencyKey,
+  createNodeProviderLifecycleEffectRecord,
+} from './node-provider-lifecycle-effect-journal.js';
+export type {
   RuntimeGatewayAuthProvider,
   RuntimeGatewayAuthResult,
   RuntimeTransportAuthPayload,
