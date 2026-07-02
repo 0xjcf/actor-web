@@ -1881,8 +1881,8 @@ operator explicitly asks for queue mutations.
 
 - Title: ADR: fas-local Runtime Host Substrate Alignment
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/adr-fas-local-runtime-host-substrate-alignment.md
 - Automation mode: advisory
 - Verification lane: fast
