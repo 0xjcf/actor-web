@@ -1,4 +1,4 @@
-# Runtime: tool execution timeout/cancellation + real-async to
+# Runtime: tool execution timeout/cancellation + real-async tool e2e coverage
 
 ## Source
 
@@ -39,11 +39,31 @@ Surfaced by the fas-studio agents-with-tools readiness assessment (2026-06-10). 
 
 ## Affected files
 
-- Scope unknown.
+- docs/site/concepts/tools.md
+- packages/actor-core-runtime/src/index.ts
+- packages/actor-core-runtime/src/browser.ts
 
 ## Scope Amendments
 
-- None.
+- Type: docs-scope
+- Added at: 2026-07-02T03:40:00Z
+- Trigger: Acceptance criterion requires timeout behavior documentation for tool authors.
+- Reason: Document tools.execute timeoutMs and executor AbortSignal behavior in the public tool-author docs.
+- Added paths: docs/site/concepts/tools.md
+- Evidence source: task-packet
+- Evidence: task-packet | .fas/state/task-packet.json | Acceptance criteria include: timeout behavior is documented for tool authors.
+- Accuracy signal: high
+- Follow-up needed: none
+
+- Type: api-export-scope
+- Added at: 2026-07-02T03:48:00Z
+- Trigger: Actor tool timeout support introduces public error and option types.
+- Reason: Export ActorToolTimeoutError and timeout option types through existing runtime entrypoints that already export the toolbox.
+- Added paths: packages/actor-core-runtime/src/index.ts, packages/actor-core-runtime/src/browser.ts
+- Evidence source: source
+- Evidence: source | packages/actor-core-runtime/src/index.ts | Root and browser entrypoints currently re-export actor-tools public toolbox symbols.
+- Accuracy signal: high
+- Follow-up needed: none
 
 ## Implementation plan
 
