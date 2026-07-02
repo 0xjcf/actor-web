@@ -1680,8 +1680,8 @@
 
 - Title: Delivery semantics: at-least-once and idempotency for non-idempotent agent tool side-effects
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/delivery-semantics-at-least-once-and-idempotency-for-non-ide.md
 - Verification lane: fast
 - Policy sensitivity: standard
