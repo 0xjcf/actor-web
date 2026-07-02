@@ -1911,8 +1911,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Runtime: provider lifecycle effect journal for non-replayable process ports
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/runtime-provider-lifecycle-effect-journal-for-non-replayable.md
 - Automation mode: advisory
 - Verification lane: fast
