@@ -1923,8 +1923,8 @@ operator explicitly asks for queue mutations.
 
 - Title: ProviderActor conformance tests for fas-local provider lifecycle fake ports
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/provideractor-conformance-tests-for-fas-local-provider-lifec.md
 - Verification lane: fast
 - Policy sensitivity: standard
