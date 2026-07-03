@@ -92,7 +92,8 @@ Location-transparency audit L0 ROOT FIX (highest leverage). Two parallel registr
 
 ## Dependencies
 
-- None known at task creation.
+- `task-1781880511534` — Make actor addresses opaque and mint them through one canonical factory.
+- `task-1781964585809` — Collapse ActorAddress to an opaque branded path string (Address.from + typed AddressQuery).
 
 ## Open questions
 
