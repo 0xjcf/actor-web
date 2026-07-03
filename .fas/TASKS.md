@@ -1169,8 +1169,8 @@
 
 - Title: actor-web CLI v1: @actor-web/agent package (llm tool + agent-loop) + agent hosting
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/actor-web-cli-v1-actor-web-agent-package-llm-tool-agent.md
 - Automation mode: advisory
 - Verification lane: fast
