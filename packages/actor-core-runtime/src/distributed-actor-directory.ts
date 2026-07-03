@@ -114,12 +114,14 @@ export class DistributedActorDirectory implements ActorDirectory {
   async register(address: ActorAddress, location: string): Promise<void> {
     const key = this.getAddressKey(address);
     const now = Date.now();
+    const ttl =
+      location === this.config.nodeAddress ? Number.POSITIVE_INFINITY : now + this.config.cacheTtl;
 
     // Store in registry (not cache) with TTL
     const entry: RegistryEntry = {
       location,
       timestamp: now,
-      ttl: now + this.config.cacheTtl, // Registry entries also have TTL
+      ttl,
     };
 
     this.registry.set(key, entry);
@@ -343,7 +345,7 @@ export class DistributedActorDirectory implements ActorDirectory {
         address,
         location: entry.location,
         timestamp: entry.timestamp,
-        ttl: entry.ttl,
+        ttl: entry.location === this.config.nodeAddress ? now + this.config.cacheTtl : entry.ttl,
       });
     }
 

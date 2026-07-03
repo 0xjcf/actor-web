@@ -901,6 +901,7 @@ export class ActorSystemImpl implements ActorSystem {
     this.actors.delete(path);
     this.actorOriginalBehaviors.delete(path);
     this.actorStarted.delete(path);
+    this.autoPublishingRegistry.removeActor(path);
 
     // Clean up restart tracking and the per-actor supervision policy. A
     // supervised restart re-passes the policy through spawn and restores the
@@ -2712,7 +2713,7 @@ export class ActorSystemImpl implements ActorSystem {
       publisherId,
       eventType: eventMessage.type,
       subscriberCount: subscribers.length,
-      subscribers: subscribers.map((s) => s.address),
+      subscribers,
     });
 
     // ✅ DIRECT MAILBOX ENQUEUE: Send event to each subscriber's mailbox directly
@@ -2720,7 +2721,7 @@ export class ActorSystemImpl implements ActorSystem {
     for (const subscriber of subscribers) {
       log.debug('🔍 EMIT EVENT DEBUG: Direct enqueue to subscriber', {
         publisherId,
-        subscriberId: subscriber.address,
+        subscriberId: subscriber,
         eventType: eventMessage.type,
         eventMessage,
       });
@@ -2729,17 +2730,17 @@ export class ActorSystemImpl implements ActorSystem {
         // Direct enqueue to mailbox - no async boundary
         // This ensures events are available immediately in tests
         // and maintains deterministic ordering with other messages
-        this.enqueueMessage(subscriber.address, eventMessage).catch((error) => {
+        this.enqueueMessage(subscriber, eventMessage).catch((error) => {
           // Log as dead letter if enqueue fails (e.g., mailbox full)
           log.debug('🔍 EMIT EVENT DEBUG: Event dropped (dead letter)', {
-            subscriberId: subscriber.address,
+            subscriberId: subscriber,
             eventType: eventMessage.type,
             reason: error instanceof Error ? error.message : 'Unknown error',
           });
 
           log.warn('Event dropped - dead letter', {
             publisherId,
-            subscriberId: subscriber.address,
+            subscriberId: subscriber,
             eventType: eventMessage.type,
             error: error instanceof Error ? error.message : 'Unknown error',
           });
@@ -2748,7 +2749,7 @@ export class ActorSystemImpl implements ActorSystem {
         // Handle any synchronous errors from enqueue attempt
         log.error('Failed to enqueue event', {
           publisherId,
-          subscriberId: subscriber.address,
+          subscriberId: subscriber,
           eventType: eventMessage.type,
           error: syncError instanceof Error ? syncError.message : 'Unknown error',
         });
@@ -4693,6 +4694,14 @@ export class ActorSystemImpl implements ActorSystem {
       );
     }
 
+    const publisherLocation = await this.directory.lookup(publisher.address);
+    const subscriberLocation = await this.directory.lookup(options.subscriber.address);
+    if (!publisherLocation || !subscriberLocation) {
+      throw new Error(
+        `Cannot subscribe actor without directory entries: publisher=${publisher.address}, subscriber=${options.subscriber.address}`
+      );
+    }
+
     // Add subscriber to the registry
     log.debug('🔍 SUBSCRIBE DEBUG: Adding subscriber to registry', {
       publisherId,
@@ -4703,7 +4712,7 @@ export class ActorSystemImpl implements ActorSystem {
     this.autoPublishingRegistry.addSubscriber(
       publisherId,
       subscriberId,
-      options.subscriber,
+      options.subscriber.address,
       eventTypes
     );
 

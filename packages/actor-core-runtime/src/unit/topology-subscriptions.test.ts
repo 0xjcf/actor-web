@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { emit, setup } from 'xstate';
 import { startRuntime } from '../actor-web-client.js';
 import { actor, defineActorWebTopology, node } from '../topology.js';
@@ -40,6 +40,7 @@ function createCollector() {
 
 describe('topology declarative subscriptions', () => {
   it('wires a declared subscription on start so a publisher emit reaches the subscriber', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const topology = defineActorWebTopology({
       nodes: { local: node('local') },
       actors: {
@@ -55,7 +56,15 @@ describe('topology declarative subscriptions', () => {
       await runtime.nodes.local?.system.flush();
 
       expect(runtime.requireActor('collector').getSnapshot().context).toEqual({ pongs: [1] });
+      const deadLetters = (
+        runtime.nodes.local?.system as unknown as {
+          deadLetterQueue: { getAll(): ReadonlyArray<{ messageType: string; reason: string }> };
+        }
+      ).deadLetterQueue.getAll();
+      expect(deadLetters).toEqual([]);
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
     } finally {
+      consoleErrorSpy.mockRestore();
       await runtime.stop();
     }
   });

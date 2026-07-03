@@ -355,3 +355,27 @@ describe.skip('DistributedActorDirectory', () => {
     });
   });
 });
+
+describe('DistributedActorDirectory registry ownership regressions', () => {
+  it('keeps own-node registry entries live after cache TTL expires', async () => {
+    const directory = new DistributedActorDirectory({
+      nodeAddress: 'test-node',
+      cacheTtl: 5,
+      cleanupInterval: 1000,
+      metricsInterval: 1000,
+    });
+    const address = createActorAddress('own-node-actor', 'actor', 'test-node');
+
+    try {
+      await directory.register(address, 'test-node');
+      expect(await directory.lookup(address)).toBe('test-node');
+
+      await createActorDelay(20);
+
+      expect(await directory.lookup(address)).toBe('test-node');
+      expect((await directory.getAll()).get(address)).toBe('test-node');
+    } finally {
+      await directory.cleanup();
+    }
+  });
+});

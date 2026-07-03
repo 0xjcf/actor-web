@@ -12,8 +12,7 @@
  * - Integration with existing subscription system
  */
 
-import type { ActorRef } from './actor-ref.js';
-import type { ActorBehavior, ActorMessage } from './actor-system.js';
+import type { ActorAddress, ActorBehavior, ActorMessage } from './actor-system.js';
 import type { OTPContextHandler, XStateMachineHandler } from './create-actor.js';
 import { Logger } from './logger.js';
 import type { MessagePlan } from './message-plan.js';
@@ -24,8 +23,8 @@ const log = Logger.namespace('AUTO_PUBLISHING');
  * Subscription info with event filters
  */
 export interface SubscriberInfo {
-  /** The subscriber actor reference */
-  actor: ActorRef;
+  /** The subscriber actor address */
+  address: ActorAddress;
   /** Event types to filter (empty array means all events) */
   eventTypes: string[];
 }
@@ -212,7 +211,7 @@ export class AutoPublishingRegistry {
   addSubscriber(
     publisherId: string,
     subscriberId: string,
-    subscriber: ActorRef,
+    subscriberAddress: ActorAddress,
     eventTypes: string[] = []
   ): void {
     log.debug('🔍 AUTO-PUBLISHING DEBUG: addSubscriber called', {
@@ -229,7 +228,7 @@ export class AutoPublishingRegistry {
     }
 
     metadata.subscribers.set(subscriberId, {
-      actor: subscriber,
+      address: subscriberAddress,
       eventTypes,
     });
 
@@ -255,6 +254,17 @@ export class AutoPublishingRegistry {
   }
 
   /**
+   * Remove an actor from publisher and subscriber indexes.
+   */
+  removeActor(actorId: string): void {
+    this.publishableActors.delete(actorId);
+
+    for (const metadata of this.publishableActors.values()) {
+      metadata.subscribers.delete(actorId);
+    }
+  }
+
+  /**
    * Get all subscribers for an actor
    */
   getSubscribers(publisherId: string): SubscriberInfo[] {
@@ -265,7 +275,7 @@ export class AutoPublishingRegistry {
   /**
    * Get subscribers for a specific event type
    */
-  getSubscribersForEvent(publisherId: string, eventType: string): ActorRef[] {
+  getSubscribersForEvent(publisherId: string, eventType: string): ActorAddress[] {
     log.debug('🔍 AUTO-PUBLISHING DEBUG: getSubscribersForEvent called', {
       publisherId,
       eventType,
@@ -283,7 +293,7 @@ export class AutoPublishingRegistry {
       return [];
     }
 
-    const subscribers: ActorRef[] = [];
+    const subscribers: ActorAddress[] = [];
     log.debug('🔍 AUTO-PUBLISHING DEBUG: Checking subscribers', {
       publisherId,
       eventType,
@@ -291,14 +301,14 @@ export class AutoPublishingRegistry {
       subscriberEntries: Array.from(metadata.subscribers.entries()).map(([id, info]) => ({
         id,
         eventTypes: info.eventTypes,
-        actorPath: info.actor.address,
+        actorPath: info.address,
       })),
     });
 
     for (const subscriberInfo of metadata.subscribers.values()) {
       // If no event filter specified, or event type matches filter
       if (subscriberInfo.eventTypes.length === 0 || subscriberInfo.eventTypes.includes(eventType)) {
-        subscribers.push(subscriberInfo.actor);
+        subscribers.push(subscriberInfo.address);
       }
     }
 
@@ -307,7 +317,7 @@ export class AutoPublishingRegistry {
       eventType,
       subscriberCount: subscribers.length,
       totalSubscribers: metadata.subscribers.size,
-      subscribers: subscribers.map((s) => s.address),
+      subscribers,
     });
 
     return subscribers;

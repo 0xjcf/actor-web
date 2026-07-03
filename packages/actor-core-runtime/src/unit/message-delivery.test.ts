@@ -3,7 +3,7 @@
  * @description Unit tests for Layer 5: Message delivery to mailboxes
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ActorMessage } from '../actor-system.js';
 import { ActorSystemImpl } from '../actor-system-impl.js';
 import { withTimerTesting } from '../testing/timer-test-utils.js';
@@ -98,6 +98,57 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
     });
 
     await system.stop();
+  });
+
+  it('should reconcile stopped subscribers before emitting events', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const system = new ActorSystemImpl({ nodeAddress: 'test-node' });
+    await system.start();
+
+    try {
+      const publisherBehavior = defineBehavior<ActorMessage>()
+        .onMessage(({ message }) => {
+          if (message.type === 'EMIT_EVENT') {
+            return {
+              emit: [{ type: 'EMITTED_EVENT', data: 'hello' }],
+            };
+          }
+        })
+        .build();
+
+      const subscriberBehavior = defineBehavior<ActorMessage>()
+        .onMessage(() => {
+          // The subscriber is stopped before publish; no event should be delivered.
+        })
+        .build();
+
+      const publisherPid = await system.spawn(publisherBehavior, { id: 'publisher' });
+      const subscriberPid = await system.spawn(subscriberBehavior, { id: 'subscriber' });
+
+      await system.subscribe(publisherPid, {
+        subscriber: subscriberPid,
+        events: ['EMITTED_EVENT'],
+      });
+
+      await subscriberPid.stop();
+      await publisherPid.send({ type: 'EMIT_EVENT' });
+      await system.flush();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const deadLetters = (
+        system as unknown as {
+          deadLetterQueue: {
+            getAll(): ReadonlyArray<{ targetActorId: string; reason: string }>;
+          };
+        }
+      ).deadLetterQueue.getAll();
+
+      expect(deadLetters).toEqual([]);
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    } finally {
+      consoleErrorSpy.mockRestore();
+      await system.stop();
+    }
   });
 
   it('should handle mailbox overflow strategies', async () => {
