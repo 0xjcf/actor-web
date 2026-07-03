@@ -100,6 +100,62 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
     await system.stop();
   });
 
+  it('should deliver emitted events to a batch of subscriber mailboxes', async () => {
+    const system = new ActorSystemImpl({ nodeAddress: 'test-node' });
+    await system.start();
+
+    try {
+      const publisherBehavior = defineBehavior<ActorMessage>()
+        .onMessage(({ message }) => {
+          if (message.type === 'EMIT_EVENT') {
+            return {
+              emit: [{ type: 'EMITTED_EVENT', data: 'hello' }],
+            };
+          }
+        })
+        .build();
+
+      const subscriberMessagesA: ActorMessage[] = [];
+      const subscriberMessagesB: ActorMessage[] = [];
+      const subscriberBehaviorA = defineBehavior<ActorMessage>()
+        .onMessage(({ message }) => {
+          subscriberMessagesA.push(message);
+        })
+        .build();
+      const subscriberBehaviorB = defineBehavior<ActorMessage>()
+        .onMessage(({ message }) => {
+          subscriberMessagesB.push(message);
+        })
+        .build();
+
+      const publisherPid = await system.spawn(publisherBehavior, { id: 'publisher' });
+      const subscriberAPid = await system.spawn(subscriberBehaviorA, { id: 'subscriber-a' });
+      const subscriberBPid = await system.spawn(subscriberBehaviorB, { id: 'subscriber-b' });
+
+      const unsubscribe = await system.subscribe(publisherPid, {
+        subscribers: [subscriberAPid, subscriberBPid],
+        events: ['EMITTED_EVENT'],
+      });
+
+      await publisherPid.send({ type: 'EMIT_EVENT' });
+      await system.flush();
+
+      expect(subscriberMessagesA).toHaveLength(1);
+      expect(subscriberMessagesB).toHaveLength(1);
+      expect(subscriberMessagesA[0]).toMatchObject({ type: 'EMITTED_EVENT', data: 'hello' });
+      expect(subscriberMessagesB[0]).toMatchObject({ type: 'EMITTED_EVENT', data: 'hello' });
+
+      await unsubscribe();
+      await publisherPid.send({ type: 'EMIT_EVENT' });
+      await system.flush();
+
+      expect(subscriberMessagesA).toHaveLength(1);
+      expect(subscriberMessagesB).toHaveLength(1);
+    } finally {
+      await system.stop();
+    }
+  });
+
   it('should reconcile stopped subscribers before emitting events', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const system = new ActorSystemImpl({ nodeAddress: 'test-node' });
