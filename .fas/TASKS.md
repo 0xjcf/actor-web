@@ -1639,8 +1639,8 @@
 
 - Title: Unify actor location truth: single directory-backed resolution for send and emit/subscribe
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/unify-actor-location-truth-single-directory-backed-resolutio.md
 - Verification lane: fast
 - Policy sensitivity: standard
