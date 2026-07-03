@@ -1,4 +1,4 @@
-# Docs: document the ignite-element integration surface (readM
+# Docs: document the ignite-element integration surface (readModel/commandSource/sourceHandle + opts)
 
 ## Source
 
@@ -31,10 +31,23 @@ Cross-repo alignment (spike C10). Document the topology source factories (.readM
 ## Affected files
 
 - docs/
+- docs/site/guides/ignite-element.md
+- docs/site/concepts/sources-and-gateway.md
+- docs/site/api/topology.md
+- docs/API.md
+- docs/examples/ignite-element-host.md
 
 ## Scope Amendments
 
-- None.
+- Type: scope-promotion
+- Added at: 2026-07-03T18:55:00Z
+- Trigger: Docs surface narrowed during implementation
+- Reason: Promote concrete docs files that already own the Ignite Element integration, source/gateway contract, topology API, API reference, and runnable example note.
+- Added paths: docs/site/guides/ignite-element.md, docs/site/concepts/sources-and-gateway.md, docs/site/api/topology.md, docs/API.md, docs/examples/ignite-element-host.md
+- Evidence source: repo-search
+- Evidence: repo-search | docs/site/guides/ignite-element.md | Existing Ignite Element guide and companion source factory docs contain the target surface.
+- Accuracy signal: Targeted rg found exact readModel/commandSource/sourceHandle/opts docs.
+- Follow-up needed: None.
 
 ## Implementation plan
 
@@ -52,7 +65,7 @@ Cross-repo alignment (spike C10). Document the topology source factories (.readM
 
 ## Dependencies
 
-- None known at task creation.
+- task-1780800649098 (docs site scaffold/guide prereq from queue row)
 
 ## Open questions
 

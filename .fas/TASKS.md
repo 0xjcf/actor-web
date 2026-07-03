@@ -898,9 +898,12 @@
 
 - Title: Docs: document the ignite-element integration surface (readModel/commandSource/sourceHandle + opts)
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/docs-document-the-ignite-element-integration-surface-readm.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Add batch subscribers[] overload to system.subscribe
 
