@@ -1,4 +1,4 @@
-# Decide event-sourcing module fate: promote as lattice journal or deprecate
+# Decide event-sourcing module fate (promote as lattice journal or deprecate)
 
 ## Source
 
@@ -36,13 +36,20 @@ Gap identified:
 ## Affected files
 
 - packages/actor-core-runtime/src/event-sourcing.ts (promote, trim, or deprecate)
-- packages/actor-core-runtime/src/index.ts (export surface)
 - packages/actor-core-runtime/src/integration/event-sourcing.test.ts (un-skip or remove)
 - .fas/memory/decisions.md (record the outcome)
 
 ## Scope Amendments
 
-- None.
+- Type: scope-demotion
+- Added at: 2026-07-03T19:27:00Z
+- Trigger: delegated architecture and staff-engineer inspection
+- Reason: `packages/actor-core-runtime/src/index.ts` has no event-sourcing export leak on this branch; leaving it unchanged preserves the approved narrow package-root surface.
+- Demoted paths: packages/actor-core-runtime/src/index.ts
+- Evidence source: fas_architect and fas_staff_engineer handoffs
+- Evidence: Current root package surface does not re-export `event-sourcing`; the implementation decision is to trim the module-local journal seam without adding root exports.
+- Accuracy signal: Direct inspection of `packages/actor-core-runtime/src/index.ts` and package exports.
+- Follow-up needed: None.
 
 ## Implementation plan
 

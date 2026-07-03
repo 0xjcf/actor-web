@@ -1302,9 +1302,12 @@
 
 - Title: Decide event-sourcing module fate (promote as lattice journal or deprecate)
 - Mode: 6-agent
-- Status: backlog
-- Owner: planner
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/event-sourcing-module-is-vestigial-event-sourcing-ts-export.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Add lattice-mode coordination example beside fas-agent-loop (orchestration baseline + stigmergic lattice + hybrid)
 
