@@ -15,20 +15,22 @@ Each actor in a topology exposes source factories:
 
 - **`readModel(opts)`** — projection only: `snapshot()`, `subscribe(listener)`,
   `subscribeEvent(listener)`, transport status. No `send`/`ask`.
-- **`commandSource(opts)`** — the read-model surface **plus** `send(message)` and
-  `ask(message)`.
 - **`source(opts)`** — the unified surface (read + command) for simple cases.
+- **`commandSource(opts)`** — the command-only surface for hosts that need
+  `send(message)` / `ask(message)` without projection replay.
 - **`sourceHandle(opts)`** — a paired read-model + command source for hosts that
   want both explicitly.
 
 ```ts
 const view = topology.actors.compare.readModel({ gateway: { url } });
+const ui   = topology.actors.compare.source({ gateway: { url } });
 const cmd  = topology.actors.compare.commandSource({ gateway: { url } });
 ```
 
 Prefer `readModel` for components that only display state, and reach for a
-command source only where a component intentionally drives the actor — so the
-ability to send commands is visible in the code, not granted by default.
+unified or command-only source only where a component intentionally drives the
+actor — so the ability to send commands is visible in the code, not granted by
+default.
 
 ## The gateway
 
@@ -49,7 +51,7 @@ These sources are shaped to plug straight into
 
 ```ts
 igniteCore({
-  source: topology.actors.compare.readModel({ gateway: { url } }),
+  source: topology.actors.compare.source({ gateway: { url } }),
   view: ({ context }) => ({ outcome: context.outcome }),
   commands: ({ actor, command }) => ({
     acceptFork: command(() => actor.send({ type: 'ACCEPT_FORK' })),

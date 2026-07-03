@@ -1,4 +1,4 @@
-# Release prep 0.2.0: ship @actor-web/agent + decide the publi
+# Release prep 0.2.0: ship @actor-web/agent + decide the public package facade
 
 ## Source
 

@@ -69,8 +69,8 @@ Each actor in a topology exposes factories for UI consumption:
 | Factory | Returns |
 | --- | --- |
 | `actor.readModel(opts)` | Read-only source: `snapshot`, `subscribe`, `subscribeEvent`. |
-| `actor.commandSource(opts)` | Read-model **+** `send` / `ask`. |
 | `actor.source(opts)` | Unified read + command. |
+| `actor.commandSource(opts)` | Command-only `send` / `ask` surface using command-only gateway subscribe mode. |
 | `actor.sourceHandle(opts)` | Paired read-model + command source. |
 | `actor.readModelHandle(opts)` | Gateway-wrapped read-model handle. |
 

@@ -19,8 +19,8 @@ binding.
 import { igniteCore } from 'ignite-element/actor-web';
 
 const registerCompare = igniteCore({
-  // a topology-owned source for one actor
-  source: topology.actors.compare.readModel({ gateway: { url } }),
+  // a topology-owned read/write source for one actor
+  source: topology.actors.compare.source({ gateway: { url } }),
   // project snapshot context into UI state
   view: ({ context }) => ({ outcome: context.outcome, selected: context.selected }),
   // bind UI actions to actor messages
@@ -39,7 +39,10 @@ Pick the narrowest capability:
 
 - **`readModel(opts)`** — display-only components. Snapshots + events, no
   `send`/`ask`.
-- **`commandSource(opts)`** — components that intentionally drive the actor.
+- **`source(opts)`** — components that render state and intentionally drive the
+  actor.
+- **`commandSource(opts)`** — command-only hosts that do not need projection
+  replay.
 
 This is CQRS at the UI edge: the ability to command is visible in the code, not
 granted to every projection by default. See

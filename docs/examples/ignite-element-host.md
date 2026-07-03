@@ -135,35 +135,37 @@ source-shaped adapter.
 
 `logistics-browser-client.ts` binds the shared topology to the deployed gateway
 for current demo wiring, but the target `ignite-element/actor-web` contract is
-read-model first. The Ignite host should pass `.readModel(...)` as `source` and
-only opt into `.commandSource(...)` when the component intentionally owns
-command/control. Browser-local details such as form inputs and latest-event
-display remain element concerns instead of being disguised as Actor-Web source
-state. REST ingress stays in the server HTTP adapter and reaches the same actor
-behavior.
+single-source first. The Ignite host should pass `.readModel(...)` as `source`
+for read-only projections, or pass a source value that exposes `send`/`ask` when
+the component intentionally owns command/control. For gateway-backed topology
+actors, that read/write value is `.source(...)`; `.commandSource(...)` is the
+command-only path for hosts that do not need projection replay. Browser-local
+details such as form inputs and latest-event display remain element concerns
+instead of being disguised as Actor-Web source state. REST ingress stays in the
+server HTTP adapter and reaches the same actor behavior.
 
 Use the split like this:
 
 ```ts
 const runtime = await startRuntime(logistics);
+const shipmentSource = runtime.shipment.commandSource();
 
 const shipmentHost = igniteCore({
-  source: ({ host }) => runtime.shipment.readModel({ host }),
-  commandSource: () => runtime.shipment.commandSource(),
+  source: shipmentSource,
   commands: ({ actor, command }) => ({
     resetShipment: command(() => actor.send({ type: 'RESET_SHIPMENT' })),
   }),
 });
 ```
 
-Do not inject standalone command-helper objects into Ignite components. Keep
-host-owned commands on the Ignite command API through the explicit
-`commandSource` pairing. For deployed gateway-backed pages, use the same split
-with `logistics.actors.shipment.readModel({ gateway })` and
-`logistics.actors.shipment.commandSource({ gateway })`. Generic browser clients
-can still use
-`createActorWebReadModelClient(...)` or `.readModel(...)` where no Ignite command
-surface is required.
+Do not inject standalone command-helper objects into Ignite components or add a
+second Ignite config key for commands. Keep host-owned commands on the Ignite
+command API and choose the right Actor-Web source value for `source`.
+For deployed gateway-backed pages, use the shipment read-model source as
+`source` for read-only views, or use `logistics.actors.shipment.source({ gateway })`
+as `source` when both projection and commands are required. Generic browser
+clients can still use `createActorWebReadModelClient(...)` or `.readModel(...)`
+where no Ignite command surface is required.
 
 `server-runtime-gateway.ts` starts the server node with `serveNode` and
 uses `serveActorWebHttp(runtime).for(logistics.actors.shipment)` for REST

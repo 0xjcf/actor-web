@@ -608,35 +608,15 @@ const shipmentCard = igniteCore({
 });
 ```
 
-When a host needs both live projection state and command/control for the same
-actor, pair the read-model source with an explicit command helper. The
-read-model side stays on the full projection subscription, while the explicit
-command helper uses a lighter command-only gateway subscribe mode so it does
-not open a second snapshot/event/transition stream for the same actor.
-
-```ts
-const client = createActorWebReadModelClient(logistics, {
-  gateway: { url: 'ws://127.0.0.1:4100' },
-  clientVersion: 'logistics-ui',
-});
-
-const shipmentSource = client.actors.shipment;
-const shipmentCommands = logistics.actors.shipment.commandSource({
-  gateway: { url: 'ws://127.0.0.1:4100' },
-});
-```
-
-The matching `ignite-element/actor-web` contract should expose that pairing
-without requiring product code to wrap sources or write manual generics:
+When an Ignite host needs both live projection state and command/control for
+the same actor, pass the command-capable Actor-Web source as Ignite's single
+`source`. The split remains visible in the source factory choice, without a
+second Ignite config key or manual generics:
 
 ```ts
 const shipmentCard = igniteCore({
   source: () =>
-    logistics.actors.shipment.readModel({
-      gateway: { url: 'ws://127.0.0.1:4100' },
-    }),
-  commandSource: () =>
-    logistics.actors.shipment.commandSource({
+    logistics.actors.shipment.source({
       gateway: { url: 'ws://127.0.0.1:4100' },
     }),
 
@@ -646,6 +626,9 @@ const shipmentCard = igniteCore({
   }),
 });
 ```
+
+Generic browser clients that do not use Ignite can still compose a read-model
+client and command-capable source explicitly when that is the product shape.
 
 `ignite-element/actor-web` should treat `close()` as the Actor-Web cleanup hook,
 equivalent to `stop()` for handles, so product code does not need to adapt
@@ -669,18 +652,20 @@ const runtime = await startRuntime(logistics, {
 
 const dashboard = igniteCore({
   source: ({ host }) => runtime.dashboard.readModel({ host }),
-  commandSource: () => runtime.dashboard.commandSource(),
 });
 ```
 
 `readModel({ host })` accepts Ignite's host-context object so product code can
-pass the source factory arguments straight through. `source.close()` closes that
-source's subscriptions; `runtime.stop()` closes every source the runtime opened
-and then stops all started Actor-Web nodes. App-owned runtimes should call
-`runtime.stop()` during teardown. Ignite-owned isolated sources can rely on
-`close()` or an `AbortSignal` passed to `readModel(...)`/`commandSource(...)`.
+pass the source factory arguments straight through. Use `commandSource({ host })`
+as the Ignite `source` when a component intentionally owns command/control.
+`source.close()` closes that source's subscriptions; `runtime.stop()` closes
+every source the runtime opened and then stops all started Actor-Web nodes.
+App-owned runtimes should call `runtime.stop()` during teardown. Ignite-owned
+isolated sources can rely on `close()` or an `AbortSignal` passed to
+`readModel(...)`/`commandSource(...)`.
 
-Use an explicit command helper when the host owns command/control:
+Outside Ignite, use an explicit command helper when the host owns
+command/control without a projection stream:
 
 ```ts
 const shipmentCommands = logistics.actors.shipment.commandSource({
@@ -749,11 +734,11 @@ const shipmentSource = createActorWebReadModelSource({
 ```
 
 Use `createActorWebCommandSource(...)` or `topology.actors.name.commandSource(...)`
-only when the host intentionally owns command/control for that actor. These
-helpers now opt into the gateway's command-only subscribe mode: they still go
-through gateway auth and scope resolution, but they wait for the first
-post-subscribe status instead of an initial snapshot and they do not request
-snapshot/event/transition replay.
+only when the host intentionally owns command/control for that actor without a
+projection stream. These helpers opt into the gateway's command-only subscribe
+mode: they still go through gateway auth and scope resolution, but they wait for
+the first post-subscribe status instead of an initial snapshot and they do not
+request snapshot/event/transition replay.
 
 ```ts
 const shipmentCommands = createActorWebCommandSource({

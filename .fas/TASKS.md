@@ -1956,6 +1956,17 @@ operator explicitly asks for queue mutations.
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Document actor-web ecosystem architecture alignment
+
+- Title: Document actor-web ecosystem architecture alignment
+- Mode: 6-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/document-actor-web-ecosystem-architecture-alignment.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
 ## Template
 
 ### Task: `<short task title>`
