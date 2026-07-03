@@ -53,6 +53,7 @@ import type {
   ActorMessage,
   ActorPID,
   ActorStats,
+  ActorSubscribeOptions,
   ActorSupervisionPolicy,
   ActorSupervisionStrategy,
   ActorSystem,
@@ -4664,21 +4665,22 @@ export class ActorSystemImpl implements ActorSystem {
    */
   async subscribe<TEventType extends string = string>(
     publisher: ActorRef,
-    options: {
-      subscriber: ActorRef;
-      events?: TEventType[];
-    }
+    options: ActorSubscribeOptions<TEventType>
   ): Promise<() => Promise<void>> {
     const publisherId = publisher.address;
-    const subscriberId = options.subscriber.address;
-    const eventTypes = options.events || [];
+    const subscribers = options.subscribers
+      ? [...options.subscribers]
+      : options.subscriber
+        ? [options.subscriber]
+        : [];
+    const eventTypes = [...(options.events ?? [])];
 
     log.debug('🔍 SUBSCRIBE DEBUG: subscribe() called', {
       publisherId,
-      subscriberId,
+      subscriberIds: subscribers.map((subscriber) => subscriber.address),
       eventTypes,
       hasPublisher: !!publisher,
-      hasSubscriber: !!options.subscriber,
+      subscriberCount: subscribers.length,
     });
 
     // Register publisher with auto-publishing registry if not already registered
@@ -4697,43 +4699,58 @@ export class ActorSystemImpl implements ActorSystem {
     }
 
     const publisherLocation = await this.directory.lookup(publisher.address);
-    const subscriberLocation = await this.directory.lookup(options.subscriber.address);
-    if (!publisherLocation || !subscriberLocation) {
+    const subscriberLocations = await Promise.all(
+      subscribers.map(async (subscriber) => ({
+        subscriber,
+        location: await this.directory.lookup(subscriber.address),
+      }))
+    );
+    const missingSubscribers = subscriberLocations
+      .filter(({ location }) => !location)
+      .map(({ subscriber }) => subscriber.address);
+    if (!publisherLocation || missingSubscribers.length > 0) {
       throw new Error(
-        `Cannot subscribe actor without directory entries: publisher=${publisher.address}, subscriber=${options.subscriber.address}`
+        `Cannot subscribe actor without directory entries: publisher=${publisher.address}, subscribers=${missingSubscribers.join(', ')}`
       );
     }
 
     // Add subscriber to the registry
     log.debug('🔍 SUBSCRIBE DEBUG: Adding subscriber to registry', {
       publisherId,
-      subscriberId,
+      subscriberIds: subscribers.map((subscriber) => subscriber.address),
       eventTypes,
     });
 
-    this.autoPublishingRegistry.addSubscriber(
+    this.autoPublishingRegistry.addSubscribers(
       publisherId,
-      subscriberId,
-      options.subscriber.address,
+      subscribers.map((subscriber) => ({
+        subscriberId: subscriber.address,
+        subscriberAddress: subscriber.address,
+      })),
       eventTypes
     );
 
     log.debug('🔍 SUBSCRIBE DEBUG: Subscription completed', {
       publisherId,
-      subscriberId,
+      subscriberIds: subscribers.map((subscriber) => subscriber.address),
       eventTypes: eventTypes.length > 0 ? eventTypes : 'all',
     });
 
     log.info('Actor subscription created', {
       publisher: publisherId,
-      subscriber: subscriberId,
+      subscribers: subscribers.map((subscriber) => subscriber.address),
       events: eventTypes.length > 0 ? eventTypes : 'all',
     });
 
     // Return unsubscribe function
     return async () => {
-      this.autoPublishingRegistry.removeSubscriber(publisherId, subscriberId);
-      log.debug('Actor subscription removed', { publisherId, subscriberId });
+      for (const subscriber of subscribers) {
+        this.autoPublishingRegistry.removeSubscriber(publisherId, subscriber.address);
+      }
+      log.debug('Actor subscription removed', {
+        publisherId,
+        subscriberIds: subscribers.map((subscriber) => subscriber.address),
+      });
     };
   }
 

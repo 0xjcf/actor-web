@@ -29,6 +29,13 @@ export interface SubscriberInfo {
   eventTypes: string[];
 }
 
+export interface BatchSubscriberInfo {
+  /** The subscriber registry id */
+  subscriberId: string;
+  /** The subscriber actor address */
+  subscriberAddress: ActorAddress;
+}
+
 /**
  * Metadata about an actor's publishable events
  */
@@ -240,6 +247,24 @@ export class AutoPublishingRegistry {
     });
 
     log.debug('Subscriber added', { publisherId, subscriberId, eventTypes });
+  }
+
+  /**
+   * Add multiple subscribers to an actor's events.
+   */
+  addSubscribers(
+    publisherId: string,
+    subscribers: readonly BatchSubscriberInfo[],
+    eventTypes: string[] = []
+  ): void {
+    for (const subscriber of subscribers) {
+      this.addSubscriber(
+        publisherId,
+        subscriber.subscriberId,
+        subscriber.subscriberAddress,
+        eventTypes
+      );
+    }
   }
 
   /**

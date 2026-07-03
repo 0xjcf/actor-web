@@ -198,6 +198,18 @@ export interface SpawnOptions {
   readonly supervision?: ActorSupervisionPolicy;
 }
 
+export type ActorSubscribeOptions<TEventType extends string = string> =
+  | {
+      readonly subscriber: ActorRef;
+      readonly subscribers?: never;
+      readonly events?: readonly TEventType[];
+    }
+  | {
+      readonly subscriber?: never;
+      readonly subscribers: readonly ActorRef[];
+      readonly events?: readonly TEventType[];
+    };
+
 /**
  * Supervision strategy directives
  */
@@ -426,14 +438,15 @@ export interface ActorSystem {
   // ============================================================================
 
   /**
-   * Subscribe an actor to events from a publisher actor using pure actor messaging
+   * Subscribe one or more actors to events from a publisher actor using pure actor messaging
    *
    * This maintains pure actor model compliance by sending SUBSCRIBE messages internally.
    * Despite the name "subscribe", this is purely message-based communication.
    *
    * @param publisher - The actor that emits events
    * @param options - Subscription configuration
-   * @param options.subscriber - The actor that should receive events
+   * @param options.subscriber - The single actor that should receive events
+   * @param options.subscribers - Batch of actors that should receive events
    * @param options.events - Optional array of event types to subscribe to (defaults to all)
    * @returns Promise that resolves to an unsubscribe function
    *
@@ -454,10 +467,7 @@ export interface ActorSystem {
    */
   subscribe<TEventType extends string = string>(
     publisher: ActorRef,
-    options: {
-      subscriber: ActorRef;
-      events?: TEventType[];
-    }
+    options: ActorSubscribeOptions<TEventType>
   ): Promise<() => Promise<void>>;
 
   /**
