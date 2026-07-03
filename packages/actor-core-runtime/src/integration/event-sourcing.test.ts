@@ -43,6 +43,37 @@ describe('event-sourcing journal seam', () => {
     await expect(eventStore.getEvents(streamId, 2)).resolves.toEqual([events[2]]);
   });
 
+  it('filters stream events by timestamp range', async () => {
+    const streamId = 'journal-stream';
+    const events = [createEvent(streamId, 1), createEvent(streamId, 2), createEvent(streamId, 3)];
+
+    await eventStore.append(streamId, events, 0);
+
+    await expect(
+      eventStore.getEventsByTimeRange(streamId, new Date(1500), new Date(2500))
+    ).resolves.toEqual([events[1]]);
+  });
+
+  it('filters journal events by type across streams', async () => {
+    const firstStream = 'first-stream';
+    const secondStream = 'second-stream';
+    const created = createEvent(firstStream, 1, { type: 'ARTIFACT_CREATED' });
+    const updated = createEvent(firstStream, 2, { type: 'ARTIFACT_UPDATED' });
+    const otherCreated = createEvent(secondStream, 1, {
+      eventId: 'event-other-created',
+      timestamp: 3000,
+      type: 'ARTIFACT_CREATED',
+    });
+
+    await eventStore.append(firstStream, [created, updated], 0);
+    await eventStore.append(secondStream, [otherCreated], 0);
+
+    await expect(eventStore.getEventsByType('ARTIFACT_CREATED')).resolves.toEqual([
+      otherCreated,
+      created,
+    ]);
+  });
+
   it('rejects appends with stale expected versions', async () => {
     const streamId = 'journal-stream';
 
