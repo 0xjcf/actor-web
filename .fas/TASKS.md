@@ -1967,6 +1967,30 @@ operator explicitly asks for queue mutations.
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Runtime correctness (CodeRabbit PR#32 full-pass): retry-interceptor unhandled rejection + create-actor-ref parent contract
+
+- Title: Runtime correctness (CodeRabbit PR#32 full-pass): retry-interceptor unhandled rejection + create-actor-ref parent contract
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/runtime-correctness-coderabbit-pr-32-full-pass-retry-interce.md
+- Automation mode: advisory
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Docs hygiene: scrub absolute local-path leaks from committed docs
+
+- Title: Docs hygiene: scrub absolute local-path leaks from committed docs
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/docs-hygiene-scrub-absolute-local-path-leaks-from-committed-.md
+- Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: contained
+
 ## Template
 
 ### Task: `<short task title>`
