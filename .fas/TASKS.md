@@ -909,9 +909,12 @@
 
 - Title: Add batch subscribers[] overload to system.subscribe
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/add-batch-subscribers-overload-to-system-subscribe.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Add declarative subscriptions to defineActorWebTopology
 
