@@ -33,6 +33,51 @@ const registerCompare = igniteCore({
 registerCompare('compare-view', (props) => /* render */);
 ```
 
+## Source factories
+
+Each topology actor selects the Actor-Web actor identity first:
+
+```ts
+topology.actors.compare.readModel({ gateway: { url } });
+```
+
+The argument is `ActorWebSourceOptions`: gateway and client transport config,
+not actor identity.
+
+```ts
+type ActorWebSourceOptions = {
+  gateway: {
+    url: string;
+    scope?: { kind?: string; params?: Record<string, string> };
+    auth?: RuntimeGatewayAuthProvider;
+  };
+  streamId?: string;
+  createSocket?: (url: string) => ActorWebGatewaySocket;
+  clientVersion?: string;
+};
+```
+
+Use `gateway.scope.params` for tenant, document, or entity filters. Override
+`gateway.scope.kind` only when the public gateway projection is intentionally
+different from the topology actor key.
+
+## Ignite mapping
+
+Ignite takes one Actor-Web handle as `source`. `commandSource(...)` is an
+Actor-Web factory name, not a second `igniteCore` config key.
+
+| Actor-Web factory | Capability | Pass to `igniteCore` |
+| --- | --- | --- |
+| `readModel(opts)` | snapshots, emitted events, transport status | `source` |
+| `source(opts)` | read model plus `send` / `ask` | `source` |
+| `commandSource(opts)` | command-capable source optimized for command-only gateway subscription | `source` |
+| `sourceHandle(opts)` | `{ source, commandSource, stop }` for hosts that want explicit read/write handles | pass `handle.commandSource` when Ignite commands; pass `handle.source` for read-only projection |
+| `readModelHandle(opts)` | `{ source, stop }` for explicit read-model lifecycle ownership | pass `handle.source` |
+
+For normal Ignite components, prefer passing `readModel(...)`, `source(...)`, or
+`commandSource(...)` directly. Use handle factories when the host owns lifecycle
+outside Ignite and needs a single `stop()` for cleanup.
+
 ## Read-model vs command source
 
 Pick the narrowest capability:

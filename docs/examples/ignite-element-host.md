@@ -144,6 +144,28 @@ details such as form inputs and latest-event display remain element concerns
 instead of being disguised as Actor-Web source state. REST ingress stays in the
 server HTTP adapter and reaches the same actor behavior.
 
+Source factory options are gateway/transport config, not actor identity:
+
+```ts
+const shipmentSource = logistics.actors.shipment.readModel({
+  gateway: {
+    url: gatewayUrl,
+    scope: {
+      params: { tenantId: currentTenant },
+    },
+  },
+  clientVersion: 'logistics-control-tower',
+});
+```
+
+The actor identity is already selected by `logistics.actors.shipment`. Use
+`gateway.scope.params` for product filters and reserve `gateway.scope.kind` for
+intentional public projection aliases. If the host wants explicit lifecycle
+ownership, use `.sourceHandle(...)` or `.readModelHandle(...)`. Pass
+`sourceHandle.commandSource` to Ignite when the component issues commands, pass
+`sourceHandle.source` or `readModelHandle.source` for read-only projection, and
+call `handle.stop()` during teardown.
+
 Use the split like this:
 
 ```ts

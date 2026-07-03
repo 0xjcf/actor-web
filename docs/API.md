@@ -589,6 +589,22 @@ Actor-Web read-model sources provide:
 - `subscribeTransportStatus(listener)`
 - `close()`
 
+Topology actors expose the same source factory names everywhere:
+
+| Factory | Use when | Ignite Element mapping |
+| --- | --- | --- |
+| `readModel(opts)` | the host only projects snapshots/events | pass as `igniteCore({ source })` |
+| `source(opts)` | the host projects state and intentionally sends commands | pass as `igniteCore({ source })` |
+| `commandSource(opts)` | the host owns command/control without projection replay | pass as `igniteCore({ source })` |
+| `sourceHandle(opts)` | the host wants explicit `{ source, commandSource, stop }` ownership | pass `handle.commandSource` when Ignite commands; pass `handle.source` for read-only projection |
+| `readModelHandle(opts)` | the host wants explicit read-model cleanup with `stop()` | pass `handle.source` |
+
+`opts` is `ActorWebSourceOptions`: `{ gateway: { url, scope?, auth? },
+streamId?, createSocket?, clientVersion? }`. It is gateway/transport
+configuration, not actor identity. The actor is selected by the topology path
+(`logistics.actors.shipment`); `gateway.scope.params` carries product filters
+such as tenant, document, shipment, or vehicle ids.
+
 For Ignite Element, the target API keeps this read-model source as the default
 `source` for `ignite-element/actor-web`. Components that only render live
 projection state should not need a command-capable source:
@@ -610,8 +626,9 @@ const shipmentCard = igniteCore({
 
 When an Ignite host needs both live projection state and command/control for
 the same actor, pass the command-capable Actor-Web source as Ignite's single
-`source`. The split remains visible in the source factory choice, without a
-second Ignite config key or manual generics:
+`source`. `commandSource(...)` is an Actor-Web source factory, not a second
+Ignite config key. The split remains visible in the source factory choice,
+without manual generics:
 
 ```ts
 const shipmentCard = igniteCore({
@@ -657,7 +674,9 @@ const dashboard = igniteCore({
 
 `readModel({ host })` accepts Ignite's host-context object so product code can
 pass the source factory arguments straight through. Use `commandSource({ host })`
-as the Ignite `source` when a component intentionally owns command/control.
+as the Ignite `source` when a host intentionally owns command/control but does
+not need projection replay. Use `source({ host })` when the same component needs
+both projection and command capability.
 `source.close()` closes that source's subscriptions; `runtime.stop()` closes
 every source the runtime opened and then stops all started Actor-Web nodes.
 App-owned runtimes should call `runtime.stop()` during teardown. Ignite-owned
@@ -1006,7 +1025,10 @@ await runtime.stop();
 The returned runtime exposes:
 
 - `runtime.actorKey.readModel({ host?, signal? })`
+- `runtime.actorKey.source({ host?, signal? })`
 - `runtime.actorKey.commandSource({ host?, signal? })`
+- `runtime.actorKey.sourceHandle({ host?, signal? })`
+- `runtime.actorKey.readModelHandle({ host?, signal? })`
 - `runtime.actorKey.actor()`
 - `runtime.actors.actorKey` for the same helpers without top-level access
 - `runtime.nodes` for node handles and focused test flushing

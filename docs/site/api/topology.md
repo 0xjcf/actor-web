@@ -75,8 +75,16 @@ Each actor in a topology exposes factories for UI consumption:
 | `actor.readModelHandle(opts)` | Gateway-wrapped read-model handle. |
 
 `opts` is `ActorWebSourceOptions` — gateway/transport config
-(`{ gateway: { url, scope?, auth? }, streamId?, createSocket? }`), **not** actor
-identity. See [Sources & the gateway](/concepts/sources-and-gateway).
+(`{ gateway: { url, scope?, auth? }, streamId?, createSocket?, clientVersion? }`),
+**not** actor identity. The actor identity comes from the topology path
+(`topology.actors.<key>`). `gateway.scope.params` carries product filters such
+as tenant or document ids; override `gateway.scope.kind` only for an intentional
+public projection alias. See [Sources & the gateway](/concepts/sources-and-gateway).
+
+For [Ignite Element](/guides/ignite-element), `readModel(...)`, `source(...)`,
+and `commandSource(...)` are all passed through `igniteCore({ source: ... })`.
+`commandSource(...)` is the Actor-Web factory for a command-capable source, not
+a second Ignite config key.
 
 ## Address-based sources
 
