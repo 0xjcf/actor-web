@@ -1297,9 +1297,12 @@
 
 - Title: Author the lattice contract design doc (artifact store + dependency activation)
 - Mode: 6-agent
-- Status: backlog
-- Owner: planner
-- Brief: .fas/tasks/no-persistent-artifact-fact-store-or-dependency-activation-p.md
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/author-the-lattice-contract-design-doc-artifact-store-depend.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Decide event-sourcing module fate (promote as lattice journal or deprecate)
 
