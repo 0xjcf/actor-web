@@ -29,6 +29,8 @@ export type {
   ActorMessage,
   // ActorPID is now internal - use ActorRef instead
   ActorStats,
+  ActorSupervisionPolicy,
+  ActorSupervisionStrategy,
   ActorSystem,
   AddressQuery,
   ClusterState,

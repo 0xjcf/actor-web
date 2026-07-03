@@ -803,7 +803,7 @@ export class ActorSystemImpl implements ActorSystem {
    * `actorStopped` event is emitted per stop — callers must not emit their
    * own; they pass the reason here instead.
    */
-  private async stopActor(pid: ActorPID, reason?: string): Promise<void> {
+  private async stopActor(pid: ActorPID, reason?: string, error?: string): Promise<void> {
     // Access the address from the PID interface
     const address = pid.address;
     const path = address;
@@ -930,7 +930,11 @@ export class ActorSystemImpl implements ActorSystem {
     await this.emitSystemEvent({
       eventType: 'actorStopped',
       timestamp: Date.now(),
-      data: reason !== undefined ? { address: address, reason } : { address: address },
+      data: {
+        address,
+        ...(reason !== undefined ? { reason } : {}),
+        ...(error !== undefined ? { error } : {}),
+      },
     });
   }
 
@@ -4209,12 +4213,16 @@ export class ActorSystemImpl implements ActorSystem {
         // Stop the actor permanently to prevent restart loops and memory
         // leaks. stopActor emits the single terminal actorStopped event with
         // this reason.
-        await this.stopActor(new ActorPIDImpl(address, this), 'max-restarts-exceeded');
+        await this.stopActor(
+          new ActorPIDImpl(address, this),
+          'max-restarts-exceeded',
+          errorMessage
+        );
         return;
       }
       case 'stop': {
         log.error('Actor failed, applying stop directive', { path: address });
-        await this.stopActor(new ActorPIDImpl(address, this), 'supervision-stop');
+        await this.stopActor(new ActorPIDImpl(address, this), 'supervision-stop', errorMessage);
         return;
       }
       case 'escalate': {
@@ -4223,7 +4231,7 @@ export class ActorSystemImpl implements ActorSystem {
         // operators observe the unhandled failure. Widening groups
         // (one-for-all/rest-for-one) never reach here — their escalate is
         // substituted into a bounded group restart above.
-        log.warn('Actor failed, escalating (stop + escalation event)', { path: address });
+        log.error('Actor failed, escalating (stop + escalation event)', { path: address });
         await this.stopActor(new ActorPIDImpl(address, this));
         await this.emitSystemEvent({
           eventType: 'actorEscalated',
@@ -4312,10 +4320,22 @@ export class ActorSystemImpl implements ActorSystem {
         restartAttempt: currentRestartCount + 1,
       });
     } catch (restartError) {
+      const restartErrorMessage =
+        restartError instanceof Error ? restartError.message : String(restartError);
       log.error('Failed to restart actor', {
         path: address,
         restartAttempt: currentRestartCount + 1,
-        error: restartError instanceof Error ? restartError.message : 'Unknown',
+        error: restartErrorMessage,
+      });
+      await this.emitSystemEvent({
+        eventType: 'actorRespawnFailed',
+        timestamp: Date.now(),
+        data: {
+          address,
+          reason: 'respawn-failed',
+          error: restartErrorMessage,
+          restartAttempt: currentRestartCount + 1,
+        },
       });
       // Escalate restart failure
       await this.notifyGuardianOfFailure(address, restartError);
@@ -4521,7 +4541,11 @@ export class ActorSystemImpl implements ActorSystem {
               ? 'max-restarts-exceeded'
               : 'supervisor-max-restarts-exceeded';
         try {
-          await this.stopActor(new ActorPIDImpl(parseActorPath(path), this), memberReason);
+          await this.stopActor(
+            new ActorPIDImpl(parseActorPath(path), this),
+            memberReason,
+            errorMessage
+          );
         } catch (stopError) {
           log.error('Failed to stop supervisor group member during give-up', {
             path,
