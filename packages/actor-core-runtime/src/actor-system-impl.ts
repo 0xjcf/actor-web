@@ -901,7 +901,9 @@ export class ActorSystemImpl implements ActorSystem {
     this.actors.delete(path);
     this.actorOriginalBehaviors.delete(path);
     this.actorStarted.delete(path);
-    this.autoPublishingRegistry.removeActor(path);
+    if (reason !== 'supervisor-restart' && reason !== 'supervisor-group-restart') {
+      this.autoPublishingRegistry.removeActor(path);
+    }
 
     // Clean up restart tracking and the per-actor supervision policy. A
     // supervised restart re-passes the policy through spawn and restores the
@@ -2124,7 +2126,7 @@ export class ActorSystemImpl implements ActorSystem {
   /**
    * Stop an actor by address (internal method)
    */
-  async stopActorInternal(address: ActorAddress): Promise<void> {
+  async stopActorInternal(address: ActorAddress, reason?: string): Promise<void> {
     if (this.isKnownRemoteAddress(address)) {
       await this.requestRemoteActorStop(address);
       return;
@@ -2134,7 +2136,7 @@ export class ActorSystemImpl implements ActorSystem {
     if (this.actors.has(address)) {
       // Create a temporary PID to call the public stop method
       const pid = new ActorPIDImpl(address, this);
-      await this.stopActor(pid);
+      await this.stopActor(pid, reason);
     }
   }
 
@@ -4280,7 +4282,7 @@ export class ActorSystemImpl implements ActorSystem {
 
     try {
       // Stop the current actor
-      await this.stopActor(new ActorPIDImpl(address, this));
+      await this.stopActor(new ActorPIDImpl(address, this), 'supervisor-restart');
 
       // Respawn with the same (original) behavior, ID, and supervision policy
       await this.spawn(respawnBehavior as unknown as ActorBehavior<ActorMessage, unknown>, {
