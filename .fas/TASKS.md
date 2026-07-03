@@ -1429,9 +1429,12 @@
 
 - Title: Implement @actor-web/lattice: LatticeActor, topology lattice()/dependsOn, activation protocol
 - Mode: 6-agent
-- Status: backlog
-- Owner: planner
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/implement-actor-web-lattice-latticeactor-topology-lattice.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Cross-node subscription delivery: forward emitted events to remote-node subscribers
 
@@ -2011,6 +2014,14 @@ operator explicitly asks for queue mutations.
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: contained
+
+### Task: Design observation vocabulary for lattice artifact sources (observe/requires/prefer)
+
+- Title: Design observation vocabulary for lattice artifact sources (observe/requires/prefer)
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/design-observation-vocabulary-for-lattice-artifact-sources-o.md
 
 ## Template
 

@@ -123,10 +123,9 @@ behavior.
 
 Every registered dependency has a stable `dependencyId`. Topology-declared
 dependencies should provide an explicit `id`; when omitted, v1 derives the
-`dependencyId` deterministically from the lattice id, actor key, and zero-based
-index of the declaration in that actor's `dependsOn` array. Authors should use an
-explicit `id` before reordering declarations, because the index-derived fallback
-is stable only while declaration order stays stable.
+`dependencyId` deterministically from the lattice reference, actor key,
+activation mode, and normalized matcher set. Reordering declarations must not
+change the fallback id for the same logical dependency.
 
 Rules:
 
@@ -200,17 +199,32 @@ to stronger semantics.
 
 ## Topology surface and runtime wiring
 
-The topology-facing surface is an optional `lattice()` helper plus per-actor
-`dependsOn` declarations.
+The topology-facing surface is an optional `lattice()` helper plus package-owned
+`dependsOn` actor declarations.
 
 Example shape:
 
 ```ts
+const plannerBehavior = defineBehavior<PlannerMessage>()
+  .withContext({ planned: false })
+  .onMessage(() => ({ context: { planned: true } }))
+  .build();
+
 defineActorWebTopology({
+  nodes: { local: node("local") },
   actors: {
-    workspace: lattice({ node: "coordinator" }),
-    planner: actor({
-      dependsOn: [{ id: "planner-inputs", lattice: "workspace", requires: [...] }],
+    workspace: lattice({ id: "workflow-lattice", node: "local" }),
+    planner: dependsOn({
+      id: "planner",
+      node: "local",
+      behavior: plannerBehavior,
+      dependencies: [
+        {
+          id: "planner-inputs",
+          lattice: "workspace",
+          requires: [{ type: "research.summary", key: "task-1781273347589" }],
+        },
+      ],
     }),
   },
 });
@@ -220,14 +234,28 @@ Contract direction:
 
 - `lattice()` declares a lattice actor in the topology, analogous in spirit to
   how `supervisor()` declares supervision structure.
-- `dependsOn` is declarative and serializable. It belongs in topology metadata,
-  not behavior closures.
+- `dependsOn({ id, node, behavior, dependencies })` bakes in runtime `actor()`
+  internally and attaches declarative, serializable lattice metadata. It belongs
+  in package-owned topology metadata, not behavior closures or core runtime
+  actor options.
+- `dependencies[].lattice` references the topology actor key for the
+  `LatticeActor` coordination environment, such as `workspace` above. Artifact
+  matcher `key` is a separate durable artifact coordinate, such as a task,
+  workflow, or session id; authors must not derive it from the lattice actor
+  key.
+- The normal DX is one default lattice per workflow, session, or workspace.
+  Multiple lattice environments are supported through explicit `lattice`
+  references, but should be reserved for isolation, lifecycle, or security
+  boundaries.
 - Future lattice package/runtime host work should wire dependency registrations
   on node start using the same durable pattern as today's declarative
   subscriptions: spawn actors, derive the intended registrations from topology,
   and register them again on restart. This is the implementation contract for
   the lattice surface, not a claim that current runtime hosts already register
   lattice dependencies.
+- Package-owned runtime wiring also owns activation-timeout polling by sending
+  deterministic `CHECK_ACTIVATION_TIMEOUTS` messages to lattice actors through a
+  scheduler/timer port; reducers never read the clock directly.
 - Cross-node transport remains transparent at the actor boundary. The lattice
   uses existing public runtime primitives rather than introducing a separate
   control plane.
@@ -245,7 +273,8 @@ Decision:
 - Use an EventStore-style append/replay seam to persist artifact publications,
   dependency registrations, withdrawals, and activation acknowledgements.
 - Treat the journal as the internal source of rebuild truth for the
-  `LatticeActor`.
+  `LatticeActor`; topology-created `lattice({ journal })` actors replay through
+  this seam before handling their first message.
 - Do not generalize this into generic actor persistence for v1.
 
 The intended seam aligns with the repo's existing event-store direction:
