@@ -50,6 +50,38 @@ function buildCounterTopology() {
   });
 }
 
+type AgentPackage = {
+  readonly ACTOR_WEB_LLM_TOOL_NAME: 'llm';
+  createAgentLoopBehavior(options?: { readonly system?: string }): unknown;
+};
+
+async function loadAgentPackage(): Promise<AgentPackage | null> {
+  try {
+    return (await import('@actor-web/agent')) as AgentPackage;
+  } catch {
+    return null;
+  }
+}
+
+function buildAgentLoopTopology(input: {
+  readonly agentPackage: AgentPackage;
+  readonly grantLlm: boolean;
+}) {
+  return defineActorWebTopology({
+    nodes: { local: node('local') },
+    actors: {
+      agent: actor({
+        id: 'agent',
+        node: 'local',
+        behavior: input.agentPackage.createAgentLoopBehavior({
+          system: 'You are a runtime-hosted agent.',
+        }),
+        tools: input.grantLlm ? [input.agentPackage.ACTOR_WEB_LLM_TOOL_NAME] : [],
+      }),
+    },
+  });
+}
+
 // ============================================================================
 // MODULE LOADING ADAPTER
 // ============================================================================
@@ -216,6 +248,107 @@ describe('createRuntimeHost', () => {
     if (!started.ok) {
       expect(started.error).toContain('Node "remote" not found');
       expect(started.error).toContain('local');
+    }
+  });
+
+  it('hosts @actor-web/agent loops with an explicitly registered llm provider', async () => {
+    const agentPackage = await loadAgentPackage();
+    expect(agentPackage).not.toBeNull();
+    if (!agentPackage) {
+      return;
+    }
+    const provider = (request: { readonly messages: readonly { readonly content: string }[] }) => ({
+      ok: true,
+      value: {
+        message: {
+          role: 'assistant',
+          content: `hosted:${request.messages.at(-1)?.content}`,
+        },
+      },
+    });
+    const started = await createRuntimeHost(
+      buildAgentLoopTopology({ agentPackage, grantLlm: true }),
+      {
+        agent: { llm: provider },
+      }
+    );
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+
+    try {
+      const reply = await started.value.ask(
+        'agent',
+        '{"type":"START_AGENT","prompt":"ship v1"}',
+        2000
+      );
+
+      expect(reply).toMatchObject({
+        ok: true,
+        value: {
+          ok: true,
+          status: 'responded',
+          message: {
+            role: 'assistant',
+            content: 'hosted:ship v1',
+          },
+        },
+      });
+    } finally {
+      await started.value.stop();
+    }
+  });
+
+  it('keeps the hosted llm provider behind topology toolAccess', async () => {
+    const agentPackage = await loadAgentPackage();
+    expect(agentPackage).not.toBeNull();
+    if (!agentPackage) {
+      return;
+    }
+    let called = false;
+    const provider = () => {
+      called = true;
+      return {
+        ok: true,
+        value: {
+          message: {
+            role: 'assistant',
+            content: 'should not run',
+          },
+        },
+      };
+    };
+    const started = await createRuntimeHost(
+      buildAgentLoopTopology({ agentPackage, grantLlm: false }),
+      {
+        agent: { llm: provider },
+      }
+    );
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+
+    try {
+      const reply = await started.value.ask(
+        'agent',
+        '{"type":"START_AGENT","prompt":"blocked"}',
+        2000
+      );
+
+      expect(called).toBe(false);
+      expect(reply).toMatchObject({
+        ok: true,
+        value: {
+          ok: false,
+          error: {
+            code: 'LLM_TOOL_UNAVAILABLE',
+          },
+        },
+      });
+    } finally {
+      await started.value.stop();
     }
   });
 });

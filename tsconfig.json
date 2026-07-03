@@ -37,6 +37,7 @@
       "@actor-web/runtime/browser": ["./packages/actor-core-runtime/src/browser.ts"],
       "@actor-web/runtime/node": ["./packages/actor-core-runtime/src/node.ts"],
       "@actor-web/runtime/topology": ["./packages/actor-core-runtime/src/topology-entry.ts"],
+      "@actor-web/agent": ["./packages/actor-agent/src/index.ts"],
       "@actor-web/testing": ["./packages/actor-core-testing/src/index.ts"],
       "@actor-web/cli": ["./packages/agent-workflow-cli/src/index.ts"]
     }
@@ -49,6 +50,9 @@
     },
     {
       "path": "./packages/actor-core-testing"
+    },
+    {
+      "path": "./packages/actor-agent"
     },
     {
       "path": "./packages/agent-workflow-cli"

@@ -13,6 +13,9 @@
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.test.tsx"],
   "references": [
     {
+      "path": "../actor-agent"
+    },
+    {
       "path": "../actor-core-runtime"
     }
   ]
