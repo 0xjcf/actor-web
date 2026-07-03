@@ -50,7 +50,9 @@ Design: docs/actor-web-cli-runtime-host-design.md (Phase v1). SEQUENCE AFTER CLI
 - `packages/agent-workflow-cli/src/host/runtime-host.ts`
 - `packages/agent-workflow-cli/src/host/runtime-host.test.ts`
 - `package.json`
+- `pnpm-lock.yaml`
 - `tsconfig.json`
+- `.fas-config.json`
 - `architecture.boundaries.json`
 - `docs/actor-web-cli-runtime-host-design.md`
 
@@ -63,6 +65,10 @@ Design: docs/actor-web-cli-runtime-host-design.md (Phase v1). SEQUENCE AFTER CLI
   gets a typed registration seam that can install those agent tools when
   hosting agent topologies; no LLM code or dependency is added to
   `@actor-web/runtime`.
+- 2026-07-03: Promote `pnpm-lock.yaml` and `.fas-config.json` after closeout
+  readiness correctly identified the new workspace package and package-local
+  tests as release-lane surfaces. The FAS test command must explicitly cover
+  `pnpm test:agent` and `pnpm test:cli`.
 
 ## Implementation plan
 
