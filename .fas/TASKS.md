@@ -1398,9 +1398,12 @@
 
 - Title: Supervision observability polish: reason-coded respawn-failure event, error in policy-stop payloads, export policy types
 - Mode: single-agent
-- Status: backlog
-- Owner: planner
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/supervision-observability-polish-reason-coded-respawn-failu.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Add CI test workflow: run verify lanes on every PR
 
