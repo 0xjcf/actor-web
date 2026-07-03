@@ -1960,8 +1960,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Document actor-web ecosystem architecture alignment
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/document-actor-web-ecosystem-architecture-alignment.md
 - Verification lane: fast
 - Policy sensitivity: standard
