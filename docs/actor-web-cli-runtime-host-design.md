@@ -1,6 +1,6 @@
 # Design: `@actor-web/cli` as an Actor/Agent Runtime Host
 
-- **Status:** Draft / proposal (for discussion — no code yet)
+- **Status:** Draft / dogfood implementation in progress
 - **Date:** 2026-06-09
 - **Owner:** actor-web
 - **Related:** [actor-web-actor-dx-design.md](./actor-web-actor-dx-design.md),
@@ -141,7 +141,7 @@ lets non-agent consumers use the runtime/CLI without pulling in an LLM SDK.
         ▲
         │ depends on
 @actor-web/agent     llm tool + agent-loop behavior + memory/streaming;
-                     owns the LLM vendor SDK dependency
+                     owns the LLM provider/tool boundary
         ▲
         │ depends on (runtime always; agent optionally)
 @actor-web/cli       host/console (serve/spawn/send/watch). Registers the
@@ -186,8 +186,11 @@ runtime calls (`serveNode`, `system.lookup`, `spawn`, `send`/`ask`,
 
 ## Agent layer (sketch)
 
-These pieces ship in **`@actor-web/agent`**. An agent is just a behavior that
-calls an `llm` tool:
+These pieces ship in **`@actor-web/agent`**. The v1 dogfood slice keeps the
+vendor-specific SDK behind an injected provider port: the package exports an
+`llm` tool registry helper plus an agent-loop behavior, while
+`@actor-web/runtime` remains free of LLM dependencies. An agent is just a
+behavior that calls an `llm` tool:
 
 ```ts
 const researcher = defineBehavior<AgentMsg, AgentEvent>()
@@ -208,6 +211,19 @@ The `llm` tool is registered in the `ActorToolRegistry` passed to `serveNode`.
 `toolAccess` decides which agents may call `llm` and which may call, say, `fetch`
 or `git`. Supervision restarts the agent if its loop throws. Multiple agents
 coordinate via `emit`/`subscribe` instead of a central conductor.
+
+The current CLI host registration seam is programmatic:
+
+```ts
+const host = await createRuntimeHost(topology, {
+  agent: {
+    llm: provider,
+  },
+});
+```
+
+The host merges that provider into the runtime tool registry as `llm`; topology
+`tools` / actor `tools` still decide whether a given actor can call it.
 
 ## Runtime gaps to close before this is real
 

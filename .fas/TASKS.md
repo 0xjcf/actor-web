@@ -1169,10 +1169,13 @@
 
 - Title: actor-web CLI v1: @actor-web/agent package (llm tool + agent-loop) + agent hosting
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/actor-web-cli-v1-actor-web-agent-package-llm-tool-agent.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: actor-web CLI v2: distributed hosting (--gateway/--transport/connect)
 

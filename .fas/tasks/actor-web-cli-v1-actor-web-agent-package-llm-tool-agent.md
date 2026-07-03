@@ -1,4 +1,4 @@
-# actor-web CLI v1: @actor-web/agent package (llm tool + agent
+# actor-web CLI v1: @actor-web/agent package (llm tool + agent-loop) + agent hosting
 
 ## Source
 
@@ -37,11 +37,32 @@ Design: docs/actor-web-cli-runtime-host-design.md (Phase v1). SEQUENCE AFTER CLI
 
 ## Affected files
 
-- Scope unknown.
+- `packages/actor-agent/package.json`
+- `packages/actor-agent/tsconfig.json`
+- `packages/actor-agent/vitest.config.ts`
+- `packages/actor-agent/tests/setup.ts`
+- `packages/actor-agent/src/index.ts`
+- `packages/actor-agent/src/agent-loop.test.ts`
+- `src/actor-agent-package.test.ts`
+- `packages/agent-workflow-cli/package.json`
+- `packages/agent-workflow-cli/tsconfig.json`
+- `packages/agent-workflow-cli/vitest.config.ts`
+- `packages/agent-workflow-cli/src/host/runtime-host.ts`
+- `packages/agent-workflow-cli/src/host/runtime-host.test.ts`
+- `package.json`
+- `tsconfig.json`
+- `architecture.boundaries.json`
+- `docs/actor-web-cli-runtime-host-design.md`
 
 ## Scope Amendments
 
-- None.
+- 2026-07-03: Promote package and host-integration paths from generated
+  unknown scope. The smallest v1 slice is a dedicated `@actor-web/agent`
+  workspace package with an injected LLM-provider port, an `llm` tool
+  registry helper, and a deterministic agent-loop behavior. The CLI v0 host
+  gets a typed registration seam that can install those agent tools when
+  hosting agent topologies; no LLM code or dependency is added to
+  `@actor-web/runtime`.
 
 ## Implementation plan
 
