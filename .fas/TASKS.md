@@ -1639,9 +1639,12 @@
 
 - Title: Unify actor location truth: single directory-backed resolution for send and emit/subscribe
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/unify-actor-location-truth-single-directory-backed-resolutio.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Example: declarative topology.subscriptions through a directory-backed runtime
 
