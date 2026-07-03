@@ -149,7 +149,7 @@ Only modify files that the current task requires.
 - If an unplanned change is necessary for correctness, note it explicitly in the commit message.
 
 | Rationalization | Why it is wrong |
-| --- | --- |
+|---|---|
 | "I noticed this bug while working nearby, I should fix it now" | File a follow-up task. Unplanned fixes muddy the review and risk regressions. |
 | "This file needs reformatting anyway" | Formatting changes belong in a dedicated `chore` commit or a separate PR. |
 | "It is just one small rename" | Renames ripple through imports you did not plan to test. |
@@ -161,7 +161,7 @@ When you encounter ambiguity, conflicting context, or incomplete requirements, s
 
 Emit a structured block:
 
-```text
+```
 CONFUSION:
 - What: <one-sentence description of the ambiguity>
 - Options:
