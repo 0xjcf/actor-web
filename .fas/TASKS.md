@@ -1705,9 +1705,12 @@
 
 - Title: Agent transport: stream tool/agent output as a backpressured cross-node stream
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/agent-transport-stream-tool-agent-output-as-a-backpressured-.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Delivery semantics: at-least-once and idempotency for non-idempotent agent tool side-effects
 

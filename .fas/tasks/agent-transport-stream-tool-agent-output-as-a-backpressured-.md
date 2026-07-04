@@ -28,11 +28,23 @@ Location-transparency audit L5 (agent-payload gap, UNOWNED). emit is discrete an
 
 ## Affected files
 
-- Scope unknown.
+- `packages/actor-core-runtime/src/runtime-transport-stream.ts`
+- `packages/actor-core-runtime/src/runtime-transport-protocol.ts`
+- `packages/actor-core-runtime/src/actor-system-impl.ts`
+- `packages/actor-core-runtime/src/index.ts`
+- `packages/actor-core-runtime/src/browser.ts`
+- `packages/actor-core-runtime/src/node.ts`
+- `packages/actor-core-runtime/src/unit/runtime-transport-stream.test.ts`
+- `docs/API.md`
+- `docs/spikes/actor-web-external-transport-design.md`
+- `.fas/TASKS.md`
 
 ## Scope Amendments
 
-- None.
+- 2026-07-04: Scope refreshed during implementation after the generic
+  generated plan produced the placeholder path `tool/agent`; concrete affected
+  files are the runtime stream primitive, runtime protocol/export wiring, the
+  focused unit test, and docs that describe the new stream contract.
 
 ## Implementation plan
 

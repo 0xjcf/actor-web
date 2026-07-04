@@ -1198,6 +1198,7 @@ The runtime transport contract exports:
 - `createRuntimeTransportMessageId(...)`
 - `RUNTIME_TRANSPORT_PROTOCOL_VERSION`
 - `DEFAULT_RUNTIME_TRANSPORT_MAX_FRAME_BYTES`
+- `createRuntimeTransportStreamHost(...)`
 - validation helpers for identity, handshake, runtime frames, ack frames, and
   heartbeat frames
 - `measureRuntimeTransportFrameBytes(...)`,
@@ -1233,10 +1234,42 @@ enqueueing. The default is `DEFAULT_RUNTIME_TRANSPORT_MAX_FRAME_BYTES` (`1 MiB`)
 and can be overridden with `maxFrameBytes` on the Node or browser WebSocket
 transport options. Oversized sends reject with `payload_too_large`, emit
 `frame.dropped` telemetry with `frameBytes` and `maxFrameBytes`, and do not
-consume the peer sequence or hit the wire. Until transport streaming/chunking
-lands, large prompts, model outputs, context packs, and binary/blob payloads
-should be externalized into a durable artifact store and sent as stable
-references in actor messages.
+consume the peer sequence or hit the wire.
+
+`createRuntimeTransportStreamHost(...)` adds a credit-based stream protocol over
+the existing `MessageTransport`. It is intended for incremental agent and tool
+output such as LLM tokens, progress facts, and stdout-like text chunks. Stream
+messages are ordinary `__runtime.stream.*` runtime control frames, so existing
+ordering, max-frame validation, ack/retry for runtime control traffic, and
+transport queue backpressure still apply. A sender can write only while it has
+receiver credit; the receiver grants more credit after each chunk handler
+settles.
+
+```ts
+const outputStreams = createRuntimeTransportStreamHost({
+  transport,
+  nodeAddress: 'worker',
+  initialCredit: 1,
+});
+
+outputStreams.subscribe((stream) => ({
+  async onChunk(chunk) {
+    await appendAgentOutput(stream.streamId, chunk.payload);
+  },
+}));
+
+const stream = await outputStreams.open('coordinator', {
+  metadata: { kind: 'agent-output' },
+});
+
+await stream.write({ token: 'Planning' });
+await stream.write({ token: ' complete.' });
+await stream.close();
+```
+
+Large prompts, model outputs, context packs, and binary/blob payloads should
+still be externalized into a durable artifact store and sent as stable
+references when they do not fit the configured frame limit.
 
 Runtime transport rejection covers:
 
