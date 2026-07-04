@@ -1,19 +1,28 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ActorMessage, MessageTransport } from '../actor-system.js';
-import { createRuntimeTransportStreamHost } from '../runtime-transport-stream.js';
+import {
+  createRuntimeTransportStreamChunkMessage,
+  createRuntimeTransportStreamHost,
+} from '../runtime-transport-stream.js';
 
 class Deferred<T = void> {
   readonly promise: Promise<T>;
   private resolvePromise?: (value: T | PromiseLike<T>) => void;
+  private rejectPromise?: (error: unknown) => void;
 
   constructor() {
-    this.promise = new Promise<T>((resolve) => {
+    this.promise = new Promise<T>((resolve, reject) => {
       this.resolvePromise = resolve;
+      this.rejectPromise = reject;
     });
   }
 
   resolve(value: T): void {
     this.resolvePromise?.(value);
+  }
+
+  reject(error: unknown): void {
+    this.rejectPromise?.(error);
   }
 }
 
@@ -156,5 +165,138 @@ describe('runtime transport streams', () => {
 
     await hostA.stop();
     await hostB.stop();
+  });
+
+  it('fails the peer stream when the receiver consumer rejects a chunk', async () => {
+    const network = new LinkedTransportNetwork();
+    const transportA = network.create('node-a');
+    const transportB = network.create('node-b');
+    await transportA.connect('node-b');
+    await transportB.connect('node-a');
+
+    const hostA = createRuntimeTransportStreamHost({
+      transport: transportA,
+      nodeAddress: 'node-a',
+      initialCredit: 1,
+      streamIdFactory: () => 'agent-output-stream-2',
+    });
+    const hostB = createRuntimeTransportStreamHost({
+      transport: transportB,
+      nodeAddress: 'node-b',
+      initialCredit: 1,
+    });
+    const chunkFailure = new Deferred<void>();
+    const receiverErrors: string[] = [];
+
+    hostB.subscribe(() => ({
+      async onChunk() {
+        await chunkFailure.promise;
+      },
+      onError(error) {
+        receiverErrors.push(error.code);
+      },
+    }));
+
+    const stream = await hostA.open('node-b');
+    await stream.write({ token: 'bad' });
+    const blockedWrite = stream.write({ token: 'after' });
+
+    chunkFailure.reject(new Error('chunk boom'));
+
+    await expect(blockedWrite).rejects.toThrow('chunk boom');
+    await flushMicrotasks();
+
+    expect(receiverErrors).toEqual(['consumer_failed']);
+
+    await hostA.stop();
+    await hostB.stop();
+  });
+
+  it('notifies the local consumer when an incoming stream sequence is invalid', async () => {
+    const network = new LinkedTransportNetwork();
+    const transportA = network.create('node-a');
+    const transportB = network.create('node-b');
+    await transportA.connect('node-b');
+    await transportB.connect('node-a');
+
+    const hostA = createRuntimeTransportStreamHost({
+      transport: transportA,
+      nodeAddress: 'node-a',
+      initialCredit: 1,
+      streamIdFactory: () => 'agent-output-stream-3',
+    });
+    const hostB = createRuntimeTransportStreamHost({
+      transport: transportB,
+      nodeAddress: 'node-b',
+      initialCredit: 1,
+    });
+    const receiverError = new Deferred<string>();
+
+    hostB.subscribe(() => ({
+      onChunk() {
+        throw new Error('unexpected chunk delivery');
+      },
+      onError(error) {
+        receiverError.resolve(error.code);
+      },
+    }));
+
+    await hostA.open('node-b');
+    await transportA.send(
+      'node-b',
+      createRuntimeTransportStreamChunkMessage({
+        streamId: 'agent-output-stream-3',
+        sequence: 2,
+        payload: { token: 'out-of-order' },
+      })
+    );
+
+    await expect(receiverError.promise).resolves.toBe('sequence_mismatch');
+
+    await hostA.stop();
+    await hostB.stop();
+  });
+
+  it('notifies incoming consumers when the stream host stops', async () => {
+    const network = new LinkedTransportNetwork();
+    const transportA = network.create('node-a');
+    const transportB = network.create('node-b');
+    await transportA.connect('node-b');
+    await transportB.connect('node-a');
+
+    const hostA = createRuntimeTransportStreamHost({
+      transport: transportA,
+      nodeAddress: 'node-a',
+      initialCredit: 1,
+      streamIdFactory: () => 'agent-output-stream-4',
+    });
+    const hostB = createRuntimeTransportStreamHost({
+      transport: transportB,
+      nodeAddress: 'node-b',
+      initialCredit: 1,
+    });
+    const opened = new Deferred<void>();
+    const receiverError = new Deferred<string>();
+
+    hostB.subscribe(() => {
+      opened.resolve(undefined);
+      return {
+        onChunk() {
+          throw new Error('unexpected chunk delivery');
+        },
+        onError(error) {
+          receiverError.resolve(error.code);
+        },
+      };
+    });
+
+    await hostA.open('node-b');
+    await opened.promise;
+    await flushMicrotasks();
+    await hostB.stop();
+
+    await expect(receiverError.promise).resolves.toBe('stream_host_stopped');
+
+    await hostA.stop();
   });
 });

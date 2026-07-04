@@ -345,6 +345,12 @@ class RuntimeTransportStreamHostImpl implements RuntimeTransportStreamHost {
         new Error(`Runtime transport stream host ${this.nodeAddress} stopped.`)
       );
     }
+    for (const state of this.incomingStreams.values()) {
+      await this.failIncomingState(state, {
+        code: 'stream_host_stopped',
+        message: `Runtime transport stream host ${this.nodeAddress} stopped.`,
+      });
+    }
     this.outgoingStreams.clear();
     this.incomingStreams.clear();
     this.streamMessageQueues.clear();
@@ -618,21 +624,36 @@ class RuntimeTransportStreamHostImpl implements RuntimeTransportStreamHost {
     }
 
     if (message.sequence !== state.expectedSequence) {
-      state.closed = true;
-      this.incomingStreams.delete(message.streamId);
-      await this.sendStreamError(source, message.streamId, {
+      const error = {
         code: 'sequence_mismatch',
         message: `Runtime transport stream "${message.streamId}" expected sequence ${state.expectedSequence} but received ${message.sequence}.`,
+      };
+      await this.failIncomingState(state, error);
+      await this.sendStreamError(source, message.streamId, error);
+      return;
+    }
+
+    try {
+      await state.consumer.onChunk({
+        streamId: message.streamId,
+        source,
+        sequence: message.sequence,
+        payload: message.payload,
+      });
+    } catch (error) {
+      const chunkError = toError(error);
+      const streamError = {
+        code: 'consumer_failed',
+        message: chunkError.message,
+      };
+      await this.failIncomingState(state, streamError);
+      await this.sendStreamError(source, message.streamId, {
+        code: streamError.code,
+        message: streamError.message,
       });
       return;
     }
 
-    await state.consumer.onChunk({
-      streamId: message.streamId,
-      source,
-      sequence: message.sequence,
-      payload: message.payload,
-    });
     state.expectedSequence += 1;
     await this.grantCredit(source, message.streamId, 1);
   }
@@ -667,16 +688,36 @@ class RuntimeTransportStreamHostImpl implements RuntimeTransportStreamHost {
 
     const incoming = this.incomingStreams.get(message.streamId);
     if (incoming && incoming.stream.source === source) {
-      incoming.closed = true;
-      this.incomingStreams.delete(message.streamId);
-      await incoming.consumer.onError?.({
-        streamId: message.streamId,
-        source,
+      await this.failIncomingState(incoming, {
         code: message.code,
         message: message.message,
       });
     } else if (incoming) {
       this.reportSourceMismatch(incoming.stream.source, source, message.streamId);
+    }
+  }
+
+  private async failIncomingState(
+    state: IncomingStreamState,
+    error: { readonly code: string; readonly message: string }
+  ): Promise<void> {
+    state.closed = true;
+    this.incomingStreams.delete(state.stream.streamId);
+    try {
+      await state.consumer.onError?.({
+        streamId: state.stream.streamId,
+        source: state.stream.source,
+        code: error.code,
+        message: error.message,
+      });
+    } catch (consumerError) {
+      this.onError({
+        code: 'stream_consumer_error_handler_failed',
+        message: toError(consumerError).message,
+        source: state.stream.source,
+        streamId: state.stream.streamId,
+        cause: consumerError,
+      });
     }
   }
 
