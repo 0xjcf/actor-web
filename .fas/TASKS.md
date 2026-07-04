@@ -1705,8 +1705,8 @@
 
 - Title: Agent transport: stream tool/agent output as a backpressured cross-node stream
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/agent-transport-stream-tool-agent-output-as-a-backpressured-.md
 - Verification lane: fast
 - Policy sensitivity: standard
