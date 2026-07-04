@@ -11,7 +11,7 @@ fas-local owns the public local-runtime product surface: `Runtime.create(...)`,
 `ProviderManager` lifecycle APIs, and the CLI flow that resolves
 provider/profile/model state before starting runtime work. That ownership is
 consistent with the shared roadmap in
-[the FAS shared architecture roadmap](../../fas/docs/adr/0006%20-%20shared-architecture-roadmap.md),
+[the FAS shared architecture roadmap](https://github.com/0xjcf/FAS/blob/main/docs/adr/0006%20-%20shared-architecture-roadmap.md),
 which keeps FAS as control-plane meaning and actor-web as a possible runtime
 and topology substrate reached by extraction and explicit contracts rather than
 mutual imports.
