@@ -2045,6 +2045,15 @@ operator explicitly asks for queue mutations.
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Resolve CodeRabbit closeout code findings: lattice activation IDs and agent-loop test narrowing
+
+- Title: Resolve CodeRabbit closeout code findings: lattice activation IDs and agent-loop test narrowing
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/resolve-coderabbit-closeout-code-findings-lattice-activation.md
+- Automation mode: advisory
+
 ## Template
 
 ### Task: `<short task title>`
