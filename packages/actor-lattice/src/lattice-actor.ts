@@ -88,7 +88,7 @@ function hashText(value: string): string {
 }
 
 function activationIdFor(dependencyId: string, satisfactionKey: string): string {
-  return `activation:${dependencyId}:${hashText(satisfactionKey)}`;
+  return `activation:${dependencyId}:${encodeURIComponent(satisfactionKey)}`;
 }
 
 function appendDeliveredKey(
