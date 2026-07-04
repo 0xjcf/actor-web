@@ -87,12 +87,6 @@ class LinkedTransport implements MessageTransport {
   }
 }
 
-async function flushMicrotasks(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-}
-
 describe('runtime transport streams', () => {
   it('holds later chunks until the receiver returns stream credit', async () => {
     const network = new LinkedTransportNetwork();
@@ -145,7 +139,7 @@ describe('runtime transport streams', () => {
     closePromise.then(() => {
       closeResolved = true;
     });
-    await flushMicrotasks();
+    await vi.waitFor(() => expect(received).toHaveLength(1));
 
     expect(received).toEqual([{ token: 'hello' }]);
     expect(secondResolved).toBe(false);
@@ -156,7 +150,6 @@ describe('runtime transport streams', () => {
     await secondWrite;
     await closePromise;
     await streamClosedDrain.promise;
-    await flushMicrotasks();
 
     expect(received).toEqual([{ token: 'hello' }, { token: 'world' }]);
     expect(secondResolved).toBe(true);
@@ -204,7 +197,7 @@ describe('runtime transport streams', () => {
     chunkFailure.reject(new Error('chunk boom'));
 
     await expect(blockedWrite).rejects.toThrow('chunk boom');
-    await flushMicrotasks();
+    await vi.waitFor(() => expect(receiverErrors).toEqual(['consumer_failed']));
 
     expect(receiverErrors).toEqual(['consumer_failed']);
 
@@ -292,7 +285,12 @@ describe('runtime transport streams', () => {
 
     await hostA.open('node-b');
     await opened.promise;
-    await flushMicrotasks();
+    await vi.waitFor(() =>
+      expect(transportB.send).toHaveBeenCalledWith(
+        'node-a',
+        expect.objectContaining({ type: '__runtime.stream.credit' })
+      )
+    );
     await hostB.stop();
 
     await expect(receiverError.promise).resolves.toBe('stream_host_stopped');
