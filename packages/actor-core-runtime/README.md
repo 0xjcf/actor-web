@@ -90,6 +90,10 @@ This package is the runtime for the
 
 - [`@actor-web/testing`](https://www.npmjs.com/package/@actor-web/testing) —
   machine analysis and test helpers.
+- [`@actor-web/agent`](https://www.npmjs.com/package/@actor-web/agent) — LLM
+  tool and agent-loop utilities for runtime hosts.
+- [`@actor-web/lattice`](https://www.npmjs.com/package/@actor-web/lattice) —
+  artifact and dependency coordination for stigmergic workflows.
 
 ## License
 

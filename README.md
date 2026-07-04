@@ -16,7 +16,8 @@ JavaScript lacks built-in primitives for actor-based concurrency and fault toler
 - **🎯 Pure Actor Model** - No shared state, message-only communication
 - **🌍 Scoped Location Transparency** - Actor code and refs use the same API locally and across directly connected runtime nodes; dynamic membership and production multi-machine hardening are still roadmap work.
 - **🛡️ Fault Tolerance** - Supervisor trees with "let it crash" philosophy
-- **📦 Workspace Packages** - Runtime, testing utilities, and workflow CLI ship from `packages/*`
+- **📦 Workspace Packages** - Runtime, testing utilities, agent utilities,
+  lattice coordination, and workflow CLI ship from `packages/*`
 - **🔄 Unified API** - Single `defineBehavior()` for all patterns
 
 ## ⚡ Quick Start
