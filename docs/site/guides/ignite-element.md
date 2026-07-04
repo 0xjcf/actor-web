@@ -24,9 +24,9 @@ const registerCompare = igniteCore({
   // project snapshot context into UI state
   view: ({ context }) => ({ outcome: context.outcome, selected: context.selected }),
   // bind UI actions to actor messages
-  commands: ({ actor }) => ({
-    acceptFork: () => actor.send({ type: 'ACCEPT_FORK' }),
-    selectFork: () => actor.send({ type: 'SELECT_FORK' }),
+  commands: ({ actor, command }) => ({
+    acceptFork: command(() => actor.send({ type: 'ACCEPT_FORK' })),
+    selectFork: command(() => actor.send({ type: 'SELECT_FORK' })),
   }),
 });
 
@@ -78,6 +78,33 @@ For normal Ignite components, prefer passing `readModel(...)`, `source(...)`, or
 `commandSource(...)` directly. Use handle factories when the host owns lifecycle
 outside Ignite and needs a single `stop()` for cleanup.
 
+## Headless runtime
+
+The value returned by `igniteCore(...)` is also a headless runtime. You can
+execute named commands, inspect projected view state, subscribe to actor-emitted
+runtime events, and record deterministic stories without mounting a custom
+element:
+
+```ts
+const result = await registerCompare.execute('acceptFork');
+const snapshot = registerCompare.getSnapshot();
+const view = registerCompare.getView();
+
+const events = registerCompare.on('OUTCOME_RESOLVED', (event) => {
+  console.log(event.detail);
+});
+
+const views = registerCompare.watchView((nextView) => {
+  console.log(nextView.outcome);
+});
+
+events.unsubscribe();
+views.unsubscribe();
+```
+
+See [Headless agent runtime](/guides/agent-runtime) for the full runtime surface
+and Actor-Web boundary rules.
+
 ## Read-model vs command source
 
 Pick the narrowest capability:
@@ -98,9 +125,10 @@ granted to every projection by default. See
 - Keep `view` inline for small mappings: `({ context }) => ({ ... })`. Reach for
   a projection helper only when the view composes multiple slices or
   loading/error rules.
-- Put commands **inside** the `commands: ({ actor }) => ...` callback using
-  `actor.send` / `actor.ask`. Each command is a plain function — no wrapper
-  helper.
+- Put commands **inside** the `commands: ({ actor, command }) => ...` callback
+  using `actor.send` / `actor.ask`. Each command is a named product verb; wrap it
+  in `command(...)` when you want schema metadata for headless agents or
+  operator tooling.
 - Don't import runtime source-handle generics or custom runtime interfaces into
   UI code. Domain protocol types stay at the actor/domain boundary.
 
