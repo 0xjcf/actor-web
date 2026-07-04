@@ -182,6 +182,34 @@ export {
   getRuntimeTransportStatus,
 } from './runtime-transport-status.js';
 export type {
+  RuntimeTransportIncomingStream,
+  RuntimeTransportStreamChunk,
+  RuntimeTransportStreamChunkMessage,
+  RuntimeTransportStreamCloseMessage,
+  RuntimeTransportStreamConsumer,
+  RuntimeTransportStreamCreditMessage,
+  RuntimeTransportStreamError,
+  RuntimeTransportStreamErrorMessage,
+  RuntimeTransportStreamHandler,
+  RuntimeTransportStreamHost,
+  RuntimeTransportStreamHostError,
+  RuntimeTransportStreamHostOptions,
+  RuntimeTransportStreamMessage,
+  RuntimeTransportStreamOpenMessage,
+  RuntimeTransportStreamOpenOptions,
+  RuntimeTransportWritableStream,
+} from './runtime-transport-stream.js';
+export {
+  createRuntimeTransportStreamChunkMessage,
+  createRuntimeTransportStreamCloseMessage,
+  createRuntimeTransportStreamCreditMessage,
+  createRuntimeTransportStreamErrorMessage,
+  createRuntimeTransportStreamHost,
+  createRuntimeTransportStreamOpenMessage,
+  DEFAULT_RUNTIME_TRANSPORT_STREAM_INITIAL_CREDIT,
+  isRuntimeTransportStreamMessage,
+} from './runtime-transport-stream.js';
+export type {
   InMemoryRuntimeTransportTelemetrySink,
   RuntimeTransportPeerStats,
   RuntimeTransportStats,

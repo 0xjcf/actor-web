@@ -2955,6 +2955,15 @@ export class ActorSystemImpl implements ActorSystem {
         }
         return;
       }
+      case '__runtime.stream.open':
+      case '__runtime.stream.credit':
+      case '__runtime.stream.chunk':
+      case '__runtime.stream.close':
+      case '__runtime.stream.error':
+        // Stream control frames are consumed by createRuntimeTransportStreamHost subscribers.
+        // Actor systems share the same transport subscription, so reserve these messages here
+        // instead of treating them as actor-delivery work.
+        return;
       case '__runtime.remote.stop.request':
         try {
           await this.stopActorInternal(message.address);
