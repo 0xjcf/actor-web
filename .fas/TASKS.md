@@ -2023,6 +2023,22 @@ operator explicitly asks for queue mutations.
 - Owner: runtime
 - Brief: .fas/tasks/design-observation-vocabulary-for-lattice-artifact-sources-o.md
 
+### Task: Resolve CodeRabbit lattice release findings: artifact hashing, replay hydration, scheduler errors
+
+- Title: Resolve CodeRabbit lattice release findings: artifact hashing, replay hydration, scheduler errors
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/resolve-coderabbit-lattice-release-findings-artifact-hashing.md
+
+### Task: Resolve CodeRabbit agent/provider/session release findings: stale facts, tool re-entry, effect failures
+
+- Title: Resolve CodeRabbit agent/provider/session release findings: stale facts, tool re-entry, effect failures
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/resolve-coderabbit-agent-provider-session-release-findings-s.md
+
 ## Template
 
 ### Task: `<short task title>`

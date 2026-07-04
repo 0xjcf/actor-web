@@ -6,30 +6,13 @@ Created from `.fas/queue/tasks.json` task `task-1782439279955`.
 
 ## Problem
 
-CodeRabbit flagged absolute local filesystem paths leaking the maintainer's
-machine layout into committed public documentation. One `.fas` brief instance
-was fixed in PR #32, but follow-up grep found additional occurrences outside
-that PR diff.
-
-Current sites to re-check:
-
-- `docs/spikes/actor-web-adr-003-fas-integration-review.md`
-- `docs/actor-web-dx-naming-handoff.md`
-- generated `docs/site/node_modules/.bin/**` shims
-
-Generated dependency shims should be handled by ignore/cleanup policy, not by
-editing vendored files.
+CodeRabbit review --agent -t committed --base main -c AGENTS.md on branch fas/release-0-2-0 flagged docs/test hygiene issues that should remain one release-blocking docs cleanup bucket. Keep the original absolute-path leak cleanup, and also verify/fix: docs/0009-fas-local-runtime-host-substrate-alignment.md contains a machine-local /Users/joseflores/... reference that should become repo-relative prose; docs/actor-web-ecosystem-alignment.md overstates maturity with Current labels where the cited evidence is Proposed or partial; src/docs-honesty.test.ts is too loose because shared toContain assertions can pass on later incidental mentions instead of the first-mention hero/frontmatter copy. Verify each finding against current code before editing.
 
 ## Acceptance criteria
 
-- Committed docs do not expose `/Users/joseflores/...` absolute local paths.
-- Public docs use repo-relative paths or generic placeholders where needed.
-- Generated `docs/site/node_modules` artifacts are ignored or removed from the
-  committed surface rather than manually edited.
-- `grep -rn "/Users/joseflores" docs/ .fas/ .changeset/` returns only intended
-  internal FAS evidence, or no matches if none are intended.
-- Markdown lint passes for changed docs.
-- The release terminal task is no longer blocked by this docs hygiene task.
+- fas validate-task passes before snapshot; full verify remains shared for batch close.
+- The work is tracked in `.fas/TASKS.md`.
+- The task has a clear implementation and verification plan before execution starts.
 
 ## Proposed solution
 
@@ -49,10 +32,21 @@ editing vendored files.
 - docs/actor-web-dx-naming-handoff.md
 - .gitignore
 - docs/site
+- docs/0009-fas-local-runtime-host-substrate-alignment.md
+- docs/actor-web-ecosystem-alignment.md
+- src/docs-honesty.test.ts
 
 ## Scope Amendments
 
-- None.
+- Type: coderabbit-review-followup
+- Added at: 2026-07-04
+- Trigger: CodeRabbit committed review against main during release batch closeout
+- Reason: Consolidate minor docs/test findings into the existing release-blocking docs hygiene task instead of creating duplicate queue items.
+- Added paths: docs/0009-fas-local-runtime-host-substrate-alignment.md, docs/actor-web-ecosystem-alignment.md, src/docs-honesty.test.ts, docs/spikes/actor-web-adr-003-fas-integration-review.md, docs/actor-web-dx-naming-handoff.md, .gitignore, docs/site
+- Evidence source: coderabbit review --agent -t committed --base main -c AGENTS.md
+- Evidence: coderabbit review --agent -t committed --base main -c AGENTS.md | docs/0009-fas-local-runtime-host-substrate-alignment.md | Also includes docs/actor-web-ecosystem-alignment.md and src/docs-honesty.test.ts findings.
+- Accuracy signal: reviewer-confirmed
+- Follow-up needed: Implement through the existing docs hygiene task before release prep.
 
 ## Implementation plan
 
