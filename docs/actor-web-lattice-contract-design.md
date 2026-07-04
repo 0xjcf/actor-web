@@ -41,6 +41,7 @@ The public contract names are future-facing and locked for this design:
 - `REGISTER_DEPENDENCY`
 - `WITHDRAW_DEPENDENCY`
 - `ACK_ACTIVATION`
+- `CHECK_ACTIVATION_TIMEOUTS`
 - `QUERY_ARTIFACTS`
 - `ARTIFACT_PUBLISHED`
 - `DEPENDENCY_SATISFIED`
@@ -181,6 +182,8 @@ Protocol intent:
   cancels future activation attempts for that dependency.
 - `ACK_ACTIVATION` moves the matching activation from `delivered` to
   `acknowledged`.
+- `CHECK_ACTIVATION_TIMEOUTS` is the package-owned scheduler control message
+  that deterministically evaluates activation timeout facts and re-delivery.
 - `QUERY_ARTIFACTS` returns artifact views via ask and does not change lattice
   state.
 

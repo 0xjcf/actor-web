@@ -57,7 +57,7 @@ CodeRabbit review --agent -t committed --base main -c AGENTS.md on branch fas/re
 ## Verification plan
 
 - Run tracked-file grep for machine-local home paths, for example
-  `git grep -n "$HOME" -- docs .fas .changeset`.
+  `git grep -n "$HOME" -- docs src .fas .changeset .gitignore`.
 - Run markdown lint for changed documentation.
 - Run `fas validate-task`.
 
