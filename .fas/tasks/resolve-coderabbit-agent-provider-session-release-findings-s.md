@@ -35,9 +35,9 @@ CodeRabbit review --agent -t committed --base main -c AGENTS.md on branch fas/re
 - packages/actor-core-runtime/src/node-session-actor.ts
 - packages/actor-core-runtime/src/node-provider-actor.ts
 - packages/actor-agent/src/index.ts
-- packages/actor-core-runtime/src/unit/session-actor-conformance.test.ts
+- packages/actor-core-runtime/src/testing/session-actor-conformance.ts
 - packages/actor-core-runtime/src/unit/provider-actor-conformance.test.ts
-- packages/actor-agent/src/unit
+- packages/actor-agent/src/agent-loop.test.ts
 
 ## Scope Amendments
 

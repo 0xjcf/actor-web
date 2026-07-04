@@ -166,6 +166,7 @@ function toolNamesForModel(tools: { list(): string[] }): readonly string[] {
 function createFailureResult(input: {
   readonly context: ActorAgentLoopContext;
   readonly error: ActorAgentError;
+  readonly emitPrefix?: readonly ActorAgentLoopEvent[];
 }): {
   readonly context: ActorAgentLoopContext;
   readonly reply: ActorAgentLoopReply;
@@ -183,12 +184,27 @@ function createFailureResult(input: {
       error: input.error,
     },
     emit: [
+      ...(input.emitPrefix ?? []),
       {
         type: 'AGENT_STEP_FAILED',
         step: input.context.steps,
         error: input.error,
       },
     ],
+  };
+}
+
+function createObservedToolMessage(
+  message: Extract<ActorAgentLoopMessage, { type: 'OBSERVE_TOOL_RESULT' }>
+): ActorAgentLlmMessage {
+  return {
+    role: 'tool',
+    content: serializeToolOutput({
+      ok: message.ok,
+      output: message.output,
+    }),
+    toolCallId: message.toolCallId,
+    toolName: message.name,
   };
 }
 
@@ -231,19 +247,42 @@ export function createAgentLoopBehavior(
       const nextMessages =
         message.type === 'START_AGENT'
           ? [{ role: 'user' as const, content: message.prompt }]
-          : [
-              {
-                role: 'tool' as const,
-                content: serializeToolOutput(message.output),
-                toolCallId: message.toolCallId,
-                toolName: message.name,
-              },
-            ];
+          : [createObservedToolMessage(message)];
       const pendingToolCalls =
         message.type === 'OBSERVE_TOOL_RESULT'
           ? context.pendingToolCalls.filter((toolCall) => toolCall.id !== message.toolCallId)
           : context.pendingToolCalls;
       const messages = [...context.history, ...nextMessages];
+      const observedToolEvents: ActorAgentLoopEvent[] =
+        message.type === 'OBSERVE_TOOL_RESULT'
+          ? [
+              {
+                type: 'AGENT_TOOL_RESULT_OBSERVED',
+                toolCallId: message.toolCallId,
+                name: message.name,
+                ok: message.ok,
+              },
+            ]
+          : [];
+
+      if (message.type === 'OBSERVE_TOOL_RESULT' && pendingToolCalls.length > 0) {
+        return {
+          context: {
+            history: messages,
+            steps: context.steps,
+            pendingToolCalls,
+            lastError: null,
+          },
+          reply: {
+            ok: true,
+            status: 'waiting-for-tool',
+            message: nextMessages[0],
+            toolCalls: [],
+          },
+          emit: observedToolEvents,
+        };
+      }
+
       const step = context.steps + 1;
 
       try {
@@ -266,6 +305,7 @@ export function createAgentLoopBehavior(
               pendingToolCalls,
             },
             error: result.error,
+            emitPrefix: observedToolEvents,
           });
         }
 
@@ -302,7 +342,7 @@ export function createAgentLoopBehavior(
         return {
           context: nextContext,
           reply,
-          emit,
+          emit: [...observedToolEvents, ...emit],
         };
       } catch (error) {
         return createFailureResult({
@@ -312,6 +352,7 @@ export function createAgentLoopBehavior(
             pendingToolCalls,
           },
           error: normalizeThrownError(error),
+          emitPrefix: observedToolEvents,
         });
       }
     })

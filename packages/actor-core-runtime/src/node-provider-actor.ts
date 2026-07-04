@@ -18,6 +18,7 @@ import {
 } from './node-provider-lifecycle-contract.js';
 import type {
   NodeProviderLifecycleCancellationResult,
+  NodeProviderLifecycleEffectClaimInput,
   NodeProviderLifecycleEffectJournal,
   NodeProviderLifecycleFilesystemProbeResult,
   NodeProviderLifecycleModelCacheInspectionResult,
@@ -240,6 +241,56 @@ type NodeProviderActorEffectResult =
   | NodeProviderLifecycleModelCacheInspectionResult
   | NodeProviderLifecycleCancellationResult;
 
+function toThrownErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function createEffectThrowFailure(input: {
+  readonly kind: NodeProviderLifecycleEffectClaimInput['kind'];
+  readonly operationKey: string;
+  readonly phase: 'perform' | 'record';
+  readonly error: unknown;
+}): NodeProviderLifecycleFailure {
+  const message = toThrownErrorMessage(input.error);
+  return createActorFailure(
+    'invalid_request',
+    `Node provider actor ${input.phase} failed for lifecycle effect "${input.kind}": ${message}`,
+    {
+      kind: input.kind,
+      operationKey: input.operationKey,
+      phase: input.phase,
+      message,
+    }
+  );
+}
+
+function createStructuredEffectFailureResult(
+  kind: NodeProviderLifecycleEffectClaimInput['kind'],
+  failure: NodeProviderLifecycleFailure
+): NodeProviderActorEffectResult {
+  switch (kind) {
+    case 'duplicate_prevention':
+      return {
+        outcome: 'error',
+        error: failure,
+      };
+    case 'readiness':
+      return {
+        outcome: 'failed',
+        failure,
+      };
+    case 'spawn':
+    case 'signal':
+    case 'filesystem_probe':
+    case 'model_cache_inspect':
+    case 'cancellation':
+      return {
+        outcome: 'failed',
+        failure,
+      };
+  }
+}
+
 export function createNodeProviderActor(options: NodeProviderActorOptions): NodeProviderActor {
   let projection = createInitialProjection();
   let readinessAttempts = 0;
@@ -315,14 +366,48 @@ export function createNodeProviderActor(options: NodeProviderActorOptions): Node
       };
     }
 
-    const result = await params.perform();
+    const result = await (async (): Promise<TResult> => {
+      try {
+        return await params.perform();
+      } catch (error) {
+        return createStructuredEffectFailureResult(
+          params.kind,
+          createEffectThrowFailure({
+            kind: params.kind,
+            operationKey: params.operationKey,
+            phase: 'perform',
+            error,
+          })
+        ) as TResult;
+      }
+    })();
     const record = createNodeProviderLifecycleEffectRecord({
       idempotencyKey: keyResult.value,
       kind: params.kind,
       recordedAt: options.ports.clock.nowIso(),
       result,
     } as never);
-    const recorded = await options.ports.journal.record(record);
+    const recorded = await (async () => {
+      try {
+        return await options.ports.journal.record(record);
+      } catch (error) {
+        const failureRecord = createNodeProviderLifecycleEffectRecord({
+          idempotencyKey: keyResult.value,
+          kind: params.kind,
+          recordedAt: options.ports.clock.nowIso(),
+          result: createStructuredEffectFailureResult(
+            params.kind,
+            createEffectThrowFailure({
+              kind: params.kind,
+              operationKey: params.operationKey,
+              phase: 'record',
+              error,
+            })
+          ),
+        } as never);
+        return await options.ports.journal.record(failureRecord);
+      }
+    })();
     if (recorded.outcome === 'error') {
       return {
         outcome: 'error',

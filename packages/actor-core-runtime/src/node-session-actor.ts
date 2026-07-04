@@ -144,6 +144,18 @@ function observeProviderFact(
       }
     );
   }
+  if (fact.sequence <= snapshot.turn.sequence) {
+    return rejectCommand(
+      snapshot,
+      'OBSERVE_PROVIDER_FACT',
+      getObservedAt(fact),
+      'Observed provider fact sequence must advance the active turn.',
+      {
+        activeSequence: snapshot.turn.sequence,
+        observedSequence: fact.sequence,
+      }
+    );
+  }
 
   switch (fact.type) {
     case 'PROVIDER_DELTA': {

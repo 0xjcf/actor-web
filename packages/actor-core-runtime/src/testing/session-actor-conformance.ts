@@ -446,5 +446,28 @@ export function describeSessionActorConformance(harness: SessionActorConformance
       expectRejected(mismatchedTurn, 'OBSERVE_PROVIDER_FACT');
       expectCoreProjectionUnchanged(active, mismatchedTurn);
     });
+
+    it('rejects duplicate deltas and stale terminal provider facts without mutating the turn', async () => {
+      const scenario = harness.createScenario();
+
+      await createSession(scenario);
+      await attachProvider(scenario);
+      await submitTurn(scenario);
+      const delta = await observeProviderFact(scenario, createDeltaFact(scenario));
+
+      const duplicateDelta = await observeProviderFact(scenario, createDeltaFact(scenario));
+      expectRejected(duplicateDelta, 'OBSERVE_PROVIDER_FACT');
+      expectCoreProjectionUnchanged(delta, duplicateDelta);
+
+      const staleCompleted = await observeProviderFact(
+        scenario,
+        createCompletedFact(scenario, {
+          sequence: 1,
+          checkpoint: 'checkpoint:terminal:stale',
+        })
+      );
+      expectRejected(staleCompleted, 'OBSERVE_PROVIDER_FACT');
+      expectCoreProjectionUnchanged(delta, staleCompleted);
+    });
   });
 }

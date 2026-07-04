@@ -2038,9 +2038,12 @@ operator explicitly asks for queue mutations.
 
 - Title: Resolve CodeRabbit agent/provider/session release findings: stale facts, tool re-entry, effect failures
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/resolve-coderabbit-agent-provider-session-release-findings-s.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ## Template
 

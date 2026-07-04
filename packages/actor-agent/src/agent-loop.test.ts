@@ -263,4 +263,256 @@ describe('@actor-web/agent loop behavior', () => {
       ],
     });
   });
+
+  it('does not re-enter the llm until all pending tool calls are resolved', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+    const provider = vi
+      .fn<ActorAgentLlmProvider>()
+      .mockReturnValueOnce({
+        ok: true,
+        value: {
+          message: {
+            role: 'assistant',
+            content: 'Need both tool results.',
+            toolCalls: [
+              {
+                id: 'call-1',
+                name: 'repo.diff',
+                input: { taskId: 'task-1' },
+              },
+              {
+                id: 'call-2',
+                name: 'repo.status',
+                input: { taskId: 'task-1' },
+              },
+            ],
+          },
+        },
+      })
+      .mockReturnValueOnce({
+        ok: true,
+        value: {
+          message: {
+            role: 'assistant',
+            content: 'All tool results observed.',
+          },
+        },
+      });
+    const behavior = agent.createAgentLoopBehavior({ system: 'You are a FAS planner.' });
+    const tools = createActorToolbox(
+      {
+        ...agent.createActorAgentToolRegistry({ llm: provider }),
+        'repo.diff': () => ({ ok: true, diff: 'changed files' }),
+        'repo.status': () => ({ ok: true, clean: false }),
+      },
+      actorToolContext,
+      [agent.ACTOR_WEB_LLM_TOOL_NAME, 'repo.diff', 'repo.status']
+    );
+
+    const started = await behavior.onMessage?.({
+      message: { type: 'START_AGENT', prompt: 'plan task-1' },
+      context: behavior.context,
+      actor: {
+        getSnapshot: () => ({ context: behavior.context }),
+      },
+      tools,
+    });
+
+    expect(started).toMatchObject({
+      context: {
+        steps: 1,
+        pendingToolCalls: [
+          { id: 'call-1', name: 'repo.diff', input: { taskId: 'task-1' } },
+          { id: 'call-2', name: 'repo.status', input: { taskId: 'task-1' } },
+        ],
+      },
+    });
+
+    const observed = await behavior.onMessage?.({
+      message: {
+        type: 'OBSERVE_TOOL_RESULT',
+        toolCallId: 'call-1',
+        name: 'repo.diff',
+        ok: true,
+        output: { diff: 'changed files' },
+      },
+      context: started?.context,
+      actor: {
+        getSnapshot: () => ({ context: started?.context }),
+      },
+      tools,
+    });
+
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(observed).toMatchObject({
+      context: {
+        steps: 1,
+        history: [
+          { role: 'user', content: 'plan task-1' },
+          {
+            role: 'assistant',
+            content: 'Need both tool results.',
+          },
+          {
+            role: 'tool',
+            toolCallId: 'call-1',
+            toolName: 'repo.diff',
+            content: JSON.stringify({
+              ok: true,
+              output: { diff: 'changed files' },
+            }),
+          },
+        ],
+        pendingToolCalls: [{ id: 'call-2', name: 'repo.status', input: { taskId: 'task-1' } }],
+      },
+      reply: {
+        ok: true,
+        status: 'waiting-for-tool',
+        message: {
+          role: 'tool',
+          toolCallId: 'call-1',
+          toolName: 'repo.diff',
+          content: JSON.stringify({
+            ok: true,
+            output: { diff: 'changed files' },
+          }),
+        },
+        toolCalls: [],
+      },
+      emit: [
+        {
+          type: 'AGENT_TOOL_RESULT_OBSERVED',
+          toolCallId: 'call-1',
+          name: 'repo.diff',
+          ok: true,
+        },
+      ],
+    });
+  });
+
+  it('preserves ok:false tool results when re-entering the llm after the final tool reply', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+    const provider = vi
+      .fn<ActorAgentLlmProvider>()
+      .mockReturnValueOnce({
+        ok: true,
+        value: {
+          message: {
+            role: 'assistant',
+            content: 'Run the diff tool.',
+            toolCalls: [
+              {
+                id: 'call-1',
+                name: 'repo.diff',
+                input: { taskId: 'task-1' },
+              },
+            ],
+          },
+        },
+      })
+      .mockImplementationOnce((request) => ({
+        ok: true,
+        value: {
+          message: {
+            role: 'assistant',
+            content: request.messages.at(-1)?.content ?? 'missing tool message',
+          },
+        },
+      }));
+    const behavior = agent.createAgentLoopBehavior({ system: 'You are a FAS planner.' });
+    const tools = createActorToolbox(
+      {
+        ...agent.createActorAgentToolRegistry({ llm: provider }),
+        'repo.diff': () => ({ ok: false, error: 'tool execution failed' }),
+      },
+      actorToolContext,
+      [agent.ACTOR_WEB_LLM_TOOL_NAME, 'repo.diff']
+    );
+
+    const started = await behavior.onMessage?.({
+      message: { type: 'START_AGENT', prompt: 'plan task-1' },
+      context: behavior.context,
+      actor: {
+        getSnapshot: () => ({ context: behavior.context }),
+      },
+      tools,
+    });
+
+    const observed = await behavior.onMessage?.({
+      message: {
+        type: 'OBSERVE_TOOL_RESULT',
+        toolCallId: 'call-1',
+        name: 'repo.diff',
+        ok: false,
+        output: { error: 'tool execution failed' },
+      },
+      context: started?.context,
+      actor: {
+        getSnapshot: () => ({ context: started?.context }),
+      },
+      tools,
+    });
+
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(provider.mock.calls[1]?.[0]).toMatchObject({
+      messages: [
+        { role: 'user', content: 'plan task-1' },
+        {
+          role: 'assistant',
+          content: 'Run the diff tool.',
+        },
+        {
+          role: 'tool',
+          content: JSON.stringify({
+            ok: false,
+            output: { error: 'tool execution failed' },
+          }),
+        },
+      ],
+    });
+    expect(observed).toMatchObject({
+      context: {
+        steps: 2,
+        pendingToolCalls: [],
+      },
+      reply: {
+        ok: true,
+        status: 'responded',
+        message: {
+          role: 'assistant',
+          content: JSON.stringify({
+            ok: false,
+            output: { error: 'tool execution failed' },
+          }),
+        },
+      },
+      emit: [
+        {
+          type: 'AGENT_TOOL_RESULT_OBSERVED',
+          toolCallId: 'call-1',
+          name: 'repo.diff',
+          ok: false,
+        },
+        {
+          type: 'AGENT_STEP_COMPLETED',
+          step: 2,
+          message: {
+            role: 'assistant',
+            content: JSON.stringify({
+              ok: false,
+              output: { error: 'tool execution failed' },
+            }),
+          },
+        },
+      ],
+    });
+  });
 });
