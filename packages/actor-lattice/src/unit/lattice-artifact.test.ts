@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createArtifactStore, publishArtifact, queryArtifacts } from '../artifact.js';
+import {
+  createArtifactStore,
+  createContentHash,
+  publishArtifact,
+  queryArtifacts,
+} from '../artifact.js';
 
 describe('lattice artifact store', () => {
   it('stores typed, keyed, versioned artifacts and keeps the latest-per-key head', () => {
@@ -28,21 +33,45 @@ describe('lattice artifact store', () => {
     const first = publishArtifact(createArtifactStore(), {
       type: 'research.summary',
       key: 'task-1781273347589',
-      payload: { value: 1 },
+      payload: { value: 1, nested: { alpha: true, beta: ['x', 'y'] } },
       producer: 'planner',
       publishedAt: 100,
-      contentHash: 'same',
     });
     const second = publishArtifact(first.store, {
       type: 'research.summary',
       key: 'task-1781273347589',
-      payload: { value: 1 },
+      payload: { nested: { beta: ['x', 'y'], alpha: true }, value: 1 },
       producer: 'planner',
       publishedAt: 200,
-      contentHash: 'same',
     });
 
     expect(second.published).toBe(false);
     expect(queryArtifacts(second.store, { history: true })).toHaveLength(1);
+  });
+
+  it('creates the same content hash for semantically identical payloads with reordered keys', () => {
+    const first = createContentHash(
+      { value: 1, nested: { alpha: true, beta: ['x', 'y'] } },
+      { tags: { phase: 'draft', owner: 'planner' } }
+    );
+    const second = createContentHash(
+      { nested: { beta: ['x', 'y'], alpha: true }, value: 1 },
+      { tags: { owner: 'planner', phase: 'draft' } }
+    );
+
+    expect(first).toBe(second);
+  });
+
+  it('creates a different content hash when the semantic payload changes', () => {
+    const first = createContentHash(
+      { value: 1, nested: { alpha: true, beta: ['x', 'y'] } },
+      { tags: { owner: 'planner' } }
+    );
+    const second = createContentHash(
+      { value: 2, nested: { alpha: true, beta: ['x', 'y'] } },
+      { tags: { owner: 'planner' } }
+    );
+
+    expect(first).not.toBe(second);
   });
 });

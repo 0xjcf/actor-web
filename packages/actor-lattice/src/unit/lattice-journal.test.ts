@@ -1,6 +1,6 @@
 import { startRuntime } from '@actor-web/runtime';
 import { defineActorWebTopology, node } from '@actor-web/runtime/topology';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   createEventStoreLatticeJournal,
   createLatticeState,
@@ -169,6 +169,58 @@ describe('lattice journal seam', () => {
       expect(artifacts).toEqual([artifact]);
     } finally {
       await runtime.stop();
+    }
+  });
+
+  it('retries hydration after a failed replay when the same topology definition is restarted', async () => {
+    const replay = vi
+      .fn<() => Promise<readonly unknown[]>>()
+      .mockRejectedValueOnce(new Error('replay failed'))
+      .mockResolvedValueOnce([{ kind: 'ARTIFACT_PUBLISHED', artifact }]);
+    const journal = {
+      append: vi.fn(),
+      replay: vi.fn(async (streamId: string, fromVersion?: number) => {
+        expect(streamId).toBe('workflow-lattice');
+        expect(fromVersion).toBeUndefined();
+        return (await replay()) as never;
+      }),
+    };
+    const topology = defineActorWebTopology({
+      nodes: { local: node('local') },
+      actors: {
+        workspace: lattice({ id: 'workflow-lattice', node: 'local', journal }),
+      },
+    });
+
+    const firstRuntime = await startRuntime(topology);
+    await expect(
+      (
+        firstRuntime.requireActor('workspace') as unknown as {
+          ask<TReply>(message: LatticeMessage): Promise<TReply>;
+        }
+      ).ask({
+        type: 'QUERY_ARTIFACTS',
+        query: { history: true },
+      })
+    ).rejects.toThrow('replay failed');
+    await firstRuntime.stop();
+
+    const secondRuntime = await startRuntime(topology);
+
+    try {
+      const artifacts = await (
+        secondRuntime.requireActor('workspace') as unknown as {
+          ask<TReply>(message: LatticeMessage): Promise<TReply>;
+        }
+      ).ask<readonly ArtifactRecord[]>({
+        type: 'QUERY_ARTIFACTS',
+        query: { history: true },
+      });
+
+      expect(artifacts).toEqual([artifact]);
+      expect(journal.replay).toHaveBeenCalledTimes(2);
+    } finally {
+      await secondRuntime.stop();
     }
   });
 });
