@@ -113,6 +113,69 @@ describe('lattice journal seam', () => {
     ]);
   });
 
+  it('replays dependency replacement without stale delivered satisfaction keys', async () => {
+    const journal = createEventStoreLatticeJournal();
+    const initial = createLatticeState('workspace');
+    const firstDependency: RegisteredDependency = {
+      dependencyId: 'workspace:planner:0',
+      lattice: 'workspace',
+      actorKey: 'planner',
+      requires: [{ type: 'task.brief', key: 'session-1' }],
+      mode: 'once',
+    };
+    const secondDependency: RegisteredDependency = {
+      dependencyId: 'workspace:planner:0',
+      lattice: 'workspace',
+      actorKey: 'planner',
+      requires: [{ type: 'execution.plan', key: 'session-1' }],
+      mode: 'once',
+    };
+    const taskBrief: ArtifactRecord = {
+      artifactId: 'task.brief:session-1@1',
+      type: 'task.brief',
+      key: 'session-1',
+      version: 1,
+      payload: { objective: 'draft' },
+      producer: 'coordinator',
+      publishedAt: 10,
+      contentHash: 'hash-brief',
+    };
+    const executionPlan: ArtifactRecord = {
+      artifactId: 'execution.plan:session-1@1',
+      type: 'execution.plan',
+      key: 'session-1',
+      version: 1,
+      payload: { steps: ['implement'] },
+      producer: 'planner',
+      publishedAt: 30,
+      contentHash: 'hash-plan',
+    };
+
+    await journal.append(
+      'workspace',
+      [
+        { kind: 'ARTIFACT_PUBLISHED', artifact: taskBrief },
+        { kind: 'DEPENDENCY_REGISTERED', dependency: firstDependency, registeredAt: 20 },
+        { kind: 'ARTIFACT_PUBLISHED', artifact: executionPlan },
+        { kind: 'DEPENDENCY_REGISTERED', dependency: secondDependency, registeredAt: 40 },
+      ],
+      initial.journalVersion
+    );
+
+    const replayed = await replayLatticeState('workspace', journal);
+
+    expect(replayed.dependencies).toEqual([secondDependency]);
+    expect(replayed.activations).toHaveLength(1);
+    expect(replayed.activations[0]).toMatchObject({
+      dependencyId: 'workspace:planner:0',
+      satisfactionKey: 'execution.plan:session-1@1',
+      status: 'delivered',
+    });
+    expect(replayed.deliveredSatisfactionKeys['workspace:planner:0']).toEqual([
+      'execution.plan:session-1@1',
+    ]);
+  });
+
   it('replays activation acknowledgements after restart-created activations exist', async () => {
     const journal = createEventStoreLatticeJournal();
     const initial = createLatticeState('workspace');

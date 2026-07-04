@@ -106,6 +106,16 @@ function appendDeliveredKey(
   };
 }
 
+function resetDependencyActivationState(state: LatticeState, dependencyId: string): LatticeState {
+  const { [dependencyId]: _staleKeys, ...deliveredSatisfactionKeys } =
+    state.deliveredSatisfactionKeys;
+  return {
+    ...state,
+    activations: state.activations.filter((activation) => activation.dependencyId !== dependencyId),
+    deliveredSatisfactionKeys,
+  };
+}
+
 function shouldEmitSatisfaction(
   state: LatticeState,
   dependency: RegisteredDependency,
@@ -239,21 +249,20 @@ function applyJournalEvent(state: LatticeState, event: LatticeJournalEvent): Lat
       ].sort((left, right) => dependencyKey(left).localeCompare(dependencyKey(right))),
       journalVersion: state.journalVersion + 1,
     };
-    const queued = queueSatisfactionActivations(withDependency, [event.dependency], registeredAt);
+    const reset = resetDependencyActivationState(withDependency, event.dependency.dependencyId);
+    const queued = queueSatisfactionActivations(reset, [event.dependency], registeredAt);
     return deliverPendingActivations(queued, registeredAt).state;
   }
 
   if (event.kind === 'DEPENDENCY_WITHDRAWN') {
-    return {
+    const withoutDependency = {
       ...state,
       dependencies: state.dependencies.filter(
         (dependency) => dependency.dependencyId !== event.dependencyId
       ),
-      activations: state.activations.filter(
-        (activation) => activation.dependencyId !== event.dependencyId
-      ),
       journalVersion: state.journalVersion + 1,
     };
+    return resetDependencyActivationState(withoutDependency, event.dependencyId);
   }
 
   return {
@@ -352,7 +361,8 @@ export function reduceLatticeMessage(
         dependencyKey(left).localeCompare(dependencyKey(right))
       ),
     };
-    const queued = queueSatisfactionActivations(withDependency, [dependency], registeredAt);
+    const reset = resetDependencyActivationState(withDependency, dependency.dependencyId);
+    const queued = queueSatisfactionActivations(reset, [dependency], registeredAt);
     const delivered = deliverPendingActivations(queued, registeredAt);
     return {
       ...delivered,
@@ -368,16 +378,14 @@ export function reduceLatticeMessage(
   }
 
   if (message.type === 'WITHDRAW_DEPENDENCY') {
+    const withoutDependency = {
+      ...state,
+      dependencies: state.dependencies.filter(
+        (dependency) => dependency.dependencyId !== message.dependencyId
+      ),
+    };
     return {
-      state: {
-        ...state,
-        dependencies: state.dependencies.filter(
-          (dependency) => dependency.dependencyId !== message.dependencyId
-        ),
-        activations: state.activations.filter(
-          (activation) => activation.dependencyId !== message.dependencyId
-        ),
-      },
+      state: resetDependencyActivationState(withoutDependency, message.dependencyId),
       emit: [] as LatticeEvent[],
       journalEvents: [
         {

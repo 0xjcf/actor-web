@@ -149,6 +149,69 @@ describe('lattice activation lifecycle', () => {
     expect(registered.state.activations[0]?.deliveredAt).toBe(0);
   });
 
+  it('resets activation history when a dependency id is replaced', () => {
+    const withFirstArtifact = reduceLatticeMessage(createLatticeState('workspace'), {
+      type: 'PUBLISH_ARTIFACT',
+      artifact: {
+        type: 'task.brief',
+        key: 'session-1',
+        payload: { objective: 'draft' },
+        producer: 'coordinator',
+        publishedAt: 10,
+      },
+    }).state;
+    const registeredFirst = reduceLatticeMessage(withFirstArtifact, {
+      type: 'REGISTER_DEPENDENCY',
+      dependency: {
+        dependencyId: 'workspace:planner:0',
+        lattice: 'workspace',
+        actorKey: 'planner',
+        requires: [{ type: 'task.brief', key: 'session-1' }],
+        mode: 'once',
+      },
+      registeredAt: 20,
+    }).state;
+    const withSecondArtifact = reduceLatticeMessage(registeredFirst, {
+      type: 'PUBLISH_ARTIFACT',
+      artifact: {
+        type: 'execution.plan',
+        key: 'session-1',
+        payload: { steps: ['implement'] },
+        producer: 'planner',
+        publishedAt: 30,
+      },
+    }).state;
+
+    const replaced = reduceLatticeMessage(withSecondArtifact, {
+      type: 'REGISTER_DEPENDENCY',
+      dependency: {
+        dependencyId: 'workspace:planner:0',
+        lattice: 'workspace',
+        actorKey: 'planner',
+        requires: [{ type: 'execution.plan', key: 'session-1' }],
+        mode: 'once',
+      },
+      registeredAt: 40,
+    });
+
+    expect(replaced.emit).toContainEqual(
+      expect.objectContaining({
+        type: 'DEPENDENCY_SATISFIED',
+        dependencyId: 'workspace:planner:0',
+        satisfactionKey: 'execution.plan:session-1@1',
+      })
+    );
+    expect(replaced.state.activations).toHaveLength(1);
+    expect(replaced.state.activations[0]).toMatchObject({
+      dependencyId: 'workspace:planner:0',
+      satisfactionKey: 'execution.plan:session-1@1',
+      status: 'delivered',
+    });
+    expect(replaced.state.deliveredSatisfactionKeys['workspace:planner:0']).toEqual([
+      'execution.plan:session-1@1',
+    ]);
+  });
+
   it('reports failed timeout-check sends and keeps subsequent scheduled ticks running', async () => {
     const sentMessages: LatticeMessage[] = [];
     const workspaceRef = {
