@@ -50,6 +50,49 @@ describe('lattice activation lifecycle', () => {
     expect(replayed.activations[0]?.status).toBe('acknowledged');
   });
 
+  it('derives activation ids from the full satisfaction key while preserving the dependency prefix', () => {
+    const published = reduceLatticeMessage(createLatticeState('workspace'), {
+      type: 'REGISTER_DEPENDENCY',
+      dependency: {
+        dependencyId: 'workspace:planner:0',
+        lattice: 'workspace',
+        actorKey: 'planner',
+        requires: [{ type: 'research.summary', key: 'task-1781273347589' }],
+        mode: 'everyVersion',
+      },
+    }).state;
+
+    const first = reduceLatticeMessage(published, {
+      type: 'PUBLISH_ARTIFACT',
+      artifact: {
+        type: 'research.summary',
+        key: 'task-1781273347589',
+        payload: { revision: 1 },
+        producer: 'researcher',
+        publishedAt: 100,
+      },
+    }).state;
+    const second = reduceLatticeMessage(first, {
+      type: 'PUBLISH_ARTIFACT',
+      artifact: {
+        type: 'research.summary',
+        key: 'task-1781273347589',
+        payload: { revision: 2 },
+        producer: 'researcher',
+        publishedAt: 200,
+      },
+    }).state;
+
+    expect(second.activations.map((activation) => activation.activationId)).toEqual([
+      'activation:workspace:planner:0:research.summary%3Atask-1781273347589%401',
+      'activation:workspace:planner:0:research.summary%3Atask-1781273347589%402',
+    ]);
+    expect(second.activations.map((activation) => activation.satisfactionKey)).toEqual([
+      'research.summary:task-1781273347589@1',
+      'research.summary:task-1781273347589@2',
+    ]);
+  });
+
   it('emits timeout facts and re-delivers timed-out activations deterministically', () => {
     const next = reduceLatticeMessage(createLatticeState('workspace'), {
       type: 'REGISTER_DEPENDENCY',

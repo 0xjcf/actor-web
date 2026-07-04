@@ -21,10 +21,19 @@ type AgentModule = {
   };
 };
 
+type AgentLoopResultWithContext = {
+  readonly context: unknown;
+};
+
 const actorToolContext = {
   actorId: 'actor://local/researcher',
   nodeAddress: 'local',
 };
+
+function readAgentLoopContext(result: unknown): unknown {
+  expect(result).toMatchObject({ context: expect.any(Object) });
+  return (result as AgentLoopResultWithContext).context;
+}
 
 function createAgentParams(input: {
   readonly behavior: AgentModule extends {
@@ -331,6 +340,7 @@ describe('@actor-web/agent loop behavior', () => {
         ],
       },
     });
+    const startedContext = readAgentLoopContext(started);
 
     const observed = await behavior.onMessage?.({
       message: {
@@ -340,9 +350,9 @@ describe('@actor-web/agent loop behavior', () => {
         ok: true,
         output: { diff: 'changed files' },
       },
-      context: started?.context,
+      context: startedContext,
       actor: {
-        getSnapshot: () => ({ context: started?.context }),
+        getSnapshot: () => ({ context: startedContext }),
       },
       tools,
     });
@@ -445,6 +455,7 @@ describe('@actor-web/agent loop behavior', () => {
       },
       tools,
     });
+    const startedContext = readAgentLoopContext(started);
 
     const observed = await behavior.onMessage?.({
       message: {
@@ -454,9 +465,9 @@ describe('@actor-web/agent loop behavior', () => {
         ok: false,
         output: { error: 'tool execution failed' },
       },
-      context: started?.context,
+      context: startedContext,
       actor: {
-        getSnapshot: () => ({ context: started?.context }),
+        getSnapshot: () => ({ context: startedContext }),
       },
       tools,
     });
