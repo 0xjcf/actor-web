@@ -523,19 +523,26 @@ export function createLatticeActor(
 ) {
   const options = typeof input === 'string' ? { latticeId: input } : input;
   const journal = options.journal;
-  let replayed = false;
-  let replayPromise: Promise<LatticeState> | null = null;
+  const hydratedContexts = new WeakSet<LatticeState>();
+  const replayPromises = new WeakMap<LatticeState, Promise<LatticeState>>();
 
   const hydrate = async (context: LatticeState): Promise<LatticeState> => {
-    if (!journal || replayed) {
+    if (!journal || hydratedContexts.has(context)) {
       return context;
     }
 
-    replayPromise ??= replayLatticeState(options.latticeId, journal, {
-      timeoutMs: options.timeoutMs,
-    });
+    let replayPromise = replayPromises.get(context);
+    if (!replayPromise) {
+      replayPromise = replayLatticeState(options.latticeId, journal, {
+        timeoutMs: options.timeoutMs,
+      }).finally(() => {
+        replayPromises.delete(context);
+      });
+      replayPromises.set(context, replayPromise);
+    }
+
     const replayedState = await replayPromise;
-    replayed = true;
+    hydratedContexts.add(replayedState);
     return replayedState;
   };
 
@@ -561,6 +568,8 @@ export function createLatticeActor(
           journalVersion: nextVersion,
         };
       }
+
+      hydratedContexts.add(nextState);
 
       return {
         context: nextState,

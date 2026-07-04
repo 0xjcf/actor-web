@@ -28,6 +28,10 @@ const defaultScheduler: LatticeRuntimeScheduler = {
   },
 };
 
+function reportTimeoutCheckError(actorKey: string, error: unknown) {
+  console.error(`[actor-web/lattice] Failed CHECK_ACTIVATION_TIMEOUTS for "${actorKey}".`, error);
+}
+
 function isLatticeActorDefinition(definition: unknown): boolean {
   return (
     typeof definition === 'object' &&
@@ -124,7 +128,8 @@ export async function wireLatticeRuntime<TTopology extends ActorWebTopology<Acto
     const intervalMs = options.timeoutCheckIntervalMs ?? 1_000;
     const scheduler = options.scheduler ?? defaultScheduler;
     const stopTimeoutChecks = scheduler.scheduleEvery(intervalMs, async () => {
-      await Promise.all(
+      const now = scheduler.now();
+      const results = await Promise.allSettled(
         latticeActors.map(async (actorKey) => {
           const latticeActor = runtime.requireActor(
             actorKey as keyof TTopology['actors'] & string
@@ -133,10 +138,17 @@ export async function wireLatticeRuntime<TTopology extends ActorWebTopology<Acto
           };
           await latticeActor.send({
             type: 'CHECK_ACTIVATION_TIMEOUTS',
-            now: scheduler.now(),
+            now,
           });
+          return actorKey;
         })
       );
+
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          reportTimeoutCheckError(latticeActors[index] ?? 'unknown', result.reason);
+        }
+      });
     });
     teardowns.push(stopTimeoutChecks);
   }

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { ArtifactQuery, ArtifactRecord } from './protocol.js';
 
 export interface ArtifactStore {
@@ -24,12 +25,7 @@ export function stableStringify(value: unknown): string {
 }
 
 function hashText(value: string): string {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `h${(hash >>> 0).toString(16)}`;
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
 export function artifactIdentity(type: string, key?: string): string {
