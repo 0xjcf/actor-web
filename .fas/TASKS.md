@@ -1250,8 +1250,8 @@
 
 - Title: Release prep 0.2.0: ship @actor-web/agent + decide the public package facade
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/release-prep-0-2-0-ship-actor-web-agent-decide-the-publi.md
 - Verification lane: fast
 - Policy sensitivity: standard
