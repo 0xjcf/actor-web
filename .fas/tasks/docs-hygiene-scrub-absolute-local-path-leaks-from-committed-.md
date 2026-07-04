@@ -6,7 +6,7 @@ Created from `.fas/queue/tasks.json` task `task-1782439279955`.
 
 ## Problem
 
-CodeRabbit review --agent -t committed --base main -c AGENTS.md on branch fas/release-0-2-0 flagged docs/test hygiene issues that should remain one release-blocking docs cleanup bucket. Keep the original absolute-path leak cleanup, and also verify/fix: docs/0009-fas-local-runtime-host-substrate-alignment.md contains a machine-local /Users/joseflores/... reference that should become repo-relative prose; docs/actor-web-ecosystem-alignment.md overstates maturity with Current labels where the cited evidence is Proposed or partial; src/docs-honesty.test.ts is too loose because shared toContain assertions can pass on later incidental mentions instead of the first-mention hero/frontmatter copy. Verify each finding against current code before editing.
+CodeRabbit review --agent -t committed --base main -c AGENTS.md on branch fas/release-0-2-0 flagged docs/test hygiene issues that should remain one release-blocking docs cleanup bucket. Keep the original absolute-path leak cleanup, and also verify/fix: docs/0009-fas-local-runtime-host-substrate-alignment.md contains a machine-local absolute home-path reference that should become repo-relative prose; docs/actor-web-ecosystem-alignment.md overstates maturity with Current labels where the cited evidence is Proposed or partial; src/docs-honesty.test.ts is too loose because shared toContain assertions can pass on later incidental mentions instead of the first-mention hero/frontmatter copy. Verify each finding against current code before editing.
 
 ## Acceptance criteria
 
@@ -56,7 +56,8 @@ CodeRabbit review --agent -t committed --base main -c AGENTS.md on branch fas/re
 
 ## Verification plan
 
-- Run `grep -rn "/Users/joseflores" docs/ .fas/ .changeset/`.
+- Run tracked-file grep for machine-local home paths, for example
+  `git grep -n "$HOME" -- docs .fas .changeset`.
 - Run markdown lint for changed documentation.
 - Run `fas validate-task`.
 

@@ -51,14 +51,14 @@ Actor-Web files reviewed:
 
 Cross-repo context reviewed from local sibling checkouts:
 
-- `/Users/joseflores/Development/fas/docs/adr/0006 - shared-architecture-roadmap.md`
-- `/Users/joseflores/Development/fas/docs/adr/0007-fas-adr-003-boundary-foundation.md`
-- `/Users/joseflores/Development/fas/packages/shared-contracts/README.md`
-- `/Users/joseflores/Development/fas/packages/shared-contracts/index.d.ts`
-- `/Users/joseflores/Development/ignite-element/docs/adr-003-shared-arc.md`
-- `/Users/joseflores/Development/ignite-element/docs/shared-architecture-model.md`
+- [FAS shared architecture roadmap](../../../fas/docs/adr/0006%20-%20shared-architecture-roadmap.md)
+- [FAS ADR-003 boundary foundation](../../../fas/docs/adr/0007-fas-adr-003-boundary-foundation.md)
+- [FAS shared contracts README](../../../fas/packages/shared-contracts/README.md)
+- [FAS shared contracts types](../../../fas/packages/shared-contracts/index.d.ts)
+- [ignite-element ADR-003 shared architecture](../../../ignite-element/docs/adr-003-shared-arc.md)
+- [ignite-element shared architecture model](../../../ignite-element/docs/shared-architecture-model.md)
 
-No local Blueprint checkout was found under `/Users/joseflores/Development`.
+No local Blueprint checkout was available alongside the reviewed sibling repos.
 Blueprint conclusions in this review are therefore inferred from FAS and
 ignite-element docs only.
 

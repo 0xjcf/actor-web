@@ -2007,13 +2007,13 @@ operator explicitly asks for queue mutations.
 
 - Title: Docs hygiene: scrub absolute local-path leaks from committed docs
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/docs-hygiene-scrub-absolute-local-path-leaks-from-committed-.md
 - Automation mode: advisory
 - Verification lane: fast
 - Policy sensitivity: standard
-- Blast radius: contained
+- Blast radius: cross-cutting
 
 ### Task: Design observation vocabulary for lattice artifact sources (observe/requires/prefer)
 
