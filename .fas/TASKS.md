@@ -1080,10 +1080,13 @@
 
 - Title: Docs: headless agent runtime page + refresh ignite guide to target API
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/docs-headless-agent-runtime-page-refresh-ignite-guide-to.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Rename package scope to @actor-web
 
