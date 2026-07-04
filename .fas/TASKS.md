@@ -1250,9 +1250,12 @@
 
 - Title: Release prep 0.2.0: ship @actor-web/agent + decide the public package facade
 - Mode: single-agent
-- Status: backlog
-- Owner: planner
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/release-prep-0-2-0-ship-actor-web-agent-decide-the-publi.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Docs: refresh root + runtime READMEs to the real post-rename API (remove fictional feature claims)
 

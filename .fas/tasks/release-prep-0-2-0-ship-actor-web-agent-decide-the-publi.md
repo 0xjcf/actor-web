@@ -83,11 +83,31 @@ Post actor-web publish:
 
 ## Affected files
 
-- Scope unknown.
+- .changeset/release-0-2-0-agent-lattice.md
+- docs/0010-actor-web-0-2-0-release-packaging.md
+- README.md
+- packages/actor-core-runtime/README.md
+- packages/actor-core-runtime/tsconfig.json
+- packages/actor-agent/README.md
+- packages/actor-agent/CHANGELOG.md
+- packages/actor-agent/LICENSE
+- packages/actor-lattice/README.md
+- packages/actor-lattice/CHANGELOG.md
+- packages/actor-lattice/LICENSE
+- packages/actor-lattice/tsconfig.json
+- .fas/memory/decisions.md
 
 ## Scope Amendments
 
-- None.
+- Type: release-prep-scope
+- Added at: 2026-07-04
+- Trigger: release package inventory and npm facade verification
+- Reason: Scope unknown at bootstrap; implementation established package docs, changeset, facade ADR, tarball hygiene, and decision memory as the required release-prep artifacts.
+- Added paths: .changeset/release-0-2-0-agent-lattice.md, docs/0010-actor-web-0-2-0-release-packaging.md, README.md, packages/actor-core-runtime/README.md, packages/actor-core-runtime/tsconfig.json, packages/actor-agent/README.md, packages/actor-agent/CHANGELOG.md, packages/actor-agent/LICENSE, packages/actor-lattice/README.md, packages/actor-lattice/CHANGELOG.md, packages/actor-lattice/LICENSE, packages/actor-lattice/tsconfig.json, .fas/memory/decisions.md
+- Evidence source: npm view, pnpm changeset status, npm pack --dry-run
+- Evidence: npm view, pnpm changeset status, npm pack --dry-run | docs/0010-actor-web-0-2-0-release-packaging.md | actor-web unscoped package is owned by another maintainer; scoped packages are the 0.2.0 public surface
+- Accuracy signal: package inventory and live npm evidence
+- Follow-up needed: Changesets GitHub Action remains an operational follow-up, not a 0.2.0 blocker.
 
 ## Implementation plan
 
