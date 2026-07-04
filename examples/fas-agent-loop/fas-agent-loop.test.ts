@@ -1,8 +1,10 @@
+import { collectLatticeRegistrations, collectLatticeSubscriptions } from '@actor-web/lattice';
 import type { ActorToolExecutor } from '@actor-web/runtime';
 import { defineBehavior } from '@actor-web/runtime';
 import { startActorWebNode } from '@actor-web/runtime/browser';
 import { actor, defineActorWebTopology, node, tool } from '@actor-web/runtime/topology';
 import { afterEach, describe, expect, it } from 'vitest';
+import { describeFasCoordinationModes, summarizeLatticeActivation } from './fas-behaviors';
 import {
   type FasAgentLoopExampleRuntime,
   type SubmitFasTaskInput,
@@ -119,6 +121,145 @@ describe('fas-agent-loop example', () => {
       'taskBoard',
       'taskRun',
     ]);
+  });
+
+  it('declares lattice coordination actors beside the orchestration baseline', () => {
+    const registrations = collectLatticeRegistrations(fasAgentLoop);
+    const dependencyById = Object.fromEntries(
+      registrations.map((registration) => [registration.dependencyId, registration])
+    );
+
+    expect(fasAgentLoop.actors.workspace.address).toBe(
+      'actor://fas-coordinator-runtime/fas-workspace-lattice'
+    );
+    expect(fasAgentLoop.supervisors.latticeEnvironment.children).toEqual([
+      'workspace',
+      'hybridCoordinator',
+    ]);
+    expect(fasAgentLoop.supervisors.latticeAgents.children).toEqual([
+      'latticePlanner',
+      'latticeImplementer',
+      'latticeVerifier',
+      'latticeReviewer',
+    ]);
+    expect(dependencyById['planner-observes-task-brief']).toMatchObject({
+      actorKey: 'latticePlanner',
+      lattice: 'workspace',
+      mode: 'once',
+      requires: [{ type: 'task.brief' }],
+    });
+    expect(dependencyById['implementer-observes-execution-plan']).toMatchObject({
+      actorKey: 'latticeImplementer',
+      lattice: 'workspace',
+      mode: 'once',
+      requires: [{ type: 'execution.plan' }],
+    });
+    expect(dependencyById['implementer-observes-review-findings']).toMatchObject({
+      actorKey: 'latticeImplementer',
+      lattice: 'workspace',
+      mode: 'everyVersion',
+      requires: [{ type: 'review.findings' }],
+    });
+    expect(dependencyById['verifier-observes-implementation-patch']).toMatchObject({
+      actorKey: 'latticeVerifier',
+      lattice: 'workspace',
+      mode: 'everyVersion',
+      requires: [{ type: 'implementation.patch' }],
+    });
+    expect(dependencyById['reviewer-observes-verification-result']).toMatchObject({
+      actorKey: 'latticeReviewer',
+      lattice: 'workspace',
+      mode: 'everyVersion',
+      requires: [{ type: 'verification.result' }],
+    });
+    expect(dependencyById['hybrid-coordinator-observes-review-approved']).toMatchObject({
+      actorKey: 'hybridCoordinator',
+      lattice: 'workspace',
+      mode: 'once',
+      requires: [{ type: 'review.approved' }],
+    });
+    expect(collectLatticeSubscriptions(fasAgentLoop)).toEqual([
+      {
+        from: 'workspace',
+        to: 'latticePlanner',
+        events: ['DEPENDENCY_SATISFIED', 'ACTIVATION_TIMED_OUT'],
+      },
+      {
+        from: 'workspace',
+        to: 'latticeImplementer',
+        events: ['DEPENDENCY_SATISFIED', 'ACTIVATION_TIMED_OUT'],
+      },
+      {
+        from: 'workspace',
+        to: 'latticeVerifier',
+        events: ['DEPENDENCY_SATISFIED', 'ACTIVATION_TIMED_OUT'],
+      },
+      {
+        from: 'workspace',
+        to: 'latticeReviewer',
+        events: ['DEPENDENCY_SATISFIED', 'ACTIVATION_TIMED_OUT'],
+      },
+      {
+        from: 'workspace',
+        to: 'hybridCoordinator',
+        events: ['DEPENDENCY_SATISFIED', 'ACTIVATION_TIMED_OUT'],
+      },
+    ]);
+  });
+
+  it('documents the three FAS coordination modes and the review rework loop', () => {
+    const modes = describeFasCoordinationModes();
+
+    expect(modes.map((mode) => mode.mode)).toEqual(['orchestration', 'lattice', 'hybrid']);
+    expect(modes.find((mode) => mode.mode === 'orchestration')).toMatchObject({
+      coordinator: 'Coordinator drives planner, implementer, verifier, and reviewer with ask/send.',
+      activation: ['TASK_SUBMITTED', 'PLAN_CREATED', 'PATCH_CREATED', 'REVIEW_COMPLETED'],
+    });
+    expect(modes.find((mode) => mode.mode === 'lattice')).toMatchObject({
+      coordinator: 'No direct agent wiring; agents observe workspace artifacts.',
+      artifacts: [
+        'task.brief',
+        'execution.plan',
+        'implementation.patch',
+        'verification.result',
+        'review.approved',
+      ],
+      rework: 'review.findings everyVersion reactivates the implementer.',
+    });
+    expect(modes.find((mode) => mode.mode === 'hybrid')).toMatchObject({
+      coordinator:
+        'Coordinator publishes task.brief, observes review.approved, and enforces budget.',
+      activation: ['PUBLISH_ARTIFACT task.brief', 'DEPENDENCY_SATISFIED review.approved'],
+    });
+
+    expect(
+      summarizeLatticeActivation('implementer', {
+        type: 'DEPENDENCY_SATISFIED',
+        activationId: 'activation:implementer-observes-review-findings:review.findings@2',
+        dependencyId: 'implementer-observes-review-findings',
+        actorKey: 'latticeImplementer',
+        lattice: 'workspace',
+        satisfactionKey: 'review.findings@2',
+        artifacts: [
+          {
+            artifactId: 'artifact-review-findings-v2',
+            type: 'review.findings',
+            key: 'task-1001',
+            version: 2,
+            payload: { findings: ['narrow the patch'] },
+            producer: 'latticeReviewer',
+            publishedAt: 100,
+            contentHash: 'hash-review-findings-v2',
+          },
+        ],
+      })
+    ).toEqual({
+      activationId: 'activation:implementer-observes-review-findings:review.findings@2',
+      artifactTypes: ['review.findings'],
+      label: 'Review findings observed',
+      role: 'implementer',
+      satisfactionKey: 'review.findings@2',
+    });
   });
 
   it('runs a deterministic FAS workflow through completion', async () => {
