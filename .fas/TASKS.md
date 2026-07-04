@@ -1319,10 +1319,13 @@
 
 - Title: Add lattice-mode coordination example beside fas-agent-loop (orchestration baseline + stigmergic lattice + hybrid)
 - Mode: single-agent
-- Status: backlog
-- Owner: planner
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/add-lattice-mode-coordination-example-beside-fas-agent-loop.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Wire topology-declared subscriptions in serveNode and startActorWebNode
 

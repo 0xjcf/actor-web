@@ -1,4 +1,4 @@
-# Add lattice-mode coordination example beside fas-agent-loop
+# Add lattice-mode coordination example beside fas-agent-loop (orchestration baseline + stigmergic lattice + hybrid)
 
 ## Source
 
@@ -39,10 +39,28 @@ Final step of the stigmergic-lattice spike execution order (spike direct-1781143
 - examples/fas-agent-loop/fas-topology.ts
 - examples/fas-agent-loop/fas-behaviors.ts
 - examples/fas-agent-loop/README.md
+- examples/vitest.config.ts
 
 ## Scope Amendments
 
-- None.
+- Type: scope-refresh-promotion
+- Added at: 2026-07-04
+- Trigger: dirty-low-confidence-scope
+- Reason: Promoted dirty low-confidence or dependency-reachable task-packet path(s) into affected scope.
+- Added paths: examples/fas-agent-loop/fas-topology.ts
+- Evidence source: task-packet dirty scope promotion
+- Evidence: task-packet dirty scope promotion | .fas/state/task-packet.json | Promoted dirty path(s): examples/fas-agent-loop/fas-topology.ts
+- Accuracy signal: Path was dirty in git status and present in task-packet low-confidence/dependency-reachable scope.
+
+- Type: test-lane-alias
+- Added at: 2026-07-04
+- Trigger: examples-public-lattice-import
+- Reason: The fas-agent-loop example now imports @actor-web/lattice by public package name, so the examples Vitest config needs workspace aliases for @actor-web/lattice and @actor-web/runtime/event-sourcing.
+- Added paths: examples/vitest.config.ts
+- Evidence source: closeout-readiness
+- Evidence: closeout-readiness | .fas/state/closeout-readiness/latest.json | Plan alignment reported examples/vitest.config.ts as the only unexpected file after focused checks passed.
+- Accuracy signal: The config change is limited to examples test-lane alias resolution and does not change runtime behavior.
+- Follow-up needed: None; keep the alias as part of the example test support surface.
 
 ## Implementation plan
 
