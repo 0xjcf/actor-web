@@ -2049,10 +2049,13 @@ operator explicitly asks for queue mutations.
 
 - Title: Resolve CodeRabbit closeout code findings: lattice activation IDs and agent-loop test narrowing
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/resolve-coderabbit-closeout-code-findings-lattice-activation.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ## Template
 
