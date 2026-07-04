@@ -18,7 +18,7 @@ Define the actor-web process supervision port/adaptor contract needed before act
 
 ## Acceptance criteria
 
-- A public or documented internal ProcessRunner/effect-port contract covers spawn, signal, stdout/stderr, readiness, crash, cancellation, idle shutdown, and duplicate-prevention facts.
+- A public or documented internal ProcessRunner/effect-port contract covers spawn, process groups, signal policy, bounded stdout/stderr capture, readiness checks, crash detection, cancellation, idle shutdown, duplicate-prevention facts, and errors-as-data handling.
 - The contract keeps actor core deterministic and keeps Node process effects behind adapters/ports.
 - Tests use fake process and readiness ports; no real mlx_lm.server process is required.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
