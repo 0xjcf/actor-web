@@ -2007,8 +2007,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Docs hygiene: scrub absolute local-path leaks from committed docs
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/docs-hygiene-scrub-absolute-local-path-leaks-from-committed-.md
 - Automation mode: advisory
 - Verification lane: fast
@@ -2027,8 +2027,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Resolve CodeRabbit lattice release findings: artifact hashing, replay hydration, scheduler errors
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/resolve-coderabbit-lattice-release-findings-artifact-hashing.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -2038,8 +2038,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Resolve CodeRabbit agent/provider/session release findings: stale facts, tool re-entry, effect failures
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/resolve-coderabbit-agent-provider-session-release-findings-s.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -2049,8 +2049,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Resolve CodeRabbit closeout code findings: lattice activation IDs and agent-loop test narrowing
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/resolve-coderabbit-closeout-code-findings-lattice-activation.md
 - Automation mode: advisory
 - Verification lane: fast
