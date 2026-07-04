@@ -1080,8 +1080,8 @@
 
 - Title: Docs: headless agent runtime page + refresh ignite guide to target API
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/docs-headless-agent-runtime-page-refresh-ignite-guide-to.md
 - Automation mode: advisory
 - Verification lane: fast
@@ -1322,8 +1322,8 @@
 
 - Title: Add lattice-mode coordination example beside fas-agent-loop (orchestration baseline + stigmergic lattice + hybrid)
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/add-lattice-mode-coordination-example-beside-fas-agent-loop.md
 - Automation mode: advisory
 - Verification lane: fast
