@@ -898,8 +898,8 @@
 
 - Title: Docs: document the ignite-element integration surface (readModel/commandSource/sourceHandle + opts)
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/docs-document-the-ignite-element-integration-surface-readm.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -909,8 +909,8 @@
 
 - Title: Add batch subscribers[] overload to system.subscribe
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/add-batch-subscribers-overload-to-system-subscribe.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -1169,8 +1169,8 @@
 
 - Title: actor-web CLI v1: @actor-web/agent package (llm tool + agent-loop) + agent hosting
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/actor-web-cli-v1-actor-web-agent-package-llm-tool-agent.md
 - Automation mode: advisory
 - Verification lane: fast
@@ -1308,8 +1308,8 @@
 
 - Title: Decide event-sourcing module fate (promote as lattice journal or deprecate)
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/event-sourcing-module-is-vestigial-event-sourcing-ts-export.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -1407,8 +1407,8 @@
 
 - Title: Supervision observability polish: reason-coded respawn-failure event, error in policy-stop payloads, export policy types
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/supervision-observability-polish-reason-coded-respawn-failu.md
 - Verification lane: fast
 - Policy sensitivity: standard
