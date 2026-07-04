@@ -31,9 +31,10 @@ driven agents:
 
 The agents do not point at each other. They observe artifacts in the workspace
 environment, and `@actor-web/lattice` derives registrations and subscriptions
-from the topology. A task-specific runtime can use artifact `key` values such as
-the task id or session id; this reusable example leaves keys open so the
-declaration describes the artifact contract rather than one task instance.
+from the topology. A task-specific runtime must scope artifact `key` values to a
+task/session identifier, or another equivalent namespace, so concurrent runs do
+not share activation state. This reusable example leaves placeholder keys open
+only to describe the artifact contract rather than one task instance.
 
 ## Hybrid
 
