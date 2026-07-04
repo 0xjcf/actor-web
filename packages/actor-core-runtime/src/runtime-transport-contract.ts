@@ -2,6 +2,7 @@ import type { ActorMessage } from './actor-system.js';
 import type { RuntimeTransportAuthPayload } from './runtime-auth.js';
 
 export const RUNTIME_TRANSPORT_PROTOCOL_VERSION = 'actor-web-runtime/1' as const;
+export const DEFAULT_RUNTIME_TRANSPORT_MAX_FRAME_BYTES = 1024 * 1024;
 
 export type RuntimeTransportProtocolVersion = typeof RUNTIME_TRANSPORT_PROTOCOL_VERSION;
 
@@ -10,7 +11,8 @@ export type RuntimeTransportHandshakeRejectCode =
   | 'self_connection'
   | 'incompatible_protocol'
   | 'malformed_frame'
-  | 'unauthorized';
+  | 'unauthorized'
+  | 'payload_too_large';
 
 export interface RuntimeNodeIdentity {
   nodeAddress: string;
@@ -90,6 +92,24 @@ export type RuntimeTransportValidationResult =
       message: string;
     };
 
+export type RuntimeTransportPayloadValidationResult =
+  | {
+      ok: true;
+      frameBytes: number;
+      maxFrameBytes: number;
+    }
+  | {
+      ok: false;
+      code: 'payload_too_large';
+      message: string;
+      frameBytes: number;
+      maxFrameBytes: number;
+    };
+
+export interface RuntimeTransportFramePayloadSizeOptions {
+  maxFrameBytes?: number;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
@@ -108,6 +128,40 @@ function hasStringArray(value: unknown): value is readonly string[] {
 
 function hasStringRecord(value: unknown): value is Readonly<Record<string, string>> {
   return isRecord(value) && Object.values(value).every((entry) => typeof entry === 'string');
+}
+
+export function normalizeRuntimeTransportMaxFrameBytes(maxFrameBytes: unknown): number {
+  return typeof maxFrameBytes === 'number' && Number.isFinite(maxFrameBytes) && maxFrameBytes > 0
+    ? Math.floor(maxFrameBytes)
+    : DEFAULT_RUNTIME_TRANSPORT_MAX_FRAME_BYTES;
+}
+
+export function measureRuntimeTransportFrameBytes(frame: RuntimeTransportFrame): number {
+  return new TextEncoder().encode(JSON.stringify(frame)).byteLength;
+}
+
+export function validateRuntimeTransportFramePayloadSize(
+  frame: RuntimeTransportFrame,
+  options: RuntimeTransportFramePayloadSizeOptions = {}
+): RuntimeTransportPayloadValidationResult {
+  const maxFrameBytes = normalizeRuntimeTransportMaxFrameBytes(options.maxFrameBytes);
+  const frameBytes = measureRuntimeTransportFrameBytes(frame);
+
+  if (frameBytes > maxFrameBytes) {
+    return {
+      ok: false,
+      code: 'payload_too_large',
+      frameBytes,
+      maxFrameBytes,
+      message: `Runtime transport frame is ${frameBytes} bytes, exceeding the configured maxFrameBytes of ${maxFrameBytes}. Externalize large blobs and send artifact references instead.`,
+    };
+  }
+
+  return {
+    ok: true,
+    frameBytes,
+    maxFrameBytes,
+  };
 }
 
 function validateRuntimeAuthPayload(value: unknown): RuntimeTransportValidationResult {

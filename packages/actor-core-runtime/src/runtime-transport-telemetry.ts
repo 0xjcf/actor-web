@@ -6,6 +6,7 @@ export type RuntimeTransportDropCode =
   | 'self_connection'
   | 'incompatible_protocol'
   | 'unauthorized'
+  | 'payload_too_large'
   | 'idempotency_provider_error';
 
 export type RuntimeTransportTelemetryEventType =
@@ -49,6 +50,8 @@ export interface RuntimeTransportTelemetryEvent {
   expectedSequence?: number;
   queueDepth?: number;
   queueLimit?: number;
+  frameBytes?: number;
+  maxFrameBytes?: number;
   reason?: string;
   dropCode?: RuntimeTransportDropCode;
   authSubject?: string;

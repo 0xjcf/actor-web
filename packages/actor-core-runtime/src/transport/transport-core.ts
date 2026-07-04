@@ -19,10 +19,14 @@ import {
   createRuntimeTransportHeartbeatPing,
   createRuntimeTransportHeartbeatPong,
   createRuntimeTransportMessageId,
+  DEFAULT_RUNTIME_TRANSPORT_MAX_FRAME_BYTES,
+  normalizeRuntimeTransportMaxFrameBytes,
   type RuntimeNodeIdentity,
   type RuntimeTransportFrame,
+  type RuntimeTransportPayloadValidationResult,
   validateRuntimeTransportAckFrame,
   validateRuntimeTransportFrame,
+  validateRuntimeTransportFramePayloadSize,
   validateRuntimeTransportHeartbeatFrame,
 } from '../runtime-transport-contract.js';
 import {
@@ -64,6 +68,7 @@ export interface TransportCoreOptions {
   readonly ackTimeoutMs?: number;
   readonly maxAckRetries?: number;
   readonly outboundQueueLimit?: number;
+  readonly maxFrameBytes?: number;
   readonly idempotencyProvider?: RuntimeTransportIdempotencyProvider;
   readonly telemetry?: RuntimeTransportTelemetryObserver;
   readonly auth?: RuntimeTransportAuthProvider<{
@@ -128,6 +133,7 @@ export class TransportCore implements MessageTransport {
   private readonly ackTimeoutMs: number;
   private readonly maxAckRetries: number;
   private readonly outboundQueueLimit: number;
+  private readonly maxFrameBytes: number;
   private readonly clock: () => Date;
   private readonly timers: TransportTimers;
   private readonly onListenerError: (error: unknown) => void;
@@ -143,6 +149,9 @@ export class TransportCore implements MessageTransport {
     this.ackTimeoutMs = options.ackTimeoutMs ?? 1000;
     this.maxAckRetries = options.maxAckRetries ?? 2;
     this.outboundQueueLimit = options.outboundQueueLimit ?? 1024;
+    this.maxFrameBytes = normalizeRuntimeTransportMaxFrameBytes(
+      options.maxFrameBytes ?? DEFAULT_RUNTIME_TRANSPORT_MAX_FRAME_BYTES
+    );
     this.clock = options.clock ?? (() => new Date());
     this.timers = options.timers ?? DEFAULT_TIMERS;
     this.onListenerError = options.onListenerError ?? (() => undefined);
@@ -234,20 +243,28 @@ export class TransportCore implements MessageTransport {
       throw new Error(`Transport ${this.identity.nodeAddress} is not connected to ${destination}`);
     }
 
-    peer.sequence += 1;
+    const sequence = peer.sequence + 1;
     const frame = createRuntimeTransportFrame({
       source: this.identity,
       destination: peer.identity,
       messageId: createRuntimeTransportMessageId({
         source: this.identity,
         destination: peer.identity,
-        sequence: peer.sequence,
+        sequence,
       }),
-      sequence: peer.sequence,
+      sequence,
       message,
       now: this.clock,
     });
+    const payloadValidation = validateRuntimeTransportFramePayloadSize(frame, {
+      maxFrameBytes: this.maxFrameBytes,
+    });
+    if (!payloadValidation.ok) {
+      this.recordOutboundFramePayloadTooLarge(destination, peer, frame, payloadValidation);
+      throw new Error(payloadValidation.message);
+    }
 
+    peer.sequence = sequence;
     await this.enqueueFrame(destination, peer, frame, true);
   }
 
@@ -1275,6 +1292,34 @@ export class TransportCore implements MessageTransport {
       queueDepth: peer.outboundQueue.length,
       queueLimit: this.outboundQueueLimit,
       reason,
+    });
+  }
+
+  private recordOutboundFramePayloadTooLarge(
+    nodeAddress: string,
+    peer: Peer,
+    frame: RuntimeTransportFrame,
+    result: Extract<RuntimeTransportPayloadValidationResult, { ok: false }>
+  ): void {
+    this.stats.outboundFramesDropped += 1;
+    this.stats.validationFramesDropped += 1;
+    this.setPeerStats(nodeAddress, {
+      identity: peer.identity,
+      outboundQueueDepth: peer.outboundQueue.length,
+      outboundQueueLimit: this.outboundQueueLimit,
+      outboundFramesDropped: (this.stats.peers[nodeAddress]?.outboundFramesDropped ?? 0) + 1,
+      validationFramesDropped: (this.stats.peers[nodeAddress]?.validationFramesDropped ?? 0) + 1,
+    });
+    this.emitTelemetry({
+      type: 'frame.dropped',
+      peerNodeAddress: nodeAddress,
+      messageType: frame.message.type,
+      messageId: frame.messageId,
+      sequence: frame.sequence,
+      reason: result.message,
+      dropCode: result.code,
+      frameBytes: result.frameBytes,
+      maxFrameBytes: result.maxFrameBytes,
     });
   }
 
