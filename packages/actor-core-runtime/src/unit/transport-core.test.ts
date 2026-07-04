@@ -4,6 +4,7 @@ import {
   createRuntimeNodeIdentity,
   createRuntimeTransportAckFrame,
   createRuntimeTransportFrame,
+  measureRuntimeTransportFrameBytes,
   type RuntimeTransportFrame,
 } from '../runtime-transport-contract.js';
 import type {
@@ -229,6 +230,7 @@ async function makeConnectedHarness(
     heartbeatIntervalMs?: number;
     heartbeatTimeoutMs?: number;
     outboundQueueLimit?: number;
+    maxFrameBytes?: number;
     idempotencyProvider?: {
       claim: (
         input: RuntimeTransportIdempotencyClaimInput
@@ -260,6 +262,7 @@ async function makeConnectedHarness(
     ...(options.outboundQueueLimit !== undefined
       ? { outboundQueueLimit: options.outboundQueueLimit }
       : {}),
+    ...(options.maxFrameBytes !== undefined ? { maxFrameBytes: options.maxFrameBytes } : {}),
     ...(options.idempotencyProvider ? { idempotencyProvider: options.idempotencyProvider } : {}),
   });
 
@@ -413,6 +416,44 @@ describe('TransportCore — backpressure drop (case 10)', () => {
     expect(core.getStats().outboundFramesDropped).toBe(1);
     expect(core.getStats().backpressureDropCount).toBe(1);
     expect(telemetry.some((event) => event.type === 'backpressure.applied')).toBe(true);
+  });
+
+  it('rejects an oversized runtime frame before enqueueing or sending it', async () => {
+    const largeMessage = userMessage('LARGE_CONTEXT');
+    const frame = createRuntimeTransportFrame({
+      source: LOCAL,
+      destination: REMOTE,
+      sequence: 1,
+      message: largeMessage,
+      now: () => new Date(0),
+    });
+    const frameBytes = measureRuntimeTransportFrameBytes(frame);
+    const { core, link, telemetry } = await makeConnectedHarness({
+      maxFrameBytes: frameBytes - 1,
+    });
+
+    await expect(core.send(REMOTE.nodeAddress, largeMessage)).rejects.toThrow(
+      `Runtime transport frame is ${frameBytes} bytes, exceeding the configured maxFrameBytes of ${
+        frameBytes - 1
+      }. Externalize large blobs and send artifact references instead.`
+    );
+
+    expect(link.sent).toHaveLength(0);
+    expect(core.getStats()).toMatchObject({
+      outboundQueueDepth: 0,
+      outboundFramesDropped: 1,
+      validationFramesDropped: 1,
+    });
+    expect(telemetry).toContainEqual(
+      expect.objectContaining({
+        type: 'frame.dropped',
+        peerNodeAddress: REMOTE.nodeAddress,
+        messageType: largeMessage.type,
+        dropCode: 'payload_too_large',
+        frameBytes,
+        maxFrameBytes: frameBytes - 1,
+      })
+    );
   });
 });
 

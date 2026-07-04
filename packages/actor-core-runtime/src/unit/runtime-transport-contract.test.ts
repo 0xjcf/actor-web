@@ -7,10 +7,12 @@ import {
   createRuntimeTransportHandshakeHello,
   createRuntimeTransportHeartbeatPing,
   createRuntimeTransportMessageId,
+  measureRuntimeTransportFrameBytes,
   RUNTIME_TRANSPORT_PROTOCOL_VERSION,
   validateRuntimeNodeIdentity,
   validateRuntimeTransportAckFrame,
   validateRuntimeTransportFrame,
+  validateRuntimeTransportFramePayloadSize,
   validateRuntimeTransportHandshake,
   validateRuntimeTransportHeartbeatFrame,
 } from '../runtime-transport-contract.js';
@@ -154,6 +156,41 @@ describe('runtime transport contract', () => {
 
     expect(validateRuntimeTransportFrame(frame, local)).toEqual({ ok: true });
     expect(frame.messageId).toBe(createRuntimeTransportMessageId(frame));
+  });
+
+  it('measures runtime frame bytes and rejects payloads above the configured max', () => {
+    const local = node('node-a');
+    const remote = node('node-b');
+    const frame = createRuntimeTransportFrame({
+      source: remote,
+      destination: local,
+      sequence: 1,
+      now: fixedNow,
+      message: {
+        type: '__runtime.directory.sync.request',
+        requestId: 'sync-1',
+        prompt: 'Plan cafés',
+      },
+    });
+    const frameBytes = measureRuntimeTransportFrameBytes(frame);
+
+    expect(frameBytes).toBe(new TextEncoder().encode(JSON.stringify(frame)).byteLength);
+    expect(validateRuntimeTransportFramePayloadSize(frame, { maxFrameBytes: frameBytes })).toEqual({
+      ok: true,
+      frameBytes,
+      maxFrameBytes: frameBytes,
+    });
+    expect(
+      validateRuntimeTransportFramePayloadSize(frame, { maxFrameBytes: frameBytes - 1 })
+    ).toEqual({
+      ok: false,
+      code: 'payload_too_large',
+      frameBytes,
+      maxFrameBytes: frameBytes - 1,
+      message: `Runtime transport frame is ${frameBytes} bytes, exceeding the configured maxFrameBytes of ${
+        frameBytes - 1
+      }. Externalize large blobs and send artifact references instead.`,
+    });
   });
 
   it('rejects runtime frame envelopes without a message id', () => {
