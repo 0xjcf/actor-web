@@ -1694,8 +1694,8 @@
 
 - Title: Transport: large-payload framing/chunking contract or explicit max-payload with blob-externalization
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/transport-large-payload-framing-chunking-contract-or-explici.md
 - Verification lane: fast
 - Policy sensitivity: standard
