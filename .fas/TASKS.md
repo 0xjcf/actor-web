@@ -1297,8 +1297,8 @@
 
 - Title: Author the lattice contract design doc (artifact store + dependency activation)
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/author-the-lattice-contract-design-doc-artifact-store-depend.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -1429,8 +1429,8 @@
 
 - Title: Implement @actor-web/lattice: LatticeActor, topology lattice()/dependsOn, activation protocol
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/implement-actor-web-lattice-latticeactor-topology-lattice.md
 - Verification lane: fast
 - Policy sensitivity: standard
