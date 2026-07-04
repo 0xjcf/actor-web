@@ -13,6 +13,7 @@ import type {
   InMemoryNodeProviderLifecycleEffectJournal,
   NodeProviderLifecycleFilesystemProbeResult,
   NodeProviderLifecycleModelCacheInspectionResult,
+  NodeProviderLifecycleSignalRecord,
 } from '../node-provider-lifecycle-effect-journal.js';
 
 export interface ProviderActorConformanceScenarioOptions {
@@ -82,6 +83,14 @@ function expectFailureCode(
 
 function journalKinds(scenario: ProviderActorConformanceScenario): readonly string[] {
   return Object.values(scenario.journal.getSnapshot()).map((entry) => entry.kind);
+}
+
+function signalRecords(
+  scenario: ProviderActorConformanceScenario
+): readonly NodeProviderLifecycleSignalRecord[] {
+  return Object.values(scenario.journal.getSnapshot()).flatMap((entry) =>
+    entry.record?.kind === 'signal' ? [entry.record] : []
+  );
 }
 
 export function describeProviderActorConformance(harness: ProviderActorConformanceHarness): void {
@@ -199,6 +208,9 @@ export function describeProviderActorConformance(harness: ProviderActorConforman
       const timedOut = await checkReadiness(scenario);
       expect(timedOut.status).toBe('failed');
       expectFailureCode(timedOut, 'startup_timeout');
+      expect(scenario.calls.signal).toBe(1);
+      expect(journalKinds(scenario)).toContain('cancellation');
+      expect(journalKinds(scenario)).toContain('signal');
     });
 
     it('projects model mismatch and health-check readiness failures as data', async () => {
@@ -229,6 +241,7 @@ export function describeProviderActorConformance(harness: ProviderActorConforman
       await acquire(mismatch);
       const mismatchSnapshot = await checkReadiness(mismatch);
       expectFailureCode(mismatchSnapshot, 'readiness_failed');
+      expect(mismatch.calls.signal).toBe(1);
       expect(mismatchSnapshot.failure?.details).toMatchObject({
         expectedModel: 'mlx-community/Llama-3.2-3B-Instruct-4bit',
       });
@@ -260,6 +273,7 @@ export function describeProviderActorConformance(harness: ProviderActorConforman
       await acquire(health);
       const healthSnapshot = await checkReadiness(health);
       expectFailureCode(healthSnapshot, 'readiness_failed');
+      expect(health.calls.signal).toBe(1);
       expect(healthSnapshot.failure?.details).toMatchObject({
         target: 'http://127.0.0.1:4242/v1/models',
         attempt: 1,
@@ -370,15 +384,30 @@ export function describeProviderActorConformance(harness: ProviderActorConforman
 
       await acquire(scenario);
       await checkReadiness(scenario);
-      await scenario.actor.dispatch({
+      const released = await scenario.actor.dispatch({
         type: 'RELEASE_PROVIDER',
         acquisitionKey: scenario.acquisitionKey as never,
       });
+      expect(released.idleSince).toBe('2026-07-02T15:00:00.000Z');
+      expect(released.idleDeadline).toBe('2026-07-02T15:00:30.000Z');
       scenario.advanceTime(31_000);
       const stopping = await scenario.actor.dispatch({
         type: 'TICK_IDLE_SHUTDOWN',
       });
       expect(stopping.status).toBe('stopping');
+      const idleShutdownSignal = signalRecords(scenario).find(
+        (record) =>
+          record.result.outcome === 'signaled' && record.result.fact.reason === 'idle_shutdown'
+      );
+      expect(
+        idleShutdownSignal?.result.outcome === 'signaled'
+          ? idleShutdownSignal.result.fact.idleShutdown
+          : null
+      ).toMatchObject({
+        idleSince: '2026-07-02T15:00:00.000Z',
+        shutdownRequestedAt: '2026-07-02T15:00:31.000Z',
+        inactivityWindowMs: 30_000,
+      });
 
       const stopped = await scenario.actor.dispatch({
         type: 'OBSERVE_PROVIDER_EXIT',
@@ -395,18 +424,21 @@ export function describeProviderActorConformance(harness: ProviderActorConforman
       });
     });
 
-    it('collapses repeated acquire calls into one claimed duplicate-prevention effect and projects duplicates instead of throwing', async () => {
+    it('replays repeated acquire calls through the journal without re-running claimed effects', async () => {
       const scenario = harness.createScenario();
 
       const first = await acquire(scenario);
       const second = await acquire(scenario);
 
       expect(first.status).toBe('starting');
-      expect(second.failure?.code).toBe('duplicate');
+      expect(second.status).toBe('starting');
+      expect(second.failure).toBeNull();
       expect(scenario.calls.claimDuplicate).toBe(1);
+      expect(scenario.calls.spawn).toBe(1);
       expect(journalKinds(scenario).filter((kind) => kind === 'duplicate_prevention')).toHaveLength(
         1
       );
+      expect(journalKinds(scenario).filter((kind) => kind === 'spawn')).toHaveLength(1);
     });
 
     it('projects fake port failures as data for duplicate, filesystem, model cache, signal, exit observation, readiness, and tail capture', async () => {

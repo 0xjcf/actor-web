@@ -8,7 +8,6 @@ import {
   type ChildProcessClaimDuplicateResult,
   type ChildProcessHandle,
   type ChildProcessObserveExitResult,
-  type ChildProcessSignalResult,
   type ChildProcessSpawnResult,
   type ChildProcessTailOutputResult,
   createChildProcessHandle,
@@ -116,15 +115,6 @@ describeProviderActorConformance({
         detail: 'ready',
       }),
     };
-    const defaultSignal: ChildProcessSignalResult = {
-      outcome: 'signaled',
-      fact: createProviderLifecycleSignalFact({
-        handle,
-        signal: 'SIGTERM',
-        reason: 'cancellation',
-        observedAt: clock.nowIso(),
-      }),
-    };
     const defaultObserveExit: ChildProcessObserveExitResult = {
       outcome: 'running',
       handle,
@@ -200,9 +190,21 @@ describeProviderActorConformance({
             calls.spawn += 1;
             return options.spawn ?? defaultSpawn;
           },
-          signal() {
+          signal(input) {
             calls.signal += 1;
-            return options.signal ?? defaultSignal;
+            return (
+              options.signal ?? {
+                outcome: 'signaled',
+                fact: createProviderLifecycleSignalFact({
+                  handle: input.handle,
+                  signal: input.signal,
+                  reason: input.reason,
+                  observedAt: clock.nowIso(),
+                  ...(input.cancellation ? { cancellation: input.cancellation } : {}),
+                  ...(input.idleShutdown ? { idleShutdown: input.idleShutdown } : {}),
+                }),
+              }
+            );
           },
           observeExit() {
             calls.observeExit += 1;

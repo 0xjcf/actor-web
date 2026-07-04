@@ -45,6 +45,7 @@ export interface NodeProviderActorProjection {
   readonly ready: boolean;
   readonly failure: NodeProviderLifecycleFailure | null;
   readonly restartCount: number;
+  readonly idleSince: string | null;
   readonly idleDeadline: string | null;
   readonly stdoutTail: NodeProviderActorOutputProjection;
   readonly stderrTail: NodeProviderActorOutputProjection;
@@ -158,6 +159,7 @@ function createInitialProjection(): NodeProviderActorProjection {
     ready: false,
     failure: null,
     restartCount: 0,
+    idleSince: null,
     idleDeadline: null,
     stdoutTail: emptyOutputProjection(),
     stderrTail: emptyOutputProjection(),
@@ -203,6 +205,7 @@ function projectFailure(
     status: 'failed',
     ready: false,
     failure,
+    idleSince: null,
     idleDeadline: null,
     lastObservedAt: observedAt,
   };
@@ -464,6 +467,7 @@ export function createNodeProviderActor(options: NodeProviderActorOptions): Node
       acquisitionKey,
       endpoint: options.endpoint,
       failure: null,
+      idleSince: null,
       idleDeadline: null,
       lastObservedAt: options.ports.clock.nowIso(),
     };
@@ -534,24 +538,6 @@ export function createNodeProviderActor(options: NodeProviderActorOptions): Node
       return projection;
     }
 
-    if (duplicate.replayed && duplicate.result.outcome === 'claimed') {
-      projection = {
-        ...projection,
-        status: projection.handle ? projection.status : 'starting',
-        ready: projection.ready,
-        failure: createActorFailure(
-          'duplicate',
-          'Provider acquisition was already claimed for this activation.',
-          {
-            activationKey,
-            acquisitionKey,
-          }
-        ),
-        lastObservedAt: options.ports.clock.nowIso(),
-      };
-      return projection;
-    }
-
     if (duplicate.result.outcome === 'already_running') {
       projection = {
         ...projection,
@@ -559,6 +545,7 @@ export function createNodeProviderActor(options: NodeProviderActorOptions): Node
         handle: duplicate.result.running.handle,
         ready: true,
         failure: null,
+        idleSince: null,
         lastObservedAt: duplicate.result.running.detectedAt,
       };
       readinessAttempts = 0;
@@ -623,11 +610,73 @@ export function createNodeProviderActor(options: NodeProviderActorOptions): Node
       endpoint: options.endpoint,
       ready: false,
       failure: null,
+      idleSince: null,
       idleDeadline: null,
       lastObservedAt: process.startedAt,
     };
     readinessAttempts = 0;
     startupStartedAtMs = options.ports.clock.nowMs();
+    return projection;
+  }
+
+  async function failReadinessAndSignal(
+    failure: NodeProviderLifecycleFailure,
+    observedAt: string | null
+  ): Promise<NodeProviderActorProjection> {
+    const handle = projection.handle;
+    projection = projectFailure(projection, failure, observedAt);
+    startupStartedAtMs = null;
+    if (!handle) {
+      return projection;
+    }
+
+    const cancellation = createProviderLifecycleCancellationFact({
+      requestedBy: 'runtime',
+      reason: 'readiness_failed',
+      requestedAt: options.ports.clock.nowIso(),
+      ...(projection.activationKey ? { activationKey: projection.activationKey } : {}),
+    });
+    const cancellationEffect = await runEffect({
+      kind: 'cancellation',
+      operationKey: `cancellation:readiness_failed:${handle}`,
+      activationKey: projection.activationKey ?? undefined,
+      acquisitionKey: projection.acquisitionKey ?? undefined,
+      handle,
+      perform: () => ({
+        outcome: 'cancelled' as const,
+        fact: cancellation,
+      }),
+    });
+    if (cancellationEffect.outcome === 'error') {
+      projection = projectFailure(
+        projection,
+        cancellationEffect.failure,
+        options.ports.clock.nowIso()
+      );
+      return projection;
+    }
+    const signal = await runEffect({
+      kind: 'signal',
+      operationKey: `signal:readiness_failed:${handle}`,
+      activationKey: projection.activationKey ?? undefined,
+      acquisitionKey: projection.acquisitionKey ?? undefined,
+      handle,
+      perform: () =>
+        options.ports.childProcess.signal({
+          handle,
+          signal: 'SIGTERM',
+          reason: 'cancellation',
+          cancellation: cancellationEffect.result.fact,
+        }),
+    });
+    if (signal.outcome === 'error') {
+      projection = projectFailure(projection, signal.failure, options.ports.clock.nowIso());
+      return projection;
+    }
+    if (signal.result.outcome === 'failed') {
+      projection = projectFailure(projection, signal.result.failure, options.ports.clock.nowIso());
+      return projection;
+    }
     return projection;
   }
 
@@ -642,8 +691,7 @@ export function createNodeProviderActor(options: NodeProviderActorOptions): Node
       !projection.ready &&
       nowMs - startupStartedAtMs >= options.readiness.startupTimeoutMs
     ) {
-      projection = projectFailure(
-        projection,
+      return failReadinessAndSignal(
         createActorFailure(
           'startup_timeout',
           'Provider readiness did not complete before the configured timeout.',
@@ -655,7 +703,6 @@ export function createNodeProviderActor(options: NodeProviderActorOptions): Node
         ),
         options.ports.clock.nowIso()
       );
-      return projection;
     }
 
     readinessAttempts += 1;
@@ -687,6 +734,7 @@ export function createNodeProviderActor(options: NodeProviderActorOptions): Node
           status: 'running',
           ready: true,
           failure: null,
+          idleSince: null,
           idleDeadline: null,
           lastObservedAt: readiness.result.fact.observedAt,
         };
@@ -702,22 +750,15 @@ export function createNodeProviderActor(options: NodeProviderActorOptions): Node
         };
         return projection;
       case 'failed':
-        projection = projectFailure(
-          projection,
+        return failReadinessAndSignal(
           readiness.result.failure,
           readiness.result.fact?.observedAt ??
             readiness.result.exit?.observedAt ??
             readiness.result.cancellation?.requestedAt ??
             options.ports.clock.nowIso()
         );
-        return projection;
       case 'error':
-        projection = projectFailure(
-          projection,
-          readiness.result.error,
-          options.ports.clock.nowIso()
-        );
-        return projection;
+        return failReadinessAndSignal(readiness.result.error, options.ports.clock.nowIso());
     }
   }
 
@@ -785,6 +826,7 @@ export function createNodeProviderActor(options: NodeProviderActorOptions): Node
       status: 'stopping',
       ready: false,
       failure: null,
+      idleSince: null,
       idleDeadline: null,
       lastObservedAt:
         signal.result.outcome === 'signaled'
@@ -798,6 +840,7 @@ export function createNodeProviderActor(options: NodeProviderActorOptions): Node
     if (
       projection.status !== 'running' ||
       !projection.handle ||
+      !projection.idleSince ||
       !projection.idleDeadline ||
       options.ports.clock.nowIso() < projection.idleDeadline
     ) {
@@ -805,7 +848,7 @@ export function createNodeProviderActor(options: NodeProviderActorOptions): Node
     }
 
     const idleShutdown = createProviderLifecycleIdleShutdownFact({
-      idleSince: projection.idleDeadline,
+      idleSince: projection.idleSince,
       shutdownRequestedAt: options.ports.clock.nowIso(),
       inactivityWindowMs: options.idleShutdownMs,
       acquisitionKey: projection.acquisitionKey as ProviderLifecycleAcquisitionKey,
@@ -838,6 +881,7 @@ export function createNodeProviderActor(options: NodeProviderActorOptions): Node
       ...projection,
       status: 'stopping',
       ready: false,
+      idleSince: null,
       idleDeadline: null,
       lastObservedAt:
         signal.result.outcome === 'signaled'
@@ -882,6 +926,7 @@ export function createNodeProviderActor(options: NodeProviderActorOptions): Node
         handle: null,
         ready: false,
         restartCount: projection.restartCount + 1,
+        idleSince: null,
         idleDeadline: null,
         failure: createActorFailure('crashed', 'Provider process crashed.', {
           exitCode: exit.fact.exitCode,
@@ -895,6 +940,7 @@ export function createNodeProviderActor(options: NodeProviderActorOptions): Node
         status: 'idle',
         handle: null,
         ready: false,
+        idleSince: null,
         idleDeadline: null,
         failure: createActorFailure('exited', 'Provider process exited.', {
           exitCode: exit.fact.exitCode,
@@ -908,6 +954,7 @@ export function createNodeProviderActor(options: NodeProviderActorOptions): Node
         status: 'idle',
         handle: null,
         ready: false,
+        idleSince: null,
         idleDeadline: null,
         failure: null,
         lastObservedAt: exit.fact.observedAt,
@@ -938,10 +985,12 @@ export function createNodeProviderActor(options: NodeProviderActorOptions): Node
             (!command.acquisitionKey || command.acquisitionKey === projection.acquisitionKey)
           ) {
             const idleDeadlineMs = options.ports.clock.nowMs() + options.idleShutdownMs;
+            const idleSince = options.ports.clock.nowIso();
             projection = {
               ...projection,
+              idleSince,
               idleDeadline: new Date(idleDeadlineMs).toISOString(),
-              lastObservedAt: options.ports.clock.nowIso(),
+              lastObservedAt: idleSince,
             };
           }
           return projection;
