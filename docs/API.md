@@ -1197,8 +1197,12 @@ The runtime transport contract exports:
 - `RuntimeTransportHeartbeatFrame`
 - `createRuntimeTransportMessageId(...)`
 - `RUNTIME_TRANSPORT_PROTOCOL_VERSION`
+- `DEFAULT_RUNTIME_TRANSPORT_MAX_FRAME_BYTES`
 - validation helpers for identity, handshake, runtime frames, ack frames, and
   heartbeat frames
+- `measureRuntimeTransportFrameBytes(...)`,
+  `normalizeRuntimeTransportMaxFrameBytes(...)`, and
+  `validateRuntimeTransportFramePayloadSize(...)`
 
 Runtime transport frames include a `messageId`. Node and browser WebSocket
 transports keep a bounded per-peer idempotency cache and drop duplicate frame IDs
@@ -1224,12 +1228,23 @@ limit is `1024` queued data frames. When the queue is full, `send(...)` rejects
 and the transport emits backpressure telemetry instead of buffering without a
 limit. Ack and heartbeat control frames stay minimal and direct.
 
-Handshake rejection covers:
+Both WebSocket transports also enforce a max serialized runtime-frame size before
+enqueueing. The default is `DEFAULT_RUNTIME_TRANSPORT_MAX_FRAME_BYTES` (`1 MiB`)
+and can be overridden with `maxFrameBytes` on the Node or browser WebSocket
+transport options. Oversized sends reject with `payload_too_large`, emit
+`frame.dropped` telemetry with `frameBytes` and `maxFrameBytes`, and do not
+consume the peer sequence or hit the wire. Until transport streaming/chunking
+lands, large prompts, model outputs, context packs, and binary/blob payloads
+should be externalized into a durable artifact store and sent as stable
+references in actor messages.
+
+Runtime transport rejection covers:
 
 - missing node identity
 - same-node connections
 - incompatible protocol versions
 - malformed frame envelopes
+- oversized runtime frames
 
 ## Telemetry And Stats
 

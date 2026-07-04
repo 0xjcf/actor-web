@@ -28,11 +28,50 @@ Location-transparency audit L5 (agent-payload gap, UNOWNED). The transport bound
 
 ## Affected files
 
-- Scope unknown.
+- packages/actor-core-runtime/src/runtime-transport-contract.ts
+- packages/actor-core-runtime/src/transport/transport-core.ts
+- packages/actor-core-runtime/src/runtime-transport-telemetry.ts
+- packages/actor-core-runtime/src/index.ts
+- packages/actor-core-runtime/src/browser.ts
+- packages/actor-core-runtime/src/browser-websocket-message-transport.ts
+- packages/actor-core-runtime/src/node-websocket-message-transport.ts
+- packages/actor-core-runtime/src/unit/runtime-transport-contract.test.ts
+- packages/actor-core-runtime/src/unit/transport-core.test.ts
+- docs/API.md
+- docs/spikes/actor-web-external-transport-design.md
+- packages/actor-core-runtime/src/unit/browser-websocket-message-transport.test.ts
+- packages/actor-core-runtime/src/unit/node-websocket-message-transport.test.ts
 
 ## Scope Amendments
 
-- None.
+- Type: explicit-scope
+- Added at: 2026-07-04T18:20:00.000Z
+- Trigger: implementation scope refresh
+- Reason: Implement explicit max-frame-byte validation at the shared runtime transport contract/core seam, expose the limit through public transport options/exports, and document blob externalization guidance instead of adding chunking/reassembly in this release slice.
+- Added paths: packages/actor-core-runtime/src/runtime-transport-contract.ts, packages/actor-core-runtime/src/transport/transport-core.ts, packages/actor-core-runtime/src/runtime-transport-telemetry.ts, packages/actor-core-runtime/src/index.ts, packages/actor-core-runtime/src/browser.ts, packages/actor-core-runtime/src/browser-websocket-message-transport.ts, packages/actor-core-runtime/src/node-websocket-message-transport.ts, packages/actor-core-runtime/src/unit/runtime-transport-contract.test.ts, packages/actor-core-runtime/src/unit/transport-core.test.ts, docs/API.md, docs/spikes/actor-web-external-transport-design.md
+- Evidence source: task-packet
+- Evidence: task-packet | .fas/state/task-packet.json | Low-confidence hints pointed at the runtime transport contract and WebSocket transport surface; source inspection showed enforcement belongs in TransportCore.
+- Accuracy signal: validated against transport-core/WebSocket adapter ownership before editing
+- Follow-up needed: Streaming/chunking remains in the downstream streaming task blocked by this contract.
+
+- Type: explicit-scope
+- Added at: 2026-07-04T18:24:00.000Z
+- Trigger: public option test coverage
+- Reason: Added focused tests proving maxFrameBytes is forwarded from the Node and browser WebSocket public options into the shared transport core.
+- Added paths: packages/actor-core-runtime/src/unit/browser-websocket-message-transport.test.ts, packages/actor-core-runtime/src/unit/node-websocket-message-transport.test.ts
+- Evidence source: diff
+- Evidence: diff | packages/actor-core-runtime/src/unit/browser-websocket-message-transport.test.ts | Public WebSocket option pass-through is production surface and needs test coverage.
+- Accuracy signal: tests are no-socket white-box checks of the shared core configuration
+- Follow-up needed: None.
+
+- Type: scope-refresh-promotion
+- Added at: 2026-07-04
+- Trigger: dirty-low-confidence-scope
+- Reason: Promoted dirty low-confidence or dependency-reachable task-packet path(s) into affected scope.
+- Added paths: packages/actor-core-runtime/src/browser.ts, packages/actor-core-runtime/src/index.ts, packages/actor-core-runtime/src/runtime-transport-contract.ts
+- Evidence source: task-packet dirty scope promotion
+- Evidence: task-packet dirty scope promotion | .fas/state/task-packet.json | Promoted dirty path(s): packages/actor-core-runtime/src/browser.ts, packages/actor-core-runtime/src/index.ts, packages/actor-core-runtime/src/runtime-transport-contract.ts
+- Accuracy signal: Path was dirty in git status and present in task-packet low-confidence/dependency-reachable scope.
 
 ## Implementation plan
 

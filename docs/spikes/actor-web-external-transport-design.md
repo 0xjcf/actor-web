@@ -521,10 +521,17 @@ and true multi-host rehearsal.
 Status: complete for runtime-native telemetry/stats snapshots, auth/security,
 message ID based duplicate suppression, and bounded retry/ack handling for
 internal runtime control traffic. Bounded per-peer outbound queues now apply
-backpressure by rejecting sends when the queue is full. Runtime telemetry now has
+backpressure by rejecting sends when the queue is full. WebSocket transports now
+also enforce an explicit max serialized runtime-frame size before enqueueing
+(`maxFrameBytes`, default `1 MiB`) and reject oversized actor messages with
+`payload_too_large` plus frame-size telemetry. Actor-Web does not yet chunk or
+reassemble large agent payloads; callers should externalize large prompts,
+outputs, context packs, and blobs into durable artifact storage and send stable
+references until the streaming/chunking task lands. Runtime telemetry now has
 exporter/sink primitives plus a Node JSONL file sink. Remaining production work
-is durable replay storage, deployment-backed discovery, OpenTelemetry/metrics
-adapters, and true multi-host rehearsal.
+is durable replay storage, deployment-backed discovery, transport
+streaming/chunking, OpenTelemetry/metrics adapters, and true multi-host
+rehearsal.
 
 ### Phase 4: Projection hardening
 

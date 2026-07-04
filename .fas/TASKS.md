@@ -1694,9 +1694,12 @@
 
 - Title: Transport: large-payload framing/chunking contract or explicit max-payload with blob-externalization
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/transport-large-payload-framing-chunking-contract-or-explici.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Agent transport: stream tool/agent output as a backpressured cross-node stream
 
