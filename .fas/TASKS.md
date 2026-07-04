@@ -2027,9 +2027,12 @@ operator explicitly asks for queue mutations.
 
 - Title: Resolve CodeRabbit lattice release findings: artifact hashing, replay hydration, scheduler errors
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/resolve-coderabbit-lattice-release-findings-artifact-hashing.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Resolve CodeRabbit agent/provider/session release findings: stale facts, tool re-entry, effect failures
 
