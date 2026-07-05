@@ -401,6 +401,50 @@ describe('remote runtime transport', () => {
     }
   });
 
+  it('rejects remote delivery attempts for node-private local addresses', async () => {
+    const network = createInMemoryMessageTransportNetwork();
+    const localTransport = network.createTransport('node-a');
+    network.createTransport('node-b');
+    localSystem = new ActorSystemImpl({
+      nodeAddress: 'node-a',
+      transport: localTransport,
+    });
+
+    const sent: Array<{ destination: string; message: ActorMessage }> = [];
+    const realSend = localTransport.send.bind(localTransport);
+    localTransport.send = async (destination: string, message: ActorMessage) => {
+      sent.push({ destination, message });
+      return realSend(destination, message);
+    };
+
+    await localSystem.start();
+    await localTransport.connect('node-b');
+
+    const deliverRemote = (
+      localSystem as unknown as {
+        deliverMessageRemote(
+          location: string,
+          address: ActorAddress,
+          message: ActorMessage
+        ): Promise<void>;
+      }
+    ).deliverMessageRemote.bind(localSystem);
+
+    await expect(
+      deliverRemote(
+        'node-b',
+        'actor://local/remote-shadow' as ActorAddress,
+        {
+          type: 'PING',
+          _timestamp: Date.now(),
+          _version: '1.0.0',
+        } as ActorMessage
+      )
+    ).rejects.toThrow(/node-private local address/i);
+
+    expect(sent.filter((frame) => frame.message.type === '__runtime.remote.send')).toHaveLength(0);
+  });
+
   it('does not broadcast a directory unregister for node-private (local) addresses', async () => {
     const network = createInMemoryMessageTransportNetwork();
     const localTransport = network.createTransport('node-a');

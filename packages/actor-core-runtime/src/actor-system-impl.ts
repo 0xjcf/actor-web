@@ -4133,6 +4133,13 @@ export class ActorSystemImpl implements ActorSystem {
     address: ActorAddress,
     message: ActorMessage
   ): Promise<void> {
+    if (isLocalAddress(address)) {
+      throw new Error(
+        `Cannot deliver node-private local address ${address} to remote node ${location}. ` +
+          'Remote actors must use an explicit node address.'
+      );
+    }
+
     await this.sendTransportMessage(location, {
       type: '__runtime.remote.send',
       address,
