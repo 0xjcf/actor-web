@@ -1570,8 +1570,8 @@
 
 - Title: Formalize remote node identity and collision protection
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/formalize-remote-node-identity-and-collision-protection.md
 - Verification lane: fast
 - Policy sensitivity: standard
