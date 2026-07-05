@@ -2013,8 +2013,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Runtime correctness (CodeRabbit PR#32 full-pass): retry-interceptor unhandled rejection + create-actor-ref parent contract
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/runtime-correctness-coderabbit-pr-32-full-pass-retry-interce.md
 - Automation mode: advisory
 - Verification lane: full
@@ -2071,6 +2071,17 @@ operator explicitly asks for queue mutations.
 - Owner: implementer
 - Brief: .fas/tasks/resolve-coderabbit-closeout-code-findings-lattice-activation.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Runtime correctness (CodeRabbit PR#32 full-pass): retry-interceptor unhandled rejection + create-actor-ref parent contra
+
+- Title: Runtime correctness (CodeRabbit PR#32 full-pass): retry-interceptor unhandled rejection + create-actor-ref parent contra
+- Mode: single-agent
+- Status: implementing
+- Owner: implementer
+- Brief: .fas/tasks/runtime-correctness-coderabbit-pr-32-full-pass-retry-interce.md
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
