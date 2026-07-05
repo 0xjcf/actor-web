@@ -111,6 +111,14 @@ import type { ContextOf, MessageOf } from './type-helpers.js';
 import type { ActorSnapshot, JsonValue, Message } from './types.js';
 import { createActorAddress, generateCorrelationId, parse } from './utils/factories.js';
 
+function cloneMessageContext(context: MessageContext): MessageContext {
+  return {
+    traceId: context.traceId,
+    correlationId: context.correlationId,
+    metadata: new Map(context.metadata),
+  };
+}
+
 // ✅ Define specific message types for type safety
 interface SpawnChildMessage extends ActorMessage {
   type: 'SPAWN_CHILD';
@@ -1956,7 +1964,7 @@ export class ActorSystemImpl implements ActorSystem {
         return;
       }
 
-      log.error('Hit message processing limit - possible infinite loop', {
+      log.debug('Message processing batch ended at limit without continuation', {
         actorPath: address,
         processId,
         processed,
@@ -2508,11 +2516,12 @@ export class ActorSystemImpl implements ActorSystem {
     behaviorHandler: PureActorBehaviorHandler
   ): Promise<void> {
     // Get message context
-    let context =
+    let context = cloneMessageContext(
       this.messageContexts.get(message) ||
-      createMessageContext({
-        correlationId: message._correlationId,
-      });
+        createMessageContext({
+          correlationId: message._correlationId,
+        })
+    );
     context.metadata.set('actorPath', address);
     const mailbox = this.actorMailboxes.get(address);
     if (mailbox) {
@@ -2759,7 +2768,7 @@ export class ActorSystemImpl implements ActorSystem {
         // Direct enqueue to mailbox - no async boundary
         // This ensures events are available immediately in tests
         // and maintains deterministic ordering with other messages
-        this.enqueueMessage(subscriber, eventMessage).catch((error) => {
+        this.enqueueMessage(subscriber, { ...eventMessage }).catch((error) => {
           // Log as dead letter if enqueue fails (e.g., mailbox full)
           log.debug('🔍 EMIT EVENT DEBUG: Event dropped (dead letter)', {
             subscriberId: subscriber,

@@ -157,6 +157,69 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
     }
   });
 
+  it('should isolate emitted event message context across subscriber deliveries', async () => {
+    const system = new ActorSystemImpl({ nodeAddress: 'test-node' });
+    await system.start();
+
+    try {
+      const received: Array<{
+        actorPath: unknown;
+        context: unknown;
+        message: ActorMessage;
+      }> = [];
+
+      system.registerGlobalInterceptor(
+        {
+          beforeReceive({ message, context }) {
+            if (message.type === 'EMITTED_EVENT') {
+              received.push({
+                actorPath: context.metadata.get('actorPath'),
+                context,
+                message,
+              });
+            }
+            return message;
+          },
+        },
+        { id: 'fanout-context-capture' }
+      );
+
+      const publisherBehavior = defineBehavior<ActorMessage>()
+        .onMessage(({ message }) => {
+          if (message.type === 'EMIT_EVENT') {
+            return {
+              emit: [{ type: 'EMITTED_EVENT', data: 'hello' }],
+            };
+          }
+        })
+        .build();
+      const subscriberBehavior = defineBehavior<ActorMessage>()
+        .onMessage(() => {})
+        .build();
+
+      const publisherPid = await system.spawn(publisherBehavior, { id: 'publisher' });
+      const subscriberAPid = await system.spawn(subscriberBehavior, { id: 'subscriber-a' });
+      const subscriberBPid = await system.spawn(subscriberBehavior, { id: 'subscriber-b' });
+
+      await system.subscribe(publisherPid, {
+        subscribers: [subscriberAPid, subscriberBPid],
+        events: ['EMITTED_EVENT'],
+      });
+
+      await publisherPid.send({ type: 'EMIT_EVENT' });
+      await system.flush();
+
+      expect(received).toHaveLength(2);
+      expect(new Set(received.map((record) => record.actorPath))).toEqual(
+        new Set([subscriberAPid.address, subscriberBPid.address])
+      );
+      expect(received[0]?.context).not.toBe(received[1]?.context);
+      expect(received[0]?.message).not.toBe(received[1]?.message);
+    } finally {
+      await system.stop();
+    }
+  });
+
   it('should continue draining an actor mailbox after the processing batch limit', async () => {
     const system = new ActorSystemImpl({ nodeAddress: 'test-node' });
     await system.start();

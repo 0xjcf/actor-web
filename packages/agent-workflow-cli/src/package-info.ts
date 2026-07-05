@@ -29,19 +29,23 @@ let cachedPackageInfo: PackageInfo | null = null;
  * Load package.json asynchronously using ES module file system access
  */
 export async function loadPackageInfo(): Promise<PackageInfo> {
+  const packageData = await readPackageInfo();
+
+  // Validate required fields
+  if (!packageData.name || !packageData.version || !packageData.description) {
+    raiseAdapterFailure(
+      'Invalid package.json: missing required fields (name, version, description)'
+    );
+  }
+
+  return packageData;
+}
+
+async function readPackageInfo(): Promise<PackageInfo> {
   try {
     const packagePath = resolve(__dirname, '../package.json');
     const packageText = await readFile(packagePath, 'utf-8');
-    const packageData = JSON.parse(packageText) as PackageInfo;
-
-    // Validate required fields
-    if (!packageData.name || !packageData.version || !packageData.description) {
-      raiseAdapterFailure(
-        'Invalid package.json: missing required fields (name, version, description)'
-      );
-    }
-
-    return packageData;
+    return JSON.parse(packageText) as PackageInfo;
   } catch (error) {
     if (error instanceof Error) {
       raiseAdapterFailure(`Failed to load package.json: ${error.message}`, { cause: error });

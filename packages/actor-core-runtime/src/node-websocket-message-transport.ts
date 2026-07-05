@@ -768,7 +768,10 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
             error instanceof Error ? error.message : 'Runtime peer connection failed.',
         });
       }
-      raiseAdapterFailure(error instanceof Error ? error : new Error(String(error)));
+      if (error instanceof Error) {
+        raiseAdapterFailure(error);
+      }
+      raiseAdapterFailure(String(error), { cause: error });
     }
   }
 

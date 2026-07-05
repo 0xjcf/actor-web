@@ -23,3 +23,9 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Relaxing a type-check during a migration can silently loosen a semantic contract.** `_sender` validation was flipped from `typeof === 'object'` to `typeof === 'string' && length > 0`, which accepts `"not-an-address"`; the architect's intent was an address-*shape* ("string/`Address.from`") check. When a branded-string migration relaxes a guard, preserve the SHAPE validation (a non-throwing `isActorAddressShape`), not just the primitive type.
 
 - **Pre-existing latent bug surfaced (not fixed here, follow-up):** `create-actor-ref.ts` stores `parent` as a string id (`parse(this.address).id`) while the constructor/`get parent()` expose it as an `ActorRef` — a string masquerading as a ref. `main` already did this (`this.address.id`); the migration preserved it, so it's out of scope for the address PR but worth a dedicated fix.
+
+## PR #37 — runtime correctness hardening babysit (2026-07-05, single-agent)
+
+- **CodeRabbit top-level AI-agent prompts can contain actionable outside-diff and nitpick items that do not appear as unresolved inline threads.** This review had four unresolved threads, but the "Prompt for all review comments with AI agents" block also contained two outside-diff findings and two nitpicks that were valid and fixable. Babysit triage should parse the top-level review body and not stop at unresolved review threads.
+
+- **Runtime contexts that carry live `ActorRef`s need an explicit serialized projection.** Component actors legitimately preserve live dependency refs inside in-memory handler context, but snapshot `toJSON()` and remote projections must omit those refs. When adding live refs to context, add a focused serialization test that proves the runtime context still has the ref while the durable JSON projection does not.

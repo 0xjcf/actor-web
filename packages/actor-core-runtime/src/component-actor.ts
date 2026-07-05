@@ -220,6 +220,35 @@ export interface ComponentActorContext {
   readonly isDestroyed: boolean;
 }
 
+type ComponentActorSnapshotContext = Pick<
+  ComponentActorContext,
+  'messageCount' | 'renderCount' | 'lastRender' | 'mountTime' | 'isDestroyed' | 'isMounted'
+>;
+
+function toComponentActorSnapshotContext(
+  context: Partial<ComponentActorContext>
+): ComponentActorSnapshotContext {
+  return {
+    messageCount: context.messageCount ?? 0,
+    renderCount: context.renderCount ?? 0,
+    lastRender: context.lastRender ?? 0,
+    mountTime: context.mountTime ?? 0,
+    isDestroyed: context.isDestroyed ?? false,
+    isMounted: context.isMounted ?? false,
+  };
+}
+
+function withComponentActorSnapshotSerialization<TContext extends ComponentActorContext>(
+  context: TContext
+): TContext {
+  Object.defineProperty(context, 'toJSON', {
+    configurable: true,
+    enumerable: false,
+    value: () => toComponentActorSnapshotContext(context),
+  });
+  return context;
+}
+
 /**
  * Component Actor Configuration
  */
@@ -382,7 +411,7 @@ export function createComponentActorBehavior(
 
       if (context.isDestroyed) {
         log.warn('Message received by destroyed component actor', { type: message.type });
-        return { context };
+        return { context: withComponentActorSnapshotSerialization(context) };
       }
 
       // Update message count and create new context
@@ -422,7 +451,7 @@ export function createComponentActorBehavior(
           log.warn('Unknown message type received by component actor', {
             type: (message as { type: string }).type,
           });
-          return { context: newContext };
+          return { context: withComponentActorSnapshotSerialization(newContext) };
       }
     },
 
@@ -508,7 +537,7 @@ async function processFanOutResult(
   }
 
   return {
-    context: resultContext as ComponentActorContext,
+    context: withComponentActorSnapshotSerialization(resultContext as ComponentActorContext),
     emit: emitMessages,
   };
 }
@@ -573,7 +602,7 @@ async function handleMountComponent(
   const pendingBridgeMessages = xstateBridge.triggerPendingEmission();
 
   return {
-    context: newContext,
+    context: withComponentActorSnapshotSerialization(newContext),
     emit: [
       {
         type: 'COMPONENT_MOUNTED',
@@ -614,7 +643,7 @@ async function handleUnmountComponent(
   };
 
   return {
-    context: newContext,
+    context: withComponentActorSnapshotSerialization(newContext),
     emit: [
       {
         type: 'COMPONENT_UNMOUNTED',
@@ -635,7 +664,7 @@ async function handleDOMEvent(
 ): Promise<{ context: ComponentActorContext; emit?: Message[] }> {
   if (!context.xstateActor || !context.isMounted) {
     log.warn('DOM event received but component not mounted');
-    return { context };
+    return { context: withComponentActorSnapshotSerialization(context) };
   }
 
   log.debug('Processing DOM event', {
@@ -709,7 +738,7 @@ async function handleDOMEvent(
   ];
 
   return {
-    context: renderResult.context,
+    context: withComponentActorSnapshotSerialization(renderResult.context),
     emit: emitMessages,
   };
 }
@@ -721,7 +750,7 @@ async function handleRender(
   context: ComponentActorContext
 ): Promise<{ context: ComponentActorContext; emit?: Message[] }> {
   if (!context.element || !context.template || !context.isMounted) {
-    return { context };
+    return { context: withComponentActorSnapshotSerialization(context) };
   }
 
   try {
@@ -751,7 +780,7 @@ async function handleRender(
     });
 
     return {
-      context: newContext,
+      context: withComponentActorSnapshotSerialization(newContext),
       emit: [
         {
           type: 'COMPONENT_RENDERED',
@@ -768,7 +797,7 @@ async function handleRender(
     });
 
     return {
-      context,
+      context: withComponentActorSnapshotSerialization(context),
       emit: [
         {
           type: 'COMPONENT_RENDER_ERROR',
@@ -832,7 +861,7 @@ async function handleUpdateDependencies(
     dependencies: message.dependencies,
   };
 
-  return { context: newContext };
+  return { context: withComponentActorSnapshotSerialization(newContext) };
 }
 
 // ============================================================================

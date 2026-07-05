@@ -107,6 +107,50 @@ describe('ComponentActor dependency updates', () => {
       backend
     );
   });
+
+  it('keeps ActorRef dependencies out of serialized component snapshots', async () => {
+    const behavior = createComponentActorBehavior({
+      machine: dependencyMachine,
+      template: () => '',
+    });
+    const backend = createDependencyRef('actor://test-node/backend');
+
+    const updateResult = await behavior.onMessage({
+      message: {
+        type: 'UPDATE_DEPENDENCIES',
+        dependencies: { backend },
+      },
+      actor: {
+        getSnapshot: () => ({
+          context: {
+            messageCount: 0,
+            renderCount: 0,
+            lastRender: 0,
+            mountTime: 0,
+            isDestroyed: false,
+            isMounted: false,
+          },
+        }),
+      },
+      tools: {},
+    } as Parameters<typeof behavior.onMessage>[0]);
+
+    const updatedContext = (updateResult as { context: ComponentActorContext }).context;
+    const serializedContext = (
+      updatedContext as ComponentActorContext & { toJSON(): unknown }
+    ).toJSON();
+
+    expect(updatedContext.dependencies.backend).toBe(backend);
+    expect(serializedContext).toEqual({
+      messageCount: 1,
+      renderCount: 0,
+      lastRender: 0,
+      mountTime: 0,
+      isDestroyed: false,
+      isMounted: false,
+    });
+    expect(serializedContext).not.toHaveProperty('dependencies');
+  });
 });
 
 describe.skip('ComponentActor - Pure Actor Model Integration', () => {

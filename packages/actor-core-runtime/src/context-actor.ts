@@ -12,6 +12,19 @@ import type { ActorSnapshot, ActorStatus, Message } from './types.js';
 
 const log = Logger.namespace('CONTEXT_ACTOR');
 
+function serializeContext(context: unknown): unknown {
+  if (
+    context &&
+    typeof context === 'object' &&
+    'toJSON' in context &&
+    typeof context.toJSON === 'function'
+  ) {
+    return context.toJSON();
+  }
+
+  return context;
+}
+
 /**
  * Lightweight context-based actor implementation.
  * Provides the same interface as XState actors but manages context directly.
@@ -47,7 +60,7 @@ export class ContextActor<TContext = Record<string, unknown>> implements ActorIn
       matches: (state: string) => state === 'active',
       can: () => true,
       hasTag: () => false,
-      toJSON: () => ({ value: 'active', context: this.context }),
+      toJSON: () => ({ value: 'active', context: serializeContext(this.context) }),
     };
   }
 
