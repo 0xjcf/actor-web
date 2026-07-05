@@ -59,7 +59,9 @@
     "utils:commit-sample": "./scripts/commit-config.sh create-sample",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "pnpm build && changeset publish"
+    "release": "pnpm release:stable",
+    "release:stable": "node scripts/release.mjs --channel stable",
+    "release:beta": "node scripts/release.mjs --channel beta"
   },
   "keywords": [
     "actor-model",
