@@ -37,13 +37,23 @@ MERGE: { target: 'resolved', actions: emit(() => ({ type: 'OUTCOME_RESOLVED', ou
 
 ## Reacting to another actor's events
 
-An actor becomes a subscriber by being wired to a publisher. Today that wiring
-is explicit:
+An actor becomes a subscriber by being wired to a publisher. Dynamic wiring is
+explicit:
 
 ```ts
 // Deliver `compare`'s OUTCOME_RESOLVED events into the pipeline actor.
 await system.subscribe(compareRef, {
   subscriber: pipelineRef,
+  events: ['OUTCOME_RESOLVED'],
+});
+```
+
+For imperative fan-out, pass a batch of subscriber refs. The returned
+unsubscribe removes every subscriber registered by that call:
+
+```ts
+await system.subscribe(compareRef, {
+  subscribers: [pipelineRef, actorSystemRef],
   events: ['OUTCOME_RESOLVED'],
 });
 ```

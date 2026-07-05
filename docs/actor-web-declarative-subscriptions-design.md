@@ -10,11 +10,10 @@ The canonical reaction primitive already exists: a handler returns
 `{ emit: [...] }`, and the runtime enqueues those events directly into the
 mailbox of any registered subscriber actor
 (`emitEventToSubscribers`, `actor-system-impl.ts:2408`). What is missing is an
-ergonomic, durable, type-checked way to *declare who listens to whom*. Today the
-only path is the imperative, singular `system.subscribe(publisher, { subscriber,
-events })` (`actor-system.ts:413`), which is under-documented, lost on system
-restart, silently non-idempotent, and repetitive when fanning one event out to
-several actors.
+ergonomic, durable, type-checked way to *declare who listens to whom*. Dynamic
+wiring uses the imperative `system.subscribe(publisher, { subscriber, events })`
+or batch `system.subscribe(publisher, { subscribers, events })` path, which
+remains under-documented, lost on system restart, and silently non-idempotent.
 
 This design adds:
 
@@ -54,14 +53,14 @@ The remaining friction is entirely in *declaring the wiring*.
 - **Subscription API**: declarative topology `subscriptions` **and** a batch
   `subscribers[]` overload on `system.subscribe`.
 - **EventBrokerActor**: delete it. `AutoPublishingRegistry` is canonical.
-- **Process**: design doc first (this document), then FAS planning. No code yet.
+- **Process**: design doc first (this document), then FAS planning.
 
 ## Current state (verified)
 
 | Fact | Evidence |
 |---|---|
 | `emit` routes via `AutoPublishingRegistry`, direct mailbox enqueue, single-node | `actor-system-impl.ts:2408-2463` |
-| `system.subscribe(publisher, { subscriber, events? })` is singular, async (no I/O), returns async unsubscribe | `actor-system.ts:413`, impl `actor-system-impl.ts:3827` |
+| `system.subscribe(publisher, { subscriber, events? })` and `system.subscribe(publisher, { subscribers, events? })` are async (no I/O) and return async unsubscribe | `actor-system.ts`, impl `actor-system-impl.ts` |
 | Registry keyed by `publisherId` → `subscribers` map keyed by `subscriberId`; per-subscriber `eventTypes[]` filter | `auto-publishing.ts:44,51,231` |
 | Re-subscribing the same (publisher, subscriber) **overwrites** — no dedup | `auto-publishing.ts:231` |
 | `events: []` means "all events" | `auto-publishing.ts:298-303` |
@@ -129,7 +128,7 @@ The imperative escape hatch for dynamic wiring, sharing the registry path:
 ```ts
 // existing (kept)
 subscribe(publisher, { subscriber: a, events });
-// new overload
+// batch overload
 subscribe(publisher, { subscribers: [a, b], events });
 ```
 
@@ -220,7 +219,7 @@ System handle access for any imperative wiring needed during the spike:
 
 ## Gap backlog
 
-1. **Batch fan-out** — `subscribers[]` overload. Small.
+1. **Batch fan-out** — `subscribers[]` overload. Done.
 2. **Declarative `subscriptions`** — DX + restart durability. Primary.
 3. **Typed events** — derive from publisher emitted-event union. Medium.
 4. **Canonical mechanism** — delete `EventBrokerActor`. Small, but grep-verify.
@@ -234,7 +233,7 @@ review).
 
 **actor-web (framework):**
 
-- T1. Add `subscribers[]` overload to `system.subscribe` + tests
+- T1. Add `subscribers[]` overload to `system.subscribe` + tests. Done.
   (`auto-publishing`, `event-emission`). Lowest risk, no topology change.
 - T2. Add `subscriptions` to `ActorWebTopologyInput` and
   `defineActorWebTopology`; wire on node start, unwire on `stop()`; type-check

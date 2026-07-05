@@ -33,12 +33,23 @@ Subscriptions design T1. Add a subscribers: ActorRef[] batch overload to system.
 - packages/actor-core-runtime/src/actor-system-impl.ts
 - packages/actor-core-runtime/src/auto-publishing.ts
 - docs/site/concepts/subscriptions-and-events.md
+- packages/actor-core-runtime/src/unit/message-delivery.test.ts
 
 ## Scope Amendments
 
 - Type: scope-refresh
 - Added at: 2026-06-08
 - Added paths: docs/site/concepts/subscriptions-and-events.md
+
+- Type: scope-promotion
+- Added at: 2026-07-03T18:52:00Z
+- Trigger: TDD acceptance requires direct test coverage
+- Reason: Promote the existing message delivery unit test because it exercises system.subscribe event delivery and can capture the batch subscribers overload.
+- Added paths: packages/actor-core-runtime/src/unit/message-delivery.test.ts
+- Evidence source: repo-search
+- Evidence: repo-search | packages/actor-core-runtime/src/unit/message-delivery.test.ts | Existing tests cover singular system.subscribe and emitted-event delivery.
+- Accuracy signal: rg found direct system.subscribe coverage in message-delivery.test.ts.
+- Follow-up needed: None.
 
 ## Implementation plan
 

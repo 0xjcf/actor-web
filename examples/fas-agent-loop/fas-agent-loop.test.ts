@@ -1,4 +1,10 @@
+import { collectLatticeRegistrations, collectLatticeSubscriptions } from '@actor-web/lattice';
+import type { ActorToolExecutor } from '@actor-web/runtime';
+import { defineBehavior } from '@actor-web/runtime';
+import { startActorWebNode } from '@actor-web/runtime/browser';
+import { actor, defineActorWebTopology, node, tool } from '@actor-web/runtime/topology';
 import { afterEach, describe, expect, it } from 'vitest';
+import { describeFasCoordinationModes, summarizeLatticeActivation } from './fas-behaviors';
 import {
   type FasAgentLoopExampleRuntime,
   type SubmitFasTaskInput,
@@ -10,6 +16,25 @@ const TEST_TASK: SubmitFasTaskInput = {
   taskId: 'task-1001',
   title: 'Implement deterministic FAS loop',
   prompt: 'Build a headless Actor-Web workflow loop with fake tools.',
+};
+
+type AsyncProbeInput =
+  | { readonly mode: 'delay'; readonly value: string }
+  | { readonly mode: 'hang' };
+type AsyncProbeResult = {
+  readonly value: string;
+  readonly signalProvided: boolean;
+};
+type AsyncProbeCommand =
+  | { readonly type: 'RUN_ASYNC_TOOL'; readonly value: string }
+  | { readonly type: 'RUN_HUNG_TOOL' }
+  | { readonly type: 'PING' };
+type AsyncProbeReply =
+  | AsyncProbeResult
+  | { readonly code: string | undefined }
+  | { readonly pong: true };
+type AsyncProbeTools = {
+  readonly 'fas.async_probe': ActorToolExecutor<AsyncProbeInput, AsyncProbeResult>;
 };
 
 async function waitFor(
@@ -24,6 +49,47 @@ async function waitFor(
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error(message);
+}
+
+function createAsyncProbeBehavior() {
+  return defineBehavior<AsyncProbeCommand, AsyncProbeReply>()
+    .onMessage(async ({ message, tools }) => {
+      const executeWithOptions = tools.execute as <TOutput, TInput>(
+        name: string,
+        input: TInput,
+        options: { readonly timeoutMs: number }
+      ) => Promise<TOutput>;
+
+      if (message.type === 'PING') {
+        return { reply: { pong: true } };
+      }
+
+      if (message.type === 'RUN_ASYNC_TOOL') {
+        const result = await executeWithOptions<AsyncProbeResult, AsyncProbeInput>(
+          'fas.async_probe',
+          { mode: 'delay', value: message.value },
+          { timeoutMs: 250 }
+        );
+        return { reply: result };
+      }
+
+      try {
+        await executeWithOptions<AsyncProbeResult, AsyncProbeInput>(
+          'fas.async_probe',
+          { mode: 'hang' },
+          { timeoutMs: 25 }
+        );
+      } catch (error) {
+        return {
+          reply: {
+            code: (error as { readonly code?: string }).code,
+          },
+        };
+      }
+
+      throw new Error('Expected hung async probe tool to time out.');
+    })
+    .build();
 }
 
 describe('fas-agent-loop example', () => {
@@ -55,6 +121,145 @@ describe('fas-agent-loop example', () => {
       'taskBoard',
       'taskRun',
     ]);
+  });
+
+  it('declares lattice coordination actors beside the orchestration baseline', () => {
+    const registrations = collectLatticeRegistrations(fasAgentLoop);
+    const dependencyById = Object.fromEntries(
+      registrations.map((registration) => [registration.dependencyId, registration])
+    );
+
+    expect(fasAgentLoop.actors.workspace.address).toBe(
+      'actor://fas-coordinator-runtime/fas-workspace-lattice'
+    );
+    expect(fasAgentLoop.supervisors.latticeEnvironment.children).toEqual([
+      'workspace',
+      'hybridCoordinator',
+    ]);
+    expect(fasAgentLoop.supervisors.latticeAgents.children).toEqual([
+      'latticePlanner',
+      'latticeImplementer',
+      'latticeVerifier',
+      'latticeReviewer',
+    ]);
+    expect(dependencyById['planner-observes-task-brief']).toMatchObject({
+      actorKey: 'latticePlanner',
+      lattice: 'workspace',
+      mode: 'once',
+      requires: [{ type: 'task.brief' }],
+    });
+    expect(dependencyById['implementer-observes-execution-plan']).toMatchObject({
+      actorKey: 'latticeImplementer',
+      lattice: 'workspace',
+      mode: 'once',
+      requires: [{ type: 'execution.plan' }],
+    });
+    expect(dependencyById['implementer-observes-review-findings']).toMatchObject({
+      actorKey: 'latticeImplementer',
+      lattice: 'workspace',
+      mode: 'everyVersion',
+      requires: [{ type: 'review.findings' }],
+    });
+    expect(dependencyById['verifier-observes-implementation-patch']).toMatchObject({
+      actorKey: 'latticeVerifier',
+      lattice: 'workspace',
+      mode: 'everyVersion',
+      requires: [{ type: 'implementation.patch' }],
+    });
+    expect(dependencyById['reviewer-observes-verification-result']).toMatchObject({
+      actorKey: 'latticeReviewer',
+      lattice: 'workspace',
+      mode: 'everyVersion',
+      requires: [{ type: 'verification.result' }],
+    });
+    expect(dependencyById['hybrid-coordinator-observes-review-approved']).toMatchObject({
+      actorKey: 'hybridCoordinator',
+      lattice: 'workspace',
+      mode: 'once',
+      requires: [{ type: 'review.approved' }],
+    });
+    expect(collectLatticeSubscriptions(fasAgentLoop)).toEqual([
+      {
+        from: 'workspace',
+        to: 'latticePlanner',
+        events: ['DEPENDENCY_SATISFIED', 'ACTIVATION_TIMED_OUT'],
+      },
+      {
+        from: 'workspace',
+        to: 'latticeImplementer',
+        events: ['DEPENDENCY_SATISFIED', 'ACTIVATION_TIMED_OUT'],
+      },
+      {
+        from: 'workspace',
+        to: 'latticeVerifier',
+        events: ['DEPENDENCY_SATISFIED', 'ACTIVATION_TIMED_OUT'],
+      },
+      {
+        from: 'workspace',
+        to: 'latticeReviewer',
+        events: ['DEPENDENCY_SATISFIED', 'ACTIVATION_TIMED_OUT'],
+      },
+      {
+        from: 'workspace',
+        to: 'hybridCoordinator',
+        events: ['DEPENDENCY_SATISFIED', 'ACTIVATION_TIMED_OUT'],
+      },
+    ]);
+  });
+
+  it('documents the three FAS coordination modes and the review rework loop', () => {
+    const modes = describeFasCoordinationModes();
+
+    expect(modes.map((mode) => mode.mode)).toEqual(['orchestration', 'lattice', 'hybrid']);
+    expect(modes.find((mode) => mode.mode === 'orchestration')).toMatchObject({
+      coordinator: 'Coordinator drives planner, implementer, verifier, and reviewer with ask/send.',
+      activation: ['TASK_SUBMITTED', 'PLAN_CREATED', 'PATCH_CREATED', 'REVIEW_COMPLETED'],
+    });
+    expect(modes.find((mode) => mode.mode === 'lattice')).toMatchObject({
+      coordinator: 'No direct agent wiring; agents observe workspace artifacts.',
+      artifacts: [
+        'task.brief',
+        'execution.plan',
+        'implementation.patch',
+        'verification.result',
+        'review.approved',
+      ],
+      rework: 'review.findings everyVersion reactivates the implementer.',
+    });
+    expect(modes.find((mode) => mode.mode === 'hybrid')).toMatchObject({
+      coordinator:
+        'Coordinator publishes task.brief, observes review.approved, and enforces budget.',
+      activation: ['PUBLISH_ARTIFACT task.brief', 'DEPENDENCY_SATISFIED review.approved'],
+    });
+
+    expect(
+      summarizeLatticeActivation('implementer', {
+        type: 'DEPENDENCY_SATISFIED',
+        activationId: 'activation:implementer-observes-review-findings:review.findings@2',
+        dependencyId: 'implementer-observes-review-findings',
+        actorKey: 'latticeImplementer',
+        lattice: 'workspace',
+        satisfactionKey: 'review.findings@2',
+        artifacts: [
+          {
+            artifactId: 'artifact-review-findings-v2',
+            type: 'review.findings',
+            key: 'task-1001',
+            version: 2,
+            payload: { findings: ['narrow the patch'] },
+            producer: 'latticeReviewer',
+            publishedAt: 100,
+            contentHash: 'hash-review-findings-v2',
+          },
+        ],
+      })
+    ).toEqual({
+      activationId: 'activation:implementer-observes-review-findings:review.findings@2',
+      artifactTypes: ['review.findings'],
+      label: 'Review findings observed',
+      role: 'implementer',
+      satisfactionKey: 'review.findings@2',
+    });
   });
 
   it('runs a deterministic FAS workflow through completion', async () => {
@@ -101,6 +306,71 @@ describe('fas-agent-loop example', () => {
     ]);
     expect(runtime.taskBoard.getSnapshot().context.completedCount).toBe(1);
     expect(runtime.tools.state.invocations.map((call) => call.tool)).toContain('memory.write');
+  });
+
+  it('keeps a spawned actor responsive after a hung async tool times out', async () => {
+    const asyncProbeActor = actor.withTools<AsyncProbeTools>()({
+      id: 'fas-async-probe',
+      node: 'worker',
+      tools: ['fas.async_probe'] as const,
+      behavior: createAsyncProbeBehavior,
+    });
+    const topology = defineActorWebTopology({
+      nodes: {
+        worker: node('fas-async-tool-worker'),
+      },
+      tools: [tool('fas.async_probe')],
+      actors: {
+        asyncProbe: asyncProbeActor,
+      },
+    });
+    let delayedToolRan = false;
+    let hungToolSignal: AbortSignal | undefined;
+    let hungToolAborted = false;
+    const asyncProbeTools: AsyncProbeTools = {
+      'fas.async_probe': async (input, context) => {
+        if (input.mode === 'delay') {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          delayedToolRan = true;
+          return {
+            value: `async:${input.value}`,
+            signalProvided: context.signal instanceof AbortSignal,
+          };
+        }
+
+        hungToolSignal = context.signal;
+        context.signal.addEventListener('abort', () => {
+          hungToolAborted = true;
+        });
+        return new Promise<AsyncProbeResult>(() => {});
+      },
+    };
+    const worker = await startActorWebNode(topology, {
+      node: 'worker',
+      tools: asyncProbeTools,
+    });
+
+    try {
+      const probe = worker.requireActor('asyncProbe');
+
+      await expect(
+        probe.ask<AsyncProbeReply>({ type: 'RUN_ASYNC_TOOL', value: 'fas' }, 500)
+      ).resolves.toEqual({
+        value: 'async:fas',
+        signalProvided: true,
+      });
+      await expect(probe.ask<AsyncProbeReply>({ type: 'RUN_HUNG_TOOL' }, 500)).resolves.toEqual({
+        code: 'ACTOR_TOOL_TIMEOUT',
+      });
+      await expect(probe.ask<AsyncProbeReply>({ type: 'PING' }, 500)).resolves.toEqual({
+        pong: true,
+      });
+      expect(delayedToolRan).toBe(true);
+      expect(hungToolSignal).toBeInstanceOf(AbortSignal);
+      expect(hungToolAborted).toBe(true);
+    } finally {
+      await worker.stop();
+    }
   });
 
   it('projects the task board through the coordinator gateway source', async () => {

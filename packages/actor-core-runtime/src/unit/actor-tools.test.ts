@@ -14,13 +14,17 @@ type ScanTools = {
 
 describe('ActorToolbox', () => {
   it('executes typed tool ports with runtime context', async () => {
+    let observedSignal: AbortSignal | undefined;
     const scan = vi.fn<ScanTools['provider.scan.verify']>((input, context) => ({
       accepted: true,
       label: `${context.actorId}:${input.label}`,
     }));
     const toolbox = createActorToolbox<ScanTools>(
       {
-        'provider.scan.verify': scan,
+        'provider.scan.verify': (input, context) => {
+          observedSignal = (context as { readonly signal?: AbortSignal }).signal;
+          return scan(input, context);
+        },
         'provider.secret': () => 'hidden',
       },
       {
@@ -38,13 +42,80 @@ describe('ActorToolbox', () => {
     });
     expect(scan).toHaveBeenCalledWith(
       { label: 'HVAC' },
+      expect.objectContaining({
+        actorId: 'actor://worker/scanner',
+        nodeAddress: 'worker',
+      })
+    );
+    expect(observedSignal).toBeInstanceOf(AbortSignal);
+    expect(observedSignal?.aborted).toBe(false);
+    expect(toolbox.list()).toEqual(['provider.scan.verify']);
+    expect(toolbox.has('provider.secret')).toBe(false);
+  });
+
+  it('times out slow tool calls with a typed error and abort signal', async () => {
+    let observedSignal: AbortSignal | undefined;
+    const toolbox = createActorToolbox<ScanTools>(
+      {
+        'provider.scan.verify': async (_input, context) => {
+          observedSignal = (context as { readonly signal?: AbortSignal }).signal;
+          return new Promise<ScanResult>((resolve) => {
+            setTimeout(() => {
+              resolve({ accepted: true, label: 'late' });
+            }, 50);
+          });
+        },
+        'provider.secret': () => 'hidden',
+      },
       {
         actorId: 'actor://worker/scanner',
         nodeAddress: 'worker',
-      }
+      },
+      ['provider.scan.verify']
     );
-    expect(toolbox.list()).toEqual(['provider.scan.verify']);
-    expect(toolbox.has('provider.secret')).toBe(false);
+    const executeWithOptions = toolbox.execute as (
+      name: 'provider.scan.verify',
+      input: ScanInput,
+      options: { readonly timeoutMs: number }
+    ) => Promise<ScanResult>;
+
+    await expect(
+      executeWithOptions('provider.scan.verify', { label: 'slow' }, { timeoutMs: 5 })
+    ).rejects.toMatchObject({
+      name: 'ActorToolTimeoutError',
+      code: 'ACTOR_TOOL_TIMEOUT',
+      toolName: 'provider.scan.verify',
+      timeoutMs: 5,
+      actorId: 'actor://worker/scanner',
+      nodeAddress: 'worker',
+    });
+    expect(observedSignal).toBeInstanceOf(AbortSignal);
+    expect(observedSignal?.aborted).toBe(true);
+  });
+
+  it('uses a toolbox default timeout when a call omits timeout options', async () => {
+    const toolbox = createActorToolbox<ScanTools>(
+      {
+        'provider.scan.verify': async () =>
+          new Promise<ScanResult>((resolve) => {
+            setTimeout(() => {
+              resolve({ accepted: true, label: 'late' });
+            }, 50);
+          }),
+        'provider.secret': () => 'hidden',
+      },
+      {
+        actorId: 'actor://worker/scanner',
+        nodeAddress: 'worker',
+      },
+      ['provider.scan.verify'],
+      { defaultTimeoutMs: 5 }
+    );
+
+    await expect(toolbox.execute('provider.scan.verify', { label: 'slow' })).rejects.toMatchObject({
+      code: 'ACTOR_TOOL_TIMEOUT',
+      timeoutMs: 5,
+    });
   });
 
   it('rejects unassigned registered tools with the unavailable-tool error', async () => {

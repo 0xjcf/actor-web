@@ -69,6 +69,7 @@ interface CorePeerView {
 }
 
 interface CoreView {
+  maxFrameBytes: number;
   peers: Map<string, CorePeerView>;
   handleInboundPayload(
     sourceNodeAddress: string,
@@ -105,6 +106,16 @@ function deliverInbound(
 describe('NodeWebSocketMessageTransport', () => {
   afterEach(async () => {
     await Promise.allSettled(transports.splice(0).map((transport) => transport.stop()));
+  });
+
+  it('passes maxFrameBytes into the shared transport core', () => {
+    const transport = createNodeWebSocketMessageTransport({
+      nodeAddress: 'node-a',
+      maxFrameBytes: 128,
+    });
+    transports.push(transport);
+
+    expect(coreOf(transport).maxFrameBytes).toBe(128);
   });
 
   it('starts and stops a localhost listener on an ephemeral port', async () => {

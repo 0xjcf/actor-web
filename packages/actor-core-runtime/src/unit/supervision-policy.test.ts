@@ -22,6 +22,10 @@ import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } fr
 import { createMachine } from 'xstate';
 import type { ActorAddress, ActorSupervisionPolicy } from '../actor-system.js';
 import { ActorSystemImpl, resolveSupervisionDecision } from '../actor-system-impl.js';
+import type {
+  ActorSupervisionPolicy as PublicActorSupervisionPolicy,
+  ActorSupervisionStrategy as PublicActorSupervisionStrategy,
+} from '../index.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
 type SystemEventRecord = {
@@ -150,9 +154,11 @@ describe('per-actor supervision policies (behavioral)', () => {
     // restart teardown plus exactly one reason-coded permanent stop — the
     // permanent stop must not double-emit.
     const stoppedEvents = eventsFor(emitSystemEventSpy, 'actorStopped', path);
-    expect(
-      stoppedEvents.filter((event) => event.data?.reason === 'max-restarts-exceeded')
-    ).toHaveLength(1);
+    const maxRestartsEvents = stoppedEvents.filter(
+      (event) => event.data?.reason === 'max-restarts-exceeded'
+    );
+    expect(maxRestartsEvents).toHaveLength(1);
+    expect(maxRestartsEvents[0]?.data?.error).toBe('induced failure');
     expect(stoppedEvents).toHaveLength(2);
     await expect(system.lookup(path)).resolves.toBeFalsy();
   }, 30_000);
@@ -180,8 +186,38 @@ describe('per-actor supervision policies (behavioral)', () => {
     const stoppedEvents = eventsFor(emitSystemEventSpy, 'actorStopped', path);
     expect(stoppedEvents).toHaveLength(1);
     expect(stoppedEvents[0]?.data?.reason).toBe('supervision-stop');
+    expect(stoppedEvents[0]?.data?.error).toBe('induced failure');
     await expect(system.lookup(path)).resolves.toBeFalsy();
   }, 15_000);
+
+  it('emits a distinct actorRespawnFailed event when restart respawn throws', async () => {
+    const ref = await system.spawn(createCrashableCounter(), {
+      id: 'respawn-fails',
+      supervision: { strategy: 'restart', maxRestarts: 2, withinMs: 60_000 },
+    });
+    const path = ref.address;
+    const spawnSpy = vi
+      // biome-ignore lint/suspicious/noExplicitAny: forcing the private restart path to observe respawn failure
+      .spyOn(system as any, 'spawn')
+      .mockRejectedValueOnce(new Error('respawn exploded'));
+
+    try {
+      await ref.send({ type: 'BOOM' });
+      const failed = await waitForSystemEvent(
+        emitSystemEventSpy,
+        (event) => event.eventType === 'actorRespawnFailed' && event.data?.address === path,
+        'respawn failure event for respawn-fails',
+        2000
+      );
+
+      expect(failed.data?.reason).toBe('respawn-failed');
+      expect(failed.data?.error).toBe('respawn exploded');
+      expect(failed.data?.restartAttempt).toBe(1);
+      expect(eventsFor(emitSystemEventSpy, 'actorStopped', path)).toHaveLength(1);
+    } finally {
+      spawnSpy.mockRestore();
+    }
+  }, 10_000);
 
   it('escalate policy stops the actor and emits a distinct escalation event', async () => {
     const ref = await system.spawn(createCrashableCounter(), {
@@ -348,6 +384,13 @@ describe('per-actor supervision policies (behavioral)', () => {
       recordedEvents(emitSystemEventSpy).some((event) => event.eventType === 'actorSpawned')
     ).toBe(true);
   }, 20_000);
+
+  it('exports supervision policy types from the public runtime index', () => {
+    const strategy: PublicActorSupervisionStrategy = 'restart';
+    const policy: PublicActorSupervisionPolicy = { strategy, maxRestarts: 1, withinMs: 1000 };
+
+    expect(policy.strategy).toBe('restart');
+  });
 });
 
 describe('resolveSupervisionDecision (pure decision core)', () => {

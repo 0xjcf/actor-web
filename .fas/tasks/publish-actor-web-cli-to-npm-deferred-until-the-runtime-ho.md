@@ -1,4 +1,4 @@
-# Publish @actor-web/cli to npm (deferred until the runtime ho
+# Publish @actor-web/cli to npm (deferred until the runtime host has a real surface)
 
 ## Source
 

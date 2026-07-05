@@ -1,6 +1,6 @@
 # @actor-web/runtime
 
-> **Pure actor model runtime for JavaScript/TypeScript** — location-transparent actors, supervision trees, and message-only communication, inspired by Erlang/OTP.
+> **Pure actor model runtime for JavaScript/TypeScript** — location-transparent actors across local and directly connected runtime nodes, supervision trees, and message-only communication, inspired by Erlang/OTP. Dynamic membership and production multi-machine transport remain roadmap work; see the [external transport status](https://github.com/0xjcf/actor-web/blob/main/docs/spikes/actor-web-external-transport-design.md).
 
 **📚 Documentation: [0xjcf.github.io/actor-web](https://0xjcf.github.io/actor-web/)**
 
@@ -90,6 +90,10 @@ This package is the runtime for the
 
 - [`@actor-web/testing`](https://www.npmjs.com/package/@actor-web/testing) —
   machine analysis and test helpers.
+- [`@actor-web/agent`](https://www.npmjs.com/package/@actor-web/agent) — LLM
+  tool and agent-loop utilities for runtime hosts.
+- [`@actor-web/lattice`](https://www.npmjs.com/package/@actor-web/lattice) —
+  artifact and dependency coordination for stigmergic workflows.
 
 ## License
 

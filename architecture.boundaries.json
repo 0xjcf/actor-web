@@ -129,6 +129,7 @@
         "packages/actor-core-runtime/src/plan-interpreter.ts",
         "packages/actor-core-runtime/src/pure-xstate-utilities.ts",
         "packages/actor-core-runtime/src/utils/factories.ts",
+        "packages/actor-agent/src",
         "packages/agent-workflow-cli/src"
       ]
     },

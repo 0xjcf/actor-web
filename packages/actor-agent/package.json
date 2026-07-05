@@ -1,0 +1,66 @@
+{
+  "name": "@actor-web/agent",
+  "version": "0.2.0",
+  "description": "LLM tool and agent-loop utilities for actor-web runtime hosts",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm && tsc --emitDeclarationOnly && node ../../scripts/verify-exports.mjs .",
+    "build:watch": "pnpm build --watch",
+    "dev": "vitest --watch",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "format": "biome format . --write",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "prepublishOnly": "pnpm clean && pnpm build"
+  },
+  "keywords": [
+    "actor-model",
+    "agents",
+    "llm",
+    "runtime"
+  ],
+  "author": "Actor-Web Team",
+  "license": "MIT",
+  "dependencies": {
+    "@actor-web/runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.8.0",
+    "@types/node": "^20.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^2.1.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xjcf/actor-web.git",
+    "directory": "packages/actor-agent"
+  },
+  "homepage": "https://github.com/0xjcf/actor-web#readme",
+  "bugs": {
+    "url": "https://github.com/0xjcf/actor-web/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  }
+}

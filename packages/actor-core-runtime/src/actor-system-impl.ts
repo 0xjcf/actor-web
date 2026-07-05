@@ -53,6 +53,7 @@ import type {
   ActorMessage,
   ActorPID,
   ActorStats,
+  ActorSubscribeOptions,
   ActorSupervisionPolicy,
   ActorSupervisionStrategy,
   ActorSystem,
@@ -802,7 +803,7 @@ export class ActorSystemImpl implements ActorSystem {
    * `actorStopped` event is emitted per stop — callers must not emit their
    * own; they pass the reason here instead.
    */
-  private async stopActor(pid: ActorPID, reason?: string): Promise<void> {
+  private async stopActor(pid: ActorPID, reason?: string, error?: string): Promise<void> {
     // Access the address from the PID interface
     const address = pid.address;
     const path = address;
@@ -901,6 +902,9 @@ export class ActorSystemImpl implements ActorSystem {
     this.actors.delete(path);
     this.actorOriginalBehaviors.delete(path);
     this.actorStarted.delete(path);
+    if (reason !== 'supervisor-restart' && reason !== 'supervisor-group-restart') {
+      this.autoPublishingRegistry.removeActor(path);
+    }
 
     // Clean up restart tracking and the per-actor supervision policy. A
     // supervised restart re-passes the policy through spawn and restores the
@@ -926,7 +930,11 @@ export class ActorSystemImpl implements ActorSystem {
     await this.emitSystemEvent({
       eventType: 'actorStopped',
       timestamp: Date.now(),
-      data: reason !== undefined ? { address: address, reason } : { address: address },
+      data: {
+        address,
+        ...(reason !== undefined ? { reason } : {}),
+        ...(error !== undefined ? { error } : {}),
+      },
     });
   }
 
@@ -2123,7 +2131,7 @@ export class ActorSystemImpl implements ActorSystem {
   /**
    * Stop an actor by address (internal method)
    */
-  async stopActorInternal(address: ActorAddress): Promise<void> {
+  async stopActorInternal(address: ActorAddress, reason?: string): Promise<void> {
     if (this.isKnownRemoteAddress(address)) {
       await this.requestRemoteActorStop(address);
       return;
@@ -2133,7 +2141,7 @@ export class ActorSystemImpl implements ActorSystem {
     if (this.actors.has(address)) {
       // Create a temporary PID to call the public stop method
       const pid = new ActorPIDImpl(address, this);
-      await this.stopActor(pid);
+      await this.stopActor(pid, reason);
     }
   }
 
@@ -2712,7 +2720,7 @@ export class ActorSystemImpl implements ActorSystem {
       publisherId,
       eventType: eventMessage.type,
       subscriberCount: subscribers.length,
-      subscribers: subscribers.map((s) => s.address),
+      subscribers,
     });
 
     // ✅ DIRECT MAILBOX ENQUEUE: Send event to each subscriber's mailbox directly
@@ -2720,7 +2728,7 @@ export class ActorSystemImpl implements ActorSystem {
     for (const subscriber of subscribers) {
       log.debug('🔍 EMIT EVENT DEBUG: Direct enqueue to subscriber', {
         publisherId,
-        subscriberId: subscriber.address,
+        subscriberId: subscriber,
         eventType: eventMessage.type,
         eventMessage,
       });
@@ -2729,17 +2737,17 @@ export class ActorSystemImpl implements ActorSystem {
         // Direct enqueue to mailbox - no async boundary
         // This ensures events are available immediately in tests
         // and maintains deterministic ordering with other messages
-        this.enqueueMessage(subscriber.address, eventMessage).catch((error) => {
+        this.enqueueMessage(subscriber, eventMessage).catch((error) => {
           // Log as dead letter if enqueue fails (e.g., mailbox full)
           log.debug('🔍 EMIT EVENT DEBUG: Event dropped (dead letter)', {
-            subscriberId: subscriber.address,
+            subscriberId: subscriber,
             eventType: eventMessage.type,
             reason: error instanceof Error ? error.message : 'Unknown error',
           });
 
           log.warn('Event dropped - dead letter', {
             publisherId,
-            subscriberId: subscriber.address,
+            subscriberId: subscriber,
             eventType: eventMessage.type,
             error: error instanceof Error ? error.message : 'Unknown error',
           });
@@ -2748,7 +2756,7 @@ export class ActorSystemImpl implements ActorSystem {
         // Handle any synchronous errors from enqueue attempt
         log.error('Failed to enqueue event', {
           publisherId,
-          subscriberId: subscriber.address,
+          subscriberId: subscriber,
           eventType: eventMessage.type,
           error: syncError instanceof Error ? syncError.message : 'Unknown error',
         });
@@ -2947,6 +2955,15 @@ export class ActorSystemImpl implements ActorSystem {
         }
         return;
       }
+      case '__runtime.stream.open':
+      case '__runtime.stream.credit':
+      case '__runtime.stream.chunk':
+      case '__runtime.stream.close':
+      case '__runtime.stream.error':
+        // Stream control frames are consumed by createRuntimeTransportStreamHost subscribers.
+        // Actor systems share the same transport subscription, so reserve these messages here
+        // instead of treating them as actor-delivery work.
+        return;
       case '__runtime.remote.stop.request':
         try {
           await this.stopActorInternal(message.address);
@@ -4205,12 +4222,16 @@ export class ActorSystemImpl implements ActorSystem {
         // Stop the actor permanently to prevent restart loops and memory
         // leaks. stopActor emits the single terminal actorStopped event with
         // this reason.
-        await this.stopActor(new ActorPIDImpl(address, this), 'max-restarts-exceeded');
+        await this.stopActor(
+          new ActorPIDImpl(address, this),
+          'max-restarts-exceeded',
+          errorMessage
+        );
         return;
       }
       case 'stop': {
         log.error('Actor failed, applying stop directive', { path: address });
-        await this.stopActor(new ActorPIDImpl(address, this), 'supervision-stop');
+        await this.stopActor(new ActorPIDImpl(address, this), 'supervision-stop', errorMessage);
         return;
       }
       case 'escalate': {
@@ -4219,7 +4240,7 @@ export class ActorSystemImpl implements ActorSystem {
         // operators observe the unhandled failure. Widening groups
         // (one-for-all/rest-for-one) never reach here — their escalate is
         // substituted into a bounded group restart above.
-        log.warn('Actor failed, escalating (stop + escalation event)', { path: address });
+        log.error('Actor failed, escalating (stop + escalation event)', { path: address });
         await this.stopActor(new ActorPIDImpl(address, this));
         await this.emitSystemEvent({
           eventType: 'actorEscalated',
@@ -4279,7 +4300,7 @@ export class ActorSystemImpl implements ActorSystem {
 
     try {
       // Stop the current actor
-      await this.stopActor(new ActorPIDImpl(address, this));
+      await this.stopActor(new ActorPIDImpl(address, this), 'supervisor-restart');
 
       // Respawn with the same (original) behavior, ID, and supervision policy
       await this.spawn(respawnBehavior as unknown as ActorBehavior<ActorMessage, unknown>, {
@@ -4308,10 +4329,22 @@ export class ActorSystemImpl implements ActorSystem {
         restartAttempt: currentRestartCount + 1,
       });
     } catch (restartError) {
+      const restartErrorMessage =
+        restartError instanceof Error ? restartError.message : String(restartError);
       log.error('Failed to restart actor', {
         path: address,
         restartAttempt: currentRestartCount + 1,
-        error: restartError instanceof Error ? restartError.message : 'Unknown',
+        error: restartErrorMessage,
+      });
+      await this.emitSystemEvent({
+        eventType: 'actorRespawnFailed',
+        timestamp: Date.now(),
+        data: {
+          address,
+          reason: 'respawn-failed',
+          error: restartErrorMessage,
+          restartAttempt: currentRestartCount + 1,
+        },
       });
       // Escalate restart failure
       await this.notifyGuardianOfFailure(address, restartError);
@@ -4517,7 +4550,11 @@ export class ActorSystemImpl implements ActorSystem {
               ? 'max-restarts-exceeded'
               : 'supervisor-max-restarts-exceeded';
         try {
-          await this.stopActor(new ActorPIDImpl(parseActorPath(path), this), memberReason);
+          await this.stopActor(
+            new ActorPIDImpl(parseActorPath(path), this),
+            memberReason,
+            errorMessage
+          );
         } catch (stopError) {
           log.error('Failed to stop supervisor group member during give-up', {
             path,
@@ -4661,21 +4698,22 @@ export class ActorSystemImpl implements ActorSystem {
    */
   async subscribe<TEventType extends string = string>(
     publisher: ActorRef,
-    options: {
-      subscriber: ActorRef;
-      events?: TEventType[];
-    }
+    options: ActorSubscribeOptions<TEventType>
   ): Promise<() => Promise<void>> {
     const publisherId = publisher.address;
-    const subscriberId = options.subscriber.address;
-    const eventTypes = options.events || [];
+    const subscribers = options.subscribers
+      ? [...options.subscribers]
+      : options.subscriber
+        ? [options.subscriber]
+        : [];
+    const eventTypes = [...(options.events ?? [])];
 
     log.debug('🔍 SUBSCRIBE DEBUG: subscribe() called', {
       publisherId,
-      subscriberId,
+      subscriberIds: subscribers.map((subscriber) => subscriber.address),
       eventTypes,
       hasPublisher: !!publisher,
-      hasSubscriber: !!options.subscriber,
+      subscriberCount: subscribers.length,
     });
 
     // Register publisher with auto-publishing registry if not already registered
@@ -4693,36 +4731,59 @@ export class ActorSystemImpl implements ActorSystem {
       );
     }
 
+    const publisherLocation = await this.directory.lookup(publisher.address);
+    const subscriberLocations = await Promise.all(
+      subscribers.map(async (subscriber) => ({
+        subscriber,
+        location: await this.directory.lookup(subscriber.address),
+      }))
+    );
+    const missingSubscribers = subscriberLocations
+      .filter(({ location }) => !location)
+      .map(({ subscriber }) => subscriber.address);
+    if (!publisherLocation || missingSubscribers.length > 0) {
+      throw new Error(
+        `Cannot subscribe actor without directory entries: publisher=${publisher.address}, subscribers=${missingSubscribers.join(', ')}`
+      );
+    }
+
     // Add subscriber to the registry
     log.debug('🔍 SUBSCRIBE DEBUG: Adding subscriber to registry', {
       publisherId,
-      subscriberId,
+      subscriberIds: subscribers.map((subscriber) => subscriber.address),
       eventTypes,
     });
 
-    this.autoPublishingRegistry.addSubscriber(
+    this.autoPublishingRegistry.addSubscribers(
       publisherId,
-      subscriberId,
-      options.subscriber,
+      subscribers.map((subscriber) => ({
+        subscriberId: subscriber.address,
+        subscriberAddress: subscriber.address,
+      })),
       eventTypes
     );
 
     log.debug('🔍 SUBSCRIBE DEBUG: Subscription completed', {
       publisherId,
-      subscriberId,
+      subscriberIds: subscribers.map((subscriber) => subscriber.address),
       eventTypes: eventTypes.length > 0 ? eventTypes : 'all',
     });
 
     log.info('Actor subscription created', {
       publisher: publisherId,
-      subscriber: subscriberId,
+      subscribers: subscribers.map((subscriber) => subscriber.address),
       events: eventTypes.length > 0 ? eventTypes : 'all',
     });
 
     // Return unsubscribe function
     return async () => {
-      this.autoPublishingRegistry.removeSubscriber(publisherId, subscriberId);
-      log.debug('Actor subscription removed', { publisherId, subscriberId });
+      for (const subscriber of subscribers) {
+        this.autoPublishingRegistry.removeSubscriber(publisherId, subscriber.address);
+      }
+      log.debug('Actor subscription removed', {
+        publisherId,
+        subscriberIds: subscribers.map((subscriber) => subscriber.address),
+      });
     };
   }
 

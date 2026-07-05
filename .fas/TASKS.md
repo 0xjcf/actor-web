@@ -898,17 +898,23 @@
 
 - Title: Docs: document the ignite-element integration surface (readModel/commandSource/sourceHandle + opts)
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/docs-document-the-ignite-element-integration-surface-readm.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Add batch subscribers[] overload to system.subscribe
 
 - Title: Add batch subscribers[] overload to system.subscribe
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/add-batch-subscribers-overload-to-system-subscribe.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Add declarative subscriptions to defineActorWebTopology
 
@@ -1074,10 +1080,13 @@
 
 - Title: Docs: headless agent runtime page + refresh ignite guide to target API
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/docs-headless-agent-runtime-page-refresh-ignite-guide-to.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Rename package scope to @actor-web
 
@@ -1163,10 +1172,13 @@
 
 - Title: actor-web CLI v1: @actor-web/agent package (llm tool + agent-loop) + agent hosting
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/actor-web-cli-v1-actor-web-agent-package-llm-tool-agent.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: actor-web CLI v2: distributed hosting (--gateway/--transport/connect)
 
@@ -1226,18 +1238,24 @@
 
 - Title: Runtime: tool execution timeout/cancellation + real-async tool e2e coverage
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/runtime-tool-execution-timeout-cancellation-real-async-to.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Release prep 0.2.0: ship @actor-web/agent + decide the public package facade
 
 - Title: Release prep 0.2.0: ship @actor-web/agent + decide the public package facade
 - Mode: single-agent
-- Status: backlog
-- Owner: planner
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/release-prep-0-2-0-ship-actor-web-agent-decide-the-publi.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Docs: refresh root + runtime READMEs to the real post-rename API (remove fictional feature claims)
 
@@ -1285,26 +1303,35 @@
 
 - Title: Author the lattice contract design doc (artifact store + dependency activation)
 - Mode: 6-agent
-- Status: backlog
-- Owner: planner
-- Brief: .fas/tasks/no-persistent-artifact-fact-store-or-dependency-activation-p.md
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/author-the-lattice-contract-design-doc-artifact-store-depend.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Decide event-sourcing module fate (promote as lattice journal or deprecate)
 
 - Title: Decide event-sourcing module fate (promote as lattice journal or deprecate)
 - Mode: 6-agent
-- Status: backlog
-- Owner: planner
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/event-sourcing-module-is-vestigial-event-sourcing-ts-export.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Add lattice-mode coordination example beside fas-agent-loop (orchestration baseline + stigmergic lattice + hybrid)
 
 - Title: Add lattice-mode coordination example beside fas-agent-loop (orchestration baseline + stigmergic lattice + hybrid)
 - Mode: single-agent
-- Status: backlog
-- Owner: planner
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/add-lattice-mode-coordination-example-beside-fas-agent-loop.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Wire topology-declared subscriptions in serveNode and startActorWebNode
 
@@ -1389,9 +1416,12 @@
 
 - Title: Supervision observability polish: reason-coded respawn-failure event, error in policy-stop payloads, export policy types
 - Mode: single-agent
-- Status: backlog
-- Owner: planner
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/supervision-observability-polish-reason-coded-respawn-failu.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Add CI test workflow: run verify lanes on every PR
 
@@ -1408,9 +1438,12 @@
 
 - Title: Implement @actor-web/lattice: LatticeActor, topology lattice()/dependsOn, activation protocol
 - Mode: 6-agent
-- Status: backlog
-- Owner: planner
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/implement-actor-web-lattice-latticeactor-topology-lattice.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Cross-node subscription delivery: forward emitted events to remote-node subscribers
 
@@ -1636,9 +1669,12 @@
 
 - Title: Unify actor location truth: single directory-backed resolution for send and emit/subscribe
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/unify-actor-location-truth-single-directory-backed-resolutio.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Example: declarative topology.subscriptions through a directory-backed runtime
 
@@ -1661,33 +1697,45 @@
 
 - Title: Transport: large-payload framing/chunking contract or explicit max-payload with blob-externalization
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/transport-large-payload-framing-chunking-contract-or-explici.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Agent transport: stream tool/agent output as a backpressured cross-node stream
 
 - Title: Agent transport: stream tool/agent output as a backpressured cross-node stream
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/agent-transport-stream-tool-agent-output-as-a-backpressured-.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Delivery semantics: at-least-once and idempotency for non-idempotent agent tool side-effects
 
 - Title: Delivery semantics: at-least-once and idempotency for non-idempotent agent tool side-effects
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/delivery-semantics-at-least-once-and-idempotency-for-non-ide.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Docs honesty pass: scope the location-transparency claim at first mention and reconcile multi-machine status
 
 - Title: Docs honesty pass: scope the location-transparency claim at first mention and reconcile multi-machine status
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/docs-honesty-pass-scope-the-location-transparency-claim-at-f.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Post-mesh scoping: membership graduation tier, cross-node supervision boundary, claim gating
 
@@ -1732,6 +1780,297 @@
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/complete-address-path-migration-tail-wire-agent-workflow-cli.md
+
+### Task: # Actor-Web Spike Prompt: fas-local Runtime Host Fit
+
+- Title: # Actor-Web Spike Prompt: fas-local Runtime Host Fit
+- Mode: single-agent
+- Status: commit-planning
+- Owner: planner
+- Brief: .fas/tasks/actor-web-spike-prompt-fas-local-runtime-host-fit.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+Use this prompt from the `../actor-web` repository. The spike is read-only
+unless the operator explicitly asks you to create follow-up task briefs or an
+ADR draft.
+
+## Goal
+
+Assess whether actor-web's roadmap and runtime model can support the future
+fas-local actor system target without forcing actor-web into fas-local before
+the runtime API is stable.
+
+Target future shape:
+
+```text
+fas-local Runtime
+  -> ActorSystem
+    -> SessionActor
+      -> ProviderActor
+      -> WorkspaceActor
+      -> ContextActor
+      -> ReplayActor
+```
+
+Near-term fas-local shape remains non-actor-web:
+
+```text
+CLI
+  -> ProviderManager
+    -> Runtime
+      -> Session
+        -> Provider
+```
+
+## Read-Only Inputs
+
+In `../actor-web`, inspect:
+
+- README and package exports.
+- ADRs and spikes that mention FAS, runtime hosts, supervision, replay,
+  topology, child actors, or process ownership.
+- `.fas/TASKS.md`, `.fas/queue/tasks.json`, and domain maps.
+- Existing tests or examples that supervise external effects or long-lived
+  resources.
+
+From `../fas-local`, inspect read-only:
+
+- `.fas/tasks/add-provider-manager-lifecycle-orchestration.md`
+- `.fas/queue/tasks.json`
+- `.fas/artifacts/spikes/2026-07-01-actor-web-fas-local-runtime-host-spike-prompt.md`
+- `packages/provider-mlx/src/index.ts`
+- `apps/cli/src/index.ts`
+- `tests/provider-mlx.test.mjs`
+- `tests/cli.test.mjs`
+- `.fas/memory/integrations.md`
+
+## Questions To Answer
+
+1. Does actor-web support a Runtime-hosted `ActorSystem` without replacing
+   fas-local's public Runtime, Session, Provider, ProviderManager, or CLI APIs?
+2. Can actor-web supervise Node child processes such as `mlx_lm.server` safely?
+   Cover process groups, signals, stdout/stderr backpressure, readiness checks,
+   crash/restart behavior, cancellation, idle shutdown, and duplicate
+   prevention.
+3. Should fas-local use actor-web inside the CLI process, in a long-lived daemon,
+   or behind a separate runtime host? Compare lifecycle and operator tradeoffs.
+4. How should actor-web model non-replayable side effects such as process spawn,
+   kill, health-check fetch, filesystem probes, and model cache inspection?
+   Identify which facts/events are replayable and which effects must be
+   guarded by ports or effect journals.
+5. What message contracts are needed for `SessionActor` and `ProviderActor`?
+   Include commands, events, facts, errors-as-data, projections, and
+   supervision policies.
+6. What must change in actor-web, if anything, to support fas-local's target?
+   What must change in fas-local instead?
+7. Where should the durable roadmap artifacts live: actor-web ADR, actor-web
+   Epic, fas-local follow-up task, FAS shared contract, or all of the above?
+
+## Constraints
+
+- Do not add actor-web as a fas-local dependency during this spike.
+- Do not implement actors in fas-local.
+- Do not move Provider Manager process lifecycle into `provider-mlx` or
+  `runtime-core`.
+- Preserve hexagonal architecture: deterministic functional cores, imperative
+  shells for effects, explicit ports, projections, and errors as facts.
+- Treat FAS/fas-local as the control-plane/product/runtime API owner and
+  actor-web as a potential execution/data-plane substrate.
+- Keep integration through explicit contracts, not mutual imports or hidden
+  coupling.
+
+## Required Deliverables
+
+Write a spike report in actor-web, suggested path:
+
+```text
+.fas/artifacts/spikes/YYYY-MM-DD-fas-local-actor-system-readiness.md
+```
+
+The report must include:
+
+- Verdict: `ready-now`, `ready-after-actor-web-work`,
+  `ready-after-fas-local-work`, or `not-recommended-yet`.
+- Evidence table with actor-web file paths and fas-local file paths.
+- Decision matrix comparing:
+  - fas-local local state machine only
+  - actor-web embedded in CLI
+  - actor-web daemon/runtime host
+  - separate Provider Manager process outside actor-web
+- Child-process supervision assessment for `mlx_lm.server`.
+- Replay/effect-safety assessment.
+- Proposed minimal first actor-web integration, if recommended.
+- Required actor-web ADR outline.
+- Required actor-web Epic/task list.
+- Required fas-local follow-up task list.
+- Risks and open questions.
+
+## Acceptance Criteria
+
+- The spike proves whether actor-web can host `SessionActor` and
+  `ProviderActor` without redefining fas-local Runtime APIs.
+- The spike explicitly answers whether actor-web can safely supervise the Node
+  child processes fas-local needs for MLX servers.
+- Any recommendation to adopt actor-web includes a smallest safe integration
+  slice and prerequisites.
+- Any recommendation to delay actor-web includes concrete missing capabilities
+  or contract gaps.
+- No production code is changed.
+
+## Suggested Closeout
+
+If actor-web is FAS-managed, run the repo-native read-only spike workflow and
+capture a report-only artifact. Do not create implementation tasks unless the
+operator explicitly asks for queue mutations.
+
+### Task: ADR: fas-local Runtime Host Substrate Alignment
+
+- Title: ADR: fas-local Runtime Host Substrate Alignment
+- Mode: 6-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/adr-fas-local-runtime-host-substrate-alignment.md
+- Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Runtime: child-process effect port contract for fas-local provider hosts
+
+- Title: Runtime: child-process effect port contract for fas-local provider hosts
+- Mode: 6-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/runtime-child-process-effect-port-contract-for-fas-local-pro.md
+- Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Runtime: provider lifecycle effect journal for non-replayable process ports
+
+- Title: Runtime: provider lifecycle effect journal for non-replayable process ports
+- Mode: 6-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/runtime-provider-lifecycle-effect-journal-for-non-replayable.md
+- Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: ProviderActor conformance tests for fas-local provider lifecycle fake ports
+
+- Title: ProviderActor conformance tests for fas-local provider lifecycle fake ports
+- Mode: 6-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/provideractor-conformance-tests-for-fas-local-provider-lifec.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: SessionActor conformance tests for fas-local session semantics
+
+- Title: SessionActor conformance tests for fas-local session semantics
+- Mode: 6-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/sessionactor-conformance-tests-for-fas-local-session-semanti.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Example: embedded actor-web host behind fas-local-like Runtime APIs
+
+- Title: Example: embedded actor-web host behind fas-local-like Runtime APIs
+- Mode: 6-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/example-embedded-actor-web-host-behind-fas-local-like-runtim.md
+- Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Document actor-web ecosystem architecture alignment
+
+- Title: Document actor-web ecosystem architecture alignment
+- Mode: 6-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/document-actor-web-ecosystem-architecture-alignment.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Runtime correctness (CodeRabbit PR#32 full-pass): retry-interceptor unhandled rejection + create-actor-ref parent contract
+
+- Title: Runtime correctness (CodeRabbit PR#32 full-pass): retry-interceptor unhandled rejection + create-actor-ref parent contract
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/runtime-correctness-coderabbit-pr-32-full-pass-retry-interce.md
+- Automation mode: advisory
+- Verification lane: full
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Docs hygiene: scrub absolute local-path leaks from committed docs
+
+- Title: Docs hygiene: scrub absolute local-path leaks from committed docs
+- Mode: single-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/docs-hygiene-scrub-absolute-local-path-leaks-from-committed-.md
+- Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Design observation vocabulary for lattice artifact sources (observe/requires/prefer)
+
+- Title: Design observation vocabulary for lattice artifact sources (observe/requires/prefer)
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/design-observation-vocabulary-for-lattice-artifact-sources-o.md
+
+### Task: Resolve CodeRabbit lattice release findings: artifact hashing, replay hydration, scheduler errors
+
+- Title: Resolve CodeRabbit lattice release findings: artifact hashing, replay hydration, scheduler errors
+- Mode: 6-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/resolve-coderabbit-lattice-release-findings-artifact-hashing.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Resolve CodeRabbit agent/provider/session release findings: stale facts, tool re-entry, effect failures
+
+- Title: Resolve CodeRabbit agent/provider/session release findings: stale facts, tool re-entry, effect failures
+- Mode: 6-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/resolve-coderabbit-agent-provider-session-release-findings-s.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Resolve CodeRabbit closeout code findings: lattice activation IDs and agent-loop test narrowing
+
+- Title: Resolve CodeRabbit closeout code findings: lattice activation IDs and agent-loop test narrowing
+- Mode: single-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/resolve-coderabbit-closeout-code-findings-lattice-activation.md
+- Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ## Template
 

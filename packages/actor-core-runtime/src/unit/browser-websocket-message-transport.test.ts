@@ -47,6 +47,10 @@ interface BrowserCorePeerView {
   link: { send(payload: unknown): Promise<void> };
 }
 
+interface BrowserCoreConfigView {
+  maxFrameBytes: number;
+}
+
 function getBrowserCorePeer(
   transport: BrowserWebSocketMessageTransport,
   nodeAddress: string
@@ -54,6 +58,10 @@ function getBrowserCorePeer(
   return (
     transport as unknown as { core: { peers: Map<string, BrowserCorePeerView> } }
   ).core.peers.get(nodeAddress);
+}
+
+function getBrowserCoreMaxFrameBytes(transport: BrowserWebSocketMessageTransport): number {
+  return (transport as unknown as { core: BrowserCoreConfigView }).core.maxFrameBytes;
 }
 
 function createCheckoutBehavior() {
@@ -145,6 +153,14 @@ describe('BrowserWebSocketMessageTransport', () => {
   afterEach(async () => {
     await Promise.allSettled(systems.splice(0).map((system) => system.stop()));
     await Promise.allSettled(transports.splice(0).map((transport) => transport.stop()));
+  });
+
+  it('passes maxFrameBytes into the shared transport core', () => {
+    const browser = createBrowserTransport('worker-a', {
+      maxFrameBytes: 128,
+    });
+
+    expect(getBrowserCoreMaxFrameBytes(browser)).toBe(128);
   });
 
   it('opens an outbound browser-style WebSocket and handshakes with a Node peer', async () => {

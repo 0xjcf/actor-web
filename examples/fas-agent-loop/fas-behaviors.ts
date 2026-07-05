@@ -1,3 +1,4 @@
+import type { LatticeEvent } from '@actor-web/lattice';
 import { defineBehavior, defineFSM } from '@actor-web/runtime';
 import type {
   ActorWebAllowedToolRegistry,
@@ -41,6 +42,31 @@ type ReviewerDefineActor = ActorWebTypedDefineActor<
   ActorWebAllowedToolRegistry<FasToolRegistry, typeof FAS_AGENT_TOOL_ACCESS.reviewer>
 >;
 
+export type FasCoordinationMode = 'orchestration' | 'lattice' | 'hybrid';
+
+export interface FasCoordinationModeDescription {
+  readonly mode: FasCoordinationMode;
+  readonly coordinator: string;
+  readonly artifacts: readonly string[];
+  readonly activation: readonly string[];
+  readonly rework: string;
+}
+
+export interface FasLatticeActivationSummary {
+  readonly activationId: string;
+  readonly artifactTypes: readonly string[];
+  readonly label: string;
+  readonly role: FasAgentRole;
+  readonly satisfactionKey: string;
+}
+
+export interface FasLatticeAgentContext {
+  readonly role: FasAgentRole;
+  readonly activations: readonly FasLatticeActivationSummary[];
+}
+
+type FasLatticeAgentCommand = LatticeEvent | { readonly type: 'GET_LATTICE_AGENT_STATE' };
+
 function timelineEntry(input: {
   label: string;
   phase: FasTaskPhase;
@@ -78,6 +104,123 @@ function createInitialSupervisorContext(): { readonly submittedTaskIds: readonly
   return {
     submittedTaskIds: [],
   };
+}
+
+function createInitialLatticeAgentContext(role: FasAgentRole): FasLatticeAgentContext {
+  return {
+    role,
+    activations: [],
+  };
+}
+
+function labelForArtifactTypes(artifactTypes: readonly string[]): string {
+  if (artifactTypes.includes('review.findings')) {
+    return 'Review findings observed';
+  }
+  if (artifactTypes.includes('task.brief')) {
+    return 'Task brief observed';
+  }
+  if (artifactTypes.includes('execution.plan')) {
+    return 'Execution plan observed';
+  }
+  if (artifactTypes.includes('implementation.patch')) {
+    return 'Implementation patch observed';
+  }
+  if (artifactTypes.includes('verification.result')) {
+    return 'Verification result observed';
+  }
+  if (artifactTypes.includes('review.approved')) {
+    return 'Approved review observed';
+  }
+  return 'Workspace artifact observed';
+}
+
+export function describeFasCoordinationModes(): readonly FasCoordinationModeDescription[] {
+  return [
+    {
+      mode: 'orchestration',
+      coordinator: 'Coordinator drives planner, implementer, verifier, and reviewer with ask/send.',
+      artifacts: [],
+      activation: ['TASK_SUBMITTED', 'PLAN_CREATED', 'PATCH_CREATED', 'REVIEW_COMPLETED'],
+      rework: 'Coordinator routes validation failures or review rejection back to implementer.',
+    },
+    {
+      mode: 'lattice',
+      coordinator: 'No direct agent wiring; agents observe workspace artifacts.',
+      artifacts: [
+        'task.brief',
+        'execution.plan',
+        'implementation.patch',
+        'verification.result',
+        'review.approved',
+      ],
+      activation: [
+        'task.brief -> planner',
+        'execution.plan -> implementer',
+        'implementation.patch -> verifier',
+        'verification.result -> reviewer',
+      ],
+      rework: 'review.findings everyVersion reactivates the implementer.',
+    },
+    {
+      mode: 'hybrid',
+      coordinator:
+        'Coordinator publishes task.brief, observes review.approved, and enforces budget.',
+      artifacts: ['task.brief', 'review.approved'],
+      activation: ['PUBLISH_ARTIFACT task.brief', 'DEPENDENCY_SATISFIED review.approved'],
+      rework: 'Agents self-organize through lattice artifacts while coordinator owns watchdogs.',
+    },
+  ];
+}
+
+export function summarizeLatticeActivation(
+  role: FasAgentRole,
+  event: Extract<LatticeEvent, { readonly type: 'DEPENDENCY_SATISFIED' }>
+): FasLatticeActivationSummary {
+  const artifactTypes = event.artifacts.map((artifact) => artifact.type);
+
+  return {
+    activationId: event.activationId,
+    artifactTypes,
+    label: labelForArtifactTypes(artifactTypes),
+    role,
+    satisfactionKey: event.satisfactionKey,
+  };
+}
+
+function createFasLatticeAgentBehavior(role: FasAgentRole) {
+  return defineBehavior<FasLatticeAgentCommand>()
+    .withContext(createInitialLatticeAgentContext(role))
+    .onMessage(({ message, context }) => {
+      if (message.type === 'GET_LATTICE_AGENT_STATE') {
+        return { reply: context };
+      }
+
+      if (message.type === 'DEPENDENCY_SATISFIED') {
+        const activation = summarizeLatticeActivation(role, message);
+
+        return {
+          context: {
+            role,
+            activations: [activation, ...context.activations],
+          } satisfies FasLatticeAgentContext,
+          reply: activation,
+        };
+      }
+
+      if (message.type === 'ACTIVATION_TIMED_OUT') {
+        return {
+          reply: {
+            activationId: message.activationId,
+            dependencyId: message.dependencyId,
+            timedOut: true,
+          },
+        };
+      }
+
+      return { reply: context };
+    })
+    .build();
 }
 
 const taskRunFSM = defineFSM<FasTaskCommand, FasTaskContext, FasTaskPhase>({
@@ -459,4 +602,24 @@ export function createReviewerAgentBehavior(defineBehavior: ReviewerDefineActor)
       };
     })
     .build();
+}
+
+export function createFasLatticePlannerBehavior() {
+  return createFasLatticeAgentBehavior('planner');
+}
+
+export function createFasLatticeImplementerBehavior() {
+  return createFasLatticeAgentBehavior('implementer');
+}
+
+export function createFasLatticeVerifierBehavior() {
+  return createFasLatticeAgentBehavior('verifier');
+}
+
+export function createFasLatticeReviewerBehavior() {
+  return createFasLatticeAgentBehavior('reviewer');
+}
+
+export function createFasHybridCoordinatorBehavior() {
+  return createFasLatticeAgentBehavior('supervisor');
 }

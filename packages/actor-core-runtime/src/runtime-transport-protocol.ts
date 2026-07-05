@@ -9,6 +9,7 @@ import type {
   ActorRuntimeSnapshot,
   ActorTransitionRecord,
 } from './runtime-projection.js';
+import type { RuntimeTransportStreamMessage } from './runtime-transport-stream.js';
 
 export interface RuntimeDirectoryEntry {
   address: ActorAddress;
@@ -218,6 +219,7 @@ export type RuntimeProtocolMessage =
   | RuntimeTopologySubscribeMessage
   | RuntimeTopologyUnsubscribeMessage
   | RuntimeTopologyEventMessage
+  | RuntimeTransportStreamMessage
   | RuntimeRemoteStopRequestMessage
   | RuntimeRemoteStopResponseMessage
   | RuntimeRemoteStatsRequestMessage

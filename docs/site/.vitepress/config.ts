@@ -60,6 +60,7 @@ export default defineConfig({
         text: 'Guides',
         items: [
           { text: 'Ignite Element integration', link: '/guides/ignite-element' },
+          { text: 'Headless agent runtime', link: '/guides/agent-runtime' },
           { text: 'Using XState machines', link: '/guides/xstate-transitions' },
           { text: 'Coordinating actors', link: '/guides/coordinating-actors' },
           { text: 'Multi-process deployment', link: '/guides/multi-process-deployment' },

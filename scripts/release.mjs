@@ -1,0 +1,494 @@
+#!/usr/bin/env node
+
+import { execSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { env, exit, stdin, stdout } from 'node:process';
+import { createInterface } from 'node:readline/promises';
+
+const args = process.argv.slice(2);
+const hasFlag = (flag) => args.includes(flag);
+const getOption = (name) => {
+  const equalsValue = args.find((arg) => arg.startsWith(`${name}=`));
+  if (equalsValue) {
+    return equalsValue.slice(name.length + 1).trim() || undefined;
+  }
+
+  const index = args.indexOf(name);
+  if (index === -1) {
+    return undefined;
+  }
+
+  const value = args[index + 1];
+  if (!value || value.startsWith('--')) {
+    return undefined;
+  }
+
+  return value.trim() || undefined;
+};
+
+const dryRun = hasFlag('--dry-run');
+const prepareOnly = hasFlag('--prepare-only');
+const allowBranchPublish = hasFlag('--allow-branch-publish');
+const skipOtp = hasFlag('--skip-otp');
+const otp = getOption('--otp');
+const channel = getOption('--channel') ?? 'stable';
+
+if (!['stable', 'beta'].includes(channel)) {
+  console.error(`[release] Unsupported channel "${channel}". Use stable or beta.`);
+  exit(1);
+}
+
+const npmCacheDir = mkdtempSync(join(tmpdir(), 'actor-web-release-npm-'));
+const releaseEnv = { ...env, NPM_CONFIG_CACHE: env.NPM_CONFIG_CACHE ?? npmCacheDir };
+
+const run = (command, options = {}) => {
+  const { onError, ...execOptions } = options;
+  console.log(`\n> ${command}`);
+  try {
+    execSync(command, { stdio: 'inherit', ...execOptions });
+  } catch (error) {
+    if (typeof onError === 'function') {
+      onError(error);
+    }
+    throw error;
+  }
+};
+
+const output = (command, options = {}) =>
+  execSync(command, {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    ...options,
+  }).trim();
+
+const ensureCleanWorkingTree = () => {
+  const status = output('git status --porcelain');
+  if (status) {
+    console.error('[release] Working tree is not clean. Commit or stash changes before releasing.');
+    exit(1);
+  }
+};
+
+const currentBranch = () => output('git branch --show-current') || 'HEAD';
+
+const ensureStablePublishBranch = () => {
+  if (dryRun || prepareOnly || channel !== 'stable' || allowBranchPublish) {
+    return;
+  }
+
+  const branch = currentBranch();
+  if (branch !== 'main') {
+    console.error(
+      `[release] Stable publishes must run from main after the version PR lands. Current branch: ${branch}.`
+    );
+    console.error(
+      '[release] Use `pnpm release:prepare` on a release branch, merge it, then run this command from main.'
+    );
+    console.error('[release] Use --allow-branch-publish only for an explicit emergency exception.');
+    exit(1);
+  }
+};
+
+const ensureNpmAuth = () => {
+  try {
+    const username = output('npm whoami');
+    console.log(`[release] Authenticated with npm as ${username}`);
+  } catch {
+    console.error('[release] Unable to determine npm user. Run `npm login` before releasing.');
+    exit(1);
+  }
+};
+
+const resolveOtp = async () => {
+  if (skipOtp) {
+    console.log('[release] Skipping OTP prompt (--skip-otp)');
+    return undefined;
+  }
+
+  if (otp) {
+    return otp;
+  }
+
+  if (env.NPM_CONFIG_OTP) {
+    return env.NPM_CONFIG_OTP;
+  }
+
+  const rl = createInterface({ input: stdin, output: stdout });
+  const answer = (
+    await rl.question('[release] Enter npm one-time password (leave blank to skip): ')
+  ).trim();
+  await rl.close();
+  return answer || undefined;
+};
+
+const shellQuote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
+
+const readPreMode = (cwd = process.cwd()) => {
+  const preFile = join(cwd, '.changeset/pre.json');
+  if (!existsSync(preFile)) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(readFileSync(preFile, 'utf8'));
+  } catch {
+    console.error('[release] Could not parse .changeset/pre.json.');
+    exit(1);
+  }
+};
+
+const ensureChannelState = () => {
+  const preMode = readPreMode();
+
+  if (channel === 'stable' && preMode) {
+    console.error(
+      '[release] Stable releases require no .changeset/pre.json. Exit pre-mode before publishing stable.'
+    );
+    exit(1);
+  }
+
+  if (channel === 'beta' && preMode?.tag !== 'beta') {
+    console.error('[release] Beta releases require .changeset/pre.json with tag "beta".');
+    exit(1);
+  }
+};
+
+const getPendingChangesets = (cwd = process.cwd()) => {
+  const dir = join(cwd, '.changeset');
+  if (!existsSync(dir)) {
+    return [];
+  }
+
+  const changesetFiles = readdirSync(dir).filter(
+    (file) => file.endsWith('.md') && file !== 'README.md'
+  );
+  const preMode = readPreMode(cwd);
+  const applied = preMode?.changesets ?? [];
+
+  return changesetFiles.filter((file) => !applied.includes(file.replace(/\.md$/, '')));
+};
+
+const getReleasePlan = (cwd = process.cwd()) => {
+  const out = join(cwd, '.release-plan.json');
+  try {
+    execSync(`pnpm changeset status --output=${shellQuote(out)}`, { cwd, stdio: 'ignore' });
+    const plan = JSON.parse(readFileSync(out, 'utf8'));
+    return (plan.releases ?? []).filter((release) => release.type !== 'none');
+  } catch (error) {
+    console.warn(
+      `[release] Could not compute planned versions: ${error instanceof Error ? error.message : error}`
+    );
+    return [];
+  } finally {
+    rmSync(out, { force: true });
+  }
+};
+
+const printPlannedVersions = (releases = getReleasePlan()) => {
+  if (releases.length === 0) {
+    console.log('[release] No pending changesets; current package versions would publish as-is.');
+    return;
+  }
+
+  console.log('\n[release] Planned version bumps:');
+  for (const release of releases) {
+    console.log(
+      `  ${release.name}: ${release.oldVersion} -> ${release.newVersion} (${release.type})`
+    );
+  }
+};
+
+const runVerification = () => {
+  run('pnpm test:all');
+  run('pnpm build');
+};
+
+const versionAndCommit = (pendingChangesets) => {
+  if (pendingChangesets.length === 0) {
+    console.log('[release] No pending changesets; skipping `changeset version`.');
+    return;
+  }
+
+  printPlannedVersions();
+  run('pnpm changeset version');
+  run('pnpm install --no-frozen-lockfile');
+  run('git add package.json pnpm-lock.yaml .changeset packages');
+  run('git commit -m "chore: version packages" --no-verify', { env: { ...env, HUSKY: '0' } });
+};
+
+const printVersionedPublishPlan = (cwd, releases) => {
+  if (releases.length === 0) {
+    return;
+  }
+
+  console.log('\n[release] Versioned dry-run packages:');
+  const packagesDir = join(cwd, 'packages');
+  const packageManifests = new Map(
+    readdirSync(packagesDir).flatMap((entry) => {
+      const packageJsonPath = join(packagesDir, entry, 'package.json');
+      if (!existsSync(packageJsonPath)) {
+        return [];
+      }
+
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+      return [[packageJson.name, packageJson]];
+    })
+  );
+
+  for (const release of releases) {
+    const packageJson = packageManifests.get(release.name);
+    if (!packageJson) {
+      console.log(`  ${release.name}@<manifest not found>`);
+      continue;
+    }
+
+    console.log(`  ${packageJson.name}@${packageJson.version}`);
+  }
+};
+
+const readPublishablePackages = (cwd = process.cwd()) => {
+  const packagesDir = join(cwd, 'packages');
+  const packages = readdirSync(packagesDir).flatMap((entry) => {
+    const dir = join(packagesDir, entry);
+    const packageJsonPath = join(dir, 'package.json');
+    if (!existsSync(packageJsonPath)) {
+      return [];
+    }
+
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+    if (packageJson.private) {
+      return [];
+    }
+
+    return [{ dir, packageJson }];
+  });
+
+  const byName = new Map(packages.map((pkg) => [pkg.packageJson.name, pkg]));
+  const visiting = new Set();
+  const visited = new Set();
+  const ordered = [];
+
+  const visit = (pkg) => {
+    const name = pkg.packageJson.name;
+    if (visited.has(name)) {
+      return;
+    }
+    if (visiting.has(name)) {
+      throw new Error(`Circular publish dependency involving ${name}`);
+    }
+
+    visiting.add(name);
+    const dependencyNames = [
+      ...Object.keys(pkg.packageJson.dependencies ?? {}),
+      ...Object.keys(pkg.packageJson.peerDependencies ?? {}),
+      ...Object.keys(pkg.packageJson.optionalDependencies ?? {}),
+    ];
+
+    for (const dependencyName of dependencyNames) {
+      const dependency = byName.get(dependencyName);
+      if (dependency) {
+        visit(dependency);
+      }
+    }
+
+    visiting.delete(name);
+    visited.add(name);
+    ordered.push(pkg);
+  };
+
+  for (const pkg of packages) {
+    visit(pkg);
+  }
+
+  return ordered;
+};
+
+const packageIsPublished = (name, version, publishEnv) => {
+  try {
+    const publishedVersion = output(`npm view ${shellQuote(`${name}@${version}`)} version --json`, {
+      env: publishEnv,
+    });
+    return JSON.parse(publishedVersion) === version;
+  } catch (error) {
+    const stderr = error?.stderr?.toString?.() ?? '';
+    if (stderr.includes('E404') || stderr.includes('404 Not Found')) {
+      return false;
+    }
+
+    throw error;
+  }
+};
+
+const ensurePackageTag = (name, version) => {
+  const tagName = `${name}@${version}`;
+  try {
+    const tagType = output(`git cat-file -t refs/tags/${shellQuote(tagName)}`);
+    const tagTarget = output(`git rev-list -n 1 refs/tags/${shellQuote(tagName)}`);
+    const head = output('git rev-parse HEAD');
+    if (tagTarget !== head) {
+      console.error(
+        `[release] Existing package tag ${tagName} points to ${tagTarget}, not HEAD ${head}.`
+      );
+      console.error('[release] Refusing to rewrite an existing package tag automatically.');
+      exit(1);
+    }
+
+    if (tagType === 'tag') {
+      console.log(`[release] Annotated tag already exists: ${tagName}`);
+      return;
+    }
+
+    console.log(`[release] Replacing lightweight tag with annotated tag: ${tagName}`);
+    run(`git tag -a -f ${shellQuote(tagName)} -m ${shellQuote(tagName)} HEAD`);
+  } catch {
+    run(`git tag -a ${shellQuote(tagName)} -m ${shellQuote(tagName)}`);
+  }
+};
+
+const printPostPublishCloseout = (packages) => {
+  const branch = currentBranch();
+  const tags = packages.map((pkg) => `${pkg.packageJson.name}@${pkg.packageJson.version}`);
+  const quotedRefs = [branch, ...tags].map(shellQuote).join(' ');
+
+  console.log('\n[release] Publish complete.');
+  console.log('[release] Push the release source and package tags with:');
+  console.log(`  git push -u origin ${quotedRefs}`);
+  console.log('[release] Open or merge the release PR without squashing/rebasing release commits.');
+};
+
+const publishDryRun = (cwd = process.cwd()) => {
+  const publishTag = channel === 'beta' ? 'beta' : 'latest';
+  const packages = readPublishablePackages(cwd);
+
+  console.log('\n[release] Dry-run publishing packages sequentially:');
+  for (const pkg of packages) {
+    run(
+      `pnpm --filter ${shellQuote(pkg.packageJson.name)} publish --dry-run --no-git-checks --access public --tag ${publishTag}`,
+      {
+        cwd,
+        env: releaseEnv,
+      }
+    );
+  }
+};
+
+const publishVersionedDryRun = (releases, pendingChangesets) => {
+  if (pendingChangesets.length === 0) {
+    publishDryRun();
+    return;
+  }
+
+  const worktreeParent = mkdtempSync(join(tmpdir(), 'actor-web-release-worktree-'));
+  const worktreePath = join(worktreeParent, 'repo');
+
+  try {
+    console.log('\n[release] Creating temporary versioned worktree for dry-run tarball preview.');
+    run(`git worktree add --detach ${shellQuote(worktreePath)} HEAD`);
+    run('pnpm install --no-frozen-lockfile', { cwd: worktreePath, env: releaseEnv });
+    run('pnpm changeset version', { cwd: worktreePath, env: { ...releaseEnv, HUSKY: '0' } });
+    run('pnpm install --no-frozen-lockfile', { cwd: worktreePath, env: releaseEnv });
+    printVersionedPublishPlan(worktreePath, releases);
+    run('pnpm build', { cwd: worktreePath, env: releaseEnv });
+    publishDryRun(worktreePath);
+  } finally {
+    try {
+      run(`git worktree remove --force ${shellQuote(worktreePath)}`);
+      rmSync(worktreeParent, { force: true, recursive: true });
+    } catch {
+      rmSync(worktreeParent, { force: true, recursive: true });
+    }
+  }
+};
+
+const publish = async () => {
+  const resolvedOtp = await resolveOtp();
+  const publishEnv = { ...releaseEnv };
+
+  if (resolvedOtp) {
+    publishEnv.NPM_CONFIG_OTP = resolvedOtp;
+    console.log('[release] Using provided OTP for npm publish.');
+  }
+
+  const publishTag = channel === 'beta' ? 'beta' : 'latest';
+  const packages = readPublishablePackages();
+
+  console.log('\n[release] Publishing packages sequentially:');
+  for (const pkg of packages) {
+    const { name, version } = pkg.packageJson;
+
+    if (packageIsPublished(name, version, publishEnv)) {
+      console.log(`[release] ${name}@${version} is already published; skipping.`);
+      ensurePackageTag(name, version);
+      continue;
+    }
+
+    run(
+      `pnpm --filter ${shellQuote(name)} publish --no-git-checks --access public --tag ${publishTag}`,
+      {
+        env: publishEnv,
+      }
+    );
+    ensurePackageTag(name, version);
+  }
+
+  printPostPublishCloseout(packages);
+};
+
+const main = async () => {
+  env.HUSKY = '0';
+
+  ensureChannelState();
+  ensureCleanWorkingTree();
+  ensureStablePublishBranch();
+
+  if (!dryRun && !prepareOnly) {
+    ensureNpmAuth();
+  }
+
+  try {
+    run('pnpm changeset status');
+  } catch {
+    console.warn(
+      '[release] `changeset status` did not find pending changesets; continuing for already-versioned packages.'
+    );
+  }
+
+  runVerification();
+
+  const pendingChangesets = getPendingChangesets();
+  const releases = getReleasePlan();
+
+  if (dryRun) {
+    console.log('\n[release] Dry run: not versioning, committing, or publishing.');
+    printPlannedVersions(releases);
+    publishVersionedDryRun(releases, pendingChangesets);
+    console.log('\n[release] Dry run complete. No files were changed and nothing was published.');
+    return;
+  }
+
+  versionAndCommit(pendingChangesets);
+
+  if (prepareOnly) {
+    console.log('\n[release] Prepare complete. No packages were published.');
+    console.log(
+      '[release] Push this branch, open a PR to main, merge without squashing/rebasing, then run `pnpm release:stable` from main.'
+    );
+    return;
+  }
+
+  run('pnpm build');
+  publishDryRun();
+  await publish();
+};
+
+main()
+  .catch((error) => {
+    console.error('\n[release] Release script failed.');
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  })
+  .finally(() => {
+    rmSync(npmCacheDir, { force: true, recursive: true });
+  });

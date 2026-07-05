@@ -29,6 +29,8 @@ export type {
   ActorMessage,
   // ActorPID is now internal - use ActorRef instead
   ActorStats,
+  ActorSupervisionPolicy,
+  ActorSupervisionStrategy,
   ActorSystem,
   AddressQuery,
   ClusterState,
@@ -38,12 +40,43 @@ export type {
 export type { ActorSystemConfig } from './actor-system-impl.js';
 export { createActorSystem } from './actor-system-impl.js';
 export type {
+  ActorToolDeliveryAck,
+  ActorToolDeliveryAcknowledgeResult,
+  ActorToolDeliveryAckTimeoutDecision,
+  ActorToolDeliveryActivationId,
+  ActorToolDeliveryAttempt,
+  ActorToolDeliveryAttemptResult,
+  ActorToolDeliveryFailure,
+  ActorToolDeliveryFailureCode,
+  ActorToolDeliveryIdempotencyClaimInput,
+  ActorToolDeliveryIdempotencyClaimResult,
+  ActorToolDeliveryIdempotencyKey,
+  ActorToolDeliveryIdempotencyProvider,
+  ActorToolDeliveryParseResult,
+  ActorToolDeliveryReemitCommand,
+  ActorToolDeliveryStatus,
+  InMemoryActorToolDeliveryIdempotencyProvider,
+} from './actor-tool-delivery.js';
+export {
+  createActorToolDeliveryAck,
+  createActorToolDeliveryActivationId,
+  createActorToolDeliveryAttempt,
+  createActorToolDeliveryIdempotencyKey,
+  createInMemoryActorToolDeliveryIdempotencyProvider,
+  evaluateActorToolDeliveryAckTimeout,
+} from './actor-tool-delivery.js';
+export type {
   ActorToolbox,
+  ActorToolboxOptions,
   ActorToolExecutionContext,
+  ActorToolExecutionOptions,
   ActorToolExecutor,
+  ActorToolHostContext,
   ActorToolRegistry,
+  ActorToolTimerHandle,
+  ActorToolTimers,
 } from './actor-tools.js';
-export { createActorToolbox } from './actor-tools.js';
+export { ActorToolTimeoutError, createActorToolbox } from './actor-tools.js';
 export type {
   ActorWebClient,
   ActorWebClientOptions,
@@ -284,9 +317,11 @@ export type {
   RuntimeNodeIdentity,
   RuntimeTransportAckFrame,
   RuntimeTransportFrame,
+  RuntimeTransportFramePayloadSizeOptions,
   RuntimeTransportHandshake,
   RuntimeTransportHandshakeRejectCode,
   RuntimeTransportHeartbeatFrame,
+  RuntimeTransportPayloadValidationResult,
   RuntimeTransportProtocolVersion,
   RuntimeTransportValidationResult,
 } from './runtime-transport-contract.js';
@@ -300,12 +335,16 @@ export {
   createRuntimeTransportHeartbeatPing,
   createRuntimeTransportHeartbeatPong,
   createRuntimeTransportMessageId,
+  DEFAULT_RUNTIME_TRANSPORT_MAX_FRAME_BYTES,
   isRuntimeNodeIdentity,
   isSameRuntimeNodeIdentity,
+  measureRuntimeTransportFrameBytes,
+  normalizeRuntimeTransportMaxFrameBytes,
   RUNTIME_TRANSPORT_PROTOCOL_VERSION,
   validateRuntimeNodeIdentity,
   validateRuntimeTransportAckFrame,
   validateRuntimeTransportFrame,
+  validateRuntimeTransportFramePayloadSize,
   validateRuntimeTransportHandshake,
   validateRuntimeTransportHeartbeatFrame,
 } from './runtime-transport-contract.js';
@@ -336,6 +375,34 @@ export {
   getRuntimePeerStatus,
   getRuntimeTransportStatus,
 } from './runtime-transport-status.js';
+export type {
+  RuntimeTransportIncomingStream,
+  RuntimeTransportStreamChunk,
+  RuntimeTransportStreamChunkMessage,
+  RuntimeTransportStreamCloseMessage,
+  RuntimeTransportStreamConsumer,
+  RuntimeTransportStreamCreditMessage,
+  RuntimeTransportStreamError,
+  RuntimeTransportStreamErrorMessage,
+  RuntimeTransportStreamHandler,
+  RuntimeTransportStreamHost,
+  RuntimeTransportStreamHostError,
+  RuntimeTransportStreamHostOptions,
+  RuntimeTransportStreamMessage,
+  RuntimeTransportStreamOpenMessage,
+  RuntimeTransportStreamOpenOptions,
+  RuntimeTransportWritableStream,
+} from './runtime-transport-stream.js';
+export {
+  createRuntimeTransportStreamChunkMessage,
+  createRuntimeTransportStreamCloseMessage,
+  createRuntimeTransportStreamCreditMessage,
+  createRuntimeTransportStreamErrorMessage,
+  createRuntimeTransportStreamHost,
+  createRuntimeTransportStreamOpenMessage,
+  DEFAULT_RUNTIME_TRANSPORT_STREAM_INITIAL_CREDIT,
+  isRuntimeTransportStreamMessage,
+} from './runtime-transport-stream.js';
 export type {
   InMemoryRuntimeTransportTelemetrySink,
   RuntimeTransportPeerStats,

@@ -60,6 +60,7 @@ export interface NodeWebSocketMessageTransportOptions {
   ackTimeoutMs?: number;
   maxAckRetries?: number;
   outboundQueueLimit?: number;
+  maxFrameBytes?: number;
   idempotencyProvider?: RuntimeTransportIdempotencyProvider;
   telemetry?: RuntimeTransportTelemetryObserver;
   auth?: RuntimeTransportAuthProvider<{
@@ -688,6 +689,7 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
       ...(options.outboundQueueLimit !== undefined
         ? { outboundQueueLimit: options.outboundQueueLimit }
         : {}),
+      ...(options.maxFrameBytes !== undefined ? { maxFrameBytes: options.maxFrameBytes } : {}),
       ...(options.idempotencyProvider ? { idempotencyProvider: options.idempotencyProvider } : {}),
       ...(options.telemetry ? { telemetry: options.telemetry } : {}),
       ...(options.auth ? { auth: options.auth } : {}),

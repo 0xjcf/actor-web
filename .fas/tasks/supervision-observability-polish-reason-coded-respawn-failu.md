@@ -1,4 +1,4 @@
-# Supervision observability polish: reason-coded respawn-failu
+# Supervision observability polish: reason-coded respawn-failure event, error in policy-stop payloads, export policy types
 
 ## Source
 
@@ -30,10 +30,19 @@ Follow-ups from the per-actor supervision policy review (4-agent, 2026-06-11; re
 
 - packages/actor-core-runtime/src/actor-system-impl.ts
 - packages/actor-core-runtime/src/index.ts
+- packages/actor-core-runtime/src/unit/supervision-policy.test.ts
 
 ## Scope Amendments
 
-- None.
+- Type: scope-promotion
+- Added at: 2026-07-03T19:00:00Z
+- Trigger: TDD acceptance requires supervision regression tests
+- Reason: Promote the existing supervision policy test file because it covers max-restarts, policy-stop, escalation, and restart behavior needed for this observability polish.
+- Added paths: packages/actor-core-runtime/src/unit/supervision-policy.test.ts
+- Evidence source: repo-search
+- Evidence: repo-search | packages/actor-core-runtime/src/unit/supervision-policy.test.ts | Existing tests spy on emitSystemEvent and assert actorStopped/actorEscalated/actorRestarted behavior.
+- Accuracy signal: rg found direct supervision event coverage in supervision-policy.test.ts.
+- Follow-up needed: None.
 
 ## Implementation plan
 

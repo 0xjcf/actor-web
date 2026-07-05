@@ -1,6 +1,12 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@actor-web/agent': new URL('../actor-agent/src/index.ts', import.meta.url).pathname,
+      '@actor-web/runtime': new URL('../actor-core-runtime/src/index.ts', import.meta.url).pathname,
+    },
+  },
   test: {
     environment: 'node', // CLI package runs in Node environment
     globals: true,

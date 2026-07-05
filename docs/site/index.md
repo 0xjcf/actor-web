@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Actor-Web
   text: Pure actor model for the web
-  tagline: Location-transparent actors for JavaScript/TypeScript, inspired by Erlang/OTP.
+  tagline: Location-transparent actors for local and directly connected runtime nodes; dynamic membership and production multi-machine transport remain in progress.
   actions:
     - theme: brand
       text: What is Actor-Web?
@@ -12,6 +12,9 @@ hero:
     - theme: alt
       text: Your first actor
       link: /getting-started/your-first-actor
+    - theme: alt
+      text: Transport status
+      link: https://github.com/0xjcf/actor-web/blob/main/docs/spikes/actor-web-external-transport-design.md
 
 features:
   - title: Actors, not call stacks

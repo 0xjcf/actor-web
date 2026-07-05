@@ -72,9 +72,21 @@ In Codex, prefer `.fas/state/codex-orchestration.json` plus `.fas/state/codex-su
 - Planner artifacts and commit plans remain the source of truth over any generic skill defaults.
 - Handoffs must cite changed files, ChangeSet or planAlignment evidence, verification receipts, and any memory constraints used or intentionally overridden.
 - Delegated `handoff` and `completed` updates should also include compact advisory `Context Feedback` with usefulness, completeness, freshness, and noise ratings or an explicit `not applicable` marker. Prefer `fas record-agent-execution ... --context-feedback-json '<json>'`.
+- Root-owned and `single-agent` closeout summaries should include the same compact advisory `Context Feedback` block, or an explicit `not applicable` marker, so context-quality artifacts capture a root-session sample as well.
 - Root session owns process-pressure diagnostics, cleanup decisions, final full verification, ship/closeout, and `fas done`. Delegated agents receive compact machine-risk status only (`available`, `unavailable`, `unavailable-permission`, `yellow`, or `red`) unless their assigned task explicitly owns runtime safety.
 - Normal root-owned workflow preflights should stay compact as well; reserve full process-table attempt-chain diagnostics for explicit `fas runtime process-pressure ...` inspection and root logs.
 - When Codex reports process-table permission failures from sandboxed Node execution, use approved root-session FAS commands such as `fas runtime process-pressure --stage task-start --preflight --cleanup-plan` (or the `implement-preflight` alias), `fas runtime cleanup --dry-run`, `fas verify --full`, `fas ship`, or `fas done` instead of asking delegated agents to inspect OS processes. Root-session diagnostics should prefer the approved `fas runtime process-pressure` command path and treat the reported node/shell/root-command attempt chain as the audit surface.
+
+## Claude Code Client
+
+Claude Code consumes the same FAS role plan as Codex and Cursor — it is an adapter over the shared orchestration model, not a separate fork. `fas install`/`fas update` generate its surfaces:
+
+- **Skills**: the FAS skills sync into `~/.claude/skills` (override with `FAS_CLAUDE_SKILLS_DIR`). Load the root mode skill (`fas-single`, `fas-4-agents`, or `fas-6-agents`) in the root session; role skills (`fas-planner`, `fas-architect`, `fas-staff-engineer`, `fas-implementer`, `fas-investigator`, `fas-reviewer`) drive each delegated step.
+- **Subagents**: `.claude/agents/fas-{architect,staff-engineer,implementer,investigator,reviewer}.md` are generated as thin pointers to the canonical `.fas/agents/<role>.md` definitions. Read-only roles (`fas-investigator`, `fas-reviewer`) exclude `Edit`/`Write`. Do not hand-edit them — edit the role files and re-run `fas update`.
+- **MCP**: `.mcp.json` wires the read-only `fas mcp-server` (`fas_local`) for status and review-context surfaces. It is merged non-destructively, so your own MCP servers are preserved.
+- **Setup surface**: prefer `.fas/state/claude-orchestration.json` plus `.fas/state/claude-subagents-prompt.md` for subagent types, mode hints, and spawn order, with `.fas/state/agent-orchestration.json` as the canonical source.
+
+Delegation rules match Codex: spawn `Task` subagents only when the user requests `4-agent`/`6-agent` mode or `claude-orchestration.json` requires delegation; require `setupCompliance.status=compliant` first; the root session owns FAS lifecycle records, verification, and closeout, and translates returned handoffs into audited `fas` CLI commands. The delegated lifecycle, evidence-order, and handoff rules in **Codex Skills** above apply to Claude Code delegation as well.
 
 ## Pipeline Owners vs Conceptual Roles
 
@@ -114,6 +126,18 @@ When SQLite-backed `memory_records` are available, treat them as authoritative. 
 - Human approval is required only at the final review and merge stage.
 - Do not move project-local `.fas/` runtime data into the shared platform repo.
 - Do not stop after planning unless a hard blocker prevents safe progress.
+
+## External AI Review Guidance
+
+When a tool such as CodeRabbit reviews this repository with `AGENTS.md` as context:
+
+- Treat `.fas/state/task-packet.json`, `.fas/state/commit-plan.json`, `.fas/state/closeout-readiness/latest.json`, and verification receipts as review evidence when present, but prefer source files and tests for final correctness claims.
+- Distinguish source/runtime changes from generated FAS projections such as `.fas/TASKS.md`, `.fas/queue/tasks.json`, and `.fas/state/*`; flag projection drift when it changes operator truth, but do not treat generated state churn as product code.
+- Flag unrelated bundled commits or branch contamination as review concerns, especially when a changed file is outside the task brief, task packet, or commit plan.
+- For metadata-only briefs and queue cleanup, do not require production-code TDD unless the accepted scope includes production behavior changes.
+- Prefer follow-up tasks for non-blocking workflow improvements; block only on correctness, data-loss, security, contract, migration, or verification risks that must be fixed before merge.
+- Do not request repeated full verification or repeated external-review passes unless new material changes landed after the latest valid receipt or review.
+- Order findings by correctness/security/data-loss risk first, then contract and test gaps, then process or style concerns.
 
 ## Scope Discipline
 
@@ -171,22 +195,27 @@ Do not continue to the next commit-plan step when the current step has failures.
 These are the most frequent ways agents try to skip FAS guardrails. All of them are wrong.
 
 ### Skipping planning
+
 | "The task is simple, I can skip planning" | The pipeline is the discipline. Simple tasks finish faster through the pipeline, not around it. |
 | "I already know which files to change" | The planner discovers dependency-reachable files and cross-module impacts you will miss. |
 
 ### Skipping verification
+
 | "I already ran the tests individually" | Individual runs do not replace `verify.sh`. The pipeline runs format, lint, typecheck, test, and boundaries as a unit. |
 | "The change is too small to need verification" | Small changes break things. A one-line typo fix can fail formatting. Always verify. |
 
 ### Combining commits
+
 | "These two steps are closely related, I will combine them" | Separate commits let each step be reviewed, reverted, and bisected independently. |
 | "It is faster to do it all at once" | It feels faster until something breaks and you cannot tell which change caused it. |
 
 ### Skipping memory
+
 | "I already know this codebase" | Memory contains incidents, PR feedback, and decisions from other sessions you have no access to. |
 | "The task is narrow, memory is not relevant" | Narrow tasks are where past incidents matter most. |
 
 ### Spike-phase drift
+
 | "I found the answer, let me just fix it" | Spikes are read-only. Fixes go into task briefs for the implementation pipeline. Implementing during a spike bypasses planning, commit discipline, and verification. |
 | "This repo doesn't need bootstrapping" | Bootstrapping produces indexes and memory that make exploration structural. Skipping it degrades spike quality. |
 | "The spike is done after one repo" | Spikes exist because the problem is cross-cutting. Check sibling repos before concluding. |

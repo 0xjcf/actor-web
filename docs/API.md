@@ -589,6 +589,22 @@ Actor-Web read-model sources provide:
 - `subscribeTransportStatus(listener)`
 - `close()`
 
+Topology actors expose the same source factory names everywhere:
+
+| Factory | Use when | Ignite Element mapping |
+| --- | --- | --- |
+| `readModel(opts)` | the host only projects snapshots/events | pass as `igniteCore({ source })` |
+| `source(opts)` | the host projects state and intentionally sends commands | pass as `igniteCore({ source })` |
+| `commandSource(opts)` | the host owns command/control without projection replay | pass as `igniteCore({ source })` |
+| `sourceHandle(opts)` | the host wants explicit `{ source, commandSource, stop }` ownership | pass `handle.commandSource` when Ignite commands; pass `handle.source` for read-only projection |
+| `readModelHandle(opts)` | the host wants explicit read-model cleanup with `stop()` | pass `handle.source` |
+
+`opts` is `ActorWebSourceOptions`: `{ gateway: { url, scope?, auth? },
+streamId?, createSocket?, clientVersion? }`. It is gateway/transport
+configuration, not actor identity. The actor is selected by the topology path
+(`logistics.actors.shipment`); `gateway.scope.params` carries product filters
+such as tenant, document, shipment, or vehicle ids.
+
 For Ignite Element, the target API keeps this read-model source as the default
 `source` for `ignite-element/actor-web`. Components that only render live
 projection state should not need a command-capable source:
@@ -608,35 +624,16 @@ const shipmentCard = igniteCore({
 });
 ```
 
-When a host needs both live projection state and command/control for the same
-actor, pair the read-model source with an explicit command helper. The
-read-model side stays on the full projection subscription, while the explicit
-command helper uses a lighter command-only gateway subscribe mode so it does
-not open a second snapshot/event/transition stream for the same actor.
-
-```ts
-const client = createActorWebReadModelClient(logistics, {
-  gateway: { url: 'ws://127.0.0.1:4100' },
-  clientVersion: 'logistics-ui',
-});
-
-const shipmentSource = client.actors.shipment;
-const shipmentCommands = logistics.actors.shipment.commandSource({
-  gateway: { url: 'ws://127.0.0.1:4100' },
-});
-```
-
-The matching `ignite-element/actor-web` contract should expose that pairing
-without requiring product code to wrap sources or write manual generics:
+When an Ignite host needs both live projection state and command/control for
+the same actor, pass the command-capable Actor-Web source as Ignite's single
+`source`. `commandSource(...)` is an Actor-Web source factory, not a second
+Ignite config key. The split remains visible in the source factory choice,
+without manual generics:
 
 ```ts
 const shipmentCard = igniteCore({
   source: () =>
-    logistics.actors.shipment.readModel({
-      gateway: { url: 'ws://127.0.0.1:4100' },
-    }),
-  commandSource: () =>
-    logistics.actors.shipment.commandSource({
+    logistics.actors.shipment.source({
       gateway: { url: 'ws://127.0.0.1:4100' },
     }),
 
@@ -646,6 +643,9 @@ const shipmentCard = igniteCore({
   }),
 });
 ```
+
+Generic browser clients that do not use Ignite can still compose a read-model
+client and command-capable source explicitly when that is the product shape.
 
 `ignite-element/actor-web` should treat `close()` as the Actor-Web cleanup hook,
 equivalent to `stop()` for handles, so product code does not need to adapt
@@ -669,18 +669,22 @@ const runtime = await startRuntime(logistics, {
 
 const dashboard = igniteCore({
   source: ({ host }) => runtime.dashboard.readModel({ host }),
-  commandSource: () => runtime.dashboard.commandSource(),
 });
 ```
 
 `readModel({ host })` accepts Ignite's host-context object so product code can
-pass the source factory arguments straight through. `source.close()` closes that
-source's subscriptions; `runtime.stop()` closes every source the runtime opened
-and then stops all started Actor-Web nodes. App-owned runtimes should call
-`runtime.stop()` during teardown. Ignite-owned isolated sources can rely on
-`close()` or an `AbortSignal` passed to `readModel(...)`/`commandSource(...)`.
+pass the source factory arguments straight through. Use `commandSource({ host })`
+as the Ignite `source` when a host intentionally owns command/control but does
+not need projection replay. Use `source({ host })` when the same component needs
+both projection and command capability.
+`source.close()` closes that source's subscriptions; `runtime.stop()` closes
+every source the runtime opened and then stops all started Actor-Web nodes.
+App-owned runtimes should call `runtime.stop()` during teardown. Ignite-owned
+isolated sources can rely on `close()` or an `AbortSignal` passed to
+`readModel(...)`/`commandSource(...)`.
 
-Use an explicit command helper when the host owns command/control:
+Outside Ignite, use an explicit command helper when the host owns
+command/control without a projection stream:
 
 ```ts
 const shipmentCommands = logistics.actors.shipment.commandSource({
@@ -749,11 +753,11 @@ const shipmentSource = createActorWebReadModelSource({
 ```
 
 Use `createActorWebCommandSource(...)` or `topology.actors.name.commandSource(...)`
-only when the host intentionally owns command/control for that actor. These
-helpers now opt into the gateway's command-only subscribe mode: they still go
-through gateway auth and scope resolution, but they wait for the first
-post-subscribe status instead of an initial snapshot and they do not request
-snapshot/event/transition replay.
+only when the host intentionally owns command/control for that actor without a
+projection stream. These helpers opt into the gateway's command-only subscribe
+mode: they still go through gateway auth and scope resolution, but they wait for
+the first post-subscribe status instead of an initial snapshot and they do not
+request snapshot/event/transition replay.
 
 ```ts
 const shipmentCommands = createActorWebCommandSource({
@@ -1021,7 +1025,10 @@ await runtime.stop();
 The returned runtime exposes:
 
 - `runtime.actorKey.readModel({ host?, signal? })`
+- `runtime.actorKey.source({ host?, signal? })`
 - `runtime.actorKey.commandSource({ host?, signal? })`
+- `runtime.actorKey.sourceHandle({ host?, signal? })`
+- `runtime.actorKey.readModelHandle({ host?, signal? })`
 - `runtime.actorKey.actor()`
 - `runtime.actors.actorKey` for the same helpers without top-level access
 - `runtime.nodes` for node handles and focused test flushing
@@ -1190,8 +1197,13 @@ The runtime transport contract exports:
 - `RuntimeTransportHeartbeatFrame`
 - `createRuntimeTransportMessageId(...)`
 - `RUNTIME_TRANSPORT_PROTOCOL_VERSION`
+- `DEFAULT_RUNTIME_TRANSPORT_MAX_FRAME_BYTES`
+- `createRuntimeTransportStreamHost(...)`
 - validation helpers for identity, handshake, runtime frames, ack frames, and
   heartbeat frames
+- `measureRuntimeTransportFrameBytes(...)`,
+  `normalizeRuntimeTransportMaxFrameBytes(...)`, and
+  `validateRuntimeTransportFramePayloadSize(...)`
 
 Runtime transport frames include a `messageId`. Node and browser WebSocket
 transports keep a bounded per-peer idempotency cache and drop duplicate frame IDs
@@ -1217,12 +1229,55 @@ limit is `1024` queued data frames. When the queue is full, `send(...)` rejects
 and the transport emits backpressure telemetry instead of buffering without a
 limit. Ack and heartbeat control frames stay minimal and direct.
 
-Handshake rejection covers:
+Both WebSocket transports also enforce a max serialized runtime-frame size before
+enqueueing. The default is `DEFAULT_RUNTIME_TRANSPORT_MAX_FRAME_BYTES` (`1 MiB`)
+and can be overridden with `maxFrameBytes` on the Node or browser WebSocket
+transport options. Oversized sends reject with `payload_too_large`, emit
+`frame.dropped` telemetry with `frameBytes` and `maxFrameBytes`, and do not
+consume the peer sequence or hit the wire.
+
+`createRuntimeTransportStreamHost(...)` adds a credit-based stream protocol over
+the existing `MessageTransport`. It is intended for incremental agent and tool
+output such as LLM tokens, progress facts, and stdout-like text chunks. Stream
+messages are ordinary `__runtime.stream.*` runtime control frames, so existing
+ordering, max-frame validation, ack/retry for runtime control traffic, and
+transport queue backpressure still apply. A sender can write only while it has
+receiver credit; the receiver grants more credit after each chunk handler
+settles.
+
+```ts
+const outputStreams = createRuntimeTransportStreamHost({
+  transport,
+  nodeAddress: 'worker',
+  initialCredit: 1,
+});
+
+outputStreams.subscribe((stream) => ({
+  async onChunk(chunk) {
+    await appendAgentOutput(stream.streamId, chunk.payload);
+  },
+}));
+
+const stream = await outputStreams.open('coordinator', {
+  metadata: { kind: 'agent-output' },
+});
+
+await stream.write({ token: 'Planning' });
+await stream.write({ token: ' complete.' });
+await stream.close();
+```
+
+Large prompts, model outputs, context packs, and binary/blob payloads should
+still be externalized into a durable artifact store and sent as stable
+references when they do not fit the configured frame limit.
+
+Runtime transport rejection covers:
 
 - missing node identity
 - same-node connections
 - incompatible protocol versions
 - malformed frame envelopes
+- oversized runtime frames
 
 ## Telemetry And Stats
 

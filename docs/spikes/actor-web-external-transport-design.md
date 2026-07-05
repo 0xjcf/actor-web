@@ -8,8 +8,9 @@ external transport direction.
 
 Current closeout status: the runtime gateway and Ignite bridge are a documented
 projection/gateway slice. They prove the host-facing API shape, service-worker
-topology, and shared-contract projection mapping. They do not complete
-production distributed transport.
+topology, shared-contract projection mapping, and a multi-process localhost
+rehearsal. They do not complete physical multi-host deployment or production
+distributed transport.
 
 ## Why This Doc Exists
 
@@ -201,7 +202,8 @@ That means:
 4. Shared-contract promotion from mapper to real data-plane wire shape
 5. Durable telemetry export, tracing, lag, replay, and backpressure
    observability
-6. Multi-process and multi-machine prove-out beyond localhost
+6. True multi-host prove-out beyond the completed multi-process localhost
+   rehearsal
 
 ## External Transport Options
 
@@ -492,8 +494,8 @@ Status: complete for localhost/static-peer prove-out. Later slices added
 auth/security, telemetry, idempotency, ack/retry control traffic, bounded
 backpressure, bounded gateway replay, and runtime peer discovery provider
 integration. Remaining production work is deployment-backed discovery adapters,
-durable replay storage, durable observability export, and multi-machine
-prove-out.
+durable replay storage, durable observability export, and true multi-host
+rehearsal.
 
 ### Phase 3: Identity and membership hardening
 
@@ -505,7 +507,7 @@ prove-out.
 Status: complete for basic membership hardening and pluggable discovery provider
 wiring. Remaining production work is a deployment-backed discovery adapter,
 durable membership state, durable replay storage, durable observability export,
-and multi-machine prove-out.
+and true multi-host rehearsal.
 
 ### Phase 3.5: Runtime transport observability foundation
 
@@ -519,10 +521,19 @@ and multi-machine prove-out.
 Status: complete for runtime-native telemetry/stats snapshots, auth/security,
 message ID based duplicate suppression, and bounded retry/ack handling for
 internal runtime control traffic. Bounded per-peer outbound queues now apply
-backpressure by rejecting sends when the queue is full. Runtime telemetry now has
+backpressure by rejecting sends when the queue is full. WebSocket transports now
+also enforce an explicit max serialized runtime-frame size before enqueueing
+(`maxFrameBytes`, default `1 MiB`) and reject oversized actor messages with
+`payload_too_large` plus frame-size telemetry. Actor-Web now exposes
+`createRuntimeTransportStreamHost(...)` for credit-based `__runtime.stream.*`
+agent/tool output streams over existing transports. It does not reassemble
+oversized blobs; callers should still externalize large prompts, context packs,
+and binary payloads into durable artifact storage and send stable references
+when they exceed the configured frame limit. Runtime telemetry now has
 exporter/sink primitives plus a Node JSONL file sink. Remaining production work
-is durable replay storage, deployment-backed discovery, OpenTelemetry/metrics
-adapters, and multi-machine prove-out.
+is durable replay storage, deployment-backed discovery, bulk chunk/reassembly
+for artifact payloads, OpenTelemetry/metrics adapters, and true multi-host
+rehearsal.
 
 ### Phase 4: Projection hardening
 

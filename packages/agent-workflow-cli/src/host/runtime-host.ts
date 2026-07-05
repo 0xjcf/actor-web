@@ -13,9 +13,11 @@
  * and tests all share one code path.
  */
 
+import { type ActorAgentLlmProvider, createActorAgentTools } from '@actor-web/agent';
 import type {
   ActorMessage,
   ActorRef,
+  ActorToolRegistry,
   ActorWebTopology,
   ActorWebTopologyInput,
   Message,
@@ -47,6 +49,16 @@ export interface RuntimeHost {
   /** Drain in-flight messages on every started node. */
   flush(): Promise<void>;
   stop(): Promise<void>;
+}
+
+export interface RuntimeHostAgentOptions {
+  readonly llm?: ActorAgentLlmProvider;
+}
+
+export interface RuntimeHostOptions {
+  readonly node?: string;
+  readonly tools?: ActorToolRegistry;
+  readonly agent?: RuntimeHostAgentOptions;
 }
 
 interface RegisteredActor {
@@ -103,16 +115,28 @@ function toEntry(actor: RegisteredActor): HostActorEntry {
   };
 }
 
+function resolveRuntimeHostTools(options: RuntimeHostOptions): ActorToolRegistry | undefined {
+  if (!options.agent?.llm) {
+    return options.tools;
+  }
+
+  return {
+    ...(options.tools ?? {}),
+    ...createActorAgentTools({ llm: options.agent.llm }),
+  };
+}
+
 /**
  * Start an in-process host from a topology value (programmatic entry point).
  */
 export async function createRuntimeHost(
   topology: AnyTopology,
-  options: { node?: string } = {}
+  options: RuntimeHostOptions = {}
 ): Promise<HostResult<RuntimeHost>> {
   let runtime: Awaited<ReturnType<typeof startRuntime>>;
   try {
-    runtime = await startRuntime(topology);
+    const tools = resolveRuntimeHostTools(options);
+    runtime = await startRuntime(topology, tools ? { tools } : undefined);
   } catch (error) {
     return {
       ok: false,
@@ -265,7 +289,7 @@ export async function createRuntimeHost(
  */
 export async function createRuntimeHostFromFile(
   topologyPath: string,
-  options: { node?: string } = {}
+  options: RuntimeHostOptions = {}
 ): Promise<HostResult<RuntimeHost>> {
   const loaded = await loadModuleExport(topologyPath);
   if (!loaded.ok) {

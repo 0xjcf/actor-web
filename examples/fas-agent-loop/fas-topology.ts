@@ -1,5 +1,11 @@
+import { dependsOn, lattice } from '@actor-web/lattice';
 import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
 import {
+  createFasHybridCoordinatorBehavior,
+  createFasLatticeImplementerBehavior,
+  createFasLatticePlannerBehavior,
+  createFasLatticeReviewerBehavior,
+  createFasLatticeVerifierBehavior,
   createFasSupervisorBehavior,
   createImplementerAgentBehavior,
   createPlannerAgentBehavior,
@@ -109,6 +115,84 @@ export const fasAgentLoop = defineActorWebTopology({
         withinMs: 60_000,
       },
     }),
+
+    workspace: lattice({
+      id: 'fas-workspace-lattice',
+      node: 'coordinator',
+    }),
+
+    latticePlanner: dependsOn({
+      id: 'fas-lattice-planner-agent',
+      node: 'worker',
+      behavior: createFasLatticePlannerBehavior,
+      dependencies: [
+        {
+          id: 'planner-observes-task-brief',
+          lattice: 'workspace',
+          requires: [{ type: 'task.brief' }],
+        },
+      ],
+    }),
+
+    latticeImplementer: dependsOn({
+      id: 'fas-lattice-implementer-agent',
+      node: 'worker',
+      behavior: createFasLatticeImplementerBehavior,
+      dependencies: [
+        {
+          id: 'implementer-observes-execution-plan',
+          lattice: 'workspace',
+          requires: [{ type: 'execution.plan' }],
+        },
+        {
+          id: 'implementer-observes-review-findings',
+          lattice: 'workspace',
+          mode: 'everyVersion',
+          requires: [{ type: 'review.findings' }],
+        },
+      ],
+    }),
+
+    latticeVerifier: dependsOn({
+      id: 'fas-lattice-verifier-agent',
+      node: 'worker',
+      behavior: createFasLatticeVerifierBehavior,
+      dependencies: [
+        {
+          id: 'verifier-observes-implementation-patch',
+          lattice: 'workspace',
+          mode: 'everyVersion',
+          requires: [{ type: 'implementation.patch' }],
+        },
+      ],
+    }),
+
+    latticeReviewer: dependsOn({
+      id: 'fas-lattice-reviewer-agent',
+      node: 'worker',
+      behavior: createFasLatticeReviewerBehavior,
+      dependencies: [
+        {
+          id: 'reviewer-observes-verification-result',
+          lattice: 'workspace',
+          mode: 'everyVersion',
+          requires: [{ type: 'verification.result' }],
+        },
+      ],
+    }),
+
+    hybridCoordinator: dependsOn({
+      id: 'fas-hybrid-coordinator',
+      node: 'coordinator',
+      behavior: createFasHybridCoordinatorBehavior,
+      dependencies: [
+        {
+          id: 'hybrid-coordinator-observes-review-approved',
+          lattice: 'workspace',
+          requires: [{ type: 'review.approved' }],
+        },
+      ],
+    }),
   },
 
   supervisors: {
@@ -122,6 +206,18 @@ export const fasAgentLoop = defineActorWebTopology({
       node: 'worker',
       strategy: 'one-for-one',
       children: ['plannerAgent', 'implementerAgent', 'verifierAgent', 'reviewerAgent'],
+    }),
+
+    latticeEnvironment: supervisor({
+      node: 'coordinator',
+      strategy: 'one-for-one',
+      children: ['workspace', 'hybridCoordinator'],
+    }),
+
+    latticeAgents: supervisor({
+      node: 'worker',
+      strategy: 'one-for-one',
+      children: ['latticePlanner', 'latticeImplementer', 'latticeVerifier', 'latticeReviewer'],
     }),
   },
 });

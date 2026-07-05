@@ -3,7 +3,7 @@
  * @description Unit tests for Layer 5: Message delivery to mailboxes
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ActorMessage } from '../actor-system.js';
 import { ActorSystemImpl } from '../actor-system-impl.js';
 import { withTimerTesting } from '../testing/timer-test-utils.js';
@@ -98,6 +98,113 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
     });
 
     await system.stop();
+  });
+
+  it('should deliver emitted events to a batch of subscriber mailboxes', async () => {
+    const system = new ActorSystemImpl({ nodeAddress: 'test-node' });
+    await system.start();
+
+    try {
+      const publisherBehavior = defineBehavior<ActorMessage>()
+        .onMessage(({ message }) => {
+          if (message.type === 'EMIT_EVENT') {
+            return {
+              emit: [{ type: 'EMITTED_EVENT', data: 'hello' }],
+            };
+          }
+        })
+        .build();
+
+      const subscriberMessagesA: ActorMessage[] = [];
+      const subscriberMessagesB: ActorMessage[] = [];
+      const subscriberBehaviorA = defineBehavior<ActorMessage>()
+        .onMessage(({ message }) => {
+          subscriberMessagesA.push(message);
+        })
+        .build();
+      const subscriberBehaviorB = defineBehavior<ActorMessage>()
+        .onMessage(({ message }) => {
+          subscriberMessagesB.push(message);
+        })
+        .build();
+
+      const publisherPid = await system.spawn(publisherBehavior, { id: 'publisher' });
+      const subscriberAPid = await system.spawn(subscriberBehaviorA, { id: 'subscriber-a' });
+      const subscriberBPid = await system.spawn(subscriberBehaviorB, { id: 'subscriber-b' });
+
+      const unsubscribe = await system.subscribe(publisherPid, {
+        subscribers: [subscriberAPid, subscriberBPid],
+        events: ['EMITTED_EVENT'],
+      });
+
+      await publisherPid.send({ type: 'EMIT_EVENT' });
+      await system.flush();
+
+      expect(subscriberMessagesA).toHaveLength(1);
+      expect(subscriberMessagesB).toHaveLength(1);
+      expect(subscriberMessagesA[0]).toMatchObject({ type: 'EMITTED_EVENT', data: 'hello' });
+      expect(subscriberMessagesB[0]).toMatchObject({ type: 'EMITTED_EVENT', data: 'hello' });
+
+      await unsubscribe();
+      await publisherPid.send({ type: 'EMIT_EVENT' });
+      await system.flush();
+
+      expect(subscriberMessagesA).toHaveLength(1);
+      expect(subscriberMessagesB).toHaveLength(1);
+    } finally {
+      await system.stop();
+    }
+  });
+
+  it('should reconcile stopped subscribers before emitting events', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const system = new ActorSystemImpl({ nodeAddress: 'test-node' });
+    await system.start();
+
+    try {
+      const publisherBehavior = defineBehavior<ActorMessage>()
+        .onMessage(({ message }) => {
+          if (message.type === 'EMIT_EVENT') {
+            return {
+              emit: [{ type: 'EMITTED_EVENT', data: 'hello' }],
+            };
+          }
+        })
+        .build();
+
+      const subscriberBehavior = defineBehavior<ActorMessage>()
+        .onMessage(() => {
+          // The subscriber is stopped before publish; no event should be delivered.
+        })
+        .build();
+
+      const publisherPid = await system.spawn(publisherBehavior, { id: 'publisher' });
+      const subscriberPid = await system.spawn(subscriberBehavior, { id: 'subscriber' });
+
+      await system.subscribe(publisherPid, {
+        subscriber: subscriberPid,
+        events: ['EMITTED_EVENT'],
+      });
+
+      await subscriberPid.stop();
+      await publisherPid.send({ type: 'EMIT_EVENT' });
+      await system.flush();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const deadLetters = (
+        system as unknown as {
+          deadLetterQueue: {
+            getAll(): ReadonlyArray<{ targetActorId: string; reason: string }>;
+          };
+        }
+      ).deadLetterQueue.getAll();
+
+      expect(deadLetters).toEqual([]);
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    } finally {
+      consoleErrorSpy.mockRestore();
+      await system.stop();
+    }
   });
 
   it('should handle mailbox overflow strategies', async () => {

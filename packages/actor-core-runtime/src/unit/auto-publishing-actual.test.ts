@@ -85,22 +85,22 @@ describe.skip('Layer 4: AutoPublishingRegistry - Actual Implementation', () => {
     const sub2 = createMockActorRef('actor://test/sub2');
 
     // Add subscribers with event filters
-    registry.addSubscriber('publisher', 'sub1', sub1, ['EVENT_A', 'EVENT_B']);
-    registry.addSubscriber('publisher', 'sub2', sub2, ['EVENT_B', 'EVENT_C']);
+    registry.addSubscriber('publisher', 'sub1', sub1.address, ['EVENT_A', 'EVENT_B']);
+    registry.addSubscriber('publisher', 'sub2', sub2.address, ['EVENT_B', 'EVENT_C']);
 
     // Get subscribers for specific events
     const subsForA = registry.getSubscribersForEvent('publisher', 'EVENT_A');
     expect(subsForA).toHaveLength(1);
-    expect(subsForA[0]).toBe(sub1);
+    expect(subsForA[0]).toBe(sub1.address);
 
     const subsForB = registry.getSubscribersForEvent('publisher', 'EVENT_B');
     expect(subsForB).toHaveLength(2);
-    expect(subsForB).toContain(sub1);
-    expect(subsForB).toContain(sub2);
+    expect(subsForB).toContain(sub1.address);
+    expect(subsForB).toContain(sub2.address);
 
     const subsForC = registry.getSubscribersForEvent('publisher', 'EVENT_C');
     expect(subsForC).toHaveLength(1);
-    expect(subsForC[0]).toBe(sub2);
+    expect(subsForC[0]).toBe(sub2.address);
 
     // Event not in any filter
     const subsForD = registry.getSubscribersForEvent('publisher', 'EVENT_D');
@@ -115,7 +115,7 @@ describe.skip('Layer 4: AutoPublishingRegistry - Actual Implementation', () => {
 
     // Add subscriber with no filter
     const subscriber = createMockActorRef('actor://test/all-subscriber');
-    registry.addSubscriber('publisher', 'all-sub', subscriber, []); // Empty array = all events
+    registry.addSubscriber('publisher', 'all-sub', subscriber.address, []); // Empty array = all events
 
     // Should receive all events
     expect(registry.getSubscribersForEvent('publisher', 'ANY_EVENT')).toHaveLength(1);
@@ -129,7 +129,7 @@ describe.skip('Layer 4: AutoPublishingRegistry - Actual Implementation', () => {
     // Setup
     registry.analyzeActorBehavior('publisher', { onMessage: () => {} });
     const subscriber = createMockActorRef('actor://test/subscriber');
-    registry.addSubscriber('publisher', 'sub-id', subscriber, ['EVENT']);
+    registry.addSubscriber('publisher', 'sub-id', subscriber.address, ['EVENT']);
 
     // Verify subscriber exists
     expect(registry.getSubscribersForEvent('publisher', 'EVENT')).toHaveLength(1);
@@ -152,7 +152,7 @@ describe.skip('Layer 4: AutoPublishingRegistry - Actual Implementation', () => {
     // addSubscriber should throw
     const subscriber = createMockActorRef('actor://test/sub');
     expect(() => {
-      registry.addSubscriber('non-existent', 'sub', subscriber, ['EVENT']);
+      registry.addSubscriber('non-existent', 'sub', subscriber.address, ['EVENT']);
     }).toThrow('Actor non-existent is not registered for auto-publishing');
   });
 
@@ -210,7 +210,7 @@ describe.skip('Layer 4: AutoPublishingRegistry - Actual Implementation', () => {
     // Note: The current implementation doesn't support pattern matching
     // It only does exact matches or no filter (all events)
     const subscriber = createMockActorRef('actor://test/pattern-sub');
-    registry.addSubscriber('publisher', 'pattern', subscriber, ['USER_*']);
+    registry.addSubscriber('publisher', 'pattern', subscriber.address, ['USER_*']);
 
     // Will only match exact 'USER_*', not patterns
     expect(registry.getSubscribersForEvent('publisher', 'USER_*')).toHaveLength(1);

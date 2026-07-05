@@ -106,11 +106,12 @@ side obvious.
 Current implementation status:
 
 - `@actor-web/runtime/topology` exports the browser-safe topology declaration
-  helpers, descriptor types, and actor descriptor `.readModel(...)` /
-  `.commandSource(...)` conveniences.
+  helpers, descriptor types, and actor descriptor `.readModel(...)`,
+  `.source(...)`, and `.commandSource(...)` conveniences.
 - `@actor-web/runtime/browser` exports `createActorWebReadModelSource` for
-  gateway-backed Ignite-compatible read-model sources and
-  `createActorWebCommandSource` for explicit host-owned command/control.
+  gateway-backed Ignite-compatible read-model sources, `createActorWebSource`
+  for read/write sources, and `createActorWebCommandSource` for explicit
+  host-owned command-only control.
 - `@actor-web/runtime/node` exports `serveNode` for topology-owned
   Node/server runtime hosting.
 - `@actor-web/runtime/node` exports `serveActorWebHttp` for route-first HTTP
@@ -119,9 +120,8 @@ Current implementation status:
   browser worker runtime hosting.
 - `ignite-element/actor-web` is the first-class Ignite Element adapter entrypoint
   for Actor-Web sources.
-- The current example uses topology actor `.readModel(...)` for server gateway
-  sources and opts into `.commandSource(...)` only where the host deliberately
-  owns command/control.
+- The current example uses topology actor `.source(...)` when an Ignite host
+  needs one gateway-backed source for both projection and command/control.
 
 ## Primary Path: Shared TypeScript Topology
 
@@ -195,13 +195,9 @@ import { igniteCore } from 'ignite-element/actor-web';
 import { logistics } from './logistics.topology';
 
 const logisticsControlTower = igniteCore({
-  source: logistics.actors.shipment.readModel({
+  source: logistics.actors.shipment.source({
     gateway: { url: import.meta.env.VITE_ACTOR_WEB_GATEWAY_URL },
   }),
-  commandSource: () =>
-    logistics.actors.shipment.commandSource({
-      gateway: { url: import.meta.env.VITE_ACTOR_WEB_GATEWAY_URL },
-    }),
 
   states: ({ context, transport }) => ({
     status: context.status,
@@ -501,8 +497,10 @@ supplied.
 
 Command/read split is modeled at the topology boundary, not by requiring a
 custom gateway scope for every source. Default browser/topology sources stay
-projection-only, while host-owned control uses `commandSource(...)` or
-`createActorWebCommandSource(...)` explicitly. When an agentic workflow needs
+projection-only. Hosts that need one Ignite-compatible read/write source use
+`source(...)` or `createActorWebSource(...)`; hosts that only need command
+delivery use `commandSource(...)` or `createActorWebCommandSource(...)` and get
+the gateway's command-only subscription mode. When an agentic workflow needs
 stricter CQRS boundaries, declare separate topology actors or generated-client
 descriptors for the command actor and the read projection actor. This keeps the
 split visible in the actor model while preserving the low-boilerplate source
@@ -512,8 +510,7 @@ For `ignite-element/actor-web`, the intended pairing is:
 
 ```ts
 igniteCore({
-  source: ({ host }) => runtime.dashboard.readModel({ host }),
-  commandSource: () => runtime.dashboard.commandSource(),
+  source: ({ host }) => runtime.dashboard.commandSource({ host }),
   commands: ({ actor }) => ({
     approve: (approvalId: string) =>
       actor.send({ type: 'APPROVE_RECOMMENDATION', approvalId }),
@@ -521,10 +518,11 @@ igniteCore({
 });
 ```
 
-`source` is always the live read-model/projection port. `commandSource` is
-optional and only present when the component intentionally owns command/control.
-The Ignite adapter should infer both sides without app-level generic
-annotations and should close Actor-Web sources through `close()` or `stop()`.
+`source` is the only Ignite config key. It can receive a projection-only
+read-model source or a command-capable source value; the component chooses the
+narrowest source factory that matches its responsibilities. The Ignite adapter
+should infer both sides without app-level generic annotations and should close
+Actor-Web sources through `close()` or `stop()`.
 
 ## AI And Agentic Workflow Alignment
 
