@@ -14,10 +14,12 @@ import type {
 import type { RuntimeTransportTelemetryEvent } from '../runtime-transport-telemetry.js';
 import type {
   DialResult,
+  PeerIdentity,
   PeerLink,
   PeerLinkHeartbeat,
   PeerLinkSink,
   TransportChannel,
+  TransportListenHandle,
 } from '../transport/transport-channel.js';
 import { TransportCore, type TransportTimers } from '../transport/transport-core.js';
 
@@ -120,12 +122,17 @@ class FakePeerLink implements PeerLink {
 
   constructor(
     readonly remoteAddress: string,
-    options: { heartbeat?: PeerLinkHeartbeat } = {}
+    options: { heartbeat?: PeerLinkHeartbeat; identity?: PeerIdentity } = {}
   ) {
     if (options.heartbeat) {
       this.heartbeat = options.heartbeat;
     }
+    if (options.identity) {
+      this.identity = options.identity;
+    }
   }
+
+  readonly identity?: PeerIdentity;
 
   send(payload: unknown): Promise<void> {
     this.sent.push(payload);
@@ -177,11 +184,26 @@ class FakeNativeHeartbeat implements PeerLinkHeartbeat {
 
 class FakeTransportChannel implements TransportChannel {
   dialCount = 0;
+  private onPeer: ((link: PeerLink) => void) | null = null;
+
   constructor(private readonly result: () => DialResult) {}
 
   dial(_remoteAddress: string): Promise<DialResult> {
     this.dialCount += 1;
     return Promise.resolve(this.result());
+  }
+
+  listen(onPeer: (link: PeerLink) => void): Promise<TransportListenHandle> {
+    this.onPeer = onPeer;
+    return Promise.resolve({
+      close: async () => {
+        this.onPeer = null;
+      },
+    });
+  }
+
+  accept(link: PeerLink): void {
+    this.onPeer?.(link);
   }
 }
 
@@ -290,6 +312,47 @@ describe('TransportCore — send pipeline (case 4)', () => {
     });
     expect(link.sent[0]).toBe(JSON.stringify(expectedFrame));
     expect(core.getPeerStats(REMOTE.nodeAddress)?.lastSentSequence).toBe(1);
+  });
+});
+
+describe('TransportCore — peer identity collisions', () => {
+  it('rejects a second link for the same node address with a different node id', async () => {
+    const channel = new FakeTransportChannel(() => ({ ok: false, reason: 'unused' }));
+    const timers = new FakeTimers();
+    const core = new TransportCore({
+      identity: LOCAL,
+      channel,
+      clock: () => timers.now(),
+      timers,
+      heartbeatIntervalMs: 0,
+    });
+
+    await core.start();
+
+    const firstLink = new FakePeerLink('node-b', {
+      identity: {
+        nodeAddress: 'node-b',
+        nodeId: 'stable-node-b',
+        incarnation: 'node-b-boot-1',
+      },
+    });
+    channel.accept(firstLink);
+
+    const conflictingLink = new FakePeerLink('node-b', {
+      identity: {
+        nodeAddress: 'node-b',
+        nodeId: 'different-node-b',
+        incarnation: 'node-b-boot-conflict',
+      },
+    });
+    channel.accept(conflictingLink);
+
+    expect(conflictingLink.closeCount).toBe(1);
+    expect(firstLink.isOpen).toBe(true);
+    expect(core.getPeerStats('node-b')).toMatchObject({
+      state: 'connected',
+      identity: { nodeId: 'stable-node-b', incarnation: 'node-b-boot-1' },
+    });
   });
 });
 
