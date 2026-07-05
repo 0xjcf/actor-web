@@ -377,6 +377,17 @@ type RuntimeActorDirectory = ActorDirectory & {
 };
 
 /**
+ * Resolves a remote actor's registered node location to the next transport hop.
+ */
+export interface RemoteMessageRouter {
+  resolveNextHop(
+    location: string,
+    address: ActorAddress,
+    connectedNodes: readonly string[]
+  ): string | Promise<string>;
+}
+
+/**
  * Configuration for the actor system
  */
 export interface ActorSystemConfig {
@@ -419,6 +430,11 @@ export interface ActorSystemConfig {
    * Optional cross-node runtime transport.
    */
   transport?: MessageTransport;
+
+  /**
+   * Optional remote delivery router for multi-hop transports.
+   */
+  router?: RemoteMessageRouter;
 
   /**
    * Runtime-native tool implementations exposed to actor dependencies.
@@ -4182,7 +4198,12 @@ export class ActorSystemImpl implements ActorSystem {
       );
     }
 
-    await this.sendTransportMessage(location, {
+    const connectedNodes = this.config.transport?.getConnectedNodes() ?? [];
+    const nextHop = this.config.router
+      ? await this.config.router.resolveNextHop(location, address, connectedNodes)
+      : location;
+
+    await this.sendTransportMessage(nextHop, {
       type: '__runtime.remote.send',
       address,
       message,
