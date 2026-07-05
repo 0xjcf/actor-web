@@ -1633,8 +1633,8 @@
 
 - Title: Enforce errors-as-data behavior-boundary profile (flip from throwing-adapters)
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/enforce-errors-as-data-behavior-boundary-profile-flip-from.md
 - Verification lane: fast
 - Policy sensitivity: standard
