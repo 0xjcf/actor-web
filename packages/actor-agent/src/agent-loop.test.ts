@@ -10,15 +10,17 @@ type ActorAgentLlmProvider = (
   context: { readonly actorId: string; readonly nodeAddress: string; readonly signal: AbortSignal }
 ) => unknown;
 
+type AgentLoopBehaviorHarness = {
+  readonly context: unknown;
+  readonly onMessage?: (params: unknown) => Promise<unknown> | unknown;
+};
+
 type AgentModule = {
   readonly ACTOR_WEB_LLM_TOOL_NAME: 'llm';
   createActorAgentToolRegistry(input: {
     readonly llm: ActorAgentLlmProvider;
   }): Record<string, (...args: readonly unknown[]) => unknown>;
-  createAgentLoopBehavior(options?: { readonly system?: string }): {
-    readonly context: unknown;
-    readonly onMessage?: (params: unknown) => Promise<unknown> | unknown;
-  };
+  createAgentLoopBehavior(options?: { readonly system?: string }): AgentLoopBehaviorHarness;
 };
 
 type AgentLoopResultWithContext = {
@@ -36,11 +38,7 @@ function readAgentLoopContext(result: unknown): unknown {
 }
 
 function createAgentParams(input: {
-  readonly behavior: AgentModule extends {
-    createAgentLoopBehavior: (...args: readonly unknown[]) => infer TBehavior;
-  }
-    ? TBehavior
-    : never;
+  readonly behavior: AgentLoopBehaviorHarness;
   readonly tools: ReturnType<typeof createActorToolbox>;
   readonly message:
     | { readonly type: 'START_AGENT'; readonly prompt: string; readonly system?: string }
