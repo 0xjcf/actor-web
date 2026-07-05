@@ -4,6 +4,8 @@
  */
 
 import type { AnyStateMachine, EventObject, SnapshotFrom } from 'xstate';
+import type { ActorRef } from './actor-ref.js';
+import type { ActorMessage } from './actor-system.js';
 import type { UniversalTemplate } from './create-actor.js';
 
 // Re-export for cleaner imports elsewhere
@@ -47,7 +49,7 @@ export type ActorStatus = 'idle' | 'starting' | 'running' | 'stopping' | 'stoppe
 
 export interface ActorRefOptions {
   id?: string;
-  parent?: string;
+  parent?: ActorRef<unknown, ActorMessage>;
   supervision?: SupervisionStrategy | 'resume' | 'restart' | 'stop';
   /**
    * Optional template extracted from behavior definition (Phase 2.1 Task 2.2)
