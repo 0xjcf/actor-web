@@ -17,6 +17,7 @@ import type { ActorMessage, ActorSystem } from '../actor-system.js';
 import { createActorSystem } from '../actor-system-impl.js';
 import {
   type ComponentActorConfig,
+  type ComponentActorContext,
   createComponentActorBehavior,
   type TemplateFunction,
 } from '../component-actor.js';
@@ -32,6 +33,81 @@ vi.mock('../logger.js', () => ({
     }),
   },
 }));
+
+describe('ComponentActor dependency updates', () => {
+  const dependencyMachine = setup({
+    types: {
+      context: {} as Record<string, never>,
+      events: {} as { type: 'NOOP' },
+    },
+  }).createMachine({
+    id: 'dependency-test',
+    initial: 'idle',
+    context: {},
+    states: {
+      idle: {},
+    },
+  });
+
+  function createDependencyRef(address: string): ActorRef {
+    return {
+      address,
+      send: vi.fn(async () => undefined),
+      ask: vi.fn(async () => ({})),
+      stop: vi.fn(async () => undefined),
+      isAlive: vi.fn(async () => true),
+      getStats: vi.fn(async () => ({
+        messagesReceived: 0,
+        messagesProcessed: 0,
+        errors: 0,
+        uptime: 0,
+      })),
+    } as unknown as ActorRef;
+  }
+
+  it('applies UPDATE_DEPENDENCIES refs and preserves them across later messages', async () => {
+    const behavior = createComponentActorBehavior({
+      machine: dependencyMachine,
+      template: () => '',
+    });
+    const backend = createDependencyRef('actor://test-node/backend');
+
+    const baseContext = {
+      messageCount: 0,
+      renderCount: 0,
+      lastRender: 0,
+      mountTime: 0,
+      isDestroyed: false,
+      isMounted: false,
+    };
+
+    const updateResult = await behavior.onMessage({
+      message: {
+        type: 'UPDATE_DEPENDENCIES',
+        dependencies: { backend },
+      },
+      actor: {
+        getSnapshot: () => ({ context: baseContext }),
+      },
+      tools: {},
+    } as Parameters<typeof behavior.onMessage>[0]);
+    const updatedContext = (updateResult as { context: ComponentActorContext }).context;
+
+    expect(updatedContext.dependencies.backend).toBe(backend);
+
+    const renderResult = await behavior.onMessage({
+      message: { type: 'RENDER' },
+      actor: {
+        getSnapshot: () => ({ context: updatedContext }),
+      },
+      tools: {},
+    } as Parameters<typeof behavior.onMessage>[0]);
+
+    expect((renderResult as { context: ComponentActorContext }).context.dependencies.backend).toBe(
+      backend
+    );
+  });
+});
 
 describe.skip('ComponentActor - Pure Actor Model Integration', () => {
   let actorSystem: ActorSystem;

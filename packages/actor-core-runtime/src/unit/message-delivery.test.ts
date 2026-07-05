@@ -6,6 +6,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ActorMessage } from '../actor-system.js';
 import { ActorSystemImpl } from '../actor-system-impl.js';
+import { MetricsInterceptor } from '../interceptors/metrics-interceptor.js';
 import { withTimerTesting } from '../testing/timer-test-utils.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
@@ -152,6 +153,67 @@ describe('Layer 5: Message Delivery to Mailboxes', () => {
       expect(subscriberMessagesA).toHaveLength(1);
       expect(subscriberMessagesB).toHaveLength(1);
     } finally {
+      await system.stop();
+    }
+  });
+
+  it('should continue draining an actor mailbox after the processing batch limit', async () => {
+    const system = new ActorSystemImpl({ nodeAddress: 'test-node' });
+    await system.start();
+
+    try {
+      const processedIndexes: number[] = [];
+      const actor = await system.spawn(
+        defineBehavior<ActorMessage>()
+          .onMessage(({ message }) => {
+            if (message.type === 'BATCHED_MESSAGE' && typeof message.index === 'number') {
+              processedIndexes.push(message.index);
+            }
+          })
+          .build(),
+        { id: 'batch-limited-actor' }
+      );
+
+      await Promise.all(
+        Array.from({ length: 101 }, (_, index) =>
+          actor.send({
+            type: 'BATCHED_MESSAGE',
+            index,
+          })
+        )
+      );
+
+      await vi.waitFor(() => expect(processedIndexes).toHaveLength(101), { timeout: 250 });
+      expect(processedIndexes[100]).toBe(100);
+    } finally {
+      await system.stop();
+    }
+  });
+
+  it('should record receive metrics against the receiver actor address', async () => {
+    const system = new ActorSystemImpl({ nodeAddress: 'test-node' });
+    const metrics = new MetricsInterceptor();
+    await system.start();
+
+    try {
+      system.registerGlobalInterceptor(metrics, { id: 'metrics' });
+      const actor = await system.spawn(
+        defineBehavior<ActorMessage>()
+          .onMessage(() => {
+            // Receiving the message is enough for the interceptor metrics path.
+          })
+          .build(),
+        { id: 'metrics-target' }
+      );
+
+      await actor.send({ type: 'METRIC_TARGET_MESSAGE' });
+      await system.flush();
+
+      const actorMetrics = metrics.getMetrics().get(actor.address);
+      expect(actorMetrics?.messagesReceived).toBe(1);
+      expect(actorMetrics?.messagesProcessed).toBe(1);
+    } finally {
+      metrics.destroy();
       await system.stop();
     }
   });
