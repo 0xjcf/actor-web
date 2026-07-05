@@ -123,7 +123,7 @@ const resolveOtp = async () => {
   return answer || undefined;
 };
 
-const shellQuote = (value) => JSON.stringify(value);
+const shellQuote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 
 const readPreMode = (cwd = process.cwd()) => {
   const preFile = join(cwd, '.changeset/pre.json');
@@ -173,7 +173,7 @@ const getPendingChangesets = (cwd = process.cwd()) => {
 const getReleasePlan = (cwd = process.cwd()) => {
   const out = join(cwd, '.release-plan.json');
   try {
-    execSync(`pnpm changeset status --output=${out}`, { cwd, stdio: 'ignore' });
+    execSync(`pnpm changeset status --output=${shellQuote(out)}`, { cwd, stdio: 'ignore' });
     const plan = JSON.parse(readFileSync(out, 'utf8'));
     return (plan.releases ?? []).filter((release) => release.type !== 'none');
   } catch (error) {
@@ -325,19 +325,19 @@ const ensurePackageTag = (name, version) => {
   const tagName = `${name}@${version}`;
   try {
     const tagType = output(`git cat-file -t refs/tags/${shellQuote(tagName)}`);
-    if (tagType === 'tag') {
-      console.log(`[release] Annotated tag already exists: ${tagName}`);
-      return;
-    }
-
     const tagTarget = output(`git rev-list -n 1 refs/tags/${shellQuote(tagName)}`);
     const head = output('git rev-parse HEAD');
     if (tagTarget !== head) {
       console.error(
-        `[release] Existing non-annotated tag ${tagName} points to ${tagTarget}, not HEAD ${head}.`
+        `[release] Existing package tag ${tagName} points to ${tagTarget}, not HEAD ${head}.`
       );
       console.error('[release] Refusing to rewrite an existing package tag automatically.');
       exit(1);
+    }
+
+    if (tagType === 'tag') {
+      console.log(`[release] Annotated tag already exists: ${tagName}`);
+      return;
     }
 
     console.log(`[release] Replacing lightweight tag with annotated tag: ${tagName}`);
