@@ -1554,9 +1554,12 @@
 
 - Title: Make ActorDirectory injectable via ActorSystemConfig
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/make-actordirectory-injectable-via-actorsystemconfig.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Add next-hop routing hook in deliverMessageRemote
 

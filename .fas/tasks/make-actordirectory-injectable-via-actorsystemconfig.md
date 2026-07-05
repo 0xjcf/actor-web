@@ -28,11 +28,19 @@ Mesh prerequisite (spike direct-1781363862864 readiness audit). ActorDirectory i
 
 ## Affected files
 
-- Scope unknown.
+- packages/actor-core-runtime/src/actor-system-impl.ts
+- packages/actor-core-runtime/src/unit/actor-system-directory-injection.test.ts
 
 ## Scope Amendments
 
-- None.
+- Type: scope-refresh-promotion
+- Added at: 2026-07-05
+- Trigger: dirty-low-confidence-scope
+- Reason: Promoted dirty low-confidence or dependency-reachable task-packet path(s) into affected scope.
+- Added paths: packages/actor-core-runtime/src/actor-system-impl.ts
+- Evidence source: task-packet dirty scope promotion
+- Evidence: task-packet dirty scope promotion | .fas/state/task-packet.json | Promoted dirty path(s): packages/actor-core-runtime/src/actor-system-impl.ts
+- Accuracy signal: Path was dirty in git status and present in task-packet low-confidence/dependency-reachable scope.
 
 ## Implementation plan
 
