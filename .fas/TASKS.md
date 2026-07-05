@@ -1554,8 +1554,8 @@
 
 - Title: Make ActorDirectory injectable via ActorSystemConfig
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/make-actordirectory-injectable-via-actorsystemconfig.md
 - Verification lane: fast
 - Policy sensitivity: standard
