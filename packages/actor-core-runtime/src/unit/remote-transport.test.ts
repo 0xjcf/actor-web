@@ -445,6 +445,69 @@ describe('remote runtime transport', () => {
     expect(sent.filter((frame) => frame.message.type === '__runtime.remote.send')).toHaveLength(0);
   });
 
+  it('uses a configured next-hop router before sending remote delivery frames', async () => {
+    const network = createInMemoryMessageTransportNetwork();
+    const localTransport = network.createTransport('node-a');
+    network.createTransport('node-b');
+    network.createTransport('node-relay');
+    const routerCalls: Array<{
+      location: string;
+      address: ActorAddress;
+      connectedNodes: readonly string[];
+    }> = [];
+    localSystem = new ActorSystemImpl({
+      nodeAddress: 'node-a',
+      transport: localTransport,
+      router: {
+        resolveNextHop: async (location, address, connectedNodes) => {
+          routerCalls.push({ location, address, connectedNodes });
+          return 'node-relay';
+        },
+      },
+    });
+
+    const sent: Array<{ destination: string; message: ActorMessage }> = [];
+    const realSend = localTransport.send.bind(localTransport);
+    localTransport.send = async (destination: string, message: ActorMessage) => {
+      sent.push({ destination, message });
+      return realSend(destination, message);
+    };
+
+    await localSystem.start();
+    await localTransport.connect('node-relay');
+
+    const deliverRemote = (
+      localSystem as unknown as {
+        deliverMessageRemote(
+          location: string,
+          address: ActorAddress,
+          message: ActorMessage
+        ): Promise<void>;
+      }
+    ).deliverMessageRemote.bind(localSystem);
+
+    const targetAddress = 'actor://node-b/mesh-target' as ActorAddress;
+    await deliverRemote('node-b', targetAddress, {
+      type: 'PING',
+      _timestamp: Date.now(),
+      _version: '1.0.0',
+    } as ActorMessage);
+
+    expect(routerCalls).toEqual([
+      {
+        location: 'node-b',
+        address: targetAddress,
+        connectedNodes: ['node-relay'],
+      },
+    ]);
+    const remoteSendFrames = sent.filter((frame) => frame.message.type === '__runtime.remote.send');
+    expect(remoteSendFrames).toHaveLength(1);
+    expect(remoteSendFrames[0]).toMatchObject({
+      destination: 'node-relay',
+      message: { address: targetAddress },
+    });
+  });
+
   it('does not broadcast a directory unregister for node-private (local) addresses', async () => {
     const network = createInMemoryMessageTransportNetwork();
     const localTransport = network.createTransport('node-a');
