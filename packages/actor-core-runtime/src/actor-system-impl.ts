@@ -1943,6 +1943,19 @@ export class ActorSystemImpl implements ActorSystem {
     if (processed >= maxMessages) {
       const hasMoreMessages = !mailbox.isEmpty();
       const shouldContinue = this.actorProcessingLoops.get(address);
+      if (hasMoreMessages && shouldContinue) {
+        log.debug('Hit message processing limit; scheduling next processing round', {
+          actorPath: address,
+          processId,
+          processed,
+          mailboxSize: mailbox.size(),
+          hasMoreMessages,
+          shouldContinue,
+        });
+        scheduleMacrotask(() => this.processActorMessages(address, behavior));
+        return;
+      }
+
       log.error('Hit message processing limit - possible infinite loop', {
         actorPath: address,
         processId,
@@ -1951,15 +1964,6 @@ export class ActorSystemImpl implements ActorSystem {
         hasMoreMessages,
         shouldContinue,
       });
-      if (hasMoreMessages && shouldContinue) {
-        log.debug('Scheduling next processing round after batch limit', {
-          actorPath: address,
-          processId,
-          nextProcessId: 'will-be-generated',
-        });
-        scheduleMacrotask(() => this.processActorMessages(address, behavior));
-        return;
-      }
       this.actorProcessingActive.set(address, false);
       return;
     }
