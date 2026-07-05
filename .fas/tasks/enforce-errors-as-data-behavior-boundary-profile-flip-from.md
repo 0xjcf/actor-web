@@ -29,11 +29,30 @@ Governance gap (found during P2 architecture review). .fas-config.json sets beha
 
 ## Affected files
 
-- Scope unknown.
+- .fas-config.json
+- packages/actor-core-runtime/src/adapter-failure.ts
+- packages/actor-core-runtime/src/index.ts
+- packages/actor-core-runtime/src/browser-websocket-message-transport.ts
+- packages/actor-core-runtime/src/node-websocket-message-transport.ts
+- packages/actor-core-runtime/src/message-port-transport.ts
+- packages/actor-core-runtime/src/testing/in-memory-message-transport.ts
+- packages/actor-core-runtime/src/interceptors/validation-interceptor.ts
+- packages/actor-core-runtime/src/messaging/mailbox.ts
+- packages/actor-core-runtime/src/messaging/serialization.ts
+- packages/actor-core-runtime/src/performance/benchmark.ts
+- packages/actor-core-runtime/src/unit/behavior-boundary-config.test.ts
+- packages/agent-workflow-cli/src/package-info.ts
 
 ## Scope Amendments
 
-- None.
+- Type: affected-file-promotion
+- Added at: 2026-07-05
+- Trigger: errors-as-data red boundary check
+- Reason: Promote concrete adapter-remediation files after the target profile exposed the exact throw sites and the narrow helper needed to preserve exceptional failure semantics.
+- Added paths: .fas-config.json, packages/actor-core-runtime/src/adapter-failure.ts, packages/actor-core-runtime/src/index.ts, packages/actor-core-runtime/src/browser-websocket-message-transport.ts, packages/actor-core-runtime/src/node-websocket-message-transport.ts, packages/actor-core-runtime/src/message-port-transport.ts, packages/actor-core-runtime/src/testing/in-memory-message-transport.ts, packages/actor-core-runtime/src/interceptors/validation-interceptor.ts, packages/actor-core-runtime/src/messaging/mailbox.ts, packages/actor-core-runtime/src/messaging/serialization.ts, packages/actor-core-runtime/src/performance/benchmark.ts, packages/actor-core-runtime/src/unit/behavior-boundary-config.test.ts, packages/agent-workflow-cli/src/package-info.ts
+- Evidence source: focused red checks
+- Evidence: focused red checks | .fas-config.json | Temporary errors-as-data boundary run reported adapter throws; config regression test failed while profile remained throwing-adapters.
+- Accuracy signal: high
 
 ## Implementation plan
 

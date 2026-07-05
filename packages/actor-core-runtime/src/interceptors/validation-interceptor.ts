@@ -6,6 +6,7 @@
  */
 
 import type { ActorAddress, ActorMessage } from '../actor-system.js';
+import { raiseAdapterFailure } from '../adapter-failure.js';
 import { Logger } from '../logger.js';
 import type { BeforeReceiveParams, MessageInterceptor } from '../messaging/interceptors.js';
 
@@ -172,7 +173,7 @@ export class ValidationInterceptor implements MessageInterceptor {
         messageType: message.type,
         error: error instanceof Error ? error.message : String(error),
       });
-      throw error;
+      raiseAdapterFailure(error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -194,7 +195,7 @@ export class ValidationInterceptor implements MessageInterceptor {
     }
 
     if (this.options.onFailure === 'error') {
-      throw new Error(`Validation failed: ${reason}`);
+      raiseAdapterFailure(`Validation failed: ${reason}`);
     }
 
     // Default: filter out the message

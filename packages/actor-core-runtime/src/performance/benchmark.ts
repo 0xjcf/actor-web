@@ -4,6 +4,7 @@
  */
 
 import type { ActorMessage, ActorSystem } from '../actor-system.js';
+import { raiseAdapterFailure } from '../adapter-failure.js';
 import { defineBehavior } from '../index.js';
 import { Logger } from '../logger.js';
 import type { BaselineMetrics, OptimizationImpact, RegressionReport } from './index.js';
@@ -73,7 +74,7 @@ export class PerformanceBenchmark {
    */
   async measureOptimization(optimizationName: string): Promise<OptimizationImpact> {
     if (!this.baselineMetrics) {
-      throw new Error('Must measure baseline before measuring optimization impact');
+      raiseAdapterFailure('Must measure baseline before measuring optimization impact');
     }
 
     log.debug(`🚀 Measuring optimization impact: ${optimizationName}`);

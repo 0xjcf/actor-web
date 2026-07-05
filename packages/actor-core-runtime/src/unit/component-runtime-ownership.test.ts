@@ -213,8 +213,8 @@ describe('component runtime ownership', () => {
     expect(overrideRuntime.actorRef.send).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'UPDATE_DEPENDENCIES',
-        dependencyRefs: {
-          injected: 'actor://override-runtime/injected',
+        dependencies: {
+          injected: injectedDependency,
         },
       })
     );

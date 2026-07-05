@@ -11,6 +11,7 @@
 // preserved verbatim.
 
 import type { ActorMessage, MessageTransport } from './actor-system.js';
+import { raiseAdapterFailure } from './adapter-failure.js';
 import {
   type RuntimeTransportAuthProvider,
   resolveRuntimeAuthPayload,
@@ -411,7 +412,9 @@ export class BrowserWebSocketMessageTransport implements MessageTransport {
         options.webSocketFactory ??
         ((url) => {
           if (typeof WebSocket === 'undefined') {
-            throw new Error('Browser WebSocket transport requires a global WebSocket constructor.');
+            raiseAdapterFailure(
+              'Browser WebSocket transport requires a global WebSocket constructor.'
+            );
           }
 
           return new WebSocket(url);

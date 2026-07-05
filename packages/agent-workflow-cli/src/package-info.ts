@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { raiseAdapterFailure } from '@actor-web/runtime';
 
 // Get current file directory in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -28,22 +29,28 @@ let cachedPackageInfo: PackageInfo | null = null;
  * Load package.json asynchronously using ES module file system access
  */
 export async function loadPackageInfo(): Promise<PackageInfo> {
+  const packageData = await readPackageInfo();
+
+  // Validate required fields
+  if (!packageData.name || !packageData.version || !packageData.description) {
+    raiseAdapterFailure(
+      'Invalid package.json: missing required fields (name, version, description)'
+    );
+  }
+
+  return packageData;
+}
+
+async function readPackageInfo(): Promise<PackageInfo> {
   try {
     const packagePath = resolve(__dirname, '../package.json');
     const packageText = await readFile(packagePath, 'utf-8');
-    const packageData = JSON.parse(packageText) as PackageInfo;
-
-    // Validate required fields
-    if (!packageData.name || !packageData.version || !packageData.description) {
-      throw new Error('Invalid package.json: missing required fields (name, version, description)');
-    }
-
-    return packageData;
+    return JSON.parse(packageText) as PackageInfo;
   } catch (error) {
     if (error instanceof Error) {
-      throw new Error(`Failed to load package.json: ${error.message}`);
+      raiseAdapterFailure(`Failed to load package.json: ${error.message}`, { cause: error });
     }
-    throw new Error('Failed to load package.json: Unknown error');
+    raiseAdapterFailure('Failed to load package.json: Unknown error', { cause: error });
   }
 }
 
@@ -63,7 +70,7 @@ export async function getPackageInfo(): Promise<PackageInfo> {
  */
 export function getVersionSync(): string {
   if (!cachedPackageInfo) {
-    throw new Error(
+    raiseAdapterFailure(
       'Package info not loaded. Call getPackageInfo() first during application startup.'
     );
   }
@@ -75,7 +82,7 @@ export function getVersionSync(): string {
  */
 export function getNameSync(): string {
   if (!cachedPackageInfo) {
-    throw new Error(
+    raiseAdapterFailure(
       'Package info not loaded. Call getPackageInfo() first during application startup.'
     );
   }
@@ -87,7 +94,7 @@ export function getNameSync(): string {
  */
 export function getDescriptionSync(): string {
   if (!cachedPackageInfo) {
-    throw new Error(
+    raiseAdapterFailure(
       'Package info not loaded. Call getPackageInfo() first during application startup.'
     );
   }

@@ -49,10 +49,19 @@ earlier CLI pass.
 - packages/actor-core-runtime/src/interceptors/retry-interceptor.ts
 - packages/actor-core-runtime/src/create-actor-ref.ts
 - packages/actor-core-runtime/src/unit
+- packages/actor-core-runtime/src/types.ts
 
 ## Scope Amendments
 
-- None.
+- Type: implementation-scope
+- Added at: 2026-07-05
+- Trigger: parent-ref contract type alignment
+- Reason: create-actor-ref now passes the actual parent ActorRef, so ActorRefOptions.parent must be typed as ActorRef instead of string.
+- Added paths: packages/actor-core-runtime/src/types.ts
+- Evidence source: focused-test
+- Evidence: focused-test | packages/actor-core-runtime/src/unit/create-actor-ref.test.ts | Regression asserts childRef.parent is the parent ActorRef, not the parent id string.
+- Accuracy signal: red-to-green regression test
+- Follow-up needed: none
 
 ## Implementation plan
 

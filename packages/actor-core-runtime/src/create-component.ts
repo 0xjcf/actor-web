@@ -633,15 +633,9 @@ export function createComponent(config: CreateComponentConfig): ComponentClass {
         throw new Error('Component actor not available. Component may not be connected.');
       }
 
-      // Convert ActorRef objects to serializable references
-      const dependencyRefs: Record<string, string> = {};
-      for (const [key, actor] of Object.entries(dependencies)) {
-        dependencyRefs[key] = actor.address;
-      }
-
       await this._actorPID.send({
         type: 'UPDATE_DEPENDENCIES',
-        dependencyRefs,
+        dependencies,
       });
     }
 

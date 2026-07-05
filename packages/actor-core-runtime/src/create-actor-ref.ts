@@ -28,7 +28,7 @@ import type {
   SpawnOptions,
   SupervisionStrategy,
 } from './types.js';
-import { createActorAddress, generateActorId, parse } from './utils/factories.js';
+import { createActorAddress, generateActorId } from './utils/factories.js';
 
 /**
  * Type guard for AnyStateMachine
@@ -386,7 +386,7 @@ class XStateActorRef<TContext = unknown, TMessage extends ActorMessage = ActorMe
     const childRef = createActorRef<TChildContext, TChildMessage>(machine, {
       ...options,
       id: childId,
-      parent: parse(this.address).id, // Use ID instead of actor reference
+      parent: this,
     });
 
     this.children.set(childId, childRef as ActorRef<unknown, ActorMessage>);

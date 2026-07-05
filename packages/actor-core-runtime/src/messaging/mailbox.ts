@@ -5,6 +5,7 @@
  */
 
 import type { ActorMessage } from '../actor-system.js';
+import { raiseAdapterFailure } from '../adapter-failure.js';
 
 /**
  * Overflow strategies for when mailbox reaches capacity
@@ -83,7 +84,7 @@ export class BoundedMailbox {
 
   constructor(public readonly config: MailboxConfig) {
     if (config.capacity <= 0) {
-      throw new Error('Mailbox capacity must be greater than 0');
+      raiseAdapterFailure('Mailbox capacity must be greater than 0');
     }
   }
 
@@ -118,7 +119,9 @@ export class BoundedMailbox {
    */
   enqueue(message: ActorMessage): boolean | Promise<boolean> {
     if (this.stopped) {
-      throw new MailboxError('Cannot enqueue to stopped mailbox', this.config.overflowStrategy);
+      raiseAdapterFailure(
+        new MailboxError('Cannot enqueue to stopped mailbox', this.config.overflowStrategy)
+      );
     }
 
     // Check if we have space
@@ -135,16 +138,18 @@ export class BoundedMailbox {
 
       case OverflowStrategy.FAIL:
         this.totalFailed++;
-        throw new MailboxError(
-          `Mailbox capacity exceeded (${this.config.capacity}). Message dropped.`,
-          OverflowStrategy.FAIL
+        return raiseAdapterFailure(
+          new MailboxError(
+            `Mailbox capacity exceeded (${this.config.capacity}). Message dropped.`,
+            OverflowStrategy.FAIL
+          )
         );
 
       case OverflowStrategy.PARK:
         return this.parkSender(message);
 
       default:
-        throw new Error(`Unknown overflow strategy: ${this.config.overflowStrategy}`);
+        raiseAdapterFailure(`Unknown overflow strategy: ${this.config.overflowStrategy}`);
     }
   }
 

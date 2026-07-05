@@ -221,44 +221,54 @@ export class RetryInterceptor implements MessageInterceptor {
 
     // ✅ PURE ACTOR MODEL: Schedule retry using XState timeout manager
     this.timeoutManager.setTimeout(() => {
-      if (!this.actorSystem) {
-        log.error('Actor system not set, cannot retry message');
-        return;
-      }
+      void this.retryMessage(actor, message);
+    }, delay);
+  }
 
-      // Check circuit breaker again before retry
-      if (this.circuitState === CircuitState.OPEN) {
-        log.debug('Circuit breaker opened during retry delay', {
-          messageType: message.type,
-        });
-        return;
-      }
+  private async retryMessage(actor: string, message: ActorMessage): Promise<void> {
+    if (!this.actorSystem) {
+      log.error('Actor system not set, cannot retry message');
+      this.recordFailure();
+      return;
+    }
 
-      // If half-open, this is a test request
-      if (this.circuitState === CircuitState.HALF_OPEN) {
-        log.debug('Testing circuit breaker with retry', {
-          messageType: message.type,
-        });
-      }
+    // Check circuit breaker again before retry
+    if (this.circuitState === CircuitState.OPEN) {
+      log.debug('Circuit breaker opened during retry delay', {
+        messageType: message.type,
+      });
+      return;
+    }
 
-      try {
-        // Re-send the message
-        this.actorSystem.lookup(actor).then((actor) => {
-          if (actor) {
-            actor.send(message);
-          }
-        });
-      } catch (retryError) {
-        log.error('Failed to retry message', {
+    // If half-open, this is a test request
+    if (this.circuitState === CircuitState.HALF_OPEN) {
+      log.debug('Testing circuit breaker with retry', {
+        messageType: message.type,
+      });
+    }
+
+    try {
+      const target = await this.actorSystem.lookup(actor);
+      if (!target) {
+        log.error('Failed to retry message: actor not found', {
           messageType: message.type,
           actor,
-          error: retryError instanceof Error ? retryError.message : String(retryError),
         });
-
-        // Record failure for circuit breaker
         this.recordFailure();
+        return;
       }
-    }, delay);
+
+      await target.send(message);
+    } catch (retryError) {
+      log.error('Failed to retry message', {
+        messageType: message.type,
+        actor,
+        error: retryError instanceof Error ? retryError.message : String(retryError),
+      });
+
+      // Record failure for circuit breaker
+      this.recordFailure();
+    }
   }
 
   /**

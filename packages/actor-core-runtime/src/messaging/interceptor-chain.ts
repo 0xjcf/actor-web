@@ -155,21 +155,7 @@ export class InterceptorChain {
         correlationId: message._correlationId,
       });
 
-    // Store reference to avoid closure issues
-    const pipeline = this.composedPipeline;
-
-    // Create a mutable wrapper for context passing
-    const contextWrapper = { current: context };
-    const pipelineWithContext = async (
-      msg: ActorMessage,
-      snd: ActorAddress | null,
-      ph: 'send' | 'receive'
-    ): Promise<PipelineResult> => {
-      const result = await pipeline(msg, snd, ph);
-      return { ...result, context: contextWrapper.current };
-    };
-
-    return pipelineWithContext(message, sender, phase);
+    return this.composedPipeline(message, sender, phase, context);
   }
 
   /**
@@ -219,12 +205,15 @@ export class InterceptorChain {
     return async (
       message: ActorMessage,
       sender: ActorAddress | null,
-      phase: 'send' | 'receive'
+      phase: 'send' | 'receive',
+      initialContext?: MessageContext
     ): Promise<PipelineResult> => {
       let current = message;
-      const context = createMessageContext({
-        correlationId: message._correlationId,
-      });
+      const context =
+        initialContext ||
+        createMessageContext({
+          correlationId: message._correlationId,
+        });
 
       for (const reg of sorted) {
         // Skip disabled interceptors (circuit breaker)
@@ -246,7 +235,7 @@ export class InterceptorChain {
               phase === 'send'
                 ? { message: current, sender, context }
                 : { message: current, sender, context };
-            const result = hook(params);
+            const result = hook.call(interceptor, params);
 
             // Handle both sync and async results efficiently
             const newMessage = isPromise(result) ? await result : result;
@@ -307,7 +296,7 @@ export class InterceptorChain {
           const hook = reg.interceptor.afterProcess;
           if (!hook) continue;
 
-          const promise = hook({ message, result, actor, context });
+          const promise = hook.call(reg.interceptor, { message, result, actor, context });
 
           if (isPromise(promise)) {
             await promise;
@@ -352,7 +341,7 @@ export class InterceptorChain {
           const hook = reg.interceptor.onError;
           if (!hook) continue;
 
-          const promise = hook({ error, message, actor, context });
+          const promise = hook.call(reg.interceptor, { error, message, actor, context });
 
           if (isPromise(promise)) {
             await promise;

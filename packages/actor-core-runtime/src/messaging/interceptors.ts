@@ -165,7 +165,8 @@ export interface PipelineResult {
 export type MessagePipeline = (
   message: ActorMessage,
   sender: ActorAddress | null,
-  phase: 'send' | 'receive'
+  phase: 'send' | 'receive',
+  context?: MessageContext
 ) => Promise<PipelineResult>;
 
 /**

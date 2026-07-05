@@ -1633,9 +1633,12 @@
 
 - Title: Enforce errors-as-data behavior-boundary profile (flip from throwing-adapters)
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/enforce-errors-as-data-behavior-boundary-profile-flip-from.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: [fas-studio] Runtime: emit from a topology actor in browser-local startRuntime logs 'Actor not found' for the publisher + dead-letters on every cross-actor emit
 
@@ -1768,10 +1771,13 @@
 
 - Title: Resolve pre-existing runtime issues surfaced by CodeRabbit on the opaque-address PR (mailbox drain, UPDATE_DEPENDENCIES
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/resolve-pre-existing-runtime-issues-surfaced-by-coderabbit-o.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Complete .address.path migration tail + wire agent-workflow-cli into the test lane (qa-surfaced)
 
@@ -2010,8 +2016,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Runtime correctness (CodeRabbit PR#32 full-pass): retry-interceptor unhandled rejection + create-actor-ref parent contract
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/runtime-correctness-coderabbit-pr-32-full-pass-retry-interce.md
 - Automation mode: advisory
 - Verification lane: full

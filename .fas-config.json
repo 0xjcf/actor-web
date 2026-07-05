@@ -20,7 +20,7 @@
   "queueFile": ".fas/queue/tasks.json",
   "boundaryPolicyFile": "",
   "architectureRulesFile": ".fas/architecture-rules.json",
-  "behaviorBoundaryProfile": "throwing-adapters",
+  "behaviorBoundaryProfile": "errors-as-data",
   "architectureProfile": "layered",
   "systemDocsDir": "docs",
   "behaviorBoundaries": {
@@ -65,6 +65,10 @@
       "packages/actor-core-runtime/src/messaging/",
       "packages/actor-core-runtime/src/memory/",
       "packages/actor-core-runtime/src/performance/",
+      "packages/actor-core-runtime/src/node-websocket-message-transport.ts",
+      "packages/actor-core-runtime/src/browser-websocket-message-transport.ts",
+      "packages/actor-core-runtime/src/message-port-transport.ts",
+      "packages/actor-core-runtime/src/testing/in-memory-message-transport.ts",
       "packages/agent-workflow-cli/src/"
     ],
     "lifecycle": [],
