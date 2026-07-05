@@ -29,11 +29,21 @@ Mesh prerequisite (spike direct-1781363862864 readiness audit). Today deliverMes
 
 ## Affected files
 
-- Scope unknown.
+- packages/actor-core-runtime/src/actor-system-impl.ts
+- packages/actor-core-runtime/src/unit/remote-transport.test.ts
+- packages/actor-core-runtime/src/index.ts
+- packages/actor-core-runtime/src/browser.ts
 
 ## Scope Amendments
 
-- None.
+- Type: scope-refresh-promotion
+- Added at: 2026-07-05
+- Trigger: dirty-low-confidence-scope
+- Reason: Promoted dirty low-confidence or dependency-reachable task-packet path(s) into affected scope.
+- Added paths: packages/actor-core-runtime/src/actor-system-impl.ts, packages/actor-core-runtime/src/unit/remote-transport.test.ts
+- Evidence source: task-packet dirty scope promotion
+- Evidence: task-packet dirty scope promotion | .fas/state/task-packet.json | Promoted dirty path(s): packages/actor-core-runtime/src/actor-system-impl.ts, packages/actor-core-runtime/src/unit/remote-transport.test.ts
+- Accuracy signal: Path was dirty in git status and present in task-packet low-confidence/dependency-reachable scope.
 
 ## Implementation plan
 

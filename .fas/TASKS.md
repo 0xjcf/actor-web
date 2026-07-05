@@ -1565,9 +1565,12 @@
 
 - Title: Add next-hop routing hook in deliverMessageRemote
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/add-next-hop-routing-hook-in-delivermessageremote.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Formalize remote node identity and collision protection
 
