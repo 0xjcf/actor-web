@@ -69,10 +69,30 @@ triaged as out-of-scope-but-real during that task's pre-MR gate.
 - packages/actor-core-runtime/src/create-component.ts
 - packages/actor-core-runtime/src/component-actor.ts
 - packages/actor-core-runtime/src/interceptors/metrics-interceptor.ts
+- packages/actor-core-runtime/src/messaging/interceptor-chain.ts
+- packages/actor-core-runtime/src/messaging/interceptors.ts
 
 ## Scope Amendments
 
-- None.
+- Type: implementation-scope
+- Added at: 2026-07-05
+- Trigger: receive metrics root-cause analysis
+- Reason: MetricsInterceptor cannot observe actorPath until InterceptorChain preserves the initial MessageContext passed by ActorSystemImpl.
+- Added paths: packages/actor-core-runtime/src/messaging/interceptor-chain.ts
+- Evidence source: source-read
+- Evidence: source-read | packages/actor-core-runtime/src/messaging/interceptor-chain.ts | composePipeline creates a fresh context and drops metadata from execute(initialContext).
+- Accuracy signal: confirmed by source inspection
+- Follow-up needed: none
+
+- Type: implementation-scope
+- Added at: 2026-07-05
+- Trigger: receive metrics red test
+- Reason: InterceptorChain must accept and preserve the initial MessageContext in its composed pipeline type for actorPath metadata to reach beforeReceive.
+- Added paths: packages/actor-core-runtime/src/messaging/interceptors.ts
+- Evidence source: focused-test
+- Evidence: focused-test | packages/actor-core-runtime/src/unit/message-delivery.test.ts | MetricsInterceptor received no actor metrics and class hook invocation also lost this binding.
+- Accuracy signal: red regression test
+- Follow-up needed: none
 
 ## Implementation plan
 

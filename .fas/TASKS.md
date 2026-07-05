@@ -1768,10 +1768,13 @@
 
 - Title: Resolve pre-existing runtime issues surfaced by CodeRabbit on the opaque-address PR (mailbox drain, UPDATE_DEPENDENCIES
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/resolve-pre-existing-runtime-issues-surfaced-by-coderabbit-o.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Complete .address.path migration tail + wire agent-workflow-cli into the test lane (qa-surfaced)
 
