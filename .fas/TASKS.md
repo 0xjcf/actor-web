@@ -1633,9 +1633,12 @@
 
 - Title: Enforce errors-as-data behavior-boundary profile (flip from throwing-adapters)
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/enforce-errors-as-data-behavior-boundary-profile-flip-from.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: [fas-studio] Runtime: emit from a topology actor in browser-local startRuntime logs 'Actor not found' for the publisher + dead-letters on every cross-actor emit
 
