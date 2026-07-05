@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { raiseAdapterFailure } from '@actor-web/runtime';
 
 // Get current file directory in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -35,15 +36,17 @@ export async function loadPackageInfo(): Promise<PackageInfo> {
 
     // Validate required fields
     if (!packageData.name || !packageData.version || !packageData.description) {
-      throw new Error('Invalid package.json: missing required fields (name, version, description)');
+      raiseAdapterFailure(
+        'Invalid package.json: missing required fields (name, version, description)'
+      );
     }
 
     return packageData;
   } catch (error) {
     if (error instanceof Error) {
-      throw new Error(`Failed to load package.json: ${error.message}`);
+      raiseAdapterFailure(`Failed to load package.json: ${error.message}`, { cause: error });
     }
-    throw new Error('Failed to load package.json: Unknown error');
+    raiseAdapterFailure('Failed to load package.json: Unknown error', { cause: error });
   }
 }
 
@@ -63,7 +66,7 @@ export async function getPackageInfo(): Promise<PackageInfo> {
  */
 export function getVersionSync(): string {
   if (!cachedPackageInfo) {
-    throw new Error(
+    raiseAdapterFailure(
       'Package info not loaded. Call getPackageInfo() first during application startup.'
     );
   }
@@ -75,7 +78,7 @@ export function getVersionSync(): string {
  */
 export function getNameSync(): string {
   if (!cachedPackageInfo) {
-    throw new Error(
+    raiseAdapterFailure(
       'Package info not loaded. Call getPackageInfo() first during application startup.'
     );
   }
@@ -87,7 +90,7 @@ export function getNameSync(): string {
  */
 export function getDescriptionSync(): string {
   if (!cachedPackageInfo) {
-    throw new Error(
+    raiseAdapterFailure(
       'Package info not loaded. Call getPackageInfo() first during application startup.'
     );
   }

@@ -1,4 +1,5 @@
 import type { ActorMessage, MessageTransport } from './actor-system.js';
+import { raiseAdapterFailure } from './adapter-failure.js';
 import { safeDispatchListener } from './transport/transport-channel.js';
 
 const MESSAGE_PORT_TRANSPORT_MARKER = '__actorWebMessagePortTransport';
@@ -117,7 +118,9 @@ class DefaultMessagePortTransport implements MessagePortTransport {
     this.assertActive();
 
     if (!this.connections.has(destination)) {
-      throw new Error(`Transport ${this.options.nodeAddress} is not connected to ${destination}`);
+      raiseAdapterFailure(
+        `Transport ${this.options.nodeAddress} is not connected to ${destination}`
+      );
     }
 
     this.options.port.postMessage({
@@ -141,7 +144,9 @@ class DefaultMessagePortTransport implements MessagePortTransport {
     this.assertActive();
 
     if (!address) {
-      throw new Error(`Transport ${this.options.nodeAddress} cannot connect without an address`);
+      raiseAdapterFailure(
+        `Transport ${this.options.nodeAddress} cannot connect without an address`
+      );
     }
 
     if (this.connections.has(address)) {
@@ -243,7 +248,7 @@ class DefaultMessagePortTransport implements MessagePortTransport {
 
   private assertActive(): void {
     if (this.destroyed) {
-      throw new Error(`Transport ${this.options.nodeAddress} has been destroyed`);
+      raiseAdapterFailure(`Transport ${this.options.nodeAddress} has been destroyed`);
     }
   }
 }

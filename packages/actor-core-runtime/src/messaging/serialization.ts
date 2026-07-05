@@ -5,6 +5,7 @@
  */
 
 import type { ActorMessage } from '../actor-system.js';
+import { raiseAdapterFailure } from '../adapter-failure.js';
 
 /**
  * Type guard to validate ActorMessage structure according to actor-system.ts requirements
@@ -67,7 +68,7 @@ export class JsonSerializer implements MessageSerializer {
     const parsed: unknown = JSON.parse(json);
 
     if (!isValidActorMessage(parsed)) {
-      throw new Error('Invalid ActorMessage format');
+      raiseAdapterFailure('Invalid ActorMessage format');
     }
 
     return parsed;
@@ -96,7 +97,7 @@ export class MessagePackSerializer implements MessageSerializer {
 
   async encode(message: ActorMessage): Promise<ArrayBuffer> {
     if (!this.msgpack) {
-      throw new Error('MessagePack not available - install @msgpack/msgpack');
+      raiseAdapterFailure('MessagePack not available - install @msgpack/msgpack');
     }
     const encoded = this.msgpack.encode(message);
     return encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength);
@@ -104,13 +105,13 @@ export class MessagePackSerializer implements MessageSerializer {
 
   async decode(data: ArrayBuffer): Promise<ActorMessage> {
     if (!this.msgpack) {
-      throw new Error('MessagePack not available - install @msgpack/msgpack');
+      raiseAdapterFailure('MessagePack not available - install @msgpack/msgpack');
     }
     const uint8Array = new Uint8Array(data);
     const parsed: unknown = this.msgpack.decode(uint8Array);
 
     if (!isValidActorMessage(parsed)) {
-      throw new Error('Invalid ActorMessage format');
+      raiseAdapterFailure('Invalid ActorMessage format');
     }
 
     return parsed;
@@ -138,7 +139,7 @@ export function registerSerializer(serializer: MessageSerializer): void {
 export function getSerializer(format: SerializationFormat): MessageSerializer {
   const serializer = serializers.get(format);
   if (!serializer) {
-    throw new Error(`Unknown serialization format: ${format}`);
+    raiseAdapterFailure(`Unknown serialization format: ${format}`);
   }
   return serializer;
 }

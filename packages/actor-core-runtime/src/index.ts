@@ -92,6 +92,8 @@ export {
   createActorWebReadModelClient,
   startRuntime,
 } from './actor-web-client.js';
+export type { AdapterFailureOptions } from './adapter-failure.js';
+export { raiseAdapterFailure } from './adapter-failure.js';
 // Auto-publishing system (Phase 2.1)
 export {
   AutoPublishingRegistry,

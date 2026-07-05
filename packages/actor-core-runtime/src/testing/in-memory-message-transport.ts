@@ -4,6 +4,7 @@
  */
 
 import type { ActorMessage, MessageTransport } from '../actor-system.js';
+import { raiseAdapterFailure } from '../adapter-failure.js';
 import {
   createRuntimeNodeIdentity,
   createRuntimeTransportFrame,
@@ -46,7 +47,7 @@ class InMemoryMessageTransport implements MessageTransport {
 
   async send(destination: string, message: ActorMessage): Promise<void> {
     if (!this.connections.has(destination)) {
-      throw new Error(`Transport ${this.nodeAddress} is not connected to ${destination}`);
+      raiseAdapterFailure(`Transport ${this.nodeAddress} is not connected to ${destination}`);
     }
 
     await this.network.dispatch({
@@ -130,7 +131,7 @@ class InMemoryMessageTransportNetworkImpl implements InMemoryMessageTransportNet
     options: InMemoryMessageTransportOptions = {}
   ): MessageTransport {
     if (this.transports.has(nodeAddress)) {
-      throw new Error(`Transport already exists for node ${nodeAddress}`);
+      raiseAdapterFailure(`Transport already exists for node ${nodeAddress}`);
     }
 
     const transport = new InMemoryMessageTransport(nodeAddress, options, this);
@@ -229,7 +230,7 @@ class InMemoryMessageTransportNetworkImpl implements InMemoryMessageTransportNet
         destinationTransport.identity()
       );
       if (!validation.ok) {
-        throw new Error(`Runtime transport frame rejected: ${validation.message}`);
+        raiseAdapterFailure(`Runtime transport frame rejected: ${validation.message}`);
       }
     }
 
@@ -242,7 +243,7 @@ class InMemoryMessageTransportNetworkImpl implements InMemoryMessageTransportNet
   private getTransport(nodeAddress: string): InMemoryMessageTransport {
     const transport = this.transports.get(nodeAddress);
     if (!transport) {
-      throw new Error(`Unknown transport node: ${nodeAddress}`);
+      raiseAdapterFailure(`Unknown transport node: ${nodeAddress}`);
     }
 
     return transport;
@@ -257,13 +258,13 @@ class InMemoryMessageTransportNetworkImpl implements InMemoryMessageTransportNet
     const hello = createRuntimeTransportHandshakeHello(sourceIdentity);
     const helloValidation = validateRuntimeTransportHandshake(hello, destinationIdentity);
     if (!helloValidation.ok) {
-      throw new Error(`Runtime handshake rejected: ${helloValidation.message}`);
+      raiseAdapterFailure(`Runtime handshake rejected: ${helloValidation.message}`);
     }
 
     const accept = createRuntimeTransportHandshakeAccept(destinationIdentity, sourceIdentity);
     const acceptValidation = validateRuntimeTransportHandshake(accept, sourceIdentity);
     if (!acceptValidation.ok) {
-      throw new Error(`Runtime handshake rejected: ${acceptValidation.message}`);
+      raiseAdapterFailure(`Runtime handshake rejected: ${acceptValidation.message}`);
     }
   }
 }

@@ -11,6 +11,7 @@
 
 import WebSocket, { WebSocketServer } from 'ws';
 import type { ActorMessage, MessageTransport } from './actor-system.js';
+import { raiseAdapterFailure } from './adapter-failure.js';
 import {
   type RuntimeTransportAuthProvider,
   resolveRuntimeAuthPayload,
@@ -767,7 +768,7 @@ export class NodeWebSocketMessageTransport implements MessageTransport {
             error instanceof Error ? error.message : 'Runtime peer connection failed.',
         });
       }
-      throw error;
+      raiseAdapterFailure(error instanceof Error ? error : new Error(String(error)));
     }
   }
 
