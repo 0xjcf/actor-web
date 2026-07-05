@@ -2016,8 +2016,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Runtime correctness (CodeRabbit PR#32 full-pass): retry-interceptor unhandled rejection + create-actor-ref parent contract
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/runtime-correctness-coderabbit-pr-32-full-pass-retry-interce.md
 - Automation mode: advisory
 - Verification lane: full
