@@ -14,6 +14,7 @@ describe('raiseAdapterFailure', () => {
   });
 
   it('attaches cause to existing Error instances before throwing the same error', () => {
+    expect.assertions(2);
     const cause = { code: 'existing_failure' };
     const failure = new Error('existing failure');
 
