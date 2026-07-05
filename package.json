@@ -60,6 +60,7 @@
     "changeset": "changeset",
     "version": "changeset version",
     "release": "pnpm release:stable",
+    "release:prepare": "node scripts/release.mjs --channel stable --prepare-only",
     "release:stable": "node scripts/release.mjs --channel stable",
     "release:beta": "node scripts/release.mjs --channel beta"
   },

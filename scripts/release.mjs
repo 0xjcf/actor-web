@@ -29,6 +29,8 @@ const getOption = (name) => {
 };
 
 const dryRun = hasFlag('--dry-run');
+const prepareOnly = hasFlag('--prepare-only');
+const allowBranchPublish = hasFlag('--allow-branch-publish');
 const skipOtp = hasFlag('--skip-otp');
 const otp = getOption('--otp');
 const channel = getOption('--channel') ?? 'stable';
@@ -65,6 +67,24 @@ const ensureCleanWorkingTree = () => {
   const status = output('git status --porcelain');
   if (status) {
     console.error('[release] Working tree is not clean. Commit or stash changes before releasing.');
+    exit(1);
+  }
+};
+
+const currentBranch = () => output('git branch --show-current') || 'HEAD';
+
+const ensureStablePublishBranch = () => {
+  if (dryRun || prepareOnly || channel !== 'stable' || allowBranchPublish) {
+    return;
+  }
+
+  const branch = currentBranch();
+  if (branch !== 'main') {
+    console.error(
+      `[release] Stable publishes must run from main after the version PR lands. Current branch: ${branch}.`
+    );
+    console.error('[release] Use `pnpm release:prepare` on a release branch, merge it, then run this command from main.');
+    console.error('[release] Use --allow-branch-publish only for an explicit emergency exception.');
     exit(1);
   }
 };
@@ -302,11 +322,38 @@ const packageIsPublished = (name, version, publishEnv) => {
 const ensurePackageTag = (name, version) => {
   const tagName = `${name}@${version}`;
   try {
-    output(`git rev-parse -q --verify refs/tags/${shellQuote(tagName)}`);
-    console.log(`[release] Tag already exists: ${tagName}`);
+    const tagType = output(`git cat-file -t refs/tags/${shellQuote(tagName)}`);
+    if (tagType === 'tag') {
+      console.log(`[release] Annotated tag already exists: ${tagName}`);
+      return;
+    }
+
+    const tagTarget = output(`git rev-list -n 1 refs/tags/${shellQuote(tagName)}`);
+    const head = output('git rev-parse HEAD');
+    if (tagTarget !== head) {
+      console.error(
+        `[release] Existing non-annotated tag ${tagName} points to ${tagTarget}, not HEAD ${head}.`
+      );
+      console.error('[release] Refusing to rewrite an existing package tag automatically.');
+      exit(1);
+    }
+
+    console.log(`[release] Replacing lightweight tag with annotated tag: ${tagName}`);
+    run(`git tag -a -f ${shellQuote(tagName)} -m ${shellQuote(tagName)} HEAD`);
   } catch {
-    run(`git tag ${shellQuote(tagName)}`);
+    run(`git tag -a ${shellQuote(tagName)} -m ${shellQuote(tagName)}`);
   }
+};
+
+const printPostPublishCloseout = (packages) => {
+  const branch = currentBranch();
+  const tags = packages.map((pkg) => `${pkg.packageJson.name}@${pkg.packageJson.version}`);
+  const quotedRefs = [branch, ...tags].map(shellQuote).join(' ');
+
+  console.log('\n[release] Publish complete.');
+  console.log('[release] Push the release source and package tags with:');
+  console.log(`  git push -u origin ${quotedRefs}`);
+  console.log('[release] Open or merge the release PR without squashing/rebasing release commits.');
 };
 
 const publishDryRun = (cwd = process.cwd()) => {
@@ -383,6 +430,8 @@ const publish = async () => {
     );
     ensurePackageTag(name, version);
   }
+
+  printPostPublishCloseout(packages);
 };
 
 const main = async () => {
@@ -390,8 +439,9 @@ const main = async () => {
 
   ensureChannelState();
   ensureCleanWorkingTree();
+  ensureStablePublishBranch();
 
-  if (!dryRun) {
+  if (!dryRun && !prepareOnly) {
     ensureNpmAuth();
   }
 
@@ -417,13 +467,16 @@ const main = async () => {
   }
 
   versionAndCommit(pendingChangesets);
+
+  if (prepareOnly) {
+    console.log('\n[release] Prepare complete. No packages were published.');
+    console.log('[release] Push this branch, open a PR to main, merge without squashing/rebasing, then run `pnpm release:stable` from main.');
+    return;
+  }
+
   run('pnpm build');
   publishDryRun();
   await publish();
-
-  console.log(
-    '\n[release] Publish complete. Push the release commit and tags with `git push --follow-tags`.'
-  );
 };
 
 main()
