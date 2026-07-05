@@ -83,7 +83,9 @@ const ensureStablePublishBranch = () => {
     console.error(
       `[release] Stable publishes must run from main after the version PR lands. Current branch: ${branch}.`
     );
-    console.error('[release] Use `pnpm release:prepare` on a release branch, merge it, then run this command from main.');
+    console.error(
+      '[release] Use `pnpm release:prepare` on a release branch, merge it, then run this command from main.'
+    );
     console.error('[release] Use --allow-branch-publish only for an explicit emergency exception.');
     exit(1);
   }
@@ -470,7 +472,9 @@ const main = async () => {
 
   if (prepareOnly) {
     console.log('\n[release] Prepare complete. No packages were published.');
-    console.log('[release] Push this branch, open a PR to main, merge without squashing/rebasing, then run `pnpm release:stable` from main.');
+    console.log(
+      '[release] Push this branch, open a PR to main, merge without squashing/rebasing, then run `pnpm release:stable` from main.'
+    );
     return;
   }
 
