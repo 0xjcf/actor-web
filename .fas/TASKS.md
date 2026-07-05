@@ -1570,9 +1570,12 @@
 
 - Title: Formalize remote node identity and collision protection
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/formalize-remote-node-identity-and-collision-protection.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Extract shared transport core (framing/ack-retry/queue/heartbeat/stats + safe listener dispatch)
 

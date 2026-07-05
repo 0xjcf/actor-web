@@ -28,7 +28,10 @@ Mesh prerequisite + latent correctness fix (spike direct-1781363862864 readiness
 
 ## Affected files
 
-- Scope unknown.
+- `packages/actor-core-runtime/src/actor-system-impl.ts`
+- `packages/actor-core-runtime/src/transport/transport-core.ts`
+- `packages/actor-core-runtime/src/unit/remote-transport.test.ts`
+- `packages/actor-core-runtime/src/unit/transport-core.test.ts`
 
 ## Scope Amendments
 
