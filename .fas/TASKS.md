@@ -1200,7 +1200,7 @@
 
 - Title: Publish @actor-web/cli to npm (deferred until the runtime host has a real surface)
 - Mode: single-agent
-- Status: queued
+- Status: deferred
 - Owner: runtime
 - Brief: .fas/tasks/publish-actor-web-cli-to-npm-deferred-until-the-runtime-ho.md
 - Automation mode: advisory
