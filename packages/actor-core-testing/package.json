@@ -1,6 +1,6 @@
 {
   "name": "@actor-web/testing",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Testing utilities for actor-core applications including state machine analysis",
   "type": "module",
   "main": "dist/index.cjs",

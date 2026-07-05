@@ -1,6 +1,6 @@
 {
   "name": "@actor-web/lattice",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Lattice artifact and dependency coordination for Actor-Web",
   "type": "module",
   "main": "dist/index.cjs",

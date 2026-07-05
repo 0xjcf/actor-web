@@ -1,6 +1,6 @@
 {
   "name": "@actor-web/agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "LLM tool and agent-loop utilities for actor-web runtime hosts",
   "type": "module",
   "main": "dist/index.cjs",
