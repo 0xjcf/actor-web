@@ -1565,8 +1565,8 @@
 
 - Title: Add next-hop routing hook in deliverMessageRemote
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/add-next-hop-routing-hook-in-delivermessageremote.md
 - Verification lane: fast
 - Policy sensitivity: standard
