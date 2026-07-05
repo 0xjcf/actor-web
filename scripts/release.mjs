@@ -54,10 +54,11 @@ const run = (command, options = {}) => {
   }
 };
 
-const output = (command) =>
+const output = (command, options = {}) =>
   execSync(command, {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
+    ...options,
   }).trim();
 
 const ensureCleanWorkingTree = () => {
@@ -225,9 +226,103 @@ const printVersionedPublishPlan = (cwd, releases) => {
   }
 };
 
+const readPublishablePackages = (cwd = process.cwd()) => {
+  const packagesDir = join(cwd, 'packages');
+  const packages = readdirSync(packagesDir).flatMap((entry) => {
+    const dir = join(packagesDir, entry);
+    const packageJsonPath = join(dir, 'package.json');
+    if (!existsSync(packageJsonPath)) {
+      return [];
+    }
+
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+    if (packageJson.private) {
+      return [];
+    }
+
+    return [{ dir, packageJson }];
+  });
+
+  const byName = new Map(packages.map((pkg) => [pkg.packageJson.name, pkg]));
+  const visiting = new Set();
+  const visited = new Set();
+  const ordered = [];
+
+  const visit = (pkg) => {
+    const name = pkg.packageJson.name;
+    if (visited.has(name)) {
+      return;
+    }
+    if (visiting.has(name)) {
+      throw new Error(`Circular publish dependency involving ${name}`);
+    }
+
+    visiting.add(name);
+    const dependencyNames = [
+      ...Object.keys(pkg.packageJson.dependencies ?? {}),
+      ...Object.keys(pkg.packageJson.peerDependencies ?? {}),
+      ...Object.keys(pkg.packageJson.optionalDependencies ?? {}),
+    ];
+
+    for (const dependencyName of dependencyNames) {
+      const dependency = byName.get(dependencyName);
+      if (dependency) {
+        visit(dependency);
+      }
+    }
+
+    visiting.delete(name);
+    visited.add(name);
+    ordered.push(pkg);
+  };
+
+  for (const pkg of packages) {
+    visit(pkg);
+  }
+
+  return ordered;
+};
+
+const packageIsPublished = (name, version, publishEnv) => {
+  try {
+    const publishedVersion = output(`npm view ${shellQuote(`${name}@${version}`)} version --json`, {
+      env: publishEnv,
+    });
+    return JSON.parse(publishedVersion) === version;
+  } catch (error) {
+    const stderr = error?.stderr?.toString?.() ?? '';
+    if (stderr.includes('E404') || stderr.includes('404 Not Found')) {
+      return false;
+    }
+
+    throw error;
+  }
+};
+
+const ensurePackageTag = (name, version) => {
+  const tagName = `${name}@${version}`;
+  try {
+    output(`git rev-parse -q --verify refs/tags/${shellQuote(tagName)}`);
+    console.log(`[release] Tag already exists: ${tagName}`);
+  } catch {
+    run(`git tag ${shellQuote(tagName)}`);
+  }
+};
+
 const publishDryRun = (cwd = process.cwd()) => {
-  const tag = channel === 'beta' && !readPreMode(cwd) ? ' --tag beta' : '';
-  run(`pnpm -r publish --dry-run --no-git-checks${tag}`, { cwd, env: releaseEnv });
+  const publishTag = channel === 'beta' ? 'beta' : 'latest';
+  const packages = readPublishablePackages(cwd);
+
+  console.log('\n[release] Dry-run publishing packages sequentially:');
+  for (const pkg of packages) {
+    run(
+      `pnpm --filter ${shellQuote(pkg.packageJson.name)} publish --dry-run --no-git-checks --access public --tag ${publishTag}`,
+      {
+        cwd,
+        env: releaseEnv,
+      }
+    );
+  }
 };
 
 const publishVersionedDryRun = (releases, pendingChangesets) => {
@@ -267,7 +362,27 @@ const publish = async () => {
     console.log('[release] Using provided OTP for npm publish.');
   }
 
-  run('pnpm changeset publish', { env: publishEnv });
+  const publishTag = channel === 'beta' ? 'beta' : 'latest';
+  const packages = readPublishablePackages();
+
+  console.log('\n[release] Publishing packages sequentially:');
+  for (const pkg of packages) {
+    const { name, version } = pkg.packageJson;
+
+    if (packageIsPublished(name, version, publishEnv)) {
+      console.log(`[release] ${name}@${version} is already published; skipping.`);
+      ensurePackageTag(name, version);
+      continue;
+    }
+
+    run(
+      `pnpm --filter ${shellQuote(name)} publish --no-git-checks --access public --tag ${publishTag}`,
+      {
+        env: publishEnv,
+      }
+    );
+    ensurePackageTag(name, version);
+  }
 };
 
 const main = async () => {
