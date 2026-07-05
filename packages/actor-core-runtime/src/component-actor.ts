@@ -354,6 +354,7 @@ export function createComponentActorBehavior(
     context: initialContext,
     async onMessage({ message, actor }) {
       const jsonContext = actor.getSnapshot().context as {
+        dependencies?: Record<string, ActorRef>;
         messageCount?: number;
         renderCount?: number;
         lastRender?: number;
@@ -370,7 +371,7 @@ export function createComponentActorBehavior(
         currentState: null, // Will be set during mounting
         element: null, // Will be set during mounting
         template: config.template, // From config
-        dependencies: {}, // Will be updated via messages
+        dependencies: jsonContext.dependencies || {}, // Updated via messages
         messageCount: jsonContext.messageCount || 0,
         renderCount: jsonContext.renderCount || 0,
         lastRender: jsonContext.lastRender || 0,

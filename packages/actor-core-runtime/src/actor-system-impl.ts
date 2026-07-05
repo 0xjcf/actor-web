@@ -1941,12 +1941,25 @@ export class ActorSystemImpl implements ActorSystem {
 
     // Safety check for infinite loop protection
     if (processed >= maxMessages) {
+      const hasMoreMessages = !mailbox.isEmpty();
+      const shouldContinue = this.actorProcessingLoops.get(address);
       log.error('Hit message processing limit - possible infinite loop', {
         actorPath: address,
         processId,
         processed,
         mailboxSize: mailbox.size(),
+        hasMoreMessages,
+        shouldContinue,
       });
+      if (hasMoreMessages && shouldContinue) {
+        log.debug('Scheduling next processing round after batch limit', {
+          actorPath: address,
+          processId,
+          nextProcessId: 'will-be-generated',
+        });
+        scheduleMacrotask(() => this.processActorMessages(address, behavior));
+        return;
+      }
       this.actorProcessingActive.set(address, false);
       return;
     }
@@ -2496,6 +2509,11 @@ export class ActorSystemImpl implements ActorSystem {
       createMessageContext({
         correlationId: message._correlationId,
       });
+    context.metadata.set('actorPath', address);
+    const mailbox = this.actorMailboxes.get(address);
+    if (mailbox) {
+      context.metadata.set('queueDepth', mailbox.size());
+    }
 
     // Execute global beforeReceive interceptors
     let processedMessage = message;

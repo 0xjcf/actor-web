@@ -107,16 +107,16 @@ export class MetricsInterceptor implements MessageInterceptor {
   }
 
   async beforeReceive({ message, context }: BeforeReceiveParams): Promise<ActorMessage> {
-    // Get actor path from context (set by ActorSystemImpl)
-    const actorPath = context.metadata.get('actorPath') as string;
-    if (actorPath) {
-      const metrics = this.getOrCreateMetrics(actorPath);
+    // Get receiver address from context (set by ActorSystemImpl)
+    const receiverAddress = context.metadata.get('actorPath') as string;
+    if (receiverAddress) {
+      const metrics = this.getOrCreateMetrics(receiverAddress);
       metrics.messagesReceived++;
       metrics.lastUpdated = Date.now();
 
       // Start timing for this message
       this.messageTimings.set(message, {
-        actor: actorPath,
+        actor: receiverAddress,
         startTime: performance.now(),
       });
 
