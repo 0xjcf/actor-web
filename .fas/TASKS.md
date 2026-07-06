@@ -2093,6 +2093,15 @@ operator explicitly asks for queue mutations.
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Carry labs-mesh route tokens through runtime remote routing protocol
+
+- Title: Carry labs-mesh route tokens through runtime remote routing protocol
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/carry-labs-mesh-route-tokens-through-runtime-remote-routing-.md
+- Automation mode: advisory
+
 ## Template
 
 ### Task: `<short task title>`

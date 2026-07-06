@@ -179,7 +179,7 @@ describe('@actor-web/labs-mesh routing', () => {
     expect(
       resolveMeshNextHop({
         localNode: 'node-a',
-        targetNode: 'node-b',
+        targetNode: 'node-relay',
         connectedNodes: ['node-relay'],
         membership,
         adjacency: {
