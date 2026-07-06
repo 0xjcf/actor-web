@@ -1701,8 +1701,8 @@
 
 - Title: Author the @actor-web/labs-mesh design doc (gossip membership, multi-hop, directory propagation)
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/author-the-actor-web-labs-mesh-design-doc-gossip-membership-.md
 - Verification lane: fast
 - Policy sensitivity: standard
