@@ -354,6 +354,52 @@ describe('TransportCore — peer identity collisions', () => {
       identity: { nodeId: 'stable-node-b', incarnation: 'node-b-boot-1' },
     });
   });
+
+  it('rejects an outbound connection when the same node address has a different node id', async () => {
+    const firstLink = new FakePeerLink('node-b', {
+      identity: {
+        nodeAddress: 'node-b',
+        nodeId: 'stable-node-b',
+        incarnation: 'node-b-boot-1',
+      },
+    });
+    const conflictingLink = new FakePeerLink('node-b', {
+      identity: {
+        nodeAddress: 'node-b',
+        nodeId: 'different-node-b',
+        incarnation: 'node-b-boot-conflict',
+      },
+    });
+    const dialedLinks = [firstLink, conflictingLink];
+    const channel = new FakeTransportChannel(() => {
+      const link = dialedLinks.shift();
+      return link ? { ok: true, link } : { ok: false, reason: 'unexpected dial' };
+    });
+    const timers = new FakeTimers();
+    const core = new TransportCore({
+      identity: LOCAL,
+      channel,
+      clock: () => timers.now(),
+      timers,
+      heartbeatIntervalMs: 0,
+    });
+
+    await core.start();
+    await core.connect('node-b');
+    firstLink.close();
+
+    await expect(core.connect('node-b')).rejects.toThrow(
+      /existing nodeId=stable-node-b, incoming nodeId=different-node-b/
+    );
+
+    expect(channel.dialCount).toBe(2);
+    expect(dialedLinks).toHaveLength(0);
+    expect(conflictingLink.closeCount).toBe(1);
+    expect(core.getPeerStats('node-b')).toMatchObject({
+      state: 'rejected',
+      identity: { nodeId: 'stable-node-b', incarnation: 'node-b-boot-1' },
+    });
+  });
 });
 
 describe('TransportCore — subscribe / unsubscribe (case 5)', () => {

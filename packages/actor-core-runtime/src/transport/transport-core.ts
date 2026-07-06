@@ -410,7 +410,9 @@ export class TransportCore implements MessageTransport {
 
     return {
       ok: false,
-      message: `Runtime peer identity conflict for ${identity.nodeAddress}.`,
+      message:
+        `Runtime peer identity conflict for ${identity.nodeAddress}: ` +
+        `existing nodeId=${existing.identity.nodeId}, incoming nodeId=${identity.nodeId}.`,
     };
   }
 

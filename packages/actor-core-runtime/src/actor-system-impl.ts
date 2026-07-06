@@ -1770,7 +1770,22 @@ export class ActorSystemImpl implements ActorSystem {
         location,
         nodeAddress: this.config.nodeAddress,
       });
-      await this.deliverMessageRemote(location, address, processedMessage);
+      try {
+        await this.deliverMessageRemote(location, address, processedMessage);
+      } catch (error) {
+        log.error('Remote delivery failed', {
+          actorPath: address,
+          location,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        this.deadLetterQueue.add(
+          processedMessage,
+          address,
+          'Remote delivery failed',
+          1,
+          error instanceof Error ? error : undefined
+        );
+      }
       return;
     }
 

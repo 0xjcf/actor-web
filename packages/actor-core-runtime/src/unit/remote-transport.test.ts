@@ -3,6 +3,7 @@ import { setup } from 'xstate';
 import type { ActorAddress, ActorMessage } from '../actor-system.js';
 import { ActorSystemImpl } from '../actor-system-impl.js';
 import { createActorSource } from '../integration/actor-source.js';
+import type { DeadLetter } from '../messaging/dead-letter-queue.js';
 import { createRuntimeNodeIdentity } from '../runtime-transport-contract.js';
 import {
   createInMemoryMessageTransportNetwork,
@@ -506,6 +507,49 @@ describe('remote runtime transport', () => {
       destination: 'node-relay',
       message: { address: targetAddress },
     });
+  });
+
+  it('dead-letters remote delivery failures from the routing hook', async () => {
+    const network = createInMemoryMessageTransportNetwork();
+    localSystem = new ActorSystemImpl({
+      nodeAddress: 'node-a',
+      transport: network.createTransport('node-a'),
+      router: {
+        resolveNextHop: async () => {
+          throw new Error('router unavailable');
+        },
+      },
+    });
+
+    await localSystem.start();
+
+    const targetAddress = 'actor://node-b/mesh-target' as ActorAddress;
+    await (
+      localSystem as unknown as {
+        directory: {
+          register(address: ActorAddress, location: string): Promise<void>;
+        };
+      }
+    ).directory.register(targetAddress, 'node-b');
+
+    await localSystem.enqueueMessage(targetAddress, {
+      type: 'PING',
+      _timestamp: Date.now(),
+      _version: '1.0.0',
+    } as ActorMessage);
+
+    const deadLetters = (
+      localSystem as unknown as {
+        deadLetterQueue: { getAll(): ReadonlyArray<DeadLetter> };
+      }
+    ).deadLetterQueue.getAll();
+
+    expect(deadLetters).toEqual([
+      expect.objectContaining({
+        message: expect.objectContaining({ type: 'PING' }),
+        reason: 'Remote delivery failed',
+      }),
+    ]);
   });
 
   it('does not broadcast a directory unregister for node-private (local) addresses', async () => {

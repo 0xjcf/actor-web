@@ -8,7 +8,11 @@ export type {
   ClusterState,
   MessageTransport,
 } from './actor-system.js';
-export type { ActorSystemConfig, RemoteMessageRouter } from './actor-system-impl.js';
+export type {
+  ActorSystemConfig,
+  DirectoryConfig as ActorSystemDirectoryConfig,
+  RemoteMessageRouter,
+} from './actor-system-impl.js';
 export { createActorSystem } from './actor-system-impl.js';
 export type {
   ActorToolDeliveryAck,
