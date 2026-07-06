@@ -120,6 +120,30 @@ function cloneMessageContext(context: MessageContext): MessageContext {
   };
 }
 
+function normalizeRemoteRouteDecision(decision: unknown): {
+  readonly nextHop: string;
+  readonly routeToken?: unknown;
+} {
+  if (typeof decision === 'string') {
+    return { nextHop: decision };
+  }
+
+  if (
+    typeof decision !== 'object' ||
+    decision === null ||
+    !('nextHop' in decision) ||
+    typeof decision.nextHop !== 'string' ||
+    decision.nextHop.length === 0
+  ) {
+    throw new Error('RemoteMessageRouter returned an invalid route decision.');
+  }
+
+  return {
+    nextHop: decision.nextHop,
+    ...('routeToken' in decision ? { routeToken: decision.routeToken } : {}),
+  };
+}
+
 // ✅ Define specific message types for type safety
 interface SpawnChildMessage extends ActorMessage {
   type: 'SPAWN_CHILD';
@@ -383,8 +407,12 @@ export interface RemoteMessageRouter {
   resolveNextHop(
     location: string,
     address: ActorAddress,
-    connectedNodes: readonly string[]
-  ): string | Promise<string>;
+    connectedNodes: readonly string[],
+    routeToken?: unknown
+  ):
+    | string
+    | { readonly nextHop: string; readonly routeToken?: unknown }
+    | Promise<string | { readonly nextHop: string; readonly routeToken?: unknown }>;
 }
 
 /**
@@ -1619,6 +1647,14 @@ export class ActorSystemImpl implements ActorSystem {
    * Enqueue a message to an actor's mailbox (fire-and-forget)
    */
   async enqueueMessage(address: ActorAddress, message: ActorMessage): Promise<void> {
+    await this.enqueueMessageInternal(address, message);
+  }
+
+  private async enqueueMessageInternal(
+    address: ActorAddress,
+    message: ActorMessage,
+    routeToken?: unknown
+  ): Promise<void> {
     log.debug('enqueueMessage called', {
       actorPath: address,
       messageType: message.type,
@@ -1771,7 +1807,7 @@ export class ActorSystemImpl implements ActorSystem {
         nodeAddress: this.config.nodeAddress,
       });
       try {
-        await this.deliverMessageRemote(location, address, processedMessage);
+        await this.deliverMessageRemote(location, address, processedMessage, routeToken);
       } catch (error) {
         log.error('Remote delivery failed', {
           actorPath: address,
@@ -2961,7 +2997,7 @@ export class ActorSystemImpl implements ActorSystem {
         this.correlationManager.handleError(message.requestId, new Error(message.errorMessage));
         return;
       case '__runtime.remote.send':
-        await this.enqueueMessage(message.address, message.message);
+        await this.enqueueMessageInternal(message.address, message.message, message.routeToken);
         return;
       case '__runtime.remote.ask.request':
         try {
@@ -4204,7 +4240,8 @@ export class ActorSystemImpl implements ActorSystem {
   private async deliverMessageRemote(
     location: string,
     address: ActorAddress,
-    message: ActorMessage
+    message: ActorMessage,
+    routeToken?: unknown
   ): Promise<void> {
     if (isLocalAddress(address)) {
       throw new Error(
@@ -4214,14 +4251,17 @@ export class ActorSystemImpl implements ActorSystem {
     }
 
     const connectedNodes = this.config.transport?.getConnectedNodes() ?? [];
-    const nextHop = this.config.router
-      ? await this.config.router.resolveNextHop(location, address, connectedNodes)
-      : location;
+    const routedDecision = this.config.router
+      ? normalizeRemoteRouteDecision(
+          await this.config.router.resolveNextHop(location, address, connectedNodes, routeToken)
+        )
+      : { nextHop: location, routeToken };
 
-    await this.sendTransportMessage(nextHop, {
+    await this.sendTransportMessage(routedDecision.nextHop, {
       type: '__runtime.remote.send',
       address,
       message,
+      routeToken: routedDecision.routeToken,
       _timestamp: Date.now(),
       _version: '1.0.0',
     });

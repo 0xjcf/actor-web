@@ -2097,10 +2097,13 @@ operator explicitly asks for queue mutations.
 
 - Title: Carry labs-mesh route tokens through runtime remote routing protocol
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/carry-labs-mesh-route-tokens-through-runtime-remote-routing-.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ## Template
 

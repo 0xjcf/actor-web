@@ -74,6 +74,7 @@ export interface RuntimeRemoteSendMessage extends RuntimeProtocolMessageBase {
   type: '__runtime.remote.send';
   address: ActorAddress;
   message: ActorMessage;
+  routeToken?: unknown;
 }
 
 export interface RuntimeRemoteAskRequestMessage extends RuntimeProtocolMessageBase {

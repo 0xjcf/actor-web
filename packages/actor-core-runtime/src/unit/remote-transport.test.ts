@@ -108,13 +108,31 @@ async function waitFor(predicate: () => boolean, message: string): Promise<void>
   throw new Error(message);
 }
 
+async function waitForRemoteCount(
+  actor: { ask<TResponse>(message: ActorMessage): Promise<TResponse> },
+  expectedCount: number,
+  message: string
+): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if ((await actor.ask<number>({ type: 'GET_COUNT' } as ActorMessage)) === expectedCount) {
+      return;
+    }
+
+    await nextTick();
+  }
+
+  throw new Error(message);
+}
+
 describe('remote runtime transport', () => {
   let localSystem: ActorSystemImpl | undefined;
+  let relaySystem: ActorSystemImpl | undefined;
   let remoteSystem: ActorSystemImpl | undefined;
 
   afterEach(async () => {
-    await Promise.allSettled([localSystem?.stop(), remoteSystem?.stop()]);
+    await Promise.allSettled([localSystem?.stop(), relaySystem?.stop(), remoteSystem?.stop()]);
     localSystem = undefined;
+    relaySystem = undefined;
     remoteSystem = undefined;
   });
 
@@ -547,6 +565,378 @@ describe('remote runtime transport', () => {
     expect(deadLetters).toEqual([
       expect.objectContaining({
         message: expect.objectContaining({ type: 'PING' }),
+        reason: 'Remote delivery failed',
+      }),
+    ]);
+  });
+
+  it('propagates opaque route tokens across relayed remote delivery frames', async () => {
+    const network = createInMemoryMessageTransportNetwork();
+    const localTransport = network.createTransport('node-a');
+    const relayTransport = network.createTransport('node-relay');
+    const aToRelayToken = {
+      visitedNodes: ['node-a', 'node-relay'],
+      hopLimit: 1,
+    };
+    const relayToTargetToken = {
+      visitedNodes: ['node-a', 'node-relay', 'node-b'],
+      hopLimit: 0,
+    };
+    const relayRouterCalls: unknown[] = [];
+    localSystem = new ActorSystemImpl({
+      nodeAddress: 'node-a',
+      transport: localTransport,
+      router: {
+        resolveNextHop: async () => ({
+          nextHop: 'node-relay',
+          routeToken: aToRelayToken,
+        }),
+      },
+    });
+    relaySystem = new ActorSystemImpl({
+      nodeAddress: 'node-relay',
+      transport: relayTransport,
+      router: {
+        resolveNextHop: async (_location, _address, _connectedNodes, routeToken?: unknown) => {
+          relayRouterCalls.push(routeToken);
+          return {
+            nextHop: 'node-b',
+            routeToken: relayToTargetToken,
+          };
+        },
+      },
+    });
+    remoteSystem = new ActorSystemImpl({
+      nodeAddress: 'node-b',
+      transport: network.createTransport('node-b'),
+    });
+
+    const localSent: Array<{ destination: string; message: ActorMessage }> = [];
+    const relaySent: Array<{ destination: string; message: ActorMessage }> = [];
+    const realLocalSend = localTransport.send.bind(localTransport);
+    const realRelaySend = relayTransport.send.bind(relayTransport);
+    localTransport.send = async (destination: string, message: ActorMessage) => {
+      localSent.push({ destination, message });
+      if (destination === 'node-relay') {
+        return;
+      }
+
+      return realLocalSend(destination, message);
+    };
+    relayTransport.send = async (destination: string, message: ActorMessage) => {
+      relaySent.push({ destination, message });
+      return realRelaySend(destination, message);
+    };
+
+    await Promise.all([localSystem.start(), relaySystem.start(), remoteSystem.start()]);
+
+    const remoteActor = await remoteSystem.spawn(createCheckoutBehavior(), {
+      id: 'mesh-target',
+    });
+
+    await relaySystem.join(['node-b']);
+
+    const deliverRemote = (
+      localSystem as unknown as {
+        deliverMessageRemote(
+          location: string,
+          address: ActorAddress,
+          message: ActorMessage
+        ): Promise<void>;
+      }
+    ).deliverMessageRemote.bind(localSystem);
+    await deliverRemote('node-b', remoteActor.address, {
+      type: 'SUBMIT',
+      orderId: 'order-mesh',
+    } as ActorMessage);
+    const relayInboundFrame = localSent.find(
+      (frame) =>
+        frame.destination === 'node-relay' && frame.message.type === '__runtime.remote.send'
+    );
+    expect(relayInboundFrame).toMatchObject({
+      destination: 'node-relay',
+      message: {
+        type: '__runtime.remote.send',
+        address: remoteActor.address,
+        routeToken: aToRelayToken,
+      },
+    });
+
+    const relayDeliver = (
+      relayTransport as unknown as {
+        deliver(event: { source: string; message: ActorMessage }): void;
+      }
+    ).deliver.bind(relayTransport);
+    relayDeliver({
+      source: 'node-a',
+      message: relayInboundFrame?.message as ActorMessage,
+    });
+    await Promise.all([relaySystem.flush(), remoteSystem.flush()]);
+
+    await waitFor(() => relayRouterCalls.length === 1, 'Expected relay router to receive a token');
+    await waitForRemoteCount(remoteActor, 1, 'Expected remote actor to receive the relayed send');
+    expect(relayRouterCalls).toEqual([aToRelayToken]);
+    expect(localSent).toContainEqual(
+      expect.objectContaining({
+        destination: 'node-relay',
+        message: expect.objectContaining({
+          type: '__runtime.remote.send',
+          address: remoteActor.address,
+          routeToken: aToRelayToken,
+        }),
+      })
+    );
+    expect(relaySent).toContainEqual(
+      expect.objectContaining({
+        destination: 'node-b',
+        message: expect.objectContaining({
+          type: '__runtime.remote.send',
+          address: remoteActor.address,
+          routeToken: relayToTargetToken,
+        }),
+      })
+    );
+  });
+
+  it('fails closed when a relayed route token is hop-limit exhausted', async () => {
+    const network = createInMemoryMessageTransportNetwork();
+    const localTransport = network.createTransport('node-a');
+    const relayTransport = network.createTransport('node-relay');
+    remoteSystem = new ActorSystemImpl({
+      nodeAddress: 'node-b',
+      transport: network.createTransport('node-b'),
+    });
+    localSystem = new ActorSystemImpl({
+      nodeAddress: 'node-a',
+      transport: localTransport,
+      router: {
+        resolveNextHop: async () => ({
+          nextHop: 'node-relay',
+          routeToken: {
+            visitedNodes: ['node-a', 'node-relay'],
+            hopLimit: 0,
+          },
+        }),
+      },
+    });
+    relaySystem = new ActorSystemImpl({
+      nodeAddress: 'node-relay',
+      transport: relayTransport,
+      router: {
+        resolveNextHop: async (_location, _address, _connectedNodes, routeToken?: unknown) => {
+          const token = routeToken as { hopLimit?: number } | undefined;
+          if ((token?.hopLimit ?? 0) <= 0) {
+            throw new Error('hop-limit-exhausted');
+          }
+
+          return 'node-b';
+        },
+      },
+    });
+
+    const localSent: Array<{ destination: string; message: ActorMessage }> = [];
+    const relaySent: Array<{ destination: string; message: ActorMessage }> = [];
+    const realLocalSend = localTransport.send.bind(localTransport);
+    const realRelaySend = relayTransport.send.bind(relayTransport);
+    localTransport.send = async (destination: string, message: ActorMessage) => {
+      localSent.push({ destination, message });
+      if (destination === 'node-relay') {
+        return;
+      }
+
+      return realLocalSend(destination, message);
+    };
+    relayTransport.send = async (destination: string, message: ActorMessage) => {
+      relaySent.push({ destination, message });
+      return realRelaySend(destination, message);
+    };
+
+    await Promise.all([localSystem.start(), relaySystem.start(), remoteSystem.start()]);
+    const remoteActor = await remoteSystem.spawn(createCheckoutBehavior(), {
+      id: 'mesh-hop-limit',
+    });
+
+    await relaySystem.join(['node-b']);
+
+    const deliverRemote = (
+      localSystem as unknown as {
+        deliverMessageRemote(
+          location: string,
+          address: ActorAddress,
+          message: ActorMessage
+        ): Promise<void>;
+      }
+    ).deliverMessageRemote.bind(localSystem);
+    await deliverRemote('node-b', remoteActor.address, {
+      type: 'SUBMIT',
+      orderId: 'order-hop-limit',
+    } as ActorMessage);
+    const relayInboundFrame = localSent.find(
+      (frame) =>
+        frame.destination === 'node-relay' && frame.message.type === '__runtime.remote.send'
+    );
+    expect(relayInboundFrame).toMatchObject({
+      destination: 'node-relay',
+      message: {
+        type: '__runtime.remote.send',
+        address: remoteActor.address,
+        routeToken: {
+          visitedNodes: ['node-a', 'node-relay'],
+          hopLimit: 0,
+        },
+      },
+    });
+    const relayDeliver = (
+      relayTransport as unknown as {
+        deliver(event: { source: string; message: ActorMessage }): void;
+      }
+    ).deliver.bind(relayTransport);
+    relayDeliver({
+      source: 'node-a',
+      message: relayInboundFrame?.message as ActorMessage,
+    });
+    await Promise.all([relaySystem.flush(), remoteSystem.flush()]);
+
+    const deadLetters = (
+      relaySystem as unknown as {
+        deadLetterQueue: { getAll(): ReadonlyArray<DeadLetter> };
+      }
+    ).deadLetterQueue;
+    await waitFor(
+      () => deadLetters.getAll().length === 1,
+      'Expected relay dead-letter queue to record hop-limit exhaustion'
+    );
+    expect(relaySent).not.toContainEqual(
+      expect.objectContaining({
+        destination: 'node-b',
+        message: expect.objectContaining({ type: '__runtime.remote.send' }),
+      })
+    );
+    expect(deadLetters.getAll()).toEqual([
+      expect.objectContaining({
+        message: expect.objectContaining({ type: 'SUBMIT', orderId: 'order-hop-limit' }),
+        reason: 'Remote delivery failed',
+      }),
+    ]);
+  });
+
+  it('fails closed when a relayed route token would revisit the target node', async () => {
+    const network = createInMemoryMessageTransportNetwork();
+    const localTransport = network.createTransport('node-a');
+    const relayTransport = network.createTransport('node-relay');
+    remoteSystem = new ActorSystemImpl({
+      nodeAddress: 'node-b',
+      transport: network.createTransport('node-b'),
+    });
+    localSystem = new ActorSystemImpl({
+      nodeAddress: 'node-a',
+      transport: localTransport,
+      router: {
+        resolveNextHop: async () => ({
+          nextHop: 'node-relay',
+          routeToken: {
+            visitedNodes: ['node-a', 'node-b'],
+            hopLimit: 2,
+          },
+        }),
+      },
+    });
+    relaySystem = new ActorSystemImpl({
+      nodeAddress: 'node-relay',
+      transport: relayTransport,
+      router: {
+        resolveNextHop: async (_location, _address, _connectedNodes, routeToken?: unknown) => {
+          const token = routeToken as { visitedNodes?: readonly string[] } | undefined;
+          if (token?.visitedNodes?.includes('node-b')) {
+            throw new Error('route-loop');
+          }
+
+          return 'node-b';
+        },
+      },
+    });
+
+    const localSent: Array<{ destination: string; message: ActorMessage }> = [];
+    const relaySent: Array<{ destination: string; message: ActorMessage }> = [];
+    const realLocalSend = localTransport.send.bind(localTransport);
+    const realRelaySend = relayTransport.send.bind(relayTransport);
+    localTransport.send = async (destination: string, message: ActorMessage) => {
+      localSent.push({ destination, message });
+      if (destination === 'node-relay') {
+        return;
+      }
+
+      return realLocalSend(destination, message);
+    };
+    relayTransport.send = async (destination: string, message: ActorMessage) => {
+      relaySent.push({ destination, message });
+      return realRelaySend(destination, message);
+    };
+
+    await Promise.all([localSystem.start(), relaySystem.start(), remoteSystem.start()]);
+    const remoteActor = await remoteSystem.spawn(createCheckoutBehavior(), {
+      id: 'mesh-route-loop',
+    });
+
+    await relaySystem.join(['node-b']);
+
+    const deliverRemote = (
+      localSystem as unknown as {
+        deliverMessageRemote(
+          location: string,
+          address: ActorAddress,
+          message: ActorMessage
+        ): Promise<void>;
+      }
+    ).deliverMessageRemote.bind(localSystem);
+    await deliverRemote('node-b', remoteActor.address, {
+      type: 'SUBMIT',
+      orderId: 'order-route-loop',
+    } as ActorMessage);
+    const relayInboundFrame = localSent.find(
+      (frame) =>
+        frame.destination === 'node-relay' && frame.message.type === '__runtime.remote.send'
+    );
+    expect(relayInboundFrame).toMatchObject({
+      destination: 'node-relay',
+      message: {
+        type: '__runtime.remote.send',
+        address: remoteActor.address,
+        routeToken: {
+          visitedNodes: ['node-a', 'node-b'],
+          hopLimit: 2,
+        },
+      },
+    });
+    const relayDeliver = (
+      relayTransport as unknown as {
+        deliver(event: { source: string; message: ActorMessage }): void;
+      }
+    ).deliver.bind(relayTransport);
+    relayDeliver({
+      source: 'node-a',
+      message: relayInboundFrame?.message as ActorMessage,
+    });
+    await Promise.all([relaySystem.flush(), remoteSystem.flush()]);
+
+    const deadLetters = (
+      relaySystem as unknown as {
+        deadLetterQueue: { getAll(): ReadonlyArray<DeadLetter> };
+      }
+    ).deadLetterQueue;
+    await waitFor(
+      () => deadLetters.getAll().length === 1,
+      'Expected relay dead-letter queue to record route-loop failure'
+    );
+    expect(relaySent).not.toContainEqual(
+      expect.objectContaining({
+        destination: 'node-b',
+        message: expect.objectContaining({ type: '__runtime.remote.send' }),
+      })
+    );
+    expect(deadLetters.getAll()).toEqual([
+      expect.objectContaining({
+        message: expect.objectContaining({ type: 'SUBMIT', orderId: 'order-route-loop' }),
         reason: 'Remote delivery failed',
       }),
     ]);

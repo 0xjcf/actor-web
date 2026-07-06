@@ -242,10 +242,58 @@ describe('@actor-web/labs-mesh routing', () => {
       },
     });
     const router = createMeshRemoteMessageRouter(mesh);
+    const inboundToken = { visitedNodes: ['node-a'], hopLimit: 4 };
 
-    await expect(router.resolveNextHop('node-b', plannerAddress, ['node-relay'])).resolves.toBe(
-      'node-relay'
-    );
+    await expect(
+      router.resolveNextHop('node-b', plannerAddress, ['node-relay'], inboundToken)
+    ).resolves.toEqual({
+      nextHop: 'node-relay',
+      routeToken: { visitedNodes: ['node-a', 'node-relay'], hopLimit: 3 },
+    });
+  });
+
+  it('fails closed through the runtime RemoteMessageRouter seam when a present route token is malformed', async () => {
+    const mesh = createLabsMesh({
+      localNode: 'node-a',
+      membership: [
+        { nodeAddress: 'node-a', incarnation: 1, state: 'alive', seenAt: 1 },
+        { nodeAddress: 'node-relay', incarnation: 1, state: 'alive', seenAt: 1 },
+        { nodeAddress: 'node-b', incarnation: 1, state: 'alive', seenAt: 1 },
+      ],
+      adjacency: {
+        'node-a': ['node-relay'],
+        'node-relay': ['node-b'],
+      },
+    });
+    const router = createMeshRemoteMessageRouter(mesh);
+
+    await expect(
+      router.resolveNextHop('node-b', plannerAddress, ['node-relay'], {
+        visitedNodes: ['node-a', 7],
+        hopLimit: Number.NaN,
+      })
+    ).rejects.toThrow('Mesh route token is malformed.');
+  });
+
+  it('keeps undefined route tokens backward-compatible at the runtime RemoteMessageRouter seam', async () => {
+    const mesh = createLabsMesh({
+      localNode: 'node-a',
+      membership: [
+        { nodeAddress: 'node-a', incarnation: 1, state: 'alive', seenAt: 1 },
+        { nodeAddress: 'node-relay', incarnation: 1, state: 'alive', seenAt: 1 },
+        { nodeAddress: 'node-b', incarnation: 1, state: 'alive', seenAt: 1 },
+      ],
+      adjacency: {
+        'node-a': ['node-relay'],
+        'node-relay': ['node-b'],
+      },
+    });
+    const router = createMeshRemoteMessageRouter(mesh);
+
+    await expect(router.resolveNextHop('node-b', plannerAddress, ['node-relay'])).resolves.toEqual({
+      nextHop: 'node-relay',
+      routeToken: { visitedNodes: ['node-a', 'node-relay'], hopLimit: 15 },
+    });
   });
 
   it('rejects through the runtime RemoteMessageRouter seam when no route exists', async () => {
@@ -259,8 +307,11 @@ describe('@actor-web/labs-mesh routing', () => {
     });
     const router = createMeshRemoteMessageRouter(mesh);
 
-    await expect(router.resolveNextHop('node-b', plannerAddress, [])).rejects.toThrow(
-      'Mesh target node node-b has no safe next hop from node-a.'
-    );
+    await expect(
+      router.resolveNextHop('node-b', plannerAddress, [], {
+        visitedNodes: ['node-a'],
+        hopLimit: 2,
+      })
+    ).rejects.toThrow('Mesh target node node-b has no safe next hop from node-a.');
   });
 });
