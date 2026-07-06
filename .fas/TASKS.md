@@ -1701,9 +1701,12 @@
 
 - Title: Author the @actor-web/labs-mesh design doc (gossip membership, multi-hop, directory propagation)
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/author-the-actor-web-labs-mesh-design-doc-gossip-membership-.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Transport: large-payload framing/chunking contract or explicit max-payload with blob-externalization
 
