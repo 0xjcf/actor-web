@@ -1599,7 +1599,7 @@
 
 - Title: Implement @actor-web/transport-broadcast-channel adapter
 - Mode: single-agent
-- Status: queued
+- Status: done
 - Owner: implementer
 - Brief: .fas/tasks/implement-actor-web-transport-broadcast-channel-adapter.md
 - Verification lane: fast

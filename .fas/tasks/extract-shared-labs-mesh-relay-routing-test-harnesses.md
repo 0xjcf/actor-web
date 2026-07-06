@@ -1,13 +1,16 @@
 # Extract shared labs-mesh relay routing test harnesses
 
 ## Source
+
 PR #41 post-merge CodeRabbit cleanup follow-up, created with `fas create-task`
 on 2026-07-06.
 
 ## Problem
+
 CodeRabbit PR #41 left low-value cleanup nits for duplicated relay-topology and mesh-routing test setup. Extract small test-only helpers in remote-transport.test.ts and labs-mesh.test.ts without changing runtime behavior or public API.
 
 ## Acceptance criteria
+
 - remote-transport relay tests use a shared local helper for three-node transport setup, send capture, and private delivery bindings.
 - labs-mesh routing tests use a shared test mesh factory for the repeated node membership and adjacency graph.
 - No production runtime behavior changes are included.
@@ -19,37 +22,47 @@ CodeRabbit PR #41 left low-value cleanup nits for duplicated relay-topology and 
 - The task is queued in `.fas/queue/tasks.json` for the runtime.
 
 ## Proposed solution
+
 - Use the supplied problem context, acceptance criteria, and affected-file hints to draft the concrete implementation approach during planning.
 
 ## Alternatives considered
+
 - None recorded at task creation. Add rejected approaches during planning if scope tradeoffs appear.
 
 ## Affected files
+
 - packages/actor-core-runtime/src/unit/remote-transport.test.ts
 - packages/actor-labs-mesh/src/unit/labs-mesh.test.ts
 
 ## Scope Amendments
+
 - None.
 
 ## Implementation plan
+
 - Convert the supplied context into a scoped implementation plan before editing.
 - Refresh affected-file scope before implementation if the generated hints are incomplete.
 
 ## Verification plan
+
 - Run `fas validate-task` for the inner-loop verification gate.
 - Run `.fas/scripts/verify.sh --full` at the final release-quality gate when tracked files change.
 
 ## Risks
+
 - Validate generated scope, acceptance criteria, and verification evidence before closeout to avoid workflow drift.
 
 ## Dependencies
+
 - Depends on `task-1783361040728` (carry labs-mesh route tokens through runtime
   remote routing protocol).
 
 ## Open questions
+
 - None captured at task creation.
 
 ## Artifact links
+
 - Planning: `.fas/state/planning.json`
 - Task packet: `.fas/state/task-packet.json`
 - Commit plan: `.fas/state/commit-plan.json`

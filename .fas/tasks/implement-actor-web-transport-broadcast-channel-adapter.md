@@ -29,11 +29,16 @@ Location-transparency audit L4. Re-sequenced behind the foundation (unified dire
 
 ## Affected files
 
-- Scope unknown.
+- packages/actor-core-runtime/src/broadcast-channel-message-transport.ts
+- packages/actor-core-runtime/src/unit/broadcast-channel-message-transport.test.ts
+- packages/actor-core-runtime/src/browser.ts
 
 ## Scope Amendments
 
-- None.
+- 2026-07-06: Promoted concrete affected files after FAS bootstrap reported
+  unknown scope. The implementation stays inside the runtime package and browser
+  entrypoint; no WebRTC, Mesh Pong, or runtime-core behavior changes are in
+  scope.
 
 ## Implementation plan
 
@@ -51,7 +56,9 @@ Location-transparency audit L4. Re-sequenced behind the foundation (unified dire
 
 ## Dependencies
 
-- None known at task creation.
+- Completed prerequisites: shared transport core, unified actor location truth,
+  remote node identity, labs-mesh package, and labs-mesh route-token runtime
+  protocol.
 
 ## Open questions
 

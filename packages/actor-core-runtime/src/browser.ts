@@ -83,6 +83,14 @@ export {
   createActorWebSource,
   createActorWebSourceHandle,
 } from './actor-web-source.js';
+export type {
+  BroadcastChannelLike,
+  BroadcastChannelMessageTransportOptions,
+} from './broadcast-channel-message-transport.js';
+export {
+  BroadcastChannelMessageTransport,
+  createBroadcastChannelMessageTransport,
+} from './broadcast-channel-message-transport.js';
 export { createActorRef } from './create-actor-ref.js';
 export type {
   ActorCommandSource,
