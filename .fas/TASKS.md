@@ -1554,25 +1554,34 @@
 
 - Title: Make ActorDirectory injectable via ActorSystemConfig
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/make-actordirectory-injectable-via-actorsystemconfig.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Add next-hop routing hook in deliverMessageRemote
 
 - Title: Add next-hop routing hook in deliverMessageRemote
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/add-next-hop-routing-hook-in-delivermessageremote.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Formalize remote node identity and collision protection
 
 - Title: Formalize remote node identity and collision protection
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/formalize-remote-node-identity-and-collision-protection.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Extract shared transport core (framing/ack-retry/queue/heartbeat/stats + safe listener dispatch)
 

@@ -328,6 +328,13 @@ export class TransportCore implements MessageTransport {
       }
     }
 
+    const peerAcceptance = this.canAcceptPeer(peerIdentity);
+    if (!peerAcceptance.ok) {
+      result.link.close();
+      this.recordHandshakeRejected(address, peerAcceptance.message);
+      throw new Error(`Runtime handshake rejected: ${peerAcceptance.message}`);
+    }
+
     this.registerPeer(result.link, peerIdentity);
   }
 
@@ -378,14 +385,35 @@ export class TransportCore implements MessageTransport {
     // Normalize the structural PeerIdentity surfaced by the link into a full
     // RuntimeNodeIdentity (filling protocolVersion) so the registered peer carries the
     // complete handshake identity used for inbound frame source-matching and stats.
-    this.registerPeer(
-      link,
-      createRuntimeNodeIdentity({
-        nodeAddress: link.identity.nodeAddress,
-        nodeId: link.identity.nodeId,
-        incarnation: link.identity.incarnation,
-      })
-    );
+    const identity = createRuntimeNodeIdentity({
+      nodeAddress: link.identity.nodeAddress,
+      nodeId: link.identity.nodeId,
+      incarnation: link.identity.incarnation,
+    });
+    const peerAcceptance = this.canAcceptPeer(identity);
+    if (!peerAcceptance.ok) {
+      link.close();
+      this.recordInboundHandshakeRejection(identity.nodeAddress, peerAcceptance.message);
+      return;
+    }
+
+    this.registerPeer(link, identity);
+  }
+
+  private canAcceptPeer(
+    identity: RuntimeNodeIdentity
+  ): { ok: true } | { ok: false; message: string } {
+    const existing = this.peers.get(identity.nodeAddress);
+    if (!existing || existing.identity.nodeId === identity.nodeId) {
+      return { ok: true };
+    }
+
+    return {
+      ok: false,
+      message:
+        `Runtime peer identity conflict for ${identity.nodeAddress}: ` +
+        `existing nodeId=${existing.identity.nodeId}, incoming nodeId=${identity.nodeId}.`,
+    };
   }
 
   private registerPeer(link: PeerLink, identity: RuntimeNodeIdentity): void {

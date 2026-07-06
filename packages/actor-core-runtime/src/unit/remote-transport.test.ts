@@ -3,6 +3,7 @@ import { setup } from 'xstate';
 import type { ActorAddress, ActorMessage } from '../actor-system.js';
 import { ActorSystemImpl } from '../actor-system-impl.js';
 import { createActorSource } from '../integration/actor-source.js';
+import type { DeadLetter } from '../messaging/dead-letter-queue.js';
 import { createRuntimeNodeIdentity } from '../runtime-transport-contract.js';
 import {
   createInMemoryMessageTransportNetwork,
@@ -399,6 +400,156 @@ describe('remote runtime transport', () => {
     } finally {
       process.off('unhandledRejection', onUnhandledRejection);
     }
+  });
+
+  it('rejects remote delivery attempts for node-private local addresses', async () => {
+    const network = createInMemoryMessageTransportNetwork();
+    const localTransport = network.createTransport('node-a');
+    network.createTransport('node-b');
+    localSystem = new ActorSystemImpl({
+      nodeAddress: 'node-a',
+      transport: localTransport,
+    });
+
+    const sent: Array<{ destination: string; message: ActorMessage }> = [];
+    const realSend = localTransport.send.bind(localTransport);
+    localTransport.send = async (destination: string, message: ActorMessage) => {
+      sent.push({ destination, message });
+      return realSend(destination, message);
+    };
+
+    await localSystem.start();
+    await localTransport.connect('node-b');
+
+    const deliverRemote = (
+      localSystem as unknown as {
+        deliverMessageRemote(
+          location: string,
+          address: ActorAddress,
+          message: ActorMessage
+        ): Promise<void>;
+      }
+    ).deliverMessageRemote.bind(localSystem);
+
+    await expect(
+      deliverRemote(
+        'node-b',
+        'actor://local/remote-shadow' as ActorAddress,
+        {
+          type: 'PING',
+          _timestamp: Date.now(),
+          _version: '1.0.0',
+        } as ActorMessage
+      )
+    ).rejects.toThrow(/node-private local address/i);
+
+    expect(sent.filter((frame) => frame.message.type === '__runtime.remote.send')).toHaveLength(0);
+  });
+
+  it('uses a configured next-hop router before sending remote delivery frames', async () => {
+    const network = createInMemoryMessageTransportNetwork();
+    const localTransport = network.createTransport('node-a');
+    network.createTransport('node-b');
+    network.createTransport('node-relay');
+    const routerCalls: Array<{
+      location: string;
+      address: ActorAddress;
+      connectedNodes: readonly string[];
+    }> = [];
+    localSystem = new ActorSystemImpl({
+      nodeAddress: 'node-a',
+      transport: localTransport,
+      router: {
+        resolveNextHop: async (location, address, connectedNodes) => {
+          routerCalls.push({ location, address, connectedNodes });
+          return 'node-relay';
+        },
+      },
+    });
+
+    const sent: Array<{ destination: string; message: ActorMessage }> = [];
+    const realSend = localTransport.send.bind(localTransport);
+    localTransport.send = async (destination: string, message: ActorMessage) => {
+      sent.push({ destination, message });
+      return realSend(destination, message);
+    };
+
+    await localSystem.start();
+    await localTransport.connect('node-relay');
+
+    const deliverRemote = (
+      localSystem as unknown as {
+        deliverMessageRemote(
+          location: string,
+          address: ActorAddress,
+          message: ActorMessage
+        ): Promise<void>;
+      }
+    ).deliverMessageRemote.bind(localSystem);
+
+    const targetAddress = 'actor://node-b/mesh-target' as ActorAddress;
+    await deliverRemote('node-b', targetAddress, {
+      type: 'PING',
+      _timestamp: Date.now(),
+      _version: '1.0.0',
+    } as ActorMessage);
+
+    expect(routerCalls).toEqual([
+      {
+        location: 'node-b',
+        address: targetAddress,
+        connectedNodes: ['node-relay'],
+      },
+    ]);
+    const remoteSendFrames = sent.filter((frame) => frame.message.type === '__runtime.remote.send');
+    expect(remoteSendFrames).toHaveLength(1);
+    expect(remoteSendFrames[0]).toMatchObject({
+      destination: 'node-relay',
+      message: { address: targetAddress },
+    });
+  });
+
+  it('dead-letters remote delivery failures from the routing hook', async () => {
+    const network = createInMemoryMessageTransportNetwork();
+    localSystem = new ActorSystemImpl({
+      nodeAddress: 'node-a',
+      transport: network.createTransport('node-a'),
+      router: {
+        resolveNextHop: async () => {
+          throw new Error('router unavailable');
+        },
+      },
+    });
+
+    await localSystem.start();
+
+    const targetAddress = 'actor://node-b/mesh-target' as ActorAddress;
+    await (
+      localSystem as unknown as {
+        directory: {
+          register(address: ActorAddress, location: string): Promise<void>;
+        };
+      }
+    ).directory.register(targetAddress, 'node-b');
+
+    await localSystem.enqueueMessage(targetAddress, {
+      type: 'PING',
+      _timestamp: Date.now(),
+      _version: '1.0.0',
+    } as ActorMessage);
+
+    const deadLetters = (
+      localSystem as unknown as {
+        deadLetterQueue: { getAll(): ReadonlyArray<DeadLetter> };
+      }
+    ).deadLetterQueue.getAll();
+
+    expect(deadLetters).toEqual([
+      expect.objectContaining({
+        message: expect.objectContaining({ type: 'PING' }),
+        reason: 'Remote delivery failed',
+      }),
+    ]);
   });
 
   it('does not broadcast a directory unregister for node-private (local) addresses', async () => {

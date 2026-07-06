@@ -50,6 +50,7 @@ import type {
   ActorAddress,
   ActorBehavior,
   ActorDependencies,
+  ActorDirectory,
   ActorMessage,
   ActorPID,
   ActorStats,
@@ -355,9 +356,35 @@ export function resolveTreeSupervisionDecision(
  * Directory configuration for actor lookup
  */
 export interface DirectoryConfig {
+  implementation?: ActorDirectory;
   maxCacheSize?: number;
   cacheTtl?: number;
   cleanupInterval?: number;
+}
+
+type RuntimeActorDirectory = ActorDirectory & {
+  cleanup?: () => Promise<void>;
+  getCacheStats?: () => {
+    size: number;
+    hitRate: number;
+    hits: number;
+    misses: number;
+    maxSize: number;
+  };
+  applyRemoteEntry?: (entry: RuntimeDirectoryEntry) => void;
+  removeRemoteEntry?: (address: ActorAddress) => void;
+  exportEntries?: () => RuntimeDirectoryEntry[];
+};
+
+/**
+ * Resolves a remote actor's registered node location to the next transport hop.
+ */
+export interface RemoteMessageRouter {
+  resolveNextHop(
+    location: string,
+    address: ActorAddress,
+    connectedNodes: readonly string[]
+  ): string | Promise<string>;
 }
 
 /**
@@ -403,6 +430,11 @@ export interface ActorSystemConfig {
    * Optional cross-node runtime transport.
    */
   transport?: MessageTransport;
+
+  /**
+   * Optional remote delivery router for multi-hop transports.
+   */
+  router?: RemoteMessageRouter;
 
   /**
    * Runtime-native tool implementations exposed to actor dependencies.
@@ -463,7 +495,7 @@ export class ActorSystemImpl implements ActorSystem {
   private actorMailboxes = new Map<string, BoundedMailbox>();
   private actorProcessingLoops = new Map<string, boolean>(); // Track active processing loops
   private actorProcessingActive = new Map<string, boolean>(); // Track if loop is currently processing
-  private directory: DistributedActorDirectory;
+  private directory: RuntimeActorDirectory;
   private subscribers = new Map<string, Set<(message: ActorMessage) => void>>();
   private snapshotSubscribers = new Map<string, Set<(snapshot: ActorSnapshot<unknown>) => void>>();
   private actorEventSubscribers = new Map<
@@ -576,12 +608,14 @@ export class ActorSystemImpl implements ActorSystem {
         this.actorSupervisorGroupKeys.set(childPath, group.key);
       }
     }
-    this.directory = new DistributedActorDirectory({
-      nodeAddress: config.nodeAddress,
-      maxCacheSize: config.directory?.maxCacheSize ?? 10000,
-      cacheTtl: config.directory?.cacheTtl ?? 5 * 60 * 1000,
-      cleanupInterval: config.directory?.cleanupInterval ?? 60 * 1000,
-    });
+    this.directory =
+      (config.directory?.implementation as RuntimeActorDirectory | undefined) ??
+      new DistributedActorDirectory({
+        nodeAddress: config.nodeAddress,
+        maxCacheSize: config.directory?.maxCacheSize ?? 10000,
+        cacheTtl: config.directory?.cacheTtl ?? 5 * 60 * 1000,
+        cleanupInterval: config.directory?.cleanupInterval ?? 60 * 1000,
+      });
 
     // Initialize correlation manager for ask pattern
     this.correlationManager = createCorrelationManager({
@@ -792,8 +826,8 @@ export class ActorSystemImpl implements ActorSystem {
     // Stop the system timeout manager
     this.systemTimeoutManager.destroy();
 
-    // Clear directory
-    await this.directory.cleanup();
+    // Clear directory resources when the implementation owns cleanup hooks.
+    await this.cleanupDirectory();
 
     if (this.transportSubscriptionStop) {
       this.transportSubscriptionStop();
@@ -1736,7 +1770,22 @@ export class ActorSystemImpl implements ActorSystem {
         location,
         nodeAddress: this.config.nodeAddress,
       });
-      await this.deliverMessageRemote(location, address, processedMessage);
+      try {
+        await this.deliverMessageRemote(location, address, processedMessage);
+      } catch (error) {
+        log.error('Remote delivery failed', {
+          actorPath: address,
+          location,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        this.deadLetterQueue.add(
+          processedMessage,
+          address,
+          'Remote delivery failed',
+          1,
+          error instanceof Error ? error : undefined
+        );
+      }
       return;
     }
 
@@ -2346,7 +2395,31 @@ export class ActorSystemImpl implements ActorSystem {
    * Get directory stats (internal method)
    */
   getDirectoryStats() {
-    return this.directory.getCacheStats();
+    return (
+      this.directory.getCacheStats?.() ?? {
+        size: 0,
+        hitRate: 0,
+        hits: 0,
+        misses: 0,
+        maxSize: 0,
+      }
+    );
+  }
+
+  private async cleanupDirectory(): Promise<void> {
+    await this.directory.cleanup?.();
+  }
+
+  private applyRemoteDirectoryEntry(entry: RuntimeDirectoryEntry): void {
+    this.directory.applyRemoteEntry?.(entry);
+  }
+
+  private removeRemoteDirectoryEntry(address: ActorAddress): void {
+    this.directory.removeRemoteEntry?.(address);
+  }
+
+  private exportDirectoryEntries(): RuntimeDirectoryEntry[] {
+    return this.directory.exportEntries?.() ?? [];
   }
 
   /**
@@ -2860,16 +2933,16 @@ export class ActorSystemImpl implements ActorSystem {
         await this.handleTransportDisconnected(message.nodeAddress);
         return;
       case '__runtime.directory.register':
-        this.directory.applyRemoteEntry(message.entry);
+        this.applyRemoteDirectoryEntry(message.entry);
         return;
       case '__runtime.directory.unregister':
-        this.directory.removeRemoteEntry(message.address);
+        this.removeRemoteDirectoryEntry(message.address);
         return;
       case '__runtime.directory.sync.request':
         await this.sendTransportMessage(source, {
           type: '__runtime.directory.sync.response',
           requestId: message.requestId,
-          entries: this.directory.exportEntries(),
+          entries: this.exportDirectoryEntries(),
           _timestamp: Date.now(),
           _version: '1.0.0',
         });
@@ -3319,7 +3392,7 @@ export class ActorSystemImpl implements ActorSystem {
 
       const address = parseActorPath(path);
       if (address) {
-        this.directory.removeRemoteEntry(address);
+        this.removeRemoteDirectoryEntry(address);
       }
     }
 
@@ -3611,7 +3684,7 @@ export class ActorSystemImpl implements ActorSystem {
 
     const syncResponse = response as ActorMessage & { entries: RuntimeDirectoryEntry[] };
     for (const entry of syncResponse.entries) {
-      this.directory.applyRemoteEntry(entry);
+      this.applyRemoteDirectoryEntry(entry);
     }
   }
 
@@ -4133,7 +4206,19 @@ export class ActorSystemImpl implements ActorSystem {
     address: ActorAddress,
     message: ActorMessage
   ): Promise<void> {
-    await this.sendTransportMessage(location, {
+    if (isLocalAddress(address)) {
+      throw new Error(
+        `Cannot deliver node-private local address ${address} to remote node ${location}. ` +
+          'Remote actors must use an explicit node address.'
+      );
+    }
+
+    const connectedNodes = this.config.transport?.getConnectedNodes() ?? [];
+    const nextHop = this.config.router
+      ? await this.config.router.resolveNextHop(location, address, connectedNodes)
+      : location;
+
+    await this.sendTransportMessage(nextHop, {
       type: '__runtime.remote.send',
       address,
       message,
