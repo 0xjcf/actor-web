@@ -2105,6 +2105,14 @@ operator explicitly asks for queue mutations.
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Extract shared labs-mesh relay routing test harnesses
+
+- Title: Extract shared labs-mesh relay routing test harnesses
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/extract-shared-labs-mesh-relay-routing-test-harnesses.md
+
 ## Template
 
 ### Task: `<short task title>`

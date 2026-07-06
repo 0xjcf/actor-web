@@ -39,3 +39,9 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 ## PR #40 — labs mesh implementation babysit (2026-07-06, single-agent)
 
 - **Optional-clock semantics in deterministic cores need wrapper-level coverage.** `resolveMeshDirectoryLocation` correctly accepted `now`, but `LabsMesh.resolveDirectoryLocation` did not pass one, so TTL expiry was unreachable through the shell API. When a pure helper accepts an injected clock or timestamp, test the public wrapper that composes it, not only the pure helper.
+
+## PR #41 — labs mesh route-token relay babysit (2026-07-06, single-agent)
+
+- **Negative async delivery assertions must observe the side effect that must not happen.** A state value that starts at the expected value can pass immediately and miss a late relay. For fail-closed relay guarantees, capture the outbound transport or effect journal and assert the forbidden send/effect is absent after the failure fact is observed.
+
+- **CodeRabbit closeout needs the completed review body, not only a green or skipped check.** When automatic incremental reviews are disabled or only a status check is visible, post an explicit `@coderabbitai review` and read the follow-up result before closing babysit.

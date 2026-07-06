@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed design contract for `@actor-web/labs-mesh`.
+Accepted design contract for `@actor-web/labs-mesh`.
 
 This document is the canonical design boundary for the labs-mesh slice queued by
 `task-1781880954222`. It defines the membership, directory propagation, and
@@ -56,8 +56,8 @@ Non-goals for v1:
 
 - no implementation details, wire-format specifics, or package-internal data
   structures
-- no changes to the existing runtime transport protocol or its at-most-once
-  baseline
+- no transport-level retry or delivery-guarantee changes to the existing runtime
+  transport protocol or its at-most-once baseline
 - no transport-media design for BroadcastChannel or WebRTC in this task
 - no split-brain-safe ownership transfer promise
 - no cross-node supervision tree, remote restart, or remote child ownership
@@ -169,6 +169,9 @@ Decision:
 - labs-mesh computes the next reachable hop toward the destination node
 - the runtime asks `RemoteMessageRouter` for that next hop before sending a
   remote frame
+- remote send frames may carry optional route-token metadata so relays can
+  preserve visited-node and hop-limit state without changing the transport
+  delivery baseline
 
 The routing contract is therefore:
 
