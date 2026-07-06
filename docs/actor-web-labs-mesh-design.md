@@ -183,10 +183,16 @@ V1 routing policy expectations:
 
 - prefer directly connected owner nodes when available
 - otherwise choose a next hop from current membership and adjacency knowledge
+- carry a bounded hop count or route token with visited-node state so relays
+  cannot forward the same delivery indefinitely
+- reject any route that has exhausted its hop limit or would revisit a node
+  already present in the route token
 - avoid routing through nodes currently in `suspect`, `dead`, or quarantined
   state unless policy explicitly allows a degraded fallback
 - fail closed when no safe next hop exists rather than fabricating transport
   reachability
+- fail closed when loop-prevention state says the delivery cannot advance
+  safely, even if a neighbor is otherwise connected
 
 Alignment requirement:
 
