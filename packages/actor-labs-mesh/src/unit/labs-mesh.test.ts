@@ -265,9 +265,7 @@ describe('@actor-web/labs-mesh routing', () => {
         'node-relay': ['node-b'],
       },
     });
-    const router = createMeshRemoteMessageRouter(mesh, {
-      routeToken: { visitedNodes: ['node-a'], hopLimit: 4 },
-    });
+    const router = createMeshRemoteMessageRouter(mesh);
 
     await expect(
       router.resolveNextHop('node-b', plannerAddress, ['node-relay'], {

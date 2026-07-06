@@ -120,18 +120,28 @@ function cloneMessageContext(context: MessageContext): MessageContext {
   };
 }
 
-function normalizeRemoteRouteDecision(
-  decision: string | { readonly nextHop: string; readonly routeToken?: unknown }
-): { readonly nextHop: string; readonly routeToken?: unknown } {
+function normalizeRemoteRouteDecision(decision: unknown): {
+  readonly nextHop: string;
+  readonly routeToken?: unknown;
+} {
   if (typeof decision === 'string') {
     return { nextHop: decision };
   }
 
-  if (typeof decision.nextHop !== 'string' || decision.nextHop.length === 0) {
+  if (
+    typeof decision !== 'object' ||
+    decision === null ||
+    !('nextHop' in decision) ||
+    typeof decision.nextHop !== 'string' ||
+    decision.nextHop.length === 0
+  ) {
     throw new Error('RemoteMessageRouter returned an invalid route decision.');
   }
 
-  return decision;
+  return {
+    nextHop: decision.nextHop,
+    ...('routeToken' in decision ? { routeToken: decision.routeToken } : {}),
+  };
 }
 
 // ✅ Define specific message types for type safety

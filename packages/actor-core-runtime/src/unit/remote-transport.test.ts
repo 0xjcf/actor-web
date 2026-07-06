@@ -735,7 +735,9 @@ describe('remote runtime transport', () => {
     });
 
     const localSent: Array<{ destination: string; message: ActorMessage }> = [];
+    const relaySent: Array<{ destination: string; message: ActorMessage }> = [];
     const realLocalSend = localTransport.send.bind(localTransport);
+    const realRelaySend = relayTransport.send.bind(relayTransport);
     localTransport.send = async (destination: string, message: ActorMessage) => {
       localSent.push({ destination, message });
       if (destination === 'node-relay') {
@@ -743,6 +745,10 @@ describe('remote runtime transport', () => {
       }
 
       return realLocalSend(destination, message);
+    };
+    relayTransport.send = async (destination: string, message: ActorMessage) => {
+      relaySent.push({ destination, message });
+      return realRelaySend(destination, message);
     };
 
     await Promise.all([localSystem.start(), relaySystem.start(), remoteSystem.start()]);
@@ -800,7 +806,12 @@ describe('remote runtime transport', () => {
       () => deadLetters.getAll().length === 1,
       'Expected relay dead-letter queue to record hop-limit exhaustion'
     );
-    await waitForRemoteCount(remoteActor, 0, 'Expected exhausted token to fail before delivery');
+    expect(relaySent).not.toContainEqual(
+      expect.objectContaining({
+        destination: 'node-b',
+        message: expect.objectContaining({ type: '__runtime.remote.send' }),
+      })
+    );
     expect(deadLetters.getAll()).toEqual([
       expect.objectContaining({
         message: expect.objectContaining({ type: 'SUBMIT', orderId: 'order-hop-limit' }),
@@ -846,7 +857,9 @@ describe('remote runtime transport', () => {
     });
 
     const localSent: Array<{ destination: string; message: ActorMessage }> = [];
+    const relaySent: Array<{ destination: string; message: ActorMessage }> = [];
     const realLocalSend = localTransport.send.bind(localTransport);
+    const realRelaySend = relayTransport.send.bind(relayTransport);
     localTransport.send = async (destination: string, message: ActorMessage) => {
       localSent.push({ destination, message });
       if (destination === 'node-relay') {
@@ -854,6 +867,10 @@ describe('remote runtime transport', () => {
       }
 
       return realLocalSend(destination, message);
+    };
+    relayTransport.send = async (destination: string, message: ActorMessage) => {
+      relaySent.push({ destination, message });
+      return realRelaySend(destination, message);
     };
 
     await Promise.all([localSystem.start(), relaySystem.start(), remoteSystem.start()]);
@@ -911,7 +928,12 @@ describe('remote runtime transport', () => {
       () => deadLetters.getAll().length === 1,
       'Expected relay dead-letter queue to record route-loop failure'
     );
-    await waitForRemoteCount(remoteActor, 0, 'Expected looping token to fail before delivery');
+    expect(relaySent).not.toContainEqual(
+      expect.objectContaining({
+        destination: 'node-b',
+        message: expect.objectContaining({ type: '__runtime.remote.send' }),
+      })
+    );
     expect(deadLetters.getAll()).toEqual([
       expect.objectContaining({
         message: expect.objectContaining({ type: 'SUBMIT', orderId: 'order-route-loop' }),
