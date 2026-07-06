@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ActorMessage } from '../actor-system.js';
 import {
+  BROADCAST_CHANNEL_TRANSPORT_PROTOCOL,
   type BroadcastChannelLike,
   type BroadcastChannelMessageTransport,
   type BroadcastChannelMessageTransportOptions,
+  type BroadcastChannelTransportEnvelope,
   createBroadcastChannelMessageTransport,
 } from '../broadcast-channel-message-transport.js';
 import {
@@ -15,7 +17,6 @@ import {
 
 const transports: BroadcastChannelMessageTransport[] = [];
 const TEST_CHANNEL_NAME = 'actor-web-test';
-const BROADCAST_CHANNEL_TRANSPORT_PROTOCOL = 'actor-web.broadcast-channel/1';
 
 class FakeBroadcastChannelNetwork {
   private readonly channels = new Set<FakeBroadcastChannel>();
@@ -123,6 +124,19 @@ function testIdentity(
   });
 }
 
+function testEnvelope(
+  source: RuntimeNodeIdentity,
+  destination: string,
+  payload: unknown
+): BroadcastChannelTransportEnvelope {
+  return {
+    protocol: BROADCAST_CHANNEL_TRANSPORT_PROTOCOL,
+    source,
+    destination,
+    payload,
+  };
+}
+
 async function nextTick(): Promise<void> {
   await new Promise((resolve) => {
     setTimeout(resolve, 0);
@@ -202,12 +216,14 @@ describe('BroadcastChannelMessageTransport', () => {
     const connect = tabA.connect('tab-b');
     await nextTick();
 
-    network.broadcast(TEST_CHANNEL_NAME, {
-      protocol: BROADCAST_CHANNEL_TRANSPORT_PROTOCOL,
-      source: testIdentity('tab-b', 'tab-b-spoof'),
-      destination: 'tab-a',
-      payload: createRuntimeTransportHandshakeAccept(testIdentity('tab-b'), testIdentity('tab-a')),
-    });
+    network.broadcast(
+      TEST_CHANNEL_NAME,
+      testEnvelope(
+        testIdentity('tab-b', 'tab-b-spoof'),
+        'tab-a',
+        createRuntimeTransportHandshakeAccept(testIdentity('tab-b'), testIdentity('tab-a'))
+      )
+    );
 
     await expect(connect).rejects.toThrow(
       /BroadcastChannel handshake envelope source does not match payload source/
@@ -226,11 +242,9 @@ describe('BroadcastChannelMessageTransport', () => {
     await tabA.connect('tab-b');
 
     const staleSource = testIdentity('tab-a', 'tab-a-stale');
-    network.broadcast(TEST_CHANNEL_NAME, {
-      protocol: BROADCAST_CHANNEL_TRANSPORT_PROTOCOL,
-      source: staleSource,
-      destination: 'tab-b',
-      payload: {
+    network.broadcast(
+      TEST_CHANNEL_NAME,
+      testEnvelope(staleSource, 'tab-b', {
         protocolVersion: RUNTIME_TRANSPORT_PROTOCOL_VERSION,
         source: staleSource,
         destination: testIdentity('tab-b'),
@@ -238,8 +252,8 @@ describe('BroadcastChannelMessageTransport', () => {
         sequence: 0,
         sentAt: new Date().toISOString(),
         message: { type: 'STALE_FRAME' },
-      },
-    });
+      })
+    );
     await nextTick();
 
     expect(received.some((message) => message.type === 'STALE_FRAME')).toBe(false);

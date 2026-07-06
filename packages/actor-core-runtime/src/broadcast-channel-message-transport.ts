@@ -34,7 +34,7 @@ import type {
 import { safeDispatchListener } from './transport/transport-channel.js';
 import { TransportCore, type TransportTimers } from './transport/transport-core.js';
 
-const BROADCAST_CHANNEL_TRANSPORT_PROTOCOL = 'actor-web.broadcast-channel/1' as const;
+export const BROADCAST_CHANNEL_TRANSPORT_PROTOCOL = 'actor-web.broadcast-channel/1' as const;
 const DEFAULT_BROADCAST_CHANNEL_NAME = 'actor-web-runtime';
 const DEFAULT_CONNECT_TIMEOUT_MS = 3000;
 
@@ -71,7 +71,7 @@ export interface BroadcastChannelMessageTransportOptions {
   onListenerError?: (error: unknown) => void;
 }
 
-interface BroadcastChannelTransportEnvelope {
+export interface BroadcastChannelTransportEnvelope {
   readonly protocol: typeof BROADCAST_CHANNEL_TRANSPORT_PROTOCOL;
   readonly source: RuntimeNodeIdentity;
   readonly destination: string;
