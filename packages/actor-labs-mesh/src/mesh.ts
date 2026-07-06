@@ -84,8 +84,11 @@ export class LabsMesh implements MeshRouterState {
     return exportMeshDirectoryEntries(this.directory);
   }
 
-  resolveDirectoryLocation(address: MeshDirectoryEntry['address']): string | undefined {
-    return resolveMeshDirectoryLocation(this.directory, address);
+  resolveDirectoryLocation(
+    address: MeshDirectoryEntry['address'],
+    now: number = Date.now()
+  ): string | undefined {
+    return resolveMeshDirectoryLocation(this.directory, address, { now });
   }
 
   setAdjacency(nodeAddress: string, peers: readonly string[]): void {

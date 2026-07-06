@@ -200,6 +200,7 @@ function findRoutePath(input: {
 }
 
 function advanceRoute(nextHop: string, token: MeshRouteToken): MeshRouteResult {
+  // Safety net for unexpected findRoutePath hops; direct target revisits are guarded earlier.
   if (token.visitedNodes.includes(nextHop)) {
     return failRoute('route-loop', `Mesh route would revisit ${nextHop}.`);
   }

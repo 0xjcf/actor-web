@@ -2,6 +2,7 @@ import type { ActorAddress } from '@actor-web/runtime';
 import { describe, expect, it } from 'vitest';
 import {
   applyMeshDirectoryEntry,
+  compareMeshIncarnation,
   createLabsMesh,
   createMeshDirectoryState,
   createMeshMembershipState,
@@ -57,6 +58,14 @@ describe('@actor-web/labs-mesh membership', () => {
       state: 'dead',
     });
   });
+
+  it('orders mixed numeric-looking incarnations consistently', () => {
+    expect(compareMeshIncarnation('5', '10')).toBe(-1);
+    expect(compareMeshIncarnation(5, '10')).toBe(-1);
+    expect(compareMeshIncarnation('5', 10)).toBe(-1);
+    expect(compareMeshIncarnation('10', 'node-epoch')).toBe(-1);
+    expect(compareMeshIncarnation('node-epoch', 10)).toBe(1);
+  });
 });
 
 describe('@actor-web/labs-mesh directory propagation', () => {
@@ -90,6 +99,45 @@ describe('@actor-web/labs-mesh directory propagation', () => {
       ownerIncarnation: 2,
       tombstone: true,
     });
+  });
+
+  it('rejects a directory entry from a different owner node', () => {
+    const first = applyMeshDirectoryEntry(createMeshDirectoryState(), {
+      address: plannerAddress,
+      ownerNode: 'node-b',
+      ownerIncarnation: 1,
+      version: 1,
+      updatedAt: 100,
+    }).state;
+
+    const conflicting = applyMeshDirectoryEntry(first, {
+      address: plannerAddress,
+      ownerNode: 'node-c',
+      ownerIncarnation: 1,
+      version: 2,
+      updatedAt: 110,
+    });
+
+    expect(conflicting).toMatchObject({ accepted: false, code: 'owner-conflict' });
+  });
+
+  it('honors ttl when resolving a directory location through the mesh shell', () => {
+    const mesh = createLabsMesh({
+      localNode: 'node-a',
+      directory: [
+        {
+          address: plannerAddress,
+          ownerNode: 'node-b',
+          ownerIncarnation: 1,
+          version: 1,
+          updatedAt: 100,
+          ttl: 150,
+        },
+      ],
+    });
+
+    expect(mesh.resolveDirectoryLocation(plannerAddress, 149)).toBe('node-b');
+    expect(mesh.resolveDirectoryLocation(plannerAddress, 150)).toBeUndefined();
   });
 });
 
@@ -197,6 +245,22 @@ describe('@actor-web/labs-mesh routing', () => {
 
     await expect(router.resolveNextHop('node-b', plannerAddress, ['node-relay'])).resolves.toBe(
       'node-relay'
+    );
+  });
+
+  it('rejects through the runtime RemoteMessageRouter seam when no route exists', async () => {
+    const mesh = createLabsMesh({
+      localNode: 'node-a',
+      membership: [
+        { nodeAddress: 'node-a', incarnation: 1, state: 'alive', seenAt: 1 },
+        { nodeAddress: 'node-b', incarnation: 1, state: 'alive', seenAt: 1 },
+      ],
+      adjacency: {},
+    });
+    const router = createMeshRemoteMessageRouter(mesh);
+
+    await expect(router.resolveNextHop('node-b', plannerAddress, [])).rejects.toThrow(
+      'Mesh target node node-b has no safe next hop from node-a.'
     );
   });
 });

@@ -84,14 +84,23 @@ export function isMeshNodeRouteable(state: MeshMembershipState, nodeAddress: str
 }
 
 export function compareMeshIncarnation(left: MeshIncarnation, right: MeshIncarnation): number {
-  const leftNumber = toFiniteNumber(left);
-  const rightNumber = toFiniteNumber(right);
+  const leftOrder = toIncarnationOrder(left);
+  const rightOrder = toIncarnationOrder(right);
 
-  if (leftNumber !== undefined && rightNumber !== undefined) {
-    return Math.sign(leftNumber - rightNumber);
+  if (leftOrder.numeric !== undefined && rightOrder.numeric !== undefined) {
+    const numericOrder = Math.sign(leftOrder.numeric - rightOrder.numeric);
+    return numericOrder === 0 ? leftOrder.text.localeCompare(rightOrder.text) : numericOrder;
   }
 
-  return String(left).localeCompare(String(right));
+  if (leftOrder.numeric !== undefined) {
+    return -1;
+  }
+
+  if (rightOrder.numeric !== undefined) {
+    return 1;
+  }
+
+  return leftOrder.text.localeCompare(rightOrder.text);
 }
 
 function acceptMembershipRecord(
@@ -121,7 +130,12 @@ function cloneMembershipRecord(record: MeshMembershipRecord): MeshMembershipReco
   };
 }
 
-function toFiniteNumber(value: MeshIncarnation): number | undefined {
+function toIncarnationOrder(value: MeshIncarnation): { numeric?: number; text: string } {
+  const text = String(value);
   const candidate = typeof value === 'number' ? value : Number(value);
-  return Number.isFinite(candidate) ? candidate : undefined;
+  if (!Number.isFinite(candidate)) {
+    return { text };
+  }
+
+  return { numeric: candidate, text };
 }
