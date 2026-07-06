@@ -28,11 +28,20 @@ Location-transparency audit L3. The labs-mesh implementation brief is a content-
 
 ## Affected files
 
-- Scope unknown.
+- docs/actor-web-labs-mesh-design.md
+- .fas/tasks/author-the-actor-web-labs-mesh-design-doc-gossip-membership-.md
+- .fas/TASKS.md
 
 ## Scope Amendments
 
-- None.
+- Type: explicit-scope-promotion
+- Added at: 2026-07-06
+- Trigger: FAS blocked code-writing token until explicit scope and commit-plan convergence existed.
+- Reason: Architect and staff engineer narrowed the task to a canonical labs-mesh design doc plus minimal FAS task/tracker metadata.
+- Added paths: docs/actor-web-labs-mesh-design.md, .fas/tasks/author-the-actor-web-labs-mesh-design-doc-gossip-membership-.md, .fas/TASKS.md
+- Evidence source: delegated architecture and staff engineering handoffs
+- Evidence: delegated architecture and staff engineering handoffs | .fas/state/agent-orchestration-execution.json | Target doc docs/actor-web-labs-mesh-design.md; runtime files reference-only; queue file intentionally untouched.
+- Accuracy signal: human-approved epic order plus delegated 6-agent planning
 
 ## Implementation plan
 
