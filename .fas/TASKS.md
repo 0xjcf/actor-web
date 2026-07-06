@@ -1618,7 +1618,7 @@
 
 - Title: Implement @actor-web/labs-mesh (gossip membership + multi-hop routing + directory propagation)
 - Mode: single-agent
-- Status: implementing
+- Status: done
 - Owner: implementer
 - Brief: .fas/tasks/implement-actor-web-labs-mesh-gossip-membership-multi-ho.md
 - Verification lane: fast
