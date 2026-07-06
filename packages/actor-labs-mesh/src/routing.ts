@@ -86,7 +86,7 @@ export function resolveMeshNextHop(input: MeshRouteInput): MeshRouteResult {
     return advanceRoute(input.targetNode, token);
   }
 
-  const loopCandidates = input.connectedNodes.filter((node) => visited.has(node));
+  const loopCandidates: string[] = [];
   const path = findRoutePath({
     localNode: input.localNode,
     targetNode: input.targetNode,
@@ -94,6 +94,7 @@ export function resolveMeshNextHop(input: MeshRouteInput): MeshRouteResult {
     visited,
     membership: input.membership,
     adjacency: input.adjacency ?? {},
+    loopCandidates,
   });
 
   if (!path && loopCandidates.length > 0) {
@@ -146,12 +147,18 @@ function findRoutePath(input: {
   readonly visited: ReadonlySet<string>;
   readonly membership: MeshMembershipState;
   readonly adjacency: Readonly<Record<string, readonly string[]>>;
+  readonly loopCandidates: string[];
 }): readonly string[] | undefined {
   const queue: string[][] = [];
   const seen = new Set<string>(input.visited);
 
   for (const neighbor of input.adjacency[input.localNode] ?? []) {
-    if (!input.connected.has(neighbor) || input.visited.has(neighbor)) {
+    if (input.visited.has(neighbor)) {
+      input.loopCandidates.push(neighbor);
+      continue;
+    }
+
+    if (!input.connected.has(neighbor)) {
       continue;
     }
 
@@ -171,7 +178,12 @@ function findRoutePath(input: {
     }
 
     for (const neighbor of input.adjacency[node] ?? []) {
-      if (seen.has(neighbor) || input.visited.has(neighbor)) {
+      if (input.visited.has(neighbor)) {
+        input.loopCandidates.push(neighbor);
+        continue;
+      }
+
+      if (seen.has(neighbor)) {
         continue;
       }
 

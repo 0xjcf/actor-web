@@ -157,6 +157,29 @@ describe('@actor-web/labs-mesh routing', () => {
     ).toMatchObject({ ok: false, code: 'hop-limit-exhausted' });
   });
 
+  it('reports unreachable instead of a loop when no explored path revisits a node', () => {
+    const membership = createMeshMembershipState([
+      { nodeAddress: 'node-a', incarnation: 1, state: 'alive', seenAt: 1 },
+      { nodeAddress: 'node-relay', incarnation: 1, state: 'alive', seenAt: 1 },
+      { nodeAddress: 'node-b', incarnation: 1, state: 'alive', seenAt: 1 },
+      { nodeAddress: 'node-old', incarnation: 1, state: 'alive', seenAt: 1 },
+    ]);
+
+    expect(
+      resolveMeshNextHop({
+        localNode: 'node-a',
+        targetNode: 'node-b',
+        connectedNodes: ['node-relay', 'node-old'],
+        membership,
+        adjacency: {
+          'node-a': ['node-relay'],
+          'node-relay': [],
+        },
+        routeToken: { visitedNodes: ['node-a', 'node-old'], hopLimit: 4 },
+      })
+    ).toMatchObject({ ok: false, code: 'unreachable' });
+  });
+
   it('adapts route facts to the runtime RemoteMessageRouter seam', async () => {
     const mesh = createLabsMesh({
       localNode: 'node-a',
