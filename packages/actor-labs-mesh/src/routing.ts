@@ -113,14 +113,23 @@ export function createMeshRemoteMessageRouter(
     async resolveNextHop(
       location: string,
       _address: ActorAddress,
-      connectedNodes: readonly string[]
-    ): Promise<string> {
-      const route = mesh.resolveNextHop(location, connectedNodes, options.routeToken);
+      connectedNodes: readonly string[],
+      routeToken?: unknown
+    ): Promise<{ nextHop: string; routeToken: MeshRouteToken }> {
+      if (routeToken !== undefined && !isMeshRouteToken(routeToken)) {
+        throw new Error('Mesh route token is malformed.');
+      }
+
+      const meshRouteToken = routeToken ?? options.routeToken;
+      const route = mesh.resolveNextHop(location, connectedNodes, meshRouteToken);
       if (!route.ok) {
         throw new Error(route.message);
       }
 
-      return route.nextHop;
+      return {
+        nextHop: route.nextHop,
+        routeToken: route.routeToken,
+      };
     },
   };
 }
@@ -197,4 +206,23 @@ function advanceRoute(nextHop: string, token: MeshRouteToken): MeshRouteResult {
 
 function failRoute(code: MeshRouteFailureCode, message: string): MeshRouteResult {
   return { ok: false, code, message };
+}
+
+function isMeshRouteToken(value: unknown): value is MeshRouteToken {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as {
+    visitedNodes?: unknown;
+    hopLimit?: unknown;
+  };
+
+  return (
+    Array.isArray(candidate.visitedNodes) &&
+    candidate.visitedNodes.every((entry) => typeof entry === 'string') &&
+    typeof candidate.hopLimit === 'number' &&
+    Number.isFinite(candidate.hopLimit) &&
+    Number.isInteger(candidate.hopLimit)
+  );
 }
