@@ -3,10 +3,19 @@ import type { ActorMessage } from '../actor-system.js';
 import {
   type BroadcastChannelLike,
   type BroadcastChannelMessageTransport,
+  type BroadcastChannelMessageTransportOptions,
   createBroadcastChannelMessageTransport,
 } from '../broadcast-channel-message-transport.js';
+import {
+  createRuntimeNodeIdentity,
+  createRuntimeTransportHandshakeAccept,
+  RUNTIME_TRANSPORT_PROTOCOL_VERSION,
+  type RuntimeNodeIdentity,
+} from '../runtime-transport-contract.js';
 
 const transports: BroadcastChannelMessageTransport[] = [];
+const TEST_CHANNEL_NAME = 'actor-web-test';
+const BROADCAST_CHANNEL_TRANSPORT_PROTOCOL = 'actor-web.broadcast-channel/1';
 
 class FakeBroadcastChannelNetwork {
   private readonly channels = new Set<FakeBroadcastChannel>();
@@ -24,6 +33,14 @@ class FakeBroadcastChannelNetwork {
   publish(sender: FakeBroadcastChannel, data: unknown): void {
     for (const channel of Array.from(this.channels)) {
       if (channel !== sender && channel.name === sender.name) {
+        channel.deliver(data);
+      }
+    }
+  }
+
+  broadcast(channelName: string, data: unknown): void {
+    for (const channel of Array.from(this.channels)) {
+      if (channel.name === channelName) {
         channel.deliver(data);
       }
     }
@@ -77,17 +94,33 @@ class FakeBroadcastChannel implements BroadcastChannelLike {
 
 function createTransport(
   network: FakeBroadcastChannelNetwork,
-  nodeAddress: string
+  nodeAddress: string,
+  options: Omit<
+    Partial<BroadcastChannelMessageTransportOptions>,
+    'broadcastChannelFactory' | 'channelName' | 'nodeAddress'
+  > = {}
 ): BroadcastChannelMessageTransport {
   const transport = createBroadcastChannelMessageTransport({
     nodeAddress,
-    channelName: 'actor-web-test',
+    channelName: TEST_CHANNEL_NAME,
     incarnation: `${nodeAddress}-boot`,
     heartbeatIntervalMs: 0,
     broadcastChannelFactory: network.create,
+    ...options,
   });
   transports.push(transport);
   return transport;
+}
+
+function testIdentity(
+  nodeAddress: string,
+  incarnation = `${nodeAddress}-boot`
+): RuntimeNodeIdentity {
+  return createRuntimeNodeIdentity({
+    nodeAddress,
+    nodeId: nodeAddress,
+    incarnation,
+  });
 }
 
 async function nextTick(): Promise<void> {
@@ -159,5 +192,79 @@ describe('BroadcastChannelMessageTransport', () => {
     expect(receivedByC.some((message) => message.type === 'FOR_TAB_B')).toBe(false);
     expect(tabC.isConnected('tab-a')).toBe(true);
     expect(tabA.isConnected('tab-c')).toBe(true);
+  });
+
+  it('rejects accept frames whose envelope source does not match the payload source', async () => {
+    const network = new FakeBroadcastChannelNetwork();
+    const tabA = createTransport(network, 'tab-a');
+
+    await tabA.start();
+    const connect = tabA.connect('tab-b');
+    await nextTick();
+
+    network.broadcast(TEST_CHANNEL_NAME, {
+      protocol: BROADCAST_CHANNEL_TRANSPORT_PROTOCOL,
+      source: testIdentity('tab-b', 'tab-b-spoof'),
+      destination: 'tab-a',
+      payload: createRuntimeTransportHandshakeAccept(testIdentity('tab-b'), testIdentity('tab-a')),
+    });
+
+    await expect(connect).rejects.toThrow(
+      /BroadcastChannel handshake envelope source does not match payload source/
+    );
+    expect(tabA.isConnected('tab-b')).toBe(false);
+  });
+
+  it('ignores stale same-address frames without disconnecting the negotiated peer', async () => {
+    const network = new FakeBroadcastChannelNetwork();
+    const tabA = createTransport(network, 'tab-a');
+    const tabB = createTransport(network, 'tab-b');
+    const received: ActorMessage[] = [];
+    tabB.subscribe((event) => received.push(event.message));
+
+    await Promise.all([tabA.start(), tabB.start()]);
+    await tabA.connect('tab-b');
+
+    const staleSource = testIdentity('tab-a', 'tab-a-stale');
+    network.broadcast(TEST_CHANNEL_NAME, {
+      protocol: BROADCAST_CHANNEL_TRANSPORT_PROTOCOL,
+      source: staleSource,
+      destination: 'tab-b',
+      payload: {
+        protocolVersion: RUNTIME_TRANSPORT_PROTOCOL_VERSION,
+        source: staleSource,
+        destination: testIdentity('tab-b'),
+        messageId: 'stale-frame-1',
+        sequence: 0,
+        sentAt: new Date().toISOString(),
+        message: { type: 'STALE_FRAME' },
+      },
+    });
+    await nextTick();
+
+    expect(received.some((message) => message.type === 'STALE_FRAME')).toBe(false);
+    expect(tabB.isConnected('tab-a')).toBe(true);
+  });
+
+  it('contains telemetry observer failures during the handshake', async () => {
+    const network = new FakeBroadcastChannelNetwork();
+    const listenerErrors: unknown[] = [];
+    const tabA = createTransport(network, 'tab-a', {
+      telemetry: (event) => {
+        if (event.type === 'auth.accepted') {
+          throw new Error('telemetry failed');
+        }
+      },
+      onListenerError: (error) => listenerErrors.push(error),
+    });
+    const tabB = createTransport(network, 'tab-b');
+
+    await Promise.all([tabA.start(), tabB.start()]);
+    await tabA.connect('tab-b');
+
+    expect(tabA.isConnected('tab-b')).toBe(true);
+    expect(
+      listenerErrors.some((error) => error instanceof Error && error.message === 'telemetry failed')
+    ).toBe(true);
   });
 });

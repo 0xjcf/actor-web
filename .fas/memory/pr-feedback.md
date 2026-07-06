@@ -45,3 +45,9 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Negative async delivery assertions must observe the side effect that must not happen.** A state value that starts at the expected value can pass immediately and miss a late relay. For fail-closed relay guarantees, capture the outbound transport or effect journal and assert the forbidden send/effect is absent after the failure fact is observed.
 
 - **CodeRabbit closeout needs the completed review body, not only a green or skipped check.** When automatic incremental reviews are disabled or only a status check is visible, post an explicit `@coderabbitai review` and read the follow-up result before closing babysit.
+
+## PR #42 — BroadcastChannel transport babysit (2026-07-06, single-agent)
+
+- **Shared-bus transports must validate full negotiated identity at every ingress, not just node address.** BroadcastChannel delivery is many-to-many, so a restarted or spoofed participant can reuse the same `nodeAddress`. Validate payload source against envelope source during handshake and filter peer payloads by the negotiated `RuntimeNodeIdentity` before handing frames to the core, with regression tests for stale same-address frames.
+
+- **User observer hooks on handshake paths must be contained effects.** Telemetry observers run inside connection completion paths; if they throw, they can turn an otherwise valid handshake into a timeout or rejected listener path. Adapter-level telemetry emitters should catch observer failures and route them to the configured listener/error port without changing handshake facts.

@@ -143,14 +143,19 @@ function createDefaultBroadcastChannel(channelName: string): BroadcastChannelLik
 function createTelemetryEmitter(
   localNodeAddress: string,
   telemetry: RuntimeTransportTelemetryObserver | undefined,
-  now: () => Date
+  now: () => Date,
+  onTelemetryError: (error: unknown) => void
 ): (event: Omit<RuntimeTransportTelemetryEvent, 'nodeAddress' | 'timestamp'>) => void {
   return (event) => {
-    telemetry?.({
-      nodeAddress: localNodeAddress,
-      timestamp: now().toISOString(),
-      ...event,
-    } as RuntimeTransportTelemetryEvent);
+    try {
+      telemetry?.({
+        nodeAddress: localNodeAddress,
+        timestamp: now().toISOString(),
+        ...event,
+      } as RuntimeTransportTelemetryEvent);
+    } catch (error) {
+      onTelemetryError(error);
+    }
   };
 }
 
@@ -259,7 +264,7 @@ class BroadcastChannelPeerLink implements PeerLink {
     this.unsubscribe?.();
     this.sink = sink;
     this.unsubscribe = this.bus.subscribe((envelope) => {
-      if (this.closed || envelope.source.nodeAddress !== this.remoteAddress) {
+      if (this.closed || !isSameRuntimeNodeIdentity(envelope.source, this.identity)) {
         return;
       }
 
@@ -373,6 +378,14 @@ class BroadcastChannelTransportChannel implements TransportChannel {
         const validation = validateRuntimeTransportHandshake(frame, this.options.identity);
         if (!validation.ok) {
           finish({ ok: false, reason: `Runtime handshake rejected: ${validation.message}` });
+          return;
+        }
+
+        if (!isSameRuntimeNodeIdentity(frame.source, envelope.source)) {
+          finish({
+            ok: false,
+            reason: 'BroadcastChannel handshake envelope source does not match payload source.',
+          });
           return;
         }
 
@@ -534,8 +547,13 @@ export class BroadcastChannelMessageTransport implements MessageTransport {
     const nativeChannel = (options.broadcastChannelFactory ?? createDefaultBroadcastChannel)(
       channelName
     );
-    const emitTelemetry = createTelemetryEmitter(this.identity.nodeAddress, options.telemetry, now);
     const onListenerError = options.onListenerError ?? (() => undefined);
+    const emitTelemetry = createTelemetryEmitter(
+      this.identity.nodeAddress,
+      options.telemetry,
+      now,
+      onListenerError
+    );
 
     this.bus = new BroadcastChannelBus(nativeChannel, this.identity, onListenerError);
     const channel = new BroadcastChannelTransportChannel({
