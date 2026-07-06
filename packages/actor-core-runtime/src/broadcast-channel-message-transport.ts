@@ -13,6 +13,7 @@ import {
   isSameRuntimeNodeIdentity,
   type RuntimeNodeIdentity,
   type RuntimeTransportHandshake,
+  type RuntimeTransportHandshakeRejectCode,
   validateRuntimeNodeIdentity,
   validateRuntimeTransportHandshake,
 } from './runtime-transport-contract.js';
@@ -255,6 +256,7 @@ class BroadcastChannelPeerLink implements PeerLink {
   }
 
   receive(sink: PeerLinkSink): () => void {
+    this.unsubscribe?.();
     this.sink = sink;
     this.unsubscribe = this.bus.subscribe((envelope) => {
       if (this.closed || envelope.source.nodeAddress !== this.remoteAddress) {
@@ -316,7 +318,7 @@ class BroadcastChannelTransportChannel implements TransportChannel {
         return;
       }
 
-      void this.acceptHandshakeHello(envelope, onPeer);
+      return this.acceptHandshakeHello(envelope, onPeer);
     });
 
     return {
@@ -449,10 +451,13 @@ class BroadcastChannelTransportChannel implements TransportChannel {
       return;
     }
 
-    const reject = async (message: string): Promise<void> => {
+    const reject = async (
+      code: RuntimeTransportHandshakeRejectCode,
+      message: string
+    ): Promise<void> => {
       await this.options.bus.post(
         envelope.source.nodeAddress,
-        createRuntimeTransportHandshakeReject('malformed_frame', message, {
+        createRuntimeTransportHandshakeReject(code, message, {
           source: this.options.identity,
           destination: envelope.source,
           now: this.options.now,
@@ -462,12 +467,15 @@ class BroadcastChannelTransportChannel implements TransportChannel {
 
     const validation = validateRuntimeTransportHandshake(frame, this.options.identity);
     if (!validation.ok) {
-      await reject(validation.message);
+      await reject(validation.code, validation.message);
       return;
     }
 
     if (!isSameRuntimeNodeIdentity(frame.source, envelope.source)) {
-      await reject('BroadcastChannel handshake envelope source does not match payload source.');
+      await reject(
+        'malformed_frame',
+        'BroadcastChannel handshake envelope source does not match payload source.'
+      );
       return;
     }
 
