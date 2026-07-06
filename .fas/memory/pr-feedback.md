@@ -35,3 +35,7 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Nested public config additions need their own exported type alias when the package already exports a same-named lower-level config.** Adding `ActorSystemConfig.directory.implementation` introduced a public nested shape named `DirectoryConfig`, but the package entrypoint already exported a different `DirectoryConfig` from the distributed directory. When extending a nested public config, export an unambiguous alias such as `ActorSystemDirectoryConfig` beside the parent config so consumers can type the nested option without importing internals or colliding with existing names.
 
 - **New user-supplied async hooks in message delivery must be caught at the caller boundary that owns dead-letter reporting.** A router hook that rejects can otherwise escape fire-and-forget sends before the runtime records a dead letter. When adding hook seams to delivery paths, add an error-path test that proves hook failures are represented as runtime facts rather than unhandled rejections.
+
+## PR #40 — labs mesh implementation babysit (2026-07-06, single-agent)
+
+- **Optional-clock semantics in deterministic cores need wrapper-level coverage.** `resolveMeshDirectoryLocation` correctly accepted `now`, but `LabsMesh.resolveDirectoryLocation` did not pass one, so TTL expiry was unreachable through the shell API. When a pure helper accepts an injected clock or timestamp, test the public wrapper that composes it, not only the pure helper.

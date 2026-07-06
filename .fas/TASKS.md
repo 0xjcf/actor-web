@@ -1618,9 +1618,12 @@
 
 - Title: Implement @actor-web/labs-mesh (gossip membership + multi-hop routing + directory propagation)
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/implement-actor-web-labs-mesh-gossip-membership-multi-ho.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Build Mesh Pong example (UI demo + headless transport-parity test)
 
@@ -2089,6 +2092,15 @@ operator explicitly asks for queue mutations.
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
+
+### Task: Carry labs-mesh route tokens through runtime remote routing protocol
+
+- Title: Carry labs-mesh route tokens through runtime remote routing protocol
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/carry-labs-mesh-route-tokens-through-runtime-remote-routing-.md
+- Automation mode: advisory
 
 ## Template
 

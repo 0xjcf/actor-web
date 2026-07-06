@@ -42,6 +42,7 @@
       "@actor-web/runtime/topology": ["./packages/actor-core-runtime/src/topology-entry.ts"],
       "@actor-web/agent": ["./packages/actor-agent/src/index.ts"],
       "@actor-web/lattice": ["./packages/actor-lattice/src/index.ts"],
+      "@actor-web/labs-mesh": ["./packages/actor-labs-mesh/src/index.ts"],
       "@actor-web/testing": ["./packages/actor-core-testing/src/index.ts"],
       "@actor-web/cli": ["./packages/agent-workflow-cli/src/index.ts"]
     }
@@ -60,6 +61,9 @@
     },
     {
       "path": "./packages/actor-lattice"
+    },
+    {
+      "path": "./packages/actor-labs-mesh"
     },
     {
       "path": "./packages/agent-workflow-cli"

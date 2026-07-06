@@ -29,11 +29,44 @@ Spike direct-1781363862864. The real Mesh: arbitrary node graph where an actor o
 
 ## Affected files
 
-- Scope unknown.
+- packages/actor-labs-mesh/package.json
+- packages/actor-labs-mesh/tsconfig.json
+- packages/actor-labs-mesh/vitest.config.ts
+- packages/actor-labs-mesh/README.md
+- packages/actor-labs-mesh/CHANGELOG.md
+- packages/actor-labs-mesh/LICENSE
+- packages/actor-labs-mesh/src/index.ts
+- packages/actor-labs-mesh/src/membership.ts
+- packages/actor-labs-mesh/src/directory.ts
+- packages/actor-labs-mesh/src/routing.ts
+- packages/actor-labs-mesh/src/mesh.ts
+- packages/actor-labs-mesh/src/unit/labs-mesh.test.ts
+- package.json
+- tsconfig.json
+- .fas/TASKS.md
+- .fas-config.json
+- pnpm-lock.yaml
+- .changeset/labs-mesh-initial.md
 
 ## Scope Amendments
 
-- None.
+- Type: explicit-scope-promotion
+- Added at: 2026-07-06
+- Trigger: Planner produced no explicit planned paths for the labs-mesh implementation task.
+- Reason: Repo inspection shows labs-mesh is an optional overlay package that should depend on existing runtime seams without changing transport semantics.
+- Added paths: packages/actor-labs-mesh/package.json, packages/actor-labs-mesh/tsconfig.json, packages/actor-labs-mesh/vitest.config.ts, packages/actor-labs-mesh/README.md, packages/actor-labs-mesh/CHANGELOG.md, packages/actor-labs-mesh/LICENSE, packages/actor-labs-mesh/src/index.ts, packages/actor-labs-mesh/src/membership.ts, packages/actor-labs-mesh/src/directory.ts, packages/actor-labs-mesh/src/routing.ts, packages/actor-labs-mesh/src/mesh.ts, packages/actor-labs-mesh/src/unit/labs-mesh.test.ts, package.json, tsconfig.json, .fas/TASKS.md
+- Evidence source: task brief, merged labs-mesh design doc, and runtime package layout
+- Evidence: task brief, merged labs-mesh design doc, and runtime package layout | docs/actor-web-labs-mesh-design.md | Implement a new @actor-web/labs-mesh workspace package with membership, anti-entropy directory propagation, and next-hop routing core plus root build/test/typecheck wiring.
+- Accuracy signal: human-approved mesh boundary: mesh owns reachability; lattice owns artifacts; transport remains single-hop
+
+- Type: release-verification-scope
+- Added at: 2026-07-06
+- Trigger: New publishable workspace package must be included in normal repo verification and future Changesets release planning.
+- Reason: Root build/test/typecheck, FAS verification, lockfile, and changeset metadata are required for @actor-web/labs-mesh to stay covered after merge.
+- Added paths: packages/actor-labs-mesh/package.json, packages/actor-labs-mesh/tsconfig.json, packages/actor-labs-mesh/vitest.config.ts, packages/actor-labs-mesh/README.md, packages/actor-labs-mesh/CHANGELOG.md, packages/actor-labs-mesh/LICENSE, packages/actor-labs-mesh/src/index.ts, packages/actor-labs-mesh/src/membership.ts, packages/actor-labs-mesh/src/directory.ts, packages/actor-labs-mesh/src/routing.ts, packages/actor-labs-mesh/src/mesh.ts, packages/actor-labs-mesh/src/unit/labs-mesh.test.ts, package.json, tsconfig.json, .fas-config.json, pnpm-lock.yaml, .changeset/labs-mesh-initial.md, .fas/TASKS.md
+- Evidence source: release script and root workspace scripts
+- Evidence: release script and root workspace scripts | scripts/release.mjs | readPublishablePackages publishes every non-private workspace package; labs-mesh needs an explicit first-release changeset and root verification wiring.
+- Accuracy signal: local package test/typecheck/lint passed before root wiring
 
 ## Implementation plan
 
