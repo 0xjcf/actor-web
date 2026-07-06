@@ -267,9 +267,10 @@ The design affects these existing seams and contracts:
   participation, restore directory state, and align declarative runtime flows
   with membership-aware routing
 
-This design does not add a commitment to public transport-adapter APIs in this
-task. BroadcastChannel and WebRTC remain later transport-media work that must
-conform to this mesh contract.
+This design does not require public transport-adapter APIs in the mesh package
+itself. The BroadcastChannel adapter has now landed as a browser/same-origin
+transport medium, and WebRTC remains later transport-media work; both must
+conform to this mesh contract when used under labs-mesh.
 
 ## Rollout and implementation ordering
 
@@ -279,7 +280,8 @@ Implementation must follow the already approved labs-mesh epic ordering:
    injectable `ActorDirectory`, then next-hop routing hook.
 2. This design doc defines the contract after those foundations exist.
 3. Mesh implementation lands later as its own branch and PR.
-4. BroadcastChannel and WebRTC transport adapters stay separate follow-up work.
+4. BroadcastChannel has landed as a separate transport-adapter slice; WebRTC
+   remains separate follow-up work.
 5. Examples, claim scoping, and broader supervision/ownership questions remain
    later slices.
 

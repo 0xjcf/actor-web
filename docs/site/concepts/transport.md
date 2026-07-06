@@ -16,7 +16,8 @@ network hop transparently.
 Two different edges, often confused:
 
 - **Transport** — runtime-to-runtime. How *nodes* exchange actor messages
-  (currently a WebSocket `MessageTransport`).
+  (for example WebSocket between runtime hosts, or BroadcastChannel between
+  same-origin browser contexts).
 - **Gateway** — runtime-to-consumer. How a *UI* observes projections and sends
   commands (see [Sources & the gateway](/concepts/sources-and-gateway)).
 

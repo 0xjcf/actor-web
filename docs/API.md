@@ -1186,6 +1186,17 @@ Use this for browser-local topology proofs and embedded runtime edges such as
 page-to-worker, iframe-to-host, or page-to-service-worker links. The app shell
 owns creating and transferring the port.
 
+## BroadcastChannel Transport
+
+`createBroadcastChannelMessageTransport(options)` adapts the browser
+`BroadcastChannel` API into the `MessageTransport` seam. It is exported from
+`@actor-web/runtime/browser`.
+
+Use this for same-origin browser contexts that can share a named channel, such
+as tabs, workers, and embedded browser runtime hosts. BroadcastChannel is a
+browser-local bus, so the adapter validates runtime handshakes and negotiated
+node identity before delivering peer payloads to the transport core.
+
 ## Runtime Transport Contract
 
 The runtime transport contract exports:
@@ -1205,9 +1216,9 @@ The runtime transport contract exports:
   `normalizeRuntimeTransportMaxFrameBytes(...)`, and
   `validateRuntimeTransportFramePayloadSize(...)`
 
-Runtime transport frames include a `messageId`. Node and browser WebSocket
-transports keep a bounded per-peer idempotency cache and drop duplicate frame IDs
-before runtime subscriber delivery.
+Runtime transport frames include a `messageId`. Built-in WebSocket and
+BroadcastChannel transports keep a bounded per-peer idempotency cache and drop
+duplicate frame IDs before runtime subscriber delivery.
 
 When a transport is configured with `idempotencyProvider`, the transport also
 issues an atomic claim keyed by the stable local/peer node identity context plus
@@ -1349,7 +1360,8 @@ WebSocket transport path, see
   types.
 - `@actor-web/runtime/topology`: browser-safe topology descriptor helpers.
 - `@actor-web/runtime/browser`: browser-safe Actor-Web client/source,
-  MessagePort transport, and browser worker runtime hosting.
+  MessagePort and BroadcastChannel transports, and browser worker runtime
+  hosting.
 - `@actor-web/runtime/node`: Node/server topology runner and HTTP ingress
   adapter.
 
