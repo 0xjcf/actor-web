@@ -44,10 +44,18 @@ CodeRabbit PR #40 committed review found that createMeshRemoteMessageRouter retu
 - packages/actor-core-runtime/src/unit/remote-transport.test.ts
 - packages/actor-labs-mesh/src/routing.ts
 - packages/actor-labs-mesh/src/unit/labs-mesh.test.ts
+- .fas-config.json
 
 ## Scope Amendments
 
-- None.
+- Type: closeout-readiness
+- Added at: closeout-readiness
+- Trigger: verifier-blocked
+- Reason: Closeout readiness required the labs-mesh package test lane to be explicit in .fas-config.json so full FAS verification covers changed labs-mesh tests.
+- Added paths: packages/actor-core-runtime/src/actor-system-impl.ts, packages/actor-core-runtime/src/runtime-transport-protocol.ts, packages/actor-core-runtime/src/unit/remote-transport.test.ts, packages/actor-labs-mesh/src/routing.ts, packages/actor-labs-mesh/src/unit/labs-mesh.test.ts, .fas-config.json
+- Evidence source: closeout-readiness
+- Evidence: closeout-readiness | .fas/state/closeout-readiness/latest.json | PACKAGE_TESTS_COVERED_BY_VERIFICATION reported packages/actor-labs-mesh/src/unit/labs-mesh.test.ts outside the configured FAS test command.
+- Accuracy signal: closeout-discovered
 
 ## Implementation plan
 
