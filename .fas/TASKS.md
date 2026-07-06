@@ -1599,8 +1599,8 @@
 
 - Title: Implement @actor-web/transport-broadcast-channel adapter
 - Mode: single-agent
-- Status: queued
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/implement-actor-web-transport-broadcast-channel-adapter.md
 - Verification lane: fast
 - Policy sensitivity: standard
