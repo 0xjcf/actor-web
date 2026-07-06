@@ -1618,9 +1618,12 @@
 
 - Title: Implement @actor-web/labs-mesh (gossip membership + multi-hop routing + directory propagation)
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/implement-actor-web-labs-mesh-gossip-membership-multi-ho.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Build Mesh Pong example (UI demo + headless transport-parity test)
 

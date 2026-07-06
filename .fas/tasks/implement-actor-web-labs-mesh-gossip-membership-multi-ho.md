@@ -29,11 +29,32 @@ Spike direct-1781363862864. The real Mesh: arbitrary node graph where an actor o
 
 ## Affected files
 
-- Scope unknown.
+- packages/actor-labs-mesh/package.json
+- packages/actor-labs-mesh/tsconfig.json
+- packages/actor-labs-mesh/vitest.config.ts
+- packages/actor-labs-mesh/README.md
+- packages/actor-labs-mesh/CHANGELOG.md
+- packages/actor-labs-mesh/LICENSE
+- packages/actor-labs-mesh/src/index.ts
+- packages/actor-labs-mesh/src/membership.ts
+- packages/actor-labs-mesh/src/directory.ts
+- packages/actor-labs-mesh/src/routing.ts
+- packages/actor-labs-mesh/src/mesh.ts
+- packages/actor-labs-mesh/src/unit/labs-mesh.test.ts
+- package.json
+- tsconfig.json
+- .fas/TASKS.md
 
 ## Scope Amendments
 
-- None.
+- Type: explicit-scope-promotion
+- Added at: 2026-07-06
+- Trigger: Planner produced no explicit planned paths for the labs-mesh implementation task.
+- Reason: Repo inspection shows labs-mesh is an optional overlay package that should depend on existing runtime seams without changing transport semantics.
+- Added paths: packages/actor-labs-mesh/package.json, packages/actor-labs-mesh/tsconfig.json, packages/actor-labs-mesh/vitest.config.ts, packages/actor-labs-mesh/README.md, packages/actor-labs-mesh/CHANGELOG.md, packages/actor-labs-mesh/LICENSE, packages/actor-labs-mesh/src/index.ts, packages/actor-labs-mesh/src/membership.ts, packages/actor-labs-mesh/src/directory.ts, packages/actor-labs-mesh/src/routing.ts, packages/actor-labs-mesh/src/mesh.ts, packages/actor-labs-mesh/src/unit/labs-mesh.test.ts, package.json, tsconfig.json, .fas/TASKS.md
+- Evidence source: task brief, merged labs-mesh design doc, and runtime package layout
+- Evidence: task brief, merged labs-mesh design doc, and runtime package layout | docs/actor-web-labs-mesh-design.md | Implement a new @actor-web/labs-mesh workspace package with membership, anti-entropy directory propagation, and next-hop routing core plus root build/test/typecheck wiring.
+- Accuracy signal: human-approved mesh boundary: mesh owns reachability; lattice owns artifacts; transport remains single-hop
 
 ## Implementation plan
 
