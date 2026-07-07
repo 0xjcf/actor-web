@@ -2117,8 +2117,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Add uncurried topology source factory API for Ignite-friendly Actor-Web sources
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/add-uncurried-topology-source-factory-api-for-ignite-friendl.md
 - Verification lane: fast
 - Policy sensitivity: standard
