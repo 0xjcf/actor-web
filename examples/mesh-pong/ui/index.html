@@ -75,7 +75,7 @@
 
       .surface {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 220px;
+        grid-template-columns: minmax(0, 1fr) 280px;
         gap: 18px;
         align-items: start;
       }
@@ -113,6 +113,40 @@
         color: #f7c948;
       }
 
+      .proof {
+        margin-top: 18px;
+        border-top: 1px solid #315b52;
+        padding-top: 18px;
+      }
+
+      .proof h2 {
+        margin: 0 0 12px;
+        font-size: 18px;
+        letter-spacing: 0;
+      }
+
+      .proof-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .proof-item {
+        border: 1px solid #315b52;
+        border-radius: 6px;
+        padding: 10px;
+        background: rgba(16, 36, 31, 0.74);
+        min-width: 0;
+      }
+
+      .proof-item code {
+        display: block;
+        overflow-wrap: anywhere;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: #f7c948;
+        line-height: 1.35;
+      }
+
       @media (max-width: 780px) {
         main {
           padding: 16px;
@@ -124,6 +158,10 @@
         }
 
         .surface {
+          grid-template-columns: 1fr;
+        }
+
+        .proof-grid {
           grid-template-columns: 1fr;
         }
       }
@@ -160,6 +198,44 @@
             <span class="value" id="status-value">starting</span>
           </div>
         </aside>
+      </section>
+
+      <section class="proof" aria-labelledby="proof-heading">
+        <h2 id="proof-heading">Transport parity</h2>
+        <div class="proof-grid">
+          <div class="proof-item">
+            <span class="label">Shared topology</span>
+            <code id="proof-topology">pong-topology.ts</code>
+          </div>
+          <div class="proof-item">
+            <span class="label">Shared behaviors</span>
+            <code id="proof-behaviors">pong-behaviors.ts</code>
+          </div>
+          <div class="proof-item">
+            <span class="label">Actors</span>
+            <code id="proof-actors">ball, score, paddleA, paddleB</code>
+          </div>
+          <div class="proof-item">
+            <span class="label">Validation gate</span>
+            <code id="proof-gate">mesh-pong.test.ts</code>
+          </div>
+          <div class="proof-item">
+            <span class="label">Selected startup</span>
+            <code id="proof-startup">modes/local.ts</code>
+          </div>
+          <div class="proof-item">
+            <span class="label">Runtime call</span>
+            <code id="proof-call">startRuntime(pong)</code>
+          </div>
+          <div class="proof-item">
+            <span class="label">Transport boundary</span>
+            <code id="proof-transport">in-process runtime</code>
+          </div>
+          <div class="proof-item">
+            <span class="label">Node layout</span>
+            <code id="proof-nodes">server / a / b</code>
+          </div>
+        </div>
       </section>
     </main>
     <script type="module" src="./main.ts"></script>

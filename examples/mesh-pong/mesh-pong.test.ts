@@ -4,6 +4,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { startMeshPongBroadcast } from './modes/broadcast';
 import { startMeshPongLocal } from './modes/local';
 import { startMeshPongWebSocketLoopback } from './modes/websocket';
+import {
+  MESH_PONG_MODE_PARITY_PROOF,
+  MESH_PONG_SHARED_PARITY_PROOF,
+  parityProofForMode,
+} from './parity-proof';
 import type {
   BallCommand,
   PongBallContext,
@@ -178,6 +183,23 @@ async function captureSequence(
 }
 
 describe('Mesh Pong transport parity', () => {
+  it('keeps the browser proof panel tied to shared behavior and mode-only startup files', () => {
+    expect(MESH_PONG_SHARED_PARITY_PROOF).toMatchObject({
+      topologyFile: 'pong-topology.ts',
+      behaviorFile: 'pong-behaviors.ts',
+      validationGate: 'mesh-pong.test.ts: local = broadcast = websocket',
+    });
+    expect(MESH_PONG_SHARED_PARITY_PROOF.actors).toEqual(['ball', 'score', 'paddleA', 'paddleB']);
+
+    expect(Object.keys(MESH_PONG_MODE_PARITY_PROOF).sort()).toEqual(['broadcast', 'local', 'mesh']);
+
+    for (const [mode, proof] of Object.entries(MESH_PONG_MODE_PARITY_PROOF)) {
+      expect(proof).toBe(parityProofForMode(mode as keyof typeof MESH_PONG_MODE_PARITY_PROOF));
+      expect(proof.startupFile).toBe(`modes/${mode}.ts`);
+      expect(proof.nodeLayout).toBe('server / a / b');
+    }
+  });
+
   it('produces the same deterministic score sequence for local, broadcast, and websocket runtimes', async () => {
     const broadcastNetwork = new FakeBroadcastChannelNetwork();
 

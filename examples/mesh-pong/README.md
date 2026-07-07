@@ -69,6 +69,7 @@ examples/mesh-pong/
   ui/
     index.html              the playable demo + transport switcher
     main.ts                 browser runtime driver
+    ../parity-proof.ts      data rendered by the UI proof panel
     pong-canvas.ts          renders snapshots from the score/ball actors
   mesh-pong.test.ts         headless behavior-parity test (the validation gate)
 ```
@@ -84,8 +85,10 @@ The example is two deliverables: a human-facing demo and an automated gate.
    is identical across all three. This is what proves the actors are
    transport-independent; it runs in CI through `pnpm test:examples`.
 2. **UI demo** (`ui/`) — a playable Pong with a transport switcher (local /
-   broadcast / mesh). WebSocket loopback is automated in the parity test because
-   browser WebSocket nodes need an external listener.
+   broadcast / mesh). The page renders the shared topology/behavior files, the
+   selected startup module, and the CI validation gate so the parity claim is
+   visible while switching transports. WebSocket loopback is automated in the
+   parity test because browser WebSocket nodes need an external listener.
 
 Acceptance:
 

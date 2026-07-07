@@ -2,6 +2,11 @@ import type { ActorMessage, ActorRef } from '@actor-web/runtime';
 import { startMeshPongBroadcast } from '../modes/broadcast';
 import { startMeshPongLocal } from '../modes/local';
 import { startMeshPongMesh } from '../modes/mesh';
+import {
+  type BrowserPongTransportMode,
+  MESH_PONG_SHARED_PARITY_PROOF,
+  parityProofForMode,
+} from '../parity-proof';
 import type {
   BallCommand,
   PaddleCommand,
@@ -16,7 +21,7 @@ import { DEFAULT_PONG_SEED, PONG_FIELD } from '../pong-contract';
 import { pong } from '../pong-topology';
 import { drawPong } from './pong-canvas';
 
-type BrowserMode = Exclude<PongTransportMode, 'websocket'>;
+type BrowserMode = BrowserPongTransportMode;
 type BrowserRuntime =
   | Awaited<ReturnType<typeof startMeshPongLocal>>
   | Awaited<ReturnType<typeof startMeshPongBroadcast>>
@@ -35,8 +40,31 @@ const resetButton = document.querySelector<HTMLButtonElement>('#reset-game');
 const modeValue = document.querySelector<HTMLElement>('#mode-value');
 const scoreValue = document.querySelector<HTMLElement>('#score-value');
 const statusValue = document.querySelector<HTMLElement>('#status-value');
+const proofTopology = document.querySelector<HTMLElement>('#proof-topology');
+const proofBehaviors = document.querySelector<HTMLElement>('#proof-behaviors');
+const proofActors = document.querySelector<HTMLElement>('#proof-actors');
+const proofGate = document.querySelector<HTMLElement>('#proof-gate');
+const proofStartup = document.querySelector<HTMLElement>('#proof-startup');
+const proofCall = document.querySelector<HTMLElement>('#proof-call');
+const proofTransport = document.querySelector<HTMLElement>('#proof-transport');
+const proofNodes = document.querySelector<HTMLElement>('#proof-nodes');
 
-if (!canvas || !modeSelect || !resetButton || !modeValue || !scoreValue || !statusValue) {
+if (
+  !canvas ||
+  !modeSelect ||
+  !resetButton ||
+  !modeValue ||
+  !scoreValue ||
+  !statusValue ||
+  !proofTopology ||
+  !proofBehaviors ||
+  !proofActors ||
+  !proofGate ||
+  !proofStartup ||
+  !proofCall ||
+  !proofTransport ||
+  !proofNodes
+) {
   throw new Error('Mesh Pong UI failed to bind required DOM nodes.');
 }
 
@@ -46,6 +74,14 @@ const resetButtonElement: HTMLButtonElement = resetButton;
 const modeValueElement: HTMLElement = modeValue;
 const scoreValueElement: HTMLElement = scoreValue;
 const statusValueElement: HTMLElement = statusValue;
+const proofTopologyElement: HTMLElement = proofTopology;
+const proofBehaviorsElement: HTMLElement = proofBehaviors;
+const proofActorsElement: HTMLElement = proofActors;
+const proofGateElement: HTMLElement = proofGate;
+const proofStartupElement: HTMLElement = proofStartup;
+const proofCallElement: HTMLElement = proofCall;
+const proofTransportElement: HTMLElement = proofTransport;
+const proofNodesElement: HTMLElement = proofNodes;
 
 let runtime: BrowserRuntime | null = null;
 let refs: RuntimeRefs | null = null;
@@ -63,6 +99,18 @@ function isCluster(
 
 function setStatus(value: string): void {
   statusValueElement.textContent = value;
+}
+
+function renderParityProof(mode: BrowserMode): void {
+  const modeProof = parityProofForMode(mode);
+  proofTopologyElement.textContent = MESH_PONG_SHARED_PARITY_PROOF.topologyFile;
+  proofBehaviorsElement.textContent = MESH_PONG_SHARED_PARITY_PROOF.behaviorFile;
+  proofActorsElement.textContent = MESH_PONG_SHARED_PARITY_PROOF.actors.join(', ');
+  proofGateElement.textContent = MESH_PONG_SHARED_PARITY_PROOF.validationGate;
+  proofStartupElement.textContent = modeProof.startupFile;
+  proofCallElement.textContent = modeProof.startupCall;
+  proofTransportElement.textContent = modeProof.transportBoundary;
+  proofNodesElement.textContent = modeProof.nodeLayout;
 }
 
 async function flushRuntime(candidate: BrowserRuntime): Promise<void> {
@@ -179,6 +227,7 @@ async function switchMode(mode: BrowserMode): Promise<void> {
 
   selectedMode = mode;
   modeValueElement.textContent = mode;
+  renderParityProof(mode);
   setStatus('starting');
   runtime = await startRuntimeForMode(mode);
   refs = await resolveRefs(runtime);
