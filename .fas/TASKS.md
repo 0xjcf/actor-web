@@ -1632,8 +1632,8 @@
 
 - Title: Build Mesh Pong example (UI demo + headless transport-parity test)
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/build-mesh-pong-example-ui-demo-headless-transport-parity.md
 - Verification lane: fast
 - Policy sensitivity: standard
