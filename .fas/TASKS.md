@@ -1610,9 +1610,12 @@
 
 - Title: Implement @actor-web/transport-webrtc peer adapter
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/implement-actor-web-transport-webrtc-peer-adapter.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Implement @actor-web/labs-mesh (gossip membership + multi-hop routing + directory propagation)
 
