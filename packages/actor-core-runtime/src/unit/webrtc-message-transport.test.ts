@@ -36,7 +36,7 @@ class FakeWebRtcDataChannel implements WebRtcDataChannelLike {
 
     this.readyState = 'closed';
     this.emit('close', new Event('close'));
-    this.peer?.emit('close', new Event('close'));
+    this.peer?.close();
   }
 
   addEventListener(type: string, listener: EventListener): void {
