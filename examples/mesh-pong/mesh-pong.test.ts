@@ -314,21 +314,28 @@ async function centerPaddles(
   await flush(runtime);
 }
 
+async function stepSimulation(
+  runtime: StartedMeshPongRuntime,
+  refs: MeshPongTestRefs
+): Promise<void> {
+  await centerPaddles(runtime, refs);
+
+  const [left, right] = await Promise.all([
+    refs.paddleA.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
+    refs.paddleB.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
+  ]);
+  await refs.ball.send({ type: 'SET_PADDLES', leftY: left.y, rightY: right.y });
+  await refs.ball.send({ type: 'TICK' });
+  await flush(runtime);
+}
+
 async function driveUntilNextScore(
   runtime: StartedMeshPongRuntime,
   refs: MeshPongTestRefs,
   currentSequenceLength: number
 ): Promise<PongScoreState> {
   for (let tick = 0; tick < 40; tick += 1) {
-    await centerPaddles(runtime, refs);
-
-    const [left, right] = await Promise.all([
-      refs.paddleA.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
-      refs.paddleB.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
-    ]);
-    await refs.ball.send({ type: 'SET_PADDLES', leftY: left.y, rightY: right.y });
-    await refs.ball.send({ type: 'TICK' });
-    await flush(runtime);
+    await stepSimulation(runtime, refs);
 
     const score = await refs.score.ask<PongScoreState>({ type: 'GET_SCORE' });
     if (score.sequence.length > currentSequenceLength) {
@@ -347,15 +354,7 @@ async function runScoreSequence(runtime: StartedMeshPongRuntime): Promise<string
   await flush(runtime);
 
   for (let tick = 0; tick < 28; tick += 1) {
-    await centerPaddles(runtime, refs);
-
-    const [left, right] = await Promise.all([
-      refs.paddleA.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
-      refs.paddleB.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
-    ]);
-    await refs.ball.send({ type: 'SET_PADDLES', leftY: left.y, rightY: right.y });
-    await refs.ball.send({ type: 'TICK' });
-    await flush(runtime);
+    await stepSimulation(runtime, refs);
   }
 
   const finalScore = await refs.score.ask<PongScoreState>({ type: 'GET_SCORE' });
