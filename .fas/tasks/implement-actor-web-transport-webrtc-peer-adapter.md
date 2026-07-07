@@ -33,7 +33,12 @@ Spike direct-1781363862864. Direct browser<->browser data channel over WebRTC; s
 
 ## Scope Amendments
 
-- None.
+- 2026-07-06: `docs/0011-distributed-runtime-stack.md` defines the boundary
+  model for WebRTC and later distributed runtime work. This task must implement
+  WebRTC as a direct-peer transport over `RTCDataChannel` only. It may accept a
+  WebRTC-specific signaling/bootstrap port for SDP/ICE exchange, but it must not
+  absorb general peer discovery, capability policy, mesh membership/routing,
+  lattice coordination, or actor behavior semantics.
 
 ## Implementation plan
 

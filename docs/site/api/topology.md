@@ -70,9 +70,8 @@ Each actor in a topology exposes factories for UI consumption:
 | --- | --- |
 | `actor.readModel(opts)` | Read-only source: `snapshot`, `subscribe`, `subscribeEvent`. |
 | `actor.source(opts)` | Unified read + command. |
-| `actor.commandSource(opts)` | Command-only `send` / `ask` surface using command-only gateway subscribe mode. |
-| `actor.sourceHandle(opts)` | Paired read-model + command source. |
-| `actor.readModelHandle(opts)` | Gateway-wrapped read-model handle. |
+| `actor.commands(opts)` | Command-capable `send` / `ask` surface using command-only gateway subscribe mode. |
+| `actor.session(opts)` | Explicit `{ readModel, commands, close }` lifecycle bundle. |
 
 `opts` is `ActorWebSourceOptions` — gateway/transport config
 (`{ gateway: { url, scope?, auth? }, streamId?, createSocket?, clientVersion? }`),
@@ -81,10 +80,13 @@ Each actor in a topology exposes factories for UI consumption:
 as tenant or document ids; override `gateway.scope.kind` only for an intentional
 public projection alias. See [Sources & the gateway](/concepts/sources-and-gateway).
 
+Topologies also expose actor-key-first factories:
+`topology.readModel(actorKey, opts)`, `topology.source(actorKey, opts)`,
+`topology.commands(actorKey, opts)`, and `topology.session(actorKey, opts)`.
 For [Ignite Element](/guides/ignite-element), `readModel(...)`, `source(...)`,
-and `commandSource(...)` are all passed through `igniteCore({ source: ... })`.
-`commandSource(...)` is the Actor-Web factory for a command-capable source, not
-a second Ignite config key.
+and `commands(...)` are all passed through `igniteCore({ source: ... })`.
+`commands(...)` is the Actor-Web factory for a command-capable source, not a
+second Ignite config key.
 
 ## Address-based sources
 

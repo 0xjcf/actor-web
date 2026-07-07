@@ -595,9 +595,8 @@ Topology actors expose the same source factory names everywhere:
 | --- | --- | --- |
 | `readModel(opts)` | the host only projects snapshots/events | pass as `igniteCore({ source })` |
 | `source(opts)` | the host projects state and intentionally sends commands | pass as `igniteCore({ source })` |
-| `commandSource(opts)` | the host owns command/control without projection replay | pass as `igniteCore({ source })` |
-| `sourceHandle(opts)` | the host wants explicit `{ source, commandSource, stop }` ownership | pass `handle.commandSource` when Ignite commands; pass `handle.source` for read-only projection |
-| `readModelHandle(opts)` | the host wants explicit read-model cleanup with `stop()` | pass `handle.source` |
+| `commands(opts)` | the host owns command/control without projection replay | pass as `igniteCore({ source })` |
+| `session(opts)` | the host intentionally separates read and command handles with one lifecycle hook | pass `session.commands` when Ignite commands; pass `session.readModel` for read-only projection |
 
 `opts` is `ActorWebSourceOptions`: `{ gateway: { url, scope?, auth? },
 streamId?, createSocket?, clientVersion? }`. It is gateway/transport
@@ -626,9 +625,9 @@ const shipmentCard = igniteCore({
 
 When an Ignite host needs both live projection state and command/control for
 the same actor, pass the command-capable Actor-Web source as Ignite's single
-`source`. `commandSource(...)` is an Actor-Web source factory, not a second
-Ignite config key. The split remains visible in the source factory choice,
-without manual generics:
+`source`. `commands(...)` is an Actor-Web source factory, not a second Ignite
+config key. The split remains visible in the source factory choice, without
+manual generics:
 
 ```ts
 const shipmentCard = igniteCore({
@@ -673,21 +672,21 @@ const dashboard = igniteCore({
 ```
 
 `readModel({ host })` accepts Ignite's host-context object so product code can
-pass the source factory arguments straight through. Use `commandSource({ host })`
-as the Ignite `source` when a host intentionally owns command/control but does
-not need projection replay. Use `source({ host })` when the same component needs
+pass the source factory arguments straight through. Use `commands({ host })` as
+the Ignite `source` when a host intentionally owns command/control but does not
+need projection replay. Use `source({ host })` when the same component needs
 both projection and command capability.
 `source.close()` closes that source's subscriptions; `runtime.stop()` closes
 every source the runtime opened and then stops all started Actor-Web nodes.
 App-owned runtimes should call `runtime.stop()` during teardown. Ignite-owned
 isolated sources can rely on `close()` or an `AbortSignal` passed to
-`readModel(...)`/`commandSource(...)`.
+`readModel(...)`/`commands(...)`.
 
 Outside Ignite, use an explicit command helper when the host owns
 command/control without a projection stream:
 
 ```ts
-const shipmentCommands = logistics.actors.shipment.commandSource({
+const shipmentCommands = logistics.actors.shipment.commands({
   gateway: { url: 'ws://127.0.0.1:4100' },
 });
 
@@ -698,7 +697,7 @@ await shipmentCommands.send({
 });
 ```
 
-Legacy command-capable helpers remain available for compatibility:
+Generic command-capable clients can still use `createActorWebClient(...)`:
 
 ```ts
 const legacyClient = createActorWebClient(logistics, {
@@ -752,7 +751,7 @@ const shipmentSource = createActorWebReadModelSource({
 });
 ```
 
-Use `createActorWebCommandSource(...)` or `topology.actors.name.commandSource(...)`
+Use `createActorWebCommandSource(...)` or `topology.actors.name.commands(...)`
 only when the host intentionally owns command/control for that actor without a
 projection stream. These helpers opt into the gateway's command-only subscribe
 mode: they still go through gateway auth and scope resolution, but they wait for
@@ -1012,7 +1011,7 @@ Ignite validation where the app owns runtime startup and teardown.
 const runtime = await startRuntime(logistics);
 
 const shipmentProjection = runtime.shipment.readModel();
-const shipmentCommands = runtime.shipment.commandSource();
+const shipmentCommands = runtime.shipment.commands();
 
 await shipmentCommands.send({
   type: 'CREATE_SHIPMENT',
@@ -1026,9 +1025,8 @@ The returned runtime exposes:
 
 - `runtime.actorKey.readModel({ host?, signal? })`
 - `runtime.actorKey.source({ host?, signal? })`
-- `runtime.actorKey.commandSource({ host?, signal? })`
-- `runtime.actorKey.sourceHandle({ host?, signal? })`
-- `runtime.actorKey.readModelHandle({ host?, signal? })`
+- `runtime.actorKey.commands({ host?, signal? })`
+- `runtime.actorKey.session({ host?, signal? })`
 - `runtime.actorKey.actor()`
 - `runtime.actors.actorKey` for the same helpers without top-level access
 - `runtime.nodes` for node handles and focused test flushing

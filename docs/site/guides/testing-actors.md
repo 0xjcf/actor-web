@@ -11,12 +11,12 @@ state. Feed a message, assert the result.
 
 ## Drive an actor and assert state
 
-Use a local runtime and the actor's command source. `ask` resolves after the
-message is processed, so you can assert the next snapshot:
+Use a local runtime and the actor's command-capable source. `ask` resolves after
+the message is processed, so you can assert the next snapshot:
 
 ```ts
 const runtime = await startRuntime(topology);
-const counter = runtime.actors.counter.commandSource();
+const counter = runtime.actors.counter.commands();
 
 await counter.ask({ type: 'INCREMENT' });
 expect(counter.snapshot().context.count).toBe(1);

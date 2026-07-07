@@ -138,7 +138,7 @@ for current demo wiring, but the target `ignite-element/actor-web` contract is
 single-source first. The Ignite host should pass `.readModel(...)` as `source`
 for read-only projections, or pass a source value that exposes `send`/`ask` when
 the component intentionally owns command/control. For gateway-backed topology
-actors, that read/write value is `.source(...)`; `.commandSource(...)` is the
+actors, that read/write value is `.source(...)`; `.commands(...)` is the
 command-only path for hosts that do not need projection replay. Browser-local
 details such as form inputs and latest-event display remain element concerns
 instead of being disguised as Actor-Web source state. REST ingress stays in the
@@ -161,16 +161,15 @@ const shipmentSource = logistics.actors.shipment.readModel({
 The actor identity is already selected by `logistics.actors.shipment`. Use
 `gateway.scope.params` for product filters and reserve `gateway.scope.kind` for
 intentional public projection aliases. If the host wants explicit lifecycle
-ownership, use `.sourceHandle(...)` or `.readModelHandle(...)`. Pass
-`sourceHandle.commandSource` to Ignite when the component issues commands, pass
-`sourceHandle.source` or `readModelHandle.source` for read-only projection, and
-call `handle.stop()` during teardown.
+ownership, use `.session(...)`. Pass `session.commands` to Ignite when the
+component issues commands, pass `session.readModel` for read-only projection,
+and call `session.close()` during teardown.
 
 Use the split like this:
 
 ```ts
 const runtime = await startRuntime(logistics);
-const shipmentSource = runtime.shipment.commandSource();
+const shipmentSource = runtime.shipment.commands();
 
 const shipmentHost = igniteCore({
   source: shipmentSource,

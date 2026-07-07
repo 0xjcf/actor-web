@@ -20,7 +20,7 @@ Returns a started runtime with:
 
 | Member | Purpose |
 | --- | --- |
-| `runtime.actors.<id>` | Source factories (`commandSource()`, `readModel()`, …). |
+| `runtime.actors.<id>` | Source factories (`commands()`, `readModel()`, `session()`, …). |
 | `runtime.requireActor(id)` / `getActor(id)` | The live `ActorRef`. |
 | `runtime.nodes.<node>.system` | The underlying `ActorSystem` (e.g. for `subscribe`). |
 | `runtime.stop()` | Graceful shutdown. |

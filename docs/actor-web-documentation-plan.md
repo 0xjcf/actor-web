@@ -188,7 +188,7 @@ written fresh.
   - **Subscriptions & events** — *seeded from*
     `actor-web-declarative-subscriptions-design.md` (published view of in-flight
     work)
-  - Sources & the gateway (`readModel` / `commandSource`) — *seeded from*
+  - Sources & the gateway (`readModel` / `commands`) — *seeded from*
     topology design doc, `docs/examples/ignite-element-host.md`
   - Tools (functional core / imperative shell) — *seeded from* runtime README
   - Transport & multi-node — *seeded from*

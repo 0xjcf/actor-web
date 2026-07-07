@@ -63,20 +63,19 @@ different from the topology actor key.
 
 ## Ignite mapping
 
-Ignite takes one Actor-Web handle as `source`. `commandSource(...)` is an
-Actor-Web factory name, not a second `igniteCore` config key.
+Ignite takes one Actor-Web value as `source`. `commands(...)` is an Actor-Web
+factory name, not a second `igniteCore` config key.
 
 | Actor-Web factory | Capability | Pass to `igniteCore` |
 | --- | --- | --- |
 | `readModel(opts)` | snapshots, emitted events, transport status | `source` |
 | `source(opts)` | read model plus `send` / `ask` | `source` |
-| `commandSource(opts)` | command-capable source optimized for command-only gateway subscription | `source` |
-| `sourceHandle(opts)` | `{ source, commandSource, stop }` for hosts that want explicit read/write handles | pass `handle.commandSource` when Ignite commands; pass `handle.source` for read-only projection |
-| `readModelHandle(opts)` | `{ source, stop }` for explicit read-model lifecycle ownership | pass `handle.source` |
+| `commands(opts)` | command-capable source optimized for command-only gateway subscription | `source` |
+| `session(opts)` | `{ readModel, commands, close }` for hosts that intentionally separate read and command lifecycles | pass `session.commands` when Ignite commands; pass `session.readModel` for read-only projection |
 
 For normal Ignite components, prefer passing `readModel(...)`, `source(...)`, or
-`commandSource(...)` directly. Use handle factories when the host owns lifecycle
-outside Ignite and needs a single `stop()` for cleanup.
+`commands(...)` directly. Use `session(...)` when the host owns lifecycle outside
+Ignite and needs a single `close()` for paired read/command cleanup.
 
 ## Headless runtime
 
@@ -113,7 +112,7 @@ Pick the narrowest capability:
   `send`/`ask`.
 - **`source(opts)`** — components that render state and intentionally drive the
   actor.
-- **`commandSource(opts)`** — command-only hosts that do not need projection
+- **`commands(opts)`** — command-only hosts that do not need projection
   replay.
 
 This is CQRS at the UI edge: the ability to command is visible in the code, not

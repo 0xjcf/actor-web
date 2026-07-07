@@ -107,7 +107,7 @@ Current implementation status:
 
 - `@actor-web/runtime/topology` exports the browser-safe topology declaration
   helpers, descriptor types, and actor descriptor `.readModel(...)`,
-  `.source(...)`, and `.commandSource(...)` conveniences.
+  `.source(...)`, `.commands(...)`, and `.session(...)` conveniences.
 - `@actor-web/runtime/browser` exports `createActorWebReadModelSource` for
   gateway-backed Ignite-compatible read-model sources, `createActorWebSource`
   for read/write sources, and `createActorWebCommandSource` for explicit
@@ -499,7 +499,7 @@ Command/read split is modeled at the topology boundary, not by requiring a
 custom gateway scope for every source. Default browser/topology sources stay
 projection-only. Hosts that need one Ignite-compatible read/write source use
 `source(...)` or `createActorWebSource(...)`; hosts that only need command
-delivery use `commandSource(...)` or `createActorWebCommandSource(...)` and get
+delivery use `commands(...)` or `createActorWebCommandSource(...)` and get
 the gateway's command-only subscription mode. When an agentic workflow needs
 stricter CQRS boundaries, declare separate topology actors or generated-client
 descriptors for the command actor and the read projection actor. This keeps the
@@ -510,7 +510,7 @@ For `ignite-element/actor-web`, the intended pairing is:
 
 ```ts
 igniteCore({
-  source: ({ host }) => runtime.dashboard.commandSource({ host }),
+  source: ({ host }) => runtime.dashboard.commands({ host }),
   commands: ({ actor }) => ({
     approve: (approvalId: string) =>
       actor.send({ type: 'APPROVE_RECOMMENDATION', approvalId }),
