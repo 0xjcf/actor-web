@@ -2134,8 +2134,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Mesh Pong session lobby and human controller slots
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/mesh-pong-session-lobby-and-human-controller-slots.md
 - Verification lane: fast
 - Policy sensitivity: standard
