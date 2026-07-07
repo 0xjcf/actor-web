@@ -45,6 +45,11 @@ Spike direct-1781363862864. Terminal validation node for the transport/mesh trac
 - examples/index.html
 - packages/actor-core-runtime/src/actor-context-manager.ts
 - packages/actor-core-runtime/src/actor-system-impl.ts
+- examples/mesh-pong/parity-proof.ts
+- .fas/TASKS.md
+- .fas/tasks/mesh-pong-session-lobby-and-human-controller-slots.md
+- .fas/tasks/mesh-pong-mlx-llm-controller-adapter-and-player-modes.md
+- .fas/tasks/post-mesh-scoping-membership-graduation-tier-cross-node-supe.md
 
 ## Scope Amendments
 
@@ -55,6 +60,26 @@ Spike direct-1781363862864. Terminal validation node for the transport/mesh trac
 - Type: scope-refresh
 - Added at: 2026-07-07
 - Added paths: packages/actor-core-runtime/src/actor-context-manager.ts, packages/actor-core-runtime/src/actor-system-impl.ts
+
+- Type: operator-follow-up-and-ui-clarity
+- Added at: 2026-07-07
+- Trigger: Operator asked to queue Mesh Pong multiplayer/LLM follow-ups and make transport parity visible in the current example UI.
+- Reason: Queue updates are part of the requested dependency chain, and parity-proof metadata is needed so the browser demo shows the same topology and behavior invariants validated by mesh-pong.test.ts.
+- Added paths: examples/mesh-pong/parity-proof.ts, .fas/TASKS.md, .fas/tasks/mesh-pong-session-lobby-and-human-controller-slots.md, .fas/tasks/mesh-pong-mlx-llm-controller-adapter-and-player-modes.md
+- Evidence source: operator request
+- Evidence: operator request | .fas/state/current-task.json | Current task remains the transport-parity example; multiplayer and MLX work are queued as follow-ups.
+- Accuracy signal: live queue verified after fas create-task
+- Follow-up needed: Run the queued session lobby task before post-mesh claim gating.
+
+- Type: queue-dependency-chain-clarity
+- Added at: 2026-07-07
+- Trigger: Operator requested the dependency chain be updated for Mesh Pong multiplayer and LLM follow-ups.
+- Reason: The post-mesh claim-gating brief now records its dependency on the new Mesh Pong MLX/player-modes task, matching the live queue edge.
+- Added paths: .fas/tasks/post-mesh-scoping-membership-graduation-tier-cross-node-supe.md
+- Evidence source: fas create-task and fas edit-task
+- Evidence: fas create-task and fas edit-task | .fas/queue/tasks.json | task-1781880961715 depends on task-1783452033293; task-1783452033293 depends on task-1783452020274; task-1783452020274 depends on task-1781724531725.
+- Accuracy signal: jq verification of live queue rows
+- Follow-up needed: Proceed with task-1783452020274 after current Mesh Pong task closes.
 
 ## Implementation plan
 

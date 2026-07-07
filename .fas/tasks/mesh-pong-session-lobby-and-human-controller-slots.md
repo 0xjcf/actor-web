@@ -1,16 +1,19 @@
-# Post-mesh scoping: membership graduation tier, cross-node supervision boundary, claim gating
+# Mesh Pong session lobby and human controller slots
 
 ## Source
 
-Created with `fas create-task` on 2026-06-19.
+Created with `fas create-task` on 2026-07-07.
 
 ## Problem
 
-Location-transparency audit L6. After membership lands: (1) decide whether @actor-web/labs-mesh graduates from labs to a supported tier and gate the UNCONDITIONAL location-transparency claim on it; (2) document the node-local supervision boundary and scope cross-node monitor/link/nodedown semantics (today supervision is node-local; peer-down purges directory entries with no failover). Decision and scoping, not implementation.
+Follow-up from the Mesh Pong transport-parity demo. Extend examples/mesh-pong with a session-scoped lobby so each browser tab creates or resumes one PlayerSessionActor, claims a side, marks ready, and starts only after the required controller slots are present. Keep Pong behaviors transport-agnostic and keep controller/session coordination in the example shell. This covers two-human play across separate browser sessions and creates the controller-slot model needed for later LLM players.
 
 ## Acceptance criteria
 
-- The change is verified and does not introduce regressions.
+- Opening two same-origin tabs creates two distinct active player sessions without duplicating one browser identity.
+- Two-human mode requires both side controllers to be present and ready before START_MATCH is accepted.
+- The UI exposes player-count and controller-type choices without adding Ignite-specific Actor-Web helper APIs.
+- Human controller input is routed through session/controller actors while Pong ball, paddle, and score behaviors remain transport-agnostic.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
 - DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.
@@ -28,7 +31,13 @@ Location-transparency audit L6. After membership lands: (1) decide whether @acto
 
 ## Affected files
 
-- Scope unknown.
+- examples/mesh-pong/README.md
+- examples/mesh-pong/pong-contract.ts
+- examples/mesh-pong/pong-behaviors.ts
+- examples/mesh-pong/pong-topology.ts
+- examples/mesh-pong/ui/index.html
+- examples/mesh-pong/ui/main.ts
+- examples/mesh-pong/mesh-pong.test.ts
 
 ## Scope Amendments
 
@@ -50,7 +59,7 @@ Location-transparency audit L6. After membership lands: (1) decide whether @acto
 
 ## Dependencies
 
-- Depends on task-1781628517450 labs-mesh implementation, task-1783360998273/task-1783361040728 route-token protocol follow-ups, and task-1783452033293 Mesh Pong MLX LLM controller adapter and player modes. Claim gating should run after the richer Mesh Pong multiplayer and LLM validation surface is queued or implemented.
+- Depends on task-1781724531725 Build Mesh Pong example. Blocks task-1783452033293 Mesh Pong MLX LLM controller adapter and player modes.
 
 ## Open questions
 
