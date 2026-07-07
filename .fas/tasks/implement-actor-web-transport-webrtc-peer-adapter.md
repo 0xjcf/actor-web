@@ -29,13 +29,14 @@ Spike direct-1781363862864. Direct browser<->browser data channel over WebRTC; s
 
 ## Affected files
 
-- `packages/actor-core-runtime/src/webrtc-message-transport.ts`
-- `packages/actor-core-runtime/src/unit/webrtc-message-transport.test.ts`
-- `packages/actor-core-runtime/src/browser.ts`
-- `docs/0011-distributed-runtime-stack.md`
-- `docs/API.md`
-- `docs/site/concepts/transport.md`
-- `docs/actor-web-labs-mesh-design.md`
+- packages/actor-core-runtime/src/webrtc-message-transport.ts
+- packages/actor-core-runtime/src/unit/webrtc-message-transport.test.ts
+- packages/actor-core-runtime/src/browser.ts
+- docs/0011-distributed-runtime-stack.md
+- docs/API.md
+- docs/site/concepts/transport.md
+- docs/actor-web-labs-mesh-design.md
+- .fas/memory/pr-feedback.md
 
 ## Scope Amendments
 
@@ -45,6 +46,16 @@ Spike direct-1781363862864. Direct browser<->browser data channel over WebRTC; s
   WebRTC-specific signaling/bootstrap port for SDP/ICE exchange, but it must not
   absorb general peer discovery, capability policy, mesh membership/routing,
   lattice coordination, or actor behavior semantics.
+
+- Type: babysit-memory
+- Added at: 2026-07-07
+- Trigger: PR #44 babysit closeout
+- Reason: Record reusable PR review lessons required by fas-babysit closeout after WebRTC transport review.
+- Added paths: .fas/memory/pr-feedback.md
+- Evidence source: PR #44 review
+- Evidence: PR #44 review | .fas/memory/pr-feedback.md | Added durable WebRTC transport review patterns from PR #44.
+- Accuracy signal: FAS babysit workflow requires durable PR feedback memory after review sweeps.
+- Follow-up needed: None.
 
 ## Implementation plan
 
