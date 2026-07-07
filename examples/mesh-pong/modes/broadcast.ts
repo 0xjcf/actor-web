@@ -25,27 +25,21 @@ export interface StartedMeshPongCluster {
 export async function connectMeshPongCluster(
   cluster: Pick<StartedMeshPongCluster, 'server' | 'a' | 'b'>
 ): Promise<void> {
-  await Promise.all([
-    cluster.server.system.join([PONG_NODE_ADDRESSES.a, PONG_NODE_ADDRESSES.b]),
-    cluster.a.system.join([PONG_NODE_ADDRESSES.server, PONG_NODE_ADDRESSES.b]),
-    cluster.b.system.join([PONG_NODE_ADDRESSES.server, PONG_NODE_ADDRESSES.a]),
-  ]);
+  await cluster.server.system.join([PONG_NODE_ADDRESSES.a, PONG_NODE_ADDRESSES.b]);
+  await cluster.a.system.join([PONG_NODE_ADDRESSES.server, PONG_NODE_ADDRESSES.b]);
+  await cluster.b.system.join([PONG_NODE_ADDRESSES.server, PONG_NODE_ADDRESSES.a]);
 }
 
 export async function flushMeshPongCluster(
   cluster: Pick<StartedMeshPongCluster, 'server' | 'a' | 'b'>
 ): Promise<void> {
-  await Promise.all([
-    cluster.server.system.flush(),
-    cluster.a.system.flush(),
-    cluster.b.system.flush(),
-  ]);
+  await cluster.server.system.flush();
+  await cluster.a.system.flush();
+  await cluster.b.system.flush();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  await Promise.all([
-    cluster.server.system.flush(),
-    cluster.a.system.flush(),
-    cluster.b.system.flush(),
-  ]);
+  await cluster.server.system.flush();
+  await cluster.a.system.flush();
+  await cluster.b.system.flush();
 }
 
 export async function stopMeshPongCluster(

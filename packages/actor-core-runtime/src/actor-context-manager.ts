@@ -314,6 +314,10 @@ export function hasActiveContext(): boolean {
   return storage.getStore() !== undefined;
 }
 
+export function supportsOverlappingTopLevelAsyncRuns(): boolean {
+  return !(storage instanceof FallbackContextStorage);
+}
+
 /**
  * Run a function with logging enabled/disabled temporarily
  *

@@ -1,4 +1,4 @@
-import { startRuntime } from '@actor-web/runtime';
+import { startRuntime } from '@actor-web/runtime/browser';
 import { pong } from '../pong-topology';
 
 export async function startMeshPongLocal() {

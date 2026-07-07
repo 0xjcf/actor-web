@@ -71,9 +71,9 @@ async function flushRuntime(candidate: BrowserRuntime): Promise<void> {
     return;
   }
 
-  await Promise.all(
-    Object.values(candidate.nodes).map((nodeRuntime) => nodeRuntime?.system.flush())
-  );
+  for (const nodeRuntime of Object.values(candidate.nodes)) {
+    await nodeRuntime?.system.flush();
+  }
 }
 
 function serverNode(candidate: BrowserRuntime) {
@@ -122,12 +122,10 @@ async function resolveRefs(candidate: BrowserRuntime): Promise<RuntimeRefs> {
 }
 
 async function snapshot(nextRefs: RuntimeRefs): Promise<PongSnapshot> {
-  const [ball, score, left, right] = await Promise.all([
-    nextRefs.ball.ask<PongBallContext>({ type: 'GET_BALL' }),
-    nextRefs.score.ask<PongScoreState>({ type: 'GET_SCORE' }),
-    nextRefs.paddleA.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
-    nextRefs.paddleB.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
-  ]);
+  const ball = await nextRefs.ball.ask<PongBallContext>({ type: 'GET_BALL' });
+  const score = await nextRefs.score.ask<PongScoreState>({ type: 'GET_SCORE' });
+  const left = await nextRefs.paddleA.ask<PongPaddleState>({ type: 'GET_PADDLE' });
+  const right = await nextRefs.paddleB.ask<PongPaddleState>({ type: 'GET_PADDLE' });
 
   return {
     ball: ball.ball,
@@ -145,12 +143,13 @@ async function resetGame(): Promise<void> {
   }
 
   const centerY = PONG_FIELD.height / 2 - PONG_FIELD.paddleHeight / 2;
-  await Promise.all([
-    refs.ball.send({ type: 'RESET_BALL', seed: DEFAULT_PONG_SEED }),
-    refs.score.send({ type: 'RESET_SCORE' }),
-    refs.paddleA.send({ type: 'SET_PADDLE', y: centerY }),
-    refs.paddleB.send({ type: 'SET_PADDLE', y: centerY }),
-  ]);
+  await refs.ball.send({ type: 'RESET_BALL', seed: DEFAULT_PONG_SEED });
+  await flushRuntime(runtime);
+  await refs.score.send({ type: 'RESET_SCORE' });
+  await flushRuntime(runtime);
+  await refs.paddleA.send({ type: 'SET_PADDLE', y: centerY });
+  await flushRuntime(runtime);
+  await refs.paddleB.send({ type: 'SET_PADDLE', y: centerY });
   await flushRuntime(runtime);
   const nextSnapshot = await snapshot(refs);
   drawPong(canvasElement, nextSnapshot);
@@ -188,21 +187,23 @@ async function switchMode(mode: BrowserMode): Promise<void> {
   loopHandle = window.setTimeout(tick, 120);
 }
 
-async function applyPaddleInput(nextRefs: RuntimeRefs): Promise<void> {
-  const moves: Promise<void>[] = [];
+async function applyPaddleInput(nextRuntime: BrowserRuntime, nextRefs: RuntimeRefs): Promise<void> {
   if (keys.has('w')) {
-    moves.push(nextRefs.paddleA.send({ type: 'MOVE_PADDLE', direction: 'up' }));
+    await nextRefs.paddleA.send({ type: 'MOVE_PADDLE', direction: 'up' });
+    await flushRuntime(nextRuntime);
   }
   if (keys.has('s')) {
-    moves.push(nextRefs.paddleA.send({ type: 'MOVE_PADDLE', direction: 'down' }));
+    await nextRefs.paddleA.send({ type: 'MOVE_PADDLE', direction: 'down' });
+    await flushRuntime(nextRuntime);
   }
   if (keys.has('arrowup')) {
-    moves.push(nextRefs.paddleB.send({ type: 'MOVE_PADDLE', direction: 'up' }));
+    await nextRefs.paddleB.send({ type: 'MOVE_PADDLE', direction: 'up' });
+    await flushRuntime(nextRuntime);
   }
   if (keys.has('arrowdown')) {
-    moves.push(nextRefs.paddleB.send({ type: 'MOVE_PADDLE', direction: 'down' }));
+    await nextRefs.paddleB.send({ type: 'MOVE_PADDLE', direction: 'down' });
+    await flushRuntime(nextRuntime);
   }
-  await Promise.all(moves);
 }
 
 async function tick(): Promise<void> {
@@ -211,8 +212,7 @@ async function tick(): Promise<void> {
   }
 
   try {
-    await applyPaddleInput(refs);
-    await flushRuntime(runtime);
+    await applyPaddleInput(runtime, refs);
     const current = await snapshot(refs);
     await refs.ball.send({
       type: 'SET_PADDLES',

@@ -1,4 +1,4 @@
-import { defineBehavior } from '@actor-web/runtime';
+import { defineBehavior } from '@actor-web/runtime/browser';
 import {
   advanceBall,
   type BallCommand,
