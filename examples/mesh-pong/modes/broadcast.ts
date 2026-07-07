@@ -66,29 +66,41 @@ function createBroadcastTransport(
 export async function startMeshPongBroadcast(
   options: MeshPongBroadcastOptions = {}
 ): Promise<StartedMeshPongCluster> {
-  const server = await startActorWebNode(pong, {
-    node: 'server',
-    transport: createBroadcastTransport(PONG_NODE_ADDRESSES.server, options),
-  });
-  const a = await startActorWebNode(pong, {
-    node: 'a',
-    transport: createBroadcastTransport(PONG_NODE_ADDRESSES.a, options),
-  });
-  const b = await startActorWebNode(pong, {
-    node: 'b',
-    transport: createBroadcastTransport(PONG_NODE_ADDRESSES.b, options),
-  });
+  const startedNodes: StartedActorWebNode<typeof pong, MessageTransport>[] = [];
 
-  const cluster: StartedMeshPongCluster = {
-    mode: 'broadcast',
-    server,
-    a,
-    b,
-    flush: () => flushMeshPongCluster(cluster),
-    stop: () => stopMeshPongCluster(cluster),
-  };
+  try {
+    const server = await startActorWebNode(pong, {
+      node: 'server',
+      transport: createBroadcastTransport(PONG_NODE_ADDRESSES.server, options),
+    });
+    startedNodes.push(server);
 
-  await connectMeshPongCluster(cluster);
-  await cluster.flush();
-  return cluster;
+    const a = await startActorWebNode(pong, {
+      node: 'a',
+      transport: createBroadcastTransport(PONG_NODE_ADDRESSES.a, options),
+    });
+    startedNodes.push(a);
+
+    const b = await startActorWebNode(pong, {
+      node: 'b',
+      transport: createBroadcastTransport(PONG_NODE_ADDRESSES.b, options),
+    });
+    startedNodes.push(b);
+
+    const cluster: StartedMeshPongCluster = {
+      mode: 'broadcast',
+      server,
+      a,
+      b,
+      flush: () => flushMeshPongCluster(cluster),
+      stop: () => stopMeshPongCluster(cluster),
+    };
+
+    await connectMeshPongCluster(cluster);
+    await cluster.flush();
+    return cluster;
+  } catch (error) {
+    await Promise.allSettled(startedNodes.reverse().map((nodeRuntime) => nodeRuntime.stop()));
+    throw error;
+  }
 }

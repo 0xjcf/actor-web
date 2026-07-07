@@ -103,16 +103,21 @@ export const scoreBehavior = defineBehavior<ScoreCommand, ScoreEvent>()
       };
     }
 
+    const point = {
+      ...message.point,
+      left: context.left + (message.point.scorer === 'left' ? 1 : 0),
+      right: context.right + (message.point.scorer === 'right' ? 1 : 0),
+    };
     const score: PongScoreState = {
-      left: message.point.left,
-      right: message.point.right,
-      sequence: [...context.sequence, message.point],
+      left: point.left,
+      right: point.right,
+      sequence: [...context.sequence, point],
     };
 
     return {
       context: score,
       reply: score,
-      emit: [{ type: 'SCORE_CHANGED' as const, score, point: message.point }],
+      emit: [{ type: 'SCORE_CHANGED' as const, score, point }],
     };
   })
   .build();

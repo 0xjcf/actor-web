@@ -11,12 +11,18 @@ import {
 } from './parity-proof';
 import type {
   BallCommand,
+  PaddleCommand,
   PongBallContext,
   PongPaddleState,
   PongScoreState,
   ScoreCommand,
 } from './pong-contract';
-import { DEFAULT_PONG_SEED, PONG_FIELD } from './pong-contract';
+import {
+  advanceBall,
+  createInitialBallContext,
+  DEFAULT_PONG_SEED,
+  PONG_FIELD,
+} from './pong-contract';
 import { pong } from './pong-topology';
 
 type StartedMeshPongRuntime =
@@ -35,6 +41,10 @@ class FakeBroadcastChannelNetwork {
 
   delete(channel: FakeBroadcastChannel): void {
     this.channels.delete(channel);
+  }
+
+  size(): number {
+    return this.channels.size;
   }
 
   publish(sender: FakeBroadcastChannel, data: unknown): void {
@@ -93,6 +103,13 @@ class FakeBroadcastChannel implements BroadcastChannelLike {
 
 const startedRuntimes: StartedMeshPongRuntime[] = [];
 
+interface MeshPongTestRefs {
+  readonly ball: ActorRef<PongBallContext, BallCommand>;
+  readonly score: ActorRef<PongScoreState, ScoreCommand>;
+  readonly paddleA: ActorRef<PongPaddleState, PaddleCommand>;
+  readonly paddleB: ActorRef<PongPaddleState, PaddleCommand>;
+}
+
 afterEach(async () => {
   await Promise.allSettled(startedRuntimes.splice(0).map((runtime) => runtime.stop()));
 });
@@ -135,40 +152,77 @@ async function waitForActor<TContext, TMessage extends ActorMessage>(
   throw new Error(`Timed out resolving Mesh Pong actor ${address} from the server node.`);
 }
 
-async function runScoreSequence(runtime: StartedMeshPongRuntime): Promise<string[]> {
+async function resolvePongRefs(runtime: StartedMeshPongRuntime): Promise<MeshPongTestRefs> {
   const server = serverNode(runtime);
-  const ball = server.requireActor('ball') as ActorRef<PongBallContext, BallCommand>;
-  const score = server.requireActor('score') as ActorRef<PongScoreState, ScoreCommand>;
-  const paddleA = await waitForActor<
-    PongPaddleState,
-    { type: 'SET_PADDLE'; y: number } | { type: 'GET_PADDLE' }
-  >(runtime, pong.actors.paddleA.address);
-  const paddleB = await waitForActor<
-    PongPaddleState,
-    { type: 'SET_PADDLE'; y: number } | { type: 'GET_PADDLE' }
-  >(runtime, pong.actors.paddleB.address);
+  return {
+    ball: server.requireActor('ball') as ActorRef<PongBallContext, BallCommand>,
+    score: server.requireActor('score') as ActorRef<PongScoreState, ScoreCommand>,
+    paddleA: await waitForActor<PongPaddleState, PaddleCommand>(
+      runtime,
+      pong.actors.paddleA.address
+    ),
+    paddleB: await waitForActor<PongPaddleState, PaddleCommand>(
+      runtime,
+      pong.actors.paddleB.address
+    ),
+  };
+}
 
+async function centerPaddles(
+  runtime: StartedMeshPongRuntime,
+  refs: Pick<MeshPongTestRefs, 'paddleA' | 'paddleB'>
+): Promise<void> {
   const centerY = PONG_FIELD.height / 2 - PONG_FIELD.paddleHeight / 2;
+  await refs.paddleA.send({ type: 'SET_PADDLE', y: centerY });
+  await refs.paddleB.send({ type: 'SET_PADDLE', y: centerY });
+  await flush(runtime);
+}
 
-  await ball.send({ type: 'RESET_BALL', seed: DEFAULT_PONG_SEED });
-  await score.send({ type: 'RESET_SCORE' });
+async function driveUntilNextScore(
+  runtime: StartedMeshPongRuntime,
+  refs: MeshPongTestRefs,
+  currentSequenceLength: number
+): Promise<PongScoreState> {
+  for (let tick = 0; tick < 40; tick += 1) {
+    await centerPaddles(runtime, refs);
+
+    const [left, right] = await Promise.all([
+      refs.paddleA.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
+      refs.paddleB.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
+    ]);
+    await refs.ball.send({ type: 'SET_PADDLES', leftY: left.y, rightY: right.y });
+    await refs.ball.send({ type: 'TICK' });
+    await flush(runtime);
+
+    const score = await refs.score.ask<PongScoreState>({ type: 'GET_SCORE' });
+    if (score.sequence.length > currentSequenceLength) {
+      return score;
+    }
+  }
+
+  throw new Error('Mesh Pong did not score within the expected tick window.');
+}
+
+async function runScoreSequence(runtime: StartedMeshPongRuntime): Promise<string[]> {
+  const refs = await resolvePongRefs(runtime);
+
+  await refs.ball.send({ type: 'RESET_BALL', seed: DEFAULT_PONG_SEED });
+  await refs.score.send({ type: 'RESET_SCORE' });
   await flush(runtime);
 
   for (let tick = 0; tick < 28; tick += 1) {
-    await paddleA.send({ type: 'SET_PADDLE', y: centerY });
-    await paddleB.send({ type: 'SET_PADDLE', y: centerY });
-    await flush(runtime);
+    await centerPaddles(runtime, refs);
 
     const [left, right] = await Promise.all([
-      paddleA.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
-      paddleB.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
+      refs.paddleA.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
+      refs.paddleB.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
     ]);
-    await ball.send({ type: 'SET_PADDLES', leftY: left.y, rightY: right.y });
-    await ball.send({ type: 'TICK' });
+    await refs.ball.send({ type: 'SET_PADDLES', leftY: left.y, rightY: right.y });
+    await refs.ball.send({ type: 'TICK' });
     await flush(runtime);
   }
 
-  const finalScore = await score.ask<PongScoreState>({ type: 'GET_SCORE' });
+  const finalScore = await refs.score.ask<PongScoreState>({ type: 'GET_SCORE' });
   return finalScore.sequence.map(
     (point) => `${point.scorer}:${point.left}-${point.right}:r${point.rally}:t${point.tick}`
   );
@@ -183,6 +237,66 @@ async function captureSequence(
 }
 
 describe('Mesh Pong transport parity', () => {
+  it('keeps the score actor as the only source of scoreboard totals', async () => {
+    const runtime = await startMeshPongLocal();
+    startedRuntimes.push(runtime);
+    const refs = await resolvePongRefs(runtime);
+
+    await refs.ball.send({ type: 'RESET_BALL', seed: DEFAULT_PONG_SEED });
+    await refs.score.send({ type: 'RESET_SCORE' });
+    await flush(runtime);
+
+    const firstScore = await driveUntilNextScore(runtime, refs, 0);
+    await refs.ball.send({ type: 'RESET_BALL', seed: DEFAULT_PONG_SEED });
+    await flush(runtime);
+
+    const secondScore = await driveUntilNextScore(runtime, refs, firstScore.sequence.length);
+    const latestPoint = secondScore.sequence[secondScore.sequence.length - 1];
+    expect(secondScore.left + secondScore.right).toBe(firstScore.left + firstScore.right + 1);
+    expect(latestPoint.left).toBe(secondScore.left);
+    expect(latestPoint.right).toBe(secondScore.right);
+  });
+
+  it('does not bounce a ball that was already behind a paddle face', () => {
+    const baseContext = createInitialBallContext(DEFAULT_PONG_SEED);
+    const leftPaddleRight = PONG_FIELD.paddleMargin + PONG_FIELD.paddleWidth;
+    const ballY = baseContext.leftPaddleY + 10;
+
+    const result = advanceBall({
+      ...baseContext,
+      ball: {
+        ...baseContext.ball,
+        x: leftPaddleRight - PONG_FIELD.ballRadius - 1,
+        y: ballY,
+        vx: -PONG_FIELD.ballSpeedX,
+        vy: 0,
+      },
+    });
+
+    expect(result.context.ball.vx).toBeLessThan(0);
+    expect(result.context.ball.x).toBeLessThan(leftPaddleRight);
+  });
+
+  it('cleans up partially started broadcast nodes when startup fails', async () => {
+    const broadcastNetwork = new FakeBroadcastChannelNetwork();
+    let createdChannels = 0;
+
+    await expect(
+      startMeshPongBroadcast({
+        channelName: 'mesh-pong-broadcast-startup-failure',
+        broadcastChannelFactory: (channelName) => {
+          createdChannels += 1;
+          if (createdChannels === 2) {
+            throw new Error('broadcast channel setup failed');
+          }
+          return broadcastNetwork.create(channelName);
+        },
+      })
+    ).rejects.toThrow('broadcast channel setup failed');
+
+    expect(broadcastNetwork.size()).toBe(0);
+  });
+
   it('keeps the browser proof panel tied to shared behavior and mode-only startup files', () => {
     expect(MESH_PONG_SHARED_PARITY_PROOF).toMatchObject({
       topologyFile: 'pong-topology.ts',

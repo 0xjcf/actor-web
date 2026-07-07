@@ -50,6 +50,7 @@ Spike direct-1781363862864. Terminal validation node for the transport/mesh trac
 - .fas/tasks/mesh-pong-session-lobby-and-human-controller-slots.md
 - .fas/tasks/mesh-pong-mlx-llm-controller-adapter-and-player-modes.md
 - .fas/tasks/post-mesh-scoping-membership-graduation-tier-cross-node-supe.md
+- .fas/memory/pr-feedback.md
 
 ## Scope Amendments
 
@@ -80,6 +81,16 @@ Spike direct-1781363862864. Terminal validation node for the transport/mesh trac
 - Evidence: fas create-task and fas edit-task | .fas/queue/tasks.json | task-1781880961715 depends on task-1783452033293; task-1783452033293 depends on task-1783452020274; task-1783452020274 depends on task-1781724531725.
 - Accuracy signal: jq verification of live queue rows
 - Follow-up needed: Proceed with task-1783452020274 after current Mesh Pong task closes.
+
+- Type: pr-babysit-feedback-memory
+- Added at: 2026-07-07
+- Trigger: PR #45 CodeRabbit babysit sweep found reusable review lessons while fixing Mesh Pong review comments.
+- Reason: FAS babysit requires durable PR feedback memory after each sweep, and the memory entry records recurring review patterns for future Mesh Pong and transport-example work.
+- Added paths: .fas/memory/pr-feedback.md
+- Evidence source: PR #45 review comments
+- Evidence: CodeRabbit review | .fas/memory/pr-feedback.md | Recorded reusable lessons for partial startup unwind, single-owner actor state, crossing-test collisions, and async UI generation guards.
+- Accuracy signal: PR comments re-read before update
+- Follow-up needed: None.
 
 ## Implementation plan
 

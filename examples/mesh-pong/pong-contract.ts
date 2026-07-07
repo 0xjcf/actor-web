@@ -45,6 +45,12 @@ export interface PongScorePoint {
   readonly tick: number;
 }
 
+export interface PongScoredSignal {
+  readonly scorer: PongSide;
+  readonly rally: number;
+  readonly tick: number;
+}
+
 export interface PongScoreState {
   readonly left: number;
   readonly right: number;
@@ -55,7 +61,6 @@ export interface PongBallContext {
   readonly ball: PongBallState;
   readonly leftPaddleY: number;
   readonly rightPaddleY: number;
-  readonly score: PongScoreState;
   readonly tick: number;
 }
 
@@ -67,7 +72,7 @@ export type BallCommand =
 
 export type BallEvent =
   | { readonly type: 'BALL_MOVED'; readonly ball: PongBallState }
-  | { readonly type: 'SCORED'; readonly point: PongScorePoint; readonly ball: PongBallState };
+  | { readonly type: 'SCORED'; readonly point: PongScoredSignal; readonly ball: PongBallState };
 
 export type PaddleCommand =
   | { readonly type: 'MOVE_PADDLE'; readonly direction: 'up' | 'down'; readonly amount?: number }
@@ -144,7 +149,6 @@ export function createInitialBallContext(seed = DEFAULT_PONG_SEED): PongBallCont
     ball: createInitialBall(seed),
     leftPaddleY: paddle.y,
     rightPaddleY: paddle.y,
-    score: createInitialScore(),
     tick: 0,
   };
 }
@@ -192,6 +196,10 @@ export function advanceBall(context: PongBallContext): AdvanceBallResult {
 
   const leftPaddleRight = PONG_FIELD.paddleMargin + PONG_FIELD.paddleWidth;
   const rightPaddleLeft = PONG_FIELD.width - PONG_FIELD.paddleMargin - PONG_FIELD.paddleWidth;
+  const crossedLeftPaddleFace =
+    ball.x - ball.radius >= leftPaddleRight && nextBall.x - nextBall.radius <= leftPaddleRight;
+  const crossedRightPaddleFace =
+    ball.x + ball.radius <= rightPaddleLeft && nextBall.x + nextBall.radius >= rightPaddleLeft;
   const withinLeftPaddle =
     nextBall.y >= context.leftPaddleY &&
     nextBall.y <= context.leftPaddleY + PONG_FIELD.paddleHeight;
@@ -199,7 +207,7 @@ export function advanceBall(context: PongBallContext): AdvanceBallResult {
     nextBall.y >= context.rightPaddleY &&
     nextBall.y <= context.rightPaddleY + PONG_FIELD.paddleHeight;
 
-  if (nextBall.vx < 0 && nextBall.x - nextBall.radius <= leftPaddleRight && withinLeftPaddle) {
+  if (nextBall.vx < 0 && crossedLeftPaddleFace && withinLeftPaddle) {
     nextBall = {
       ...nextBall,
       x: leftPaddleRight + nextBall.radius,
@@ -207,7 +215,7 @@ export function advanceBall(context: PongBallContext): AdvanceBallResult {
     };
   }
 
-  if (nextBall.vx > 0 && nextBall.x + nextBall.radius >= rightPaddleLeft && withinRightPaddle) {
+  if (nextBall.vx > 0 && crossedRightPaddleFace && withinRightPaddle) {
     nextBall = {
       ...nextBall,
       x: rightPaddleLeft - nextBall.radius,
@@ -230,24 +238,16 @@ export function advanceBall(context: PongBallContext): AdvanceBallResult {
     };
   }
 
-  const point: PongScorePoint = {
+  const point: PongScoredSignal = {
     scorer,
-    left: context.score.left + (scorer === 'left' ? 1 : 0),
-    right: context.score.right + (scorer === 'right' ? 1 : 0),
     rally: nextBall.rally,
     tick,
-  };
-  const nextScore: PongScoreState = {
-    left: point.left,
-    right: point.right,
-    sequence: [...context.score.sequence, point],
   };
   const resetDirection: 1 | -1 = scorer === 'left' ? -1 : 1;
   const resetBall = createInitialBall(context.ball.seed + tick, resetDirection);
   const nextContext = {
     ...context,
     ball: resetBall,
-    score: nextScore,
     tick,
   };
 

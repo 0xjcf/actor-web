@@ -253,6 +253,10 @@ async function switchMode(mode: BrowserMode): Promise<void> {
     }
   }
 
+  if (switchGeneration !== generation) {
+    return;
+  }
+
   selectedMode = mode;
   modeValueElement.textContent = mode;
   renderParityProof(mode);
