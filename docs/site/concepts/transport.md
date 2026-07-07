@@ -17,7 +17,8 @@ Two different edges, often confused:
 
 - **Transport** — runtime-to-runtime. How *nodes* exchange actor messages
   (for example WebSocket between runtime hosts, or BroadcastChannel between
-  same-origin browser contexts).
+  same-origin browser contexts, or WebRTC `RTCDataChannel` between directly
+  connected browser peers).
 - **Gateway** — runtime-to-consumer. How a *UI* observes projections and sends
   commands (see [Sources & the gateway](/concepts/sources-and-gateway)).
 
@@ -44,6 +45,11 @@ Nodes find each other through static peer maps or a runtime peer-discovery
 provider. The transport tracks peer liveness (heartbeats, stale-socket
 rejection, identity/incarnation replacement) so a reconnecting or replaced peer
 is handled cleanly.
+
+WebRTC keeps this split explicit: discovery and SDP/ICE signaling are
+caller-owned, and the WebRTC adapter receives only a narrow bootstrap port that
+opens or listens for `RTCDataChannel` instances. The adapter then runs the
+runtime handshake and frame protocol over that direct channel.
 
 ## Backpressure
 

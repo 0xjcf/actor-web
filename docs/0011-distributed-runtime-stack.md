@@ -109,7 +109,8 @@ The WebRTC adapter must implement only the transport layer:
 
 - wrap an `RTCDataChannel` as a direct-peer `MessageTransport`
 - reuse the shared transport core and runtime frame protocol
-- accept an explicit bootstrap/signaling port for SDP/ICE exchange
+- accept an explicit data-channel bootstrap port owned by caller-provided
+  signaling/SDP/ICE code
 - surface connection and negotiation failures as facts/errors-as-data
 
 The WebRTC adapter must not own:
@@ -121,10 +122,13 @@ The WebRTC adapter must not own:
 - lattice artifact coordination
 - actor behavior semantics
 
-Use `signaling` when the API is specifically about WebRTC SDP/ICE exchange. Use
-`discovery` only for a broader peer-finding or bootstrap abstraction that can
-support WebSocket seed lists, BroadcastChannel local discovery, mDNS, QR-code
-pairing, libp2p, manual copy/paste, or other future mechanisms.
+Use `signaling` when the API is specifically about WebRTC SDP/ICE exchange.
+The transport adapter itself accepts a narrower `bootstrap` port that opens or
+listens for `RTCDataChannel` instances after caller-owned signaling has done
+its work. Use `discovery` only for a broader peer-finding or bootstrap
+abstraction that can support WebSocket seed lists, BroadcastChannel local
+discovery, mDNS, QR-code pairing, libp2p, manual copy/paste, or other future
+mechanisms.
 
 Conceptual shape:
 
@@ -132,15 +136,21 @@ Conceptual shape:
 const peer = await discovery.findPeer("browser-b");
 
 const transport = createWebRtcMessageTransport({
-  identity: localIdentity,
-  signaling: peer.signaling,
+  nodeAddress: "browser-a",
+  bootstrap: {
+    openDataChannel: ({ remoteAddress }) =>
+      signaling.openDataChannel(peer.signaling, remoteAddress),
+    listen: (listener) => signaling.listenForDataChannels(listener),
+  },
 });
 
-await transport.connect(peer.identity);
+await transport.connect(peer.identity.nodeAddress);
 ```
 
-The discovery record may carry signaling coordinates, but transport remains
-responsible only for negotiating and using the direct data channel.
+The discovery record may carry signaling coordinates, but caller-owned signaling
+turns those coordinates into data channels. The WebRTC transport remains
+responsible only for runtime handshake validation and frame delivery over the
+direct data channel.
 
 ## Package Guidance
 
@@ -155,7 +165,8 @@ discovery independently of the core runtime host.
 Until then:
 
 - keep identity and frame contracts in runtime
-- keep WebRTC-specific SDP/ICE signaling on the WebRTC adapter surface
+- keep WebRTC-specific SDP/ICE signaling outside the adapter and pass opened
+  data-channel bootstrap ports into the WebRTC adapter
 - keep mesh membership and routing in `@actor-web/labs-mesh`
 - keep lattice coordination in `@actor-web/lattice`
 

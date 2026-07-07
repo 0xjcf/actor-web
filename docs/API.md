@@ -1195,6 +1195,33 @@ as tabs, workers, and embedded browser runtime hosts. BroadcastChannel is a
 browser-local bus, so the adapter validates runtime handshakes and negotiated
 node identity before delivering peer payloads to the transport core.
 
+## WebRTC Transport
+
+`createWebRtcMessageTransport(options)` adapts browser `RTCDataChannel`
+connections into the `MessageTransport` seam. It is exported from
+`@actor-web/runtime/browser`.
+
+```ts
+const transport = createWebRtcMessageTransport({
+  nodeAddress: 'browser-a',
+  bootstrap: {
+    openDataChannel: ({ remoteAddress }) =>
+      signaling.openDataChannel(remoteAddress),
+    listen: (listener) => signaling.listenForDataChannels(listener),
+  },
+});
+
+await transport.start();
+await transport.connect('browser-b');
+```
+
+The `bootstrap` port is intentionally narrow: it opens outgoing data channels
+and listens for incoming data channels. Discovery, SDP/ICE signaling,
+permissions, and mesh route selection stay outside the adapter. The adapter
+runs Actor-Web's runtime handshake over the data channel, then delegates
+ack/retry, duplicate suppression, heartbeat frames, stats, and telemetry to the
+shared transport core.
+
 ## Runtime Transport Contract
 
 The runtime transport contract exports:
@@ -1214,9 +1241,9 @@ The runtime transport contract exports:
   `normalizeRuntimeTransportMaxFrameBytes(...)`, and
   `validateRuntimeTransportFramePayloadSize(...)`
 
-Runtime transport frames include a `messageId`. Built-in WebSocket and
-BroadcastChannel transports keep a bounded per-peer idempotency cache and drop
-duplicate frame IDs before runtime subscriber delivery.
+Runtime transport frames include a `messageId`. Built-in WebSocket,
+BroadcastChannel, and WebRTC transports keep a bounded per-peer idempotency
+cache and drop duplicate frame IDs before runtime subscriber delivery.
 
 When a transport is configured with `idempotencyProvider`, the transport also
 issues an atomic claim keyed by the stable local/peer node identity context plus
