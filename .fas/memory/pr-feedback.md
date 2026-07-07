@@ -59,3 +59,13 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Session builders must unwind partially created resources when later setup fails.** When constructing paired read/command sources, create the read side first only if a failure while creating commands closes that read side before rethrowing. Add a failure-path test that makes the second factory throw and verifies the first resource is closed.
 
 - **Tests for paired read/command sources should identify handles by behavior, not creation order.** A positional socket counter can keep passing if read/command wiring swaps. Use emitted gateway frames or handle-specific effects to bind assertions to the actual read-model and command-only sources.
+
+## PR #44 — WebRTC transport babysit (2026-07-07, single-agent)
+
+- **Handshake waits in transport adapters must observe close/error as first-class outcomes, not only timeout.** WebRTC data channels can close or error after setup begins but before the auth handshake completes. Handshake helpers should subscribe to `close` and `error`, remove those listeners on completion, and return or resolve failure facts immediately instead of waiting for a timer.
+
+- **User-supplied auth hooks in transport handshakes must be contained at the adapter boundary.** Token providers and verifiers are imperative ports; if they throw during dial/listen, the adapter should close the opened channel and report a failed connection/auth fact instead of letting the exception escape and leave half-open resources.
+
+- **PeerLink `receive()` implementations must be idempotent.** If the public contract allows repeated `receive()` calls, a new sink registration must detach the prior listener and `close()` must detach whichever listener is currently active, or repeated consumers can orphan message handlers.
+
+- **Browser transport fakes should model async delivery and teardown.** Synchronous fake `send()`/`close()` behavior can hide races in DataChannel-like adapters. Prefer microtask-delivered messages and a `closing` -> `closed` transition so tests exercise production-like ordering.

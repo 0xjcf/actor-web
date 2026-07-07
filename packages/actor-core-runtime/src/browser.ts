@@ -316,3 +316,14 @@ export {
   type UnifiedTransitionHandler,
   type UnifiedTransitionHandlers,
 } from './unified-actor-builder.js';
+export type {
+  WebRtcDataChannelBootstrap,
+  WebRtcDataChannelLike,
+  WebRtcIncomingDataChannelEvent,
+  WebRtcMessageTransportOptions,
+  WebRtcOpenDataChannelInput,
+} from './webrtc-message-transport.js';
+export {
+  createWebRtcMessageTransport,
+  WebRtcMessageTransport,
+} from './webrtc-message-transport.js';
