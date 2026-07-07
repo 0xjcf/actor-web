@@ -242,19 +242,11 @@ class WebRtcTransportChannel implements TransportChannel {
       };
     }
 
-    let dataChannel: WebRtcDataChannelLike;
-    try {
-      dataChannel = await this.options.bootstrap.openDataChannel({
-        local: this.options.identity,
-        remoteAddress,
-      });
-    } catch (error) {
-      return {
-        ok: false,
-        reason:
-          error instanceof Error ? error.message : `WebRTC bootstrap failed for ${remoteAddress}.`,
-      };
+    const openedBootstrap = await this.openDataChannel(remoteAddress);
+    if (!openedBootstrap.ok) {
+      return openedBootstrap;
     }
+    const { dataChannel } = openedBootstrap;
 
     const opened = await this.waitForOpen(dataChannel, `WebRTC data channel to ${remoteAddress}`);
     if (!opened.ok) {
@@ -263,7 +255,12 @@ class WebRtcTransportChannel implements TransportChannel {
     }
 
     const authPayload = await resolveRuntimeAuthPayload(this.options.auth);
-    return this.exchangeHandshake(dataChannel, remoteAddress, authPayload);
+    const handshaked = await this.exchangeHandshake(dataChannel, remoteAddress, authPayload);
+    if (!handshaked.ok) {
+      dataChannel.close();
+    }
+
+    return handshaked;
   }
 
   async listen(onPeer: (link: PeerLink) => void): Promise<TransportListenHandle> {
@@ -279,6 +276,55 @@ class WebRtcTransportChannel implements TransportChannel {
         unsubscribe();
       },
     };
+  }
+
+  private openDataChannel(
+    remoteAddress: string
+  ): Promise<{ ok: true; dataChannel: WebRtcDataChannelLike } | { ok: false; reason: string }> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (
+        result: { ok: true; dataChannel: WebRtcDataChannelLike } | { ok: false; reason: string }
+      ): void => {
+        if (settled) {
+          if (result.ok) {
+            result.dataChannel.close();
+          }
+          return;
+        }
+
+        settled = true;
+        this.options.timers.clearTimeout(timeout);
+        resolve(result);
+      };
+
+      const timeout = this.options.timers.setTimeout(() => {
+        finish({
+          ok: false,
+          reason: `Timed out waiting for WebRTC bootstrap to open ${remoteAddress}.`,
+        });
+      }, this.options.connectTimeoutMs);
+
+      this.options.bootstrap
+        .openDataChannel({
+          local: this.options.identity,
+          remoteAddress,
+        })
+        .then(
+          (dataChannel) => {
+            finish({ ok: true, dataChannel });
+          },
+          (error: unknown) => {
+            finish({
+              ok: false,
+              reason:
+                error instanceof Error
+                  ? error.message
+                  : `WebRTC bootstrap failed for ${remoteAddress}.`,
+            });
+          }
+        );
+    });
   }
 
   private waitForOpen(
@@ -445,14 +491,18 @@ class WebRtcTransportChannel implements TransportChannel {
       message: string,
       source?: RuntimeNodeIdentity
     ): Promise<void> => {
-      await sendDataChannelJson(
-        dataChannel,
-        createRuntimeTransportHandshakeReject(code, message, {
-          source: this.options.identity,
-          ...(source ? { destination: source } : {}),
-          now: this.options.now,
-        })
-      );
+      try {
+        await sendDataChannelJson(
+          dataChannel,
+          createRuntimeTransportHandshakeReject(code, message, {
+            source: this.options.identity,
+            ...(source ? { destination: source } : {}),
+            now: this.options.now,
+          })
+        );
+      } finally {
+        dataChannel.close();
+      }
     };
 
     const validation = validateRuntimeTransportHandshake(frame, this.options.identity);
@@ -480,11 +530,6 @@ class WebRtcTransportChannel implements TransportChannel {
       return;
     }
 
-    this.options.emitTelemetry({
-      type: 'auth.accepted',
-      peerNodeAddress: frame.source.nodeAddress,
-    });
-    onPeer(new WebRtcPeerLink(dataChannel, frame.source.nodeAddress, frame.source));
     await sendDataChannelJson(
       dataChannel,
       createRuntimeTransportHandshakeAccept(this.options.identity, frame.source, {
@@ -492,6 +537,11 @@ class WebRtcTransportChannel implements TransportChannel {
         now: this.options.now,
       })
     );
+    this.options.emitTelemetry({
+      type: 'auth.accepted',
+      peerNodeAddress: frame.source.nodeAddress,
+    });
+    onPeer(new WebRtcPeerLink(dataChannel, frame.source.nodeAddress, frame.source));
   }
 
   private waitForHandshakeHello(

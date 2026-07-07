@@ -6,6 +6,7 @@ import {
   type WebRtcDataChannelBootstrap,
   type WebRtcDataChannelLike,
   type WebRtcMessageTransport,
+  type WebRtcMessageTransportOptions,
 } from '../webrtc-message-transport.js';
 
 const transports: WebRtcMessageTransport[] = [];
@@ -65,6 +66,10 @@ class FakeWebRtcDataChannel implements WebRtcDataChannelLike {
 }
 
 class FakeWebRtcBootstrapHub {
+  readonly pairs: Array<{
+    readonly local: FakeWebRtcDataChannel;
+    readonly remote: FakeWebRtcDataChannel;
+  }> = [];
   private readonly listeners = new Map<
     string,
     (event: { dataChannel: WebRtcDataChannelLike }) => void
@@ -82,6 +87,7 @@ class FakeWebRtcBootstrapHub {
         const remote = new FakeWebRtcDataChannel(`${remoteAddress}<-${nodeAddress}`);
         local.peer = remote;
         remote.peer = local;
+        this.pairs.push({ local, remote });
 
         listener({ dataChannel: remote });
         queueMicrotask(() => {
@@ -101,12 +107,17 @@ class FakeWebRtcBootstrapHub {
   }
 }
 
-function createTransport(hub: FakeWebRtcBootstrapHub, nodeAddress: string): WebRtcMessageTransport {
+function createTransport(
+  hub: FakeWebRtcBootstrapHub,
+  nodeAddress: string,
+  options: Omit<Partial<WebRtcMessageTransportOptions>, 'bootstrap' | 'nodeAddress'> = {}
+): WebRtcMessageTransport {
   const transport = createWebRtcMessageTransport({
     nodeAddress,
     incarnation: `${nodeAddress}-boot`,
     heartbeatIntervalMs: 0,
     bootstrap: hub.createBootstrap(nodeAddress),
+    ...options,
   });
   transports.push(transport);
   return transport;
@@ -166,6 +177,56 @@ describe('WebRtcMessageTransport', () => {
       /No WebRTC listener for missing-browser/
     );
     expect(browserA.isConnected('missing-browser')).toBe(false);
+  });
+
+  it('times out bootstrap channel creation and closes a late data channel', async () => {
+    let resolveLateChannel:
+      | ((dataChannel: WebRtcDataChannelLike | PromiseLike<WebRtcDataChannelLike>) => void)
+      | null = null;
+    const browserA = createWebRtcMessageTransport({
+      nodeAddress: 'browser-a',
+      incarnation: 'browser-a-boot',
+      heartbeatIntervalMs: 0,
+      connectTimeoutMs: 1,
+      bootstrap: {
+        openDataChannel: () =>
+          new Promise<WebRtcDataChannelLike>((resolve) => {
+            resolveLateChannel = resolve;
+          }),
+      },
+    });
+    transports.push(browserA);
+    await browserA.start();
+
+    await expect(browserA.connect('browser-b')).rejects.toThrow(
+      /Timed out waiting for WebRTC bootstrap to open browser-b/
+    );
+
+    const lateChannel = new FakeWebRtcDataChannel('late-channel');
+    resolveLateChannel?.(lateChannel);
+    await nextTick();
+
+    expect(lateChannel.readyState).toBe('closed');
+  });
+
+  it('closes both data-channel ends when inbound auth rejects the runtime handshake', async () => {
+    const hub = new FakeWebRtcBootstrapHub();
+    const browserA = createTransport(hub, 'browser-a');
+    const browserB = createTransport(hub, 'browser-b', {
+      auth: {
+        verify: () => ({ ok: false, reason: 'test auth rejected' }),
+      },
+    });
+
+    await Promise.all([browserA.start(), browserB.start()]);
+
+    await expect(browserA.connect('browser-b')).rejects.toThrow(/test auth rejected/);
+
+    const pair = hub.pairs.at(-1);
+    expect(pair?.local.readyState).toBe('closed');
+    expect(pair?.remote.readyState).toBe('closed');
+    expect(browserA.isConnected('browser-b')).toBe(false);
+    expect(browserB.isConnected('browser-a')).toBe(false);
   });
 });
 
