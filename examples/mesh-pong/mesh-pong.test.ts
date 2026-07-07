@@ -12,8 +12,15 @@ import {
 import type {
   BallCommand,
   PaddleCommand,
+  PlayerSessionCommand,
   PongBallContext,
+  PongControllerInputResult,
+  PongLobbyCommand,
+  PongLobbyState,
+  PongMatchStartResult,
   PongPaddleState,
+  PongPlayerSessionParams,
+  PongPlayerSessionState,
   PongScoreState,
   ScoreCommand,
 } from './pong-contract';
@@ -110,6 +117,12 @@ interface MeshPongTestRefs {
   readonly paddleB: ActorRef<PongPaddleState, PaddleCommand>;
 }
 
+interface MeshPongSessionRefs {
+  readonly lobby: ActorRef<PongLobbyState, PongLobbyCommand>;
+  readonly sessionA: ActorRef<PongPlayerSessionState, PlayerSessionCommand>;
+  readonly sessionB: ActorRef<PongPlayerSessionState, PlayerSessionCommand>;
+}
+
 afterEach(async () => {
   await Promise.allSettled(startedRuntimes.splice(0).map((runtime) => runtime.stop()));
 });
@@ -166,6 +179,31 @@ async function resolvePongRefs(runtime: StartedMeshPongRuntime): Promise<MeshPon
       pong.actors.paddleB.address
     ),
   };
+}
+
+async function createPlayerSession(
+  runtime: StartedMeshPongRuntime,
+  params: PongPlayerSessionParams
+): Promise<ActorRef<PongPlayerSessionState, PlayerSessionCommand>> {
+  const server = serverNode(runtime);
+  return server.actors.playerSession.instance(params);
+}
+
+async function resolveSessionRefs(runtime: StartedMeshPongRuntime): Promise<MeshPongSessionRefs> {
+  const server = serverNode(runtime);
+  return {
+    lobby: server.requireActor('lobby') as ActorRef<PongLobbyState, PongLobbyCommand>,
+    sessionA: await createPlayerSession(runtime, { sessionId: 'tab-a' }),
+    sessionB: await createPlayerSession(runtime, { sessionId: 'tab-b' }),
+  };
+}
+
+async function syncSessionToLobby(
+  lobby: ActorRef<PongLobbyState, PongLobbyCommand>,
+  session: ActorRef<PongPlayerSessionState, PlayerSessionCommand>
+): Promise<void> {
+  const state = await session.ask<PongPlayerSessionState>({ type: 'GET_SESSION' });
+  await lobby.send({ type: 'SYNC_SESSION', session: state });
 }
 
 async function centerPaddles(
@@ -237,6 +275,106 @@ async function captureSequence(
 }
 
 describe('Mesh Pong transport parity', () => {
+  it('creates one player session actor per browser session', async () => {
+    const runtime = await startMeshPongLocal();
+    startedRuntimes.push(runtime);
+
+    const { sessionA, sessionB } = await resolveSessionRefs(runtime);
+
+    expect(sessionA.address).toBe('actor://pong-server/player-session-tab-a');
+    expect(sessionB.address).toBe('actor://pong-server/player-session-tab-b');
+    expect(sessionA.address).not.toBe(sessionB.address);
+
+    await sessionA.send({ type: 'CLAIM_SIDE', side: 'left' });
+    await sessionA.send({ type: 'SET_READY', ready: true });
+    await flush(runtime);
+
+    await expect(sessionA.ask<PongPlayerSessionState>({ type: 'GET_SESSION' })).resolves.toEqual({
+      sessionId: 'tab-a',
+      controller: 'human',
+      side: 'left',
+      ready: true,
+    });
+  });
+
+  it('requires both human controller slots to be ready before starting a two-player match', async () => {
+    const runtime = await startMeshPongLocal();
+    startedRuntimes.push(runtime);
+    const { lobby, sessionA, sessionB } = await resolveSessionRefs(runtime);
+
+    await lobby.send({ type: 'RESET_LOBBY' });
+    await flush(runtime);
+
+    await expect(
+      lobby.ask<PongMatchStartResult>({
+        type: 'START_MATCH',
+        mode: {
+          playerCount: 2,
+          controllers: { left: 'human', right: 'human' },
+        },
+      })
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'missing-controller',
+      missing: ['left', 'right'],
+    });
+
+    await sessionA.send({ type: 'CLAIM_SIDE', side: 'left' });
+    await sessionA.send({ type: 'SET_READY', ready: true });
+    await syncSessionToLobby(lobby, sessionA);
+    await flush(runtime);
+
+    await expect(
+      lobby.ask<PongMatchStartResult>({
+        type: 'START_MATCH',
+        mode: {
+          playerCount: 2,
+          controllers: { left: 'human', right: 'human' },
+        },
+      })
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'missing-controller',
+      missing: ['right'],
+    });
+
+    await sessionB.send({ type: 'CLAIM_SIDE', side: 'right' });
+    await sessionB.send({ type: 'SET_READY', ready: true });
+    const input = await sessionB.ask<PongControllerInputResult>({
+      type: 'MOVE_CONTROLLER',
+      direction: 'up',
+    });
+    await syncSessionToLobby(lobby, sessionB);
+    await flush(runtime);
+
+    expect(input).toEqual({
+      ok: true,
+      sessionId: 'tab-b',
+      side: 'right',
+      direction: 'up',
+      amount: PONG_FIELD.paddleStep,
+    });
+    await expect(
+      lobby.ask<PongMatchStartResult>({
+        type: 'START_MATCH',
+        mode: {
+          playerCount: 2,
+          controllers: { left: 'human', right: 'human' },
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      mode: {
+        playerCount: 2,
+        controllers: { left: 'human', right: 'human' },
+      },
+      controllers: [
+        { sessionId: 'tab-a', controller: 'human', side: 'left', ready: true },
+        { sessionId: 'tab-b', controller: 'human', side: 'right', ready: true },
+      ],
+    });
+  });
+
   it('keeps the score actor as the only source of scoreboard totals', async () => {
     const runtime = await startMeshPongLocal();
     startedRuntimes.push(runtime);

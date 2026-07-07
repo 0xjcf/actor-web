@@ -2134,9 +2134,12 @@ operator explicitly asks for queue mutations.
 
 - Title: Mesh Pong session lobby and human controller slots
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/mesh-pong-session-lobby-and-human-controller-slots.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Mesh Pong MLX LLM controller adapter and player modes
 
