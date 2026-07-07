@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mesh Pong</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        background: #07120f;
+        color: #e9fff8;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          linear-gradient(180deg, rgba(12, 31, 28, 0.9), rgba(7, 18, 15, 1)),
+          #07120f;
+      }
+
+      main {
+        width: min(1100px, 100%);
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 28px;
+        letter-spacing: 0;
+      }
+
+      .controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      select,
+      button {
+        min-height: 36px;
+        border: 1px solid #315b52;
+        background: #10241f;
+        color: #e9fff8;
+        border-radius: 6px;
+        padding: 0 10px;
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      button:hover,
+      select:hover {
+        border-color: #f7c948;
+      }
+
+      .surface {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 220px;
+        gap: 18px;
+        align-items: start;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        border: 1px solid #315b52;
+        background: #07120f;
+      }
+
+      .panel {
+        display: grid;
+        gap: 12px;
+        font-size: 14px;
+      }
+
+      .stat {
+        border: 1px solid #315b52;
+        border-radius: 6px;
+        padding: 12px;
+        background: #10241f;
+      }
+
+      .label {
+        display: block;
+        color: #8cc8ba;
+        font-size: 12px;
+        margin-bottom: 6px;
+      }
+
+      .value {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: #f7c948;
+      }
+
+      @media (max-width: 780px) {
+        main {
+          padding: 16px;
+        }
+
+        .topbar {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .surface {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="topbar">
+        <h1>Mesh Pong</h1>
+        <div class="controls">
+          <select id="transport-mode" aria-label="Transport mode">
+            <option value="local">Local</option>
+            <option value="broadcast">BroadcastChannel</option>
+            <option value="mesh">Mesh</option>
+            <option value="websocket">WebSocket loopback</option>
+          </select>
+          <button id="reset-game" type="button">Reset</button>
+        </div>
+      </div>
+
+      <section class="surface">
+        <canvas id="pong-canvas" width="960" height="540"></canvas>
+        <aside class="panel">
+          <div class="stat">
+            <span class="label">Transport</span>
+            <span class="value" id="mode-value">local</span>
+          </div>
+          <div class="stat">
+            <span class="label">Score</span>
+            <span class="value" id="score-value">0 : 0</span>
+          </div>
+          <div class="stat">
+            <span class="label">Status</span>
+            <span class="value" id="status-value">starting</span>
+          </div>
+        </aside>
+      </section>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

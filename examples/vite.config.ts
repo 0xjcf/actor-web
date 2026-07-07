@@ -25,8 +25,23 @@ export default defineConfig({
         ),
       },
       {
+        find: '@actor-web/runtime/event-sourcing',
+        replacement: path.resolve(
+          actorWebRoot,
+          'packages/actor-core-runtime/src/event-sourcing-entry.ts'
+        ),
+      },
+      {
         find: '@actor-web/runtime',
         replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/index.ts'),
+      },
+      {
+        find: '@actor-web/lattice',
+        replacement: path.resolve(actorWebRoot, 'packages/actor-lattice/src/index.ts'),
+      },
+      {
+        find: '@actor-web/labs-mesh',
+        replacement: path.resolve(actorWebRoot, 'packages/actor-labs-mesh/src/index.ts'),
       },
     ],
   },
@@ -44,6 +59,7 @@ export default defineConfig({
         fasAgentLoop: path.resolve(currentDir, 'fas-agent-loop/index.html'),
         igniteHeadlessHost: path.resolve(currentDir, 'ignite-headless-host/index.html'),
         igniteHeadlessProvider: path.resolve(currentDir, 'ignite-headless-host/provider.html'),
+        meshPong: path.resolve(currentDir, 'mesh-pong/ui/index.html'),
         'ignite-headless-host/ignite-headless-host.sw': path.resolve(
           currentDir,
           'ignite-headless-host/ignite-headless-host.sw.ts'
