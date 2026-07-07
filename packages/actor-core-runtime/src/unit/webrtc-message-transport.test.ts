@@ -26,17 +26,30 @@ class FakeWebRtcDataChannel implements WebRtcDataChannelLike {
       throw new Error(`DataChannel ${this.label} is not open.`);
     }
 
-    this.peer.emit('message', { data } as MessageEvent);
+    const peer = this.peer;
+    queueMicrotask(() => {
+      if (peer.readyState === 'open') {
+        peer.emit('message', { data } as MessageEvent);
+      }
+    });
   }
 
   close(): void {
-    if (this.readyState === 'closed') {
+    if (this.readyState === 'closing' || this.readyState === 'closed') {
       return;
     }
 
-    this.readyState = 'closed';
-    this.emit('close', new Event('close'));
-    this.peer?.close();
+    this.readyState = 'closing';
+    const peer = this.peer;
+    queueMicrotask(() => {
+      if (this.readyState === 'closed') {
+        return;
+      }
+
+      this.readyState = 'closed';
+      this.emit('close', new Event('close'));
+      peer?.close();
+    });
   }
 
   addEventListener(type: string, listener: EventListener): void {
@@ -223,6 +236,10 @@ describe('WebRtcMessageTransport', () => {
     await expect(browserA.connect('browser-b')).rejects.toThrow(/test auth rejected/);
 
     const pair = hub.pairs.at(-1);
+    await waitFor(
+      () => pair?.local.readyState === 'closed' && pair.remote.readyState === 'closed',
+      'auth rejection should close both WebRTC data channel ends'
+    );
     expect(pair?.local.readyState).toBe('closed');
     expect(pair?.remote.readyState).toBe('closed');
     expect(browserA.isConnected('browser-b')).toBe(false);
@@ -245,6 +262,10 @@ describe('WebRtcMessageTransport', () => {
     await expect(browserA.connect('browser-b')).rejects.toThrow(/token provider failed/);
 
     const pair = hub.pairs.at(-1);
+    await waitFor(
+      () => pair?.local.readyState === 'closed' && pair.remote.readyState === 'closed',
+      'outbound auth token failure should close both WebRTC data channel ends'
+    );
     expect(pair?.local.readyState).toBe('closed');
     expect(pair?.remote.readyState).toBe('closed');
     expect(browserA.isConnected('browser-b')).toBe(false);
@@ -271,6 +292,10 @@ describe('WebRtcMessageTransport', () => {
     await expect(browserA.connect('browser-b')).rejects.toThrow(/auth verifier failed/);
 
     const pair = hub.pairs.at(-1);
+    await waitFor(
+      () => pair?.local.readyState === 'closed' && pair.remote.readyState === 'closed',
+      'thrown inbound auth verifier should close both WebRTC data channel ends'
+    );
     expect(pair?.local.readyState).toBe('closed');
     expect(pair?.remote.readyState).toBe('closed');
     expect(listenerErrors).toHaveLength(1);
@@ -278,6 +303,39 @@ describe('WebRtcMessageTransport', () => {
     expect((listenerErrors[0] as Error).message).toBe('auth verifier failed');
     expect(browserA.isConnected('browser-b')).toBe(false);
     expect(browserB.isConnected('browser-a')).toBe(false);
+  });
+
+  it('fails fast when the data channel closes during the outbound runtime handshake', async () => {
+    const local = new FakeWebRtcDataChannel('browser-a->browser-b');
+    const remote = new FakeWebRtcDataChannel('browser-b<-browser-a');
+    local.peer = remote;
+    remote.peer = local;
+    remote.addEventListener('message', () => {
+      remote.close();
+    });
+    const browserA = createWebRtcMessageTransport({
+      nodeAddress: 'browser-a',
+      incarnation: 'browser-a-boot',
+      heartbeatIntervalMs: 0,
+      connectTimeoutMs: 1000,
+      bootstrap: {
+        openDataChannel: async () => {
+          queueMicrotask(() => {
+            local.open();
+            remote.open();
+          });
+          return local;
+        },
+      },
+    });
+    transports.push(browserA);
+    await browserA.start();
+
+    await expect(browserA.connect('browser-b')).rejects.toThrow(/closed during handshake/);
+    await waitFor(
+      () => local.readyState === 'closed' && remote.readyState === 'closed',
+      'handshake close should close both WebRTC data channel ends'
+    );
   });
 });
 

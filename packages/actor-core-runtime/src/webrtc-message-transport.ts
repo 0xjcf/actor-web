@@ -162,6 +162,7 @@ function createTelemetryEmitter(
 
 class WebRtcPeerLink implements PeerLink {
   private sink: PeerLinkSink | null = null;
+  private unsubscribe: (() => void) | null = null;
   private closed = false;
 
   constructor(
@@ -183,6 +184,7 @@ class WebRtcPeerLink implements PeerLink {
   }
 
   receive(sink: PeerLinkSink): () => void {
+    this.unsubscribe?.();
     this.sink = sink;
 
     const onMessage: EventListener = (event) => {
@@ -199,12 +201,18 @@ class WebRtcPeerLink implements PeerLink {
     this.dataChannel.addEventListener('close', onClose);
     this.dataChannel.addEventListener('error', onError);
 
-    return () => {
+    const unsubscribe = () => {
       this.dataChannel.removeEventListener('message', onMessage);
       this.dataChannel.removeEventListener('close', onClose);
       this.dataChannel.removeEventListener('error', onError);
-      this.sink = null;
+      if (this.unsubscribe === unsubscribe) {
+        this.unsubscribe = null;
+        this.sink = null;
+      }
     };
+    this.unsubscribe = unsubscribe;
+
+    return unsubscribe;
   }
 
   close(): void {
@@ -213,6 +221,8 @@ class WebRtcPeerLink implements PeerLink {
     }
 
     this.closed = true;
+    this.unsubscribe?.();
+    this.unsubscribe = null;
     this.sink = null;
     try {
       this.dataChannel.close();
@@ -387,6 +397,9 @@ class WebRtcTransportChannel implements TransportChannel {
   ): Promise<DialResult> {
     return new Promise((resolve) => {
       let settled = false;
+      let onMessage: EventListener = () => undefined;
+      let onClose: EventListener = () => undefined;
+      let onError: EventListener = () => undefined;
       const finish = (result: DialResult): void => {
         if (settled) {
           return;
@@ -395,6 +408,8 @@ class WebRtcTransportChannel implements TransportChannel {
         settled = true;
         this.options.timers.clearTimeout(timeout);
         dataChannel.removeEventListener('message', onMessage);
+        dataChannel.removeEventListener('close', onClose);
+        dataChannel.removeEventListener('error', onError);
         resolve(result);
       };
 
@@ -405,7 +420,19 @@ class WebRtcTransportChannel implements TransportChannel {
         });
       }, this.options.connectTimeoutMs);
 
-      const onMessage: EventListener = (event) => {
+      onClose = () => {
+        finish({
+          ok: false,
+          reason: `WebRTC data channel to ${remoteAddress} closed during handshake.`,
+        });
+      };
+      onError = () => {
+        finish({
+          ok: false,
+          reason: `WebRTC data channel to ${remoteAddress} errored during handshake.`,
+        });
+      };
+      onMessage = (event) => {
         const frame = parseDataChannelPayload((event as MessageEvent).data);
         if (!isHandshakeAccept(frame) && !isHandshakeReject(frame)) {
           return;
@@ -465,6 +492,8 @@ class WebRtcTransportChannel implements TransportChannel {
       };
 
       dataChannel.addEventListener('message', onMessage);
+      dataChannel.addEventListener('close', onClose);
+      dataChannel.addEventListener('error', onError);
       sendDataChannelJson(
         dataChannel,
         createRuntimeTransportHandshakeHello(this.options.identity, {
@@ -577,6 +606,9 @@ class WebRtcTransportChannel implements TransportChannel {
   ): Promise<Extract<RuntimeTransportHandshake, { type: 'runtime.handshake.hello' }> | null> {
     return new Promise((resolve) => {
       let settled = false;
+      let onMessage: EventListener = () => undefined;
+      let onClose: EventListener = () => undefined;
+      let onError: EventListener = () => undefined;
       const finish = (
         frame: Extract<RuntimeTransportHandshake, { type: 'runtime.handshake.hello' }> | null
       ): void => {
@@ -587,6 +619,8 @@ class WebRtcTransportChannel implements TransportChannel {
         settled = true;
         this.options.timers.clearTimeout(timeout);
         dataChannel.removeEventListener('message', onMessage);
+        dataChannel.removeEventListener('close', onClose);
+        dataChannel.removeEventListener('error', onError);
         resolve(frame);
       };
 
@@ -594,7 +628,9 @@ class WebRtcTransportChannel implements TransportChannel {
         finish(null);
       }, this.options.connectTimeoutMs);
 
-      const onMessage: EventListener = (event) => {
+      onClose = () => finish(null);
+      onError = () => finish(null);
+      onMessage = (event) => {
         const frame = parseDataChannelPayload((event as MessageEvent).data);
         if (isHandshakeHello(frame)) {
           finish(frame);
@@ -602,6 +638,8 @@ class WebRtcTransportChannel implements TransportChannel {
       };
 
       dataChannel.addEventListener('message', onMessage);
+      dataChannel.addEventListener('close', onClose);
+      dataChannel.addEventListener('error', onError);
     });
   }
 }
