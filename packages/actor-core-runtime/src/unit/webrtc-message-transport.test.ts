@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ActorMessage } from '../actor-system.js';
+import { describeTransportConformance } from '../testing/transport-conformance.js';
 import {
+  createWebRtcMessageTransport,
   type WebRtcDataChannelBootstrap,
   type WebRtcDataChannelLike,
   type WebRtcMessageTransport,
-  createWebRtcMessageTransport,
 } from '../webrtc-message-transport.js';
-import { describeTransportConformance } from '../testing/transport-conformance.js';
 
 const transports: WebRtcMessageTransport[] = [];
 
