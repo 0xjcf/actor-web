@@ -13,13 +13,8 @@ import {
   createActorWebCommandSource,
   createActorWebReadModelSource,
   createActorWebSource,
-  createActorWebSourceHandle,
 } from './actor-web-source.js';
-import {
-  createRuntimeGatewaySourceHandle,
-  type RuntimeGatewayScopeDescriptor,
-  type RuntimeGatewaySourceHandle,
-} from './runtime-gateway-shared.js';
+import type { RuntimeGatewayScopeDescriptor } from './runtime-gateway-shared.js';
 import {
   defineBehavior as defineTopologyActorBehavior,
   type UnifiedActorBuilder,
@@ -37,6 +32,57 @@ export type ActorWebSupervisionPolicy = ActorSupervisionPolicy;
 // The topology DSL's public address type collapses onto the single branded model
 // so the topology/examples surface can't build object literals that drift.
 export type ActorWebActorAddress = ActorAddress;
+
+type ClosableActorWebSourceLike = {
+  close(): void;
+};
+
+export interface ActorWebSourceSession<
+  TReadModel extends ClosableActorWebSourceLike,
+  TCommands extends ClosableActorWebSourceLike,
+> {
+  readonly readModel: TReadModel;
+  readonly commands: TCommands;
+  close(): void;
+}
+
+export function createActorWebSourceSession<
+  TReadModel extends ClosableActorWebSourceLike,
+  TCommands extends ClosableActorWebSourceLike,
+>(readModel: TReadModel, commands: TCommands): ActorWebSourceSession<TReadModel, TCommands> {
+  let closed = false;
+
+  return {
+    readModel,
+    commands,
+    close() {
+      if (closed) {
+        return;
+      }
+
+      closed = true;
+      let closeError: unknown;
+
+      try {
+        readModel.close();
+      } catch (error) {
+        closeError = error;
+      }
+
+      if (commands !== (readModel as unknown)) {
+        try {
+          commands.close();
+        } catch (error) {
+          closeError ??= error;
+        }
+      }
+
+      if (closeError) {
+        throw closeError;
+      }
+    },
+  };
+}
 
 export interface ActorWebToolDefinition<TName extends string = string> {
   readonly name: TName;
@@ -167,9 +213,9 @@ export interface ActorWebActorDescriptor<
     ActorWebBehaviorMessage<NonNullable<TBehavior>>,
     ActorWebBehaviorEvent<NonNullable<TBehavior>>
   >;
-  sourceHandle(
+  session(
     options: ActorWebSourceOptions
-  ): RuntimeGatewaySourceHandle<
+  ): ActorWebSourceSession<
     ClosableActorWebReadModelSource<
       ActorWebBehaviorContext<NonNullable<TBehavior>>,
       ActorWebBehaviorEvent<NonNullable<TBehavior>>
@@ -190,20 +236,11 @@ export interface ActorWebActorDescriptor<
     ActorWebBehaviorContext<NonNullable<TBehavior>>,
     ActorWebBehaviorEvent<NonNullable<TBehavior>>
   >;
-  readModelHandle(
-    options: ActorWebSourceOptions
-  ): RuntimeGatewaySourceHandle<
-    ClosableActorWebReadModelSource<
-      ActorWebBehaviorContext<NonNullable<TBehavior>>,
-      ActorWebBehaviorEvent<NonNullable<TBehavior>>
-    >,
-    never
-  >;
   /**
    * Explicit command/control source for hosts that intentionally send or ask.
    * Pair with readModel(...) instead of making every projection command-capable.
    */
-  commandSource(
+  commands(
     options: ActorWebSourceOptions
   ): ClosableActorWebSource<
     ActorWebBehaviorContext<NonNullable<TBehavior>>,
@@ -228,18 +265,21 @@ export interface ActorWebSupervisorDescriptor<TNode extends string = string>
 
 export type ActorWebTopologySourceFactoryInput = ActorWebSourceOptions;
 
-export type ActorWebTopologySourceFactory<TActor extends ActorWebActorDescriptor> = {
-  bivarianceHack(
-    options: ActorWebTopologySourceFactoryInput
-  ): RuntimeGatewaySourceHandle<
-    ClosableActorWebReadModelSource<ActorWebActorContext<TActor>, ActorWebActorEvent<TActor>>,
-    ClosableActorWebSource<
-      ActorWebActorContext<TActor>,
-      ActorWebActorMessage<TActor>,
-      ActorWebActorEvent<TActor>
-    >
+export type ActorWebTopologyActorSource<TActor extends ActorWebActorDescriptor> =
+  ClosableActorWebSource<
+    ActorWebActorContext<TActor>,
+    ActorWebActorMessage<TActor>,
+    ActorWebActorEvent<TActor>
   >;
-}['bivarianceHack'];
+
+export type ActorWebTopologyActorReadModel<TActor extends ActorWebActorDescriptor> =
+  ClosableActorWebReadModelSource<ActorWebActorContext<TActor>, ActorWebActorEvent<TActor>>;
+
+export type ActorWebTopologyActorSession<TActor extends ActorWebActorDescriptor> =
+  ActorWebSourceSession<
+    ActorWebTopologyActorReadModel<TActor>,
+    ActorWebTopologyActorSource<TActor>
+  >;
 
 export type ActorWebToolCatalogInput =
   | readonly ActorWebToolDefinition[]
@@ -377,6 +417,15 @@ type ActorWebTopologyTools<TInput extends ActorWebTopologyInput> = TInput extend
       : Record<string, never>
   : Record<string, never>;
 
+type ActorWebTopologyActor<
+  TInput extends ActorWebTopologyInput,
+  TKey extends keyof TInput['actors'] & string,
+> = ActorWebActorDescriptor<
+  TInput['actors'][TKey]['id'],
+  TInput['actors'][TKey]['node'],
+  TInput['actors'][TKey] extends { readonly behavior?: infer TBehavior } ? TBehavior : unknown
+>;
+
 export type ActorWebTopology<TInput extends ActorWebTopologyInput> = {
   readonly contractVersion?: string;
   readonly tools: ActorWebTopologyTools<TInput>;
@@ -393,14 +442,21 @@ export type ActorWebTopology<TInput extends ActorWebTopologyInput> = {
   };
   readonly subscriptions: readonly ActorWebSubscriptionDefinition[];
   source<TKey extends keyof TInput['actors'] & string>(
-    key: TKey
-  ): ActorWebTopologySourceFactory<
-    ActorWebActorDescriptor<
-      TInput['actors'][TKey]['id'],
-      TInput['actors'][TKey]['node'],
-      TInput['actors'][TKey] extends { readonly behavior?: infer TBehavior } ? TBehavior : unknown
-    >
-  >;
+    key: TKey,
+    options: ActorWebTopologySourceFactoryInput
+  ): ActorWebTopologyActorSource<ActorWebTopologyActor<TInput, TKey>>;
+  readModel<TKey extends keyof TInput['actors'] & string>(
+    key: TKey,
+    options: ActorWebTopologySourceFactoryInput
+  ): ActorWebTopologyActorReadModel<ActorWebTopologyActor<TInput, TKey>>;
+  commands<TKey extends keyof TInput['actors'] & string>(
+    key: TKey,
+    options: ActorWebTopologySourceFactoryInput
+  ): ActorWebTopologyActorSource<ActorWebTopologyActor<TInput, TKey>>;
+  session<TKey extends keyof TInput['actors'] & string>(
+    key: TKey,
+    options: ActorWebTopologySourceFactoryInput
+  ): ActorWebTopologyActorSession<ActorWebTopologyActor<TInput, TKey>>;
 };
 
 export function node<TAddress extends string>(address: TAddress): ActorWebNodeDefinition<TAddress> {
@@ -587,17 +643,17 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
               ...options,
             });
           },
-          sourceHandle(options: ActorWebSourceOptions) {
+          session(options: ActorWebSourceOptions) {
             const readModel = createActorWebReadModelSource({
               actor: this,
               ...options,
             });
-            const commandSource = createActorWebCommandSource({
+            const commands = createActorWebCommandSource({
               actor: this,
               ...options,
             });
 
-            return createActorWebSourceHandle(readModel, commandSource);
+            return createActorWebSourceSession(readModel, commands);
           },
           readModel(options: ActorWebSourceOptions): ClosableActorWebReadModelSource {
             return createActorWebReadModelSource({
@@ -605,15 +661,7 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
               ...options,
             });
           },
-          readModelHandle(options: ActorWebSourceOptions) {
-            return createRuntimeGatewaySourceHandle(
-              createActorWebReadModelSource({
-                actor: this,
-                ...options,
-              })
-            );
-          },
-          commandSource(options: ActorWebSourceOptions): ClosableActorWebSource {
+          commands(options: ActorWebSourceOptions): ClosableActorWebSource {
             return createActorWebCommandSource({
               actor: this,
               ...options,
@@ -655,6 +703,16 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
       ];
     })
   );
+  const requireActorDescriptor = <TKey extends keyof TInput['actors'] & string>(
+    key: TKey
+  ): ActorWebTopologyActor<TInput, TKey> => {
+    const actorDescriptor = actors[key] as ActorWebTopologyActor<TInput, TKey> | undefined;
+    if (!actorDescriptor) {
+      throw new Error(`Actor-Web topology does not define actor "${String(key)}".`);
+    }
+
+    return actorDescriptor;
+  };
 
   return {
     contractVersion: input.contractVersion,
@@ -663,17 +721,17 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
     actors: actors as ActorWebTopology<TInput>['actors'],
     supervisors: supervisors as ActorWebTopology<TInput>['supervisors'],
     subscriptions: input.subscriptions ?? [],
-    source(key) {
-      const actorDescriptor = actors[key];
-      if (!actorDescriptor) {
-        throw new Error(`Actor-Web topology does not define actor "${String(key)}".`);
-      }
-
-      return ((options: ActorWebTopologySourceFactoryInput) => {
-        return actorDescriptor.sourceHandle(options);
-      }) as ActorWebTopology<TInput>['source'] extends (actorKey: typeof key) => infer TFactory
-        ? TFactory
-        : never;
+    source(key, options) {
+      return requireActorDescriptor(key).source(options);
+    },
+    readModel(key, options) {
+      return requireActorDescriptor(key).readModel(options);
+    },
+    commands(key, options) {
+      return requireActorDescriptor(key).commands(options);
+    },
+    session(key, options) {
+      return requireActorDescriptor(key).session(options);
     },
   };
 }
