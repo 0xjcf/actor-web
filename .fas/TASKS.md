@@ -2156,9 +2156,12 @@ operator explicitly asks for queue mutations.
 
 - Title: Refactor Mesh Pong parity test stepping helper
 - Mode: single-agent
-- Status: backlog
-- Owner: planner
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/refactor-mesh-pong-parity-test-stepping-helper.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ## Template
 
