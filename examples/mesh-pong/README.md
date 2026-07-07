@@ -26,6 +26,12 @@ export const pong = defineActorWebTopology({
   actors: {
     ball: actor({ id: 'ball', node: 'server', behavior: ballBehavior }),
     score: actor({ id: 'score', node: 'server', behavior: scoreBehavior }),
+    lobby: actor({ id: 'lobby', node: 'server', behavior: lobbyBehavior }),
+    playerSession: actor({
+      id: createPlayerSessionActorId,
+      node: 'server',
+      behavior: createPlayerSessionBehavior,
+    }),
     paddleA: actor({ id: 'paddle-a', node: 'a', behavior: createPaddleBehavior('left') }),
     paddleB: actor({ id: 'paddle-b', node: 'b', behavior: createPaddleBehavior('right') }),
   },
@@ -59,7 +65,7 @@ mesh-demo execution.
 examples/mesh-pong/
   README.md                 this file
   pong-contract.ts          message/event types and deterministic Pong rules
-  pong-behaviors.ts         ball / paddle / score behaviors (transport-agnostic)
+  pong-behaviors.ts         ball / paddle / score / session / lobby behaviors
   pong-topology.ts          the shared defineActorWebTopology
   parity-proof.ts           data rendered by the UI proof panel
   modes/
@@ -85,8 +91,9 @@ The example is two deliverables: a human-facing demo and an automated gate.
    is identical across all three. This is what proves the actors are
    transport-independent; it runs in CI through `pnpm test:examples`.
 2. **UI demo** (`ui/`) — a playable Pong with a transport switcher (local /
-   broadcast / mesh). The page renders the shared topology/behavior files, the
-   selected startup module, and the parity-status panel so the validation
+   broadcast / mesh), per-tab player sessions, side claims, readiness, and an
+   explicit start gate. The page renders the shared topology/behavior files,
+   the selected startup module, and the parity-status panel so the validation
    result is visible while switching transports. It does not run the CI gate;
    `mesh-pong.test.ts` remains the runtime-agnostic parity test executed by
    `pnpm test:examples`. WebSocket loopback is automated in that test because
@@ -96,6 +103,8 @@ Acceptance:
 
 - The ball / paddle / score behaviors import no transport, runtime, or topology
   module — only `defineBehavior` and message/event types.
+- Two-player human mode starts only after both side controller slots are claimed
+  and ready.
 - Switching mode changes exactly one startup call; zero
   changes to `pong-behaviors.ts` or `pong-topology.ts` across modes.
 - The parity test passes for local, broadcast, and websocket.

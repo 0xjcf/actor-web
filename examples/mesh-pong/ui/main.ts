@@ -10,14 +10,22 @@ import {
 import type {
   BallCommand,
   PaddleCommand,
+  PlayerSessionCommand,
   PongBallContext,
+  PongControllerInputResult,
+  PongControllerType,
+  PongLobbyCommand,
+  PongLobbyState,
+  PongMatchMode,
+  PongMatchStartResult,
   PongPaddleState,
+  PongPlayerSessionState,
   PongScoreState,
   PongSnapshot,
   PongTransportMode,
   ScoreCommand,
 } from '../pong-contract';
-import { DEFAULT_PONG_SEED, PONG_FIELD } from '../pong-contract';
+import { DEFAULT_PONG_SEED, PONG_FIELD, TWO_HUMAN_PONG_MATCH_MODE } from '../pong-contract';
 import { pong } from '../pong-topology';
 import { drawPong } from './pong-canvas';
 
@@ -30,16 +38,28 @@ type BrowserRuntime =
 interface RuntimeRefs {
   readonly ball: ActorRef<PongBallContext, BallCommand>;
   readonly score: ActorRef<PongScoreState, ScoreCommand>;
+  readonly lobby: ActorRef<PongLobbyState, PongLobbyCommand>;
+  readonly playerSession: ActorRef<PongPlayerSessionState, PlayerSessionCommand>;
   readonly paddleA: ActorRef<PongPaddleState, PaddleCommand>;
   readonly paddleB: ActorRef<PongPaddleState, PaddleCommand>;
 }
 
 const canvas = document.querySelector<HTMLCanvasElement>('#pong-canvas');
 const modeSelect = document.querySelector<HTMLSelectElement>('#transport-mode');
+const playerCountSelect = document.querySelector<HTMLSelectElement>('#player-count');
+const leftControllerSelect = document.querySelector<HTMLSelectElement>('#left-controller');
+const rightControllerSelect = document.querySelector<HTMLSelectElement>('#right-controller');
+const claimLeftButton = document.querySelector<HTMLButtonElement>('#claim-left');
+const claimRightButton = document.querySelector<HTMLButtonElement>('#claim-right');
+const readyButton = document.querySelector<HTMLButtonElement>('#ready-player');
+const startButton = document.querySelector<HTMLButtonElement>('#start-game');
 const resetButton = document.querySelector<HTMLButtonElement>('#reset-game');
 const modeValue = document.querySelector<HTMLElement>('#mode-value');
 const scoreValue = document.querySelector<HTMLElement>('#score-value');
 const statusValue = document.querySelector<HTMLElement>('#status-value');
+const sessionValue = document.querySelector<HTMLElement>('#session-value');
+const sideValue = document.querySelector<HTMLElement>('#side-value');
+const lobbyValue = document.querySelector<HTMLElement>('#lobby-value');
 const proofTopology = document.querySelector<HTMLElement>('#proof-topology');
 const proofBehaviors = document.querySelector<HTMLElement>('#proof-behaviors');
 const proofActors = document.querySelector<HTMLElement>('#proof-actors');
@@ -52,10 +72,20 @@ const proofNodes = document.querySelector<HTMLElement>('#proof-nodes');
 if (
   !canvas ||
   !modeSelect ||
+  !playerCountSelect ||
+  !leftControllerSelect ||
+  !rightControllerSelect ||
+  !claimLeftButton ||
+  !claimRightButton ||
+  !readyButton ||
+  !startButton ||
   !resetButton ||
   !modeValue ||
   !scoreValue ||
   !statusValue ||
+  !sessionValue ||
+  !sideValue ||
+  !lobbyValue ||
   !proofTopology ||
   !proofBehaviors ||
   !proofActors ||
@@ -70,10 +100,20 @@ if (
 
 const canvasElement: HTMLCanvasElement = canvas;
 const modeSelectElement: HTMLSelectElement = modeSelect;
+const playerCountSelectElement: HTMLSelectElement = playerCountSelect;
+const leftControllerSelectElement: HTMLSelectElement = leftControllerSelect;
+const rightControllerSelectElement: HTMLSelectElement = rightControllerSelect;
+const claimLeftButtonElement: HTMLButtonElement = claimLeftButton;
+const claimRightButtonElement: HTMLButtonElement = claimRightButton;
+const readyButtonElement: HTMLButtonElement = readyButton;
+const startButtonElement: HTMLButtonElement = startButton;
 const resetButtonElement: HTMLButtonElement = resetButton;
 const modeValueElement: HTMLElement = modeValue;
 const scoreValueElement: HTMLElement = scoreValue;
 const statusValueElement: HTMLElement = statusValue;
+const sessionValueElement: HTMLElement = sessionValue;
+const sideValueElement: HTMLElement = sideValue;
+const lobbyValueElement: HTMLElement = lobbyValue;
 const proofTopologyElement: HTMLElement = proofTopology;
 const proofBehaviorsElement: HTMLElement = proofBehaviors;
 const proofActorsElement: HTMLElement = proofActors;
@@ -88,7 +128,104 @@ let refs: RuntimeRefs | null = null;
 let selectedMode: BrowserMode = 'local';
 let loopHandle: number | null = null;
 let switchGeneration = 0;
+let playerSessionState: PongPlayerSessionState | null = null;
+let matchStarted = false;
 const keys = new Set<string>();
+
+const SESSION_ID_STORAGE_KEY = 'actor-web.mesh-pong.session-id';
+const LOBBY_STORAGE_KEY = 'actor-web.mesh-pong.sessions';
+const LOBBY_CHANNEL_NAME = 'actor-web.mesh-pong.lobby';
+
+type LobbyChannelMessage =
+  | { readonly type: 'sessions-updated' }
+  | {
+      readonly type: 'controller-input';
+      readonly input: Extract<PongControllerInputResult, { readonly ok: true }>;
+    }
+  | { readonly type: 'match-started'; readonly mode: PongMatchMode };
+
+const lobbyChannel =
+  typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(LOBBY_CHANNEL_NAME);
+
+function createSessionId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getBrowserSessionId(): string {
+  try {
+    const stored = sessionStorage.getItem(SESSION_ID_STORAGE_KEY);
+    if (stored) {
+      return stored;
+    }
+    const next = createSessionId();
+    sessionStorage.setItem(SESSION_ID_STORAGE_KEY, next);
+    return next;
+  } catch {
+    return createSessionId();
+  }
+}
+
+const browserSessionId = getBrowserSessionId();
+
+function isController(value: string): value is PongControllerType {
+  return value === 'human' || value === 'mlx';
+}
+
+function selectedController(select: HTMLSelectElement): PongControllerType {
+  return isController(select.value) ? select.value : 'human';
+}
+
+function selectedMatchMode(): PongMatchMode {
+  return {
+    playerCount: playerCountSelectElement.value === '1' ? 1 : 2,
+    controllers: {
+      left: selectedController(leftControllerSelectElement),
+      right: selectedController(rightControllerSelectElement),
+    },
+  };
+}
+
+function isPongPlayerSessionState(value: unknown): value is PongPlayerSessionState {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as Partial<PongPlayerSessionState>;
+  return (
+    typeof candidate.sessionId === 'string' &&
+    (candidate.controller === 'human' || candidate.controller === 'mlx') &&
+    (candidate.side === null || candidate.side === 'left' || candidate.side === 'right') &&
+    typeof candidate.ready === 'boolean'
+  );
+}
+
+function readStoredSessions(): PongPlayerSessionState[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LOBBY_STORAGE_KEY) ?? '[]') as unknown;
+    return Array.isArray(parsed) ? parsed.filter(isPongPlayerSessionState) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredSession(session: PongPlayerSessionState): void {
+  const sessions = [
+    ...readStoredSessions().filter((candidate) => candidate.sessionId !== session.sessionId),
+    session,
+  ];
+  try {
+    localStorage.setItem(LOBBY_STORAGE_KEY, JSON.stringify(sessions));
+  } catch {
+    // Storage is an optimization for separate tabs; actor state remains authoritative locally.
+  }
+  lobbyChannel?.postMessage({ type: 'sessions-updated' } satisfies LobbyChannelMessage);
+}
+
+function storedSessionForCurrentTab(): PongPlayerSessionState | undefined {
+  return readStoredSessions().find((session) => session.sessionId === browserSessionId);
+}
 
 function isCluster(
   candidate: BrowserRuntime
@@ -100,6 +237,63 @@ function isCluster(
 
 function setStatus(value: string): void {
   statusValueElement.textContent = value;
+}
+
+function renderPlayerSession(session: PongPlayerSessionState | null): void {
+  sessionValueElement.textContent = browserSessionId.slice(0, 8);
+  sideValueElement.textContent = session?.side ?? 'none';
+  readyButtonElement.textContent = session?.ready ? 'Ready' : 'Ready';
+}
+
+function renderLobby(lobby: PongLobbyState): void {
+  const readyControllers = lobby.controllers.filter((controller) => controller.ready).length;
+  lobbyValueElement.textContent = `${readyControllers} / 2`;
+}
+
+async function currentLobbyState(nextRefs: RuntimeRefs): Promise<PongLobbyState> {
+  return nextRefs.lobby.ask<PongLobbyState>({ type: 'GET_LOBBY' });
+}
+
+async function syncStoredSessionsToLobby(
+  nextRuntime: BrowserRuntime,
+  nextRefs: RuntimeRefs
+): Promise<void> {
+  await nextRefs.lobby.send({ type: 'RESET_LOBBY' });
+  for (const session of readStoredSessions()) {
+    await nextRefs.lobby.send({ type: 'SYNC_SESSION', session });
+  }
+  await flushRuntime(nextRuntime);
+  renderLobby(await currentLobbyState(nextRefs));
+}
+
+async function syncCurrentSession(
+  nextRuntime: BrowserRuntime,
+  nextRefs: RuntimeRefs
+): Promise<void> {
+  const session = await nextRefs.playerSession.ask<PongPlayerSessionState>({ type: 'GET_SESSION' });
+  playerSessionState = session;
+  writeStoredSession(session);
+  await syncStoredSessionsToLobby(nextRuntime, nextRefs);
+  renderPlayerSession(session);
+}
+
+async function hydrateCurrentSession(
+  nextRuntime: BrowserRuntime,
+  nextRefs: RuntimeRefs
+): Promise<void> {
+  const stored = storedSessionForCurrentTab();
+  if (stored?.side) {
+    await nextRefs.playerSession.send({
+      type: 'CLAIM_SIDE',
+      side: stored.side,
+      controller: stored.controller,
+    });
+    if (stored.ready) {
+      await nextRefs.playerSession.send({ type: 'SET_READY', ready: true });
+    }
+    await flushRuntime(nextRuntime);
+  }
+  await syncCurrentSession(nextRuntime, nextRefs);
 }
 
 function renderParityProof(mode: BrowserMode): void {
@@ -159,6 +353,8 @@ async function resolveRefs(candidate: BrowserRuntime): Promise<RuntimeRefs> {
   return {
     ball: server.requireActor('ball') as ActorRef<PongBallContext, BallCommand>,
     score: server.requireActor('score') as ActorRef<PongScoreState, ScoreCommand>,
+    lobby: server.requireActor('lobby') as ActorRef<PongLobbyState, PongLobbyCommand>,
+    playerSession: await server.actors.playerSession.instance({ sessionId: browserSessionId }),
     paddleA: await waitForActor<PongPaddleState, PaddleCommand>(
       candidate,
       pong.actors.paddleA.address
@@ -214,9 +410,15 @@ async function resetGame(): Promise<void> {
     return;
   }
 
+  matchStarted = false;
+  if (loopHandle !== null) {
+    window.clearTimeout(loopHandle);
+    loopHandle = null;
+  }
   const nextSnapshot = await resetRuntimeGame(currentRuntime, currentRefs);
   if (runtime === currentRuntime && refs === currentRefs) {
     renderSnapshot(nextSnapshot);
+    setStatus('lobby');
   }
 }
 
@@ -242,6 +444,8 @@ async function switchMode(mode: BrowserMode): Promise<void> {
   const previous = runtime;
   runtime = null;
   refs = null;
+  playerSessionState = null;
+  matchStarted = false;
   if (previous) {
     try {
       await previous.stop();
@@ -267,6 +471,7 @@ async function switchMode(mode: BrowserMode): Promise<void> {
     nextRuntime = await startRuntimeForMode(mode);
     const nextRefs = await resolveRefs(nextRuntime);
     const nextSnapshot = await resetRuntimeGame(nextRuntime, nextRefs);
+    await hydrateCurrentSession(nextRuntime, nextRefs);
 
     if (switchGeneration !== generation) {
       await nextRuntime.stop().catch(() => undefined);
@@ -276,8 +481,7 @@ async function switchMode(mode: BrowserMode): Promise<void> {
     runtime = nextRuntime;
     refs = nextRefs;
     renderSnapshot(nextSnapshot);
-    setStatus('running');
-    loopHandle = window.setTimeout(tick, 120);
+    setStatus('lobby');
   } catch (error) {
     if (nextRuntime) {
       await nextRuntime.stop().catch(() => undefined);
@@ -291,29 +495,59 @@ async function switchMode(mode: BrowserMode): Promise<void> {
   }
 }
 
+async function applyControllerInput(
+  nextRuntime: BrowserRuntime,
+  nextRefs: RuntimeRefs,
+  input: Extract<PongControllerInputResult, { readonly ok: true }>
+): Promise<void> {
+  const paddle = input.side === 'left' ? nextRefs.paddleA : nextRefs.paddleB;
+  await paddle.send({
+    type: 'MOVE_PADDLE',
+    direction: input.direction,
+    amount: input.amount,
+  });
+  await flushRuntime(nextRuntime);
+}
+
 async function applyPaddleInput(nextRuntime: BrowserRuntime, nextRefs: RuntimeRefs): Promise<void> {
-  if (keys.has('w')) {
-    await nextRefs.paddleA.send({ type: 'MOVE_PADDLE', direction: 'up' });
-    await flushRuntime(nextRuntime);
+  const session = playerSessionState;
+  if (!session?.side) {
+    return;
   }
-  if (keys.has('s')) {
-    await nextRefs.paddleA.send({ type: 'MOVE_PADDLE', direction: 'down' });
-    await flushRuntime(nextRuntime);
+
+  const direction =
+    session.side === 'left'
+      ? keys.has('w')
+        ? 'up'
+        : keys.has('s')
+          ? 'down'
+          : null
+      : keys.has('arrowup')
+        ? 'up'
+        : keys.has('arrowdown')
+          ? 'down'
+          : null;
+
+  if (!direction) {
+    return;
   }
-  if (keys.has('arrowup')) {
-    await nextRefs.paddleB.send({ type: 'MOVE_PADDLE', direction: 'up' });
-    await flushRuntime(nextRuntime);
+
+  const input = await nextRefs.playerSession.ask<PongControllerInputResult>({
+    type: 'MOVE_CONTROLLER',
+    direction,
+  });
+  if (!input.ok) {
+    return;
   }
-  if (keys.has('arrowdown')) {
-    await nextRefs.paddleB.send({ type: 'MOVE_PADDLE', direction: 'down' });
-    await flushRuntime(nextRuntime);
-  }
+
+  await applyControllerInput(nextRuntime, nextRefs, input);
+  lobbyChannel?.postMessage({ type: 'controller-input', input } satisfies LobbyChannelMessage);
 }
 
 async function tick(): Promise<void> {
   const currentRuntime = runtime;
   const currentRefs = refs;
-  if (!currentRuntime || !currentRefs) {
+  if (!currentRuntime || !currentRefs || !matchStarted) {
     return;
   }
 
@@ -341,6 +575,84 @@ async function tick(): Promise<void> {
   }
 }
 
+async function claimSide(side: 'left' | 'right'): Promise<void> {
+  const currentRuntime = runtime;
+  const currentRefs = refs;
+  if (!currentRuntime || !currentRefs) {
+    return;
+  }
+
+  await currentRefs.playerSession.send({
+    type: 'CLAIM_SIDE',
+    side,
+    controller: 'human',
+  });
+  await flushRuntime(currentRuntime);
+  await syncCurrentSession(currentRuntime, currentRefs);
+  setStatus('claimed');
+}
+
+async function markReady(): Promise<void> {
+  const currentRuntime = runtime;
+  const currentRefs = refs;
+  if (!currentRuntime || !currentRefs) {
+    return;
+  }
+
+  await currentRefs.playerSession.send({ type: 'SET_READY', ready: true });
+  await flushRuntime(currentRuntime);
+  await syncCurrentSession(currentRuntime, currentRefs);
+  setStatus('ready');
+}
+
+function formatStartFailure(result: Exclude<PongMatchStartResult, { readonly ok: true }>): string {
+  return `${result.reason}: ${result.missing.join(', ')}`;
+}
+
+async function startMatch(mode: PongMatchMode, broadcast: boolean): Promise<void> {
+  const currentRuntime = runtime;
+  const currentRefs = refs;
+  if (!currentRuntime || !currentRefs) {
+    return;
+  }
+
+  await syncStoredSessionsToLobby(currentRuntime, currentRefs);
+  const result = await currentRefs.lobby.ask<PongMatchStartResult>({
+    type: 'START_MATCH',
+    mode,
+  });
+  await flushRuntime(currentRuntime);
+  renderLobby(await currentLobbyState(currentRefs));
+  if (!result.ok) {
+    matchStarted = false;
+    setStatus(formatStartFailure(result));
+    return;
+  }
+
+  matchStarted = true;
+  setStatus('running');
+  if (loopHandle === null) {
+    loopHandle = window.setTimeout(tick, 90);
+  }
+  if (broadcast) {
+    lobbyChannel?.postMessage({ type: 'match-started', mode } satisfies LobbyChannelMessage);
+  }
+}
+
+async function syncCurrentLobbyFromStorage(): Promise<void> {
+  const currentRuntime = runtime;
+  const currentRefs = refs;
+  if (!currentRuntime || !currentRefs) {
+    return;
+  }
+  await syncStoredSessionsToLobby(currentRuntime, currentRefs);
+}
+
+playerCountSelectElement.value = String(TWO_HUMAN_PONG_MATCH_MODE.playerCount);
+leftControllerSelectElement.value = TWO_HUMAN_PONG_MATCH_MODE.controllers.left;
+rightControllerSelectElement.value = TWO_HUMAN_PONG_MATCH_MODE.controllers.right;
+renderPlayerSession(null);
+
 modeSelectElement.addEventListener('change', () => {
   const mode = modeSelectElement.value as PongTransportMode;
   if (mode === 'websocket') {
@@ -349,6 +661,30 @@ modeSelectElement.addEventListener('change', () => {
     return;
   }
   void switchMode(mode);
+});
+
+claimLeftButtonElement.addEventListener('click', () => {
+  void claimSide('left').catch((error: unknown) => {
+    setStatus(error instanceof Error ? error.message : 'claim failed');
+  });
+});
+
+claimRightButtonElement.addEventListener('click', () => {
+  void claimSide('right').catch((error: unknown) => {
+    setStatus(error instanceof Error ? error.message : 'claim failed');
+  });
+});
+
+readyButtonElement.addEventListener('click', () => {
+  void markReady().catch((error: unknown) => {
+    setStatus(error instanceof Error ? error.message : 'ready failed');
+  });
+});
+
+startButtonElement.addEventListener('click', () => {
+  void startMatch(selectedMatchMode(), true).catch((error: unknown) => {
+    setStatus(error instanceof Error ? error.message : 'start failed');
+  });
 });
 
 resetButtonElement.addEventListener('click', () => {
@@ -363,6 +699,52 @@ window.addEventListener('keydown', (event) => {
 
 window.addEventListener('keyup', (event) => {
   keys.delete(event.key.toLowerCase());
+});
+
+lobbyChannel?.addEventListener('message', (event: MessageEvent<LobbyChannelMessage>) => {
+  const message = event.data;
+  if (!message || typeof message !== 'object') {
+    return;
+  }
+
+  if (message.type === 'sessions-updated') {
+    void syncCurrentLobbyFromStorage().catch((error: unknown) => {
+      setStatus(error instanceof Error ? error.message : 'lobby sync failed');
+    });
+    return;
+  }
+
+  if (message.type === 'controller-input') {
+    if (message.input.sessionId === browserSessionId) {
+      return;
+    }
+    const currentRuntime = runtime;
+    const currentRefs = refs;
+    if (!currentRuntime || !currentRefs || !matchStarted) {
+      return;
+    }
+    void applyControllerInput(currentRuntime, currentRefs, message.input).catch(
+      (error: unknown) => {
+        setStatus(error instanceof Error ? error.message : 'remote input failed');
+      }
+    );
+    return;
+  }
+
+  if (message.type === 'match-started') {
+    void startMatch(message.mode, false).catch((error: unknown) => {
+      setStatus(error instanceof Error ? error.message : 'start failed');
+    });
+  }
+});
+
+window.addEventListener('storage', (event) => {
+  if (event.key !== LOBBY_STORAGE_KEY) {
+    return;
+  }
+  void syncCurrentLobbyFromStorage().catch((error: unknown) => {
+    setStatus(error instanceof Error ? error.message : 'lobby sync failed');
+  });
 });
 
 void switchMode('local');

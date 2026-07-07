@@ -178,6 +178,22 @@
             <option value="mesh">Mesh</option>
             <option value="websocket">WebSocket loopback</option>
           </select>
+          <select id="player-count" aria-label="Player count">
+            <option value="2">2 players</option>
+            <option value="1">1 player</option>
+          </select>
+          <select id="left-controller" aria-label="Left controller">
+            <option value="human">Left human</option>
+            <option value="mlx">Left MLX</option>
+          </select>
+          <select id="right-controller" aria-label="Right controller">
+            <option value="human">Right human</option>
+            <option value="mlx">Right MLX</option>
+          </select>
+          <button id="claim-left" type="button">Left</button>
+          <button id="claim-right" type="button">Right</button>
+          <button id="ready-player" type="button">Ready</button>
+          <button id="start-game" type="button">Start</button>
           <button id="reset-game" type="button">Reset</button>
         </div>
       </div>
@@ -196,6 +212,18 @@
           <div class="stat">
             <span class="label">Status</span>
             <span class="value" id="status-value">starting</span>
+          </div>
+          <div class="stat">
+            <span class="label">Session</span>
+            <span class="value" id="session-value">joining</span>
+          </div>
+          <div class="stat">
+            <span class="label">Side</span>
+            <span class="value" id="side-value">none</span>
+          </div>
+          <div class="stat">
+            <span class="label">Lobby</span>
+            <span class="value" id="lobby-value">0 / 2</span>
           </div>
         </aside>
       </section>
