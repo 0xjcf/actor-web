@@ -69,3 +69,13 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **PeerLink `receive()` implementations must be idempotent.** If the public contract allows repeated `receive()` calls, a new sink registration must detach the prior listener and `close()` must detach whichever listener is currently active, or repeated consumers can orphan message handlers.
 
 - **Browser transport fakes should model async delivery and teardown.** Synchronous fake `send()`/`close()` behavior can hide races in DataChannel-like adapters. Prefer microtask-delivered messages and a `closing` -> `closed` transition so tests exercise production-like ordering.
+
+## PR #45 — Mesh Pong example babysit (2026-07-07, single-agent)
+
+- **Multi-node example starters must unwind partial startup on every failure boundary.** If an example starts several actor-web nodes before connecting or flushing them, track each started handle immediately and stop all started handles when any later start/connect/flush step fails. Add a failure-path test that forces the second or later resource to throw and verifies no transport/channel handles remain registered.
+
+- **Actor contexts should not duplicate state owned by a subscribed actor.** If one actor owns a projection such as score totals, upstream events should carry facts or signals and let the projection actor derive its own state. Avoid putting copied projection state in another actor's context unless there is a tested reconciliation protocol for independent resets.
+
+- **Collision and boundary tests should assert transitions, not only final positions.** A paddle or boundary response should prove the entity crossed the interaction plane during the current tick. Tests should cover the already-past-plane case so late or stale state cannot still trigger a bounce.
+
+- **Async UI mode switches need generation guards before every visible state write.** Guard the "starting" state and labels as well as final success/error application after awaited teardown. Otherwise an abandoned request can leave visible mode/proof/status text inconsistent with the runtime that actually won the race.

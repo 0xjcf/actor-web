@@ -5046,7 +5046,7 @@ export class ActorSystemImpl implements ActorSystem {
    * Process one message from each actor's mailbox (round-robin)
    */
   private async processOneRoundOfMessages(): Promise<void> {
-    const promises: Promise<void>[] = [];
+    const addresses: ActorAddress[] = [];
 
     // Process one message from each actor
     for (const [path, mailbox] of this.actorMailboxes.entries()) {
@@ -5054,15 +5054,20 @@ export class ActorSystemImpl implements ActorSystem {
         // Get the actor address
         const address = parseActorPath(path);
         if (address) {
-          // Process one message for this actor
-          const promise = this.processNextMessage(address);
-          promises.push(promise);
+          addresses.push(address);
         }
       }
     }
 
-    // Wait for all messages in this round to be processed
-    await Promise.all(promises);
+    if (ActorContextManager.supportsOverlappingTopLevelAsyncRuns()) {
+      // Wait for all messages in this round to be processed
+      await Promise.all(addresses.map((address) => this.processNextMessage(address)));
+      return;
+    }
+
+    for (const address of addresses) {
+      await this.processNextMessage(address);
+    }
   }
 
   /**

@@ -1632,9 +1632,12 @@
 
 - Title: Build Mesh Pong example (UI demo + headless transport-parity test)
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/build-mesh-pong-example-ui-demo-headless-transport-parity.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Docs: machine-backed actor default dispatcher reply
 
@@ -2126,6 +2129,22 @@ operator explicitly asks for queue mutations.
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
+
+### Task: Mesh Pong session lobby and human controller slots
+
+- Title: Mesh Pong session lobby and human controller slots
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/mesh-pong-session-lobby-and-human-controller-slots.md
+
+### Task: Mesh Pong MLX LLM controller adapter and player modes
+
+- Title: Mesh Pong MLX LLM controller adapter and player modes
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/mesh-pong-mlx-llm-controller-adapter-and-player-modes.md
 
 ## Template
 

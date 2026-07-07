@@ -38,6 +38,10 @@ export default defineConfig({
         find: '@actor-web/lattice',
         replacement: path.resolve(actorWebRoot, 'packages/actor-lattice/src/index.ts'),
       },
+      {
+        find: '@actor-web/labs-mesh',
+        replacement: path.resolve(actorWebRoot, 'packages/actor-labs-mesh/src/index.ts'),
+      },
     ],
   },
   test: {
