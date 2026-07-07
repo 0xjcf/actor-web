@@ -1610,8 +1610,8 @@
 
 - Title: Implement @actor-web/transport-webrtc peer adapter
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/implement-actor-web-transport-webrtc-peer-adapter.md
 - Verification lane: fast
 - Policy sensitivity: standard
