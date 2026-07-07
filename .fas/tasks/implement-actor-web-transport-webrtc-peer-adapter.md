@@ -29,7 +29,13 @@ Spike direct-1781363862864. Direct browser<->browser data channel over WebRTC; s
 
 ## Affected files
 
-- Scope unknown.
+- `packages/actor-core-runtime/src/webrtc-message-transport.ts`
+- `packages/actor-core-runtime/src/unit/webrtc-message-transport.test.ts`
+- `packages/actor-core-runtime/src/browser.ts`
+- `docs/0011-distributed-runtime-stack.md`
+- `docs/API.md`
+- `docs/site/concepts/transport.md`
+- `docs/actor-web-labs-mesh-design.md`
 
 ## Scope Amendments
 
