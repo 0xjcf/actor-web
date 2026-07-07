@@ -2163,6 +2163,18 @@ operator explicitly asks for queue mutations.
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Fix actor-agent runtime browser test alias for Mesh Pong MLX full verify
+
+- Title: Fix actor-agent runtime browser test alias for Mesh Pong MLX full verify
+- Mode: single-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/fix-actor-agent-runtime-browser-test-alias-for-mesh-pong-mlx.md
+- Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
 ## Template
 
 ### Task: `<short task title>`
