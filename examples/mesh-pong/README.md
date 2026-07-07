@@ -4,6 +4,9 @@
 > `examples/mesh-pong/mesh-pong.test.ts`; the playable demo is
 > `examples/mesh-pong/ui/index.html`.
 
+Mesh Pong now covers one human plus one MLX controller, full MLX-vs-MLX play,
+and a deterministic fake-provider CI lane for the `llm` tool boundary.
+
 ## What it proves
 
 One set of actor definitions runs unchanged across every transport and
@@ -57,7 +60,8 @@ await startMeshPongMesh({ channelName: 'pong-mesh' });
 
 The example keeps transport-specific code in `modes/`. `pong-behaviors.ts` and
 `pong-topology.ts` do not change between local, BroadcastChannel, WebSocket, and
-mesh-demo execution.
+mesh-demo execution. MLX prompt construction, provider calls, and response
+parsing live in `pong-controller.ts`, outside the deterministic Pong rules.
 
 ## File layout
 
@@ -66,6 +70,7 @@ examples/mesh-pong/
   README.md                 this file
   pong-contract.ts          message/event types and deterministic Pong rules
   pong-behaviors.ts         ball / paddle / score / session / lobby behaviors
+  pong-controller.ts        side-specific MLX controller actors behind the llm tool
   pong-topology.ts          the shared defineActorWebTopology
   parity-proof.ts           data rendered by the UI proof panel
   modes/
@@ -91,13 +96,18 @@ The example is two deliverables: a human-facing demo and an automated gate.
    is identical across all three. This is what proves the actors are
    transport-independent; it runs in CI through `pnpm test:examples`.
 2. **UI demo** (`ui/`) — a playable Pong with a transport switcher (local /
-   broadcast / mesh), per-tab player sessions, side claims, readiness, and an
-   explicit start gate. The page renders the shared topology/behavior files,
-   the selected startup module, and the parity-status panel so the validation
-   result is visible while switching transports. It does not run the CI gate;
-   `mesh-pong.test.ts` remains the runtime-agnostic parity test executed by
-   `pnpm test:examples`. WebSocket loopback is automated in that test because
-   browser WebSocket nodes need an external listener.
+   broadcast / mesh), per-tab player sessions, side claims, readiness, MLX
+   controller selection, and an explicit start gate. The browser stays the
+   observer/control panel: it claims human slots, synthesizes `mlx-left` /
+   `mlx-right` lobby sessions for the chosen mode, feeds snapshots to the
+   controller actors, and applies bounded paddle intents. It does not persist
+   MLX controllers as browser sessions. The page renders the shared
+   topology/behavior files, the selected startup module, and the parity-status
+   panel so the validation result is visible while switching transports. It
+   does not run the CI gate; `mesh-pong.test.ts` remains the runtime-agnostic
+   parity test executed by `pnpm test:examples`. WebSocket loopback is
+   automated in that test because browser WebSocket nodes need an external
+   listener.
 
 Acceptance:
 
@@ -105,10 +115,53 @@ Acceptance:
   module — only `defineBehavior` and message/event types.
 - Two-player human mode starts only after both side controller slots are claimed
   and ready.
+- One-player mode starts with one human slot and one MLX controller slot.
+- MLX-vs-MLX mode runs through controller actors while the browser remains an
+  observer/control panel.
+- Missing or failing MLX providers project error facts instead of crashing
+  startup.
 - Switching mode changes exactly one startup call; zero
   changes to `pong-behaviors.ts` or `pong-topology.ts` across modes.
 - The parity test passes for local, broadcast, and websocket.
 - Mesh mode runs the demo across 3 peers with no server process.
+
+## Local MLX prerequisites
+
+To use a real local model, register an Actor-Web `llm` tool/provider at runtime
+that fronts your MLX host or server. The Mesh Pong controller actors expect a
+single JSON reply:
+
+```json
+{ "direction": "up" | "down", "amount": 1..28 }
+```
+
+Amounts are clamped to one paddle step, and non-JSON or malformed replies are
+returned as controller error facts.
+
+The browser demo can enable a local OpenAI-compatible MLX endpoint without code
+changes. It reads these overrides in order: `localStorage` first, then Vite env
+vars.
+
+- `actor-web.mesh-pong.mlx.enabled` or `VITE_MESH_PONG_MLX_ENABLED`
+- `actor-web.mesh-pong.mlx.endpoint` or `VITE_MESH_PONG_MLX_ENDPOINT`
+- `actor-web.mesh-pong.mlx.model` or `VITE_MESH_PONG_MLX_MODEL`
+- `actor-web.mesh-pong.mlx.api-key` or `VITE_MESH_PONG_MLX_API_KEY`
+
+Defaults:
+
+- enabled: `false`
+- endpoint: `http://127.0.0.1:8080/v1`
+- model: `mlx-community/Llama-3.2-3B-Instruct-4bit`
+
+When enabled, the demo posts to `<endpoint>/chat/completions` through the same
+Actor-Web `llm` tool seam used by tests. When disabled or unreachable, the
+controller actor returns a data error instead of throwing.
+
+## CI path
+
+`mesh-pong.test.ts` does not require a live MLX runtime. It injects a
+deterministic fake `ActorAgentLlmProvider` through the `llm` tool so the
+one-player, MLX-vs-MLX, and missing-provider paths stay stable in CI.
 
 ## Depends on
 

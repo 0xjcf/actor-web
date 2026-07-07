@@ -1,4 +1,5 @@
 import type { ActorMessage, ActorRef } from '@actor-web/runtime';
+import { createBrowserMlxTools } from '../mlx-provider';
 import { startMeshPongBroadcast } from '../modes/broadcast';
 import { startMeshPongLocal } from '../modes/local';
 import { startMeshPongMesh } from '../modes/mesh';
@@ -9,10 +10,13 @@ import {
 } from '../parity-proof';
 import type {
   BallCommand,
+  ControllerCommand,
   PaddleCommand,
   PlayerSessionCommand,
   PongBallContext,
+  PongControllerActorState,
   PongControllerInputResult,
+  PongControllerResult,
   PongControllerType,
   PongLobbyCommand,
   PongLobbyState,
@@ -21,11 +25,19 @@ import type {
   PongPaddleState,
   PongPlayerSessionState,
   PongScoreState,
+  PongSide,
   PongSnapshot,
   PongTransportMode,
   ScoreCommand,
 } from '../pong-contract';
-import { DEFAULT_PONG_SEED, PONG_FIELD, TWO_HUMAN_PONG_MATCH_MODE } from '../pong-contract';
+import {
+  createSyntheticMlxControllerInput,
+  DEFAULT_PONG_SEED,
+  PONG_FIELD,
+  shouldLaunchMlxControllerForSide,
+  syncLobbySessionsFromStorage,
+  TWO_HUMAN_PONG_MATCH_MODE,
+} from '../pong-contract';
 import { pong } from '../pong-topology';
 import { drawPong } from './pong-canvas';
 
@@ -37,6 +49,8 @@ type BrowserRuntime =
 
 interface RuntimeRefs {
   readonly ball: ActorRef<PongBallContext, BallCommand>;
+  readonly controllerLeft: ActorRef<PongControllerActorState, ControllerCommand>;
+  readonly controllerRight: ActorRef<PongControllerActorState, ControllerCommand>;
   readonly score: ActorRef<PongScoreState, ScoreCommand>;
   readonly lobby: ActorRef<PongLobbyState, PongLobbyCommand>;
   readonly playerSession: ActorRef<PongPlayerSessionState, PlayerSessionCommand>;
@@ -130,7 +144,43 @@ let loopHandle: number | null = null;
 let switchGeneration = 0;
 let playerSessionState: PongPlayerSessionState | null = null;
 let matchStarted = false;
+let matchOwnerSessionId: string | null = null;
+let matchGeneration = 0;
 const keys = new Set<string>();
+let lifecycleStatus = 'idle';
+const controllerDiagnostics: Partial<Record<PongSide, string>> = {};
+
+type MlxControllerRequest = {
+  readonly runtime: BrowserRuntime;
+  readonly refs: RuntimeRefs;
+  readonly side: PongSide;
+  readonly controller: ActorRef<PongControllerActorState, ControllerCommand>;
+  readonly snapshot: PongSnapshot;
+  readonly matchGeneration: number;
+};
+
+const mlxControllerRequests: Partial<Record<PongSide, MlxControllerRequest>> = {};
+
+function clearMlxControllerRequests(): void {
+  delete mlxControllerRequests.left;
+  delete mlxControllerRequests.right;
+}
+
+function clearMatchOwner(): void {
+  matchOwnerSessionId = null;
+}
+
+function renderStatus(): void {
+  const diagnostics = (['left', 'right'] as const)
+    .flatMap((side) => {
+      const reason = controllerDiagnostics[side];
+      return reason ? [`${side} ${reason}`] : [];
+    })
+    .join('; ');
+  statusValueElement.textContent = diagnostics
+    ? `${lifecycleStatus}; ${diagnostics}`
+    : lifecycleStatus;
+}
 
 const SESSION_ID_STORAGE_KEY = 'actor-web.mesh-pong.session-id';
 const LOBBY_STORAGE_KEY = 'actor-web.mesh-pong.sessions';
@@ -142,7 +192,11 @@ type LobbyChannelMessage =
       readonly type: 'controller-input';
       readonly input: Extract<PongControllerInputResult, { readonly ok: true }>;
     }
-  | { readonly type: 'match-started'; readonly mode: PongMatchMode };
+  | {
+      readonly type: 'match-started';
+      readonly mode: PongMatchMode;
+      readonly ownerSessionId: string;
+    };
 
 const lobbyChannel =
   typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(LOBBY_CHANNEL_NAME);
@@ -211,6 +265,9 @@ function readStoredSessions(): PongPlayerSessionState[] {
 }
 
 function writeStoredSession(session: PongPlayerSessionState): void {
+  if (session.controller !== 'human') {
+    return;
+  }
   const sessions = [
     ...readStoredSessions().filter((candidate) => candidate.sessionId !== session.sessionId),
     session,
@@ -227,6 +284,15 @@ function storedSessionForCurrentTab(): PongPlayerSessionState | undefined {
   return readStoredSessions().find((session) => session.sessionId === browserSessionId);
 }
 
+function mlxSessionForSide(side: 'left' | 'right'): PongPlayerSessionState {
+  return {
+    sessionId: `mlx-${side}`,
+    controller: 'mlx',
+    side,
+    ready: true,
+  };
+}
+
 function isCluster(
   candidate: BrowserRuntime
 ): candidate is
@@ -236,7 +302,27 @@ function isCluster(
 }
 
 function setStatus(value: string): void {
-  statusValueElement.textContent = value;
+  lifecycleStatus = value;
+  renderStatus();
+}
+
+function clearControllerDiagnostics(): void {
+  delete controllerDiagnostics.left;
+  delete controllerDiagnostics.right;
+  renderStatus();
+}
+
+function clearControllerDiagnostic(side: PongSide): void {
+  if (!(side in controllerDiagnostics)) {
+    return;
+  }
+  delete controllerDiagnostics[side];
+  renderStatus();
+}
+
+function setControllerDiagnostic(side: PongSide, reason: string): void {
+  controllerDiagnostics[side] = reason;
+  renderStatus();
 }
 
 function renderPlayerSession(session: PongPlayerSessionState | null): void {
@@ -258,9 +344,37 @@ async function syncStoredSessionsToLobby(
   nextRuntime: BrowserRuntime,
   nextRefs: RuntimeRefs
 ): Promise<void> {
+  const currentLobby = await currentLobbyState(nextRefs);
+  const nextLobby = syncLobbySessionsFromStorage(currentLobby, readStoredSessions());
+  const nextSessions = new Map(nextLobby.sessions.map((session) => [session.sessionId, session]));
+  for (const session of currentLobby.sessions) {
+    if (!nextSessions.has(session.sessionId)) {
+      await nextRefs.lobby.send({ type: 'REMOVE_SESSION', sessionId: session.sessionId });
+    }
+  }
+  for (const session of nextLobby.sessions) {
+    await nextRefs.lobby.send({ type: 'SYNC_SESSION', session });
+  }
+  await flushRuntime(nextRuntime);
+  renderLobby(await currentLobbyState(nextRefs));
+}
+
+async function syncLobbyForMatchMode(
+  nextRuntime: BrowserRuntime,
+  nextRefs: RuntimeRefs,
+  mode: PongMatchMode
+): Promise<void> {
   await nextRefs.lobby.send({ type: 'RESET_LOBBY' });
   for (const session of readStoredSessions()) {
     await nextRefs.lobby.send({ type: 'SYNC_SESSION', session });
+  }
+  for (const side of ['left', 'right'] as const) {
+    if (mode.controllers[side] === 'mlx') {
+      await nextRefs.lobby.send({
+        type: 'SYNC_SESSION',
+        session: mlxSessionForSide(side),
+      });
+    }
   }
   await flushRuntime(nextRuntime);
   renderLobby(await currentLobbyState(nextRefs));
@@ -352,6 +466,14 @@ async function resolveRefs(candidate: BrowserRuntime): Promise<RuntimeRefs> {
   const server = serverNode(candidate);
   return {
     ball: server.requireActor('ball') as ActorRef<PongBallContext, BallCommand>,
+    controllerLeft: await waitForActor<PongControllerActorState, ControllerCommand>(
+      candidate,
+      pong.actors.controllerLeft.address
+    ),
+    controllerRight: await waitForActor<PongControllerActorState, ControllerCommand>(
+      candidate,
+      pong.actors.controllerRight.address
+    ),
     score: server.requireActor('score') as ActorRef<PongScoreState, ScoreCommand>,
     lobby: server.requireActor('lobby') as ActorRef<PongLobbyState, PongLobbyCommand>,
     playerSession: await server.actors.playerSession.instance({ sessionId: browserSessionId }),
@@ -403,6 +525,10 @@ function renderSnapshot(nextSnapshot: PongSnapshot): void {
   scoreValueElement.textContent = `${nextSnapshot.score.left} : ${nextSnapshot.score.right}`;
 }
 
+function browserLocalStorage() {
+  return typeof localStorage === 'undefined' ? undefined : localStorage;
+}
+
 async function resetGame(): Promise<void> {
   const currentRuntime = runtime;
   const currentRefs = refs;
@@ -411,6 +537,10 @@ async function resetGame(): Promise<void> {
   }
 
   matchStarted = false;
+  clearMatchOwner();
+  matchGeneration += 1;
+  clearMlxControllerRequests();
+  clearControllerDiagnostics();
   if (loopHandle !== null) {
     window.clearTimeout(loopHandle);
     loopHandle = null;
@@ -423,13 +553,20 @@ async function resetGame(): Promise<void> {
 }
 
 async function startRuntimeForMode(mode: BrowserMode): Promise<BrowserRuntime> {
+  const tools = createBrowserMlxTools({ storage: browserLocalStorage() });
   if (mode === 'local') {
-    return startMeshPongLocal();
+    return startMeshPongLocal({ tools });
   }
   if (mode === 'broadcast') {
-    return startMeshPongBroadcast({ channelName: `mesh-pong-demo-${crypto.randomUUID()}` });
+    return startMeshPongBroadcast({
+      channelName: `mesh-pong-demo-${crypto.randomUUID()}`,
+      tools,
+    });
   }
-  return startMeshPongMesh({ channelName: `mesh-pong-demo-${crypto.randomUUID()}` });
+  return startMeshPongMesh({
+    channelName: `mesh-pong-demo-${crypto.randomUUID()}`,
+    tools,
+  });
 }
 
 async function switchMode(mode: BrowserMode): Promise<void> {
@@ -446,6 +583,10 @@ async function switchMode(mode: BrowserMode): Promise<void> {
   refs = null;
   playerSessionState = null;
   matchStarted = false;
+  clearMatchOwner();
+  matchGeneration += 1;
+  clearMlxControllerRequests();
+  clearControllerDiagnostics();
   if (previous) {
     try {
       await previous.stop();
@@ -490,6 +631,7 @@ async function switchMode(mode: BrowserMode): Promise<void> {
       runtime = null;
       refs = null;
       loopHandle = null;
+      clearMatchOwner();
       setStatus(error instanceof Error ? `start failed: ${error.message}` : 'start failed');
     }
   }
@@ -509,9 +651,13 @@ async function applyControllerInput(
   await flushRuntime(nextRuntime);
 }
 
-async function applyPaddleInput(nextRuntime: BrowserRuntime, nextRefs: RuntimeRefs): Promise<void> {
+async function applyPaddleInput(
+  nextRuntime: BrowserRuntime,
+  nextRefs: RuntimeRefs,
+  mode: PongMatchMode | null
+): Promise<void> {
   const session = playerSessionState;
-  if (!session?.side) {
+  if (!session?.side || mode?.controllers[session.side] !== 'human') {
     return;
   }
 
@@ -544,6 +690,85 @@ async function applyPaddleInput(nextRuntime: BrowserRuntime, nextRefs: RuntimeRe
   lobbyChannel?.postMessage({ type: 'controller-input', input } satisfies LobbyChannelMessage);
 }
 
+function isCurrentMlxRequest(request: MlxControllerRequest): boolean {
+  return (
+    mlxControllerRequests[request.side] === request &&
+    request.matchGeneration === matchGeneration &&
+    runtime === request.runtime &&
+    refs === request.refs &&
+    matchStarted
+  );
+}
+
+async function stillControlsMlxSide(request: MlxControllerRequest): Promise<boolean> {
+  if (!isCurrentMlxRequest(request)) {
+    return false;
+  }
+  const lobby = await currentLobbyState(request.refs);
+  return isCurrentMlxRequest(request) && lobby.mode?.controllers[request.side] === 'mlx';
+}
+
+async function resolveMlxControllerInput(request: MlxControllerRequest): Promise<void> {
+  try {
+    const result = await request.controller.ask<PongControllerResult>({
+      type: 'RUN_CONTROLLER',
+      snapshot: request.snapshot,
+    });
+    if (!(await stillControlsMlxSide(request))) {
+      return;
+    }
+    if (!result.ok) {
+      setControllerDiagnostic(result.side, result.reason);
+      return;
+    }
+
+    clearControllerDiagnostic(result.side);
+    if (!(await stillControlsMlxSide(request))) {
+      return;
+    }
+
+    const input = createSyntheticMlxControllerInput(result);
+    await applyControllerInput(request.runtime, request.refs, input);
+    if (!(await stillControlsMlxSide(request))) {
+      return;
+    }
+    lobbyChannel?.postMessage({ type: 'controller-input', input } satisfies LobbyChannelMessage);
+  } catch (error) {
+    if (await stillControlsMlxSide(request)) {
+      setControllerDiagnostic(
+        request.side,
+        error instanceof Error ? error.message : 'controller error'
+      );
+    }
+  } finally {
+    if (mlxControllerRequests[request.side] === request) {
+      delete mlxControllerRequests[request.side];
+    }
+  }
+}
+
+function launchMlxControllerInput(
+  nextRuntime: BrowserRuntime,
+  nextRefs: RuntimeRefs,
+  side: PongSide,
+  controller: ActorRef<PongControllerActorState, ControllerCommand>,
+  snapshotState: PongSnapshot
+): void {
+  if (mlxControllerRequests[side]) {
+    return;
+  }
+  const request: MlxControllerRequest = {
+    runtime: nextRuntime,
+    refs: nextRefs,
+    side,
+    controller,
+    snapshot: snapshotState,
+    matchGeneration,
+  };
+  mlxControllerRequests[side] = request;
+  void resolveMlxControllerInput(request);
+}
+
 async function tick(): Promise<void> {
   const currentRuntime = runtime;
   const currentRefs = refs;
@@ -552,12 +777,49 @@ async function tick(): Promise<void> {
   }
 
   try {
-    await applyPaddleInput(currentRuntime, currentRefs);
+    const lobby = await currentLobbyState(currentRefs);
+    await applyPaddleInput(currentRuntime, currentRefs, lobby.mode);
     const current = await snapshot(currentRefs);
+    if (
+      shouldLaunchMlxControllerForSide({
+        browserSessionId,
+        matchOwnerSessionId,
+        mode: lobby.mode,
+        side: 'left',
+      })
+    ) {
+      launchMlxControllerInput(
+        currentRuntime,
+        currentRefs,
+        'left',
+        currentRefs.controllerLeft,
+        current
+      );
+    }
+    if (
+      shouldLaunchMlxControllerForSide({
+        browserSessionId,
+        matchOwnerSessionId,
+        mode: lobby.mode,
+        side: 'right',
+      })
+    ) {
+      launchMlxControllerInput(
+        currentRuntime,
+        currentRefs,
+        'right',
+        currentRefs.controllerRight,
+        current
+      );
+    }
+    const paddles = await Promise.all([
+      currentRefs.paddleA.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
+      currentRefs.paddleB.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
+    ]);
     await currentRefs.ball.send({
       type: 'SET_PADDLES',
-      leftY: current.paddles.left.y,
-      rightY: current.paddles.right.y,
+      leftY: paddles[0].y,
+      rightY: paddles[1].y,
     });
     await currentRefs.ball.send({ type: 'TICK' });
     await flushRuntime(currentRuntime);
@@ -609,14 +871,21 @@ function formatStartFailure(result: Exclude<PongMatchStartResult, { readonly ok:
   return `${result.reason}: ${result.missing.join(', ')}`;
 }
 
-async function startMatch(mode: PongMatchMode, broadcast: boolean): Promise<void> {
+async function startMatch(
+  mode: PongMatchMode,
+  broadcast: boolean,
+  ownerSessionId: string = browserSessionId
+): Promise<void> {
   const currentRuntime = runtime;
   const currentRefs = refs;
   if (!currentRuntime || !currentRefs) {
     return;
   }
 
-  await syncStoredSessionsToLobby(currentRuntime, currentRefs);
+  matchGeneration += 1;
+  clearMlxControllerRequests();
+  clearControllerDiagnostics();
+  await syncLobbyForMatchMode(currentRuntime, currentRefs, mode);
   const result = await currentRefs.lobby.ask<PongMatchStartResult>({
     type: 'START_MATCH',
     mode,
@@ -625,17 +894,23 @@ async function startMatch(mode: PongMatchMode, broadcast: boolean): Promise<void
   renderLobby(await currentLobbyState(currentRefs));
   if (!result.ok) {
     matchStarted = false;
+    clearMatchOwner();
     setStatus(formatStartFailure(result));
     return;
   }
 
   matchStarted = true;
+  matchOwnerSessionId = ownerSessionId;
   setStatus('running');
   if (loopHandle === null) {
     loopHandle = window.setTimeout(tick, 90);
   }
   if (broadcast) {
-    lobbyChannel?.postMessage({ type: 'match-started', mode } satisfies LobbyChannelMessage);
+    lobbyChannel?.postMessage({
+      type: 'match-started',
+      mode,
+      ownerSessionId,
+    } satisfies LobbyChannelMessage);
   }
 }
 
@@ -732,7 +1007,7 @@ lobbyChannel?.addEventListener('message', (event: MessageEvent<LobbyChannelMessa
   }
 
   if (message.type === 'match-started') {
-    void startMatch(message.mode, false).catch((error: unknown) => {
+    void startMatch(message.mode, false, message.ownerSessionId).catch((error: unknown) => {
       setStatus(error instanceof Error ? error.message : 'start failed');
     });
   }

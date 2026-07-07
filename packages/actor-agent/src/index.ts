@@ -1,10 +1,10 @@
+import type { ActorBehavior } from '@actor-web/runtime';
 import type {
-  ActorBehavior,
   ActorToolExecutionContext,
   ActorToolExecutor,
   ActorToolRegistry,
-} from '@actor-web/runtime';
-import { defineBehavior } from '@actor-web/runtime';
+} from '@actor-web/runtime/browser';
+import { defineBehavior } from '@actor-web/runtime/browser';
 
 export const ACTOR_WEB_LLM_TOOL_NAME = 'llm' as const;
 

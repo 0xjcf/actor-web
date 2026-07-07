@@ -106,12 +106,49 @@ export interface PongSnapshot {
   readonly score: PongScoreState;
 }
 
+export interface PongControllerIntent {
+  readonly side: PongSide;
+  readonly direction: 'up' | 'down';
+  readonly amount: number;
+}
+
+export type PongControllerResult =
+  | ({
+      readonly ok: true;
+      readonly provider: 'llm';
+    } & PongControllerIntent)
+  | {
+      readonly ok: false;
+      readonly side: PongSide;
+      readonly reason: 'llm-unavailable' | 'provider-failed' | 'invalid-response';
+      readonly error: {
+        readonly code: string;
+        readonly message: string;
+      };
+    };
+
+export interface PongControllerActorState {
+  readonly side: PongSide;
+  readonly lastResult: PongControllerResult | null;
+}
+
+export type ControllerCommand =
+  | { readonly type: 'GET_CONTROLLER' }
+  | { readonly type: 'RUN_CONTROLLER'; readonly snapshot: PongSnapshot };
+
 export type PongControllerType = 'human' | 'mlx';
 export type PongPlayerCount = 1 | 2;
 
 export interface PongMatchMode {
   readonly playerCount: PongPlayerCount;
   readonly controllers: Record<PongSide, PongControllerType>;
+}
+
+export interface PongMatchControllerAuthority {
+  readonly browserSessionId: string;
+  readonly matchOwnerSessionId: string | null;
+  readonly mode: PongMatchMode | null;
+  readonly side: PongSide;
 }
 
 export interface PongPlayerSessionParams {
@@ -292,6 +329,25 @@ export function createInitialLobby(): PongLobbyState {
   };
 }
 
+export function shouldLaunchMlxControllerForSide(authority: PongMatchControllerAuthority): boolean {
+  return (
+    authority.matchOwnerSessionId === authority.browserSessionId &&
+    authority.mode?.controllers[authority.side] === 'mlx'
+  );
+}
+
+export function createSyntheticMlxControllerInput(
+  result: Extract<PongControllerResult, { readonly ok: true }>
+): Extract<PongControllerInputResult, { readonly ok: true }> {
+  return {
+    ok: true,
+    sessionId: `mlx-${result.side}`,
+    side: result.side,
+    direction: result.direction,
+    amount: result.amount,
+  };
+}
+
 function resolveControllerSlots(
   sessions: readonly PongPlayerSessionState[]
 ): readonly PongControllerSlot[] {
@@ -322,6 +378,33 @@ export function syncLobbySession(
     ...lobby.sessions.filter((candidate) => candidate.sessionId !== session.sessionId),
     session,
   ];
+  const controllers = resolveControllerSlots(sessions);
+  return {
+    ...lobby,
+    sessions,
+    controllers,
+  };
+}
+
+export function syncLobbySessionsFromStorage(
+  lobby: PongLobbyState,
+  storedSessions: readonly PongPlayerSessionState[]
+): PongLobbyState {
+  const sessions = [...storedSessions];
+  if (lobby.started && lobby.mode) {
+    for (const side of PONG_SIDES) {
+      if (lobby.mode.controllers[side] !== 'mlx') {
+        continue;
+      }
+      sessions.push({
+        sessionId: `mlx-${side}`,
+        controller: 'mlx',
+        side,
+        ready: true,
+      });
+    }
+  }
+
   const controllers = resolveControllerSlots(sessions);
   return {
     ...lobby,
