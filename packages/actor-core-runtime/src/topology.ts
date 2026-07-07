@@ -648,10 +648,16 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
               actor: this,
               ...options,
             });
-            const commands = createActorWebCommandSource({
-              actor: this,
-              ...options,
-            });
+            let commands: ClosableActorWebSource;
+            try {
+              commands = createActorWebCommandSource({
+                actor: this,
+                ...options,
+              });
+            } catch (error) {
+              readModel.close();
+              throw error;
+            }
 
             return createActorWebSourceSession(readModel, commands);
           },

@@ -209,6 +209,22 @@ export type StartedActorWebLocalRuntime<TTopology extends ActorWebTopology<Actor
   };
 
 type ClosableLocalSource = { close(): void };
+type TrackedActorWebClientSource = { close(): void };
+
+function trackActorWebClientSource<TSource extends TrackedActorWebClientSource>(
+  openedSources: Set<TrackedActorWebClientSource>,
+  source: TSource
+): TSource {
+  const close = source.close.bind(source);
+  const trackedSource = Object.assign(source, {
+    close() {
+      openedSources.delete(trackedSource);
+      close();
+    },
+  });
+  openedSources.add(trackedSource);
+  return trackedSource;
+}
 
 function registerAbortCleanup(
   options: ActorWebLocalRuntimeSourceOptions | undefined,
@@ -330,7 +346,7 @@ export function createActorWebClient<TTopology extends ActorWebTopology<ActorWeb
   topology: TTopology,
   options: ActorWebClientOptions
 ): ActorWebClient<TTopology> {
-  const openedSources = new Set<{ close(): void }>();
+  const openedSources = new Set<TrackedActorWebClientSource>();
   const actors = {} as ActorWebClient<TTopology>['actors'];
 
   for (const [key, actor] of Object.entries(topology.actors)) {
@@ -346,8 +362,7 @@ export function createActorWebClient<TTopology extends ActorWebTopology<ActorWeb
             clientVersion: options.clientVersion,
             ...(options.createSocket ? { createSocket: options.createSocket } : {}),
           });
-          openedSources.add(readModel);
-          return readModel;
+          return trackActorWebClientSource(openedSources, readModel);
         };
         const createCommands = (): ClosableActorWebSource => {
           const commands = createActorWebCommandSource({
@@ -357,31 +372,38 @@ export function createActorWebClient<TTopology extends ActorWebTopology<ActorWeb
             clientVersion: options.clientVersion,
             ...(options.createSocket ? { createSocket: options.createSocket } : {}),
           });
-          openedSources.add(commands);
-          return commands;
+          return trackActorWebClientSource(openedSources, commands);
         };
 
-        source ??= Object.assign(
-          createActorWebSource({
-            actor,
-            gateway: options.gateway,
-            streamId: `actor-web-${key}`,
-            clientVersion: options.clientVersion,
-            ...(options.createSocket ? { createSocket: options.createSocket } : {}),
-          }),
-          {
-            readModel() {
-              return createReadModel();
-            },
-            commands() {
-              return createCommands();
-            },
-            session() {
-              return createActorWebSourceSession(createReadModel(), createCommands());
-            },
-          }
+        source ??= trackActorWebClientSource(
+          openedSources,
+          Object.assign(
+            createActorWebSource({
+              actor,
+              gateway: options.gateway,
+              streamId: `actor-web-${key}`,
+              clientVersion: options.clientVersion,
+              ...(options.createSocket ? { createSocket: options.createSocket } : {}),
+            }),
+            {
+              readModel() {
+                return createReadModel();
+              },
+              commands() {
+                return createCommands();
+              },
+              session() {
+                const readModel = createReadModel();
+                try {
+                  return createActorWebSourceSession(readModel, createCommands());
+                } catch (error) {
+                  readModel.close();
+                  throw error;
+                }
+              },
+            }
+          )
         );
-        openedSources.add(source);
         return source as ActorWebClient<TTopology>['actors'][typeof key];
       },
     });

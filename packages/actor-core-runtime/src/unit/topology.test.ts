@@ -245,7 +245,14 @@ describe('Actor-Web topology helpers', () => {
       },
     });
     const closes: string[] = [];
-    let socketIndex = 0;
+    const closedSessionSockets: ActorWebGatewaySocket[] = [];
+    const sessionSockets: Array<
+      ActorWebGatewaySocket & {
+        readonly sentFrames: Array<Record<string, unknown>>;
+        emitOpen(): void;
+        emitReady(connectionId: string): void;
+      }
+    > = [];
     type SourceActorKey = Parameters<typeof logistics.source>[0];
     type SourceFactoryInput = Parameters<typeof logistics.source>[1];
     type ExpectedSource = ReturnType<typeof logistics.actors.shipment.source>;
@@ -255,7 +262,6 @@ describe('Actor-Web topology helpers', () => {
       gateway: { url: 'ws://example.invalid/gateway' },
       streamId: 'shipment-source',
       createSocket: () => {
-        socketIndex += 1;
         return {
           readyState: 1,
           send: () => {},
@@ -269,16 +275,40 @@ describe('Actor-Web topology helpers', () => {
     const session: ExpectedSession = logistics.session('shipment', {
       gateway: { url: 'ws://example.invalid/gateway' },
       createSocket: () => {
-        socketIndex += 1;
-        const socketName = socketIndex === 2 ? 'readModel' : 'commands';
-        return {
+        const listeners = new Map<string, Array<(event?: unknown) => void>>();
+        const sentFrames: Array<Record<string, unknown>> = [];
+        const socket = {
           readyState: 1,
-          send: () => {},
-          close: () => {
-            closes.push(socketName);
+          sentFrames,
+          send: (data: string) => {
+            sentFrames.push(JSON.parse(data) as Record<string, unknown>);
           },
-          addEventListener: () => {},
+          close: () => {
+            closedSessionSockets.push(socket);
+          },
+          addEventListener: (type: string, listener: (event?: unknown) => void) => {
+            listeners.set(type, [...(listeners.get(type) ?? []), listener]);
+          },
+          emitOpen: () => {
+            for (const listener of listeners.get('open') ?? []) {
+              listener();
+            }
+          },
+          emitReady: (connectionId: string) => {
+            for (const listener of listeners.get('message') ?? []) {
+              listener({
+                data: JSON.stringify({
+                  type: 'ready',
+                  connectionId,
+                  heartbeatMs: 15000,
+                  serverTime: '2026-04-25T18:00:00.000Z',
+                }),
+              });
+            }
+          },
         };
+        sessionSockets.push(socket);
+        return socket;
       },
     });
     const validActorKey: SourceActorKey = 'shipment';
@@ -296,6 +326,19 @@ describe('Actor-Web topology helpers', () => {
     expect(typeof source.send).toBe('function');
     expect(session.readModel.address).toBe(logistics.actors.shipment.address);
     expect(typeof session.commands.send).toBe('function');
+    for (const [index, socket] of sessionSockets.entries()) {
+      socket.emitOpen();
+      socket.emitReady(`session-${index}`);
+    }
+    const readModelSocket = sessionSockets.find((socket) =>
+      socket.sentFrames.some((frame) => frame.type === 'subscribe' && frame.mode !== 'command-only')
+    );
+    const commandsSocket = sessionSockets.find((socket) =>
+      socket.sentFrames.some((frame) => frame.type === 'subscribe' && frame.mode === 'command-only')
+    );
+    expect(readModelSocket).toBeDefined();
+    expect(commandsSocket).toBeDefined();
+    expect(readModelSocket).not.toBe(commandsSocket);
     expect(validActorKey).toBe('shipment');
     expect(invalidActorKey).toBe('missing');
     expect(invalidHostOnlyOptions).toHaveProperty('host');
@@ -303,9 +346,93 @@ describe('Actor-Web topology helpers', () => {
     expect(oldSourceHandle).toBeUndefined();
 
     source.close();
-    await session.close();
+    session.readModel.close();
+    session.commands.close();
 
-    expect(closes).toEqual(['source', 'readModel', 'commands']);
+    expect(closes).toEqual(['source']);
+    expect(closedSessionSockets).toEqual([readModelSocket, commandsSocket]);
+  });
+
+  it('removes manually closed gateway client sources from client cleanup tracking', () => {
+    const logistics = defineActorWebTopology({
+      contractVersion: '1.0.0',
+      nodes: {
+        server: node('logistics-server-runtime'),
+      },
+      actors: {
+        shipment: actor({
+          id: 'logistics-shipment',
+          node: 'server',
+          behavior: createShipmentBehavior,
+          gateway: true,
+        }),
+      },
+    });
+    const closeCounts: number[] = [];
+
+    const client = createActorWebClient(logistics, {
+      gateway: { url: 'ws://example.invalid/gateway' },
+      createSocket: () => {
+        const socketIndex = closeCounts.length;
+        closeCounts.push(0);
+        return {
+          readyState: 1,
+          send: () => {},
+          close: () => {
+            closeCounts[socketIndex] += 1;
+          },
+          addEventListener: () => {},
+        };
+      },
+    });
+
+    const shipment = client.actors.shipment;
+    const readModel = shipment.readModel();
+    readModel.close();
+    client.close();
+
+    expect(closeCounts).toEqual([1, 1]);
+  });
+
+  it('closes topology session read models when command source creation fails', () => {
+    const logistics = defineActorWebTopology({
+      contractVersion: '1.0.0',
+      nodes: {
+        server: node('logistics-server-runtime'),
+      },
+      actors: {
+        shipment: actor({
+          id: 'logistics-shipment',
+          node: 'server',
+          behavior: createShipmentBehavior,
+          gateway: true,
+        }),
+      },
+    });
+    let closeCount = 0;
+    let socketIndex = 0;
+
+    expect(() =>
+      logistics.session('shipment', {
+        gateway: { url: 'ws://example.invalid/gateway' },
+        createSocket: () => {
+          socketIndex += 1;
+          if (socketIndex === 2) {
+            throw new Error('command socket unavailable');
+          }
+
+          return {
+            readyState: 1,
+            send: () => {},
+            close: () => {
+              closeCount += 1;
+            },
+            addEventListener: () => {},
+          };
+        },
+      })
+    ).toThrow('command socket unavailable');
+    expect(closeCount).toBe(1);
   });
 
   it('does not open unused topology client sources', () => {
