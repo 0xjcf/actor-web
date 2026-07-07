@@ -1632,9 +1632,12 @@
 
 - Title: Build Mesh Pong example (UI demo + headless transport-parity test)
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/build-mesh-pong-example-ui-demo-headless-transport-parity.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Docs: machine-backed actor default dispatcher reply
 

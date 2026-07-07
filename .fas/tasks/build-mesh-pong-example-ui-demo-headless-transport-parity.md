@@ -28,11 +28,27 @@ Spike direct-1781363862864. Terminal validation node for the transport/mesh trac
 
 ## Affected files
 
-- Scope unknown.
+- examples/mesh-pong/README.md
+- examples/mesh-pong/pong-contract.ts
+- examples/mesh-pong/pong-behaviors.ts
+- examples/mesh-pong/pong-topology.ts
+- examples/mesh-pong/modes/local.ts
+- examples/mesh-pong/modes/broadcast.ts
+- examples/mesh-pong/modes/websocket.ts
+- examples/mesh-pong/modes/mesh.ts
+- examples/mesh-pong/ui/index.html
+- examples/mesh-pong/ui/main.ts
+- examples/mesh-pong/ui/pong-canvas.ts
+- examples/mesh-pong/mesh-pong.test.ts
+- examples/vite.config.ts
+- examples/vitest.config.ts
+- examples/index.html
 
 ## Scope Amendments
 
-- None.
+- Type: scope-refresh
+- Added at: 2026-07-07
+- Added paths: examples/mesh-pong/README.md, examples/mesh-pong/pong-contract.ts, examples/mesh-pong/pong-behaviors.ts, examples/mesh-pong/pong-topology.ts, examples/mesh-pong/modes/local.ts, examples/mesh-pong/modes/broadcast.ts, examples/mesh-pong/modes/websocket.ts, examples/mesh-pong/modes/mesh.ts, examples/mesh-pong/ui/index.html, examples/mesh-pong/ui/main.ts, examples/mesh-pong/ui/pong-canvas.ts, examples/mesh-pong/mesh-pong.test.ts, examples/vite.config.ts, examples/vitest.config.ts, examples/index.html
 
 ## Implementation plan
 
