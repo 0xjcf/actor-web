@@ -208,7 +208,7 @@ describe('Actor-Web topology helpers', () => {
         addEventListener: () => {},
       }),
     });
-    const commandSource = logistics.actors.shipment.commandSource({
+    const commandSource = logistics.actors.shipment.commands({
       gateway: { url: 'ws://example.invalid/gateway' },
       createSocket: () => ({
         readyState: 1,
@@ -229,7 +229,7 @@ describe('Actor-Web topology helpers', () => {
     commandSource.close();
   });
 
-  it('provides a typed topology source factory for projection-compatible source handles', async () => {
+  it('provides typed actor-key-first topology source factories', async () => {
     const logistics = defineActorWebTopology({
       contractVersion: '1.0.0',
       nodes: {
@@ -246,17 +246,31 @@ describe('Actor-Web topology helpers', () => {
     });
     const closes: string[] = [];
     let socketIndex = 0;
-    const sourceFactory = logistics.source('shipment');
-    type FactoryHandle = ReturnType<typeof sourceFactory>;
-    type ExpectedHandle = ReturnType<typeof logistics.actors.shipment.sourceHandle>;
     type SourceActorKey = Parameters<typeof logistics.source>[0];
-    type SourceFactoryInput = Parameters<typeof sourceFactory>[0];
+    type SourceFactoryInput = Parameters<typeof logistics.source>[1];
+    type ExpectedSource = ReturnType<typeof logistics.actors.shipment.source>;
+    type ExpectedSession = ReturnType<typeof logistics.actors.shipment.session>;
 
-    const sourceHandle: FactoryHandle = sourceFactory({
+    const source: ExpectedSource = logistics.source('shipment', {
+      gateway: { url: 'ws://example.invalid/gateway' },
+      streamId: 'shipment-source',
+      createSocket: () => {
+        socketIndex += 1;
+        return {
+          readyState: 1,
+          send: () => {},
+          close: () => {
+            closes.push('source');
+          },
+          addEventListener: () => {},
+        };
+      },
+    });
+    const session: ExpectedSession = logistics.session('shipment', {
       gateway: { url: 'ws://example.invalid/gateway' },
       createSocket: () => {
         socketIndex += 1;
-        const socketName = socketIndex === 1 ? 'readModel' : 'command';
+        const socketName = socketIndex === 2 ? 'readModel' : 'commands';
         return {
           readyState: 1,
           send: () => {},
@@ -267,24 +281,31 @@ describe('Actor-Web topology helpers', () => {
         };
       },
     });
-    const expectedHandle: ExpectedHandle = sourceHandle;
     const validActorKey: SourceActorKey = 'shipment';
 
     // @ts-expect-error invalid actor keys must stay a type error
     const invalidActorKey: SourceActorKey = 'missing';
     // @ts-expect-error declared topologies require gateway-backed source options
     const invalidHostOnlyOptions: SourceFactoryInput = { host: new EventTarget() };
+    // @ts-expect-error old public commandSource name is removed in favor of commands()
+    const oldCommandSource = logistics.actors.shipment.commandSource;
+    // @ts-expect-error old public sourceHandle name is removed in favor of session()
+    const oldSourceHandle = logistics.actors.shipment.sourceHandle;
 
-    expect(sourceHandle.source.address).toBe(logistics.actors.shipment.address);
-    expect(typeof sourceHandle.commandSource.send).toBe('function');
-    expect(expectedHandle.commandSource).toBe(sourceHandle.commandSource);
+    expect(source.address).toBe(logistics.actors.shipment.address);
+    expect(typeof source.send).toBe('function');
+    expect(session.readModel.address).toBe(logistics.actors.shipment.address);
+    expect(typeof session.commands.send).toBe('function');
     expect(validActorKey).toBe('shipment');
     expect(invalidActorKey).toBe('missing');
     expect(invalidHostOnlyOptions).toHaveProperty('host');
+    expect(oldCommandSource).toBeUndefined();
+    expect(oldSourceHandle).toBeUndefined();
 
-    await sourceHandle.stop();
+    source.close();
+    await session.close();
 
-    expect(closes).toEqual(['readModel', 'command']);
+    expect(closes).toEqual(['source', 'readModel', 'commands']);
   });
 
   it('does not open unused topology client sources', () => {
@@ -538,7 +559,7 @@ describe('Actor-Web topology helpers', () => {
       streamId: 'vehicle-inspections-stream',
       createSocket: () => socket,
     });
-    const commandSource = logistics.actors.vehicleInspections.commandSource({
+    const commandSource = logistics.actors.vehicleInspections.commands({
       gateway: {
         url: 'ws://example.invalid/gateway',
         scope: {

@@ -73,9 +73,9 @@ describe('startRuntime', () => {
     const runtime = await startRuntime(logistics);
 
     try {
-      const sourceHandle = runtime.dashboard.sourceHandle({ host: new EventTarget() });
-      const readModel = sourceHandle.source;
-      const commandSource = sourceHandle.commandSource;
+      const session = runtime.dashboard.session({ host: new EventTarget() });
+      const readModel = session.readModel;
+      const commandSource = session.commands;
       const snapshots: ShipmentContext[] = [];
 
       readModel.subscribe((snapshot) => {
@@ -99,7 +99,7 @@ describe('startRuntime', () => {
         shipmentId: 'shipment-1',
         status: 'created',
       });
-      await sourceHandle.stop();
+      await session.close();
     } finally {
       await runtime.stop();
     }
@@ -109,7 +109,7 @@ describe('startRuntime', () => {
     const logistics = createLogisticsTopology();
     const runtime = await startRuntime(logistics);
     const readModel = runtime.dashboard.readModel();
-    const commandSource = runtime.dashboard.commandSource();
+    const commandSource = runtime.dashboard.commands();
     const snapshots: ShipmentContext[] = [];
 
     readModel.subscribe((snapshot) => {
@@ -145,18 +145,18 @@ describe('startRuntime', () => {
       DashboardContext,
       DashboardCommand,
       DashboardEvent
-    > = runtime.dashboard.commandSource();
-    const sourceHandle = runtime.dashboard.sourceHandle(options);
+    > = runtime.dashboard.commands();
+    const session = runtime.dashboard.session(options);
     const command: DashboardCommand = { type: 'CREATE_SHIPMENT', shipmentId: 'typed' };
     const snapshots: DashboardContext[] = [];
 
-    const sourceHandleReadModel: ClosableActorWebReadModelSource<DashboardContext, DashboardEvent> =
-      sourceHandle.source;
-    const sourceHandleCommandSource: ClosableActorWebSource<
+    const sessionReadModel: ClosableActorWebReadModelSource<DashboardContext, DashboardEvent> =
+      session.readModel;
+    const sessionCommands: ClosableActorWebSource<
       DashboardContext,
       DashboardCommand,
       DashboardEvent
-    > = sourceHandle.commandSource;
+    > = session.commands;
 
     readModel.subscribe((snapshot) => {
       snapshots.push(snapshot.context);
@@ -166,31 +166,32 @@ describe('startRuntime', () => {
     await runtime.nodes.dashboard?.system.flush();
 
     expect(snapshots).toHaveLength(1);
-    expect(sourceHandleReadModel.snapshot().context.status).toBe('created');
-    expect(sourceHandleCommandSource).toBeDefined();
+    expect(sessionReadModel.snapshot().context.status).toBe('created');
+    expect(sessionCommands).toBeDefined();
 
     await runtime.stop();
   });
 
-  it('routes runtime topology source factories through the existing local source-handle cleanup path', async () => {
+  it('routes runtime topology source factories through the new local source vocabulary', async () => {
     const logistics = createLogisticsTopology();
     const runtime = await startRuntime(logistics);
 
     try {
-      const sourceFactory = runtime.topology.source('dashboard');
-      type RuntimeSourceFactoryInput = Parameters<typeof sourceFactory>[0];
+      type RuntimeSourceFactoryInput = Parameters<typeof runtime.topology.source>[1];
       const localSourceOptions: RuntimeSourceFactoryInput = { host: new EventTarget() };
-      const sourceHandle = sourceFactory(localSourceOptions);
+      const source = runtime.topology.source('dashboard', localSourceOptions);
+      const session = runtime.topology.session('dashboard', localSourceOptions);
       const snapshots: ShipmentContext[] = [];
 
-      sourceHandle.source.subscribe((snapshot) => {
+      source.subscribe((snapshot) => {
         snapshots.push(snapshot.context);
       });
 
-      expect(typeof sourceHandle.commandSource.send).toBe('function');
+      expect(typeof source.send).toBe('function');
+      expect(typeof session.commands.send).toBe('function');
       expect(snapshots).toHaveLength(1);
 
-      await sourceHandle.commandSource.send({
+      await source.send({
         type: 'CREATE_SHIPMENT',
         shipmentId: 'before-stop',
       });
@@ -201,9 +202,10 @@ describe('startRuntime', () => {
         status: 'created',
       });
 
-      await sourceHandle.stop();
+      await session.close();
+      source.close();
 
-      await runtime.dashboard.commandSource().send({
+      await runtime.dashboard.commands().send({
         type: 'CREATE_SHIPMENT',
         shipmentId: 'after-stop',
       });
