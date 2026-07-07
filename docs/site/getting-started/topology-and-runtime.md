@@ -36,10 +36,11 @@ const runtime = await startRuntime(topology);
 
 ## 3. Drive the actor
 
-Each actor exposes source factories. A command source can both observe and send:
+Each actor exposes source factories. A command-capable source can both observe
+and send:
 
 ```ts
-const counter = runtime.actors.counter.commandSource();
+const counter = runtime.actors.counter.commands();
 
 await counter.ask({ type: 'INCREMENT' });
 console.log(counter.snapshot().context.count); // 1

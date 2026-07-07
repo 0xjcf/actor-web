@@ -16,17 +16,15 @@ Each actor in a topology exposes source factories:
 - **`readModel(opts)`** — projection only: `snapshot()`, `subscribe(listener)`,
   `subscribeEvent(listener)`, transport status. No `send`/`ask`.
 - **`source(opts)`** — the unified surface (read + command) for simple cases.
-- **`commandSource(opts)`** — the command-only surface for hosts that need
+- **`commands(opts)`** — the command-capable surface for hosts that need
   `send(message)` / `ask(message)` without projection replay.
-- **`sourceHandle(opts)`** — a paired read-model + command source for hosts that
-  want both explicitly.
-- **`readModelHandle(opts)`** — a read-model source wrapped with a `stop()`
-  lifecycle hook for hosts that own cleanup outside an adapter.
+- **`session(opts)`** — paired `{ readModel, commands, close }` handles for hosts
+  that own lifecycle outside an adapter.
 
 ```ts
 const view = topology.actors.compare.readModel({ gateway: { url } });
 const ui   = topology.actors.compare.source({ gateway: { url } });
-const cmd  = topology.actors.compare.commandSource({ gateway: { url } });
+const cmd  = topology.actors.compare.commands({ gateway: { url } });
 ```
 
 Prefer `readModel` for components that only display state, and reach for a
@@ -69,8 +67,8 @@ The view projects snapshot context into UI state; commands bind to `actor.send`
 imports runtime internals.
 
 Ignite consumes the returned value through its single `source` option:
-`readModel(...)`, `source(...)`, and `commandSource(...)` are all source values
-from Ignite's point of view. Use `sourceHandle(...)` or `readModelHandle(...)`
-only when the host wants explicit `{ source, commandSource?, stop }` lifecycle
-control. For `sourceHandle(...)`, pass `handle.commandSource` to Ignite when the
-component issues commands, or `handle.source` for read-only projection.
+`readModel(...)`, `source(...)`, and `commands(...)` are all source values from
+Ignite's point of view. Use `session(...)` only when the host wants explicit
+`{ readModel, commands, close }` lifecycle control. Pass `session.commands` to
+Ignite when the component issues commands, or `session.readModel` for read-only
+projection.

@@ -51,3 +51,11 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Shared-bus transports must validate full negotiated identity at every ingress, not just node address.** BroadcastChannel delivery is many-to-many, so a restarted or spoofed participant can reuse the same `nodeAddress`. Validate payload source against envelope source during handshake and filter peer payloads by the negotiated `RuntimeNodeIdentity` before handing frames to the core, with regression tests for stale same-address frames.
 
 - **User observer hooks on handshake paths must be contained effects.** Telemetry observers run inside connection completion paths; if they throw, they can turn an otherwise valid handshake into a timeout or rejected listener path. Adapter-level telemetry emitters should catch observer failures and route them to the configured listener/error port without changing handshake facts.
+
+## PR #43 — topology source API babysit (2026-07-07, single-agent)
+
+- **Source registries that own cleanup must deregister sources on manual close.** If a client tracks opened sources for bulk cleanup, every source factory should wrap `close()` so manually closed sources remove themselves from the registry before delegating. Add a regression test that manually closes one source and then closes the owner, asserting the already closed source is not closed again.
+
+- **Session builders must unwind partially created resources when later setup fails.** When constructing paired read/command sources, create the read side first only if a failure while creating commands closes that read side before rethrowing. Add a failure-path test that makes the second factory throw and verifies the first resource is closed.
+
+- **Tests for paired read/command sources should identify handles by behavior, not creation order.** A positional socket counter can keep passing if read/command wiring swaps. Use emitted gateway frames or handle-specific effects to bind assertions to the actual read-model and command-only sources.

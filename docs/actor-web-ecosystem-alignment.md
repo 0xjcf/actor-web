@@ -237,6 +237,6 @@ For actor-web maintainers, the safe working assumption is:
 - A published docs page may look more authoritative than the owning repo's ADR
   even when it is only describing actor-web behavior.
 - Ignite examples can drift if actor-web docs keep pre-beta.8 per-config
-  `commandSource` snippets after Ignite moved to one `source` surface.
+  command-source snippets after Ignite moved to one `source` surface.
 - Cross-repo alignment can still drift unless each repo records the same split
   in its own accepted artifact.

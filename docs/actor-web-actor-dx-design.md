@@ -290,11 +290,11 @@ they are authored, not derived.
 
 ## Without ignite-element
 
-The same actors consume directly through the command source — already lean, no
+The same actors consume directly through the command-capable source — already lean, no
 helpers:
 
 ```ts
-const compare = runtime.actors.compare.commandSource();
+const compare = runtime.actors.compare.commands();
 compare.subscribe((s) => render(compareView(s.context)));
 button.onclick = () => compare.send({ type: "ACCEPT_FORK" });
 const resolved = await compare.ask({ type: "MERGE" });   // resolves with snapshot
