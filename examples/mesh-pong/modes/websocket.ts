@@ -15,37 +15,49 @@ function requireTransportUrl(node: ServedActorWebNode<typeof pong>, label: strin
 }
 
 export async function startMeshPongWebSocketLoopback(): Promise<StartedMeshPongCluster> {
-  const b = await serveNode(pong, {
-    node: 'b',
-    transport: { listen: true, heartbeatIntervalMs: 0 },
-  });
-  const a = await serveNode(pong, {
-    node: 'a',
-    transport: { listen: true, heartbeatIntervalMs: 0 },
-    peers: {
-      b: requireTransportUrl(b, 'b'),
-    },
-    connect: ['b'],
-  });
-  const server = await serveNode(pong, {
-    node: 'server',
-    transport: { listen: true, heartbeatIntervalMs: 0 },
-    peers: {
-      a: requireTransportUrl(a, 'a'),
-      b: requireTransportUrl(b, 'b'),
-    },
-    connect: ['a', 'b'],
-  });
+  const startedNodes: Array<{ stop(): Promise<void> }> = [];
 
-  const cluster: StartedMeshPongCluster = {
-    mode: 'websocket',
-    server,
-    a,
-    b,
-    flush: () => flushMeshPongCluster(cluster),
-    stop: () => stopMeshPongCluster(cluster),
-  };
+  try {
+    const b = await serveNode(pong, {
+      node: 'b',
+      transport: { listen: true, heartbeatIntervalMs: 0 },
+    });
+    startedNodes.push(b);
 
-  await cluster.flush();
-  return cluster;
+    const a = await serveNode(pong, {
+      node: 'a',
+      transport: { listen: true, heartbeatIntervalMs: 0 },
+      peers: {
+        b: requireTransportUrl(b, 'b'),
+      },
+      connect: ['b'],
+    });
+    startedNodes.push(a);
+
+    const server = await serveNode(pong, {
+      node: 'server',
+      transport: { listen: true, heartbeatIntervalMs: 0 },
+      peers: {
+        a: requireTransportUrl(a, 'a'),
+        b: requireTransportUrl(b, 'b'),
+      },
+      connect: ['a', 'b'],
+    });
+    startedNodes.push(server);
+
+    const cluster: StartedMeshPongCluster = {
+      mode: 'websocket',
+      server,
+      a,
+      b,
+      flush: () => flushMeshPongCluster(cluster),
+      stop: () => stopMeshPongCluster(cluster),
+    };
+
+    await cluster.flush();
+    return cluster;
+  } catch (error) {
+    await Promise.allSettled(startedNodes.map((nodeRuntime) => nodeRuntime.stop()));
+    throw error;
+  }
 }

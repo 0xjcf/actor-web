@@ -87,6 +87,7 @@ let runtime: BrowserRuntime | null = null;
 let refs: RuntimeRefs | null = null;
 let selectedMode: BrowserMode = 'local';
 let loopHandle: number | null = null;
+let switchGeneration = 0;
 const keys = new Set<string>();
 
 function isCluster(
@@ -185,23 +186,38 @@ async function snapshot(nextRefs: RuntimeRefs): Promise<PongSnapshot> {
   };
 }
 
+async function resetRuntimeGame(
+  nextRuntime: BrowserRuntime,
+  nextRefs: RuntimeRefs
+): Promise<PongSnapshot> {
+  const centerY = PONG_FIELD.height / 2 - PONG_FIELD.paddleHeight / 2;
+  await nextRefs.ball.send({ type: 'RESET_BALL', seed: DEFAULT_PONG_SEED });
+  await flushRuntime(nextRuntime);
+  await nextRefs.score.send({ type: 'RESET_SCORE' });
+  await flushRuntime(nextRuntime);
+  await nextRefs.paddleA.send({ type: 'SET_PADDLE', y: centerY });
+  await flushRuntime(nextRuntime);
+  await nextRefs.paddleB.send({ type: 'SET_PADDLE', y: centerY });
+  await flushRuntime(nextRuntime);
+  return snapshot(nextRefs);
+}
+
+function renderSnapshot(nextSnapshot: PongSnapshot): void {
+  drawPong(canvasElement, nextSnapshot);
+  scoreValueElement.textContent = `${nextSnapshot.score.left} : ${nextSnapshot.score.right}`;
+}
+
 async function resetGame(): Promise<void> {
-  if (!runtime || !refs) {
+  const currentRuntime = runtime;
+  const currentRefs = refs;
+  if (!currentRuntime || !currentRefs) {
     return;
   }
 
-  const centerY = PONG_FIELD.height / 2 - PONG_FIELD.paddleHeight / 2;
-  await refs.ball.send({ type: 'RESET_BALL', seed: DEFAULT_PONG_SEED });
-  await flushRuntime(runtime);
-  await refs.score.send({ type: 'RESET_SCORE' });
-  await flushRuntime(runtime);
-  await refs.paddleA.send({ type: 'SET_PADDLE', y: centerY });
-  await flushRuntime(runtime);
-  await refs.paddleB.send({ type: 'SET_PADDLE', y: centerY });
-  await flushRuntime(runtime);
-  const nextSnapshot = await snapshot(refs);
-  drawPong(canvasElement, nextSnapshot);
-  scoreValueElement.textContent = `${nextSnapshot.score.left} : ${nextSnapshot.score.right}`;
+  const nextSnapshot = await resetRuntimeGame(currentRuntime, currentRefs);
+  if (runtime === currentRuntime && refs === currentRefs) {
+    renderSnapshot(nextSnapshot);
+  }
 }
 
 async function startRuntimeForMode(mode: BrowserMode): Promise<BrowserRuntime> {
@@ -215,6 +231,9 @@ async function startRuntimeForMode(mode: BrowserMode): Promise<BrowserRuntime> {
 }
 
 async function switchMode(mode: BrowserMode): Promise<void> {
+  const generation = switchGeneration + 1;
+  switchGeneration = generation;
+
   if (loopHandle !== null) {
     window.clearTimeout(loopHandle);
     loopHandle = null;
@@ -223,17 +242,49 @@ async function switchMode(mode: BrowserMode): Promise<void> {
   const previous = runtime;
   runtime = null;
   refs = null;
-  await previous?.stop();
+  if (previous) {
+    try {
+      await previous.stop();
+    } catch (error) {
+      if (switchGeneration === generation) {
+        setStatus(error instanceof Error ? `stop failed: ${error.message}` : 'stop failed');
+      }
+      return;
+    }
+  }
 
   selectedMode = mode;
   modeValueElement.textContent = mode;
   renderParityProof(mode);
   setStatus('starting');
-  runtime = await startRuntimeForMode(mode);
-  refs = await resolveRefs(runtime);
-  await resetGame();
-  setStatus('running');
-  loopHandle = window.setTimeout(tick, 120);
+
+  let nextRuntime: BrowserRuntime | null = null;
+  try {
+    nextRuntime = await startRuntimeForMode(mode);
+    const nextRefs = await resolveRefs(nextRuntime);
+    const nextSnapshot = await resetRuntimeGame(nextRuntime, nextRefs);
+
+    if (switchGeneration !== generation) {
+      await nextRuntime.stop().catch(() => undefined);
+      return;
+    }
+
+    runtime = nextRuntime;
+    refs = nextRefs;
+    renderSnapshot(nextSnapshot);
+    setStatus('running');
+    loopHandle = window.setTimeout(tick, 120);
+  } catch (error) {
+    if (nextRuntime) {
+      await nextRuntime.stop().catch(() => undefined);
+    }
+    if (switchGeneration === generation) {
+      runtime = null;
+      refs = null;
+      loopHandle = null;
+      setStatus(error instanceof Error ? `start failed: ${error.message}` : 'start failed');
+    }
+  }
 }
 
 async function applyPaddleInput(nextRuntime: BrowserRuntime, nextRefs: RuntimeRefs): Promise<void> {
@@ -256,28 +307,33 @@ async function applyPaddleInput(nextRuntime: BrowserRuntime, nextRefs: RuntimeRe
 }
 
 async function tick(): Promise<void> {
-  if (!runtime || !refs) {
+  const currentRuntime = runtime;
+  const currentRefs = refs;
+  if (!currentRuntime || !currentRefs) {
     return;
   }
 
   try {
-    await applyPaddleInput(runtime, refs);
-    const current = await snapshot(refs);
-    await refs.ball.send({
+    await applyPaddleInput(currentRuntime, currentRefs);
+    const current = await snapshot(currentRefs);
+    await currentRefs.ball.send({
       type: 'SET_PADDLES',
       leftY: current.paddles.left.y,
       rightY: current.paddles.right.y,
     });
-    await refs.ball.send({ type: 'TICK' });
-    await flushRuntime(runtime);
-    const nextSnapshot = await snapshot(refs);
-    drawPong(canvasElement, nextSnapshot);
-    scoreValueElement.textContent = `${nextSnapshot.score.left} : ${nextSnapshot.score.right}`;
-    setStatus('running');
+    await currentRefs.ball.send({ type: 'TICK' });
+    await flushRuntime(currentRuntime);
+    const nextSnapshot = await snapshot(currentRefs);
+    if (runtime === currentRuntime && refs === currentRefs) {
+      renderSnapshot(nextSnapshot);
+      setStatus('running');
+    }
   } catch (error) {
     setStatus(error instanceof Error ? error.message : 'runtime error');
   } finally {
-    loopHandle = window.setTimeout(tick, 90);
+    if (runtime === currentRuntime && refs === currentRefs) {
+      loopHandle = window.setTimeout(tick, 90);
+    }
   }
 }
 
@@ -292,7 +348,9 @@ modeSelectElement.addEventListener('change', () => {
 });
 
 resetButtonElement.addEventListener('click', () => {
-  void resetGame();
+  void resetGame().catch((error: unknown) => {
+    setStatus(error instanceof Error ? error.message : 'reset failed');
+  });
 });
 
 window.addEventListener('keydown', (event) => {

@@ -10,6 +10,7 @@ import {
   movePaddle,
   type PaddleCommand,
   type PaddleEvent,
+  PONG_FIELD,
   type PongBallContext,
   type PongPaddleState,
   type PongScoreState,
@@ -75,7 +76,7 @@ export function createPaddleBehavior(side: PongSide) {
       const paddle =
         message.type === 'SET_PADDLE'
           ? setPaddle(context, message.y)
-          : movePaddle(context, message.direction, message.amount ?? 28);
+          : movePaddle(context, message.direction, message.amount ?? PONG_FIELD.paddleStep);
 
       return {
         context: paddle,

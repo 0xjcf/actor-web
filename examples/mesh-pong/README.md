@@ -61,6 +61,7 @@ examples/mesh-pong/
   pong-contract.ts          message/event types and deterministic Pong rules
   pong-behaviors.ts         ball / paddle / score behaviors (transport-agnostic)
   pong-topology.ts          the shared defineActorWebTopology
+  parity-proof.ts           data rendered by the UI proof panel
   modes/
     local.ts                startRuntime(pong)
     websocket.ts            serveNode loopback transport
@@ -69,7 +70,6 @@ examples/mesh-pong/
   ui/
     index.html              the playable demo + transport switcher
     main.ts                 browser runtime driver
-    ../parity-proof.ts      data rendered by the UI proof panel
     pong-canvas.ts          renders snapshots from the score/ball actors
   mesh-pong.test.ts         headless behavior-parity test (the validation gate)
 ```
@@ -86,9 +86,11 @@ The example is two deliverables: a human-facing demo and an automated gate.
    transport-independent; it runs in CI through `pnpm test:examples`.
 2. **UI demo** (`ui/`) — a playable Pong with a transport switcher (local /
    broadcast / mesh). The page renders the shared topology/behavior files, the
-   selected startup module, and the CI validation gate so the parity claim is
-   visible while switching transports. WebSocket loopback is automated in the
-   parity test because browser WebSocket nodes need an external listener.
+   selected startup module, and the parity-status panel so the validation
+   result is visible while switching transports. It does not run the CI gate;
+   `mesh-pong.test.ts` remains the runtime-agnostic parity test executed by
+   `pnpm test:examples`. WebSocket loopback is automated in that test because
+   browser WebSocket nodes need an external listener.
 
 Acceptance:
 
