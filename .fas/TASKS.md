@@ -2146,6 +2146,14 @@ operator explicitly asks for queue mutations.
 - Owner: runtime
 - Brief: .fas/tasks/mesh-pong-mlx-llm-controller-adapter-and-player-modes.md
 
+### Task: Refactor Mesh Pong parity test stepping helper
+
+- Title: Refactor Mesh Pong parity test stepping helper
+- Mode: single-agent
+- Status: backlog
+- Owner: planner
+- Brief: .fas/tasks/refactor-mesh-pong-parity-test-stepping-helper.md
+
 ## Template
 
 ### Task: `<short task title>`
