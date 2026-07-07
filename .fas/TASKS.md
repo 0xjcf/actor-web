@@ -2145,9 +2145,12 @@ operator explicitly asks for queue mutations.
 
 - Title: Mesh Pong MLX LLM controller adapter and player modes
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/mesh-pong-mlx-llm-controller-adapter-and-player-modes.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Refactor Mesh Pong parity test stepping helper
 
