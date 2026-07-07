@@ -228,6 +228,57 @@ describe('WebRtcMessageTransport', () => {
     expect(browserA.isConnected('browser-b')).toBe(false);
     expect(browserB.isConnected('browser-a')).toBe(false);
   });
+
+  it('closes opened data channels when outbound auth token creation fails', async () => {
+    const hub = new FakeWebRtcBootstrapHub();
+    const browserA = createTransport(hub, 'browser-a', {
+      auth: {
+        token: () => {
+          throw new Error('token provider failed');
+        },
+      },
+    });
+    const browserB = createTransport(hub, 'browser-b');
+
+    await Promise.all([browserA.start(), browserB.start()]);
+
+    await expect(browserA.connect('browser-b')).rejects.toThrow(/token provider failed/);
+
+    const pair = hub.pairs.at(-1);
+    expect(pair?.local.readyState).toBe('closed');
+    expect(pair?.remote.readyState).toBe('closed');
+    expect(browserA.isConnected('browser-b')).toBe(false);
+    expect(browserB.isConnected('browser-a')).toBe(false);
+  });
+
+  it('rejects and closes both data-channel ends when inbound auth verification throws', async () => {
+    const hub = new FakeWebRtcBootstrapHub();
+    const listenerErrors: unknown[] = [];
+    const browserA = createTransport(hub, 'browser-a');
+    const browserB = createTransport(hub, 'browser-b', {
+      auth: {
+        verify: () => {
+          throw new Error('auth verifier failed');
+        },
+      },
+      onListenerError: (error) => {
+        listenerErrors.push(error);
+      },
+    });
+
+    await Promise.all([browserA.start(), browserB.start()]);
+
+    await expect(browserA.connect('browser-b')).rejects.toThrow(/auth verifier failed/);
+
+    const pair = hub.pairs.at(-1);
+    expect(pair?.local.readyState).toBe('closed');
+    expect(pair?.remote.readyState).toBe('closed');
+    expect(listenerErrors).toHaveLength(1);
+    expect(listenerErrors[0]).toBeInstanceOf(Error);
+    expect((listenerErrors[0] as Error).message).toBe('auth verifier failed');
+    expect(browserA.isConnected('browser-b')).toBe(false);
+    expect(browserB.isConnected('browser-a')).toBe(false);
+  });
 });
 
 describeTransportConformance({

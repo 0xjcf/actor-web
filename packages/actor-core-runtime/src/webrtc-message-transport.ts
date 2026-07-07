@@ -128,6 +128,10 @@ function sendDataChannelJson(channel: WebRtcDataChannelLike, frame: unknown): Pr
   }
 }
 
+function describeError(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
 function createDefaultTimers(): TransportTimers {
   return {
     setTimeout: (callback, ms) => setTimeout(callback, ms) as unknown as number,
@@ -254,8 +258,17 @@ class WebRtcTransportChannel implements TransportChannel {
       return opened;
     }
 
-    const authPayload = await resolveRuntimeAuthPayload(this.options.auth);
-    const handshaked = await this.exchangeHandshake(dataChannel, remoteAddress, authPayload);
+    let handshaked: DialResult;
+    try {
+      const authPayload = await resolveRuntimeAuthPayload(this.options.auth);
+      handshaked = await this.exchangeHandshake(dataChannel, remoteAddress, authPayload);
+    } catch (error) {
+      dataChannel.close();
+      return {
+        ok: false,
+        reason: describeError(error, `WebRTC peer connection failed for ${remoteAddress}.`),
+      };
+    }
     if (!handshaked.ok) {
       dataChannel.close();
     }
@@ -515,33 +528,48 @@ class WebRtcTransportChannel implements TransportChannel {
       return;
     }
 
-    const auth = await verifyRuntimeAuth(this.options.auth, {
-      auth: frame.auth,
-      source: frame.source,
-      local: this.options.identity,
-    });
-    if (!auth.ok) {
-      await reject('unauthorized', auth.reason, frame.source);
+    try {
+      const auth = await verifyRuntimeAuth(this.options.auth, {
+        auth: frame.auth,
+        source: frame.source,
+        local: this.options.identity,
+      });
+      if (!auth.ok) {
+        await reject('unauthorized', auth.reason, frame.source);
+        this.options.emitTelemetry({
+          type: 'auth.rejected',
+          peerNodeAddress: frame.source.nodeAddress,
+          reason: auth.reason,
+        });
+        return;
+      }
+
+      await sendDataChannelJson(
+        dataChannel,
+        createRuntimeTransportHandshakeAccept(this.options.identity, frame.source, {
+          auth: await resolveRuntimeAuthPayload(this.options.auth),
+          now: this.options.now,
+        })
+      );
+      this.options.emitTelemetry({
+        type: 'auth.accepted',
+        peerNodeAddress: frame.source.nodeAddress,
+      });
+      onPeer(new WebRtcPeerLink(dataChannel, frame.source.nodeAddress, frame.source));
+    } catch (error) {
+      const reason = describeError(error, 'Runtime inbound WebRTC handshake failed.');
+      try {
+        await reject('unauthorized', reason, frame.source);
+      } catch {
+        // reject() already closes the data channel in a finally block.
+      }
       this.options.emitTelemetry({
         type: 'auth.rejected',
         peerNodeAddress: frame.source.nodeAddress,
-        reason: auth.reason,
+        reason,
       });
-      return;
+      throw error;
     }
-
-    await sendDataChannelJson(
-      dataChannel,
-      createRuntimeTransportHandshakeAccept(this.options.identity, frame.source, {
-        auth: await resolveRuntimeAuthPayload(this.options.auth),
-        now: this.options.now,
-      })
-    );
-    this.options.emitTelemetry({
-      type: 'auth.accepted',
-      peerNodeAddress: frame.source.nodeAddress,
-    });
-    onPeer(new WebRtcPeerLink(dataChannel, frame.source.nodeAddress, frame.source));
   }
 
   private waitForHandshakeHello(
