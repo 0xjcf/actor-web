@@ -2220,6 +2220,14 @@ operator explicitly asks for queue mutations.
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Mesh Pong hybrid reflex controller plus LLM planner mode
+
+- Title: Mesh Pong hybrid reflex controller plus LLM planner mode
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/mesh-pong-hybrid-reflex-controller-plus-llm-planner-mode.md
+
 ## Template
 
 ### Task: `<short task title>`
