@@ -2134,8 +2134,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Mesh Pong session lobby and human controller slots
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/mesh-pong-session-lobby-and-human-controller-slots.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -2145,8 +2145,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Mesh Pong MLX LLM controller adapter and player modes
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/mesh-pong-mlx-llm-controller-adapter-and-player-modes.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -2156,8 +2156,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Refactor Mesh Pong parity test stepping helper
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/refactor-mesh-pong-parity-test-stepping-helper.md
 - Verification lane: fast
 - Policy sensitivity: standard
@@ -2167,8 +2167,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Fix actor-agent runtime browser test alias for Mesh Pong MLX full verify
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/fix-actor-agent-runtime-browser-test-alias-for-mesh-pong-mlx.md
 - Automation mode: advisory
 - Verification lane: fast
@@ -2179,8 +2179,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Resolve CodeRabbit Mesh Pong batch closeout findings
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/resolve-coderabbit-mesh-pong-batch-closeout-findings.md
 - Verification lane: fast
 - Policy sensitivity: standard
