@@ -58,84 +58,354 @@ interface RuntimeRefs {
   readonly paddleB: ActorRef<PongPaddleState, PaddleCommand>;
 }
 
-const canvas = document.querySelector<HTMLCanvasElement>('#pong-canvas');
-const modeSelect = document.querySelector<HTMLSelectElement>('#transport-mode');
-const playerCountSelect = document.querySelector<HTMLSelectElement>('#player-count');
-const leftControllerSelect = document.querySelector<HTMLSelectElement>('#left-controller');
-const rightControllerSelect = document.querySelector<HTMLSelectElement>('#right-controller');
-const claimLeftButton = document.querySelector<HTMLButtonElement>('#claim-left');
-const claimRightButton = document.querySelector<HTMLButtonElement>('#claim-right');
-const readyButton = document.querySelector<HTMLButtonElement>('#ready-player');
-const startButton = document.querySelector<HTMLButtonElement>('#start-game');
-const resetButton = document.querySelector<HTMLButtonElement>('#reset-game');
-const modeValue = document.querySelector<HTMLElement>('#mode-value');
-const scoreValue = document.querySelector<HTMLElement>('#score-value');
-const statusValue = document.querySelector<HTMLElement>('#status-value');
-const sessionValue = document.querySelector<HTMLElement>('#session-value');
-const sideValue = document.querySelector<HTMLElement>('#side-value');
-const lobbyValue = document.querySelector<HTMLElement>('#lobby-value');
-const proofTopology = document.querySelector<HTMLElement>('#proof-topology');
-const proofBehaviors = document.querySelector<HTMLElement>('#proof-behaviors');
-const proofActors = document.querySelector<HTMLElement>('#proof-actors');
-const proofGate = document.querySelector<HTMLElement>('#proof-gate');
-const proofStartup = document.querySelector<HTMLElement>('#proof-startup');
-const proofCall = document.querySelector<HTMLElement>('#proof-call');
-const proofTransport = document.querySelector<HTMLElement>('#proof-transport');
-const proofNodes = document.querySelector<HTMLElement>('#proof-nodes');
-
-if (
-  !canvas ||
-  !modeSelect ||
-  !playerCountSelect ||
-  !leftControllerSelect ||
-  !rightControllerSelect ||
-  !claimLeftButton ||
-  !claimRightButton ||
-  !readyButton ||
-  !startButton ||
-  !resetButton ||
-  !modeValue ||
-  !scoreValue ||
-  !statusValue ||
-  !sessionValue ||
-  !sideValue ||
-  !lobbyValue ||
-  !proofTopology ||
-  !proofBehaviors ||
-  !proofActors ||
-  !proofGate ||
-  !proofStartup ||
-  !proofCall ||
-  !proofTransport ||
-  !proofNodes
-) {
-  throw new Error('Mesh Pong UI failed to bind required DOM nodes.');
+export interface MeshPongTelemetryControllerState {
+  readonly inFlight: boolean;
+  readonly startedAtMs: number | null;
+  readonly rttMs: number | null;
+  readonly outcome: 'idle' | 'pending' | 'applied' | 'error';
+  readonly error: string | null;
+  readonly lastAppliedIntentAtMs: number | null;
+  readonly lastAppliedIntentAgeMs: number | null;
 }
 
-const canvasElement: HTMLCanvasElement = canvas;
-const modeSelectElement: HTMLSelectElement = modeSelect;
-const playerCountSelectElement: HTMLSelectElement = playerCountSelect;
-const leftControllerSelectElement: HTMLSelectElement = leftControllerSelect;
-const rightControllerSelectElement: HTMLSelectElement = rightControllerSelect;
-const claimLeftButtonElement: HTMLButtonElement = claimLeftButton;
-const claimRightButtonElement: HTMLButtonElement = claimRightButton;
-const readyButtonElement: HTMLButtonElement = readyButton;
-const startButtonElement: HTMLButtonElement = startButton;
-const resetButtonElement: HTMLButtonElement = resetButton;
-const modeValueElement: HTMLElement = modeValue;
-const scoreValueElement: HTMLElement = scoreValue;
-const statusValueElement: HTMLElement = statusValue;
-const sessionValueElement: HTMLElement = sessionValue;
-const sideValueElement: HTMLElement = sideValue;
-const lobbyValueElement: HTMLElement = lobbyValue;
-const proofTopologyElement: HTMLElement = proofTopology;
-const proofBehaviorsElement: HTMLElement = proofBehaviors;
-const proofActorsElement: HTMLElement = proofActors;
-const proofGateElement: HTMLElement = proofGate;
-const proofStartupElement: HTMLElement = proofStartup;
-const proofCallElement: HTMLElement = proofCall;
-const proofTransportElement: HTMLElement = proofTransport;
-const proofNodesElement: HTMLElement = proofNodes;
+export interface MeshPongTelemetryState {
+  readonly createdAtMs: number;
+  readonly render: {
+    readonly count: number;
+    readonly lastAtMs: number | null;
+    readonly lastGapMs: number | null;
+  };
+  readonly simulation: {
+    readonly targetIntervalMs: number;
+    readonly scheduledCount: number;
+    readonly appliedCount: number;
+    readonly heldCount: number;
+    readonly droppedCount: number;
+    readonly lastScheduledAtMs: number | null;
+    readonly lastScheduledGapMs: number | null;
+    readonly lastAppliedAtMs: number | null;
+    readonly lastAppliedGapMs: number | null;
+  };
+  readonly controllers: Record<PongSide, MeshPongTelemetryControllerState>;
+  readonly replay: {
+    readonly originSessionId: string | null;
+    readonly sentAtMs: number | null;
+    readonly receivedAtMs: number | null;
+    readonly latencyMs: number | null;
+  };
+}
+
+export type MeshPongTelemetryEvent =
+  | { readonly type: 'rendered'; readonly nowMs: number }
+  | { readonly type: 'simulation-scheduled'; readonly nowMs: number }
+  | { readonly type: 'simulation-held'; readonly nowMs: number }
+  | { readonly type: 'simulation-applied'; readonly nowMs: number }
+  | {
+      readonly type: 'controller-request-started';
+      readonly side: PongSide;
+      readonly nowMs: number;
+    }
+  | {
+      readonly type: 'controller-request-finished';
+      readonly side: PongSide;
+      readonly nowMs: number;
+      readonly outcome: 'applied' | 'error';
+      readonly error?: string;
+    }
+  | {
+      readonly type: 'controller-intent-applied';
+      readonly side: PongSide;
+      readonly nowMs: number;
+      readonly sentAtMs?: number;
+    }
+  | {
+      readonly type: 'replay-sent';
+      readonly originSessionId: string;
+      readonly sentAtMs: number;
+    }
+  | {
+      readonly type: 'replay-received';
+      readonly originSessionId: string;
+      readonly sentAtMs: number;
+      readonly receivedAtMs: number;
+    };
+
+export interface MeshPongTelemetryDisplay {
+  readonly render: string;
+  readonly simulation: string;
+  readonly leftController: string;
+  readonly rightController: string;
+  readonly replay: string;
+}
+
+const MESH_PONG_SIMULATION_INTERVAL_MS = 90;
+const MESH_PONG_MLX_CONTROLLER_ASK_TIMEOUT_MS = 30_000;
+
+function createTelemetryControllerState(): MeshPongTelemetryControllerState {
+  return {
+    inFlight: false,
+    startedAtMs: null,
+    rttMs: null,
+    outcome: 'idle',
+    error: null,
+    lastAppliedIntentAtMs: null,
+    lastAppliedIntentAgeMs: null,
+  };
+}
+
+export function createMeshPongTelemetryState(nowMs: number): MeshPongTelemetryState {
+  return {
+    createdAtMs: nowMs,
+    render: {
+      count: 0,
+      lastAtMs: null,
+      lastGapMs: null,
+    },
+    simulation: {
+      targetIntervalMs: MESH_PONG_SIMULATION_INTERVAL_MS,
+      scheduledCount: 0,
+      appliedCount: 0,
+      heldCount: 0,
+      droppedCount: 0,
+      lastScheduledAtMs: null,
+      lastScheduledGapMs: null,
+      lastAppliedAtMs: null,
+      lastAppliedGapMs: null,
+    },
+    controllers: {
+      left: createTelemetryControllerState(),
+      right: createTelemetryControllerState(),
+    },
+    replay: {
+      originSessionId: null,
+      sentAtMs: null,
+      receivedAtMs: null,
+      latencyMs: null,
+    },
+  };
+}
+
+function measureGap(previousAtMs: number | null, nowMs: number): number | null {
+  if (previousAtMs === null) {
+    return null;
+  }
+  return Math.max(0, nowMs - previousAtMs);
+}
+
+function droppedTurnCount(targetIntervalMs: number, gapMs: number | null): number {
+  if (gapMs === null) {
+    return 0;
+  }
+  return Math.max(0, Math.floor(gapMs / targetIntervalMs) - 1);
+}
+
+export function reduceMeshPongTelemetry(
+  state: MeshPongTelemetryState,
+  event: MeshPongTelemetryEvent
+): MeshPongTelemetryState {
+  switch (event.type) {
+    case 'rendered': {
+      return {
+        ...state,
+        render: {
+          count: state.render.count + 1,
+          lastAtMs: event.nowMs,
+          lastGapMs: measureGap(state.render.lastAtMs, event.nowMs),
+        },
+      };
+    }
+    case 'simulation-scheduled': {
+      const gapMs = measureGap(state.simulation.lastScheduledAtMs, event.nowMs);
+      return {
+        ...state,
+        simulation: {
+          ...state.simulation,
+          scheduledCount: state.simulation.scheduledCount + 1,
+          droppedCount:
+            state.simulation.droppedCount +
+            droppedTurnCount(state.simulation.targetIntervalMs, gapMs),
+          lastScheduledAtMs: event.nowMs,
+          lastScheduledGapMs: gapMs,
+        },
+      };
+    }
+    case 'simulation-held': {
+      return {
+        ...state,
+        simulation: {
+          ...state.simulation,
+          heldCount: state.simulation.heldCount + 1,
+        },
+      };
+    }
+    case 'simulation-applied': {
+      return {
+        ...state,
+        simulation: {
+          ...state.simulation,
+          appliedCount: state.simulation.appliedCount + 1,
+          lastAppliedAtMs: event.nowMs,
+          lastAppliedGapMs: measureGap(state.simulation.lastAppliedAtMs, event.nowMs),
+        },
+      };
+    }
+    case 'controller-request-started': {
+      return {
+        ...state,
+        controllers: {
+          ...state.controllers,
+          [event.side]: {
+            ...state.controllers[event.side],
+            inFlight: true,
+            startedAtMs: event.nowMs,
+            outcome: 'pending',
+            error: null,
+          },
+        },
+      };
+    }
+    case 'controller-request-finished': {
+      const controller = state.controllers[event.side];
+      return {
+        ...state,
+        controllers: {
+          ...state.controllers,
+          [event.side]: {
+            ...controller,
+            inFlight: false,
+            rttMs:
+              controller.startedAtMs === null
+                ? null
+                : Math.max(0, event.nowMs - controller.startedAtMs),
+            outcome: event.outcome,
+            error: event.error ?? null,
+          },
+        },
+      };
+    }
+    case 'controller-intent-applied': {
+      return {
+        ...state,
+        controllers: {
+          ...state.controllers,
+          [event.side]: {
+            ...state.controllers[event.side],
+            lastAppliedIntentAtMs: event.nowMs,
+            lastAppliedIntentAgeMs:
+              event.sentAtMs === undefined ? 0 : Math.max(0, event.nowMs - event.sentAtMs),
+            outcome: 'applied',
+            error: null,
+          },
+        },
+      };
+    }
+    case 'replay-sent': {
+      return {
+        ...state,
+        replay: {
+          originSessionId: event.originSessionId,
+          sentAtMs: event.sentAtMs,
+          receivedAtMs: null,
+          latencyMs: null,
+        },
+      };
+    }
+    case 'replay-received': {
+      return {
+        ...state,
+        replay: {
+          originSessionId: event.originSessionId,
+          sentAtMs: event.sentAtMs,
+          receivedAtMs: event.receivedAtMs,
+          latencyMs: Math.max(0, event.receivedAtMs - event.sentAtMs),
+        },
+      };
+    }
+  }
+}
+
+function formatMs(value: number | null): string {
+  return value === null ? '--' : `${Math.round(value)}ms`;
+}
+
+function formatControllerTelemetry(state: MeshPongTelemetryControllerState): string {
+  const status = state.inFlight ? 'in-flight' : state.outcome;
+  const error = state.error ? ` err ${state.error}` : '';
+  return `state ${status} rtt ${formatMs(state.rttMs)} age ${formatMs(state.lastAppliedIntentAgeMs)}${error}`;
+}
+
+export function formatMeshPongTelemetry(state: MeshPongTelemetryState): MeshPongTelemetryDisplay {
+  return {
+    render: `${state.render.count} frames gap ${formatMs(state.render.lastGapMs)}`,
+    simulation: `${state.simulation.targetIntervalMs}ms sched ${state.simulation.scheduledCount} applied ${state.simulation.appliedCount} held ${state.simulation.heldCount} dropped ${state.simulation.droppedCount} sgap ${formatMs(state.simulation.lastScheduledGapMs)} agap ${formatMs(state.simulation.lastAppliedGapMs)}`,
+    leftController: formatControllerTelemetry(state.controllers.left),
+    rightController: formatControllerTelemetry(state.controllers.right),
+    replay:
+      state.replay.originSessionId === null
+        ? 'idle'
+        : `${state.replay.originSessionId.slice(0, 8)} latency ${formatMs(state.replay.latencyMs)}`,
+  };
+}
+
+type TelemetryValueElements = Record<keyof MeshPongTelemetryDisplay, HTMLElement>;
+
+type LobbyReplayMetadata = {
+  readonly originSessionId: string;
+  readonly sentAtMs: number;
+};
+
+type LobbyChannelMessage =
+  | { readonly type: 'sessions-updated' }
+  | {
+      readonly type: 'controller-input';
+      readonly input: Extract<PongControllerInputResult, { readonly ok: true }>;
+      readonly replay?: LobbyReplayMetadata;
+    }
+  | {
+      readonly type: 'match-started';
+      readonly mode: PongMatchMode;
+      readonly ownerSessionId: string;
+    };
+
+type MlxControllerRequest = {
+  readonly runtime: BrowserRuntime;
+  readonly refs: RuntimeRefs;
+  readonly side: PongSide;
+  readonly controller: ActorRef<PongControllerActorState, ControllerCommand>;
+  readonly snapshot: PongSnapshot;
+  readonly matchGeneration: number;
+};
+
+const SESSION_ID_STORAGE_KEY = 'actor-web.mesh-pong.session-id';
+const LOBBY_STORAGE_KEY = 'actor-web.mesh-pong.sessions';
+const LOBBY_CHANNEL_NAME = 'actor-web.mesh-pong.lobby';
+
+let canvasElement: HTMLCanvasElement;
+let modeSelectElement: HTMLSelectElement;
+let playerCountSelectElement: HTMLSelectElement;
+let leftControllerSelectElement: HTMLSelectElement;
+let rightControllerSelectElement: HTMLSelectElement;
+let claimLeftButtonElement: HTMLButtonElement;
+let claimRightButtonElement: HTMLButtonElement;
+let readyButtonElement: HTMLButtonElement;
+let startButtonElement: HTMLButtonElement;
+let resetButtonElement: HTMLButtonElement;
+let modeValueElement: HTMLElement;
+let scoreValueElement: HTMLElement;
+let statusValueElement: HTMLElement;
+let sessionValueElement: HTMLElement;
+let sideValueElement: HTMLElement;
+let lobbyValueElement: HTMLElement;
+let proofTopologyElement: HTMLElement;
+let proofBehaviorsElement: HTMLElement;
+let proofActorsElement: HTMLElement;
+let proofGateElement: HTMLElement;
+let proofStartupElement: HTMLElement;
+let proofCallElement: HTMLElement;
+let proofTransportElement: HTMLElement;
+let proofNodesElement: HTMLElement;
+let telemetryValues: TelemetryValueElements;
+let uiBootstrapped = false;
 
 let runtime: BrowserRuntime | null = null;
 let refs: RuntimeRefs | null = null;
@@ -149,24 +419,82 @@ let matchGeneration = 0;
 const keys = new Set<string>();
 let lifecycleStatus = 'idle';
 const controllerDiagnostics: Partial<Record<PongSide, string>> = {};
-const MESH_PONG_MLX_CONTROLLER_ASK_TIMEOUT_MS = 30_000;
 let nextMlxControllerSide: PongSide = 'left';
+let telemetryState = createMeshPongTelemetryState(0);
+const mlxControllerRequests: Partial<Record<PongSide, MlxControllerRequest>> = {};
+
+const lobbyChannel =
+  typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(LOBBY_CHANNEL_NAME);
+
+function nowMs(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+}
+
+function resetTelemetry(): void {
+  telemetryState = createMeshPongTelemetryState(nowMs());
+  renderTelemetry();
+}
+
+function updateTelemetry(event: MeshPongTelemetryEvent): void {
+  telemetryState = reduceMeshPongTelemetry(telemetryState, event);
+  renderTelemetry();
+}
+
+function renderTelemetry(): void {
+  if (!uiBootstrapped) {
+    return;
+  }
+  const formatted = formatMeshPongTelemetry(telemetryState);
+  telemetryValues.render.textContent = formatted.render;
+  telemetryValues.simulation.textContent = formatted.simulation;
+  telemetryValues.leftController.textContent = formatted.leftController;
+  telemetryValues.rightController.textContent = formatted.rightController;
+  telemetryValues.replay.textContent = formatted.replay;
+}
+
+function queryRequired<T extends Element>(documentRef: Document, selector: string): T {
+  const element = documentRef.querySelector<T>(selector);
+  if (!element) {
+    throw new Error(`Mesh Pong UI failed to bind required DOM node: ${selector}`);
+  }
+  return element;
+}
+
+function appendTelemetryStat(
+  documentRef: Document,
+  panelElement: HTMLElement,
+  label: string
+): HTMLElement {
+  const stat = documentRef.createElement('div');
+  stat.className = 'stat';
+  const labelElement = documentRef.createElement('span');
+  labelElement.className = 'label';
+  labelElement.textContent = label;
+  const valueElement = documentRef.createElement('span');
+  valueElement.className = 'value';
+  valueElement.textContent = '--';
+  stat.append(labelElement, valueElement);
+  panelElement.append(stat);
+  return valueElement;
+}
+
+function bindTelemetryPanel(documentRef: Document): TelemetryValueElements {
+  const panelElement = queryRequired<HTMLElement>(documentRef, '.panel');
+  return {
+    render: appendTelemetryStat(documentRef, panelElement, 'Render'),
+    simulation: appendTelemetryStat(documentRef, panelElement, 'Simulation'),
+    leftController: appendTelemetryStat(documentRef, panelElement, 'Left control'),
+    rightController: appendTelemetryStat(documentRef, panelElement, 'Right control'),
+    replay: appendTelemetryStat(documentRef, panelElement, 'Replay'),
+  };
+}
 
 function formatMlxControllerError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes('timed out') ? 'controller-timeout' : message;
 }
-
-type MlxControllerRequest = {
-  readonly runtime: BrowserRuntime;
-  readonly refs: RuntimeRefs;
-  readonly side: PongSide;
-  readonly controller: ActorRef<PongControllerActorState, ControllerCommand>;
-  readonly snapshot: PongSnapshot;
-  readonly matchGeneration: number;
-};
-
-const mlxControllerRequests: Partial<Record<PongSide, MlxControllerRequest>> = {};
 
 function clearMlxControllerRequests(): void {
   delete mlxControllerRequests.left;
@@ -189,25 +517,6 @@ function renderStatus(): void {
     ? `${lifecycleStatus}; ${diagnostics}`
     : lifecycleStatus;
 }
-
-const SESSION_ID_STORAGE_KEY = 'actor-web.mesh-pong.session-id';
-const LOBBY_STORAGE_KEY = 'actor-web.mesh-pong.sessions';
-const LOBBY_CHANNEL_NAME = 'actor-web.mesh-pong.lobby';
-
-type LobbyChannelMessage =
-  | { readonly type: 'sessions-updated' }
-  | {
-      readonly type: 'controller-input';
-      readonly input: Extract<PongControllerInputResult, { readonly ok: true }>;
-    }
-  | {
-      readonly type: 'match-started';
-      readonly mode: PongMatchMode;
-      readonly ownerSessionId: string;
-    };
-
-const lobbyChannel =
-  typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(LOBBY_CHANNEL_NAME);
 
 function createSessionId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -529,6 +838,7 @@ async function resetRuntimeGame(
 }
 
 function renderSnapshot(nextSnapshot: PongSnapshot): void {
+  updateTelemetry({ type: 'rendered', nowMs: nowMs() });
   drawPong(canvasElement, nextSnapshot);
   scoreValueElement.textContent = `${nextSnapshot.score.left} : ${nextSnapshot.score.right}`;
 }
@@ -595,6 +905,8 @@ async function switchMode(mode: BrowserMode): Promise<void> {
   matchGeneration += 1;
   clearMlxControllerRequests();
   clearControllerDiagnostics();
+  resetTelemetry();
+
   if (previous) {
     try {
       await previous.stop();
@@ -645,11 +957,35 @@ async function switchMode(mode: BrowserMode): Promise<void> {
   }
 }
 
+function postControllerInput(
+  input: Extract<PongControllerInputResult, { readonly ok: true }>
+): void {
+  const sentAtMs = nowMs();
+  updateTelemetry({
+    type: 'replay-sent',
+    originSessionId: browserSessionId,
+    sentAtMs,
+  });
+  lobbyChannel?.postMessage({
+    type: 'controller-input',
+    input,
+    replay: {
+      originSessionId: browserSessionId,
+      sentAtMs,
+    },
+  } satisfies LobbyChannelMessage);
+}
+
 async function applyControllerInput(
   nextRuntime: BrowserRuntime,
   nextRefs: RuntimeRefs,
-  input: Extract<PongControllerInputResult, { readonly ok: true }>
+  input: Extract<PongControllerInputResult, { readonly ok: true }>,
+  metadata?: {
+    readonly appliedAtMs?: number;
+    readonly sentAtMs?: number;
+  }
 ): Promise<void> {
+  const appliedAtMs = metadata?.appliedAtMs ?? nowMs();
   const paddle = input.side === 'left' ? nextRefs.paddleA : nextRefs.paddleB;
   await paddle.send({
     type: 'MOVE_PADDLE',
@@ -657,6 +993,12 @@ async function applyControllerInput(
     amount: input.amount,
   });
   await flushRuntime(nextRuntime);
+  updateTelemetry({
+    type: 'controller-intent-applied',
+    side: input.side,
+    nowMs: appliedAtMs,
+    sentAtMs: metadata?.sentAtMs,
+  });
 }
 
 async function applyPaddleInput(
@@ -694,8 +1036,9 @@ async function applyPaddleInput(
     return;
   }
 
-  await applyControllerInput(nextRuntime, nextRefs, input);
-  lobbyChannel?.postMessage({ type: 'controller-input', input } satisfies LobbyChannelMessage);
+  const appliedAtMs = nowMs();
+  await applyControllerInput(nextRuntime, nextRefs, input, { appliedAtMs });
+  postControllerInput(input);
 }
 
 function isCurrentMlxRequest(request: MlxControllerRequest): boolean {
@@ -733,6 +1076,13 @@ async function resolveMlxControllerInput(request: MlxControllerRequest): Promise
       return;
     }
     if (!result.ok) {
+      updateTelemetry({
+        type: 'controller-request-finished',
+        side: result.side,
+        nowMs: nowMs(),
+        outcome: 'error',
+        error: result.reason,
+      });
       setControllerDiagnostic(result.side, result.reason);
       return;
     }
@@ -743,14 +1093,29 @@ async function resolveMlxControllerInput(request: MlxControllerRequest): Promise
     }
 
     const input = createSyntheticMlxControllerInput(result);
-    await applyControllerInput(request.runtime, request.refs, input);
+    const appliedAtMs = nowMs();
+    updateTelemetry({
+      type: 'controller-request-finished',
+      side: result.side,
+      nowMs: appliedAtMs,
+      outcome: 'applied',
+    });
+    await applyControllerInput(request.runtime, request.refs, input, { appliedAtMs });
     if (!(await stillControlsMlxSide(request))) {
       return;
     }
-    lobbyChannel?.postMessage({ type: 'controller-input', input } satisfies LobbyChannelMessage);
+    postControllerInput(input);
   } catch (error) {
+    const errorReason = formatMlxControllerError(error);
+    updateTelemetry({
+      type: 'controller-request-finished',
+      side: request.side,
+      nowMs: nowMs(),
+      outcome: 'error',
+      error: errorReason,
+    });
     if (await stillControlsMlxSide(request)) {
-      setControllerDiagnostic(request.side, formatMlxControllerError(error));
+      setControllerDiagnostic(request.side, errorReason);
     }
   } finally {
     if (mlxControllerRequests[request.side] === request) {
@@ -769,6 +1134,7 @@ function launchMlxControllerInput(
   if (mlxControllerRequests[side]) {
     return;
   }
+  updateTelemetry({ type: 'controller-request-started', side, nowMs: nowMs() });
   const request: MlxControllerRequest = {
     runtime: nextRuntime,
     refs: nextRefs,
@@ -820,8 +1186,12 @@ async function tick(): Promise<void> {
     return;
   }
 
+  const scheduledAtMs = nowMs();
+  updateTelemetry({ type: 'simulation-scheduled', nowMs: scheduledAtMs });
+
   try {
     if (hasInFlightMlxControllerRequest()) {
+      updateTelemetry({ type: 'simulation-held', nowMs: scheduledAtMs });
       setStatus('running');
       return;
     }
@@ -839,6 +1209,7 @@ async function tick(): Promise<void> {
     });
     await currentRefs.ball.send({ type: 'TICK' });
     await flushRuntime(currentRuntime);
+    updateTelemetry({ type: 'simulation-applied', nowMs: nowMs() });
     const nextSnapshot = await snapshot(currentRefs);
     if (runtime === currentRuntime && refs === currentRefs) {
       renderSnapshot(nextSnapshot);
@@ -849,7 +1220,7 @@ async function tick(): Promise<void> {
     setStatus(error instanceof Error ? error.message : 'runtime error');
   } finally {
     if (runtime === currentRuntime && refs === currentRefs) {
-      loopHandle = window.setTimeout(tick, 90);
+      loopHandle = window.setTimeout(tick, MESH_PONG_SIMULATION_INTERVAL_MS);
     }
   }
 }
@@ -920,7 +1291,7 @@ async function startMatch(
   matchOwnerSessionId = ownerSessionId;
   setStatus('running');
   if (loopHandle === null) {
-    loopHandle = window.setTimeout(tick, 90);
+    loopHandle = window.setTimeout(tick, MESH_PONG_SIMULATION_INTERVAL_MS);
   }
   if (broadcast) {
     lobbyChannel?.postMessage({
@@ -940,103 +1311,155 @@ async function syncCurrentLobbyFromStorage(): Promise<void> {
   await syncStoredSessionsToLobby(currentRuntime, currentRefs);
 }
 
-playerCountSelectElement.value = String(TWO_HUMAN_PONG_MATCH_MODE.playerCount);
-leftControllerSelectElement.value = TWO_HUMAN_PONG_MATCH_MODE.controllers.left;
-rightControllerSelectElement.value = TWO_HUMAN_PONG_MATCH_MODE.controllers.right;
-renderPlayerSession(null);
-
-modeSelectElement.addEventListener('change', () => {
-  const mode = modeSelectElement.value as PongTransportMode;
-  if (mode === 'websocket') {
-    modeSelectElement.value = selectedMode;
-    setStatus('websocket loopback runs in CI');
-    return;
-  }
-  void switchMode(mode);
-});
-
-claimLeftButtonElement.addEventListener('click', () => {
-  void claimSide('left').catch((error: unknown) => {
-    setStatus(error instanceof Error ? error.message : 'claim failed');
-  });
-});
-
-claimRightButtonElement.addEventListener('click', () => {
-  void claimSide('right').catch((error: unknown) => {
-    setStatus(error instanceof Error ? error.message : 'claim failed');
-  });
-});
-
-readyButtonElement.addEventListener('click', () => {
-  void markReady().catch((error: unknown) => {
-    setStatus(error instanceof Error ? error.message : 'ready failed');
-  });
-});
-
-startButtonElement.addEventListener('click', () => {
-  void startMatch(selectedMatchMode(), true).catch((error: unknown) => {
-    setStatus(error instanceof Error ? error.message : 'start failed');
-  });
-});
-
-resetButtonElement.addEventListener('click', () => {
-  void resetGame().catch((error: unknown) => {
-    setStatus(error instanceof Error ? error.message : 'reset failed');
-  });
-});
-
-window.addEventListener('keydown', (event) => {
-  keys.add(event.key.toLowerCase());
-});
-
-window.addEventListener('keyup', (event) => {
-  keys.delete(event.key.toLowerCase());
-});
-
-lobbyChannel?.addEventListener('message', (event: MessageEvent<LobbyChannelMessage>) => {
-  const message = event.data;
-  if (!message || typeof message !== 'object') {
+export function bootstrapMeshPongUI(): void {
+  if (uiBootstrapped || typeof document === 'undefined' || typeof window === 'undefined') {
     return;
   }
 
-  if (message.type === 'sessions-updated') {
+  canvasElement = queryRequired<HTMLCanvasElement>(document, '#pong-canvas');
+  modeSelectElement = queryRequired<HTMLSelectElement>(document, '#transport-mode');
+  playerCountSelectElement = queryRequired<HTMLSelectElement>(document, '#player-count');
+  leftControllerSelectElement = queryRequired<HTMLSelectElement>(document, '#left-controller');
+  rightControllerSelectElement = queryRequired<HTMLSelectElement>(document, '#right-controller');
+  claimLeftButtonElement = queryRequired<HTMLButtonElement>(document, '#claim-left');
+  claimRightButtonElement = queryRequired<HTMLButtonElement>(document, '#claim-right');
+  readyButtonElement = queryRequired<HTMLButtonElement>(document, '#ready-player');
+  startButtonElement = queryRequired<HTMLButtonElement>(document, '#start-game');
+  resetButtonElement = queryRequired<HTMLButtonElement>(document, '#reset-game');
+  modeValueElement = queryRequired<HTMLElement>(document, '#mode-value');
+  scoreValueElement = queryRequired<HTMLElement>(document, '#score-value');
+  statusValueElement = queryRequired<HTMLElement>(document, '#status-value');
+  sessionValueElement = queryRequired<HTMLElement>(document, '#session-value');
+  sideValueElement = queryRequired<HTMLElement>(document, '#side-value');
+  lobbyValueElement = queryRequired<HTMLElement>(document, '#lobby-value');
+  proofTopologyElement = queryRequired<HTMLElement>(document, '#proof-topology');
+  proofBehaviorsElement = queryRequired<HTMLElement>(document, '#proof-behaviors');
+  proofActorsElement = queryRequired<HTMLElement>(document, '#proof-actors');
+  proofGateElement = queryRequired<HTMLElement>(document, '#proof-gate');
+  proofStartupElement = queryRequired<HTMLElement>(document, '#proof-startup');
+  proofCallElement = queryRequired<HTMLElement>(document, '#proof-call');
+  proofTransportElement = queryRequired<HTMLElement>(document, '#proof-transport');
+  proofNodesElement = queryRequired<HTMLElement>(document, '#proof-nodes');
+  telemetryValues = bindTelemetryPanel(document);
+
+  uiBootstrapped = true;
+  playerCountSelectElement.value = String(TWO_HUMAN_PONG_MATCH_MODE.playerCount);
+  leftControllerSelectElement.value = TWO_HUMAN_PONG_MATCH_MODE.controllers.left;
+  rightControllerSelectElement.value = TWO_HUMAN_PONG_MATCH_MODE.controllers.right;
+  renderPlayerSession(null);
+  resetTelemetry();
+
+  modeSelectElement.addEventListener('change', () => {
+    const mode = modeSelectElement.value as PongTransportMode;
+    if (mode === 'websocket') {
+      modeSelectElement.value = selectedMode;
+      setStatus('websocket loopback runs in CI');
+      return;
+    }
+    void switchMode(mode);
+  });
+
+  claimLeftButtonElement.addEventListener('click', () => {
+    void claimSide('left').catch((error: unknown) => {
+      setStatus(error instanceof Error ? error.message : 'claim failed');
+    });
+  });
+
+  claimRightButtonElement.addEventListener('click', () => {
+    void claimSide('right').catch((error: unknown) => {
+      setStatus(error instanceof Error ? error.message : 'claim failed');
+    });
+  });
+
+  readyButtonElement.addEventListener('click', () => {
+    void markReady().catch((error: unknown) => {
+      setStatus(error instanceof Error ? error.message : 'ready failed');
+    });
+  });
+
+  startButtonElement.addEventListener('click', () => {
+    void startMatch(selectedMatchMode(), true).catch((error: unknown) => {
+      setStatus(error instanceof Error ? error.message : 'start failed');
+    });
+  });
+
+  resetButtonElement.addEventListener('click', () => {
+    void resetGame().catch((error: unknown) => {
+      setStatus(error instanceof Error ? error.message : 'reset failed');
+    });
+  });
+
+  window.addEventListener('keydown', (event) => {
+    keys.add(event.key.toLowerCase());
+  });
+
+  window.addEventListener('keyup', (event) => {
+    keys.delete(event.key.toLowerCase());
+  });
+
+  lobbyChannel?.addEventListener('message', (event: MessageEvent<LobbyChannelMessage>) => {
+    const message = event.data;
+    if (!message || typeof message !== 'object') {
+      return;
+    }
+
+    if (message.type === 'sessions-updated') {
+      void syncCurrentLobbyFromStorage().catch((error: unknown) => {
+        setStatus(error instanceof Error ? error.message : 'lobby sync failed');
+      });
+      return;
+    }
+
+    if (message.type === 'controller-input') {
+      if (message.input.sessionId === browserSessionId) {
+        return;
+      }
+      const currentRuntime = runtime;
+      const currentRefs = refs;
+      if (!currentRuntime || !currentRefs || !matchStarted) {
+        return;
+      }
+      const appliedAtMs = nowMs();
+      if (message.replay) {
+        updateTelemetry({
+          type: 'replay-received',
+          originSessionId: message.replay.originSessionId,
+          sentAtMs: message.replay.sentAtMs,
+          receivedAtMs: appliedAtMs,
+        });
+      }
+      void applyControllerInput(currentRuntime, currentRefs, message.input, {
+        appliedAtMs,
+        sentAtMs: message.replay?.sentAtMs,
+      }).catch((error: unknown) => {
+        setStatus(error instanceof Error ? error.message : 'remote input failed');
+      });
+      return;
+    }
+
+    if (message.type === 'match-started') {
+      void startMatch(message.mode, false, message.ownerSessionId).catch((error: unknown) => {
+        setStatus(error instanceof Error ? error.message : 'start failed');
+      });
+    }
+  });
+
+  window.addEventListener('storage', (event) => {
+    if (event.key !== LOBBY_STORAGE_KEY) {
+      return;
+    }
     void syncCurrentLobbyFromStorage().catch((error: unknown) => {
       setStatus(error instanceof Error ? error.message : 'lobby sync failed');
     });
-    return;
-  }
-
-  if (message.type === 'controller-input') {
-    if (message.input.sessionId === browserSessionId) {
-      return;
-    }
-    const currentRuntime = runtime;
-    const currentRefs = refs;
-    if (!currentRuntime || !currentRefs || !matchStarted) {
-      return;
-    }
-    void applyControllerInput(currentRuntime, currentRefs, message.input).catch(
-      (error: unknown) => {
-        setStatus(error instanceof Error ? error.message : 'remote input failed');
-      }
-    );
-    return;
-  }
-
-  if (message.type === 'match-started') {
-    void startMatch(message.mode, false, message.ownerSessionId).catch((error: unknown) => {
-      setStatus(error instanceof Error ? error.message : 'start failed');
-    });
-  }
-});
-
-window.addEventListener('storage', (event) => {
-  if (event.key !== LOBBY_STORAGE_KEY) {
-    return;
-  }
-  void syncCurrentLobbyFromStorage().catch((error: unknown) => {
-    setStatus(error instanceof Error ? error.message : 'lobby sync failed');
   });
-});
 
-void switchMode('local');
+  void switchMode('local');
+}
+
+if (
+  typeof document !== 'undefined' &&
+  typeof window !== 'undefined' &&
+  document.querySelector('#pong-canvas')
+) {
+  bootstrapMeshPongUI();
+}
