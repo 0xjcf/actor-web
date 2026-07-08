@@ -12,7 +12,7 @@ and a deterministic fake-provider CI lane for the `llm` tool boundary.
 The demo sidebar now exposes shell-local telemetry so lag can be attributed
 before changing scheduling:
 
-- `Render` shows browser paint cadence and the last frame gap.
+- `Render` shows snapshot render cadence and the last snapshot gap.
 - `Simulation` tracks the fixed `90ms` turn budget, total scheduled turns,
   applied turns, held turns, dropped turns, and the latest scheduling/applied
   gaps.
@@ -28,8 +28,10 @@ Interpretation:
 - High `dropped` means the browser missed one or more `90ms` simulation slots,
   calculated as `floor(gapMs / 90) - 1`.
 - High controller `rtt` points to model/provider latency.
-- High intent `age` or replay latency points to broadcast/replay delay after
-  the controller already decided.
+- High MLX intent `age` includes local model decision time; replay latency
+  points to broadcast/replay delay after the controller already decided. Local
+  human input is applied immediately in the shell, so its intent age is usually
+  near zero.
 
 ## What it proves
 

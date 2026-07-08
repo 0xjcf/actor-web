@@ -374,6 +374,7 @@ type MlxControllerRequest = {
   readonly controller: ActorRef<PongControllerActorState, ControllerCommand>;
   readonly snapshot: PongSnapshot;
   readonly matchGeneration: number;
+  readonly startedAtMs: number;
 };
 
 const SESSION_ID_STORAGE_KEY = 'actor-web.mesh-pong.session-id';
@@ -1100,7 +1101,10 @@ async function resolveMlxControllerInput(request: MlxControllerRequest): Promise
       nowMs: appliedAtMs,
       outcome: 'applied',
     });
-    await applyControllerInput(request.runtime, request.refs, input, { appliedAtMs });
+    await applyControllerInput(request.runtime, request.refs, input, {
+      appliedAtMs,
+      sentAtMs: request.startedAtMs,
+    });
     if (!(await stillControlsMlxSide(request))) {
       return;
     }
@@ -1134,7 +1138,8 @@ function launchMlxControllerInput(
   if (mlxControllerRequests[side]) {
     return;
   }
-  updateTelemetry({ type: 'controller-request-started', side, nowMs: nowMs() });
+  const startedAtMs = nowMs();
+  updateTelemetry({ type: 'controller-request-started', side, nowMs: startedAtMs });
   const request: MlxControllerRequest = {
     runtime: nextRuntime,
     refs: nextRefs,
@@ -1142,6 +1147,7 @@ function launchMlxControllerInput(
     controller,
     snapshot: snapshotState,
     matchGeneration,
+    startedAtMs,
   };
   mlxControllerRequests[side] = request;
   void resolveMlxControllerInput(request);

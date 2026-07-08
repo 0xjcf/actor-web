@@ -1153,10 +1153,22 @@ describe('Mesh Pong transport parity', () => {
 
     expect(uiEntrypoint).toContain('MESH_PONG_MLX_CONTROLLER_ASK_TIMEOUT_MS = 30_000');
     expect(uiEntrypoint).toContain('MESH_PONG_MLX_CONTROLLER_ASK_TIMEOUT_MS');
+    expect(uiEntrypoint).toContain('readonly startedAtMs: number;');
     expect(uiEntrypoint).toContain('hasInFlightMlxControllerRequest');
     expect(uiEntrypoint).toContain('launchNextMlxControllerInput');
     expect(uiEntrypoint).toContain('nextMlxControllerSide');
+    expect(uiEntrypoint).toContain('const startedAtMs = nowMs();');
+    expect(uiEntrypoint).toContain('sentAtMs: request.startedAtMs');
     expect(uiEntrypoint).toContain("'controller-timeout'");
+  });
+
+  it('documents snapshot render cadence and MLX intent age semantics', async () => {
+    const readme = await readFile(path.resolve(meshPongExamplesDir, 'mesh-pong/README.md'), 'utf8');
+
+    expect(readme).toContain('snapshot render cadence');
+    expect(readme).not.toContain('browser paint cadence');
+    expect(readme).toContain('High MLX intent `age` includes local model decision time');
+    expect(readme).toMatch(/Local\s+human input is applied immediately in the shell/);
   });
 
   it('produces the same deterministic score sequence for local, broadcast, and websocket runtimes', async () => {
