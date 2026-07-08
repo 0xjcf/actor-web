@@ -32,6 +32,7 @@ Use the telemetry and decoupled loop to evaluate model-size and server-topology 
 - None recorded at task creation. Add rejected approaches during planning if scope tradeoffs appear.
 
 ## Affected files
+
 - examples/mesh-pong/README.md
 - examples/mesh-pong/mesh-pong.test.ts
 - examples/mesh-pong/ui/main.ts
