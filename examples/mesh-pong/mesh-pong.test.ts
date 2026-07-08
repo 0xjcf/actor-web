@@ -54,6 +54,12 @@ import {
   syncLobbySessionsFromStorage,
 } from './pong-contract';
 import { pong } from './pong-topology';
+import {
+  bootstrapMeshPongUI,
+  createMeshPongTelemetryState,
+  formatMeshPongTelemetry,
+  reduceMeshPongTelemetry,
+} from './ui/main';
 
 type StartedMeshPongRuntime =
   | Awaited<ReturnType<typeof startMeshPongLocal>>
@@ -372,6 +378,142 @@ async function captureSequence(
 }
 
 describe('Mesh Pong transport parity', () => {
+  it('tracks held and applied simulation turns in telemetry state', () => {
+    let telemetry = createMeshPongTelemetryState(0);
+
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'simulation-scheduled',
+      nowMs: 90,
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'simulation-held',
+      nowMs: 90,
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'simulation-scheduled',
+      nowMs: 180,
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'simulation-applied',
+      nowMs: 180,
+    });
+
+    expect(telemetry.simulation.scheduledCount).toBe(2);
+    expect(telemetry.simulation.heldCount).toBe(1);
+    expect(telemetry.simulation.appliedCount).toBe(1);
+    expect(telemetry.simulation.lastScheduledGapMs).toBe(90);
+  });
+
+  it('derives dropped turns from the simulation scheduling gap', () => {
+    let telemetry = createMeshPongTelemetryState(0);
+
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'simulation-scheduled',
+      nowMs: 90,
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'simulation-scheduled',
+      nowMs: 370,
+    });
+
+    expect(telemetry.simulation.lastScheduledGapMs).toBe(280);
+    expect(telemetry.simulation.droppedCount).toBe(2);
+  });
+
+  it('formats render, simulation, and per-side controller telemetry facts', () => {
+    let telemetry = createMeshPongTelemetryState(0);
+
+    telemetry = reduceMeshPongTelemetry(telemetry, { type: 'rendered', nowMs: 16 });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'simulation-scheduled',
+      nowMs: 90,
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'simulation-applied',
+      nowMs: 92,
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'controller-request-started',
+      side: 'left',
+      nowMs: 100,
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'controller-request-finished',
+      side: 'left',
+      nowMs: 145,
+      outcome: 'applied',
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'controller-intent-applied',
+      side: 'left',
+      nowMs: 150,
+      sentAtMs: 138,
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'controller-request-finished',
+      side: 'right',
+      nowMs: 151,
+      outcome: 'error',
+      error: 'provider-failed',
+    });
+
+    const formatted = formatMeshPongTelemetry(telemetry);
+
+    expect(formatted.render).toContain('frames');
+    expect(formatted.simulation).toContain('90ms');
+    expect(formatted.simulation).toContain('applied 1');
+    expect(formatted.leftController).toContain('rtt 45ms');
+    expect(formatted.leftController).toContain('age 12ms');
+    expect(formatted.rightController).toContain('provider-failed');
+  });
+
+  it('records controller RTT, replay latency, and applied intent age from injected timestamps', () => {
+    let telemetry = createMeshPongTelemetryState(0);
+
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'controller-request-started',
+      side: 'left',
+      nowMs: 100,
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'controller-request-finished',
+      side: 'left',
+      nowMs: 160,
+      outcome: 'applied',
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'replay-sent',
+      originSessionId: 'session-a',
+      sentAtMs: 162,
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'replay-received',
+      originSessionId: 'session-a',
+      sentAtMs: 162,
+      receivedAtMs: 171,
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'controller-intent-applied',
+      side: 'left',
+      nowMs: 180,
+      sentAtMs: 162,
+    });
+
+    expect(telemetry.controllers.left.rttMs).toBe(60);
+    expect(telemetry.controllers.left.lastAppliedIntentAgeMs).toBe(18);
+    expect(telemetry.replay.latencyMs).toBe(9);
+  });
+
+  it('exports the browser helper surface without requiring DOM bootstrap', async () => {
+    const module = await import('./ui/main');
+
+    expect(typeof module.createMeshPongTelemetryState).toBe('function');
+    expect(typeof module.reduceMeshPongTelemetry).toBe('function');
+    expect(typeof module.formatMeshPongTelemetry).toBe('function');
+    expect(typeof module.bootstrapMeshPongUI).toBe('function');
+    expect(bootstrapMeshPongUI).toBe(module.bootstrapMeshPongUI);
+  });
+
   it('creates one player session actor per browser session', async () => {
     const runtime = await startMeshPongLocal();
     startedRuntimes.push(runtime);

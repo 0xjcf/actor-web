@@ -7,6 +7,30 @@
 Mesh Pong now covers one human plus one MLX controller, full MLX-vs-MLX play,
 and a deterministic fake-provider CI lane for the `llm` tool boundary.
 
+## Lag budget telemetry
+
+The demo sidebar now exposes shell-local telemetry so lag can be attributed
+before changing scheduling:
+
+- `Render` shows browser paint cadence and the last frame gap.
+- `Simulation` tracks the fixed `90ms` turn budget, total scheduled turns,
+  applied turns, held turns, dropped turns, and the latest scheduling/applied
+  gaps.
+- `Left control` / `Right control` show whether an MLX turn is in flight, the
+  latest controller RTT, the outcome, and the age of the last applied intent.
+- `Replay` shows the last cross-tab controller-input replay latency when a tab
+  re-applies another tab's input.
+
+Interpretation:
+
+- High `held` with low `dropped` means the scheduler is intentionally waiting on
+  an in-flight MLX turn.
+- High `dropped` means the browser missed one or more `90ms` simulation slots,
+  calculated as `floor(gapMs / 90) - 1`.
+- High controller `rtt` points to model/provider latency.
+- High intent `age` or replay latency points to broadcast/replay delay after
+  the controller already decided.
+
 ## What it proves
 
 One set of actor definitions runs unchanged across every transport and
