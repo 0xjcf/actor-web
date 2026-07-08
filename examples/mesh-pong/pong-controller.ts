@@ -17,6 +17,8 @@ import {
   type PongSnapshot,
 } from './pong-contract';
 
+export const CONTROLLER_LLM_TIMEOUT_MS = 1500;
+
 function createInitialControllerState(side: PongSide): PongControllerActorState {
   return {
     side,
@@ -87,6 +89,18 @@ function mapFailure(
   };
 }
 
+function mapThrownProviderError(side: PongSide, error: unknown): PongControllerResult {
+  return {
+    ok: false,
+    side,
+    reason: 'provider-failed',
+    error: {
+      code: 'LLM_PROVIDER_ERROR',
+      message: error instanceof Error ? error.message : 'LLM provider threw unexpectedly.',
+    },
+  };
+}
+
 export function normalizePongControllerAmount(rawAmount: number): number {
   return Math.max(1, Math.min(PONG_FIELD.paddleStep, Math.trunc(rawAmount)));
 }
@@ -140,14 +154,21 @@ export async function runPongControllerWithLlmProvider(
   provider: ActorAgentLlmProvider
 ): Promise<PongControllerResult> {
   const abortController = new AbortController();
-  const llmResult = await provider(createPongControllerRequest(side, snapshot), {
-    actorId: `mesh-pong-controller-${side}`,
-    nodeAddress: 'browser',
-    signal: abortController.signal,
-  });
-  return llmResult.ok
-    ? parseControllerResponse(side, llmResult.value.message.content)
-    : mapFailure(side, llmResult);
+  const timeoutId = setTimeout(() => abortController.abort(), CONTROLLER_LLM_TIMEOUT_MS);
+  try {
+    const llmResult = await provider(createPongControllerRequest(side, snapshot), {
+      actorId: `mesh-pong-controller-${side}`,
+      nodeAddress: 'browser',
+      signal: abortController.signal,
+    });
+    return llmResult.ok
+      ? parseControllerResponse(side, llmResult.value.message.content)
+      : mapFailure(side, llmResult);
+  } catch (error) {
+    return mapThrownProviderError(side, error);
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export function createPongControllerBehavior(side: PongSide) {

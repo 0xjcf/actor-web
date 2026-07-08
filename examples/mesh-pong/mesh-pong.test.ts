@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import {
   type ActorAgentLlmProvider,
   type ActorAgentLlmRequest,
+  type ActorAgentLlmResult,
   createActorAgentTools,
 } from '@actor-web/agent';
 import type { ActorMessage, ActorRef } from '@actor-web/runtime';
@@ -58,6 +59,7 @@ import {
   syncLobbySession,
   syncLobbySessionsFromStorage,
 } from './pong-contract';
+import { CONTROLLER_LLM_TIMEOUT_MS, runPongControllerWithLlmProvider } from './pong-controller';
 import { pong } from './pong-topology';
 import {
   bootstrapMeshPongUI,
@@ -1370,6 +1372,59 @@ describe('Mesh Pong transport parity', () => {
       },
     });
     expect(observedSignal?.aborted).toBe(true);
+  });
+
+  it('maps thrown controller provider errors to data failures', async () => {
+    const snapshot = createStepperSnapshot(
+      { left: createInitialPaddle('left'), right: createInitialPaddle('right') },
+      0
+    );
+
+    await expect(
+      runPongControllerWithLlmProvider('left', snapshot, async () => {
+        throw new Error('provider exploded');
+      })
+    ).resolves.toEqual({
+      ok: false,
+      side: 'left',
+      reason: 'provider-failed',
+      error: {
+        code: 'LLM_PROVIDER_ERROR',
+        message: 'provider exploded',
+      },
+    });
+  });
+
+  it('aborts controller provider calls after the controller timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const snapshot = createStepperSnapshot(
+        { left: createInitialPaddle('left'), right: createInitialPaddle('right') },
+        0
+      );
+      let observedSignal: AbortSignal | undefined;
+      const result = runPongControllerWithLlmProvider('right', snapshot, (_request, options) => {
+        observedSignal = options.signal;
+        return new Promise<ActorAgentLlmResult>((_resolve, reject) => {
+          options.signal.addEventListener('abort', () => reject(new Error('controller aborted')));
+        });
+      });
+
+      await vi.advanceTimersByTimeAsync(CONTROLLER_LLM_TIMEOUT_MS);
+
+      await expect(result).resolves.toEqual({
+        ok: false,
+        side: 'right',
+        reason: 'provider-failed',
+        error: {
+          code: 'LLM_PROVIDER_ERROR',
+          message: 'controller aborted',
+        },
+      });
+      expect(observedSignal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('starts LLM-vs-LLM mode through controller actors with a deterministic fake provider', async () => {
