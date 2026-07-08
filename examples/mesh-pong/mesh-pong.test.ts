@@ -824,6 +824,34 @@ describe('Mesh Pong transport parity', () => {
     expect(formatMeshPongBenchmarkSummary(smooth)).toContain('effect smooth');
   });
 
+  it('classifies benchmark outcomes as laggy when controller latency exceeds the simulation budget', () => {
+    let laggy = createMeshPongBenchmarkSummaryState(0);
+    laggy = reduceMeshPongBenchmarkSummary(laggy, {
+      type: 'simulation-scheduled',
+      nowMs: 90,
+    });
+    laggy = reduceMeshPongBenchmarkSummary(laggy, {
+      type: 'simulation-applied',
+      nowMs: 90,
+    });
+    laggy = reduceMeshPongBenchmarkSummary(laggy, {
+      type: 'controller-request-started',
+      side: 'left',
+      nowMs: 100,
+    });
+    laggy = reduceMeshPongBenchmarkSummary(laggy, {
+      type: 'controller-request-finished',
+      side: 'left',
+      nowMs: 220,
+      outcome: 'ready',
+    });
+
+    expect(laggy.controllers.latency.averageMs).toBe(120);
+    expect(laggy.timeoutRate).toBe(0);
+    expect(laggy.gameplayEffect).toBe('laggy');
+    expect(formatMeshPongBenchmarkSummary(laggy)).toContain('effect laggy');
+  });
+
   it('exports the browser helper surface without requiring DOM bootstrap', async () => {
     const module = await import('./ui/main');
 
