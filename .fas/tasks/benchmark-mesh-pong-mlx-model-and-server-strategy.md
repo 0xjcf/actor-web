@@ -37,6 +37,7 @@ Use the telemetry and decoupled loop to evaluate model-size and server-topology 
 - examples/mesh-pong/mesh-pong.test.ts
 - examples/mesh-pong/ui/main.ts
 - examples/mesh-pong/mlx-provider.ts
+- examples/mesh-pong/pong-controller.ts
 
 ## Scope Amendments
 
@@ -66,6 +67,15 @@ Use the telemetry and decoupled loop to evaluate model-size and server-topology 
 - Evidence source: CodeRabbit CLI review
 - Evidence: CodeRabbit CLI review | examples/mesh-pong/mlx-provider.ts | Commit 065346d7 removed localStorage API-key resolution and kept VITE_MESH_PONG_MLX_API_KEY env/runtime-only.
 - Accuracy signal: reviewer-found
+
+- Type: scope-refresh
+- Added at: manual-validation
+- Trigger: Manual Mesh Pong two-MLX browser validation still showed visible multi-second render gaps
+- Reason: Fixing the browser lag required reusing the Pong controller prompt/parser from the imperative shell so MLX inference no longer runs inside a browser actor message handler.
+- Added paths: examples/mesh-pong/pong-controller.ts
+- Evidence source: in-app browser telemetry
+- Evidence: in-app browser telemetry | examples/mesh-pong/pong-controller.ts | Live two-MLX run before the fix showed render gaps around 5.2s and dropped simulation turns; after moving the UI MLX call to the shell, render/simulation gaps held around 92-93ms with dropped 0.
+- Accuracy signal: manual-validation-found
 
 ## Implementation plan
 

@@ -2213,8 +2213,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Benchmark Mesh Pong MLX model and server strategy
 - Mode: 6-agent
-- Status: done
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/benchmark-mesh-pong-mlx-model-and-server-strategy.md
 - Verification lane: fast
 - Policy sensitivity: standard
