@@ -35,6 +35,7 @@ Use the telemetry and decoupled loop to evaluate model-size and server-topology 
 - examples/mesh-pong/README.md
 - examples/mesh-pong/mesh-pong.test.ts
 - examples/mesh-pong/ui/main.ts
+- examples/mesh-pong/mlx-provider.ts
 
 ## Scope Amendments
 
@@ -46,6 +47,15 @@ Use the telemetry and decoupled loop to evaluate model-size and server-topology 
 - Evidence source: architect and staff-engineer handoff
 - Evidence: `fas_architect` and `fas_staff_engineer` both directed this task to keep `mlx-provider.ts` unchanged and add benchmark summary evidence in the browser shell plus tests.
 - Accuracy signal: planner-missed
+
+- Type: scope-refresh
+- Added at: code-review
+- Trigger: CodeRabbit secret-storage finding
+- Reason: CodeRabbit found that the Mesh Pong README and provider allowed MLX API keys to be persisted in browser localStorage; fixing the valid security finding required updating the provider config seam, README guidance, and config test.
+- Added paths: examples/mesh-pong/mlx-provider.ts
+- Evidence source: CodeRabbit CLI review
+- Evidence: CodeRabbit CLI review | examples/mesh-pong/mlx-provider.ts | Removed localStorage API-key resolution and kept VITE_MESH_PONG_MLX_API_KEY env/runtime-only.
+- Accuracy signal: reviewer-found
 
 ## Implementation plan
 
