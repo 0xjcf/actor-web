@@ -1,16 +1,16 @@
-# Post-mesh scoping: membership graduation tier, cross-node supervision boundary, claim gating
+# Mesh Pong performance telemetry and lag budget
 
 ## Source
-
-Created with `fas create-task` on 2026-06-19.
+Created with `fas create-task` on 2026-07-08.
 
 ## Problem
-
-Location-transparency audit L6. After membership lands: (1) decide whether @actor-web/labs-mesh graduates from labs to a supported tier and gate the UNCONDITIONAL location-transparency claim on it; (2) document the node-local supervision boundary and scope cross-node monitor/link/nodedown semantics (today supervision is node-local; peer-down purges directory entries with no failover). Decision and scoping, not implementation.
+Add visible and testable Mesh Pong performance telemetry so the example exposes render cadence, simulation cadence, MLX controller latency, controller in-flight state, dropped or held ticks, and last-applied intent age. This should make the current lag attributable before changing scheduling. Keep telemetry in the example shell and return facts as data; do not move timing or provider calls into Pong functional behaviors.
 
 ## Acceptance criteria
-
-- The change is verified and does not introduce regressions.
+- The UI exposes a compact performance/debug panel that distinguishes render loop health, deterministic simulation tick health, and MLX controller latency/in-flight state.
+- The example records enough structured metrics to answer whether lag is caused by model latency, tick gating, transport delivery, or rendering.
+- Tests cover the telemetry reducer, formatter, or equivalent deterministic surface without requiring a live MLX server.
+- Documentation explains the expected local latency budget and how to interpret the metrics.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
 - DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.
@@ -19,44 +19,37 @@ Location-transparency audit L6. After membership lands: (1) decide whether @acto
 - The task is queued in `.fas/queue/tasks.json` for the runtime.
 
 ## Proposed solution
-
 - Use the supplied problem context, acceptance criteria, and affected-file hints to draft the concrete implementation approach during planning.
 
 ## Alternatives considered
-
 - None recorded at task creation. Add rejected approaches during planning if scope tradeoffs appear.
 
 ## Affected files
-
-- Scope unknown.
+- examples/mesh-pong/README.md
+- examples/mesh-pong/mesh-pong.test.ts
+- examples/mesh-pong/ui/main.ts
 
 ## Scope Amendments
-
 - None.
 
 ## Implementation plan
-
 - Convert the supplied context into a scoped implementation plan before editing.
 - Refresh affected-file scope before implementation if the generated hints are incomplete.
 
 ## Verification plan
-
 - Run `fas validate-task` for the inner-loop verification gate.
 - Run `.fas/scripts/verify.sh --full` at the final release-quality gate when tracked files change.
 
 ## Risks
-
 - Validate generated scope, acceptance criteria, and verification evidence before closeout to avoid workflow drift.
 
 ## Dependencies
-- Depends on task-1781628517450 labs-mesh implementation, task-1783360998273/task-1783361040728 route-token protocol follow-ups, task-1783452033293 Mesh Pong MLX LLM controller adapter and player modes, and task-1783516442115 Benchmark Mesh Pong MLX model and server strategy. Claim gating should run only after richer Mesh Pong multiplayer, LLM validation, and performance strategy evidence are queued or implemented.
+- Depends on task-1783452033293 Mesh Pong MLX LLM controller adapter and player modes. Blocks task-1783516431222 Decouple Mesh Pong simulation and render loop from MLX inference turns.
 
 ## Open questions
-
 - None captured at task creation.
 
 ## Artifact links
-
 - Planning: `.fas/state/planning.json`
 - Task packet: `.fas/state/task-packet.json`
 - Commit plan: `.fas/state/commit-plan.json`

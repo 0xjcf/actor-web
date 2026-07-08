@@ -1,16 +1,17 @@
-# Post-mesh scoping: membership graduation tier, cross-node supervision boundary, claim gating
+# Benchmark Mesh Pong MLX model and server strategy
 
 ## Source
-
-Created with `fas create-task` on 2026-06-19.
+Created with `fas create-task` on 2026-07-08.
 
 ## Problem
-
-Location-transparency audit L6. After membership lands: (1) decide whether @actor-web/labs-mesh graduates from labs to a supported tier and gate the UNCONDITIONAL location-transparency claim on it; (2) document the node-local supervision boundary and scope cross-node monitor/link/nodedown semantics (today supervision is node-local; peer-down purges directory entries with no failover). Decision and scoping, not implementation.
+Use the telemetry and decoupled loop to evaluate model-size and server-topology choices for Mesh Pong. Compare the current Qwen3-8B-4bit setup against faster locally available or configurable MLX model options where possible, and decide whether per-player endpoints or two servers are justified. Implement only the minimal configuration, docs, and tests needed for the chosen strategy; if two servers do not improve local play, record that as an explicit deferred option.
 
 ## Acceptance criteria
-
-- The change is verified and does not introduce regressions.
+- Benchmark evidence captures per-turn latency, throughput, timeout rate, and visible gameplay effect for the tested MLX setup.
+- The example supports the chosen provider/server configuration without coupling Pong functional behaviors to MLX or provider internals.
+- Per-side endpoint or model configuration is implemented only if the evidence shows it improves local play; otherwise the decision is documented with follow-up scope.
+- The README includes recommended model/server settings and local setup commands for the validated path.
+- Post-mesh claim gating remains blocked until this performance strategy is resolved.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
 - DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.
@@ -19,44 +20,38 @@ Location-transparency audit L6. After membership lands: (1) decide whether @acto
 - The task is queued in `.fas/queue/tasks.json` for the runtime.
 
 ## Proposed solution
-
 - Use the supplied problem context, acceptance criteria, and affected-file hints to draft the concrete implementation approach during planning.
 
 ## Alternatives considered
-
 - None recorded at task creation. Add rejected approaches during planning if scope tradeoffs appear.
 
 ## Affected files
-
-- Scope unknown.
+- examples/mesh-pong/README.md
+- examples/mesh-pong/mesh-pong.test.ts
+- examples/mesh-pong/mlx-provider.ts
+- examples/mesh-pong/ui/main.ts
 
 ## Scope Amendments
-
 - None.
 
 ## Implementation plan
-
 - Convert the supplied context into a scoped implementation plan before editing.
 - Refresh affected-file scope before implementation if the generated hints are incomplete.
 
 ## Verification plan
-
 - Run `fas validate-task` for the inner-loop verification gate.
 - Run `.fas/scripts/verify.sh --full` at the final release-quality gate when tracked files change.
 
 ## Risks
-
 - Validate generated scope, acceptance criteria, and verification evidence before closeout to avoid workflow drift.
 
 ## Dependencies
-- Depends on task-1781628517450 labs-mesh implementation, task-1783360998273/task-1783361040728 route-token protocol follow-ups, task-1783452033293 Mesh Pong MLX LLM controller adapter and player modes, and task-1783516442115 Benchmark Mesh Pong MLX model and server strategy. Claim gating should run only after richer Mesh Pong multiplayer, LLM validation, and performance strategy evidence are queued or implemented.
+- Depends on task-1783516431222 Decouple Mesh Pong simulation and render loop from MLX inference turns. Blocks task-1781880961715 Post-mesh scoping: membership graduation tier, cross-node supervision boundary, claim gating.
 
 ## Open questions
-
 - None captured at task creation.
 
 ## Artifact links
-
 - Planning: `.fas/state/planning.json`
 - Task packet: `.fas/state/task-packet.json`
 - Commit plan: `.fas/state/commit-plan.json`

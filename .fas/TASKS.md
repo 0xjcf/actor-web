@@ -2186,6 +2186,31 @@ operator explicitly asks for queue mutations.
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Mesh Pong performance telemetry and lag budget
+
+- Title: Mesh Pong performance telemetry and lag budget
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/mesh-pong-performance-telemetry-and-lag-budget.md
+
+### Task: Decouple Mesh Pong simulation and render loop from MLX inference turns
+
+- Title: Decouple Mesh Pong simulation and render loop from MLX inference turns
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/decouple-mesh-pong-simulation-and-render-loop-from-mlx-infer.md
+- Automation mode: advisory
+
+### Task: Benchmark Mesh Pong MLX model and server strategy
+
+- Title: Benchmark Mesh Pong MLX model and server strategy
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/benchmark-mesh-pong-mlx-model-and-server-strategy.md
+
 ## Template
 
 ### Task: `<short task title>`
