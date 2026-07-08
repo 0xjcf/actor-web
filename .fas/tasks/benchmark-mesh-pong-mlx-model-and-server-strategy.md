@@ -32,12 +32,12 @@ Use the telemetry and decoupled loop to evaluate model-size and server-topology 
 - None recorded at task creation. Add rejected approaches during planning if scope tradeoffs appear.
 
 ## Affected files
-
 - examples/mesh-pong/README.md
 - examples/mesh-pong/mesh-pong.test.ts
 - examples/mesh-pong/ui/main.ts
 - examples/mesh-pong/mlx-provider.ts
 - examples/mesh-pong/pong-controller.ts
+- examples/mesh-pong/pong-behaviors.ts
 
 ## Scope Amendments
 
@@ -76,6 +76,15 @@ Use the telemetry and decoupled loop to evaluate model-size and server-topology 
 - Evidence source: in-app browser telemetry
 - Evidence: in-app browser telemetry | examples/mesh-pong/pong-controller.ts | Live two-MLX run before the fix showed render gaps around 5.2s and dropped simulation turns; after moving the UI MLX call to the shell, render/simulation gaps held around 92-93ms with dropped 0.
 - Accuracy signal: manual-validation-found
+
+- Type: scope-refresh
+- Added at: code-review
+- Trigger: CodeRabbit malformed command findings
+- Reason: CodeRabbit found that malformed Mesh Pong lobby/player-session messages could mutate runtime state or escape provider errors during closeout; fixing the valid findings required changing pong-behaviors.ts in addition to the planned controller and test files.
+- Added paths: examples/mesh-pong/pong-behaviors.ts
+- Evidence source: CodeRabbit CLI review
+- Evidence: CodeRabbit CLI review | examples/mesh-pong/pong-behaviors.ts | Commit ccfbf4b9 validates CLAIM_SIDE payloads before mutation and prevents unknown lobby messages from resetting match state.
+- Accuracy signal: reviewer-found
 
 ## Implementation plan
 
