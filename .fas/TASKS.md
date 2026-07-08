@@ -2213,9 +2213,12 @@ operator explicitly asks for queue mutations.
 
 - Title: Benchmark Mesh Pong MLX model and server strategy
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/benchmark-mesh-pong-mlx-model-and-server-strategy.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ## Template
 

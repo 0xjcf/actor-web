@@ -34,12 +34,18 @@ Use the telemetry and decoupled loop to evaluate model-size and server-topology 
 
 - examples/mesh-pong/README.md
 - examples/mesh-pong/mesh-pong.test.ts
-- examples/mesh-pong/mlx-provider.ts
 - examples/mesh-pong/ui/main.ts
 
 ## Scope Amendments
 
-- None.
+- Type: scope-refresh
+- Added at: implementation
+- Trigger: architecture decision
+- Reason: `examples/mesh-pong/mlx-provider.ts` was inspected as provider-contract context, but the accepted strategy keeps the existing single-endpoint provider configuration unchanged and defers per-side endpoint or two-server routing until live benchmark evidence justifies it.
+- Removed planned paths: examples/mesh-pong/mlx-provider.ts
+- Evidence source: architect and staff-engineer handoff
+- Evidence: `fas_architect` and `fas_staff_engineer` both directed this task to keep `mlx-provider.ts` unchanged and add benchmark summary evidence in the browser shell plus tests.
+- Accuracy signal: planner-missed
 
 ## Implementation plan
 
