@@ -71,6 +71,10 @@ function mapFailure(
   };
 }
 
+export function normalizePongControllerAmount(rawAmount: number): number {
+  return Math.max(1, Math.min(PONG_FIELD.paddleStep, Math.trunc(rawAmount)));
+}
+
 function parseControllerResponse(side: PongSide, content: string): PongControllerResult {
   try {
     const parsed = JSON.parse(content) as { direction?: unknown; amount?: unknown };
@@ -99,7 +103,7 @@ function parseControllerResponse(side: PongSide, content: string): PongControlle
       provider: 'llm',
       side,
       direction,
-      amount: Math.max(1, Math.min(PONG_FIELD.paddleStep, Math.trunc(rawAmount))),
+      amount: normalizePongControllerAmount(rawAmount),
     };
   } catch {
     return {

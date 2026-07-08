@@ -5,7 +5,9 @@
 > `examples/mesh-pong/ui/index.html`.
 
 Mesh Pong now covers one human plus one MLX controller, full MLX-vs-MLX play,
-and a deterministic fake-provider CI lane for the `llm` tool boundary.
+and a deterministic fake-provider CI lane for the `llm` tool boundary. The
+browser loop now treats MLX as two independent per-side intent lanes, so slow
+model turns no longer pause simulation or rendering.
 
 ## Lag budget telemetry
 
@@ -23,8 +25,8 @@ before changing scheduling:
 
 Interpretation:
 
-- High `held` with low `dropped` means the scheduler is intentionally waiting on
-  an in-flight MLX turn.
+- `held` should stay near zero during normal MLX play because the owner tick now
+  advances while each side keeps at most one local-model request in flight.
 - High `dropped` means the browser missed one or more `90ms` simulation slots,
   calculated as `floor(gapMs / 90) - 1`.
 - High controller `rtt` points to model/provider latency.
@@ -32,6 +34,9 @@ Interpretation:
   points to broadcast/replay delay after the controller already decided. Local
   human input is applied immediately in the shell, so its intent age is usually
   near zero.
+- When a fresh MLX result is late, the owner reuses the last known intent for a
+  small bounded number of turns, then falls back to a no-op until a new result
+  arrives.
 
 ## What it proves
 
@@ -126,8 +131,9 @@ The example is two deliverables: a human-facing demo and an automated gate.
    controller selection, and an explicit start gate. The browser stays the
    observer/control panel: it claims human slots, synthesizes `mlx-left` /
    `mlx-right` lobby sessions for the chosen mode, feeds snapshots to the
-   controller actors, and applies bounded paddle intents. It does not persist
-   MLX controllers as browser sessions. The page renders the shared
+   controller actors, and applies bounded paddle intents at owner-tick turn
+   boundaries. It does not persist MLX controllers as browser sessions. The
+   page renders the shared
    topology/behavior files, the selected startup module, and the parity-status
    panel so the validation result is visible while switching transports. It
    does not run the CI gate; `mesh-pong.test.ts` remains the runtime-agnostic
