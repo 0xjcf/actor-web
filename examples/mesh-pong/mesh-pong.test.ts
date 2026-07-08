@@ -682,6 +682,12 @@ describe('Mesh Pong transport parity', () => {
         },
       },
     });
+    expect(JSON.parse(String(fetchCalls[0]?.init?.body))).toMatchObject({
+      model: 'mlx-local',
+      temperature: 0,
+      max_tokens: 24,
+      chat_template_kwargs: { enable_thinking: false },
+    });
   });
 
   it('times out browser MLX endpoint calls that do not settle', async () => {
@@ -995,6 +1001,20 @@ describe('Mesh Pong transport parity', () => {
 
     expect(uiEntrypoint).toContain("session?.ready ? 'Ready' : 'Mark ready'");
     expect(uiEntrypoint).not.toContain("session?.ready ? 'Ready' : 'Ready'");
+  });
+
+  it('keeps browser MLX controller turns on an explicit local-model ask timeout', async () => {
+    const uiEntrypoint = await readFile(
+      path.resolve(meshPongExamplesDir, 'mesh-pong/ui/main.ts'),
+      'utf8'
+    );
+
+    expect(uiEntrypoint).toContain('MESH_PONG_MLX_CONTROLLER_ASK_TIMEOUT_MS = 30_000');
+    expect(uiEntrypoint).toContain('MESH_PONG_MLX_CONTROLLER_ASK_TIMEOUT_MS');
+    expect(uiEntrypoint).toContain('hasInFlightMlxControllerRequest');
+    expect(uiEntrypoint).toContain('launchNextMlxControllerInput');
+    expect(uiEntrypoint).toContain('nextMlxControllerSide');
+    expect(uiEntrypoint).toContain("'controller-timeout'");
   });
 
   it('produces the same deterministic score sequence for local, broadcast, and websocket runtimes', async () => {

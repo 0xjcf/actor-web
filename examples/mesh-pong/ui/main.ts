@@ -149,6 +149,13 @@ let matchGeneration = 0;
 const keys = new Set<string>();
 let lifecycleStatus = 'idle';
 const controllerDiagnostics: Partial<Record<PongSide, string>> = {};
+const MESH_PONG_MLX_CONTROLLER_ASK_TIMEOUT_MS = 30_000;
+let nextMlxControllerSide: PongSide = 'left';
+
+function formatMlxControllerError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('timed out') ? 'controller-timeout' : message;
+}
 
 type MlxControllerRequest = {
   readonly runtime: BrowserRuntime;
@@ -164,6 +171,7 @@ const mlxControllerRequests: Partial<Record<PongSide, MlxControllerRequest>> = {
 function clearMlxControllerRequests(): void {
   delete mlxControllerRequests.left;
   delete mlxControllerRequests.right;
+  nextMlxControllerSide = 'left';
 }
 
 function clearMatchOwner(): void {
@@ -700,6 +708,10 @@ function isCurrentMlxRequest(request: MlxControllerRequest): boolean {
   );
 }
 
+function hasInFlightMlxControllerRequest(): boolean {
+  return Boolean(mlxControllerRequests.left || mlxControllerRequests.right);
+}
+
 async function stillControlsMlxSide(request: MlxControllerRequest): Promise<boolean> {
   if (!isCurrentMlxRequest(request)) {
     return false;
@@ -710,10 +722,13 @@ async function stillControlsMlxSide(request: MlxControllerRequest): Promise<bool
 
 async function resolveMlxControllerInput(request: MlxControllerRequest): Promise<void> {
   try {
-    const result = await request.controller.ask<PongControllerResult>({
-      type: 'RUN_CONTROLLER',
-      snapshot: request.snapshot,
-    });
+    const result = await request.controller.ask<PongControllerResult>(
+      {
+        type: 'RUN_CONTROLLER',
+        snapshot: request.snapshot,
+      },
+      MESH_PONG_MLX_CONTROLLER_ASK_TIMEOUT_MS
+    );
     if (!(await stillControlsMlxSide(request))) {
       return;
     }
@@ -735,10 +750,7 @@ async function resolveMlxControllerInput(request: MlxControllerRequest): Promise
     lobbyChannel?.postMessage({ type: 'controller-input', input } satisfies LobbyChannelMessage);
   } catch (error) {
     if (await stillControlsMlxSide(request)) {
-      setControllerDiagnostic(
-        request.side,
-        error instanceof Error ? error.message : 'controller error'
-      );
+      setControllerDiagnostic(request.side, formatMlxControllerError(error));
     }
   } finally {
     if (mlxControllerRequests[request.side] === request) {
@@ -769,6 +781,38 @@ function launchMlxControllerInput(
   void resolveMlxControllerInput(request);
 }
 
+function launchNextMlxControllerInput(
+  nextRuntime: BrowserRuntime,
+  nextRefs: RuntimeRefs,
+  mode: PongMatchMode | null,
+  snapshotState: PongSnapshot
+): void {
+  const eligibleSides = (['left', 'right'] as const).filter((side) =>
+    shouldLaunchMlxControllerForSide({
+      browserSessionId,
+      matchOwnerSessionId,
+      mode,
+      side,
+    })
+  );
+  if (eligibleSides.length === 0) {
+    return;
+  }
+
+  const side = eligibleSides.includes(nextMlxControllerSide)
+    ? nextMlxControllerSide
+    : eligibleSides[0];
+  nextMlxControllerSide = side === 'left' ? 'right' : 'left';
+
+  launchMlxControllerInput(
+    nextRuntime,
+    nextRefs,
+    side,
+    side === 'left' ? nextRefs.controllerLeft : nextRefs.controllerRight,
+    snapshotState
+  );
+}
+
 async function tick(): Promise<void> {
   const currentRuntime = runtime;
   const currentRefs = refs;
@@ -777,41 +821,13 @@ async function tick(): Promise<void> {
   }
 
   try {
+    if (hasInFlightMlxControllerRequest()) {
+      setStatus('running');
+      return;
+    }
+
     const lobby = await currentLobbyState(currentRefs);
     await applyPaddleInput(currentRuntime, currentRefs, lobby.mode);
-    const current = await snapshot(currentRefs);
-    if (
-      shouldLaunchMlxControllerForSide({
-        browserSessionId,
-        matchOwnerSessionId,
-        mode: lobby.mode,
-        side: 'left',
-      })
-    ) {
-      launchMlxControllerInput(
-        currentRuntime,
-        currentRefs,
-        'left',
-        currentRefs.controllerLeft,
-        current
-      );
-    }
-    if (
-      shouldLaunchMlxControllerForSide({
-        browserSessionId,
-        matchOwnerSessionId,
-        mode: lobby.mode,
-        side: 'right',
-      })
-    ) {
-      launchMlxControllerInput(
-        currentRuntime,
-        currentRefs,
-        'right',
-        currentRefs.controllerRight,
-        current
-      );
-    }
     const paddles = await Promise.all([
       currentRefs.paddleA.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
       currentRefs.paddleB.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
@@ -828,6 +844,7 @@ async function tick(): Promise<void> {
       renderSnapshot(nextSnapshot);
       setStatus('running');
     }
+    launchNextMlxControllerInput(currentRuntime, currentRefs, lobby.mode, nextSnapshot);
   } catch (error) {
     setStatus(error instanceof Error ? error.message : 'runtime error');
   } finally {

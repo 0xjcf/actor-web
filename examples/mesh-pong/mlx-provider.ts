@@ -36,7 +36,8 @@ export const MESH_PONG_MLX_MODEL_KEY = 'actor-web.mesh-pong.mlx.model';
 export const MESH_PONG_MLX_API_KEY = 'actor-web.mesh-pong.mlx.api-key';
 export const DEFAULT_MESH_PONG_MLX_ENDPOINT = 'http://127.0.0.1:8080/v1';
 export const DEFAULT_MESH_PONG_MLX_MODEL = 'mlx-community/Llama-3.2-3B-Instruct-4bit';
-export const DEFAULT_MESH_PONG_MLX_TIMEOUT_MS = 3_000;
+export const DEFAULT_MESH_PONG_MLX_TIMEOUT_MS = 20_000;
+export const DEFAULT_MESH_PONG_MLX_MAX_TOKENS = 24;
 
 function readStorageValue(storage: StorageLike | undefined, key: string): string | undefined {
   try {
@@ -162,6 +163,8 @@ export function createBrowserMlxLlmProvider(
           model: config.model,
           messages: requestMessages(request),
           temperature: 0,
+          max_tokens: DEFAULT_MESH_PONG_MLX_MAX_TOKENS,
+          chat_template_kwargs: { enable_thinking: false },
         }),
       });
       globalThis.clearTimeout(timeoutId);
