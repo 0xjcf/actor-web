@@ -40,6 +40,10 @@ function isPongControllerType(value: unknown): value is 'human' | 'mlx' {
   return value === 'human' || value === 'mlx';
 }
 
+function isPongSide(value: unknown): value is PongSide {
+  return value === 'left' || value === 'right';
+}
+
 function isPongMatchMode(value: unknown): value is PongMatchMode {
   if (!value || typeof value !== 'object') {
     return false;
@@ -169,6 +173,19 @@ export function createPlayerSessionBehavior(params: PongPlayerSessionParams) {
       }
 
       if (message.type === 'CLAIM_SIDE') {
+        if (
+          !isPongSide(message.side) ||
+          (message.controller !== undefined && !isPongControllerType(message.controller))
+        ) {
+          return {
+            reply: {
+              ok: false,
+              sessionId: context.sessionId,
+              reason: 'invalid-command' as const,
+            },
+          };
+        }
+
         const session = claimPlayerSessionSide(context, message.side, message.controller);
         return {
           context: session,
@@ -243,7 +260,17 @@ export const lobbyBehavior = defineBehavior<PongLobbyCommand, PongLobbyEvent>()
       };
     }
 
-    if (message.type !== 'START_MATCH' || !isPongMatchMode(message.mode)) {
+    if (message.type !== 'START_MATCH') {
+      return {
+        reply: {
+          ok: false as const,
+          reason: 'invalid-command' as const,
+          missing: [] as readonly PongSide[],
+        },
+      };
+    }
+
+    if (!isPongMatchMode(message.mode)) {
       const result = {
         ok: false as const,
         reason: 'invalid-command' as const,

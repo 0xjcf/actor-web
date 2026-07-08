@@ -1110,6 +1110,22 @@ describe('Mesh Pong transport parity', () => {
       reason: 'invalid-command',
     });
 
+    const initialSession = await sessionA.ask<PongPlayerSessionState>({ type: 'GET_SESSION' });
+    await expect(
+      sessionA.ask<PongControllerInputResult>({
+        type: 'CLAIM_SIDE',
+        side: 'middle',
+        controller: 'bot',
+      } as unknown as PlayerSessionCommand)
+    ).resolves.toEqual({
+      ok: false,
+      sessionId: 'tab-a',
+      reason: 'invalid-command',
+    });
+    await expect(sessionA.ask<PongPlayerSessionState>({ type: 'GET_SESSION' })).resolves.toEqual(
+      initialSession
+    );
+
     await sessionA.send({ type: 'CLAIM_SIDE', side: 'left' });
     await flush(runtime);
 
@@ -1133,6 +1149,7 @@ describe('Mesh Pong transport parity', () => {
       missing: [],
     });
 
+    const lobbyBeforeUnknown = await lobby.ask<PongLobbyState>({ type: 'GET_LOBBY' });
     await expect(
       lobby.ask<PongMatchStartResult>({
         type: 'UNKNOWN_COMMAND',
@@ -1142,6 +1159,9 @@ describe('Mesh Pong transport parity', () => {
       reason: 'invalid-command',
       missing: [],
     });
+    await expect(lobby.ask<PongLobbyState>({ type: 'GET_LOBBY' })).resolves.toEqual(
+      lobbyBeforeUnknown
+    );
   });
 
   it('starts one-player human plus MLX controller mode and emits bounded controller intents', async () => {
