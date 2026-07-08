@@ -9,6 +9,94 @@ and a deterministic fake-provider CI lane for the `llm` tool boundary. The
 browser loop now treats MLX as two independent per-side intent lanes, so slow
 model turns no longer pause simulation or rendering.
 
+## Recommended local benchmark path
+
+The recommended operator benchmark path stays intentionally small and uses the
+same provider shape that is covered by in-repo tests:
+
+- One OpenAI-compatible MLX endpoint shared by both sides.
+- One model setting for both controller actors.
+- Browser-side telemetry plus the benchmark summary reducer in `ui/main.ts` for
+  deterministic latency, throughput, timeout, and gameplay-effect reporting.
+
+Start a local MLX server on the endpoint the example already supports:
+
+```bash
+python -m mlx_lm.server \
+  --model mlx-community/Llama-3.2-3B-Instruct-4bit \
+  --host 127.0.0.1 \
+  --port 8080
+```
+
+Start the example with the same single-endpoint configuration:
+
+```bash
+VITE_MESH_PONG_MLX_ENABLED=true \
+VITE_MESH_PONG_MLX_ENDPOINT=http://127.0.0.1:8080/v1 \
+VITE_MESH_PONG_MLX_MODEL=mlx-community/Llama-3.2-3B-Instruct-4bit \
+pnpm examples:dev:local
+```
+
+Open the local examples app, switch to Mesh Pong, and use either:
+
+- One-player: one human side plus one `mlx` side.
+- MLX-vs-MLX: both sides set to `mlx` to observe shared-endpoint contention.
+
+Supported overrides remain exactly the existing provider keys, with
+`localStorage` taking precedence over Vite env vars:
+
+- `actor-web.mesh-pong.mlx.enabled` or `VITE_MESH_PONG_MLX_ENABLED`
+- `actor-web.mesh-pong.mlx.endpoint` or `VITE_MESH_PONG_MLX_ENDPOINT`
+- `actor-web.mesh-pong.mlx.model` or `VITE_MESH_PONG_MLX_MODEL`
+- `actor-web.mesh-pong.mlx.api-key` or `VITE_MESH_PONG_MLX_API_KEY`
+
+Defaults:
+
+- enabled: `false`
+- endpoint: `http://127.0.0.1:8080/v1`
+- model: `mlx-community/Llama-3.2-3B-Instruct-4bit`
+
+## Benchmark summary
+
+The browser sidebar now shows both the raw telemetry lanes and a compact
+benchmark summary string derived only from telemetry events. The summary reports
+these deterministic metrics:
+
+- controller started / finished / timeouts
+- latency count / total / min / max / average
+- controller throughput per second
+- simulation scheduled / applied / held / dropped
+- applied simulation turns per second
+- timeout rate
+- gameplay effect classification: `stalled`, `timeout-bound`, `laggy`, or `smooth`
+
+Evidence boundary:
+
+- Deterministic in-repo evidence covers the summary reducer, browser shell
+  wiring, one-player telemetry, MLX-vs-MLX telemetry, timeout classification,
+  and fake-provider behavior without a live MLX server.
+- Manual local benchmark evidence should be collected by running the
+  single-endpoint procedure above with the current default model and endpoint.
+  This sandbox did not run a live MLX benchmark.
+- The model/server strategy for the example remains single-endpoint until live
+  evidence shows that a dual-server setup improves local play.
+
+Deterministic benchmark scenarios:
+
+| Scenario | Settings | Expected summary signal | Interpretation |
+| --- | --- | --- | --- |
+| One-player, synthetic provider | `playerCount=1`, one side `mlx`, one side human | `effect smooth` when controller latency stays under the `90ms` simulation budget and held/dropped stay near zero | Proves the summary path for the default local demo shape without requiring MLX |
+| MLX-vs-MLX, synthetic provider | `playerCount=2`, both sides `mlx` | `effect timeout-bound` or `effect laggy` once average latency rises above budget, held/dropped turns accumulate, or controller timeouts appear | Proves the shared-endpoint stress summary without requiring MLX |
+| Synthetic CI lane | fake provider or rejected controller promise in `mesh-pong.test.ts` | `timeouts 1` and deterministic summary output with no live MLX | Keeps CI live-MLX-free while proving the reducer and shell wiring |
+
+Decision for this task: keep the single shared endpoint path and defer
+per-side endpoint/model configuration plus a two-server strategy. The current
+example only exposes one browser-local provider config in `mlx-provider.ts`, and
+there is no clean side-specific provider seam yet. There is also no in-repo or
+live benchmark evidence in this task showing that per-side endpoints improve
+local play, so adding dual routing here would widen the adapter contract before
+the evidence supports it.
+
 ## Lag budget telemetry
 
 The demo sidebar now exposes shell-local telemetry so lag can be attributed
@@ -169,21 +257,6 @@ single JSON reply:
 
 Amounts are clamped to one paddle step, and non-JSON or malformed replies are
 returned as controller error facts.
-
-The browser demo can enable a local OpenAI-compatible MLX endpoint without code
-changes. It reads these overrides in order: `localStorage` first, then Vite env
-vars.
-
-- `actor-web.mesh-pong.mlx.enabled` or `VITE_MESH_PONG_MLX_ENABLED`
-- `actor-web.mesh-pong.mlx.endpoint` or `VITE_MESH_PONG_MLX_ENDPOINT`
-- `actor-web.mesh-pong.mlx.model` or `VITE_MESH_PONG_MLX_MODEL`
-- `actor-web.mesh-pong.mlx.api-key` or `VITE_MESH_PONG_MLX_API_KEY`
-
-Defaults:
-
-- enabled: `false`
-- endpoint: `http://127.0.0.1:8080/v1`
-- model: `mlx-community/Llama-3.2-3B-Instruct-4bit`
 
 When enabled, the demo posts to `<endpoint>/chat/completions` through the same
 Actor-Web `llm` tool seam used by tests. When disabled or unreachable, the

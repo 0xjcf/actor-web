@@ -95,6 +95,36 @@ export interface MeshPongTelemetryState {
   };
 }
 
+export interface MeshPongBenchmarkSummaryState {
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+  readonly lastScheduledAtMs: number | null;
+  readonly controllerRequestStartedAtMs: Record<PongSide, number | null>;
+  readonly controllers: {
+    readonly startedCount: number;
+    readonly finishedCount: number;
+    readonly timeoutCount: number;
+    readonly latency: {
+      readonly count: number;
+      readonly totalMs: number;
+      readonly minMs: number | null;
+      readonly maxMs: number | null;
+      readonly averageMs: number | null;
+    };
+    readonly throughputPerSec: number;
+  };
+  readonly simulation: {
+    readonly targetIntervalMs: number;
+    readonly scheduledCount: number;
+    readonly appliedCount: number;
+    readonly heldCount: number;
+    readonly droppedCount: number;
+    readonly appliedPerSec: number;
+  };
+  readonly timeoutRate: number;
+  readonly gameplayEffect: 'stalled' | 'timeout-bound' | 'laggy' | 'smooth';
+}
+
 export type MeshPongTelemetryEvent =
   | { readonly type: 'rendered'; readonly nowMs: number }
   | { readonly type: 'simulation-scheduled'; readonly nowMs: number }
@@ -185,6 +215,41 @@ export function createMeshPongTelemetryState(nowMs: number): MeshPongTelemetrySt
   };
 }
 
+export function createMeshPongBenchmarkSummaryState(nowMs: number): MeshPongBenchmarkSummaryState {
+  return {
+    createdAtMs: nowMs,
+    updatedAtMs: nowMs,
+    lastScheduledAtMs: null,
+    controllerRequestStartedAtMs: {
+      left: null,
+      right: null,
+    },
+    controllers: {
+      startedCount: 0,
+      finishedCount: 0,
+      timeoutCount: 0,
+      latency: {
+        count: 0,
+        totalMs: 0,
+        minMs: null,
+        maxMs: null,
+        averageMs: null,
+      },
+      throughputPerSec: 0,
+    },
+    simulation: {
+      targetIntervalMs: MESH_PONG_SIMULATION_INTERVAL_MS,
+      scheduledCount: 0,
+      appliedCount: 0,
+      heldCount: 0,
+      droppedCount: 0,
+      appliedPerSec: 0,
+    },
+    timeoutRate: 0,
+    gameplayEffect: 'stalled',
+  };
+}
+
 function measureGap(previousAtMs: number | null, nowMs: number): number | null {
   if (previousAtMs === null) {
     return null;
@@ -197,6 +262,182 @@ function droppedTurnCount(targetIntervalMs: number, gapMs: number | null): numbe
     return 0;
   }
   return Math.max(0, Math.floor(gapMs / targetIntervalMs) - 1);
+}
+
+function isTimeoutError(error: string | undefined): boolean {
+  if (!error) {
+    return false;
+  }
+  return error.includes('timeout') || error.includes('timed out');
+}
+
+function eventTimestamp(event: MeshPongTelemetryEvent): number {
+  switch (event.type) {
+    case 'rendered':
+    case 'simulation-scheduled':
+    case 'simulation-held':
+    case 'simulation-applied':
+    case 'controller-request-started':
+    case 'controller-request-finished':
+      return event.nowMs;
+    case 'controller-intent-applied':
+      return event.nowMs;
+    case 'replay-sent':
+      return event.sentAtMs;
+    case 'replay-received':
+      return event.receivedAtMs;
+  }
+}
+
+function deriveBenchmarkSummary(
+  state: Omit<
+    MeshPongBenchmarkSummaryState,
+    'controllers' | 'simulation' | 'timeoutRate' | 'gameplayEffect'
+  > & {
+    readonly controllers: Omit<
+      MeshPongBenchmarkSummaryState['controllers'],
+      'throughputPerSec' | 'latency'
+    > & {
+      readonly latency: Omit<MeshPongBenchmarkSummaryState['controllers']['latency'], 'averageMs'>;
+    };
+    readonly simulation: Omit<MeshPongBenchmarkSummaryState['simulation'], 'appliedPerSec'>;
+  }
+): MeshPongBenchmarkSummaryState {
+  const elapsedMs = Math.max(0, state.updatedAtMs - state.createdAtMs);
+  const elapsedSeconds = elapsedMs === 0 ? 0 : elapsedMs / 1000;
+  const averageLatencyMs =
+    state.controllers.latency.count === 0
+      ? null
+      : state.controllers.latency.totalMs / state.controllers.latency.count;
+  const controllerThroughputPerSec =
+    elapsedSeconds === 0 ? 0 : state.controllers.finishedCount / elapsedSeconds;
+  const appliedPerSec = elapsedSeconds === 0 ? 0 : state.simulation.appliedCount / elapsedSeconds;
+  const timeoutRate =
+    state.controllers.finishedCount === 0
+      ? 0
+      : state.controllers.timeoutCount / state.controllers.finishedCount;
+  const gameplayEffect =
+    state.controllers.finishedCount === 0 || state.simulation.appliedCount === 0
+      ? 'stalled'
+      : timeoutRate >= 0.5
+        ? 'timeout-bound'
+        : (averageLatencyMs !== null && averageLatencyMs > state.simulation.targetIntervalMs) ||
+            state.simulation.heldCount > 0 ||
+            state.simulation.droppedCount > 0
+          ? 'laggy'
+          : 'smooth';
+
+  return {
+    ...state,
+    controllers: {
+      ...state.controllers,
+      latency: {
+        ...state.controllers.latency,
+        averageMs: averageLatencyMs,
+      },
+      throughputPerSec: controllerThroughputPerSec,
+    },
+    simulation: {
+      ...state.simulation,
+      appliedPerSec,
+    },
+    timeoutRate,
+    gameplayEffect,
+  };
+}
+
+export function reduceMeshPongBenchmarkSummary(
+  state: MeshPongBenchmarkSummaryState,
+  event: MeshPongTelemetryEvent
+): MeshPongBenchmarkSummaryState {
+  switch (event.type) {
+    case 'simulation-scheduled': {
+      const gapMs = measureGap(state.lastScheduledAtMs, event.nowMs);
+      return deriveBenchmarkSummary({
+        ...state,
+        updatedAtMs: event.nowMs,
+        lastScheduledAtMs: event.nowMs,
+        simulation: {
+          ...state.simulation,
+          scheduledCount: state.simulation.scheduledCount + 1,
+          droppedCount:
+            state.simulation.droppedCount +
+            droppedTurnCount(state.simulation.targetIntervalMs, gapMs),
+        },
+      });
+    }
+    case 'simulation-held': {
+      return deriveBenchmarkSummary({
+        ...state,
+        updatedAtMs: event.nowMs,
+        simulation: {
+          ...state.simulation,
+          heldCount: state.simulation.heldCount + 1,
+        },
+      });
+    }
+    case 'simulation-applied': {
+      return deriveBenchmarkSummary({
+        ...state,
+        updatedAtMs: event.nowMs,
+        simulation: {
+          ...state.simulation,
+          appliedCount: state.simulation.appliedCount + 1,
+        },
+      });
+    }
+    case 'controller-request-started': {
+      return deriveBenchmarkSummary({
+        ...state,
+        updatedAtMs: event.nowMs,
+        controllerRequestStartedAtMs: {
+          ...state.controllerRequestStartedAtMs,
+          [event.side]: event.nowMs,
+        },
+        controllers: {
+          ...state.controllers,
+          startedCount: state.controllers.startedCount + 1,
+        },
+      });
+    }
+    case 'controller-request-finished': {
+      const startedAtMs = state.controllerRequestStartedAtMs[event.side];
+      const latencyMs = startedAtMs === null ? 0 : Math.max(0, event.nowMs - startedAtMs);
+      const latencyCount = state.controllers.latency.count + 1;
+      const latencyTotalMs = state.controllers.latency.totalMs + latencyMs;
+      return deriveBenchmarkSummary({
+        ...state,
+        updatedAtMs: event.nowMs,
+        controllerRequestStartedAtMs: {
+          ...state.controllerRequestStartedAtMs,
+          [event.side]: null,
+        },
+        controllers: {
+          ...state.controllers,
+          finishedCount: state.controllers.finishedCount + 1,
+          timeoutCount: state.controllers.timeoutCount + (isTimeoutError(event.error) ? 1 : 0),
+          latency: {
+            count: latencyCount,
+            totalMs: latencyTotalMs,
+            minMs:
+              state.controllers.latency.minMs === null
+                ? latencyMs
+                : Math.min(state.controllers.latency.minMs, latencyMs),
+            maxMs:
+              state.controllers.latency.maxMs === null
+                ? latencyMs
+                : Math.max(state.controllers.latency.maxMs, latencyMs),
+          },
+        },
+      });
+    }
+    default: {
+      return deriveBenchmarkSummary({
+        ...state,
+        updatedAtMs: eventTimestamp(event),
+      });
+    }
+  }
 }
 
 export function reduceMeshPongTelemetry(
@@ -334,6 +575,18 @@ function formatControllerTelemetry(state: MeshPongTelemetryControllerState): str
   return `state ${status} rtt ${formatMs(state.rttMs)} age ${formatMs(state.lastAppliedIntentAgeMs)}${error}`;
 }
 
+function formatRate(value: number): string {
+  return `${value.toFixed(2)}/s`;
+}
+
+function formatPercent(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+export function formatMeshPongBenchmarkSummary(state: MeshPongBenchmarkSummaryState): string {
+  return `ctrl ${state.controllers.startedCount}/${state.controllers.finishedCount} timeouts ${state.controllers.timeoutCount} latency avg ${formatMs(state.controllers.latency.averageMs)} min ${formatMs(state.controllers.latency.minMs)} max ${formatMs(state.controllers.latency.maxMs)} thr ${formatRate(state.controllers.throughputPerSec)} sim sched ${state.simulation.scheduledCount} applied ${state.simulation.appliedCount} held ${state.simulation.heldCount} dropped ${state.simulation.droppedCount} apply ${formatRate(state.simulation.appliedPerSec)} timeout ${formatPercent(state.timeoutRate)} effect ${state.gameplayEffect}`;
+}
+
 export function formatMeshPongTelemetry(state: MeshPongTelemetryState): MeshPongTelemetryDisplay {
   return {
     render: `${state.render.count} frames gap ${formatMs(state.render.lastGapMs)}`,
@@ -347,7 +600,9 @@ export function formatMeshPongTelemetry(state: MeshPongTelemetryState): MeshPong
   };
 }
 
-type TelemetryValueElements = Record<keyof MeshPongTelemetryDisplay, HTMLElement>;
+type TelemetryValueElements = Record<keyof MeshPongTelemetryDisplay, HTMLElement> & {
+  readonly benchmark: HTMLElement;
+};
 
 type LobbyReplayMetadata = {
   readonly originSessionId: string;
@@ -471,6 +726,7 @@ const keys = new Set<string>();
 let lifecycleStatus = 'idle';
 const controllerDiagnostics: Partial<Record<PongSide, string>> = {};
 let telemetryState = createMeshPongTelemetryState(0);
+let benchmarkSummaryState = createMeshPongBenchmarkSummaryState(0);
 let turnStepper: MeshPongTurnStepper | null = null;
 
 const lobbyChannel =
@@ -484,11 +740,13 @@ function nowMs(): number {
 
 function resetTelemetry(): void {
   telemetryState = createMeshPongTelemetryState(nowMs());
+  benchmarkSummaryState = createMeshPongBenchmarkSummaryState(telemetryState.createdAtMs);
   renderTelemetry();
 }
 
 function updateTelemetry(event: MeshPongTelemetryEvent): void {
   telemetryState = reduceMeshPongTelemetry(telemetryState, event);
+  benchmarkSummaryState = reduceMeshPongBenchmarkSummary(benchmarkSummaryState, event);
   renderTelemetry();
 }
 
@@ -502,6 +760,7 @@ function renderTelemetry(): void {
   telemetryValues.leftController.textContent = formatted.leftController;
   telemetryValues.rightController.textContent = formatted.rightController;
   telemetryValues.replay.textContent = formatted.replay;
+  telemetryValues.benchmark.textContent = formatMeshPongBenchmarkSummary(benchmarkSummaryState);
 }
 
 function queryRequired<T extends Element>(documentRef: Document, selector: string): T {
@@ -538,6 +797,7 @@ function bindTelemetryPanel(documentRef: Document): TelemetryValueElements {
     leftController: appendTelemetryStat(documentRef, panelElement, 'Left control'),
     rightController: appendTelemetryStat(documentRef, panelElement, 'Right control'),
     replay: appendTelemetryStat(documentRef, panelElement, 'Replay'),
+    benchmark: appendTelemetryStat(documentRef, panelElement, 'Benchmark'),
   };
 }
 
