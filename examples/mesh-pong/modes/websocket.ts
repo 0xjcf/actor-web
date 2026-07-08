@@ -1,10 +1,16 @@
-import { type ServedActorWebNode, serveNode } from '@actor-web/runtime/node';
+import type { ActorToolRegistry, ServedActorWebNode } from '@actor-web/runtime/node';
+import { serveNode } from '@actor-web/runtime/node';
+import { createPongControllerTools } from '../pong-controller';
 import { pong } from '../pong-topology';
 import {
   flushMeshPongCluster,
   type StartedMeshPongCluster,
   stopMeshPongCluster,
 } from './broadcast';
+
+export interface MeshPongWebSocketLoopbackOptions {
+  readonly tools?: ActorToolRegistry;
+}
 
 function requireTransportUrl(node: ServedActorWebNode<typeof pong>, label: string): string {
   const url = node.getTransportUrl();
@@ -14,19 +20,24 @@ function requireTransportUrl(node: ServedActorWebNode<typeof pong>, label: strin
   return url;
 }
 
-export async function startMeshPongWebSocketLoopback(): Promise<StartedMeshPongCluster> {
+export async function startMeshPongWebSocketLoopback(
+  options: MeshPongWebSocketLoopbackOptions = {}
+): Promise<StartedMeshPongCluster> {
   const startedNodes: Array<{ stop(): Promise<void> }> = [];
+  const tools = createPongControllerTools(options.tools);
 
   try {
     const b = await serveNode(pong, {
       node: 'b',
       transport: { listen: true, heartbeatIntervalMs: 0 },
+      tools,
     });
     startedNodes.push(b);
 
     const a = await serveNode(pong, {
       node: 'a',
       transport: { listen: true, heartbeatIntervalMs: 0 },
+      tools,
       peers: {
         b: requireTransportUrl(b, 'b'),
       },
@@ -37,6 +48,7 @@ export async function startMeshPongWebSocketLoopback(): Promise<StartedMeshPongC
     const server = await serveNode(pong, {
       node: 'server',
       transport: { listen: true, heartbeatIntervalMs: 0 },
+      tools,
       peers: {
         a: requireTransportUrl(a, 'a'),
         b: requireTransportUrl(b, 'b'),

@@ -4,6 +4,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@actor-web/agent': new URL('../actor-agent/src/index.ts', import.meta.url).pathname,
+      '@actor-web/runtime/browser': new URL('../actor-core-runtime/src/browser.ts', import.meta.url)
+        .pathname,
       '@actor-web/runtime': new URL('../actor-core-runtime/src/index.ts', import.meta.url).pathname,
     },
   },

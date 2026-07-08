@@ -1,16 +1,19 @@
 import type { MessageTransport } from '@actor-web/runtime/browser';
 import {
+  type ActorToolRegistry,
   type BroadcastChannelLike,
   createBroadcastChannelMessageTransport,
   type StartedActorWebNode,
   startActorWebNode,
 } from '@actor-web/runtime/browser';
 import { PONG_NODE_ADDRESSES } from '../pong-contract';
+import { createPongControllerTools } from '../pong-controller';
 import { pong } from '../pong-topology';
 
 export interface MeshPongBroadcastOptions {
   readonly channelName?: string;
   readonly broadcastChannelFactory?: (channelName: string) => BroadcastChannelLike;
+  readonly tools?: ActorToolRegistry;
 }
 
 export interface StartedMeshPongCluster {
@@ -72,18 +75,21 @@ export async function startMeshPongBroadcast(
     const server = await startActorWebNode(pong, {
       node: 'server',
       transport: createBroadcastTransport(PONG_NODE_ADDRESSES.server, options),
+      tools: createPongControllerTools(options.tools),
     });
     startedNodes.push(server);
 
     const a = await startActorWebNode(pong, {
       node: 'a',
       transport: createBroadcastTransport(PONG_NODE_ADDRESSES.a, options),
+      tools: createPongControllerTools(options.tools),
     });
     startedNodes.push(a);
 
     const b = await startActorWebNode(pong, {
       node: 'b',
       transport: createBroadcastTransport(PONG_NODE_ADDRESSES.b, options),
+      tools: createPongControllerTools(options.tools),
     });
     startedNodes.push(b);
 

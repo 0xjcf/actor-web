@@ -1,22 +1,30 @@
-# Post-mesh scoping: membership graduation tier, cross-node supervision boundary, claim gating
+# Fix actor-agent runtime browser test alias for Mesh Pong MLX full verify
 
 ## Source
 
-Created with `fas create-task` on 2026-06-19.
+Created with `fas create-task` on 2026-07-07.
 
 ## Problem
 
-Location-transparency audit L6. After membership lands: (1) decide whether @actor-web/labs-mesh graduates from labs to a supported tier and gate the UNCONDITIONAL location-transparency claim on it; (2) document the node-local supervision boundary and scope cross-node monitor/link/nodedown semantics (today supervision is node-local; peer-down purges directory entries with no failover). Decision and scoping, not implementation.
+Shared Mesh Pong batch full verification failed because @actor-web/agent tests import src/index.ts after the MLX task moved the package entrypoint to @actor-web/runtime/browser. The package Vitest config aliases @actor-web/runtime but not the browser subpath, so loadAgentModule returns null.
+
+## Automation admission
+
+- Expected operator value: Improves operator leverage around "Fix actor-agent runtime browser test alias for Mesh Pong MLX full verify" by reducing manual coordination, repetitive execution, or trust gaps.
+- Observability surface: Use authoritative FAS surfaces such as `fas runtime status`, `fas runtime watch`, workflow logs, receipts, or notifications to show whether the automation is active, quiet, stalled, blocked, or complete.
+- Recovery path: A human can abort, retry, recover, or rerun this workflow without leaving stale queue, lease, branch, or current-task state.
+- Autonomy mode: advisory
+- Promotion criteria: Promote beyond advisory only after dogfood runs prove clear operator value, trustworthy observability, and bounded recovery.
 
 ## Acceptance criteria
 
-- The change is verified and does not introduce regressions.
+- @actor-web/agent package tests resolve @actor-web/runtime/browser to the runtime source browser entrypoint.
+- The shared full verification lane passes after the fix.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
 - DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.
 - The work is tracked in `.fas/TASKS.md`.
 - The task has a clear implementation and verification plan before execution starts.
-- The task is queued in `.fas/queue/tasks.json` for the runtime.
 
 ## Proposed solution
 
@@ -28,11 +36,14 @@ Location-transparency audit L6. After membership lands: (1) decide whether @acto
 
 ## Affected files
 
-- Scope unknown.
+- packages/agent-workflow-cli/vitest.config.ts
+- packages/actor-agent/vitest.config.ts
 
 ## Scope Amendments
 
-- None.
+- Added 2026-07-07: the CLI package Vitest config also imports
+  `@actor-web/agent` from source, so it needs the same
+  `@actor-web/runtime/browser` alias for the shared full verification lane.
 
 ## Implementation plan
 
@@ -50,7 +61,7 @@ Location-transparency audit L6. After membership lands: (1) decide whether @acto
 
 ## Dependencies
 
-- Depends on task-1781628517450 labs-mesh implementation, task-1783360998273/task-1783361040728 route-token protocol follow-ups, task-1783452033293 Mesh Pong MLX LLM controller adapter and player modes, and task-1783516442115 Benchmark Mesh Pong MLX model and server strategy. Claim gating should run only after richer Mesh Pong multiplayer, LLM validation, and performance strategy evidence are queued or implemented.
+- None known at task creation.
 
 ## Open questions
 

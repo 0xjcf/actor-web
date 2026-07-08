@@ -1,22 +1,24 @@
-# Post-mesh scoping: membership graduation tier, cross-node supervision boundary, claim gating
+# Resolve CodeRabbit Mesh Pong batch closeout findings
 
 ## Source
 
-Created with `fas create-task` on 2026-06-19.
+Created with `fas create-task` on 2026-07-07.
 
 ## Problem
 
-Location-transparency audit L6. After membership lands: (1) decide whether @actor-web/labs-mesh graduates from labs to a supported tier and gate the UNCONDITIONAL location-transparency claim on it; (2) document the node-local supervision boundary and scope cross-node monitor/link/nodedown semantics (today supervision is node-local; peer-down purges directory entries with no failover). Decision and scoping, not implementation.
+CodeRabbit committed review for the Mesh Pong batch found three closeout issues: ready button copy does not distinguish ready state, player/lobby handlers should reject unknown or malformed messages instead of falling through with undefined fields, and the browser MLX provider fetch needs a bounded timeout.
 
 ## Acceptance criteria
 
-- The change is verified and does not introduce regressions.
+- Ready button copy distinguishes ready and not-ready local session states.
+- Player-session and lobby behavior handlers return safe error facts for unknown or malformed messages.
+- Browser MLX provider fetches use a bounded timeout and return a timeout failure instead of hanging.
+- Mesh Pong tests cover the closeout fixes.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
 - DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.
 - The work is tracked in `.fas/TASKS.md`.
 - The task has a clear implementation and verification plan before execution starts.
-- The task is queued in `.fas/queue/tasks.json` for the runtime.
 
 ## Proposed solution
 
@@ -28,11 +30,17 @@ Location-transparency audit L6. After membership lands: (1) decide whether @acto
 
 ## Affected files
 
-- Scope unknown.
+- examples/mesh-pong/ui/main.ts
+- examples/mesh-pong/pong-contract.ts
+- examples/mesh-pong/pong-behaviors.ts
+- examples/mesh-pong/mlx-provider.ts
+- examples/mesh-pong/mesh-pong.test.ts
 
 ## Scope Amendments
 
-- None.
+- Added 2026-07-07: `pong-contract.ts` is required so malformed player-session
+  and lobby commands can return explicit `invalid-command` facts instead of
+  overloading existing missing-controller or side-unclaimed reasons.
 
 ## Implementation plan
 
@@ -50,7 +58,7 @@ Location-transparency audit L6. After membership lands: (1) decide whether @acto
 
 ## Dependencies
 
-- Depends on task-1781628517450 labs-mesh implementation, task-1783360998273/task-1783361040728 route-token protocol follow-ups, task-1783452033293 Mesh Pong MLX LLM controller adapter and player modes, and task-1783516442115 Benchmark Mesh Pong MLX model and server strategy. Claim gating should run only after richer Mesh Pong multiplayer, LLM validation, and performance strategy evidence are queued or implemented.
+- None known at task creation.
 
 ## Open questions
 

@@ -36,6 +36,10 @@ export default defineConfig({
         replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/index.ts'),
       },
       {
+        find: '@actor-web/agent',
+        replacement: path.resolve(actorWebRoot, 'packages/actor-agent/src/index.ts'),
+      },
+      {
         find: '@actor-web/lattice',
         replacement: path.resolve(actorWebRoot, 'packages/actor-lattice/src/index.ts'),
       },

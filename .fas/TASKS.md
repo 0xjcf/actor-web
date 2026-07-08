@@ -2134,25 +2134,147 @@ operator explicitly asks for queue mutations.
 
 - Title: Mesh Pong session lobby and human controller slots
 - Mode: single-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/mesh-pong-session-lobby-and-human-controller-slots.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Mesh Pong MLX LLM controller adapter and player modes
 
 - Title: Mesh Pong MLX LLM controller adapter and player modes
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/mesh-pong-mlx-llm-controller-adapter-and-player-modes.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Refactor Mesh Pong parity test stepping helper
 
 - Title: Refactor Mesh Pong parity test stepping helper
 - Mode: single-agent
-- Status: backlog
-- Owner: planner
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/refactor-mesh-pong-parity-test-stepping-helper.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Fix actor-agent runtime browser test alias for Mesh Pong MLX full verify
+
+- Title: Fix actor-agent runtime browser test alias for Mesh Pong MLX full verify
+- Mode: single-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/fix-actor-agent-runtime-browser-test-alias-for-mesh-pong-mlx.md
+- Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Resolve CodeRabbit Mesh Pong batch closeout findings
+
+- Title: Resolve CodeRabbit Mesh Pong batch closeout findings
+- Mode: single-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/resolve-coderabbit-mesh-pong-batch-closeout-findings.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Mesh Pong performance telemetry and lag budget
+
+- Title: Mesh Pong performance telemetry and lag budget
+- Mode: 6-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/mesh-pong-performance-telemetry-and-lag-budget.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Decouple Mesh Pong simulation and render loop from MLX inference turns
+
+- Title: Decouple Mesh Pong simulation and render loop from MLX inference turns
+- Mode: 6-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/decouple-mesh-pong-simulation-and-render-loop-from-mlx-infer.md
+- Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Benchmark Mesh Pong MLX model and server strategy
+
+- Title: Benchmark Mesh Pong MLX model and server strategy
+- Mode: 6-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/benchmark-mesh-pong-mlx-model-and-server-strategy.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Mesh Pong browser-playable WebSocket transport mode
+
+- Title: Mesh Pong browser-playable WebSocket transport mode
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/mesh-pong-browser-playable-websocket-transport-mode.md
+
+### Task: Mesh Pong hybrid reflex controller plus LLM planner mode
+
+- Title: Mesh Pong hybrid reflex controller plus LLM planner mode
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/mesh-pong-hybrid-reflex-controller-plus-llm-planner-mode.md
+
+### Task: Design actor-web advisory policy for deadline-safe advice
+
+- Title: Design actor-web advisory policy for deadline-safe advice
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/design-actor-web-advisory-lane-primitive-for-deadline-safe-a.md
+
+### Task: Design actor-web policy composition and Behavior Graph runtime model
+
+- Title: Design actor-web policy composition and Behavior Graph runtime model
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/evaluate-behavior-tree-and-utility-ai-primitives-for-actor-w.md
+
+### Task: Mesh Pong behavior-tree paddle policy proof
+
+- Title: Mesh Pong behavior-tree paddle policy proof
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/mesh-pong-behavior-tree-paddle-policy-proof.md
+
+### Task: Mesh Pong utility-policy tactical scorer proof
+
+- Title: Mesh Pong utility-policy tactical scorer proof
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/mesh-pong-utility-policy-tactical-scorer-proof.md
+
+### Task: Document Mesh Pong layered actor-control course path
+
+- Title: Document Mesh Pong layered actor-control course path
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/document-mesh-pong-layered-actor-control-course-path.md
 
 ## Template
 

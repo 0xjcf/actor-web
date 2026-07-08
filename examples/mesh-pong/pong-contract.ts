@@ -106,8 +106,380 @@ export interface PongSnapshot {
   readonly score: PongScoreState;
 }
 
+export interface PongControllerIntent {
+  readonly side: PongSide;
+  readonly direction: 'up' | 'down';
+  readonly amount: number;
+}
+
+export type PongControllerResult =
+  | ({
+      readonly ok: true;
+      readonly provider: 'llm';
+    } & PongControllerIntent)
+  | {
+      readonly ok: false;
+      readonly side: PongSide;
+      readonly reason: 'llm-unavailable' | 'provider-failed' | 'invalid-response';
+      readonly error: {
+        readonly code: string;
+        readonly message: string;
+      };
+    };
+
+export interface PongControllerActorState {
+  readonly side: PongSide;
+  readonly lastResult: PongControllerResult | null;
+}
+
+export type ControllerCommand =
+  | { readonly type: 'GET_CONTROLLER' }
+  | { readonly type: 'RUN_CONTROLLER'; readonly snapshot: PongSnapshot };
+
+export type PongControllerType = 'human' | 'mlx';
+export type PongPlayerCount = 1 | 2;
+
+export interface PongMatchMode {
+  readonly playerCount: PongPlayerCount;
+  readonly controllers: Record<PongSide, PongControllerType>;
+}
+
+export interface PongMatchControllerAuthority {
+  readonly browserSessionId: string;
+  readonly matchOwnerSessionId: string | null;
+  readonly mode: PongMatchMode | null;
+  readonly side: PongSide;
+}
+
+export interface PongPlayerSessionParams {
+  readonly sessionId: string;
+}
+
+export interface PongPlayerSessionState {
+  readonly sessionId: string;
+  readonly controller: PongControllerType;
+  readonly side: PongSide | null;
+  readonly ready: boolean;
+}
+
+export interface PongControllerSlot {
+  readonly sessionId: string;
+  readonly controller: PongControllerType;
+  readonly side: PongSide;
+  readonly ready: boolean;
+}
+
+export type PongMatchStartResult =
+  | {
+      readonly ok: true;
+      readonly mode: PongMatchMode;
+      readonly controllers: readonly PongControllerSlot[];
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'missing-controller' | 'controller-not-ready' | 'invalid-command';
+      readonly missing: readonly PongSide[];
+    };
+
+export type PongControllerInputResult =
+  | {
+      readonly ok: true;
+      readonly sessionId: string;
+      readonly side: PongSide;
+      readonly direction: 'up' | 'down';
+      readonly amount: number;
+    }
+  | {
+      readonly ok: false;
+      readonly sessionId: string;
+      readonly reason: 'side-unclaimed' | 'invalid-command';
+    };
+
+export interface PongLobbyState {
+  readonly sessions: readonly PongPlayerSessionState[];
+  readonly controllers: readonly PongControllerSlot[];
+  readonly started: boolean;
+  readonly mode: PongMatchMode | null;
+  readonly lastStart: PongMatchStartResult | null;
+}
+
+export type PlayerSessionCommand =
+  | { readonly type: 'GET_SESSION' }
+  | {
+      readonly type: 'CLAIM_SIDE';
+      readonly side: PongSide;
+      readonly controller?: PongControllerType;
+    }
+  | { readonly type: 'SET_READY'; readonly ready: boolean }
+  | {
+      readonly type: 'MOVE_CONTROLLER';
+      readonly direction: 'up' | 'down';
+      readonly amount?: number;
+    };
+
+export type PlayerSessionEvent =
+  | { readonly type: 'PLAYER_SESSION_CHANGED'; readonly session: PongPlayerSessionState }
+  | {
+      readonly type: 'PADDLE_INPUT';
+      readonly input: Extract<PongControllerInputResult, { readonly ok: true }>;
+    };
+
+export type PongLobbyCommand =
+  | { readonly type: 'GET_LOBBY' }
+  | { readonly type: 'RESET_LOBBY' }
+  | { readonly type: 'SYNC_SESSION'; readonly session: PongPlayerSessionState }
+  | { readonly type: 'REMOVE_SESSION'; readonly sessionId: string }
+  | { readonly type: 'START_MATCH'; readonly mode: PongMatchMode };
+
+export type PongLobbyEvent =
+  | { readonly type: 'LOBBY_CHANGED'; readonly lobby: PongLobbyState }
+  | {
+      readonly type: 'MATCH_STARTED';
+      readonly mode: PongMatchMode;
+      readonly controllers: readonly PongControllerSlot[];
+    }
+  | {
+      readonly type: 'MATCH_START_REJECTED';
+      readonly result: Exclude<PongMatchStartResult, { ok: true }>;
+    };
+
+const PONG_SIDES: readonly PongSide[] = ['left', 'right'];
+
+export const TWO_HUMAN_PONG_MATCH_MODE: PongMatchMode = {
+  playerCount: 2,
+  controllers: {
+    left: 'human',
+    right: 'human',
+  },
+};
+
 export function clampPaddleY(y: number): number {
   return Math.max(0, Math.min(PONG_FIELD.height - PONG_FIELD.paddleHeight, y));
+}
+
+export function createPlayerSessionActorId(params: PongPlayerSessionParams): string {
+  const safeSessionId = params.sessionId
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `player-session-${safeSessionId || 'anonymous'}`;
+}
+
+export function createInitialPlayerSession(sessionId: string): PongPlayerSessionState {
+  return {
+    sessionId,
+    controller: 'human',
+    side: null,
+    ready: false,
+  };
+}
+
+export function claimPlayerSessionSide(
+  session: PongPlayerSessionState,
+  side: PongSide,
+  controller: PongControllerType = 'human'
+): PongPlayerSessionState {
+  return {
+    ...session,
+    controller,
+    side,
+    ready: session.side === side && session.controller === controller ? session.ready : false,
+  };
+}
+
+export function setPlayerSessionReady(
+  session: PongPlayerSessionState,
+  ready: boolean
+): PongPlayerSessionState {
+  return {
+    ...session,
+    ready: Boolean(session.side && ready),
+  };
+}
+
+export function createPlayerSessionInput(
+  session: PongPlayerSessionState,
+  direction: 'up' | 'down',
+  amount: number = PONG_FIELD.paddleStep
+): PongControllerInputResult {
+  if (!session.side) {
+    return {
+      ok: false,
+      sessionId: session.sessionId,
+      reason: 'side-unclaimed',
+    };
+  }
+
+  return {
+    ok: true,
+    sessionId: session.sessionId,
+    side: session.side,
+    direction,
+    amount,
+  };
+}
+
+export function createInitialLobby(): PongLobbyState {
+  return {
+    sessions: [],
+    controllers: [],
+    started: false,
+    mode: null,
+    lastStart: null,
+  };
+}
+
+export function shouldLaunchMlxControllerForSide(authority: PongMatchControllerAuthority): boolean {
+  return (
+    authority.matchOwnerSessionId === authority.browserSessionId &&
+    authority.mode?.controllers[authority.side] === 'mlx'
+  );
+}
+
+export function createMlxSessionId(side: PongSide): string {
+  return `mlx-${side}`;
+}
+
+export function createSyntheticMlxControllerInput(
+  result: Extract<PongControllerResult, { readonly ok: true }>
+): Extract<PongControllerInputResult, { readonly ok: true }> {
+  return {
+    ok: true,
+    sessionId: createMlxSessionId(result.side),
+    side: result.side,
+    direction: result.direction,
+    amount: result.amount,
+  };
+}
+
+function resolveControllerSlots(
+  sessions: readonly PongPlayerSessionState[]
+): readonly PongControllerSlot[] {
+  const slots = new Map<PongSide, PongControllerSlot>();
+  for (const session of sessions) {
+    if (!session.side) {
+      continue;
+    }
+    slots.set(session.side, {
+      sessionId: session.sessionId,
+      controller: session.controller,
+      side: session.side,
+      ready: session.ready,
+    });
+  }
+
+  return PONG_SIDES.flatMap((side) => {
+    const slot = slots.get(side);
+    return slot ? [slot] : [];
+  });
+}
+
+export function syncLobbySession(
+  lobby: PongLobbyState,
+  session: PongPlayerSessionState
+): PongLobbyState {
+  const sessions = [
+    ...lobby.sessions.filter((candidate) => candidate.sessionId !== session.sessionId),
+    session,
+  ];
+  const controllers = resolveControllerSlots(sessions);
+  return {
+    ...lobby,
+    sessions,
+    controllers,
+  };
+}
+
+export function syncLobbySessionsFromStorage(
+  lobby: PongLobbyState,
+  storedSessions: readonly PongPlayerSessionState[]
+): PongLobbyState {
+  const sessions = [...storedSessions];
+  if (lobby.started && lobby.mode) {
+    for (const side of PONG_SIDES) {
+      if (lobby.mode.controllers[side] !== 'mlx') {
+        continue;
+      }
+      sessions.push({
+        sessionId: createMlxSessionId(side),
+        controller: 'mlx',
+        side,
+        ready: true,
+      });
+    }
+  }
+
+  const controllers = resolveControllerSlots(sessions);
+  return {
+    ...lobby,
+    sessions,
+    controllers,
+  };
+}
+
+export function removeLobbySession(lobby: PongLobbyState, sessionId: string): PongLobbyState {
+  const sessions = lobby.sessions.filter((session) => session.sessionId !== sessionId);
+  const controllers = resolveControllerSlots(sessions);
+  return {
+    ...lobby,
+    sessions,
+    controllers,
+  };
+}
+
+export function startLobbyMatch(
+  lobby: PongLobbyState,
+  mode: PongMatchMode
+): { readonly lobby: PongLobbyState; readonly result: PongMatchStartResult } {
+  const missing = PONG_SIDES.filter((side) => {
+    const slot = lobby.controllers.find((controller) => controller.side === side);
+    return !slot || slot.controller !== mode.controllers[side];
+  });
+  if (missing.length > 0) {
+    const result: PongMatchStartResult = {
+      ok: false,
+      reason: 'missing-controller',
+      missing,
+    };
+    return {
+      lobby,
+      result,
+    };
+  }
+
+  const notReady = PONG_SIDES.filter((side) => {
+    const slot = lobby.controllers.find((controller) => controller.side === side);
+    return !slot?.ready;
+  });
+  if (notReady.length > 0) {
+    const result: PongMatchStartResult = {
+      ok: false,
+      reason: 'controller-not-ready',
+      missing: notReady,
+    };
+    return {
+      lobby,
+      result,
+    };
+  }
+
+  const controllers = PONG_SIDES.map((side) =>
+    lobby.controllers.find((controller) => controller.side === side)
+  ).filter((controller): controller is PongControllerSlot => Boolean(controller));
+  const result: PongMatchStartResult = {
+    ok: true,
+    mode,
+    controllers,
+  };
+  return {
+    lobby: {
+      ...lobby,
+      started: true,
+      mode,
+      lastStart: result,
+    },
+    result,
+  };
 }
 
 export function createInitialPaddle(side: PongSide): PongPaddleState {

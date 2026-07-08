@@ -32,16 +32,29 @@ Follow-up from the Mesh Pong session lobby. Add a real LLM controller path for M
 ## Affected files
 
 - examples/mesh-pong/README.md
+- examples/mesh-pong/mesh-pong.test.ts
+- examples/mesh-pong/mlx-provider.ts
+- examples/mesh-pong/modes/broadcast.ts
+- examples/mesh-pong/modes/local.ts
+- examples/mesh-pong/modes/websocket.ts
 - examples/mesh-pong/pong-contract.ts
+- examples/mesh-pong/pong-controller.ts
 - examples/mesh-pong/pong-topology.ts
 - examples/mesh-pong/ui/main.ts
-- examples/mesh-pong/mesh-pong.test.ts
+- examples/vite.config.ts
+- examples/vitest.config.ts
 - packages/actor-agent/src/index.ts
-- packages/actor-core-runtime/src/testing/provider-actor-conformance.ts
+- packages/actor-agent/tsconfig.json
 
 ## Scope Amendments
 
-- None.
+- Added 2026-07-07: Real MLX provider wiring required new Mesh Pong
+  controller/provider files, startup-mode tool registry threading, and example
+  Vite/Vitest aliases so the browser UI and tests resolve the browser-safe
+  `@actor-web/agent` boundary. The originally suggested
+  `packages/actor-core-runtime/src/testing/provider-actor-conformance.ts`
+  conformance file was not needed because behavior was covered through the
+  Mesh Pong controller and transport-parity tests.
 
 ## Implementation plan
 
@@ -59,7 +72,7 @@ Follow-up from the Mesh Pong session lobby. Add a real LLM controller path for M
 
 ## Dependencies
 
-- Depends on task-1783452020274 Mesh Pong session lobby and human controller slots. Blocks task-1781880961715 post-mesh claim gating.
+- Depends on task-1783452020274 Mesh Pong session lobby and human controller slots. Blocks task-1783516419352 Mesh Pong performance telemetry and lag budget, and continues to block task-1781880961715 post-mesh claim gating through the Mesh Pong validation chain.
 
 ## Open questions
 
