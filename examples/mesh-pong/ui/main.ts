@@ -168,8 +168,45 @@ export interface MeshPongTelemetryDisplay {
   readonly replay: string;
 }
 
-const MESH_PONG_SIMULATION_INTERVAL_MS = 90;
-const MESH_PONG_MLX_CONTROLLER_ASK_TIMEOUT_MS = 30_000;
+export interface MeshPongClock {
+  readonly nowMs: () => number;
+  readonly nowEpochMs: () => number;
+}
+
+export interface MeshPongClockSource {
+  readonly timeOrigin?: number;
+  readonly now: () => number;
+}
+
+export interface MeshPongControllerSchedulePolicy {
+  readonly simulationIntervalMs: number;
+  readonly controllerAskTimeoutMs: number;
+  readonly staleIntentTurnLimit: number;
+}
+
+export const DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY: MeshPongControllerSchedulePolicy = {
+  simulationIntervalMs: 90,
+  controllerAskTimeoutMs: 30_000,
+  staleIntentTurnLimit: 3,
+};
+
+function defaultClockSource(): MeshPongClockSource | undefined {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance
+    : undefined;
+}
+
+export function createMeshPongClock(source = defaultClockSource()): MeshPongClock {
+  return {
+    nowMs: () => source?.now() ?? Date.now(),
+    nowEpochMs: () => {
+      if (source && typeof source.timeOrigin === 'number') {
+        return source.timeOrigin + source.now();
+      }
+      return Date.now();
+    },
+  };
+}
 
 function createTelemetryControllerState(): MeshPongTelemetryControllerState {
   return {
@@ -192,7 +229,7 @@ export function createMeshPongTelemetryState(nowMs: number): MeshPongTelemetrySt
       lastGapMs: null,
     },
     simulation: {
-      targetIntervalMs: MESH_PONG_SIMULATION_INTERVAL_MS,
+      targetIntervalMs: DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY.simulationIntervalMs,
       scheduledCount: 0,
       appliedCount: 0,
       heldCount: 0,
@@ -238,7 +275,7 @@ export function createMeshPongBenchmarkSummaryState(nowMs: number): MeshPongBenc
       throughputPerSec: 0,
     },
     simulation: {
-      targetIntervalMs: MESH_PONG_SIMULATION_INTERVAL_MS,
+      targetIntervalMs: DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY.simulationIntervalMs,
       scheduledCount: 0,
       appliedCount: 0,
       heldCount: 0,
@@ -430,6 +467,11 @@ export function reduceMeshPongBenchmarkSummary(
           },
         },
       });
+    }
+    case 'controller-intent-applied':
+    case 'replay-sent':
+    case 'replay-received': {
+      return state;
     }
     default: {
       return deriveBenchmarkSummary({
@@ -661,6 +703,7 @@ export interface MeshPongTurnStepperDeps {
   readonly browserSessionId: string;
   readonly getMatchState: () => MeshPongTurnMatchState;
   readonly nowMs: () => number;
+  readonly schedulePolicy?: MeshPongControllerSchedulePolicy;
   readonly flushRuntime: (runtime: BrowserRuntime) => Promise<void>;
   readonly snapshot: () => Promise<PongSnapshot>;
   readonly renderSnapshot: (snapshot: PongSnapshot) => void;
@@ -678,8 +721,6 @@ export interface MeshPongTurnStepper {
   tick(): Promise<void>;
   stop(): void;
 }
-
-const MESH_PONG_MLX_STALE_TURN_LIMIT = 3;
 
 const SESSION_ID_STORAGE_KEY = 'actor-web.mesh-pong.session-id';
 const LOBBY_STORAGE_KEY = 'actor-web.mesh-pong.sessions';
@@ -731,11 +772,14 @@ let turnStepper: MeshPongTurnStepper | null = null;
 
 const lobbyChannel =
   typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(LOBBY_CHANNEL_NAME);
+const meshPongClock = createMeshPongClock();
 
 function nowMs(): number {
-  return typeof performance !== 'undefined' && typeof performance.now === 'function'
-    ? performance.now()
-    : Date.now();
+  return meshPongClock.nowMs();
+}
+
+function nowEpochMs(): number {
+  return meshPongClock.nowEpochMs();
 }
 
 function resetTelemetry(): void {
@@ -1297,7 +1341,7 @@ async function switchMode(mode: BrowserMode): Promise<void> {
 function postControllerInput(
   input: Extract<PongControllerInputResult, { readonly ok: true }>
 ): void {
-  const sentAtMs = nowMs();
+  const sentAtMs = nowEpochMs();
   updateTelemetry({
     type: 'replay-sent',
     originSessionId: browserSessionId,
@@ -1393,6 +1437,7 @@ function createEmptyMlxLaneState(): MlxControllerLaneState {
 }
 
 export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPongTurnStepper {
+  const schedulePolicy = deps.schedulePolicy ?? DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY;
   const lanes: Record<PongSide, MlxControllerLaneState> = {
     left: createEmptyMlxLaneState(),
     right: createEmptyMlxLaneState(),
@@ -1452,7 +1497,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
           type: 'RUN_CONTROLLER',
           snapshot: request.snapshot,
         },
-        MESH_PONG_MLX_CONTROLLER_ASK_TIMEOUT_MS
+        schedulePolicy.controllerAskTimeoutMs
       );
       if (!ownsRequest(request)) {
         return;
@@ -1544,7 +1589,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
       lane.readyIntent = null;
       lane.lastIntent = readyIntent.input;
       lane.lastIntentSentAtMs = readyIntent.sentAtMs;
-      lane.staleTurnsRemaining = MESH_PONG_MLX_STALE_TURN_LIMIT;
+      lane.staleTurnsRemaining = schedulePolicy.staleIntentTurnLimit;
       return {
         input: readyIntent.input,
         sentAtMs: readyIntent.sentAtMs,
@@ -1655,7 +1700,10 @@ async function tick(): Promise<void> {
     await currentStepper.tick();
   } finally {
     if (turnStepper === currentStepper && runtime === currentRuntime && refs === currentRefs) {
-      loopHandle = window.setTimeout(tick, MESH_PONG_SIMULATION_INTERVAL_MS);
+      loopHandle = window.setTimeout(
+        tick,
+        DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY.simulationIntervalMs
+      );
     }
   }
 }
@@ -1726,7 +1774,10 @@ async function startMatch(
   matchMode = mode;
   setStatus('running');
   if (loopHandle === null) {
-    loopHandle = window.setTimeout(tick, MESH_PONG_SIMULATION_INTERVAL_MS);
+    loopHandle = window.setTimeout(
+      tick,
+      DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY.simulationIntervalMs
+    );
   }
   if (broadcast) {
     lobbyChannel?.postMessage({
@@ -1854,7 +1905,7 @@ export function bootstrapMeshPongUI(): void {
       if (!currentRuntime || !currentRefs || !matchStarted) {
         return;
       }
-      const appliedAtMs = nowMs();
+      const appliedAtMs = nowEpochMs();
       if (message.replay) {
         updateTelemetry({
           type: 'replay-received',

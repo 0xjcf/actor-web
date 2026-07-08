@@ -61,10 +61,13 @@ import { pong } from './pong-topology';
 import {
   bootstrapMeshPongUI,
   createMeshPongBenchmarkSummaryState,
+  createMeshPongClock,
   createMeshPongTelemetryState,
   createMeshPongTurnStepper,
+  DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY,
   formatMeshPongBenchmarkSummary,
   formatMeshPongTelemetry,
+  type MeshPongControllerSchedulePolicy,
   type MeshPongTelemetryEvent,
   reduceMeshPongBenchmarkSummary,
   reduceMeshPongTelemetry,
@@ -415,7 +418,10 @@ function createStepperSnapshot(
   };
 }
 
-function createTurnStepperHarness(mode: PongMatchMode) {
+function createTurnStepperHarness(
+  mode: PongMatchMode,
+  options: { readonly schedulePolicy?: MeshPongControllerSchedulePolicy } = {}
+) {
   const runtime = { kind: 'mesh-pong-test-runtime' } as unknown as Awaited<
     ReturnType<typeof startMeshPongLocal>
   >;
@@ -426,6 +432,8 @@ function createTurnStepperHarness(mode: PongMatchMode) {
   const commands: string[] = [];
   const leftDeferreds: Array<ReturnType<typeof createDeferred<PongControllerResult>>> = [];
   const rightDeferreds: Array<ReturnType<typeof createDeferred<PongControllerResult>>> = [];
+  const leftAskTimeouts: number[] = [];
+  const rightAskTimeouts: number[] = [];
   const matchState = {
     started: true,
     generation: 1,
@@ -513,8 +521,11 @@ function createTurnStepperHarness(mode: PongMatchMode) {
   } as unknown as ActorRef<PongPaddleState, PaddleCommand>;
 
   const controllerLeft = {
-    ask: vi.fn((_message: ControllerCommand) => {
+    ask: vi.fn((_message: ControllerCommand, timeoutMs?: number) => {
       leftAskCount += 1;
+      if (timeoutMs !== undefined) {
+        leftAskTimeouts.push(timeoutMs);
+      }
       const deferred = createDeferred<PongControllerResult>();
       leftDeferreds.push(deferred);
       return deferred.promise;
@@ -522,8 +533,11 @@ function createTurnStepperHarness(mode: PongMatchMode) {
   } as unknown as ActorRef<PongControllerActorState, ControllerCommand>;
 
   const controllerRight = {
-    ask: vi.fn((_message: ControllerCommand) => {
+    ask: vi.fn((_message: ControllerCommand, timeoutMs?: number) => {
       rightAskCount += 1;
+      if (timeoutMs !== undefined) {
+        rightAskTimeouts.push(timeoutMs);
+      }
       const deferred = createDeferred<PongControllerResult>();
       rightDeferreds.push(deferred);
       return deferred.promise;
@@ -561,6 +575,7 @@ function createTurnStepperHarness(mode: PongMatchMode) {
       now += 5;
       return now;
     },
+    schedulePolicy: options.schedulePolicy,
     flushRuntime: async () => undefined,
     snapshot: async () => createStepperSnapshot(paddles, tickCount),
     renderSnapshot: (nextSnapshot) => {
@@ -591,11 +606,23 @@ function createTurnStepperHarness(mode: PongMatchMode) {
     telemetryEvents,
     tickCount: () => tickCount,
     leftAskCount: () => leftAskCount,
+    leftAskTimeouts: () => leftAskTimeouts,
     rightAskCount: () => rightAskCount,
+    rightAskTimeouts: () => rightAskTimeouts,
   };
 }
 
 describe('Mesh Pong transport parity', () => {
+  it('derives cross-tab epoch timestamps from a shared clock source', () => {
+    const clock = createMeshPongClock({
+      timeOrigin: 1_000,
+      now: () => 80,
+    });
+
+    expect(clock.nowMs()).toBe(80);
+    expect(clock.nowEpochMs()).toBe(1_080);
+  });
+
   it('tracks held and applied simulation turns in telemetry state', () => {
     let telemetry = createMeshPongTelemetryState(0);
 
@@ -727,6 +754,64 @@ describe('Mesh Pong transport parity', () => {
     expect(telemetry.controllers.left.rttMs).toBe(60);
     expect(telemetry.controllers.left.lastAppliedIntentAgeMs).toBe(18);
     expect(telemetry.replay.latencyMs).toBe(9);
+  });
+
+  it('uses epoch timestamps for cross-tab replay latency without poisoning benchmark rates', () => {
+    const remoteClock = createMeshPongClock({
+      timeOrigin: 1_000,
+      now: () => 80,
+    });
+    const sentAtEpochMs = 1_000;
+    const receivedAtEpochMs = remoteClock.nowEpochMs();
+    let telemetry = createMeshPongTelemetryState(5);
+    let summary = reduceMeshPongBenchmarkSummary(createMeshPongBenchmarkSummaryState(5), {
+      type: 'simulation-scheduled',
+      nowMs: 95,
+    });
+
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'replay-sent',
+      originSessionId: 'remote-tab',
+      sentAtMs: sentAtEpochMs,
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'replay-received',
+      originSessionId: 'remote-tab',
+      sentAtMs: sentAtEpochMs,
+      receivedAtMs: receivedAtEpochMs,
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'controller-intent-applied',
+      side: 'left',
+      nowMs: receivedAtEpochMs,
+      sentAtMs: sentAtEpochMs,
+    });
+    for (const event of [
+      {
+        type: 'replay-sent',
+        originSessionId: 'remote-tab',
+        sentAtMs: sentAtEpochMs,
+      },
+      {
+        type: 'replay-received',
+        originSessionId: 'remote-tab',
+        sentAtMs: sentAtEpochMs,
+        receivedAtMs: receivedAtEpochMs,
+      },
+      {
+        type: 'controller-intent-applied',
+        side: 'left',
+        nowMs: receivedAtEpochMs,
+        sentAtMs: sentAtEpochMs,
+      },
+    ] satisfies MeshPongTelemetryEvent[]) {
+      summary = reduceMeshPongBenchmarkSummary(summary, event);
+    }
+
+    expect(telemetry.replay.latencyMs).toBe(80);
+    expect(telemetry.controllers.left.lastAppliedIntentAgeMs).toBe(80);
+    expect(summary.updatedAtMs).toBe(95);
+    expect(summary.controllers.throughputPerSec).toBe(0);
   });
 
   it('reduces benchmark summary metrics for latency, throughput, timeouts, and lag classification', () => {
@@ -1439,6 +1524,45 @@ describe('Mesh Pong transport parity', () => {
     expect(harness.statuses.at(-1)).toBe('running');
   });
 
+  it('uses controller schedule policy for ask timeout and stale intent reuse', async () => {
+    expect(DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY).toEqual({
+      simulationIntervalMs: 90,
+      controllerAskTimeoutMs: 30_000,
+      staleIntentTurnLimit: 3,
+    });
+    const harness = createTurnStepperHarness(
+      {
+        playerCount: 1,
+        controllers: { left: 'human', right: 'mlx' },
+      },
+      {
+        schedulePolicy: {
+          ...DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY,
+          controllerAskTimeoutMs: 1_234,
+          staleIntentTurnLimit: 1,
+        },
+      }
+    );
+
+    await harness.stepper.tick();
+    expect(harness.rightAskTimeouts()).toEqual([1_234]);
+    harness.rightDeferreds[0]?.resolve({
+      ok: true,
+      provider: 'llm',
+      side: 'right',
+      direction: 'down',
+      amount: PONG_FIELD.paddleStep,
+    });
+    await flushMicrotasks();
+
+    await harness.stepper.tick();
+    await harness.stepper.tick();
+    await harness.stepper.tick();
+
+    expect(harness.rightAskTimeouts()).toEqual([1_234, 1_234]);
+    expect(harness.commands.filter((command) => command === 'right:MOVE_PADDLE')).toHaveLength(2);
+  });
+
   it('summarizes one-player and mlx-vs-mlx benchmark telemetry without a live provider', async () => {
     const onePlayer = createTurnStepperHarness({
       playerCount: 1,
@@ -1707,9 +1831,11 @@ describe('Mesh Pong transport parity', () => {
       'utf8'
     );
 
-    expect(uiEntrypoint).toContain('MESH_PONG_MLX_CONTROLLER_ASK_TIMEOUT_MS = 30_000');
-    expect(uiEntrypoint).toContain('MESH_PONG_MLX_CONTROLLER_ASK_TIMEOUT_MS');
-    expect(uiEntrypoint).toContain('MESH_PONG_MLX_STALE_TURN_LIMIT = 3');
+    expect(uiEntrypoint).toContain('DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY');
+    expect(uiEntrypoint).toContain('controllerAskTimeoutMs: 30_000');
+    expect(uiEntrypoint).toContain('staleIntentTurnLimit: 3');
+    expect(uiEntrypoint).toContain('schedulePolicy.controllerAskTimeoutMs');
+    expect(uiEntrypoint).toContain('schedulePolicy.staleIntentTurnLimit');
     expect(uiEntrypoint).toContain('createMeshPongTurnStepper');
     expect(uiEntrypoint).toContain('readonly requestId: number;');
     expect(uiEntrypoint).toContain('readonly startedAtMs: number;');
