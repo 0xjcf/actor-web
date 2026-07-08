@@ -2201,10 +2201,13 @@ operator explicitly asks for queue mutations.
 
 - Title: Decouple Mesh Pong simulation and render loop from MLX inference turns
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/decouple-mesh-pong-simulation-and-render-loop-from-mlx-infer.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Benchmark Mesh Pong MLX model and server strategy
 
