@@ -2236,6 +2236,14 @@ operator explicitly asks for queue mutations.
 - Owner: runtime
 - Brief: .fas/tasks/design-actor-web-advisory-lane-primitive-for-deadline-safe-a.md
 
+### Task: Evaluate behavior-tree and utility-AI primitives for actor-web behavior composition
+
+- Title: Evaluate behavior-tree and utility-AI primitives for actor-web behavior composition
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/evaluate-behavior-tree-and-utility-ai-primitives-for-actor-w.md
+
 ## Template
 
 ### Task: `<short task title>`
