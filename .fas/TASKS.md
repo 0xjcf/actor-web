@@ -2190,8 +2190,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Mesh Pong performance telemetry and lag budget
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/mesh-pong-performance-telemetry-and-lag-budget.md
 - Verification lane: fast
 - Policy sensitivity: standard
