@@ -6,15 +6,15 @@ Created with `fas create-task` on 2026-07-08.
 
 ## Problem
 
-Turn the Mesh Pong progression into a course-style, operator-readable learning path once the proof layers and API decisions are complete. Document the sequence from session/match FSMs, deterministic reflex control, behavior-tree action selection, Advisory Lane planning, utility-policy scoring and public actor-web API extraction. The guide should explain what each layer buys actor-web and where the concept applies outside games, such as agent orchestration, smart-home automation, dispatch and workflow control.
+Turn the Mesh Pong progression into a course-style, operator-readable learning path once the proof layers and API decisions are complete. Document the sequence from session/match lifecycle policy, deterministic reflex control, execution-policy action selection, advisory policy planning, decision-policy scoring and public actor-web policy composition. The guide should explain what each layer buys actor-web and where the concept applies outside games, such as agent orchestration, smart-home automation, dispatch and workflow control.
 
 ## Acceptance criteria
 
 - Adds a concise Mesh Pong layered-control guide or README section that teaches each layer in implementation order.
-- Maps FSM, reflex controller, behavior tree, Advisory Lane and utility policy to concrete Mesh Pong files, telemetry and tests.
+- Maps FSM/lifecycle policy, reflex controller, execution policy, advisory policy, decision policy and Behavior Graph concepts to concrete Mesh Pong files, telemetry and tests.
 - Explains what each layer buys actor-web and when not to use it.
 - Connects the pattern to at least two non-game actor-web scenarios such as agent orchestration, workflow control, smart-home automation or dispatch.
-- References the final API decisions for withAdvisoryLane, behavior-tree and utility-policy support instead of presenting speculative APIs as shipped.
+- References the final API decisions for `withPolicy(...)`, advisory policy, Behavior Graph and any behavior-tree or utility-policy support instead of presenting speculative APIs as shipped.
 - The task is queued after the actor-web behavior-tree/utility-AI primitive evaluation task and does not block post-mesh claim gating unless that task records a concrete dependency.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
