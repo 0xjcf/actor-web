@@ -2220,6 +2220,14 @@ operator explicitly asks for queue mutations.
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Mesh Pong browser-playable WebSocket transport mode
+
+- Title: Mesh Pong browser-playable WebSocket transport mode
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/mesh-pong-browser-playable-websocket-transport-mode.md
+
 ### Task: Mesh Pong hybrid reflex controller plus LLM planner mode
 
 - Title: Mesh Pong hybrid reflex controller plus LLM planner mode
