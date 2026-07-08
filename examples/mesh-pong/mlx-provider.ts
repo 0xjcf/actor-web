@@ -33,7 +33,6 @@ export interface OpenAiChatCompletionResponse {
 export const MESH_PONG_MLX_ENABLED_KEY = 'actor-web.mesh-pong.mlx.enabled';
 export const MESH_PONG_MLX_ENDPOINT_KEY = 'actor-web.mesh-pong.mlx.endpoint';
 export const MESH_PONG_MLX_MODEL_KEY = 'actor-web.mesh-pong.mlx.model';
-export const MESH_PONG_MLX_API_KEY = 'actor-web.mesh-pong.mlx.api-key';
 export const DEFAULT_MESH_PONG_MLX_ENDPOINT = 'http://127.0.0.1:8080/v1';
 export const DEFAULT_MESH_PONG_MLX_MODEL = 'mlx-community/Llama-3.2-3B-Instruct-4bit';
 export const DEFAULT_MESH_PONG_MLX_TIMEOUT_MS = 20_000;
@@ -81,9 +80,7 @@ export function resolveBrowserMlxProviderConfig(storage?: StorageLike): MeshPong
       readStorageValue(storage, MESH_PONG_MLX_MODEL_KEY) ??
       readEnvValue('VITE_MESH_PONG_MLX_MODEL') ??
       DEFAULT_MESH_PONG_MLX_MODEL,
-    apiKey:
-      readStorageValue(storage, MESH_PONG_MLX_API_KEY) ??
-      readEnvValue('VITE_MESH_PONG_MLX_API_KEY'),
+    apiKey: readEnvValue('VITE_MESH_PONG_MLX_API_KEY'),
   };
 }
 

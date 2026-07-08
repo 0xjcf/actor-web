@@ -42,13 +42,15 @@ Open the local examples app, switch to Mesh Pong, and use either:
 - One-player: one human side plus one `mlx` side.
 - MLX-vs-MLX: both sides set to `mlx` to observe shared-endpoint contention.
 
-Supported overrides remain exactly the existing provider keys, with
-`localStorage` taking precedence over Vite env vars:
+Supported browser-storable overrides remain the non-secret provider keys, with
+`localStorage` taking precedence over Vite env vars for those values:
 
 - `actor-web.mesh-pong.mlx.enabled` or `VITE_MESH_PONG_MLX_ENABLED`
 - `actor-web.mesh-pong.mlx.endpoint` or `VITE_MESH_PONG_MLX_ENDPOINT`
 - `actor-web.mesh-pong.mlx.model` or `VITE_MESH_PONG_MLX_MODEL`
-- `actor-web.mesh-pong.mlx.api-key` or `VITE_MESH_PONG_MLX_API_KEY`
+
+`VITE_MESH_PONG_MLX_API_KEY` is env/runtime-only. Do not persist MLX API keys in
+browser `localStorage`.
 
 Defaults:
 

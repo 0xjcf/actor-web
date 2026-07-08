@@ -1185,7 +1185,7 @@ describe('Mesh Pong transport parity', () => {
     }
   });
 
-  it('reads browser MLX config from local storage overrides', () => {
+  it('reads browser MLX config from local storage overrides except api keys', () => {
     const config = resolveBrowserMlxProviderConfig(
       createStorage({
         'actor-web.mesh-pong.mlx.enabled': 'true',
@@ -1199,7 +1199,7 @@ describe('Mesh Pong transport parity', () => {
       enabled: true,
       endpoint: 'http://127.0.0.1:1234/v1',
       model: 'mlx-test-model',
-      apiKey: 'local-key',
+      apiKey: undefined,
     });
   });
 
