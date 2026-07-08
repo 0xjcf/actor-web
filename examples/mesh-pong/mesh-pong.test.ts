@@ -8,7 +8,7 @@ import {
   createActorAgentTools,
 } from '@actor-web/agent';
 import type { ActorMessage, ActorRef } from '@actor-web/runtime';
-import type { BroadcastChannelLike } from '@actor-web/runtime/browser';
+import type { ActorToolExecutionContext, BroadcastChannelLike } from '@actor-web/runtime/browser';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createBrowserMlxLlmProvider,
@@ -50,6 +50,7 @@ import {
   createInitialPaddle,
   createInitialPlayerSession,
   createInitialScore,
+  createMlxSessionId,
   createSyntheticMlxControllerInput,
   DEFAULT_PONG_SEED,
   PONG_FIELD,
@@ -178,6 +179,15 @@ afterEach(async () => {
   await Promise.allSettled(startedRuntimes.splice(0).map((runtime) => runtime.stop()));
 });
 
+function createToolExecutionContext(signal?: AbortSignal): ActorToolExecutionContext {
+  const controller = new AbortController();
+  return {
+    actorId: 'mesh-pong-test',
+    nodeAddress: 'browser',
+    signal: signal ?? controller.signal,
+  };
+}
+
 async function flush(runtime: StartedMeshPongRuntime): Promise<void> {
   if ('flush' in runtime) {
     await runtime.flush();
@@ -287,7 +297,7 @@ async function syncSyntheticMlxSession(
   await lobby.send({
     type: 'SYNC_SESSION',
     session: {
-      sessionId: `mlx-${side}`,
+      sessionId: createMlxSessionId(side),
       controller: 'mlx',
       side,
       ready: true,
@@ -1100,6 +1110,73 @@ describe('Mesh Pong transport parity', () => {
     });
   });
 
+  it('preserves active lobby state when a later match-start request is rejected', async () => {
+    const startedLobby = startLobbyMatch(
+      syncLobbySession(
+        syncLobbySession(createInitialLobby(), {
+          sessionId: 'tab-a',
+          controller: 'human',
+          side: 'left',
+          ready: true,
+        }),
+        {
+          sessionId: 'tab-b',
+          controller: 'human',
+          side: 'right',
+          ready: true,
+        }
+      ),
+      {
+        playerCount: 2,
+        controllers: { left: 'human', right: 'human' },
+      }
+    ).lobby;
+
+    const rejected = startLobbyMatch(startedLobby, {
+      playerCount: 2,
+      controllers: { left: 'human', right: 'mlx' },
+    });
+    expect(rejected.result).toEqual({
+      ok: false,
+      reason: 'missing-controller',
+      missing: ['right'],
+    });
+    expect(rejected.lobby).toBe(startedLobby);
+
+    const runtime = await startMeshPongLocal();
+    startedRuntimes.push(runtime);
+    const { lobby, sessionA, sessionB } = await resolveSessionRefs(runtime);
+    await sessionA.send({ type: 'CLAIM_SIDE', side: 'left' });
+    await sessionA.send({ type: 'SET_READY', ready: true });
+    await sessionB.send({ type: 'CLAIM_SIDE', side: 'right' });
+    await sessionB.send({ type: 'SET_READY', ready: true });
+    await syncSessionToLobby(lobby, sessionA);
+    await syncSessionToLobby(lobby, sessionB);
+    await flush(runtime);
+    await lobby.ask<PongMatchStartResult>({
+      type: 'START_MATCH',
+      mode: {
+        playerCount: 2,
+        controllers: { left: 'human', right: 'human' },
+      },
+    });
+    const lobbyBeforeReject = await lobby.ask<PongLobbyState>({ type: 'GET_LOBBY' });
+
+    await expect(
+      lobby.ask<PongMatchStartResult>({
+        type: 'START_MATCH',
+        mode: 'bad-mode',
+      } as unknown as PongLobbyCommand)
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'invalid-command',
+      missing: [],
+    });
+    await expect(lobby.ask<PongLobbyState>({ type: 'GET_LOBBY' })).resolves.toEqual(
+      lobbyBeforeReject
+    );
+  });
+
   it('returns data failures for malformed player-session and lobby commands', async () => {
     const runtime = await startMeshPongLocal();
     startedRuntimes.push(runtime);
@@ -1255,13 +1332,12 @@ describe('Mesh Pong transport parity', () => {
     }
   });
 
-  it('reads browser MLX config from local storage overrides except api keys', () => {
+  it('reads browser MLX config from non-secret local storage overrides', () => {
     const config = resolveBrowserMlxProviderConfig(
       createStorage({
         'actor-web.mesh-pong.mlx.enabled': 'true',
         'actor-web.mesh-pong.mlx.endpoint': 'http://127.0.0.1:1234/v1/',
         'actor-web.mesh-pong.mlx.model': 'mlx-test-model',
-        'actor-web.mesh-pong.mlx.api-key': 'local-key',
       })
     );
 
@@ -1269,8 +1345,8 @@ describe('Mesh Pong transport parity', () => {
       enabled: true,
       endpoint: 'http://127.0.0.1:1234/v1',
       model: 'mlx-test-model',
-      apiKey: undefined,
     });
+    expect(config).not.toHaveProperty('apiKey');
   });
 
   it('calls an openai-compatible local MLX endpoint when browser MLX is enabled', async () => {
@@ -1280,7 +1356,6 @@ describe('Mesh Pong transport parity', () => {
         enabled: true,
         endpoint: 'http://127.0.0.1:8080/v1',
         model: 'mlx-local',
-        apiKey: 'secret',
       },
       fetchImpl: (async (url, init) => {
         fetchCalls.push({ url: String(url), init });
@@ -1301,7 +1376,7 @@ describe('Mesh Pong transport parity', () => {
           messages: [{ role: 'user', content: '{"side":"left"}' }],
           tools: [],
         } as ActorAgentLlmRequest,
-        {} as never
+        createToolExecutionContext()
       )
     ).resolves.toEqual({
       ok: true,
@@ -1326,10 +1401,11 @@ describe('Mesh Pong transport parity', () => {
         signal: expect.any(AbortSignal),
         headers: {
           'content-type': 'application/json',
-          authorization: 'Bearer secret',
         },
       },
     });
+    expect(JSON.stringify(fetchCalls[0]?.init?.headers)).not.toContain('authorization');
+    expect(JSON.stringify(fetchCalls[0]?.init?.headers)).not.toContain('Bearer');
     expect(JSON.parse(String(fetchCalls[0]?.init?.body))).toMatchObject({
       model: 'mlx-local',
       temperature: 0,
@@ -1365,7 +1441,7 @@ describe('Mesh Pong transport parity', () => {
           messages: [{ role: 'user', content: '{"side":"right"}' }],
           tools: [],
         } as ActorAgentLlmRequest,
-        {} as never
+        createToolExecutionContext()
       )
     ).resolves.toMatchObject({
       ok: false,
@@ -1373,6 +1449,47 @@ describe('Mesh Pong transport parity', () => {
         code: 'LLM_PROVIDER_FAILED',
         message:
           'Local MLX request timed out after 1ms for http://127.0.0.1:8080/v1/chat/completions.',
+      },
+    });
+    expect(observedSignal?.aborted).toBe(true);
+  });
+
+  it('honors actor-tool abort signals during browser MLX endpoint calls', async () => {
+    const controller = new AbortController();
+    let observedSignal: AbortSignal | undefined;
+    const provider = createBrowserMlxLlmProvider({
+      config: {
+        enabled: true,
+        endpoint: 'http://127.0.0.1:8080/v1',
+        model: 'mlx-local',
+      },
+      timeoutMs: 20_000,
+      fetchImpl: (async (_url, init) => {
+        observedSignal = init?.signal as AbortSignal | undefined;
+        return new Promise<Response>((_resolve, reject) => {
+          observedSignal?.addEventListener('abort', () => {
+            const error = new Error('aborted');
+            error.name = 'AbortError';
+            reject(error);
+          });
+        });
+      }) as typeof fetch,
+    });
+
+    const result = provider(
+      {
+        messages: [{ role: 'user', content: '{"side":"left"}' }],
+        tools: [],
+      } as ActorAgentLlmRequest,
+      createToolExecutionContext(controller.signal)
+    );
+    controller.abort(new Error('controller deadline'));
+
+    await expect(result).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: 'LLM_PROVIDER_FAILED',
+        message: 'Local MLX request was aborted for http://127.0.0.1:8080/v1/chat/completions.',
       },
     });
     expect(observedSignal?.aborted).toBe(true);
@@ -1429,6 +1546,37 @@ describe('Mesh Pong transport parity', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('enforces controller timeout through actor tool execution', async () => {
+    let observedSignal: AbortSignal | undefined;
+    const runtime = await startMeshPongLocal({
+      tools: createActorAgentTools({
+        llm: (_request, context) => {
+          observedSignal = context.signal;
+          return new Promise<ActorAgentLlmResult>((_resolve, reject) => {
+            context.signal.addEventListener('abort', () => reject(new Error('tool aborted')));
+          });
+        },
+      }),
+    });
+    startedRuntimes.push(runtime);
+    const controllers = await resolveControllerRefs(runtime);
+    const result = controllers.right.ask<PongControllerResult>({
+      type: 'RUN_CONTROLLER',
+      snapshot: await currentSnapshot(runtime),
+    });
+
+    await expect(result).resolves.toEqual({
+      ok: false,
+      side: 'right',
+      reason: 'provider-failed',
+      error: {
+        code: 'LLM_PROVIDER_ERROR',
+        message: `Actor tool "llm" timed out after ${CONTROLLER_LLM_TIMEOUT_MS}ms.`,
+      },
+    });
+    expect(observedSignal?.aborted).toBe(true);
   });
 
   it('starts LLM-vs-LLM mode through controller actors with a deterministic fake provider', async () => {
@@ -1569,6 +1717,7 @@ describe('Mesh Pong transport parity', () => {
   });
 
   it('creates the synthetic controller-input payload that observer tabs replay for MLX turns', () => {
+    expect(createMlxSessionId('right')).toBe('mlx-right');
     expect(
       createSyntheticMlxControllerInput({
         ok: true,
@@ -1676,6 +1825,39 @@ describe('Mesh Pong transport parity', () => {
     expect(stepOrder).toEqual(['flush:1', 'snapshot:1', 'flush:2', 'snapshot:2']);
     expect(harness.tickCount()).toBe(2);
     expect(harness.renderedSnapshots).toHaveLength(2);
+  });
+
+  it('reports held telemetry instead of overlapping simulation ticks', async () => {
+    const flushDeferred = createDeferred<void>();
+    const flushRuntime = vi.fn(() => flushDeferred.promise);
+    const harness = createTurnStepperHarness(
+      {
+        playerCount: 2,
+        controllers: { left: 'human', right: 'human' },
+      },
+      {
+        flushRuntime,
+      }
+    );
+
+    const firstTick = harness.stepper.tick();
+    for (let attempt = 0; attempt < 5 && flushRuntime.mock.calls.length === 0; attempt += 1) {
+      await flushMicrotasks();
+    }
+    expect(flushRuntime).toHaveBeenCalledTimes(1);
+
+    await harness.stepper.tick();
+    expect(harness.commands.filter((command) => command === 'ball:TICK')).toHaveLength(1);
+    expect(harness.telemetryEvents.some((event) => event.type === 'simulation-held')).toBe(true);
+    const summary = harness.telemetryEvents.reduce(
+      reduceMeshPongBenchmarkSummary,
+      createMeshPongBenchmarkSummaryState(0)
+    );
+    expect(summary.simulation.heldCount).toBe(1);
+
+    flushDeferred.resolve();
+    await firstTick;
+    expect(harness.renderedSnapshots).toHaveLength(1);
   });
 
   it('uses the shell MLX runner when present instead of blocking browser controller actors', async () => {
@@ -2051,6 +2233,10 @@ describe('Mesh Pong transport parity', () => {
     expect(uiEntrypoint).toContain('function isCurrentRuntimeContext(');
     expect(uiEntrypoint).toContain(
       'shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs)'
+    );
+    expect(uiEntrypoint).toContain('options: { readonly shouldApply?: () => boolean } = {}');
+    expect(uiEntrypoint).toContain(
+      'await hydrateCurrentSession(nextRuntime, nextRefs, {\n      shouldApply: () => switchGeneration === generation,\n    });'
     );
     expect(uiEntrypoint).toContain('() => isCurrentRuntimeContext(currentRuntime, currentRefs)');
     expect(uiEntrypoint).toContain('if (!isCurrentRuntimeContext(currentRuntime, currentRefs))');

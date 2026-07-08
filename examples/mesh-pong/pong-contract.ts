@@ -336,12 +336,16 @@ export function shouldLaunchMlxControllerForSide(authority: PongMatchControllerA
   );
 }
 
+export function createMlxSessionId(side: PongSide): string {
+  return `mlx-${side}`;
+}
+
 export function createSyntheticMlxControllerInput(
   result: Extract<PongControllerResult, { readonly ok: true }>
 ): Extract<PongControllerInputResult, { readonly ok: true }> {
   return {
     ok: true,
-    sessionId: `mlx-${result.side}`,
+    sessionId: createMlxSessionId(result.side),
     side: result.side,
     direction: result.direction,
     amount: result.amount,
@@ -397,7 +401,7 @@ export function syncLobbySessionsFromStorage(
         continue;
       }
       sessions.push({
-        sessionId: `mlx-${side}`,
+        sessionId: createMlxSessionId(side),
         controller: 'mlx',
         side,
         ready: true,
@@ -438,7 +442,7 @@ export function startLobbyMatch(
       missing,
     };
     return {
-      lobby: { ...lobby, started: false, mode: null, lastStart: result },
+      lobby,
       result,
     };
   }
@@ -454,7 +458,7 @@ export function startLobbyMatch(
       missing: notReady,
     };
     return {
-      lobby: { ...lobby, started: false, mode: null, lastStart: result },
+      lobby,
       result,
     };
   }

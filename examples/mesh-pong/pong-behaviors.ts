@@ -277,7 +277,6 @@ export const lobbyBehavior = defineBehavior<PongLobbyCommand, PongLobbyEvent>()
         missing: [] as readonly PongSide[],
       };
       return {
-        context: { ...context, started: false, mode: null, lastStart: result },
         reply: result,
         emit: [{ type: 'MATCH_START_REJECTED' as const, result }],
       };

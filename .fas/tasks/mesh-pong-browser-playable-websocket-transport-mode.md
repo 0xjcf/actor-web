@@ -1,12 +1,15 @@
 # Mesh Pong browser-playable WebSocket transport mode
 
 ## Source
+
 Created with `fas create-task` on 2026-07-08.
 
 ## Problem
+
 Epic: labs-mesh-runtime-substrate. Follow-up from the Mesh Pong UI transport selector gap: the page exposes WebSocket loopback, but the browser UI currently rejects that mode because the existing WebSocket parity path is a Node loopback test helper. Implement a browser-playable WebSocket transport mode for Mesh Pong by connecting the UI/runtime to an external Actor-Web WebSocket listener or dev helper, while keeping browser nodes outbound-only and preserving local, BroadcastChannel, and labs-mesh modes. The goal is an operator demo where selecting WebSocket activates the mode, reports connection health clearly, and supports the same player/session and MLX controller flows used for the Mesh Pong promotional GIF/blog proof.
 
 ## Acceptance criteria
+
 - Selecting WebSocket in the Mesh Pong UI activates a real browser-playable transport mode instead of reverting the selector, when the required external listener/dev helper is available.
 - The implementation uses the existing browser/WebWorker WebSocket transport capability and Node listener surfaces; it does not add browser listener support or couple Pong behaviors to transport internals.
 - The UI reports explicit connection, listener-missing, and transport-failed states with recovery guidance, without silently falling back to another transport.
@@ -22,12 +25,15 @@ Epic: labs-mesh-runtime-substrate. Follow-up from the Mesh Pong UI transport sel
 - The task is queued in `.fas/queue/tasks.json` for the runtime.
 
 ## Proposed solution
+
 - Use the supplied problem context, acceptance criteria, and affected-file hints to draft the concrete implementation approach during planning.
 
 ## Alternatives considered
+
 - None recorded at task creation. Add rejected approaches during planning if scope tradeoffs appear.
 
 ## Affected files
+
 - examples/mesh-pong/ui/main.ts
 - examples/mesh-pong/ui/index.html
 - examples/mesh-pong/README.md
@@ -36,28 +42,35 @@ Epic: labs-mesh-runtime-substrate. Follow-up from the Mesh Pong UI transport sel
 - examples/vite.config.ts
 
 ## Scope Amendments
+
 - None.
 
 ## Implementation plan
+
 - Convert the supplied context into a scoped implementation plan before editing.
 - Refresh affected-file scope before implementation if the generated hints are incomplete.
 
 ## Verification plan
+
 - Run `fas validate-task` for the inner-loop verification gate.
 - Run `.fas/scripts/verify.sh --full` at the final release-quality gate when tracked files change.
 
 ## Risks
+
 - Validate generated scope, acceptance criteria, and verification evidence before closeout to avoid workflow drift.
 
 ## Dependencies
+
 - Depends on task-1783516442115 Benchmark Mesh Pong MLX model and server strategy.
 - Blocks task-1781880961715 Post-mesh scoping: membership graduation tier, cross-node supervision boundary, claim gating.
 - Belongs to epic labs-mesh-runtime-substrate as a Mesh Pong transport-demo follow-up. It uses the completed Browser/WebWorker WebSocket transport capability but does not reopen that completed runtime task.
 
 ## Open questions
+
 - None captured at task creation.
 
 ## Artifact links
+
 - Planning: `.fas/state/planning.json`
 - Task packet: `.fas/state/task-packet.json`
 - Commit plan: `.fas/state/commit-plan.json`

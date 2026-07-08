@@ -14,7 +14,6 @@ export interface MeshPongMlxProviderConfig {
   readonly enabled: boolean;
   readonly endpoint: string;
   readonly model: string;
-  readonly apiKey?: string;
 }
 
 export interface OpenAiChatCompletionResponse {
@@ -80,7 +79,6 @@ export function resolveBrowserMlxProviderConfig(storage?: StorageLike): MeshPong
       readStorageValue(storage, MESH_PONG_MLX_MODEL_KEY) ??
       readEnvValue('VITE_MESH_PONG_MLX_MODEL') ??
       DEFAULT_MESH_PONG_MLX_MODEL,
-    apiKey: readEnvValue('VITE_MESH_PONG_MLX_API_KEY'),
   };
 }
 
@@ -133,7 +131,7 @@ export function createBrowserMlxLlmProvider(
   const fetchImpl = input.fetchImpl ?? globalThis.fetch;
   const timeoutMs = input.timeoutMs ?? DEFAULT_MESH_PONG_MLX_TIMEOUT_MS;
 
-  return async (request) => {
+  return async (request, context) => {
     if (!config.enabled) {
       return unavailableResult(
         `Enable local MLX with ${MESH_PONG_MLX_ENABLED_KEY}=true or VITE_MESH_PONG_MLX_ENABLED=true.`
@@ -144,9 +142,21 @@ export function createBrowserMlxLlmProvider(
     }
 
     const abortController = new AbortController();
+    let timedOut = false;
+    let externallyAborted = false;
     const timeoutId = globalThis.setTimeout(() => {
+      timedOut = true;
       abortController.abort();
     }, timeoutMs);
+    const onExternalAbort = () => {
+      externallyAborted = true;
+      abortController.abort();
+    };
+    if (context.signal.aborted) {
+      onExternalAbort();
+    } else {
+      context.signal.addEventListener('abort', onExternalAbort, { once: true });
+    }
 
     try {
       const response = await fetchImpl(`${config.endpoint}/chat/completions`, {
@@ -154,7 +164,6 @@ export function createBrowserMlxLlmProvider(
         signal: abortController.signal,
         headers: {
           'content-type': 'application/json',
-          ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
         },
         body: JSON.stringify({
           model: config.model,
@@ -197,8 +206,13 @@ export function createBrowserMlxLlmProvider(
         },
       };
     } catch (error) {
-      globalThis.clearTimeout(timeoutId);
-      if (isAbortError(error)) {
+      if (isAbortError(error) || timedOut || externallyAborted || abortController.signal.aborted) {
+        if (externallyAborted && !timedOut) {
+          return providerFailure(
+            `Local MLX request was aborted for ${config.endpoint}/chat/completions.`,
+            error
+          );
+        }
         return providerFailure(
           `Local MLX request timed out after ${timeoutMs}ms for ${config.endpoint}/chat/completions.`,
           error
@@ -208,6 +222,9 @@ export function createBrowserMlxLlmProvider(
         `Local MLX request failed for ${config.endpoint}/chat/completions.`,
         error
       );
+    } finally {
+      globalThis.clearTimeout(timeoutId);
+      context.signal.removeEventListener('abort', onExternalAbort);
     }
   };
 }

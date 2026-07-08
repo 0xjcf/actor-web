@@ -180,8 +180,17 @@ export function createPongControllerBehavior(side: PongSide) {
         return { reply: context };
       }
 
-      const result = await runPongControllerWithLlmProvider(side, message.snapshot, (request) =>
-        tools.execute<ActorAgentLlmResult, ActorAgentLlmRequest>(ACTOR_WEB_LLM_TOOL_NAME, request)
+      const result = await runPongControllerWithLlmProvider(
+        side,
+        message.snapshot,
+        (request, _context) =>
+          tools.execute<ActorAgentLlmResult, ActorAgentLlmRequest>(
+            ACTOR_WEB_LLM_TOOL_NAME,
+            request,
+            {
+              timeoutMs: CONTROLLER_LLM_TIMEOUT_MS,
+            }
+          )
       );
 
       return {

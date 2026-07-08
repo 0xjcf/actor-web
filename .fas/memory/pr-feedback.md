@@ -79,3 +79,13 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Collision and boundary tests should assert transitions, not only final positions.** A paddle or boundary response should prove the entity crossed the interaction plane during the current tick. Tests should cover the already-past-plane case so late or stale state cannot still trigger a bounce.
 
 - **Async UI mode switches need generation guards before every visible state write.** Guard the "starting" state and labels as well as final success/error application after awaited teardown. Otherwise an abandoned request can leave visible mode/proof/status text inconsistent with the runtime that actually won the race.
+
+## PR #46 — Mesh Pong player modes batch babysit (2026-07-08, single-agent)
+
+- **Browser examples must treat `VITE_` variables as public bundle inputs.** Do not read bearer tokens or API keys from browser `import.meta.env`, even for local demos. If an example endpoint needs auth, keep the secret behind a local server/proxy boundary and document that the browser surface only carries non-secret configuration.
+
+- **Timeout coverage needs to cross the actual actor/tool boundary.** A helper-level `AbortSignal` test does not prove that an actor behavior forwards deadlines into `tools.execute`. When controller/advisory logic depends on a deadline, add a regression through the actor behavior or toolbox call that proves the underlying provider signal is aborted.
+
+- **Documented telemetry counters need a live emission path.** Reducer-only tests can make a metric look supported while no runtime path emits the event. For scheduling metrics such as held/dropped/applied turns, add a harness test that forces the runtime condition and observes the emitted event.
+
+- **Rejected commands against active actor state should prove non-mutation.** For malformed or rejected commands on actors that can already be in a started/running state, assert the full pre-rejection context remains unchanged so stale or stray commands cannot stop live work.

@@ -49,8 +49,9 @@ Supported browser-storable overrides remain the non-secret provider keys, with
 - `actor-web.mesh-pong.mlx.endpoint` or `VITE_MESH_PONG_MLX_ENDPOINT`
 - `actor-web.mesh-pong.mlx.model` or `VITE_MESH_PONG_MLX_MODEL`
 
-`VITE_MESH_PONG_MLX_API_KEY` is env/runtime-only. Do not persist MLX API keys in
-browser `localStorage`.
+The browser demo intentionally does not send Authorization headers. If an MLX
+endpoint requires auth, keep the bearer token behind a local server/proxy and
+point the browser example at that local OpenAI-compatible boundary.
 
 Defaults:
 

@@ -1129,8 +1129,10 @@ async function syncCurrentSession(
 
 async function hydrateCurrentSession(
   nextRuntime: BrowserRuntime,
-  nextRefs: RuntimeRefs
+  nextRefs: RuntimeRefs,
+  options: { readonly shouldApply?: () => boolean } = {}
 ): Promise<void> {
+  const shouldApply = options.shouldApply ?? (() => true);
   const stored = storedSessionForCurrentTab();
   if (stored?.side) {
     await nextRefs.playerSession.send({
@@ -1138,12 +1140,21 @@ async function hydrateCurrentSession(
       side: stored.side,
       controller: stored.controller,
     });
+    if (!shouldApply()) {
+      return;
+    }
     if (stored.ready) {
       await nextRefs.playerSession.send({ type: 'SET_READY', ready: true });
+      if (!shouldApply()) {
+        return;
+      }
     }
     await flushRuntime(nextRuntime);
+    if (!shouldApply()) {
+      return;
+    }
   }
-  await syncCurrentSession(nextRuntime, nextRefs);
+  await syncCurrentSession(nextRuntime, nextRefs, { shouldApply });
 }
 
 function renderParityProof(mode: BrowserMode): void {
@@ -1363,7 +1374,9 @@ async function switchMode(mode: BrowserMode): Promise<void> {
     nextRuntime = await startRuntimeForMode(mode);
     const nextRefs = await resolveRefs(nextRuntime);
     const nextSnapshot = await resetRuntimeGame(nextRuntime, nextRefs);
-    await hydrateCurrentSession(nextRuntime, nextRefs);
+    await hydrateCurrentSession(nextRuntime, nextRefs, {
+      shouldApply: () => switchGeneration === generation,
+    });
 
     if (switchGeneration !== generation) {
       await nextRuntime.stop().catch(() => undefined);
@@ -1519,6 +1532,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
     right: createEmptyMlxLaneState(),
   };
   let active = true;
+  let applyingSimulation = false;
   let nextRequestId = 1;
   let lastMatchGeneration: number | null = null;
 
@@ -1694,7 +1708,12 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
 
     const scheduledAtMs = deps.nowMs();
     deps.updateTelemetry({ type: 'simulation-scheduled', nowMs: scheduledAtMs });
+    if (applyingSimulation) {
+      deps.updateTelemetry({ type: 'simulation-held', nowMs: deps.nowMs() });
+      return;
+    }
 
+    applyingSimulation = true;
     try {
       await deps.applyHumanInput?.(matchState.mode);
 
@@ -1753,6 +1772,8 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
       }
     } catch (error) {
       deps.setStatus(error instanceof Error ? error.message : 'runtime error');
+    } finally {
+      applyingSimulation = false;
     }
   }
 
