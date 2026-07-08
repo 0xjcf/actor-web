@@ -2175,6 +2175,17 @@ operator explicitly asks for queue mutations.
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Resolve CodeRabbit Mesh Pong batch closeout findings
+
+- Title: Resolve CodeRabbit Mesh Pong batch closeout findings
+- Mode: single-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/resolve-coderabbit-mesh-pong-batch-closeout-findings.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
 ## Template
 
 ### Task: `<short task title>`
