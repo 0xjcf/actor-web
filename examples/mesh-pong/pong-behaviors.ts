@@ -21,6 +21,7 @@ import {
   type PongLobbyCommand,
   type PongLobbyEvent,
   type PongLobbyState,
+  type PongMatchMode,
   type PongPaddleState,
   type PongPlayerSessionParams,
   type PongPlayerSessionState,
@@ -34,6 +35,26 @@ import {
   startLobbyMatch,
   syncLobbySession,
 } from './pong-contract';
+
+function isPongControllerType(value: unknown): value is 'human' | 'mlx' {
+  return value === 'human' || value === 'mlx';
+}
+
+function isPongMatchMode(value: unknown): value is PongMatchMode {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const mode = value as {
+    readonly playerCount?: unknown;
+    readonly controllers?: { readonly left?: unknown; readonly right?: unknown };
+  };
+  return (
+    (mode.playerCount === 1 || mode.playerCount === 2) &&
+    Boolean(mode.controllers) &&
+    isPongControllerType(mode.controllers?.left) &&
+    isPongControllerType(mode.controllers?.right)
+  );
+}
 
 export const ballBehavior = defineBehavior<BallCommand, BallEvent>()
   .withContext(createInitialBallContext(DEFAULT_PONG_SEED))
@@ -165,6 +186,19 @@ export function createPlayerSessionBehavior(params: PongPlayerSessionParams) {
         };
       }
 
+      if (
+        message.type !== 'MOVE_CONTROLLER' ||
+        (message.direction !== 'up' && message.direction !== 'down')
+      ) {
+        return {
+          reply: {
+            ok: false,
+            sessionId: context.sessionId,
+            reason: 'invalid-command' as const,
+          },
+        };
+      }
+
       const input = createPlayerSessionInput(context, message.direction, message.amount);
       return {
         reply: input,
@@ -206,6 +240,19 @@ export const lobbyBehavior = defineBehavior<PongLobbyCommand, PongLobbyEvent>()
         context: lobby,
         reply: lobby,
         emit: [{ type: 'LOBBY_CHANGED' as const, lobby }],
+      };
+    }
+
+    if (message.type !== 'START_MATCH' || !isPongMatchMode(message.mode)) {
+      const result = {
+        ok: false as const,
+        reason: 'invalid-command' as const,
+        missing: [] as readonly PongSide[],
+      };
+      return {
+        context: { ...context, started: false, mode: null, lastStart: result },
+        reply: result,
+        emit: [{ type: 'MATCH_START_REJECTED' as const, result }],
       };
     }
 

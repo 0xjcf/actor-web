@@ -36,6 +36,7 @@ export const MESH_PONG_MLX_MODEL_KEY = 'actor-web.mesh-pong.mlx.model';
 export const MESH_PONG_MLX_API_KEY = 'actor-web.mesh-pong.mlx.api-key';
 export const DEFAULT_MESH_PONG_MLX_ENDPOINT = 'http://127.0.0.1:8080/v1';
 export const DEFAULT_MESH_PONG_MLX_MODEL = 'mlx-community/Llama-3.2-3B-Instruct-4bit';
+export const DEFAULT_MESH_PONG_MLX_TIMEOUT_MS = 3_000;
 
 function readStorageValue(storage: StorageLike | undefined, key: string): string | undefined {
   try {
@@ -119,11 +120,20 @@ function requestMessages(request: ActorAgentLlmRequest) {
   ];
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
 export function createBrowserMlxLlmProvider(
-  input: { readonly config?: MeshPongMlxProviderConfig; readonly fetchImpl?: typeof fetch } = {}
+  input: {
+    readonly config?: MeshPongMlxProviderConfig;
+    readonly fetchImpl?: typeof fetch;
+    readonly timeoutMs?: number;
+  } = {}
 ): ActorAgentLlmProvider {
   const config = input.config ?? resolveBrowserMlxProviderConfig();
   const fetchImpl = input.fetchImpl ?? globalThis.fetch;
+  const timeoutMs = input.timeoutMs ?? DEFAULT_MESH_PONG_MLX_TIMEOUT_MS;
 
   return async (request) => {
     if (!config.enabled) {
@@ -135,9 +145,15 @@ export function createBrowserMlxLlmProvider(
       return unavailableResult('Fetch is unavailable in this runtime.');
     }
 
+    const abortController = new AbortController();
+    const timeoutId = globalThis.setTimeout(() => {
+      abortController.abort();
+    }, timeoutMs);
+
     try {
       const response = await fetchImpl(`${config.endpoint}/chat/completions`, {
         method: 'POST',
+        signal: abortController.signal,
         headers: {
           'content-type': 'application/json',
           ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
@@ -148,6 +164,7 @@ export function createBrowserMlxLlmProvider(
           temperature: 0,
         }),
       });
+      globalThis.clearTimeout(timeoutId);
 
       if (!response.ok) {
         return providerFailure(
@@ -180,6 +197,13 @@ export function createBrowserMlxLlmProvider(
         },
       };
     } catch (error) {
+      globalThis.clearTimeout(timeoutId);
+      if (isAbortError(error)) {
+        return providerFailure(
+          `Local MLX request timed out after ${timeoutMs}ms for ${config.endpoint}/chat/completions.`,
+          error
+        );
+      }
       return providerFailure(
         `Local MLX request failed for ${config.endpoint}/chat/completions.`,
         error

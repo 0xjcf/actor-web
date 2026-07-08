@@ -177,7 +177,7 @@ export type PongMatchStartResult =
     }
   | {
       readonly ok: false;
-      readonly reason: 'missing-controller' | 'controller-not-ready';
+      readonly reason: 'missing-controller' | 'controller-not-ready' | 'invalid-command';
       readonly missing: readonly PongSide[];
     };
 
@@ -192,7 +192,7 @@ export type PongControllerInputResult =
   | {
       readonly ok: false;
       readonly sessionId: string;
-      readonly reason: 'side-unclaimed';
+      readonly reason: 'side-unclaimed' | 'invalid-command';
     };
 
 export interface PongLobbyState {

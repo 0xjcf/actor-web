@@ -328,7 +328,7 @@ function setControllerDiagnostic(side: PongSide, reason: string): void {
 function renderPlayerSession(session: PongPlayerSessionState | null): void {
   sessionValueElement.textContent = browserSessionId.slice(0, 8);
   sideValueElement.textContent = session?.side ?? 'none';
-  readyButtonElement.textContent = session?.ready ? 'Ready' : 'Ready';
+  readyButtonElement.textContent = session?.ready ? 'Ready' : 'Mark ready';
 }
 
 function renderLobby(lobby: PongLobbyState): void {
