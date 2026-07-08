@@ -1,5 +1,9 @@
 import type { ActorMessage, ActorRef } from '@actor-web/runtime';
-import { createBrowserMlxTools } from '../mlx-provider';
+import {
+  createBrowserMlxLlmProvider,
+  createBrowserMlxTools,
+  resolveBrowserMlxProviderConfig,
+} from '../mlx-provider';
 import { startMeshPongBroadcast } from '../modes/broadcast';
 import { startMeshPongLocal } from '../modes/local';
 import { startMeshPongMesh } from '../modes/mesh';
@@ -38,6 +42,7 @@ import {
   syncLobbySessionsFromStorage,
   TWO_HUMAN_PONG_MATCH_MODE,
 } from '../pong-contract';
+import { runPongControllerWithLlmProvider } from '../pong-controller';
 import { pong } from '../pong-topology';
 import { drawPong } from './pong-canvas';
 
@@ -122,7 +127,7 @@ export interface MeshPongBenchmarkSummaryState {
     readonly appliedPerSec: number;
   };
   readonly timeoutRate: number;
-  readonly gameplayEffect: 'stalled' | 'timeout-bound' | 'laggy' | 'smooth';
+  readonly gameplayEffect: 'stalled' | 'timeout-bound' | 'laggy' | 'controller-delayed' | 'smooth';
 }
 
 export type MeshPongTelemetryEvent =
@@ -353,16 +358,19 @@ function deriveBenchmarkSummary(
     state.controllers.finishedCount === 0
       ? 0
       : state.controllers.timeoutCount / state.controllers.finishedCount;
+  const simulationLagged = state.simulation.heldCount > 0 || state.simulation.droppedCount > 0;
+  const controllerDelayed =
+    averageLatencyMs !== null && averageLatencyMs > state.simulation.targetIntervalMs;
   const gameplayEffect =
     state.controllers.finishedCount === 0 || state.simulation.appliedCount === 0
       ? 'stalled'
       : timeoutRate >= 0.5
         ? 'timeout-bound'
-        : (averageLatencyMs !== null && averageLatencyMs > state.simulation.targetIntervalMs) ||
-            state.simulation.heldCount > 0 ||
-            state.simulation.droppedCount > 0
+        : simulationLagged
           ? 'laggy'
-          : 'smooth';
+          : controllerDelayed
+            ? 'controller-delayed'
+            : 'smooth';
 
   return {
     ...state,
@@ -712,6 +720,10 @@ export interface MeshPongTurnStepperDeps {
   readonly postControllerInput: (
     input: Extract<PongControllerInputResult, { readonly ok: true }>
   ) => void;
+  readonly runMlxController?: (
+    side: PongSide,
+    snapshot: PongSnapshot
+  ) => Promise<PongControllerResult>;
   readonly setControllerDiagnostic: (side: PongSide, reason: string) => void;
   readonly clearControllerDiagnostic: (side: PongSide) => void;
   readonly applyHumanInput?: (mode: PongMatchMode | null) => Promise<void>;
@@ -1207,6 +1219,19 @@ function browserLocalStorage() {
   return typeof localStorage === 'undefined' ? undefined : localStorage;
 }
 
+function runBrowserMlxController(
+  side: PongSide,
+  nextSnapshot: PongSnapshot
+): Promise<PongControllerResult> {
+  return runPongControllerWithLlmProvider(
+    side,
+    nextSnapshot,
+    createBrowserMlxLlmProvider({
+      config: resolveBrowserMlxProviderConfig(browserLocalStorage()),
+    })
+  );
+}
+
 async function resetGame(): Promise<void> {
   const currentRuntime = runtime;
   const currentRefs = refs;
@@ -1318,6 +1343,7 @@ async function switchMode(mode: BrowserMode): Promise<void> {
       setStatus,
       updateTelemetry,
       postControllerInput,
+      runMlxController: runBrowserMlxController,
       setControllerDiagnostic,
       clearControllerDiagnostic,
       applyHumanInput: (mode) => applyPaddleInput(activeRuntime, nextRefs, mode),
@@ -1365,6 +1391,7 @@ async function applyControllerInput(
     readonly appliedAtMs?: number;
     readonly flushRuntime?: (runtime: BrowserRuntime) => Promise<void>;
     readonly sentAtMs?: number;
+    readonly syncRuntime?: boolean;
     readonly updateTelemetry?: (event: MeshPongTelemetryEvent) => void;
   }
 ): Promise<void> {
@@ -1375,8 +1402,10 @@ async function applyControllerInput(
     direction: input.direction,
     amount: input.amount,
   });
-  const flush = metadata?.flushRuntime ?? flushRuntime;
-  await flush(nextRuntime);
+  if (metadata?.syncRuntime !== false) {
+    const flush = metadata?.flushRuntime ?? flushRuntime;
+    await flush(nextRuntime);
+  }
   const reportTelemetry = metadata?.updateTelemetry ?? updateTelemetry;
   reportTelemetry({
     type: 'controller-intent-applied',
@@ -1422,7 +1451,7 @@ async function applyPaddleInput(
   }
 
   const appliedAtMs = nowMs();
-  await applyControllerInput(nextRuntime, nextRefs, input, { appliedAtMs });
+  await applyControllerInput(nextRuntime, nextRefs, input, { appliedAtMs, syncRuntime: false });
   postControllerInput(input);
 }
 
@@ -1492,13 +1521,15 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
   async function resolveMlxControllerInput(request: MlxControllerRequest): Promise<void> {
     const lane = lanes[request.side];
     try {
-      const result = await request.controller.ask<PongControllerResult>(
-        {
-          type: 'RUN_CONTROLLER',
-          snapshot: request.snapshot,
-        },
-        schedulePolicy.controllerAskTimeoutMs
-      );
+      const result = deps.runMlxController
+        ? await deps.runMlxController(request.side, request.snapshot)
+        : await request.controller.ask<PongControllerResult>(
+            {
+              type: 'RUN_CONTROLLER',
+              snapshot: request.snapshot,
+            },
+            schedulePolicy.controllerAskTimeoutMs
+          );
       if (!ownsRequest(request)) {
         return;
       }
@@ -1627,8 +1658,8 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
         }
         await applyControllerInput(deps.runtime, deps.refs, usableIntent.input, {
           appliedAtMs: deps.nowMs(),
-          flushRuntime: deps.flushRuntime,
           sentAtMs: usableIntent.sentAtMs,
+          syncRuntime: false,
           updateTelemetry: deps.updateTelemetry,
         });
         deps.postControllerInput(usableIntent.input);
@@ -1644,7 +1675,6 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
         rightY: paddles[1].y,
       });
       await deps.refs.ball.send({ type: 'TICK' });
-      await deps.flushRuntime(deps.runtime);
       deps.updateTelemetry({ type: 'simulation-applied', nowMs: deps.nowMs() });
       const nextSnapshot = await deps.snapshot();
       if (!active) {
@@ -1917,6 +1947,7 @@ export function bootstrapMeshPongUI(): void {
       void applyControllerInput(currentRuntime, currentRefs, message.input, {
         appliedAtMs,
         sentAtMs: message.replay?.sentAtMs,
+        syncRuntime: false,
       }).catch((error: unknown) => {
         setStatus(error instanceof Error ? error.message : 'remote input failed');
       });

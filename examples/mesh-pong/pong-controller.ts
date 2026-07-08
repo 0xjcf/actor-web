@@ -56,6 +56,22 @@ function createControllerPrompt(side: PongSide, snapshot: PongSnapshot): string 
   });
 }
 
+export function createPongControllerRequest(
+  side: PongSide,
+  snapshot: PongSnapshot
+): ActorAgentLlmRequest {
+  return {
+    system: 'You are a Pong paddle controller. Reply with JSON only. Do not include markdown.',
+    messages: [
+      {
+        role: 'user',
+        content: createControllerPrompt(side, snapshot),
+      },
+    ],
+    tools: [],
+  };
+}
+
 function mapFailure(
   side: PongSide,
   result: Extract<ActorAgentLlmResult, { ok: false }>
@@ -118,6 +134,22 @@ function parseControllerResponse(side: PongSide, content: string): PongControlle
   }
 }
 
+export async function runPongControllerWithLlmProvider(
+  side: PongSide,
+  snapshot: PongSnapshot,
+  provider: ActorAgentLlmProvider
+): Promise<PongControllerResult> {
+  const abortController = new AbortController();
+  const llmResult = await provider(createPongControllerRequest(side, snapshot), {
+    actorId: `mesh-pong-controller-${side}`,
+    nodeAddress: 'browser',
+    signal: abortController.signal,
+  });
+  return llmResult.ok
+    ? parseControllerResponse(side, llmResult.value.message.content)
+    : mapFailure(side, llmResult);
+}
+
 export function createPongControllerBehavior(side: PongSide) {
   return defineBehavior<ControllerCommand>()
     .withTools<ActorAgentToolRegistry>()
@@ -127,23 +159,9 @@ export function createPongControllerBehavior(side: PongSide) {
         return { reply: context };
       }
 
-      const request: ActorAgentLlmRequest = {
-        system: 'You are a Pong paddle controller. Reply with JSON only. Do not include markdown.',
-        messages: [
-          {
-            role: 'user',
-            content: createControllerPrompt(side, message.snapshot),
-          },
-        ],
-        tools: [],
-      };
-      const llmResult = await tools.execute<ActorAgentLlmResult, ActorAgentLlmRequest>(
-        ACTOR_WEB_LLM_TOOL_NAME,
-        request
+      const result = await runPongControllerWithLlmProvider(side, message.snapshot, (request) =>
+        tools.execute<ActorAgentLlmResult, ActorAgentLlmRequest>(ACTOR_WEB_LLM_TOOL_NAME, request)
       );
-      const result = llmResult.ok
-        ? parseControllerResponse(side, llmResult.value.message.content)
-        : mapFailure(side, llmResult);
 
       return {
         context: {
