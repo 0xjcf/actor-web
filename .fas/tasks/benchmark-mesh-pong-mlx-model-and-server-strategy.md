@@ -14,6 +14,7 @@ Use the telemetry and decoupled loop to evaluate model-size and server-topology 
 - The example supports the chosen provider/server configuration without coupling Pong functional behaviors to MLX or provider internals.
 - Per-side endpoint or model configuration is implemented only if the evidence shows it improves local play; otherwise the decision is documented with follow-up scope.
 - The README includes recommended model/server settings and local setup commands for the validated path.
+- The MLX provider config keeps API keys env/runtime-only and does not persist API keys through browser storage.
 - Post-mesh claim gating remains blocked until this performance strategy is resolved.
 - TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
 - TDD: every production code change in the change set is covered by an added or updated test.
@@ -43,7 +44,7 @@ Use the telemetry and decoupled loop to evaluate model-size and server-topology 
 - Added at: implementation
 - Trigger: architecture decision
 - Reason: `examples/mesh-pong/mlx-provider.ts` was inspected as provider-contract context, but the accepted strategy keeps the existing single-endpoint provider configuration unchanged and defers per-side endpoint or two-server routing until live benchmark evidence justifies it.
-- Removed planned paths: examples/mesh-pong/mlx-provider.ts
+- Reference-only paths before code-review follow-up: examples/mesh-pong/mlx-provider.ts
 - Evidence source: architect and staff-engineer handoff
 - Evidence: `fas_architect` and `fas_staff_engineer` both directed this task to keep `mlx-provider.ts` unchanged and add benchmark summary evidence in the browser shell plus tests.
 - Accuracy signal: planner-missed
@@ -55,6 +56,15 @@ Use the telemetry and decoupled loop to evaluate model-size and server-topology 
 - Added paths: examples/mesh-pong/mlx-provider.ts
 - Evidence source: CodeRabbit CLI review
 - Evidence: CodeRabbit CLI review | examples/mesh-pong/mlx-provider.ts | Removed localStorage API-key resolution and kept VITE_MESH_PONG_MLX_API_KEY env/runtime-only.
+- Accuracy signal: reviewer-found
+
+- Type: scope-refresh-promotion
+- Added at: code-review
+- Trigger: CodeRabbit secret-storage finding
+- Reason: Promote examples/mesh-pong/mlx-provider.ts back into implementation scope because fixing the valid CodeRabbit API-key localStorage finding required changing the provider config seam, not just README wording.
+- Added paths: examples/mesh-pong/mlx-provider.ts
+- Evidence source: CodeRabbit CLI review
+- Evidence: CodeRabbit CLI review | examples/mesh-pong/mlx-provider.ts | Commit 065346d7 removed localStorage API-key resolution and kept VITE_MESH_PONG_MLX_API_KEY env/runtime-only.
 - Accuracy signal: reviewer-found
 
 ## Implementation plan
