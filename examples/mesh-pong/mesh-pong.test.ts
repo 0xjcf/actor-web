@@ -60,10 +60,13 @@ import {
 import { pong } from './pong-topology';
 import {
   bootstrapMeshPongUI,
+  createMeshPongBenchmarkSummaryState,
   createMeshPongTelemetryState,
   createMeshPongTurnStepper,
+  formatMeshPongBenchmarkSummary,
   formatMeshPongTelemetry,
   type MeshPongTelemetryEvent,
+  reduceMeshPongBenchmarkSummary,
   reduceMeshPongTelemetry,
 } from './ui/main';
 
@@ -726,11 +729,109 @@ describe('Mesh Pong transport parity', () => {
     expect(telemetry.replay.latencyMs).toBe(9);
   });
 
+  it('reduces benchmark summary metrics for latency, throughput, timeouts, and lag classification', () => {
+    let summary = createMeshPongBenchmarkSummaryState(0);
+
+    summary = reduceMeshPongBenchmarkSummary(summary, {
+      type: 'simulation-scheduled',
+      nowMs: 90,
+    });
+    summary = reduceMeshPongBenchmarkSummary(summary, {
+      type: 'simulation-applied',
+      nowMs: 90,
+    });
+    summary = reduceMeshPongBenchmarkSummary(summary, {
+      type: 'controller-request-started',
+      side: 'left',
+      nowMs: 100,
+    });
+    summary = reduceMeshPongBenchmarkSummary(summary, {
+      type: 'controller-request-finished',
+      side: 'left',
+      nowMs: 160,
+      outcome: 'ready',
+    });
+    summary = reduceMeshPongBenchmarkSummary(summary, {
+      type: 'controller-intent-applied',
+      side: 'left',
+      nowMs: 170,
+      sentAtMs: 150,
+    });
+    summary = reduceMeshPongBenchmarkSummary(summary, {
+      type: 'simulation-scheduled',
+      nowMs: 270,
+    });
+    summary = reduceMeshPongBenchmarkSummary(summary, {
+      type: 'simulation-held',
+      nowMs: 270,
+    });
+    summary = reduceMeshPongBenchmarkSummary(summary, {
+      type: 'controller-request-started',
+      side: 'right',
+      nowMs: 280,
+    });
+    summary = reduceMeshPongBenchmarkSummary(summary, {
+      type: 'controller-request-finished',
+      side: 'right',
+      nowMs: 400,
+      outcome: 'error',
+      error: 'controller-timeout',
+    });
+
+    expect(summary.controllers.startedCount).toBe(2);
+    expect(summary.controllers.finishedCount).toBe(2);
+    expect(summary.controllers.timeoutCount).toBe(1);
+    expect(summary.controllers.latency.count).toBe(2);
+    expect(summary.controllers.latency.totalMs).toBe(180);
+    expect(summary.controllers.latency.minMs).toBe(60);
+    expect(summary.controllers.latency.maxMs).toBe(120);
+    expect(summary.controllers.latency.averageMs).toBe(90);
+    expect(summary.controllers.throughputPerSec).toBeCloseTo(5, 5);
+    expect(summary.simulation.scheduledCount).toBe(2);
+    expect(summary.simulation.appliedCount).toBe(1);
+    expect(summary.simulation.heldCount).toBe(1);
+    expect(summary.simulation.droppedCount).toBe(1);
+    expect(summary.simulation.appliedPerSec).toBeCloseTo(2.5, 5);
+    expect(summary.timeoutRate).toBe(0.5);
+    expect(summary.gameplayEffect).toBe('timeout-bound');
+  });
+
+  it('classifies stalled and smooth benchmark outcomes deterministically', () => {
+    const stalled = formatMeshPongBenchmarkSummary(createMeshPongBenchmarkSummaryState(0));
+    expect(stalled).toContain('effect stalled');
+
+    let smooth = createMeshPongBenchmarkSummaryState(0);
+    smooth = reduceMeshPongBenchmarkSummary(smooth, {
+      type: 'simulation-scheduled',
+      nowMs: 90,
+    });
+    smooth = reduceMeshPongBenchmarkSummary(smooth, {
+      type: 'simulation-applied',
+      nowMs: 90,
+    });
+    smooth = reduceMeshPongBenchmarkSummary(smooth, {
+      type: 'controller-request-started',
+      side: 'left',
+      nowMs: 100,
+    });
+    smooth = reduceMeshPongBenchmarkSummary(smooth, {
+      type: 'controller-request-finished',
+      side: 'left',
+      nowMs: 150,
+      outcome: 'ready',
+    });
+
+    expect(formatMeshPongBenchmarkSummary(smooth)).toContain('effect smooth');
+  });
+
   it('exports the browser helper surface without requiring DOM bootstrap', async () => {
     const module = await import('./ui/main');
 
+    expect(typeof module.createMeshPongBenchmarkSummaryState).toBe('function');
     expect(typeof module.createMeshPongTelemetryState).toBe('function');
+    expect(typeof module.reduceMeshPongBenchmarkSummary).toBe('function');
     expect(typeof module.reduceMeshPongTelemetry).toBe('function');
+    expect(typeof module.formatMeshPongBenchmarkSummary).toBe('function');
     expect(typeof module.formatMeshPongTelemetry).toBe('function');
     expect(typeof module.bootstrapMeshPongUI).toBe('function');
     expect(bootstrapMeshPongUI).toBe(module.bootstrapMeshPongUI);
@@ -1308,6 +1409,58 @@ describe('Mesh Pong transport parity', () => {
     expect(harness.rightAskCount()).toBe(2);
     expect(harness.renderedSnapshots.length).toBeGreaterThanOrEqual(3);
     expect(harness.statuses.at(-1)).toBe('running');
+  });
+
+  it('summarizes one-player and mlx-vs-mlx benchmark telemetry without a live provider', async () => {
+    const onePlayer = createTurnStepperHarness({
+      playerCount: 1,
+      controllers: { left: 'mlx', right: 'human' },
+    });
+    await onePlayer.stepper.tick();
+    onePlayer.leftDeferreds[0]?.resolve({
+      ok: true,
+      provider: 'llm',
+      side: 'left',
+      direction: 'up',
+      amount: PONG_FIELD.paddleStep,
+    });
+    await flushMicrotasks();
+    await onePlayer.stepper.tick();
+
+    const onePlayerSummary = onePlayer.telemetryEvents.reduce(
+      reduceMeshPongBenchmarkSummary,
+      createMeshPongBenchmarkSummaryState(0)
+    );
+    expect(onePlayerSummary.controllers.startedCount).toBeGreaterThanOrEqual(1);
+    expect(onePlayerSummary.controllers.finishedCount).toBeGreaterThanOrEqual(1);
+    expect(onePlayerSummary.simulation.appliedCount).toBeGreaterThanOrEqual(2);
+    expect(onePlayerSummary.gameplayEffect).toBe('smooth');
+
+    const mlxVsMlx = createTurnStepperHarness({
+      playerCount: 2,
+      controllers: { left: 'mlx', right: 'mlx' },
+    });
+    await mlxVsMlx.stepper.tick();
+    mlxVsMlx.leftDeferreds[0]?.resolve({
+      ok: true,
+      provider: 'llm',
+      side: 'left',
+      direction: 'up',
+      amount: PONG_FIELD.paddleStep,
+    });
+    mlxVsMlx.rightDeferreds[0]?.reject(new Error('controller-timeout'));
+    await flushMicrotasks();
+    await mlxVsMlx.stepper.tick();
+
+    const mlxVsMlxSummary = mlxVsMlx.telemetryEvents.reduce(
+      reduceMeshPongBenchmarkSummary,
+      createMeshPongBenchmarkSummaryState(0)
+    );
+    expect(mlxVsMlxSummary.controllers.startedCount).toBeGreaterThanOrEqual(2);
+    expect(mlxVsMlxSummary.controllers.finishedCount).toBeGreaterThanOrEqual(2);
+    expect(mlxVsMlxSummary.controllers.timeoutCount).toBe(1);
+    expect(mlxVsMlxSummary.gameplayEffect).toBe('timeout-bound');
+    expect(formatMeshPongBenchmarkSummary(mlxVsMlxSummary)).toContain('timeouts 1');
   });
 
   it('discards late MLX completions after the match generation changes', async () => {
