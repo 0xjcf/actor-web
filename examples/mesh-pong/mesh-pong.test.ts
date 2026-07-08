@@ -472,6 +472,56 @@ describe('Mesh Pong transport parity', () => {
     });
   });
 
+  it('returns data failures for malformed player-session and lobby commands', async () => {
+    const runtime = await startMeshPongLocal();
+    startedRuntimes.push(runtime);
+    const { lobby, sessionA } = await resolveSessionRefs(runtime);
+
+    await expect(
+      sessionA.ask<PongControllerInputResult>({
+        type: 'MOVE_CONTROLLER',
+        direction: 'sideways',
+      } as unknown as PlayerSessionCommand)
+    ).resolves.toEqual({
+      ok: false,
+      sessionId: 'tab-a',
+      reason: 'invalid-command',
+    });
+
+    await sessionA.send({ type: 'CLAIM_SIDE', side: 'left' });
+    await flush(runtime);
+
+    await expect(
+      sessionA.ask<PongControllerInputResult>({
+        type: 'UNKNOWN_COMMAND',
+      } as unknown as PlayerSessionCommand)
+    ).resolves.toEqual({
+      ok: false,
+      sessionId: 'tab-a',
+      reason: 'invalid-command',
+    });
+
+    await expect(
+      lobby.ask<PongMatchStartResult>({
+        type: 'START_MATCH',
+      } as unknown as PongLobbyCommand)
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'invalid-command',
+      missing: [],
+    });
+
+    await expect(
+      lobby.ask<PongMatchStartResult>({
+        type: 'UNKNOWN_COMMAND',
+      } as unknown as PongLobbyCommand)
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'invalid-command',
+      missing: [],
+    });
+  });
+
   it('starts one-player human plus MLX controller mode and emits bounded controller intents', async () => {
     const runtime = await startMeshPongLocal({
       tools: createActorAgentTools({
@@ -625,12 +675,53 @@ describe('Mesh Pong transport parity', () => {
       url: 'http://127.0.0.1:8080/v1/chat/completions',
       init: {
         method: 'POST',
+        signal: expect.any(AbortSignal),
         headers: {
           'content-type': 'application/json',
           authorization: 'Bearer secret',
         },
       },
     });
+  });
+
+  it('times out browser MLX endpoint calls that do not settle', async () => {
+    let observedSignal: AbortSignal | undefined;
+    const provider = createBrowserMlxLlmProvider({
+      config: {
+        enabled: true,
+        endpoint: 'http://127.0.0.1:8080/v1',
+        model: 'mlx-local',
+      },
+      timeoutMs: 1,
+      fetchImpl: (async (_url, init) => {
+        observedSignal = init?.signal as AbortSignal | undefined;
+        return new Promise<Response>((_resolve, reject) => {
+          observedSignal?.addEventListener('abort', () => {
+            const error = new Error('aborted');
+            error.name = 'AbortError';
+            reject(error);
+          });
+        });
+      }) as typeof fetch,
+    });
+
+    await expect(
+      provider(
+        {
+          messages: [{ role: 'user', content: '{"side":"right"}' }],
+          tools: [],
+        } as ActorAgentLlmRequest,
+        {} as never
+      )
+    ).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: 'LLM_PROVIDER_FAILED',
+        message:
+          'Local MLX request timed out after 1ms for http://127.0.0.1:8080/v1/chat/completions.',
+      },
+    });
+    expect(observedSignal?.aborted).toBe(true);
   });
 
   it('starts LLM-vs-LLM mode through controller actors with a deterministic fake provider', async () => {
@@ -894,6 +985,16 @@ describe('Mesh Pong transport parity', () => {
 
     expect(agentEntrypoint).toContain("from '@actor-web/runtime/browser'");
     expect(agentEntrypoint).not.toContain("import { defineBehavior } from '@actor-web/runtime';");
+  });
+
+  it('keeps ready-button copy distinct for ready and not-ready sessions', async () => {
+    const uiEntrypoint = await readFile(
+      path.resolve(meshPongExamplesDir, 'mesh-pong/ui/main.ts'),
+      'utf8'
+    );
+
+    expect(uiEntrypoint).toContain("session?.ready ? 'Ready' : 'Mark ready'");
+    expect(uiEntrypoint).not.toContain("session?.ready ? 'Ready' : 'Ready'");
   });
 
   it('produces the same deterministic score sequence for local, broadcast, and websocket runtimes', async () => {
