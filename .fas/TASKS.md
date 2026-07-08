@@ -2190,9 +2190,12 @@ operator explicitly asks for queue mutations.
 
 - Title: Mesh Pong performance telemetry and lag budget
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/mesh-pong-performance-telemetry-and-lag-budget.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Decouple Mesh Pong simulation and render loop from MLX inference turns
 

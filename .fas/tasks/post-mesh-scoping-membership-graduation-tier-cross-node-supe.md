@@ -49,6 +49,7 @@ Location-transparency audit L6. After membership lands: (1) decide whether @acto
 - Validate generated scope, acceptance criteria, and verification evidence before closeout to avoid workflow drift.
 
 ## Dependencies
+
 - Depends on task-1781628517450 labs-mesh implementation, task-1783360998273/task-1783361040728 route-token protocol follow-ups, task-1783452033293 Mesh Pong MLX LLM controller adapter and player modes, and task-1783516442115 Benchmark Mesh Pong MLX model and server strategy. Claim gating should run only after richer Mesh Pong multiplayer, LLM validation, and performance strategy evidence are queued or implemented.
 
 ## Open questions

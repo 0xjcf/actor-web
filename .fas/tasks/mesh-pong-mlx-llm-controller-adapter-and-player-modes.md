@@ -71,6 +71,7 @@ Follow-up from the Mesh Pong session lobby. Add a real LLM controller path for M
 - Validate generated scope, acceptance criteria, and verification evidence before closeout to avoid workflow drift.
 
 ## Dependencies
+
 - Depends on task-1783452020274 Mesh Pong session lobby and human controller slots. Blocks task-1783516419352 Mesh Pong performance telemetry and lag budget, and continues to block task-1781880961715 post-mesh claim gating through the Mesh Pong validation chain.
 
 ## Open questions
