@@ -2244,6 +2244,30 @@ operator explicitly asks for queue mutations.
 - Owner: runtime
 - Brief: .fas/tasks/evaluate-behavior-tree-and-utility-ai-primitives-for-actor-w.md
 
+### Task: Mesh Pong behavior-tree paddle policy proof
+
+- Title: Mesh Pong behavior-tree paddle policy proof
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/mesh-pong-behavior-tree-paddle-policy-proof.md
+
+### Task: Mesh Pong utility-policy tactical scorer proof
+
+- Title: Mesh Pong utility-policy tactical scorer proof
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/mesh-pong-utility-policy-tactical-scorer-proof.md
+
+### Task: Document Mesh Pong layered actor-control course path
+
+- Title: Document Mesh Pong layered actor-control course path
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/document-mesh-pong-layered-actor-control-course-path.md
+
 ## Template
 
 ### Task: `<short task title>`
