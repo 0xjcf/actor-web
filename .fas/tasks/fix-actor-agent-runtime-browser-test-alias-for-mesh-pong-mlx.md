@@ -36,11 +36,14 @@ Shared Mesh Pong batch full verification failed because @actor-web/agent tests i
 
 ## Affected files
 
+- packages/agent-workflow-cli/vitest.config.ts
 - packages/actor-agent/vitest.config.ts
 
 ## Scope Amendments
 
-- None.
+- Added 2026-07-07: the CLI package Vitest config also imports
+  `@actor-web/agent` from source, so it needs the same
+  `@actor-web/runtime/browser` alias for the shared full verification lane.
 
 ## Implementation plan
 
