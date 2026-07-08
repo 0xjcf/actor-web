@@ -8,7 +8,7 @@ import {
 } from '@actor-web/agent';
 import type { ActorMessage, ActorRef } from '@actor-web/runtime';
 import type { BroadcastChannelLike } from '@actor-web/runtime/browser';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createBrowserMlxLlmProvider,
   resolveBrowserMlxProviderConfig,
@@ -45,9 +45,13 @@ import {
   advanceBall,
   createInitialBallContext,
   createInitialLobby,
+  createInitialPaddle,
+  createInitialPlayerSession,
+  createInitialScore,
   createSyntheticMlxControllerInput,
   DEFAULT_PONG_SEED,
   PONG_FIELD,
+  type PongMatchMode,
   shouldLaunchMlxControllerForSide,
   startLobbyMatch,
   syncLobbySession,
@@ -57,7 +61,9 @@ import { pong } from './pong-topology';
 import {
   bootstrapMeshPongUI,
   createMeshPongTelemetryState,
+  createMeshPongTurnStepper,
   formatMeshPongTelemetry,
+  type MeshPongTelemetryEvent,
   reduceMeshPongTelemetry,
 } from './ui/main';
 
@@ -377,6 +383,215 @@ async function captureSequence(
   return runScoreSequence(runtime);
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+  return { promise, resolve, reject };
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+function createStepperSnapshot(
+  paddles: { left: PongPaddleState; right: PongPaddleState },
+  tick: number
+): PongSnapshot {
+  return {
+    ball: {
+      ...createInitialBallContext(DEFAULT_PONG_SEED).ball,
+      rally: tick,
+    },
+    score: createInitialScore(),
+    paddles,
+  };
+}
+
+function createTurnStepperHarness(mode: PongMatchMode) {
+  const runtime = { kind: 'mesh-pong-test-runtime' } as unknown as Awaited<
+    ReturnType<typeof startMeshPongLocal>
+  >;
+  const telemetryEvents: MeshPongTelemetryEvent[] = [];
+  const statuses: string[] = [];
+  const replayedInputs: Array<Extract<PongControllerInputResult, { readonly ok: true }>> = [];
+  const renderedSnapshots: PongSnapshot[] = [];
+  const commands: string[] = [];
+  const leftDeferreds: Array<ReturnType<typeof createDeferred<PongControllerResult>>> = [];
+  const rightDeferreds: Array<ReturnType<typeof createDeferred<PongControllerResult>>> = [];
+  const matchState = {
+    started: true,
+    generation: 1,
+    ownerSessionId: 'owner-tab',
+    mode,
+  };
+  let now = 100;
+  let tickCount = 0;
+  let leftAskCount = 0;
+  let rightAskCount = 0;
+  let paddles = {
+    left: createInitialPaddle('left'),
+    right: createInitialPaddle('right'),
+  };
+
+  const ball = {
+    ask: vi.fn(async () => ({
+      ball: createStepperSnapshot(paddles, tickCount).ball,
+      leftPaddleY: paddles.left.y,
+      rightPaddleY: paddles.right.y,
+      tick: tickCount,
+    })),
+    send: vi.fn(async (message: BallCommand) => {
+      commands.push(`ball:${message.type}`);
+      if (message.type === 'TICK') {
+        tickCount += 1;
+      }
+    }),
+  } as unknown as ActorRef<PongBallContext, BallCommand>;
+
+  const paddleA = {
+    ask: vi.fn(async () => paddles.left),
+    send: vi.fn(async (message: PaddleCommand) => {
+      commands.push(`left:${message.type}`);
+      if (message.type === 'MOVE_PADDLE') {
+        paddles = {
+          ...paddles,
+          left: {
+            ...paddles.left,
+            y:
+              message.direction === 'up'
+                ? paddles.left.y - (message.amount ?? PONG_FIELD.paddleStep)
+                : paddles.left.y + (message.amount ?? PONG_FIELD.paddleStep),
+          },
+        };
+      }
+      if (message.type === 'SET_PADDLE') {
+        paddles = {
+          ...paddles,
+          left: {
+            ...paddles.left,
+            y: message.y,
+          },
+        };
+      }
+    }),
+  } as unknown as ActorRef<PongPaddleState, PaddleCommand>;
+
+  const paddleB = {
+    ask: vi.fn(async () => paddles.right),
+    send: vi.fn(async (message: PaddleCommand) => {
+      commands.push(`right:${message.type}`);
+      if (message.type === 'MOVE_PADDLE') {
+        paddles = {
+          ...paddles,
+          right: {
+            ...paddles.right,
+            y:
+              message.direction === 'up'
+                ? paddles.right.y - (message.amount ?? PONG_FIELD.paddleStep)
+                : paddles.right.y + (message.amount ?? PONG_FIELD.paddleStep),
+          },
+        };
+      }
+      if (message.type === 'SET_PADDLE') {
+        paddles = {
+          ...paddles,
+          right: {
+            ...paddles.right,
+            y: message.y,
+          },
+        };
+      }
+    }),
+  } as unknown as ActorRef<PongPaddleState, PaddleCommand>;
+
+  const controllerLeft = {
+    ask: vi.fn((_message: ControllerCommand) => {
+      leftAskCount += 1;
+      const deferred = createDeferred<PongControllerResult>();
+      leftDeferreds.push(deferred);
+      return deferred.promise;
+    }),
+  } as unknown as ActorRef<PongControllerActorState, ControllerCommand>;
+
+  const controllerRight = {
+    ask: vi.fn((_message: ControllerCommand) => {
+      rightAskCount += 1;
+      const deferred = createDeferred<PongControllerResult>();
+      rightDeferreds.push(deferred);
+      return deferred.promise;
+    }),
+  } as unknown as ActorRef<PongControllerActorState, ControllerCommand>;
+
+  const refs = {
+    ball,
+    controllerLeft,
+    controllerRight,
+    score: {
+      ask: vi.fn(async () => createInitialScore()),
+    } as unknown as ActorRef<PongScoreState, ScoreCommand>,
+    lobby: {
+      ask: vi.fn(async () => createInitialLobby()),
+    } as unknown as ActorRef<PongLobbyState, PongLobbyCommand>,
+    playerSession: {
+      ask: vi.fn(async () => createInitialPlayerSession('owner-tab')),
+    } as unknown as ActorRef<PongPlayerSessionState, PlayerSessionCommand>,
+    paddleA,
+    paddleB,
+  };
+
+  const stepper = createMeshPongTurnStepper({
+    runtime,
+    refs,
+    browserSessionId: 'owner-tab',
+    getMatchState: () => ({
+      matchStarted: matchState.started,
+      matchGeneration: matchState.generation,
+      matchOwnerSessionId: matchState.ownerSessionId,
+      mode: matchState.mode,
+    }),
+    nowMs: () => {
+      now += 5;
+      return now;
+    },
+    flushRuntime: async () => undefined,
+    snapshot: async () => createStepperSnapshot(paddles, tickCount),
+    renderSnapshot: (nextSnapshot) => {
+      renderedSnapshots.push(nextSnapshot);
+    },
+    setStatus: (status) => {
+      statuses.push(status);
+    },
+    updateTelemetry: (event) => {
+      telemetryEvents.push(event);
+    },
+    postControllerInput: (input) => {
+      replayedInputs.push(input);
+    },
+    setControllerDiagnostic: () => undefined,
+    clearControllerDiagnostic: () => undefined,
+  });
+
+  return {
+    commands,
+    leftDeferreds,
+    matchState,
+    replayedInputs,
+    renderedSnapshots,
+    rightDeferreds,
+    statuses,
+    stepper,
+    telemetryEvents,
+    tickCount: () => tickCount,
+    leftAskCount: () => leftAskCount,
+    rightAskCount: () => rightAskCount,
+  };
+}
+
 describe('Mesh Pong transport parity', () => {
   it('tracks held and applied simulation turns in telemetry state', () => {
     let telemetry = createMeshPongTelemetryState(0);
@@ -441,8 +656,11 @@ describe('Mesh Pong transport parity', () => {
       type: 'controller-request-finished',
       side: 'left',
       nowMs: 145,
-      outcome: 'applied',
+      outcome: 'ready',
     });
+    expect(telemetry.controllers.left.outcome).toBe('ready');
+    expect(telemetry.controllers.left.lastAppliedIntentAgeMs).toBeNull();
+
     telemetry = reduceMeshPongTelemetry(telemetry, {
       type: 'controller-intent-applied',
       side: 'left',
@@ -479,8 +697,12 @@ describe('Mesh Pong transport parity', () => {
       type: 'controller-request-finished',
       side: 'left',
       nowMs: 160,
-      outcome: 'applied',
+      outcome: 'ready',
     });
+    expect(telemetry.controllers.left.outcome).toBe('ready');
+    expect(telemetry.controllers.left.lastAppliedIntentAtMs).toBeNull();
+    expect(telemetry.controllers.left.lastAppliedIntentAgeMs).toBeNull();
+
     telemetry = reduceMeshPongTelemetry(telemetry, {
       type: 'replay-sent',
       originSessionId: 'session-a',
@@ -1027,6 +1249,119 @@ describe('Mesh Pong transport parity', () => {
     });
   });
 
+  it('keeps owner ticks advancing while both MLX lanes are unresolved and stale intent stays bounded', async () => {
+    const harness = createTurnStepperHarness({
+      playerCount: 2,
+      controllers: { left: 'mlx', right: 'mlx' },
+    });
+
+    await harness.stepper.tick();
+    await harness.stepper.tick();
+
+    expect(harness.tickCount()).toBe(2);
+    expect(harness.leftAskCount()).toBe(1);
+    expect(harness.rightAskCount()).toBe(1);
+    expect(harness.commands.filter((command) => command === 'ball:TICK')).toHaveLength(2);
+    expect(harness.telemetryEvents.some((event) => event.type === 'simulation-applied')).toBe(true);
+
+    harness.rightDeferreds[0]?.resolve({
+      ok: true,
+      provider: 'llm',
+      side: 'right',
+      direction: 'down',
+      amount: PONG_FIELD.paddleStep,
+    });
+    await flushMicrotasks();
+
+    expect(harness.commands.filter((command) => command === 'right:MOVE_PADDLE')).toHaveLength(0);
+    expect(harness.replayedInputs).toHaveLength(0);
+    const rightFinishedEvent = [...harness.telemetryEvents]
+      .reverse()
+      .find(
+        (
+          event
+        ): event is Extract<
+          MeshPongTelemetryEvent,
+          { readonly type: 'controller-request-finished' }
+        > => event.type === 'controller-request-finished' && event.side === 'right'
+      );
+    expect(rightFinishedEvent?.outcome).toBe('ready');
+    expect(
+      harness.telemetryEvents.some(
+        (event) => event.type === 'controller-intent-applied' && event.side === 'right'
+      )
+    ).toBe(false);
+
+    await harness.stepper.tick();
+    expect(
+      harness.telemetryEvents.some(
+        (event) => event.type === 'controller-intent-applied' && event.side === 'right'
+      )
+    ).toBe(true);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await harness.stepper.tick();
+    }
+
+    const rightMoves = harness.commands.filter((command) => command === 'right:MOVE_PADDLE');
+    expect(rightMoves.length).toBeGreaterThanOrEqual(2);
+    expect(rightMoves.length).toBeLessThan(6);
+    expect(harness.rightAskCount()).toBe(2);
+    expect(harness.renderedSnapshots.length).toBeGreaterThanOrEqual(3);
+    expect(harness.statuses.at(-1)).toBe('running');
+  });
+
+  it('discards late MLX completions after the match generation changes', async () => {
+    const harness = createTurnStepperHarness({
+      playerCount: 1,
+      controllers: { left: 'mlx', right: 'human' },
+    });
+
+    await harness.stepper.tick();
+    expect(harness.leftAskCount()).toBe(1);
+
+    harness.matchState.generation += 1;
+    harness.leftDeferreds[0]?.resolve({
+      ok: true,
+      provider: 'llm',
+      side: 'left',
+      direction: 'up',
+      amount: PONG_FIELD.paddleStep,
+    });
+    await flushMicrotasks();
+    await harness.stepper.tick();
+
+    expect(harness.commands.filter((command) => command === 'left:MOVE_PADDLE')).toHaveLength(0);
+    expect(harness.replayedInputs).toHaveLength(0);
+    expect(harness.leftAskCount()).toBe(2);
+  });
+
+  it('discards stale rejected MLX completions after the match generation changes', async () => {
+    const harness = createTurnStepperHarness({
+      playerCount: 1,
+      controllers: { left: 'mlx', right: 'human' },
+    });
+
+    await harness.stepper.tick();
+    expect(harness.leftAskCount()).toBe(1);
+
+    harness.matchState.generation += 1;
+    harness.leftDeferreds[0]?.reject(new Error('stale provider timeout'));
+    await flushMicrotasks();
+    await harness.stepper.tick();
+
+    expect(
+      harness.telemetryEvents.some(
+        (event) =>
+          event.type === 'controller-request-finished' &&
+          event.side === 'left' &&
+          event.outcome === 'error'
+      )
+    ).toBe(false);
+    expect(harness.commands.filter((command) => command === 'left:MOVE_PADDLE')).toHaveLength(0);
+    expect(harness.replayedInputs).toHaveLength(0);
+    expect(harness.leftAskCount()).toBe(2);
+  });
+
   it('projects missing or unavailable LLM controller providers as data', async () => {
     const runtime = await startMeshPongLocal();
     startedRuntimes.push(runtime);
@@ -1153,11 +1488,14 @@ describe('Mesh Pong transport parity', () => {
 
     expect(uiEntrypoint).toContain('MESH_PONG_MLX_CONTROLLER_ASK_TIMEOUT_MS = 30_000');
     expect(uiEntrypoint).toContain('MESH_PONG_MLX_CONTROLLER_ASK_TIMEOUT_MS');
+    expect(uiEntrypoint).toContain('MESH_PONG_MLX_STALE_TURN_LIMIT = 3');
+    expect(uiEntrypoint).toContain('createMeshPongTurnStepper');
+    expect(uiEntrypoint).toContain('readonly requestId: number;');
     expect(uiEntrypoint).toContain('readonly startedAtMs: number;');
-    expect(uiEntrypoint).toContain('hasInFlightMlxControllerRequest');
-    expect(uiEntrypoint).toContain('launchNextMlxControllerInput');
-    expect(uiEntrypoint).toContain('nextMlxControllerSide');
-    expect(uiEntrypoint).toContain('const startedAtMs = nowMs();');
+    expect(uiEntrypoint).not.toContain('hasInFlightMlxControllerRequest');
+    expect(uiEntrypoint).not.toContain('nextMlxControllerSide');
+    expect(uiEntrypoint).toContain('lane.staleTurnsRemaining');
+    expect(uiEntrypoint).toContain('const startedAtMs = deps.nowMs();');
     expect(uiEntrypoint).toContain('sentAtMs: request.startedAtMs');
     expect(uiEntrypoint).toContain("'controller-timeout'");
   });
@@ -1168,6 +1506,7 @@ describe('Mesh Pong transport parity', () => {
     expect(readme).toContain('snapshot render cadence');
     expect(readme).not.toContain('browser paint cadence');
     expect(readme).toContain('High MLX intent `age` includes local model decision time');
+    expect(readme).toMatch(/reuses the last known intent for a\s+small bounded number of turns/);
     expect(readme).toMatch(/Local\s+human input is applied immediately in the shell/);
   });
 
