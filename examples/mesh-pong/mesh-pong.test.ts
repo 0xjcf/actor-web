@@ -38,6 +38,7 @@ import type {
   PongPlayerSessionParams,
   PongPlayerSessionState,
   PongScoreState,
+  PongSide,
   PongSnapshot,
   ScoreCommand,
 } from './pong-contract';
@@ -420,7 +421,14 @@ function createStepperSnapshot(
 
 function createTurnStepperHarness(
   mode: PongMatchMode,
-  options: { readonly schedulePolicy?: MeshPongControllerSchedulePolicy } = {}
+  options: {
+    readonly flushRuntime?: () => Promise<void>;
+    readonly runMlxController?: (
+      side: PongSide,
+      snapshot: PongSnapshot
+    ) => Promise<PongControllerResult>;
+    readonly schedulePolicy?: MeshPongControllerSchedulePolicy;
+  } = {}
 ) {
   const runtime = { kind: 'mesh-pong-test-runtime' } as unknown as Awaited<
     ReturnType<typeof startMeshPongLocal>
@@ -576,7 +584,7 @@ function createTurnStepperHarness(
       return now;
     },
     schedulePolicy: options.schedulePolicy,
-    flushRuntime: async () => undefined,
+    flushRuntime: options.flushRuntime ?? (async () => undefined),
     snapshot: async () => createStepperSnapshot(paddles, tickCount),
     renderSnapshot: (nextSnapshot) => {
       renderedSnapshots.push(nextSnapshot);
@@ -590,6 +598,7 @@ function createTurnStepperHarness(
     postControllerInput: (input) => {
       replayedInputs.push(input);
     },
+    runMlxController: options.runMlxController,
     setControllerDiagnostic: () => undefined,
     clearControllerDiagnostic: () => undefined,
   });
@@ -909,7 +918,35 @@ describe('Mesh Pong transport parity', () => {
     expect(formatMeshPongBenchmarkSummary(smooth)).toContain('effect smooth');
   });
 
-  it('classifies benchmark outcomes as laggy when controller latency exceeds the simulation budget', () => {
+  it('classifies benchmark outcomes as controller-delayed when controller latency exceeds the simulation budget', () => {
+    let delayed = createMeshPongBenchmarkSummaryState(0);
+    delayed = reduceMeshPongBenchmarkSummary(delayed, {
+      type: 'simulation-scheduled',
+      nowMs: 90,
+    });
+    delayed = reduceMeshPongBenchmarkSummary(delayed, {
+      type: 'simulation-applied',
+      nowMs: 90,
+    });
+    delayed = reduceMeshPongBenchmarkSummary(delayed, {
+      type: 'controller-request-started',
+      side: 'left',
+      nowMs: 100,
+    });
+    delayed = reduceMeshPongBenchmarkSummary(delayed, {
+      type: 'controller-request-finished',
+      side: 'left',
+      nowMs: 220,
+      outcome: 'ready',
+    });
+
+    expect(delayed.controllers.latency.averageMs).toBe(120);
+    expect(delayed.timeoutRate).toBe(0);
+    expect(delayed.gameplayEffect).toBe('controller-delayed');
+    expect(formatMeshPongBenchmarkSummary(delayed)).toContain('effect controller-delayed');
+  });
+
+  it('classifies benchmark outcomes as laggy when simulation turns are held or dropped', () => {
     let laggy = createMeshPongBenchmarkSummaryState(0);
     laggy = reduceMeshPongBenchmarkSummary(laggy, {
       type: 'simulation-scheduled',
@@ -920,19 +957,26 @@ describe('Mesh Pong transport parity', () => {
       nowMs: 90,
     });
     laggy = reduceMeshPongBenchmarkSummary(laggy, {
+      type: 'simulation-scheduled',
+      nowMs: 270,
+    });
+    laggy = reduceMeshPongBenchmarkSummary(laggy, {
+      type: 'simulation-applied',
+      nowMs: 270,
+    });
+    laggy = reduceMeshPongBenchmarkSummary(laggy, {
       type: 'controller-request-started',
       side: 'left',
-      nowMs: 100,
+      nowMs: 280,
     });
     laggy = reduceMeshPongBenchmarkSummary(laggy, {
       type: 'controller-request-finished',
       side: 'left',
-      nowMs: 220,
+      nowMs: 320,
       outcome: 'ready',
     });
 
-    expect(laggy.controllers.latency.averageMs).toBe(120);
-    expect(laggy.timeoutRate).toBe(0);
+    expect(laggy.simulation.droppedCount).toBe(1);
     expect(laggy.gameplayEffect).toBe('laggy');
     expect(formatMeshPongBenchmarkSummary(laggy)).toContain('effect laggy');
   });
@@ -1522,6 +1566,55 @@ describe('Mesh Pong transport parity', () => {
     expect(harness.rightAskCount()).toBe(2);
     expect(harness.renderedSnapshots.length).toBeGreaterThanOrEqual(3);
     expect(harness.statuses.at(-1)).toBe('running');
+  });
+
+  it('does not flush the whole runtime from live ticks while MLX controller turns are pending', async () => {
+    const flushRuntime = vi.fn(async () => undefined);
+    const harness = createTurnStepperHarness(
+      {
+        playerCount: 2,
+        controllers: { left: 'mlx', right: 'mlx' },
+      },
+      { flushRuntime }
+    );
+
+    await harness.stepper.tick();
+    await harness.stepper.tick();
+
+    expect(harness.leftAskCount()).toBe(1);
+    expect(harness.rightAskCount()).toBe(1);
+    expect(flushRuntime).not.toHaveBeenCalled();
+    expect(harness.tickCount()).toBe(2);
+    expect(harness.renderedSnapshots).toHaveLength(2);
+  });
+
+  it('uses the shell MLX runner when present instead of blocking browser controller actors', async () => {
+    const runMlxController = vi.fn(
+      async (side: PongSide): Promise<PongControllerResult> => ({
+        ok: true,
+        provider: 'llm',
+        side,
+        direction: side === 'left' ? 'up' : 'down',
+        amount: PONG_FIELD.paddleStep,
+      })
+    );
+    const harness = createTurnStepperHarness(
+      {
+        playerCount: 2,
+        controllers: { left: 'mlx', right: 'mlx' },
+      },
+      { runMlxController }
+    );
+
+    await harness.stepper.tick();
+    await flushMicrotasks();
+    await harness.stepper.tick();
+
+    expect(runMlxController).toHaveBeenCalled();
+    expect(harness.leftAskCount()).toBe(0);
+    expect(harness.rightAskCount()).toBe(0);
+    expect(harness.commands).toContain('left:MOVE_PADDLE');
+    expect(harness.commands).toContain('right:MOVE_PADDLE');
   });
 
   it('uses controller schedule policy for ask timeout and stale intent reuse', async () => {
