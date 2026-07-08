@@ -806,6 +806,12 @@ function formatMlxControllerError(error: unknown): string {
   return message.includes('timed out') ? 'controller-timeout' : message;
 }
 
+function formatControllerFailureTelemetryError(
+  result: Extract<PongControllerResult, { readonly ok: false }>
+): string {
+  return `${result.reason} ${result.error.code}: ${result.error.message}`;
+}
+
 function stopTurnStepper(): void {
   turnStepper?.stop();
   turnStepper = null;
@@ -1457,7 +1463,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
           side: result.side,
           nowMs: deps.nowMs(),
           outcome: 'error',
-          error: result.reason,
+          error: formatControllerFailureTelemetryError(result),
         });
         deps.setControllerDiagnostic(result.side, result.reason);
         return;

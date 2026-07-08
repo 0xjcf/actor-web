@@ -1491,6 +1491,46 @@ describe('Mesh Pong transport parity', () => {
     expect(formatMeshPongBenchmarkSummary(mlxVsMlxSummary)).toContain('timeouts 1');
   });
 
+  it('counts provider-returned MLX timeout failures through turn-stepper telemetry', async () => {
+    const harness = createTurnStepperHarness({
+      playerCount: 1,
+      controllers: { left: 'mlx', right: 'human' },
+    });
+    await harness.stepper.tick();
+    harness.leftDeferreds[0]?.resolve({
+      ok: false,
+      side: 'left',
+      reason: 'provider-failed',
+      error: {
+        code: 'LLM_PROVIDER_FAILED',
+        message:
+          'Local MLX request timed out after 20000ms for http://127.0.0.1:8080/v1/chat/completions.',
+      },
+    });
+    await flushMicrotasks();
+
+    const leftFinishedEvent = harness.telemetryEvents.find(
+      (
+        event
+      ): event is Extract<
+        MeshPongTelemetryEvent,
+        { readonly type: 'controller-request-finished' }
+      > => event.type === 'controller-request-finished' && event.side === 'left'
+    );
+    expect(leftFinishedEvent?.outcome).toBe('error');
+    expect(leftFinishedEvent?.error).toContain('provider-failed');
+    expect(leftFinishedEvent?.error).toContain('LLM_PROVIDER_FAILED');
+    expect(leftFinishedEvent?.error).toContain('timed out');
+
+    const summary = harness.telemetryEvents.reduce(
+      reduceMeshPongBenchmarkSummary,
+      createMeshPongBenchmarkSummaryState(0)
+    );
+    expect(summary.controllers.timeoutCount).toBe(1);
+    expect(summary.timeoutRate).toBe(1);
+    expect(summary.gameplayEffect).toBe('timeout-bound');
+  });
+
   it('discards late MLX completions after the match generation changes', async () => {
     const harness = createTurnStepperHarness({
       playerCount: 1,
