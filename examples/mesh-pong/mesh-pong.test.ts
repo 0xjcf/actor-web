@@ -429,6 +429,7 @@ function createTurnStepperHarness(
       side: PongSide,
       snapshot: PongSnapshot
     ) => Promise<PongControllerResult>;
+    readonly onSnapshot?: () => void;
     readonly schedulePolicy?: MeshPongControllerSchedulePolicy;
   } = {}
 ) {
@@ -587,7 +588,10 @@ function createTurnStepperHarness(
     },
     schedulePolicy: options.schedulePolicy,
     flushRuntime: options.flushRuntime ?? (async () => undefined),
-    snapshot: async () => createStepperSnapshot(paddles, tickCount),
+    snapshot: async () => {
+      options.onSnapshot?.();
+      return createStepperSnapshot(paddles, tickCount);
+    },
     renderSnapshot: (nextSnapshot) => {
       renderedSnapshots.push(nextSnapshot);
     },
@@ -1643,22 +1647,33 @@ describe('Mesh Pong transport parity', () => {
     expect(harness.statuses.at(-1)).toBe('running');
   });
 
-  it('does not flush the whole runtime from live ticks while MLX controller turns are pending', async () => {
-    const flushRuntime = vi.fn(async () => undefined);
+  it('flushes each simulation tick before snapshotting while MLX controller turns are pending', async () => {
+    const stepOrder: string[] = [];
+    let tickCount = () => 0;
+    const flushRuntime = vi.fn(async () => {
+      stepOrder.push(`flush:${tickCount()}`);
+    });
     const harness = createTurnStepperHarness(
       {
         playerCount: 2,
         controllers: { left: 'mlx', right: 'mlx' },
       },
-      { flushRuntime }
+      {
+        flushRuntime,
+        onSnapshot: () => {
+          stepOrder.push(`snapshot:${tickCount()}`);
+        },
+      }
     );
+    tickCount = harness.tickCount;
 
     await harness.stepper.tick();
     await harness.stepper.tick();
 
     expect(harness.leftAskCount()).toBe(1);
     expect(harness.rightAskCount()).toBe(1);
-    expect(flushRuntime).not.toHaveBeenCalled();
+    expect(flushRuntime).toHaveBeenCalledTimes(2);
+    expect(stepOrder).toEqual(['flush:1', 'snapshot:1', 'flush:2', 'snapshot:2']);
     expect(harness.tickCount()).toBe(2);
     expect(harness.renderedSnapshots).toHaveLength(2);
   });
@@ -2013,6 +2028,34 @@ describe('Mesh Pong transport parity', () => {
     expect(uiEntrypoint).toContain('const startedAtMs = deps.nowMs();');
     expect(uiEntrypoint).toContain('sentAtMs: request.startedAtMs');
     expect(uiEntrypoint).toContain("'controller-timeout'");
+  });
+
+  it('keeps browser startup channel ids on the secure-context-safe session id helper', async () => {
+    const uiEntrypoint = await readFile(
+      path.resolve(meshPongExamplesDir, 'mesh-pong/ui/main.ts'),
+      'utf8'
+    );
+
+    expect(uiEntrypoint).toContain('function createSessionId(): string');
+    expect(uiEntrypoint).toContain('globalThis.crypto.randomUUID()');
+    expect(uiEntrypoint).toContain('channelName: `mesh-pong-demo-$' + '{createSessionId()}`');
+    expect(uiEntrypoint).not.toContain('channelName: `mesh-pong-demo-$' + '{crypto.randomUUID()}`');
+  });
+
+  it('guards stale browser session actions before publishing shared UI state', async () => {
+    const uiEntrypoint = await readFile(
+      path.resolve(meshPongExamplesDir, 'mesh-pong/ui/main.ts'),
+      'utf8'
+    );
+
+    expect(uiEntrypoint).toContain('function isCurrentRuntimeContext(');
+    expect(uiEntrypoint).toContain(
+      'shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs)'
+    );
+    expect(uiEntrypoint).toContain('() => isCurrentRuntimeContext(currentRuntime, currentRefs)');
+    expect(uiEntrypoint).toContain('if (!isCurrentRuntimeContext(currentRuntime, currentRefs))');
+    expect(uiEntrypoint).toContain('renderLobby(lobbyState);');
+    expect(uiEntrypoint).toContain("lobbyChannel?.postMessage({\n      type: 'match-started'");
   });
 
   it('documents snapshot render cadence and MLX intent age semantics', async () => {

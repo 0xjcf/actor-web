@@ -891,8 +891,12 @@ function renderStatus(): void {
 }
 
 function createSessionId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID();
+  try {
+    if (typeof globalThis.crypto?.randomUUID === 'function') {
+      return globalThis.crypto.randomUUID();
+    }
+  } catch {
+    // Fall through to a non-secure-context-safe local session id.
   }
   return `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -1029,33 +1033,65 @@ async function currentLobbyState(nextRefs: RuntimeRefs): Promise<PongLobbyState>
   return nextRefs.lobby.ask<PongLobbyState>({ type: 'GET_LOBBY' });
 }
 
+function isCurrentRuntimeContext(
+  candidateRuntime: BrowserRuntime,
+  candidateRefs: RuntimeRefs
+): boolean {
+  return runtime === candidateRuntime && refs === candidateRefs;
+}
+
 async function syncStoredSessionsToLobby(
   nextRuntime: BrowserRuntime,
-  nextRefs: RuntimeRefs
+  nextRefs: RuntimeRefs,
+  options: { readonly shouldApply?: () => boolean } = {}
 ): Promise<void> {
+  const shouldApply = options.shouldApply ?? (() => true);
   const currentLobby = await currentLobbyState(nextRefs);
+  if (!shouldApply()) {
+    return;
+  }
   const nextLobby = syncLobbySessionsFromStorage(currentLobby, readStoredSessions());
   const nextSessions = new Map(nextLobby.sessions.map((session) => [session.sessionId, session]));
   for (const session of currentLobby.sessions) {
+    if (!shouldApply()) {
+      return;
+    }
     if (!nextSessions.has(session.sessionId)) {
       await nextRefs.lobby.send({ type: 'REMOVE_SESSION', sessionId: session.sessionId });
     }
   }
   for (const session of nextLobby.sessions) {
+    if (!shouldApply()) {
+      return;
+    }
     await nextRefs.lobby.send({ type: 'SYNC_SESSION', session });
   }
   await flushRuntime(nextRuntime);
-  renderLobby(await currentLobbyState(nextRefs));
+  if (!shouldApply()) {
+    return;
+  }
+  const lobbyState = await currentLobbyState(nextRefs);
+  if (!shouldApply()) {
+    return;
+  }
+  renderLobby(lobbyState);
 }
 
 async function syncLobbyForMatchMode(
   nextRuntime: BrowserRuntime,
   nextRefs: RuntimeRefs,
-  mode: PongMatchMode
-): Promise<void> {
+  mode: PongMatchMode,
+  shouldContinue: () => boolean = () => true
+): Promise<boolean> {
   await nextRefs.lobby.send({ type: 'RESET_LOBBY' });
+  if (!shouldContinue()) {
+    return false;
+  }
   for (const session of readStoredSessions()) {
     await nextRefs.lobby.send({ type: 'SYNC_SESSION', session });
+    if (!shouldContinue()) {
+      return false;
+    }
   }
   for (const side of ['left', 'right'] as const) {
     if (mode.controllers[side] === 'mlx') {
@@ -1063,20 +1099,31 @@ async function syncLobbyForMatchMode(
         type: 'SYNC_SESSION',
         session: mlxSessionForSide(side),
       });
+      if (!shouldContinue()) {
+        return false;
+      }
     }
   }
   await flushRuntime(nextRuntime);
-  renderLobby(await currentLobbyState(nextRefs));
+  return shouldContinue();
 }
 
 async function syncCurrentSession(
   nextRuntime: BrowserRuntime,
-  nextRefs: RuntimeRefs
+  nextRefs: RuntimeRefs,
+  options: { readonly shouldApply?: () => boolean } = {}
 ): Promise<void> {
+  const shouldApply = options.shouldApply ?? (() => true);
   const session = await nextRefs.playerSession.ask<PongPlayerSessionState>({ type: 'GET_SESSION' });
+  if (!shouldApply()) {
+    return;
+  }
   playerSessionState = session;
   writeStoredSession(session);
-  await syncStoredSessionsToLobby(nextRuntime, nextRefs);
+  await syncStoredSessionsToLobby(nextRuntime, nextRefs, { shouldApply });
+  if (!shouldApply()) {
+    return;
+  }
   renderPlayerSession(session);
 }
 
@@ -1261,12 +1308,12 @@ async function startRuntimeForMode(mode: BrowserMode): Promise<BrowserRuntime> {
   }
   if (mode === 'broadcast') {
     return startMeshPongBroadcast({
-      channelName: `mesh-pong-demo-${crypto.randomUUID()}`,
+      channelName: `mesh-pong-demo-${createSessionId()}`,
       tools,
     });
   }
   return startMeshPongMesh({
-    channelName: `mesh-pong-demo-${crypto.randomUUID()}`,
+    channelName: `mesh-pong-demo-${createSessionId()}`,
     tools,
   });
 }
@@ -1675,6 +1722,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
         rightY: paddles[1].y,
       });
       await deps.refs.ball.send({ type: 'TICK' });
+      await deps.flushRuntime(deps.runtime);
       deps.updateTelemetry({ type: 'simulation-applied', nowMs: deps.nowMs() });
       const nextSnapshot = await deps.snapshot();
       if (!active) {
@@ -1750,8 +1798,19 @@ async function claimSide(side: 'left' | 'right'): Promise<void> {
     side,
     controller: 'human',
   });
+  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+    return;
+  }
   await flushRuntime(currentRuntime);
-  await syncCurrentSession(currentRuntime, currentRefs);
+  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+    return;
+  }
+  await syncCurrentSession(currentRuntime, currentRefs, {
+    shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs),
+  });
+  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+    return;
+  }
   setStatus('claimed');
 }
 
@@ -1763,8 +1822,19 @@ async function markReady(): Promise<void> {
   }
 
   await currentRefs.playerSession.send({ type: 'SET_READY', ready: true });
+  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+    return;
+  }
   await flushRuntime(currentRuntime);
-  await syncCurrentSession(currentRuntime, currentRefs);
+  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+    return;
+  }
+  await syncCurrentSession(currentRuntime, currentRefs, {
+    shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs),
+  });
+  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+    return;
+  }
   setStatus('ready');
 }
 
@@ -1785,13 +1855,28 @@ async function startMatch(
 
   matchGeneration += 1;
   clearControllerDiagnostics();
-  await syncLobbyForMatchMode(currentRuntime, currentRefs, mode);
+  const synced = await syncLobbyForMatchMode(currentRuntime, currentRefs, mode, () =>
+    isCurrentRuntimeContext(currentRuntime, currentRefs)
+  );
+  if (!synced || !isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+    return;
+  }
   const result = await currentRefs.lobby.ask<PongMatchStartResult>({
     type: 'START_MATCH',
     mode,
   });
+  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+    return;
+  }
   await flushRuntime(currentRuntime);
-  renderLobby(await currentLobbyState(currentRefs));
+  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+    return;
+  }
+  const lobbyState = await currentLobbyState(currentRefs);
+  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+    return;
+  }
+  renderLobby(lobbyState);
   if (!result.ok) {
     matchStarted = false;
     clearMatchOwner();
@@ -1824,7 +1909,9 @@ async function syncCurrentLobbyFromStorage(): Promise<void> {
   if (!currentRuntime || !currentRefs) {
     return;
   }
-  await syncStoredSessionsToLobby(currentRuntime, currentRefs);
+  await syncStoredSessionsToLobby(currentRuntime, currentRefs, {
+    shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs),
+  });
 }
 
 export function bootstrapMeshPongUI(): void {
