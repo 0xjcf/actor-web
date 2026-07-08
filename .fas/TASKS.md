@@ -2228,6 +2228,14 @@ operator explicitly asks for queue mutations.
 - Owner: runtime
 - Brief: .fas/tasks/mesh-pong-hybrid-reflex-controller-plus-llm-planner-mode.md
 
+### Task: Design actor-web Advisory Lane primitive for deadline-safe agents
+
+- Title: Design actor-web Advisory Lane primitive for deadline-safe agents
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/design-actor-web-advisory-lane-primitive-for-deadline-safe-a.md
+
 ## Template
 
 ### Task: `<short task title>`
