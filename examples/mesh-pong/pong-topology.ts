@@ -1,11 +1,7 @@
 import { ACTOR_WEB_LLM_TOOL_NAME } from '@actor-web/agent';
 import { actor, defineActorWebTopology, node, tool } from '@actor-web/runtime/topology';
 import { createPlayerSessionBehavior, matchCoordinatorBehavior } from './pong-behaviors';
-import {
-  createPlayerSessionActorId,
-  createPongClientNodeAddress,
-  PONG_NODE_ADDRESSES,
-} from './pong-contract';
+import { createPlayerSessionActorId, PONG_NODE_ADDRESSES } from './pong-contract';
 import { createPongControllerBehavior } from './pong-controller';
 
 export interface CreatePongTopologyOptions {
@@ -51,43 +47,4 @@ export function createPongTopology(options: CreatePongTopologyOptions = {}) {
   });
 }
 
-const basePong = createPongTopology();
-
-type PongCompatibilityActors = typeof basePong.actors & {
-  readonly ball: { readonly address: string };
-  readonly lobby: { readonly address: string };
-  readonly paddleA: { readonly address: string };
-  readonly paddleB: { readonly address: string };
-  readonly score: { readonly address: string };
-};
-
-export const pong = basePong as typeof basePong & {
-  readonly actors: PongCompatibilityActors;
-};
-
-Object.defineProperties(pong.actors, {
-  ball: {
-    enumerable: false,
-    value: { address: 'actor://pong-server/ball' },
-  },
-  lobby: {
-    enumerable: false,
-    value: { address: 'actor://pong-server/lobby' },
-  },
-  paddleA: {
-    enumerable: false,
-    value: { address: 'actor://pong-a/paddle-a' },
-  },
-  paddleB: {
-    enumerable: false,
-    value: { address: 'actor://pong-b/paddle-b' },
-  },
-  score: {
-    enumerable: false,
-    value: { address: 'actor://pong-server/score' },
-  },
-});
-
-export function createDefaultPongClientNodeAddress(sessionId: string): string {
-  return createPongClientNodeAddress(sessionId);
-}
+export const pong = createPongTopology();

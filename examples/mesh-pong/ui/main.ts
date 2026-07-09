@@ -822,10 +822,6 @@ export interface MeshPongTurnStepperDeps {
     input: Extract<PongControllerInputResult, { readonly ok: true }>,
     controllerTelemetry?: MeshPongControllerReplayTelemetry
   ) => void;
-  readonly runMlxController?: (
-    side: PongSide,
-    snapshot: PongSnapshot
-  ) => Promise<PongControllerResult>;
   readonly setControllerDiagnostic: (side: PongSide, reason: string) => void;
   readonly clearControllerDiagnostic: (side: PongSide) => void;
   readonly applyHumanInput?: (mode: PongShellMatchMode | null) => Promise<void>;
@@ -1114,6 +1110,18 @@ function renderLobby(match: PongMatchState): void {
   lobbyValueElement.textContent = `${readyControllers} / 2`;
 }
 
+function applyProjectedMatch(
+  nextMatch: PongMatchState,
+  options: { readonly renderStatus?: boolean } = {}
+): void {
+  matchState = nextMatch;
+  renderLobby(nextMatch);
+  renderSnapshot(nextMatch.snapshot);
+  if (options.renderStatus !== false) {
+    setStatus(statusForMatchPhase(nextMatch.phase));
+  }
+}
+
 async function currentMatchState(nextRefs: RuntimeRefs): Promise<PongMatchState> {
   return nextRefs.matchCoordinator.ask<PongMatchState>({ type: 'GET_MATCH' });
 }
@@ -1285,8 +1293,7 @@ async function resetRuntimeGame(
 ): Promise<PongSnapshot> {
   await flushRuntime(nextRuntime);
   const nextMatch = await currentMatchState(nextRefs);
-  matchState = nextMatch;
-  renderLobby(nextMatch);
+  applyProjectedMatch(nextMatch);
   return nextMatch.snapshot;
 }
 
@@ -1304,10 +1311,6 @@ async function resetGame(): Promise<void> {
   }
 
   clearControllerDiagnostics();
-  if (loopHandle !== null) {
-    window.clearTimeout(loopHandle);
-    loopHandle = null;
-  }
   const currentMatch = await currentMatchState(currentRefs);
   const result = await currentRefs.matchCoordinator.ask<PongMatchCommandResult>({
     type: 'RESTART_MATCH',
@@ -1316,15 +1319,12 @@ async function resetGame(): Promise<void> {
   });
   await flushRuntime(currentRuntime);
   if (!result.ok) {
-    setStatus(result.reason);
+    setStatus(formatMatchCommandFailure(result));
     return;
   }
-  matchState = result.match;
-  renderLobby(result.match);
-  const nextSnapshot = result.match.snapshot;
   if (runtime === currentRuntime && refs === currentRefs) {
-    renderSnapshot(nextSnapshot);
-    setStatus(readyStatusForMode(selectedMode));
+    applyProjectedMatch(result.match);
+    ensureProjectionLoop();
   }
 }
 
@@ -1343,13 +1343,10 @@ async function returnToRoom(): Promise<void> {
   });
   await flushRuntime(currentRuntime);
   if (!result.ok) {
-    setStatus(result.reason);
+    setStatus(formatMatchCommandFailure(result));
     return;
   }
-  matchState = result.match;
-  renderLobby(result.match);
-  renderSnapshot(result.match.snapshot);
-  setStatus(readyStatusForMode(selectedMode));
+  applyProjectedMatch(result.match);
 }
 
 function isBrowserRuntimeStartFailure(
@@ -1360,10 +1357,6 @@ function isBrowserRuntimeStartFailure(
 
 function startStatusForMode(mode: BrowserMode): string {
   return mode === 'websocket' ? describeMeshPongWebSocketStatus('connecting') : 'starting';
-}
-
-function readyStatusForMode(mode: BrowserMode): string {
-  return mode === 'websocket' ? describeMeshPongWebSocketStatus('connected') : 'lobby';
 }
 
 function statusForMatchPhase(phase: PongMatchPhase): string {
@@ -1402,6 +1395,16 @@ async function startRuntimeForMode(
     sessionId: browserSessionId,
     channelName: 'mesh-pong-demo-mesh',
   });
+}
+
+function ensureProjectionLoop(): void {
+  if (!turnStepper || !runtime || !refs || loopHandle !== null) {
+    return;
+  }
+  loopHandle = window.setTimeout(
+    tick,
+    DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY.simulationIntervalMs
+  );
 }
 
 async function switchMode(mode: BrowserMode): Promise<void> {
@@ -1508,7 +1511,8 @@ async function switchMode(mode: BrowserMode): Promise<void> {
       applyHumanInput: (mode) => applyPaddleInput(activeRuntime, nextRefs, mode),
     });
     renderSnapshot(nextSnapshot);
-    setStatus(readyStatusForMode(mode));
+    setStatus(statusForMatchPhase((matchState as PongMatchState | null)?.phase ?? 'lobby'));
+    ensureProjectionLoop();
   } catch (error) {
     if (nextRuntime) {
       await nextRuntime.stop().catch(() => undefined);
@@ -1569,7 +1573,7 @@ async function applyControllerInput(
     readonly syncRuntime?: boolean;
     readonly updateTelemetry?: (event: MeshPongTelemetryEvent) => void;
   }
-): Promise<void> {
+): Promise<boolean> {
   const appliedAtMs = metadata?.appliedAtMs ?? nowMs();
   const currentMatch = matchState ?? (await currentMatchState(nextRefs));
   const result = await nextRefs.matchCoordinator.ask<PongMatchCommandResult>({
@@ -1579,7 +1583,8 @@ async function applyControllerInput(
     input,
   });
   if (!result.ok) {
-    throw new Error(result.reason);
+    setStatus(formatMatchCommandFailure(result));
+    return false;
   }
   matchState = result.match;
   if (metadata?.syncRuntime !== false) {
@@ -1597,6 +1602,7 @@ async function applyControllerInput(
     nowMs: appliedAtMs,
     sentAtMs: metadata?.sentAtMs,
   });
+  return true;
 }
 
 async function applyPaddleInput(
@@ -2032,7 +2038,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
               }
             : createSyntheticPlannerControllerInput(side, intent);
         const detail = formatAimDetail(aim);
-        await applyControllerInput(deps.runtime, deps.refs, input, {
+        const applied = await applyControllerInput(deps.runtime, deps.refs, input, {
           appliedAtMs: deps.nowMs(),
           detail,
           mode: normalizedMode,
@@ -2042,6 +2048,9 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
           syncRuntime: false,
           updateTelemetry: deps.updateTelemetry,
         });
+        if (!applied) {
+          return;
+        }
         deps.postControllerInput(input, {
           detail,
           mode: normalizedMode,
@@ -2057,7 +2066,8 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
         expectedGeneration: coordinatorState.generation,
       });
       if (!tickResult.ok) {
-        throw new Error(tickResult.reason);
+        deps.setStatus(formatMatchCommandFailure(tickResult));
+        return;
       }
       matchState = tickResult.match;
       await deps.flushRuntime(deps.runtime);
@@ -2068,7 +2078,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
       }
 
       deps.renderSnapshot(nextSnapshot);
-      deps.setStatus('running');
+      deps.setStatus(statusForMatchPhase(tickResult.match.phase));
 
       const refreshedMatchState = deps.getMatchState();
       syncLanes(refreshedMatchState);
@@ -2119,6 +2129,11 @@ async function tick(): Promise<void> {
   }
 
   try {
+    const refreshedMatch = await currentMatchState(currentRefs);
+    if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+      return;
+    }
+    applyProjectedMatch(refreshedMatch);
     await currentStepper.tick();
   } finally {
     if (turnStepper === currentStepper && runtime === currentRuntime && refs === currentRefs) {
@@ -2182,7 +2197,7 @@ async function markReady(): Promise<void> {
   setStatus('ready');
 }
 
-function formatStartFailure(
+function formatMatchCommandFailure(
   result: Exclude<PongMatchCommandResult, { readonly ok: true }>
 ): string {
   if ('missing' in result) {
@@ -2225,22 +2240,14 @@ async function startMatch(
   if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
     return;
   }
-  matchState = await currentMatchState(currentRefs);
-  renderLobby(matchState);
+  applyProjectedMatch(await currentMatchState(currentRefs), { renderStatus: false });
   if (!result.ok) {
-    setStatus(formatStartFailure(result));
+    setStatus(formatMatchCommandFailure(result));
     return;
   }
 
-  matchState = result.match;
-  renderLobby(result.match);
-  setStatus('running');
-  if (loopHandle === null) {
-    loopHandle = window.setTimeout(
-      tick,
-      DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY.simulationIntervalMs
-    );
-  }
+  applyProjectedMatch(result.match);
+  ensureProjectionLoop();
 }
 
 export function bootstrapMeshPongUI(): void {

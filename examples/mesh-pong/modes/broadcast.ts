@@ -47,6 +47,10 @@ export interface StartedMeshPongBroadcast {
   stop(): Promise<void>;
 }
 
+interface BroadcastLeaseHandle {
+  readonly release: () => void;
+}
+
 function resolveWebLocks(options: MeshPongBroadcastOptions): MeshPongWebLocks {
   if (options.webLocks) {
     return options.webLocks;
@@ -196,10 +200,67 @@ export async function startMeshPongBroadcast(
 ): Promise<StartedMeshPongBroadcast> {
   const channelName = options.channelName ?? 'mesh-pong';
   const webLocks = resolveWebLocks(options);
-  return webLocks.request(`mesh-pong:${channelName}:host`, { ifAvailable: true }, async (lock) => {
-    if (lock) {
-      return startMeshPongBroadcastHost(options);
-    }
-    return startMeshPongBroadcastClient(options);
+  return new Promise<StartedMeshPongBroadcast>((resolve, reject) => {
+    let settled = false;
+
+    const resolveStart = (runtime: StartedMeshPongBroadcast): void => {
+      if (!settled) {
+        settled = true;
+        resolve(runtime);
+      }
+    };
+
+    const rejectStart = (error: unknown): void => {
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    };
+
+    const withHostLease = (
+      runtime: StartedMeshPongBroadcast,
+      leaseHandle: BroadcastLeaseHandle
+    ): StartedMeshPongBroadcast => {
+      let released = false;
+
+      return {
+        ...runtime,
+        stop: async () => {
+          try {
+            await runtime.stop();
+          } finally {
+            if (!released) {
+              released = true;
+              leaseHandle.release();
+            }
+          }
+        },
+      };
+    };
+
+    void webLocks
+      .request(`mesh-pong:${channelName}:host`, { ifAvailable: true }, async (lock) => {
+        if (!lock) {
+          resolveStart(await startMeshPongBroadcastClient(options));
+          return;
+        }
+
+        let releaseLease!: () => void;
+        const leaseReleased = new Promise<void>((resolveLease) => {
+          releaseLease = resolveLease;
+        });
+
+        try {
+          const hostRuntime = await startMeshPongBroadcastHost(options);
+          resolveStart(withHostLease(hostRuntime, { release: releaseLease }));
+          await leaseReleased;
+        } catch (error) {
+          rejectStart(error);
+          throw error;
+        }
+      })
+      .catch((error) => {
+        rejectStart(error);
+      });
   });
 }
