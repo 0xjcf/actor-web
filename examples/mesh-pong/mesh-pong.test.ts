@@ -17,7 +17,11 @@ import {
 } from './mlx-provider';
 import { startMeshPongBroadcast } from './modes/broadcast';
 import { startMeshPongLocal } from './modes/local';
-import { startMeshPongWebSocketLoopback } from './modes/websocket';
+import {
+  createMeshPongWebSocketDevHelperClient,
+  describeMeshPongWebSocketStatus,
+  startMeshPongWebSocketLoopback,
+} from './modes/websocket';
 import {
   MESH_PONG_MODE_PARITY_PROOF,
   MESH_PONG_SHARED_PARITY_PROOF,
@@ -87,6 +91,7 @@ import {
   type MeshPongTelemetryEvent,
   reduceMeshPongBenchmarkSummary,
   reduceMeshPongTelemetry,
+  resolveBrowserModeSelection,
 } from './ui/main';
 
 type StartedMeshPongRuntime =
@@ -2601,13 +2606,21 @@ describe('Mesh Pong transport parity', () => {
     });
     expect(MESH_PONG_SHARED_PARITY_PROOF.actors).toEqual(['ball', 'score', 'paddleA', 'paddleB']);
 
-    expect(Object.keys(MESH_PONG_MODE_PARITY_PROOF).sort()).toEqual(['broadcast', 'local', 'mesh']);
+    expect(Object.keys(MESH_PONG_MODE_PARITY_PROOF).sort()).toEqual([
+      'broadcast',
+      'local',
+      'mesh',
+      'websocket',
+    ]);
 
     for (const [mode, proof] of Object.entries(MESH_PONG_MODE_PARITY_PROOF)) {
       expect(proof).toBe(parityProofForMode(mode as keyof typeof MESH_PONG_MODE_PARITY_PROOF));
       expect(proof.startupFile).toBe(`modes/${mode}.ts`);
       expect(proof.nodeLayout).toBe('server / a / b');
     }
+
+    expect(parityProofForMode('websocket').transportBoundary).toContain('browser');
+    expect(parityProofForMode('websocket').startupCall).toContain('startMeshPongBrowserWebSocket');
   });
 
   it('keeps the Mesh Pong browser entry on the browser-safe agent/runtime boundary', async () => {
@@ -2684,6 +2697,90 @@ describe('Mesh Pong transport parity', () => {
     expect(uiEntrypoint).toContain('if (!isCurrentRuntimeContext(currentRuntime, currentRefs))');
     expect(uiEntrypoint).toContain('renderLobby(lobbyState);');
     expect(uiEntrypoint).toContain("lobbyChannel?.postMessage({\n      type: 'match-started'");
+  });
+
+  it('accepts websocket as a real browser transport mode selection', () => {
+    expect(resolveBrowserModeSelection('websocket', 'local')).toBe('websocket');
+    expect(resolveBrowserModeSelection('mesh', 'local')).toBe('mesh');
+    expect(resolveBrowserModeSelection('not-a-mode', 'broadcast')).toBe('broadcast');
+  });
+
+  it('returns websocket helper status facts and flushes without throwing on listener-missing states', async () => {
+    const responses = [
+      new Response(
+        JSON.stringify({
+          state: 'ready',
+          transportUrl: 'ws://127.0.0.1:4102',
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }
+      ),
+      new Response(
+        JSON.stringify({
+          state: 'ready',
+          transportUrl: 'ws://127.0.0.1:4102',
+          actorAddress: 'actor://pong-server/player-session-browser-a',
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }
+      ),
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+      new Response('missing', { status: 404 }),
+      new Response(
+        JSON.stringify({
+          state: 'transport-failed',
+          message: 'listener failed to start',
+        }),
+        {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        }
+      ),
+    ];
+    const fetch = vi.fn(async () => {
+      const response = responses.shift();
+      if (!response) {
+        throw new Error('Unexpected Mesh Pong WebSocket helper request.');
+      }
+      return response;
+    });
+    const client = createMeshPongWebSocketDevHelperClient({
+      baseUrl: 'http://127.0.0.1:4173',
+      fetch: fetch as typeof globalThis.fetch,
+    });
+
+    await expect(client.getStatus()).resolves.toEqual({
+      state: 'ready',
+      transportUrl: 'ws://127.0.0.1:4102',
+    });
+    await expect(client.ensurePlayerSession('browser-a')).resolves.toEqual({
+      state: 'ready',
+      transportUrl: 'ws://127.0.0.1:4102',
+      actorAddress: 'actor://pong-server/player-session-browser-a',
+    });
+    await expect(client.flush()).resolves.toBeUndefined();
+    await expect(client.getStatus()).resolves.toEqual({
+      state: 'listener-missing',
+      message: 'Mesh Pong WebSocket listener helper is unavailable.',
+      transportUrl: null,
+    });
+    await expect(client.getStatus()).resolves.toEqual({
+      state: 'transport-failed',
+      message: 'listener failed to start',
+      transportUrl: null,
+    });
+    expect(describeMeshPongWebSocketStatus('connecting')).toBe('connecting');
+    expect(describeMeshPongWebSocketStatus('connected')).toBe('connected/lobby');
+    expect(describeMeshPongWebSocketStatus('listener-missing')).toBe('listener-missing');
+    expect(describeMeshPongWebSocketStatus('transport-failed')).toBe('transport-failed');
+    expect(fetch).toHaveBeenCalledTimes(5);
   });
 
   it('documents snapshot render cadence and planner decision age semantics', async () => {
