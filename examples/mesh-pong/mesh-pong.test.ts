@@ -491,12 +491,6 @@ async function resolveDistributedMatchCoordinator(
   );
 }
 
-async function currentDistributedMatchState(
-  runtime: StartedMeshPongRuntime
-): Promise<PongMatchState> {
-  return currentMatchState(await resolveDistributedMatchCoordinator(runtime));
-}
-
 async function syncSyntheticMlxSession(
   lobby: ActorRef<PongLobbyState, PongLobbyCommand>,
   side: 'left' | 'right'
@@ -1809,7 +1803,9 @@ describe('Mesh Pong transport parity', () => {
     );
 
     expect(uiEntrypoint).toContain('function ensureProjectionLoop(): void');
-    expect(uiEntrypoint).toContain('applyProjectedMatch(refreshedMatch);');
+    expect(uiEntrypoint).toContain(
+      'applyProjectedMatch(refreshedMatch, { renderSnapshot: false, renderStatus: false });'
+    );
     expect(uiEntrypoint).toContain('ensureProjectionLoop();');
     expect(resetSection).not.toContain('window.clearTimeout(loopHandle);');
   });
@@ -3400,6 +3396,7 @@ describe('Mesh Pong transport parity', () => {
     startedRuntimes.push(host, client);
 
     const hostCoordinator = await resolveDistributedMatchCoordinator(host);
+    const guestCoordinator = await resolveDistributedMatchCoordinator(client);
     const hostSession = await createPlayerSession(host, { sessionId: 'host-tab' });
     const guestSession = await createPlayerSession(client, { sessionId: 'guest-tab' });
 
@@ -3408,7 +3405,7 @@ describe('Mesh Pong transport parity', () => {
     await guestSession.send({ type: 'CLAIM_SIDE', side: 'right' });
     await guestSession.send({ type: 'SET_READY', ready: true });
     await syncCoordinatorSession(hostCoordinator, hostSession);
-    await syncCoordinatorSession(hostCoordinator, guestSession);
+    await syncCoordinatorSession(guestCoordinator, guestSession);
     await flush(host);
     await flush(client);
 
@@ -3428,8 +3425,8 @@ describe('Mesh Pong transport parity', () => {
 
     const assertConverged = async (expectedGeneration: number, expectedAuthority: string) => {
       const [hostMatch, clientMatch] = await Promise.all([
-        currentDistributedMatchState(host),
-        currentDistributedMatchState(client),
+        currentMatchState(hostCoordinator),
+        currentMatchState(guestCoordinator),
       ]);
 
       expect(hostMatch).toMatchObject({
@@ -3453,7 +3450,7 @@ describe('Mesh Pong transport parity', () => {
     await flush(client);
     await assertConverged(2, 'host-tab');
 
-    await hostCoordinator.ask<PongMatchCommandResult>({
+    await guestCoordinator.ask<PongMatchCommandResult>({
       type: 'RESTART_MATCH',
       requestSessionId: 'guest-tab',
       expectedGeneration: 2,

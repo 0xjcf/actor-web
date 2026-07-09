@@ -1112,11 +1112,13 @@ function renderLobby(match: PongMatchState): void {
 
 function applyProjectedMatch(
   nextMatch: PongMatchState,
-  options: { readonly renderStatus?: boolean } = {}
+  options: { readonly renderSnapshot?: boolean; readonly renderStatus?: boolean } = {}
 ): void {
   matchState = nextMatch;
   renderLobby(nextMatch);
-  renderSnapshot(nextMatch.snapshot);
+  if (options.renderSnapshot !== false) {
+    renderSnapshot(nextMatch.snapshot);
+  }
   if (options.renderStatus !== false) {
     setStatus(statusForMatchPhase(nextMatch.phase));
   }
@@ -1284,7 +1286,7 @@ async function resolveRefs(candidate: BrowserRuntime): Promise<RuntimeRefs> {
 }
 
 async function snapshot(nextRefs: RuntimeRefs): Promise<PongSnapshot> {
-  return (await currentMatchState(nextRefs)).snapshot;
+  return matchState?.snapshot ?? (await currentMatchState(nextRefs)).snapshot;
 }
 
 async function resetRuntimeGame(
@@ -2133,7 +2135,7 @@ async function tick(): Promise<void> {
     if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
       return;
     }
-    applyProjectedMatch(refreshedMatch);
+    applyProjectedMatch(refreshedMatch, { renderSnapshot: false, renderStatus: false });
     await currentStepper.tick();
   } finally {
     if (turnStepper === currentStepper && runtime === currentRuntime && refs === currentRefs) {
