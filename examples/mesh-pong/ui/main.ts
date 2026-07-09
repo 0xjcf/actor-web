@@ -231,6 +231,8 @@ export interface MeshPongClockSource {
   readonly now: () => number;
 }
 
+export const MESH_PONG_STARTUP_TIMEOUT_MS = 5_000;
+
 export interface MeshPongControllerSchedulePolicy {
   readonly simulationIntervalMs: number;
   readonly controllerAskTimeoutMs: number;
@@ -261,6 +263,27 @@ export function createMeshPongClock(source = defaultClockSource()): MeshPongCloc
       return Date.now();
     },
   };
+}
+
+export async function withMeshPongStartupTimeout<T>(
+  operation: Promise<T>,
+  label: string,
+  timeoutMs = MESH_PONG_STARTUP_TIMEOUT_MS
+): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<T>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(new Error(`Timed out starting Mesh Pong ${label}.`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([operation, timeout]);
+  } finally {
+    if (timeoutHandle !== null) {
+      clearTimeout(timeoutHandle);
+    }
+  }
 }
 
 function createTelemetryControllerState(): MeshPongTelemetryControllerState {
@@ -1338,6 +1361,29 @@ function lookupNode(candidate: BrowserRuntime) {
   return server;
 }
 
+function ownedRuntimeNode(candidate: BrowserRuntime, nodeKey: 'a' | 'b') {
+  if (isBrowserWebSocketRuntime(candidate) || isBrowserClusterRuntime(candidate)) {
+    return candidate[nodeKey];
+  }
+
+  const nodeRuntime = candidate.nodes[nodeKey];
+  if (!nodeRuntime) {
+    throw new Error(`Mesh Pong local runtime did not start the ${nodeKey} node.`);
+  }
+  return nodeRuntime;
+}
+
+function ownedPaddleActor(
+  candidate: BrowserRuntime,
+  nodeKey: 'a' | 'b',
+  actorKey: 'paddleA' | 'paddleB'
+): ActorRef<PongPaddleState, PaddleCommand> {
+  return ownedRuntimeNode(candidate, nodeKey).requireActor(actorKey) as ActorRef<
+    PongPaddleState,
+    PaddleCommand
+  >;
+}
+
 async function waitForActor<TContext, TMessage extends ActorMessage>(
   candidate: BrowserRuntime,
   address: string
@@ -1378,14 +1424,8 @@ async function resolveRefs(candidate: BrowserRuntime): Promise<RuntimeRefs> {
       pong.actors.lobby.address
     ),
     playerSession,
-    paddleA: await waitForActor<PongPaddleState, PaddleCommand>(
-      candidate,
-      pong.actors.paddleA.address
-    ),
-    paddleB: await waitForActor<PongPaddleState, PaddleCommand>(
-      candidate,
-      pong.actors.paddleB.address
-    ),
+    paddleA: ownedPaddleActor(candidate, 'a', 'paddleA'),
+    paddleB: ownedPaddleActor(candidate, 'b', 'paddleB'),
   };
 }
 
@@ -1550,7 +1590,10 @@ async function switchMode(mode: BrowserMode): Promise<void> {
 
   let nextRuntime: BrowserRuntime | null = null;
   try {
-    const startedRuntime = await startRuntimeForMode(mode);
+    const startedRuntime = await withMeshPongStartupTimeout(
+      startRuntimeForMode(mode),
+      `${mode} runtime`
+    );
     if (isBrowserRuntimeStartFailure(startedRuntime)) {
       if (switchGeneration === generation) {
         setStatus(failureStatusForMode(startedRuntime));
@@ -1558,11 +1601,20 @@ async function switchMode(mode: BrowserMode): Promise<void> {
       return;
     }
     nextRuntime = 'ok' in startedRuntime ? startedRuntime.runtime : startedRuntime;
-    const nextRefs = await resolveRefs(nextRuntime);
-    const nextSnapshot = await resetRuntimeGame(nextRuntime, nextRefs);
-    await hydrateCurrentSession(nextRuntime, nextRefs, {
-      shouldApply: () => switchGeneration === generation,
-    });
+    const nextRefs = await withMeshPongStartupTimeout(
+      resolveRefs(nextRuntime),
+      `${mode} actor refs`
+    );
+    const nextSnapshot = await withMeshPongStartupTimeout(
+      resetRuntimeGame(nextRuntime, nextRefs),
+      `${mode} game reset`
+    );
+    await withMeshPongStartupTimeout(
+      hydrateCurrentSession(nextRuntime, nextRefs, {
+        shouldApply: () => switchGeneration === generation,
+      }),
+      `${mode} session hydrate`
+    );
 
     if (switchGeneration !== generation) {
       await nextRuntime.stop().catch(() => undefined);

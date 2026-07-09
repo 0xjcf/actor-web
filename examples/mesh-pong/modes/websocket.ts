@@ -1,7 +1,6 @@
 import type { StartedActorWebNode } from '@actor-web/runtime/browser';
 import { startActorWebNode } from '@actor-web/runtime/browser';
 import type { ActorToolRegistry, ServedActorWebNode } from '@actor-web/runtime/node';
-import { serveNode } from '@actor-web/runtime/node';
 import { PONG_NODE_ADDRESSES } from '../pong-contract';
 import { createPongControllerTools } from '../pong-controller';
 import { pong } from '../pong-topology';
@@ -273,6 +272,7 @@ function requireTransportUrl(node: ServedActorWebNode<typeof pong>, label: strin
 export async function startMeshPongWebSocketLoopback(
   options: MeshPongWebSocketLoopbackOptions = {}
 ): Promise<StartedMeshPongCluster> {
+  const { serveNode } = await import('@actor-web/runtime/node');
   const startedNodes: Array<{ stop(): Promise<void> }> = [];
   const tools = createPongControllerTools(options.tools);
 

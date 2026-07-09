@@ -87,11 +87,13 @@ import {
   DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY,
   formatMeshPongBenchmarkSummary,
   formatMeshPongTelemetry,
+  MESH_PONG_STARTUP_TIMEOUT_MS,
   type MeshPongControllerSchedulePolicy,
   type MeshPongTelemetryEvent,
   reduceMeshPongBenchmarkSummary,
   reduceMeshPongTelemetry,
   resolveBrowserModeSelection,
+  withMeshPongStartupTimeout,
 } from './ui/main';
 
 type StartedMeshPongRuntime =
@@ -2628,9 +2630,47 @@ describe('Mesh Pong transport parity', () => {
       path.resolve(meshPongExamplesDir, '../packages/actor-agent/src/index.ts'),
       'utf8'
     );
+    const websocketMode = await readFile(
+      path.resolve(meshPongExamplesDir, 'mesh-pong/modes/websocket.ts'),
+      'utf8'
+    );
 
     expect(agentEntrypoint).toContain("from '@actor-web/runtime/browser'");
     expect(agentEntrypoint).not.toContain("import { defineBehavior } from '@actor-web/runtime';");
+    expect(websocketMode).not.toContain("import { serveNode } from '@actor-web/runtime/node'");
+    expect(websocketMode).toContain("await import('@actor-web/runtime/node')");
+  });
+
+  it('bounds browser startup waits so the UI can leave the starting state on hangs', async () => {
+    vi.useFakeTimers();
+    try {
+      const startup = withMeshPongStartupTimeout(
+        new Promise<never>(() => undefined),
+        'local actor refs',
+        25
+      );
+      const assertion = expect(startup).rejects.toThrow(
+        'Timed out starting Mesh Pong local actor refs.'
+      );
+
+      await vi.advanceTimersByTimeAsync(25);
+
+      await assertion;
+      expect(MESH_PONG_STARTUP_TIMEOUT_MS).toBe(5_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('resolves browser websocket paddle actors from their owning browser nodes', async () => {
+    const uiEntrypoint = await readFile(
+      path.resolve(meshPongExamplesDir, 'mesh-pong/ui/main.ts'),
+      'utf8'
+    );
+
+    expect(uiEntrypoint).toContain("paddleA: ownedPaddleActor(candidate, 'a', 'paddleA')");
+    expect(uiEntrypoint).toContain("paddleB: ownedPaddleActor(candidate, 'b', 'paddleB')");
+    expect(uiEntrypoint).not.toContain('pong.actors.paddleB.address');
   });
 
   it('keeps ready-button copy distinct for ready and not-ready sessions', async () => {
@@ -2691,7 +2731,7 @@ describe('Mesh Pong transport parity', () => {
     );
     expect(uiEntrypoint).toContain('options: { readonly shouldApply?: () => boolean } = {}');
     expect(uiEntrypoint).toContain(
-      'await hydrateCurrentSession(nextRuntime, nextRefs, {\n      shouldApply: () => switchGeneration === generation,\n    });'
+      'await withMeshPongStartupTimeout(\n      hydrateCurrentSession(nextRuntime, nextRefs, {\n        shouldApply: () => switchGeneration === generation,\n      }),\n      `${mode} session hydrate`\n    );'
     );
     expect(uiEntrypoint).toContain('() => isCurrentRuntimeContext(currentRuntime, currentRefs)');
     expect(uiEntrypoint).toContain('if (!isCurrentRuntimeContext(currentRuntime, currentRefs))');
