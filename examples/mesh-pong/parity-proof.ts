@@ -1,6 +1,6 @@
 import type { PongTransportMode } from './pong-contract';
 
-export type BrowserPongTransportMode = Exclude<PongTransportMode, 'websocket'>;
+export type BrowserPongTransportMode = PongTransportMode;
 
 export interface MeshPongSharedParityProof {
   readonly topologyFile: string;
@@ -47,6 +47,13 @@ export const MESH_PONG_MODE_PARITY_PROOF: Record<
     startupFile: 'modes/mesh.ts',
     startupCall: 'startMeshPongBroadcast(...) + createLabsMesh(...)',
     transportBoundary: 'labs-mesh overlay on BroadcastChannel peers',
+    nodeLayout: 'server / a / b',
+  },
+  websocket: {
+    mode: 'websocket',
+    startupFile: 'modes/websocket.ts',
+    startupCall: 'startMeshPongBrowserWebSocket(...)',
+    transportBoundary: 'browser WebSocket peers connected outbound-only to a Node server helper',
     nodeLayout: 'server / a / b',
   },
 };

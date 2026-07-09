@@ -8,6 +8,12 @@ import { startMeshPongBroadcast } from '../modes/broadcast';
 import { startMeshPongLocal } from '../modes/local';
 import { startMeshPongMesh } from '../modes/mesh';
 import {
+  describeMeshPongWebSocketStatus,
+  type MeshPongBrowserWebSocketStartResult,
+  type StartedMeshPongBrowserWebSocketRuntime,
+  startMeshPongBrowserWebSocket,
+} from '../modes/websocket';
+import {
   type BrowserPongTransportMode,
   MESH_PONG_SHARED_PARITY_PROOF,
   parityProofForMode,
@@ -35,7 +41,6 @@ import type {
   PongShellMatchMode,
   PongSide,
   PongSnapshot,
-  PongTransportMode,
   ScoreCommand,
 } from '../pong-contract';
 import {
@@ -62,7 +67,8 @@ type BrowserMode = BrowserPongTransportMode;
 type BrowserRuntime =
   | Awaited<ReturnType<typeof startMeshPongLocal>>
   | Awaited<ReturnType<typeof startMeshPongBroadcast>>
-  | Awaited<ReturnType<typeof startMeshPongMesh>>;
+  | Awaited<ReturnType<typeof startMeshPongMesh>>
+  | StartedMeshPongBrowserWebSocketRuntime;
 
 interface RuntimeRefs {
   readonly ball: ActorRef<PongBallContext, BallCommand>;
@@ -1026,6 +1032,12 @@ function isController(value: string): value is PongControllerModeCompat {
   );
 }
 
+export function resolveBrowserModeSelection(value: string, fallback: BrowserMode): BrowserMode {
+  return value === 'local' || value === 'broadcast' || value === 'mesh' || value === 'websocket'
+    ? value
+    : fallback;
+}
+
 function selectedController(select: HTMLSelectElement): PongControllerMode {
   return normalizePongControllerType(isController(select.value) ? select.value : 'human');
 }
@@ -1111,12 +1123,18 @@ function storedSessionForCurrentTab(): PongPlayerSessionState | undefined {
   return readStoredSessions().find((session) => session.sessionId === browserSessionId);
 }
 
-function isCluster(
+function isBrowserClusterRuntime(
   candidate: BrowserRuntime
 ): candidate is
   | Awaited<ReturnType<typeof startMeshPongBroadcast>>
   | Awaited<ReturnType<typeof startMeshPongMesh>> {
   return 'server' in candidate;
+}
+
+function isBrowserWebSocketRuntime(
+  candidate: BrowserRuntime
+): candidate is StartedMeshPongBrowserWebSocketRuntime {
+  return 'lookupNode' in candidate;
 }
 
 function setStatus(value: string): void {
@@ -1295,7 +1313,7 @@ function renderParityProof(mode: BrowserMode): void {
 }
 
 async function flushRuntime(candidate: BrowserRuntime): Promise<void> {
-  if (isCluster(candidate)) {
+  if ('flush' in candidate) {
     await candidate.flush();
     return;
   }
@@ -1305,8 +1323,11 @@ async function flushRuntime(candidate: BrowserRuntime): Promise<void> {
   }
 }
 
-function serverNode(candidate: BrowserRuntime) {
-  if (isCluster(candidate)) {
+function lookupNode(candidate: BrowserRuntime) {
+  if (isBrowserWebSocketRuntime(candidate)) {
+    return candidate.lookupNode;
+  }
+  if (isBrowserClusterRuntime(candidate)) {
     return candidate.server;
   }
 
@@ -1321,7 +1342,7 @@ async function waitForActor<TContext, TMessage extends ActorMessage>(
   candidate: BrowserRuntime,
   address: string
 ): Promise<ActorRef<TContext, TMessage>> {
-  const server = serverNode(candidate);
+  const server = lookupNode(candidate);
   for (let attempt = 0; attempt < 80; attempt += 1) {
     const actorRef = await server.system.lookup<TContext, TMessage>(address);
     if (actorRef) {
@@ -1335,9 +1356,14 @@ async function waitForActor<TContext, TMessage extends ActorMessage>(
 }
 
 async function resolveRefs(candidate: BrowserRuntime): Promise<RuntimeRefs> {
-  const server = serverNode(candidate);
+  const playerSession = isBrowserWebSocketRuntime(candidate)
+    ? await waitForActor<PongPlayerSessionState, PlayerSessionCommand>(
+        candidate,
+        candidate.playerSessionAddress
+      )
+    : await lookupNode(candidate).actors.playerSession.instance({ sessionId: browserSessionId });
   return {
-    ball: server.requireActor('ball') as ActorRef<PongBallContext, BallCommand>,
+    ball: await waitForActor<PongBallContext, BallCommand>(candidate, pong.actors.ball.address),
     controllerLeft: await waitForActor<PongControllerActorState, ControllerCommand>(
       candidate,
       pong.actors.controllerLeft.address
@@ -1346,9 +1372,12 @@ async function resolveRefs(candidate: BrowserRuntime): Promise<RuntimeRefs> {
       candidate,
       pong.actors.controllerRight.address
     ),
-    score: server.requireActor('score') as ActorRef<PongScoreState, ScoreCommand>,
-    lobby: server.requireActor('lobby') as ActorRef<PongLobbyState, PongLobbyCommand>,
-    playerSession: await server.actors.playerSession.instance({ sessionId: browserSessionId }),
+    score: await waitForActor<PongScoreState, ScoreCommand>(candidate, pong.actors.score.address),
+    lobby: await waitForActor<PongLobbyState, PongLobbyCommand>(
+      candidate,
+      pong.actors.lobby.address
+    ),
+    playerSession,
     paddleA: await waitForActor<PongPaddleState, PaddleCommand>(
       candidate,
       pong.actors.paddleA.address
@@ -1433,11 +1462,33 @@ async function resetGame(): Promise<void> {
   const nextSnapshot = await resetRuntimeGame(currentRuntime, currentRefs);
   if (runtime === currentRuntime && refs === currentRefs) {
     renderSnapshot(nextSnapshot);
-    setStatus('lobby');
+    setStatus(readyStatusForMode(selectedMode));
   }
 }
 
-async function startRuntimeForMode(mode: BrowserMode): Promise<BrowserRuntime> {
+function isBrowserRuntimeStartFailure(
+  candidate: BrowserRuntime | MeshPongBrowserWebSocketStartResult
+): candidate is Extract<MeshPongBrowserWebSocketStartResult, { readonly ok: false }> {
+  return 'ok' in candidate && candidate.ok === false;
+}
+
+function startStatusForMode(mode: BrowserMode): string {
+  return mode === 'websocket' ? describeMeshPongWebSocketStatus('connecting') : 'starting';
+}
+
+function readyStatusForMode(mode: BrowserMode): string {
+  return mode === 'websocket' ? describeMeshPongWebSocketStatus('connected') : 'lobby';
+}
+
+function failureStatusForMode(
+  result: Extract<MeshPongBrowserWebSocketStartResult, { readonly ok: false }>
+): string {
+  return describeMeshPongWebSocketStatus(result.state);
+}
+
+async function startRuntimeForMode(
+  mode: BrowserMode
+): Promise<BrowserRuntime | MeshPongBrowserWebSocketStartResult> {
   const tools = createBrowserMlxTools({ storage: browserLocalStorage() });
   if (mode === 'local') {
     return startMeshPongLocal({ tools });
@@ -1447,6 +1498,9 @@ async function startRuntimeForMode(mode: BrowserMode): Promise<BrowserRuntime> {
       channelName: `mesh-pong-demo-${createSessionId()}`,
       tools,
     });
+  }
+  if (mode === 'websocket') {
+    return startMeshPongBrowserWebSocket({ sessionId: browserSessionId });
   }
   return startMeshPongMesh({
     channelName: `mesh-pong-demo-${createSessionId()}`,
@@ -1492,11 +1546,18 @@ async function switchMode(mode: BrowserMode): Promise<void> {
   selectedMode = mode;
   modeValueElement.textContent = mode;
   renderParityProof(mode);
-  setStatus('starting');
+  setStatus(startStatusForMode(mode));
 
   let nextRuntime: BrowserRuntime | null = null;
   try {
-    nextRuntime = await startRuntimeForMode(mode);
+    const startedRuntime = await startRuntimeForMode(mode);
+    if (isBrowserRuntimeStartFailure(startedRuntime)) {
+      if (switchGeneration === generation) {
+        setStatus(failureStatusForMode(startedRuntime));
+      }
+      return;
+    }
+    nextRuntime = 'ok' in startedRuntime ? startedRuntime.runtime : startedRuntime;
     const nextRefs = await resolveRefs(nextRuntime);
     const nextSnapshot = await resetRuntimeGame(nextRuntime, nextRefs);
     await hydrateCurrentSession(nextRuntime, nextRefs, {
@@ -1534,7 +1595,7 @@ async function switchMode(mode: BrowserMode): Promise<void> {
       applyHumanInput: (mode) => applyPaddleInput(activeRuntime, nextRefs, mode),
     });
     renderSnapshot(nextSnapshot);
-    setStatus('lobby');
+    setStatus(readyStatusForMode(mode));
   } catch (error) {
     if (nextRuntime) {
       await nextRuntime.stop().catch(() => undefined);
@@ -2315,12 +2376,8 @@ export function bootstrapMeshPongUI(): void {
   resetTelemetry();
 
   modeSelectElement.addEventListener('change', () => {
-    const mode = modeSelectElement.value as PongTransportMode;
-    if (mode === 'websocket') {
-      modeSelectElement.value = selectedMode;
-      setStatus('websocket loopback runs in CI');
-      return;
-    }
+    const mode = resolveBrowserModeSelection(modeSelectElement.value, selectedMode);
+    modeSelectElement.value = mode;
     void switchMode(mode);
   });
 
