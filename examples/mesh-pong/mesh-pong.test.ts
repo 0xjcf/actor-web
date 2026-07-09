@@ -641,7 +641,7 @@ function createStepperSnapshot(
 function createTurnStepperHarness(
   mode: PongShellMatchMode,
   options: {
-    readonly applyHumanInput?: (mode: PongShellMatchMode | null) => Promise<void>;
+    readonly applyHumanInput?: (mode: PongShellMatchMode | null) => Promise<boolean>;
     readonly applyFailure?: Exclude<PongMatchCommandResult, { readonly ok: true }>;
     readonly flushRuntime?: () => Promise<void>;
     readonly runMlxController?: (
@@ -2515,7 +2515,7 @@ describe('Mesh Pong transport parity', () => {
       playerCount: 2,
       controllers: { left: 'human', right: 'human' },
     } as const;
-    const applyHumanInput = vi.fn(async () => undefined);
+    const applyHumanInput = vi.fn(async () => true);
     const harness = createTurnStepperHarness(mode, {
       applyHumanInput,
     });

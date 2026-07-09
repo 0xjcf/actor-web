@@ -824,7 +824,7 @@ export interface MeshPongTurnStepperDeps {
   ) => void;
   readonly setControllerDiagnostic: (side: PongSide, reason: string) => void;
   readonly clearControllerDiagnostic: (side: PongSide) => void;
-  readonly applyHumanInput?: (mode: PongShellMatchMode | null) => Promise<boolean | void>;
+  readonly applyHumanInput?: (mode: PongShellMatchMode | null) => Promise<boolean>;
 }
 
 export interface MeshPongTurnStepper {
