@@ -5,26 +5,27 @@
 Created with `fas create-task` on 2026-07-09.
 
 ## Problem
+Epic: labs-mesh-runtime-substrate. Build the proper online-game workflow only after authoritative match convergence and remote room semantics exist. Split the current control surface into Lobby, Room/Table, Match, and Result/Rematch states. Every screen is a projection over room, session, and match actor facts; DOM state and tab-local variables never decide lifecycle truth. Lobby owns connection and room entry, Room/Table owns seats/controllers/readiness/start, Match owns play and authorized lifecycle commands, and Result owns rematch or return-to-room. Keep diagnostics progressively disclosed and manually validate desktop, tablet, and mobile.
 
-Epic: labs-mesh-runtime-substrate. Give Mesh Pong the proper online-game UX pass after remote rooms and spectator semantics exist. Split the current single-screen control surface into clear lifecycle workflows: Lobby for transport and room creation/joining, Room/Table for seats, players, MLX slots, spectators, readiness and chat/events, and Match for the game surface, score, player controls, spectator view, telemetry, replay/proof, and return/rematch actions. Use online poker/table-game patterns for responsibilities and avoid dumping every diagnostic on the playfield. Validate desktop, tablet, and mobile breakpoints with manual browser evidence.
 
 ## Acceptance criteria
-
-- The UI has explicit Lobby, Room/Table, and Match workflow states or screens, with controls scoped to each lifecycle responsibility.
-- Lobby owns transport selection, create room, join room, room code or invite URL, connection status, and demo-mode entry points.
-- Room/Table owns seat claim/release, player type selection, MLX slot selection, ready state, spectator list, host/start authority, chat or event log, and room lifecycle status.
-- Match owns the playfield, score, player-side controls, spectator read-only view, pause/reset/rematch or leave actions, compact performance telemetry, and transport-parity proof.
-- The responsive layout is manually validated at desktop, tablet, and mobile widths with no horizontal overflow, clipped controls, inaccessible labels, or overlapping text.
-- Controls use domain-appropriate affordances and accessible names; advanced diagnostics are progressively disclosed away from the primary play surface.
-- Tests cover workflow state transitions, spectator read-only controls, seat controls, ready/start gating, and stable accessible labels where practical.
-- Docs or README screenshots/guidance explain how to capture the promotional GIF with two MLX players and how spectators join.
-- DDD: UI state remains an adapter/projection over actor/session facts; Pong functional behaviors stay free of DOM, network, clock, or storage concerns.
-- TDD: a failing test that captures the new or changed behavior is written before the implementation and lands in the same change.
-- TDD: every production code change in the change set is covered by an added or updated test.
-- DDD: respect domain boundaries — keep the functional core deterministic and side-effect-free (no reads, writes, network, or clock), confine coordination to the imperative shell, and have adapters return facts instead of throwing.
+- The UI has explicit Lobby, Room/Table, Match, and Result/Rematch workflow states with controls scoped to each responsibility.
+- Lobby owns local demo entry, online create/join, room code or invite URL, connection status, and advanced transport selection.
+- Room/Table owns seat claim/release, Human or MLX controller selection, ready state, spectator list, host/start authority, chat/events, and room lifecycle status.
+- Start is enabled only when the authoritative room projection reports all required seats ready; rejection reasons are displayed as domain facts.
+- Match owns the playfield, score, player controls, spectator view, pause, restart-match, return-to-room, compact performance telemetry, and transport-parity proof.
+- Restart match and return to room are distinct commands; an accepted command from either seated player updates every player and spectator projection to the same generation.
+- Result/Rematch owns outcome, rematch readiness/vote, and return-to-room without rebuilding browser-local match truth.
+- No UI module owns authoritative matchStarted, match generation, score, seat, readiness, or controller-mode state; reconnect and refresh hydrate from actor read models.
+- Advanced diagnostics are disclosed away from primary gameplay while selected transport and authority remain visibly provable.
+- Responsive layouts are manually validated at desktop, tablet, and mobile widths without overflow, clipping, inaccessible labels, or overlap.
+- Tests cover workflow transitions, projection hydration, spectator restrictions, seat/readiness/start gates, restart convergence, rematch, and stable accessible labels.
+- Docs include the two-MLX promotional capture workflow and spectator join flow.
+- TDD: failing workflow tests precede implementation and every production change has coverage.
+- DDD: UI remains an adapter/projection over actor facts; deterministic behavior contains no DOM, network, storage, clock, or timer effects.
+- The work is tracked in .fas/TASKS.md and queued with a reviewed implementation and verification plan.
 - The work is tracked in `.fas/TASKS.md`.
 - The task has a clear implementation and verification plan before execution starts.
-- The task is queued in `.fas/queue/tasks.json` for the runtime.
 
 ## Proposed solution
 
@@ -43,8 +44,14 @@ Epic: labs-mesh-runtime-substrate. Give Mesh Pong the proper online-game UX pass
 - examples/mesh-pong/mesh-pong.test.ts
 
 ## Scope Amendments
-
-- None.
+- Type: projection-only-workflow-contract
+- Added at: 2026-07-09
+- Trigger: Operator found reset divergence and confusion caused by one screen mixing Lobby, Room, Match, and diagnostics.
+- Reason: The workflow task must consume authoritative room and match read models and must not repair lifecycle synchronization inside DOM handlers.
+- Evidence source: source and UX review
+- Evidence: source and UX review | examples/mesh-pong/ui/main.ts | Current reset and start handlers mix actor commands with tab-local lifecycle mutation.
+- Accuracy signal: current source and live queue reviewed
+- Follow-up needed: Execute after authoritative convergence and remote room tasks.
 
 ## Implementation plan
 
@@ -61,10 +68,9 @@ Epic: labs-mesh-runtime-substrate. Give Mesh Pong the proper online-game UX pass
 - Validate generated scope, acceptance criteria, and verification evidence before closeout to avoid workflow drift.
 
 ## Dependencies
-
-- Depends on task-1783616720644 Mesh Pong remote rooms and spectator channel model.
-- Blocks task-1781880961715 Post-mesh scoping: membership graduation tier, cross-node supervision boundary, claim gating.
-- Belongs to epic labs-mesh-runtime-substrate as the Mesh Pong online-game workflow and responsive UX polish slice.
+- Depends on task-1783616720644 Mesh Pong remote rooms and spectator channel model, which is gated by task-1783627795146 authoritative match convergence.
+- Blocks task-1781880961715 post-mesh claim gating.
+- Belongs to epic labs-mesh-runtime-substrate as the online-game workflow and responsive UX projection slice.
 
 ## Open questions
 
