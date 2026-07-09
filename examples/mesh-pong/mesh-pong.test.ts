@@ -50,22 +50,34 @@ import {
   createInitialPaddle,
   createInitialPlayerSession,
   createInitialScore,
-  createMlxSessionId,
-  createSyntheticMlxControllerInput,
+  createMergedControllerAim,
+  createPlannerSessionId,
+  createPlannerStrategy,
+  createReflexControllerAim,
+  createSyntheticControllerSession,
+  createSyntheticPlannerControllerInput,
   DEFAULT_PONG_SEED,
+  normalizePongControllerType,
   PONG_FIELD,
-  type PongMatchMode,
-  shouldLaunchMlxControllerForSide,
+  type PongShellMatchMode,
+  shouldLaunchPlannerControllerForSide,
   startLobbyMatch,
   syncLobbySession,
   syncLobbySessionsFromStorage,
+  toLegacyPongControllerType,
+  usesSyntheticControllerSlot,
 } from './pong-contract';
-import { CONTROLLER_LLM_TIMEOUT_MS, runPongControllerWithLlmProvider } from './pong-controller';
+import {
+  CONTROLLER_LLM_TIMEOUT_MS,
+  createPongControllerRequest,
+  runPongControllerWithLlmProvider,
+} from './pong-controller';
 import { pong } from './pong-topology';
 import {
   bootstrapMeshPongUI,
   createMeshPongBenchmarkSummaryState,
   createMeshPongClock,
+  createMeshPongControllerInputReplayMessage,
   createMeshPongTelemetryState,
   createMeshPongTurnStepper,
   DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY,
@@ -297,7 +309,7 @@ async function syncSyntheticMlxSession(
   await lobby.send({
     type: 'SYNC_SESSION',
     session: {
-      sessionId: createMlxSessionId(side),
+      sessionId: createPlannerSessionId(side),
       controller: 'mlx',
       side,
       ready: true,
@@ -432,7 +444,7 @@ function createStepperSnapshot(
 }
 
 function createTurnStepperHarness(
-  mode: PongMatchMode,
+  mode: PongShellMatchMode,
   options: {
     readonly flushRuntime?: () => Promise<void>;
     readonly runMlxController?: (
@@ -705,13 +717,17 @@ describe('Mesh Pong transport parity', () => {
     telemetry = reduceMeshPongTelemetry(telemetry, {
       type: 'controller-request-started',
       side: 'left',
+      mode: 'planner',
       nowMs: 100,
     });
     telemetry = reduceMeshPongTelemetry(telemetry, {
       type: 'controller-request-finished',
       side: 'left',
+      mode: 'planner',
       nowMs: 145,
       outcome: 'ready',
+      strategyStatus: 'fresh',
+      detail: 't278 planner-target',
     });
     expect(telemetry.controllers.left.outcome).toBe('ready');
     expect(telemetry.controllers.left.lastAppliedIntentAgeMs).toBeNull();
@@ -719,14 +735,20 @@ describe('Mesh Pong transport parity', () => {
     telemetry = reduceMeshPongTelemetry(telemetry, {
       type: 'controller-intent-applied',
       side: 'left',
+      mode: 'planner',
+      source: 'planner',
+      strategyStatus: 'fresh',
+      detail: 't278 planner-target',
       nowMs: 150,
       sentAtMs: 138,
     });
     telemetry = reduceMeshPongTelemetry(telemetry, {
       type: 'controller-request-finished',
       side: 'right',
+      mode: 'hybrid',
       nowMs: 151,
       outcome: 'error',
+      strategyStatus: 'error',
       error: 'provider-failed',
     });
 
@@ -735,9 +757,49 @@ describe('Mesh Pong transport parity', () => {
     expect(formatted.render).toContain('frames');
     expect(formatted.simulation).toContain('90ms');
     expect(formatted.simulation).toContain('applied 1');
+    expect(formatted.leftController).toContain('m planner');
+    expect(formatted.leftController).toContain('src planner');
+    expect(formatted.leftController).toContain('st fresh');
+    expect(formatted.leftController).toContain('aim t278 planner-target');
     expect(formatted.leftController).toContain('rtt 45ms');
     expect(formatted.leftController).toContain('age 12ms');
     expect(formatted.rightController).toContain('provider-failed');
+  });
+
+  it('captures fallback and stale strategy details in per-side telemetry', () => {
+    let telemetry = createMeshPongTelemetryState(0);
+
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'controller-request-started',
+      side: 'right',
+      mode: 'hybrid',
+      nowMs: 100,
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'controller-request-finished',
+      side: 'right',
+      mode: 'hybrid',
+      nowMs: 150,
+      outcome: 'ready',
+      strategyStatus: 'fresh',
+      detail: 't140 shadow-bottom',
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'controller-intent-applied',
+      side: 'right',
+      mode: 'hybrid',
+      source: 'hybrid',
+      strategyStatus: 'stale',
+      detail: 't140/i92 shadow-bottom',
+      nowMs: 172,
+      sentAtMs: 120,
+    });
+
+    expect(telemetry.controllers.right.mode).toBe('hybrid');
+    expect(telemetry.controllers.right.appliedSource).toBe('hybrid');
+    expect(telemetry.controllers.right.strategyStatus).toBe('stale');
+    expect(telemetry.controllers.right.detail).toBe('t140/i92 shadow-bottom');
+    expect(formatMeshPongTelemetry(telemetry).rightController).toContain('st stale');
   });
 
   it('records controller RTT, replay latency, and applied intent age from injected timestamps', () => {
@@ -746,13 +808,17 @@ describe('Mesh Pong transport parity', () => {
     telemetry = reduceMeshPongTelemetry(telemetry, {
       type: 'controller-request-started',
       side: 'left',
+      mode: 'planner',
       nowMs: 100,
     });
     telemetry = reduceMeshPongTelemetry(telemetry, {
       type: 'controller-request-finished',
       side: 'left',
+      mode: 'planner',
       nowMs: 160,
       outcome: 'ready',
+      strategyStatus: 'fresh',
+      detail: 't0 hug-top',
     });
     expect(telemetry.controllers.left.outcome).toBe('ready');
     expect(telemetry.controllers.left.lastAppliedIntentAtMs).toBeNull();
@@ -772,6 +838,10 @@ describe('Mesh Pong transport parity', () => {
     telemetry = reduceMeshPongTelemetry(telemetry, {
       type: 'controller-intent-applied',
       side: 'left',
+      mode: 'planner',
+      source: 'planner',
+      strategyStatus: 'fresh',
+      detail: 't0 hug-top',
       nowMs: 180,
       sentAtMs: 162,
     });
@@ -779,6 +849,64 @@ describe('Mesh Pong transport parity', () => {
     expect(telemetry.controllers.left.rttMs).toBe(60);
     expect(telemetry.controllers.left.lastAppliedIntentAgeMs).toBe(18);
     expect(telemetry.replay.latencyMs).toBe(9);
+  });
+
+  it('preserves non-human controller telemetry through controller-input replay payloads', () => {
+    const sentAtMs = 1_000;
+    const receivedAtMs = 1_045;
+    const message = createMeshPongControllerInputReplayMessage({
+      input: createSyntheticPlannerControllerInput('right', {
+        side: 'right',
+        direction: 'up',
+        amount: 7,
+      }),
+      originSessionId: 'owner-tab',
+      sentAtMs,
+      controllerTelemetry: {
+        mode: 'hybrid',
+        source: 'hybrid',
+        strategyStatus: 'stale',
+        detail: 't140/i92 shadow-bottom',
+      },
+    });
+
+    expect(message.controllerTelemetry).toEqual({
+      mode: 'hybrid',
+      source: 'hybrid',
+      strategyStatus: 'stale',
+      detail: 't140/i92 shadow-bottom',
+    });
+    const controllerTelemetry = message.controllerTelemetry;
+    expect(controllerTelemetry).toBeDefined();
+    if (!controllerTelemetry) {
+      throw new Error('controller telemetry missing from replay message');
+    }
+
+    let telemetry = createMeshPongTelemetryState(0);
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'replay-received',
+      originSessionId: message.replay.originSessionId,
+      sentAtMs: message.replay.sentAtMs,
+      receivedAtMs,
+    });
+    telemetry = reduceMeshPongTelemetry(telemetry, {
+      type: 'controller-intent-applied',
+      side: message.input.side,
+      mode: controllerTelemetry.mode,
+      source: controllerTelemetry.source,
+      strategyStatus: controllerTelemetry.strategyStatus,
+      detail: controllerTelemetry.detail,
+      nowMs: receivedAtMs,
+      sentAtMs: message.replay.sentAtMs,
+    });
+
+    expect(telemetry.controllers.right.mode).toBe('hybrid');
+    expect(telemetry.controllers.right.appliedSource).toBe('hybrid');
+    expect(telemetry.controllers.right.strategyStatus).toBe('stale');
+    expect(telemetry.controllers.right.detail).toBe('t140/i92 shadow-bottom');
+    expect(telemetry.controllers.right.lastAppliedIntentAgeMs).toBe(45);
+    expect(formatMeshPongTelemetry(telemetry).rightController).toContain('src hybrid');
+    expect(formatMeshPongTelemetry(telemetry).rightController).toContain('st stale');
   });
 
   it('uses epoch timestamps for cross-tab replay latency without poisoning benchmark rates', () => {
@@ -808,6 +936,10 @@ describe('Mesh Pong transport parity', () => {
     telemetry = reduceMeshPongTelemetry(telemetry, {
       type: 'controller-intent-applied',
       side: 'left',
+      mode: 'planner',
+      source: 'planner',
+      strategyStatus: 'fresh',
+      detail: 't0 hug-top',
       nowMs: receivedAtEpochMs,
       sentAtMs: sentAtEpochMs,
     });
@@ -826,6 +958,10 @@ describe('Mesh Pong transport parity', () => {
       {
         type: 'controller-intent-applied',
         side: 'left',
+        mode: 'planner',
+        source: 'planner',
+        strategyStatus: 'fresh',
+        detail: 't0 hug-top',
         nowMs: receivedAtEpochMs,
         sentAtMs: sentAtEpochMs,
       },
@@ -853,17 +989,23 @@ describe('Mesh Pong transport parity', () => {
     summary = reduceMeshPongBenchmarkSummary(summary, {
       type: 'controller-request-started',
       side: 'left',
+      mode: 'planner',
       nowMs: 100,
     });
     summary = reduceMeshPongBenchmarkSummary(summary, {
       type: 'controller-request-finished',
       side: 'left',
+      mode: 'planner',
       nowMs: 160,
       outcome: 'ready',
     });
     summary = reduceMeshPongBenchmarkSummary(summary, {
       type: 'controller-intent-applied',
       side: 'left',
+      mode: 'planner',
+      source: 'planner',
+      strategyStatus: 'fresh',
+      detail: 't0 hug-top',
       nowMs: 170,
       sentAtMs: 150,
     });
@@ -878,11 +1020,13 @@ describe('Mesh Pong transport parity', () => {
     summary = reduceMeshPongBenchmarkSummary(summary, {
       type: 'controller-request-started',
       side: 'right',
+      mode: 'planner',
       nowMs: 280,
     });
     summary = reduceMeshPongBenchmarkSummary(summary, {
       type: 'controller-request-finished',
       side: 'right',
+      mode: 'planner',
       nowMs: 400,
       outcome: 'error',
       error: 'controller-timeout',
@@ -922,11 +1066,13 @@ describe('Mesh Pong transport parity', () => {
     smooth = reduceMeshPongBenchmarkSummary(smooth, {
       type: 'controller-request-started',
       side: 'left',
+      mode: 'planner',
       nowMs: 100,
     });
     smooth = reduceMeshPongBenchmarkSummary(smooth, {
       type: 'controller-request-finished',
       side: 'left',
+      mode: 'planner',
       nowMs: 150,
       outcome: 'ready',
     });
@@ -947,11 +1093,13 @@ describe('Mesh Pong transport parity', () => {
     delayed = reduceMeshPongBenchmarkSummary(delayed, {
       type: 'controller-request-started',
       side: 'left',
+      mode: 'planner',
       nowMs: 100,
     });
     delayed = reduceMeshPongBenchmarkSummary(delayed, {
       type: 'controller-request-finished',
       side: 'left',
+      mode: 'planner',
       nowMs: 220,
       outcome: 'ready',
     });
@@ -983,11 +1131,13 @@ describe('Mesh Pong transport parity', () => {
     laggy = reduceMeshPongBenchmarkSummary(laggy, {
       type: 'controller-request-started',
       side: 'left',
+      mode: 'planner',
       nowMs: 280,
     });
     laggy = reduceMeshPongBenchmarkSummary(laggy, {
       type: 'controller-request-finished',
       side: 'left',
+      mode: 'planner',
       nowMs: 320,
       outcome: 'ready',
     });
@@ -1006,6 +1156,7 @@ describe('Mesh Pong transport parity', () => {
     expect(typeof module.reduceMeshPongTelemetry).toBe('function');
     expect(typeof module.formatMeshPongBenchmarkSummary).toBe('function');
     expect(typeof module.formatMeshPongTelemetry).toBe('function');
+    expect(typeof module.createMeshPongControllerInputReplayMessage).toBe('function');
     expect(typeof module.bootstrapMeshPongUI).toBe('function');
     expect(bootstrapMeshPongUI).toBe(module.bootstrapMeshPongUI);
   });
@@ -1177,6 +1328,48 @@ describe('Mesh Pong transport parity', () => {
     );
   });
 
+  it('starts a reflex controller side from a clean lobby without launching planner work', () => {
+    const mode = {
+      playerCount: 1,
+      controllers: { left: 'human', right: 'reflex' },
+    } as const;
+    const legacyMode = {
+      playerCount: mode.playerCount,
+      controllers: {
+        left: toLegacyPongControllerType(mode.controllers.left),
+        right: toLegacyPongControllerType(mode.controllers.right),
+      },
+    };
+    const lobby = syncLobbySession(
+      syncLobbySession(createInitialLobby(), {
+        sessionId: 'tab-a',
+        controller: 'human',
+        side: 'left',
+        ready: true,
+      }),
+      createSyntheticControllerSession('right')
+    );
+
+    expect(toLegacyPongControllerType('reflex')).toBe('mlx');
+    expect(usesSyntheticControllerSlot('reflex')).toBe(true);
+    expect(
+      shouldLaunchPlannerControllerForSide({
+        browserSessionId: 'tab-a',
+        matchOwnerSessionId: 'tab-a',
+        mode,
+        side: 'right',
+      })
+    ).toBe(false);
+    expect(startLobbyMatch(lobby, legacyMode).result).toEqual({
+      ok: true,
+      mode: legacyMode,
+      controllers: [
+        { sessionId: 'tab-a', controller: 'human', side: 'left', ready: true },
+        { sessionId: 'planner-right', controller: 'mlx', side: 'right', ready: true },
+      ],
+    });
+  });
+
   it('returns data failures for malformed player-session and lobby commands', async () => {
     const runtime = await startMeshPongLocal();
     startedRuntimes.push(runtime);
@@ -1250,7 +1443,10 @@ describe('Mesh Pong transport parity', () => {
   it('starts one-player human plus MLX controller mode and emits bounded controller intents', async () => {
     const runtime = await startMeshPongLocal({
       tools: createActorAgentTools({
-        llm: createFakeMlxProvider(() => '{"direction":"down","amount":999}'),
+        llm: createFakeMlxProvider(
+          () =>
+            `{"targetY":${PONG_FIELD.height - PONG_FIELD.paddleHeight},"biasY":0,"maxStep":999,"label":"planner-target"}`
+        ),
       }),
     });
     startedRuntimes.push(runtime);
@@ -1279,7 +1475,7 @@ describe('Mesh Pong transport parity', () => {
       },
       controllers: [
         { sessionId: 'tab-a', controller: 'human', side: 'left', ready: true },
-        { sessionId: 'mlx-right', controller: 'mlx', side: 'right', ready: true },
+        { sessionId: 'planner-right', controller: 'mlx', side: 'right', ready: true },
       ],
     });
 
@@ -1291,21 +1487,25 @@ describe('Mesh Pong transport parity', () => {
     expect(result).toEqual({
       ok: true,
       side: 'right',
-      direction: 'down',
-      amount: PONG_FIELD.paddleStep,
       provider: 'llm',
+      strategy: createPlannerStrategy('right', {
+        targetY: PONG_FIELD.height - PONG_FIELD.paddleHeight,
+        biasY: 0,
+        maxStep: PONG_FIELD.paddleStep,
+        label: 'planner-target',
+      }),
     });
   });
 
   it('returns invalid-response when the LLM amount is malformed', async () => {
     for (const content of [
-      '{"direction":"down","amount":null}',
-      '{"direction":"down","amount":false}',
-      '{"direction":"down","amount":""}',
-      '{"direction":"down","amount":"   "}',
-      '{"direction":"down","amount":{}}',
-      '{"direction":"down","amount":"Infinity"}',
-      '{"direction":"down","amount":"NaN"}',
+      '{"targetY":null,"biasY":0,"maxStep":10}',
+      '{"targetY":false,"biasY":0,"maxStep":10}',
+      '{"targetY":"","biasY":0,"maxStep":10}',
+      '{"targetY":"   ","biasY":0,"maxStep":10}',
+      '{"targetY":{},"biasY":0,"maxStep":10}',
+      '{"targetY":"Infinity","biasY":0,"maxStep":10}',
+      '{"targetY":"NaN","biasY":0,"maxStep":10}',
     ]) {
       const runtime = await startMeshPongLocal({
         tools: createActorAgentTools({
@@ -1326,7 +1526,7 @@ describe('Mesh Pong transport parity', () => {
         reason: 'invalid-response',
         error: {
           code: 'LLM_INVALID_RESPONSE',
-          message: 'LLM controller must return JSON with direction and amount.',
+          message: 'LLM controller must return JSON with targetY, biasY, and maxStep.',
         },
       });
     }
@@ -1584,8 +1784,8 @@ describe('Mesh Pong transport parity', () => {
       tools: createActorAgentTools({
         llm: createFakeMlxProvider((request) =>
           JSON.parse(request.messages.at(-1)?.content ?? '{}').side === 'left'
-            ? '{"direction":"up","amount":12}'
-            : '{"direction":"down","amount":9}'
+            ? '{"targetY":0,"biasY":0,"maxStep":12,"label":"planner-target"}'
+            : `{"targetY":${PONG_FIELD.height - PONG_FIELD.paddleHeight},"biasY":0,"maxStep":9,"label":"planner-target"}`
         ),
       }),
     });
@@ -1612,8 +1812,8 @@ describe('Mesh Pong transport parity', () => {
         controllers: { left: 'mlx', right: 'mlx' },
       },
       controllers: [
-        { sessionId: 'mlx-left', controller: 'mlx', side: 'left', ready: true },
-        { sessionId: 'mlx-right', controller: 'mlx', side: 'right', ready: true },
+        { sessionId: 'planner-left', controller: 'mlx', side: 'left', ready: true },
+        { sessionId: 'planner-right', controller: 'mlx', side: 'right', ready: true },
       ],
     });
 
@@ -1623,18 +1823,26 @@ describe('Mesh Pong transport parity', () => {
     ).resolves.toEqual({
       ok: true,
       side: 'left',
-      direction: 'up',
-      amount: 12,
       provider: 'llm',
+      strategy: createPlannerStrategy('left', {
+        targetY: 0,
+        biasY: 0,
+        maxStep: 12,
+        label: 'planner-target',
+      }),
     });
     await expect(
       controllers.right.ask<PongControllerResult>({ type: 'RUN_CONTROLLER', snapshot })
     ).resolves.toEqual({
       ok: true,
       side: 'right',
-      direction: 'down',
-      amount: 9,
       provider: 'llm',
+      strategy: createPlannerStrategy('right', {
+        targetY: PONG_FIELD.height - PONG_FIELD.paddleHeight,
+        biasY: 0,
+        maxStep: 9,
+        label: 'planner-target',
+      }),
     });
   });
 
@@ -1647,7 +1855,7 @@ describe('Mesh Pong transport parity', () => {
     };
     const startedLobby = startLobbyMatch(
       syncLobbySession(syncLobbySession(createInitialLobby(), humanSession), {
-        sessionId: 'mlx-right',
+        sessionId: 'planner-right',
         controller: 'mlx',
         side: 'right',
         ready: true,
@@ -1663,7 +1871,7 @@ describe('Mesh Pong transport parity', () => {
       sessions: [
         humanSession,
         {
-          sessionId: 'mlx-right',
+          sessionId: 'planner-right',
           controller: 'mlx',
           side: 'right',
           ready: true,
@@ -1671,19 +1879,19 @@ describe('Mesh Pong transport parity', () => {
       ],
       controllers: [
         { sessionId: 'tab-a', controller: 'human', side: 'left', ready: true },
-        { sessionId: 'mlx-right', controller: 'mlx', side: 'right', ready: true },
+        { sessionId: 'planner-right', controller: 'mlx', side: 'right', ready: true },
       ],
     });
   });
 
-  it('elects only the match owner tab to launch MLX controller turns', () => {
+  it('elects only the match owner tab to launch planner controller turns', () => {
     const mode = {
       playerCount: 2,
-      controllers: { left: 'mlx', right: 'human' },
+      controllers: { left: 'planner', right: 'human' },
     } as const;
 
     expect(
-      shouldLaunchMlxControllerForSide({
+      shouldLaunchPlannerControllerForSide({
         browserSessionId: 'tab-a',
         matchOwnerSessionId: 'tab-a',
         mode,
@@ -1691,7 +1899,7 @@ describe('Mesh Pong transport parity', () => {
       })
     ).toBe(true);
     expect(
-      shouldLaunchMlxControllerForSide({
+      shouldLaunchPlannerControllerForSide({
         browserSessionId: 'tab-b',
         matchOwnerSessionId: 'tab-a',
         mode,
@@ -1699,7 +1907,7 @@ describe('Mesh Pong transport parity', () => {
       })
     ).toBe(false);
     expect(
-      shouldLaunchMlxControllerForSide({
+      shouldLaunchPlannerControllerForSide({
         browserSessionId: 'tab-a',
         matchOwnerSessionId: 'tab-a',
         mode,
@@ -1707,7 +1915,7 @@ describe('Mesh Pong transport parity', () => {
       })
     ).toBe(false);
     expect(
-      shouldLaunchMlxControllerForSide({
+      shouldLaunchPlannerControllerForSide({
         browserSessionId: 'tab-a',
         matchOwnerSessionId: null,
         mode,
@@ -1717,28 +1925,233 @@ describe('Mesh Pong transport parity', () => {
   });
 
   it('creates the synthetic controller-input payload that observer tabs replay for MLX turns', () => {
-    expect(createMlxSessionId('right')).toBe('mlx-right');
+    expect(createPlannerSessionId('right')).toBe('planner-right');
+    expect(normalizePongControllerType('mlx')).toBe('planner');
+    expect(normalizePongControllerType('planner')).toBe('planner');
+    expect(normalizePongControllerType('hybrid')).toBe('hybrid');
     expect(
-      createSyntheticMlxControllerInput({
-        ok: true,
-        provider: 'llm',
+      createSyntheticPlannerControllerInput('right', {
         side: 'right',
         direction: 'down',
         amount: 9,
       })
     ).toEqual({
       ok: true,
-      sessionId: 'mlx-right',
+      sessionId: 'planner-right',
       side: 'right',
       direction: 'down',
       amount: 9,
     });
   });
 
+  it('creates deterministic reflex targets and planner overlays in the pure contract core', () => {
+    const snapshot = createStepperSnapshot(
+      {
+        left: createInitialPaddle('left'),
+        right: createInitialPaddle('right'),
+      },
+      0
+    );
+    const reflexAim = createReflexControllerAim(snapshot, 'left');
+    expect(reflexAim.reason).toBe('intercept');
+    expect(reflexAim.interceptY).not.toBeNull();
+
+    const mergedAim = createMergedControllerAim(
+      snapshot,
+      'left',
+      createPlannerStrategy('left', {
+        targetY: 42,
+        biasY: -12,
+        label: 'bait-high',
+      })
+    );
+    expect(mergedAim.reason).toBe('planner-target');
+    expect(mergedAim.targetY).toBe(30);
+  });
+
+  it('elects only the match owner tab to launch planner controller turns', () => {
+    const mode = {
+      playerCount: 2,
+      controllers: { left: 'planner', right: 'human' },
+    } as const;
+
+    expect(
+      shouldLaunchPlannerControllerForSide({
+        browserSessionId: 'tab-a',
+        matchOwnerSessionId: 'tab-a',
+        mode,
+        side: 'left',
+      })
+    ).toBe(true);
+    expect(
+      shouldLaunchPlannerControllerForSide({
+        browserSessionId: 'tab-b',
+        matchOwnerSessionId: 'tab-a',
+        mode,
+        side: 'left',
+      })
+    ).toBe(false);
+    expect(
+      shouldLaunchPlannerControllerForSide({
+        browserSessionId: 'tab-a',
+        matchOwnerSessionId: 'tab-a',
+        mode,
+        side: 'right',
+      })
+    ).toBe(false);
+  });
+
+  it('keeps planner-only turns nonblocking and unresolved without secretly running reflex', async () => {
+    const harness = createTurnStepperHarness({
+      playerCount: 1,
+      controllers: { left: 'planner', right: 'human' },
+    });
+
+    await harness.stepper.tick();
+    await harness.stepper.tick();
+
+    expect(harness.tickCount()).toBe(2);
+    expect(harness.leftAskCount()).toBe(1);
+    expect(harness.commands.filter((command) => command === 'left:MOVE_PADDLE')).toHaveLength(0);
+    expect(harness.commands.filter((command) => command === 'ball:TICK')).toHaveLength(2);
+  });
+
+  it('shows planner-only no-op turns as neutral after the fresh strategy window expires', async () => {
+    const harness = createTurnStepperHarness(
+      {
+        playerCount: 1,
+        controllers: { left: 'planner', right: 'human' },
+      },
+      {
+        schedulePolicy: {
+          ...DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY,
+          plannerStrategyFreshTurnLimit: 1,
+          plannerStrategyStaleTurnLimit: 0,
+        },
+      }
+    );
+
+    await harness.stepper.tick();
+    harness.leftDeferreds[0]?.resolve({
+      ok: true,
+      provider: 'llm',
+      side: 'left',
+      strategy: createPlannerStrategy('left', {
+        targetY: PONG_FIELD.height - PONG_FIELD.paddleHeight,
+        biasY: 0,
+        label: 'hug-bottom',
+      }),
+    });
+    await flushMicrotasks();
+
+    await harness.stepper.tick();
+    const freshAppliedEvents = harness.telemetryEvents.filter(
+      (
+        event
+      ): event is Extract<MeshPongTelemetryEvent, { readonly type: 'controller-intent-applied' }> =>
+        event.type === 'controller-intent-applied' &&
+        event.side === 'left' &&
+        event.strategyStatus === 'fresh'
+    );
+    expect(freshAppliedEvents).toHaveLength(1);
+    expect(harness.commands.filter((command) => command === 'left:MOVE_PADDLE')).toHaveLength(1);
+
+    const beforeNeutralTick = harness.telemetryEvents.length;
+    await harness.stepper.tick();
+    const neutralTurnEvents = harness.telemetryEvents.slice(beforeNeutralTick);
+
+    expect(
+      neutralTurnEvents.some(
+        (event) =>
+          event.type === 'controller-state-observed' &&
+          event.side === 'left' &&
+          event.mode === 'planner' &&
+          event.source === 'planner' &&
+          event.strategyStatus === 'neutral' &&
+          event.detail === 'neutral hug-bottom'
+      )
+    ).toBe(true);
+    expect(
+      neutralTurnEvents.some(
+        (event) => event.type === 'controller-intent-applied' && event.side === 'left'
+      )
+    ).toBe(false);
+    expect(harness.commands.filter((command) => command === 'left:MOVE_PADDLE')).toHaveLength(1);
+
+    const telemetry = harness.telemetryEvents.reduce(
+      reduceMeshPongTelemetry,
+      createMeshPongTelemetryState(0)
+    );
+    expect(telemetry.controllers.left.mode).toBe('planner');
+    expect(telemetry.controllers.left.appliedSource).toBe('planner');
+    expect(telemetry.controllers.left.strategyStatus).toBe('neutral');
+    expect(telemetry.controllers.left.detail).toBe('neutral hug-bottom');
+    expect(telemetry.controllers.left.lastAppliedIntentAtMs).not.toBe(
+      neutralTurnEvents.find((event) => event.type === 'controller-state-observed')?.nowMs
+    );
+    expect(telemetry.controllers.left.lastAppliedIntentAgeMs).toBeGreaterThan(0);
+    expect(formatMeshPongTelemetry(telemetry).leftController).toContain('st neutral');
+    expect(formatMeshPongTelemetry(telemetry).leftController).toContain('aim neutral hug-bottom');
+  });
+
+  it('runs reflex mode without any planner requests and targets the intercept lane', async () => {
+    const harness = createTurnStepperHarness({
+      playerCount: 1,
+      controllers: { left: 'reflex', right: 'human' },
+    });
+
+    await harness.stepper.tick();
+
+    expect(harness.leftAskCount()).toBe(0);
+    expect(harness.commands).toContain('left:MOVE_PADDLE');
+    expect(harness.commands).toContain('ball:TICK');
+  });
+
+  it('keeps hybrid mode on reflex while a slow planner stays pending, then reuses stale planner overlay only within budget', async () => {
+    const harness = createTurnStepperHarness(
+      {
+        playerCount: 1,
+        controllers: { left: 'hybrid', right: 'human' },
+      },
+      {
+        schedulePolicy: {
+          ...DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY,
+          plannerStrategyFreshTurnLimit: 1,
+          plannerStrategyStaleTurnLimit: 1,
+        },
+      }
+    );
+
+    await harness.stepper.tick();
+    await harness.stepper.tick();
+
+    expect(harness.leftAskCount()).toBe(1);
+    expect(harness.commands.filter((command) => command === 'left:MOVE_PADDLE').length).toBe(2);
+
+    harness.leftDeferreds[0]?.resolve({
+      ok: true,
+      provider: 'llm',
+      side: 'left',
+      strategy: createPlannerStrategy('left', {
+        targetY: PONG_FIELD.height - PONG_FIELD.paddleHeight,
+        biasY: 0,
+        label: 'hug-bottom-wall',
+      }),
+    });
+    await flushMicrotasks();
+
+    await harness.stepper.tick();
+    await harness.stepper.tick();
+    await harness.stepper.tick();
+
+    expect(harness.leftAskCount()).toBeGreaterThanOrEqual(2);
+    expect(harness.commands.filter((command) => command === 'left:MOVE_PADDLE').length).toBe(5);
+  });
+
   it('keeps owner ticks advancing while both MLX lanes are unresolved and stale intent stays bounded', async () => {
     const harness = createTurnStepperHarness({
       playerCount: 2,
-      controllers: { left: 'mlx', right: 'mlx' },
+      controllers: { left: 'planner', right: 'planner' },
     });
 
     await harness.stepper.tick();
@@ -1754,8 +2167,11 @@ describe('Mesh Pong transport parity', () => {
       ok: true,
       provider: 'llm',
       side: 'right',
-      direction: 'down',
-      amount: PONG_FIELD.paddleStep,
+      strategy: createPlannerStrategy('right', {
+        targetY: PONG_FIELD.height - PONG_FIELD.paddleHeight,
+        biasY: 0,
+        label: 'shadow-bottom',
+      }),
     });
     await flushMicrotasks();
 
@@ -1805,7 +2221,7 @@ describe('Mesh Pong transport parity', () => {
     const harness = createTurnStepperHarness(
       {
         playerCount: 2,
-        controllers: { left: 'mlx', right: 'mlx' },
+        controllers: { left: 'planner', right: 'planner' },
       },
       {
         flushRuntime,
@@ -1822,7 +2238,14 @@ describe('Mesh Pong transport parity', () => {
     expect(harness.leftAskCount()).toBe(1);
     expect(harness.rightAskCount()).toBe(1);
     expect(flushRuntime).toHaveBeenCalledTimes(2);
-    expect(stepOrder).toEqual(['flush:1', 'snapshot:1', 'flush:2', 'snapshot:2']);
+    expect(stepOrder).toEqual([
+      'snapshot:0',
+      'flush:1',
+      'snapshot:1',
+      'snapshot:1',
+      'flush:2',
+      'snapshot:2',
+    ]);
     expect(harness.tickCount()).toBe(2);
     expect(harness.renderedSnapshots).toHaveLength(2);
   });
@@ -1866,14 +2289,17 @@ describe('Mesh Pong transport parity', () => {
         ok: true,
         provider: 'llm',
         side,
-        direction: side === 'left' ? 'up' : 'down',
-        amount: PONG_FIELD.paddleStep,
+        strategy: createPlannerStrategy(side, {
+          targetY: side === 'left' ? 0 : PONG_FIELD.height - PONG_FIELD.paddleHeight,
+          biasY: 0,
+          label: side === 'left' ? 'hug-top' : 'hug-bottom',
+        }),
       })
     );
     const harness = createTurnStepperHarness(
       {
         playerCount: 2,
-        controllers: { left: 'mlx', right: 'mlx' },
+        controllers: { left: 'planner', right: 'planner' },
       },
       { runMlxController }
     );
@@ -1893,18 +2319,20 @@ describe('Mesh Pong transport parity', () => {
     expect(DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY).toEqual({
       simulationIntervalMs: 90,
       controllerAskTimeoutMs: 30_000,
-      staleIntentTurnLimit: 3,
+      plannerStrategyFreshTurnLimit: 2,
+      plannerStrategyStaleTurnLimit: 1,
     });
     const harness = createTurnStepperHarness(
       {
         playerCount: 1,
-        controllers: { left: 'human', right: 'mlx' },
+        controllers: { left: 'human', right: 'planner' },
       },
       {
         schedulePolicy: {
           ...DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY,
           controllerAskTimeoutMs: 1_234,
-          staleIntentTurnLimit: 1,
+          plannerStrategyFreshTurnLimit: 1,
+          plannerStrategyStaleTurnLimit: 0,
         },
       }
     );
@@ -1915,8 +2343,11 @@ describe('Mesh Pong transport parity', () => {
       ok: true,
       provider: 'llm',
       side: 'right',
-      direction: 'down',
-      amount: PONG_FIELD.paddleStep,
+      strategy: createPlannerStrategy('right', {
+        targetY: PONG_FIELD.height - PONG_FIELD.paddleHeight,
+        biasY: 0,
+        label: 'hug-bottom',
+      }),
     });
     await flushMicrotasks();
 
@@ -1925,21 +2356,24 @@ describe('Mesh Pong transport parity', () => {
     await harness.stepper.tick();
 
     expect(harness.rightAskTimeouts()).toEqual([1_234, 1_234]);
-    expect(harness.commands.filter((command) => command === 'right:MOVE_PADDLE')).toHaveLength(2);
+    expect(harness.commands.filter((command) => command === 'right:MOVE_PADDLE')).toHaveLength(1);
   });
 
   it('summarizes one-player and mlx-vs-mlx benchmark telemetry without a live provider', async () => {
     const onePlayer = createTurnStepperHarness({
       playerCount: 1,
-      controllers: { left: 'mlx', right: 'human' },
+      controllers: { left: 'planner', right: 'human' },
     });
     await onePlayer.stepper.tick();
     onePlayer.leftDeferreds[0]?.resolve({
       ok: true,
       provider: 'llm',
       side: 'left',
-      direction: 'up',
-      amount: PONG_FIELD.paddleStep,
+      strategy: createPlannerStrategy('left', {
+        targetY: 0,
+        biasY: 0,
+        label: 'hug-top',
+      }),
     });
     await flushMicrotasks();
     await onePlayer.stepper.tick();
@@ -1955,15 +2389,18 @@ describe('Mesh Pong transport parity', () => {
 
     const mlxVsMlx = createTurnStepperHarness({
       playerCount: 2,
-      controllers: { left: 'mlx', right: 'mlx' },
+      controllers: { left: 'planner', right: 'planner' },
     });
     await mlxVsMlx.stepper.tick();
     mlxVsMlx.leftDeferreds[0]?.resolve({
       ok: true,
       provider: 'llm',
       side: 'left',
-      direction: 'up',
-      amount: PONG_FIELD.paddleStep,
+      strategy: createPlannerStrategy('left', {
+        targetY: 0,
+        biasY: 0,
+        label: 'hug-top',
+      }),
     });
     mlxVsMlx.rightDeferreds[0]?.reject(new Error('controller-timeout'));
     await flushMicrotasks();
@@ -1983,7 +2420,7 @@ describe('Mesh Pong transport parity', () => {
   it('counts provider-returned MLX timeout failures through turn-stepper telemetry', async () => {
     const harness = createTurnStepperHarness({
       playerCount: 1,
-      controllers: { left: 'mlx', right: 'human' },
+      controllers: { left: 'planner', right: 'human' },
     });
     await harness.stepper.tick();
     harness.leftDeferreds[0]?.resolve({
@@ -2023,7 +2460,7 @@ describe('Mesh Pong transport parity', () => {
   it('discards late MLX completions after the match generation changes', async () => {
     const harness = createTurnStepperHarness({
       playerCount: 1,
-      controllers: { left: 'mlx', right: 'human' },
+      controllers: { left: 'planner', right: 'human' },
     });
 
     await harness.stepper.tick();
@@ -2034,8 +2471,11 @@ describe('Mesh Pong transport parity', () => {
       ok: true,
       provider: 'llm',
       side: 'left',
-      direction: 'up',
-      amount: PONG_FIELD.paddleStep,
+      strategy: createPlannerStrategy('left', {
+        targetY: 0,
+        biasY: 0,
+        label: 'hug-top',
+      }),
     });
     await flushMicrotasks();
     await harness.stepper.tick();
@@ -2048,7 +2488,7 @@ describe('Mesh Pong transport parity', () => {
   it('discards stale rejected MLX completions after the match generation changes', async () => {
     const harness = createTurnStepperHarness({
       playerCount: 1,
-      controllers: { left: 'mlx', right: 'human' },
+      controllers: { left: 'planner', right: 'human' },
     });
 
     await harness.stepper.tick();
@@ -2198,9 +2638,11 @@ describe('Mesh Pong transport parity', () => {
 
     expect(uiEntrypoint).toContain('DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY');
     expect(uiEntrypoint).toContain('controllerAskTimeoutMs: 30_000');
-    expect(uiEntrypoint).toContain('staleIntentTurnLimit: 3');
+    expect(uiEntrypoint).toContain('plannerStrategyFreshTurnLimit: 2');
+    expect(uiEntrypoint).toContain('plannerStrategyStaleTurnLimit: 1');
     expect(uiEntrypoint).toContain('schedulePolicy.controllerAskTimeoutMs');
-    expect(uiEntrypoint).toContain('schedulePolicy.staleIntentTurnLimit');
+    expect(uiEntrypoint).toContain('schedulePolicy.plannerStrategyFreshTurnLimit');
+    expect(uiEntrypoint).toContain('schedulePolicy.plannerStrategyStaleTurnLimit');
     expect(uiEntrypoint).toContain('createMeshPongTurnStepper');
     expect(uiEntrypoint).toContain('readonly requestId: number;');
     expect(uiEntrypoint).toContain('readonly startedAtMs: number;');
@@ -2244,14 +2686,41 @@ describe('Mesh Pong transport parity', () => {
     expect(uiEntrypoint).toContain("lobbyChannel?.postMessage({\n      type: 'match-started'");
   });
 
-  it('documents snapshot render cadence and MLX intent age semantics', async () => {
+  it('documents snapshot render cadence and planner decision age semantics', async () => {
     const readme = await readFile(path.resolve(meshPongExamplesDir, 'mesh-pong/README.md'), 'utf8');
 
     expect(readme).toContain('snapshot render cadence');
     expect(readme).not.toContain('browser paint cadence');
-    expect(readme).toContain('High MLX intent `age` includes local model decision time');
-    expect(readme).toMatch(/reuses the last known intent for a\s+small bounded number of turns/);
+    expect(readme).toContain('High decision `age` includes local model decision time');
+    expect(readme).toContain('visible controller mode');
+    expect(readme).toMatch(/planner freshness or\s+fallback status/);
+    expect(readme).toContain('target/intercept or strategy label');
+    expect(readme).toContain('one human side plus one `reflex`, `planner`, or `hybrid` side');
+    expect(readme).not.toContain('one human side plus one `mlx` side');
     expect(readme).toMatch(/Local\s+human input is applied immediately in the shell/);
+  });
+
+  it('documents the planner strategy json contract and keeps it aligned with the controller prompt', async () => {
+    const readme = await readFile(path.resolve(meshPongExamplesDir, 'mesh-pong/README.md'), 'utf8');
+    const request = createPongControllerRequest(
+      'left',
+      createStepperSnapshot(
+        { left: createInitialPaddle('left'), right: createInitialPaddle('right') },
+        0
+      )
+    );
+    const prompt = String(request.messages.at(-1)?.content ?? '');
+
+    expect(readme).toContain('"targetY": 0..278');
+    expect(readme).toContain('"biasY": -82..82');
+    expect(readme).toContain('"maxStep": 1..28');
+    expect(readme).toContain('"label": "short reason string"');
+    expect(readme).toContain('"facts": ["short fact strings"]');
+    expect(prompt).toContain('"targetY":"number"');
+    expect(prompt).toContain('"biasY":"number"');
+    expect(prompt).toContain('"maxStep":"number"');
+    expect(prompt).toContain('"label":"string"');
+    expect(prompt).toContain('"facts":"string[]"');
   });
 
   it('produces the same deterministic score sequence for local, broadcast, and websocket runtimes', async () => {
