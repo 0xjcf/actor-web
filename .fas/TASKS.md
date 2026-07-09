@@ -2279,6 +2279,30 @@ operator explicitly asks for queue mutations.
 - Owner: runtime
 - Brief: .fas/tasks/document-mesh-pong-layered-actor-control-course-path.md
 
+### Task: Define actor-web artifact actor registry contract for Ignite ArtifactSpec interop
+
+- Title: Define actor-web artifact actor registry contract for Ignite ArtifactSpec interop
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/define-actor-web-artifact-actor-registry-contract-for-ignite.md
+
+### Task: Mesh Pong remote rooms and spectator channel model
+
+- Title: Mesh Pong remote rooms and spectator channel model
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/mesh-pong-remote-rooms-and-spectator-channel-model.md
+
+### Task: Mesh Pong Lobby Room Table and Match UI workflow polish
+
+- Title: Mesh Pong Lobby Room Table and Match UI workflow polish
+- Mode: 4-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/mesh-pong-lobby-room-table-and-match-ui-workflow-polish.md
+
 ## Template
 
 ### Task: `<short task title>`
