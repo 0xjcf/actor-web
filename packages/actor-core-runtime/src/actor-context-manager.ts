@@ -86,14 +86,13 @@ interface FallbackContextFrame<T> {
 export class FallbackContextStorage<T> implements ContextStorage<T> {
   private current: T | undefined;
   private readonly frames: FallbackContextFrame<T>[] = [];
+  private readonly idleWaiters: Array<() => void> = [];
   private rootPrevious: T | undefined;
   private callbackDepth = 0;
 
   run<TResult>(context: T, fn: () => TResult): TResult {
     if (this.callbackDepth === 0 && this.frames.length > 0) {
-      throw new Error(
-        'FallbackContextStorage cannot start overlapping top-level async runs without AsyncLocalStorage'
-      );
+      return this.queueTopLevelRun(context, fn) as TResult;
     }
 
     if (this.frames.length === 0) {
@@ -145,10 +144,33 @@ export class FallbackContextStorage<T> implements ContextStorage<T> {
     if (this.frames.length === 0) {
       this.current = this.rootPrevious;
       this.rootPrevious = undefined;
+      this.resolveIdleWaiters();
       return;
     }
 
     this.current = this.frames[this.frames.length - 1]?.context;
+  }
+
+  private async queueTopLevelRun<TResult>(
+    context: T,
+    fn: () => TResult
+  ): Promise<Awaited<TResult>> {
+    await new Promise<void>((resolve) => {
+      this.idleWaiters.push(resolve);
+    });
+
+    return await this.run(context, fn);
+  }
+
+  private resolveIdleWaiters(): void {
+    if (this.idleWaiters.length === 0) {
+      return;
+    }
+
+    const waiters = this.idleWaiters.splice(0);
+    for (const resolve of waiters) {
+      resolve();
+    }
   }
 }
 
