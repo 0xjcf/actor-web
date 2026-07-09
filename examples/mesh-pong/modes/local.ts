@@ -1,12 +1,19 @@
 import type { ActorToolRegistry } from '@actor-web/runtime/browser';
 import { startRuntime } from '@actor-web/runtime/browser';
+import { createPongClientNodeAddress } from '../pong-contract';
 import { createPongControllerTools } from '../pong-controller';
-import { pong } from '../pong-topology';
+import { createPongTopology } from '../pong-topology';
 
 export interface MeshPongLocalOptions {
+  readonly sessionId?: string;
   readonly tools?: ActorToolRegistry;
 }
 
 export async function startMeshPongLocal(options: MeshPongLocalOptions = {}) {
-  return startRuntime(pong, { tools: createPongControllerTools(options.tools) });
+  const topology = createPongTopology({
+    clientNodeAddress: options.sessionId
+      ? createPongClientNodeAddress(options.sessionId)
+      : undefined,
+  });
+  return startRuntime(topology, { tools: createPongControllerTools(options.tools) });
 }

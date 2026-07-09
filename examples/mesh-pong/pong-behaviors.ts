@@ -32,6 +32,7 @@ import {
   type PongPlayerSessionState,
   type PongScoreState,
   type PongSide,
+  pauseMatchLifecycle,
   removeLobbySession,
   removeMatchSession,
   restartMatchLifecycle,
@@ -345,30 +346,32 @@ export const matchCoordinatorBehavior = defineBehavior<PongMatchCommand, PongMat
             message.expectedGeneration,
             message.mode
           )
-        : message.type === 'RESTART_MATCH'
-          ? restartMatchLifecycle(context, message.requestSessionId, message.expectedGeneration)
-          : message.type === 'REMATCH'
-            ? restartMatchLifecycle(
-                context,
-                message.requestSessionId,
-                message.expectedGeneration,
-                message.mode
-              )
-            : message.type === 'RETURN_TO_ROOM'
-              ? returnMatchToRoom(context, message.requestSessionId, message.expectedGeneration)
-              : message.type === 'APPLY_CONTROLLER_INPUT'
-                ? applyMatchControllerInput(
-                    context,
-                    message.requestSessionId,
-                    message.expectedGeneration,
-                    message.input
-                  )
-                : tickMatch(
-                    context,
-                    message.requestSessionId,
-                    message.expectedGeneration,
-                    message.count
-                  );
+        : message.type === 'PAUSE_MATCH'
+          ? pauseMatchLifecycle(context, message.requestSessionId, message.expectedGeneration)
+          : message.type === 'RESTART_MATCH'
+            ? restartMatchLifecycle(context, message.requestSessionId, message.expectedGeneration)
+            : message.type === 'REMATCH'
+              ? restartMatchLifecycle(
+                  context,
+                  message.requestSessionId,
+                  message.expectedGeneration,
+                  message.mode
+                )
+              : message.type === 'RETURN_TO_ROOM'
+                ? returnMatchToRoom(context, message.requestSessionId, message.expectedGeneration)
+                : message.type === 'APPLY_CONTROLLER_INPUT'
+                  ? applyMatchControllerInput(
+                      context,
+                      message.requestSessionId,
+                      message.expectedGeneration,
+                      message.input
+                    )
+                  : tickMatch(
+                      context,
+                      message.requestSessionId,
+                      message.expectedGeneration,
+                      message.count
+                    );
 
     return result.ok
       ? {

@@ -16,7 +16,16 @@ export const PONG_NODE_ADDRESSES = {
   server: 'pong-server',
   a: 'pong-a',
   b: 'pong-b',
+  localClient: 'pong-client-local',
 } as const;
+
+export function createPongClientNodeAddress(sessionId: string): string {
+  const safeSessionId = sessionId
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `pong-client-${safeSessionId || 'anonymous'}`;
+}
 
 export type PongSide = 'left' | 'right';
 export type PongTransportMode = 'local' | 'broadcast' | 'websocket' | 'mesh';
@@ -322,6 +331,11 @@ export type PongMatchCommand =
       readonly requestSessionId: string;
       readonly expectedGeneration: number;
       readonly mode: PongMatchMode;
+    }
+  | {
+      readonly type: 'PAUSE_MATCH';
+      readonly requestSessionId: string;
+      readonly expectedGeneration: number;
     }
   | {
       readonly type: 'RESTART_MATCH';
@@ -762,6 +776,7 @@ function updateAuthorityFromSessions(match: PongMatchState): PongMatchState {
   }
   return {
     ...match,
+    generation: match.generation + 1,
     authoritySessionId: null,
     phase: 'paused',
   };
@@ -989,6 +1004,37 @@ export function restartMatchLifecycle(
       authoritySessionId: requestSessionId,
       tick: 0,
       snapshot: resetSnapshot(DEFAULT_PONG_SEED + match.generation + 1),
+    },
+  };
+}
+
+export function pauseMatchLifecycle(
+  match: PongMatchState,
+  requestSessionId: string,
+  expectedGeneration: number
+): PongMatchCommandResult {
+  const generationFailure = hasExpectedGeneration(match, expectedGeneration);
+  if (generationFailure) {
+    return generationFailure;
+  }
+  const authorityFailure = requireAuthority(match, requestSessionId);
+  if (authorityFailure) {
+    return authorityFailure;
+  }
+  const runningFailure = requireRunningMatch(match);
+  if (runningFailure) {
+    return runningFailure;
+  }
+
+  return {
+    ok: true,
+    match: {
+      ...match,
+      generation: match.generation + 1,
+      phase: 'paused',
+      authoritySessionId: null,
+      tick: match.tick,
+      snapshot: match.snapshot,
     },
   };
 }
