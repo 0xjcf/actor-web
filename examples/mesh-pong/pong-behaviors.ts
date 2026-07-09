@@ -320,58 +320,52 @@ export const matchCoordinatorBehavior = defineBehavior<PongMatchCommand, PongMat
       return { reply: context };
     }
 
-    if (message.type === 'SYNC_SESSION') {
-      const match = syncMatchSession(context, message.session);
-      return {
-        context: match,
-        reply: match,
-        emit: [{ type: 'MATCH_CHANGED' as const, match }],
-      };
-    }
-
-    if (message.type === 'REMOVE_SESSION') {
-      const match = removeMatchSession(context, message.sessionId);
-      return {
-        context: match,
-        reply: match,
-        emit: [{ type: 'MATCH_CHANGED' as const, match }],
-      };
-    }
-
     const result =
-      message.type === 'START_MATCH'
-        ? startMatchLifecycle(
-            context,
-            message.requestSessionId,
-            message.expectedGeneration,
-            message.mode
-          )
-        : message.type === 'PAUSE_MATCH'
-          ? pauseMatchLifecycle(context, message.requestSessionId, message.expectedGeneration)
-          : message.type === 'RESTART_MATCH'
-            ? restartMatchLifecycle(context, message.requestSessionId, message.expectedGeneration)
-            : message.type === 'REMATCH'
-              ? restartMatchLifecycle(
-                  context,
-                  message.requestSessionId,
-                  message.expectedGeneration,
-                  message.mode
-                )
-              : message.type === 'RETURN_TO_ROOM'
-                ? returnMatchToRoom(context, message.requestSessionId, message.expectedGeneration)
-                : message.type === 'APPLY_CONTROLLER_INPUT'
-                  ? applyMatchControllerInput(
+      message.type === 'SYNC_SESSION'
+        ? syncMatchSession(context, message.requestSessionId, message.session)
+        : message.type === 'REMOVE_SESSION'
+          ? removeMatchSession(context, message.requestSessionId, message.sessionId)
+          : message.type === 'START_MATCH'
+            ? startMatchLifecycle(
+                context,
+                message.requestSessionId,
+                message.expectedGeneration,
+                message.mode
+              )
+            : message.type === 'PAUSE_MATCH'
+              ? pauseMatchLifecycle(context, message.requestSessionId, message.expectedGeneration)
+              : message.type === 'RESTART_MATCH'
+                ? restartMatchLifecycle(
+                    context,
+                    message.requestSessionId,
+                    message.expectedGeneration
+                  )
+                : message.type === 'REMATCH'
+                  ? restartMatchLifecycle(
                       context,
                       message.requestSessionId,
                       message.expectedGeneration,
-                      message.input
+                      message.mode
                     )
-                  : tickMatch(
-                      context,
-                      message.requestSessionId,
-                      message.expectedGeneration,
-                      message.count
-                    );
+                  : message.type === 'RETURN_TO_ROOM'
+                    ? returnMatchToRoom(
+                        context,
+                        message.requestSessionId,
+                        message.expectedGeneration
+                      )
+                    : message.type === 'APPLY_CONTROLLER_INPUT'
+                      ? applyMatchControllerInput(
+                          context,
+                          message.requestSessionId,
+                          message.expectedGeneration,
+                          message.input
+                        )
+                      : tickMatch(
+                          context,
+                          message.requestSessionId,
+                          message.expectedGeneration,
+                          message.count
+                        );
 
     return result.ok
       ? {

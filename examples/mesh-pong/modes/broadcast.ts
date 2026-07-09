@@ -31,6 +31,7 @@ export interface MeshPongBroadcastOptions {
   readonly broadcastChannelFactory?: (channelName: string) => BroadcastChannelLike;
   readonly tools?: ActorToolRegistry;
   readonly webLocks?: MeshPongWebLocks;
+  readonly startNode?: typeof startActorWebNode;
 }
 
 export interface StartedMeshPongBroadcast {
@@ -115,30 +116,31 @@ export async function startMeshPongBroadcastHost(
   const clientNodeAddress = createPongClientNodeAddress(sessionId);
   const topology = createPongTopology({ clientNodeAddress });
   const startedNodes: StartedPongNode[] = [];
+  const startNode = options.startNode ?? startActorWebNode;
 
   try {
-    const server = await startActorWebNode(topology, {
+    const server = await startNode(topology, {
       node: 'server',
       transport: createBroadcastTransport(PONG_NODE_ADDRESSES.server, channelName, options),
       tools: createPongControllerTools(options.tools),
     });
     startedNodes.push(server);
 
-    const a = await startActorWebNode(topology, {
+    const a = await startNode(topology, {
       node: 'a',
       transport: createBroadcastTransport(PONG_NODE_ADDRESSES.a, channelName, options),
       tools: createPongControllerTools(options.tools),
     });
     startedNodes.push(a);
 
-    const b = await startActorWebNode(topology, {
+    const b = await startNode(topology, {
       node: 'b',
       transport: createBroadcastTransport(PONG_NODE_ADDRESSES.b, channelName, options),
       tools: createPongControllerTools(options.tools),
     });
     startedNodes.push(b);
 
-    const client = await startActorWebNode(topology, {
+    const client = await startNode(topology, {
       node: 'client',
       transport: createBroadcastTransport(clientNodeAddress, channelName, options),
     });
@@ -175,24 +177,34 @@ export async function startMeshPongBroadcastClient(
   const channelName = options.channelName ?? 'mesh-pong';
   const clientNodeAddress = createPongClientNodeAddress(sessionId);
   const topology = createPongTopology({ clientNodeAddress });
-  const client = await startActorWebNode(topology, {
-    node: 'client',
-    transport: createBroadcastTransport(clientNodeAddress, channelName, options),
-  });
+  const startNode = options.startNode ?? startActorWebNode;
+  let client: StartedPongNode | null = null;
 
-  await client.system.join([PONG_NODE_ADDRESSES.server]);
-  const runtime: StartedMeshPongBroadcast = {
-    mode: 'broadcast',
-    hostAcquired: false,
-    channelName,
-    clientNodeAddress,
-    client,
-    lookupNode: client,
-    flush: () => flushNodes([client]),
-    stop: () => stopNodes([client]),
-  };
-  await runtime.flush();
-  return runtime;
+  try {
+    client = await startNode(topology, {
+      node: 'client',
+      transport: createBroadcastTransport(clientNodeAddress, channelName, options),
+    });
+
+    await client.system.join([PONG_NODE_ADDRESSES.server]);
+    const runtime: StartedMeshPongBroadcast = {
+      mode: 'broadcast',
+      hostAcquired: false,
+      channelName,
+      clientNodeAddress,
+      client,
+      lookupNode: client,
+      flush: () => flushNodes([client as StartedPongNode]),
+      stop: () => stopNodes([client as StartedPongNode]),
+    };
+    await runtime.flush();
+    return runtime;
+  } catch (error) {
+    if (client) {
+      await stopNodes([client]);
+    }
+    throw error;
+  }
 }
 
 export async function startMeshPongBroadcast(

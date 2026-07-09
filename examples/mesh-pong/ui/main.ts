@@ -34,6 +34,7 @@ import type {
   PongSnapshot,
 } from '../pong-contract';
 import {
+  createInitialPlayerSession,
   createMergedControllerAim,
   createReflexControllerAim,
   createSyntheticControllerSession,
@@ -251,17 +252,40 @@ export function createMeshPongClock(source = defaultClockSource()): MeshPongCloc
 export async function withMeshPongStartupTimeout<T>(
   operation: Promise<T>,
   label: string,
-  timeoutMs = MESH_PONG_STARTUP_TIMEOUT_MS
+  timeoutMs = MESH_PONG_STARTUP_TIMEOUT_MS,
+  disposeLateResult?: (value: T) => Promise<void> | void
 ): Promise<T> {
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  let timedOut = false;
+  let disposed = false;
+  const observedOperation = operation.then(
+    async (value) => {
+      if (timedOut && disposeLateResult && !disposed) {
+        disposed = true;
+        try {
+          await disposeLateResult(value);
+        } catch {
+          // Late cleanup is best-effort after the caller already received the timeout fact.
+        }
+      }
+      return value;
+    },
+    (error: unknown) => {
+      if (timedOut) {
+        return undefined as T;
+      }
+      throw error;
+    }
+  );
   const timeout = new Promise<T>((_, reject) => {
     timeoutHandle = setTimeout(() => {
+      timedOut = true;
       reject(new Error(`Timed out starting Mesh Pong ${label}.`));
     }, timeoutMs);
   });
 
   try {
-    return await Promise.race([operation, timeout]);
+    return await Promise.race([observedOperation, timeout]);
   } finally {
     if (timeoutHandle !== null) {
       clearTimeout(timeoutHandle);
@@ -1154,19 +1178,32 @@ async function syncMatchForMode(
   mode: PongShellMatchMode,
   shouldContinue: () => boolean = () => true
 ): Promise<boolean> {
-  if (playerSessionState) {
-    await nextRefs.matchCoordinator.send({ type: 'SYNC_SESSION', session: playerSessionState });
+  const syncSession = async (session: PongPlayerSessionState): Promise<boolean> => {
+    const result = await nextRefs.matchCoordinator.ask<PongMatchCommandResult>({
+      type: 'SYNC_SESSION',
+      requestSessionId: session.sessionId,
+      session,
+    });
     if (!shouldContinue()) {
+      return false;
+    }
+    if (!result.ok) {
+      setStatus(formatMatchCommandFailure(result));
+      return false;
+    }
+    matchState = result.match;
+    return true;
+  };
+
+  if (playerSessionState) {
+    if (!(await syncSession(playerSessionState))) {
       return false;
     }
   }
   for (const side of ['left', 'right'] as const) {
     if (usesSyntheticControllerSlot(mode.controllers[side])) {
-      await nextRefs.matchCoordinator.send({
-        type: 'SYNC_SESSION',
-        session: createSyntheticControllerSession(side),
-      });
-      if (!shouldContinue()) {
+      const session = createSyntheticControllerSession(side);
+      if (!(await syncSession(session))) {
         return false;
       }
     }
@@ -1179,34 +1216,48 @@ async function syncCurrentSession(
   nextRuntime: BrowserRuntime,
   nextRefs: RuntimeRefs,
   options: { readonly shouldApply?: () => boolean } = {}
-): Promise<void> {
+): Promise<boolean> {
   const shouldApply = options.shouldApply ?? (() => true);
   const session = await nextRefs.playerSession.ask<PongPlayerSessionState>({ type: 'GET_SESSION' });
   if (!shouldApply()) {
-    return;
+    return false;
   }
-  playerSessionState = session;
-  await nextRefs.matchCoordinator.send({ type: 'SYNC_SESSION', session });
+  const result = await nextRefs.matchCoordinator.ask<PongMatchCommandResult>({
+    type: 'SYNC_SESSION',
+    requestSessionId: session.sessionId,
+    session,
+  });
   await flushRuntime(nextRuntime);
   if (!shouldApply()) {
-    return;
+    return false;
   }
   const nextMatch = await currentMatchState(nextRefs);
   if (!shouldApply()) {
-    return;
+    return false;
   }
   matchState = nextMatch;
   renderLobby(nextMatch);
+  if (!result.ok) {
+    const projectedSession =
+      nextMatch.sessions.find((candidate) => candidate.sessionId === session.sessionId) ??
+      createInitialPlayerSession(session.sessionId);
+    playerSessionState = projectedSession;
+    renderPlayerSession(projectedSession);
+    setStatus(formatMatchCommandFailure(result));
+    return false;
+  }
+  playerSessionState = session;
   renderPlayerSession(session);
+  return true;
 }
 
 async function hydrateCurrentSession(
   nextRuntime: BrowserRuntime,
   nextRefs: RuntimeRefs,
   options: { readonly shouldApply?: () => boolean } = {}
-): Promise<void> {
+): Promise<boolean> {
   const shouldApply = options.shouldApply ?? (() => true);
-  await syncCurrentSession(nextRuntime, nextRefs, { shouldApply });
+  return syncCurrentSession(nextRuntime, nextRefs, { shouldApply });
 }
 
 function renderParityProof(mode: BrowserMode): void {
@@ -1412,6 +1463,16 @@ async function startRuntimeForMode(
   });
 }
 
+async function disposeLateRuntimeStart(
+  startedRuntime: BrowserRuntime | MeshPongBrowserWebSocketStartResult
+): Promise<void> {
+  if (isBrowserRuntimeStartFailure(startedRuntime)) {
+    return;
+  }
+  const lateRuntime = 'ok' in startedRuntime ? startedRuntime.runtime : startedRuntime;
+  await lateRuntime.stop().catch(() => undefined);
+}
+
 function ensureProjectionLoop(): void {
   if (!turnStepper || !runtime || !refs || loopHandle !== null) {
     return;
@@ -1464,7 +1525,9 @@ async function switchMode(mode: BrowserMode): Promise<void> {
   try {
     const startedRuntime = await withMeshPongStartupTimeout(
       startRuntimeForMode(mode),
-      `${mode} runtime`
+      `${mode} runtime`,
+      MESH_PONG_STARTUP_TIMEOUT_MS,
+      disposeLateRuntimeStart
     );
     if (isBrowserRuntimeStartFailure(startedRuntime)) {
       if (switchGeneration === generation) {
@@ -1481,12 +1544,16 @@ async function switchMode(mode: BrowserMode): Promise<void> {
       resetRuntimeGame(nextRuntime, nextRefs),
       `${mode} game reset`
     );
-    await withMeshPongStartupTimeout(
+    const hydrated = await withMeshPongStartupTimeout(
       hydrateCurrentSession(nextRuntime, nextRefs, {
         shouldApply: () => switchGeneration === generation,
       }),
       `${mode} session hydrate`
     );
+    if (!hydrated) {
+      await nextRuntime.stop().catch(() => undefined);
+      return;
+    }
 
     if (switchGeneration !== generation) {
       await nextRuntime.stop().catch(() => undefined);
@@ -2184,10 +2251,10 @@ async function claimSide(side: 'left' | 'right'): Promise<void> {
   if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
     return;
   }
-  await syncCurrentSession(currentRuntime, currentRefs, {
+  const synced = await syncCurrentSession(currentRuntime, currentRefs, {
     shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs),
   });
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!synced || !isCurrentRuntimeContext(currentRuntime, currentRefs)) {
     return;
   }
   setStatus('claimed');
@@ -2208,10 +2275,10 @@ async function markReady(): Promise<void> {
   if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
     return;
   }
-  await syncCurrentSession(currentRuntime, currentRefs, {
+  const synced = await syncCurrentSession(currentRuntime, currentRefs, {
     shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs),
   });
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!synced || !isCurrentRuntimeContext(currentRuntime, currentRefs)) {
     return;
   }
   setStatus('ready');

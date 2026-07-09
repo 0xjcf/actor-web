@@ -94,6 +94,7 @@ export type MeshPongBrowserWebSocketStartResult =
 export interface StartMeshPongBrowserWebSocketOptions {
   readonly sessionId: string;
   readonly helper?: MeshPongWebSocketDevHelperClient;
+  readonly startClientNode?: typeof startActorWebNode;
 }
 
 const MESH_PONG_WEBSOCKET_HELPER_PATH = '/__mesh-pong/websocket';
@@ -362,9 +363,11 @@ export async function startMeshPongBrowserWebSocketClient(
 
   const clientNodeAddress = createPongClientNodeAddress(options.sessionId);
   const topology = createPongTopology({ clientNodeAddress });
+  let client: StartedPongNode | null = null;
   try {
     await ensureGlobalWebSocket();
-    const client = await startActorWebNode(topology as never, {
+    const startClientNode = options.startClientNode ?? startActorWebNode;
+    client = await startClientNode(topology as never, {
       node: 'client',
       peers: {
         server: helperStatus.transportUrl,
@@ -402,6 +405,9 @@ export async function startMeshPongBrowserWebSocketClient(
     await runtime.flush();
     return { ok: true, runtime };
   } catch (error) {
+    if (client) {
+      await stopBrowserClient({ client });
+    }
     return {
       ok: false,
       state: 'transport-failed',

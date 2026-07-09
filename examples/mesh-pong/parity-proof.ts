@@ -34,28 +34,28 @@ export const MESH_PONG_MODE_PARITY_PROOF: Record<
     startupFile: 'modes/local.ts',
     startupCall: 'startRuntime(pong)',
     transportBoundary: 'in-process runtime',
-    nodeLayout: 'server / a / b',
+    nodeLayout: 'server / a / b / client in one runtime',
   },
   broadcast: {
     mode: 'broadcast',
     startupFile: 'modes/broadcast.ts',
     startupCall: 'startActorWebNode(pong, { transport })',
     transportBoundary: 'BroadcastChannel transport',
-    nodeLayout: 'server / a / b',
+    nodeLayout: 'host server / a / b / client; joiners client only',
   },
   mesh: {
     mode: 'mesh',
     startupFile: 'modes/mesh.ts',
     startupCall: 'startMeshPongBroadcast(...) + createLabsMesh(...)',
     transportBoundary: 'labs-mesh overlay on BroadcastChannel peers',
-    nodeLayout: 'server / a / b',
+    nodeLayout: 'host server / a / b / client; joiners client only; local overlays',
   },
   websocket: {
     mode: 'websocket',
     startupFile: 'modes/websocket.ts',
     startupCall: 'startMeshPongBrowserWebSocket(...)',
     transportBoundary: 'browser WebSocket peers connected outbound-only to a Node server helper',
-    nodeLayout: 'server / a / b',
+    nodeLayout: 'helper host server / a / b / client; browser tabs client only',
   },
 };
 

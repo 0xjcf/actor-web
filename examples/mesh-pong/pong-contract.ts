@@ -258,7 +258,9 @@ export type PongMatchFailureReason =
   | 'match-not-running'
   | 'missing-controller'
   | 'not-authority'
+  | 'not-session-owner'
   | 'not-seated-player'
+  | 'session-mutation-not-allowed'
   | 'stale-generation';
 
 export type PongMatchCommandResult =
@@ -287,6 +289,19 @@ export type PongMatchCommandResult =
       readonly reason: 'not-authority';
       readonly requestSessionId: string;
       readonly authoritySessionId: string | null;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'not-session-owner';
+      readonly requestSessionId: string;
+      readonly sessionId: string;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'session-mutation-not-allowed';
+      readonly requestSessionId: string;
+      readonly sessionId: string;
+      readonly phase: Exclude<PongMatchPhase, 'lobby'>;
     }
   | {
       readonly ok: false;
@@ -324,8 +339,16 @@ export type PongLobbyCommand =
 
 export type PongMatchCommand =
   | { readonly type: 'GET_MATCH' }
-  | { readonly type: 'SYNC_SESSION'; readonly session: PongPlayerSessionState }
-  | { readonly type: 'REMOVE_SESSION'; readonly sessionId: string }
+  | {
+      readonly type: 'SYNC_SESSION';
+      readonly requestSessionId: string;
+      readonly session: PongPlayerSessionState;
+    }
+  | {
+      readonly type: 'REMOVE_SESSION';
+      readonly requestSessionId: string;
+      readonly sessionId: string;
+    }
   | {
       readonly type: 'START_MATCH';
       readonly requestSessionId: string;
@@ -800,18 +823,46 @@ export function syncLobbySession(
 
 export function syncMatchSession(
   match: PongMatchState,
+  requestSessionId: string,
   session: PongPlayerSessionState
-): PongMatchState {
+): PongMatchCommandResult {
+  if (requestSessionId !== session.sessionId) {
+    return {
+      ok: false,
+      reason: 'not-session-owner',
+      requestSessionId,
+      sessionId: session.sessionId,
+    };
+  }
+
+  const existing = match.sessions.find((candidate) => candidate.sessionId === session.sessionId);
+  if (
+    match.phase !== 'lobby' &&
+    ((!existing && session.side !== null) ||
+      (existing && (existing.side !== session.side || existing.controller !== session.controller)))
+  ) {
+    return {
+      ok: false,
+      reason: 'session-mutation-not-allowed',
+      requestSessionId,
+      sessionId: session.sessionId,
+      phase: match.phase,
+    };
+  }
+
   const sessions = [
     ...match.sessions.filter((candidate) => candidate.sessionId !== session.sessionId),
     session,
   ];
   const controllers = resolveControllerSlots(sessions);
-  return updateAuthorityFromSessions({
-    ...match,
-    sessions,
-    controllers,
-  });
+  return {
+    ok: true,
+    match: updateAuthorityFromSessions({
+      ...match,
+      sessions,
+      controllers,
+    }),
+  };
 }
 
 export function syncLobbySessionsFromStorage(
@@ -846,14 +897,30 @@ export function removeLobbySession(lobby: PongLobbyState, sessionId: string): Po
   };
 }
 
-export function removeMatchSession(match: PongMatchState, sessionId: string): PongMatchState {
+export function removeMatchSession(
+  match: PongMatchState,
+  requestSessionId: string,
+  sessionId: string
+): PongMatchCommandResult {
+  if (requestSessionId !== sessionId) {
+    return {
+      ok: false,
+      reason: 'not-session-owner',
+      requestSessionId,
+      sessionId,
+    };
+  }
+
   const sessions = match.sessions.filter((session) => session.sessionId !== sessionId);
   const controllers = resolveControllerSlots(sessions);
-  return updateAuthorityFromSessions({
-    ...match,
-    sessions,
-    controllers,
-  });
+  return {
+    ok: true,
+    match: updateAuthorityFromSessions({
+      ...match,
+      sessions,
+      controllers,
+    }),
+  };
 }
 
 export function startLobbyMatch(
