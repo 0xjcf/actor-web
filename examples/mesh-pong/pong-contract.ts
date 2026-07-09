@@ -112,11 +112,30 @@ export interface PongControllerIntent {
   readonly amount: number;
 }
 
+export interface PongPlannerStrategy {
+  readonly side: PongSide;
+  readonly targetY: number;
+  readonly biasY: number;
+  readonly maxStep: number;
+  readonly label: string;
+  readonly facts: readonly string[];
+}
+
+export interface PongControllerAim {
+  readonly side: PongSide;
+  readonly targetY: number;
+  readonly interceptY: number | null;
+  readonly reason: 'center' | 'intercept' | 'planner-target';
+  readonly strategyLabel: string | null;
+}
+
 export type PongControllerResult =
-  | ({
+  | {
       readonly ok: true;
       readonly provider: 'llm';
-    } & PongControllerIntent)
+      readonly side: PongSide;
+      readonly strategy: PongPlannerStrategy;
+    }
   | {
       readonly ok: false;
       readonly side: PongSide;
@@ -137,6 +156,8 @@ export type ControllerCommand =
   | { readonly type: 'RUN_CONTROLLER'; readonly snapshot: PongSnapshot };
 
 export type PongControllerType = 'human' | 'mlx';
+export type PongControllerMode = 'human' | 'reflex' | 'planner' | 'hybrid';
+export type PongControllerModeCompat = PongControllerMode | PongControllerType;
 export type PongPlayerCount = 1 | 2;
 
 export interface PongMatchMode {
@@ -144,10 +165,15 @@ export interface PongMatchMode {
   readonly controllers: Record<PongSide, PongControllerType>;
 }
 
+export interface PongShellMatchMode {
+  readonly playerCount: PongPlayerCount;
+  readonly controllers: Record<PongSide, PongControllerMode>;
+}
+
 export interface PongMatchControllerAuthority {
   readonly browserSessionId: string;
   readonly matchOwnerSessionId: string | null;
-  readonly mode: PongMatchMode | null;
+  readonly mode: PongShellMatchMode | null;
   readonly side: PongSide;
 }
 
@@ -332,23 +358,176 @@ export function createInitialLobby(): PongLobbyState {
 export function shouldLaunchMlxControllerForSide(authority: PongMatchControllerAuthority): boolean {
   return (
     authority.matchOwnerSessionId === authority.browserSessionId &&
-    authority.mode?.controllers[authority.side] === 'mlx'
+    authority.mode !== null &&
+    usesPlannerController(authority.mode.controllers[authority.side])
   );
 }
 
-export function createMlxSessionId(side: PongSide): string {
-  return `mlx-${side}`;
+export function shouldLaunchPlannerControllerForSide(
+  authority: PongMatchControllerAuthority
+): boolean {
+  return shouldLaunchMlxControllerForSide(authority);
 }
 
-export function createSyntheticMlxControllerInput(
-  result: Extract<PongControllerResult, { readonly ok: true }>
+export function createPlannerSessionId(side: PongSide): string {
+  return `planner-${side}`;
+}
+
+export function createMlxSessionId(side: PongSide): string {
+  return createPlannerSessionId(side);
+}
+
+export function createSyntheticControllerSession(side: PongSide): PongPlayerSessionState {
+  return {
+    sessionId: createPlannerSessionId(side),
+    controller: 'mlx',
+    side,
+    ready: true,
+  };
+}
+
+export function normalizePongControllerType(
+  value: PongControllerModeCompat | string | undefined
+): PongControllerMode {
+  switch (value) {
+    case 'reflex':
+    case 'planner':
+    case 'hybrid':
+    case 'human':
+      return value;
+    case 'mlx':
+      return 'planner';
+    default:
+      return 'human';
+  }
+}
+
+export function toLegacyPongControllerType(value: PongControllerMode): PongControllerType {
+  return usesSyntheticControllerSlot(value) ? 'mlx' : 'human';
+}
+
+export function usesPlannerController(value: PongControllerModeCompat): boolean {
+  const normalized = normalizePongControllerType(value);
+  return normalized === 'planner' || normalized === 'hybrid';
+}
+
+export function usesSyntheticControllerSlot(value: PongControllerModeCompat): boolean {
+  return normalizePongControllerType(value) !== 'human';
+}
+
+export function usesReflexController(value: PongControllerModeCompat): boolean {
+  const normalized = normalizePongControllerType(value);
+  return normalized === 'reflex' || normalized === 'hybrid';
+}
+
+export function createPlannerStrategy(
+  side: PongSide,
+  partial: Partial<Omit<PongPlannerStrategy, 'side'>> = {}
+): PongPlannerStrategy {
+  return {
+    side,
+    targetY: clampPaddleY(partial.targetY ?? PONG_FIELD.height / 2 - PONG_FIELD.paddleHeight / 2),
+    biasY: partial.biasY ?? 0,
+    maxStep: Math.max(
+      1,
+      Math.min(PONG_FIELD.paddleStep, Math.trunc(partial.maxStep ?? PONG_FIELD.paddleStep))
+    ),
+    label: partial.label ?? 'intercept-window',
+    facts: partial.facts ?? [],
+  };
+}
+
+function projectBallY(ball: PongBallState, steps: number): number {
+  let y = ball.y;
+  let vy = ball.vy;
+  for (let step = 0; step < steps; step += 1) {
+    y += vy;
+    if (y - ball.radius <= 0 || y + ball.radius >= PONG_FIELD.height) {
+      y = Math.max(ball.radius, Math.min(PONG_FIELD.height - ball.radius, y));
+      vy = -vy;
+    }
+  }
+  return y;
+}
+
+function resolveInterceptY(snapshot: PongSnapshot, side: PongSide): number | null {
+  const ball = snapshot.ball;
+  const targetX =
+    side === 'left'
+      ? PONG_FIELD.paddleMargin + PONG_FIELD.paddleWidth + ball.radius
+      : PONG_FIELD.width - PONG_FIELD.paddleMargin - PONG_FIELD.paddleWidth - ball.radius;
+  const movingTowardSide = side === 'left' ? ball.vx < 0 : ball.vx > 0;
+  if (!movingTowardSide) {
+    return null;
+  }
+
+  const distance = Math.abs(targetX - ball.x);
+  const steps = Math.max(0, Math.ceil(distance / Math.max(1, Math.abs(ball.vx))));
+  return clampPaddleY(projectBallY(ball, steps) - PONG_FIELD.paddleHeight / 2);
+}
+
+export function createReflexControllerAim(
+  snapshot: PongSnapshot,
+  side: PongSide
+): PongControllerAim {
+  const interceptY = resolveInterceptY(snapshot, side);
+  const centeredY = clampPaddleY(PONG_FIELD.height / 2 - PONG_FIELD.paddleHeight / 2);
+  return {
+    side,
+    targetY: interceptY ?? centeredY,
+    interceptY,
+    reason: interceptY === null ? 'center' : 'intercept',
+    strategyLabel: null,
+  };
+}
+
+export function createMergedControllerAim(
+  snapshot: PongSnapshot,
+  side: PongSide,
+  strategy: PongPlannerStrategy | null
+): PongControllerAim {
+  const reflexAim = createReflexControllerAim(snapshot, side);
+  if (!strategy) {
+    return reflexAim;
+  }
+  return {
+    side,
+    interceptY: reflexAim.interceptY,
+    targetY: clampPaddleY(strategy.targetY + strategy.biasY),
+    reason: 'planner-target',
+    strategyLabel: strategy.label,
+  };
+}
+
+export function resolveControllerIntentForAim(
+  paddle: PongPaddleState,
+  aim: PongControllerAim,
+  maxStep: number = PONG_FIELD.paddleStep
+): PongControllerIntent | null {
+  const paddleCenter = paddle.y + paddle.height / 2;
+  const targetCenter = aim.targetY + paddle.height / 2;
+  const delta = targetCenter - paddleCenter;
+  if (Math.abs(delta) < 1) {
+    return null;
+  }
+  const amount = Math.max(1, Math.min(maxStep, Math.trunc(Math.abs(delta))));
+  return {
+    side: paddle.side,
+    direction: delta < 0 ? 'up' : 'down',
+    amount,
+  };
+}
+
+export function createSyntheticPlannerControllerInput(
+  side: PongSide,
+  intent: PongControllerIntent
 ): Extract<PongControllerInputResult, { readonly ok: true }> {
   return {
     ok: true,
-    sessionId: createMlxSessionId(result.side),
-    side: result.side,
-    direction: result.direction,
-    amount: result.amount,
+    sessionId: createPlannerSessionId(side),
+    side,
+    direction: intent.direction,
+    amount: intent.amount,
   };
 }
 
@@ -400,12 +579,7 @@ export function syncLobbySessionsFromStorage(
       if (lobby.mode.controllers[side] !== 'mlx') {
         continue;
       }
-      sessions.push({
-        sessionId: createMlxSessionId(side),
-        controller: 'mlx',
-        side,
-        ready: true,
-      });
+      sessions.push(createSyntheticControllerSession(side));
     }
   }
 
