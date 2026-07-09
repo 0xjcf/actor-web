@@ -1,12 +1,15 @@
 # Mesh Pong Lobby Room Table and Match UI workflow polish
 
 ## Source
+
 Created with `fas create-task` on 2026-07-09.
 
 ## Problem
+
 Epic: labs-mesh-runtime-substrate. Give Mesh Pong the proper online-game UX pass after remote rooms and spectator semantics exist. Split the current single-screen control surface into clear lifecycle workflows: Lobby for transport and room creation/joining, Room/Table for seats, players, MLX slots, spectators, readiness and chat/events, and Match for the game surface, score, player controls, spectator view, telemetry, replay/proof, and return/rematch actions. Use online poker/table-game patterns for responsibilities and avoid dumping every diagnostic on the playfield. Validate desktop, tablet, and mobile breakpoints with manual browser evidence.
 
 ## Acceptance criteria
+
 - The UI has explicit Lobby, Room/Table, and Match workflow states or screens, with controls scoped to each lifecycle responsibility.
 - Lobby owns transport selection, create room, join room, room code or invite URL, connection status, and demo-mode entry points.
 - Room/Table owns seat claim/release, player type selection, MLX slot selection, ready state, spectator list, host/start authority, chat or event log, and room lifecycle status.
@@ -24,12 +27,15 @@ Epic: labs-mesh-runtime-substrate. Give Mesh Pong the proper online-game UX pass
 - The task is queued in `.fas/queue/tasks.json` for the runtime.
 
 ## Proposed solution
+
 - Use the supplied problem context, acceptance criteria, and affected-file hints to draft the concrete implementation approach during planning.
 
 ## Alternatives considered
+
 - None recorded at task creation. Add rejected approaches during planning if scope tradeoffs appear.
 
 ## Affected files
+
 - examples/mesh-pong/README.md
 - examples/mesh-pong/ui/index.html
 - examples/mesh-pong/ui/main.ts
@@ -37,28 +43,35 @@ Epic: labs-mesh-runtime-substrate. Give Mesh Pong the proper online-game UX pass
 - examples/mesh-pong/mesh-pong.test.ts
 
 ## Scope Amendments
+
 - None.
 
 ## Implementation plan
+
 - Convert the supplied context into a scoped implementation plan before editing.
 - Refresh affected-file scope before implementation if the generated hints are incomplete.
 
 ## Verification plan
+
 - Run `fas validate-task` for the inner-loop verification gate.
 - Run `.fas/scripts/verify.sh --full` at the final release-quality gate when tracked files change.
 
 ## Risks
+
 - Validate generated scope, acceptance criteria, and verification evidence before closeout to avoid workflow drift.
 
 ## Dependencies
+
 - Depends on task-1783616720644 Mesh Pong remote rooms and spectator channel model.
 - Blocks task-1781880961715 Post-mesh scoping: membership graduation tier, cross-node supervision boundary, claim gating.
 - Belongs to epic labs-mesh-runtime-substrate as the Mesh Pong online-game workflow and responsive UX polish slice.
 
 ## Open questions
+
 - None captured at task creation.
 
 ## Artifact links
+
 - Planning: `.fas/state/planning.json`
 - Task packet: `.fas/state/task-packet.json`
 - Commit plan: `.fas/state/commit-plan.json`

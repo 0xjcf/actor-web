@@ -185,8 +185,11 @@ export const pong = defineActorWebTopology({
 // local — one process, no transport
 await startMeshPongLocal();
 
-// websocket — loopback nodes for the parity gate
+// websocket loopback — Node listeners on every node for the parity gate
 await startMeshPongWebSocketLoopback();
+
+// websocket browser — browser a/b connect outbound-only to a Node helper listener
+await startMeshPongBrowserWebSocket();
 
 // broadcast-channel — same-origin tabs, no server
 await startMeshPongBroadcast({ channelName: 'pong' });
@@ -249,7 +252,7 @@ The example is two deliverables: a human-facing demo and an automated gate.
    is identical across all three. This is what proves the actors are
    transport-independent; it runs in CI through `pnpm test:examples`.
 2. **UI demo** (`ui/`) — a playable Pong with a transport switcher (local /
-   broadcast / mesh), per-tab player sessions, side claims, readiness,
+   broadcast / mesh / websocket), per-tab player sessions, side claims, readiness,
    `human` / `reflex` / `planner` / `hybrid` controller selection, and an
    explicit start gate. The browser stays the
    observer/control panel: it claims human slots, synthesizes legacy-compatible
@@ -261,9 +264,28 @@ The example is two deliverables: a human-facing demo and an automated gate.
    topology/behavior files, the selected startup module, and the parity-status
    panel so the validation result is visible while switching transports. It
    does not run the CI gate; `mesh-pong.test.ts` remains the runtime-agnostic
-   parity test executed by `pnpm test:examples`. WebSocket loopback is
-   automated in that test because browser WebSocket nodes need an external
-   listener.
+   parity test executed by `pnpm test:examples`.
+
+Transport distinction:
+
+- `local`: one in-process runtime for quick deterministic play.
+- `broadcast`: same-origin tabs on BroadcastChannel with no external listener.
+- `mesh`: labs-mesh overlay on top of the BroadcastChannel demo topology.
+- `websocket` in `mesh-pong.test.ts`: the headless loopback parity gate, where
+  Node listeners run on every node so CI can prove transport parity.
+- `websocket` in the browser UI: a browser-playable mode where browser nodes
+  stay outbound-only and connect to a Node `serveNode` listener started by the
+  local Vite helper. The UI reports `connecting`, `connected/lobby`,
+  `listener-missing`, or `transport-failed` instead of silently falling back.
+
+Capture guidance:
+
+- Use browser-playable WebSocket for local demo/blog/GIF capture when you want
+  a real remote transport in the browser.
+- Keep `startMeshPongWebSocketLoopback()` as the automated parity proof and CI
+  gate; it is not the browser demo path.
+- Production hardening is still follow-up work: the helper is intentionally a
+  local example/dev-server seam, not a packaged runtime surface.
 
 Acceptance:
 

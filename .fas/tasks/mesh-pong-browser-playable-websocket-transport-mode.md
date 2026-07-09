@@ -39,6 +39,7 @@ Epic: labs-mesh-runtime-substrate. Follow-up from the Mesh Pong UI transport sel
 - examples/mesh-pong/README.md
 - examples/mesh-pong/mesh-pong.test.ts
 - examples/mesh-pong/modes/websocket.ts
+- examples/mesh-pong/parity-proof.ts
 - examples/vite.config.ts
 
 ## Scope Amendments
