@@ -41,6 +41,7 @@ export type MeshPongWebSocketHelperSessionStatus =
       readonly state: 'ready';
       readonly transportUrl: string;
       readonly actorAddress: string;
+      readonly matchAddress: string;
     }
   | Extract<MeshPongWebSocketHelperStatus, { readonly state: 'listener-missing' }>
   | Extract<MeshPongWebSocketHelperStatus, { readonly state: 'transport-failed' }>;
@@ -60,6 +61,7 @@ export interface StartedMeshPongBrowserWebSocketRuntime {
   readonly mode: 'websocket';
   readonly transportUrl: string;
   readonly playerSessionAddress: string;
+  readonly matchCoordinatorAddress: string;
   readonly lookupNode: StartedActorWebNode<typeof pong>;
   readonly a: StartedActorWebNode<typeof pong>;
   readonly b: StartedActorWebNode<typeof pong>;
@@ -190,9 +192,10 @@ async function parseSessionStatus(
   }
 
   const actorAddress = asString((candidate as { actorAddress?: unknown }).actorAddress);
-  if (!actorAddress) {
+  const matchAddress = asString((candidate as { matchAddress?: unknown }).matchAddress);
+  if (!actorAddress || !matchAddress) {
     return transportFailedStatus(
-      'Mesh Pong WebSocket helper did not return a player-session address.',
+      'Mesh Pong WebSocket helper did not return a player-session or coordinator address.',
       transportUrl
     );
   }
@@ -201,6 +204,7 @@ async function parseSessionStatus(
     state: 'ready',
     transportUrl,
     actorAddress,
+    matchAddress,
   };
 }
 
@@ -400,6 +404,7 @@ export async function startMeshPongBrowserWebSocket(
       mode: 'websocket',
       transportUrl: sessionStatus.transportUrl,
       playerSessionAddress: sessionStatus.actorAddress,
+      matchCoordinatorAddress: sessionStatus.matchAddress,
       lookupNode: a,
       a,
       b,

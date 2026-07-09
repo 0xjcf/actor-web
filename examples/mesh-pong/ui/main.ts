@@ -32,8 +32,11 @@ import type {
   PongControllerResult,
   PongLobbyCommand,
   PongLobbyState,
+  PongMatchCommand,
+  PongMatchCommandResult,
   PongMatchMode,
-  PongMatchStartResult,
+  PongMatchPhase,
+  PongMatchState,
   PongPaddleState,
   PongPlannerStrategy,
   PongPlayerSessionState,
@@ -48,12 +51,10 @@ import {
   createReflexControllerAim,
   createSyntheticControllerSession,
   createSyntheticPlannerControllerInput,
-  DEFAULT_PONG_SEED,
   normalizePongControllerType,
   PONG_FIELD,
   resolveControllerIntentForAim,
   shouldLaunchPlannerControllerForSide,
-  syncLobbySessionsFromStorage,
   TWO_HUMAN_PONG_MATCH_MODE,
   toLegacyPongControllerType,
   usesPlannerController,
@@ -74,6 +75,7 @@ interface RuntimeRefs {
   readonly ball: ActorRef<PongBallContext, BallCommand>;
   readonly controllerLeft: ActorRef<PongControllerActorState, ControllerCommand>;
   readonly controllerRight: ActorRef<PongControllerActorState, ControllerCommand>;
+  readonly matchCoordinator: ActorRef<PongMatchState, PongMatchCommand>;
   readonly score: ActorRef<PongScoreState, ScoreCommand>;
   readonly lobby: ActorRef<PongLobbyState, PongLobbyCommand>;
   readonly playerSession: ActorRef<PongPlayerSessionState, PlayerSessionCommand>;
@@ -789,15 +791,6 @@ export type MeshPongControllerInputReplayEnvelope = MeshPongControllerInputRepla
   readonly replay: LobbyReplayMetadata;
 };
 
-type LobbyChannelMessage =
-  | { readonly type: 'sessions-updated' }
-  | MeshPongControllerInputReplayMessage
-  | {
-      readonly type: 'match-started';
-      readonly mode: PongShellMatchMode;
-      readonly ownerSessionId: string;
-    };
-
 type PlannerControllerRequest = {
   readonly requestId: number;
   readonly runtime: BrowserRuntime;
@@ -826,7 +819,7 @@ type PlannerControllerLaneState = {
 };
 
 export interface MeshPongTurnMatchState {
-  readonly matchStarted: boolean;
+  readonly phase: PongMatchPhase;
   readonly matchGeneration: number;
   readonly matchOwnerSessionId: string | null;
   readonly mode: PongShellMatchMode | null;
@@ -863,8 +856,6 @@ export interface MeshPongTurnStepper {
 }
 
 const SESSION_ID_STORAGE_KEY = 'actor-web.mesh-pong.session-id';
-const LOBBY_STORAGE_KEY = 'actor-web.mesh-pong.sessions';
-const LOBBY_CHANNEL_NAME = 'actor-web.mesh-pong.lobby';
 
 let canvasElement: HTMLCanvasElement;
 let modeSelectElement: HTMLSelectElement;
@@ -899,27 +890,17 @@ let selectedMode: BrowserMode = 'local';
 let loopHandle: number | null = null;
 let switchGeneration = 0;
 let playerSessionState: PongPlayerSessionState | null = null;
-let matchStarted = false;
-let matchOwnerSessionId: string | null = null;
-let matchGeneration = 0;
-let matchMode: PongShellMatchMode | null = null;
+let matchState: PongMatchState | null = null;
 const keys = new Set<string>();
 let lifecycleStatus = 'idle';
 const controllerDiagnostics: Partial<Record<PongSide, string>> = {};
 let telemetryState = createMeshPongTelemetryState(0);
 let benchmarkSummaryState = createMeshPongBenchmarkSummaryState(0);
 let turnStepper: MeshPongTurnStepper | null = null;
-
-const lobbyChannel =
-  typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(LOBBY_CHANNEL_NAME);
 const meshPongClock = createMeshPongClock();
 
 function nowMs(): number {
   return meshPongClock.nowMs();
-}
-
-function nowEpochMs(): number {
-  return meshPongClock.nowEpochMs();
 }
 
 function resetTelemetry(): void {
@@ -1002,8 +983,7 @@ function stopTurnStepper(): void {
 }
 
 function clearMatchOwner(): void {
-  matchOwnerSessionId = null;
-  matchMode = null;
+  matchState = null;
 }
 
 function renderStatus(): void {
@@ -1075,19 +1055,6 @@ function selectedMatchMode(): PongShellMatchMode {
   };
 }
 
-function isPongPlayerSessionState(value: unknown): value is PongPlayerSessionState {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-  const candidate = value as Partial<PongPlayerSessionState>;
-  return (
-    typeof candidate.sessionId === 'string' &&
-    (candidate.controller === 'human' || candidate.controller === 'mlx') &&
-    (candidate.side === null || candidate.side === 'left' || candidate.side === 'right') &&
-    typeof candidate.ready === 'boolean'
-  );
-}
-
 function toLegacyMatchMode(mode: PongShellMatchMode): PongMatchMode {
   return {
     playerCount: mode.playerCount,
@@ -1115,35 +1082,6 @@ function installControllerVocabulary(select: HTMLSelectElement, side: PongSide):
     })
   );
   select.value = legacyValue;
-}
-
-function readStoredSessions(): PongPlayerSessionState[] {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(LOBBY_STORAGE_KEY) ?? '[]') as unknown;
-    return Array.isArray(parsed) ? parsed.filter(isPongPlayerSessionState) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeStoredSession(session: PongPlayerSessionState): void {
-  if (session.controller !== 'human') {
-    return;
-  }
-  const sessions = [
-    ...readStoredSessions().filter((candidate) => candidate.sessionId !== session.sessionId),
-    session,
-  ];
-  try {
-    localStorage.setItem(LOBBY_STORAGE_KEY, JSON.stringify(sessions));
-  } catch {
-    // Storage is an optimization for separate tabs; actor state remains authoritative locally.
-  }
-  lobbyChannel?.postMessage({ type: 'sessions-updated' } satisfies LobbyChannelMessage);
-}
-
-function storedSessionForCurrentTab(): PongPlayerSessionState | undefined {
-  return readStoredSessions().find((session) => session.sessionId === browserSessionId);
 }
 
 function isBrowserClusterRuntime(
@@ -1190,13 +1128,13 @@ function renderPlayerSession(session: PongPlayerSessionState | null): void {
   readyButtonElement.textContent = session?.ready ? 'Ready' : 'Mark ready';
 }
 
-function renderLobby(lobby: PongLobbyState): void {
-  const readyControllers = lobby.controllers.filter((controller) => controller.ready).length;
+function renderLobby(match: PongMatchState): void {
+  const readyControllers = match.controllers.filter((controller) => controller.ready).length;
   lobbyValueElement.textContent = `${readyControllers} / 2`;
 }
 
-async function currentLobbyState(nextRefs: RuntimeRefs): Promise<PongLobbyState> {
-  return nextRefs.lobby.ask<PongLobbyState>({ type: 'GET_LOBBY' });
+async function currentMatchState(nextRefs: RuntimeRefs): Promise<PongMatchState> {
+  return nextRefs.matchCoordinator.ask<PongMatchState>({ type: 'GET_MATCH' });
 }
 
 function isCurrentRuntimeContext(
@@ -1206,62 +1144,31 @@ function isCurrentRuntimeContext(
   return runtime === candidateRuntime && refs === candidateRefs;
 }
 
-async function syncStoredSessionsToLobby(
-  nextRuntime: BrowserRuntime,
-  nextRefs: RuntimeRefs,
-  options: { readonly shouldApply?: () => boolean } = {}
-): Promise<void> {
-  const shouldApply = options.shouldApply ?? (() => true);
-  const currentLobby = await currentLobbyState(nextRefs);
-  if (!shouldApply()) {
-    return;
-  }
-  const nextLobby = syncLobbySessionsFromStorage(currentLobby, readStoredSessions());
-  const nextSessions = new Map(nextLobby.sessions.map((session) => [session.sessionId, session]));
-  for (const session of currentLobby.sessions) {
-    if (!shouldApply()) {
-      return;
-    }
-    if (!nextSessions.has(session.sessionId)) {
-      await nextRefs.lobby.send({ type: 'REMOVE_SESSION', sessionId: session.sessionId });
-    }
-  }
-  for (const session of nextLobby.sessions) {
-    if (!shouldApply()) {
-      return;
-    }
-    await nextRefs.lobby.send({ type: 'SYNC_SESSION', session });
-  }
-  await flushRuntime(nextRuntime);
-  if (!shouldApply()) {
-    return;
-  }
-  const lobbyState = await currentLobbyState(nextRefs);
-  if (!shouldApply()) {
-    return;
-  }
-  renderLobby(lobbyState);
-}
-
-async function syncLobbyForMatchMode(
+async function syncMatchForMode(
   nextRuntime: BrowserRuntime,
   nextRefs: RuntimeRefs,
   mode: PongShellMatchMode,
   shouldContinue: () => boolean = () => true
 ): Promise<boolean> {
-  await nextRefs.lobby.send({ type: 'RESET_LOBBY' });
-  if (!shouldContinue()) {
-    return false;
+  const currentMatch = await currentMatchState(nextRefs);
+  for (const session of currentMatch.sessions) {
+    if (session.sessionId === browserSessionId) {
+      continue;
+    }
+    await nextRefs.matchCoordinator.send({ type: 'REMOVE_SESSION', sessionId: session.sessionId });
+    if (!shouldContinue()) {
+      return false;
+    }
   }
-  for (const session of readStoredSessions()) {
-    await nextRefs.lobby.send({ type: 'SYNC_SESSION', session });
+  if (playerSessionState) {
+    await nextRefs.matchCoordinator.send({ type: 'SYNC_SESSION', session: playerSessionState });
     if (!shouldContinue()) {
       return false;
     }
   }
   for (const side of ['left', 'right'] as const) {
     if (usesSyntheticControllerSlot(mode.controllers[side])) {
-      await nextRefs.lobby.send({
+      await nextRefs.matchCoordinator.send({
         type: 'SYNC_SESSION',
         session: createSyntheticControllerSession(side),
       });
@@ -1285,11 +1192,17 @@ async function syncCurrentSession(
     return;
   }
   playerSessionState = session;
-  writeStoredSession(session);
-  await syncStoredSessionsToLobby(nextRuntime, nextRefs, { shouldApply });
+  await nextRefs.matchCoordinator.send({ type: 'SYNC_SESSION', session });
+  await flushRuntime(nextRuntime);
   if (!shouldApply()) {
     return;
   }
+  const nextMatch = await currentMatchState(nextRefs);
+  if (!shouldApply()) {
+    return;
+  }
+  matchState = nextMatch;
+  renderLobby(nextMatch);
   renderPlayerSession(session);
 }
 
@@ -1299,27 +1212,6 @@ async function hydrateCurrentSession(
   options: { readonly shouldApply?: () => boolean } = {}
 ): Promise<void> {
   const shouldApply = options.shouldApply ?? (() => true);
-  const stored = storedSessionForCurrentTab();
-  if (stored?.side) {
-    await nextRefs.playerSession.send({
-      type: 'CLAIM_SIDE',
-      side: stored.side,
-      controller: stored.controller,
-    });
-    if (!shouldApply()) {
-      return;
-    }
-    if (stored.ready) {
-      await nextRefs.playerSession.send({ type: 'SET_READY', ready: true });
-      if (!shouldApply()) {
-        return;
-      }
-    }
-    await flushRuntime(nextRuntime);
-    if (!shouldApply()) {
-      return;
-    }
-  }
   await syncCurrentSession(nextRuntime, nextRefs, { shouldApply });
 }
 
@@ -1418,6 +1310,12 @@ async function resolveRefs(candidate: BrowserRuntime): Promise<RuntimeRefs> {
       candidate,
       pong.actors.controllerRight.address
     ),
+    matchCoordinator: await waitForActor<PongMatchState, PongMatchCommand>(
+      candidate,
+      isBrowserWebSocketRuntime(candidate)
+        ? candidate.matchCoordinatorAddress
+        : pong.actors.matchCoordinator.address
+    ),
     score: await waitForActor<PongScoreState, ScoreCommand>(candidate, pong.actors.score.address),
     lobby: await waitForActor<PongLobbyState, PongLobbyCommand>(
       candidate,
@@ -1430,35 +1328,18 @@ async function resolveRefs(candidate: BrowserRuntime): Promise<RuntimeRefs> {
 }
 
 async function snapshot(nextRefs: RuntimeRefs): Promise<PongSnapshot> {
-  const ball = await nextRefs.ball.ask<PongBallContext>({ type: 'GET_BALL' });
-  const score = await nextRefs.score.ask<PongScoreState>({ type: 'GET_SCORE' });
-  const left = await nextRefs.paddleA.ask<PongPaddleState>({ type: 'GET_PADDLE' });
-  const right = await nextRefs.paddleB.ask<PongPaddleState>({ type: 'GET_PADDLE' });
-
-  return {
-    ball: ball.ball,
-    score,
-    paddles: {
-      left,
-      right,
-    },
-  };
+  return (await currentMatchState(nextRefs)).snapshot;
 }
 
 async function resetRuntimeGame(
   nextRuntime: BrowserRuntime,
   nextRefs: RuntimeRefs
 ): Promise<PongSnapshot> {
-  const centerY = PONG_FIELD.height / 2 - PONG_FIELD.paddleHeight / 2;
-  await nextRefs.ball.send({ type: 'RESET_BALL', seed: DEFAULT_PONG_SEED });
   await flushRuntime(nextRuntime);
-  await nextRefs.score.send({ type: 'RESET_SCORE' });
-  await flushRuntime(nextRuntime);
-  await nextRefs.paddleA.send({ type: 'SET_PADDLE', y: centerY });
-  await flushRuntime(nextRuntime);
-  await nextRefs.paddleB.send({ type: 'SET_PADDLE', y: centerY });
-  await flushRuntime(nextRuntime);
-  return snapshot(nextRefs);
+  const nextMatch = await currentMatchState(nextRefs);
+  matchState = nextMatch;
+  renderLobby(nextMatch);
+  return nextMatch.snapshot;
 }
 
 function renderSnapshot(nextSnapshot: PongSnapshot): void {
@@ -1491,15 +1372,25 @@ async function resetGame(): Promise<void> {
     return;
   }
 
-  matchStarted = false;
-  clearMatchOwner();
-  matchGeneration += 1;
   clearControllerDiagnostics();
   if (loopHandle !== null) {
     window.clearTimeout(loopHandle);
     loopHandle = null;
   }
-  const nextSnapshot = await resetRuntimeGame(currentRuntime, currentRefs);
+  const currentMatch = await currentMatchState(currentRefs);
+  const result = await currentRefs.matchCoordinator.ask<PongMatchCommandResult>({
+    type: 'RETURN_TO_ROOM',
+    requestSessionId: browserSessionId,
+    expectedGeneration: currentMatch.generation,
+  });
+  await flushRuntime(currentRuntime);
+  if (!result.ok) {
+    setStatus(result.reason);
+    return;
+  }
+  matchState = result.match;
+  renderLobby(result.match);
+  const nextSnapshot = result.match.snapshot;
   if (runtime === currentRuntime && refs === currentRefs) {
     renderSnapshot(nextSnapshot);
     setStatus(readyStatusForMode(selectedMode));
@@ -1535,7 +1426,7 @@ async function startRuntimeForMode(
   }
   if (mode === 'broadcast') {
     return startMeshPongBroadcast({
-      channelName: `mesh-pong-demo-${createSessionId()}`,
+      channelName: 'mesh-pong-demo',
       tools,
     });
   }
@@ -1543,7 +1434,7 @@ async function startRuntimeForMode(
     return startMeshPongBrowserWebSocket({ sessionId: browserSessionId });
   }
   return startMeshPongMesh({
-    channelName: `mesh-pong-demo-${createSessionId()}`,
+    channelName: 'mesh-pong-demo-mesh',
     tools,
   });
 }
@@ -1561,9 +1452,7 @@ async function switchMode(mode: BrowserMode): Promise<void> {
   runtime = null;
   refs = null;
   playerSessionState = null;
-  matchStarted = false;
-  clearMatchOwner();
-  matchGeneration += 1;
+  matchState = null;
   stopTurnStepper();
   clearControllerDiagnostics();
   resetTelemetry();
@@ -1629,10 +1518,18 @@ async function switchMode(mode: BrowserMode): Promise<void> {
       refs: nextRefs,
       browserSessionId,
       getMatchState: () => ({
-        matchStarted,
-        matchGeneration,
-        matchOwnerSessionId,
-        mode: matchMode,
+        phase: matchState?.phase ?? 'lobby',
+        matchGeneration: matchState?.generation ?? 0,
+        matchOwnerSessionId: matchState?.authoritySessionId ?? null,
+        mode: matchState
+          ? ({
+              playerCount: matchState.mode?.playerCount ?? TWO_HUMAN_PONG_MATCH_MODE.playerCount,
+              controllers: {
+                left: normalizePongControllerType(matchState.mode?.controllers.left ?? 'human'),
+                right: normalizePongControllerType(matchState.mode?.controllers.right ?? 'human'),
+              },
+            } satisfies PongShellMatchMode)
+          : null,
       }),
       nowMs,
       flushRuntime,
@@ -1689,20 +1586,8 @@ function postControllerInput(
   input: Extract<PongControllerInputResult, { readonly ok: true }>,
   controllerTelemetry?: MeshPongControllerReplayTelemetry
 ): void {
-  const sentAtMs = nowEpochMs();
-  updateTelemetry({
-    type: 'replay-sent',
-    originSessionId: browserSessionId,
-    sentAtMs,
-  });
-  lobbyChannel?.postMessage(
-    createMeshPongControllerInputReplayMessage({
-      input,
-      originSessionId: browserSessionId,
-      sentAtMs,
-      controllerTelemetry,
-    })
-  );
+  void input;
+  void controllerTelemetry;
 }
 
 async function applyControllerInput(
@@ -1722,12 +1607,17 @@ async function applyControllerInput(
   }
 ): Promise<void> {
   const appliedAtMs = metadata?.appliedAtMs ?? nowMs();
-  const paddle = input.side === 'left' ? nextRefs.paddleA : nextRefs.paddleB;
-  await paddle.send({
-    type: 'MOVE_PADDLE',
-    direction: input.direction,
-    amount: input.amount,
+  const currentMatch = matchState ?? (await currentMatchState(nextRefs));
+  const result = await nextRefs.matchCoordinator.ask<PongMatchCommandResult>({
+    type: 'APPLY_CONTROLLER_INPUT',
+    requestSessionId: input.sessionId,
+    expectedGeneration: currentMatch.generation,
+    input,
   });
+  if (!result.ok) {
+    throw new Error(result.reason);
+  }
+  matchState = result.match;
   if (metadata?.syncRuntime !== false) {
     const flush = metadata?.flushRuntime ?? flushRuntime;
     await flush(nextRuntime);
@@ -1787,18 +1677,8 @@ async function applyPaddleInput(
     mode: 'human',
     source: 'human',
     strategyStatus: 'live',
-    syncRuntime: false,
+    syncRuntime: true,
   });
-  postControllerInput(input, {
-    detail: direction,
-    mode: 'human',
-    source: 'human',
-    strategyStatus: 'live',
-  });
-}
-
-function createSyntheticControllerSessionId(mode: PongControllerMode, side: PongSide): string {
-  return `${mode}-${side}`;
 }
 
 function formatAimDetail(aim: PongControllerAim): string {
@@ -1839,7 +1719,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
       active &&
       deps.runtime === request.runtime &&
       deps.refs === request.refs &&
-      matchState.matchStarted &&
+      matchState.phase === 'running' &&
       matchState.matchGeneration === request.matchGeneration &&
       shouldLaunchPlannerControllerForSide({
         browserSessionId: deps.browserSessionId,
@@ -2080,9 +1960,9 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
   }
 
   async function tick(): Promise<void> {
-    const matchState = deps.getMatchState();
-    syncLanes(matchState);
-    if (!active || !matchState.matchStarted) {
+    const currentTurnMatch = deps.getMatchState();
+    syncLanes(currentTurnMatch);
+    if (!active || currentTurnMatch.phase !== 'running') {
       return;
     }
 
@@ -2092,18 +1972,27 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
       deps.updateTelemetry({ type: 'simulation-held', nowMs: deps.nowMs() });
       return;
     }
+    if (currentTurnMatch.matchOwnerSessionId !== deps.browserSessionId) {
+      const projectedSnapshot = await deps.snapshot();
+      if (!active) {
+        return;
+      }
+      deps.renderSnapshot(projectedSnapshot);
+      deps.setStatus('projecting');
+      return;
+    }
 
     applyingSimulation = true;
     try {
-      await deps.applyHumanInput?.(matchState.mode);
+      await deps.applyHumanInput?.(currentTurnMatch.mode);
       const currentSnapshot = await deps.snapshot();
       const paddles = currentSnapshot.paddles;
 
       for (const side of ['left', 'right'] as const) {
-        const controllerMode = matchState.mode?.controllers[side] ?? 'human';
+        const controllerMode = currentTurnMatch.mode?.controllers[side] ?? 'human';
         const normalizedMode = normalizePongControllerType(controllerMode);
         const plannerDecision = usesPlannerController(normalizedMode)
-          ? consumePlannerStrategy(side, normalizedMode, matchState.matchGeneration)
+          ? consumePlannerStrategy(side, normalizedMode, currentTurnMatch.matchGeneration)
           : null;
         const aim = resolveAimForMode(
           currentSnapshot,
@@ -2113,7 +2002,10 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
         );
         if (!aim) {
           if (normalizedMode === 'planner') {
-            const neutralState = describePlannerNeutralState(side, matchState.matchGeneration);
+            const neutralState = describePlannerNeutralState(
+              side,
+              currentTurnMatch.matchGeneration
+            );
             deps.updateTelemetry({
               type: 'controller-state-observed',
               side,
@@ -2147,15 +2039,15 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
           continue;
         }
         const input: Extract<PongControllerInputResult, { readonly ok: true }> =
-          normalizedMode === 'planner'
-            ? createSyntheticPlannerControllerInput(side, intent)
-            : {
+          normalizedMode === 'human'
+            ? {
                 ok: true,
-                sessionId: createSyntheticControllerSessionId(normalizedMode, side),
+                sessionId: deps.browserSessionId,
                 side,
                 direction: intent.direction,
                 amount: intent.amount,
-              };
+              }
+            : createSyntheticPlannerControllerInput(side, intent);
         const detail = formatAimDetail(aim);
         await applyControllerInput(deps.runtime, deps.refs, input, {
           appliedAtMs: deps.nowMs(),
@@ -2175,19 +2067,19 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
         });
       }
 
-      const nextPaddles = await Promise.all([
-        deps.refs.paddleA.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
-        deps.refs.paddleB.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
-      ]);
-      await deps.refs.ball.send({
-        type: 'SET_PADDLES',
-        leftY: nextPaddles[0].y,
-        rightY: nextPaddles[1].y,
+      const coordinatorState = await currentMatchState(deps.refs);
+      const tickResult = await deps.refs.matchCoordinator.ask<PongMatchCommandResult>({
+        type: 'TICK_MATCH',
+        requestSessionId: deps.browserSessionId,
+        expectedGeneration: coordinatorState.generation,
       });
-      await deps.refs.ball.send({ type: 'TICK' });
+      if (!tickResult.ok) {
+        throw new Error(tickResult.reason);
+      }
+      matchState = tickResult.match;
       await deps.flushRuntime(deps.runtime);
       deps.updateTelemetry({ type: 'simulation-applied', nowMs: deps.nowMs() });
-      const nextSnapshot = await deps.snapshot();
+      const nextSnapshot = tickResult.match.snapshot;
       if (!active) {
         return;
       }
@@ -2307,13 +2199,20 @@ async function markReady(): Promise<void> {
   setStatus('ready');
 }
 
-function formatStartFailure(result: Exclude<PongMatchStartResult, { readonly ok: true }>): string {
-  return `${result.reason}: ${result.missing.join(', ')}`;
+function formatStartFailure(
+  result: Exclude<PongMatchCommandResult, { readonly ok: true }>
+): string {
+  if ('missing' in result) {
+    return `${result.reason}: ${result.missing.join(', ')}`;
+  }
+  if ('actualGeneration' in result) {
+    return `${result.reason}: expected ${result.expectedGeneration}, actual ${result.actualGeneration}`;
+  }
+  return result.reason;
 }
 
 async function startMatch(
   mode: PongShellMatchMode,
-  broadcast: boolean,
   ownerSessionId: string = browserSessionId
 ): Promise<void> {
   const currentRuntime = runtime;
@@ -2322,16 +2221,18 @@ async function startMatch(
     return;
   }
 
-  matchGeneration += 1;
   clearControllerDiagnostics();
-  const synced = await syncLobbyForMatchMode(currentRuntime, currentRefs, mode, () =>
+  const synced = await syncMatchForMode(currentRuntime, currentRefs, mode, () =>
     isCurrentRuntimeContext(currentRuntime, currentRefs)
   );
   if (!synced || !isCurrentRuntimeContext(currentRuntime, currentRefs)) {
     return;
   }
-  const result = await currentRefs.lobby.ask<PongMatchStartResult>({
+  const currentMatch = await currentMatchState(currentRefs);
+  const result = await currentRefs.matchCoordinator.ask<PongMatchCommandResult>({
     type: 'START_MATCH',
+    requestSessionId: ownerSessionId,
+    expectedGeneration: currentMatch.generation,
     mode: toLegacyMatchMode(mode),
   });
   if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
@@ -2341,21 +2242,15 @@ async function startMatch(
   if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
     return;
   }
-  const lobbyState = await currentLobbyState(currentRefs);
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
-    return;
-  }
-  renderLobby(lobbyState);
+  matchState = await currentMatchState(currentRefs);
+  renderLobby(matchState);
   if (!result.ok) {
-    matchStarted = false;
-    clearMatchOwner();
     setStatus(formatStartFailure(result));
     return;
   }
 
-  matchStarted = true;
-  matchOwnerSessionId = ownerSessionId;
-  matchMode = mode;
+  matchState = result.match;
+  renderLobby(result.match);
   setStatus('running');
   if (loopHandle === null) {
     loopHandle = window.setTimeout(
@@ -2363,24 +2258,6 @@ async function startMatch(
       DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY.simulationIntervalMs
     );
   }
-  if (broadcast) {
-    lobbyChannel?.postMessage({
-      type: 'match-started',
-      mode,
-      ownerSessionId,
-    } satisfies LobbyChannelMessage);
-  }
-}
-
-async function syncCurrentLobbyFromStorage(): Promise<void> {
-  const currentRuntime = runtime;
-  const currentRefs = refs;
-  if (!currentRuntime || !currentRefs) {
-    return;
-  }
-  await syncStoredSessionsToLobby(currentRuntime, currentRefs, {
-    shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs),
-  });
 }
 
 export function bootstrapMeshPongUI(): void {
@@ -2452,7 +2329,7 @@ export function bootstrapMeshPongUI(): void {
   });
 
   startButtonElement.addEventListener('click', () => {
-    void startMatch(selectedMatchMode(), true).catch((error: unknown) => {
+    void startMatch(selectedMatchMode()).catch((error: unknown) => {
       setStatus(error instanceof Error ? error.message : 'start failed');
     });
   });
@@ -2469,67 +2346,6 @@ export function bootstrapMeshPongUI(): void {
 
   window.addEventListener('keyup', (event) => {
     keys.delete(event.key.toLowerCase());
-  });
-
-  lobbyChannel?.addEventListener('message', (event: MessageEvent<LobbyChannelMessage>) => {
-    const message = event.data;
-    if (!message || typeof message !== 'object') {
-      return;
-    }
-
-    if (message.type === 'sessions-updated') {
-      void syncCurrentLobbyFromStorage().catch((error: unknown) => {
-        setStatus(error instanceof Error ? error.message : 'lobby sync failed');
-      });
-      return;
-    }
-
-    if (message.type === 'controller-input') {
-      if (message.input.sessionId === browserSessionId) {
-        return;
-      }
-      const currentRuntime = runtime;
-      const currentRefs = refs;
-      if (!currentRuntime || !currentRefs || !matchStarted) {
-        return;
-      }
-      const appliedAtMs = nowEpochMs();
-      if (message.replay) {
-        updateTelemetry({
-          type: 'replay-received',
-          originSessionId: message.replay.originSessionId,
-          sentAtMs: message.replay.sentAtMs,
-          receivedAtMs: appliedAtMs,
-        });
-      }
-      void applyControllerInput(currentRuntime, currentRefs, message.input, {
-        appliedAtMs,
-        detail: message.controllerTelemetry?.detail,
-        mode: message.controllerTelemetry?.mode,
-        sentAtMs: message.replay?.sentAtMs,
-        source: message.controllerTelemetry?.source,
-        strategyStatus: message.controllerTelemetry?.strategyStatus,
-        syncRuntime: false,
-      }).catch((error: unknown) => {
-        setStatus(error instanceof Error ? error.message : 'remote input failed');
-      });
-      return;
-    }
-
-    if (message.type === 'match-started') {
-      void startMatch(message.mode, false, message.ownerSessionId).catch((error: unknown) => {
-        setStatus(error instanceof Error ? error.message : 'start failed');
-      });
-    }
-  });
-
-  window.addEventListener('storage', (event) => {
-    if (event.key !== LOBBY_STORAGE_KEY) {
-      return;
-    }
-    void syncCurrentLobbyFromStorage().catch((error: unknown) => {
-      setStatus(error instanceof Error ? error.message : 'lobby sync failed');
-    });
   });
 
   void switchMode('local');

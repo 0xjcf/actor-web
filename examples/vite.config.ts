@@ -163,11 +163,13 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
           try {
             const served = await ensureMeshPongWebSocketServer();
             const actorRef = await served.actors.playerSession.instance({ sessionId });
+            const matchCoordinator = served.requireActor('matchCoordinator');
             await served.system.flush();
             sendJson(response, 200, {
               state: 'ready',
               transportUrl: served.getTransportUrl(),
               actorAddress: actorRef.address,
+              matchAddress: matchCoordinator.address,
             });
           } catch (error) {
             sendJson(response, 503, {

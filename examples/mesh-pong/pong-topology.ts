@@ -5,6 +5,7 @@ import {
   createPaddleBehavior,
   createPlayerSessionBehavior,
   lobbyBehavior,
+  matchCoordinatorBehavior,
   scoreBehavior,
 } from './pong-behaviors';
 import { createPlayerSessionActorId, PONG_NODE_ADDRESSES } from './pong-contract';
@@ -21,6 +22,11 @@ export const pong = defineActorWebTopology({
     ball: actor({ id: 'ball', node: 'server', behavior: ballBehavior }),
     score: actor({ id: 'score', node: 'server', behavior: scoreBehavior }),
     lobby: actor({ id: 'lobby', node: 'server', behavior: lobbyBehavior }),
+    matchCoordinator: actor({
+      id: 'match-coordinator',
+      node: 'server',
+      behavior: matchCoordinatorBehavior,
+    }),
     playerSession: actor({
       id: createPlayerSessionActorId,
       node: 'server',
