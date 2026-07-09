@@ -101,6 +101,7 @@ import {
   reduceMeshPongBenchmarkSummary,
   reduceMeshPongTelemetry,
   resolveBrowserModeSelection,
+  resolveBrowserRuntimeRefPath,
   withMeshPongStartupTimeout,
 } from './ui/main';
 
@@ -3227,6 +3228,34 @@ describe('Mesh Pong transport parity', () => {
     expect(webLocks.releasedNames).toContain(`mesh-pong:${channelName}:host`);
   });
 
+  it('routes a client-only broadcast runtime through cluster refs without websocket addresses', async () => {
+    const webLocks = new FakeWebLocks();
+    const broadcastNetwork = new FakeBroadcastChannelNetwork();
+    const channelName = 'mesh-pong-broadcast-client-ref-path';
+
+    const host = await startMeshPongBroadcast({
+      sessionId: 'host-tab',
+      channelName,
+      broadcastChannelFactory: broadcastNetwork.create,
+      webLocks,
+    });
+    const client = await startMeshPongBroadcast({
+      sessionId: 'guest-tab',
+      channelName,
+      broadcastChannelFactory: broadcastNetwork.create,
+      webLocks,
+    });
+    startedRuntimes.push(host, client);
+
+    expect(client.hostAcquired).toBe(false);
+    expect(resolveBrowserRuntimeRefPath(client)).toBe('cluster');
+    expect(resolveBrowserRuntimeRefPath({ mode: 'mesh' })).toBe('cluster');
+    expect(resolveBrowserRuntimeRefPath({ mode: 'websocket' })).toBe('websocket');
+    expect(resolveBrowserRuntimeRefPath({})).toBe('local');
+    expect(client).not.toHaveProperty('playerSessionAddress');
+    expect(client).not.toHaveProperty('matchCoordinatorAddress');
+  });
+
   it('re-hydrates websocket player sessions and authoritative match state across reconnects', async () => {
     const runtime = await startMeshPongWebSocketLoopback();
     startedRuntimes.push(runtime);
@@ -3489,6 +3518,22 @@ describe('Mesh Pong transport parity', () => {
 
     expect(parityProofForMode('websocket').transportBoundary).toContain('browser');
     expect(parityProofForMode('websocket').startupCall).toContain('startMeshPongBrowserWebSocket');
+  });
+
+  it('shows every transport and the authoritative actor set in the active transport proof', async () => {
+    const html = await readFile(
+      path.resolve(meshPongExamplesDir, 'mesh-pong/ui/index.html'),
+      'utf8'
+    );
+
+    expect(html).toContain('<code>local = broadcast = mesh = websocket</code>');
+    expect(html).toContain(
+      '<code>matchCoordinator / playerSession / controllerLeft / controllerRight</code>'
+    );
+    expect(html).toContain(
+      '<code id="proof-actors">matchCoordinator, playerSession, controllerLeft, controllerRight</code>'
+    );
+    expect(html).not.toContain('ball / score / paddles');
   });
 
   it('keeps the Mesh Pong browser entry on the browser-safe agent/runtime boundary', async () => {

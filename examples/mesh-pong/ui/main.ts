@@ -1061,18 +1061,31 @@ function installControllerVocabulary(select: HTMLSelectElement, side: PongSide):
   select.value = legacyValue;
 }
 
+export type MeshPongBrowserRuntimeRefPath = 'local' | 'cluster' | 'websocket';
+
+export function resolveBrowserRuntimeRefPath(candidate: object): MeshPongBrowserRuntimeRefPath {
+  const mode = 'mode' in candidate ? candidate.mode : undefined;
+  if (mode === 'broadcast' || mode === 'mesh') {
+    return 'cluster';
+  }
+  if (mode === 'websocket') {
+    return 'websocket';
+  }
+  return 'local';
+}
+
 function isBrowserClusterRuntime(
   candidate: BrowserRuntime
 ): candidate is
   | Awaited<ReturnType<typeof startMeshPongBroadcast>>
   | Awaited<ReturnType<typeof startMeshPongMesh>> {
-  return 'server' in candidate;
+  return resolveBrowserRuntimeRefPath(candidate) === 'cluster';
 }
 
 function isBrowserWebSocketRuntime(
   candidate: BrowserRuntime
 ): candidate is StartedMeshPongBrowserWebSocketRuntime {
-  return 'lookupNode' in candidate;
+  return resolveBrowserRuntimeRefPath(candidate) === 'websocket';
 }
 
 function setStatus(value: string): void {
