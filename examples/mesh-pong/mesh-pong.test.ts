@@ -641,6 +641,7 @@ function createStepperSnapshot(
 function createTurnStepperHarness(
   mode: PongShellMatchMode,
   options: {
+    readonly applyHumanInput?: (mode: PongShellMatchMode | null) => Promise<void>;
     readonly applyFailure?: Exclude<PongMatchCommandResult, { readonly ok: true }>;
     readonly flushRuntime?: () => Promise<void>;
     readonly runMlxController?: (
@@ -878,6 +879,7 @@ function createTurnStepperHarness(
     },
     setControllerDiagnostic: () => undefined,
     clearControllerDiagnostic: () => undefined,
+    applyHumanInput: options.applyHumanInput,
   });
 
   return {
@@ -2508,6 +2510,29 @@ describe('Mesh Pong transport parity', () => {
     ).toBe(false);
   });
 
+  it('applies seated human input from a non-authority tab without advancing simulation', async () => {
+    const mode = {
+      playerCount: 2,
+      controllers: { left: 'human', right: 'human' },
+    } as const;
+    const applyHumanInput = vi.fn(async () => undefined);
+    const harness = createTurnStepperHarness(mode, {
+      applyHumanInput,
+    });
+    harness.matchState.ownerSessionId = 'authority-tab';
+
+    await harness.stepper.tick();
+
+    expect(applyHumanInput).toHaveBeenCalledOnce();
+    expect(applyHumanInput).toHaveBeenCalledWith(mode);
+    expect(harness.renderedSnapshots).toHaveLength(1);
+    expect(harness.statuses.at(-1)).toBe('projecting');
+    expect(harness.commands).not.toContain('ball:TICK');
+    expect(harness.tickCount()).toBe(0);
+    expect(harness.leftAskCount()).toBe(0);
+    expect(harness.rightAskCount()).toBe(0);
+  });
+
   it('creates the synthetic controller-input payload that observer tabs replay for MLX turns', () => {
     expect(createPlannerSessionId('right')).toBe('planner-right');
     expect(normalizePongControllerType('mlx')).toBe('planner');
@@ -3444,13 +3469,63 @@ describe('Mesh Pong transport parity', () => {
       expectedGeneration: 0,
       mode: TWO_HUMAN_PONG_MATCH_MODE,
     });
-    await hostCoordinator.ask<PongMatchCommandResult>({
-      type: 'TICK_MATCH',
-      requestSessionId: 'host-tab',
-      expectedGeneration: 1,
-    });
+    await expect(
+      hostCoordinator.ask<PongMatchCommandResult>({
+        type: 'TICK_MATCH',
+        requestSessionId: 'host-tab',
+        expectedGeneration: 1,
+      })
+    ).resolves.toMatchObject({ ok: true });
     await flush(host);
     await flush(client);
+
+    const beforeGuestInput = await currentMatchState(hostCoordinator);
+    const guestInput = await guestSession.ask<PongControllerInputResult>({
+      type: 'MOVE_CONTROLLER',
+      direction: 'down',
+    });
+    expect(guestInput).toMatchObject({
+      ok: true,
+      sessionId: 'guest-tab',
+      side: 'right',
+      direction: 'down',
+    });
+    if (!guestInput.ok) {
+      throw new Error(`Expected guest controller input, received ${guestInput.reason}.`);
+    }
+
+    await expect(
+      guestCoordinator.ask<PongMatchCommandResult>({
+        type: 'APPLY_CONTROLLER_INPUT',
+        requestSessionId: 'guest-tab',
+        expectedGeneration: beforeGuestInput.generation,
+        input: guestInput,
+      })
+    ).resolves.toMatchObject({ ok: true });
+    await flush(host);
+    await flush(client);
+
+    const [hostAfterGuestInput, guestAfterGuestInput] = await Promise.all([
+      currentMatchState(hostCoordinator),
+      currentMatchState(guestCoordinator),
+    ]);
+    expect(hostAfterGuestInput.snapshot.paddles.right.y).toBe(
+      beforeGuestInput.snapshot.paddles.right.y + guestInput.amount
+    );
+    expect(guestAfterGuestInput.snapshot).toEqual(hostAfterGuestInput.snapshot);
+
+    await expect(
+      guestCoordinator.ask<PongMatchCommandResult>({
+        type: 'TICK_MATCH',
+        requestSessionId: 'guest-tab',
+        expectedGeneration: beforeGuestInput.generation,
+      })
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'not-authority',
+      requestSessionId: 'guest-tab',
+      authoritySessionId: 'host-tab',
+    });
 
     const assertConverged = async (expectedGeneration: number, expectedAuthority: string) => {
       const [hostMatch, clientMatch] = await Promise.all([

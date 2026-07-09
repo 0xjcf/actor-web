@@ -824,7 +824,7 @@ export interface MeshPongTurnStepperDeps {
   ) => void;
   readonly setControllerDiagnostic: (side: PongSide, reason: string) => void;
   readonly clearControllerDiagnostic: (side: PongSide) => void;
-  readonly applyHumanInput?: (mode: PongShellMatchMode | null) => Promise<void>;
+  readonly applyHumanInput?: (mode: PongShellMatchMode | null) => Promise<boolean | void>;
 }
 
 export interface MeshPongTurnStepper {
@@ -1624,10 +1624,10 @@ async function applyPaddleInput(
   nextRuntime: BrowserRuntime,
   nextRefs: RuntimeRefs,
   mode: PongShellMatchMode | null
-): Promise<void> {
+): Promise<boolean> {
   const session = playerSessionState;
   if (!session?.side || normalizePongControllerType(mode?.controllers[session.side]) !== 'human') {
-    return;
+    return true;
   }
 
   const direction =
@@ -1644,7 +1644,7 @@ async function applyPaddleInput(
           : null;
 
   if (!direction) {
-    return;
+    return true;
   }
 
   const input = await nextRefs.playerSession.ask<PongControllerInputResult>({
@@ -1652,11 +1652,12 @@ async function applyPaddleInput(
     direction,
   });
   if (!input.ok) {
-    return;
+    setStatus(input.reason);
+    return false;
   }
 
   const appliedAtMs = nowMs();
-  await applyControllerInput(nextRuntime, nextRefs, input, {
+  return applyControllerInput(nextRuntime, nextRefs, input, {
     appliedAtMs,
     detail: direction,
     mode: 'human',
@@ -1690,7 +1691,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
     right: createEmptyPlannerLaneState(),
   };
   let active = true;
-  let applyingSimulation = false;
+  let turnInProgress = false;
   let nextRequestId = 1;
   let lastMatchGeneration: number | null = null;
 
@@ -1972,23 +1973,27 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
 
     const scheduledAtMs = deps.nowMs();
     deps.updateTelemetry({ type: 'simulation-scheduled', nowMs: scheduledAtMs });
-    if (applyingSimulation) {
+    if (turnInProgress) {
       deps.updateTelemetry({ type: 'simulation-held', nowMs: deps.nowMs() });
       return;
     }
-    if (!ownsProjection) {
-      const projectedSnapshot = await deps.snapshot();
-      if (!active) {
+
+    turnInProgress = true;
+    try {
+      const humanInputApplied = await deps.applyHumanInput?.(currentTurnMatch.mode);
+      if (humanInputApplied === false || !active) {
         return;
       }
-      deps.renderSnapshot(projectedSnapshot);
-      deps.setStatus('projecting');
-      return;
-    }
+      if (!ownsProjection) {
+        const projectedSnapshot = await deps.snapshot();
+        if (!active) {
+          return;
+        }
+        deps.renderSnapshot(projectedSnapshot);
+        deps.setStatus('projecting');
+        return;
+      }
 
-    applyingSimulation = true;
-    try {
-      await deps.applyHumanInput?.(currentTurnMatch.mode);
       const currentSnapshot = await deps.snapshot();
       const paddles = currentSnapshot.paddles;
 
@@ -2121,7 +2126,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
     } catch (error) {
       deps.setStatus(error instanceof Error ? error.message : 'runtime error');
     } finally {
-      applyingSimulation = false;
+      turnInProgress = false;
     }
   }
 
