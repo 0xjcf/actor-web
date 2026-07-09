@@ -27,30 +27,60 @@
       }
 
       main {
-        width: min(1100px, 100%);
+        width: min(1180px, 100%);
         margin: 0 auto;
-        padding: 24px;
+        padding: 16px 20px;
       }
 
       .topbar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        margin-bottom: 18px;
+        display: grid;
+        grid-template-columns: minmax(150px, 0.28fr) minmax(0, 1fr);
+        gap: 12px;
+        align-items: start;
+        margin-bottom: 12px;
       }
 
       h1 {
         margin: 0;
         font-size: 28px;
         letter-spacing: 0;
+        line-height: 1;
+      }
+
+      .brand {
+        display: grid;
+        align-content: start;
+        gap: 8px;
+        min-height: 0;
       }
 
       .controls {
-        display: flex;
-        align-items: center;
+        display: grid;
+        grid-template-columns: minmax(150px, 1.2fr) minmax(110px, 0.8fr) repeat(2, minmax(130px, 1fr)) auto auto;
         gap: 8px;
-        flex-wrap: wrap;
+        align-items: end;
+        border: 1px solid rgba(49, 91, 82, 0.8);
+        border-radius: 8px;
+        background: rgba(16, 36, 31, 0.82);
+        padding: 8px;
+      }
+
+      .control-field {
+        display: grid;
+        gap: 5px;
+        min-width: 0;
+      }
+
+      .control-label {
+        color: #8cc8ba;
+        font-size: 11px;
+        line-height: 1;
+      }
+
+      .control-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
       }
 
       select,
@@ -68,6 +98,13 @@
         cursor: pointer;
       }
 
+      .primary-action {
+        border-color: #f7c948;
+        background: #f7c948;
+        color: #07120f;
+        font-weight: 700;
+      }
+
       button:hover,
       select:hover {
         border-color: #f7c948;
@@ -75,9 +112,29 @@
 
       .surface {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 280px;
-        gap: 18px;
+        grid-template-columns: minmax(0, 1fr) 360px;
+        gap: 14px;
         align-items: start;
+      }
+
+      .stage {
+        display: grid;
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .match-strip,
+      .proof-strip {
+        display: grid;
+        gap: 8px;
+      }
+
+      .match-strip {
+        grid-template-columns: minmax(110px, 0.8fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr) minmax(0, 2fr);
+      }
+
+      .proof-strip {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
       }
 
       canvas {
@@ -94,11 +151,17 @@
         font-size: 14px;
       }
 
-      .stat {
+      .stat,
+      .proof-chip {
         border: 1px solid #315b52;
         border-radius: 6px;
-        padding: 12px;
+        padding: 10px;
         background: #10241f;
+        min-width: 0;
+      }
+
+      .compact-stat {
+        padding: 8px 10px;
       }
 
       .label {
@@ -109,8 +172,43 @@
       }
 
       .value {
+        display: block;
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         color: #f7c948;
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+      }
+
+      .score-value {
+        font-size: 20px;
+        line-height: 1;
+      }
+
+      .status-value {
+        max-height: 32px;
+        overflow: hidden;
+      }
+
+      .match-strip .label {
+        margin-bottom: 4px;
+      }
+
+      .match-strip .value {
+        font-size: 13px;
+        line-height: 1.25;
+      }
+
+      .proof-chip code,
+      .proof-item code {
+        display: block;
+        overflow-wrap: anywhere;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: #f7c948;
+        line-height: 1.35;
+      }
+
+      .brand .proof-chip code {
+        font-size: 12px;
       }
 
       .proof {
@@ -139,30 +237,40 @@
         min-width: 0;
       }
 
-      .proof-item code {
-        display: block;
-        overflow-wrap: anywhere;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        color: #f7c948;
-        line-height: 1.35;
-      }
-
-      @media (max-width: 780px) {
+      @media (max-width: 980px) {
         main {
           padding: 16px;
         }
 
         .topbar {
-          align-items: flex-start;
-          flex-direction: column;
+          grid-template-columns: 1fr;
+        }
+
+        .controls {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
         .surface {
           grid-template-columns: 1fr;
         }
 
+        .match-strip,
+        .proof-strip,
+        .proof-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 560px) {
+        .controls,
+        .match-strip,
+        .proof-strip,
         .proof-grid {
           grid-template-columns: 1fr;
+        }
+
+        .control-actions {
+          flex-wrap: wrap;
         }
       }
     </style>
@@ -170,49 +278,97 @@
   <body>
     <main>
       <div class="topbar">
-        <h1>Mesh Pong</h1>
+        <div class="brand">
+          <h1>Mesh Pong</h1>
+          <div class="proof-chip">
+            <span class="label">Parity proof</span>
+            <code>actors + behaviors + transports</code>
+          </div>
+        </div>
         <div class="controls">
-          <select id="transport-mode" aria-label="Transport mode">
-            <option value="local">Local</option>
-            <option value="broadcast">BroadcastChannel</option>
-            <option value="mesh">Mesh</option>
-            <option value="websocket">WebSocket loopback</option>
-          </select>
-          <select id="player-count" aria-label="Player count">
-            <option value="2">2 players</option>
-            <option value="1">1 player</option>
-          </select>
-          <select id="left-controller" aria-label="Left controller">
-            <option value="human">Left human</option>
-            <option value="mlx">Left MLX</option>
-          </select>
-          <select id="right-controller" aria-label="Right controller">
-            <option value="human">Right human</option>
-            <option value="mlx">Right MLX</option>
-          </select>
-          <button id="claim-left" type="button">Left</button>
-          <button id="claim-right" type="button">Right</button>
-          <button id="ready-player" type="button">Ready</button>
-          <button id="start-game" type="button">Start</button>
-          <button id="reset-game" type="button">Reset</button>
+          <label class="control-field">
+            <span class="control-label">Transport</span>
+            <select id="transport-mode" aria-label="Transport mode">
+              <option value="local">Local</option>
+              <option value="broadcast">BroadcastChannel</option>
+              <option value="mesh">Mesh</option>
+              <option value="websocket">WebSocket loopback</option>
+            </select>
+          </label>
+          <label class="control-field">
+            <span class="control-label">Players</span>
+            <select id="player-count" aria-label="Player count">
+              <option value="2">2 players</option>
+              <option value="1">1 player</option>
+            </select>
+          </label>
+          <label class="control-field">
+            <span class="control-label">Left</span>
+            <select id="left-controller" aria-label="Left controller">
+              <option value="human">Left human</option>
+              <option value="mlx">Left MLX</option>
+            </select>
+          </label>
+          <label class="control-field">
+            <span class="control-label">Right</span>
+            <select id="right-controller" aria-label="Right controller">
+              <option value="human">Right human</option>
+              <option value="mlx">Right MLX</option>
+            </select>
+          </label>
+          <div class="control-actions" aria-label="Session controls">
+            <button id="claim-left" type="button">Left</button>
+            <button id="claim-right" type="button">Right</button>
+            <button id="ready-player" type="button">Ready</button>
+          </div>
+          <div class="control-actions" aria-label="Match controls">
+            <button class="primary-action" id="start-game" type="button">Start</button>
+            <button id="reset-game" type="button">Reset</button>
+          </div>
         </div>
       </div>
 
       <section class="surface">
-        <canvas id="pong-canvas" width="960" height="540"></canvas>
+        <div class="stage">
+          <div class="match-strip" aria-label="Match status">
+            <div class="stat compact-stat">
+              <span class="label">Transport</span>
+              <span class="value" id="mode-value">local</span>
+            </div>
+            <div class="stat compact-stat">
+              <span class="label">Score</span>
+              <span class="value score-value" id="score-value">0 : 0</span>
+            </div>
+            <div class="stat compact-stat">
+              <span class="label">Lobby</span>
+              <span class="value" id="lobby-value">0 / 2</span>
+            </div>
+            <div class="stat compact-stat">
+              <span class="label">Status</span>
+              <span class="value status-value" id="status-value">starting</span>
+            </div>
+          </div>
+          <canvas id="pong-canvas" width="960" height="540"></canvas>
+          <div class="proof-strip" aria-label="Active transport proof">
+            <div class="proof-chip">
+              <span class="label">Topology</span>
+              <code>pong-topology.ts</code>
+            </div>
+            <div class="proof-chip">
+              <span class="label">Behavior</span>
+              <code>pong-behaviors.ts</code>
+            </div>
+            <div class="proof-chip">
+              <span class="label">Gate</span>
+              <code>local = broadcast = websocket</code>
+            </div>
+            <div class="proof-chip">
+              <span class="label">Actors</span>
+              <code>ball / score / paddles</code>
+            </div>
+          </div>
+        </div>
         <aside class="panel">
-          <div class="stat">
-            <span class="label">Transport</span>
-            <span class="value" id="mode-value">local</span>
-          </div>
-          <div class="stat">
-            <span class="label">Score</span>
-            <span class="value" id="score-value">0 : 0</span>
-          </div>
-          <div class="stat">
-            <span class="label">Status</span>
-            <span class="value" id="status-value">starting</span>
-          </div>
           <div class="stat">
             <span class="label">Session</span>
             <span class="value" id="session-value">joining</span>
@@ -220,10 +376,6 @@
           <div class="stat">
             <span class="label">Side</span>
             <span class="value" id="side-value">none</span>
-          </div>
-          <div class="stat">
-            <span class="label">Lobby</span>
-            <span class="value" id="lobby-value">0 / 2</span>
           </div>
         </aside>
       </section>

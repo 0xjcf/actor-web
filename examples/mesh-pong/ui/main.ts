@@ -984,9 +984,9 @@ function renderStatus(): void {
       return reason ? [`${side} ${reason}`] : [];
     })
     .join('; ');
-  statusValueElement.textContent = diagnostics
-    ? `${lifecycleStatus}; ${diagnostics}`
-    : lifecycleStatus;
+  const status = diagnostics ? `${lifecycleStatus}; ${diagnostics}` : lifecycleStatus;
+  statusValueElement.textContent = status;
+  statusValueElement.title = status;
 }
 
 function createSessionId(): string {
