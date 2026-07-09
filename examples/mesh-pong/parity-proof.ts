@@ -21,7 +21,8 @@ export const MESH_PONG_SHARED_PARITY_PROOF: MeshPongSharedParityProof = {
   topologyFile: 'pong-topology.ts',
   behaviorFile: 'pong-behaviors.ts',
   actors: ['matchCoordinator', 'playerSession', 'controllerLeft', 'controllerRight'],
-  validationGate: 'mesh-pong.test.ts: lifecycle + score parity across local, broadcast, websocket',
+  validationGate:
+    'mesh-pong.test.ts: coordinator lifecycle + score parity across local, broadcast, websocket',
 };
 
 export const MESH_PONG_MODE_PARITY_PROOF: Record<
