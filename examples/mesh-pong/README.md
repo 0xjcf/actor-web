@@ -4,10 +4,20 @@
 > `examples/mesh-pong/mesh-pong.test.ts`; the playable demo is
 > `examples/mesh-pong/ui/index.html`.
 
-Mesh Pong now covers one human plus one MLX controller, full MLX-vs-MLX play,
-and a deterministic fake-provider CI lane for the `llm` tool boundary. The
-browser loop now treats MLX as two independent per-side intent lanes, so slow
-model turns no longer pause simulation or rendering.
+Mesh Pong now exposes four visible controller modes per side: `human`,
+`reflex`, `planner`, and `hybrid`.
+
+- `reflex` is a deterministic intercept controller with no provider dependency.
+- `planner` asks the local MLX/LLM boundary for low-frequency strategy facts and
+  moves only while that strategy is still fresh. Once stale, it goes neutral
+  instead of secretly falling back to reflex.
+- `hybrid` always keeps reflex active as the baseline and overlays fresh planner
+  strategy when available; stale planner strategy reuses only for a small
+  bounded budget before the shell returns to reflex-only behavior.
+
+Legacy stored or configured `mlx` controller values remain accepted as
+compatibility input and normalize to visible `planner`. New browser-visible
+controller vocabulary writes use `human` / `reflex` / `planner` / `hybrid`.
 
 ## Recommended local benchmark path
 
@@ -39,8 +49,9 @@ pnpm examples:dev:local
 
 Open the local examples app, switch to Mesh Pong, and use either:
 
-- One-player: one human side plus one `mlx` side.
-- MLX-vs-MLX: both sides set to `mlx` to observe shared-endpoint contention.
+- One-player: one human side plus one `reflex`, `planner`, or `hybrid` side.
+- Planner-vs-Planner: both sides set to `planner` to observe shared-endpoint contention.
+- Hybrid-vs-Hybrid: both sides set to `hybrid` to keep deterministic reflex active while both planner lanes contend for the shared endpoint.
 
 Supported browser-storable overrides remain the non-secret provider keys, with
 `localStorage` taking precedence over Vite env vars for those values:
@@ -71,12 +82,13 @@ these deterministic metrics:
 - simulation scheduled / applied / held / dropped
 - applied simulation turns per second
 - timeout rate
-- gameplay effect classification: `stalled`, `timeout-bound`, `laggy`, or `smooth`
+- gameplay effect classification: `stalled`, `timeout-bound`, `laggy`,
+  `controller-delayed`, or `smooth`
 
 Evidence boundary:
 
 - Deterministic in-repo evidence covers the summary reducer, browser shell
-  wiring, one-player telemetry, MLX-vs-MLX telemetry, timeout classification,
+  wiring, one-player telemetry, planner-vs-planner telemetry, timeout classification,
   and fake-provider behavior without a live MLX server.
 - Manual local benchmark evidence should be collected by running the
   single-endpoint procedure above with the current default model and endpoint.
@@ -88,8 +100,8 @@ Deterministic benchmark scenarios:
 
 | Scenario | Settings | Expected summary signal | Interpretation |
 | --- | --- | --- | --- |
-| One-player, synthetic provider | `playerCount=1`, one side `mlx`, one side human | `effect smooth` when controller latency stays under the `90ms` simulation budget and held/dropped stay near zero | Proves the summary path for the default local demo shape without requiring MLX |
-| MLX-vs-MLX, synthetic provider | `playerCount=2`, both sides `mlx` | `effect timeout-bound` or `effect laggy` once average latency rises above budget, held/dropped turns accumulate, or controller timeouts appear | Proves the shared-endpoint stress summary without requiring MLX |
+| One-player, synthetic provider | `playerCount=1`, one side `planner`, one side human | `effect smooth` when controller latency stays under the `90ms` simulation budget and held/dropped stay near zero | Proves the summary path for the default local demo shape without requiring MLX |
+| Planner-vs-Planner, synthetic provider | `playerCount=2`, both sides `planner` | `effect timeout-bound` or `effect laggy` once average latency rises above budget, held/dropped turns accumulate, or controller timeouts appear | Proves the shared-endpoint stress summary without requiring MLX |
 | Synthetic CI lane | fake provider or rejected controller promise in `mesh-pong.test.ts` | `timeouts 1` and deterministic summary output with no live MLX | Keeps CI live-MLX-free while proving the reducer and shell wiring |
 
 Decision for this task: keep the single shared endpoint path and defer
@@ -109,25 +121,28 @@ before changing scheduling:
 - `Simulation` tracks the fixed `90ms` turn budget, total scheduled turns,
   applied turns, held turns, dropped turns, and the latest scheduling/applied
   gaps.
-- `Left control` / `Right control` show whether an MLX turn is in flight, the
-  latest controller RTT, the outcome, and the age of the last applied intent.
+- `Left control` / `Right control` show the visible controller mode, the applied
+  source (`human`, `reflex`, `planner`, or `hybrid`), planner freshness or
+  fallback status, the compact target/intercept or strategy label, the latest
+  controller RTT, and the age of the last applied decision.
 - `Replay` shows the last cross-tab controller-input replay latency when a tab
   re-applies another tab's input.
 
 Interpretation:
 
-- `held` should stay near zero during normal MLX play because the owner tick now
+- `held` should stay near zero during normal planner-backed play because the owner tick now
   advances while each side keeps at most one local-model request in flight.
 - High `dropped` means the browser missed one or more `90ms` simulation slots,
   calculated as `floor(gapMs / 90) - 1`.
 - High controller `rtt` points to model/provider latency.
-- High MLX intent `age` includes local model decision time; replay latency
+- High decision `age` includes local model decision time for planner-backed
+  modes; replay latency
   points to broadcast/replay delay after the controller already decided. Local
   human input is applied immediately in the shell, so its intent age is usually
   near zero.
-- When a fresh MLX result is late, the owner reuses the last known intent for a
-  small bounded number of turns, then falls back to a no-op until a new result
-  arrives.
+- When a fresh planner result is late, `planner` goes neutral after its fresh
+  budget expires, while `hybrid` falls back to reflex and only reuses stale
+  planner strategy for a small bounded number of turns.
 
 ## What it proves
 
@@ -182,8 +197,24 @@ await startMeshPongMesh({ channelName: 'pong-mesh' });
 
 The example keeps transport-specific code in `modes/`. `pong-behaviors.ts` and
 `pong-topology.ts` do not change between local, BroadcastChannel, WebSocket, and
-mesh-demo execution. MLX prompt construction, provider calls, and response
-parsing live in `pong-controller.ts`, outside the deterministic Pong rules.
+mesh-demo execution.
+
+The controller split now mirrors the intended game-engine architecture:
+
+- `pong-contract.ts`: pure deterministic core. It normalizes controller
+  vocabulary, predicts reflex intercept targets, models planner strategy facts,
+  merges strategy with reflex targeting, and resolves bounded paddle intents.
+- `pong-controller.ts`: provider adapter only. It owns prompt construction,
+  request/timeout wiring, response parsing, and errors-as-data, and returns
+  low-frequency planner strategy facts instead of per-frame paddle commands.
+- `ui/main.ts`: imperative shell. It owns controller scheduling, freshness and
+  stale-budget policy, storage migration, replay publication, DOM state, and
+  telemetry.
+
+The reusable Actor-Web primitive extraction question is intentionally deferred
+for this task. The bounded planner/reflex controller seam stays example-local
+until there is a second concrete consumer that justifies lifting it into a
+package-level contract.
 
 ## File layout
 
@@ -218,12 +249,14 @@ The example is two deliverables: a human-facing demo and an automated gate.
    is identical across all three. This is what proves the actors are
    transport-independent; it runs in CI through `pnpm test:examples`.
 2. **UI demo** (`ui/`) — a playable Pong with a transport switcher (local /
-   broadcast / mesh), per-tab player sessions, side claims, readiness, MLX
-   controller selection, and an explicit start gate. The browser stays the
-   observer/control panel: it claims human slots, synthesizes `mlx-left` /
-   `mlx-right` lobby sessions for the chosen mode, feeds snapshots to the
-   controller actors, and applies bounded paddle intents at owner-tick turn
-   boundaries. It does not persist MLX controllers as browser sessions. The
+   broadcast / mesh), per-tab player sessions, side claims, readiness,
+   `human` / `reflex` / `planner` / `hybrid` controller selection, and an
+   explicit start gate. The browser stays the
+   observer/control panel: it claims human slots, synthesizes legacy-compatible
+   controller lobby sessions for `reflex`, `planner`, or `hybrid` sides, feeds
+   snapshots to the controller actors, and applies bounded paddle intents at
+   owner-tick turn boundaries. It does not persist non-human controllers as
+   browser sessions. The
    page renders the shared
    topology/behavior files, the selected startup module, and the parity-status
    panel so the validation result is visible while switching transports. It
@@ -238,8 +271,8 @@ Acceptance:
   module — only `defineBehavior` and message/event types.
 - Two-player human mode starts only after both side controller slots are claimed
   and ready.
-- One-player mode starts with one human slot and one MLX controller slot.
-- MLX-vs-MLX mode runs through controller actors while the browser remains an
+- One-player mode starts with one human slot and one non-human controller slot.
+- Planner-vs-Planner mode runs through controller actors while the browser remains an
   observer/control panel.
 - Missing or failing MLX providers project error facts instead of crashing
   startup.
@@ -252,13 +285,19 @@ Acceptance:
 
 To use a real local model, register an Actor-Web `llm` tool/provider at runtime
 that fronts your MLX host or server. The Mesh Pong controller actors expect a
-single JSON reply:
+single planner-strategy JSON reply:
 
 ```json
-{ "direction": "up" | "down", "amount": 1..28 }
+{
+  "targetY": 0..278,
+  "biasY": -82..82,
+  "maxStep": 1..28,
+  "label": "short reason string",
+  "facts": ["short fact strings"]
+}
 ```
 
-Amounts are clamped to one paddle step, and non-JSON or malformed replies are
+`maxStep` is clamped to one paddle step, and non-JSON or malformed replies are
 returned as controller error facts.
 
 When enabled, the demo posts to `<endpoint>/chat/completions` through the same
@@ -269,7 +308,8 @@ controller actor returns a data error instead of throwing.
 
 `mesh-pong.test.ts` does not require a live MLX runtime. It injects a
 deterministic fake `ActorAgentLlmProvider` through the `llm` tool so the
-one-player, MLX-vs-MLX, and missing-provider paths stay stable in CI.
+one-player, planner-vs-planner, hybrid fallback, and missing-provider paths
+stay stable in CI.
 
 ## Depends on
 
