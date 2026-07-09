@@ -147,15 +147,21 @@ Interpretation:
 ## What it proves
 
 One set of actor definitions runs unchanged across every transport and
-topology. Pong is the proof: the ball, paddle, and score behaviors are written
-once; only the startup mode changes. This is the executable guard for the
-topology-independence guarantee from spike `direct-1781363862864`.
+topology. Pong is the proof: the authoritative match lifecycle and projection
+contract is written once; only the startup mode changes. This is the executable
+guard for the topology-independence guarantee from spike
+`direct-1781363862864`.
 
 ## The invariant — define once
 
 ```ts
 import { actor, defineActorWebTopology, node } from '@actor-web/runtime/topology';
-import { ballBehavior, createPaddleBehavior, scoreBehavior } from './pong-behaviors';
+import {
+  ballBehavior,
+  createPaddleBehavior,
+  matchCoordinatorBehavior,
+  scoreBehavior,
+} from './pong-behaviors';
 
 export const pong = defineActorWebTopology({
   nodes: {
@@ -164,6 +170,11 @@ export const pong = defineActorWebTopology({
     b: node('pong-b'),
   },
   actors: {
+    matchCoordinator: actor({
+      id: 'match-coordinator',
+      node: 'server',
+      behavior: matchCoordinatorBehavior,
+    }),
     ball: actor({ id: 'ball', node: 'server', behavior: ballBehavior }),
     score: actor({ id: 'score', node: 'server', behavior: scoreBehavior }),
     lobby: actor({ id: 'lobby', node: 'server', behavior: lobbyBehavior }),
@@ -191,10 +202,10 @@ await startMeshPongWebSocketLoopback();
 // websocket browser — browser a/b connect outbound-only to a Node helper listener
 await startMeshPongBrowserWebSocket();
 
-// broadcast-channel — same-origin tabs, no server
+// broadcast-channel — same-origin tabs on one shared transport identity
 await startMeshPongBroadcast({ channelName: 'pong' });
 
-// mesh — labs-mesh overlay on no-server BroadcastChannel peers
+// mesh — labs-mesh overlay on one shared BroadcastChannel identity
 await startMeshPongMesh({ channelName: 'pong-mesh' });
 ```
 
@@ -207,12 +218,16 @@ The controller split now mirrors the intended game-engine architecture:
 - `pong-contract.ts`: pure deterministic core. It normalizes controller
   vocabulary, predicts reflex intercept targets, models planner strategy facts,
   merges strategy with reflex targeting, and resolves bounded paddle intents.
+- `matchCoordinator`: server-node authoritative lifecycle aggregate. It owns
+  phase, generation, controller slots, session roster, authority, and the full
+  canonical `PongSnapshot`.
 - `pong-controller.ts`: provider adapter only. It owns prompt construction,
   request/timeout wiring, response parsing, and errors-as-data, and returns
   low-frequency planner strategy facts instead of per-frame paddle commands.
 - `ui/main.ts`: imperative shell. It owns controller scheduling, freshness and
-  stale-budget policy, storage migration, replay publication, DOM state, and
-  telemetry.
+  stale-budget policy, DOM state, and telemetry. Lifecycle and controller
+  writes now go back through the selected Actor-Web transport instead of the
+  old storage plus BroadcastChannel side channel.
 
 The reusable Actor-Web primitive extraction question is intentionally deferred
 for this task. The bounded planner/reflex controller seam stays example-local
@@ -225,7 +240,7 @@ package-level contract.
 examples/mesh-pong/
   README.md                 this file
   pong-contract.ts          message/event types and deterministic Pong rules
-  pong-behaviors.ts         ball / paddle / score / session / lobby behaviors
+  pong-behaviors.ts         coordinator / ball / paddle / score / session / lobby behaviors
   pong-controller.ts        side-specific MLX controller actors behind the llm tool
   pong-topology.ts          the shared defineActorWebTopology
   parity-proof.ts           data rendered by the UI proof panel
@@ -233,7 +248,7 @@ examples/mesh-pong/
     local.ts                startRuntime(pong)
     websocket.ts            serveNode loopback transport
     broadcast.ts            broadcastChannelTransport
-    mesh.ts                 labs-mesh overlay + no-server BroadcastChannel peers
+    mesh.ts                 labs-mesh overlay + shared BroadcastChannel transport
   ui/
     index.html              the playable demo + transport switcher
     main.ts                 browser runtime driver
@@ -255,12 +270,11 @@ The example is two deliverables: a human-facing demo and an automated gate.
    broadcast / mesh / websocket), per-tab player sessions, side claims, readiness,
    `human` / `reflex` / `planner` / `hybrid` controller selection, and an
    explicit start gate. The browser stays the
-   observer/control panel: it claims human slots, synthesizes legacy-compatible
-   controller lobby sessions for `reflex`, `planner`, or `hybrid` sides, feeds
-   snapshots to the controller actors, and applies bounded paddle intents at
-   owner-tick turn boundaries. It does not persist non-human controllers as
-   browser sessions. The
-   page renders the shared
+   observer/control panel: it claims human slots, synthesizes controller
+   session slots for `reflex`, `planner`, or `hybrid` sides, feeds snapshots to
+   the controller actors, and lets exactly one authority session advance match
+   ticks while every other client remains a projection. It does not persist
+   non-human controllers as browser sessions. The page renders the shared
    topology/behavior files, the selected startup module, and the parity-status
    panel so the validation result is visible while switching transports. It
    does not run the CI gate; `mesh-pong.test.ts` remains the runtime-agnostic
@@ -269,8 +283,8 @@ The example is two deliverables: a human-facing demo and an automated gate.
 Transport distinction:
 
 - `local`: one in-process runtime for quick deterministic play.
-- `broadcast`: same-origin tabs on BroadcastChannel with no external listener.
-- `mesh`: labs-mesh overlay on top of the BroadcastChannel demo topology.
+- `broadcast`: same-origin tabs on one shared BroadcastChannel transport.
+- `mesh`: labs-mesh overlay on top of the shared BroadcastChannel demo transport.
 - `websocket` in `mesh-pong.test.ts`: the headless loopback parity gate, where
   Node listeners run on every node so CI can prove transport parity.
 - `websocket` in the browser UI: a browser-playable mode where browser nodes
