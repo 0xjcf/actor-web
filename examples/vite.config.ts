@@ -1,10 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { ServedActorWebNode } from '@actor-web/runtime/node';
-import { serveNode } from '@actor-web/runtime/node';
 import { defineConfig, type Plugin } from 'vite';
-import { createPongControllerTools } from './mesh-pong/pong-controller';
-import { pong } from './mesh-pong/pong-topology';
+import { startMeshPongWebSocketHost } from './mesh-pong/modes/websocket';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const actorWebRoot = path.resolve(currentDir, '..');
@@ -12,17 +9,6 @@ const MESH_PONG_WEBSOCKET_HELPER_PATH = '/__mesh-pong/websocket';
 
 function jsonResponse(body: unknown) {
   return JSON.stringify(body, null, 2);
-}
-
-async function readJsonBody(request: NodeJS.ReadableStream): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
-  }
-  if (chunks.length === 0) {
-    return null;
-  }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
 function sendJson(
@@ -40,11 +26,15 @@ function sendJson(
 }
 
 function createMeshPongWebSocketHelperPlugin(): Plugin {
-  let meshPongWebSocketServer: ServedActorWebNode<typeof pong> | null = null;
-  let meshPongWebSocketServerPromise: Promise<ServedActorWebNode<typeof pong>> | null = null;
+  let meshPongWebSocketServer: Awaited<ReturnType<typeof startMeshPongWebSocketHost>> | null = null;
+  let meshPongWebSocketServerPromise: Promise<
+    Awaited<ReturnType<typeof startMeshPongWebSocketHost>>
+  > | null = null;
   let meshPongWebSocketServerFailure: string | null = null;
 
-  async function ensureMeshPongWebSocketServer(): Promise<ServedActorWebNode<typeof pong>> {
+  async function ensureMeshPongWebSocketServer(): Promise<
+    Awaited<ReturnType<typeof startMeshPongWebSocketHost>>
+  > {
     if (meshPongWebSocketServer) {
       return meshPongWebSocketServer;
     }
@@ -52,11 +42,7 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
       return meshPongWebSocketServerPromise;
     }
 
-    meshPongWebSocketServerPromise = serveNode(pong, {
-      node: 'server',
-      transport: { listen: true, heartbeatIntervalMs: 0 },
-      tools: createPongControllerTools(),
-    })
+    meshPongWebSocketServerPromise = startMeshPongWebSocketHost()
       .then((server) => {
         meshPongWebSocketServerFailure = null;
         meshPongWebSocketServer = server;
@@ -88,22 +74,12 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
 
     try {
       const server = await ensureMeshPongWebSocketServer();
-      const transportUrl = server.getTransportUrl();
-      if (!transportUrl) {
-        return {
-          statusCode: 503,
-          body: {
-            state: 'transport-failed',
-            message: 'Mesh Pong WebSocket helper did not expose a transport URL.',
-            transportUrl: null,
-          },
-        };
-      }
       return {
         statusCode: 200,
         body: {
           state: 'ready',
-          transportUrl,
+          transportUrl: server.transportUrl,
+          matchAddress: server.matchAddress,
         },
       };
     } catch (error) {
@@ -138,63 +114,18 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
           return;
         }
 
-        if (
-          pathname === `${MESH_PONG_WEBSOCKET_HELPER_PATH}/session` &&
-          request.method === 'POST'
-        ) {
-          const status = await meshPongWebSocketStatus();
-          if (status.statusCode !== 200) {
-            sendJson(response, status.statusCode, status.body);
-            return;
-          }
-
-          const payload = (await readJsonBody(request)) as { sessionId?: unknown } | null;
-          const sessionId =
-            payload && typeof payload.sessionId === 'string' ? payload.sessionId.trim() : '';
-          if (!sessionId) {
-            sendJson(response, 400, {
-              state: 'transport-failed',
-              message: 'Mesh Pong WebSocket helper requires a sessionId.',
-              transportUrl: null,
-            });
-            return;
-          }
-
-          try {
-            const served = await ensureMeshPongWebSocketServer();
-            const actorRef = await served.actors.playerSession.instance({ sessionId });
-            const matchCoordinator = served.requireActor('matchCoordinator');
-            await served.system.flush();
-            sendJson(response, 200, {
-              state: 'ready',
-              transportUrl: served.getTransportUrl(),
-              actorAddress: actorRef.address,
-              matchAddress: matchCoordinator.address,
-            });
-          } catch (error) {
-            sendJson(response, 503, {
-              state: 'transport-failed',
-              message:
-                error instanceof Error
-                  ? error.message
-                  : 'Mesh Pong WebSocket helper could not create the player session.',
-              transportUrl: meshPongWebSocketServer?.getTransportUrl() ?? null,
-            });
-          }
-          return;
-        }
-
         if (pathname === `${MESH_PONG_WEBSOCKET_HELPER_PATH}/flush` && request.method === 'POST') {
           try {
             const served = await ensureMeshPongWebSocketServer();
-            await served.system.flush();
+            await served.flush();
             sendJson(response, 200, { ok: true });
           } catch (error) {
             sendJson(response, 503, {
               state: 'transport-failed',
               message:
                 error instanceof Error ? error.message : 'Mesh Pong WebSocket helper flush failed.',
-              transportUrl: meshPongWebSocketServer?.getTransportUrl() ?? null,
+              transportUrl: meshPongWebSocketServer?.transportUrl ?? null,
+              matchAddress: meshPongWebSocketServer?.matchAddress ?? null,
             });
           }
           return;
@@ -204,6 +135,7 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
           state: 'listener-missing',
           message: 'Mesh Pong WebSocket listener helper is unavailable.',
           transportUrl: null,
+          matchAddress: null,
         });
       });
     },
