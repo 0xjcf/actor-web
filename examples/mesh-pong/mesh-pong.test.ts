@@ -54,6 +54,7 @@ import {
   advanceBall,
   createInitialBallContext,
   createInitialLobby,
+  createInitialMatchState,
   createInitialPaddle,
   createInitialPlayerSession,
   createInitialScore,
@@ -67,10 +68,13 @@ import {
   normalizePongControllerType,
   PONG_FIELD,
   type PongShellMatchMode,
+  removeMatchSession,
   shouldLaunchPlannerControllerForSide,
   startLobbyMatch,
+  startMatchLifecycle,
   syncLobbySession,
   syncLobbySessionsFromStorage,
+  syncMatchSession,
   TWO_HUMAN_PONG_MATCH_MODE,
   toLegacyPongControllerType,
   usesSyntheticControllerSlot,
@@ -178,6 +182,22 @@ class FakeBroadcastChannel implements BroadcastChannelLike {
   }
 }
 
+class FakeWebLocks {
+  private granted = false;
+
+  async request<T>(
+    _name: string,
+    _options: { readonly ifAvailable: true },
+    callback: (lock: { readonly name: string } | null) => Promise<T> | T
+  ): Promise<T> {
+    if (!this.granted) {
+      this.granted = true;
+      return callback({ name: 'mesh-pong-host' });
+    }
+    return callback(null);
+  }
+}
+
 const startedRuntimes: StartedMeshPongRuntime[] = [];
 
 interface MeshPongTestRefs {
@@ -199,6 +219,21 @@ interface MeshPongControllerRefs {
   readonly right: ActorRef<PongControllerActorState, ControllerCommand>;
 }
 
+interface MeshPongLookupNode {
+  readonly system: {
+    lookup(address: string): Promise<unknown>;
+    flush(): Promise<void>;
+  };
+  requireActor(key: string): unknown;
+  readonly actors: {
+    readonly playerSession: {
+      instance(
+        params: PongPlayerSessionParams
+      ): Promise<ActorRef<PongPlayerSessionState, PlayerSessionCommand>>;
+    };
+  };
+}
+
 afterEach(async () => {
   await Promise.allSettled(startedRuntimes.splice(0).map((runtime) => runtime.stop()));
 });
@@ -218,19 +253,25 @@ async function flush(runtime: StartedMeshPongRuntime): Promise<void> {
     return;
   }
 
-  await Promise.all(Object.values(runtime.nodes).map((nodeRuntime) => nodeRuntime?.system.flush()));
+  const localRuntime = runtime as StartedMeshPongRuntime & {
+    readonly nodes: Record<string, { readonly system: { flush(): Promise<void> } } | undefined>;
+  };
+  await Promise.all(
+    Object.values(localRuntime.nodes).map((nodeRuntime) => nodeRuntime?.system.flush())
+  );
 }
 
-function serverNode(runtime: StartedMeshPongRuntime) {
+function serverNode(runtime: StartedMeshPongRuntime): MeshPongLookupNode {
   if ('server' in runtime) {
-    return runtime.server;
+    return runtime.server as unknown as MeshPongLookupNode;
   }
 
-  const server = runtime.nodes.server;
+  const localRuntime = runtime as { readonly nodes: Record<string, unknown> };
+  const server = localRuntime.nodes.server as unknown;
   if (!server) {
     throw new Error('Mesh Pong local runtime did not start the server node.');
   }
-  return server;
+  return server as MeshPongLookupNode;
 }
 
 async function waitForActor<TContext, TMessage extends ActorMessage>(
@@ -239,7 +280,7 @@ async function waitForActor<TContext, TMessage extends ActorMessage>(
 ): Promise<ActorRef<TContext, TMessage>> {
   const server = serverNode(runtime);
   for (let attempt = 0; attempt < 80; attempt += 1) {
-    const actorRef = await server.system.lookup<TContext, TMessage>(address);
+    const actorRef = (await server.system.lookup(address)) as ActorRef<TContext, TMessage> | null;
     if (actorRef) {
       return actorRef;
     }
@@ -250,7 +291,7 @@ async function waitForActor<TContext, TMessage extends ActorMessage>(
   throw new Error(`Timed out resolving Mesh Pong actor ${address} from the server node.`);
 }
 
-async function resolvePongRefs(runtime: StartedMeshPongRuntime): Promise<MeshPongTestRefs> {
+async function _resolvePongRefs(runtime: StartedMeshPongRuntime): Promise<MeshPongTestRefs> {
   const server = serverNode(runtime);
   return {
     ball: server.requireActor('ball') as ActorRef<PongBallContext, BallCommand>,
@@ -270,8 +311,137 @@ async function createPlayerSession(
   runtime: StartedMeshPongRuntime,
   params: PongPlayerSessionParams
 ): Promise<ActorRef<PongPlayerSessionState, PlayerSessionCommand>> {
+  const clientRuntime = runtime as StartedMeshPongRuntime & {
+    readonly client?: {
+      readonly actors: {
+        readonly playerSession: {
+          instance(
+            params: PongPlayerSessionParams
+          ): Promise<ActorRef<PongPlayerSessionState, PlayerSessionCommand>>;
+        };
+      };
+    };
+  };
+  if (clientRuntime.client) {
+    return clientRuntime.client.actors.playerSession.instance(params);
+  }
+  const localRuntime = runtime as StartedMeshPongRuntime & {
+    readonly nodes?: Record<
+      string,
+      {
+        readonly actors: {
+          readonly playerSession: {
+            instance(
+              params: PongPlayerSessionParams
+            ): Promise<ActorRef<PongPlayerSessionState, PlayerSessionCommand>>;
+          };
+        };
+      }
+    >;
+  };
+  if (localRuntime.nodes) {
+    const client = localRuntime.nodes.client ?? localRuntime.nodes.server;
+    if (!client) {
+      throw new Error('Mesh Pong runtime did not start a client or server node.');
+    }
+    return client.actors.playerSession.instance(params);
+  }
   const server = serverNode(runtime);
   return server.actors.playerSession.instance(params);
+}
+
+function isLobbyMatchMode(value: unknown): value is {
+  readonly playerCount: 1 | 2;
+  readonly controllers: { readonly left: 'human' | 'mlx'; readonly right: 'human' | 'mlx' };
+} {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as {
+    readonly playerCount?: unknown;
+    readonly controllers?: { readonly left?: unknown; readonly right?: unknown };
+  };
+  return (
+    (candidate.playerCount === 1 || candidate.playerCount === 2) &&
+    (candidate.controllers?.left === 'human' || candidate.controllers?.left === 'mlx') &&
+    (candidate.controllers?.right === 'human' || candidate.controllers?.right === 'mlx')
+  );
+}
+
+function createLobbyRef(): ActorRef<PongLobbyState, PongLobbyCommand> {
+  let lobbyState = createInitialLobby();
+  return {
+    ask: vi.fn(async (message: PongLobbyCommand) => {
+      if (message.type === 'GET_LOBBY') {
+        return lobbyState;
+      }
+      if (message.type === 'START_MATCH') {
+        if (!isLobbyMatchMode(message.mode)) {
+          return {
+            ok: false,
+            reason: 'invalid-command',
+            missing: [],
+          } satisfies PongMatchStartResult;
+        }
+        const result = startLobbyMatch(lobbyState, message.mode);
+        lobbyState = result.lobby;
+        return result.result;
+      }
+      if (message.type === 'SYNC_SESSION') {
+        lobbyState = syncLobbySession(lobbyState, message.session);
+        return lobbyState;
+      }
+      if (message.type === 'REMOVE_SESSION') {
+        lobbyState = {
+          ...lobbyState,
+          sessions: lobbyState.sessions.filter(
+            (session) => session.sessionId !== message.sessionId
+          ),
+          controllers: lobbyState.controllers.filter(
+            (controller) => controller.sessionId !== message.sessionId
+          ),
+        };
+        return lobbyState;
+      }
+      if (message.type === 'RESET_LOBBY') {
+        lobbyState = createInitialLobby();
+        return lobbyState;
+      }
+      return {
+        ok: false,
+        reason: 'invalid-command',
+        missing: [],
+      } satisfies PongMatchStartResult;
+    }),
+    send: vi.fn(async (message: PongLobbyCommand) => {
+      if (message.type === 'SYNC_SESSION') {
+        lobbyState = syncLobbySession(lobbyState, message.session);
+        return;
+      }
+      if (message.type === 'REMOVE_SESSION') {
+        lobbyState = {
+          ...lobbyState,
+          sessions: lobbyState.sessions.filter(
+            (session) => session.sessionId !== message.sessionId
+          ),
+          controllers: lobbyState.controllers.filter(
+            (controller) => controller.sessionId !== message.sessionId
+          ),
+        };
+        return;
+      }
+      if (message.type === 'RESET_LOBBY') {
+        lobbyState = createInitialLobby();
+        return;
+      }
+      if (message.type === 'START_MATCH') {
+        if (!isLobbyMatchMode(message.mode)) {
+          return;
+        }
+        lobbyState = startLobbyMatch(lobbyState, message.mode).lobby;
+      }
+    }),
+  } as unknown as ActorRef<PongLobbyState, PongLobbyCommand>;
 }
 
 async function resolveSessionRefs(runtime: StartedMeshPongRuntime): Promise<MeshPongSessionRefs> {
@@ -281,7 +451,7 @@ async function resolveSessionRefs(runtime: StartedMeshPongRuntime): Promise<Mesh
       PongMatchState,
       PongMatchCommand
     >,
-    lobby: server.requireActor('lobby') as ActorRef<PongLobbyState, PongLobbyCommand>,
+    lobby: createLobbyRef(),
     sessionA: await createPlayerSession(runtime, { sessionId: 'tab-a' }),
     sessionB: await createPlayerSession(runtime, { sessionId: 'tab-b' }),
   };
@@ -317,19 +487,9 @@ async function resolveControllerRefs(
 }
 
 async function currentSnapshot(runtime: StartedMeshPongRuntime): Promise<PongSnapshot> {
-  const refs = await resolvePongRefs(runtime);
-  const ball = await refs.ball.ask<PongBallContext>({ type: 'GET_BALL' });
-  const score = await refs.score.ask<PongScoreState>({ type: 'GET_SCORE' });
-  const [left, right] = await Promise.all([
-    refs.paddleA.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
-    refs.paddleB.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
-  ]);
-
-  return {
-    ball: ball.ball,
-    score,
-    paddles: { left, right },
-  };
+  const { matchCoordinator } = await resolveSessionRefs(runtime);
+  const match = await currentMatchState(matchCoordinator);
+  return match.snapshot;
 }
 
 async function syncSyntheticMlxSession(
@@ -377,40 +537,43 @@ async function syncSessionToLobby(
   await lobby.send({ type: 'SYNC_SESSION', session: state });
 }
 
-async function centerPaddles(
-  runtime: StartedMeshPongRuntime,
-  refs: Pick<MeshPongTestRefs, 'paddleA' | 'paddleB'>
-): Promise<void> {
-  const centerY = PONG_FIELD.height / 2 - PONG_FIELD.paddleHeight / 2;
-  await refs.paddleA.send({ type: 'SET_PADDLE', y: centerY });
-  await refs.paddleB.send({ type: 'SET_PADDLE', y: centerY });
+async function prepareRunningMatch(
+  runtime: StartedMeshPongRuntime
+): Promise<ActorRef<PongMatchState, PongMatchCommand>> {
+  const { matchCoordinator, sessionA, sessionB } = await resolveSessionRefs(runtime);
+  await sessionA.send({ type: 'CLAIM_SIDE', side: 'left' });
+  await sessionA.send({ type: 'SET_READY', ready: true });
+  await sessionB.send({ type: 'CLAIM_SIDE', side: 'right' });
+  await sessionB.send({ type: 'SET_READY', ready: true });
+  await syncCoordinatorSession(matchCoordinator, sessionA);
+  await syncCoordinatorSession(matchCoordinator, sessionB);
   await flush(runtime);
-}
-
-async function stepSimulation(
-  runtime: StartedMeshPongRuntime,
-  refs: MeshPongTestRefs
-): Promise<void> {
-  await centerPaddles(runtime, refs);
-
-  const [left, right] = await Promise.all([
-    refs.paddleA.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
-    refs.paddleB.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
-  ]);
-  await refs.ball.send({ type: 'SET_PADDLES', leftY: left.y, rightY: right.y });
-  await refs.ball.send({ type: 'TICK' });
+  await matchCoordinator.ask<PongMatchCommandResult>({
+    type: 'START_MATCH',
+    requestSessionId: 'tab-a',
+    expectedGeneration: 0,
+    mode: TWO_HUMAN_PONG_MATCH_MODE,
+  });
   await flush(runtime);
+  return matchCoordinator;
 }
 
 async function driveUntilNextScore(
   runtime: StartedMeshPongRuntime,
-  refs: MeshPongTestRefs,
+  matchCoordinator: ActorRef<PongMatchState, PongMatchCommand>,
   currentSequenceLength: number
 ): Promise<PongScoreState> {
   for (let tick = 0; tick < 40; tick += 1) {
-    await stepSimulation(runtime, refs);
+    const currentMatch = await currentMatchState(matchCoordinator);
+    const result = await matchCoordinator.ask<PongMatchCommandResult>({
+      type: 'TICK_MATCH',
+      requestSessionId: 'tab-a',
+      expectedGeneration: currentMatch.generation,
+    });
+    expect(result.ok).toBe(true);
+    await flush(runtime);
 
-    const score = await refs.score.ask<PongScoreState>({ type: 'GET_SCORE' });
+    const score = (await currentMatchState(matchCoordinator)).snapshot.score;
     if (score.sequence.length > currentSequenceLength) {
       return score;
     }
@@ -420,17 +583,19 @@ async function driveUntilNextScore(
 }
 
 async function runScoreSequence(runtime: StartedMeshPongRuntime): Promise<string[]> {
-  const refs = await resolvePongRefs(runtime);
-
-  await refs.ball.send({ type: 'RESET_BALL', seed: DEFAULT_PONG_SEED });
-  await refs.score.send({ type: 'RESET_SCORE' });
-  await flush(runtime);
+  const matchCoordinator = await prepareRunningMatch(runtime);
 
   for (let tick = 0; tick < 28; tick += 1) {
-    await stepSimulation(runtime, refs);
+    const currentMatch = await currentMatchState(matchCoordinator);
+    await matchCoordinator.ask<PongMatchCommandResult>({
+      type: 'TICK_MATCH',
+      requestSessionId: 'tab-a',
+      expectedGeneration: currentMatch.generation,
+    });
+    await flush(runtime);
   }
 
-  const finalScore = await refs.score.ask<PongScoreState>({ type: 'GET_SCORE' });
+  const finalScore = (await currentMatchState(matchCoordinator)).snapshot.score;
   return finalScore.sequence.map(
     (point) => `${point.scorer}:${point.left}-${point.right}:r${point.rally}:t${point.tick}`
   );
@@ -1244,8 +1409,8 @@ describe('Mesh Pong transport parity', () => {
 
     const { sessionA, sessionB } = await resolveSessionRefs(runtime);
 
-    expect(sessionA.address).toBe('actor://pong-server/player-session-tab-a');
-    expect(sessionB.address).toBe('actor://pong-server/player-session-tab-b');
+    expect(sessionA.address).toBe('actor://pong-client-local/player-session-tab-a');
+    expect(sessionB.address).toBe('actor://pong-client-local/player-session-tab-b');
     expect(sessionA.address).not.toBe(sessionB.address);
 
     await sessionA.send({ type: 'CLAIM_SIDE', side: 'left' });
@@ -1529,6 +1694,124 @@ describe('Mesh Pong transport parity', () => {
       snapshot: {
         score: { left: 0, right: 0 },
       },
+    });
+  });
+
+  it('keeps the coordinator topology as the sole aggregate and places controllers on nodes a and b', () => {
+    expect(Object.keys(pong.actors).sort()).toEqual([
+      'controllerLeft',
+      'controllerRight',
+      'matchCoordinator',
+      'playerSession',
+    ]);
+    expect(pong.actors.controllerLeft.node).toBe('a');
+    expect(pong.actors.controllerRight.node).toBe('b');
+    expect(pong.subscriptions).toEqual([]);
+  });
+
+  it('pauses exactly once and preserves remaining human sessions when authority disappears', () => {
+    const running = startMatchLifecycle(
+      syncMatchSession(
+        syncMatchSession(createInitialMatchState(), {
+          sessionId: 'tab-a',
+          controller: 'human',
+          side: 'left',
+          ready: true,
+        }),
+        {
+          sessionId: 'tab-b',
+          controller: 'human',
+          side: 'right',
+          ready: true,
+        }
+      ),
+      'tab-a',
+      0,
+      TWO_HUMAN_PONG_MATCH_MODE
+    );
+    expect(running.ok).toBe(true);
+    const startedMatch = (running as Extract<PongMatchCommandResult, { ok: true }>).match;
+
+    const paused = removeMatchSession(startedMatch, 'tab-a');
+    expect(paused).toMatchObject({
+      phase: 'paused',
+      authoritySessionId: null,
+      generation: 2,
+      sessions: [expect.objectContaining({ sessionId: 'tab-b', side: 'right', ready: true })],
+    });
+
+    const repeated = removeMatchSession(paused, 'tab-a');
+    expect(repeated.generation).toBe(2);
+    expect(repeated.sessions).toEqual(paused.sessions);
+  });
+
+  it('maps reset semantics to RESTART_MATCH while keeping RETURN_TO_ROOM distinct', async () => {
+    const uiEntrypoint = await readFile(
+      path.resolve(meshPongExamplesDir, 'mesh-pong/ui/main.ts'),
+      'utf8'
+    );
+
+    expect(uiEntrypoint).toContain("type: 'RESTART_MATCH'");
+    expect(uiEntrypoint).not.toContain("type: 'RESET_MATCH'");
+    expect(uiEntrypoint).toContain("type: 'RETURN_TO_ROOM'");
+  });
+
+  it('asks remote controller actors instead of running a browser-local MLX shortcut', async () => {
+    const uiEntrypoint = await readFile(
+      path.resolve(meshPongExamplesDir, 'mesh-pong/ui/main.ts'),
+      'utf8'
+    );
+
+    expect(uiEntrypoint).toContain('refs.controllerLeft.ask');
+    expect(uiEntrypoint).toContain('refs.controllerRight.ask');
+    expect(uiEntrypoint).not.toContain('createBrowserMlxLlmProvider');
+    expect(uiEntrypoint).not.toContain('runPongControllerWithLlmProvider');
+  });
+
+  it('keeps projections alive in lobby paused and running while only the authority ticks', async () => {
+    const uiEntrypoint = await readFile(
+      path.resolve(meshPongExamplesDir, 'mesh-pong/ui/main.ts'),
+      'utf8'
+    );
+
+    expect(uiEntrypoint).toContain("case 'paused'");
+    expect(uiEntrypoint).toContain("case 'running'");
+    expect(uiEntrypoint).toContain("case 'lobby'");
+    expect(uiEntrypoint).toContain("type: 'TICK_MATCH'");
+    expect(uiEntrypoint).toContain('matchOwnerSessionId === browserSessionId');
+  });
+
+  it('adds an explicit PAUSE_MATCH command that returns data for non-authority callers', async () => {
+    const runtime = await startMeshPongLocal();
+    startedRuntimes.push(runtime);
+    const { matchCoordinator, sessionA, sessionB } = await resolveSessionRefs(runtime);
+
+    await sessionA.send({ type: 'CLAIM_SIDE', side: 'left' });
+    await sessionA.send({ type: 'SET_READY', ready: true });
+    await sessionB.send({ type: 'CLAIM_SIDE', side: 'right' });
+    await sessionB.send({ type: 'SET_READY', ready: true });
+    await syncCoordinatorSession(matchCoordinator, sessionA);
+    await syncCoordinatorSession(matchCoordinator, sessionB);
+    await flush(runtime);
+
+    await matchCoordinator.ask<PongMatchCommandResult>({
+      type: 'START_MATCH',
+      requestSessionId: 'tab-a',
+      expectedGeneration: 0,
+      mode: TWO_HUMAN_PONG_MATCH_MODE,
+    });
+
+    await expect(
+      matchCoordinator.ask<PongMatchCommandResult>({
+        type: 'PAUSE_MATCH',
+        requestSessionId: 'tab-b',
+        expectedGeneration: 1,
+      } as PongMatchCommand)
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'not-authority',
+      authoritySessionId: 'tab-a',
+      requestSessionId: 'tab-b',
     });
   });
 
@@ -2547,7 +2830,7 @@ describe('Mesh Pong transport parity', () => {
     expect(harness.renderedSnapshots).toHaveLength(1);
   });
 
-  it('uses the shell MLX runner when present instead of blocking browser controller actors', async () => {
+  it('uses remote controller actors even when a shell MLX runner is supplied', async () => {
     const runMlxController = vi.fn(
       async (side: PongSide): Promise<PongControllerResult> => ({
         ok: true,
@@ -2572,11 +2855,10 @@ describe('Mesh Pong transport parity', () => {
     await flushMicrotasks();
     await harness.stepper.tick();
 
-    expect(runMlxController).toHaveBeenCalled();
-    expect(harness.leftAskCount()).toBe(0);
-    expect(harness.rightAskCount()).toBe(0);
-    expect(harness.commands).toContain('left:MOVE_PADDLE');
-    expect(harness.commands).toContain('right:MOVE_PADDLE');
+    expect(runMlxController).not.toHaveBeenCalled();
+    expect(harness.leftAskCount()).toBeGreaterThan(0);
+    expect(harness.rightAskCount()).toBeGreaterThan(0);
+    expect(harness.commands).toEqual(['ball:TICK', 'ball:TICK']);
   });
 
   it('uses controller schedule policy for ask timeout and stale intent reuse', async () => {
@@ -2797,20 +3079,17 @@ describe('Mesh Pong transport parity', () => {
     });
   });
 
-  it('keeps the score actor as the only source of scoreboard totals', async () => {
+  it('keeps coordinator snapshot score totals authoritative across ticks', async () => {
     const runtime = await startMeshPongLocal();
     startedRuntimes.push(runtime);
-    const refs = await resolvePongRefs(runtime);
+    const matchCoordinator = await prepareRunningMatch(runtime);
 
-    await refs.ball.send({ type: 'RESET_BALL', seed: DEFAULT_PONG_SEED });
-    await refs.score.send({ type: 'RESET_SCORE' });
-    await flush(runtime);
-
-    const firstScore = await driveUntilNextScore(runtime, refs, 0);
-    await refs.ball.send({ type: 'RESET_BALL', seed: DEFAULT_PONG_SEED });
-    await flush(runtime);
-
-    const secondScore = await driveUntilNextScore(runtime, refs, firstScore.sequence.length);
+    const firstScore = await driveUntilNextScore(runtime, matchCoordinator, 0);
+    const secondScore = await driveUntilNextScore(
+      runtime,
+      matchCoordinator,
+      firstScore.sequence.length
+    );
     const latestPoint = secondScore.sequence[secondScore.sequence.length - 1];
     expect(secondScore.left + secondScore.right).toBe(firstScore.left + firstScore.right + 1);
     expect(latestPoint.left).toBe(secondScore.left);
@@ -2851,6 +3130,7 @@ describe('Mesh Pong transport parity', () => {
           }
           return broadcastNetwork.create(channelName);
         },
+        webLocks: new FakeWebLocks(),
       })
     ).rejects.toThrow('broadcast channel setup failed');
 
@@ -2866,9 +3146,9 @@ describe('Mesh Pong transport parity', () => {
       PongMatchState,
       PongMatchCommand
     >;
-    const session = await server.actors.playerSession.instance({ sessionId: 'tab-a' });
-    const reconnect = await server.actors.playerSession.instance({ sessionId: 'tab-a' });
-    const opponent = await server.actors.playerSession.instance({ sessionId: 'tab-b' });
+    const session = await createPlayerSession(runtime, { sessionId: 'tab-a' });
+    const reconnect = await createPlayerSession(runtime, { sessionId: 'tab-a' });
+    const opponent = await createPlayerSession(runtime, { sessionId: 'tab-b' });
 
     await session.send({ type: 'CLAIM_SIDE', side: 'left' });
     await session.send({ type: 'SET_READY', ready: true });
@@ -2892,7 +3172,7 @@ describe('Mesh Pong transport parity', () => {
     await flush(runtime);
 
     expect(reconnect.address).toBe(session.address);
-    await expect(reconnect.ask<PongPlayerSessionState>({ type: 'GET_SESSION' })).resolves.toEqual({
+    await expect(reconnect.ask({ type: 'GET_SESSION' })).resolves.toEqual({
       sessionId: 'tab-a',
       controller: 'human',
       side: 'left',
@@ -2910,11 +3190,48 @@ describe('Mesh Pong transport parity', () => {
     });
   });
 
+  it('starts broadcast and mesh with one Web Locks host lease instead of booting server a and b in every client', async () => {
+    const [broadcastMode, meshMode] = await Promise.all([
+      readFile(path.resolve(meshPongExamplesDir, 'mesh-pong/modes/broadcast.ts'), 'utf8'),
+      readFile(path.resolve(meshPongExamplesDir, 'mesh-pong/modes/mesh.ts'), 'utf8'),
+    ]);
+
+    expect(broadcastMode).toContain('navigator.locks.request');
+    expect(broadcastMode).toContain('ifAvailable: true');
+    expect(broadcastMode).toContain('startMeshPongBroadcastHost');
+    expect(broadcastMode).toContain('startMeshPongBroadcastClient');
+    expect(meshMode).toContain('startMeshPongMeshHost');
+    expect(meshMode).toContain('startMeshPongMeshClient');
+    expect(meshMode).toContain('createMeshOverlayForStartedNodes');
+  });
+
+  it('starts one websocket host and gives browser sessions unique client nodes without a provisioning route', async () => {
+    const [websocketMode, viteConfig] = await Promise.all([
+      readFile(path.resolve(meshPongExamplesDir, 'mesh-pong/modes/websocket.ts'), 'utf8'),
+      readFile(path.resolve(meshPongExamplesDir, 'vite.config.ts'), 'utf8'),
+    ]);
+
+    expect(websocketMode).toContain('startMeshPongWebSocketHost');
+    expect(websocketMode).toContain('startMeshPongBrowserWebSocketClient');
+    expect(websocketMode).toContain('clientNodeAddress');
+    expect(websocketMode).not.toContain('ensurePlayerSession');
+    expect(viteConfig).not.toContain('/__mesh-pong/websocket/session');
+    expect(viteConfig).toContain('matchAddress');
+  });
+
+  it('keeps score parity sourced from the coordinator snapshot instead of a separate score actor', () => {
+    expect(MESH_PONG_SHARED_PARITY_PROOF.actors).not.toContain('score');
+    expect(MESH_PONG_SHARED_PARITY_PROOF.actors).not.toContain('ball');
+    expect(MESH_PONG_SHARED_PARITY_PROOF.actors).not.toContain('lobby');
+    expect(MESH_PONG_SHARED_PARITY_PROOF.validationGate).toContain('coordinator');
+  });
+
   it('keeps authoritative lifecycle convergence parity across local, broadcast, and websocket runtimes', async () => {
     const local = await startMeshPongLocal();
     const broadcast = await startMeshPongBroadcast({
       channelName: 'mesh-pong-lifecycle-parity',
       broadcastChannelFactory: new FakeBroadcastChannelNetwork().create,
+      webLocks: new FakeWebLocks(),
     });
     const websocket = await startMeshPongWebSocketLoopback();
     startedRuntimes.push(local, broadcast, websocket);
@@ -2975,7 +3292,7 @@ describe('Mesh Pong transport parity', () => {
       topologyFile: 'pong-topology.ts',
       behaviorFile: 'pong-behaviors.ts',
       validationGate:
-        'mesh-pong.test.ts: lifecycle + score parity across local, broadcast, websocket',
+        'mesh-pong.test.ts: coordinator lifecycle + score parity across local, broadcast, websocket',
     });
     expect(MESH_PONG_SHARED_PARITY_PROOF.actors).toEqual([
       'matchCoordinator',
@@ -3044,8 +3361,8 @@ describe('Mesh Pong transport parity', () => {
       'utf8'
     );
 
-    expect(uiEntrypoint).toContain("paddleA: ownedPaddleActor(candidate, 'a', 'paddleA')");
-    expect(uiEntrypoint).toContain("paddleB: ownedPaddleActor(candidate, 'b', 'paddleB')");
+    expect(uiEntrypoint).not.toContain('ownedPaddleActor');
+    expect(uiEntrypoint).toContain('snapshot: () => snapshot(nextRefs)');
     expect(uiEntrypoint).not.toContain('pong.actors.paddleB.address');
   });
 
@@ -3132,6 +3449,7 @@ describe('Mesh Pong transport parity', () => {
         JSON.stringify({
           state: 'ready',
           transportUrl: 'ws://127.0.0.1:4102',
+          matchAddress: 'actor://pong-server/match-coordinator',
         }),
         {
           status: 200,
@@ -3142,7 +3460,6 @@ describe('Mesh Pong transport parity', () => {
         JSON.stringify({
           state: 'ready',
           transportUrl: 'ws://127.0.0.1:4102',
-          actorAddress: 'actor://pong-server/player-session-browser-a',
           matchAddress: 'actor://pong-server/match-coordinator',
         }),
         {
@@ -3181,11 +3498,11 @@ describe('Mesh Pong transport parity', () => {
     await expect(client.getStatus()).resolves.toEqual({
       state: 'ready',
       transportUrl: 'ws://127.0.0.1:4102',
+      matchAddress: 'actor://pong-server/match-coordinator',
     });
-    await expect(client.ensurePlayerSession('browser-a')).resolves.toEqual({
+    await expect(client.getStatus()).resolves.toEqual({
       state: 'ready',
       transportUrl: 'ws://127.0.0.1:4102',
-      actorAddress: 'actor://pong-server/player-session-browser-a',
       matchAddress: 'actor://pong-server/match-coordinator',
     });
     await expect(client.flush()).resolves.toBeUndefined();
@@ -3193,11 +3510,13 @@ describe('Mesh Pong transport parity', () => {
       state: 'listener-missing',
       message: 'Mesh Pong WebSocket listener helper is unavailable.',
       transportUrl: null,
+      matchAddress: null,
     });
     await expect(client.getStatus()).resolves.toEqual({
       state: 'transport-failed',
       message: 'listener failed to start',
       transportUrl: null,
+      matchAddress: null,
     });
     expect(describeMeshPongWebSocketStatus('connecting')).toBe('connecting');
     expect(describeMeshPongWebSocketStatus('connected')).toBe('connected/lobby');
@@ -3252,6 +3571,7 @@ describe('Mesh Pong transport parity', () => {
         startMeshPongBroadcast({
           channelName: 'mesh-pong-parity',
           broadcastChannelFactory: broadcastNetwork.create,
+          webLocks: new FakeWebLocks(),
         })
       ),
       captureSequence(() => startMeshPongWebSocketLoopback()),

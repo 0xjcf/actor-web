@@ -1,9 +1,4 @@
 import type { ActorMessage, ActorRef } from '@actor-web/runtime';
-import {
-  createBrowserMlxLlmProvider,
-  createBrowserMlxTools,
-  resolveBrowserMlxProviderConfig,
-} from '../mlx-provider';
 import { startMeshPongBroadcast } from '../modes/broadcast';
 import { startMeshPongLocal } from '../modes/local';
 import { startMeshPongMesh } from '../modes/mesh';
@@ -19,32 +14,24 @@ import {
   parityProofForMode,
 } from '../parity-proof';
 import type {
-  BallCommand,
   ControllerCommand,
-  PaddleCommand,
   PlayerSessionCommand,
-  PongBallContext,
   PongControllerActorState,
   PongControllerAim,
   PongControllerInputResult,
   PongControllerMode,
   PongControllerModeCompat,
   PongControllerResult,
-  PongLobbyCommand,
-  PongLobbyState,
   PongMatchCommand,
   PongMatchCommandResult,
   PongMatchMode,
   PongMatchPhase,
   PongMatchState,
-  PongPaddleState,
   PongPlannerStrategy,
   PongPlayerSessionState,
-  PongScoreState,
   PongShellMatchMode,
   PongSide,
   PongSnapshot,
-  ScoreCommand,
 } from '../pong-contract';
 import {
   createMergedControllerAim,
@@ -60,7 +47,6 @@ import {
   usesPlannerController,
   usesSyntheticControllerSlot,
 } from '../pong-contract';
-import { runPongControllerWithLlmProvider } from '../pong-controller';
 import { pong } from '../pong-topology';
 import { drawPong } from './pong-canvas';
 
@@ -72,15 +58,10 @@ type BrowserRuntime =
   | StartedMeshPongBrowserWebSocketRuntime;
 
 interface RuntimeRefs {
-  readonly ball: ActorRef<PongBallContext, BallCommand>;
   readonly controllerLeft: ActorRef<PongControllerActorState, ControllerCommand>;
   readonly controllerRight: ActorRef<PongControllerActorState, ControllerCommand>;
   readonly matchCoordinator: ActorRef<PongMatchState, PongMatchCommand>;
-  readonly score: ActorRef<PongScoreState, ScoreCommand>;
-  readonly lobby: ActorRef<PongLobbyState, PongLobbyCommand>;
   readonly playerSession: ActorRef<PongPlayerSessionState, PlayerSessionCommand>;
-  readonly paddleA: ActorRef<PongPaddleState, PaddleCommand>;
-  readonly paddleB: ActorRef<PongPaddleState, PaddleCommand>;
 }
 
 export interface MeshPongTelemetryControllerState {
@@ -1150,16 +1131,6 @@ async function syncMatchForMode(
   mode: PongShellMatchMode,
   shouldContinue: () => boolean = () => true
 ): Promise<boolean> {
-  const currentMatch = await currentMatchState(nextRefs);
-  for (const session of currentMatch.sessions) {
-    if (session.sessionId === browserSessionId) {
-      continue;
-    }
-    await nextRefs.matchCoordinator.send({ type: 'REMOVE_SESSION', sessionId: session.sessionId });
-    if (!shouldContinue()) {
-      return false;
-    }
-  }
   if (playerSessionState) {
     await nextRefs.matchCoordinator.send({ type: 'SYNC_SESSION', session: playerSessionState });
     if (!shouldContinue()) {
@@ -1243,7 +1214,7 @@ function lookupNode(candidate: BrowserRuntime) {
     return candidate.lookupNode;
   }
   if (isBrowserClusterRuntime(candidate)) {
-    return candidate.server;
+    return candidate.server ?? candidate.lookupNode;
   }
 
   const server = candidate.nodes.server;
@@ -1251,29 +1222,6 @@ function lookupNode(candidate: BrowserRuntime) {
     throw new Error('Mesh Pong local runtime did not start the server node.');
   }
   return server;
-}
-
-function ownedRuntimeNode(candidate: BrowserRuntime, nodeKey: 'a' | 'b') {
-  if (isBrowserWebSocketRuntime(candidate) || isBrowserClusterRuntime(candidate)) {
-    return candidate[nodeKey];
-  }
-
-  const nodeRuntime = candidate.nodes[nodeKey];
-  if (!nodeRuntime) {
-    throw new Error(`Mesh Pong local runtime did not start the ${nodeKey} node.`);
-  }
-  return nodeRuntime;
-}
-
-function ownedPaddleActor(
-  candidate: BrowserRuntime,
-  nodeKey: 'a' | 'b',
-  actorKey: 'paddleA' | 'paddleB'
-): ActorRef<PongPaddleState, PaddleCommand> {
-  return ownedRuntimeNode(candidate, nodeKey).requireActor(actorKey) as ActorRef<
-    PongPaddleState,
-    PaddleCommand
-  >;
 }
 
 async function waitForActor<TContext, TMessage extends ActorMessage>(
@@ -1299,9 +1247,16 @@ async function resolveRefs(candidate: BrowserRuntime): Promise<RuntimeRefs> {
         candidate,
         candidate.playerSessionAddress
       )
-    : await lookupNode(candidate).actors.playerSession.instance({ sessionId: browserSessionId });
+    : isBrowserClusterRuntime(candidate)
+      ? await candidate.client.actors.playerSession.instance({ sessionId: browserSessionId })
+      : await (() => {
+          const clientNode = candidate.nodes.client;
+          if (!clientNode) {
+            throw new Error('Mesh Pong local runtime did not start the client node.');
+          }
+          return clientNode.actors.playerSession.instance({ sessionId: browserSessionId });
+        })();
   return {
-    ball: await waitForActor<PongBallContext, BallCommand>(candidate, pong.actors.ball.address),
     controllerLeft: await waitForActor<PongControllerActorState, ControllerCommand>(
       candidate,
       pong.actors.controllerLeft.address
@@ -1316,14 +1271,7 @@ async function resolveRefs(candidate: BrowserRuntime): Promise<RuntimeRefs> {
         ? candidate.matchCoordinatorAddress
         : pong.actors.matchCoordinator.address
     ),
-    score: await waitForActor<PongScoreState, ScoreCommand>(candidate, pong.actors.score.address),
-    lobby: await waitForActor<PongLobbyState, PongLobbyCommand>(
-      candidate,
-      pong.actors.lobby.address
-    ),
     playerSession,
-    paddleA: ownedPaddleActor(candidate, 'a', 'paddleA'),
-    paddleB: ownedPaddleActor(candidate, 'b', 'paddleB'),
   };
 }
 
@@ -1348,23 +1296,6 @@ function renderSnapshot(nextSnapshot: PongSnapshot): void {
   scoreValueElement.textContent = `${nextSnapshot.score.left} : ${nextSnapshot.score.right}`;
 }
 
-function browserLocalStorage() {
-  return typeof localStorage === 'undefined' ? undefined : localStorage;
-}
-
-function runBrowserMlxController(
-  side: PongSide,
-  nextSnapshot: PongSnapshot
-): Promise<PongControllerResult> {
-  return runPongControllerWithLlmProvider(
-    side,
-    nextSnapshot,
-    createBrowserMlxLlmProvider({
-      config: resolveBrowserMlxProviderConfig(browserLocalStorage()),
-    })
-  );
-}
-
 async function resetGame(): Promise<void> {
   const currentRuntime = runtime;
   const currentRefs = refs;
@@ -1379,7 +1310,7 @@ async function resetGame(): Promise<void> {
   }
   const currentMatch = await currentMatchState(currentRefs);
   const result = await currentRefs.matchCoordinator.ask<PongMatchCommandResult>({
-    type: 'RETURN_TO_ROOM',
+    type: 'RESTART_MATCH',
     requestSessionId: browserSessionId,
     expectedGeneration: currentMatch.generation,
   });
@@ -1397,6 +1328,30 @@ async function resetGame(): Promise<void> {
   }
 }
 
+async function returnToRoom(): Promise<void> {
+  const currentRuntime = runtime;
+  const currentRefs = refs;
+  if (!currentRuntime || !currentRefs) {
+    return;
+  }
+
+  const currentMatch = await currentMatchState(currentRefs);
+  const result = await currentRefs.matchCoordinator.ask<PongMatchCommandResult>({
+    type: 'RETURN_TO_ROOM',
+    requestSessionId: browserSessionId,
+    expectedGeneration: currentMatch.generation,
+  });
+  await flushRuntime(currentRuntime);
+  if (!result.ok) {
+    setStatus(result.reason);
+    return;
+  }
+  matchState = result.match;
+  renderLobby(result.match);
+  renderSnapshot(result.match.snapshot);
+  setStatus(readyStatusForMode(selectedMode));
+}
+
 function isBrowserRuntimeStartFailure(
   candidate: BrowserRuntime | MeshPongBrowserWebSocketStartResult
 ): candidate is Extract<MeshPongBrowserWebSocketStartResult, { readonly ok: false }> {
@@ -1411,6 +1366,17 @@ function readyStatusForMode(mode: BrowserMode): string {
   return mode === 'websocket' ? describeMeshPongWebSocketStatus('connected') : 'lobby';
 }
 
+function statusForMatchPhase(phase: PongMatchPhase): string {
+  switch (phase) {
+    case 'lobby':
+      return 'lobby';
+    case 'paused':
+      return 'paused';
+    case 'running':
+      return 'running';
+  }
+}
+
 function failureStatusForMode(
   result: Extract<MeshPongBrowserWebSocketStartResult, { readonly ok: false }>
 ): string {
@@ -1420,22 +1386,21 @@ function failureStatusForMode(
 async function startRuntimeForMode(
   mode: BrowserMode
 ): Promise<BrowserRuntime | MeshPongBrowserWebSocketStartResult> {
-  const tools = createBrowserMlxTools({ storage: browserLocalStorage() });
   if (mode === 'local') {
-    return startMeshPongLocal({ tools });
+    return startMeshPongLocal({ sessionId: browserSessionId });
   }
   if (mode === 'broadcast') {
     return startMeshPongBroadcast({
+      sessionId: browserSessionId,
       channelName: 'mesh-pong-demo',
-      tools,
     });
   }
   if (mode === 'websocket') {
     return startMeshPongBrowserWebSocket({ sessionId: browserSessionId });
   }
   return startMeshPongMesh({
+    sessionId: browserSessionId,
     channelName: 'mesh-pong-demo-mesh',
-    tools,
   });
 }
 
@@ -1538,7 +1503,6 @@ async function switchMode(mode: BrowserMode): Promise<void> {
       setStatus,
       updateTelemetry,
       postControllerInput,
-      runMlxController: runBrowserMlxController,
       setControllerDiagnostic,
       clearControllerDiagnostic,
       applyHumanInput: (mode) => applyPaddleInput(activeRuntime, nextRefs, mode),
@@ -1755,15 +1719,22 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
   async function resolvePlannerControllerInput(request: PlannerControllerRequest): Promise<void> {
     const lane = lanes[request.side];
     try {
-      const result = deps.runMlxController
-        ? await deps.runMlxController(request.side, request.snapshot)
-        : await request.controller.ask<PongControllerResult>(
-            {
-              type: 'RUN_CONTROLLER',
-              snapshot: request.snapshot,
-            },
-            schedulePolicy.controllerAskTimeoutMs
-          );
+      const result =
+        request.side === 'left'
+          ? await request.refs.controllerLeft.ask<PongControllerResult>(
+              {
+                type: 'RUN_CONTROLLER',
+                snapshot: request.snapshot,
+              },
+              schedulePolicy.controllerAskTimeoutMs
+            )
+          : await request.refs.controllerRight.ask<PongControllerResult>(
+              {
+                type: 'RUN_CONTROLLER',
+                snapshot: request.snapshot,
+              },
+              schedulePolicy.controllerAskTimeoutMs
+            );
       if (!ownsRequest(request)) {
         return;
       }
@@ -1961,8 +1932,20 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
 
   async function tick(): Promise<void> {
     const currentTurnMatch = deps.getMatchState();
+    const browserSessionId = deps.browserSessionId;
+    const matchOwnerSessionId = currentTurnMatch.matchOwnerSessionId;
+    const ownsProjection = matchOwnerSessionId === browserSessionId;
     syncLanes(currentTurnMatch);
-    if (!active || currentTurnMatch.phase !== 'running') {
+    if (!active) {
+      return;
+    }
+    if (currentTurnMatch.phase !== 'running') {
+      const projectedSnapshot = await deps.snapshot();
+      if (!active) {
+        return;
+      }
+      deps.renderSnapshot(projectedSnapshot);
+      deps.setStatus(statusForMatchPhase(currentTurnMatch.phase));
       return;
     }
 
@@ -1972,7 +1955,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
       deps.updateTelemetry({ type: 'simulation-held', nowMs: deps.nowMs() });
       return;
     }
-    if (currentTurnMatch.matchOwnerSessionId !== deps.browserSessionId) {
+    if (!ownsProjection) {
       const projectedSnapshot = await deps.snapshot();
       if (!active) {
         return;
@@ -2337,6 +2320,12 @@ export function bootstrapMeshPongUI(): void {
   resetButtonElement.addEventListener('click', () => {
     void resetGame().catch((error: unknown) => {
       setStatus(error instanceof Error ? error.message : 'reset failed');
+    });
+  });
+  resetButtonElement.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    void returnToRoom().catch((error: unknown) => {
+      setStatus(error instanceof Error ? error.message : 'return failed');
     });
   });
 
