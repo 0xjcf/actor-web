@@ -183,29 +183,31 @@ class FakeBroadcastChannel implements BroadcastChannelLike {
 }
 
 class FakeWebLocks {
-  private granted = false;
+  readonly activeNames = new Set<string>();
+  readonly releasedNames: string[] = [];
+  readonly requestLog: Array<{ readonly name: string; readonly granted: boolean }> = [];
 
   async request<T>(
-    _name: string,
+    name: string,
     _options: { readonly ifAvailable: true },
     callback: (lock: { readonly name: string } | null) => Promise<T> | T
   ): Promise<T> {
-    if (!this.granted) {
-      this.granted = true;
-      return callback({ name: 'mesh-pong-host' });
+    if (this.activeNames.has(name)) {
+      this.requestLog.push({ name, granted: false });
+      return callback(null);
     }
-    return callback(null);
+    this.activeNames.add(name);
+    this.requestLog.push({ name, granted: true });
+    try {
+      return await callback({ name });
+    } finally {
+      this.activeNames.delete(name);
+      this.releasedNames.push(name);
+    }
   }
 }
 
 const startedRuntimes: StartedMeshPongRuntime[] = [];
-
-interface MeshPongTestRefs {
-  readonly ball: ActorRef<PongBallContext, BallCommand>;
-  readonly score: ActorRef<PongScoreState, ScoreCommand>;
-  readonly paddleA: ActorRef<PongPaddleState, PaddleCommand>;
-  readonly paddleB: ActorRef<PongPaddleState, PaddleCommand>;
-}
 
 interface MeshPongSessionRefs {
   readonly matchCoordinator: ActorRef<PongMatchState, PongMatchCommand>;
@@ -265,6 +267,10 @@ function serverNode(runtime: StartedMeshPongRuntime): MeshPongLookupNode {
   if ('server' in runtime) {
     return runtime.server as unknown as MeshPongLookupNode;
   }
+  const clusterRuntime = runtime as StartedMeshPongRuntime & { readonly lookupNode?: unknown };
+  if (clusterRuntime.lookupNode) {
+    return clusterRuntime.lookupNode as MeshPongLookupNode;
+  }
 
   const localRuntime = runtime as { readonly nodes: Record<string, unknown> };
   const server = localRuntime.nodes.server as unknown;
@@ -289,22 +295,6 @@ async function waitForActor<TContext, TMessage extends ActorMessage>(
   }
 
   throw new Error(`Timed out resolving Mesh Pong actor ${address} from the server node.`);
-}
-
-async function _resolvePongRefs(runtime: StartedMeshPongRuntime): Promise<MeshPongTestRefs> {
-  const server = serverNode(runtime);
-  return {
-    ball: server.requireActor('ball') as ActorRef<PongBallContext, BallCommand>,
-    score: server.requireActor('score') as ActorRef<PongScoreState, ScoreCommand>,
-    paddleA: await waitForActor<PongPaddleState, PaddleCommand>(
-      runtime,
-      pong.actors.paddleA.address
-    ),
-    paddleB: await waitForActor<PongPaddleState, PaddleCommand>(
-      runtime,
-      pong.actors.paddleB.address
-    ),
-  };
 }
 
 async function createPlayerSession(
@@ -492,6 +482,21 @@ async function currentSnapshot(runtime: StartedMeshPongRuntime): Promise<PongSna
   return match.snapshot;
 }
 
+async function resolveDistributedMatchCoordinator(
+  runtime: StartedMeshPongRuntime
+): Promise<ActorRef<PongMatchState, PongMatchCommand>> {
+  return waitForActor<PongMatchState, PongMatchCommand>(
+    runtime,
+    pong.actors.matchCoordinator.address
+  );
+}
+
+async function currentDistributedMatchState(
+  runtime: StartedMeshPongRuntime
+): Promise<PongMatchState> {
+  return currentMatchState(await resolveDistributedMatchCoordinator(runtime));
+}
+
 async function syncSyntheticMlxSession(
   lobby: ActorRef<PongLobbyState, PongLobbyCommand>,
   side: 'left' | 'right'
@@ -641,6 +646,7 @@ function createStepperSnapshot(
 function createTurnStepperHarness(
   mode: PongShellMatchMode,
   options: {
+    readonly applyFailure?: Exclude<PongMatchCommandResult, { readonly ok: true }>;
     readonly flushRuntime?: () => Promise<void>;
     readonly runMlxController?: (
       side: PongSide,
@@ -648,6 +654,7 @@ function createTurnStepperHarness(
     ) => Promise<PongControllerResult>;
     readonly onSnapshot?: () => void;
     readonly schedulePolicy?: MeshPongControllerSchedulePolicy;
+    readonly tickFailure?: Exclude<PongMatchCommandResult, { readonly ok: true }>;
   } = {}
 ) {
   const runtime = { kind: 'mesh-pong-test-runtime' } as unknown as Awaited<
@@ -800,6 +807,9 @@ function createTurnStepperHarness(
           return makeMatch();
         }
         if (message.type === 'APPLY_CONTROLLER_INPUT') {
+          if (options.applyFailure) {
+            return options.applyFailure;
+          }
           const key = message.input.side;
           const amount = message.input.amount;
           commands.push(`${key === 'left' ? 'left' : 'right'}:MOVE_PADDLE`);
@@ -816,6 +826,9 @@ function createTurnStepperHarness(
           return { ok: true, match: makeMatch() } satisfies PongMatchCommandResult;
         }
         if (message.type === 'TICK_MATCH') {
+          if (options.tickFailure) {
+            return options.tickFailure;
+          }
           commands.push('ball:TICK');
           tickCount += 1;
           return { ok: true, match: makeMatch() } satisfies PongMatchCommandResult;
@@ -868,7 +881,6 @@ function createTurnStepperHarness(
     postControllerInput: (input) => {
       replayedInputs.push(input);
     },
-    runMlxController: options.runMlxController,
     setControllerDiagnostic: () => undefined,
     clearControllerDiagnostic: () => undefined,
   });
@@ -1704,6 +1716,11 @@ describe('Mesh Pong transport parity', () => {
       'matchCoordinator',
       'playerSession',
     ]);
+    expect('ball' in pong.actors).toBe(false);
+    expect('lobby' in pong.actors).toBe(false);
+    expect('paddleA' in pong.actors).toBe(false);
+    expect('paddleB' in pong.actors).toBe(false);
+    expect('score' in pong.actors).toBe(false);
     expect(pong.actors.controllerLeft.node).toBe('a');
     expect(pong.actors.controllerRight.node).toBe('b');
     expect(pong.subscriptions).toEqual([]);
@@ -1779,6 +1796,22 @@ describe('Mesh Pong transport parity', () => {
     expect(uiEntrypoint).toContain("case 'lobby'");
     expect(uiEntrypoint).toContain("type: 'TICK_MATCH'");
     expect(uiEntrypoint).toContain('matchOwnerSessionId === browserSessionId');
+  });
+
+  it('starts projection from runtime startup and keeps reset on the active loop', async () => {
+    const uiEntrypoint = await readFile(
+      path.resolve(meshPongExamplesDir, 'mesh-pong/ui/main.ts'),
+      'utf8'
+    );
+    const resetSection = uiEntrypoint.slice(
+      uiEntrypoint.indexOf('async function resetGame(): Promise<void> {'),
+      uiEntrypoint.indexOf('async function returnToRoom(): Promise<void> {')
+    );
+
+    expect(uiEntrypoint).toContain('function ensureProjectionLoop(): void');
+    expect(uiEntrypoint).toContain('applyProjectedMatch(refreshedMatch);');
+    expect(uiEntrypoint).toContain('ensureProjectionLoop();');
+    expect(resetSection).not.toContain('window.clearTimeout(loopHandle);');
   });
 
   it('adds an explicit PAUSE_MATCH command that returns data for non-authority callers', async () => {
@@ -2861,6 +2894,27 @@ describe('Mesh Pong transport parity', () => {
     expect(harness.commands).toEqual(['ball:TICK', 'ball:TICK']);
   });
 
+  it('reports coordinator command failures as status data instead of throwing from the turn stepper', async () => {
+    const harness = createTurnStepperHarness(
+      {
+        playerCount: 2,
+        controllers: { left: 'human', right: 'human' },
+      },
+      {
+        tickFailure: {
+          ok: false,
+          reason: 'not-authority',
+          authoritySessionId: 'other-tab',
+          requestSessionId: 'owner-tab',
+        },
+      }
+    );
+
+    await expect(harness.stepper.tick()).resolves.toBeUndefined();
+    expect(harness.statuses.at(-1)).toBe('not-authority');
+    expect(harness.commands).toEqual([]);
+  });
+
   it('uses controller schedule policy for ask timeout and stale intent reuse', async () => {
     expect(DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY).toEqual({
       simulationIntervalMs: 90,
@@ -3137,6 +3191,46 @@ describe('Mesh Pong transport parity', () => {
     expect(broadcastNetwork.size()).toBe(0);
   });
 
+  it('holds the broadcast host lease until stop, keeps concurrent joiners client-only, and releases on stop', async () => {
+    const webLocks = new FakeWebLocks();
+    const broadcastNetwork = new FakeBroadcastChannelNetwork();
+    const channelName = 'mesh-pong-broadcast-lease';
+
+    const host = await startMeshPongBroadcast({
+      sessionId: 'host-tab',
+      channelName,
+      broadcastChannelFactory: broadcastNetwork.create,
+      webLocks,
+    });
+    startedRuntimes.push(host);
+
+    expect(host.hostAcquired).toBe(true);
+    expect(webLocks.activeNames.has(`mesh-pong:${channelName}:host`)).toBe(true);
+
+    const client = await startMeshPongBroadcast({
+      sessionId: 'guest-tab',
+      channelName,
+      broadcastChannelFactory: broadcastNetwork.create,
+      webLocks,
+    });
+    startedRuntimes.push(client);
+
+    expect(client.hostAcquired).toBe(false);
+    expect(client.server).toBeUndefined();
+    expect(client.a).toBeUndefined();
+    expect(client.b).toBeUndefined();
+    expect(
+      webLocks.requestLog.some(
+        (entry) => entry.name === `mesh-pong:${channelName}:host` && entry.granted === false
+      )
+    ).toBe(true);
+
+    await host.stop();
+    await flushMicrotasks();
+    expect(webLocks.activeNames.has(`mesh-pong:${channelName}:host`)).toBe(false);
+    expect(webLocks.releasedNames).toContain(`mesh-pong:${channelName}:host`);
+  });
+
   it('re-hydrates websocket player sessions and authoritative match state across reconnects', async () => {
     const runtime = await startMeshPongWebSocketLoopback();
     startedRuntimes.push(runtime);
@@ -3285,6 +3379,88 @@ describe('Mesh Pong transport parity', () => {
     });
     expect(broadcastState).toEqual(localState);
     expect(websocketState).toEqual(localState);
+  });
+
+  it('keeps independent broadcast clients converged across restarts from each seated player', async () => {
+    const broadcastNetwork = new FakeBroadcastChannelNetwork();
+    const webLocks = new FakeWebLocks();
+    const channelName = 'mesh-pong-broadcast-independent-clients';
+    const host = await startMeshPongBroadcast({
+      sessionId: 'host-tab',
+      channelName,
+      broadcastChannelFactory: broadcastNetwork.create,
+      webLocks,
+    });
+    const client = await startMeshPongBroadcast({
+      sessionId: 'guest-tab',
+      channelName,
+      broadcastChannelFactory: broadcastNetwork.create,
+      webLocks,
+    });
+    startedRuntimes.push(host, client);
+
+    const hostCoordinator = await resolveDistributedMatchCoordinator(host);
+    const hostSession = await createPlayerSession(host, { sessionId: 'host-tab' });
+    const guestSession = await createPlayerSession(client, { sessionId: 'guest-tab' });
+
+    await hostSession.send({ type: 'CLAIM_SIDE', side: 'left' });
+    await hostSession.send({ type: 'SET_READY', ready: true });
+    await guestSession.send({ type: 'CLAIM_SIDE', side: 'right' });
+    await guestSession.send({ type: 'SET_READY', ready: true });
+    await syncCoordinatorSession(hostCoordinator, hostSession);
+    await syncCoordinatorSession(hostCoordinator, guestSession);
+    await flush(host);
+    await flush(client);
+
+    await hostCoordinator.ask<PongMatchCommandResult>({
+      type: 'START_MATCH',
+      requestSessionId: 'host-tab',
+      expectedGeneration: 0,
+      mode: TWO_HUMAN_PONG_MATCH_MODE,
+    });
+    await hostCoordinator.ask<PongMatchCommandResult>({
+      type: 'TICK_MATCH',
+      requestSessionId: 'host-tab',
+      expectedGeneration: 1,
+    });
+    await flush(host);
+    await flush(client);
+
+    const assertConverged = async (expectedGeneration: number, expectedAuthority: string) => {
+      const [hostMatch, clientMatch] = await Promise.all([
+        currentDistributedMatchState(host),
+        currentDistributedMatchState(client),
+      ]);
+
+      expect(hostMatch).toMatchObject({
+        phase: 'running',
+        generation: expectedGeneration,
+        authoritySessionId: expectedAuthority,
+      });
+      expect(clientMatch.phase).toBe(hostMatch.phase);
+      expect(clientMatch.generation).toBe(hostMatch.generation);
+      expect(clientMatch.snapshot.score).toEqual(hostMatch.snapshot.score);
+      expect(clientMatch.snapshot.ball).toEqual(hostMatch.snapshot.ball);
+      expect(clientMatch.snapshot.paddles).toEqual(hostMatch.snapshot.paddles);
+    };
+
+    await hostCoordinator.ask<PongMatchCommandResult>({
+      type: 'RESTART_MATCH',
+      requestSessionId: 'host-tab',
+      expectedGeneration: 1,
+    });
+    await flush(host);
+    await flush(client);
+    await assertConverged(2, 'host-tab');
+
+    await hostCoordinator.ask<PongMatchCommandResult>({
+      type: 'RESTART_MATCH',
+      requestSessionId: 'guest-tab',
+      expectedGeneration: 2,
+    });
+    await flush(host);
+    await flush(client);
+    await assertConverged(3, 'guest-tab');
   });
 
   it('keeps the browser proof panel tied to shared behavior and mode-only startup files', () => {
