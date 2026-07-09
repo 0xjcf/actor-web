@@ -304,16 +304,19 @@ The example is two deliverables: a human-facing demo and an automated gate.
 
 Transport distinction:
 
-- `local`: one in-process runtime for quick deterministic play.
-- `broadcast`: same-origin tabs on one shared BroadcastChannel transport.
-- `mesh`: one Web Locks host starts browser-local `server / a / b / client`
-  nodes, each additional tab starts only its unique client node, and labs-mesh
-  overlays only the nodes started in that tab.
+- `local`: `server / a / b / client in one runtime` for quick deterministic
+  play.
+- `broadcast`: `host server / a / b / client; joiners client only` on one
+  same-origin BroadcastChannel transport.
+- `mesh`: `host server / a / b / client; joiners client only; local overlays`.
+  One Web Locks host starts the aggregate/controller/client nodes, each
+  additional tab starts only its unique client node, and labs-mesh overlays
+  only the nodes started in that tab.
 - `websocket` in `mesh-pong.test.ts`: the headless loopback parity gate, where
   Node listeners run on every node so CI can prove transport parity.
-- `websocket` in the browser UI: a browser-playable mode where browser nodes
-  stay outbound-only and connect to a Node `serveNode` listener started by the
-  local Vite helper. The UI reports `connecting`, `connected/lobby`,
+- `websocket` in the browser UI: `helper host server / a / b / client; browser
+  tabs client only`. Browser nodes stay outbound-only and connect to the local
+  Vite helper. The UI reports `connecting`, `connected/lobby`,
   `listener-missing`, or `transport-failed` instead of silently falling back.
 
 Capture guidance:
@@ -336,6 +339,8 @@ Acceptance:
   observer/control panel.
 - Each seated human submits input through its own player-session actor and
   coordinator ref; only the authority may advance `TICK_MATCH`.
+- `requestSessionId` is this example's current identity fact. Authenticated
+  transport identity remains remote-room work.
 - Missing or failing MLX providers project error facts instead of crashing
   startup.
 - Switching mode changes exactly one startup call; zero
