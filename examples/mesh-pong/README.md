@@ -125,8 +125,8 @@ before changing scheduling:
   source (`human`, `reflex`, `planner`, or `hybrid`), planner freshness or
   fallback status, the compact target/intercept or strategy label, the latest
   controller RTT, and the age of the last applied decision.
-- `Replay` shows the last cross-tab controller-input replay latency when a tab
-  re-applies another tab's input.
+- `Replay` remains a compatibility telemetry field and stays empty in the
+  coordinator architecture; controller input has no parallel replay channel.
 
 Interpretation:
 
@@ -136,10 +136,11 @@ Interpretation:
   calculated as `floor(gapMs / 90) - 1`.
 - High controller `rtt` points to model/provider latency.
 - High decision `age` includes local model decision time for planner-backed
-  modes; replay latency
-  points to broadcast/replay delay after the controller already decided. Local
-  human input is applied immediately in the shell, so its intent age is usually
-  near zero.
+  modes. Human and synthetic controller input use the selected Actor-Web
+  transport to reach `matchCoordinator`. Local
+  human input is applied immediately in the shell through the local coordinator
+  ref, so its intent age is usually near zero; remote human input follows the
+  same command path through its client transport.
 - When a fresh planner result is late, `planner` goes neutral after its fresh
   budget expires, while `hybrid` falls back to reflex and only reuses stale
   planner strategy for a small bounded number of turns.
@@ -155,39 +156,56 @@ guard for the topology-independence guarantee from spike
 ## The invariant — define once
 
 ```ts
-import { actor, defineActorWebTopology, node } from '@actor-web/runtime/topology';
-import {
-  ballBehavior,
-  createPaddleBehavior,
-  matchCoordinatorBehavior,
-  scoreBehavior,
-} from './pong-behaviors';
+import { ACTOR_WEB_LLM_TOOL_NAME } from '@actor-web/agent';
+import { actor, defineActorWebTopology, node, tool } from '@actor-web/runtime/topology';
+import { createPlayerSessionBehavior, matchCoordinatorBehavior } from './pong-behaviors';
+import { createPlayerSessionActorId, PONG_NODE_ADDRESSES } from './pong-contract';
+import { createPongControllerBehavior } from './pong-controller';
 
-export const pong = defineActorWebTopology({
-  nodes: {
-    server: node('pong-server'),
-    a: node('pong-a'),
-    b: node('pong-b'),
-  },
-  actors: {
-    matchCoordinator: actor({
-      id: 'match-coordinator',
-      node: 'server',
-      behavior: matchCoordinatorBehavior,
-    }),
-    ball: actor({ id: 'ball', node: 'server', behavior: ballBehavior }),
-    score: actor({ id: 'score', node: 'server', behavior: scoreBehavior }),
-    lobby: actor({ id: 'lobby', node: 'server', behavior: lobbyBehavior }),
-    playerSession: actor({
-      id: createPlayerSessionActorId,
-      node: 'server',
-      behavior: createPlayerSessionBehavior,
-    }),
-    paddleA: actor({ id: 'paddle-a', node: 'a', behavior: createPaddleBehavior('left') }),
-    paddleB: actor({ id: 'paddle-b', node: 'b', behavior: createPaddleBehavior('right') }),
-  },
-  subscriptions: [{ from: 'ball', to: ['score'], events: ['SCORED'] }],
-});
+export interface CreatePongTopologyOptions {
+  readonly clientNodeAddress?: string;
+}
+
+export function createPongTopology(options: CreatePongTopologyOptions = {}) {
+  const clientNodeAddress = options.clientNodeAddress ?? PONG_NODE_ADDRESSES.localClient;
+
+  return defineActorWebTopology({
+    nodes: {
+      server: node(PONG_NODE_ADDRESSES.server),
+      a: node(PONG_NODE_ADDRESSES.a),
+      b: node(PONG_NODE_ADDRESSES.b),
+      client: node(clientNodeAddress),
+    },
+    tools: [tool(ACTOR_WEB_LLM_TOOL_NAME)],
+    actors: {
+      matchCoordinator: actor({
+        id: 'match-coordinator',
+        node: 'server',
+        behavior: matchCoordinatorBehavior,
+      }),
+      playerSession: actor({
+        id: createPlayerSessionActorId,
+        node: 'client',
+        behavior: createPlayerSessionBehavior,
+      }),
+      controllerLeft: actor({
+        id: 'controller-left',
+        node: 'a',
+        behavior: createPongControllerBehavior('left'),
+        tools: [ACTOR_WEB_LLM_TOOL_NAME],
+      }),
+      controllerRight: actor({
+        id: 'controller-right',
+        node: 'b',
+        behavior: createPongControllerBehavior('right'),
+        tools: [ACTOR_WEB_LLM_TOOL_NAME],
+      }),
+    },
+    subscriptions: [],
+  });
+}
+
+export const pong = createPongTopology();
 ```
 
 ## The only line that changes
@@ -199,7 +217,7 @@ await startMeshPongLocal();
 // websocket loopback — Node listeners on every node for the parity gate
 await startMeshPongWebSocketLoopback();
 
-// websocket browser — browser a/b connect outbound-only to a Node helper listener
+// websocket browser — a unique browser client connects outbound to the Node helper
 await startMeshPongBrowserWebSocket();
 
 // broadcast-channel — same-origin tabs on one shared transport identity
@@ -221,13 +239,15 @@ The controller split now mirrors the intended game-engine architecture:
 - `matchCoordinator`: server-node authoritative lifecycle aggregate. It owns
   phase, generation, controller slots, session roster, authority, and the full
   canonical `PongSnapshot`.
-- `pong-controller.ts`: provider adapter only. It owns prompt construction,
-  request/timeout wiring, response parsing, and errors-as-data, and returns
-  low-frequency planner strategy facts instead of per-frame paddle commands.
+- `playerSession`: client-node adapter for one browser session's side claim,
+  readiness, and human controller input.
+- `controllerLeft` / `controllerRight`: planner adapter actors on nodes `a` and
+  `b`. They own prompt construction, request/timeout wiring, response parsing,
+  and errors-as-data, and return low-frequency strategy facts.
 - `ui/main.ts`: imperative shell. It owns controller scheduling, freshness and
-  stale-budget policy, DOM state, and telemetry. Lifecycle and controller
-  writes now go back through the selected Actor-Web transport instead of the
-  old storage plus BroadcastChannel side channel.
+  stale-budget policy, DOM state, and telemetry. Every seated human session
+  submits its own input through the selected Actor-Web transport; only the
+  authority plans synthetic controllers and advances `TICK_MATCH`.
 
 The reusable Actor-Web primitive extraction question is intentionally deferred
 for this task. The bounded planner/reflex controller seam stays example-local
@@ -240,20 +260,20 @@ package-level contract.
 examples/mesh-pong/
   README.md                 this file
   pong-contract.ts          message/event types and deterministic Pong rules
-  pong-behaviors.ts         coordinator / ball / paddle / score / session / lobby behaviors
-  pong-controller.ts        side-specific MLX controller actors behind the llm tool
+  pong-behaviors.ts         coordinator and player-session actor behaviors
+  pong-controller.ts        side-specific planner adapter actors behind the llm tool
   pong-topology.ts          the shared defineActorWebTopology
   parity-proof.ts           data rendered by the UI proof panel
   modes/
-    local.ts                startRuntime(pong)
-    websocket.ts            serveNode loopback transport
-    broadcast.ts            broadcastChannelTransport
-    mesh.ts                 labs-mesh overlay + shared BroadcastChannel transport
+    local.ts                one single-runtime server / a / b / client topology
+    websocket.ts            one helper host plus unique browser client nodes
+    broadcast.ts            one-shot browser host lease plus unique client nodes
+    mesh.ts                 host/client startup plus overlays for locally started nodes
   ui/
     index.html              the playable demo + transport switcher
     main.ts                 browser runtime driver
-    pong-canvas.ts          renders snapshots from the score/ball actors
-  mesh-pong.test.ts         headless behavior-parity test (the validation gate)
+    pong-canvas.ts          renders canonical coordinator snapshots
+  mesh-pong.test.ts         lifecycle, controller-input, and transport parity gate
 ```
 
 ## Validation strategy
@@ -262,19 +282,21 @@ The example is two deliverables: a human-facing demo and an automated gate.
 
 1. **Behavior-parity test** (`mesh-pong.test.ts`) — the real validation. It
    drives the same topology with a deterministic ball seed across `local`,
-   `broadcast-channel`, and `websocket` loopback runtimes, resolves remote
-   paddle actors from the server node, and asserts the observable score sequence
-   is identical across all three. This is what proves the actors are
-   transport-independent; it runs in CI through `pnpm test:examples`.
+   `broadcast-channel`, and `websocket` loopback runtimes, reads canonical
+   snapshots from `matchCoordinator`, and asserts identical lifecycle, score,
+   ball, and paddle projections. Independent BroadcastChannel clients also
+   prove guest human input crosses its own transport and converges. This runs in
+   CI through `pnpm test:examples`.
 2. **UI demo** (`ui/`) — a playable Pong with a transport switcher (local /
    broadcast / mesh / websocket), per-tab player sessions, side claims, readiness,
    `human` / `reflex` / `planner` / `hybrid` controller selection, and an
    explicit start gate. The browser stays the
    observer/control panel: it claims human slots, synthesizes controller
-   session slots for `reflex`, `planner`, or `hybrid` sides, feeds snapshots to
-   the controller actors, and lets exactly one authority session advance match
-   ticks while every other client remains a projection. It does not persist
-   non-human controllers as browser sessions. The page renders the shared
+   session slots for `reflex`, `planner`, or `hybrid` sides, and lets every
+   seated human send its own input while exactly one authority session asks
+   controller actors and advances match ticks. Other clients remain simulation
+   projections. It does not persist non-human controllers as browser sessions.
+   The page renders the shared
    topology/behavior files, the selected startup module, and the parity-status
    panel so the validation result is visible while switching transports. It
    does not run the CI gate; `mesh-pong.test.ts` remains the runtime-agnostic
@@ -284,7 +306,9 @@ Transport distinction:
 
 - `local`: one in-process runtime for quick deterministic play.
 - `broadcast`: same-origin tabs on one shared BroadcastChannel transport.
-- `mesh`: labs-mesh overlay on top of the shared BroadcastChannel demo transport.
+- `mesh`: one Web Locks host starts browser-local `server / a / b / client`
+  nodes, each additional tab starts only its unique client node, and labs-mesh
+  overlays only the nodes started in that tab.
 - `websocket` in `mesh-pong.test.ts`: the headless loopback parity gate, where
   Node listeners run on every node so CI can prove transport parity.
 - `websocket` in the browser UI: a browser-playable mode where browser nodes
@@ -303,19 +327,23 @@ Capture guidance:
 
 Acceptance:
 
-- The ball / paddle / score behaviors import no transport, runtime, or topology
-  module — only `defineBehavior` and message/event types.
+- The deterministic contract, coordinator/player-session behaviors, and
+  controller actors import no concrete transport or startup mode.
 - Two-player human mode starts only after both side controller slots are claimed
   and ready.
 - One-player mode starts with one human slot and one non-human controller slot.
 - Planner-vs-Planner mode runs through controller actors while the browser remains an
   observer/control panel.
+- Each seated human submits input through its own player-session actor and
+  coordinator ref; only the authority may advance `TICK_MATCH`.
 - Missing or failing MLX providers project error facts instead of crashing
   startup.
 - Switching mode changes exactly one startup call; zero
   changes to `pong-behaviors.ts` or `pong-topology.ts` across modes.
-- The parity test passes for local, broadcast, and websocket.
-- Mesh mode runs the demo across 3 peers with no server process.
+- The parity test passes for local, broadcast, and websocket, with mesh startup
+  covered by the same host/client topology contract.
+- Mesh mode has one browser host running `server / a / b / client`; client-only
+  tabs run one unique client node and never promote after host loss.
 
 ## Local MLX prerequisites
 
@@ -353,4 +381,6 @@ Built after the transports it exercises land: shared transport core,
 BroadcastChannel transport, WebSocket transport, and `@actor-web/labs-mesh`.
 Current `@actor-web/labs-mesh` exposes membership/directory/routing overlay
 APIs rather than a public `meshTransport` factory, so this example's mesh mode
-uses the no-server BroadcastChannel transport plus labs-mesh overlay state.
+uses BroadcastChannel transport for the browser-hosted `server / a / b /
+client` topology and adds labs-mesh overlay state only for locally started
+nodes.

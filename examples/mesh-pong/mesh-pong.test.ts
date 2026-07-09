@@ -3595,6 +3595,28 @@ describe('Mesh Pong transport parity', () => {
     expect(parityProofForMode('websocket').startupCall).toContain('startMeshPongBrowserWebSocket');
   });
 
+  it('documents the coordinator-only topology and host-client mesh node shape', async () => {
+    const readme = await readFile(path.resolve(meshPongExamplesDir, 'mesh-pong/README.md'), 'utf8');
+
+    expect(readme).toContain('client: node(clientNodeAddress)');
+    expect(readme).toContain("node: 'client'");
+    expect(readme).toContain('controllerLeft: actor({');
+    expect(readme).toContain('controllerRight: actor({');
+    expect(readme).toContain('subscriptions: []');
+    expect(readme).toContain('server / a / b / client');
+    expect(readme).not.toContain("ball: actor({ id: 'ball'");
+    expect(readme).not.toContain("score: actor({ id: 'score'");
+    expect(readme).not.toContain("lobby: actor({ id: 'lobby'");
+    expect(readme).not.toContain("paddleA: actor({ id: 'paddle-a'");
+    expect(readme).not.toContain("paddleB: actor({ id: 'paddle-b'");
+    expect(readme).not.toContain("events: ['SCORED']");
+    expect(readme).not.toContain('coordinator / ball / paddle / score / session / lobby behaviors');
+    expect(readme).not.toContain('renders snapshots from the score/ball actors');
+    expect(readme).not.toMatch(/resolves remote\s+paddle actors/);
+    expect(readme).not.toContain('Mesh mode runs the demo across 3 peers');
+    expect(readme).not.toContain('cross-tab controller-input replay latency');
+  });
+
   it('shows every transport and the authoritative actor set in the active transport proof', async () => {
     const html = await readFile(
       path.resolve(meshPongExamplesDir, 'mesh-pong/ui/index.html'),
