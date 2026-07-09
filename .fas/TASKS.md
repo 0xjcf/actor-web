@@ -2232,9 +2232,12 @@ operator explicitly asks for queue mutations.
 
 - Title: Mesh Pong hybrid reflex controller plus LLM planner mode
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/mesh-pong-hybrid-reflex-controller-plus-llm-planner-mode.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Design actor-web advisory policy for deadline-safe advice
 
