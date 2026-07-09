@@ -15,11 +15,12 @@ import {
   resolveBrowserMlxProviderConfig,
   type StorageLike,
 } from './mlx-provider';
-import { startMeshPongBroadcast } from './modes/broadcast';
+import { startMeshPongBroadcast, startMeshPongBroadcastClient } from './modes/broadcast';
 import { startMeshPongLocal } from './modes/local';
 import {
   createMeshPongWebSocketDevHelperClient,
   describeMeshPongWebSocketStatus,
+  startMeshPongBrowserWebSocketClient,
   startMeshPongWebSocketLoopback,
 } from './modes/websocket';
 import {
@@ -459,7 +460,14 @@ async function syncCoordinatorSession(
   session: ActorRef<PongPlayerSessionState, PlayerSessionCommand>
 ): Promise<void> {
   const state = await session.ask<PongPlayerSessionState>({ type: 'GET_SESSION' });
-  await matchCoordinator.send({ type: 'SYNC_SESSION', session: state });
+  const result = await matchCoordinator.ask<PongMatchCommandResult>({
+    type: 'SYNC_SESSION',
+    requestSessionId: state.sessionId,
+    session: state,
+  });
+  if (!result.ok) {
+    throw new Error(`Expected session sync, received ${result.reason}.`);
+  }
 }
 
 async function resolveControllerRefs(
@@ -1608,6 +1616,175 @@ describe('Mesh Pong transport parity', () => {
     });
   });
 
+  it('prevents a spectator from removing the authority session', async () => {
+    const runtime = await startMeshPongLocal();
+    startedRuntimes.push(runtime);
+    const { matchCoordinator, sessionA, sessionB } = await resolveSessionRefs(runtime);
+
+    await sessionA.send({ type: 'CLAIM_SIDE', side: 'left' });
+    await sessionA.send({ type: 'SET_READY', ready: true });
+    await sessionB.send({ type: 'CLAIM_SIDE', side: 'right' });
+    await sessionB.send({ type: 'SET_READY', ready: true });
+    await syncCoordinatorSession(matchCoordinator, sessionA);
+    await syncCoordinatorSession(matchCoordinator, sessionB);
+    await matchCoordinator.ask<PongMatchCommandResult>({
+      type: 'START_MATCH',
+      requestSessionId: 'tab-a',
+      expectedGeneration: 0,
+      mode: TWO_HUMAN_PONG_MATCH_MODE,
+    });
+
+    await expect(
+      matchCoordinator.ask<PongMatchCommandResult>({
+        type: 'REMOVE_SESSION',
+        requestSessionId: 'spectator-tab',
+        sessionId: 'tab-a',
+      })
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'not-session-owner',
+      requestSessionId: 'spectator-tab',
+      sessionId: 'tab-a',
+    });
+    await expect(currentMatchState(matchCoordinator)).resolves.toMatchObject({
+      phase: 'running',
+      generation: 1,
+      authoritySessionId: 'tab-a',
+      sessions: expect.arrayContaining([expect.objectContaining({ sessionId: 'tab-a' })]),
+    });
+  });
+
+  it('locks active seats while allowing self-authored late spectator hydration', async () => {
+    const runtime = await startMeshPongLocal();
+    startedRuntimes.push(runtime);
+    const { matchCoordinator, sessionA, sessionB } = await resolveSessionRefs(runtime);
+
+    await sessionA.send({ type: 'CLAIM_SIDE', side: 'left' });
+    await sessionA.send({ type: 'SET_READY', ready: true });
+    await sessionB.send({ type: 'CLAIM_SIDE', side: 'right' });
+    await sessionB.send({ type: 'SET_READY', ready: true });
+    await syncCoordinatorSession(matchCoordinator, sessionA);
+    await syncCoordinatorSession(matchCoordinator, sessionB);
+    await matchCoordinator.ask<PongMatchCommandResult>({
+      type: 'START_MATCH',
+      requestSessionId: 'tab-a',
+      expectedGeneration: 0,
+      mode: TWO_HUMAN_PONG_MATCH_MODE,
+    });
+
+    await expect(
+      matchCoordinator.ask<PongMatchCommandResult>({
+        type: 'SYNC_SESSION',
+        requestSessionId: 'spectator-tab',
+        session: {
+          sessionId: 'spectator-tab',
+          controller: 'human',
+          side: 'right',
+          ready: true,
+        },
+      })
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'session-mutation-not-allowed',
+      requestSessionId: 'spectator-tab',
+      sessionId: 'spectator-tab',
+      phase: 'running',
+    });
+    await expect(
+      matchCoordinator.ask<PongMatchCommandResult>({
+        type: 'SYNC_SESSION',
+        requestSessionId: 'spectator-tab',
+        session: {
+          sessionId: 'tab-b',
+          controller: 'human',
+          side: 'right',
+          ready: true,
+        },
+      })
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'not-session-owner',
+      requestSessionId: 'spectator-tab',
+      sessionId: 'tab-b',
+    });
+    await expect(
+      matchCoordinator.ask<PongMatchCommandResult>({
+        type: 'SYNC_SESSION',
+        requestSessionId: 'tab-b',
+        session: {
+          sessionId: 'tab-b',
+          controller: 'human',
+          side: 'left',
+          ready: true,
+        },
+      })
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'session-mutation-not-allowed',
+      requestSessionId: 'tab-b',
+      sessionId: 'tab-b',
+      phase: 'running',
+    });
+    await expect(
+      matchCoordinator.ask<PongMatchCommandResult>({
+        type: 'SYNC_SESSION',
+        requestSessionId: 'spectator-tab',
+        session: createInitialPlayerSession('spectator-tab'),
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      match: {
+        sessions: expect.arrayContaining([
+          expect.objectContaining({ sessionId: 'tab-b', side: 'right' }),
+          expect.objectContaining({ sessionId: 'spectator-tab', side: null }),
+        ]),
+      },
+    });
+    await expect(
+      matchCoordinator.ask<PongMatchCommandResult>({
+        type: 'SYNC_SESSION',
+        requestSessionId: 'tab-b',
+        session: {
+          sessionId: 'tab-b',
+          controller: 'human',
+          side: 'right',
+          ready: true,
+        },
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      match: {
+        phase: 'running',
+        authoritySessionId: 'tab-a',
+        sessions: expect.arrayContaining([
+          expect.objectContaining({ sessionId: 'tab-b', side: 'right' }),
+        ]),
+      },
+    });
+  });
+
+  it('keeps authorized self-sync and self-removal deterministic in the core', () => {
+    const session = {
+      sessionId: 'tab-a',
+      controller: 'human',
+      side: 'left',
+      ready: true,
+    } as const;
+    const synced = syncMatchSession(createInitialMatchState(), 'tab-a', session);
+    expect(synced).toMatchObject({ ok: true, match: { sessions: [session] } });
+    if (!synced.ok) {
+      throw new Error(`Expected authorized sync, received ${synced.reason}.`);
+    }
+
+    const removed = removeMatchSession(synced.match, 'tab-a', 'tab-a');
+    expect(removed).toMatchObject({ ok: true, match: { sessions: [], controllers: [] } });
+    if (!removed.ok) {
+      throw new Error(`Expected authorized removal, received ${removed.reason}.`);
+    }
+
+    expect(removeMatchSession(removed.match, 'tab-a', 'tab-a')).toEqual(removed);
+  });
+
   it('allows only the authority session to advance coordinator ticks', async () => {
     const runtime = await startMeshPongLocal();
     startedRuntimes.push(runtime);
@@ -1724,39 +1901,44 @@ describe('Mesh Pong transport parity', () => {
   });
 
   it('pauses exactly once and preserves remaining human sessions when authority disappears', () => {
-    const running = startMatchLifecycle(
-      syncMatchSession(
-        syncMatchSession(createInitialMatchState(), {
-          sessionId: 'tab-a',
-          controller: 'human',
-          side: 'left',
-          ready: true,
-        }),
-        {
-          sessionId: 'tab-b',
-          controller: 'human',
-          side: 'right',
-          ready: true,
-        }
-      ),
-      'tab-a',
-      0,
-      TWO_HUMAN_PONG_MATCH_MODE
-    );
+    const firstSync = syncMatchSession(createInitialMatchState(), 'tab-a', {
+      sessionId: 'tab-a',
+      controller: 'human',
+      side: 'left',
+      ready: true,
+    });
+    if (!firstSync.ok) {
+      throw new Error(`Expected first sync, received ${firstSync.reason}.`);
+    }
+    const secondSync = syncMatchSession(firstSync.match, 'tab-b', {
+      sessionId: 'tab-b',
+      controller: 'human',
+      side: 'right',
+      ready: true,
+    });
+    if (!secondSync.ok) {
+      throw new Error(`Expected second sync, received ${secondSync.reason}.`);
+    }
+    const running = startMatchLifecycle(secondSync.match, 'tab-a', 0, TWO_HUMAN_PONG_MATCH_MODE);
     expect(running.ok).toBe(true);
     const startedMatch = (running as Extract<PongMatchCommandResult, { ok: true }>).match;
 
-    const paused = removeMatchSession(startedMatch, 'tab-a');
+    const paused = removeMatchSession(startedMatch, 'tab-a', 'tab-a');
     expect(paused).toMatchObject({
-      phase: 'paused',
-      authoritySessionId: null,
-      generation: 2,
-      sessions: [expect.objectContaining({ sessionId: 'tab-b', side: 'right', ready: true })],
+      ok: true,
+      match: {
+        phase: 'paused',
+        authoritySessionId: null,
+        generation: 2,
+        sessions: [expect.objectContaining({ sessionId: 'tab-b', side: 'right', ready: true })],
+      },
     });
+    if (!paused.ok) {
+      throw new Error(`Expected authority removal, received ${paused.reason}.`);
+    }
 
-    const repeated = removeMatchSession(paused, 'tab-a');
-    expect(repeated.generation).toBe(2);
-    expect(repeated.sessions).toEqual(paused.sessions);
+    const repeated = removeMatchSession(paused.match, 'tab-a', 'tab-a');
+    expect(repeated).toEqual(paused);
   });
 
   it('maps reset semantics to RESTART_MATCH while keeping RETURN_TO_ROOM distinct', async () => {
@@ -3213,6 +3395,64 @@ describe('Mesh Pong transport parity', () => {
     expect(broadcastNetwork.size()).toBe(0);
   });
 
+  it('stops a broadcast client when joining the host fails after node startup', async () => {
+    const stop = vi.fn(async () => undefined);
+    const client = {
+      system: {
+        join: vi.fn(async () => {
+          throw new Error('client join failed');
+        }),
+        flush: vi.fn(async () => undefined),
+      },
+      stop,
+    };
+
+    await expect(
+      startMeshPongBroadcastClient({
+        channelName: 'mesh-pong-broadcast-client-failure',
+        sessionId: 'guest-tab',
+        startNode: (async () => client) as never,
+      })
+    ).rejects.toThrow('client join failed');
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it('stops a partially created websocket client when player-session startup fails', async () => {
+    const stop = vi.fn(async () => undefined);
+    const client = {
+      actors: {
+        playerSession: {
+          instance: vi.fn(async () => {
+            throw new Error('player session failed');
+          }),
+        },
+      },
+      system: {
+        flush: vi.fn(async () => undefined),
+      },
+      stop,
+    };
+    const result = await startMeshPongBrowserWebSocketClient({
+      sessionId: 'browser-tab',
+      helper: {
+        getStatus: vi.fn(async () => ({
+          state: 'ready' as const,
+          transportUrl: 'ws://127.0.0.1:1',
+          matchAddress: 'actor://pong-server/match-coordinator',
+        })),
+        flush: vi.fn(async () => undefined),
+      },
+      startClientNode: (async () => client) as never,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      state: 'transport-failed',
+      message: 'player session failed',
+    });
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
   it('holds the broadcast host lease until stop, keeps concurrent joiners client-only, and releases on stop', async () => {
     const webLocks = new FakeWebLocks();
     const broadcastNetwork = new FakeBroadcastChannelNetwork();
@@ -3588,8 +3828,20 @@ describe('Mesh Pong transport parity', () => {
     for (const [mode, proof] of Object.entries(MESH_PONG_MODE_PARITY_PROOF)) {
       expect(proof).toBe(parityProofForMode(mode as keyof typeof MESH_PONG_MODE_PARITY_PROOF));
       expect(proof.startupFile).toBe(`modes/${mode}.ts`);
-      expect(proof.nodeLayout).toBe('server / a / b');
     }
+
+    expect(MESH_PONG_MODE_PARITY_PROOF.local.nodeLayout).toBe(
+      'server / a / b / client in one runtime'
+    );
+    expect(MESH_PONG_MODE_PARITY_PROOF.broadcast.nodeLayout).toBe(
+      'host server / a / b / client; joiners client only'
+    );
+    expect(MESH_PONG_MODE_PARITY_PROOF.mesh.nodeLayout).toBe(
+      'host server / a / b / client; joiners client only; local overlays'
+    );
+    expect(MESH_PONG_MODE_PARITY_PROOF.websocket.nodeLayout).toBe(
+      'helper host server / a / b / client; browser tabs client only'
+    );
 
     expect(parityProofForMode('websocket').transportBoundary).toContain('browser');
     expect(parityProofForMode('websocket').startupCall).toContain('startMeshPongBrowserWebSocket');
@@ -3665,6 +3917,69 @@ describe('Mesh Pong transport parity', () => {
 
       await assertion;
       expect(MESH_PONG_STARTUP_TIMEOUT_MS).toBe(5_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('disposes a runtime exactly once when startup resolves after its timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const operation = createDeferred<{ stop(): Promise<void> }>();
+      const stop = vi.fn(async () => undefined);
+      const startup = withMeshPongStartupTimeout(operation.promise, 'late runtime', 25, (runtime) =>
+        runtime.stop()
+      );
+      const assertion = expect(startup).rejects.toThrow(
+        'Timed out starting Mesh Pong late runtime.'
+      );
+
+      await vi.advanceTimersByTimeAsync(25);
+      await assertion;
+      operation.resolve({ stop });
+      await flushMicrotasks();
+
+      expect(stop).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('absorbs late startup and disposer rejections after timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const lateResolve = createDeferred<{ readonly id: string }>();
+      const dispose = vi.fn(async () => {
+        throw new Error('late dispose failed');
+      });
+      const resolvedStartup = withMeshPongStartupTimeout(
+        lateResolve.promise,
+        'late resolved runtime',
+        25,
+        dispose
+      );
+      const resolvedAssertion = expect(resolvedStartup).rejects.toThrow(
+        'Timed out starting Mesh Pong late resolved runtime.'
+      );
+      await vi.advanceTimersByTimeAsync(25);
+      await resolvedAssertion;
+      lateResolve.resolve({ id: 'late-runtime' });
+      await flushMicrotasks();
+      expect(dispose).toHaveBeenCalledOnce();
+
+      const lateReject = createDeferred<never>();
+      const rejectedStartup = withMeshPongStartupTimeout(
+        lateReject.promise,
+        'late rejected runtime',
+        25
+      );
+      const rejectedAssertion = expect(rejectedStartup).rejects.toThrow(
+        'Timed out starting Mesh Pong late rejected runtime.'
+      );
+      await vi.advanceTimersByTimeAsync(25);
+      await rejectedAssertion;
+      lateReject.reject(new Error('late startup failed'));
+      await flushMicrotasks();
     } finally {
       vi.useRealTimers();
     }
