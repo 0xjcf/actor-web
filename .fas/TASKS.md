@@ -2224,8 +2224,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Mesh Pong browser-playable WebSocket transport mode
 - Mode: 6-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/mesh-pong-browser-playable-websocket-transport-mode.md
 - Verification lane: fast
 - Policy sensitivity: standard
