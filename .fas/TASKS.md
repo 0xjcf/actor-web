@@ -2310,9 +2310,12 @@ operator explicitly asks for queue mutations.
 
 - Title: Mesh Pong authoritative match lifecycle and cross-client projection convergence
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/mesh-pong-authoritative-match-lifecycle-and-cross-client-pro.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ## Template
 

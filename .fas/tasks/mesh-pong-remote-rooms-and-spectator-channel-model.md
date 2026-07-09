@@ -5,10 +5,11 @@
 Created with `fas create-task` on 2026-07-09.
 
 ## Problem
+
 Epic: labs-mesh-runtime-substrate. Extend the authoritative Mesh Pong match lifecycle from same-origin play into an online room/table model. Build on the shared Match Coordinator and canonical read model rather than introducing a second room-owned copy of match state. Define create room, join by code or URL, host authority, player seats, MLX seats, read-only spectators, reconnect/resume by session id, and room chat/events. Room membership and authorization are actor/session facts; the room routes lifecycle commands to the authoritative match and projects its current generation to every player and spectator.
 
-
 ## Acceptance criteria
+
 - Users can create a room and join it by code or URL across separate browser sessions using the browser-playable WebSocket path.
 - Room state distinguishes host, left seat, right seat, open seats, MLX seats, disconnected seats, and spectators.
 - The room references one authoritative Match Coordinator and never duplicates match phase, generation, score, ball, or paddle truth in browser or room-local state.
@@ -45,6 +46,7 @@ Epic: labs-mesh-runtime-substrate. Extend the authoritative Mesh Pong match life
 - examples/mesh-pong/modes/websocket.ts
 
 ## Scope Amendments
+
 - Type: authoritative-match-convergence-prerequisite
 - Added at: 2026-07-09
 - Trigger: Operator found that current browser tabs own independent match lifecycles and reset does not converge.
@@ -69,6 +71,7 @@ Epic: labs-mesh-runtime-substrate. Extend the authoritative Mesh Pong match life
 - Validate generated scope, acceptance criteria, and verification evidence before closeout to avoid workflow drift.
 
 ## Dependencies
+
 - Depends on task-1783546072913 Mesh Pong browser-playable WebSocket transport mode.
 - Depends on task-1783627795146 Mesh Pong authoritative match lifecycle and cross-client projection convergence.
 - Blocks task-1783616738973 Mesh Pong Lobby Room Table and Match UI workflow polish.

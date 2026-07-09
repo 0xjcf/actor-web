@@ -5,10 +5,11 @@
 Created with `fas create-task` on 2026-07-09.
 
 ## Problem
+
 Epic: labs-mesh-runtime-substrate. Build the proper online-game workflow only after authoritative match convergence and remote room semantics exist. Split the current control surface into Lobby, Room/Table, Match, and Result/Rematch states. Every screen is a projection over room, session, and match actor facts; DOM state and tab-local variables never decide lifecycle truth. Lobby owns connection and room entry, Room/Table owns seats/controllers/readiness/start, Match owns play and authorized lifecycle commands, and Result owns rematch or return-to-room. Keep diagnostics progressively disclosed and manually validate desktop, tablet, and mobile.
 
-
 ## Acceptance criteria
+
 - The UI has explicit Lobby, Room/Table, Match, and Result/Rematch workflow states with controls scoped to each responsibility.
 - Lobby owns local demo entry, online create/join, room code or invite URL, connection status, and advanced transport selection.
 - Room/Table owns seat claim/release, Human or MLX controller selection, ready state, spectator list, host/start authority, chat/events, and room lifecycle status.
@@ -44,6 +45,7 @@ Epic: labs-mesh-runtime-substrate. Build the proper online-game workflow only af
 - examples/mesh-pong/mesh-pong.test.ts
 
 ## Scope Amendments
+
 - Type: projection-only-workflow-contract
 - Added at: 2026-07-09
 - Trigger: Operator found reset divergence and confusion caused by one screen mixing Lobby, Room, Match, and diagnostics.
@@ -68,6 +70,7 @@ Epic: labs-mesh-runtime-substrate. Build the proper online-game workflow only af
 - Validate generated scope, acceptance criteria, and verification evidence before closeout to avoid workflow drift.
 
 ## Dependencies
+
 - Depends on task-1783616720644 Mesh Pong remote rooms and spectator channel model, which is gated by task-1783627795146 authoritative match convergence.
 - Blocks task-1781880961715 post-mesh claim gating.
 - Belongs to epic labs-mesh-runtime-substrate as the online-game workflow and responsive UX projection slice.
