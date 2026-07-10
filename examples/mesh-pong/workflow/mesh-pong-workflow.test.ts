@@ -142,6 +142,46 @@ describe('Mesh Pong room aggregate', () => {
       ready: false,
     });
   });
+
+  it('rejects every pre-match mutation from a disconnected member', () => {
+    const readyRoom = prepareReadyRoom();
+    const disconnectedRoom = reducePongRoom(readyRoom, {
+      type: 'LEAVE_ROOM',
+      requestSessionId: 'tab-a',
+      expectedRevision: readyRoom.revision,
+    }).state;
+    const commands: readonly PongRoomCommand[] = [
+      {
+        type: 'CLAIM_SEAT',
+        requestSessionId: 'tab-a',
+        expectedRevision: disconnectedRoom.revision,
+        side: 'left',
+      },
+      {
+        type: 'RELEASE_SEAT',
+        requestSessionId: 'tab-a',
+        expectedRevision: disconnectedRoom.revision,
+      },
+      {
+        type: 'SET_CONTROLLER',
+        requestSessionId: 'tab-a',
+        expectedRevision: disconnectedRoom.revision,
+        controller: 'mlx',
+      },
+      {
+        type: 'BEGIN_MATCH',
+        requestSessionId: 'tab-a',
+        expectedRevision: disconnectedRoom.revision,
+      },
+    ];
+
+    for (const command of commands) {
+      expect(reducePongRoom(disconnectedRoom, command).result).toMatchObject({
+        ok: false,
+        reason: 'not-member',
+      });
+    }
+  });
 });
 
 describe('Mesh Pong workflow projection', () => {
@@ -181,6 +221,17 @@ describe('Mesh Pong workflow projection', () => {
       canStart: false,
     });
   });
+
+  it('clears a prior rejection when a new Room projection has none', () => {
+    const rejected = reduceMeshPongWorkflow(createInitialMeshPongWorkflow('tab-a'), {
+      type: 'COMMAND_REJECTED',
+      rejection: { reason: 'not-host', requestSessionId: 'tab-a' },
+    });
+
+    expect(
+      reduceMeshPongWorkflow(rejected, { type: 'ROOM_PROJECTED', room: createRoom() }).rejection
+    ).toBeNull();
+  });
 });
 
 describe('Mesh Pong Ignite headless workflow', () => {
@@ -204,42 +255,48 @@ describe('Mesh Pong Ignite headless workflow', () => {
       const actors = { room, matchCoordinator };
       const sourceA = createMeshPongWorkflowSource({ sessionId: 'tab-a', actors });
       const sourceB = createMeshPongWorkflowSource({ sessionId: 'tab-b', actors });
-      const runtimeA = createMeshPongWorkflowRuntime(sourceA);
-      const runtimeB = createMeshPongWorkflowRuntime(sourceB);
-      const tabA = igniteTest(runtimeA);
-      const tabB = igniteTest(runtimeB);
+      try {
+        const runtimeA = createMeshPongWorkflowRuntime(sourceA);
+        const runtimeB = createMeshPongWorkflowRuntime(sourceB);
+        const tabA = igniteTest(runtimeA);
+        const tabB = igniteTest(runtimeB);
 
-      await tabA.when('createRoom', { code: 'PONG42' });
-      await tabB.when('joinRoom');
-      await tabA.when('claimSeat', { side: 'left' });
-      await tabB.when('claimSeat', { side: 'right' });
-      await tabA.when('setReady', { ready: true });
-      tabA.expectView({ readiness: '1 / 2', canStart: false, isHost: true });
-      tabB.expectView({ readiness: '1 / 2', canStart: false, isHost: false });
+        await tabA.when('createRoom', { code: 'PONG42' });
+        await tabB.when('joinRoom');
+        await tabA.when('claimSeat', { side: 'left' });
+        await tabB.when('claimSeat', { side: 'right' });
+        await tabA.when('setReady', { ready: true });
+        tabA.expectView({ readiness: '1 / 2', canStart: false, isHost: true });
+        tabB.expectView({ readiness: '1 / 2', canStart: false, isHost: false });
 
-      await tabB.when('setReady', { ready: true });
-      await sourceA.refresh();
-      await sourceB.refresh();
-      tabA.expectView({ readiness: '2 / 2', canStart: true, isHost: true });
-      tabB.expectView({ readiness: '2 / 2', canStart: false, isHost: false });
+        await tabB.when('setReady', { ready: true });
+        await sourceA.refresh();
+        await sourceB.refresh();
+        tabA.expectView({ readiness: '2 / 2', canStart: true, isHost: true });
+        tabB.expectView({ readiness: '2 / 2', canStart: false, isHost: false });
 
-      await tabB.when('beginMatch');
-      tabB.expectView({ rejection: 'not-host', screen: 'table' });
-      await tabA.when('beginMatch');
-      // Room produces only a roster handoff. Match stays in its own actor-owned lobby phase.
-      tabA.expectView({ screen: 'table' });
-      expect(runtimeA.getView()).toMatchObject({ roomCode: 'PONG42', isHost: true });
-      expect(runtimeB.getView()).toMatchObject({ roomCode: 'PONG42', isHost: false });
+        await tabB.when('beginMatch');
+        tabB.expectView({ rejection: 'not-host', screen: 'table' });
+        await tabA.when('beginMatch');
+        // Room produces only a roster handoff. Match stays in its own actor-owned lobby phase.
+        tabA.expectView({ screen: 'table' });
+        expect(runtimeA.getView()).toMatchObject({ roomCode: 'PONG42', isHost: true });
+        expect(runtimeB.getView()).toMatchObject({ roomCode: 'PONG42', isHost: false });
 
-      const story = runtimeB.record('independent tab reconnect');
-      await story.execute('projectConnection', { state: 'disconnected' });
-      await story.execute('projectConnection', { state: 'connected' });
-      expect(story.trace().map((entry) => entry.kind)).toEqual(
-        expect.arrayContaining(['command', 'state', 'view'])
-      );
-      story.stop();
-      sourceA.close();
-      sourceB.close();
+        const story = runtimeB.record('independent tab reconnect');
+        try {
+          await story.execute('projectConnection', { state: 'disconnected' });
+          await story.execute('projectConnection', { state: 'connected' });
+          expect(story.trace().map((entry) => entry.kind)).toEqual(
+            expect.arrayContaining(['command', 'state', 'view'])
+          );
+        } finally {
+          story.stop();
+        }
+      } finally {
+        sourceA.close();
+        sourceB.close();
+      }
     } finally {
       await started.stop();
     }

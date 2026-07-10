@@ -28,7 +28,10 @@ Create the first vertical slice of the online Mesh Pong workflow to isolate the 
 
 ## Proposed solution
 
-- Use the supplied problem context, acceptance criteria, and affected-file hints to draft the concrete implementation approach during planning.
+- Implement `pong-room-contract.ts` as the deterministic pre-match aggregate and expose it through `pong-room-behaviors.ts`; hand a frozen roster contract to the existing MatchCoordinator instead of copying match phase or score into Room.
+- Compose the Room and MatchCoordinator Actor-Web refs in `workflow/mesh-pong-workflow-source.ts`, derive screens in `mesh-pong-workflow-core.ts`, and keep subscriptions/rendering in the workflow host and screen adapters.
+- Mount the canonical workflow source in `ui/main.ts` so Lobby/Table controls dispatch Room commands, while legacy player-session synchronization remains a compatibility adapter until the remote-room slice owns atomic Match routing.
+- Prove two independent sessions converge through the same Room facts and only the projected host can start; use the Broadcast browser flow to confirm seats, readiness, and the transition into the existing Match surface.
 
 ## Alternatives considered
 
@@ -82,13 +85,18 @@ Create the first vertical slice of the online Mesh Pong workflow to isolate the 
 
 ## Implementation plan
 
-- Convert the supplied context into a scoped implementation plan before editing.
-- Refresh affected-file scope before implementation if the generated hints are incomplete.
+1. Write reducer tests in `workflow/mesh-pong-workflow.test.ts` for membership, disconnected-session rejection, stale rejections, readiness, and host-only start; then implement the pure Room and workflow transitions.
+2. Add the Room behavior/topology contract and the immutable `PongMatchRosterHandoff`; verify that Room never advances Match phase and MatchCoordinator remains the match authority.
+3. Add Room/Match ports, canonical workflow source, and `igniteTest` coverage using two independent sources over the same actor refs; verify 0/2, 1/2, 2/2, rejection, reconnect trace, and lifecycle projection facts.
+4. Mount Lobby/Table adapters in `ui/main.ts` and `ui/screens/`; guard asynchronous source/runtime work against mode switches, then manually validate two Broadcast tabs through seat claim, readiness, host-only start, and Match entry.
 
 ## Verification plan
 
-- Run `fas validate-task` for the inner-loop verification gate.
-- Run `.fas/scripts/verify.sh --full` at the final release-quality gate when tracked files change.
+- Run `pnpm exec vitest run --config examples/vitest.config.ts examples/mesh-pong/workflow/mesh-pong-workflow.test.ts` and expect reducer, two-source Ignite, cleanup, and screen-projection cases to pass.
+- Run `pnpm typecheck` and targeted Biome checks for the changed Mesh Pong files; expect no type or formatting drift.
+- Run `fas validate-task` and expect format, lint, typecheck, and changed-only behavior boundaries to pass.
+- Run `.fas/scripts/verify.sh --full` with localhost-listener permission when necessary; expect the full test matrix, architecture drift, behavior boundaries, and semantic index to pass.
+- Manually verify two Broadcast tabs: shared Room revision after seat claims, 2/2 readiness, enabled Start only for the host, and both workflow views entering Match.
 
 ## Risks
 

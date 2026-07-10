@@ -7,7 +7,6 @@ export function mountMeshPongWorkflowHost(
   source: MeshPongWorkflowSource,
   renderer: MeshPongWorkflowRendererPort
 ): () => void {
-  renderer.render(projectMeshPongWorkflow(source.snapshot().context));
   return source.subscribe((snapshot) => {
     renderer.render(projectMeshPongWorkflow(snapshot.context));
   });

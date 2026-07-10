@@ -157,7 +157,8 @@ function requireOpenMember(
   if (state.phase === 'starting') {
     return reject(state, { reason: 'match-started', requestSessionId: command.requestSessionId });
   }
-  if (!memberFor(state, command.requestSessionId)) {
+  const member = memberFor(state, command.requestSessionId);
+  if (!member || !member.connected) {
     return reject(state, { reason: 'not-member', requestSessionId: command.requestSessionId });
   }
   return null;

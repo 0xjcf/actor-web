@@ -65,7 +65,7 @@ export function reduceMeshPongWorkflow(
       return {
         ...state,
         room: fact.room,
-        rejection: fact.room?.lastRejection ?? state.rejection,
+        rejection: fact.room?.lastRejection ?? null,
       };
     case 'MATCH_PROJECTED':
       return { ...state, match: fact.match };

@@ -1162,20 +1162,24 @@ function renderPlayerSession(session: PongPlayerSessionState | null): void {
 function mountCanonicalWorkflow(nextRefs: RuntimeRefs): void {
   stopWorkflowHost?.();
   workflowSource?.close();
-  workflowSource = createMeshPongWorkflowSource({
+  const source = createMeshPongWorkflowSource({
     sessionId: browserSessionId,
     actors: {
       room: nextRefs.room,
       matchCoordinator: nextRefs.matchCoordinator,
     },
   });
-  stopWorkflowHost = mountMeshPongWorkflowHost(workflowSource, {
+  workflowSource = source;
+  stopWorkflowHost = mountMeshPongWorkflowHost(source, {
     render: (projection) => {
       renderMeshPongWorkflowScreen(workflowRootElement, projection);
       startButtonElement.disabled = !projection.canStart;
     },
   });
-  void workflowSource.refresh().catch((error: unknown) => {
+  void source.refresh().catch((error: unknown) => {
+    if (workflowSource !== source) {
+      return;
+    }
     setStatus(
       error instanceof Error ? `workflow sync failed: ${error.message}` : 'workflow sync failed'
     );
@@ -1375,6 +1379,16 @@ function isCurrentRuntimeContext(
   candidateRefs: RuntimeRefs
 ): boolean {
   return runtime === candidateRuntime && refs === candidateRefs;
+}
+
+function isCurrentWorkflowRuntimeContext(
+  candidateRuntime: BrowserRuntime,
+  candidateRefs: RuntimeRefs,
+  candidateWorkflow: MeshPongWorkflowSource
+): boolean {
+  return (
+    isCurrentRuntimeContext(candidateRuntime, candidateRefs) && workflowSource === candidateWorkflow
+  );
 }
 
 async function syncMatchForMode(
@@ -2579,9 +2593,15 @@ async function claimSide(side: 'left' | 'right'): Promise<void> {
   }
 
   await currentWorkflow.refresh();
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+    return;
+  }
   let room = currentWorkflow.snapshot().context.room;
   if (!room || room.phase === 'empty') {
     const created = await currentWorkflow.send({ type: 'CREATE_ROOM', code: 'MESH' });
+    if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+      return;
+    }
     if (!isPongRoomResult(created)) {
       setStatus('workflow create projection failed');
       return;
@@ -2591,10 +2611,16 @@ async function claimSide(side: 'left' | 'right'): Promise<void> {
       return;
     }
     await currentWorkflow.refresh();
+    if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+      return;
+    }
     room = currentWorkflow.snapshot().context.room;
   }
   if (!room?.members.some((member) => member.sessionId === browserSessionId)) {
     const joined = await currentWorkflow.send({ type: 'JOIN_ROOM' });
+    if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+      return;
+    }
     if (!isPongRoomResult(joined)) {
       setStatus('workflow join projection failed');
       return;
@@ -2605,6 +2631,9 @@ async function claimSide(side: 'left' | 'right'): Promise<void> {
     }
   }
   const claimed = await currentWorkflow.send({ type: 'CLAIM_SEAT', side, controller: 'human' });
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+    return;
+  }
   if (!isPongRoomResult(claimed)) {
     setStatus('workflow seat projection failed');
     return;
@@ -2619,18 +2648,19 @@ async function claimSide(side: 'left' | 'right'): Promise<void> {
     side,
     controller: 'human',
   });
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
   await flushRuntime(currentRuntime);
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
   const synced = await syncCurrentSession(currentRuntime, currentRefs, {
-    shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs),
+    shouldApply: () =>
+      isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow),
     restoreAuthoritative: false,
   });
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
   if (!synced.ok) {
@@ -2651,6 +2681,9 @@ async function markReady(): Promise<void> {
   }
 
   const roomReady = await currentWorkflow.send({ type: 'SET_READY', ready: true });
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+    return;
+  }
   if (!isPongRoomResult(roomReady)) {
     setStatus('workflow readiness projection failed');
     return;
@@ -2661,18 +2694,19 @@ async function markReady(): Promise<void> {
   }
 
   await currentRefs.playerSession.send({ type: 'SET_READY', ready: true });
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
   await flushRuntime(currentRuntime);
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
   const synced = await syncCurrentSession(currentRuntime, currentRefs, {
-    shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs),
+    shouldApply: () =>
+      isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow),
     restoreAuthoritative: false,
   });
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
   if (!synced.ok) {
@@ -2709,6 +2743,9 @@ async function startMatch(
 
   clearControllerDiagnostics();
   const roomStart = await currentWorkflow.send({ type: 'BEGIN_MATCH' });
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+    return;
+  }
   if (!isPongRoomResult(roomStart)) {
     setStatus('workflow start projection failed');
     return;
@@ -2718,26 +2755,33 @@ async function startMatch(
     return;
   }
   const synced = await syncMatchForMode(currentRuntime, currentRefs, mode, () =>
-    isCurrentRuntimeContext(currentRuntime, currentRefs)
+    isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)
   );
-  if (!synced || !isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!synced || !isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
   const currentMatch = await currentMatchState(currentRefs);
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+    return;
+  }
   const result = await currentRefs.matchCoordinator.ask<PongMatchCommandResult>({
     type: 'START_MATCH',
     requestSessionId: ownerSessionId,
     expectedGeneration: currentMatch.generation,
     mode: toLegacyMatchMode(mode),
   });
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
   await flushRuntime(currentRuntime);
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
-  applyProjectedMatch(await currentMatchState(currentRefs), { renderStatus: false });
+  const projectedMatch = await currentMatchState(currentRefs);
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+    return;
+  }
+  applyProjectedMatch(projectedMatch, { renderStatus: false });
   if (!result.ok) {
     setStatus(formatMatchCommandFailure(result));
     return;
