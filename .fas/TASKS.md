@@ -2339,6 +2339,14 @@ operator explicitly asks for queue mutations.
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Expose directory readiness separately from transport membership status
+
+- Title: Expose directory readiness separately from transport membership status
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/expose-directory-readiness-separately-from-transport-members.md
+
 ## Template
 
 ### Task: `<short task title>`
