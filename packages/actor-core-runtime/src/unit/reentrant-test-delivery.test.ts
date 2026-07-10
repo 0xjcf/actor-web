@@ -2,6 +2,27 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ActorRef } from '../actor-ref.js';
 import type { ActorMessage } from '../actor-system.js';
 
+const TEST_OPERATION_DEADLINE_MS = 1_000;
+
+/**
+ * Keep the deadlock guard well above normal local/CI scheduling jitter and
+ * release its timer as soon as the operation settles.
+ */
+async function settleBeforeDeadline(operation: Promise<void>): Promise<'completed' | 'timed-out'> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<'timed-out'>((resolve) => {
+    timeoutHandle = setTimeout(() => resolve('timed-out'), TEST_OPERATION_DEADLINE_MS);
+  });
+
+  try {
+    return await Promise.race([operation.then(() => 'completed' as const), deadline]);
+  } finally {
+    if (timeoutHandle !== undefined) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.resetModules();
@@ -9,7 +30,9 @@ afterEach(() => {
 
 describe('reentrant test delivery', () => {
   it('completes when actor A awaits a dependency send to actor B with fallback storage', async () => {
-    vi.spyOn(process, 'getBuiltinModule').mockReturnValue(undefined);
+    if (typeof process.getBuiltinModule === 'function') {
+      vi.spyOn(process, 'getBuiltinModule').mockReturnValue(undefined);
+    }
     vi.resetModules();
 
     const [{ ActorSystemImpl }, { defineBehavior }] = await Promise.all([
@@ -52,24 +75,15 @@ describe('reentrant test delivery', () => {
         { id: 'sender' }
       );
 
-      const result = await Promise.race([
-        sender.send({ type: 'START' }).then(() => 'delivered' as const),
-        new Promise<'timed-out'>((resolve) => {
-          setTimeout(() => resolve('timed-out'), 100);
-        }),
-      ]);
+      const result = await settleBeforeDeadline(sender.send({ type: 'START' }));
 
-      expect(result).toBe('delivered');
+      expect(result).toBe('completed');
       expect(receiverHandled).toBe(true);
       expect(senderCompleted).toBe(true);
     } finally {
       system.disableTestMode();
-      await Promise.race([
-        system.stop(),
-        new Promise<void>((resolve) => {
-          setTimeout(resolve, 100);
-        }),
-      ]);
+      const stopResult = await settleBeforeDeadline(system.stop());
+      expect(stopResult).toBe('completed');
     }
   });
 });

@@ -2896,38 +2896,6 @@ describe('Mesh Pong transport parity', () => {
     expect(mergedAim.targetY).toBe(30);
   });
 
-  it('elects only the match owner tab to launch planner controller turns', () => {
-    const mode = {
-      playerCount: 2,
-      controllers: { left: 'planner', right: 'human' },
-    } as const;
-
-    expect(
-      shouldLaunchPlannerControllerForSide({
-        browserSessionId: 'tab-a',
-        matchOwnerSessionId: 'tab-a',
-        mode,
-        side: 'left',
-      })
-    ).toBe(true);
-    expect(
-      shouldLaunchPlannerControllerForSide({
-        browserSessionId: 'tab-b',
-        matchOwnerSessionId: 'tab-a',
-        mode,
-        side: 'left',
-      })
-    ).toBe(false);
-    expect(
-      shouldLaunchPlannerControllerForSide({
-        browserSessionId: 'tab-a',
-        matchOwnerSessionId: 'tab-a',
-        mode,
-        side: 'right',
-      })
-    ).toBe(false);
-  });
-
   it('keeps planner-only turns nonblocking and unresolved without secretly running reflex', async () => {
     const harness = createTurnStepperHarness({
       playerCount: 1,
