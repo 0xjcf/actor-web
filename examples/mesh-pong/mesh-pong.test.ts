@@ -4574,15 +4574,20 @@ describe('Mesh Pong transport parity', () => {
     );
 
     expect(uiEntrypoint).toContain('function isCurrentRuntimeContext(');
+    expect(uiEntrypoint).toContain('function isCurrentWorkflowRuntimeContext(');
     expect(uiEntrypoint).toContain(
-      'shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs)'
+      'shouldApply: () =>\n      isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)'
     );
     expect(uiEntrypoint).toContain('options: { readonly shouldApply?: () => boolean } = {}');
     expect(uiEntrypoint).toContain('runMeshPongStartupSubstages({');
     expect(uiEntrypoint).toContain('hydrateCurrentSession(candidateRuntime, nextRefs, {');
     expect(uiEntrypoint).toContain('invalidateSwitchGeneration(generation)');
-    expect(uiEntrypoint).toContain('() => isCurrentRuntimeContext(currentRuntime, currentRefs)');
-    expect(uiEntrypoint).toContain('if (!isCurrentRuntimeContext(currentRuntime, currentRefs))');
+    expect(uiEntrypoint).toContain(
+      '() =>\n    isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)'
+    );
+    expect(uiEntrypoint).toContain(
+      'if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow))'
+    );
     expect(uiEntrypoint).toContain('renderLobby(nextMatch);');
     expect(uiEntrypoint).not.toContain('lobbyChannel?.postMessage');
 
