@@ -56,6 +56,15 @@ Epic: labs-mesh-runtime-substrate. Extend the authoritative Mesh Pong match life
 - Accuracy signal: git history, current source, and live queue reviewed
 - Follow-up needed: Implement the new authoritative convergence prerequisite before this task.
 
+- Type: authenticated-command-identity
+- Added at: 2026-07-10
+- Trigger: Cross-repo agent-native interaction contract alignment
+- Reason: Remote commands must bind gateway or transport-authenticated principal identity before Room or Match admission; caller-provided requestSessionId cannot be accepted as identity.
+- Evidence source: Cross-repo agent-native interaction contract amendment
+- Evidence: Cross-repo agent-native interaction contract amendment | /Users/joseflores/.codex/memories/extensions/ad_hoc/notes/2026-07-10T20-34-08Z-cross-repo-agent-native-interaction-constraint-contract-amendment.md | Filter capability discovery per caller, re-check authorization at execution, and preserve transport-agnostic Pong behaviors.
+- Accuracy signal: Remote-room tests prove spoofed session ids cannot claim host or player authority.
+- Follow-up needed: No identity mechanism is added to the present local/headless Mesh Pong slice.
+
 ## Implementation plan
 
 - Convert the supplied context into a scoped implementation plan before editing.

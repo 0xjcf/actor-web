@@ -43,7 +43,14 @@ Use Mesh Pong as the example-local proving ground for a deterministic behavior-t
 
 ## Scope Amendments
 
-- None.
+- Type: contract-alignment-prerequisite
+- Added at: 2026-07-10
+- Trigger: Cross-repo agent-native interaction contract alignment
+- Reason: Behavior-tree proof must consume caller-authorized, revisioned advisory facts from the completed Mesh Pong contract-alignment slice.
+- Evidence source: fas_staff_engineer handoff
+- Evidence: fas_staff_engineer handoff | .fas/state/agent-orchestration-execution.json | Additive dependency after current room workflow and contract alignment; retain all prior dependencies.
+- Accuracy signal: Queue graph shows task-1783716508291 blocks the behavior-tree proof.
+- Follow-up needed: No public behavior-tree API extraction in this prerequisite change.
 
 ## Implementation plan
 

@@ -50,6 +50,11 @@ Create the first vertical slice of the online Mesh Pong workflow to isolate the 
 - examples/mesh-pong/pong-contract.ts
 - examples/mesh-pong/parity-proof.ts
 - .fas/tasks/expose-directory-readiness-separately-from-transport-members.md
+- examples/mesh-pong/pong-controller.ts
+- examples/mesh-pong/README.md
+- .fas/tasks/design-actor-web-advisory-lane-primitive-for-deadline-safe-a.md
+- .fas/tasks/mesh-pong-utility-policy-tactical-scorer-proof.md
+- .fas/queue/tasks.json
 
 ## Scope Amendments
 
@@ -82,6 +87,16 @@ Create the first vertical slice of the online Mesh Pong workflow to isolate the 
 - Evidence: fas validate-task receipt | .fas/state/verification/validate-task-1783707814.log | All reported source checks pass; lint errors are missing blank lines in the current and prior generated task briefs.
 - Accuracy signal: Targeted markdownlint confirms current brief is clean; prior generated task remains the sole branch baseline blocker.
 - Follow-up needed: No product-code changes; keep the formatting-only commit isolated.
+
+- Type: cross-repo-agent-native-contract-alignment
+- Added at: 2026-07-10
+- Trigger: User-approved cross-repo contract amendment and Mesh Pong alignment review
+- Reason: Implement caller-aware command availability, revisioned advisory proposal admission, typed advisory outcomes, remote identity-bound command requirements, and truthful source-of-truth and telemetry documentation; align downstream queue dependencies without replacing existing scheduler edges.
+- Added paths: examples/mesh-pong/pong-controller.ts, examples/mesh-pong/README.md, .fas/tasks/design-actor-web-advisory-lane-primitive-for-deadline-safe-a.md, .fas/tasks/mesh-pong-utility-policy-tactical-scorer-proof.md, .fas/queue/tasks.json
+- Evidence source: 2026-07-10 cross-repo agent-native interaction constraint contract amendment
+- Evidence: 2026-07-10 cross-repo agent-native interaction constraint contract amendment | /Users/joseflores/.codex/memories/extensions/ad_hoc/notes/2026-07-10T20-34-08Z-cross-repo-agent-native-interaction-constraint-contract-amendment.md | The amendment requires explicit command availability, revision and freshness validation, typed outcomes, identity enforcement boundaries, and accurate durability and determinism claims.
+- Accuracy signal: Targeted tests prove caller-aware discovery, stale-proposal rejection within an unchanged match generation, typed timeout classification, and unchanged deterministic fallback behavior.
+- Follow-up needed: Create and queue the implementation conformance slice after advisory-policy design; remote room work binds authenticated transport identity.
 
 ## Implementation plan
 
