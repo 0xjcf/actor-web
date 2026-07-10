@@ -104,7 +104,8 @@ function mapFailure(
 function mapThrownProviderError(
   side: PongSide,
   error: unknown,
-  timedOut: boolean
+  timedOut: boolean,
+  timeoutMs: number
 ): PongControllerResult {
   const timeoutError = timedOut || error instanceof ActorToolTimeoutError;
   return {
@@ -114,7 +115,7 @@ function mapThrownProviderError(
     error: {
       code: timeoutError ? 'LLM_TIMEOUT' : 'LLM_PROVIDER_ERROR',
       message: timedOut
-        ? `Pong controller timed out after ${CONTROLLER_LLM_TIMEOUT_MS}ms.`
+        ? `Pong controller timed out after ${timeoutMs}ms.`
         : error instanceof Error
           ? error.message
           : 'LLM provider threw unexpectedly.',
@@ -223,9 +224,10 @@ export async function runPongControllerWithLlmProvider(
         ? parseControllerResponse(side, llmResult.value.message.content)
         : mapFailure(side, llmResult)
     );
+    void controllerResult.catch(() => undefined);
     return await Promise.race([controllerResult, timeout]);
   } catch (error) {
-    return mapThrownProviderError(side, error, timedOut);
+    return mapThrownProviderError(side, error, timedOut, timeoutMs);
   } finally {
     if (timeoutId !== null) {
       clearTimeout(timeoutId);
