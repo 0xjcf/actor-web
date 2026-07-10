@@ -2321,9 +2321,20 @@ operator explicitly asks for queue mutations.
 
 - Title: Fix reentrant test-mode delivery deadlock and Mesh Pong README JSON
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/fix-reentrant-test-mode-delivery-deadlock-and-mesh-pong-read.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Fix Mesh Pong pre-start lobby projection convergence and transport readiness
+
+- Title: Fix Mesh Pong pre-start lobby projection convergence and transport readiness
+- Mode: 6-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/fix-mesh-pong-pre-start-lobby-projection-convergence-and-tra.md
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
