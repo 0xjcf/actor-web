@@ -343,39 +343,86 @@ describe('BroadcastChannelMessageTransport', () => {
     );
   });
 
-  it('fails the handshake when pending runtime frames exceed the activation bound', async () => {
+  it('bounds activation frames without reusing rejected handshake payloads on reconnect', async () => {
     const network = new FakeBroadcastChannelNetwork();
     const tabA = createTransport(network, 'tab-a');
+    const received: ActorMessage[] = [];
+    tabA.subscribe((event) => received.push(event.message));
+    const activationFrames = (): ActorMessage[] =>
+      received.filter((message) => /^(BOUNDED|OVERFLOW|FRESH)_/.test(message.type));
 
     await tabA.start();
-    const connect = tabA.connect('tab-b');
-    await nextTick();
-
     const tabAIdentity = testIdentity('tab-a');
-    const tabBIdentity = testIdentity('tab-b');
-    for (let sequence = 1; sequence <= 65; sequence += 1) {
-      network.broadcast(
-        TEST_CHANNEL_NAME,
-        testEnvelope(
-          tabBIdentity,
-          'tab-a',
-          createRuntimeTransportFrame({
-            source: tabBIdentity,
-            destination: tabAIdentity,
-            sequence,
-            message: { type: `EARLY_FRAME_${sequence}` },
-          })
-        )
-      );
-    }
+    const broadcastFrames = (source: RuntimeNodeIdentity, count: number, prefix: string): void => {
+      for (let sequence = 1; sequence <= count; sequence += 1) {
+        network.broadcast(
+          TEST_CHANNEL_NAME,
+          testEnvelope(
+            source,
+            'tab-a',
+            createRuntimeTransportFrame({
+              source,
+              destination: tabAIdentity,
+              sequence,
+              message: { type: `${prefix}_${sequence}` },
+            })
+          )
+        );
+      }
+    };
 
-    await expect(connect).rejects.toThrow(
+    const boundedIdentity = testIdentity('tab-b', 'tab-b-bounded');
+    const boundedConnect = tabA.connect('tab-b');
+    await nextTick();
+    broadcastFrames(boundedIdentity, 64, 'BOUNDED');
+    network.broadcast(
+      TEST_CHANNEL_NAME,
+      testEnvelope(
+        boundedIdentity,
+        'tab-a',
+        createRuntimeTransportHandshakeAccept(boundedIdentity, tabAIdentity)
+      )
+    );
+    await boundedConnect;
+    await waitFor(
+      () => activationFrames().length === 64,
+      `Expected all bounded activation frames; received=${activationFrames().length}`
+    );
+    expect(activationFrames().map((message) => message.type)).toEqual(
+      Array.from({ length: 64 }, (_, index) => `BOUNDED_${index + 1}`)
+    );
+    await tabA.disconnect('tab-b');
+
+    const overflowIdentity = testIdentity('tab-b', 'tab-b-overflow');
+    const overflowConnect = tabA.connect('tab-b');
+    await nextTick();
+    broadcastFrames(overflowIdentity, 65, 'OVERFLOW');
+    await expect(overflowConnect).rejects.toThrow(
       'BroadcastChannel handshake from tab-b exceeded the pending frame limit (64).'
     );
     expect(tabA.isConnected('tab-b')).toBe(false);
-    expect(tabA.getPeerStats('tab-b')).toMatchObject({
-      state: 'rejected',
-    });
+    expect(tabA.getPeerStats('tab-b')).toMatchObject({ state: 'rejected' });
+    expect(activationFrames()).toHaveLength(64);
+
+    const freshIdentity = testIdentity('tab-b', 'tab-b-fresh');
+    const freshConnect = tabA.connect('tab-b');
+    await nextTick();
+    broadcastFrames(freshIdentity, 1, 'FRESH');
+    network.broadcast(
+      TEST_CHANNEL_NAME,
+      testEnvelope(
+        freshIdentity,
+        'tab-a',
+        createRuntimeTransportHandshakeAccept(freshIdentity, tabAIdentity)
+      )
+    );
+    await freshConnect;
+    await waitFor(
+      () => activationFrames().length === 65,
+      `Expected one clean reconnect frame; received=${activationFrames().length}`
+    );
+    expect(activationFrames().at(-1)?.type).toBe('FRESH_1');
+    expect(activationFrames().some((message) => message.type.startsWith('OVERFLOW_'))).toBe(false);
   });
 
   it('ignores bus frames addressed to another peer without disconnecting the bystander', async () => {
