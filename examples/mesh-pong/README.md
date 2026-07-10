@@ -358,13 +358,16 @@ single planner-strategy JSON reply:
 
 ```json
 {
-  "targetY": 0..278,
-  "biasY": -82..82,
-  "maxStep": 1..28,
+  "targetY": 139,
+  "biasY": 0,
+  "maxStep": 14,
   "label": "short reason string",
   "facts": ["short fact strings"]
 }
 ```
+
+`targetY` accepts values from 0 through 278, `biasY` accepts values from -82
+through 82, and `maxStep` accepts values from 1 through 28.
 
 `maxStep` is clamped to one paddle step, and non-JSON or malformed replies are
 returned as controller error facts.

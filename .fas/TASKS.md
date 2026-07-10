@@ -2317,6 +2317,17 @@ operator explicitly asks for queue mutations.
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Fix reentrant test-mode delivery deadlock and Mesh Pong README JSON
+
+- Title: Fix reentrant test-mode delivery deadlock and Mesh Pong README JSON
+- Mode: single-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/fix-reentrant-test-mode-delivery-deadlock-and-mesh-pong-read.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
 ## Template
 
 ### Task: `<short task title>`
