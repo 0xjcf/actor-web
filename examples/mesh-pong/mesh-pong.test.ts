@@ -52,6 +52,7 @@ import type {
   ScoreCommand,
 } from './pong-contract';
 import {
+  admitPongAdvisoryProposal,
   advanceBall,
   createInitialBallContext,
   createInitialLobby,
@@ -876,6 +877,7 @@ function createTurnStepperHarness(
     getMatchState: () => ({
       phase: matchState.started ? 'running' : 'lobby',
       matchGeneration: matchState.generation,
+      currentTick: tickCount,
       matchOwnerSessionId: matchState.ownerSessionId,
       mode: matchState.mode,
     }),
@@ -1304,7 +1306,7 @@ describe('Mesh Pong transport parity', () => {
       mode: 'planner',
       nowMs: 400,
       outcome: 'error',
-      error: 'controller-timeout',
+      reason: 'timeout',
     });
 
     expect(summary.controllers.startedCount).toBe(2);
@@ -2688,10 +2690,10 @@ describe('Mesh Pong transport parity', () => {
       await expect(result).resolves.toEqual({
         ok: false,
         side: 'right',
-        reason: 'provider-failed',
+        reason: 'timeout',
         error: {
-          code: 'LLM_PROVIDER_ERROR',
-          message: 'controller aborted',
+          code: 'LLM_TIMEOUT',
+          message: `Pong controller timed out after ${CONTROLLER_LLM_TIMEOUT_MS}ms.`,
         },
       });
       expect(observedSignal?.aborted).toBe(true);
@@ -2722,9 +2724,9 @@ describe('Mesh Pong transport parity', () => {
     await expect(result).resolves.toEqual({
       ok: false,
       side: 'right',
-      reason: 'provider-failed',
+      reason: 'timeout',
       error: {
-        code: 'LLM_PROVIDER_ERROR',
+        code: 'LLM_TIMEOUT',
         message: `Actor tool "llm" timed out after ${CONTROLLER_LLM_TIMEOUT_MS}ms.`,
       },
     });
@@ -2944,6 +2946,63 @@ describe('Mesh Pong transport parity', () => {
     expect(mergedAim.targetY).toBe(30);
   });
 
+  it('admits only a current, uncancelled advisory proposal once', () => {
+    const proposal = {
+      proposalId: 'proposal-left-2',
+      correlationId: 'controller-left-2',
+      sequence: 2,
+      side: 'left' as const,
+      matchGeneration: 7,
+      baseTick: 11,
+      ownerSessionId: 'owner-tab',
+      controllerMode: 'planner' as const,
+      requestedAtMs: 100,
+      completedAtMs: 120,
+      strategy: createPlannerStrategy('left', { label: 'fresh-window' }),
+    };
+    const context = {
+      browserSessionId: 'owner-tab',
+      matchGeneration: 7,
+      currentTick: 11,
+      matchOwnerSessionId: 'owner-tab',
+      mode: {
+        playerCount: 1 as const,
+        controllers: { left: 'planner' as const, right: 'human' as const },
+      },
+      nowMs: 125,
+      maxAgeMs: 50,
+      latestAcceptedSequence: 1,
+      cancelledProposalIds: [],
+    };
+
+    expect(admitPongAdvisoryProposal(proposal, context)).toMatchObject({ ok: true });
+    expect(admitPongAdvisoryProposal(proposal, { ...context, currentTick: 12 })).toMatchObject({
+      ok: false,
+      reason: 'stale-input',
+    });
+    expect(
+      admitPongAdvisoryProposal(proposal, { ...context, latestAcceptedSequence: 2 })
+    ).toMatchObject({
+      ok: false,
+      reason: 'superseded',
+    });
+    expect(
+      admitPongAdvisoryProposal(proposal, { ...context, cancelledProposalIds: ['proposal-left-2'] })
+    ).toMatchObject({ ok: false, reason: 'cancelled' });
+    expect(
+      admitPongAdvisoryProposal(proposal, {
+        ...context,
+        mode: {
+          ...context.mode,
+          controllers: { ...context.mode.controllers, left: 'hybrid' as const },
+        },
+      })
+    ).toMatchObject({ ok: false, reason: 'mode-changed' });
+    expect(
+      admitPongAdvisoryProposal(proposal, { ...context, matchOwnerSessionId: 'other-tab' })
+    ).toMatchObject({ ok: false, reason: 'owner-changed' });
+  });
+
   it('keeps planner-only turns nonblocking and unresolved without secretly running reflex', async () => {
     const harness = createTurnStepperHarness({
       playerCount: 1,
@@ -3098,12 +3157,11 @@ describe('Mesh Pong transport parity', () => {
     });
 
     await harness.stepper.tick();
-    await harness.stepper.tick();
 
-    expect(harness.tickCount()).toBe(2);
+    expect(harness.tickCount()).toBe(1);
     expect(harness.leftAskCount()).toBe(1);
     expect(harness.rightAskCount()).toBe(1);
-    expect(harness.commands.filter((command) => command === 'ball:TICK')).toHaveLength(2);
+    expect(harness.commands.filter((command) => command === 'ball:TICK')).toHaveLength(1);
     expect(harness.telemetryEvents.some((event) => event.type === 'simulation-applied')).toBe(true);
 
     harness.rightDeferreds[0]?.resolve({
@@ -3275,6 +3333,7 @@ describe('Mesh Pong transport parity', () => {
     expect(DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY).toEqual({
       simulationIntervalMs: 90,
       controllerAskTimeoutMs: 30_000,
+      plannerProposalMaxAgeMs: 1_000,
       plannerStrategyFreshTurnLimit: 2,
       plannerStrategyStaleTurnLimit: 1,
     });
@@ -3358,7 +3417,15 @@ describe('Mesh Pong transport parity', () => {
         label: 'hug-top',
       }),
     });
-    mlxVsMlx.rightDeferreds[0]?.reject(new Error('controller-timeout'));
+    mlxVsMlx.rightDeferreds[0]?.resolve({
+      ok: false,
+      side: 'right',
+      reason: 'timeout',
+      error: {
+        code: 'LLM_TIMEOUT',
+        message: 'Timed out at the provider boundary.',
+      },
+    });
     await flushMicrotasks();
     await mlxVsMlx.stepper.tick();
 
@@ -3373,7 +3440,7 @@ describe('Mesh Pong transport parity', () => {
     expect(formatMeshPongBenchmarkSummary(mlxVsMlxSummary)).toContain('timeouts 1');
   });
 
-  it('counts provider-returned MLX timeout failures through turn-stepper telemetry', async () => {
+  it('counts typed MLX timeout failures through turn-stepper telemetry', async () => {
     const harness = createTurnStepperHarness({
       playerCount: 1,
       controllers: { left: 'planner', right: 'human' },
@@ -3382,7 +3449,7 @@ describe('Mesh Pong transport parity', () => {
     harness.leftDeferreds[0]?.resolve({
       ok: false,
       side: 'left',
-      reason: 'provider-failed',
+      reason: 'timeout',
       error: {
         code: 'LLM_PROVIDER_FAILED',
         message:
@@ -3400,7 +3467,7 @@ describe('Mesh Pong transport parity', () => {
       > => event.type === 'controller-request-finished' && event.side === 'left'
     );
     expect(leftFinishedEvent?.outcome).toBe('error');
-    expect(leftFinishedEvent?.error).toContain('provider-failed');
+    expect(leftFinishedEvent?.reason).toBe('timeout');
     expect(leftFinishedEvent?.error).toContain('LLM_PROVIDER_FAILED');
     expect(leftFinishedEvent?.error).toContain('timed out');
 
@@ -3439,6 +3506,89 @@ describe('Mesh Pong transport parity', () => {
     expect(harness.commands.filter((command) => command === 'left:MOVE_PADDLE')).toHaveLength(0);
     expect(harness.replayedInputs).toHaveLength(0);
     expect(harness.leftAskCount()).toBe(2);
+  });
+
+  it('rejects a same-generation advisory result whose base tick is already stale', async () => {
+    const harness = createTurnStepperHarness({
+      playerCount: 1,
+      controllers: { left: 'planner', right: 'human' },
+    });
+
+    await harness.stepper.tick();
+    await harness.stepper.tick();
+    harness.leftDeferreds[0]?.resolve({
+      ok: true,
+      provider: 'llm',
+      side: 'left',
+      strategy: createPlannerStrategy('left', { label: 'late-same-generation' }),
+    });
+    await flushMicrotasks();
+
+    expect(
+      harness.telemetryEvents.some(
+        (event) =>
+          event.type === 'controller-request-finished' &&
+          event.outcome === 'rejected' &&
+          event.reason === 'stale-input'
+      )
+    ).toBe(true);
+    expect(harness.commands.filter((command) => command === 'left:MOVE_PADDLE')).toHaveLength(0);
+    expect(harness.replayedInputs).toHaveLength(0);
+  });
+
+  it('does not apply advisory input after cancellation, mode replacement, or ownership loss', async () => {
+    const cancelled = createTurnStepperHarness({
+      playerCount: 1,
+      controllers: { left: 'planner', right: 'human' },
+    });
+    await cancelled.stepper.tick();
+    cancelled.stepper.stop();
+    cancelled.leftDeferreds[0]?.resolve({
+      ok: true,
+      provider: 'llm',
+      side: 'left',
+      strategy: createPlannerStrategy('left', { label: 'cancelled' }),
+    });
+    await flushMicrotasks();
+    await cancelled.stepper.tick();
+
+    const modeChanged = createTurnStepperHarness({
+      playerCount: 1,
+      controllers: { left: 'planner', right: 'human' },
+    });
+    await modeChanged.stepper.tick();
+    modeChanged.matchState.mode = {
+      ...modeChanged.matchState.mode,
+      controllers: { left: 'human', right: 'human' },
+    };
+    modeChanged.leftDeferreds[0]?.resolve({
+      ok: true,
+      provider: 'llm',
+      side: 'left',
+      strategy: createPlannerStrategy('left', { label: 'replaced-mode' }),
+    });
+    await flushMicrotasks();
+    await modeChanged.stepper.tick();
+
+    const ownershipChanged = createTurnStepperHarness({
+      playerCount: 1,
+      controllers: { left: 'planner', right: 'human' },
+    });
+    await ownershipChanged.stepper.tick();
+    ownershipChanged.matchState.ownerSessionId = 'other-tab';
+    ownershipChanged.leftDeferreds[0]?.resolve({
+      ok: true,
+      provider: 'llm',
+      side: 'left',
+      strategy: createPlannerStrategy('left', { label: 'lost-owner' }),
+    });
+    await flushMicrotasks();
+    await ownershipChanged.stepper.tick();
+
+    for (const harness of [cancelled, modeChanged, ownershipChanged]) {
+      expect(harness.commands.filter((command) => command === 'left:MOVE_PADDLE')).toHaveLength(0);
+      expect(harness.replayedInputs).toHaveLength(0);
+    }
   });
 
   it('discards stale rejected MLX completions after the match generation changes', async () => {
@@ -4551,8 +4701,8 @@ describe('Mesh Pong transport parity', () => {
     expect(uiEntrypoint).not.toContain('nextMlxControllerSide');
     expect(uiEntrypoint).toContain('lane.staleTurnsRemaining');
     expect(uiEntrypoint).toContain('const startedAtMs = deps.nowMs();');
-    expect(uiEntrypoint).toContain('sentAtMs: request.startedAtMs');
-    expect(uiEntrypoint).toContain("'controller-timeout'");
+    expect(uiEntrypoint).toContain('requestedAtMs: request.startedAtMs');
+    expect(uiEntrypoint).toContain('reason: result.reason');
   });
 
   it('keeps browser startup channel ids on the secure-context-safe session id helper', async () => {
@@ -4715,6 +4865,10 @@ describe('Mesh Pong transport parity', () => {
     expect(readme).toContain('one human side plus one `reflex`, `planner`, or `hybrid` side');
     expect(readme).not.toContain('one human side plus one `mlx` side');
     expect(readme).toMatch(/Local\s+human input is applied immediately in the shell/);
+    expect(readme).toContain('`Room` is authoritative for lobby membership');
+    expect(readme).toContain('`MatchCoordinator` is authoritative for match phase');
+    expect(readme).toContain('Planner responses are provisional advisory proposals');
+    expect(readme).toContain('deterministically reduced from observed telemetry');
   });
 
   it('documents a valid planner strategy json contract and keeps it aligned with the controller prompt', async () => {

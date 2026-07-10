@@ -274,6 +274,7 @@ describe('Mesh Pong Ignite headless workflow', () => {
         await sourceB.refresh();
         tabA.expectView({ readiness: '2 / 2', canStart: true, isHost: true });
         tabB.expectView({ readiness: '2 / 2', canStart: false, isHost: false });
+        expect(sourceB.snapshot().can?.({ type: 'BEGIN_MATCH' })).toBe(false);
 
         await tabB.when('beginMatch');
         tabB.expectView({ rejection: 'not-host', screen: 'table' });
