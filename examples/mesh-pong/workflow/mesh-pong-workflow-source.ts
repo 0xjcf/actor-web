@@ -62,6 +62,45 @@ export function isPongRoomResult(
   return 'ok' in value;
 }
 
+function canSendWorkflowCommand(context: MeshPongWorkflowState, event: unknown): boolean {
+  if (!event || typeof event !== 'object' || !('type' in event) || typeof event.type !== 'string') {
+    return false;
+  }
+  if (event.type === 'PROJECT_CONNECTION' || event.type === 'REFRESH') {
+    return true;
+  }
+
+  const room = context.room;
+  const connected = context.connection === 'connected';
+  const member = room?.members.find((candidate) => candidate.sessionId === context.sessionId);
+  const openMember = connected && room?.phase === 'open' && member?.connected === true;
+
+  switch (event.type) {
+    case 'CREATE_ROOM':
+      return connected && (!room || room.phase === 'empty');
+    case 'JOIN_ROOM':
+      return connected && room?.phase === 'open' && member?.connected !== true;
+    case 'CLAIM_SEAT':
+      return (
+        openMember &&
+        'side' in event &&
+        (event.side === 'left' || event.side === 'right') &&
+        !room.members.some(
+          (candidate) => candidate.side === event.side && candidate.sessionId !== context.sessionId
+        )
+      );
+    case 'RELEASE_SEAT':
+    case 'SET_CONTROLLER':
+      return openMember;
+    case 'SET_READY':
+      return openMember && (!('ready' in event) || event.ready === false || member.side !== null);
+    case 'BEGIN_MATCH':
+      return projectMeshPongWorkflow(context).canStart;
+    default:
+      return false;
+  }
+}
+
 function sourceSnapshot(context: MeshPongWorkflowState) {
   const projection = projectMeshPongWorkflow(context);
   return {
@@ -71,7 +110,7 @@ function sourceSnapshot(context: MeshPongWorkflowState) {
     status: 'running',
     value: projection.screen,
     matches: (state: string) => projection.screen === state,
-    can: () => true,
+    can: (event: unknown) => canSendWorkflowCommand(context, event),
     hasTag: () => false,
     toJSON: () => ({ context, value: projection.screen }),
   };

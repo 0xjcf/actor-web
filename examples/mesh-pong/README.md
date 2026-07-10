@@ -19,6 +19,24 @@ Legacy stored or configured `mlx` controller values remain accepted as
 compatibility input and normalize to visible `planner`. New browser-visible
 controller vocabulary writes use `human` / `reflex` / `planner` / `hybrid`.
 
+## Authority and durability
+
+- `Room` is authoritative for lobby membership, seats, readiness, host selection,
+  and the immutable roster handoff. Its state is intentionally ephemeral in this example.
+- `MatchCoordinator` is authoritative for match phase, generation, canonical tick,
+  controller slots, and the canonical `PongSnapshot`. Its state is also intentionally
+  ephemeral; Mesh Pong does not claim a durable match journal or artifact store.
+- Planner responses are provisional advisory proposals. The shell records proposal and
+  correlation identity, source generation/tick, owner/mode facts, and timestamps, then
+  deterministically admits only a current, uncancelled proposal before it can influence
+  a synthetic paddle input. The coordinator remains the only authority that applies input.
+- The Ignite workflow and browser DOM are derived projections. They never own Room or
+  MatchCoordinator lifecycle state, and neither Ignite nor FAS is required to execute a match.
+
+The remote-room follow-up binds authenticated runtime identity at the transport boundary.
+The current local/headless example keeps `requestSessionId` as a development identity fact
+and rechecks Room/Match authorization at execution time.
+
 ## Recommended local benchmark path
 
 The recommended operator benchmark path stays intentionally small and uses the
@@ -27,7 +45,7 @@ same provider shape that is covered by in-repo tests:
 - One OpenAI-compatible MLX endpoint shared by both sides.
 - One model setting for both controller actors.
 - Browser-side telemetry plus the benchmark summary reducer in `ui/main.ts` for
-  deterministic latency, throughput, timeout, and gameplay-effect reporting.
+  deterministic reductions of observed latency, throughput, timeout, and gameplay-effect facts.
 
 Start a local MLX server on the endpoint the example already supports:
 
@@ -74,7 +92,7 @@ Defaults:
 
 The browser sidebar now shows both the raw telemetry lanes and a compact
 benchmark summary string derived only from telemetry events. The summary reports
-these deterministic metrics:
+metrics deterministically reduced from observed telemetry:
 
 - controller started / finished / timeouts
 - latency count / total / min / max / average
