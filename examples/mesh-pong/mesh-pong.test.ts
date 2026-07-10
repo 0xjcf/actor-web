@@ -2670,7 +2670,7 @@ describe('Mesh Pong transport parity', () => {
     });
   });
 
-  it('aborts controller provider calls after the controller timeout', async () => {
+  it('aborts controller provider calls after the effective controller timeout and observes late failures', async () => {
     vi.useFakeTimers();
     try {
       const snapshot = createStepperSnapshot(
@@ -2678,14 +2678,18 @@ describe('Mesh Pong transport parity', () => {
         0
       );
       let observedSignal: AbortSignal | undefined;
-      const result = runPongControllerWithLlmProvider('right', snapshot, (_request, options) => {
-        observedSignal = options.signal;
-        return new Promise<ActorAgentLlmResult>((_resolve, reject) => {
-          options.signal.addEventListener('abort', () => reject(new Error('controller aborted')));
-        });
-      });
+      const providerResult = createDeferred<ActorAgentLlmResult>();
+      const result = runPongControllerWithLlmProvider(
+        'right',
+        snapshot,
+        (_request, options) => {
+          observedSignal = options.signal;
+          return providerResult.promise;
+        },
+        25
+      );
 
-      await vi.advanceTimersByTimeAsync(CONTROLLER_LLM_TIMEOUT_MS);
+      await vi.advanceTimersByTimeAsync(25);
 
       await expect(result).resolves.toEqual({
         ok: false,
@@ -2693,10 +2697,13 @@ describe('Mesh Pong transport parity', () => {
         reason: 'timeout',
         error: {
           code: 'LLM_TIMEOUT',
-          message: `Pong controller timed out after ${CONTROLLER_LLM_TIMEOUT_MS}ms.`,
+          message: 'Pong controller timed out after 25ms.',
         },
       });
       expect(observedSignal?.aborted).toBe(true);
+
+      providerResult.reject(new Error('late provider failure'));
+      await flushMicrotasks();
     } finally {
       vi.useRealTimers();
     }
