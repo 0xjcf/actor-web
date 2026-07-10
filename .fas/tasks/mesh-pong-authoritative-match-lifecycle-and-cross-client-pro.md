@@ -50,6 +50,9 @@ Correct the Mesh Pong terminal validation architecture before remote rooms and U
 - examples/vite.config.ts
 - examples/mesh-pong/parity-proof.ts
 - examples/mesh-pong/ui/index.html
+- packages/actor-core-runtime/src/actor-context-manager.ts
+- packages/actor-core-runtime/src/actor-system-impl.ts
+- packages/actor-core-runtime/src/unit/actor-context-manager.test.ts
 
 ## Scope Amendments
 
@@ -72,6 +75,16 @@ Correct the Mesh Pong terminal validation architecture before remote rooms and U
 - Evidence: root manual browser validation | examples/mesh-pong/ui/index.html | Active transport proof still renders ball / score / paddles and omits mesh from the visible parity gate.
 - Accuracy signal: live browser DOM inspected after HEAD b1036751
 - Follow-up needed: Code writer must update the visible proof and add regression coverage before QA retry.
+
+- Type: external-review-scope-promotion
+- Added at: 2026-07-09
+- Trigger: CodeRabbit found that browser fallback serialization returned a queued Promise through the synchronous `run()` generic and could deadlock post-`await` reentry.
+- Reason: Preserve browser-safe actor delivery through an explicitly asynchronous queue while restoring the synchronous fallback context contract.
+- Added paths: packages/actor-core-runtime/src/actor-context-manager.ts, packages/actor-core-runtime/src/actor-system-impl.ts, packages/actor-core-runtime/src/unit/actor-context-manager.test.ts
+- Evidence source: CodeRabbit committed review
+- Evidence: Three findings reported; the two actor-context findings share one valid root cause, while the task-state/parity finding is stale because the authoritative actor proof and regression already exist.
+- Accuracy signal: failing focused regressions reproduced before implementation; two-tab BroadcastChannel validation reached 2 / 2 and synchronized running projections after the fix.
+- Follow-up needed: Refresh task scope, verification, and review evidence before closeout.
 
 ## Implementation plan
 
