@@ -204,6 +204,14 @@ export interface PongControllerSlot {
   readonly ready: boolean;
 }
 
+/** Immutable handoff from the pre-match Room aggregate to MatchCoordinator. */
+export interface PongMatchRosterHandoff {
+  readonly roomId: string;
+  readonly authoritySessionId: string;
+  readonly roomRevision: number;
+  readonly controllers: readonly PongControllerSlot[];
+}
+
 export type PongMatchStartResult =
   | {
       readonly ok: true;

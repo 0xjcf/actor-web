@@ -51,7 +51,14 @@ import {
   usesSyntheticControllerSlot,
 } from '../pong-contract';
 import { pong } from '../pong-topology';
+import {
+  createInitialMeshPongWorkflow,
+  projectMeshPongWorkflow,
+  projectRoomFromAuthoritativeMatch,
+  reduceMeshPongWorkflow,
+} from '../workflow/mesh-pong-workflow-core';
 import { drawPong } from './pong-canvas';
+import { renderMeshPongWorkflowScreen } from './screens/workflow-screen';
 
 type BrowserMode = BrowserPongTransportMode;
 type BrowserRuntime =
@@ -876,6 +883,7 @@ let statusValueElement: HTMLElement;
 let sessionValueElement: HTMLElement;
 let sideValueElement: HTMLElement;
 let lobbyValueElement: HTMLElement;
+let workflowRootElement: HTMLElement;
 let proofTopologyElement: HTMLElement;
 let proofBehaviorsElement: HTMLElement;
 let proofActorsElement: HTMLElement;
@@ -1145,6 +1153,38 @@ function renderPlayerSession(session: PongPlayerSessionState | null): void {
   if (matchState) {
     renderLobby(matchState);
   }
+  renderWorkflowScreen();
+}
+
+function renderWorkflowScreen(): void {
+  if (!uiBootstrapped) {
+    return;
+  }
+  let workflow = createInitialMeshPongWorkflow(browserSessionId);
+  workflow = reduceMeshPongWorkflow(workflow, {
+    type: 'CONNECTION_PROJECTED',
+    state:
+      lifecycleStatus.includes('failed') || lifecycleStatus.includes('disconnected')
+        ? 'disconnected'
+        : lifecycleStatus.includes('starting')
+          ? 'connecting'
+          : 'connected',
+  });
+  if (matchState) {
+    workflow = reduceMeshPongWorkflow(workflow, {
+      type: 'ROOM_PROJECTED',
+      room: projectRoomFromAuthoritativeMatch(matchState),
+    });
+    workflow = reduceMeshPongWorkflow(workflow, {
+      type: 'MATCH_PROJECTED',
+      match: {
+        phase: matchState.phase,
+        generation: matchState.generation,
+        winner: null,
+      },
+    });
+  }
+  renderMeshPongWorkflowScreen(workflowRootElement, projectMeshPongWorkflow(workflow));
 }
 
 export function isProjectedMatchReadyToStart(options: {
@@ -1174,6 +1214,7 @@ function renderLobby(match: PongMatchState): void {
     mode: selectedMatchMode(),
     expectedGeneration: match.generation,
   });
+  renderWorkflowScreen();
 }
 
 function applyProjectedMatch(
@@ -2670,6 +2711,7 @@ export function bootstrapMeshPongUI(): void {
   sessionValueElement = queryRequired<HTMLElement>(document, '#session-value');
   sideValueElement = queryRequired<HTMLElement>(document, '#side-value');
   lobbyValueElement = queryRequired<HTMLElement>(document, '#lobby-value');
+  workflowRootElement = queryRequired<HTMLElement>(document, '#workflow-screen');
   proofTopologyElement = queryRequired<HTMLElement>(document, '#proof-topology');
   proofBehaviorsElement = queryRequired<HTMLElement>(document, '#proof-behaviors');
   proofActorsElement = queryRequired<HTMLElement>(document, '#proof-actors');
