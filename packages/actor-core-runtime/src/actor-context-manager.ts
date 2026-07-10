@@ -86,13 +86,15 @@ interface FallbackContextFrame<T> {
 export class FallbackContextStorage<T> implements ContextStorage<T> {
   private current: T | undefined;
   private readonly frames: FallbackContextFrame<T>[] = [];
-  private readonly idleWaiters: Array<() => void> = [];
+  private topLevelAsyncTail: Promise<void> = Promise.resolve();
   private rootPrevious: T | undefined;
   private callbackDepth = 0;
 
   run<TResult>(context: T, fn: () => TResult): TResult {
     if (this.callbackDepth === 0 && this.frames.length > 0) {
-      return this.queueTopLevelRun(context, fn) as TResult;
+      throw new Error(
+        'FallbackContextStorage cannot start overlapping top-level async runs without AsyncLocalStorage'
+      );
     }
 
     if (this.frames.length === 0) {
@@ -133,6 +135,19 @@ export class FallbackContextStorage<T> implements ContextStorage<T> {
     return this.current;
   }
 
+  /**
+   * Serialize top-level async work without changing run()'s synchronous contract.
+   * Callers must not use this method for reentry from an active async callback.
+   */
+  runAsync<TResult>(context: T, fn: () => Promise<TResult>): Promise<TResult> {
+    const pending = this.topLevelAsyncTail.then(() => this.run(context, fn));
+    this.topLevelAsyncTail = pending.then(
+      () => undefined,
+      () => undefined
+    );
+    return pending;
+  }
+
   private releaseFrame(frameId: symbol): void {
     const frameIndex = this.frames.findIndex((frame) => frame.id === frameId);
     if (frameIndex === -1) {
@@ -144,33 +159,10 @@ export class FallbackContextStorage<T> implements ContextStorage<T> {
     if (this.frames.length === 0) {
       this.current = this.rootPrevious;
       this.rootPrevious = undefined;
-      this.resolveIdleWaiters();
       return;
     }
 
     this.current = this.frames[this.frames.length - 1]?.context;
-  }
-
-  private async queueTopLevelRun<TResult>(
-    context: T,
-    fn: () => TResult
-  ): Promise<Awaited<TResult>> {
-    await new Promise<void>((resolve) => {
-      this.idleWaiters.push(resolve);
-    });
-
-    return await this.run(context, fn);
-  }
-
-  private resolveIdleWaiters(): void {
-    if (this.idleWaiters.length === 0) {
-      return;
-    }
-
-    const waiters = this.idleWaiters.splice(0);
-    for (const resolve of waiters) {
-      resolve();
-    }
   }
 }
 
@@ -491,6 +483,25 @@ export function safeRun<T>(context: ActorContext, fn: () => T, fallbackActorId?:
 
     throw error;
   }
+}
+
+/**
+ * Run one top-level async operation with context isolation.
+ *
+ * Browser fallbacks serialize these operations because they cannot isolate
+ * concurrent top-level async contexts. AsyncLocalStorage environments retain
+ * their normal concurrent behavior.
+ */
+export function safeRunAsync<T>(
+  context: ActorContext,
+  fn: () => Promise<T>,
+  fallbackActorId?: string
+): Promise<T> {
+  if (storage instanceof FallbackContextStorage) {
+    return storage.runAsync(context, () => Promise.resolve(safeRun(context, fn, fallbackActorId)));
+  }
+
+  return Promise.resolve(safeRun(context, fn, fallbackActorId));
 }
 
 /**
