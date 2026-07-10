@@ -87,10 +87,9 @@ export function projectMeshPongWorkflow(state: MeshPongWorkflowState): MeshPongW
         : state.room
           ? 'table'
           : 'lobby';
-  const localMember = state.room?.members.find((member) => member.sessionId === state.sessionId);
-  const isHost =
-    state.room?.hostSessionId === state.sessionId ||
-    (state.room?.hostSessionId === null && Boolean(localMember?.side));
+  // Only the Room aggregate may nominate the host. Inferring it from a local seat made a
+  // joining tab appear authorized while the canonical host projection was unavailable.
+  const isHost = state.room?.hostSessionId === state.sessionId;
   const hasBothSeats =
     Boolean(state.room?.members.some((member) => member.side === 'left')) &&
     Boolean(state.room?.members.some((member) => member.side === 'right'));

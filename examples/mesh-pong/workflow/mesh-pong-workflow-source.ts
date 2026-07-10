@@ -1,17 +1,21 @@
+import type { ActorMessage, ActorRef } from '@actor-web/runtime';
 import type { ActorWebSource } from 'ignite-element/actor-web';
 import { igniteCore } from 'ignite-element/actor-web';
-import type { PongControllerType, PongSide } from '../pong-contract';
-import {
-  createInitialPongRoom,
-  type PongRoomCommand,
-  type PongRoomEvent,
-  type PongRoomResult,
-  reducePongRoom,
+import type {
+  PongControllerType,
+  PongMatchCommand,
+  PongMatchState,
+  PongSide,
+} from '../pong-contract';
+import type {
+  PongRoomCommand,
+  PongRoomEvent,
+  PongRoomResult,
+  PongRoomState,
 } from '../pong-room-contract';
 import {
   createInitialMeshPongWorkflow,
   type MeshPongConnectionState,
-  type MeshPongMatchProjection,
   type MeshPongWorkflowProjection,
   type MeshPongWorkflowState,
   projectMeshPongWorkflow,
@@ -20,98 +24,172 @@ import {
 
 type WorkflowCommandInput =
   | { readonly type: 'CREATE_ROOM'; readonly code: string }
-  | { readonly type: 'JOIN_ROOM'; readonly sessionId: string }
+  | { readonly type: 'JOIN_ROOM' }
   | {
       readonly type: 'CLAIM_SEAT';
-      readonly sessionId: string;
       readonly side: PongSide;
       readonly controller?: PongControllerType;
     }
-  | { readonly type: 'RELEASE_SEAT'; readonly sessionId: string }
-  | {
-      readonly type: 'SET_CONTROLLER';
-      readonly sessionId: string;
-      readonly controller: PongControllerType;
-    }
-  | { readonly type: 'SET_READY'; readonly sessionId: string; readonly ready: boolean }
-  | { readonly type: 'BEGIN_MATCH'; readonly sessionId: string }
+  | { readonly type: 'RELEASE_SEAT' }
+  | { readonly type: 'SET_CONTROLLER'; readonly controller: PongControllerType }
+  | { readonly type: 'SET_READY'; readonly ready: boolean }
+  | { readonly type: 'BEGIN_MATCH' }
   | { readonly type: 'PROJECT_CONNECTION'; readonly state: MeshPongConnectionState }
-  | ({ readonly type: 'PROJECT_MATCH' } & MeshPongMatchProjection);
+  | { readonly type: 'REFRESH' };
+
+export interface MeshPongWorkflowActors {
+  /** The Room aggregate is the only owner of memberships, seats, readiness, and start permission. */
+  readonly room: ActorRef<PongRoomState, PongRoomCommand>;
+  /** MatchCoordinator is the only owner of Match phase. Room only hands it an immutable roster. */
+  readonly matchCoordinator: ActorRef<PongMatchState, PongMatchCommand>;
+}
 
 export interface MeshPongWorkflowSource
   extends ActorWebSource<MeshPongWorkflowState, WorkflowCommandInput, PongRoomEvent> {
   send(message: WorkflowCommandInput): Promise<PongRoomResult | MeshPongWorkflowState>;
+  refresh(): Promise<MeshPongWorkflowState>;
   close(): void;
 }
 
 export interface CreateMeshPongWorkflowSourceOptions {
   readonly sessionId: string;
-  readonly roomId: string;
+  readonly actors: MeshPongWorkflowActors;
+}
+
+export function isPongRoomResult(
+  value: PongRoomResult | MeshPongWorkflowState
+): value is PongRoomResult {
+  return 'ok' in value;
 }
 
 function sourceSnapshot(context: MeshPongWorkflowState) {
+  const projection = projectMeshPongWorkflow(context);
   return {
     address: 'actor://pong-server/room-workflow',
     context,
-    phase: projectMeshPongWorkflow(context).screen,
+    phase: projection.screen,
     status: 'running',
-    value: projectMeshPongWorkflow(context).screen,
-    matches: (state: string) => projectMeshPongWorkflow(context).screen === state,
+    value: projection.screen,
+    matches: (state: string) => projection.screen === state,
     can: () => true,
     hasTag: () => false,
-    toJSON: () => ({ context, value: projectMeshPongWorkflow(context).screen }),
+    toJSON: () => ({ context, value: projection.screen }),
   };
 }
 
+function projectMatch(match: PongMatchState) {
+  return {
+    phase: match.phase,
+    generation: match.generation,
+    winner: null,
+  } as const;
+}
+
+function roomCommand(
+  input: Exclude<WorkflowCommandInput, { readonly type: 'PROJECT_CONNECTION' | 'REFRESH' }>,
+  requestSessionId: string,
+  expectedRevision: number
+): PongRoomCommand {
+  switch (input.type) {
+    case 'CREATE_ROOM':
+      return { type: 'CREATE_ROOM', requestSessionId, expectedRevision, code: input.code };
+    case 'JOIN_ROOM':
+      return { type: 'JOIN_ROOM', requestSessionId, expectedRevision };
+    case 'CLAIM_SEAT':
+      return {
+        type: 'CLAIM_SEAT',
+        requestSessionId,
+        expectedRevision,
+        side: input.side,
+        controller: input.controller,
+      };
+    case 'RELEASE_SEAT':
+      return { type: 'RELEASE_SEAT', requestSessionId, expectedRevision };
+    case 'SET_CONTROLLER':
+      return {
+        type: 'SET_CONTROLLER',
+        requestSessionId,
+        expectedRevision,
+        controller: input.controller,
+      };
+    case 'SET_READY':
+      return { type: 'SET_READY', requestSessionId, expectedRevision, ready: input.ready };
+    case 'BEGIN_MATCH':
+      return { type: 'BEGIN_MATCH', requestSessionId, expectedRevision };
+  }
+}
+
+/**
+ * Imperative adapter which composes authoritative Actor-Web aggregates. It holds only a derived
+ * workflow projection: it never emulates Room state and it never infers Match phase from Room.
+ */
 export function createMeshPongWorkflowSource(
   options: CreateMeshPongWorkflowSourceOptions
 ): MeshPongWorkflowSource {
   let context = createInitialMeshPongWorkflow(options.sessionId);
-  let room = createInitialPongRoom(options.roomId);
   let closed = false;
   const snapshotListeners = new Set<(snapshot: ReturnType<typeof sourceSnapshot>) => void>();
   const eventListeners = new Set<(event: PongRoomEvent) => void>();
+  const stops: (() => void)[] = [];
 
-  const transportState = () =>
-    context.connection === 'connecting' ? ('replaying' as const) : context.connection;
-
-  const publish = (events: readonly PongRoomEvent[] = []) => {
+  const publish = () => {
     const snapshot = sourceSnapshot(context);
-    for (const listener of snapshotListeners) {
-      listener(snapshot);
-    }
-    for (const event of events) {
-      for (const listener of eventListeners) {
-        listener(event);
-      }
-    }
+    for (const listener of snapshotListeners) listener(snapshot);
+  };
+  const applyRoom = (room: PongRoomState) => {
+    context = reduceMeshPongWorkflow(context, { type: 'ROOM_PROJECTED', room });
+  };
+  const applyMatch = (match: PongMatchState) => {
+    context = reduceMeshPongWorkflow(context, {
+      type: 'MATCH_PROJECTED',
+      match: projectMatch(match),
+    });
+  };
+  const refresh = async (): Promise<MeshPongWorkflowState> => {
+    const [roomResult, match] = await Promise.all([
+      options.actors.room.ask<PongRoomResult>({ type: 'GET_ROOM' }),
+      options.actors.matchCoordinator.ask<PongMatchState>({ type: 'GET_MATCH' }),
+    ]);
+    if (roomResult.ok) applyRoom(roomResult.room);
+    applyMatch(match);
+    publish();
+    return context;
   };
 
-  const applyRoom = (command: PongRoomCommand): PongRoomResult => {
-    const transition = reducePongRoom(room, command);
-    room = transition.state;
-    context = reduceMeshPongWorkflow(context, { type: 'ROOM_PROJECTED', room });
-    context = reduceMeshPongWorkflow(context, {
-      type: 'COMMAND_REJECTED',
-      rejection: transition.result.ok ? null : transition.result,
-    });
-    if (transition.result.ok && transition.result.roster) {
-      context = reduceMeshPongWorkflow(context, {
-        type: 'MATCH_PROJECTED',
-        match: { phase: 'running', generation: 1, winner: null },
-      });
-    }
-    publish(transition.events);
-    return transition.result;
+  const roomRef = options.actors.room as ActorRef<PongRoomState, PongRoomCommand> & {
+    subscribeEvent?: (listener: (event: ActorMessage) => void) => () => void;
   };
+  if (roomRef.subscribeSnapshot) {
+    stops.push(
+      roomRef.subscribeSnapshot((snapshot) => {
+        applyRoom(snapshot.context);
+        publish();
+      })
+    );
+  }
+  if (options.actors.matchCoordinator.subscribeSnapshot) {
+    stops.push(
+      options.actors.matchCoordinator.subscribeSnapshot((snapshot) => {
+        applyMatch(snapshot.context);
+        publish();
+      })
+    );
+  }
+  if (roomRef.subscribeEvent) {
+    stops.push(
+      roomRef.subscribeEvent((event) => {
+        if (event.type === 'ROOM_CHANGED' || event.type === 'ROOM_COMMAND_REJECTED') {
+          eventListeners.forEach((listener) => listener(event as PongRoomEvent));
+        }
+      })
+    );
+  }
 
   return {
     address: 'actor://pong-server/room-workflow',
     snapshot: () => sourceSnapshot(context),
     subscribe(listener) {
-      if (closed) {
-        return () => {};
-      }
+      if (closed) return () => {};
       snapshotListeners.add(listener);
       listener(sourceSnapshot(context));
       return () => snapshotListeners.delete(listener);
@@ -120,15 +198,9 @@ export function createMeshPongWorkflowSource(
       eventListeners.add(listener);
       return () => eventListeners.delete(listener);
     },
-    transportStatus: () => ({
-      state: transportState(),
-      updatedAt: 0,
-    }),
+    transportStatus: () => ({ state: 'local' as const, updatedAt: 0 }),
     subscribeTransportStatus(listener) {
-      listener({
-        state: transportState(),
-        updatedAt: 0,
-      });
+      listener({ state: 'local' as const, updatedAt: 0 });
       return () => {};
     },
     async send(message) {
@@ -140,62 +212,26 @@ export function createMeshPongWorkflowSource(
         publish();
         return context;
       }
-      if (message.type === 'PROJECT_MATCH') {
-        context = reduceMeshPongWorkflow(context, {
-          type: 'MATCH_PROJECTED',
-          match: {
-            phase: message.phase,
-            generation: message.generation,
-            winner: message.winner,
-          },
-        });
-        publish();
-        return context;
-      }
+      if (message.type === 'REFRESH') return refresh();
 
-      const requestSessionId =
-        message.type === 'CREATE_ROOM' ? options.sessionId : message.sessionId;
-      const expectedRevision = room.revision;
-      switch (message.type) {
-        case 'CREATE_ROOM':
-          return applyRoom({
-            type: 'CREATE_ROOM',
-            requestSessionId,
-            expectedRevision,
-            code: message.code,
-          });
-        case 'JOIN_ROOM':
-          return applyRoom({ type: 'JOIN_ROOM', requestSessionId, expectedRevision });
-        case 'CLAIM_SEAT':
-          return applyRoom({
-            type: 'CLAIM_SEAT',
-            requestSessionId,
-            expectedRevision,
-            side: message.side,
-            controller: message.controller,
-          });
-        case 'RELEASE_SEAT':
-          return applyRoom({ type: 'RELEASE_SEAT', requestSessionId, expectedRevision });
-        case 'SET_CONTROLLER':
-          return applyRoom({
-            type: 'SET_CONTROLLER',
-            requestSessionId,
-            expectedRevision,
-            controller: message.controller,
-          });
-        case 'SET_READY':
-          return applyRoom({
-            type: 'SET_READY',
-            requestSessionId,
-            expectedRevision,
-            ready: message.ready,
-          });
-        case 'BEGIN_MATCH':
-          return applyRoom({ type: 'BEGIN_MATCH', requestSessionId, expectedRevision });
-      }
+      const currentRoom = await options.actors.room.ask<PongRoomResult>({ type: 'GET_ROOM' });
+      if (!currentRoom.ok) return currentRoom;
+      const result = await options.actors.room.ask<PongRoomResult>(
+        roomCommand(message, options.sessionId, currentRoom.room.revision) as never
+      );
+      if (result.ok) applyRoom(result.room);
+      context = reduceMeshPongWorkflow(context, {
+        type: 'COMMAND_REJECTED',
+        rejection: result.ok ? null : result,
+      });
+      // BEGIN_MATCH only changes Room. MatchCoordinator must publish its own phase transition.
+      await refresh();
+      return result;
     },
+    refresh,
     close() {
       closed = true;
+      stops.splice(0).forEach((stop) => stop());
       snapshotListeners.clear();
       eventListeners.clear();
     },
@@ -209,37 +245,25 @@ export function createMeshPongWorkflowRuntime(source: MeshPongWorkflowSource) {
     view: ({ context }): MeshPongWorkflowProjection => projectMeshPongWorkflow(context),
     commands: ({ actor, command }) => ({
       createRoom: command((input: { readonly code: string }) =>
-        actor.send({ type: 'CREATE_ROOM', code: input.code })
+        actor.send({ type: 'CREATE_ROOM', ...input })
       ),
-      joinRoom: command((input: { readonly sessionId: string }) =>
-        actor.send({ type: 'JOIN_ROOM', sessionId: input.sessionId })
-      ),
+      joinRoom: command(() => actor.send({ type: 'JOIN_ROOM' })),
       claimSeat: command(
-        (input: {
-          readonly sessionId: string;
-          readonly side: PongSide;
-          readonly controller?: PongControllerType;
-        }) => actor.send({ type: 'CLAIM_SEAT', ...input })
+        (input: { readonly side: PongSide; readonly controller?: PongControllerType }) =>
+          actor.send({ type: 'CLAIM_SEAT', ...input })
       ),
-      releaseSeat: command((input: { readonly sessionId: string }) =>
-        actor.send({ type: 'RELEASE_SEAT', sessionId: input.sessionId })
+      releaseSeat: command(() => actor.send({ type: 'RELEASE_SEAT' })),
+      setController: command((input: { readonly controller: PongControllerType }) =>
+        actor.send({ type: 'SET_CONTROLLER', ...input })
       ),
-      setController: command(
-        (input: { readonly sessionId: string; readonly controller: PongControllerType }) =>
-          actor.send({ type: 'SET_CONTROLLER', ...input })
-      ),
-      setReady: command((input: { readonly sessionId: string; readonly ready: boolean }) =>
+      setReady: command((input: { readonly ready: boolean }) =>
         actor.send({ type: 'SET_READY', ...input })
       ),
-      beginMatch: command((input: { readonly sessionId: string }) =>
-        actor.send({ type: 'BEGIN_MATCH', sessionId: input.sessionId })
-      ),
+      beginMatch: command(() => actor.send({ type: 'BEGIN_MATCH' })),
       projectConnection: command((input: { readonly state: MeshPongConnectionState }) =>
-        actor.send({ type: 'PROJECT_CONNECTION', state: input.state })
+        actor.send({ type: 'PROJECT_CONNECTION', ...input })
       ),
-      projectMatch: command((input: MeshPongMatchProjection) =>
-        actor.send({ type: 'PROJECT_MATCH', ...input })
-      ),
+      refresh: command(() => actor.send({ type: 'REFRESH' })),
     }),
   });
 }

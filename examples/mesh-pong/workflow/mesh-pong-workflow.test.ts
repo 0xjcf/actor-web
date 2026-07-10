@@ -1,7 +1,14 @@
+import type { ActorRef } from '@actor-web/runtime';
 import { test as igniteTest } from 'ignite-element';
 import { describe, expect, it } from 'vitest';
-import type { PongMatchRosterHandoff } from '../pong-contract';
-import { createInitialPongRoom, type PongRoomState, reducePongRoom } from '../pong-room-contract';
+import { startMeshPongLocal } from '../modes/local';
+import type { PongMatchCommand, PongMatchRosterHandoff, PongMatchState } from '../pong-contract';
+import {
+  createInitialPongRoom,
+  type PongRoomCommand,
+  type PongRoomState,
+  reducePongRoom,
+} from '../pong-room-contract';
 import { pong } from '../pong-topology';
 import { renderLobbyScreen } from '../ui/screens/lobby-screen';
 import { renderTableScreen } from '../ui/screens/table-screen';
@@ -161,7 +168,7 @@ describe('Mesh Pong workflow projection', () => {
     });
   });
 
-  it('preserves the existing pre-authority start gate while the Room actor is introduced', () => {
+  it('withholds start authority until the Room actor projects a canonical host', () => {
     const room = { ...prepareReadyRoom(), hostSessionId: null };
     const workflow = reduceMeshPongWorkflow(createInitialMeshPongWorkflow('tab-b'), {
       type: 'ROOM_PROJECTED',
@@ -170,42 +177,72 @@ describe('Mesh Pong workflow projection', () => {
 
     expect(projectMeshPongWorkflow(workflow)).toMatchObject({
       screen: 'table',
-      isHost: true,
-      canStart: true,
+      isHost: false,
+      canStart: false,
     });
   });
 });
 
 describe('Mesh Pong Ignite headless workflow', () => {
-  it('drives two sessions through readiness, rejection, start, reconnect, and trace', async () => {
-    const source = createMeshPongWorkflowSource({ sessionId: 'tab-a', roomId: 'room-1' });
-    const runtime = createMeshPongWorkflowRuntime(source);
-    const scenario = igniteTest(runtime);
+  it('composes two independent sessions over the same Room and MatchCoordinator actors', async () => {
+    const started = await startMeshPongLocal();
+    try {
+      const server = started.nodes.server;
+      if (!server) {
+        throw new Error('Expected Mesh Pong local server node.');
+      }
+      const room = (await server.system.lookup(pong.actors.room.address)) as ActorRef<
+        PongRoomState,
+        PongRoomCommand
+      > | null;
+      const matchCoordinator = (await server.system.lookup(
+        pong.actors.matchCoordinator.address
+      )) as ActorRef<PongMatchState, PongMatchCommand> | null;
+      if (!room || !matchCoordinator) {
+        throw new Error('Expected canonical Mesh Pong Room and MatchCoordinator actors.');
+      }
+      const actors = { room, matchCoordinator };
+      const sourceA = createMeshPongWorkflowSource({ sessionId: 'tab-a', actors });
+      const sourceB = createMeshPongWorkflowSource({ sessionId: 'tab-b', actors });
+      const runtimeA = createMeshPongWorkflowRuntime(sourceA);
+      const runtimeB = createMeshPongWorkflowRuntime(sourceB);
+      const tabA = igniteTest(runtimeA);
+      const tabB = igniteTest(runtimeB);
 
-    await scenario.when('createRoom', { code: 'PONG42' });
-    scenario.expectView({ screen: 'table', readiness: '0 / 2' });
-    await scenario.when('joinRoom', { sessionId: 'tab-b' });
-    await scenario.when('claimSeat', { sessionId: 'tab-a', side: 'left' });
-    await scenario.when('claimSeat', { sessionId: 'tab-b', side: 'right' });
-    await scenario.when('setReady', { sessionId: 'tab-a', ready: true });
-    scenario.expectView({ readiness: '1 / 2', canStart: false });
-    await scenario.when('beginMatch', { sessionId: 'tab-a' });
-    scenario.expectView({ rejection: 'player-not-ready' });
-    await scenario.when('setReady', { sessionId: 'tab-b', ready: true });
-    scenario.expectView({ readiness: '2 / 2', canStart: true });
-    await scenario.when('beginMatch', { sessionId: 'tab-a' });
-    scenario.expectView({ screen: 'match' });
-    await scenario.when('projectMatch', { phase: 'finished', generation: 1, winner: 'left' });
-    scenario.expectView({ screen: 'result', winner: 'left' });
+      await tabA.when('createRoom', { code: 'PONG42' });
+      await tabB.when('joinRoom');
+      await tabA.when('claimSeat', { side: 'left' });
+      await tabB.when('claimSeat', { side: 'right' });
+      await tabA.when('setReady', { ready: true });
+      tabA.expectView({ readiness: '1 / 2', canStart: false, isHost: true });
+      tabB.expectView({ readiness: '1 / 2', canStart: false, isHost: false });
 
-    const story = runtime.record('two session room workflow');
-    await story.execute('projectConnection', { state: 'disconnected' });
-    await story.execute('projectConnection', { state: 'connected' });
-    expect(story.trace().map((entry) => entry.kind)).toEqual(
-      expect.arrayContaining(['command', 'state', 'view'])
-    );
-    expect(runtime.getView()).toMatchObject({ connected: true, roomCode: 'PONG42' });
-    story.stop();
+      await tabB.when('setReady', { ready: true });
+      await sourceA.refresh();
+      await sourceB.refresh();
+      tabA.expectView({ readiness: '2 / 2', canStart: true, isHost: true });
+      tabB.expectView({ readiness: '2 / 2', canStart: false, isHost: false });
+
+      await tabB.when('beginMatch');
+      tabB.expectView({ rejection: 'not-host', screen: 'table' });
+      await tabA.when('beginMatch');
+      // Room produces only a roster handoff. Match stays in its own actor-owned lobby phase.
+      tabA.expectView({ screen: 'table' });
+      expect(runtimeA.getView()).toMatchObject({ roomCode: 'PONG42', isHost: true });
+      expect(runtimeB.getView()).toMatchObject({ roomCode: 'PONG42', isHost: false });
+
+      const story = runtimeB.record('independent tab reconnect');
+      await story.execute('projectConnection', { state: 'disconnected' });
+      await story.execute('projectConnection', { state: 'connected' });
+      expect(story.trace().map((entry) => entry.kind)).toEqual(
+        expect.arrayContaining(['command', 'state', 'view'])
+      );
+      story.stop();
+      sourceA.close();
+      sourceB.close();
+    } finally {
+      await started.stop();
+    }
   });
 });
 

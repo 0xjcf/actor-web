@@ -85,7 +85,12 @@ import {
   createPongControllerRequest,
   runPongControllerWithLlmProvider,
 } from './pong-controller';
-import type { PongRoomCommand, PongRoomResult, PongRoomState } from './pong-room-contract';
+import {
+  createInitialPongRoom,
+  type PongRoomCommand,
+  type PongRoomResult,
+  type PongRoomState,
+} from './pong-room-contract';
 import { pong } from './pong-topology';
 import {
   bootstrapMeshPongUI,
@@ -845,6 +850,12 @@ function createTurnStepperHarness(
         return { ok: true, match: makeMatch() } satisfies PongMatchCommandResult;
       }),
     } as unknown as ActorRef<PongMatchState, PongMatchCommand>,
+    room: {
+      ask: vi.fn(async () => ({
+        ok: true,
+        room: createInitialPongRoom('test-room'),
+      })),
+    } as unknown as ActorRef<PongRoomState, PongRoomCommand>,
     score: {
       ask: vi.fn(async () => createInitialScore()),
     } as unknown as ActorRef<PongScoreState, ScoreCommand>,
