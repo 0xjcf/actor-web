@@ -70,6 +70,7 @@ Use Mesh Pong to prove a deterministic utility-policy layer after the behavior-t
 ## Dependencies
 
 - Depends on task-1783536373178 Design actor-web Advisory Lane primitive for deadline-safe agents.
+- Depends on task-1783717048659 Mesh Pong revisioned advisory-policy conformance proof.
 - Blocks task-1783537940318 Evaluate behavior-tree and utility-AI primitives for actor-web behavior composition.
 
 ## Open questions

@@ -52,7 +52,7 @@ Define the actor-web-level advisory policy abstraction exposed by the Mesh Pong 
 - Trigger: Mesh Pong agent-native interaction contract alignment
 - Reason: The design must define provider-neutral revisioned proposal envelopes, canonical tick and age admission, typed timeout/stale/superseded/cancelled outcomes, deterministic fallback, and example-local policy ownership before generic extraction.
 - Evidence source: Cross-repo agent-native interaction contract amendment
-- Evidence: Cross-repo agent-native interaction contract amendment | /Users/joseflores/.codex/memories/extensions/ad_hoc/notes/2026-07-10T20-34-08Z-cross-repo-agent-native-interaction-constraint-contract-amendment.md | No public createAdvisoryLane API; models propose, deterministic behavior admits and persists control facts.
+- Evidence: Cross-repo agent-native interaction contract amendment | No public createAdvisoryLane API; models propose, deterministic behavior admits and persists control facts.
 - Accuracy signal: The follow-up conformance proof demonstrates the vocabulary before public API extraction.
 - Follow-up needed: task-1783717048659 proves the design after this task completes.
 
