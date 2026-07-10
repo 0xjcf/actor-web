@@ -3942,6 +3942,10 @@ describe('Mesh Pong transport parity', () => {
     const unsubscribeGuestSource = guestSource.subscribe((snapshot) => {
       guestSourceProjections.push(snapshot.context);
     });
+    const requestedMode: PongShellMatchMode = {
+      playerCount: 2,
+      controllers: { left: 'human', right: 'human' },
+    };
 
     const [initialHostProjection, initialGuestProjection] = await Promise.all([
       currentMatchState(hostCoordinator),
@@ -3953,7 +3957,7 @@ describe('Mesh Pong transport parity', () => {
       isProjectedMatchReadyToStart({
         match: initialHostProjection,
         session: createInitialPlayerSession('host-tab'),
-        mode: TWO_HUMAN_PONG_MATCH_MODE,
+        mode: requestedMode,
         expectedGeneration: initialHostProjection.generation,
       })
     ).toBe(false);
@@ -3981,7 +3985,7 @@ describe('Mesh Pong transport parity', () => {
       isProjectedMatchReadyToStart({
         match: oneReadyHostProjection,
         session: hostReadySession,
-        mode: TWO_HUMAN_PONG_MATCH_MODE,
+        mode: requestedMode,
         expectedGeneration: oneReadyHostProjection.generation,
       })
     ).toBe(false);
@@ -4015,7 +4019,7 @@ describe('Mesh Pong transport parity', () => {
       isProjectedMatchReadyToStart({
         match: hostProjection,
         session: hostReadySession,
-        mode: TWO_HUMAN_PONG_MATCH_MODE,
+        mode: requestedMode,
         expectedGeneration: hostProjection.generation,
       })
     ).toBe(true);
@@ -4023,7 +4027,7 @@ describe('Mesh Pong transport parity', () => {
       isProjectedMatchReadyToStart({
         match: guestProjection,
         session: guestReadySession,
-        mode: TWO_HUMAN_PONG_MATCH_MODE,
+        mode: requestedMode,
         expectedGeneration: guestProjection.generation,
       })
     ).toBe(true);
@@ -4031,7 +4035,7 @@ describe('Mesh Pong transport parity', () => {
       isProjectedMatchReadyToStart({
         match: hostProjection,
         session: hostReadySession,
-        mode: TWO_HUMAN_PONG_MATCH_MODE,
+        mode: requestedMode,
         expectedGeneration: hostProjection.generation + 1,
       })
     ).toBe(false);
