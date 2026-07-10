@@ -4534,7 +4534,7 @@ describe('Mesh Pong transport parity', () => {
     expect(readme).toMatch(/Local\s+human input is applied immediately in the shell/);
   });
 
-  it('documents the planner strategy json contract and keeps it aligned with the controller prompt', async () => {
+  it('documents a valid planner strategy json contract and keeps it aligned with the controller prompt', async () => {
     const readme = await readFile(path.resolve(meshPongExamplesDir, 'mesh-pong/README.md'), 'utf8');
     const request = createPongControllerRequest(
       'left',
@@ -4544,12 +4544,18 @@ describe('Mesh Pong transport parity', () => {
       )
     );
     const prompt = String(request.messages.at(-1)?.content ?? '');
+    const strategyExample = readme.match(/```json\n(\{[\s\S]*?\})\n```/)?.[1];
 
-    expect(readme).toContain('"targetY": 0..278');
-    expect(readme).toContain('"biasY": -82..82');
-    expect(readme).toContain('"maxStep": 1..28');
-    expect(readme).toContain('"label": "short reason string"');
-    expect(readme).toContain('"facts": ["short fact strings"]');
+    expect(strategyExample).toBeDefined();
+    expect(() => JSON.parse(strategyExample ?? '')).not.toThrow();
+    expect(strategyExample).toContain('"targetY": 139');
+    expect(strategyExample).toContain('"biasY": 0');
+    expect(strategyExample).toContain('"maxStep": 14');
+    expect(strategyExample).toContain('"label": "short reason string"');
+    expect(strategyExample).toContain('"facts": ["short fact strings"]');
+    expect(readme).toContain('`targetY` accepts values from 0 through 278');
+    expect(readme).toMatch(/`biasY` accepts values from -82\s+through 82/);
+    expect(readme).toMatch(/`maxStep` accepts values from 1\s+through 28/);
     expect(prompt).toContain('"targetY":"number"');
     expect(prompt).toContain('"biasY":"number"');
     expect(prompt).toContain('"maxStep":"number"');

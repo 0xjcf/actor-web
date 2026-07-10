@@ -51,10 +51,13 @@ valid JSON.
 - `packages/actor-core-runtime/src/actor-system-impl.ts`
 - Targeted existing tests under `packages/actor-core-runtime/src/`
 - `examples/mesh-pong/README.md`
+- `examples/mesh-pong/mesh-pong.test.ts`
 
 ## Scope Amendments
 
-- None.
+- Full verification showed that the Mesh Pong documentation contract test
+  asserted the invalid pseudo-JSON values removed from the README. Promote that
+  test so it verifies concrete JSON values and the separately documented ranges.
 
 ## Implementation plan
 
