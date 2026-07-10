@@ -241,6 +241,7 @@ export interface MeshPongControllerSchedulePolicy {
   readonly simulationIntervalMs: number;
   readonly controllerAskTimeoutMs: number;
   readonly plannerProposalMaxAgeMs: number;
+  readonly plannerProposalMaxTickAge: number;
   readonly plannerStrategyFreshTurnLimit: number;
   readonly plannerStrategyStaleTurnLimit: number;
 }
@@ -249,6 +250,7 @@ export const DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY: MeshPongControllerSch
   simulationIntervalMs: 90,
   controllerAskTimeoutMs: 30_000,
   plannerProposalMaxAgeMs: 1_000,
+  plannerProposalMaxTickAge: 1,
   plannerStrategyFreshTurnLimit: 2,
   plannerStrategyStaleTurnLimit: 1,
 };
@@ -835,6 +837,10 @@ type PlannerControllerLaneState = {
   readyDecision: PlannerDecisionState | null;
   lastDecision: PlannerDecisionState | null;
   latestAcceptedSequence: number;
+  retiredProposalReasons: Record<
+    string,
+    Extract<PongAdvisoryProposalRejectionReason, 'cancelled' | 'superseded'>
+  >;
   freshTurnsRemaining: number;
   staleTurnsRemaining: number;
 };
@@ -2099,6 +2105,7 @@ function createEmptyPlannerLaneState(): PlannerControllerLaneState {
     readyDecision: null,
     lastDecision: null,
     latestAcceptedSequence: 0,
+    retiredProposalReasons: {},
     freshTurnsRemaining: 0,
     staleTurnsRemaining: 0,
   };
@@ -2115,8 +2122,19 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
   let nextRequestId = 1;
   let lastMatchGeneration: number | null = null;
 
-  function resetLane(side: PongSide): void {
-    lanes[side] = createEmptyPlannerLaneState();
+  function resetLane(
+    side: PongSide,
+    reason: Extract<PongAdvisoryProposalRejectionReason, 'cancelled' | 'superseded'> = 'superseded'
+  ): void {
+    const lane = lanes[side];
+    const retiredProposalReasons = { ...lane.retiredProposalReasons };
+    if (lane.inFlight) {
+      retiredProposalReasons[lane.inFlight.proposalId] = reason;
+    }
+    lanes[side] = {
+      ...createEmptyPlannerLaneState(),
+      retiredProposalReasons,
+    };
   }
 
   function ownsRequest(request: PlannerControllerRequest): boolean {
@@ -2138,8 +2156,8 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
 
   function syncLanes(matchState: MeshPongTurnMatchState): void {
     if (lastMatchGeneration !== matchState.matchGeneration) {
-      resetLane('left');
-      resetLane('right');
+      resetLane('left', 'superseded');
+      resetLane('right', 'superseded');
       lastMatchGeneration = matchState.matchGeneration;
       return;
     }
@@ -2162,13 +2180,27 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
         }) ||
         proposalModeChanged
       ) {
-        resetLane(side);
+        resetLane(side, 'superseded');
       }
     }
   }
 
   async function resolvePlannerControllerInput(request: PlannerControllerRequest): Promise<void> {
-    const lane = lanes[request.side];
+    const recordRetiredCompletion = (
+      reason: Extract<PongAdvisoryProposalRejectionReason, 'cancelled' | 'superseded'>
+    ): void => {
+      deps.updateTelemetry({
+        type: 'controller-request-finished',
+        side: request.side,
+        mode: request.mode,
+        nowMs: deps.nowMs(),
+        outcome: 'rejected',
+        reason,
+        strategyStatus: 'error',
+        error: reason,
+      });
+      deps.setControllerDiagnostic(request.side, reason);
+    };
     try {
       const result =
         request.side === 'left'
@@ -2186,6 +2218,12 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
               },
               schedulePolicy.controllerAskTimeoutMs
             );
+      const lane = lanes[request.side];
+      const retirementReason = lane.retiredProposalReasons[request.proposalId];
+      if (retirementReason) {
+        recordRetiredCompletion(retirementReason);
+        return;
+      }
       if (!ownsRequest(request)) {
         return;
       }
@@ -2231,8 +2269,11 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
         mode: currentMatch.mode,
         nowMs: completedAtMs,
         maxAgeMs: schedulePolicy.plannerProposalMaxAgeMs,
+        maxTickAge: schedulePolicy.plannerProposalMaxTickAge,
         latestAcceptedSequence: lane.latestAcceptedSequence,
-        cancelledProposalIds: [],
+        cancelledProposalIds: Object.entries(lane.retiredProposalReasons)
+          .filter(([, reason]) => reason === 'cancelled')
+          .map(([proposalId]) => proposalId),
       });
       if (!admission.ok) {
         deps.updateTelemetry({
@@ -2262,6 +2303,12 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
       });
     } catch (error) {
       const errorReason = formatMlxControllerError(error);
+      const lane = lanes[request.side];
+      const retirementReason = lane.retiredProposalReasons[request.proposalId];
+      if (retirementReason) {
+        recordRetiredCompletion(retirementReason);
+        return;
+      }
       if (!ownsRequest(request)) {
         return;
       }
@@ -2277,6 +2324,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
       });
       deps.setControllerDiagnostic(request.side, errorReason);
     } finally {
+      const lane = lanes[request.side];
       if (lane.inFlight?.requestId === request.requestId) {
         lane.inFlight = null;
       }
@@ -2611,8 +2659,8 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
     tick,
     stop() {
       active = false;
-      resetLane('left');
-      resetLane('right');
+      resetLane('left', 'cancelled');
+      resetLane('right', 'cancelled');
     },
   };
 }

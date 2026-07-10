@@ -28,8 +28,9 @@ controller vocabulary writes use `human` / `reflex` / `planner` / `hybrid`.
   ephemeral; Mesh Pong does not claim a durable match journal or artifact store.
 - Planner responses are provisional advisory proposals. The shell records proposal and
   correlation identity, source generation/tick, owner/mode facts, and timestamps, then
-  deterministically admits only a current, uncancelled proposal before it can influence
-  a synthetic paddle input. The coordinator remains the only authority that applies input.
+  deterministically admits only an uncancelled proposal within the configured tick-age and
+  time-age policy before it can influence a synthetic paddle input. The coordinator remains
+  the only authority that applies input.
 - The Ignite workflow and browser DOM are derived projections. They never own Room or
   MatchCoordinator lifecycle state, and neither Ignite nor FAS is required to execute a match.
 

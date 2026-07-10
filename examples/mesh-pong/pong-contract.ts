@@ -159,6 +159,7 @@ export interface PongAdvisoryProposalAdmissionContext {
   readonly browserSessionId: string;
   readonly matchGeneration: number;
   readonly currentTick: number;
+  readonly maxTickAge: number;
   readonly matchOwnerSessionId: string | null;
   readonly mode: PongShellMatchMode | null;
   readonly nowMs: number;
@@ -185,9 +186,11 @@ export function admitPongAdvisoryProposal(
   if (proposal.sequence <= context.latestAcceptedSequence) {
     return { ok: false, proposalId: proposal.proposalId, reason: 'superseded' };
   }
+  const tickAge = context.currentTick - proposal.baseTick;
   if (
     proposal.matchGeneration !== context.matchGeneration ||
-    proposal.baseTick !== context.currentTick ||
+    tickAge < 0 ||
+    tickAge > context.maxTickAge ||
     context.nowMs - proposal.completedAtMs > context.maxAgeMs
   ) {
     return { ok: false, proposalId: proposal.proposalId, reason: 'stale-input' };

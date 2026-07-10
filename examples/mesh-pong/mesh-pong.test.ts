@@ -2964,6 +2964,7 @@ describe('Mesh Pong transport parity', () => {
       browserSessionId: 'owner-tab',
       matchGeneration: 7,
       currentTick: 11,
+      maxTickAge: 1,
       matchOwnerSessionId: 'owner-tab',
       mode: {
         playerCount: 1 as const,
@@ -2977,6 +2978,9 @@ describe('Mesh Pong transport parity', () => {
 
     expect(admitPongAdvisoryProposal(proposal, context)).toMatchObject({ ok: true });
     expect(admitPongAdvisoryProposal(proposal, { ...context, currentTick: 12 })).toMatchObject({
+      ok: true,
+    });
+    expect(admitPongAdvisoryProposal(proposal, { ...context, currentTick: 13 })).toMatchObject({
       ok: false,
       reason: 'stale-input',
     });
@@ -3334,6 +3338,7 @@ describe('Mesh Pong transport parity', () => {
       simulationIntervalMs: 90,
       controllerAskTimeoutMs: 30_000,
       plannerProposalMaxAgeMs: 1_000,
+      plannerProposalMaxTickAge: 1,
       plannerStrategyFreshTurnLimit: 2,
       plannerStrategyStaleTurnLimit: 1,
     });
@@ -3490,6 +3495,7 @@ describe('Mesh Pong transport parity', () => {
     expect(harness.leftAskCount()).toBe(1);
 
     harness.matchState.generation += 1;
+    await harness.stepper.tick();
     harness.leftDeferreds[0]?.resolve({
       ok: true,
       provider: 'llm',
@@ -3506,6 +3512,14 @@ describe('Mesh Pong transport parity', () => {
     expect(harness.commands.filter((command) => command === 'left:MOVE_PADDLE')).toHaveLength(0);
     expect(harness.replayedInputs).toHaveLength(0);
     expect(harness.leftAskCount()).toBe(2);
+    expect(
+      harness.telemetryEvents.some(
+        (event) =>
+          event.type === 'controller-request-finished' &&
+          event.outcome === 'rejected' &&
+          event.reason === 'superseded'
+      )
+    ).toBe(true);
   });
 
   it('rejects a same-generation advisory result whose base tick is already stale', async () => {
@@ -3514,6 +3528,7 @@ describe('Mesh Pong transport parity', () => {
       controllers: { left: 'planner', right: 'human' },
     });
 
+    await harness.stepper.tick();
     await harness.stepper.tick();
     await harness.stepper.tick();
     harness.leftDeferreds[0]?.resolve({
@@ -3534,6 +3549,37 @@ describe('Mesh Pong transport parity', () => {
     ).toBe(true);
     expect(harness.commands.filter((command) => command === 'left:MOVE_PADDLE')).toHaveLength(0);
     expect(harness.replayedInputs).toHaveLength(0);
+  });
+
+  it('accepts a same-generation advisory result delayed within the tick-age policy', async () => {
+    const harness = createTurnStepperHarness({
+      playerCount: 1,
+      controllers: { left: 'planner', right: 'human' },
+    });
+
+    await harness.stepper.tick();
+    await harness.stepper.tick();
+    harness.leftDeferreds[0]?.resolve({
+      ok: true,
+      provider: 'llm',
+      side: 'left',
+      strategy: createPlannerStrategy('left', {
+        targetY: PONG_FIELD.height - PONG_FIELD.paddleHeight,
+        label: 'one-tick-late',
+      }),
+    });
+    await flushMicrotasks();
+    await harness.stepper.tick();
+
+    expect(
+      harness.telemetryEvents.some(
+        (event) =>
+          event.type === 'controller-request-finished' &&
+          event.side === 'left' &&
+          event.outcome === 'ready'
+      )
+    ).toBe(true);
+    expect(harness.commands.filter((command) => command === 'left:MOVE_PADDLE')).toHaveLength(1);
   });
 
   it('does not apply advisory input after cancellation, mode replacement, or ownership loss', async () => {
@@ -3561,6 +3607,7 @@ describe('Mesh Pong transport parity', () => {
       ...modeChanged.matchState.mode,
       controllers: { left: 'human', right: 'human' },
     };
+    await modeChanged.stepper.tick();
     modeChanged.leftDeferreds[0]?.resolve({
       ok: true,
       provider: 'llm',
@@ -3576,6 +3623,7 @@ describe('Mesh Pong transport parity', () => {
     });
     await ownershipChanged.stepper.tick();
     ownershipChanged.matchState.ownerSessionId = 'other-tab';
+    await ownershipChanged.stepper.tick();
     ownershipChanged.leftDeferreds[0]?.resolve({
       ok: true,
       provider: 'llm',
@@ -3588,6 +3636,24 @@ describe('Mesh Pong transport parity', () => {
     for (const harness of [cancelled, modeChanged, ownershipChanged]) {
       expect(harness.commands.filter((command) => command === 'left:MOVE_PADDLE')).toHaveLength(0);
       expect(harness.replayedInputs).toHaveLength(0);
+    }
+    expect(
+      cancelled.telemetryEvents.some(
+        (event) =>
+          event.type === 'controller-request-finished' &&
+          event.outcome === 'rejected' &&
+          event.reason === 'cancelled'
+      )
+    ).toBe(true);
+    for (const harness of [modeChanged, ownershipChanged]) {
+      expect(
+        harness.telemetryEvents.some(
+          (event) =>
+            event.type === 'controller-request-finished' &&
+            event.outcome === 'rejected' &&
+            event.reason === 'superseded'
+        )
+      ).toBe(true);
     }
   });
 
@@ -4868,6 +4934,7 @@ describe('Mesh Pong transport parity', () => {
     expect(readme).toContain('`Room` is authoritative for lobby membership');
     expect(readme).toContain('`MatchCoordinator` is authoritative for match phase');
     expect(readme).toContain('Planner responses are provisional advisory proposals');
+    expect(readme).toContain('configured tick-age and');
     expect(readme).toContain('deterministically reduced from observed telemetry');
   });
 
