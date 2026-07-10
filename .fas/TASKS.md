@@ -2347,6 +2347,17 @@ operator explicitly asks for queue mutations.
 - Owner: runtime
 - Brief: .fas/tasks/expose-directory-readiness-separately-from-transport-members.md
 
+### Task: Mesh Pong headless room workflow foundation and Lobby Table screens
+
+- Title: Mesh Pong headless room workflow foundation and Lobby Table screens
+- Mode: 6-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/mesh-pong-headless-room-workflow-foundation-and-lobby-table-.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
 ## Template
 
 ### Task: `<short task title>`
