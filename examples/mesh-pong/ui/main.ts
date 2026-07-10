@@ -16,6 +16,7 @@ import {
 import type {
   ControllerCommand,
   PlayerSessionCommand,
+  PlayerSessionRestoreResult,
   PongControllerActorState,
   PongControllerAim,
   PongControllerInputResult,
@@ -1165,6 +1166,147 @@ async function currentMatchState(nextRefs: RuntimeRefs): Promise<PongMatchState>
   return nextRefs.matchCoordinator.ask<PongMatchState>({ type: 'GET_MATCH' });
 }
 
+export type MeshPongPlayerSessionHydrationResult =
+  | {
+      readonly ok: true;
+      readonly session: PongPlayerSessionState;
+      readonly match: PongMatchState;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'cancelled';
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'restore-failed';
+      readonly result: Extract<PlayerSessionRestoreResult, { readonly ok: false }>;
+      readonly session: PongPlayerSessionState;
+      readonly match: PongMatchState;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'sync-failed';
+      readonly result: Exclude<PongMatchCommandResult, { readonly ok: true }>;
+      readonly session: PongPlayerSessionState;
+      readonly match: PongMatchState;
+    };
+
+async function syncMeshPongPlayerSessionState(options: {
+  readonly session: PongPlayerSessionState;
+  readonly matchCoordinator: ActorRef<PongMatchState, PongMatchCommand>;
+  readonly flush: () => Promise<void>;
+  readonly shouldApply: () => boolean;
+}): Promise<MeshPongPlayerSessionHydrationResult> {
+  if (!options.shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+  const syncResult = await options.matchCoordinator.ask<PongMatchCommandResult>({
+    type: 'SYNC_SESSION',
+    requestSessionId: options.session.sessionId,
+    session: options.session,
+  });
+  if (!options.shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+  await options.flush();
+  if (!options.shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+  const match = await options.matchCoordinator.ask<PongMatchState>({ type: 'GET_MATCH' });
+  if (!options.shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+  return syncResult.ok
+    ? { ok: true, session: options.session, match }
+    : {
+        ok: false,
+        reason: 'sync-failed',
+        result: syncResult,
+        session: options.session,
+        match,
+      };
+}
+
+export async function restoreAndSyncMeshPongPlayerSession(options: {
+  readonly playerSession: ActorRef<PongPlayerSessionState, PlayerSessionCommand>;
+  readonly matchCoordinator: ActorRef<PongMatchState, PongMatchCommand>;
+  readonly flush: () => Promise<void>;
+  readonly shouldApply?: () => boolean;
+}): Promise<MeshPongPlayerSessionHydrationResult> {
+  const shouldApply = options.shouldApply ?? (() => true);
+  if (!shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+
+  const localSession = await options.playerSession.ask<PongPlayerSessionState>({
+    type: 'GET_SESSION',
+  });
+  if (!shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+
+  const authoritativeMatch = await options.matchCoordinator.ask<PongMatchState>({
+    type: 'GET_MATCH',
+  });
+  if (!shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+
+  const authoritativeSession = authoritativeMatch.sessions.find(
+    (candidate) => candidate.sessionId === localSession.sessionId
+  );
+  let session = localSession;
+  if (authoritativeSession) {
+    const restoreResult = await options.playerSession.ask<PlayerSessionRestoreResult>({
+      type: 'RESTORE_SESSION',
+      session: authoritativeSession,
+    });
+    if (!shouldApply()) {
+      return { ok: false, reason: 'cancelled' };
+    }
+    if (!restoreResult.ok) {
+      return {
+        ok: false,
+        reason: 'restore-failed',
+        result: restoreResult,
+        session,
+        match: authoritativeMatch,
+      };
+    }
+    session = restoreResult.session;
+  }
+
+  return syncMeshPongPlayerSessionState({
+    session,
+    matchCoordinator: options.matchCoordinator,
+    flush: options.flush,
+    shouldApply,
+  });
+}
+
+async function syncLocalMeshPongPlayerSession(options: {
+  readonly playerSession: ActorRef<PongPlayerSessionState, PlayerSessionCommand>;
+  readonly matchCoordinator: ActorRef<PongMatchState, PongMatchCommand>;
+  readonly flush: () => Promise<void>;
+  readonly shouldApply: () => boolean;
+}): Promise<MeshPongPlayerSessionHydrationResult> {
+  if (!options.shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+  const session = await options.playerSession.ask<PongPlayerSessionState>({
+    type: 'GET_SESSION',
+  });
+  if (!options.shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+  return syncMeshPongPlayerSessionState({
+    session,
+    matchCoordinator: options.matchCoordinator,
+    flush: options.flush,
+    shouldApply: options.shouldApply,
+  });
+}
+
 function isCurrentRuntimeContext(
   candidateRuntime: BrowserRuntime,
   candidateRefs: RuntimeRefs
@@ -1215,47 +1357,75 @@ async function syncMatchForMode(
 async function syncCurrentSession(
   nextRuntime: BrowserRuntime,
   nextRefs: RuntimeRefs,
-  options: { readonly shouldApply?: () => boolean } = {}
-): Promise<boolean> {
+  options: {
+    readonly shouldApply?: () => boolean;
+    readonly restoreAuthoritative?: boolean;
+  } = {}
+): Promise<{ readonly ok: true } | { readonly ok: false; readonly status?: string }> {
   const shouldApply = options.shouldApply ?? (() => true);
-  const session = await nextRefs.playerSession.ask<PongPlayerSessionState>({ type: 'GET_SESSION' });
+  const hydration =
+    options.restoreAuthoritative === false
+      ? await syncLocalMeshPongPlayerSession({
+          playerSession: nextRefs.playerSession,
+          matchCoordinator: nextRefs.matchCoordinator,
+          flush: () => flushRuntime(nextRuntime),
+          shouldApply,
+        })
+      : await restoreAndSyncMeshPongPlayerSession({
+          playerSession: nextRefs.playerSession,
+          matchCoordinator: nextRefs.matchCoordinator,
+          flush: () => flushRuntime(nextRuntime),
+          shouldApply,
+        });
   if (!shouldApply()) {
-    return false;
+    return { ok: false };
   }
-  const result = await nextRefs.matchCoordinator.ask<PongMatchCommandResult>({
-    type: 'SYNC_SESSION',
-    requestSessionId: session.sessionId,
-    session,
-  });
-  await flushRuntime(nextRuntime);
+
+  if (!hydration.ok && hydration.reason === 'cancelled') {
+    return { ok: false };
+  }
+  matchState = hydration.match;
   if (!shouldApply()) {
-    return false;
+    return { ok: false };
   }
-  const nextMatch = await currentMatchState(nextRefs);
+  renderLobby(hydration.match);
   if (!shouldApply()) {
-    return false;
+    return { ok: false };
   }
-  matchState = nextMatch;
-  renderLobby(nextMatch);
-  if (!result.ok) {
+  if (!hydration.ok) {
     const projectedSession =
-      nextMatch.sessions.find((candidate) => candidate.sessionId === session.sessionId) ??
-      createInitialPlayerSession(session.sessionId);
+      hydration.match.sessions.find(
+        (candidate) => candidate.sessionId === hydration.session.sessionId
+      ) ?? createInitialPlayerSession(hydration.session.sessionId);
     playerSessionState = projectedSession;
+    if (!shouldApply()) {
+      return { ok: false };
+    }
     renderPlayerSession(projectedSession);
-    setStatus(formatMatchCommandFailure(result));
-    return false;
+    if (!shouldApply()) {
+      return { ok: false };
+    }
+    return {
+      ok: false,
+      status:
+        hydration.reason === 'restore-failed'
+          ? hydration.result.reason
+          : formatMatchCommandFailure(hydration.result),
+    };
   }
-  playerSessionState = session;
-  renderPlayerSession(session);
-  return true;
+  playerSessionState = hydration.session;
+  if (!shouldApply()) {
+    return { ok: false };
+  }
+  renderPlayerSession(hydration.session);
+  return { ok: true };
 }
 
 async function hydrateCurrentSession(
   nextRuntime: BrowserRuntime,
   nextRefs: RuntimeRefs,
   options: { readonly shouldApply?: () => boolean } = {}
-): Promise<boolean> {
+): Promise<{ readonly ok: true } | { readonly ok: false; readonly status?: string }> {
   const shouldApply = options.shouldApply ?? (() => true);
   return syncCurrentSession(nextRuntime, nextRefs, { shouldApply });
 }
@@ -1353,14 +1523,95 @@ async function snapshot(nextRefs: RuntimeRefs): Promise<PongSnapshot> {
   return matchState?.snapshot ?? (await currentMatchState(nextRefs)).snapshot;
 }
 
-async function resetRuntimeGame(
+interface MeshPongRuntimeResetOptions {
+  readonly shouldApply?: () => boolean;
+  readonly flush?: (runtime: BrowserRuntime) => Promise<void>;
+  readonly readMatch?: (refs: RuntimeRefs) => Promise<PongMatchState>;
+  readonly applyMatch?: (match: PongMatchState) => void;
+}
+
+export async function resetRuntimeGame(
   nextRuntime: BrowserRuntime,
-  nextRefs: RuntimeRefs
-): Promise<PongSnapshot> {
-  await flushRuntime(nextRuntime);
-  const nextMatch = await currentMatchState(nextRefs);
-  applyProjectedMatch(nextMatch);
+  nextRefs: RuntimeRefs,
+  options: MeshPongRuntimeResetOptions = {}
+): Promise<PongSnapshot | null> {
+  const shouldApply = options.shouldApply ?? (() => true);
+  const flush = options.flush ?? flushRuntime;
+  const readMatch = options.readMatch ?? currentMatchState;
+  const applyMatch = options.applyMatch ?? applyProjectedMatch;
+  if (!shouldApply()) {
+    return null;
+  }
+  await flush(nextRuntime);
+  if (!shouldApply()) {
+    return null;
+  }
+  const nextMatch = await readMatch(nextRefs);
+  if (!shouldApply()) {
+    return null;
+  }
+  applyMatch(nextMatch);
   return nextMatch.snapshot;
+}
+
+export async function runMeshPongStartupSubstages(options: {
+  readonly label: string;
+  readonly timeoutMs?: number;
+  readonly shouldApply: () => boolean;
+  readonly invalidate: () => void;
+  readonly reset: (shouldApply: () => boolean) => Promise<PongSnapshot | null>;
+  readonly hydrate: (
+    shouldApply: () => boolean
+  ) => Promise<{ readonly ok: true } | { readonly ok: false; readonly status?: string }>;
+  readonly stop: () => Promise<void>;
+  readonly activate: (snapshot: PongSnapshot) => void;
+  readonly setStatus: (status: string) => void;
+}): Promise<boolean> {
+  const timeoutMs = options.timeoutMs ?? MESH_PONG_STARTUP_TIMEOUT_MS;
+  const stop = async (): Promise<void> => {
+    await options.stop().catch(() => undefined);
+  };
+  const fail = async (status?: string): Promise<false> => {
+    const isCurrent = options.shouldApply();
+    if (isCurrent) {
+      options.invalidate();
+    }
+    await stop();
+    if (isCurrent && status) {
+      options.setStatus(status);
+    }
+    return false;
+  };
+
+  try {
+    const nextSnapshot = await withMeshPongStartupTimeout(
+      options.reset(options.shouldApply),
+      `${options.label} game reset`,
+      timeoutMs
+    );
+    if (!nextSnapshot || !options.shouldApply()) {
+      await stop();
+      return false;
+    }
+
+    const hydration = await withMeshPongStartupTimeout(
+      options.hydrate(options.shouldApply),
+      `${options.label} session hydrate`,
+      timeoutMs
+    );
+    if (!hydration.ok) {
+      return fail(hydration.status);
+    }
+    if (!options.shouldApply()) {
+      await stop();
+      return false;
+    }
+
+    options.activate(nextSnapshot);
+    return true;
+  } catch (error) {
+    return fail(error instanceof Error ? `start failed: ${error.message}` : 'start failed');
+  }
 }
 
 function renderSnapshot(nextSnapshot: PongSnapshot): void {
@@ -1483,6 +1734,14 @@ function ensureProjectionLoop(): void {
   );
 }
 
+function invalidateSwitchGeneration(generation: number): boolean {
+  if (switchGeneration !== generation) {
+    return false;
+  }
+  switchGeneration = generation + 1;
+  return true;
+}
+
 async function switchMode(mode: BrowserMode): Promise<void> {
   const generation = switchGeneration + 1;
   switchGeneration = generation;
@@ -1505,7 +1764,7 @@ async function switchMode(mode: BrowserMode): Promise<void> {
     try {
       await previous.stop();
     } catch (error) {
-      if (switchGeneration === generation) {
+      if (invalidateSwitchGeneration(generation)) {
         setStatus(error instanceof Error ? `stop failed: ${error.message}` : 'stop failed');
       }
       return;
@@ -1530,76 +1789,83 @@ async function switchMode(mode: BrowserMode): Promise<void> {
       disposeLateRuntimeStart
     );
     if (isBrowserRuntimeStartFailure(startedRuntime)) {
-      if (switchGeneration === generation) {
+      if (invalidateSwitchGeneration(generation)) {
         setStatus(failureStatusForMode(startedRuntime));
       }
       return;
     }
     nextRuntime = 'ok' in startedRuntime ? startedRuntime.runtime : startedRuntime;
+    const candidateRuntime = nextRuntime;
     const nextRefs = await withMeshPongStartupTimeout(
-      resolveRefs(nextRuntime),
+      resolveRefs(candidateRuntime),
       `${mode} actor refs`
     );
-    const nextSnapshot = await withMeshPongStartupTimeout(
-      resetRuntimeGame(nextRuntime, nextRefs),
-      `${mode} game reset`
-    );
-    const hydrated = await withMeshPongStartupTimeout(
-      hydrateCurrentSession(nextRuntime, nextRefs, {
-        shouldApply: () => switchGeneration === generation,
-      }),
-      `${mode} session hydrate`
-    );
-    if (!hydrated) {
-      await nextRuntime.stop().catch(() => undefined);
-      return;
-    }
-
-    if (switchGeneration !== generation) {
-      await nextRuntime.stop().catch(() => undefined);
-      return;
-    }
-
-    runtime = nextRuntime;
-    refs = nextRefs;
-    const activeRuntime = nextRuntime;
-    turnStepper = createMeshPongTurnStepper({
-      runtime: activeRuntime,
-      refs: nextRefs,
-      browserSessionId,
-      getMatchState: () => ({
-        phase: matchState?.phase ?? 'lobby',
-        matchGeneration: matchState?.generation ?? 0,
-        matchOwnerSessionId: matchState?.authoritySessionId ?? null,
-        mode: matchState
-          ? ({
-              playerCount: matchState.mode?.playerCount ?? TWO_HUMAN_PONG_MATCH_MODE.playerCount,
-              controllers: {
-                left: normalizePongControllerType(matchState.mode?.controllers.left ?? 'human'),
-                right: normalizePongControllerType(matchState.mode?.controllers.right ?? 'human'),
-              },
-            } satisfies PongShellMatchMode)
-          : null,
-      }),
-      nowMs,
-      flushRuntime,
-      snapshot: () => snapshot(nextRefs),
-      renderSnapshot,
+    const activated = await runMeshPongStartupSubstages({
+      label: mode,
+      shouldApply: () => switchGeneration === generation,
+      invalidate: () => {
+        invalidateSwitchGeneration(generation);
+      },
+      reset: (shouldApply) =>
+        resetRuntimeGame(candidateRuntime, nextRefs, {
+          shouldApply,
+        }),
+      hydrate: (shouldApply) =>
+        hydrateCurrentSession(candidateRuntime, nextRefs, {
+          shouldApply,
+        }),
+      stop: () => candidateRuntime.stop(),
+      activate: (nextSnapshot) => {
+        runtime = candidateRuntime;
+        refs = nextRefs;
+        const activeRuntime = candidateRuntime;
+        turnStepper = createMeshPongTurnStepper({
+          runtime: activeRuntime,
+          refs: nextRefs,
+          browserSessionId,
+          getMatchState: () => ({
+            phase: matchState?.phase ?? 'lobby',
+            matchGeneration: matchState?.generation ?? 0,
+            matchOwnerSessionId: matchState?.authoritySessionId ?? null,
+            mode: matchState
+              ? ({
+                  playerCount:
+                    matchState.mode?.playerCount ?? TWO_HUMAN_PONG_MATCH_MODE.playerCount,
+                  controllers: {
+                    left: normalizePongControllerType(matchState.mode?.controllers.left ?? 'human'),
+                    right: normalizePongControllerType(
+                      matchState.mode?.controllers.right ?? 'human'
+                    ),
+                  },
+                } satisfies PongShellMatchMode)
+              : null,
+          }),
+          nowMs,
+          flushRuntime,
+          snapshot: () => snapshot(nextRefs),
+          renderSnapshot,
+          setStatus,
+          updateTelemetry,
+          postControllerInput,
+          setControllerDiagnostic,
+          clearControllerDiagnostic,
+          applyHumanInput: (mode) => applyPaddleInput(activeRuntime, nextRefs, mode),
+        });
+        renderSnapshot(nextSnapshot);
+        setStatus(statusForMatchPhase((matchState as PongMatchState | null)?.phase ?? 'lobby'));
+        ensureProjectionLoop();
+      },
       setStatus,
-      updateTelemetry,
-      postControllerInput,
-      setControllerDiagnostic,
-      clearControllerDiagnostic,
-      applyHumanInput: (mode) => applyPaddleInput(activeRuntime, nextRefs, mode),
     });
-    renderSnapshot(nextSnapshot);
-    setStatus(statusForMatchPhase((matchState as PongMatchState | null)?.phase ?? 'lobby'));
-    ensureProjectionLoop();
+    if (!activated) {
+      return;
+    }
   } catch (error) {
+    const isCurrent = invalidateSwitchGeneration(generation);
     if (nextRuntime) {
       await nextRuntime.stop().catch(() => undefined);
     }
-    if (switchGeneration === generation) {
+    if (isCurrent) {
       runtime = null;
       refs = null;
       loopHandle = null;
@@ -2253,8 +2519,15 @@ async function claimSide(side: 'left' | 'right'): Promise<void> {
   }
   const synced = await syncCurrentSession(currentRuntime, currentRefs, {
     shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs),
+    restoreAuthoritative: false,
   });
-  if (!synced || !isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+    return;
+  }
+  if (!synced.ok) {
+    if (synced.status) {
+      setStatus(synced.status);
+    }
     return;
   }
   setStatus('claimed');
@@ -2277,8 +2550,15 @@ async function markReady(): Promise<void> {
   }
   const synced = await syncCurrentSession(currentRuntime, currentRefs, {
     shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs),
+    restoreAuthoritative: false,
   });
-  if (!synced || !isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+    return;
+  }
+  if (!synced.ok) {
+    if (synced.status) {
+      setStatus(synced.status);
+    }
     return;
   }
   setStatus('ready');
