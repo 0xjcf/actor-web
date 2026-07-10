@@ -16,12 +16,14 @@ import {
   RUNTIME_TRANSPORT_PROTOCOL_VERSION,
   type RuntimeNodeIdentity,
 } from '../runtime-transport-contract.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 const transports: BroadcastChannelMessageTransport[] = [];
 const TEST_CHANNEL_NAME = 'actor-web-test';
 
 class FakeBroadcastChannelNetwork {
   private readonly channels = new Set<FakeBroadcastChannel>();
+  readonly published: unknown[] = [];
 
   create = (name: string): BroadcastChannelLike => {
     const channel = new FakeBroadcastChannel(name, this);
@@ -34,6 +36,7 @@ class FakeBroadcastChannelNetwork {
   }
 
   publish(sender: FakeBroadcastChannel, data: unknown): void {
+    this.published.push(data);
     for (const channel of Array.from(this.channels)) {
       if (channel !== sender && channel.name === sender.name) {
         channel.deliver(data);
@@ -42,12 +45,37 @@ class FakeBroadcastChannelNetwork {
   }
 
   broadcast(channelName: string, data: unknown): void {
+    this.published.push(data);
     for (const channel of Array.from(this.channels)) {
       if (channel.name === channelName) {
         channel.deliver(data);
       }
     }
   }
+}
+
+function countPublishedRuntimeMessages(
+  network: FakeBroadcastChannelNetwork,
+  source: string,
+  destination: string,
+  messageType: string
+): number {
+  return network.published.filter((value) => {
+    const envelope = value as {
+      readonly source?: { readonly nodeAddress?: string };
+      readonly destination?: string;
+      readonly payload?: unknown;
+    };
+    const payload =
+      typeof envelope.payload === 'string'
+        ? (JSON.parse(envelope.payload) as { readonly message?: { readonly type?: string } })
+        : (envelope.payload as { readonly message?: { readonly type?: string } } | undefined);
+    return (
+      envelope.source?.nodeAddress === source &&
+      envelope.destination === destination &&
+      payload?.message?.type === messageType
+    );
+  }).length;
 }
 
 class FakeBroadcastChannel implements BroadcastChannelLike {
@@ -315,6 +343,41 @@ describe('BroadcastChannelMessageTransport', () => {
     );
   });
 
+  it('fails the handshake when pending runtime frames exceed the activation bound', async () => {
+    const network = new FakeBroadcastChannelNetwork();
+    const tabA = createTransport(network, 'tab-a');
+
+    await tabA.start();
+    const connect = tabA.connect('tab-b');
+    await nextTick();
+
+    const tabAIdentity = testIdentity('tab-a');
+    const tabBIdentity = testIdentity('tab-b');
+    for (let sequence = 1; sequence <= 65; sequence += 1) {
+      network.broadcast(
+        TEST_CHANNEL_NAME,
+        testEnvelope(
+          tabBIdentity,
+          'tab-a',
+          createRuntimeTransportFrame({
+            source: tabBIdentity,
+            destination: tabAIdentity,
+            sequence,
+            message: { type: `EARLY_FRAME_${sequence}` },
+          })
+        )
+      );
+    }
+
+    await expect(connect).rejects.toThrow(
+      'BroadcastChannel handshake from tab-b exceeded the pending frame limit (64).'
+    );
+    expect(tabA.isConnected('tab-b')).toBe(false);
+    expect(tabA.getPeerStats('tab-b')).toMatchObject({
+      state: 'rejected',
+    });
+  });
+
   it('ignores bus frames addressed to another peer without disconnecting the bystander', async () => {
     const network = new FakeBroadcastChannelNetwork();
     const tabA = createTransport(network, 'tab-a');
@@ -492,6 +555,68 @@ describe('ActorSystem BroadcastChannel directory readiness', () => {
       expect(joined).toBe(true);
     } finally {
       await system.stop();
+    }
+  });
+
+  it('syncs the directory again when a same-address peer connects with a new incarnation', async () => {
+    const network = new FakeBroadcastChannelNetwork();
+    const tabATransport = createTransport(network, 'tab-a');
+    const originalTabBTransport = createTransport(network, 'tab-b');
+    const tabASystem = new ActorSystemImpl({ nodeAddress: 'tab-a', transport: tabATransport });
+    const originalTabBSystem = new ActorSystemImpl({
+      nodeAddress: 'tab-b',
+      transport: originalTabBTransport,
+    });
+    await Promise.all([tabATransport.start(), originalTabBTransport.start()]);
+    await Promise.all([tabASystem.start(), originalTabBSystem.start()]);
+
+    let replacementTabBSystem: ActorSystemImpl | null = null;
+    try {
+      await tabASystem.join(['tab-b']);
+      expect(
+        countPublishedRuntimeMessages(network, 'tab-a', 'tab-b', '__runtime.directory.sync.request')
+      ).toBe(1);
+
+      const replacementTabBTransport = createTransport(network, 'tab-b', {
+        incarnation: 'tab-b-replacement',
+      });
+      replacementTabBSystem = new ActorSystemImpl({
+        nodeAddress: 'tab-b',
+        transport: replacementTabBTransport,
+      });
+      await replacementTabBTransport.start();
+      await replacementTabBSystem.start();
+      const replacementActor = await replacementTabBSystem.spawn(
+        defineBehavior<{ type: 'GET_INCARNATION' }>()
+          .withContext({ incarnation: 'replacement' })
+          .onMessage(({ actor }) => ({ reply: actor.getSnapshot().context.incarnation }))
+          .build(),
+        { id: 'replacement-proof' }
+      );
+      await replacementTabBTransport.connect('tab-a');
+      await tabASystem.join(['tab-b']);
+
+      expect(tabATransport.getPeerStats('tab-b')?.identity?.incarnation).toBe('tab-b-replacement');
+      expect(
+        countPublishedRuntimeMessages(network, 'tab-a', 'tab-b', '__runtime.directory.sync.request')
+      ).toBe(2);
+      const replacementRef = await tabASystem.lookup<
+        { incarnation: string },
+        { type: 'GET_INCARNATION' }
+      >(replacementActor.address);
+      expect(replacementRef).toBeDefined();
+      if (!replacementRef) {
+        throw new Error('Expected replacement actor after the second directory sync.');
+      }
+      await expect(replacementRef.ask<string>({ type: 'GET_INCARNATION' })).resolves.toBe(
+        'replacement'
+      );
+    } finally {
+      await Promise.allSettled([
+        tabASystem.stop(),
+        originalTabBSystem.stop(),
+        replacementTabBSystem?.stop(),
+      ]);
     }
   });
 });

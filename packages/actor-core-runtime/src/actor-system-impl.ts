@@ -189,6 +189,11 @@ interface RemoteProjectionWatcher {
   eventSubscribed: boolean;
 }
 
+interface RemoteDirectoryReadiness {
+  readonly connectionKey?: string;
+  readonly promise: Promise<void>;
+}
+
 interface OutboundRemoteProjectionSubscribers {
   snapshotNodes: Set<string>;
   eventNodes: Set<string>;
@@ -535,7 +540,7 @@ export class ActorSystemImpl implements ActorSystem {
   >();
   private actorProjectionState = new Map<string, ActorProjectionState>();
   private remoteProjectionWatchers = new Map<string, RemoteProjectionWatcher>();
-  private remoteDirectoryReadiness = new Map<string, Promise<void>>();
+  private remoteDirectoryReadiness = new Map<string, RemoteDirectoryReadiness>();
   private outboundRemoteProjectionSubscribers = new Map<
     string,
     OutboundRemoteProjectionSubscribers
@@ -1311,7 +1316,7 @@ export class ActorSystemImpl implements ActorSystem {
         if (!this.config.transport.isConnected(node)) {
           await this.config.transport.connect(node);
         }
-        await this.ensureRemoteDirectoryReady(node);
+        await this.ensureRemoteDirectoryReady(node, this.getRemoteConnectionKey(node));
       }
     }
 
@@ -3409,7 +3414,7 @@ export class ActorSystemImpl implements ActorSystem {
     };
 
     try {
-      await this.ensureRemoteDirectoryReady(nodeAddress);
+      await this.ensureRemoteDirectoryReady(nodeAddress, this.getRemoteConnectionKey(nodeAddress));
     } catch (error) {
       log.warn('Failed to sync remote directory on transport connect', {
         nodeAddress,
@@ -3743,20 +3748,36 @@ export class ActorSystemImpl implements ActorSystem {
     }
   }
 
-  private ensureRemoteDirectoryReady(node: string): Promise<void> {
+  private getRemoteConnectionKey(node: string): string | undefined {
+    const transport = this.config.transport as
+      | (MessageTransport & {
+          getPeerStats?(nodeAddress: string): {
+            readonly identity?: { readonly nodeId: string; readonly incarnation: string };
+          };
+        })
+      | undefined;
+    const identity = transport?.getPeerStats?.(node)?.identity;
+    return identity ? JSON.stringify([identity.nodeId, identity.incarnation]) : undefined;
+  }
+
+  private ensureRemoteDirectoryReady(node: string, connectionKey?: string): Promise<void> {
     const existing = this.remoteDirectoryReadiness.get(node);
-    if (existing) {
-      return existing;
+    if (existing && (!connectionKey || existing.connectionKey === connectionKey)) {
+      return existing.promise;
     }
 
-    const readiness = this.requestDirectorySync(node);
+    const promise = this.requestDirectorySync(node);
+    const readiness: RemoteDirectoryReadiness = {
+      ...(connectionKey ? { connectionKey } : {}),
+      promise,
+    };
     this.remoteDirectoryReadiness.set(node, readiness);
-    void readiness.catch(() => {
+    void promise.catch(() => {
       if (this.remoteDirectoryReadiness.get(node) === readiness) {
         this.remoteDirectoryReadiness.delete(node);
       }
     });
-    return readiness;
+    return promise;
   }
 
   private async requestRemoteActorAsk<T>(
