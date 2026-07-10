@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ActorMessage } from '../actor-system.js';
+import type { ActorMessage, MessageTransport } from '../actor-system.js';
+import { ActorSystemImpl } from '../actor-system-impl.js';
 import {
   BROADCAST_CHANNEL_TRANSPORT_PROTOCOL,
   type BroadcastChannelLike,
@@ -10,6 +11,7 @@ import {
 } from '../broadcast-channel-message-transport.js';
 import {
   createRuntimeNodeIdentity,
+  createRuntimeTransportFrame,
   createRuntimeTransportHandshakeAccept,
   RUNTIME_TRANSPORT_PROTOCOL_VERSION,
   type RuntimeNodeIdentity,
@@ -90,6 +92,89 @@ class FakeBroadcastChannel implements BroadcastChannelLike {
     this.closed = true;
     this.listeners.clear();
     this.network.delete(this);
+  }
+}
+
+class ControlledDirectoryTransport implements MessageTransport {
+  private listener: ((event: { source: string; message: ActorMessage }) => void) | null = null;
+  private readonly connectedNodes = new Set<string>();
+  private releaseSync: (() => void) | null = null;
+  private rejectNextSync = false;
+  directorySyncRequests = 0;
+
+  constructor(private readonly emitConnected = true) {}
+
+  async send(destination: string, message: ActorMessage): Promise<void> {
+    if (message.type !== '__runtime.directory.sync.request') {
+      return;
+    }
+
+    this.directorySyncRequests += 1;
+    const requestId = (message as ActorMessage & { requestId: string }).requestId;
+    if (this.rejectNextSync) {
+      this.rejectNextSync = false;
+      this.releaseSync = () => {
+        this.listener?.({
+          source: destination,
+          message: {
+            type: '__runtime.remote.ask.response',
+            requestId,
+          },
+        });
+      };
+      return;
+    }
+    this.releaseSync = () => {
+      this.listener?.({
+        source: destination,
+        message: {
+          type: '__runtime.directory.sync.response',
+          requestId,
+          entries: [],
+        },
+      });
+    };
+  }
+
+  subscribe(listener: (event: { source: string; message: ActorMessage }) => void): () => void {
+    this.listener = listener;
+    return () => {
+      if (this.listener === listener) {
+        this.listener = null;
+      }
+    };
+  }
+
+  async connect(address: string): Promise<void> {
+    this.connectedNodes.add(address);
+    if (this.emitConnected) {
+      this.listener?.({
+        source: address,
+        message: { type: '__runtime.transport.connected', nodeAddress: address },
+      });
+    }
+  }
+
+  async disconnect(address: string): Promise<void> {
+    this.connectedNodes.delete(address);
+  }
+
+  getConnectedNodes(): string[] {
+    return Array.from(this.connectedNodes);
+  }
+
+  isConnected(address: string): boolean {
+    return this.connectedNodes.has(address);
+  }
+
+  releaseDirectorySync(): void {
+    const release = this.releaseSync;
+    this.releaseSync = null;
+    release?.();
+  }
+
+  failNextDirectorySync(): void {
+    this.rejectNextSync = true;
   }
 }
 
@@ -179,6 +264,55 @@ describe('BroadcastChannelMessageTransport', () => {
     );
     expect(tabA.isConnected('tab-b')).toBe(true);
     expect(tabB.isConnected('tab-a')).toBe(true);
+  });
+
+  it('preserves directory frames sent before the dialing peer installs its receive sink', async () => {
+    const network = new FakeBroadcastChannelNetwork();
+    const tabA = createTransport(network, 'tab-a');
+    const received: ActorMessage[] = [];
+    tabA.subscribe((event) => received.push(event.message));
+
+    await tabA.start();
+    const connect = tabA.connect('tab-b');
+    await nextTick();
+
+    const tabAIdentity = testIdentity('tab-a');
+    const tabBIdentity = testIdentity('tab-b');
+    network.broadcast(
+      TEST_CHANNEL_NAME,
+      testEnvelope(
+        tabBIdentity,
+        'tab-a',
+        createRuntimeTransportFrame({
+          source: tabBIdentity,
+          destination: tabAIdentity,
+          sequence: 1,
+          message: {
+            type: '__runtime.directory.sync.response',
+            requestId: 'early-directory-sync',
+            entries: [],
+          },
+        })
+      )
+    );
+    network.broadcast(
+      TEST_CHANNEL_NAME,
+      testEnvelope(
+        tabBIdentity,
+        'tab-a',
+        createRuntimeTransportHandshakeAccept(tabBIdentity, tabAIdentity)
+      )
+    );
+
+    await connect;
+    await nextTick();
+
+    expect(received).toContainEqual(
+      expect.objectContaining({
+        type: '__runtime.directory.sync.response',
+        requestId: 'early-directory-sync',
+      })
+    );
   });
 
   it('ignores bus frames addressed to another peer without disconnecting the bystander', async () => {
@@ -280,5 +414,84 @@ describe('BroadcastChannelMessageTransport', () => {
     expect(
       listenerErrors.some((error) => error instanceof Error && error.message === 'telemetry failed')
     ).toBe(true);
+  });
+});
+
+describe('ActorSystem BroadcastChannel directory readiness', () => {
+  it('keeps join pending until the deduplicated remote directory sync completes', async () => {
+    const transport = new ControlledDirectoryTransport();
+    const system = new ActorSystemImpl({
+      nodeAddress: 'tab-a',
+      transport,
+    });
+    await system.start();
+
+    try {
+      let joined = false;
+      const join = system.join(['tab-b']).then(() => {
+        joined = true;
+      });
+
+      await nextTick();
+
+      expect(joined).toBe(false);
+      expect(transport.directorySyncRequests).toBe(1);
+
+      transport.releaseDirectorySync();
+      await join;
+
+      expect(joined).toBe(true);
+      expect(transport.directorySyncRequests).toBe(1);
+
+      await system.leave();
+      let rejoined = false;
+      const rejoin = system.join(['tab-b']).then(() => {
+        rejoined = true;
+      });
+
+      await nextTick();
+
+      expect(rejoined).toBe(false);
+      expect(transport.directorySyncRequests).toBe(2);
+
+      transport.releaseDirectorySync();
+      await rejoin;
+
+      expect(rejoined).toBe(true);
+    } finally {
+      await system.stop();
+    }
+  });
+
+  it('evicts rejected directory readiness so an explicit join can retry', async () => {
+    const transport = new ControlledDirectoryTransport(false);
+    const system = new ActorSystemImpl({
+      nodeAddress: 'tab-a',
+      transport,
+    });
+    await system.start();
+
+    try {
+      transport.failNextDirectorySync();
+      const failedJoin = system.join(['tab-b']);
+      await nextTick();
+      transport.releaseDirectorySync();
+      await expect(failedJoin).rejects.toThrow('Unexpected directory sync response');
+
+      let joined = false;
+      const retry = system.join(['tab-b']).then(() => {
+        joined = true;
+      });
+      await nextTick();
+
+      expect(joined).toBe(false);
+      expect(transport.directorySyncRequests).toBe(2);
+
+      transport.releaseDirectorySync();
+      await retry;
+      expect(joined).toBe(true);
+    } finally {
+      await system.stop();
+    }
   });
 });

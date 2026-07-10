@@ -480,14 +480,27 @@ export async function startRuntime<TTopology extends ActorWebTopology<ActorWebTo
     }
 
     for (const nodeKey of nodeKeys) {
-      const peerKeys = nodeKeys.filter((peerKey) => peerKey !== nodeKey);
       const startedNode = await startActorWebNode(topology, {
         node: nodeKey,
         transport: transports.get(nodeKey) as MessageTransport,
-        connect: peerKeys,
+        connect: [],
         ...(options.tools ? { tools: options.tools } : {}),
       });
       startedNodes.set(nodeKey, startedNode);
+    }
+
+    for (const nodeKey of nodeKeys) {
+      const peerAddresses = nodeKeys
+        .filter((peerKey) => peerKey !== nodeKey)
+        .map((peerKey) => topology.nodes[peerKey]?.address)
+        .filter((address): address is string => Boolean(address));
+      if (peerAddresses.length > 0) {
+        const startedNode = startedNodes.get(nodeKey);
+        if (!startedNode) {
+          throw new Error(`Actor-Web local runtime did not start node "${nodeKey}".`);
+        }
+        await startedNode.system.join(peerAddresses);
+      }
     }
   } catch (error) {
     for (const startedNode of Array.from(startedNodes.values()).reverse()) {

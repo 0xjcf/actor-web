@@ -240,13 +240,20 @@ class BroadcastChannelBus {
 class BroadcastChannelPeerLink implements PeerLink {
   private sink: PeerLinkSink | null = null;
   private unsubscribe: (() => void) | null = null;
+  private readonly pendingPayloads: unknown[] = [];
   private closed = false;
 
   constructor(
     private readonly bus: BroadcastChannelBus,
     readonly remoteAddress: string,
-    readonly identity: RuntimeNodeIdentity
-  ) {}
+    readonly identity: RuntimeNodeIdentity,
+    initialEnvelopes: readonly BroadcastChannelTransportEnvelope[] = []
+  ) {
+    for (const envelope of initialEnvelopes) {
+      this.receiveEnvelope(envelope);
+    }
+    this.unsubscribe = this.bus.subscribe((envelope) => this.receiveEnvelope(envelope));
+  }
 
   get isOpen(): boolean {
     return !this.closed && this.bus.isOpen;
@@ -261,20 +268,15 @@ class BroadcastChannelPeerLink implements PeerLink {
   }
 
   receive(sink: PeerLinkSink): () => void {
-    this.unsubscribe?.();
     this.sink = sink;
-    this.unsubscribe = this.bus.subscribe((envelope) => {
-      if (this.closed || !isSameRuntimeNodeIdentity(envelope.source, this.identity)) {
-        return;
-      }
-
-      this.sink?.onPayload(parseBroadcastPayload(envelope.payload));
-    });
+    for (const payload of this.pendingPayloads.splice(0)) {
+      sink.onPayload(payload);
+    }
 
     return () => {
-      this.unsubscribe?.();
-      this.unsubscribe = null;
-      this.sink = null;
+      if (this.sink === sink) {
+        this.sink = null;
+      }
     };
   }
 
@@ -287,6 +289,21 @@ class BroadcastChannelPeerLink implements PeerLink {
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.sink = null;
+    this.pendingPayloads.length = 0;
+  }
+
+  private receiveEnvelope(envelope: BroadcastChannelTransportEnvelope): void {
+    if (this.closed || !isSameRuntimeNodeIdentity(envelope.source, this.identity)) {
+      return;
+    }
+
+    const payload = parseBroadcastPayload(envelope.payload);
+    if (this.sink) {
+      this.sink.onPayload(payload);
+      return;
+    }
+
+    this.pendingPayloads.push(payload);
   }
 }
 
@@ -342,6 +359,7 @@ class BroadcastChannelTransportChannel implements TransportChannel {
     authPayload: Awaited<ReturnType<typeof resolveRuntimeAuthPayload>>
   ): Promise<DialResult> {
     return new Promise((resolve) => {
+      const pendingEnvelopes: BroadcastChannelTransportEnvelope[] = [];
       let settled = false;
       const finish = (result: DialResult): void => {
         if (settled) {
@@ -366,7 +384,11 @@ class BroadcastChannelTransportChannel implements TransportChannel {
         }
 
         const frame = envelope.payload;
+        if (isHandshakeHello(frame)) {
+          return;
+        }
         if (!isHandshakeAccept(frame) && !isHandshakeReject(frame)) {
+          pendingEnvelopes.push(envelope);
           return;
         }
 
@@ -422,7 +444,8 @@ class BroadcastChannelTransportChannel implements TransportChannel {
               link: new BroadcastChannelPeerLink(
                 this.options.bus,
                 frame.source.nodeAddress,
-                frame.source
+                frame.source,
+                pendingEnvelopes
               ),
             });
           },

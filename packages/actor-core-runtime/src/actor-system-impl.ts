@@ -535,6 +535,7 @@ export class ActorSystemImpl implements ActorSystem {
   >();
   private actorProjectionState = new Map<string, ActorProjectionState>();
   private remoteProjectionWatchers = new Map<string, RemoteProjectionWatcher>();
+  private remoteDirectoryReadiness = new Map<string, Promise<void>>();
   private outboundRemoteProjectionSubscribers = new Map<
     string,
     OutboundRemoteProjectionSubscribers
@@ -1303,11 +1304,14 @@ export class ActorSystemImpl implements ActorSystem {
   async join(nodes: string[]): Promise<void> {
     if (this.config.transport) {
       for (const node of nodes) {
-        if (node === this.config.nodeAddress || this.config.transport.isConnected(node)) {
+        if (node === this.config.nodeAddress) {
           continue;
         }
 
-        await this.config.transport.connect(node);
+        if (!this.config.transport.isConnected(node)) {
+          await this.config.transport.connect(node);
+        }
+        await this.ensureRemoteDirectoryReady(node);
       }
     }
 
@@ -1330,6 +1334,7 @@ export class ActorSystemImpl implements ActorSystem {
     if (this.config.transport) {
       for (const node of this.config.transport.getConnectedNodes()) {
         await this.config.transport.disconnect(node);
+        this.remoteDirectoryReadiness.delete(node);
       }
     }
 
@@ -3404,12 +3409,13 @@ export class ActorSystemImpl implements ActorSystem {
     };
 
     try {
-      await this.requestDirectorySync(nodeAddress);
+      await this.ensureRemoteDirectoryReady(nodeAddress);
     } catch (error) {
       log.warn('Failed to sync remote directory on transport connect', {
         nodeAddress,
         error: error instanceof Error ? error.message : String(error),
       });
+      return;
     }
 
     const watcherPromises = Array.from(this.remoteProjectionWatchers.values())
@@ -3424,6 +3430,7 @@ export class ActorSystemImpl implements ActorSystem {
   }
 
   private async handleTransportDisconnected(nodeAddress: string): Promise<void> {
+    this.remoteDirectoryReadiness.delete(nodeAddress);
     this.clusterState = {
       ...this.clusterState,
       nodes: this.clusterState.nodes.filter(
@@ -3734,6 +3741,22 @@ export class ActorSystemImpl implements ActorSystem {
     for (const entry of syncResponse.entries) {
       this.applyRemoteDirectoryEntry(entry);
     }
+  }
+
+  private ensureRemoteDirectoryReady(node: string): Promise<void> {
+    const existing = this.remoteDirectoryReadiness.get(node);
+    if (existing) {
+      return existing;
+    }
+
+    const readiness = this.requestDirectorySync(node);
+    this.remoteDirectoryReadiness.set(node, readiness);
+    void readiness.catch(() => {
+      if (this.remoteDirectoryReadiness.get(node) === readiness) {
+        this.remoteDirectoryReadiness.delete(node);
+      }
+    });
+    return readiness;
   }
 
   private async requestRemoteActorAsk<T>(

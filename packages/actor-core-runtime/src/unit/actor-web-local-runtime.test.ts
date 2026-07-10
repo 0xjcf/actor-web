@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { ActorMessage, MessageTransport } from '../actor-system.js';
 import {
   type ActorWebLocalRuntimeSourceOptions,
   type StartedActorWebLocalRuntime,
@@ -8,6 +9,11 @@ import type {
   ClosableActorWebReadModelSource,
   ClosableActorWebSource,
 } from '../actor-web-source.js';
+import {
+  createInMemoryMessageTransportNetwork,
+  type InMemoryMessageTransportNetwork,
+  type InMemoryTransportFrame,
+} from '../testing/in-memory-message-transport.js';
 import type {
   ActorWebActorContext,
   ActorWebActorEvent,
@@ -16,7 +22,10 @@ import type {
 import { actor, defineActorWebTopology, node } from '../topology.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
-type ShipmentCommand = { type: 'CREATE_SHIPMENT'; shipmentId: string } | { type: 'RESET' };
+type ShipmentCommand =
+  | { type: 'CREATE_SHIPMENT'; shipmentId: string }
+  | { type: 'GET_STATUS' }
+  | { type: 'RESET' };
 
 interface ShipmentContext {
   shipmentId: string | null;
@@ -28,6 +37,9 @@ function createShipmentBehavior() {
     .withContext<ShipmentContext>({ shipmentId: null, status: 'idle' })
     .onMessage(({ message, actor }) => {
       const context = actor.getSnapshot().context;
+      if (message.type === 'GET_STATUS') {
+        return { reply: context };
+      }
       if (message.type === 'CREATE_SHIPMENT') {
         return {
           context: {
@@ -44,6 +56,46 @@ function createShipmentBehavior() {
       };
     })
     .build();
+}
+
+class JoinFailureNetwork implements InMemoryMessageTransportNetwork {
+  private readonly delegate = createInMemoryMessageTransportNetwork();
+  private failed = false;
+  readonly disconnects: Array<{ source: string; destination: string }> = [];
+  readonly stops: string[] = [];
+
+  createTransport(nodeAddress: string): MessageTransport {
+    const transport = this.delegate.createTransport(nodeAddress);
+    const wrapped: MessageTransport & { stop(): Promise<void> } = {
+      send: (destination: string, message: ActorMessage) => transport.send(destination, message),
+      subscribe: (listener) => transport.subscribe(listener),
+      connect: async (destination: string) => {
+        await transport.connect(destination);
+        if (!this.failed && nodeAddress === 'logistics-dashboard-runtime') {
+          this.failed = true;
+          throw new Error('local join failed');
+        }
+      },
+      disconnect: async (destination: string) => {
+        this.disconnects.push({ source: nodeAddress, destination });
+        await transport.disconnect(destination);
+      },
+      getConnectedNodes: () => transport.getConnectedNodes(),
+      isConnected: (destination: string) => transport.isConnected(destination),
+      stop: async () => {
+        this.stops.push(nodeAddress);
+        for (const destination of transport.getConnectedNodes()) {
+          this.disconnects.push({ source: nodeAddress, destination });
+          await transport.disconnect(destination);
+        }
+      },
+    };
+    return wrapped;
+  }
+
+  dropNextMessage(predicate: (frame: InMemoryTransportFrame) => boolean): void {
+    this.delegate.dropNextMessage(predicate);
+  }
 }
 
 function createLogisticsTopology() {
@@ -68,6 +120,44 @@ function createLogisticsTopology() {
 }
 
 describe('startRuntime', () => {
+  it('resolves and asks a cross-node actor immediately after two-phase startup', async () => {
+    const logistics = createLogisticsTopology();
+    const runtime = await startRuntime(logistics);
+
+    try {
+      const worker = runtime.worker.actor();
+      const remoteWorker = await runtime.nodes.dashboard?.system.lookup<
+        ShipmentContext,
+        ShipmentCommand
+      >(worker.address);
+
+      expect(remoteWorker).toBeDefined();
+      if (!remoteWorker) {
+        throw new Error('Expected the dashboard node to resolve the worker actor after startup.');
+      }
+      await expect(remoteWorker.ask<ShipmentContext>({ type: 'GET_STATUS' })).resolves.toEqual({
+        shipmentId: null,
+        status: 'idle',
+      });
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  it('stops started nodes in reverse order when the deferred join phase fails', async () => {
+    const network = new JoinFailureNetwork();
+
+    await expect(startRuntime(createLogisticsTopology(), { network })).rejects.toThrow(
+      'local join failed'
+    );
+
+    expect(network.stops).toEqual(['logistics-worker-runtime', 'logistics-dashboard-runtime']);
+    expect(network.disconnects).toContainEqual({
+      source: 'logistics-worker-runtime',
+      destination: 'logistics-dashboard-runtime',
+    });
+  });
+
   it('starts a local topology and exposes top-level read-model and command sources', async () => {
     const logistics = createLogisticsTopology();
     const runtime = await startRuntime(logistics);
