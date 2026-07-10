@@ -2154,6 +2154,28 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
     );
   }
 
+  function admitPlannerProposal(
+    proposal: PongAdvisoryProposal,
+    lane: PlannerControllerLaneState,
+    currentMatch: MeshPongTurnMatchState,
+    nowMs: number
+  ) {
+    return admitPongAdvisoryProposal(proposal, {
+      browserSessionId: deps.browserSessionId,
+      matchGeneration: currentMatch.matchGeneration,
+      currentTick: currentMatch.currentTick,
+      matchOwnerSessionId: currentMatch.matchOwnerSessionId,
+      mode: currentMatch.mode,
+      nowMs,
+      maxAgeMs: schedulePolicy.plannerProposalMaxAgeMs,
+      maxTickAge: schedulePolicy.plannerProposalMaxTickAge,
+      latestAcceptedSequence: lane.latestAcceptedSequence,
+      cancelledProposalIds: Object.entries(lane.retiredProposalReasons)
+        .filter(([, reason]) => reason === 'cancelled')
+        .map(([proposalId]) => proposalId),
+    });
+  }
+
   function syncLanes(matchState: MeshPongTurnMatchState): void {
     if (lastMatchGeneration !== matchState.matchGeneration) {
       resetLane('left', 'superseded');
@@ -2261,20 +2283,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
         completedAtMs,
         strategy: result.strategy,
       };
-      const admission = admitPongAdvisoryProposal(proposal, {
-        browserSessionId: deps.browserSessionId,
-        matchGeneration: currentMatch.matchGeneration,
-        currentTick: currentMatch.currentTick,
-        matchOwnerSessionId: currentMatch.matchOwnerSessionId,
-        mode: currentMatch.mode,
-        nowMs: completedAtMs,
-        maxAgeMs: schedulePolicy.plannerProposalMaxAgeMs,
-        maxTickAge: schedulePolicy.plannerProposalMaxTickAge,
-        latestAcceptedSequence: lane.latestAcceptedSequence,
-        cancelledProposalIds: Object.entries(lane.retiredProposalReasons)
-          .filter(([, reason]) => reason === 'cancelled')
-          .map(([proposalId]) => proposalId),
-      });
+      const admission = admitPlannerProposal(proposal, lane, currentMatch, completedAtMs);
       if (!admission.ok) {
         deps.updateTelemetry({
           type: 'controller-request-finished',
@@ -2381,6 +2390,27 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
     if (lane.readyDecision && lane.readyDecision.matchGeneration === matchGenerationValue) {
       const readyDecision = lane.readyDecision;
       lane.readyDecision = null;
+      const consumedAtMs = deps.nowMs();
+      const admission = admitPlannerProposal(
+        readyDecision,
+        lane,
+        deps.getMatchState(),
+        consumedAtMs
+      );
+      if (!admission.ok) {
+        deps.updateTelemetry({
+          type: 'controller-request-finished',
+          side,
+          mode,
+          nowMs: consumedAtMs,
+          outcome: 'rejected',
+          reason: admission.reason,
+          strategyStatus: 'error',
+          error: admission.reason,
+        });
+        deps.setControllerDiagnostic(side, admission.reason);
+        return null;
+      }
       lane.lastDecision = readyDecision;
       lane.latestAcceptedSequence = readyDecision.sequence;
       lane.freshTurnsRemaining = schedulePolicy.plannerStrategyFreshTurnLimit;

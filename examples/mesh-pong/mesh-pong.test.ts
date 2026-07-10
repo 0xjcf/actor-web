@@ -3022,6 +3022,47 @@ describe('Mesh Pong transport parity', () => {
     expect(harness.commands.filter((command) => command === 'ball:TICK')).toHaveLength(2);
   });
 
+  it('rejects a ready planner proposal that ages out before its first synthetic input', async () => {
+    const harness = createTurnStepperHarness(
+      {
+        playerCount: 1,
+        controllers: { left: 'planner', right: 'human' },
+      },
+      {
+        schedulePolicy: {
+          ...DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY,
+          plannerProposalMaxAgeMs: 1,
+        },
+      }
+    );
+
+    await harness.stepper.tick();
+    harness.leftDeferreds[0]?.resolve({
+      ok: true,
+      provider: 'llm',
+      side: 'left',
+      strategy: createPlannerStrategy('left', {
+        targetY: PONG_FIELD.height - PONG_FIELD.paddleHeight,
+        biasY: 0,
+        label: 'delayed-bottom',
+      }),
+    });
+    await flushMicrotasks();
+
+    await harness.stepper.tick();
+
+    expect(harness.commands.filter((command) => command === 'left:MOVE_PADDLE')).toHaveLength(0);
+    expect(
+      harness.telemetryEvents.some(
+        (event) =>
+          event.type === 'controller-request-finished' &&
+          event.side === 'left' &&
+          event.outcome === 'rejected' &&
+          event.reason === 'stale-input'
+      )
+    ).toBe(true);
+  });
+
   it('shows planner-only no-op turns as neutral after the fresh strategy window expires', async () => {
     const harness = createTurnStepperHarness(
       {
