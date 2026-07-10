@@ -459,6 +459,9 @@ class BroadcastChannelTransportChannel implements TransportChannel {
           local: this.options.identity,
         }).then(
           (auth) => {
+            if (settled) {
+              return;
+            }
             if (!auth.ok) {
               this.options.emitTelemetry({
                 type: 'auth.rejected',

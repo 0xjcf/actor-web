@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ActorMessage, MessageTransport } from '../actor-system.js';
 import { ActorSystemImpl } from '../actor-system-impl.js';
 import {
@@ -76,6 +76,14 @@ function countPublishedRuntimeMessages(
       payload?.message?.type === messageType
     );
   }).length;
+}
+
+function getBusSubscriberCount(transport: BroadcastChannelMessageTransport): number {
+  return (
+    transport as unknown as {
+      readonly bus: { readonly listeners: Set<unknown> };
+    }
+  ).bus.listeners.size;
 }
 
 class FakeBroadcastChannel implements BroadcastChannelLike {
@@ -524,6 +532,85 @@ describe('BroadcastChannelMessageTransport', () => {
     expect(
       listenerErrors.some((error) => error instanceof Error && error.message === 'telemetry failed')
     ).toBe(true);
+  });
+
+  it('does not activate a peer when delayed auth succeeds after handshake timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const network = new FakeBroadcastChannelNetwork();
+      const telemetry: Array<{ type: string; peerNodeAddress?: string }> = [];
+      let verifyCalls = 0;
+      let resolveFirstAuth!: (result: { ok: true }) => void;
+      const firstAuth = new Promise<{ ok: true }>((resolve) => {
+        resolveFirstAuth = resolve;
+      });
+      const tabA = createTransport(network, 'tab-a', {
+        connectTimeoutMs: 25,
+        telemetry: (event) => telemetry.push(event),
+        auth: {
+          verify: () => {
+            verifyCalls += 1;
+            return verifyCalls === 1 ? firstAuth : { ok: true };
+          },
+        },
+      });
+      await tabA.start();
+
+      const tabAIdentity = testIdentity('tab-a');
+      const delayedIdentity = testIdentity('tab-b', 'tab-b-delayed-auth');
+      const delayedConnect = tabA.connect('tab-b');
+      await Promise.resolve();
+      await Promise.resolve();
+      network.broadcast(
+        TEST_CHANNEL_NAME,
+        testEnvelope(
+          delayedIdentity,
+          'tab-a',
+          createRuntimeTransportHandshakeAccept(delayedIdentity, tabAIdentity)
+        )
+      );
+      await Promise.resolve();
+      expect(verifyCalls).toBe(1);
+
+      const timeoutAssertion = expect(delayedConnect).rejects.toThrow(
+        'Timed out waiting for BroadcastChannel runtime handshake from tab-b'
+      );
+      await vi.advanceTimersByTimeAsync(25);
+      await timeoutAssertion;
+      expect(getBusSubscriberCount(tabA)).toBe(1);
+
+      resolveFirstAuth({ ok: true });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(telemetry.filter((event) => event.type === 'auth.accepted')).toHaveLength(0);
+      expect(getBusSubscriberCount(tabA)).toBe(1);
+      expect(tabA.isConnected('tab-b')).toBe(false);
+
+      const freshIdentity = testIdentity('tab-b', 'tab-b-fresh-auth');
+      const freshConnect = tabA.connect('tab-b');
+      await Promise.resolve();
+      await Promise.resolve();
+      network.broadcast(
+        TEST_CHANNEL_NAME,
+        testEnvelope(
+          freshIdentity,
+          'tab-a',
+          createRuntimeTransportHandshakeAccept(freshIdentity, tabAIdentity)
+        )
+      );
+      await freshConnect;
+
+      expect(verifyCalls).toBe(2);
+      expect(telemetry.filter((event) => event.type === 'auth.accepted')).toHaveLength(1);
+      expect(getBusSubscriberCount(tabA)).toBe(2);
+      expect(tabA.isConnected('tab-b')).toBe(true);
+
+      await tabA.disconnect('tab-b');
+      expect(getBusSubscriberCount(tabA)).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
