@@ -121,7 +121,23 @@ describe('FallbackContextStorage', () => {
     expect(storage.getStore()).toBeUndefined();
   });
 
-  it('queues overlapping top-level async runs and preserves each context', async () => {
+  it('rejects overlapping run calls instead of returning a queued Promise', async () => {
+    const storage = new FallbackContextStorage<ActorContext>();
+    const outer = createContext('outer-actor');
+    const inner = createContext('inner-actor');
+
+    await storage.run(outer, async () => {
+      await Promise.resolve();
+
+      expect(() => storage.run(inner, () => 'inner-result')).toThrow(
+        'FallbackContextStorage cannot start overlapping top-level async runs without AsyncLocalStorage'
+      );
+    });
+
+    expect(storage.getStore()).toBeUndefined();
+  });
+
+  it('queues explicitly asynchronous top-level runs and preserves each context', async () => {
     const storage = new FallbackContextStorage<ActorContext>();
     const first = createContext('first-actor');
     const second = createContext('second-actor');
@@ -135,14 +151,14 @@ describe('FallbackContextStorage', () => {
       releaseSecond = resolve;
     });
 
-    const firstPending = storage.run(first, async () => {
+    const firstPending = storage.runAsync(first, async () => {
       events.push('first-started');
       await firstGate;
       expect(storage.getStore()).toEqual(first);
       events.push('first-finished');
     });
 
-    const secondPending = storage.run(second, async () => {
+    const secondPending = storage.runAsync(second, async () => {
       events.push('second-started');
       expect(storage.getStore()).toEqual(second);
       await secondGate;
