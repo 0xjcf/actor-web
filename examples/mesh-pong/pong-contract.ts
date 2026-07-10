@@ -309,8 +309,24 @@ export type PongMatchCommandResult =
       readonly phase: PongMatchPhase;
     };
 
+export type PlayerSessionRestoreResult =
+  | {
+      readonly ok: true;
+      readonly session: PongPlayerSessionState;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'session-id-mismatch';
+      readonly localSessionId: string;
+      readonly restoreSessionId: string;
+    };
+
 export type PlayerSessionCommand =
   | { readonly type: 'GET_SESSION' }
+  | {
+      readonly type: 'RESTORE_SESSION';
+      readonly session: PongPlayerSessionState;
+    }
   | {
       readonly type: 'CLAIM_SIDE';
       readonly side: PongSide;
@@ -457,6 +473,24 @@ export function setPlayerSessionReady(
   return {
     ...session,
     ready: Boolean(session.side && ready),
+  };
+}
+
+export function restorePlayerSession(
+  localSession: PongPlayerSessionState,
+  restoreSession: PongPlayerSessionState
+): PlayerSessionRestoreResult {
+  if (localSession.sessionId !== restoreSession.sessionId) {
+    return {
+      ok: false,
+      reason: 'session-id-mismatch',
+      localSessionId: localSession.sessionId,
+      restoreSessionId: restoreSession.sessionId,
+    };
+  }
+  return {
+    ok: true,
+    session: restoreSession,
   };
 }
 

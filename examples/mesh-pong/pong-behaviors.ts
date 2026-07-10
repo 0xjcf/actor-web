@@ -36,6 +36,7 @@ import {
   removeLobbySession,
   removeMatchSession,
   restartMatchLifecycle,
+  restorePlayerSession,
   returnMatchToRoom,
   type ScoreCommand,
   type ScoreEvent,
@@ -182,6 +183,17 @@ export function createPlayerSessionBehavior(params: PongPlayerSessionParams) {
 
       if (message.type === 'GET_SESSION') {
         return { reply: context };
+      }
+
+      if (message.type === 'RESTORE_SESSION') {
+        const result = restorePlayerSession(context, message.session);
+        return result.ok
+          ? {
+              context: result.session,
+              reply: result,
+              emit: [{ type: 'PLAYER_SESSION_CHANGED' as const, session: result.session }],
+            }
+          : { reply: result };
       }
 
       if (message.type === 'CLAIM_SIDE') {
