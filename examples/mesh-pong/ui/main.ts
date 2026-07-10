@@ -1207,12 +1207,6 @@ export function isProjectedMatchReadyToStart(options: {
 function renderLobby(match: PongMatchState): void {
   const readyControllers = match.controllers.filter((controller) => controller.ready).length;
   lobbyValueElement.textContent = `${readyControllers} / 2`;
-  startButtonElement.disabled = !isProjectedMatchReadyToStart({
-    match,
-    session: playerSessionState,
-    mode: selectedMatchMode(),
-    expectedGeneration: match.generation,
-  });
 }
 
 function applyProjectedMatch(
