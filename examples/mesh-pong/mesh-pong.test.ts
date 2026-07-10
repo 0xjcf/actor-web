@@ -7,7 +7,7 @@ import {
   type ActorAgentLlmResult,
   createActorAgentTools,
 } from '@actor-web/agent';
-import type { ActorMessage, ActorRef } from '@actor-web/runtime';
+import { type ActorMessage, type ActorRef, createActorSource } from '@actor-web/runtime';
 import type { ActorToolExecutionContext, BroadcastChannelLike } from '@actor-web/runtime/browser';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -96,6 +96,7 @@ import {
   DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY,
   formatMeshPongBenchmarkSummary,
   formatMeshPongTelemetry,
+  isProjectedMatchReadyToStart,
   MESH_PONG_STARTUP_TIMEOUT_MS,
   type MeshPongControllerSchedulePolicy,
   type MeshPongTelemetryEvent,
@@ -3903,6 +3904,163 @@ describe('Mesh Pong transport parity', () => {
     });
     expect(broadcastState).toEqual(localState);
     expect(websocketState).toEqual(localState);
+  });
+
+  it('converges independent broadcast clients on the authoritative pre-start projection', async () => {
+    const broadcastNetwork = new FakeBroadcastChannelNetwork();
+    const webLocks = new FakeWebLocks();
+    const channelName = 'mesh-pong-broadcast-pre-start-convergence';
+    const host = await startMeshPongBroadcast({
+      sessionId: 'host-tab',
+      channelName,
+      broadcastChannelFactory: broadcastNetwork.create,
+      webLocks,
+    });
+    const client = await startMeshPongBroadcast({
+      sessionId: 'guest-tab',
+      channelName,
+      broadcastChannelFactory: broadcastNetwork.create,
+      webLocks,
+    });
+    startedRuntimes.push(host, client);
+
+    const [hostCoordinator, guestCoordinator] = await Promise.all([
+      resolveDistributedMatchCoordinator(host),
+      resolveDistributedMatchCoordinator(client),
+    ]);
+    const [hostSession, guestSession] = await Promise.all([
+      createPlayerSession(host, { sessionId: 'host-tab' }),
+      createPlayerSession(client, { sessionId: 'guest-tab' }),
+    ]);
+    const hostSource = createActorSource<PongMatchState, PongMatchCommand>(hostCoordinator);
+    const guestSource = createActorSource<PongMatchState, PongMatchCommand>(guestCoordinator);
+    const hostSourceProjections: PongMatchState[] = [];
+    const guestSourceProjections: PongMatchState[] = [];
+    const unsubscribeHostSource = hostSource.subscribe((snapshot) => {
+      hostSourceProjections.push(snapshot.context);
+    });
+    const unsubscribeGuestSource = guestSource.subscribe((snapshot) => {
+      guestSourceProjections.push(snapshot.context);
+    });
+
+    const [initialHostProjection, initialGuestProjection] = await Promise.all([
+      currentMatchState(hostCoordinator),
+      currentMatchState(guestCoordinator),
+    ]);
+    expect(initialGuestProjection).toEqual(initialHostProjection);
+    expect(initialHostProjection.controllers).toHaveLength(0);
+    expect(
+      isProjectedMatchReadyToStart({
+        match: initialHostProjection,
+        session: createInitialPlayerSession('host-tab'),
+        mode: TWO_HUMAN_PONG_MATCH_MODE,
+        expectedGeneration: initialHostProjection.generation,
+      })
+    ).toBe(false);
+
+    await hostSession.send({ type: 'CLAIM_SIDE', side: 'left' });
+    await hostSession.send({ type: 'SET_READY', ready: true });
+    await syncCoordinatorSession(hostCoordinator, hostSession);
+    await flush(host);
+    await flush(client);
+
+    const [oneReadyHostProjection, oneReadyGuestProjection] = await Promise.all([
+      currentMatchState(hostCoordinator),
+      currentMatchState(guestCoordinator),
+    ]);
+    const hostReadySession = await hostSession.ask<PongPlayerSessionState>({
+      type: 'GET_SESSION',
+    });
+    expect(oneReadyGuestProjection).toEqual(oneReadyHostProjection);
+    expect(oneReadyHostProjection.controllers).toEqual([
+      { sessionId: 'host-tab', controller: 'human', side: 'left', ready: true },
+    ]);
+    expect(hostSourceProjections.at(-1)?.controllers).toEqual(oneReadyHostProjection.controllers);
+    expect(guestSourceProjections.at(-1)?.controllers).toEqual(oneReadyGuestProjection.controllers);
+    expect(
+      isProjectedMatchReadyToStart({
+        match: oneReadyHostProjection,
+        session: hostReadySession,
+        mode: TWO_HUMAN_PONG_MATCH_MODE,
+        expectedGeneration: oneReadyHostProjection.generation,
+      })
+    ).toBe(false);
+
+    await guestSession.send({ type: 'CLAIM_SIDE', side: 'right' });
+    await guestSession.send({ type: 'SET_READY', ready: true });
+    await syncCoordinatorSession(guestCoordinator, guestSession);
+    await flush(host);
+    await flush(client);
+
+    const [hostProjection, guestProjection] = await Promise.all([
+      currentMatchState(hostCoordinator),
+      currentMatchState(guestCoordinator),
+    ]);
+    const expectedControllers = [
+      { sessionId: 'host-tab', controller: 'human', side: 'left', ready: true },
+      { sessionId: 'guest-tab', controller: 'human', side: 'right', ready: true },
+    ];
+    expect(hostProjection).toMatchObject({
+      phase: 'lobby',
+      generation: 0,
+      controllers: expectedControllers,
+    });
+    expect(guestProjection).toEqual(hostProjection);
+    expect(hostSourceProjections.at(-1)?.controllers).toEqual(hostProjection.controllers);
+    expect(guestSourceProjections.at(-1)?.controllers).toEqual(guestProjection.controllers);
+    const guestReadySession = await guestSession.ask<PongPlayerSessionState>({
+      type: 'GET_SESSION',
+    });
+    expect(
+      isProjectedMatchReadyToStart({
+        match: hostProjection,
+        session: hostReadySession,
+        mode: TWO_HUMAN_PONG_MATCH_MODE,
+        expectedGeneration: hostProjection.generation,
+      })
+    ).toBe(true);
+    expect(
+      isProjectedMatchReadyToStart({
+        match: guestProjection,
+        session: guestReadySession,
+        mode: TWO_HUMAN_PONG_MATCH_MODE,
+        expectedGeneration: guestProjection.generation,
+      })
+    ).toBe(true);
+    expect(
+      isProjectedMatchReadyToStart({
+        match: hostProjection,
+        session: hostReadySession,
+        mode: TWO_HUMAN_PONG_MATCH_MODE,
+        expectedGeneration: hostProjection.generation + 1,
+      })
+    ).toBe(false);
+    expect(
+      isProjectedMatchReadyToStart({
+        match: hostProjection,
+        session: hostReadySession,
+        mode: {
+          playerCount: 1,
+          controllers: { left: 'human', right: 'planner' },
+        },
+        expectedGeneration: hostProjection.generation,
+      })
+    ).toBe(false);
+
+    const [hostControllers, guestControllers] = await Promise.all([
+      resolveControllerRefs(host),
+      resolveControllerRefs(client),
+    ]);
+    await expect(
+      Promise.all([
+        hostControllers.left.ask({ type: 'GET_CONTROLLER' }),
+        hostControllers.right.ask({ type: 'GET_CONTROLLER' }),
+        guestControllers.left.ask({ type: 'GET_CONTROLLER' }),
+        guestControllers.right.ask({ type: 'GET_CONTROLLER' }),
+      ])
+    ).resolves.toHaveLength(4);
+    unsubscribeGuestSource();
+    unsubscribeHostSource();
   });
 
   it('keeps independent broadcast clients converged across restarts from each seated player', async () => {
