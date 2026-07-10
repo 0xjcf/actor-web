@@ -87,7 +87,10 @@ export function projectMeshPongWorkflow(state: MeshPongWorkflowState): MeshPongW
         : state.room
           ? 'table'
           : 'lobby';
-  const isHost = state.room?.hostSessionId === state.sessionId;
+  const localMember = state.room?.members.find((member) => member.sessionId === state.sessionId);
+  const isHost =
+    state.room?.hostSessionId === state.sessionId ||
+    (state.room?.hostSessionId === null && Boolean(localMember?.side));
   const hasBothSeats =
     Boolean(state.room?.members.some((member) => member.side === 'left')) &&
     Boolean(state.room?.members.some((member) => member.side === 'right'));
@@ -131,11 +134,7 @@ export function projectRoomFromAuthoritativeMatch(match: PongMatchState): PongRo
     code: 'MESH',
     revision: match.generation,
     phase: match.phase === 'lobby' ? 'open' : 'starting',
-    hostSessionId:
-      match.authoritySessionId ??
-      members.find((member) => member.side === 'left')?.sessionId ??
-      members[0]?.sessionId ??
-      null,
+    hostSessionId: match.authoritySessionId,
     members,
     lastRejection: null,
   };

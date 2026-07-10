@@ -160,6 +160,20 @@ describe('Mesh Pong workflow projection', () => {
       winner: 'left',
     });
   });
+
+  it('preserves the existing pre-authority start gate while the Room actor is introduced', () => {
+    const room = { ...prepareReadyRoom(), hostSessionId: null };
+    const workflow = reduceMeshPongWorkflow(createInitialMeshPongWorkflow('tab-b'), {
+      type: 'ROOM_PROJECTED',
+      room,
+    });
+
+    expect(projectMeshPongWorkflow(workflow)).toMatchObject({
+      screen: 'table',
+      isHost: true,
+      canStart: true,
+    });
+  });
 });
 
 describe('Mesh Pong Ignite headless workflow', () => {
