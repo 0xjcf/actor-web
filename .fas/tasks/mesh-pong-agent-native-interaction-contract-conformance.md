@@ -43,6 +43,8 @@ Implement the five approved Mesh Pong contract-alignment adjustments: caller-awa
 - .fas/queue/tasks.json
 - .fas/tasks/mesh-pong-revisioned-advisory-policy-conformance-proof.md
 - .fas/TASKS.md
+- examples/mesh-pong/pong-behaviors.ts
+- .fas/tasks/mesh-pong-headless-room-workflow-foundation-and-lobby-table-.md
 
 ## Scope Amendments
 
@@ -55,6 +57,16 @@ Implement the five approved Mesh Pong contract-alignment adjustments: caller-awa
 - Evidence: fas_staff_engineer handoff | .fas/state/agent-orchestration-execution.json | The current local contract-alignment task precedes behavior-tree proof; generic extraction evidence follows advisory-policy design and precedes utility proof.
 - Accuracy signal: Queue JSON parser and fas queue graph show reciprocal dependsOn and blocks edges.
 - Follow-up needed: Implement the generic conformance task only after its advisory-design dependency is complete.
+
+- Type: coderabbit-review-correctness
+- Added at: 2026-07-10
+- Trigger: CodeRabbit committed review
+- Reason: Repair the README topology excerpt, make malformed external match commands errors-as-data, and remove the remaining developer-local evidence path without changing the settled directory-readiness replay rule.
+- Added paths: examples/mesh-pong/pong-behaviors.ts, .fas/tasks/mesh-pong-headless-room-workflow-foundation-and-lobby-table-.md
+- Evidence source: CodeRabbit review and current-source verification
+- Evidence: CodeRabbit review and current-source verification | .fas/tasks/mesh-pong-headless-room-workflow-foundation-and-lobby-table-.md | Topology already contains the Room actor; README drift, missing runtime mode validation, and a workstation path remain actionable.
+- Accuracy signal: Focused Mesh Pong tests will cover malformed match commands and topology documentation.
+- Follow-up needed: Do not change actor-system replay behavior; directory-readiness task deliberately gates replay on failed sync.
 
 ## Implementation plan
 
