@@ -45,6 +45,7 @@ Implement the five approved Mesh Pong contract-alignment adjustments: caller-awa
 - .fas/TASKS.md
 - examples/mesh-pong/pong-behaviors.ts
 - .fas/tasks/mesh-pong-headless-room-workflow-foundation-and-lobby-table-.md
+- .changeset/runtime-readiness.md
 
 ## Scope Amendments
 
@@ -67,6 +68,16 @@ Implement the five approved Mesh Pong contract-alignment adjustments: caller-awa
 - Evidence: CodeRabbit review and current-source verification | .fas/tasks/mesh-pong-headless-room-workflow-foundation-and-lobby-table-.md | Topology already contains the Room actor; README drift, missing runtime mode validation, and a workstation path remain actionable.
 - Accuracy signal: Focused Mesh Pong tests will cover malformed match commands and topology documentation.
 - Follow-up needed: Do not change actor-system replay behavior; directory-readiness task deliberately gates replay on failed sync.
+
+- Type: stack-base-reference
+- Added at: 2026-07-11
+- Trigger: Split the combined Mesh Pong branch into stacked PRs before closeout.
+- Reason: The runtime Changeset is owned by the runtime readiness PR and inherited by this downstream branch; it is reference-only for agent-native validation.
+- Added paths: .changeset/runtime-readiness.md
+- Evidence source: root closeout branch split
+- Evidence: root closeout branch split | .changeset/runtime-readiness.md | PR2 release intent; absent from the actual PR4 diff against fas/mesh-pong-room-workflow-foundation.
+- Accuracy signal: git stacked branch ancestry and current Changesets status
+- Follow-up needed: Keep the Changeset in the runtime readiness PR; do not duplicate it in the agent-native PR.
 
 ## Implementation plan
 
