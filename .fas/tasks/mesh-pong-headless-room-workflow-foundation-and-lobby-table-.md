@@ -50,11 +50,6 @@ Create the first vertical slice of the online Mesh Pong workflow to isolate the 
 - examples/mesh-pong/pong-contract.ts
 - examples/mesh-pong/parity-proof.ts
 - .fas/tasks/expose-directory-readiness-separately-from-transport-members.md
-- examples/mesh-pong/pong-controller.ts
-- examples/mesh-pong/README.md
-- .fas/tasks/design-actor-web-advisory-lane-primitive-for-deadline-safe-a.md
-- .fas/tasks/mesh-pong-utility-policy-tactical-scorer-proof.md
-- .fas/queue/tasks.json
 
 ## Scope Amendments
 
