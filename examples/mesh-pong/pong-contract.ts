@@ -20,11 +20,7 @@ export const PONG_NODE_ADDRESSES = {
 } as const;
 
 export function createPongClientNodeAddress(sessionId: string): string {
-  const safeSessionId = sessionId
-    .trim()
-    .replace(/[^A-Za-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return `pong-client-${safeSessionId || 'anonymous'}`;
+  return `pong-client-${encodeURIComponent(sessionId)}`;
 }
 
 export type PongSide = 'left' | 'right';
@@ -191,7 +187,12 @@ export function admitPongAdvisoryProposal(
     proposal.matchGeneration !== context.matchGeneration ||
     tickAge < 0 ||
     tickAge > context.maxTickAge ||
-    context.nowMs - proposal.completedAtMs > context.maxAgeMs
+    !Number.isFinite(proposal.requestedAtMs) ||
+    !Number.isFinite(proposal.completedAtMs) ||
+    !Number.isFinite(context.nowMs) ||
+    proposal.requestedAtMs > proposal.completedAtMs ||
+    proposal.completedAtMs > context.nowMs ||
+    context.nowMs - proposal.requestedAtMs > context.maxAgeMs
   ) {
     return { ok: false, proposalId: proposal.proposalId, reason: 'stale-input' };
   }
@@ -921,17 +922,24 @@ function resetSnapshot(seed = DEFAULT_PONG_SEED): PongSnapshot {
 }
 
 function updateAuthorityFromSessions(match: PongMatchState): PongMatchState {
-  if (
-    match.authoritySessionId &&
-    match.sessions.some((session) => session.sessionId === match.authoritySessionId)
-  ) {
-    return match;
-  }
   if (match.phase !== 'running') {
     return {
       ...match,
       authoritySessionId: null,
     };
+  }
+  const hasAuthority =
+    match.authoritySessionId !== null &&
+    match.sessions.some((session) => session.sessionId === match.authoritySessionId);
+  const mode = match.mode;
+  const hasRequiredControllers =
+    mode !== null &&
+    PONG_SIDES.every((side) => {
+      const slot = match.controllers.find((controller) => controller.side === side);
+      return slot?.controller === mode.controllers[side] && slot.ready;
+    });
+  if (hasAuthority && hasRequiredControllers) {
+    return match;
   }
   return {
     ...match,
@@ -1505,6 +1513,13 @@ export function tickMatch(
   expectedGeneration: number,
   count = 1
 ): PongMatchCommandResult {
+  if (!Number.isFinite(count) || !Number.isInteger(count) || count < 1 || count > 10) {
+    return {
+      ok: false,
+      reason: 'invalid-command',
+      missing: [],
+    };
+  }
   const generationFailure = hasExpectedGeneration(match, expectedGeneration);
   if (generationFailure) {
     return generationFailure;
@@ -1519,8 +1534,7 @@ export function tickMatch(
   }
 
   let nextMatch = match;
-  const iterations = Math.max(1, Math.min(10, Math.trunc(count)));
-  for (let index = 0; index < iterations; index += 1) {
+  for (let index = 0; index < count; index += 1) {
     const result = advanceBall({
       ball: nextMatch.snapshot.ball,
       leftPaddleY: nextMatch.snapshot.paddles.left.y,
