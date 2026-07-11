@@ -63,6 +63,7 @@ import {
   createMergedControllerAim,
   createPlannerSessionId,
   createPlannerStrategy,
+  createPongClientNodeAddress,
   createReflexControllerAim,
   createSyntheticControllerSession,
   createSyntheticPlannerControllerInput,
@@ -78,6 +79,7 @@ import {
   syncLobbySessionsFromStorage,
   syncMatchSession,
   TWO_HUMAN_PONG_MATCH_MODE,
+  tickMatch,
   toLegacyPongControllerType,
   usesSyntheticControllerSlot,
 } from './pong-contract';
@@ -2065,6 +2067,101 @@ describe('Mesh Pong transport parity', () => {
     expect(repeated).toEqual(paused);
   });
 
+  it('pauses running matches when a required synthetic controller is missing or unready', () => {
+    const leftSession = {
+      sessionId: 'tab-a',
+      controller: 'human' as const,
+      side: 'left' as const,
+      ready: true,
+    };
+    const rightSession = createSyntheticControllerSession('right');
+    const leftSynced = syncMatchSession(createInitialMatchState(), 'tab-a', leftSession);
+    if (!leftSynced.ok) {
+      throw new Error(`Expected left sync, received ${leftSynced.reason}.`);
+    }
+    const rightSynced = syncMatchSession(leftSynced.match, rightSession.sessionId, rightSession);
+    if (!rightSynced.ok) {
+      throw new Error(`Expected synthetic sync, received ${rightSynced.reason}.`);
+    }
+    const started = startMatchLifecycle(rightSynced.match, 'tab-a', 0, {
+      playerCount: 1,
+      controllers: { left: 'human', right: 'mlx' },
+    });
+    if (!started.ok) {
+      throw new Error(`Expected match start, received ${started.reason}.`);
+    }
+
+    expect(
+      removeMatchSession(started.match, rightSession.sessionId, rightSession.sessionId)
+    ).toMatchObject({
+      ok: true,
+      match: { phase: 'paused', generation: 2, authoritySessionId: null },
+    });
+    expect(
+      syncMatchSession(started.match, 'tab-a', { ...leftSession, ready: false })
+    ).toMatchObject({
+      ok: true,
+      match: {
+        phase: 'paused',
+        generation: 2,
+        authoritySessionId: null,
+        controllers: [
+          expect.objectContaining({ sessionId: 'tab-a', side: 'left', ready: false }),
+          expect.objectContaining({
+            sessionId: rightSession.sessionId,
+            side: 'right',
+            ready: true,
+          }),
+        ],
+      },
+    });
+  });
+
+  it('keeps client node addresses lossless for blank, punctuation, and UTF-8 session IDs', () => {
+    const sessionIds = ['', '!', '?', '/', 'session/a', 'rémi-🚀'];
+    const addresses = sessionIds.map(createPongClientNodeAddress);
+
+    expect(addresses).toHaveLength(new Set(addresses).size);
+    for (const [index, address] of addresses.entries()) {
+      expect(address).toMatch(/^pong-client-/);
+      expect(decodeURIComponent(address.slice('pong-client-'.length))).toBe(sessionIds[index]);
+    }
+  });
+
+  it('rejects invalid tick counts without advancing a running match', () => {
+    const leftSynced = syncMatchSession(createInitialMatchState(), 'tab-a', {
+      sessionId: 'tab-a',
+      controller: 'human',
+      side: 'left',
+      ready: true,
+    });
+    if (!leftSynced.ok) {
+      throw new Error(`Expected left sync, received ${leftSynced.reason}.`);
+    }
+    const rightSynced = syncMatchSession(leftSynced.match, 'tab-b', {
+      sessionId: 'tab-b',
+      controller: 'human',
+      side: 'right',
+      ready: true,
+    });
+    if (!rightSynced.ok) {
+      throw new Error(`Expected right sync, received ${rightSynced.reason}.`);
+    }
+    const started = startMatchLifecycle(rightSynced.match, 'tab-a', 0, TWO_HUMAN_PONG_MATCH_MODE);
+    if (!started.ok) {
+      throw new Error(`Expected match start, received ${started.reason}.`);
+    }
+
+    for (const count of [0, 11, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(tickMatch(started.match, 'tab-a', 1, count)).toEqual({
+        ok: false,
+        reason: 'invalid-command',
+        missing: [],
+      });
+      expect(started.match.tick).toBe(0);
+    }
+  });
+
   it('maps reset semantics to RESTART_MATCH while keeping RETURN_TO_ROOM distinct', async () => {
     const uiEntrypoint = await readFile(
       path.resolve(meshPongExamplesDir, 'mesh-pong/ui/main.ts'),
@@ -3043,6 +3140,28 @@ describe('Mesh Pong transport parity', () => {
     expect(
       admitPongAdvisoryProposal(proposal, { ...context, matchOwnerSessionId: 'other-tab' })
     ).toMatchObject({ ok: false, reason: 'owner-changed' });
+    expect(admitPongAdvisoryProposal(proposal, { ...context, nowMs: 151 })).toMatchObject({
+      ok: false,
+      reason: 'stale-input',
+    });
+    expect(admitPongAdvisoryProposal({ ...proposal, completedAtMs: 126 }, context)).toMatchObject({
+      ok: false,
+      reason: 'stale-input',
+    });
+    expect(admitPongAdvisoryProposal({ ...proposal, completedAtMs: 99 }, context)).toMatchObject({
+      ok: false,
+      reason: 'stale-input',
+    });
+    expect(
+      admitPongAdvisoryProposal({ ...proposal, requestedAtMs: Number.NaN }, context)
+    ).toMatchObject({ ok: false, reason: 'stale-input' });
+    expect(
+      admitPongAdvisoryProposal({ ...proposal, completedAtMs: Number.POSITIVE_INFINITY }, context)
+    ).toMatchObject({ ok: false, reason: 'stale-input' });
+    expect(admitPongAdvisoryProposal(proposal, { ...context, nowMs: Number.NaN })).toMatchObject({
+      ok: false,
+      reason: 'stale-input',
+    });
   });
 
   it('keeps planner-only turns nonblocking and unresolved without secretly running reflex', async () => {
