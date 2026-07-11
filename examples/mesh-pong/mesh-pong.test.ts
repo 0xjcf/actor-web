@@ -1634,6 +1634,37 @@ describe('Mesh Pong transport parity', () => {
     });
   });
 
+  it('rejects malformed lifecycle modes as data without changing match state', async () => {
+    const runtime = await startMeshPongLocal();
+    startedRuntimes.push(runtime);
+    const { matchCoordinator } = await resolveSessionRefs(runtime);
+    const initial = await currentMatchState(matchCoordinator);
+
+    for (const command of [
+      {
+        type: 'START_MATCH',
+        requestSessionId: 'tab-a',
+        expectedGeneration: 0,
+        mode: 'invalid-mode',
+      },
+      {
+        type: 'REMATCH',
+        requestSessionId: 'tab-a',
+        expectedGeneration: 0,
+        mode: 'invalid-mode',
+      },
+    ] as const) {
+      await expect(
+        matchCoordinator.ask<PongMatchCommandResult>(command as unknown as PongMatchCommand)
+      ).resolves.toEqual({
+        ok: false,
+        reason: 'invalid-command',
+        missing: [],
+      });
+      await expect(currentMatchState(matchCoordinator)).resolves.toEqual(initial);
+    }
+  });
+
   it('prevents a spectator from removing the authority session', async () => {
     const runtime = await startMeshPongLocal();
     startedRuntimes.push(runtime);
