@@ -37,6 +37,7 @@ import { TransportCore, type TransportTimers } from './transport/transport-core.
 export const BROADCAST_CHANNEL_TRANSPORT_PROTOCOL = 'actor-web.broadcast-channel/1' as const;
 const DEFAULT_BROADCAST_CHANNEL_NAME = 'actor-web-runtime';
 const DEFAULT_CONNECT_TIMEOUT_MS = 3000;
+const MAX_PENDING_BROADCAST_FRAMES = 64;
 
 export interface BroadcastChannelLike {
   postMessage(message: unknown): void;
@@ -240,16 +241,33 @@ class BroadcastChannelBus {
 class BroadcastChannelPeerLink implements PeerLink {
   private sink: PeerLinkSink | null = null;
   private unsubscribe: (() => void) | null = null;
+  private readonly pendingPayloads: unknown[] = [];
+  private pendingFailureReason: string | null = null;
   private closed = false;
 
   constructor(
     private readonly bus: BroadcastChannelBus,
     readonly remoteAddress: string,
-    readonly identity: RuntimeNodeIdentity
-  ) {}
+    readonly identity: RuntimeNodeIdentity,
+    initialEnvelopes: readonly BroadcastChannelTransportEnvelope[] = []
+  ) {
+    for (const envelope of initialEnvelopes) {
+      this.receiveEnvelope(envelope);
+      if (this.closed) {
+        break;
+      }
+    }
+    if (!this.closed) {
+      this.unsubscribe = this.bus.subscribe((envelope) => this.receiveEnvelope(envelope));
+    }
+  }
 
   get isOpen(): boolean {
     return !this.closed && this.bus.isOpen;
+  }
+
+  get failureReason(): string | null {
+    return this.pendingFailureReason;
   }
 
   send(payload: unknown): Promise<void> {
@@ -261,20 +279,20 @@ class BroadcastChannelPeerLink implements PeerLink {
   }
 
   receive(sink: PeerLinkSink): () => void {
-    this.unsubscribe?.();
-    this.sink = sink;
-    this.unsubscribe = this.bus.subscribe((envelope) => {
-      if (this.closed || !isSameRuntimeNodeIdentity(envelope.source, this.identity)) {
-        return;
-      }
+    if (this.closed) {
+      sink.onClosed();
+      return () => {};
+    }
 
-      this.sink?.onPayload(parseBroadcastPayload(envelope.payload));
-    });
+    this.sink = sink;
+    for (const payload of this.pendingPayloads.splice(0)) {
+      sink.onPayload(payload);
+    }
 
     return () => {
-      this.unsubscribe?.();
-      this.unsubscribe = null;
-      this.sink = null;
+      if (this.sink === sink) {
+        this.sink = null;
+      }
     };
   }
 
@@ -287,6 +305,29 @@ class BroadcastChannelPeerLink implements PeerLink {
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.sink = null;
+    this.pendingPayloads.length = 0;
+  }
+
+  private receiveEnvelope(envelope: BroadcastChannelTransportEnvelope): void {
+    if (this.closed || !isSameRuntimeNodeIdentity(envelope.source, this.identity)) {
+      return;
+    }
+
+    const payload = parseBroadcastPayload(envelope.payload);
+    if (this.sink) {
+      this.sink.onPayload(payload);
+      return;
+    }
+
+    if (this.pendingPayloads.length >= MAX_PENDING_BROADCAST_FRAMES) {
+      this.pendingFailureReason =
+        `BroadcastChannel peer ${this.remoteAddress} exceeded the pending frame limit ` +
+        `(${MAX_PENDING_BROADCAST_FRAMES}) before receive activation.`;
+      this.close();
+      return;
+    }
+
+    this.pendingPayloads.push(payload);
   }
 }
 
@@ -342,6 +383,7 @@ class BroadcastChannelTransportChannel implements TransportChannel {
     authPayload: Awaited<ReturnType<typeof resolveRuntimeAuthPayload>>
   ): Promise<DialResult> {
     return new Promise((resolve) => {
+      const pendingEnvelopes: BroadcastChannelTransportEnvelope[] = [];
       let settled = false;
       const finish = (result: DialResult): void => {
         if (settled) {
@@ -350,6 +392,7 @@ class BroadcastChannelTransportChannel implements TransportChannel {
         settled = true;
         this.options.timers.clearTimeout(timeout);
         unsubscribe();
+        pendingEnvelopes.length = 0;
         resolve(result);
       };
 
@@ -366,7 +409,20 @@ class BroadcastChannelTransportChannel implements TransportChannel {
         }
 
         const frame = envelope.payload;
+        if (isHandshakeHello(frame)) {
+          return;
+        }
         if (!isHandshakeAccept(frame) && !isHandshakeReject(frame)) {
+          if (pendingEnvelopes.length >= MAX_PENDING_BROADCAST_FRAMES) {
+            finish({
+              ok: false,
+              reason:
+                `BroadcastChannel handshake from ${remoteAddress} exceeded the pending frame ` +
+                `limit (${MAX_PENDING_BROADCAST_FRAMES}).`,
+            });
+            return;
+          }
+          pendingEnvelopes.push(envelope);
           return;
         }
 
@@ -403,6 +459,9 @@ class BroadcastChannelTransportChannel implements TransportChannel {
           local: this.options.identity,
         }).then(
           (auth) => {
+            if (settled) {
+              return;
+            }
             if (!auth.ok) {
               this.options.emitTelemetry({
                 type: 'auth.rejected',
@@ -417,14 +476,22 @@ class BroadcastChannelTransportChannel implements TransportChannel {
               type: 'auth.accepted',
               peerNodeAddress: frame.source.nodeAddress,
             });
-            finish({
-              ok: true,
-              link: new BroadcastChannelPeerLink(
-                this.options.bus,
-                frame.source.nodeAddress,
-                frame.source
-              ),
-            });
+            const link = new BroadcastChannelPeerLink(
+              this.options.bus,
+              frame.source.nodeAddress,
+              frame.source,
+              pendingEnvelopes
+            );
+            if (!link.isOpen) {
+              finish({
+                ok: false,
+                reason:
+                  link.failureReason ??
+                  `BroadcastChannel peer ${frame.source.nodeAddress} closed before activation.`,
+              });
+              return;
+            }
+            finish({ ok: true, link });
           },
           (error: unknown) => {
             finish({

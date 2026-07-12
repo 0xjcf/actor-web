@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import type { ActorMessage } from '../actor-system.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ActorMessage, MessageTransport } from '../actor-system.js';
+import { ActorSystemImpl } from '../actor-system-impl.js';
 import {
   BROADCAST_CHANNEL_TRANSPORT_PROTOCOL,
   type BroadcastChannelLike,
@@ -10,16 +11,19 @@ import {
 } from '../broadcast-channel-message-transport.js';
 import {
   createRuntimeNodeIdentity,
+  createRuntimeTransportFrame,
   createRuntimeTransportHandshakeAccept,
   RUNTIME_TRANSPORT_PROTOCOL_VERSION,
   type RuntimeNodeIdentity,
 } from '../runtime-transport-contract.js';
+import { defineBehavior } from '../unified-actor-builder.js';
 
 const transports: BroadcastChannelMessageTransport[] = [];
 const TEST_CHANNEL_NAME = 'actor-web-test';
 
 class FakeBroadcastChannelNetwork {
   private readonly channels = new Set<FakeBroadcastChannel>();
+  readonly published: unknown[] = [];
 
   create = (name: string): BroadcastChannelLike => {
     const channel = new FakeBroadcastChannel(name, this);
@@ -32,6 +36,7 @@ class FakeBroadcastChannelNetwork {
   }
 
   publish(sender: FakeBroadcastChannel, data: unknown): void {
+    this.published.push(data);
     for (const channel of Array.from(this.channels)) {
       if (channel !== sender && channel.name === sender.name) {
         channel.deliver(data);
@@ -40,12 +45,45 @@ class FakeBroadcastChannelNetwork {
   }
 
   broadcast(channelName: string, data: unknown): void {
+    this.published.push(data);
     for (const channel of Array.from(this.channels)) {
       if (channel.name === channelName) {
         channel.deliver(data);
       }
     }
   }
+}
+
+function countPublishedRuntimeMessages(
+  network: FakeBroadcastChannelNetwork,
+  source: string,
+  destination: string,
+  messageType: string
+): number {
+  return network.published.filter((value) => {
+    const envelope = value as {
+      readonly source?: { readonly nodeAddress?: string };
+      readonly destination?: string;
+      readonly payload?: unknown;
+    };
+    const payload =
+      typeof envelope.payload === 'string'
+        ? (JSON.parse(envelope.payload) as { readonly message?: { readonly type?: string } })
+        : (envelope.payload as { readonly message?: { readonly type?: string } } | undefined);
+    return (
+      envelope.source?.nodeAddress === source &&
+      envelope.destination === destination &&
+      payload?.message?.type === messageType
+    );
+  }).length;
+}
+
+function getBusSubscriberCount(transport: BroadcastChannelMessageTransport): number {
+  return (
+    transport as unknown as {
+      readonly bus: { readonly listeners: Set<unknown> };
+    }
+  ).bus.listeners.size;
 }
 
 class FakeBroadcastChannel implements BroadcastChannelLike {
@@ -90,6 +128,89 @@ class FakeBroadcastChannel implements BroadcastChannelLike {
     this.closed = true;
     this.listeners.clear();
     this.network.delete(this);
+  }
+}
+
+class ControlledDirectoryTransport implements MessageTransport {
+  private listener: ((event: { source: string; message: ActorMessage }) => void) | null = null;
+  private readonly connectedNodes = new Set<string>();
+  private releaseSync: (() => void) | null = null;
+  private rejectNextSync = false;
+  directorySyncRequests = 0;
+
+  constructor(private readonly emitConnected = true) {}
+
+  async send(destination: string, message: ActorMessage): Promise<void> {
+    if (message.type !== '__runtime.directory.sync.request') {
+      return;
+    }
+
+    this.directorySyncRequests += 1;
+    const requestId = (message as ActorMessage & { requestId: string }).requestId;
+    if (this.rejectNextSync) {
+      this.rejectNextSync = false;
+      this.releaseSync = () => {
+        this.listener?.({
+          source: destination,
+          message: {
+            type: '__runtime.remote.ask.response',
+            requestId,
+          },
+        });
+      };
+      return;
+    }
+    this.releaseSync = () => {
+      this.listener?.({
+        source: destination,
+        message: {
+          type: '__runtime.directory.sync.response',
+          requestId,
+          entries: [],
+        },
+      });
+    };
+  }
+
+  subscribe(listener: (event: { source: string; message: ActorMessage }) => void): () => void {
+    this.listener = listener;
+    return () => {
+      if (this.listener === listener) {
+        this.listener = null;
+      }
+    };
+  }
+
+  async connect(address: string): Promise<void> {
+    this.connectedNodes.add(address);
+    if (this.emitConnected) {
+      this.listener?.({
+        source: address,
+        message: { type: '__runtime.transport.connected', nodeAddress: address },
+      });
+    }
+  }
+
+  async disconnect(address: string): Promise<void> {
+    this.connectedNodes.delete(address);
+  }
+
+  getConnectedNodes(): string[] {
+    return Array.from(this.connectedNodes);
+  }
+
+  isConnected(address: string): boolean {
+    return this.connectedNodes.has(address);
+  }
+
+  releaseDirectorySync(): void {
+    const release = this.releaseSync;
+    this.releaseSync = null;
+    release?.();
+  }
+
+  failNextDirectorySync(): void {
+    this.rejectNextSync = true;
   }
 }
 
@@ -179,6 +300,137 @@ describe('BroadcastChannelMessageTransport', () => {
     );
     expect(tabA.isConnected('tab-b')).toBe(true);
     expect(tabB.isConnected('tab-a')).toBe(true);
+  });
+
+  it('preserves directory frames sent before the dialing peer installs its receive sink', async () => {
+    const network = new FakeBroadcastChannelNetwork();
+    const tabA = createTransport(network, 'tab-a');
+    const received: ActorMessage[] = [];
+    tabA.subscribe((event) => received.push(event.message));
+
+    await tabA.start();
+    const connect = tabA.connect('tab-b');
+    await nextTick();
+
+    const tabAIdentity = testIdentity('tab-a');
+    const tabBIdentity = testIdentity('tab-b');
+    network.broadcast(
+      TEST_CHANNEL_NAME,
+      testEnvelope(
+        tabBIdentity,
+        'tab-a',
+        createRuntimeTransportFrame({
+          source: tabBIdentity,
+          destination: tabAIdentity,
+          sequence: 1,
+          message: {
+            type: '__runtime.directory.sync.response',
+            requestId: 'early-directory-sync',
+            entries: [],
+          },
+        })
+      )
+    );
+    network.broadcast(
+      TEST_CHANNEL_NAME,
+      testEnvelope(
+        tabBIdentity,
+        'tab-a',
+        createRuntimeTransportHandshakeAccept(tabBIdentity, tabAIdentity)
+      )
+    );
+
+    await connect;
+    await nextTick();
+
+    expect(received).toContainEqual(
+      expect.objectContaining({
+        type: '__runtime.directory.sync.response',
+        requestId: 'early-directory-sync',
+      })
+    );
+  });
+
+  it('bounds activation frames without reusing rejected handshake payloads on reconnect', async () => {
+    const network = new FakeBroadcastChannelNetwork();
+    const tabA = createTransport(network, 'tab-a');
+    const received: ActorMessage[] = [];
+    tabA.subscribe((event) => received.push(event.message));
+    const activationFrames = (): ActorMessage[] =>
+      received.filter((message) => /^(BOUNDED|OVERFLOW|FRESH)_/.test(message.type));
+
+    await tabA.start();
+    const tabAIdentity = testIdentity('tab-a');
+    const broadcastFrames = (source: RuntimeNodeIdentity, count: number, prefix: string): void => {
+      for (let sequence = 1; sequence <= count; sequence += 1) {
+        network.broadcast(
+          TEST_CHANNEL_NAME,
+          testEnvelope(
+            source,
+            'tab-a',
+            createRuntimeTransportFrame({
+              source,
+              destination: tabAIdentity,
+              sequence,
+              message: { type: `${prefix}_${sequence}` },
+            })
+          )
+        );
+      }
+    };
+
+    const boundedIdentity = testIdentity('tab-b', 'tab-b-bounded');
+    const boundedConnect = tabA.connect('tab-b');
+    await nextTick();
+    broadcastFrames(boundedIdentity, 64, 'BOUNDED');
+    network.broadcast(
+      TEST_CHANNEL_NAME,
+      testEnvelope(
+        boundedIdentity,
+        'tab-a',
+        createRuntimeTransportHandshakeAccept(boundedIdentity, tabAIdentity)
+      )
+    );
+    await boundedConnect;
+    await waitFor(
+      () => activationFrames().length === 64,
+      `Expected all bounded activation frames; received=${activationFrames().length}`
+    );
+    expect(activationFrames().map((message) => message.type)).toEqual(
+      Array.from({ length: 64 }, (_, index) => `BOUNDED_${index + 1}`)
+    );
+    await tabA.disconnect('tab-b');
+
+    const overflowIdentity = testIdentity('tab-b', 'tab-b-overflow');
+    const overflowConnect = tabA.connect('tab-b');
+    await nextTick();
+    broadcastFrames(overflowIdentity, 65, 'OVERFLOW');
+    await expect(overflowConnect).rejects.toThrow(
+      'BroadcastChannel handshake from tab-b exceeded the pending frame limit (64).'
+    );
+    expect(tabA.isConnected('tab-b')).toBe(false);
+    expect(tabA.getPeerStats('tab-b')).toMatchObject({ state: 'rejected' });
+    expect(activationFrames()).toHaveLength(64);
+
+    const freshIdentity = testIdentity('tab-b', 'tab-b-fresh');
+    const freshConnect = tabA.connect('tab-b');
+    await nextTick();
+    broadcastFrames(freshIdentity, 1, 'FRESH');
+    network.broadcast(
+      TEST_CHANNEL_NAME,
+      testEnvelope(
+        freshIdentity,
+        'tab-a',
+        createRuntimeTransportHandshakeAccept(freshIdentity, tabAIdentity)
+      )
+    );
+    await freshConnect;
+    await waitFor(
+      () => activationFrames().length === 65,
+      `Expected one clean reconnect frame; received=${activationFrames().length}`
+    );
+    expect(activationFrames().at(-1)?.type).toBe('FRESH_1');
+    expect(activationFrames().some((message) => message.type.startsWith('OVERFLOW_'))).toBe(false);
   });
 
   it('ignores bus frames addressed to another peer without disconnecting the bystander', async () => {
@@ -280,5 +532,225 @@ describe('BroadcastChannelMessageTransport', () => {
     expect(
       listenerErrors.some((error) => error instanceof Error && error.message === 'telemetry failed')
     ).toBe(true);
+  });
+
+  it('does not activate a peer when delayed auth succeeds after handshake timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const network = new FakeBroadcastChannelNetwork();
+      const telemetry: Array<{ type: string; peerNodeAddress?: string }> = [];
+      let verifyCalls = 0;
+      let resolveFirstAuth!: (result: { ok: true }) => void;
+      const firstAuth = new Promise<{ ok: true }>((resolve) => {
+        resolveFirstAuth = resolve;
+      });
+      const tabA = createTransport(network, 'tab-a', {
+        connectTimeoutMs: 25,
+        telemetry: (event) => telemetry.push(event),
+        auth: {
+          verify: () => {
+            verifyCalls += 1;
+            return verifyCalls === 1 ? firstAuth : { ok: true };
+          },
+        },
+      });
+      await tabA.start();
+
+      const tabAIdentity = testIdentity('tab-a');
+      const delayedIdentity = testIdentity('tab-b', 'tab-b-delayed-auth');
+      const delayedConnect = tabA.connect('tab-b');
+      await Promise.resolve();
+      await Promise.resolve();
+      network.broadcast(
+        TEST_CHANNEL_NAME,
+        testEnvelope(
+          delayedIdentity,
+          'tab-a',
+          createRuntimeTransportHandshakeAccept(delayedIdentity, tabAIdentity)
+        )
+      );
+      await Promise.resolve();
+      expect(verifyCalls).toBe(1);
+
+      const timeoutAssertion = expect(delayedConnect).rejects.toThrow(
+        'Timed out waiting for BroadcastChannel runtime handshake from tab-b'
+      );
+      await vi.advanceTimersByTimeAsync(25);
+      await timeoutAssertion;
+      expect(getBusSubscriberCount(tabA)).toBe(1);
+
+      resolveFirstAuth({ ok: true });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(telemetry.filter((event) => event.type === 'auth.accepted')).toHaveLength(0);
+      expect(getBusSubscriberCount(tabA)).toBe(1);
+      expect(tabA.isConnected('tab-b')).toBe(false);
+
+      const freshIdentity = testIdentity('tab-b', 'tab-b-fresh-auth');
+      const freshConnect = tabA.connect('tab-b');
+      await Promise.resolve();
+      await Promise.resolve();
+      network.broadcast(
+        TEST_CHANNEL_NAME,
+        testEnvelope(
+          freshIdentity,
+          'tab-a',
+          createRuntimeTransportHandshakeAccept(freshIdentity, tabAIdentity)
+        )
+      );
+      await freshConnect;
+
+      expect(verifyCalls).toBe(2);
+      expect(telemetry.filter((event) => event.type === 'auth.accepted')).toHaveLength(1);
+      expect(getBusSubscriberCount(tabA)).toBe(2);
+      expect(tabA.isConnected('tab-b')).toBe(true);
+
+      await tabA.disconnect('tab-b');
+      expect(getBusSubscriberCount(tabA)).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('ActorSystem BroadcastChannel directory readiness', () => {
+  it('keeps join pending until the deduplicated remote directory sync completes', async () => {
+    const transport = new ControlledDirectoryTransport();
+    const system = new ActorSystemImpl({
+      nodeAddress: 'tab-a',
+      transport,
+    });
+    await system.start();
+
+    try {
+      let joined = false;
+      const join = system.join(['tab-b']).then(() => {
+        joined = true;
+      });
+
+      await nextTick();
+
+      expect(joined).toBe(false);
+      expect(transport.directorySyncRequests).toBe(1);
+
+      transport.releaseDirectorySync();
+      await join;
+
+      expect(joined).toBe(true);
+      expect(transport.directorySyncRequests).toBe(1);
+
+      await system.leave();
+      let rejoined = false;
+      const rejoin = system.join(['tab-b']).then(() => {
+        rejoined = true;
+      });
+
+      await nextTick();
+
+      expect(rejoined).toBe(false);
+      expect(transport.directorySyncRequests).toBe(2);
+
+      transport.releaseDirectorySync();
+      await rejoin;
+
+      expect(rejoined).toBe(true);
+    } finally {
+      await system.stop();
+    }
+  });
+
+  it('evicts rejected directory readiness so an explicit join can retry', async () => {
+    const transport = new ControlledDirectoryTransport(false);
+    const system = new ActorSystemImpl({
+      nodeAddress: 'tab-a',
+      transport,
+    });
+    await system.start();
+
+    try {
+      transport.failNextDirectorySync();
+      const failedJoin = system.join(['tab-b']);
+      await nextTick();
+      transport.releaseDirectorySync();
+      await expect(failedJoin).rejects.toThrow('Unexpected directory sync response');
+
+      let joined = false;
+      const retry = system.join(['tab-b']).then(() => {
+        joined = true;
+      });
+      await nextTick();
+
+      expect(joined).toBe(false);
+      expect(transport.directorySyncRequests).toBe(2);
+
+      transport.releaseDirectorySync();
+      await retry;
+      expect(joined).toBe(true);
+    } finally {
+      await system.stop();
+    }
+  });
+
+  it('syncs the directory again when a same-address peer connects with a new incarnation', async () => {
+    const network = new FakeBroadcastChannelNetwork();
+    const tabATransport = createTransport(network, 'tab-a');
+    const originalTabBTransport = createTransport(network, 'tab-b');
+    const tabASystem = new ActorSystemImpl({ nodeAddress: 'tab-a', transport: tabATransport });
+    const originalTabBSystem = new ActorSystemImpl({
+      nodeAddress: 'tab-b',
+      transport: originalTabBTransport,
+    });
+    await Promise.all([tabATransport.start(), originalTabBTransport.start()]);
+    await Promise.all([tabASystem.start(), originalTabBSystem.start()]);
+
+    let replacementTabBSystem: ActorSystemImpl | null = null;
+    try {
+      await tabASystem.join(['tab-b']);
+      expect(
+        countPublishedRuntimeMessages(network, 'tab-a', 'tab-b', '__runtime.directory.sync.request')
+      ).toBe(1);
+
+      const replacementTabBTransport = createTransport(network, 'tab-b', {
+        incarnation: 'tab-b-replacement',
+      });
+      replacementTabBSystem = new ActorSystemImpl({
+        nodeAddress: 'tab-b',
+        transport: replacementTabBTransport,
+      });
+      await replacementTabBTransport.start();
+      await replacementTabBSystem.start();
+      const replacementActor = await replacementTabBSystem.spawn(
+        defineBehavior<{ type: 'GET_INCARNATION' }>()
+          .withContext({ incarnation: 'replacement' })
+          .onMessage(({ actor }) => ({ reply: actor.getSnapshot().context.incarnation }))
+          .build(),
+        { id: 'replacement-proof' }
+      );
+      await replacementTabBTransport.connect('tab-a');
+      await tabASystem.join(['tab-b']);
+
+      expect(tabATransport.getPeerStats('tab-b')?.identity?.incarnation).toBe('tab-b-replacement');
+      expect(
+        countPublishedRuntimeMessages(network, 'tab-a', 'tab-b', '__runtime.directory.sync.request')
+      ).toBe(2);
+      const replacementRef = await tabASystem.lookup<
+        { incarnation: string },
+        { type: 'GET_INCARNATION' }
+      >(replacementActor.address);
+      expect(replacementRef).toBeDefined();
+      if (!replacementRef) {
+        throw new Error('Expected replacement actor after the second directory sync.');
+      }
+      await expect(replacementRef.ask<string>({ type: 'GET_INCARNATION' })).resolves.toBe(
+        'replacement'
+      );
+    } finally {
+      await Promise.allSettled([
+        tabASystem.stop(),
+        originalTabBSystem.stop(),
+        replacementTabBSystem?.stop(),
+      ]);
+    }
   });
 });

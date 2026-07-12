@@ -189,6 +189,11 @@ interface RemoteProjectionWatcher {
   eventSubscribed: boolean;
 }
 
+interface RemoteDirectoryReadiness {
+  readonly connectionKey?: string;
+  readonly promise: Promise<void>;
+}
+
 interface OutboundRemoteProjectionSubscribers {
   snapshotNodes: Set<string>;
   eventNodes: Set<string>;
@@ -535,6 +540,7 @@ export class ActorSystemImpl implements ActorSystem {
   >();
   private actorProjectionState = new Map<string, ActorProjectionState>();
   private remoteProjectionWatchers = new Map<string, RemoteProjectionWatcher>();
+  private remoteDirectoryReadiness = new Map<string, RemoteDirectoryReadiness>();
   private outboundRemoteProjectionSubscribers = new Map<
     string,
     OutboundRemoteProjectionSubscribers
@@ -1303,11 +1309,14 @@ export class ActorSystemImpl implements ActorSystem {
   async join(nodes: string[]): Promise<void> {
     if (this.config.transport) {
       for (const node of nodes) {
-        if (node === this.config.nodeAddress || this.config.transport.isConnected(node)) {
+        if (node === this.config.nodeAddress) {
           continue;
         }
 
-        await this.config.transport.connect(node);
+        if (!this.config.transport.isConnected(node)) {
+          await this.config.transport.connect(node);
+        }
+        await this.ensureRemoteDirectoryReady(node, this.getRemoteConnectionKey(node));
       }
     }
 
@@ -1330,6 +1339,7 @@ export class ActorSystemImpl implements ActorSystem {
     if (this.config.transport) {
       for (const node of this.config.transport.getConnectedNodes()) {
         await this.config.transport.disconnect(node);
+        this.remoteDirectoryReadiness.delete(node);
       }
     }
 
@@ -1646,14 +1656,19 @@ export class ActorSystemImpl implements ActorSystem {
   /**
    * Enqueue a message to an actor's mailbox (fire-and-forget)
    */
-  async enqueueMessage(address: ActorAddress, message: ActorMessage): Promise<void> {
-    await this.enqueueMessageInternal(address, message);
+  async enqueueMessage(
+    address: ActorAddress,
+    message: ActorMessage,
+    options?: { reentrantTestDelivery?: boolean }
+  ): Promise<void> {
+    await this.enqueueMessageInternal(address, message, undefined, options);
   }
 
   private async enqueueMessageInternal(
     address: ActorAddress,
     message: ActorMessage,
-    routeToken?: unknown
+    routeToken?: unknown,
+    options?: { reentrantTestDelivery?: boolean }
   ): Promise<void> {
     log.debug('enqueueMessage called', {
       actorPath: address,
@@ -1904,7 +1919,9 @@ export class ActorSystemImpl implements ActorSystem {
             const message = mailbox.dequeue();
             if (message) {
               try {
-                await this.deliverMessageLocal(address, message);
+                await this.deliverMessageLocal(address, message, {
+                  allowFallbackReentry: options?.reentrantTestDelivery === true,
+                });
               } catch (error) {
                 log.error('Error processing message in test mode', {
                   actor: address,
@@ -2553,7 +2570,11 @@ export class ActorSystemImpl implements ActorSystem {
   /**
    * Deliver message to local actor
    */
-  private async deliverMessageLocal(address: ActorAddress, message: ActorMessage): Promise<void> {
+  private async deliverMessageLocal(
+    address: ActorAddress,
+    message: ActorMessage,
+    options?: { allowFallbackReentry?: boolean }
+  ): Promise<void> {
     log.debug('🔍 DELIVER LOCAL DEBUG: deliverMessageLocal called', {
       actorPath: address,
       messageType: message.type,
@@ -2610,7 +2631,8 @@ export class ActorSystemImpl implements ActorSystem {
           behaviorHandler
         );
       },
-      address
+      address,
+      options
     );
   }
 
@@ -3392,12 +3414,13 @@ export class ActorSystemImpl implements ActorSystem {
     };
 
     try {
-      await this.requestDirectorySync(nodeAddress);
+      await this.ensureRemoteDirectoryReady(nodeAddress, this.getRemoteConnectionKey(nodeAddress));
     } catch (error) {
       log.warn('Failed to sync remote directory on transport connect', {
         nodeAddress,
         error: error instanceof Error ? error.message : String(error),
       });
+      return;
     }
 
     const watcherPromises = Array.from(this.remoteProjectionWatchers.values())
@@ -3412,6 +3435,7 @@ export class ActorSystemImpl implements ActorSystem {
   }
 
   private async handleTransportDisconnected(nodeAddress: string): Promise<void> {
+    this.remoteDirectoryReadiness.delete(nodeAddress);
     this.clusterState = {
       ...this.clusterState,
       nodes: this.clusterState.nodes.filter(
@@ -3722,6 +3746,38 @@ export class ActorSystemImpl implements ActorSystem {
     for (const entry of syncResponse.entries) {
       this.applyRemoteDirectoryEntry(entry);
     }
+  }
+
+  private getRemoteConnectionKey(node: string): string | undefined {
+    const transport = this.config.transport as
+      | (MessageTransport & {
+          getPeerStats?(nodeAddress: string): {
+            readonly identity?: { readonly nodeId: string; readonly incarnation: string };
+          };
+        })
+      | undefined;
+    const identity = transport?.getPeerStats?.(node)?.identity;
+    return identity ? JSON.stringify([identity.nodeId, identity.incarnation]) : undefined;
+  }
+
+  private ensureRemoteDirectoryReady(node: string, connectionKey?: string): Promise<void> {
+    const existing = this.remoteDirectoryReadiness.get(node);
+    if (existing && (!connectionKey || existing.connectionKey === connectionKey)) {
+      return existing.promise;
+    }
+
+    const promise = this.requestDirectorySync(node);
+    const readiness: RemoteDirectoryReadiness = {
+      ...(connectionKey ? { connectionKey } : {}),
+      promise,
+    };
+    this.remoteDirectoryReadiness.set(node, readiness);
+    void promise.catch(() => {
+      if (this.remoteDirectoryReadiness.get(node) === readiness) {
+        this.remoteDirectoryReadiness.delete(node);
+      }
+    });
+    return promise;
   }
 
   private async requestRemoteActorAsk<T>(
@@ -4811,6 +4867,11 @@ export class ActorSystemImpl implements ActorSystem {
         }
       },
       send: async (to: unknown, message: ActorMessage) => {
+        if (to instanceof ActorPIDImpl) {
+          await to.sendFromActor(message);
+          return;
+        }
+
         if (typeof to === 'object' && to !== null && 'send' in to) {
           await (to as { send: (msg: ActorMessage) => Promise<void> }).send(message);
           return;
@@ -4822,7 +4883,11 @@ export class ActorSystemImpl implements ActorSystem {
             throw new Error(`Unable to resolve actor "${to}" for dependency send.`);
           }
 
-          await actorRef.send(message);
+          if (actorRef instanceof ActorPIDImpl) {
+            await actorRef.sendFromActor(message);
+          } else {
+            await actorRef.send(message);
+          }
         }
       },
       ask: async <T>(_to: unknown, _message: ActorMessage, _timeout?: number) => {
@@ -5116,6 +5181,12 @@ class ActorPIDImpl implements ActorRef {
       });
       throw error;
     }
+  }
+
+  async sendFromActor<T extends { type: string }>(message: T): Promise<void> {
+    await this.system.enqueueMessage(this.address, message, {
+      reentrantTestDelivery: true,
+    });
   }
 
   async ask<TResponse = JsonValue>(

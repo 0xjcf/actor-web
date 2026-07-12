@@ -95,7 +95,11 @@ async function connectHostNodes(
   await host.server.system.join([PONG_NODE_ADDRESSES.a, PONG_NODE_ADDRESSES.b, clientNodeAddress]);
   await host.a.system.join([PONG_NODE_ADDRESSES.server]);
   await host.b.system.join([PONG_NODE_ADDRESSES.server]);
-  await host.client.system.join([PONG_NODE_ADDRESSES.server]);
+  await host.client.system.join([
+    PONG_NODE_ADDRESSES.server,
+    PONG_NODE_ADDRESSES.a,
+    PONG_NODE_ADDRESSES.b,
+  ]);
 }
 
 async function flushNodes(nodes: readonly StartedPongNode[]): Promise<void> {
@@ -186,7 +190,11 @@ export async function startMeshPongBroadcastClient(
       transport: createBroadcastTransport(clientNodeAddress, channelName, options),
     });
 
-    await client.system.join([PONG_NODE_ADDRESSES.server]);
+    await client.system.join([
+      PONG_NODE_ADDRESSES.server,
+      PONG_NODE_ADDRESSES.a,
+      PONG_NODE_ADDRESSES.b,
+    ]);
     const runtime: StartedMeshPongBroadcast = {
       mode: 'broadcast',
       hostAcquired: false,

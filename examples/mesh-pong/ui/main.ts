@@ -44,6 +44,7 @@ import {
   PONG_FIELD,
   resolveControllerIntentForAim,
   shouldLaunchPlannerControllerForSide,
+  startMatchLifecycle,
   TWO_HUMAN_PONG_MATCH_MODE,
   toLegacyPongControllerType,
   usesPlannerController,
@@ -1141,11 +1142,38 @@ function renderPlayerSession(session: PongPlayerSessionState | null): void {
   sessionValueElement.textContent = browserSessionId.slice(0, 8);
   sideValueElement.textContent = session?.side ?? 'none';
   readyButtonElement.textContent = session?.ready ? 'Ready' : 'Mark ready';
+  if (matchState) {
+    renderLobby(matchState);
+  }
+}
+
+export function isProjectedMatchReadyToStart(options: {
+  readonly match: PongMatchState;
+  readonly session: PongPlayerSessionState | null;
+  readonly mode: PongShellMatchMode;
+  readonly expectedGeneration: number;
+}): boolean {
+  if (!options.session) {
+    return false;
+  }
+
+  return startMatchLifecycle(
+    options.match,
+    options.session.sessionId,
+    options.expectedGeneration,
+    toLegacyMatchMode(options.mode)
+  ).ok;
 }
 
 function renderLobby(match: PongMatchState): void {
   const readyControllers = match.controllers.filter((controller) => controller.ready).length;
   lobbyValueElement.textContent = `${readyControllers} / 2`;
+  startButtonElement.disabled = !isProjectedMatchReadyToStart({
+    match,
+    session: playerSessionState,
+    mode: selectedMatchMode(),
+    expectedGeneration: match.generation,
+  });
 }
 
 function applyProjectedMatch(
@@ -2634,6 +2662,7 @@ export function bootstrapMeshPongUI(): void {
   claimRightButtonElement = queryRequired<HTMLButtonElement>(document, '#claim-right');
   readyButtonElement = queryRequired<HTMLButtonElement>(document, '#ready-player');
   startButtonElement = queryRequired<HTMLButtonElement>(document, '#start-game');
+  startButtonElement.disabled = true;
   resetButtonElement = queryRequired<HTMLButtonElement>(document, '#reset-game');
   modeValueElement = queryRequired<HTMLElement>(document, '#mode-value');
   scoreValueElement = queryRequired<HTMLElement>(document, '#score-value');
@@ -2687,6 +2716,18 @@ export function bootstrapMeshPongUI(): void {
       setStatus(error instanceof Error ? error.message : 'ready failed');
     });
   });
+
+  for (const select of [
+    playerCountSelectElement,
+    leftControllerSelectElement,
+    rightControllerSelectElement,
+  ]) {
+    select.addEventListener('change', () => {
+      if (matchState) {
+        renderLobby(matchState);
+      }
+    });
+  }
 
   startButtonElement.addEventListener('click', () => {
     void startMatch(selectedMatchMode()).catch((error: unknown) => {

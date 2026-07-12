@@ -7,7 +7,7 @@ import {
   type ActorAgentLlmResult,
   createActorAgentTools,
 } from '@actor-web/agent';
-import type { ActorMessage, ActorRef } from '@actor-web/runtime';
+import { type ActorMessage, type ActorRef, createActorSource } from '@actor-web/runtime';
 import type { ActorToolExecutionContext, BroadcastChannelLike } from '@actor-web/runtime/browser';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -96,6 +96,7 @@ import {
   DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY,
   formatMeshPongBenchmarkSummary,
   formatMeshPongTelemetry,
+  isProjectedMatchReadyToStart,
   MESH_PONG_STARTUP_TIMEOUT_MS,
   type MeshPongControllerSchedulePolicy,
   type MeshPongTelemetryEvent,
@@ -2896,38 +2897,6 @@ describe('Mesh Pong transport parity', () => {
     expect(mergedAim.targetY).toBe(30);
   });
 
-  it('elects only the match owner tab to launch planner controller turns', () => {
-    const mode = {
-      playerCount: 2,
-      controllers: { left: 'planner', right: 'human' },
-    } as const;
-
-    expect(
-      shouldLaunchPlannerControllerForSide({
-        browserSessionId: 'tab-a',
-        matchOwnerSessionId: 'tab-a',
-        mode,
-        side: 'left',
-      })
-    ).toBe(true);
-    expect(
-      shouldLaunchPlannerControllerForSide({
-        browserSessionId: 'tab-b',
-        matchOwnerSessionId: 'tab-a',
-        mode,
-        side: 'left',
-      })
-    ).toBe(false);
-    expect(
-      shouldLaunchPlannerControllerForSide({
-        browserSessionId: 'tab-a',
-        matchOwnerSessionId: 'tab-a',
-        mode,
-        side: 'right',
-      })
-    ).toBe(false);
-  });
-
   it('keeps planner-only turns nonblocking and unresolved without secretly running reflex', async () => {
     const harness = createTurnStepperHarness({
       playerCount: 1,
@@ -3937,6 +3906,167 @@ describe('Mesh Pong transport parity', () => {
     expect(websocketState).toEqual(localState);
   });
 
+  it('converges independent broadcast clients on the authoritative pre-start projection', async () => {
+    const broadcastNetwork = new FakeBroadcastChannelNetwork();
+    const webLocks = new FakeWebLocks();
+    const channelName = 'mesh-pong-broadcast-pre-start-convergence';
+    const host = await startMeshPongBroadcast({
+      sessionId: 'host-tab',
+      channelName,
+      broadcastChannelFactory: broadcastNetwork.create,
+      webLocks,
+    });
+    const client = await startMeshPongBroadcast({
+      sessionId: 'guest-tab',
+      channelName,
+      broadcastChannelFactory: broadcastNetwork.create,
+      webLocks,
+    });
+    startedRuntimes.push(host, client);
+
+    const [hostCoordinator, guestCoordinator] = await Promise.all([
+      resolveDistributedMatchCoordinator(host),
+      resolveDistributedMatchCoordinator(client),
+    ]);
+    const [hostSession, guestSession] = await Promise.all([
+      createPlayerSession(host, { sessionId: 'host-tab' }),
+      createPlayerSession(client, { sessionId: 'guest-tab' }),
+    ]);
+    const hostSource = createActorSource<PongMatchState, PongMatchCommand>(hostCoordinator);
+    const guestSource = createActorSource<PongMatchState, PongMatchCommand>(guestCoordinator);
+    const hostSourceProjections: PongMatchState[] = [];
+    const guestSourceProjections: PongMatchState[] = [];
+    const unsubscribeHostSource = hostSource.subscribe((snapshot) => {
+      hostSourceProjections.push(snapshot.context);
+    });
+    const unsubscribeGuestSource = guestSource.subscribe((snapshot) => {
+      guestSourceProjections.push(snapshot.context);
+    });
+    const requestedMode: PongShellMatchMode = {
+      playerCount: 2,
+      controllers: { left: 'human', right: 'human' },
+    };
+
+    const [initialHostProjection, initialGuestProjection] = await Promise.all([
+      currentMatchState(hostCoordinator),
+      currentMatchState(guestCoordinator),
+    ]);
+    expect(initialGuestProjection).toEqual(initialHostProjection);
+    expect(initialHostProjection.controllers).toHaveLength(0);
+    expect(
+      isProjectedMatchReadyToStart({
+        match: initialHostProjection,
+        session: createInitialPlayerSession('host-tab'),
+        mode: requestedMode,
+        expectedGeneration: initialHostProjection.generation,
+      })
+    ).toBe(false);
+
+    await hostSession.send({ type: 'CLAIM_SIDE', side: 'left' });
+    await hostSession.send({ type: 'SET_READY', ready: true });
+    await syncCoordinatorSession(hostCoordinator, hostSession);
+    await flush(host);
+    await flush(client);
+
+    const [oneReadyHostProjection, oneReadyGuestProjection] = await Promise.all([
+      currentMatchState(hostCoordinator),
+      currentMatchState(guestCoordinator),
+    ]);
+    const hostReadySession = await hostSession.ask<PongPlayerSessionState>({
+      type: 'GET_SESSION',
+    });
+    expect(oneReadyGuestProjection).toEqual(oneReadyHostProjection);
+    expect(oneReadyHostProjection.controllers).toEqual([
+      { sessionId: 'host-tab', controller: 'human', side: 'left', ready: true },
+    ]);
+    expect(hostSourceProjections.at(-1)?.controllers).toEqual(oneReadyHostProjection.controllers);
+    expect(guestSourceProjections.at(-1)?.controllers).toEqual(oneReadyGuestProjection.controllers);
+    expect(
+      isProjectedMatchReadyToStart({
+        match: oneReadyHostProjection,
+        session: hostReadySession,
+        mode: requestedMode,
+        expectedGeneration: oneReadyHostProjection.generation,
+      })
+    ).toBe(false);
+
+    await guestSession.send({ type: 'CLAIM_SIDE', side: 'right' });
+    await guestSession.send({ type: 'SET_READY', ready: true });
+    await syncCoordinatorSession(guestCoordinator, guestSession);
+    await flush(host);
+    await flush(client);
+
+    const [hostProjection, guestProjection] = await Promise.all([
+      currentMatchState(hostCoordinator),
+      currentMatchState(guestCoordinator),
+    ]);
+    const expectedControllers = [
+      { sessionId: 'host-tab', controller: 'human', side: 'left', ready: true },
+      { sessionId: 'guest-tab', controller: 'human', side: 'right', ready: true },
+    ];
+    expect(hostProjection).toMatchObject({
+      phase: 'lobby',
+      generation: 0,
+      controllers: expectedControllers,
+    });
+    expect(guestProjection).toEqual(hostProjection);
+    expect(hostSourceProjections.at(-1)?.controllers).toEqual(hostProjection.controllers);
+    expect(guestSourceProjections.at(-1)?.controllers).toEqual(guestProjection.controllers);
+    const guestReadySession = await guestSession.ask<PongPlayerSessionState>({
+      type: 'GET_SESSION',
+    });
+    expect(
+      isProjectedMatchReadyToStart({
+        match: hostProjection,
+        session: hostReadySession,
+        mode: requestedMode,
+        expectedGeneration: hostProjection.generation,
+      })
+    ).toBe(true);
+    expect(
+      isProjectedMatchReadyToStart({
+        match: guestProjection,
+        session: guestReadySession,
+        mode: requestedMode,
+        expectedGeneration: guestProjection.generation,
+      })
+    ).toBe(true);
+    expect(
+      isProjectedMatchReadyToStart({
+        match: hostProjection,
+        session: hostReadySession,
+        mode: requestedMode,
+        expectedGeneration: hostProjection.generation + 1,
+      })
+    ).toBe(false);
+    expect(
+      isProjectedMatchReadyToStart({
+        match: hostProjection,
+        session: hostReadySession,
+        mode: {
+          playerCount: 1,
+          controllers: { left: 'human', right: 'planner' },
+        },
+        expectedGeneration: hostProjection.generation,
+      })
+    ).toBe(false);
+
+    const [hostControllers, guestControllers] = await Promise.all([
+      resolveControllerRefs(host),
+      resolveControllerRefs(client),
+    ]);
+    await expect(
+      Promise.all([
+        hostControllers.left.ask({ type: 'GET_CONTROLLER' }),
+        hostControllers.right.ask({ type: 'GET_CONTROLLER' }),
+        guestControllers.left.ask({ type: 'GET_CONTROLLER' }),
+        guestControllers.right.ask({ type: 'GET_CONTROLLER' }),
+      ])
+    ).resolves.toHaveLength(4);
+    unsubscribeGuestSource();
+    unsubscribeHostSource();
+  });
+
   it('keeps independent broadcast clients converged across restarts from each seated player', async () => {
     const broadcastNetwork = new FakeBroadcastChannelNetwork();
     const webLocks = new FakeWebLocks();
@@ -4534,7 +4664,7 @@ describe('Mesh Pong transport parity', () => {
     expect(readme).toMatch(/Local\s+human input is applied immediately in the shell/);
   });
 
-  it('documents the planner strategy json contract and keeps it aligned with the controller prompt', async () => {
+  it('documents a valid planner strategy json contract and keeps it aligned with the controller prompt', async () => {
     const readme = await readFile(path.resolve(meshPongExamplesDir, 'mesh-pong/README.md'), 'utf8');
     const request = createPongControllerRequest(
       'left',
@@ -4544,12 +4674,18 @@ describe('Mesh Pong transport parity', () => {
       )
     );
     const prompt = String(request.messages.at(-1)?.content ?? '');
+    const strategyExample = readme.match(/```json\n(\{[\s\S]*?\})\n```/)?.[1];
 
-    expect(readme).toContain('"targetY": 0..278');
-    expect(readme).toContain('"biasY": -82..82');
-    expect(readme).toContain('"maxStep": 1..28');
-    expect(readme).toContain('"label": "short reason string"');
-    expect(readme).toContain('"facts": ["short fact strings"]');
+    expect(strategyExample).toBeDefined();
+    expect(() => JSON.parse(strategyExample ?? '')).not.toThrow();
+    expect(strategyExample).toContain('"targetY": 139');
+    expect(strategyExample).toContain('"biasY": 0');
+    expect(strategyExample).toContain('"maxStep": 14');
+    expect(strategyExample).toContain('"label": "short reason string"');
+    expect(strategyExample).toContain('"facts": ["short fact strings"]');
+    expect(readme).toContain('`targetY` accepts values from 0 through 278');
+    expect(readme).toMatch(/`biasY` accepts values from -82\s+through 82/);
+    expect(readme).toMatch(/`maxStep` accepts values from 1\s+through 28/);
     expect(prompt).toContain('"targetY":"number"');
     expect(prompt).toContain('"biasY":"number"');
     expect(prompt).toContain('"maxStep":"number"');

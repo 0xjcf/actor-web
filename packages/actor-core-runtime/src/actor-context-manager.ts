@@ -91,7 +91,19 @@ export class FallbackContextStorage<T> implements ContextStorage<T> {
   private callbackDepth = 0;
 
   run<TResult>(context: T, fn: () => TResult): TResult {
-    if (this.callbackDepth === 0 && this.frames.length > 0) {
+    return this.runFrame(context, fn, false);
+  }
+
+  /**
+   * Run work explicitly identified by the caller as reentry from an active frame.
+   * Concurrent top-level callers must continue to use runAsync().
+   */
+  runReentrant<TResult>(context: T, fn: () => TResult): TResult {
+    return this.runFrame(context, fn, true);
+  }
+
+  private runFrame<TResult>(context: T, fn: () => TResult, allowReentry: boolean): TResult {
+    if (!allowReentry && this.callbackDepth === 0 && this.frames.length > 0) {
       throw new Error(
         'FallbackContextStorage cannot start overlapping top-level async runs without AsyncLocalStorage'
       );
@@ -495,9 +507,16 @@ export function safeRun<T>(context: ActorContext, fn: () => T, fallbackActorId?:
 export function safeRunAsync<T>(
   context: ActorContext,
   fn: () => Promise<T>,
-  fallbackActorId?: string
+  fallbackActorId?: string,
+  options?: { allowFallbackReentry?: boolean }
 ): Promise<T> {
   if (storage instanceof FallbackContextStorage) {
+    if (options?.allowFallbackReentry) {
+      return storage.runReentrant(context, () =>
+        Promise.resolve(safeRun(context, fn, fallbackActorId))
+      );
+    }
+
     return storage.runAsync(context, () => Promise.resolve(safeRun(context, fn, fallbackActorId)));
   }
 

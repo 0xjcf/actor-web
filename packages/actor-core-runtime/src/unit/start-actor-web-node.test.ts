@@ -12,6 +12,7 @@ type CounterCommand =
   | { type: 'RUN_TOOL'; value: string };
 
 class TestMessageTransport implements MessageTransport {
+  private listener: ((event: { source: string; message: ActorMessage }) => void) | null = null;
   started = false;
   stopped = false;
   connected = new Set<string>();
@@ -25,10 +26,28 @@ class TestMessageTransport implements MessageTransport {
     this.stopped = true;
   }
 
-  async send(): Promise<void> {}
+  async send(destination: string, message: ActorMessage): Promise<void> {
+    if (message.type !== '__runtime.directory.sync.request') {
+      return;
+    }
 
-  subscribe(): () => void {
-    return () => {};
+    this.listener?.({
+      source: destination,
+      message: {
+        type: '__runtime.directory.sync.response',
+        requestId: (message as ActorMessage & { requestId: string }).requestId,
+        entries: [],
+      },
+    });
+  }
+
+  subscribe(listener: (event: { source: string; message: ActorMessage }) => void): () => void {
+    this.listener = listener;
+    return () => {
+      if (this.listener === listener) {
+        this.listener = null;
+      }
+    };
   }
 
   async connect(address: string): Promise<void> {
