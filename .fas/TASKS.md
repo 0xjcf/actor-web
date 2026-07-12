@@ -2362,8 +2362,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Mesh Pong agent-native interaction contract conformance
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/mesh-pong-agent-native-interaction-contract-conformance.md
 - Verification lane: fast
 - Policy sensitivity: standard
