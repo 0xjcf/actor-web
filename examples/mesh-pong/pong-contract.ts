@@ -16,7 +16,16 @@ export const PONG_NODE_ADDRESSES = {
   server: 'pong-server',
   a: 'pong-a',
   b: 'pong-b',
+  localClient: 'pong-client-local',
 } as const;
+
+export function createPongClientNodeAddress(sessionId: string): string {
+  const safeSessionId = sessionId
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `pong-client-${safeSessionId || 'anonymous'}`;
+}
 
 export type PongSide = 'left' | 'right';
 export type PongTransportMode = 'local' | 'broadcast' | 'websocket' | 'mesh';
@@ -112,11 +121,30 @@ export interface PongControllerIntent {
   readonly amount: number;
 }
 
+export interface PongPlannerStrategy {
+  readonly side: PongSide;
+  readonly targetY: number;
+  readonly biasY: number;
+  readonly maxStep: number;
+  readonly label: string;
+  readonly facts: readonly string[];
+}
+
+export interface PongControllerAim {
+  readonly side: PongSide;
+  readonly targetY: number;
+  readonly interceptY: number | null;
+  readonly reason: 'center' | 'intercept' | 'planner-target';
+  readonly strategyLabel: string | null;
+}
+
 export type PongControllerResult =
-  | ({
+  | {
       readonly ok: true;
       readonly provider: 'llm';
-    } & PongControllerIntent)
+      readonly side: PongSide;
+      readonly strategy: PongPlannerStrategy;
+    }
   | {
       readonly ok: false;
       readonly side: PongSide;
@@ -137,6 +165,8 @@ export type ControllerCommand =
   | { readonly type: 'RUN_CONTROLLER'; readonly snapshot: PongSnapshot };
 
 export type PongControllerType = 'human' | 'mlx';
+export type PongControllerMode = 'human' | 'reflex' | 'planner' | 'hybrid';
+export type PongControllerModeCompat = PongControllerMode | PongControllerType;
 export type PongPlayerCount = 1 | 2;
 
 export interface PongMatchMode {
@@ -144,10 +174,15 @@ export interface PongMatchMode {
   readonly controllers: Record<PongSide, PongControllerType>;
 }
 
+export interface PongShellMatchMode {
+  readonly playerCount: PongPlayerCount;
+  readonly controllers: Record<PongSide, PongControllerMode>;
+}
+
 export interface PongMatchControllerAuthority {
   readonly browserSessionId: string;
   readonly matchOwnerSessionId: string | null;
-  readonly mode: PongMatchMode | null;
+  readonly mode: PongShellMatchMode | null;
   readonly side: PongSide;
 }
 
@@ -203,8 +238,109 @@ export interface PongLobbyState {
   readonly lastStart: PongMatchStartResult | null;
 }
 
+export type PongMatchPhase = 'lobby' | 'running' | 'paused';
+
+export interface PongMatchState {
+  readonly matchId: 'mesh-pong';
+  readonly generation: number;
+  readonly phase: PongMatchPhase;
+  readonly mode: PongMatchMode | null;
+  readonly sessions: readonly PongPlayerSessionState[];
+  readonly controllers: readonly PongControllerSlot[];
+  readonly authoritySessionId: string | null;
+  readonly tick: number;
+  readonly snapshot: PongSnapshot;
+}
+
+export type PongMatchFailureReason =
+  | 'controller-not-ready'
+  | 'invalid-command'
+  | 'match-not-in-lobby'
+  | 'match-not-running'
+  | 'missing-controller'
+  | 'not-authority'
+  | 'not-session-owner'
+  | 'not-seated-player'
+  | 'session-mutation-not-allowed'
+  | 'side-already-claimed'
+  | 'stale-generation';
+
+export type PongMatchCommandResult =
+  | {
+      readonly ok: true;
+      readonly match: PongMatchState;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'missing-controller' | 'controller-not-ready' | 'invalid-command';
+      readonly missing: readonly PongSide[];
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'stale-generation';
+      readonly expectedGeneration: number;
+      readonly actualGeneration: number;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'not-seated-player';
+      readonly requestSessionId: string;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'not-authority';
+      readonly requestSessionId: string;
+      readonly authoritySessionId: string | null;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'not-session-owner';
+      readonly requestSessionId: string;
+      readonly sessionId: string;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'session-mutation-not-allowed';
+      readonly requestSessionId: string;
+      readonly sessionId: string;
+      readonly phase: Exclude<PongMatchPhase, 'lobby'>;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'side-already-claimed';
+      readonly requestSessionId: string;
+      readonly ownerSessionId: string;
+      readonly side: PongSide;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'match-not-in-lobby';
+      readonly phase: Exclude<PongMatchPhase, 'lobby'>;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'match-not-running';
+      readonly phase: PongMatchPhase;
+    };
+
+export type PlayerSessionRestoreResult =
+  | {
+      readonly ok: true;
+      readonly session: PongPlayerSessionState;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'session-id-mismatch';
+      readonly localSessionId: string;
+      readonly restoreSessionId: string;
+    };
+
 export type PlayerSessionCommand =
   | { readonly type: 'GET_SESSION' }
+  | {
+      readonly type: 'RESTORE_SESSION';
+      readonly session: PongPlayerSessionState;
+    }
   | {
       readonly type: 'CLAIM_SIDE';
       readonly side: PongSide;
@@ -231,6 +367,58 @@ export type PongLobbyCommand =
   | { readonly type: 'REMOVE_SESSION'; readonly sessionId: string }
   | { readonly type: 'START_MATCH'; readonly mode: PongMatchMode };
 
+export type PongMatchCommand =
+  | { readonly type: 'GET_MATCH' }
+  | {
+      readonly type: 'SYNC_SESSION';
+      readonly requestSessionId: string;
+      readonly session: PongPlayerSessionState;
+    }
+  | {
+      readonly type: 'REMOVE_SESSION';
+      readonly requestSessionId: string;
+      readonly sessionId: string;
+    }
+  | {
+      readonly type: 'START_MATCH';
+      readonly requestSessionId: string;
+      readonly expectedGeneration: number;
+      readonly mode: PongMatchMode;
+    }
+  | {
+      readonly type: 'PAUSE_MATCH';
+      readonly requestSessionId: string;
+      readonly expectedGeneration: number;
+    }
+  | {
+      readonly type: 'RESTART_MATCH';
+      readonly requestSessionId: string;
+      readonly expectedGeneration: number;
+    }
+  | {
+      readonly type: 'REMATCH';
+      readonly requestSessionId: string;
+      readonly expectedGeneration: number;
+      readonly mode?: PongMatchMode;
+    }
+  | {
+      readonly type: 'RETURN_TO_ROOM';
+      readonly requestSessionId: string;
+      readonly expectedGeneration: number;
+    }
+  | {
+      readonly type: 'APPLY_CONTROLLER_INPUT';
+      readonly requestSessionId: string;
+      readonly expectedGeneration: number;
+      readonly input: Extract<PongControllerInputResult, { readonly ok: true }>;
+    }
+  | {
+      readonly type: 'TICK_MATCH';
+      readonly requestSessionId: string;
+      readonly expectedGeneration: number;
+      readonly count?: number;
+    };
+
 export type PongLobbyEvent =
   | { readonly type: 'LOBBY_CHANGED'; readonly lobby: PongLobbyState }
   | {
@@ -242,6 +430,11 @@ export type PongLobbyEvent =
       readonly type: 'MATCH_START_REJECTED';
       readonly result: Exclude<PongMatchStartResult, { ok: true }>;
     };
+
+export type PongMatchEvent = {
+  readonly type: 'MATCH_CHANGED';
+  readonly match: PongMatchState;
+};
 
 const PONG_SIDES: readonly PongSide[] = ['left', 'right'];
 
@@ -297,6 +490,24 @@ export function setPlayerSessionReady(
   };
 }
 
+export function restorePlayerSession(
+  localSession: PongPlayerSessionState,
+  restoreSession: PongPlayerSessionState
+): PlayerSessionRestoreResult {
+  if (localSession.sessionId !== restoreSession.sessionId) {
+    return {
+      ok: false,
+      reason: 'session-id-mismatch',
+      localSessionId: localSession.sessionId,
+      restoreSessionId: restoreSession.sessionId,
+    };
+  }
+  return {
+    ok: true,
+    session: restoreSession,
+  };
+}
+
 export function createPlayerSessionInput(
   session: PongPlayerSessionState,
   direction: 'up' | 'down',
@@ -329,26 +540,202 @@ export function createInitialLobby(): PongLobbyState {
   };
 }
 
+export function createInitialMatchState(): PongMatchState {
+  const left = createInitialPaddle('left');
+  const right = createInitialPaddle('right');
+  return {
+    matchId: 'mesh-pong',
+    generation: 0,
+    phase: 'lobby',
+    mode: null,
+    sessions: [],
+    controllers: [],
+    authoritySessionId: null,
+    tick: 0,
+    snapshot: {
+      ball: createInitialBall(DEFAULT_PONG_SEED),
+      paddles: {
+        left,
+        right,
+      },
+      score: createInitialScore(),
+    },
+  };
+}
+
 export function shouldLaunchMlxControllerForSide(authority: PongMatchControllerAuthority): boolean {
   return (
     authority.matchOwnerSessionId === authority.browserSessionId &&
-    authority.mode?.controllers[authority.side] === 'mlx'
+    authority.mode !== null &&
+    usesPlannerController(authority.mode.controllers[authority.side])
   );
 }
 
-export function createMlxSessionId(side: PongSide): string {
-  return `mlx-${side}`;
+export function shouldLaunchPlannerControllerForSide(
+  authority: PongMatchControllerAuthority
+): boolean {
+  return shouldLaunchMlxControllerForSide(authority);
 }
 
-export function createSyntheticMlxControllerInput(
-  result: Extract<PongControllerResult, { readonly ok: true }>
+export function createPlannerSessionId(side: PongSide): string {
+  return `planner-${side}`;
+}
+
+export function createMlxSessionId(side: PongSide): string {
+  return createPlannerSessionId(side);
+}
+
+export function createSyntheticControllerSession(side: PongSide): PongPlayerSessionState {
+  return {
+    sessionId: createPlannerSessionId(side),
+    controller: 'mlx',
+    side,
+    ready: true,
+  };
+}
+
+export function normalizePongControllerType(
+  value: PongControllerModeCompat | string | undefined
+): PongControllerMode {
+  switch (value) {
+    case 'reflex':
+    case 'planner':
+    case 'hybrid':
+    case 'human':
+      return value;
+    case 'mlx':
+      return 'planner';
+    default:
+      return 'human';
+  }
+}
+
+export function toLegacyPongControllerType(value: PongControllerMode): PongControllerType {
+  return usesSyntheticControllerSlot(value) ? 'mlx' : 'human';
+}
+
+export function usesPlannerController(value: PongControllerModeCompat): boolean {
+  const normalized = normalizePongControllerType(value);
+  return normalized === 'planner' || normalized === 'hybrid';
+}
+
+export function usesSyntheticControllerSlot(value: PongControllerModeCompat): boolean {
+  return normalizePongControllerType(value) !== 'human';
+}
+
+export function usesReflexController(value: PongControllerModeCompat): boolean {
+  const normalized = normalizePongControllerType(value);
+  return normalized === 'reflex' || normalized === 'hybrid';
+}
+
+export function createPlannerStrategy(
+  side: PongSide,
+  partial: Partial<Omit<PongPlannerStrategy, 'side'>> = {}
+): PongPlannerStrategy {
+  return {
+    side,
+    targetY: clampPaddleY(partial.targetY ?? PONG_FIELD.height / 2 - PONG_FIELD.paddleHeight / 2),
+    biasY: partial.biasY ?? 0,
+    maxStep: Math.max(
+      1,
+      Math.min(PONG_FIELD.paddleStep, Math.trunc(partial.maxStep ?? PONG_FIELD.paddleStep))
+    ),
+    label: partial.label ?? 'intercept-window',
+    facts: partial.facts ?? [],
+  };
+}
+
+function projectBallY(ball: PongBallState, steps: number): number {
+  let y = ball.y;
+  let vy = ball.vy;
+  for (let step = 0; step < steps; step += 1) {
+    y += vy;
+    if (y - ball.radius <= 0 || y + ball.radius >= PONG_FIELD.height) {
+      y = Math.max(ball.radius, Math.min(PONG_FIELD.height - ball.radius, y));
+      vy = -vy;
+    }
+  }
+  return y;
+}
+
+function resolveInterceptY(snapshot: PongSnapshot, side: PongSide): number | null {
+  const ball = snapshot.ball;
+  const targetX =
+    side === 'left'
+      ? PONG_FIELD.paddleMargin + PONG_FIELD.paddleWidth + ball.radius
+      : PONG_FIELD.width - PONG_FIELD.paddleMargin - PONG_FIELD.paddleWidth - ball.radius;
+  const movingTowardSide = side === 'left' ? ball.vx < 0 : ball.vx > 0;
+  if (!movingTowardSide) {
+    return null;
+  }
+
+  const distance = Math.abs(targetX - ball.x);
+  const steps = Math.max(0, Math.ceil(distance / Math.max(1, Math.abs(ball.vx))));
+  return clampPaddleY(projectBallY(ball, steps) - PONG_FIELD.paddleHeight / 2);
+}
+
+export function createReflexControllerAim(
+  snapshot: PongSnapshot,
+  side: PongSide
+): PongControllerAim {
+  const interceptY = resolveInterceptY(snapshot, side);
+  const centeredY = clampPaddleY(PONG_FIELD.height / 2 - PONG_FIELD.paddleHeight / 2);
+  return {
+    side,
+    targetY: interceptY ?? centeredY,
+    interceptY,
+    reason: interceptY === null ? 'center' : 'intercept',
+    strategyLabel: null,
+  };
+}
+
+export function createMergedControllerAim(
+  snapshot: PongSnapshot,
+  side: PongSide,
+  strategy: PongPlannerStrategy | null
+): PongControllerAim {
+  const reflexAim = createReflexControllerAim(snapshot, side);
+  if (!strategy) {
+    return reflexAim;
+  }
+  return {
+    side,
+    interceptY: reflexAim.interceptY,
+    targetY: clampPaddleY(strategy.targetY + strategy.biasY),
+    reason: 'planner-target',
+    strategyLabel: strategy.label,
+  };
+}
+
+export function resolveControllerIntentForAim(
+  paddle: PongPaddleState,
+  aim: PongControllerAim,
+  maxStep: number = PONG_FIELD.paddleStep
+): PongControllerIntent | null {
+  const paddleCenter = paddle.y + paddle.height / 2;
+  const targetCenter = aim.targetY + paddle.height / 2;
+  const delta = targetCenter - paddleCenter;
+  if (Math.abs(delta) < 1) {
+    return null;
+  }
+  const amount = Math.max(1, Math.min(maxStep, Math.trunc(Math.abs(delta))));
+  return {
+    side: paddle.side,
+    direction: delta < 0 ? 'up' : 'down',
+    amount,
+  };
+}
+
+export function createSyntheticPlannerControllerInput(
+  side: PongSide,
+  intent: PongControllerIntent
 ): Extract<PongControllerInputResult, { readonly ok: true }> {
   return {
     ok: true,
-    sessionId: createMlxSessionId(result.side),
-    side: result.side,
-    direction: result.direction,
-    amount: result.amount,
+    sessionId: createPlannerSessionId(side),
+    side,
+    direction: intent.direction,
+    amount: intent.amount,
   };
 }
 
@@ -357,7 +744,7 @@ function resolveControllerSlots(
 ): readonly PongControllerSlot[] {
   const slots = new Map<PongSide, PongControllerSlot>();
   for (const session of sessions) {
-    if (!session.side) {
+    if (!session.side || slots.has(session.side)) {
       continue;
     }
     slots.set(session.side, {
@@ -372,6 +759,98 @@ function resolveControllerSlots(
     const slot = slots.get(side);
     return slot ? [slot] : [];
   });
+}
+
+function isSeatedPlayer(match: PongMatchState, sessionId: string): boolean {
+  return match.sessions.some((session) => session.sessionId === sessionId && session.side !== null);
+}
+
+function hasExpectedGeneration(
+  match: PongMatchState,
+  expectedGeneration: number
+): Extract<PongMatchCommandResult, { readonly ok: false }> | null {
+  if (match.generation === expectedGeneration) {
+    return null;
+  }
+  return {
+    ok: false,
+    reason: 'stale-generation',
+    expectedGeneration,
+    actualGeneration: match.generation,
+  };
+}
+
+function requireSeatedPlayer(
+  match: PongMatchState,
+  requestSessionId: string
+): Extract<PongMatchCommandResult, { readonly ok: false }> | null {
+  if (isSeatedPlayer(match, requestSessionId)) {
+    return null;
+  }
+  return {
+    ok: false,
+    reason: 'not-seated-player',
+    requestSessionId,
+  };
+}
+
+function requireAuthority(
+  match: PongMatchState,
+  requestSessionId: string
+): Extract<PongMatchCommandResult, { readonly ok: false }> | null {
+  if (match.authoritySessionId === requestSessionId) {
+    return null;
+  }
+  return {
+    ok: false,
+    reason: 'not-authority',
+    requestSessionId,
+    authoritySessionId: match.authoritySessionId,
+  };
+}
+
+function requireRunningMatch(
+  match: PongMatchState
+): Extract<PongMatchCommandResult, { readonly ok: false }> | null {
+  if (match.phase === 'running' && match.mode) {
+    return null;
+  }
+  return {
+    ok: false,
+    reason: 'match-not-running',
+    phase: match.phase,
+  };
+}
+
+function resetSnapshot(seed = DEFAULT_PONG_SEED): PongSnapshot {
+  const left = createInitialPaddle('left');
+  const right = createInitialPaddle('right');
+  return {
+    ball: createInitialBall(seed),
+    paddles: { left, right },
+    score: createInitialScore(),
+  };
+}
+
+function updateAuthorityFromSessions(match: PongMatchState): PongMatchState {
+  if (
+    match.authoritySessionId &&
+    match.sessions.some((session) => session.sessionId === match.authoritySessionId)
+  ) {
+    return match;
+  }
+  if (match.phase !== 'running') {
+    return {
+      ...match,
+      authoritySessionId: null,
+    };
+  }
+  return {
+    ...match,
+    generation: match.generation + 1,
+    authoritySessionId: null,
+    phase: 'paused',
+  };
 }
 
 export function syncLobbySession(
@@ -390,6 +869,64 @@ export function syncLobbySession(
   };
 }
 
+export function syncMatchSession(
+  match: PongMatchState,
+  requestSessionId: string,
+  session: PongPlayerSessionState
+): PongMatchCommandResult {
+  if (requestSessionId !== session.sessionId) {
+    return {
+      ok: false,
+      reason: 'not-session-owner',
+      requestSessionId,
+      sessionId: session.sessionId,
+    };
+  }
+
+  const existing = match.sessions.find((candidate) => candidate.sessionId === session.sessionId);
+  if (
+    match.phase !== 'lobby' &&
+    ((!existing && session.side !== null) ||
+      (existing && (existing.side !== session.side || existing.controller !== session.controller)))
+  ) {
+    return {
+      ok: false,
+      reason: 'session-mutation-not-allowed',
+      requestSessionId,
+      sessionId: session.sessionId,
+      phase: match.phase,
+    };
+  }
+  const sideOwner = session.side
+    ? match.sessions.find(
+        (candidate) => candidate.sessionId !== session.sessionId && candidate.side === session.side
+      )
+    : undefined;
+  if (session.side && sideOwner) {
+    return {
+      ok: false,
+      reason: 'side-already-claimed',
+      requestSessionId,
+      ownerSessionId: sideOwner.sessionId,
+      side: session.side,
+    };
+  }
+
+  const sessions = [
+    ...match.sessions.filter((candidate) => candidate.sessionId !== session.sessionId),
+    session,
+  ];
+  const controllers = resolveControllerSlots(sessions);
+  return {
+    ok: true,
+    match: updateAuthorityFromSessions({
+      ...match,
+      sessions,
+      controllers,
+    }),
+  };
+}
+
 export function syncLobbySessionsFromStorage(
   lobby: PongLobbyState,
   storedSessions: readonly PongPlayerSessionState[]
@@ -400,12 +937,7 @@ export function syncLobbySessionsFromStorage(
       if (lobby.mode.controllers[side] !== 'mlx') {
         continue;
       }
-      sessions.push({
-        sessionId: createMlxSessionId(side),
-        controller: 'mlx',
-        side,
-        ready: true,
-      });
+      sessions.push(createSyntheticControllerSession(side));
     }
   }
 
@@ -424,6 +956,32 @@ export function removeLobbySession(lobby: PongLobbyState, sessionId: string): Po
     ...lobby,
     sessions,
     controllers,
+  };
+}
+
+export function removeMatchSession(
+  match: PongMatchState,
+  requestSessionId: string,
+  sessionId: string
+): PongMatchCommandResult {
+  if (requestSessionId !== sessionId) {
+    return {
+      ok: false,
+      reason: 'not-session-owner',
+      requestSessionId,
+      sessionId,
+    };
+  }
+
+  const sessions = match.sessions.filter((session) => session.sessionId !== sessionId);
+  const controllers = resolveControllerSlots(sessions);
+  return {
+    ok: true,
+    match: updateAuthorityFromSessions({
+      ...match,
+      sessions,
+      controllers,
+    }),
   };
 }
 
@@ -479,6 +1037,182 @@ export function startLobbyMatch(
       lastStart: result,
     },
     result,
+  };
+}
+
+function validateMatchControllers(
+  match: PongMatchState,
+  mode: PongMatchMode
+): Extract<PongMatchCommandResult, { readonly ok: false }> | null {
+  const missing = PONG_SIDES.filter((side) => {
+    const slot = match.controllers.find((controller) => controller.side === side);
+    return !slot || slot.controller !== mode.controllers[side];
+  });
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      reason: 'missing-controller',
+      missing,
+    };
+  }
+
+  const notReady = PONG_SIDES.filter((side) => {
+    const slot = match.controllers.find((controller) => controller.side === side);
+    return !slot?.ready;
+  });
+  if (notReady.length > 0) {
+    return {
+      ok: false,
+      reason: 'controller-not-ready',
+      missing: notReady,
+    };
+  }
+
+  return null;
+}
+
+export function startMatchLifecycle(
+  match: PongMatchState,
+  requestSessionId: string,
+  expectedGeneration: number,
+  mode: PongMatchMode
+): PongMatchCommandResult {
+  const generationFailure = hasExpectedGeneration(match, expectedGeneration);
+  if (generationFailure) {
+    return generationFailure;
+  }
+  if (match.phase !== 'lobby') {
+    return {
+      ok: false,
+      reason: 'match-not-in-lobby',
+      phase: match.phase,
+    };
+  }
+  const seatedFailure = requireSeatedPlayer(match, requestSessionId);
+  if (seatedFailure) {
+    return seatedFailure;
+  }
+  const controllerFailure = validateMatchControllers(match, mode);
+  if (controllerFailure) {
+    return controllerFailure;
+  }
+
+  return {
+    ok: true,
+    match: {
+      ...match,
+      generation: match.generation + 1,
+      phase: 'running',
+      mode,
+      authoritySessionId: requestSessionId,
+      tick: 0,
+      snapshot: resetSnapshot(DEFAULT_PONG_SEED + match.generation + 1),
+    },
+  };
+}
+
+export function restartMatchLifecycle(
+  match: PongMatchState,
+  requestSessionId: string,
+  expectedGeneration: number,
+  mode: PongMatchMode = match.mode ?? TWO_HUMAN_PONG_MATCH_MODE
+): PongMatchCommandResult {
+  const generationFailure = hasExpectedGeneration(match, expectedGeneration);
+  if (generationFailure) {
+    return generationFailure;
+  }
+  const seatedFailure = requireSeatedPlayer(match, requestSessionId);
+  if (seatedFailure) {
+    return seatedFailure;
+  }
+  const controllerFailure = validateMatchControllers(match, mode);
+  if (controllerFailure) {
+    return controllerFailure;
+  }
+
+  return {
+    ok: true,
+    match: {
+      ...match,
+      generation: match.generation + 1,
+      phase: 'running',
+      mode,
+      authoritySessionId: requestSessionId,
+      tick: 0,
+      snapshot: resetSnapshot(DEFAULT_PONG_SEED + match.generation + 1),
+    },
+  };
+}
+
+export function pauseMatchLifecycle(
+  match: PongMatchState,
+  requestSessionId: string,
+  expectedGeneration: number
+): PongMatchCommandResult {
+  const generationFailure = hasExpectedGeneration(match, expectedGeneration);
+  if (generationFailure) {
+    return generationFailure;
+  }
+  const authorityFailure = requireAuthority(match, requestSessionId);
+  if (authorityFailure) {
+    return authorityFailure;
+  }
+  const runningFailure = requireRunningMatch(match);
+  if (runningFailure) {
+    return runningFailure;
+  }
+
+  return {
+    ok: true,
+    match: {
+      ...match,
+      generation: match.generation + 1,
+      phase: 'paused',
+      authoritySessionId: null,
+      tick: match.tick,
+      snapshot: match.snapshot,
+    },
+  };
+}
+
+export function returnMatchToRoom(
+  match: PongMatchState,
+  requestSessionId: string,
+  expectedGeneration: number
+): PongMatchCommandResult {
+  const generationFailure = hasExpectedGeneration(match, expectedGeneration);
+  if (generationFailure) {
+    return generationFailure;
+  }
+  const seatedFailure = requireSeatedPlayer(match, requestSessionId);
+  if (seatedFailure) {
+    return seatedFailure;
+  }
+
+  return {
+    ok: true,
+    match: {
+      ...match,
+      generation: match.generation + 1,
+      phase: 'lobby',
+      mode: null,
+      authoritySessionId: null,
+      tick: 0,
+      snapshot: resetSnapshot(DEFAULT_PONG_SEED + match.generation + 1),
+    },
+  };
+}
+
+function applyScoreSignal(score: PongScoreState, point: PongScoredSignal): PongScoreState {
+  const nextPoint: PongScorePoint = {
+    ...point,
+    left: score.left + (point.scorer === 'left' ? 1 : 0),
+    right: score.right + (point.scorer === 'right' ? 1 : 0),
+  };
+  return {
+    left: nextPoint.left,
+    right: nextPoint.right,
+    sequence: [...score.sequence, nextPoint],
   };
 }
 
@@ -540,6 +1274,51 @@ export function setPaddle(paddle: PongPaddleState, y: number): PongPaddleState {
   return {
     ...paddle,
     y: clampPaddleY(y),
+  };
+}
+
+export function applyMatchControllerInput(
+  match: PongMatchState,
+  requestSessionId: string,
+  expectedGeneration: number,
+  input: Extract<PongControllerInputResult, { readonly ok: true }>
+): PongMatchCommandResult {
+  const generationFailure = hasExpectedGeneration(match, expectedGeneration);
+  if (generationFailure) {
+    return generationFailure;
+  }
+  const runningFailure = requireRunningMatch(match);
+  if (runningFailure) {
+    return runningFailure;
+  }
+  const seatedFailure = requireSeatedPlayer(match, requestSessionId);
+  if (seatedFailure) {
+    return seatedFailure;
+  }
+  const owner = match.sessions.find((session) => session.sessionId === requestSessionId);
+  if (!owner?.side || owner.side !== input.side || input.sessionId !== requestSessionId) {
+    return {
+      ok: false,
+      reason: 'not-seated-player',
+      requestSessionId,
+    };
+  }
+
+  const key = input.side;
+  const paddle = match.snapshot.paddles[key];
+  const nextPaddle = movePaddle(paddle, input.direction, input.amount);
+  return {
+    ok: true,
+    match: {
+      ...match,
+      snapshot: {
+        ...match.snapshot,
+        paddles: {
+          ...match.snapshot.paddles,
+          [key]: nextPaddle,
+        },
+      },
+    },
   };
 }
 
@@ -629,5 +1408,55 @@ export function advanceBall(context: PongBallContext): AdvanceBallResult {
       { type: 'SCORED', point, ball: resetBall },
       { type: 'BALL_MOVED', ball: resetBall },
     ],
+  };
+}
+
+export function tickMatch(
+  match: PongMatchState,
+  requestSessionId: string,
+  expectedGeneration: number,
+  count = 1
+): PongMatchCommandResult {
+  const generationFailure = hasExpectedGeneration(match, expectedGeneration);
+  if (generationFailure) {
+    return generationFailure;
+  }
+  const runningFailure = requireRunningMatch(match);
+  if (runningFailure) {
+    return runningFailure;
+  }
+  const authorityFailure = requireAuthority(match, requestSessionId);
+  if (authorityFailure) {
+    return authorityFailure;
+  }
+
+  let nextMatch = match;
+  const iterations = Math.max(1, Math.min(10, Math.trunc(count)));
+  for (let index = 0; index < iterations; index += 1) {
+    const result = advanceBall({
+      ball: nextMatch.snapshot.ball,
+      leftPaddleY: nextMatch.snapshot.paddles.left.y,
+      rightPaddleY: nextMatch.snapshot.paddles.right.y,
+      tick: nextMatch.tick,
+    });
+    const scoredEvent = result.events.find(
+      (event): event is Extract<BallEvent, { readonly type: 'SCORED' }> => event.type === 'SCORED'
+    );
+    nextMatch = {
+      ...nextMatch,
+      tick: result.context.tick,
+      snapshot: {
+        ...nextMatch.snapshot,
+        ball: result.context.ball,
+        score: scoredEvent
+          ? applyScoreSignal(nextMatch.snapshot.score, scoredEvent.point)
+          : nextMatch.snapshot.score,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    match: nextMatch,
   };
 }

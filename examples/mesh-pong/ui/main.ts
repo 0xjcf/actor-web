@@ -1,48 +1,54 @@
 import type { ActorMessage, ActorRef } from '@actor-web/runtime';
-import {
-  createBrowserMlxLlmProvider,
-  createBrowserMlxTools,
-  resolveBrowserMlxProviderConfig,
-} from '../mlx-provider';
 import { startMeshPongBroadcast } from '../modes/broadcast';
 import { startMeshPongLocal } from '../modes/local';
 import { startMeshPongMesh } from '../modes/mesh';
+import {
+  describeMeshPongWebSocketStatus,
+  type MeshPongBrowserWebSocketStartResult,
+  type StartedMeshPongBrowserWebSocketRuntime,
+  startMeshPongBrowserWebSocket,
+} from '../modes/websocket';
 import {
   type BrowserPongTransportMode,
   MESH_PONG_SHARED_PARITY_PROOF,
   parityProofForMode,
 } from '../parity-proof';
 import type {
-  BallCommand,
   ControllerCommand,
-  PaddleCommand,
   PlayerSessionCommand,
-  PongBallContext,
+  PlayerSessionRestoreResult,
   PongControllerActorState,
+  PongControllerAim,
   PongControllerInputResult,
+  PongControllerMode,
+  PongControllerModeCompat,
   PongControllerResult,
-  PongControllerType,
-  PongLobbyCommand,
-  PongLobbyState,
+  PongMatchCommand,
+  PongMatchCommandResult,
   PongMatchMode,
-  PongMatchStartResult,
-  PongPaddleState,
+  PongMatchPhase,
+  PongMatchState,
+  PongPlannerStrategy,
   PongPlayerSessionState,
-  PongScoreState,
+  PongShellMatchMode,
   PongSide,
   PongSnapshot,
-  PongTransportMode,
-  ScoreCommand,
 } from '../pong-contract';
 import {
-  createSyntheticMlxControllerInput,
-  DEFAULT_PONG_SEED,
+  createInitialPlayerSession,
+  createMergedControllerAim,
+  createReflexControllerAim,
+  createSyntheticControllerSession,
+  createSyntheticPlannerControllerInput,
+  normalizePongControllerType,
   PONG_FIELD,
-  shouldLaunchMlxControllerForSide,
-  syncLobbySessionsFromStorage,
+  resolveControllerIntentForAim,
+  shouldLaunchPlannerControllerForSide,
   TWO_HUMAN_PONG_MATCH_MODE,
+  toLegacyPongControllerType,
+  usesPlannerController,
+  usesSyntheticControllerSlot,
 } from '../pong-contract';
-import { runPongControllerWithLlmProvider } from '../pong-controller';
 import { pong } from '../pong-topology';
 import { drawPong } from './pong-canvas';
 
@@ -50,21 +56,30 @@ type BrowserMode = BrowserPongTransportMode;
 type BrowserRuntime =
   | Awaited<ReturnType<typeof startMeshPongLocal>>
   | Awaited<ReturnType<typeof startMeshPongBroadcast>>
-  | Awaited<ReturnType<typeof startMeshPongMesh>>;
+  | Awaited<ReturnType<typeof startMeshPongMesh>>
+  | StartedMeshPongBrowserWebSocketRuntime;
 
 interface RuntimeRefs {
-  readonly ball: ActorRef<PongBallContext, BallCommand>;
   readonly controllerLeft: ActorRef<PongControllerActorState, ControllerCommand>;
   readonly controllerRight: ActorRef<PongControllerActorState, ControllerCommand>;
-  readonly score: ActorRef<PongScoreState, ScoreCommand>;
-  readonly lobby: ActorRef<PongLobbyState, PongLobbyCommand>;
+  readonly matchCoordinator: ActorRef<PongMatchState, PongMatchCommand>;
   readonly playerSession: ActorRef<PongPlayerSessionState, PlayerSessionCommand>;
-  readonly paddleA: ActorRef<PongPaddleState, PaddleCommand>;
-  readonly paddleB: ActorRef<PongPaddleState, PaddleCommand>;
 }
 
 export interface MeshPongTelemetryControllerState {
   readonly inFlight: boolean;
+  readonly mode: PongControllerMode | 'idle';
+  readonly appliedSource: 'idle' | 'human' | 'reflex' | 'planner' | 'hybrid';
+  readonly strategyStatus:
+    | 'idle'
+    | 'live'
+    | 'pending'
+    | 'fresh'
+    | 'stale'
+    | 'fallback'
+    | 'neutral'
+    | 'error';
+  readonly detail: string | null;
   readonly startedAtMs: number | null;
   readonly rttMs: number | null;
   readonly outcome: 'idle' | 'pending' | 'ready' | 'applied' | 'error';
@@ -138,18 +153,36 @@ export type MeshPongTelemetryEvent =
   | {
       readonly type: 'controller-request-started';
       readonly side: PongSide;
+      readonly mode: PongControllerMode;
       readonly nowMs: number;
     }
   | {
       readonly type: 'controller-request-finished';
       readonly side: PongSide;
+      readonly mode: PongControllerMode;
       readonly nowMs: number;
       readonly outcome: 'ready' | 'error';
+      readonly strategyStatus?: 'fresh' | 'error';
+      readonly detail?: string;
       readonly error?: string;
     }
   | {
       readonly type: 'controller-intent-applied';
       readonly side: PongSide;
+      readonly mode: PongControllerMode;
+      readonly source: 'human' | 'reflex' | 'planner' | 'hybrid';
+      readonly strategyStatus: 'live' | 'fresh' | 'stale' | 'fallback' | 'neutral';
+      readonly detail: string;
+      readonly nowMs: number;
+      readonly sentAtMs?: number;
+    }
+  | {
+      readonly type: 'controller-state-observed';
+      readonly side: PongSide;
+      readonly mode: PongControllerMode;
+      readonly source: 'human' | 'reflex' | 'planner' | 'hybrid';
+      readonly strategyStatus: 'live' | 'fresh' | 'stale' | 'fallback' | 'neutral';
+      readonly detail: string;
       readonly nowMs: number;
       readonly sentAtMs?: number;
     }
@@ -183,16 +216,20 @@ export interface MeshPongClockSource {
   readonly now: () => number;
 }
 
+export const MESH_PONG_STARTUP_TIMEOUT_MS = 5_000;
+
 export interface MeshPongControllerSchedulePolicy {
   readonly simulationIntervalMs: number;
   readonly controllerAskTimeoutMs: number;
-  readonly staleIntentTurnLimit: number;
+  readonly plannerStrategyFreshTurnLimit: number;
+  readonly plannerStrategyStaleTurnLimit: number;
 }
 
 export const DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY: MeshPongControllerSchedulePolicy = {
   simulationIntervalMs: 90,
   controllerAskTimeoutMs: 30_000,
-  staleIntentTurnLimit: 3,
+  plannerStrategyFreshTurnLimit: 2,
+  plannerStrategyStaleTurnLimit: 1,
 };
 
 function defaultClockSource(): MeshPongClockSource | undefined {
@@ -213,9 +250,57 @@ export function createMeshPongClock(source = defaultClockSource()): MeshPongCloc
   };
 }
 
+export async function withMeshPongStartupTimeout<T>(
+  operation: Promise<T>,
+  label: string,
+  timeoutMs = MESH_PONG_STARTUP_TIMEOUT_MS,
+  disposeLateResult?: (value: T) => Promise<void> | void
+): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  let timedOut = false;
+  let disposed = false;
+  const observedOperation = operation.then(
+    async (value) => {
+      if (timedOut && disposeLateResult && !disposed) {
+        disposed = true;
+        try {
+          await disposeLateResult(value);
+        } catch {
+          // Late cleanup is best-effort after the caller already received the timeout fact.
+        }
+      }
+      return value;
+    },
+    (error: unknown) => {
+      if (timedOut) {
+        return undefined as T;
+      }
+      throw error;
+    }
+  );
+  const timeout = new Promise<T>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      reject(new Error(`Timed out starting Mesh Pong ${label}.`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([observedOperation, timeout]);
+  } finally {
+    if (timeoutHandle !== null) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
+
 function createTelemetryControllerState(): MeshPongTelemetryControllerState {
   return {
     inFlight: false,
+    mode: 'idle',
+    appliedSource: 'idle',
+    strategyStatus: 'idle',
+    detail: null,
     startedAtMs: null,
     rttMs: null,
     outcome: 'idle',
@@ -321,8 +406,8 @@ function eventTimestamp(event: MeshPongTelemetryEvent): number {
     case 'simulation-applied':
     case 'controller-request-started':
     case 'controller-request-finished':
-      return event.nowMs;
     case 'controller-intent-applied':
+    case 'controller-state-observed':
       return event.nowMs;
     case 'replay-sent':
       return event.sentAtMs;
@@ -477,6 +562,7 @@ export function reduceMeshPongBenchmarkSummary(
       });
     }
     case 'controller-intent-applied':
+    case 'controller-state-observed':
     case 'replay-sent':
     case 'replay-received': {
       return state;
@@ -548,6 +634,8 @@ export function reduceMeshPongTelemetry(
           [event.side]: {
             ...state.controllers[event.side],
             inFlight: true,
+            mode: event.mode,
+            strategyStatus: 'pending',
             startedAtMs: event.nowMs,
             outcome: 'pending',
             error: null,
@@ -564,11 +652,17 @@ export function reduceMeshPongTelemetry(
           [event.side]: {
             ...controller,
             inFlight: false,
+            mode: event.mode,
             rttMs:
               controller.startedAtMs === null
                 ? null
                 : Math.max(0, event.nowMs - controller.startedAtMs),
             outcome: event.outcome,
+            strategyStatus:
+              event.outcome === 'error'
+                ? 'error'
+                : (event.strategyStatus ?? controller.strategyStatus),
+            detail: event.detail ?? controller.detail,
             error: event.error ?? null,
           },
         },
@@ -581,10 +675,33 @@ export function reduceMeshPongTelemetry(
           ...state.controllers,
           [event.side]: {
             ...state.controllers[event.side],
+            mode: event.mode,
+            appliedSource: event.source,
+            strategyStatus: event.strategyStatus,
+            detail: event.detail,
             lastAppliedIntentAtMs: event.nowMs,
             lastAppliedIntentAgeMs:
               event.sentAtMs === undefined ? 0 : Math.max(0, event.nowMs - event.sentAtMs),
             outcome: 'applied',
+            error: null,
+          },
+        },
+      };
+    }
+    case 'controller-state-observed': {
+      return {
+        ...state,
+        controllers: {
+          ...state.controllers,
+          [event.side]: {
+            ...state.controllers[event.side],
+            mode: event.mode,
+            appliedSource: event.source,
+            strategyStatus: event.strategyStatus,
+            detail: event.detail,
+            lastAppliedIntentAgeMs:
+              event.sentAtMs === undefined ? null : Math.max(0, event.nowMs - event.sentAtMs),
+            outcome: 'ready',
             error: null,
           },
         },
@@ -619,10 +736,13 @@ function formatMs(value: number | null): string {
   return value === null ? '--' : `${Math.round(value)}ms`;
 }
 
+function summarizeControllerDetail(detail: string | null): string {
+  return detail ? ` aim ${detail}` : ' aim --';
+}
+
 function formatControllerTelemetry(state: MeshPongTelemetryControllerState): string {
-  const status = state.inFlight ? 'in-flight' : state.outcome;
   const error = state.error ? ` err ${state.error}` : '';
-  return `state ${status} rtt ${formatMs(state.rttMs)} age ${formatMs(state.lastAppliedIntentAgeMs)}${error}`;
+  return `m ${state.mode} src ${state.appliedSource} st ${state.strategyStatus}${summarizeControllerDetail(state.detail)} age ${formatMs(state.lastAppliedIntentAgeMs)} rtt ${formatMs(state.rttMs)}${error}`;
 }
 
 function formatRate(value: number): string {
@@ -654,55 +774,61 @@ type TelemetryValueElements = Record<keyof MeshPongTelemetryDisplay, HTMLElement
   readonly benchmark: HTMLElement;
 };
 
-type LobbyReplayMetadata = {
+export type MeshPongControllerReplayTelemetry = {
+  readonly mode: PongControllerMode;
+  readonly source: 'human' | 'reflex' | 'planner' | 'hybrid';
+  readonly strategyStatus: 'live' | 'fresh' | 'stale' | 'fallback' | 'neutral';
+  readonly detail: string;
+};
+
+export type LobbyReplayMetadata = {
   readonly originSessionId: string;
   readonly sentAtMs: number;
 };
 
-type LobbyChannelMessage =
-  | { readonly type: 'sessions-updated' }
-  | {
-      readonly type: 'controller-input';
-      readonly input: Extract<PongControllerInputResult, { readonly ok: true }>;
-      readonly replay?: LobbyReplayMetadata;
-    }
-  | {
-      readonly type: 'match-started';
-      readonly mode: PongMatchMode;
-      readonly ownerSessionId: string;
-    };
+export type MeshPongControllerInputReplayMessage = {
+  readonly type: 'controller-input';
+  readonly input: Extract<PongControllerInputResult, { readonly ok: true }>;
+  readonly replay?: LobbyReplayMetadata;
+  readonly controllerTelemetry?: MeshPongControllerReplayTelemetry;
+};
 
-type MlxControllerRequest = {
+export type MeshPongControllerInputReplayEnvelope = MeshPongControllerInputReplayMessage & {
+  readonly replay: LobbyReplayMetadata;
+};
+
+type PlannerControllerRequest = {
   readonly requestId: number;
   readonly runtime: BrowserRuntime;
   readonly refs: RuntimeRefs;
   readonly side: PongSide;
+  readonly mode: PongControllerMode;
   readonly controller: ActorRef<PongControllerActorState, ControllerCommand>;
   readonly snapshot: PongSnapshot;
   readonly matchGeneration: number;
   readonly startedAtMs: number;
 };
 
-type ResolvedMlxIntent = {
+type PlannerDecisionState = {
   readonly requestId: number;
   readonly matchGeneration: number;
-  readonly input: Extract<PongControllerInputResult, { readonly ok: true }>;
+  readonly strategy: PongPlannerStrategy;
   readonly sentAtMs: number;
 };
 
-type MlxControllerLaneState = {
-  inFlight: MlxControllerRequest | null;
-  readyIntent: ResolvedMlxIntent | null;
-  lastIntent: Extract<PongControllerInputResult, { readonly ok: true }> | null;
-  lastIntentSentAtMs: number | null;
+type PlannerControllerLaneState = {
+  inFlight: PlannerControllerRequest | null;
+  readyDecision: PlannerDecisionState | null;
+  lastDecision: PlannerDecisionState | null;
+  freshTurnsRemaining: number;
   staleTurnsRemaining: number;
 };
 
 export interface MeshPongTurnMatchState {
-  readonly matchStarted: boolean;
+  readonly phase: PongMatchPhase;
   readonly matchGeneration: number;
   readonly matchOwnerSessionId: string | null;
-  readonly mode: PongMatchMode | null;
+  readonly mode: PongShellMatchMode | null;
 }
 
 export interface MeshPongTurnStepperDeps {
@@ -718,15 +844,12 @@ export interface MeshPongTurnStepperDeps {
   readonly setStatus: (status: string) => void;
   readonly updateTelemetry: (event: MeshPongTelemetryEvent) => void;
   readonly postControllerInput: (
-    input: Extract<PongControllerInputResult, { readonly ok: true }>
+    input: Extract<PongControllerInputResult, { readonly ok: true }>,
+    controllerTelemetry?: MeshPongControllerReplayTelemetry
   ) => void;
-  readonly runMlxController?: (
-    side: PongSide,
-    snapshot: PongSnapshot
-  ) => Promise<PongControllerResult>;
   readonly setControllerDiagnostic: (side: PongSide, reason: string) => void;
   readonly clearControllerDiagnostic: (side: PongSide) => void;
-  readonly applyHumanInput?: (mode: PongMatchMode | null) => Promise<void>;
+  readonly applyHumanInput?: (mode: PongShellMatchMode | null) => Promise<boolean>;
 }
 
 export interface MeshPongTurnStepper {
@@ -735,8 +858,6 @@ export interface MeshPongTurnStepper {
 }
 
 const SESSION_ID_STORAGE_KEY = 'actor-web.mesh-pong.session-id';
-const LOBBY_STORAGE_KEY = 'actor-web.mesh-pong.sessions';
-const LOBBY_CHANNEL_NAME = 'actor-web.mesh-pong.lobby';
 
 let canvasElement: HTMLCanvasElement;
 let modeSelectElement: HTMLSelectElement;
@@ -771,27 +892,17 @@ let selectedMode: BrowserMode = 'local';
 let loopHandle: number | null = null;
 let switchGeneration = 0;
 let playerSessionState: PongPlayerSessionState | null = null;
-let matchStarted = false;
-let matchOwnerSessionId: string | null = null;
-let matchGeneration = 0;
-let matchMode: PongMatchMode | null = null;
+let matchState: PongMatchState | null = null;
 const keys = new Set<string>();
 let lifecycleStatus = 'idle';
 const controllerDiagnostics: Partial<Record<PongSide, string>> = {};
 let telemetryState = createMeshPongTelemetryState(0);
 let benchmarkSummaryState = createMeshPongBenchmarkSummaryState(0);
 let turnStepper: MeshPongTurnStepper | null = null;
-
-const lobbyChannel =
-  typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(LOBBY_CHANNEL_NAME);
 const meshPongClock = createMeshPongClock();
 
 function nowMs(): number {
   return meshPongClock.nowMs();
-}
-
-function nowEpochMs(): number {
-  return meshPongClock.nowEpochMs();
 }
 
 function resetTelemetry(): void {
@@ -874,8 +985,7 @@ function stopTurnStepper(): void {
 }
 
 function clearMatchOwner(): void {
-  matchOwnerSessionId = null;
-  matchMode = null;
+  matchState = null;
 }
 
 function renderStatus(): void {
@@ -885,9 +995,9 @@ function renderStatus(): void {
       return reason ? [`${side} ${reason}`] : [];
     })
     .join('; ');
-  statusValueElement.textContent = diagnostics
-    ? `${lifecycleStatus}; ${diagnostics}`
-    : lifecycleStatus;
+  const status = diagnostics ? `${lifecycleStatus}; ${diagnostics}` : lifecycleStatus;
+  statusValueElement.textContent = status;
+  statusValueElement.title = status;
 }
 
 function createSessionId(): string {
@@ -917,15 +1027,27 @@ function getBrowserSessionId(): string {
 
 const browserSessionId = getBrowserSessionId();
 
-function isController(value: string): value is PongControllerType {
-  return value === 'human' || value === 'mlx';
+function isController(value: string): value is PongControllerModeCompat {
+  return (
+    value === 'human' ||
+    value === 'mlx' ||
+    value === 'reflex' ||
+    value === 'planner' ||
+    value === 'hybrid'
+  );
 }
 
-function selectedController(select: HTMLSelectElement): PongControllerType {
-  return isController(select.value) ? select.value : 'human';
+export function resolveBrowserModeSelection(value: string, fallback: BrowserMode): BrowserMode {
+  return value === 'local' || value === 'broadcast' || value === 'mesh' || value === 'websocket'
+    ? value
+    : fallback;
 }
 
-function selectedMatchMode(): PongMatchMode {
+function selectedController(select: HTMLSelectElement): PongControllerMode {
+  return normalizePongControllerType(isController(select.value) ? select.value : 'human');
+}
+
+function selectedMatchMode(): PongShellMatchMode {
   return {
     playerCount: playerCountSelectElement.value === '1' ? 1 : 2,
     controllers: {
@@ -935,63 +1057,60 @@ function selectedMatchMode(): PongMatchMode {
   };
 }
 
-function isPongPlayerSessionState(value: unknown): value is PongPlayerSessionState {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-  const candidate = value as Partial<PongPlayerSessionState>;
-  return (
-    typeof candidate.sessionId === 'string' &&
-    (candidate.controller === 'human' || candidate.controller === 'mlx') &&
-    (candidate.side === null || candidate.side === 'left' || candidate.side === 'right') &&
-    typeof candidate.ready === 'boolean'
-  );
-}
-
-function readStoredSessions(): PongPlayerSessionState[] {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(LOBBY_STORAGE_KEY) ?? '[]') as unknown;
-    return Array.isArray(parsed) ? parsed.filter(isPongPlayerSessionState) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeStoredSession(session: PongPlayerSessionState): void {
-  if (session.controller !== 'human') {
-    return;
-  }
-  const sessions = [
-    ...readStoredSessions().filter((candidate) => candidate.sessionId !== session.sessionId),
-    session,
-  ];
-  try {
-    localStorage.setItem(LOBBY_STORAGE_KEY, JSON.stringify(sessions));
-  } catch {
-    // Storage is an optimization for separate tabs; actor state remains authoritative locally.
-  }
-  lobbyChannel?.postMessage({ type: 'sessions-updated' } satisfies LobbyChannelMessage);
-}
-
-function storedSessionForCurrentTab(): PongPlayerSessionState | undefined {
-  return readStoredSessions().find((session) => session.sessionId === browserSessionId);
-}
-
-function mlxSessionForSide(side: 'left' | 'right'): PongPlayerSessionState {
+function toLegacyMatchMode(mode: PongShellMatchMode): PongMatchMode {
   return {
-    sessionId: `mlx-${side}`,
-    controller: 'mlx',
-    side,
-    ready: true,
+    playerCount: mode.playerCount,
+    controllers: {
+      left: toLegacyPongControllerType(mode.controllers.left),
+      right: toLegacyPongControllerType(mode.controllers.right),
+    },
   };
 }
 
-function isCluster(
+function installControllerVocabulary(select: HTMLSelectElement, side: PongSide): void {
+  const legacyValue = normalizePongControllerType(select.value);
+  const labels: Array<{ value: PongControllerMode; label: string }> = [
+    { value: 'human', label: `${side === 'left' ? 'Left' : 'Right'} human` },
+    { value: 'reflex', label: `${side === 'left' ? 'Left' : 'Right'} reflex` },
+    { value: 'planner', label: `${side === 'left' ? 'Left' : 'Right'} planner` },
+    { value: 'hybrid', label: `${side === 'left' ? 'Left' : 'Right'} hybrid` },
+  ];
+  select.replaceChildren(
+    ...labels.map(({ value, label }) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      return option;
+    })
+  );
+  select.value = legacyValue;
+}
+
+export type MeshPongBrowserRuntimeRefPath = 'local' | 'cluster' | 'websocket';
+
+export function resolveBrowserRuntimeRefPath(candidate: object): MeshPongBrowserRuntimeRefPath {
+  const mode = 'mode' in candidate ? candidate.mode : undefined;
+  if (mode === 'broadcast' || mode === 'mesh') {
+    return 'cluster';
+  }
+  if (mode === 'websocket') {
+    return 'websocket';
+  }
+  return 'local';
+}
+
+function isBrowserClusterRuntime(
   candidate: BrowserRuntime
 ): candidate is
   | Awaited<ReturnType<typeof startMeshPongBroadcast>>
   | Awaited<ReturnType<typeof startMeshPongMesh>> {
-  return 'server' in candidate;
+  return resolveBrowserRuntimeRefPath(candidate) === 'cluster';
+}
+
+function isBrowserWebSocketRuntime(
+  candidate: BrowserRuntime
+): candidate is StartedMeshPongBrowserWebSocketRuntime {
+  return resolveBrowserRuntimeRefPath(candidate) === 'websocket';
 }
 
 function setStatus(value: string): void {
@@ -1024,13 +1143,168 @@ function renderPlayerSession(session: PongPlayerSessionState | null): void {
   readyButtonElement.textContent = session?.ready ? 'Ready' : 'Mark ready';
 }
 
-function renderLobby(lobby: PongLobbyState): void {
-  const readyControllers = lobby.controllers.filter((controller) => controller.ready).length;
+function renderLobby(match: PongMatchState): void {
+  const readyControllers = match.controllers.filter((controller) => controller.ready).length;
   lobbyValueElement.textContent = `${readyControllers} / 2`;
 }
 
-async function currentLobbyState(nextRefs: RuntimeRefs): Promise<PongLobbyState> {
-  return nextRefs.lobby.ask<PongLobbyState>({ type: 'GET_LOBBY' });
+function applyProjectedMatch(
+  nextMatch: PongMatchState,
+  options: { readonly renderSnapshot?: boolean; readonly renderStatus?: boolean } = {}
+): void {
+  matchState = nextMatch;
+  renderLobby(nextMatch);
+  if (options.renderSnapshot !== false) {
+    renderSnapshot(nextMatch.snapshot);
+  }
+  if (options.renderStatus !== false) {
+    setStatus(statusForMatchPhase(nextMatch.phase));
+  }
+}
+
+async function currentMatchState(nextRefs: RuntimeRefs): Promise<PongMatchState> {
+  return nextRefs.matchCoordinator.ask<PongMatchState>({ type: 'GET_MATCH' });
+}
+
+export type MeshPongPlayerSessionHydrationResult =
+  | {
+      readonly ok: true;
+      readonly session: PongPlayerSessionState;
+      readonly match: PongMatchState;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'cancelled';
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'restore-failed';
+      readonly result: Extract<PlayerSessionRestoreResult, { readonly ok: false }>;
+      readonly session: PongPlayerSessionState;
+      readonly match: PongMatchState;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'sync-failed';
+      readonly result: Exclude<PongMatchCommandResult, { readonly ok: true }>;
+      readonly session: PongPlayerSessionState;
+      readonly match: PongMatchState;
+    };
+
+async function syncMeshPongPlayerSessionState(options: {
+  readonly session: PongPlayerSessionState;
+  readonly matchCoordinator: ActorRef<PongMatchState, PongMatchCommand>;
+  readonly flush: () => Promise<void>;
+  readonly shouldApply: () => boolean;
+}): Promise<MeshPongPlayerSessionHydrationResult> {
+  if (!options.shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+  const syncResult = await options.matchCoordinator.ask<PongMatchCommandResult>({
+    type: 'SYNC_SESSION',
+    requestSessionId: options.session.sessionId,
+    session: options.session,
+  });
+  if (!options.shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+  await options.flush();
+  if (!options.shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+  const match = await options.matchCoordinator.ask<PongMatchState>({ type: 'GET_MATCH' });
+  if (!options.shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+  return syncResult.ok
+    ? { ok: true, session: options.session, match }
+    : {
+        ok: false,
+        reason: 'sync-failed',
+        result: syncResult,
+        session: options.session,
+        match,
+      };
+}
+
+export async function restoreAndSyncMeshPongPlayerSession(options: {
+  readonly playerSession: ActorRef<PongPlayerSessionState, PlayerSessionCommand>;
+  readonly matchCoordinator: ActorRef<PongMatchState, PongMatchCommand>;
+  readonly flush: () => Promise<void>;
+  readonly shouldApply?: () => boolean;
+}): Promise<MeshPongPlayerSessionHydrationResult> {
+  const shouldApply = options.shouldApply ?? (() => true);
+  if (!shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+
+  const localSession = await options.playerSession.ask<PongPlayerSessionState>({
+    type: 'GET_SESSION',
+  });
+  if (!shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+
+  const authoritativeMatch = await options.matchCoordinator.ask<PongMatchState>({
+    type: 'GET_MATCH',
+  });
+  if (!shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+
+  const authoritativeSession = authoritativeMatch.sessions.find(
+    (candidate) => candidate.sessionId === localSession.sessionId
+  );
+  let session = localSession;
+  if (authoritativeSession) {
+    const restoreResult = await options.playerSession.ask<PlayerSessionRestoreResult>({
+      type: 'RESTORE_SESSION',
+      session: authoritativeSession,
+    });
+    if (!shouldApply()) {
+      return { ok: false, reason: 'cancelled' };
+    }
+    if (!restoreResult.ok) {
+      return {
+        ok: false,
+        reason: 'restore-failed',
+        result: restoreResult,
+        session,
+        match: authoritativeMatch,
+      };
+    }
+    session = restoreResult.session;
+  }
+
+  return syncMeshPongPlayerSessionState({
+    session,
+    matchCoordinator: options.matchCoordinator,
+    flush: options.flush,
+    shouldApply,
+  });
+}
+
+async function syncLocalMeshPongPlayerSession(options: {
+  readonly playerSession: ActorRef<PongPlayerSessionState, PlayerSessionCommand>;
+  readonly matchCoordinator: ActorRef<PongMatchState, PongMatchCommand>;
+  readonly flush: () => Promise<void>;
+  readonly shouldApply: () => boolean;
+}): Promise<MeshPongPlayerSessionHydrationResult> {
+  if (!options.shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+  const session = await options.playerSession.ask<PongPlayerSessionState>({
+    type: 'GET_SESSION',
+  });
+  if (!options.shouldApply()) {
+    return { ok: false, reason: 'cancelled' };
+  }
+  return syncMeshPongPlayerSessionState({
+    session,
+    matchCoordinator: options.matchCoordinator,
+    flush: options.flush,
+    shouldApply: options.shouldApply,
+  });
 }
 
 function isCurrentRuntimeContext(
@@ -1040,66 +1314,38 @@ function isCurrentRuntimeContext(
   return runtime === candidateRuntime && refs === candidateRefs;
 }
 
-async function syncStoredSessionsToLobby(
+async function syncMatchForMode(
   nextRuntime: BrowserRuntime,
   nextRefs: RuntimeRefs,
-  options: { readonly shouldApply?: () => boolean } = {}
-): Promise<void> {
-  const shouldApply = options.shouldApply ?? (() => true);
-  const currentLobby = await currentLobbyState(nextRefs);
-  if (!shouldApply()) {
-    return;
-  }
-  const nextLobby = syncLobbySessionsFromStorage(currentLobby, readStoredSessions());
-  const nextSessions = new Map(nextLobby.sessions.map((session) => [session.sessionId, session]));
-  for (const session of currentLobby.sessions) {
-    if (!shouldApply()) {
-      return;
-    }
-    if (!nextSessions.has(session.sessionId)) {
-      await nextRefs.lobby.send({ type: 'REMOVE_SESSION', sessionId: session.sessionId });
-    }
-  }
-  for (const session of nextLobby.sessions) {
-    if (!shouldApply()) {
-      return;
-    }
-    await nextRefs.lobby.send({ type: 'SYNC_SESSION', session });
-  }
-  await flushRuntime(nextRuntime);
-  if (!shouldApply()) {
-    return;
-  }
-  const lobbyState = await currentLobbyState(nextRefs);
-  if (!shouldApply()) {
-    return;
-  }
-  renderLobby(lobbyState);
-}
-
-async function syncLobbyForMatchMode(
-  nextRuntime: BrowserRuntime,
-  nextRefs: RuntimeRefs,
-  mode: PongMatchMode,
+  mode: PongShellMatchMode,
   shouldContinue: () => boolean = () => true
 ): Promise<boolean> {
-  await nextRefs.lobby.send({ type: 'RESET_LOBBY' });
-  if (!shouldContinue()) {
-    return false;
-  }
-  for (const session of readStoredSessions()) {
-    await nextRefs.lobby.send({ type: 'SYNC_SESSION', session });
+  const syncSession = async (session: PongPlayerSessionState): Promise<boolean> => {
+    const result = await nextRefs.matchCoordinator.ask<PongMatchCommandResult>({
+      type: 'SYNC_SESSION',
+      requestSessionId: session.sessionId,
+      session,
+    });
     if (!shouldContinue()) {
+      return false;
+    }
+    if (!result.ok) {
+      setStatus(formatMatchCommandFailure(result));
+      return false;
+    }
+    matchState = result.match;
+    return true;
+  };
+
+  if (playerSessionState) {
+    if (!(await syncSession(playerSessionState))) {
       return false;
     }
   }
   for (const side of ['left', 'right'] as const) {
-    if (mode.controllers[side] === 'mlx') {
-      await nextRefs.lobby.send({
-        type: 'SYNC_SESSION',
-        session: mlxSessionForSide(side),
-      });
-      if (!shouldContinue()) {
+    if (usesSyntheticControllerSlot(mode.controllers[side])) {
+      const session = createSyntheticControllerSession(side);
+      if (!(await syncSession(session))) {
         return false;
       }
     }
@@ -1111,50 +1357,77 @@ async function syncLobbyForMatchMode(
 async function syncCurrentSession(
   nextRuntime: BrowserRuntime,
   nextRefs: RuntimeRefs,
-  options: { readonly shouldApply?: () => boolean } = {}
-): Promise<void> {
+  options: {
+    readonly shouldApply?: () => boolean;
+    readonly restoreAuthoritative?: boolean;
+  } = {}
+): Promise<{ readonly ok: true } | { readonly ok: false; readonly status?: string }> {
   const shouldApply = options.shouldApply ?? (() => true);
-  const session = await nextRefs.playerSession.ask<PongPlayerSessionState>({ type: 'GET_SESSION' });
+  const hydration =
+    options.restoreAuthoritative === false
+      ? await syncLocalMeshPongPlayerSession({
+          playerSession: nextRefs.playerSession,
+          matchCoordinator: nextRefs.matchCoordinator,
+          flush: () => flushRuntime(nextRuntime),
+          shouldApply,
+        })
+      : await restoreAndSyncMeshPongPlayerSession({
+          playerSession: nextRefs.playerSession,
+          matchCoordinator: nextRefs.matchCoordinator,
+          flush: () => flushRuntime(nextRuntime),
+          shouldApply,
+        });
   if (!shouldApply()) {
-    return;
+    return { ok: false };
   }
-  playerSessionState = session;
-  writeStoredSession(session);
-  await syncStoredSessionsToLobby(nextRuntime, nextRefs, { shouldApply });
+
+  if (!hydration.ok && hydration.reason === 'cancelled') {
+    return { ok: false };
+  }
+  matchState = hydration.match;
   if (!shouldApply()) {
-    return;
+    return { ok: false };
   }
-  renderPlayerSession(session);
+  renderLobby(hydration.match);
+  if (!shouldApply()) {
+    return { ok: false };
+  }
+  if (!hydration.ok) {
+    const projectedSession =
+      hydration.match.sessions.find(
+        (candidate) => candidate.sessionId === hydration.session.sessionId
+      ) ?? createInitialPlayerSession(hydration.session.sessionId);
+    playerSessionState = projectedSession;
+    if (!shouldApply()) {
+      return { ok: false };
+    }
+    renderPlayerSession(projectedSession);
+    if (!shouldApply()) {
+      return { ok: false };
+    }
+    return {
+      ok: false,
+      status:
+        hydration.reason === 'restore-failed'
+          ? hydration.result.reason
+          : formatMatchCommandFailure(hydration.result),
+    };
+  }
+  playerSessionState = hydration.session;
+  if (!shouldApply()) {
+    return { ok: false };
+  }
+  renderPlayerSession(hydration.session);
+  return { ok: true };
 }
 
 async function hydrateCurrentSession(
   nextRuntime: BrowserRuntime,
   nextRefs: RuntimeRefs,
   options: { readonly shouldApply?: () => boolean } = {}
-): Promise<void> {
+): Promise<{ readonly ok: true } | { readonly ok: false; readonly status?: string }> {
   const shouldApply = options.shouldApply ?? (() => true);
-  const stored = storedSessionForCurrentTab();
-  if (stored?.side) {
-    await nextRefs.playerSession.send({
-      type: 'CLAIM_SIDE',
-      side: stored.side,
-      controller: stored.controller,
-    });
-    if (!shouldApply()) {
-      return;
-    }
-    if (stored.ready) {
-      await nextRefs.playerSession.send({ type: 'SET_READY', ready: true });
-      if (!shouldApply()) {
-        return;
-      }
-    }
-    await flushRuntime(nextRuntime);
-    if (!shouldApply()) {
-      return;
-    }
-  }
-  await syncCurrentSession(nextRuntime, nextRefs, { shouldApply });
+  return syncCurrentSession(nextRuntime, nextRefs, { shouldApply });
 }
 
 function renderParityProof(mode: BrowserMode): void {
@@ -1170,7 +1443,7 @@ function renderParityProof(mode: BrowserMode): void {
 }
 
 async function flushRuntime(candidate: BrowserRuntime): Promise<void> {
-  if (isCluster(candidate)) {
+  if ('flush' in candidate) {
     await candidate.flush();
     return;
   }
@@ -1180,9 +1453,12 @@ async function flushRuntime(candidate: BrowserRuntime): Promise<void> {
   }
 }
 
-function serverNode(candidate: BrowserRuntime) {
-  if (isCluster(candidate)) {
-    return candidate.server;
+function lookupNode(candidate: BrowserRuntime) {
+  if (isBrowserWebSocketRuntime(candidate)) {
+    return candidate.lookupNode;
+  }
+  if (isBrowserClusterRuntime(candidate)) {
+    return candidate.server ?? candidate.lookupNode;
   }
 
   const server = candidate.nodes.server;
@@ -1196,7 +1472,7 @@ async function waitForActor<TContext, TMessage extends ActorMessage>(
   candidate: BrowserRuntime,
   address: string
 ): Promise<ActorRef<TContext, TMessage>> {
-  const server = serverNode(candidate);
+  const server = lookupNode(candidate);
   for (let attempt = 0; attempt < 80; attempt += 1) {
     const actorRef = await server.system.lookup<TContext, TMessage>(address);
     if (actorRef) {
@@ -1210,9 +1486,21 @@ async function waitForActor<TContext, TMessage extends ActorMessage>(
 }
 
 async function resolveRefs(candidate: BrowserRuntime): Promise<RuntimeRefs> {
-  const server = serverNode(candidate);
+  const playerSession = isBrowserWebSocketRuntime(candidate)
+    ? await waitForActor<PongPlayerSessionState, PlayerSessionCommand>(
+        candidate,
+        candidate.playerSessionAddress
+      )
+    : isBrowserClusterRuntime(candidate)
+      ? await candidate.client.actors.playerSession.instance({ sessionId: browserSessionId })
+      : await (() => {
+          const clientNode = candidate.nodes.client;
+          if (!clientNode) {
+            throw new Error('Mesh Pong local runtime did not start the client node.');
+          }
+          return clientNode.actors.playerSession.instance({ sessionId: browserSessionId });
+        })();
   return {
-    ball: server.requireActor('ball') as ActorRef<PongBallContext, BallCommand>,
     controllerLeft: await waitForActor<PongControllerActorState, ControllerCommand>(
       candidate,
       pong.actors.controllerLeft.address
@@ -1221,73 +1509,115 @@ async function resolveRefs(candidate: BrowserRuntime): Promise<RuntimeRefs> {
       candidate,
       pong.actors.controllerRight.address
     ),
-    score: server.requireActor('score') as ActorRef<PongScoreState, ScoreCommand>,
-    lobby: server.requireActor('lobby') as ActorRef<PongLobbyState, PongLobbyCommand>,
-    playerSession: await server.actors.playerSession.instance({ sessionId: browserSessionId }),
-    paddleA: await waitForActor<PongPaddleState, PaddleCommand>(
+    matchCoordinator: await waitForActor<PongMatchState, PongMatchCommand>(
       candidate,
-      pong.actors.paddleA.address
+      isBrowserWebSocketRuntime(candidate)
+        ? candidate.matchCoordinatorAddress
+        : pong.actors.matchCoordinator.address
     ),
-    paddleB: await waitForActor<PongPaddleState, PaddleCommand>(
-      candidate,
-      pong.actors.paddleB.address
-    ),
+    playerSession,
   };
 }
 
 async function snapshot(nextRefs: RuntimeRefs): Promise<PongSnapshot> {
-  const ball = await nextRefs.ball.ask<PongBallContext>({ type: 'GET_BALL' });
-  const score = await nextRefs.score.ask<PongScoreState>({ type: 'GET_SCORE' });
-  const left = await nextRefs.paddleA.ask<PongPaddleState>({ type: 'GET_PADDLE' });
-  const right = await nextRefs.paddleB.ask<PongPaddleState>({ type: 'GET_PADDLE' });
-
-  return {
-    ball: ball.ball,
-    score,
-    paddles: {
-      left,
-      right,
-    },
-  };
+  return matchState?.snapshot ?? (await currentMatchState(nextRefs)).snapshot;
 }
 
-async function resetRuntimeGame(
+interface MeshPongRuntimeResetOptions {
+  readonly shouldApply?: () => boolean;
+  readonly flush?: (runtime: BrowserRuntime) => Promise<void>;
+  readonly readMatch?: (refs: RuntimeRefs) => Promise<PongMatchState>;
+  readonly applyMatch?: (match: PongMatchState) => void;
+}
+
+export async function resetRuntimeGame(
   nextRuntime: BrowserRuntime,
-  nextRefs: RuntimeRefs
-): Promise<PongSnapshot> {
-  const centerY = PONG_FIELD.height / 2 - PONG_FIELD.paddleHeight / 2;
-  await nextRefs.ball.send({ type: 'RESET_BALL', seed: DEFAULT_PONG_SEED });
-  await flushRuntime(nextRuntime);
-  await nextRefs.score.send({ type: 'RESET_SCORE' });
-  await flushRuntime(nextRuntime);
-  await nextRefs.paddleA.send({ type: 'SET_PADDLE', y: centerY });
-  await flushRuntime(nextRuntime);
-  await nextRefs.paddleB.send({ type: 'SET_PADDLE', y: centerY });
-  await flushRuntime(nextRuntime);
-  return snapshot(nextRefs);
+  nextRefs: RuntimeRefs,
+  options: MeshPongRuntimeResetOptions = {}
+): Promise<PongSnapshot | null> {
+  const shouldApply = options.shouldApply ?? (() => true);
+  const flush = options.flush ?? flushRuntime;
+  const readMatch = options.readMatch ?? currentMatchState;
+  const applyMatch = options.applyMatch ?? applyProjectedMatch;
+  if (!shouldApply()) {
+    return null;
+  }
+  await flush(nextRuntime);
+  if (!shouldApply()) {
+    return null;
+  }
+  const nextMatch = await readMatch(nextRefs);
+  if (!shouldApply()) {
+    return null;
+  }
+  applyMatch(nextMatch);
+  return nextMatch.snapshot;
+}
+
+export async function runMeshPongStartupSubstages(options: {
+  readonly label: string;
+  readonly timeoutMs?: number;
+  readonly shouldApply: () => boolean;
+  readonly invalidate: () => void;
+  readonly reset: (shouldApply: () => boolean) => Promise<PongSnapshot | null>;
+  readonly hydrate: (
+    shouldApply: () => boolean
+  ) => Promise<{ readonly ok: true } | { readonly ok: false; readonly status?: string }>;
+  readonly stop: () => Promise<void>;
+  readonly activate: (snapshot: PongSnapshot) => void;
+  readonly setStatus: (status: string) => void;
+}): Promise<boolean> {
+  const timeoutMs = options.timeoutMs ?? MESH_PONG_STARTUP_TIMEOUT_MS;
+  const stop = async (): Promise<void> => {
+    await options.stop().catch(() => undefined);
+  };
+  const fail = async (status?: string): Promise<false> => {
+    const isCurrent = options.shouldApply();
+    if (isCurrent) {
+      options.invalidate();
+    }
+    await stop();
+    if (isCurrent && status) {
+      options.setStatus(status);
+    }
+    return false;
+  };
+
+  try {
+    const nextSnapshot = await withMeshPongStartupTimeout(
+      options.reset(options.shouldApply),
+      `${options.label} game reset`,
+      timeoutMs
+    );
+    if (!nextSnapshot || !options.shouldApply()) {
+      await stop();
+      return false;
+    }
+
+    const hydration = await withMeshPongStartupTimeout(
+      options.hydrate(options.shouldApply),
+      `${options.label} session hydrate`,
+      timeoutMs
+    );
+    if (!hydration.ok) {
+      return fail(hydration.status);
+    }
+    if (!options.shouldApply()) {
+      await stop();
+      return false;
+    }
+
+    options.activate(nextSnapshot);
+    return true;
+  } catch (error) {
+    return fail(error instanceof Error ? `start failed: ${error.message}` : 'start failed');
+  }
 }
 
 function renderSnapshot(nextSnapshot: PongSnapshot): void {
   updateTelemetry({ type: 'rendered', nowMs: nowMs() });
   drawPong(canvasElement, nextSnapshot);
   scoreValueElement.textContent = `${nextSnapshot.score.left} : ${nextSnapshot.score.right}`;
-}
-
-function browserLocalStorage() {
-  return typeof localStorage === 'undefined' ? undefined : localStorage;
-}
-
-function runBrowserMlxController(
-  side: PongSide,
-  nextSnapshot: PongSnapshot
-): Promise<PongControllerResult> {
-  return runPongControllerWithLlmProvider(
-    side,
-    nextSnapshot,
-    createBrowserMlxLlmProvider({
-      config: resolveBrowserMlxProviderConfig(browserLocalStorage()),
-    })
-  );
 }
 
 async function resetGame(): Promise<void> {
@@ -1297,36 +1627,122 @@ async function resetGame(): Promise<void> {
     return;
   }
 
-  matchStarted = false;
-  clearMatchOwner();
-  matchGeneration += 1;
   clearControllerDiagnostics();
-  if (loopHandle !== null) {
-    window.clearTimeout(loopHandle);
-    loopHandle = null;
+  const currentMatch = await currentMatchState(currentRefs);
+  const result = await currentRefs.matchCoordinator.ask<PongMatchCommandResult>({
+    type: 'RESTART_MATCH',
+    requestSessionId: browserSessionId,
+    expectedGeneration: currentMatch.generation,
+  });
+  await flushRuntime(currentRuntime);
+  if (!result.ok) {
+    setStatus(formatMatchCommandFailure(result));
+    return;
   }
-  const nextSnapshot = await resetRuntimeGame(currentRuntime, currentRefs);
   if (runtime === currentRuntime && refs === currentRefs) {
-    renderSnapshot(nextSnapshot);
-    setStatus('lobby');
+    applyProjectedMatch(result.match);
+    ensureProjectionLoop();
   }
 }
 
-async function startRuntimeForMode(mode: BrowserMode): Promise<BrowserRuntime> {
-  const tools = createBrowserMlxTools({ storage: browserLocalStorage() });
+async function returnToRoom(): Promise<void> {
+  const currentRuntime = runtime;
+  const currentRefs = refs;
+  if (!currentRuntime || !currentRefs) {
+    return;
+  }
+
+  const currentMatch = await currentMatchState(currentRefs);
+  const result = await currentRefs.matchCoordinator.ask<PongMatchCommandResult>({
+    type: 'RETURN_TO_ROOM',
+    requestSessionId: browserSessionId,
+    expectedGeneration: currentMatch.generation,
+  });
+  await flushRuntime(currentRuntime);
+  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+    return;
+  }
+  if (!result.ok) {
+    setStatus(formatMatchCommandFailure(result));
+    return;
+  }
+  applyProjectedMatch(result.match);
+}
+
+function isBrowserRuntimeStartFailure(
+  candidate: BrowserRuntime | MeshPongBrowserWebSocketStartResult
+): candidate is Extract<MeshPongBrowserWebSocketStartResult, { readonly ok: false }> {
+  return 'ok' in candidate && candidate.ok === false;
+}
+
+function startStatusForMode(mode: BrowserMode): string {
+  return mode === 'websocket' ? describeMeshPongWebSocketStatus('connecting') : 'starting';
+}
+
+function statusForMatchPhase(phase: PongMatchPhase): string {
+  switch (phase) {
+    case 'lobby':
+      return 'lobby';
+    case 'paused':
+      return 'paused';
+    case 'running':
+      return 'running';
+  }
+}
+
+function failureStatusForMode(
+  result: Extract<MeshPongBrowserWebSocketStartResult, { readonly ok: false }>
+): string {
+  return describeMeshPongWebSocketStatus(result.state);
+}
+
+async function startRuntimeForMode(
+  mode: BrowserMode
+): Promise<BrowserRuntime | MeshPongBrowserWebSocketStartResult> {
   if (mode === 'local') {
-    return startMeshPongLocal({ tools });
+    return startMeshPongLocal({ sessionId: browserSessionId });
   }
   if (mode === 'broadcast') {
     return startMeshPongBroadcast({
-      channelName: `mesh-pong-demo-${createSessionId()}`,
-      tools,
+      sessionId: browserSessionId,
+      channelName: 'mesh-pong-demo',
     });
   }
+  if (mode === 'websocket') {
+    return startMeshPongBrowserWebSocket({ sessionId: browserSessionId });
+  }
   return startMeshPongMesh({
-    channelName: `mesh-pong-demo-${createSessionId()}`,
-    tools,
+    sessionId: browserSessionId,
+    channelName: 'mesh-pong-demo-mesh',
   });
+}
+
+async function disposeLateRuntimeStart(
+  startedRuntime: BrowserRuntime | MeshPongBrowserWebSocketStartResult
+): Promise<void> {
+  if (isBrowserRuntimeStartFailure(startedRuntime)) {
+    return;
+  }
+  const lateRuntime = 'ok' in startedRuntime ? startedRuntime.runtime : startedRuntime;
+  await lateRuntime.stop().catch(() => undefined);
+}
+
+function ensureProjectionLoop(): void {
+  if (!turnStepper || !runtime || !refs || loopHandle !== null) {
+    return;
+  }
+  loopHandle = window.setTimeout(
+    tick,
+    DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY.simulationIntervalMs
+  );
+}
+
+function invalidateSwitchGeneration(generation: number): boolean {
+  if (switchGeneration !== generation) {
+    return false;
+  }
+  switchGeneration = generation + 1;
+  return true;
 }
 
 async function switchMode(mode: BrowserMode): Promise<void> {
@@ -1342,9 +1758,7 @@ async function switchMode(mode: BrowserMode): Promise<void> {
   runtime = null;
   refs = null;
   playerSessionState = null;
-  matchStarted = false;
-  clearMatchOwner();
-  matchGeneration += 1;
+  matchState = null;
   stopTurnStepper();
   clearControllerDiagnostics();
   resetTelemetry();
@@ -1353,7 +1767,7 @@ async function switchMode(mode: BrowserMode): Promise<void> {
     try {
       await previous.stop();
     } catch (error) {
-      if (switchGeneration === generation) {
+      if (invalidateSwitchGeneration(generation)) {
         setStatus(error instanceof Error ? `stop failed: ${error.message}` : 'stop failed');
       }
       return;
@@ -1367,54 +1781,94 @@ async function switchMode(mode: BrowserMode): Promise<void> {
   selectedMode = mode;
   modeValueElement.textContent = mode;
   renderParityProof(mode);
-  setStatus('starting');
+  setStatus(startStatusForMode(mode));
 
   let nextRuntime: BrowserRuntime | null = null;
   try {
-    nextRuntime = await startRuntimeForMode(mode);
-    const nextRefs = await resolveRefs(nextRuntime);
-    const nextSnapshot = await resetRuntimeGame(nextRuntime, nextRefs);
-    await hydrateCurrentSession(nextRuntime, nextRefs, {
-      shouldApply: () => switchGeneration === generation,
-    });
-
-    if (switchGeneration !== generation) {
-      await nextRuntime.stop().catch(() => undefined);
+    const startedRuntime = await withMeshPongStartupTimeout(
+      startRuntimeForMode(mode),
+      `${mode} runtime`,
+      MESH_PONG_STARTUP_TIMEOUT_MS,
+      disposeLateRuntimeStart
+    );
+    if (isBrowserRuntimeStartFailure(startedRuntime)) {
+      if (invalidateSwitchGeneration(generation)) {
+        setStatus(failureStatusForMode(startedRuntime));
+      }
       return;
     }
-
-    runtime = nextRuntime;
-    refs = nextRefs;
-    const activeRuntime = nextRuntime;
-    turnStepper = createMeshPongTurnStepper({
-      runtime: activeRuntime,
-      refs: nextRefs,
-      browserSessionId,
-      getMatchState: () => ({
-        matchStarted,
-        matchGeneration,
-        matchOwnerSessionId,
-        mode: matchMode,
-      }),
-      nowMs,
-      flushRuntime,
-      snapshot: () => snapshot(nextRefs),
-      renderSnapshot,
+    nextRuntime = 'ok' in startedRuntime ? startedRuntime.runtime : startedRuntime;
+    const candidateRuntime = nextRuntime;
+    const nextRefs = await withMeshPongStartupTimeout(
+      resolveRefs(candidateRuntime),
+      `${mode} actor refs`
+    );
+    const activated = await runMeshPongStartupSubstages({
+      label: mode,
+      shouldApply: () => switchGeneration === generation,
+      invalidate: () => {
+        invalidateSwitchGeneration(generation);
+      },
+      reset: (shouldApply) =>
+        resetRuntimeGame(candidateRuntime, nextRefs, {
+          shouldApply,
+        }),
+      hydrate: (shouldApply) =>
+        hydrateCurrentSession(candidateRuntime, nextRefs, {
+          shouldApply,
+        }),
+      stop: () => candidateRuntime.stop(),
+      activate: (nextSnapshot) => {
+        runtime = candidateRuntime;
+        refs = nextRefs;
+        const activeRuntime = candidateRuntime;
+        turnStepper = createMeshPongTurnStepper({
+          runtime: activeRuntime,
+          refs: nextRefs,
+          browserSessionId,
+          getMatchState: () => ({
+            phase: matchState?.phase ?? 'lobby',
+            matchGeneration: matchState?.generation ?? 0,
+            matchOwnerSessionId: matchState?.authoritySessionId ?? null,
+            mode: matchState
+              ? ({
+                  playerCount:
+                    matchState.mode?.playerCount ?? TWO_HUMAN_PONG_MATCH_MODE.playerCount,
+                  controllers: {
+                    left: normalizePongControllerType(matchState.mode?.controllers.left ?? 'human'),
+                    right: normalizePongControllerType(
+                      matchState.mode?.controllers.right ?? 'human'
+                    ),
+                  },
+                } satisfies PongShellMatchMode)
+              : null,
+          }),
+          nowMs,
+          flushRuntime,
+          snapshot: () => snapshot(nextRefs),
+          renderSnapshot,
+          setStatus,
+          updateTelemetry,
+          postControllerInput,
+          setControllerDiagnostic,
+          clearControllerDiagnostic,
+          applyHumanInput: (mode) => applyPaddleInput(activeRuntime, nextRefs, mode),
+        });
+        renderSnapshot(nextSnapshot);
+        setStatus(statusForMatchPhase((matchState as PongMatchState | null)?.phase ?? 'lobby'));
+        ensureProjectionLoop();
+      },
       setStatus,
-      updateTelemetry,
-      postControllerInput,
-      runMlxController: runBrowserMlxController,
-      setControllerDiagnostic,
-      clearControllerDiagnostic,
-      applyHumanInput: (mode) => applyPaddleInput(activeRuntime, nextRefs, mode),
     });
-    renderSnapshot(nextSnapshot);
-    setStatus('lobby');
+    if (!activated) {
+      return;
+    }
   } catch (error) {
+    const isCurrent = invalidateSwitchGeneration(generation);
     if (nextRuntime) {
       await nextRuntime.stop().catch(() => undefined);
     }
-    if (switchGeneration === generation) {
+    if (isCurrent) {
       runtime = null;
       refs = null;
       loopHandle = null;
@@ -1424,23 +1878,35 @@ async function switchMode(mode: BrowserMode): Promise<void> {
   }
 }
 
-function postControllerInput(
-  input: Extract<PongControllerInputResult, { readonly ok: true }>
-): void {
-  const sentAtMs = nowEpochMs();
-  updateTelemetry({
-    type: 'replay-sent',
-    originSessionId: browserSessionId,
-    sentAtMs,
-  });
-  lobbyChannel?.postMessage({
+export function createMeshPongControllerInputReplayMessage(options: {
+  readonly input: Extract<PongControllerInputResult, { readonly ok: true }>;
+  readonly originSessionId: string;
+  readonly sentAtMs: number;
+  readonly controllerTelemetry?: MeshPongControllerReplayTelemetry;
+}): MeshPongControllerInputReplayEnvelope {
+  const baseMessage = {
     type: 'controller-input',
-    input,
+    input: options.input,
     replay: {
-      originSessionId: browserSessionId,
-      sentAtMs,
+      originSessionId: options.originSessionId,
+      sentAtMs: options.sentAtMs,
     },
-  } satisfies LobbyChannelMessage);
+  } satisfies MeshPongControllerInputReplayEnvelope;
+  if (!options.controllerTelemetry) {
+    return baseMessage;
+  }
+  return {
+    ...baseMessage,
+    controllerTelemetry: options.controllerTelemetry,
+  };
+}
+
+function postControllerInput(
+  input: Extract<PongControllerInputResult, { readonly ok: true }>,
+  controllerTelemetry?: MeshPongControllerReplayTelemetry
+): void {
+  void input;
+  void controllerTelemetry;
 }
 
 async function applyControllerInput(
@@ -1449,19 +1915,29 @@ async function applyControllerInput(
   input: Extract<PongControllerInputResult, { readonly ok: true }>,
   metadata?: {
     readonly appliedAtMs?: number;
+    readonly detail?: string;
     readonly flushRuntime?: (runtime: BrowserRuntime) => Promise<void>;
+    readonly mode?: PongControllerMode;
     readonly sentAtMs?: number;
+    readonly source?: 'human' | 'reflex' | 'planner' | 'hybrid';
+    readonly strategyStatus?: 'live' | 'fresh' | 'stale' | 'fallback' | 'neutral';
     readonly syncRuntime?: boolean;
     readonly updateTelemetry?: (event: MeshPongTelemetryEvent) => void;
   }
-): Promise<void> {
+): Promise<boolean> {
   const appliedAtMs = metadata?.appliedAtMs ?? nowMs();
-  const paddle = input.side === 'left' ? nextRefs.paddleA : nextRefs.paddleB;
-  await paddle.send({
-    type: 'MOVE_PADDLE',
-    direction: input.direction,
-    amount: input.amount,
+  const currentMatch = matchState ?? (await currentMatchState(nextRefs));
+  const result = await nextRefs.matchCoordinator.ask<PongMatchCommandResult>({
+    type: 'APPLY_CONTROLLER_INPUT',
+    requestSessionId: input.sessionId,
+    expectedGeneration: currentMatch.generation,
+    input,
   });
+  if (!result.ok) {
+    setStatus(formatMatchCommandFailure(result));
+    return false;
+  }
+  matchState = result.match;
   if (metadata?.syncRuntime !== false) {
     const flush = metadata?.flushRuntime ?? flushRuntime;
     await flush(nextRuntime);
@@ -1470,19 +1946,24 @@ async function applyControllerInput(
   reportTelemetry({
     type: 'controller-intent-applied',
     side: input.side,
+    mode: metadata?.mode ?? 'human',
+    source: metadata?.source ?? 'human',
+    strategyStatus: metadata?.strategyStatus ?? 'live',
+    detail: metadata?.detail ?? '--',
     nowMs: appliedAtMs,
     sentAtMs: metadata?.sentAtMs,
   });
+  return true;
 }
 
 async function applyPaddleInput(
   nextRuntime: BrowserRuntime,
   nextRefs: RuntimeRefs,
-  mode: PongMatchMode | null
-): Promise<void> {
+  mode: PongShellMatchMode | null
+): Promise<boolean> {
   const session = playerSessionState;
-  if (!session?.side || mode?.controllers[session.side] !== 'human') {
-    return;
+  if (!session?.side || normalizePongControllerType(mode?.controllers[session.side]) !== 'human') {
+    return true;
   }
 
   const direction =
@@ -1499,7 +1980,7 @@ async function applyPaddleInput(
           : null;
 
   if (!direction) {
-    return;
+    return true;
   }
 
   const input = await nextRefs.playerSession.ask<PongControllerInputResult>({
@@ -1507,48 +1988,62 @@ async function applyPaddleInput(
     direction,
   });
   if (!input.ok) {
-    return;
+    setStatus(input.reason);
+    return false;
   }
 
   const appliedAtMs = nowMs();
-  await applyControllerInput(nextRuntime, nextRefs, input, { appliedAtMs, syncRuntime: false });
-  postControllerInput(input);
+  return applyControllerInput(nextRuntime, nextRefs, input, {
+    appliedAtMs,
+    detail: direction,
+    mode: 'human',
+    source: 'human',
+    strategyStatus: 'live',
+    syncRuntime: true,
+  });
 }
 
-function createEmptyMlxLaneState(): MlxControllerLaneState {
+function formatAimDetail(aim: PongControllerAim): string {
+  const target = `t${Math.round(aim.targetY)}`;
+  const intercept = aim.interceptY === null ? '' : `/i${Math.round(aim.interceptY)}`;
+  const label = aim.strategyLabel ? ` ${aim.strategyLabel}` : '';
+  return `${target}${intercept}${label}`;
+}
+
+function createEmptyPlannerLaneState(): PlannerControllerLaneState {
   return {
     inFlight: null,
-    readyIntent: null,
-    lastIntent: null,
-    lastIntentSentAtMs: null,
+    readyDecision: null,
+    lastDecision: null,
+    freshTurnsRemaining: 0,
     staleTurnsRemaining: 0,
   };
 }
 
 export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPongTurnStepper {
   const schedulePolicy = deps.schedulePolicy ?? DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY;
-  const lanes: Record<PongSide, MlxControllerLaneState> = {
-    left: createEmptyMlxLaneState(),
-    right: createEmptyMlxLaneState(),
+  const lanes: Record<PongSide, PlannerControllerLaneState> = {
+    left: createEmptyPlannerLaneState(),
+    right: createEmptyPlannerLaneState(),
   };
   let active = true;
-  let applyingSimulation = false;
+  let turnInProgress = false;
   let nextRequestId = 1;
   let lastMatchGeneration: number | null = null;
 
   function resetLane(side: PongSide): void {
-    lanes[side] = createEmptyMlxLaneState();
+    lanes[side] = createEmptyPlannerLaneState();
   }
 
-  function ownsRequest(request: MlxControllerRequest): boolean {
+  function ownsRequest(request: PlannerControllerRequest): boolean {
     const matchState = deps.getMatchState();
     return (
       active &&
       deps.runtime === request.runtime &&
       deps.refs === request.refs &&
-      matchState.matchStarted &&
+      matchState.phase === 'running' &&
       matchState.matchGeneration === request.matchGeneration &&
-      shouldLaunchMlxControllerForSide({
+      shouldLaunchPlannerControllerForSide({
         browserSessionId: deps.browserSessionId,
         matchOwnerSessionId: matchState.matchOwnerSessionId,
         mode: matchState.mode,
@@ -1567,7 +2062,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
 
     for (const side of ['left', 'right'] as const) {
       if (
-        !shouldLaunchMlxControllerForSide({
+        !shouldLaunchPlannerControllerForSide({
           browserSessionId: deps.browserSessionId,
           matchOwnerSessionId: matchState.matchOwnerSessionId,
           mode: matchState.mode,
@@ -1579,18 +2074,25 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
     }
   }
 
-  async function resolveMlxControllerInput(request: MlxControllerRequest): Promise<void> {
+  async function resolvePlannerControllerInput(request: PlannerControllerRequest): Promise<void> {
     const lane = lanes[request.side];
     try {
-      const result = deps.runMlxController
-        ? await deps.runMlxController(request.side, request.snapshot)
-        : await request.controller.ask<PongControllerResult>(
-            {
-              type: 'RUN_CONTROLLER',
-              snapshot: request.snapshot,
-            },
-            schedulePolicy.controllerAskTimeoutMs
-          );
+      const result =
+        request.side === 'left'
+          ? await request.refs.controllerLeft.ask<PongControllerResult>(
+              {
+                type: 'RUN_CONTROLLER',
+                snapshot: request.snapshot,
+              },
+              schedulePolicy.controllerAskTimeoutMs
+            )
+          : await request.refs.controllerRight.ask<PongControllerResult>(
+              {
+                type: 'RUN_CONTROLLER',
+                snapshot: request.snapshot,
+              },
+              schedulePolicy.controllerAskTimeoutMs
+            );
       if (!ownsRequest(request)) {
         return;
       }
@@ -1598,8 +2100,10 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
         deps.updateTelemetry({
           type: 'controller-request-finished',
           side: result.side,
+          mode: request.mode,
           nowMs: deps.nowMs(),
           outcome: 'error',
+          strategyStatus: 'error',
           error: formatControllerFailureTelemetryError(result),
         });
         deps.setControllerDiagnostic(result.side, result.reason);
@@ -1611,17 +2115,20 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
       }
 
       deps.clearControllerDiagnostic(result.side);
-      lane.readyIntent = {
+      lane.readyDecision = {
         requestId: request.requestId,
         matchGeneration: request.matchGeneration,
-        input: createSyntheticMlxControllerInput(result),
+        strategy: result.strategy,
         sentAtMs: request.startedAtMs,
       };
       deps.updateTelemetry({
         type: 'controller-request-finished',
         side: result.side,
+        mode: request.mode,
         nowMs: deps.nowMs(),
         outcome: 'ready',
+        strategyStatus: 'fresh',
+        detail: `t${Math.round(result.strategy.targetY)} ${result.strategy.label}`,
       });
     } catch (error) {
       const errorReason = formatMlxControllerError(error);
@@ -1631,8 +2138,10 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
       deps.updateTelemetry({
         type: 'controller-request-finished',
         side: request.side,
+        mode: request.mode,
         nowMs: deps.nowMs(),
         outcome: 'error',
+        strategyStatus: 'error',
         error: errorReason,
       });
       deps.setControllerDiagnostic(request.side, errorReason);
@@ -1643,8 +2152,9 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
     }
   }
 
-  function launchMlxControllerInput(
+  function launchPlannerControllerInput(
     side: PongSide,
+    mode: PongControllerMode,
     controller: ActorRef<PongControllerActorState, ControllerCommand>,
     snapshotState: PongSnapshot,
     matchGenerationValue: number
@@ -1655,12 +2165,13 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
     }
 
     const startedAtMs = deps.nowMs();
-    deps.updateTelemetry({ type: 'controller-request-started', side, nowMs: startedAtMs });
-    const request: MlxControllerRequest = {
+    deps.updateTelemetry({ type: 'controller-request-started', side, mode, nowMs: startedAtMs });
+    const request: PlannerControllerRequest = {
       requestId: nextRequestId,
       runtime: deps.runtime,
       refs: deps.refs,
       side,
+      mode,
       controller,
       snapshot: snapshotState,
       matchGeneration: matchGenerationValue,
@@ -1668,102 +2179,280 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
     };
     nextRequestId += 1;
     lane.inFlight = request;
-    void resolveMlxControllerInput(request);
+    void resolvePlannerControllerInput(request);
   }
 
-  function consumeUsableIntent(
+  function consumePlannerStrategy(
     side: PongSide,
+    mode: PongControllerMode,
     matchGenerationValue: number
-  ): { input: Extract<PongControllerInputResult, { readonly ok: true }>; sentAtMs: number } | null {
+  ): {
+    readonly strategy: PongPlannerStrategy;
+    readonly sentAtMs: number;
+    readonly freshness: 'fresh' | 'stale';
+  } | null {
     const lane = lanes[side];
-    if (lane.readyIntent && lane.readyIntent.matchGeneration === matchGenerationValue) {
-      const readyIntent = lane.readyIntent;
-      lane.readyIntent = null;
-      lane.lastIntent = readyIntent.input;
-      lane.lastIntentSentAtMs = readyIntent.sentAtMs;
-      lane.staleTurnsRemaining = schedulePolicy.staleIntentTurnLimit;
+    if (lane.readyDecision && lane.readyDecision.matchGeneration === matchGenerationValue) {
+      const readyDecision = lane.readyDecision;
+      lane.readyDecision = null;
+      lane.lastDecision = readyDecision;
+      lane.freshTurnsRemaining = schedulePolicy.plannerStrategyFreshTurnLimit;
+      lane.staleTurnsRemaining = schedulePolicy.plannerStrategyStaleTurnLimit;
+    }
+
+    if (!lane.lastDecision || lane.lastDecision.matchGeneration !== matchGenerationValue) {
+      return null;
+    }
+
+    if (lane.freshTurnsRemaining > 0) {
+      lane.freshTurnsRemaining -= 1;
       return {
-        input: readyIntent.input,
-        sentAtMs: readyIntent.sentAtMs,
+        strategy: lane.lastDecision.strategy,
+        sentAtMs: lane.lastDecision.sentAtMs,
+        freshness: 'fresh',
       };
     }
 
-    if (lane.lastIntent && lane.lastIntentSentAtMs !== null && lane.staleTurnsRemaining > 0) {
+    if (mode === 'hybrid' && lane.staleTurnsRemaining > 0) {
       lane.staleTurnsRemaining -= 1;
       return {
-        input: lane.lastIntent,
-        sentAtMs: lane.lastIntentSentAtMs,
+        strategy: lane.lastDecision.strategy,
+        sentAtMs: lane.lastDecision.sentAtMs,
+        freshness: 'stale',
       };
     }
 
     return null;
   }
 
+  function describePlannerNeutralState(
+    side: PongSide,
+    matchGenerationValue: number
+  ): { readonly detail: string; readonly sentAtMs?: number } {
+    const lastDecision = lanes[side].lastDecision;
+    if (!lastDecision || lastDecision.matchGeneration !== matchGenerationValue) {
+      return { detail: 'neutral' };
+    }
+    return {
+      detail: `neutral ${lastDecision.strategy.label}`,
+      sentAtMs: lastDecision.sentAtMs,
+    };
+  }
+
+  function resolveAimForMode(
+    snapshotState: PongSnapshot,
+    side: PongSide,
+    mode: PongControllerMode,
+    strategy: PongPlannerStrategy | null
+  ): PongControllerAim | null {
+    if (mode === 'human') {
+      return null;
+    }
+    if (mode === 'reflex') {
+      return createReflexControllerAim(snapshotState, side);
+    }
+    if (mode === 'planner') {
+      return strategy ? createMergedControllerAim(snapshotState, side, strategy) : null;
+    }
+    return createMergedControllerAim(snapshotState, side, strategy);
+  }
+
+  function resolveAppliedTelemetry(
+    mode: PongControllerMode,
+    plannerDecision: {
+      readonly strategy: PongPlannerStrategy;
+      readonly sentAtMs: number;
+      readonly freshness: 'fresh' | 'stale';
+    } | null
+  ): {
+    readonly source: 'human' | 'reflex' | 'planner' | 'hybrid';
+    readonly strategyStatus: 'live' | 'fresh' | 'stale' | 'fallback' | 'neutral';
+  } {
+    if (mode === 'reflex') {
+      return { source: 'reflex', strategyStatus: 'live' };
+    }
+    if (mode === 'planner') {
+      return plannerDecision
+        ? { source: 'planner', strategyStatus: 'fresh' }
+        : { source: 'planner', strategyStatus: 'neutral' };
+    }
+    if (mode === 'hybrid') {
+      if (!plannerDecision) {
+        return { source: 'reflex', strategyStatus: 'fallback' };
+      }
+      return {
+        source: 'hybrid',
+        strategyStatus: plannerDecision.freshness,
+      };
+    }
+    return { source: 'human', strategyStatus: 'live' };
+  }
+
   async function tick(): Promise<void> {
-    const matchState = deps.getMatchState();
-    syncLanes(matchState);
-    if (!active || !matchState.matchStarted) {
+    const currentTurnMatch = deps.getMatchState();
+    const browserSessionId = deps.browserSessionId;
+    const matchOwnerSessionId = currentTurnMatch.matchOwnerSessionId;
+    const ownsProjection = matchOwnerSessionId === browserSessionId;
+    syncLanes(currentTurnMatch);
+    if (!active) {
+      return;
+    }
+    if (currentTurnMatch.phase !== 'running') {
+      const projectedSnapshot = await deps.snapshot();
+      if (!active) {
+        return;
+      }
+      deps.renderSnapshot(projectedSnapshot);
+      deps.setStatus(statusForMatchPhase(currentTurnMatch.phase));
       return;
     }
 
     const scheduledAtMs = deps.nowMs();
     deps.updateTelemetry({ type: 'simulation-scheduled', nowMs: scheduledAtMs });
-    if (applyingSimulation) {
+    if (turnInProgress) {
       deps.updateTelemetry({ type: 'simulation-held', nowMs: deps.nowMs() });
       return;
     }
 
-    applyingSimulation = true;
+    turnInProgress = true;
     try {
-      await deps.applyHumanInput?.(matchState.mode);
+      const humanInputApplied = await deps.applyHumanInput?.(currentTurnMatch.mode);
+      if (humanInputApplied === false || !active) {
+        return;
+      }
+      if (!ownsProjection) {
+        const projectedSnapshot = await deps.snapshot();
+        if (!active) {
+          return;
+        }
+        deps.renderSnapshot(projectedSnapshot);
+        deps.setStatus('projecting');
+        return;
+      }
+
+      const currentSnapshot = await deps.snapshot();
+      const paddles = currentSnapshot.paddles;
 
       for (const side of ['left', 'right'] as const) {
-        const usableIntent = consumeUsableIntent(side, matchState.matchGeneration);
-        if (!usableIntent) {
+        const controllerMode = currentTurnMatch.mode?.controllers[side] ?? 'human';
+        const normalizedMode = normalizePongControllerType(controllerMode);
+        const plannerDecision = usesPlannerController(normalizedMode)
+          ? consumePlannerStrategy(side, normalizedMode, currentTurnMatch.matchGeneration)
+          : null;
+        const aim = resolveAimForMode(
+          currentSnapshot,
+          side,
+          normalizedMode,
+          plannerDecision?.strategy ?? null
+        );
+        if (!aim) {
+          if (normalizedMode === 'planner') {
+            const neutralState = describePlannerNeutralState(
+              side,
+              currentTurnMatch.matchGeneration
+            );
+            deps.updateTelemetry({
+              type: 'controller-state-observed',
+              side,
+              mode: normalizedMode,
+              source: 'planner',
+              strategyStatus: 'neutral',
+              detail: neutralState.detail,
+              nowMs: deps.nowMs(),
+              sentAtMs: neutralState.sentAtMs,
+            });
+          }
           continue;
         }
-        await applyControllerInput(deps.runtime, deps.refs, usableIntent.input, {
+        const intent = resolveControllerIntentForAim(
+          side === 'left' ? paddles.left : paddles.right,
+          aim,
+          plannerDecision?.strategy.maxStep ?? PONG_FIELD.paddleStep
+        );
+        const appliedTelemetry = resolveAppliedTelemetry(normalizedMode, plannerDecision);
+        if (!intent) {
+          deps.updateTelemetry({
+            type: 'controller-state-observed',
+            side,
+            mode: normalizedMode,
+            source: appliedTelemetry.source,
+            strategyStatus: appliedTelemetry.strategyStatus,
+            detail: formatAimDetail(aim),
+            nowMs: deps.nowMs(),
+            sentAtMs: plannerDecision?.sentAtMs,
+          });
+          continue;
+        }
+        const input: Extract<PongControllerInputResult, { readonly ok: true }> =
+          normalizedMode === 'human'
+            ? {
+                ok: true,
+                sessionId: deps.browserSessionId,
+                side,
+                direction: intent.direction,
+                amount: intent.amount,
+              }
+            : createSyntheticPlannerControllerInput(side, intent);
+        const detail = formatAimDetail(aim);
+        const applied = await applyControllerInput(deps.runtime, deps.refs, input, {
           appliedAtMs: deps.nowMs(),
-          sentAtMs: usableIntent.sentAtMs,
+          detail,
+          mode: normalizedMode,
+          sentAtMs: plannerDecision?.sentAtMs,
+          source: appliedTelemetry.source,
+          strategyStatus: appliedTelemetry.strategyStatus,
           syncRuntime: false,
           updateTelemetry: deps.updateTelemetry,
         });
-        deps.postControllerInput(usableIntent.input);
+        if (!applied) {
+          return;
+        }
+        deps.postControllerInput(input, {
+          detail,
+          mode: normalizedMode,
+          source: appliedTelemetry.source,
+          strategyStatus: appliedTelemetry.strategyStatus,
+        });
       }
 
-      const paddles = await Promise.all([
-        deps.refs.paddleA.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
-        deps.refs.paddleB.ask<PongPaddleState>({ type: 'GET_PADDLE' }),
-      ]);
-      await deps.refs.ball.send({
-        type: 'SET_PADDLES',
-        leftY: paddles[0].y,
-        rightY: paddles[1].y,
+      const coordinatorState = await currentMatchState(deps.refs);
+      const tickResult = await deps.refs.matchCoordinator.ask<PongMatchCommandResult>({
+        type: 'TICK_MATCH',
+        requestSessionId: deps.browserSessionId,
+        expectedGeneration: coordinatorState.generation,
       });
-      await deps.refs.ball.send({ type: 'TICK' });
+      if (!tickResult.ok) {
+        deps.setStatus(formatMatchCommandFailure(tickResult));
+        return;
+      }
+      matchState = tickResult.match;
       await deps.flushRuntime(deps.runtime);
       deps.updateTelemetry({ type: 'simulation-applied', nowMs: deps.nowMs() });
-      const nextSnapshot = await deps.snapshot();
+      const nextSnapshot = tickResult.match.snapshot;
       if (!active) {
         return;
       }
 
       deps.renderSnapshot(nextSnapshot);
-      deps.setStatus('running');
+      deps.setStatus(statusForMatchPhase(tickResult.match.phase));
 
       const refreshedMatchState = deps.getMatchState();
       syncLanes(refreshedMatchState);
       for (const side of ['left', 'right'] as const) {
+        const controllerMode = normalizePongControllerType(
+          refreshedMatchState.mode?.controllers[side] ?? 'human'
+        );
         if (
-          shouldLaunchMlxControllerForSide({
+          shouldLaunchPlannerControllerForSide({
             browserSessionId: deps.browserSessionId,
             matchOwnerSessionId: refreshedMatchState.matchOwnerSessionId,
             mode: refreshedMatchState.mode,
             side,
           })
         ) {
-          launchMlxControllerInput(
+          launchPlannerControllerInput(
             side,
+            controllerMode,
             side === 'left' ? deps.refs.controllerLeft : deps.refs.controllerRight,
             nextSnapshot,
             refreshedMatchState.matchGeneration
@@ -1773,7 +2462,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
     } catch (error) {
       deps.setStatus(error instanceof Error ? error.message : 'runtime error');
     } finally {
-      applyingSimulation = false;
+      turnInProgress = false;
     }
   }
 
@@ -1796,6 +2485,11 @@ async function tick(): Promise<void> {
   }
 
   try {
+    const refreshedMatch = await currentMatchState(currentRefs);
+    if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+      return;
+    }
+    applyProjectedMatch(refreshedMatch, { renderSnapshot: false, renderStatus: false });
     await currentStepper.tick();
   } finally {
     if (turnStepper === currentStepper && runtime === currentRuntime && refs === currentRefs) {
@@ -1826,10 +2520,17 @@ async function claimSide(side: 'left' | 'right'): Promise<void> {
   if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
     return;
   }
-  await syncCurrentSession(currentRuntime, currentRefs, {
+  const synced = await syncCurrentSession(currentRuntime, currentRefs, {
     shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs),
+    restoreAuthoritative: false,
   });
   if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+    return;
+  }
+  if (!synced.ok) {
+    if (synced.status) {
+      setStatus(synced.status);
+    }
     return;
   }
   setStatus('claimed');
@@ -1850,22 +2551,36 @@ async function markReady(): Promise<void> {
   if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
     return;
   }
-  await syncCurrentSession(currentRuntime, currentRefs, {
+  const synced = await syncCurrentSession(currentRuntime, currentRefs, {
     shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs),
+    restoreAuthoritative: false,
   });
   if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+    return;
+  }
+  if (!synced.ok) {
+    if (synced.status) {
+      setStatus(synced.status);
+    }
     return;
   }
   setStatus('ready');
 }
 
-function formatStartFailure(result: Exclude<PongMatchStartResult, { readonly ok: true }>): string {
-  return `${result.reason}: ${result.missing.join(', ')}`;
+function formatMatchCommandFailure(
+  result: Exclude<PongMatchCommandResult, { readonly ok: true }>
+): string {
+  if ('missing' in result) {
+    return `${result.reason}: ${result.missing.join(', ')}`;
+  }
+  if ('actualGeneration' in result) {
+    return `${result.reason}: expected ${result.expectedGeneration}, actual ${result.actualGeneration}`;
+  }
+  return result.reason;
 }
 
 async function startMatch(
-  mode: PongMatchMode,
-  broadcast: boolean,
+  mode: PongShellMatchMode,
   ownerSessionId: string = browserSessionId
 ): Promise<void> {
   const currentRuntime = runtime;
@@ -1874,17 +2589,19 @@ async function startMatch(
     return;
   }
 
-  matchGeneration += 1;
   clearControllerDiagnostics();
-  const synced = await syncLobbyForMatchMode(currentRuntime, currentRefs, mode, () =>
+  const synced = await syncMatchForMode(currentRuntime, currentRefs, mode, () =>
     isCurrentRuntimeContext(currentRuntime, currentRefs)
   );
   if (!synced || !isCurrentRuntimeContext(currentRuntime, currentRefs)) {
     return;
   }
-  const result = await currentRefs.lobby.ask<PongMatchStartResult>({
+  const currentMatch = await currentMatchState(currentRefs);
+  const result = await currentRefs.matchCoordinator.ask<PongMatchCommandResult>({
     type: 'START_MATCH',
-    mode,
+    requestSessionId: ownerSessionId,
+    expectedGeneration: currentMatch.generation,
+    mode: toLegacyMatchMode(mode),
   });
   if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
     return;
@@ -1893,46 +2610,14 @@ async function startMatch(
   if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
     return;
   }
-  const lobbyState = await currentLobbyState(currentRefs);
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
-    return;
-  }
-  renderLobby(lobbyState);
+  applyProjectedMatch(await currentMatchState(currentRefs), { renderStatus: false });
   if (!result.ok) {
-    matchStarted = false;
-    clearMatchOwner();
-    setStatus(formatStartFailure(result));
+    setStatus(formatMatchCommandFailure(result));
     return;
   }
 
-  matchStarted = true;
-  matchOwnerSessionId = ownerSessionId;
-  matchMode = mode;
-  setStatus('running');
-  if (loopHandle === null) {
-    loopHandle = window.setTimeout(
-      tick,
-      DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY.simulationIntervalMs
-    );
-  }
-  if (broadcast) {
-    lobbyChannel?.postMessage({
-      type: 'match-started',
-      mode,
-      ownerSessionId,
-    } satisfies LobbyChannelMessage);
-  }
-}
-
-async function syncCurrentLobbyFromStorage(): Promise<void> {
-  const currentRuntime = runtime;
-  const currentRefs = refs;
-  if (!currentRuntime || !currentRefs) {
-    return;
-  }
-  await syncStoredSessionsToLobby(currentRuntime, currentRefs, {
-    shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs),
-  });
+  applyProjectedMatch(result.match);
+  ensureProjectionLoop();
 }
 
 export function bootstrapMeshPongUI(): void {
@@ -1967,19 +2652,21 @@ export function bootstrapMeshPongUI(): void {
   telemetryValues = bindTelemetryPanel(document);
 
   uiBootstrapped = true;
+  installControllerVocabulary(leftControllerSelectElement, 'left');
+  installControllerVocabulary(rightControllerSelectElement, 'right');
   playerCountSelectElement.value = String(TWO_HUMAN_PONG_MATCH_MODE.playerCount);
-  leftControllerSelectElement.value = TWO_HUMAN_PONG_MATCH_MODE.controllers.left;
-  rightControllerSelectElement.value = TWO_HUMAN_PONG_MATCH_MODE.controllers.right;
+  leftControllerSelectElement.value = normalizePongControllerType(
+    TWO_HUMAN_PONG_MATCH_MODE.controllers.left
+  );
+  rightControllerSelectElement.value = normalizePongControllerType(
+    TWO_HUMAN_PONG_MATCH_MODE.controllers.right
+  );
   renderPlayerSession(null);
   resetTelemetry();
 
   modeSelectElement.addEventListener('change', () => {
-    const mode = modeSelectElement.value as PongTransportMode;
-    if (mode === 'websocket') {
-      modeSelectElement.value = selectedMode;
-      setStatus('websocket loopback runs in CI');
-      return;
-    }
+    const mode = resolveBrowserModeSelection(modeSelectElement.value, selectedMode);
+    modeSelectElement.value = mode;
     void switchMode(mode);
   });
 
@@ -2002,7 +2689,7 @@ export function bootstrapMeshPongUI(): void {
   });
 
   startButtonElement.addEventListener('click', () => {
-    void startMatch(selectedMatchMode(), true).catch((error: unknown) => {
+    void startMatch(selectedMatchMode()).catch((error: unknown) => {
       setStatus(error instanceof Error ? error.message : 'start failed');
     });
   });
@@ -2012,6 +2699,12 @@ export function bootstrapMeshPongUI(): void {
       setStatus(error instanceof Error ? error.message : 'reset failed');
     });
   });
+  resetButtonElement.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    void returnToRoom().catch((error: unknown) => {
+      setStatus(error instanceof Error ? error.message : 'return failed');
+    });
+  });
 
   window.addEventListener('keydown', (event) => {
     keys.add(event.key.toLowerCase());
@@ -2019,63 +2712,6 @@ export function bootstrapMeshPongUI(): void {
 
   window.addEventListener('keyup', (event) => {
     keys.delete(event.key.toLowerCase());
-  });
-
-  lobbyChannel?.addEventListener('message', (event: MessageEvent<LobbyChannelMessage>) => {
-    const message = event.data;
-    if (!message || typeof message !== 'object') {
-      return;
-    }
-
-    if (message.type === 'sessions-updated') {
-      void syncCurrentLobbyFromStorage().catch((error: unknown) => {
-        setStatus(error instanceof Error ? error.message : 'lobby sync failed');
-      });
-      return;
-    }
-
-    if (message.type === 'controller-input') {
-      if (message.input.sessionId === browserSessionId) {
-        return;
-      }
-      const currentRuntime = runtime;
-      const currentRefs = refs;
-      if (!currentRuntime || !currentRefs || !matchStarted) {
-        return;
-      }
-      const appliedAtMs = nowEpochMs();
-      if (message.replay) {
-        updateTelemetry({
-          type: 'replay-received',
-          originSessionId: message.replay.originSessionId,
-          sentAtMs: message.replay.sentAtMs,
-          receivedAtMs: appliedAtMs,
-        });
-      }
-      void applyControllerInput(currentRuntime, currentRefs, message.input, {
-        appliedAtMs,
-        sentAtMs: message.replay?.sentAtMs,
-        syncRuntime: false,
-      }).catch((error: unknown) => {
-        setStatus(error instanceof Error ? error.message : 'remote input failed');
-      });
-      return;
-    }
-
-    if (message.type === 'match-started') {
-      void startMatch(message.mode, false, message.ownerSessionId).catch((error: unknown) => {
-        setStatus(error instanceof Error ? error.message : 'start failed');
-      });
-    }
-  });
-
-  window.addEventListener('storage', (event) => {
-    if (event.key !== LOBBY_STORAGE_KEY) {
-      return;
-    }
-    void syncCurrentLobbyFromStorage().catch((error: unknown) => {
-      setStatus(error instanceof Error ? error.message : 'lobby sync failed');
-    });
   });
 
   void switchMode('local');

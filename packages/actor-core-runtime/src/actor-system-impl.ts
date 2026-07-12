@@ -2599,7 +2599,7 @@ export class ActorSystemImpl implements ActorSystem {
       `msg-${Date.now()}`
     );
 
-    return ActorContextManager.safeRun(
+    return ActorContextManager.safeRunAsync(
       actorContext,
       async () => {
         return this.processMessageWithContext(

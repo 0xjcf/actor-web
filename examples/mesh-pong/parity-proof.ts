@@ -1,6 +1,6 @@
 import type { PongTransportMode } from './pong-contract';
 
-export type BrowserPongTransportMode = Exclude<PongTransportMode, 'websocket'>;
+export type BrowserPongTransportMode = PongTransportMode;
 
 export interface MeshPongSharedParityProof {
   readonly topologyFile: string;
@@ -20,8 +20,9 @@ export interface MeshPongModeParityProof {
 export const MESH_PONG_SHARED_PARITY_PROOF: MeshPongSharedParityProof = {
   topologyFile: 'pong-topology.ts',
   behaviorFile: 'pong-behaviors.ts',
-  actors: ['ball', 'score', 'paddleA', 'paddleB'],
-  validationGate: 'mesh-pong.test.ts: local = broadcast = websocket',
+  actors: ['matchCoordinator', 'playerSession', 'controllerLeft', 'controllerRight'],
+  validationGate:
+    'mesh-pong.test.ts: coordinator lifecycle + score parity across local, broadcast, websocket',
 };
 
 export const MESH_PONG_MODE_PARITY_PROOF: Record<
@@ -33,21 +34,28 @@ export const MESH_PONG_MODE_PARITY_PROOF: Record<
     startupFile: 'modes/local.ts',
     startupCall: 'startRuntime(pong)',
     transportBoundary: 'in-process runtime',
-    nodeLayout: 'server / a / b',
+    nodeLayout: 'server / a / b / client in one runtime',
   },
   broadcast: {
     mode: 'broadcast',
     startupFile: 'modes/broadcast.ts',
     startupCall: 'startActorWebNode(pong, { transport })',
     transportBoundary: 'BroadcastChannel transport',
-    nodeLayout: 'server / a / b',
+    nodeLayout: 'host server / a / b / client; joiners client only',
   },
   mesh: {
     mode: 'mesh',
     startupFile: 'modes/mesh.ts',
     startupCall: 'startMeshPongBroadcast(...) + createLabsMesh(...)',
     transportBoundary: 'labs-mesh overlay on BroadcastChannel peers',
-    nodeLayout: 'server / a / b',
+    nodeLayout: 'host server / a / b / client; joiners client only; local overlays',
+  },
+  websocket: {
+    mode: 'websocket',
+    startupFile: 'modes/websocket.ts',
+    startupCall: 'startMeshPongBrowserWebSocket(...)',
+    transportBoundary: 'browser WebSocket peers connected outbound-only to a Node server helper',
+    nodeLayout: 'helper host server / a / b / client; browser tabs client only',
   },
 };
 

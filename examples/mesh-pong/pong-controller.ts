@@ -10,6 +10,7 @@ import type { ActorToolRegistry } from '@actor-web/runtime/browser';
 import { defineBehavior } from '@actor-web/runtime/browser';
 import {
   type ControllerCommand,
+  createPlannerStrategy,
   PONG_FIELD,
   type PongControllerActorState,
   type PongControllerResult,
@@ -36,12 +37,14 @@ const unavailableLlmProvider: ActorAgentLlmProvider = () => ({
 
 function createControllerPrompt(side: PongSide, snapshot: PongSnapshot): string {
   return JSON.stringify({
-    task: 'Return one paddle move as JSON.',
+    task: 'Return one low-frequency Pong planner strategy as JSON.',
     side,
-    bounds: {
-      minAmount: 1,
-      maxAmount: PONG_FIELD.paddleStep,
-      directions: ['up', 'down'],
+    strategy: {
+      targetY: `0..${PONG_FIELD.height - PONG_FIELD.paddleHeight}`,
+      biasY: `-${PONG_FIELD.paddleHeight}..${PONG_FIELD.paddleHeight}`,
+      maxStep: `1..${PONG_FIELD.paddleStep}`,
+      label: 'short reason string',
+      facts: ['short fact strings'],
     },
     snapshot: {
       ball: snapshot.ball,
@@ -52,8 +55,11 @@ function createControllerPrompt(side: PongSide, snapshot: PongSnapshot): string 
       },
     },
     response: {
-      direction: 'up | down',
-      amount: 'number',
+      targetY: 'number',
+      biasY: 'number',
+      maxStep: 'number',
+      label: 'string',
+      facts: 'string[]',
     },
   });
 }
@@ -107,23 +113,39 @@ export function normalizePongControllerAmount(rawAmount: number): number {
 
 function parseControllerResponse(side: PongSide, content: string): PongControllerResult {
   try {
-    const parsed = JSON.parse(content) as { direction?: unknown; amount?: unknown };
-    const direction =
-      parsed.direction === 'up' || parsed.direction === 'down' ? parsed.direction : null;
-    const rawAmount =
-      typeof parsed.amount === 'number'
-        ? parsed.amount
-        : typeof parsed.amount === 'string' && parsed.amount.trim().length > 0
-          ? Number(parsed.amount)
+    const parsed = JSON.parse(content) as {
+      targetY?: unknown;
+      biasY?: unknown;
+      maxStep?: unknown;
+      label?: unknown;
+      facts?: unknown;
+    };
+    const targetY =
+      typeof parsed.targetY === 'number'
+        ? parsed.targetY
+        : typeof parsed.targetY === 'string' && parsed.targetY.trim().length > 0
+          ? Number(parsed.targetY)
           : Number.NaN;
-    if (!direction || !Number.isFinite(rawAmount)) {
+    const biasY =
+      typeof parsed.biasY === 'number'
+        ? parsed.biasY
+        : typeof parsed.biasY === 'string' && parsed.biasY.trim().length > 0
+          ? Number(parsed.biasY)
+          : 0;
+    const maxStep =
+      typeof parsed.maxStep === 'number'
+        ? parsed.maxStep
+        : typeof parsed.maxStep === 'string' && parsed.maxStep.trim().length > 0
+          ? Number(parsed.maxStep)
+          : PONG_FIELD.paddleStep;
+    if (!Number.isFinite(targetY) || !Number.isFinite(biasY) || !Number.isFinite(maxStep)) {
       return {
         ok: false,
         side,
         reason: 'invalid-response',
         error: {
           code: 'LLM_INVALID_RESPONSE',
-          message: 'LLM controller must return JSON with direction and amount.',
+          message: 'LLM controller must return JSON with targetY, biasY, and maxStep.',
         },
       };
     }
@@ -132,8 +154,18 @@ function parseControllerResponse(side: PongSide, content: string): PongControlle
       ok: true,
       provider: 'llm',
       side,
-      direction,
-      amount: normalizePongControllerAmount(rawAmount),
+      strategy: createPlannerStrategy(side, {
+        targetY,
+        biasY,
+        maxStep,
+        label:
+          typeof parsed.label === 'string' && parsed.label.trim().length > 0
+            ? parsed.label.trim()
+            : 'planner-target',
+        facts: Array.isArray(parsed.facts)
+          ? parsed.facts.filter((fact): fact is string => typeof fact === 'string')
+          : [],
+      }),
     };
   } catch {
     return {

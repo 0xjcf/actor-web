@@ -39,11 +39,17 @@ Epic: labs-mesh-runtime-substrate. Follow-up from the Mesh Pong UI transport sel
 - examples/mesh-pong/README.md
 - examples/mesh-pong/mesh-pong.test.ts
 - examples/mesh-pong/modes/websocket.ts
+- examples/mesh-pong/parity-proof.ts
 - examples/vite.config.ts
+- packages/actor-core-runtime/src/actor-context-manager.ts
+- packages/actor-core-runtime/src/unit/actor-context-manager.test.ts
 
 ## Scope Amendments
 
-- None.
+- 2026-07-09: Manual two-tab validation exposed that the browser fallback
+  actor-context storage rejected overlapping top-level async actor runs when a
+  second Mesh Pong tab started. The runtime fallback must serialize those runs
+  so browser-playable local/WebSocket validation can support separate sessions.
 
 ## Implementation plan
 

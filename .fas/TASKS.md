@@ -2224,17 +2224,23 @@ operator explicitly asks for queue mutations.
 
 - Title: Mesh Pong browser-playable WebSocket transport mode
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/mesh-pong-browser-playable-websocket-transport-mode.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Mesh Pong hybrid reflex controller plus LLM planner mode
 
 - Title: Mesh Pong hybrid reflex controller plus LLM planner mode
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/mesh-pong-hybrid-reflex-controller-plus-llm-planner-mode.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Design actor-web advisory policy for deadline-safe advice
 
@@ -2275,6 +2281,41 @@ operator explicitly asks for queue mutations.
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/document-mesh-pong-layered-actor-control-course-path.md
+
+### Task: Define actor-web artifact actor registry contract for Ignite ArtifactSpec interop
+
+- Title: Define actor-web artifact actor registry contract for Ignite ArtifactSpec interop
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/define-actor-web-artifact-actor-registry-contract-for-ignite.md
+
+### Task: Mesh Pong remote rooms and spectator channel model
+
+- Title: Mesh Pong remote rooms and spectator channel model
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/mesh-pong-remote-rooms-and-spectator-channel-model.md
+
+### Task: Mesh Pong Lobby Room Table and Match UI workflow polish
+
+- Title: Mesh Pong Lobby Room Table and Match UI workflow polish
+- Mode: 4-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/mesh-pong-lobby-room-table-and-match-ui-workflow-polish.md
+
+### Task: Mesh Pong authoritative match lifecycle and cross-client projection convergence
+
+- Title: Mesh Pong authoritative match lifecycle and cross-client projection convergence
+- Mode: 6-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/mesh-pong-authoritative-match-lifecycle-and-cross-client-pro.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ## Template
 

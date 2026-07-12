@@ -121,31 +121,71 @@ describe('FallbackContextStorage', () => {
     expect(storage.getStore()).toBeUndefined();
   });
 
-  it('rejects overlapping top-level async runs and preserves the original context', async () => {
+  it('rejects overlapping run calls instead of returning a queued Promise', async () => {
+    const storage = new FallbackContextStorage<ActorContext>();
+    const outer = createContext('outer-actor');
+    const inner = createContext('inner-actor');
+
+    await storage.run(outer, async () => {
+      await Promise.resolve();
+
+      expect(() => storage.run(inner, () => 'inner-result')).toThrow(
+        'FallbackContextStorage cannot start overlapping top-level async runs without AsyncLocalStorage'
+      );
+    });
+
+    expect(storage.getStore()).toBeUndefined();
+  });
+
+  it('queues explicitly asynchronous top-level runs and preserves each context', async () => {
     const storage = new FallbackContextStorage<ActorContext>();
     const first = createContext('first-actor');
     const second = createContext('second-actor');
     let releaseFirst!: () => void;
+    let releaseSecond!: () => void;
+    const events: string[] = [];
     const firstGate = new Promise<void>((resolve) => {
       releaseFirst = resolve;
     });
-
-    const firstPending = storage.run(first, async () => {
-      await firstGate;
-      expect(storage.getStore()).toEqual(first);
+    const secondGate = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
     });
 
-    expect(() =>
-      storage.run(second, async () => {
-        throw new Error('should-not-run');
-      })
-    ).toThrow(
-      'FallbackContextStorage cannot start overlapping top-level async runs without AsyncLocalStorage'
-    );
+    const firstPending = storage.runAsync(first, async () => {
+      events.push('first-started');
+      await firstGate;
+      expect(storage.getStore()).toEqual(first);
+      events.push('first-finished');
+    });
+
+    const secondPending = storage.runAsync(second, async () => {
+      events.push('second-started');
+      expect(storage.getStore()).toEqual(second);
+      await secondGate;
+      expect(storage.getStore()).toEqual(second);
+      events.push('second-finished');
+    });
+
+    await Promise.resolve();
+    expect(events).toEqual(['first-started']);
+    expect(storage.getStore()).toEqual(first);
 
     releaseFirst();
     await firstPending;
+    await Promise.resolve();
 
+    expect(events).toEqual(['first-started', 'first-finished', 'second-started']);
+    expect(storage.getStore()).toEqual(second);
+
+    releaseSecond();
+    await secondPending;
+
+    expect(events).toEqual([
+      'first-started',
+      'first-finished',
+      'second-started',
+      'second-finished',
+    ]);
     expect(storage.getStore()).toBeUndefined();
   });
 });

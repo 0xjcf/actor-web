@@ -1,11 +1,13 @@
 import { defineBehavior } from '@actor-web/runtime/browser';
 import {
   advanceBall,
+  applyMatchControllerInput,
   type BallCommand,
   type BallEvent,
   claimPlayerSessionSide,
   createInitialBallContext,
   createInitialLobby,
+  createInitialMatchState,
   createInitialPaddle,
   createInitialPlayerSession,
   createInitialScore,
@@ -21,19 +23,31 @@ import {
   type PongLobbyCommand,
   type PongLobbyEvent,
   type PongLobbyState,
+  type PongMatchCommand,
+  type PongMatchCommandResult,
+  type PongMatchEvent,
   type PongMatchMode,
+  type PongMatchState,
   type PongPaddleState,
   type PongPlayerSessionParams,
   type PongPlayerSessionState,
   type PongScoreState,
   type PongSide,
+  pauseMatchLifecycle,
   removeLobbySession,
+  removeMatchSession,
+  restartMatchLifecycle,
+  restorePlayerSession,
+  returnMatchToRoom,
   type ScoreCommand,
   type ScoreEvent,
   setPaddle,
   setPlayerSessionReady,
   startLobbyMatch,
+  startMatchLifecycle,
   syncLobbySession,
+  syncMatchSession,
+  tickMatch,
 } from './pong-contract';
 
 function isPongControllerType(value: unknown): value is 'human' | 'mlx' {
@@ -172,6 +186,17 @@ export function createPlayerSessionBehavior(params: PongPlayerSessionParams) {
         return { reply: context };
       }
 
+      if (message.type === 'RESTORE_SESSION') {
+        const result = restorePlayerSession(context, message.session);
+        return result.ok
+          ? {
+              context: result.session,
+              reply: result,
+              emit: [{ type: 'PLAYER_SESSION_CHANGED' as const, session: result.session }],
+            }
+          : { reply: result };
+      }
+
       if (message.type === 'CLAIM_SIDE') {
         if (
           !isPongSide(message.side) ||
@@ -296,5 +321,85 @@ export const lobbyBehavior = defineBehavior<PongLobbyCommand, PongLobbyEvent>()
           ]
         : [{ type: 'MATCH_START_REJECTED' as const, result }],
     };
+  })
+  .build();
+
+export const matchCoordinatorBehavior = defineBehavior<PongMatchCommand, PongMatchEvent>()
+  .withContext(createInitialMatchState())
+  .onMessage(({ message, actor }) => {
+    const context = actor.getSnapshot().context as PongMatchState;
+
+    if (message.type === 'GET_MATCH') {
+      return { reply: context };
+    }
+
+    let result: PongMatchCommandResult;
+    switch (message.type) {
+      case 'SYNC_SESSION':
+        result = syncMatchSession(context, message.requestSessionId, message.session);
+        break;
+      case 'REMOVE_SESSION':
+        result = removeMatchSession(context, message.requestSessionId, message.sessionId);
+        break;
+      case 'START_MATCH':
+        result = startMatchLifecycle(
+          context,
+          message.requestSessionId,
+          message.expectedGeneration,
+          message.mode
+        );
+        break;
+      case 'PAUSE_MATCH':
+        result = pauseMatchLifecycle(context, message.requestSessionId, message.expectedGeneration);
+        break;
+      case 'RESTART_MATCH':
+        result = restartMatchLifecycle(
+          context,
+          message.requestSessionId,
+          message.expectedGeneration
+        );
+        break;
+      case 'REMATCH':
+        result = restartMatchLifecycle(
+          context,
+          message.requestSessionId,
+          message.expectedGeneration,
+          message.mode
+        );
+        break;
+      case 'RETURN_TO_ROOM':
+        result = returnMatchToRoom(context, message.requestSessionId, message.expectedGeneration);
+        break;
+      case 'APPLY_CONTROLLER_INPUT':
+        result = applyMatchControllerInput(
+          context,
+          message.requestSessionId,
+          message.expectedGeneration,
+          message.input
+        );
+        break;
+      case 'TICK_MATCH':
+        result = tickMatch(
+          context,
+          message.requestSessionId,
+          message.expectedGeneration,
+          message.count
+        );
+        break;
+      default:
+        result = {
+          ok: false,
+          reason: 'invalid-command',
+          missing: [],
+        };
+    }
+
+    return result.ok
+      ? {
+          context: result.match,
+          reply: result,
+          emit: [{ type: 'MATCH_CHANGED' as const, match: result.match }],
+        }
+      : { reply: result };
   })
   .build();

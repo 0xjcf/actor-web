@@ -86,6 +86,7 @@ interface FallbackContextFrame<T> {
 export class FallbackContextStorage<T> implements ContextStorage<T> {
   private current: T | undefined;
   private readonly frames: FallbackContextFrame<T>[] = [];
+  private topLevelAsyncTail: Promise<void> = Promise.resolve();
   private rootPrevious: T | undefined;
   private callbackDepth = 0;
 
@@ -132,6 +133,19 @@ export class FallbackContextStorage<T> implements ContextStorage<T> {
 
   getStore(): T | undefined {
     return this.current;
+  }
+
+  /**
+   * Serialize top-level async work without changing run()'s synchronous contract.
+   * Callers must not use this method for reentry from an active async callback.
+   */
+  runAsync<TResult>(context: T, fn: () => Promise<TResult>): Promise<TResult> {
+    const pending = this.topLevelAsyncTail.then(() => this.run(context, fn));
+    this.topLevelAsyncTail = pending.then(
+      () => undefined,
+      () => undefined
+    );
+    return pending;
   }
 
   private releaseFrame(frameId: symbol): void {
@@ -469,6 +483,25 @@ export function safeRun<T>(context: ActorContext, fn: () => T, fallbackActorId?:
 
     throw error;
   }
+}
+
+/**
+ * Run one top-level async operation with context isolation.
+ *
+ * Browser fallbacks serialize these operations because they cannot isolate
+ * concurrent top-level async contexts. AsyncLocalStorage environments retain
+ * their normal concurrent behavior.
+ */
+export function safeRunAsync<T>(
+  context: ActorContext,
+  fn: () => Promise<T>,
+  fallbackActorId?: string
+): Promise<T> {
+  if (storage instanceof FallbackContextStorage) {
+    return storage.runAsync(context, () => Promise.resolve(safeRun(context, fn, fallbackActorId)));
+  }
+
+  return Promise.resolve(safeRun(context, fn, fallbackActorId));
 }
 
 /**
