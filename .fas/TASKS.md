@@ -2351,12 +2351,31 @@ operator explicitly asks for queue mutations.
 
 - Title: Mesh Pong headless room workflow foundation and Lobby Table screens
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: planning
+- Owner: planner
 - Brief: .fas/tasks/mesh-pong-headless-room-workflow-foundation-and-lobby-table-.md
 - Verification lane: fast
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
+
+### Task: Mesh Pong agent-native interaction contract conformance
+
+- Title: Mesh Pong agent-native interaction contract conformance
+- Mode: 6-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/mesh-pong-agent-native-interaction-contract-conformance.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Mesh Pong revisioned advisory-policy conformance proof
+
+- Title: Mesh Pong revisioned advisory-policy conformance proof
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/mesh-pong-revisioned-advisory-policy-conformance-proof.md
 
 ## Template
 

@@ -44,7 +44,14 @@ Use Mesh Pong to prove a deterministic utility-policy layer after the behavior-t
 
 ## Scope Amendments
 
-- None.
+- Type: revisioned-advisory-prerequisite
+- Added at: 2026-07-10
+- Trigger: Cross-repo agent-native interaction contract alignment
+- Reason: Utility scoring must consume only deterministically admitted advisory facts proven by the generic advisory-policy conformance slice.
+- Evidence source: fas_staff_engineer handoff
+- Evidence: fas_staff_engineer handoff | .fas/state/agent-orchestration-execution.json | Retain advisory-design dependency and add the generic conformance dependency before utility proof.
+- Accuracy signal: Queue graph shows generic conformance blocks utility-policy proof.
+- Follow-up needed: No async provider calls in utility ticks.
 
 ## Implementation plan
 
@@ -63,6 +70,7 @@ Use Mesh Pong to prove a deterministic utility-policy layer after the behavior-t
 ## Dependencies
 
 - Depends on task-1783536373178 Design actor-web Advisory Lane primitive for deadline-safe agents.
+- Depends on task-1783717048659 Mesh Pong revisioned advisory-policy conformance proof.
 - Blocks task-1783537940318 Evaluate behavior-tree and utility-AI primitives for actor-web behavior composition.
 
 ## Open questions

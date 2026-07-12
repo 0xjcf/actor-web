@@ -20,11 +20,7 @@ export const PONG_NODE_ADDRESSES = {
 } as const;
 
 export function createPongClientNodeAddress(sessionId: string): string {
-  const safeSessionId = sessionId
-    .trim()
-    .replace(/[^A-Za-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return `pong-client-${safeSessionId || 'anonymous'}`;
+  return `pong-client-${encodeURIComponent(sessionId)}`;
 }
 
 export type PongSide = 'left' | 'right';
@@ -130,6 +126,91 @@ export interface PongPlannerStrategy {
   readonly facts: readonly string[];
 }
 
+/**
+ * A planner result is advisory data, never direct paddle authority. Its base tick and
+ * owner/mode facts make deterministic admission possible after an asynchronous provider turn.
+ */
+export interface PongAdvisoryProposal {
+  readonly proposalId: string;
+  readonly correlationId: string;
+  readonly sequence: number;
+  readonly side: PongSide;
+  readonly matchGeneration: number;
+  readonly baseTick: number;
+  readonly ownerSessionId: string | null;
+  readonly controllerMode: PongControllerMode;
+  readonly requestedAtMs: number;
+  readonly completedAtMs: number;
+  readonly strategy: PongPlannerStrategy;
+}
+
+export type PongAdvisoryProposalRejectionReason =
+  | 'cancelled'
+  | 'mode-changed'
+  | 'owner-changed'
+  | 'stale-input'
+  | 'superseded';
+
+export interface PongAdvisoryProposalAdmissionContext {
+  readonly browserSessionId: string;
+  readonly matchGeneration: number;
+  readonly currentTick: number;
+  readonly maxTickAge: number;
+  readonly matchOwnerSessionId: string | null;
+  readonly mode: PongShellMatchMode | null;
+  readonly nowMs: number;
+  readonly maxAgeMs: number;
+  readonly latestAcceptedSequence: number;
+  readonly cancelledProposalIds: readonly string[];
+}
+
+export type PongAdvisoryProposalAdmission =
+  | { readonly ok: true; readonly proposal: PongAdvisoryProposal }
+  | {
+      readonly ok: false;
+      readonly proposalId: string;
+      readonly reason: PongAdvisoryProposalRejectionReason;
+    };
+
+export function admitPongAdvisoryProposal(
+  proposal: PongAdvisoryProposal,
+  context: PongAdvisoryProposalAdmissionContext
+): PongAdvisoryProposalAdmission {
+  if (context.cancelledProposalIds.includes(proposal.proposalId)) {
+    return { ok: false, proposalId: proposal.proposalId, reason: 'cancelled' };
+  }
+  if (proposal.sequence <= context.latestAcceptedSequence) {
+    return { ok: false, proposalId: proposal.proposalId, reason: 'superseded' };
+  }
+  const tickAge = context.currentTick - proposal.baseTick;
+  if (
+    proposal.matchGeneration !== context.matchGeneration ||
+    tickAge < 0 ||
+    tickAge > context.maxTickAge ||
+    !Number.isFinite(proposal.requestedAtMs) ||
+    !Number.isFinite(proposal.completedAtMs) ||
+    !Number.isFinite(context.nowMs) ||
+    proposal.requestedAtMs > proposal.completedAtMs ||
+    proposal.completedAtMs > context.nowMs ||
+    context.nowMs - proposal.requestedAtMs > context.maxAgeMs
+  ) {
+    return { ok: false, proposalId: proposal.proposalId, reason: 'stale-input' };
+  }
+  if (
+    proposal.ownerSessionId !== context.matchOwnerSessionId ||
+    context.browserSessionId !== context.matchOwnerSessionId
+  ) {
+    return { ok: false, proposalId: proposal.proposalId, reason: 'owner-changed' };
+  }
+  if (
+    !context.mode ||
+    normalizePongControllerType(context.mode.controllers[proposal.side]) !== proposal.controllerMode
+  ) {
+    return { ok: false, proposalId: proposal.proposalId, reason: 'mode-changed' };
+  }
+  return { ok: true, proposal };
+}
+
 export interface PongControllerAim {
   readonly side: PongSide;
   readonly targetY: number;
@@ -148,7 +229,7 @@ export type PongControllerResult =
   | {
       readonly ok: false;
       readonly side: PongSide;
-      readonly reason: 'llm-unavailable' | 'provider-failed' | 'invalid-response';
+      readonly reason: 'llm-unavailable' | 'timeout' | 'provider-failed' | 'invalid-response';
       readonly error: {
         readonly code: string;
         readonly message: string;
@@ -841,17 +922,24 @@ function resetSnapshot(seed = DEFAULT_PONG_SEED): PongSnapshot {
 }
 
 function updateAuthorityFromSessions(match: PongMatchState): PongMatchState {
-  if (
-    match.authoritySessionId &&
-    match.sessions.some((session) => session.sessionId === match.authoritySessionId)
-  ) {
-    return match;
-  }
   if (match.phase !== 'running') {
     return {
       ...match,
       authoritySessionId: null,
     };
+  }
+  const hasAuthority =
+    match.authoritySessionId !== null &&
+    match.sessions.some((session) => session.sessionId === match.authoritySessionId);
+  const mode = match.mode;
+  const hasRequiredControllers =
+    mode !== null &&
+    PONG_SIDES.every((side) => {
+      const slot = match.controllers.find((controller) => controller.side === side);
+      return slot?.controller === mode.controllers[side] && slot.ready;
+    });
+  if (hasAuthority && hasRequiredControllers) {
+    return match;
   }
   return {
     ...match,
@@ -1425,6 +1513,13 @@ export function tickMatch(
   expectedGeneration: number,
   count = 1
 ): PongMatchCommandResult {
+  if (!Number.isFinite(count) || !Number.isInteger(count) || count < 1 || count > 10) {
+    return {
+      ok: false,
+      reason: 'invalid-command',
+      missing: [],
+    };
+  }
   const generationFailure = hasExpectedGeneration(match, expectedGeneration);
   if (generationFailure) {
     return generationFailure;
@@ -1439,8 +1534,7 @@ export function tickMatch(
   }
 
   let nextMatch = match;
-  const iterations = Math.max(1, Math.min(10, Math.trunc(count)));
-  for (let index = 0; index < iterations; index += 1) {
+  for (let index = 0; index < count; index += 1) {
     const result = advanceBall({
       ball: nextMatch.snapshot.ball,
       leftPaddleY: nextMatch.snapshot.paddles.left.y,

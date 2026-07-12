@@ -83,6 +83,25 @@ Create the first vertical slice of the online Mesh Pong workflow to isolate the 
 - Accuracy signal: Targeted markdownlint confirms current brief is clean; prior generated task remains the sole branch baseline blocker.
 - Follow-up needed: No product-code changes; keep the formatting-only commit isolated.
 
+- Type: cross-repo-agent-native-contract-alignment
+- Added at: 2026-07-10
+- Trigger: User-approved cross-repo contract amendment and Mesh Pong alignment review
+- Reason: Implement caller-aware command availability, revisioned advisory proposal admission, typed advisory outcomes, remote identity-bound command requirements, and truthful source-of-truth and telemetry documentation; align downstream queue dependencies without replacing existing scheduler edges.
+- Added paths: examples/mesh-pong/pong-controller.ts, examples/mesh-pong/README.md, .fas/tasks/design-actor-web-advisory-lane-primitive-for-deadline-safe-a.md, .fas/tasks/mesh-pong-utility-policy-tactical-scorer-proof.md, .fas/queue/tasks.json
+- Evidence source: 2026-07-10 cross-repo agent-native interaction constraint contract amendment
+- Evidence: 2026-07-10 cross-repo agent-native interaction constraint contract amendment | The amendment requires explicit command availability, revision and freshness validation, typed outcomes, identity enforcement boundaries, and accurate durability and determinism claims.
+- Accuracy signal: Targeted tests prove caller-aware discovery, stale-proposal rejection within an unchanged match generation, typed timeout classification, and unchanged deterministic fallback behavior.
+- Follow-up needed: Create and queue the implementation conformance slice after advisory-policy design; remote room work binds authenticated transport identity.
+
+- Type: follow-up-handoff-clarification
+- Added at: 2026-07-10
+- Trigger: Pipeline review-to-follow-up transition
+- Reason: The cross-repo contract alignment changes were initially recorded while this task was in review, but the review terminal transition required them to move into the dedicated follow-up task Mesh Pong agent-native interaction contract conformance (task-1783716508291 / direct-1783716508276). This task retains only its original room-workflow slice.
+- Evidence source: FAS pipeline transition and user-approved follow-up task
+- Evidence: FAS pipeline transition and user-approved follow-up task | .fas/tasks/mesh-pong-agent-native-interaction-contract-conformance.md | Do not treat the added affected-path references as original room-workflow implementation scope; the follow-up owns source, tests, README, and queue alignment.
+- Accuracy signal: Follow-up commits 398c69ce, 30fbfc51, and c7f8a12d contain the implementation and queue evidence.
+- Follow-up needed: Close the predecessor with its own review evidence; review the contract alignment under task-1783716508291.
+
 ## Implementation plan
 
 1. Write reducer tests in `workflow/mesh-pong-workflow.test.ts` for membership, disconnected-session rejection, stale rejections, readiness, and host-only start; then implement the pure Room and workflow transitions.

@@ -74,6 +74,14 @@ function isPongMatchMode(value: unknown): value is PongMatchMode {
   );
 }
 
+function invalidMatchCommand() {
+  return {
+    ok: false as const,
+    reason: 'invalid-command' as const,
+    missing: [] as readonly PongSide[],
+  };
+}
+
 export const ballBehavior = defineBehavior<BallCommand, BallEvent>()
   .withContext(createInitialBallContext(DEFAULT_PONG_SEED))
   .onMessage(({ message, actor }) => {
@@ -342,12 +350,14 @@ export const matchCoordinatorBehavior = defineBehavior<PongMatchCommand, PongMat
         result = removeMatchSession(context, message.requestSessionId, message.sessionId);
         break;
       case 'START_MATCH':
-        result = startMatchLifecycle(
-          context,
-          message.requestSessionId,
-          message.expectedGeneration,
-          message.mode
-        );
+        result = isPongMatchMode(message.mode)
+          ? startMatchLifecycle(
+              context,
+              message.requestSessionId,
+              message.expectedGeneration,
+              message.mode
+            )
+          : invalidMatchCommand();
         break;
       case 'PAUSE_MATCH':
         result = pauseMatchLifecycle(context, message.requestSessionId, message.expectedGeneration);
@@ -360,12 +370,15 @@ export const matchCoordinatorBehavior = defineBehavior<PongMatchCommand, PongMat
         );
         break;
       case 'REMATCH':
-        result = restartMatchLifecycle(
-          context,
-          message.requestSessionId,
-          message.expectedGeneration,
-          message.mode
-        );
+        result =
+          message.mode === undefined || isPongMatchMode(message.mode)
+            ? restartMatchLifecycle(
+                context,
+                message.requestSessionId,
+                message.expectedGeneration,
+                message.mode
+              )
+            : invalidMatchCommand();
         break;
       case 'RETURN_TO_ROOM':
         result = returnMatchToRoom(context, message.requestSessionId, message.expectedGeneration);
@@ -387,11 +400,7 @@ export const matchCoordinatorBehavior = defineBehavior<PongMatchCommand, PongMat
         );
         break;
       default:
-        result = {
-          ok: false,
-          reason: 'invalid-command',
-          missing: [],
-        };
+        result = invalidMatchCommand();
     }
 
     return result.ok

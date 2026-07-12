@@ -17,6 +17,8 @@ import type {
   ControllerCommand,
   PlayerSessionCommand,
   PlayerSessionRestoreResult,
+  PongAdvisoryProposal,
+  PongAdvisoryProposalRejectionReason,
   PongControllerActorState,
   PongControllerAim,
   PongControllerInputResult,
@@ -35,6 +37,7 @@ import type {
   PongSnapshot,
 } from '../pong-contract';
 import {
+  admitPongAdvisoryProposal,
   createInitialPlayerSession,
   createMergedControllerAim,
   createReflexControllerAim,
@@ -171,7 +174,13 @@ export type MeshPongTelemetryEvent =
       readonly side: PongSide;
       readonly mode: PongControllerMode;
       readonly nowMs: number;
-      readonly outcome: 'ready' | 'error';
+      readonly outcome: 'ready' | 'error' | 'rejected';
+      readonly reason?:
+        | 'llm-unavailable'
+        | 'timeout'
+        | 'provider-failed'
+        | 'invalid-response'
+        | PongAdvisoryProposalRejectionReason;
       readonly strategyStatus?: 'fresh' | 'error';
       readonly detail?: string;
       readonly error?: string;
@@ -231,6 +240,8 @@ export const MESH_PONG_STARTUP_TIMEOUT_MS = 5_000;
 export interface MeshPongControllerSchedulePolicy {
   readonly simulationIntervalMs: number;
   readonly controllerAskTimeoutMs: number;
+  readonly plannerProposalMaxAgeMs: number;
+  readonly plannerProposalMaxTickAge: number;
   readonly plannerStrategyFreshTurnLimit: number;
   readonly plannerStrategyStaleTurnLimit: number;
 }
@@ -238,6 +249,8 @@ export interface MeshPongControllerSchedulePolicy {
 export const DEFAULT_MESH_PONG_CONTROLLER_SCHEDULE_POLICY: MeshPongControllerSchedulePolicy = {
   simulationIntervalMs: 90,
   controllerAskTimeoutMs: 30_000,
+  plannerProposalMaxAgeMs: 1_000,
+  plannerProposalMaxTickAge: 1,
   plannerStrategyFreshTurnLimit: 2,
   plannerStrategyStaleTurnLimit: 1,
 };
@@ -401,13 +414,6 @@ function droppedTurnCount(targetIntervalMs: number, gapMs: number | null): numbe
   return Math.max(0, Math.floor(gapMs / targetIntervalMs) - 1);
 }
 
-function isTimeoutError(error: string | undefined): boolean {
-  if (!error) {
-    return false;
-  }
-  return error.includes('timeout') || error.includes('timed out');
-}
-
 function eventTimestamp(event: MeshPongTelemetryEvent): number {
   switch (event.type) {
     case 'rendered':
@@ -555,7 +561,7 @@ export function reduceMeshPongBenchmarkSummary(
         controllers: {
           ...state.controllers,
           finishedCount: state.controllers.finishedCount + 1,
-          timeoutCount: state.controllers.timeoutCount + (isTimeoutError(event.error) ? 1 : 0),
+          timeoutCount: state.controllers.timeoutCount + (event.reason === 'timeout' ? 1 : 0),
           latency: {
             count: latencyCount,
             totalMs: latencyTotalMs,
@@ -809,6 +815,9 @@ export type MeshPongControllerInputReplayEnvelope = MeshPongControllerInputRepla
 
 type PlannerControllerRequest = {
   readonly requestId: number;
+  readonly proposalId: string;
+  readonly correlationId: string;
+  readonly sequence: number;
   readonly runtime: BrowserRuntime;
   readonly refs: RuntimeRefs;
   readonly side: PongSide;
@@ -816,20 +825,22 @@ type PlannerControllerRequest = {
   readonly controller: ActorRef<PongControllerActorState, ControllerCommand>;
   readonly snapshot: PongSnapshot;
   readonly matchGeneration: number;
+  readonly baseTick: number;
+  readonly ownerSessionId: string | null;
   readonly startedAtMs: number;
 };
 
-type PlannerDecisionState = {
-  readonly requestId: number;
-  readonly matchGeneration: number;
-  readonly strategy: PongPlannerStrategy;
-  readonly sentAtMs: number;
-};
+type PlannerDecisionState = PongAdvisoryProposal;
 
 type PlannerControllerLaneState = {
   inFlight: PlannerControllerRequest | null;
   readyDecision: PlannerDecisionState | null;
   lastDecision: PlannerDecisionState | null;
+  latestAcceptedSequence: number;
+  retiredProposalReasons: Record<
+    string,
+    Extract<PongAdvisoryProposalRejectionReason, 'cancelled' | 'superseded'>
+  >;
   freshTurnsRemaining: number;
   staleTurnsRemaining: number;
 };
@@ -837,6 +848,7 @@ type PlannerControllerLaneState = {
 export interface MeshPongTurnMatchState {
   readonly phase: PongMatchPhase;
   readonly matchGeneration: number;
+  readonly currentTick: number;
   readonly matchOwnerSessionId: string | null;
   readonly mode: PongShellMatchMode | null;
 }
@@ -982,8 +994,7 @@ function bindTelemetryPanel(documentRef: Document): TelemetryValueElements {
 }
 
 function formatMlxControllerError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes('timed out') ? 'controller-timeout' : message;
+  return error instanceof Error ? error.message : String(error);
 }
 
 function formatControllerFailureTelemetryError(
@@ -1906,6 +1917,7 @@ async function switchMode(mode: BrowserMode): Promise<void> {
           getMatchState: () => ({
             phase: matchState?.phase ?? 'lobby',
             matchGeneration: matchState?.generation ?? 0,
+            currentTick: matchState?.tick ?? 0,
             matchOwnerSessionId: matchState?.authoritySessionId ?? null,
             mode: matchState
               ? ({
@@ -2092,6 +2104,8 @@ function createEmptyPlannerLaneState(): PlannerControllerLaneState {
     inFlight: null,
     readyDecision: null,
     lastDecision: null,
+    latestAcceptedSequence: 0,
+    retiredProposalReasons: {},
     freshTurnsRemaining: 0,
     staleTurnsRemaining: 0,
   };
@@ -2108,8 +2122,19 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
   let nextRequestId = 1;
   let lastMatchGeneration: number | null = null;
 
-  function resetLane(side: PongSide): void {
-    lanes[side] = createEmptyPlannerLaneState();
+  function resetLane(
+    side: PongSide,
+    reason: Extract<PongAdvisoryProposalRejectionReason, 'cancelled' | 'superseded'> = 'superseded'
+  ): void {
+    const lane = lanes[side];
+    const retiredProposalReasons = { ...lane.retiredProposalReasons };
+    if (lane.inFlight) {
+      retiredProposalReasons[lane.inFlight.proposalId] = reason;
+    }
+    lanes[side] = {
+      ...createEmptyPlannerLaneState(),
+      retiredProposalReasons,
+    };
   }
 
   function ownsRequest(request: PlannerControllerRequest): boolean {
@@ -2129,30 +2154,75 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
     );
   }
 
+  function admitPlannerProposal(
+    proposal: PongAdvisoryProposal,
+    lane: PlannerControllerLaneState,
+    currentMatch: MeshPongTurnMatchState,
+    nowMs: number
+  ) {
+    return admitPongAdvisoryProposal(proposal, {
+      browserSessionId: deps.browserSessionId,
+      matchGeneration: currentMatch.matchGeneration,
+      currentTick: currentMatch.currentTick,
+      matchOwnerSessionId: currentMatch.matchOwnerSessionId,
+      mode: currentMatch.mode,
+      nowMs,
+      maxAgeMs: schedulePolicy.plannerProposalMaxAgeMs,
+      maxTickAge: schedulePolicy.plannerProposalMaxTickAge,
+      latestAcceptedSequence: lane.latestAcceptedSequence,
+      cancelledProposalIds: Object.entries(lane.retiredProposalReasons)
+        .filter(([, reason]) => reason === 'cancelled')
+        .map(([proposalId]) => proposalId),
+    });
+  }
+
   function syncLanes(matchState: MeshPongTurnMatchState): void {
     if (lastMatchGeneration !== matchState.matchGeneration) {
-      resetLane('left');
-      resetLane('right');
+      resetLane('left', 'superseded');
+      resetLane('right', 'superseded');
       lastMatchGeneration = matchState.matchGeneration;
       return;
     }
 
     for (const side of ['left', 'right'] as const) {
+      const lane = lanes[side];
+      const currentMode = normalizePongControllerType(
+        matchState.mode?.controllers[side] ?? 'human'
+      );
+      const proposalModeChanged =
+        (lane.inFlight !== null && lane.inFlight.mode !== currentMode) ||
+        (lane.readyDecision !== null && lane.readyDecision.controllerMode !== currentMode) ||
+        (lane.lastDecision !== null && lane.lastDecision.controllerMode !== currentMode);
       if (
         !shouldLaunchPlannerControllerForSide({
           browserSessionId: deps.browserSessionId,
           matchOwnerSessionId: matchState.matchOwnerSessionId,
           mode: matchState.mode,
           side,
-        })
+        }) ||
+        proposalModeChanged
       ) {
-        resetLane(side);
+        resetLane(side, 'superseded');
       }
     }
   }
 
   async function resolvePlannerControllerInput(request: PlannerControllerRequest): Promise<void> {
-    const lane = lanes[request.side];
+    const recordRetiredCompletion = (
+      reason: Extract<PongAdvisoryProposalRejectionReason, 'cancelled' | 'superseded'>
+    ): void => {
+      deps.updateTelemetry({
+        type: 'controller-request-finished',
+        side: request.side,
+        mode: request.mode,
+        nowMs: deps.nowMs(),
+        outcome: 'rejected',
+        reason,
+        strategyStatus: 'error',
+        error: reason,
+      });
+      deps.setControllerDiagnostic(request.side, reason);
+    };
     try {
       const result =
         request.side === 'left'
@@ -2170,6 +2240,12 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
               },
               schedulePolicy.controllerAskTimeoutMs
             );
+      const lane = lanes[request.side];
+      const retirementReason = lane.retiredProposalReasons[request.proposalId];
+      if (retirementReason) {
+        recordRetiredCompletion(retirementReason);
+        return;
+      }
       if (!ownsRequest(request)) {
         return;
       }
@@ -2180,6 +2256,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
           mode: request.mode,
           nowMs: deps.nowMs(),
           outcome: 'error',
+          reason: result.reason,
           strategyStatus: 'error',
           error: formatControllerFailureTelemetryError(result),
         });
@@ -2191,24 +2268,56 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
         return;
       }
 
-      deps.clearControllerDiagnostic(result.side);
-      lane.readyDecision = {
-        requestId: request.requestId,
+      const completedAtMs = deps.nowMs();
+      const currentMatch = deps.getMatchState();
+      const proposal: PongAdvisoryProposal = {
+        proposalId: request.proposalId,
+        correlationId: request.correlationId,
+        sequence: request.sequence,
+        side: request.side,
         matchGeneration: request.matchGeneration,
+        baseTick: request.baseTick,
+        ownerSessionId: request.ownerSessionId,
+        controllerMode: request.mode,
+        requestedAtMs: request.startedAtMs,
+        completedAtMs,
         strategy: result.strategy,
-        sentAtMs: request.startedAtMs,
       };
+      const admission = admitPlannerProposal(proposal, lane, currentMatch, completedAtMs);
+      if (!admission.ok) {
+        deps.updateTelemetry({
+          type: 'controller-request-finished',
+          side: result.side,
+          mode: request.mode,
+          nowMs: completedAtMs,
+          outcome: 'rejected',
+          reason: admission.reason,
+          strategyStatus: 'error',
+          error: admission.reason,
+        });
+        deps.setControllerDiagnostic(result.side, admission.reason);
+        return;
+      }
+
+      deps.clearControllerDiagnostic(result.side);
+      lane.readyDecision = admission.proposal;
       deps.updateTelemetry({
         type: 'controller-request-finished',
         side: result.side,
         mode: request.mode,
-        nowMs: deps.nowMs(),
+        nowMs: completedAtMs,
         outcome: 'ready',
         strategyStatus: 'fresh',
         detail: `t${Math.round(result.strategy.targetY)} ${result.strategy.label}`,
       });
     } catch (error) {
       const errorReason = formatMlxControllerError(error);
+      const lane = lanes[request.side];
+      const retirementReason = lane.retiredProposalReasons[request.proposalId];
+      if (retirementReason) {
+        recordRetiredCompletion(retirementReason);
+        return;
+      }
       if (!ownsRequest(request)) {
         return;
       }
@@ -2218,11 +2327,13 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
         mode: request.mode,
         nowMs: deps.nowMs(),
         outcome: 'error',
+        reason: 'provider-failed',
         strategyStatus: 'error',
         error: errorReason,
       });
       deps.setControllerDiagnostic(request.side, errorReason);
     } finally {
+      const lane = lanes[request.side];
       if (lane.inFlight?.requestId === request.requestId) {
         lane.inFlight = null;
       }
@@ -2234,7 +2345,9 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
     mode: PongControllerMode,
     controller: ActorRef<PongControllerActorState, ControllerCommand>,
     snapshotState: PongSnapshot,
-    matchGenerationValue: number
+    matchGenerationValue: number,
+    baseTick: number,
+    ownerSessionId: string | null
   ): void {
     const lane = lanes[side];
     if (lane.inFlight) {
@@ -2245,6 +2358,9 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
     deps.updateTelemetry({ type: 'controller-request-started', side, mode, nowMs: startedAtMs });
     const request: PlannerControllerRequest = {
       requestId: nextRequestId,
+      proposalId: `proposal-${side}-${nextRequestId}`,
+      correlationId: `controller-${side}-${nextRequestId}`,
+      sequence: nextRequestId,
       runtime: deps.runtime,
       refs: deps.refs,
       side,
@@ -2252,6 +2368,8 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
       controller,
       snapshot: snapshotState,
       matchGeneration: matchGenerationValue,
+      baseTick,
+      ownerSessionId,
       startedAtMs,
     };
     nextRequestId += 1;
@@ -2272,7 +2390,29 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
     if (lane.readyDecision && lane.readyDecision.matchGeneration === matchGenerationValue) {
       const readyDecision = lane.readyDecision;
       lane.readyDecision = null;
+      const consumedAtMs = deps.nowMs();
+      const admission = admitPlannerProposal(
+        readyDecision,
+        lane,
+        deps.getMatchState(),
+        consumedAtMs
+      );
+      if (!admission.ok) {
+        deps.updateTelemetry({
+          type: 'controller-request-finished',
+          side,
+          mode,
+          nowMs: consumedAtMs,
+          outcome: 'rejected',
+          reason: admission.reason,
+          strategyStatus: 'error',
+          error: admission.reason,
+        });
+        deps.setControllerDiagnostic(side, admission.reason);
+        return null;
+      }
       lane.lastDecision = readyDecision;
+      lane.latestAcceptedSequence = readyDecision.sequence;
       lane.freshTurnsRemaining = schedulePolicy.plannerStrategyFreshTurnLimit;
       lane.staleTurnsRemaining = schedulePolicy.plannerStrategyStaleTurnLimit;
     }
@@ -2285,7 +2425,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
       lane.freshTurnsRemaining -= 1;
       return {
         strategy: lane.lastDecision.strategy,
-        sentAtMs: lane.lastDecision.sentAtMs,
+        sentAtMs: lane.lastDecision.requestedAtMs,
         freshness: 'fresh',
       };
     }
@@ -2294,7 +2434,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
       lane.staleTurnsRemaining -= 1;
       return {
         strategy: lane.lastDecision.strategy,
-        sentAtMs: lane.lastDecision.sentAtMs,
+        sentAtMs: lane.lastDecision.requestedAtMs,
         freshness: 'stale',
       };
     }
@@ -2312,7 +2452,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
     }
     return {
       detail: `neutral ${lastDecision.strategy.label}`,
-      sentAtMs: lastDecision.sentAtMs,
+      sentAtMs: lastDecision.requestedAtMs,
     };
   }
 
@@ -2532,7 +2672,9 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
             controllerMode,
             side === 'left' ? deps.refs.controllerLeft : deps.refs.controllerRight,
             nextSnapshot,
-            refreshedMatchState.matchGeneration
+            refreshedMatchState.matchGeneration,
+            refreshedMatchState.currentTick,
+            refreshedMatchState.matchOwnerSessionId
           );
         }
       }
@@ -2547,8 +2689,8 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
     tick,
     stop() {
       active = false;
-      resetLane('left');
-      resetLane('right');
+      resetLane('left', 'cancelled');
+      resetLane('right', 'cancelled');
     },
   };
 }
