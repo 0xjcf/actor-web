@@ -24,6 +24,7 @@ import {
   type PongLobbyEvent,
   type PongLobbyState,
   type PongMatchCommand,
+  type PongMatchCommandResult,
   type PongMatchEvent,
   type PongMatchMode,
   type PongMatchState,
@@ -332,52 +333,66 @@ export const matchCoordinatorBehavior = defineBehavior<PongMatchCommand, PongMat
       return { reply: context };
     }
 
-    const result =
-      message.type === 'SYNC_SESSION'
-        ? syncMatchSession(context, message.requestSessionId, message.session)
-        : message.type === 'REMOVE_SESSION'
-          ? removeMatchSession(context, message.requestSessionId, message.sessionId)
-          : message.type === 'START_MATCH'
-            ? startMatchLifecycle(
-                context,
-                message.requestSessionId,
-                message.expectedGeneration,
-                message.mode
-              )
-            : message.type === 'PAUSE_MATCH'
-              ? pauseMatchLifecycle(context, message.requestSessionId, message.expectedGeneration)
-              : message.type === 'RESTART_MATCH'
-                ? restartMatchLifecycle(
-                    context,
-                    message.requestSessionId,
-                    message.expectedGeneration
-                  )
-                : message.type === 'REMATCH'
-                  ? restartMatchLifecycle(
-                      context,
-                      message.requestSessionId,
-                      message.expectedGeneration,
-                      message.mode
-                    )
-                  : message.type === 'RETURN_TO_ROOM'
-                    ? returnMatchToRoom(
-                        context,
-                        message.requestSessionId,
-                        message.expectedGeneration
-                      )
-                    : message.type === 'APPLY_CONTROLLER_INPUT'
-                      ? applyMatchControllerInput(
-                          context,
-                          message.requestSessionId,
-                          message.expectedGeneration,
-                          message.input
-                        )
-                      : tickMatch(
-                          context,
-                          message.requestSessionId,
-                          message.expectedGeneration,
-                          message.count
-                        );
+    let result: PongMatchCommandResult;
+    switch (message.type) {
+      case 'SYNC_SESSION':
+        result = syncMatchSession(context, message.requestSessionId, message.session);
+        break;
+      case 'REMOVE_SESSION':
+        result = removeMatchSession(context, message.requestSessionId, message.sessionId);
+        break;
+      case 'START_MATCH':
+        result = startMatchLifecycle(
+          context,
+          message.requestSessionId,
+          message.expectedGeneration,
+          message.mode
+        );
+        break;
+      case 'PAUSE_MATCH':
+        result = pauseMatchLifecycle(context, message.requestSessionId, message.expectedGeneration);
+        break;
+      case 'RESTART_MATCH':
+        result = restartMatchLifecycle(
+          context,
+          message.requestSessionId,
+          message.expectedGeneration
+        );
+        break;
+      case 'REMATCH':
+        result = restartMatchLifecycle(
+          context,
+          message.requestSessionId,
+          message.expectedGeneration,
+          message.mode
+        );
+        break;
+      case 'RETURN_TO_ROOM':
+        result = returnMatchToRoom(context, message.requestSessionId, message.expectedGeneration);
+        break;
+      case 'APPLY_CONTROLLER_INPUT':
+        result = applyMatchControllerInput(
+          context,
+          message.requestSessionId,
+          message.expectedGeneration,
+          message.input
+        );
+        break;
+      case 'TICK_MATCH':
+        result = tickMatch(
+          context,
+          message.requestSessionId,
+          message.expectedGeneration,
+          message.count
+        );
+        break;
+      default:
+        result = {
+          ok: false,
+          reason: 'invalid-command',
+          missing: [],
+        };
+    }
 
     return result.ok
       ? {

@@ -30,7 +30,6 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
   let meshPongWebSocketServerPromise: Promise<
     Awaited<ReturnType<typeof startMeshPongWebSocketHost>>
   > | null = null;
-  let meshPongWebSocketServerFailure: string | null = null;
 
   async function ensureMeshPongWebSocketServer(): Promise<
     Awaited<ReturnType<typeof startMeshPongWebSocketHost>>
@@ -44,14 +43,8 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
 
     meshPongWebSocketServerPromise = startMeshPongWebSocketHost()
       .then((server) => {
-        meshPongWebSocketServerFailure = null;
         meshPongWebSocketServer = server;
         return server;
-      })
-      .catch((error: unknown) => {
-        meshPongWebSocketServerFailure =
-          error instanceof Error ? error.message : 'Mesh Pong WebSocket helper failed to start.';
-        throw error;
       })
       .finally(() => {
         meshPongWebSocketServerPromise = null;
@@ -61,17 +54,6 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
   }
 
   async function meshPongWebSocketStatus() {
-    if (meshPongWebSocketServerFailure && !meshPongWebSocketServer) {
-      return {
-        statusCode: 503,
-        body: {
-          state: 'transport-failed',
-          message: meshPongWebSocketServerFailure,
-          transportUrl: null,
-        },
-      };
-    }
-
     try {
       const server = await ensureMeshPongWebSocketServer();
       return {
@@ -85,7 +67,6 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Mesh Pong WebSocket helper failed to start.';
-      meshPongWebSocketServerFailure = message;
       return {
         statusCode: 503,
         body: {

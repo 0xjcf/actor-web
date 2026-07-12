@@ -1659,6 +1659,9 @@ async function returnToRoom(): Promise<void> {
     expectedGeneration: currentMatch.generation,
   });
   await flushRuntime(currentRuntime);
+  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+    return;
+  }
   if (!result.ok) {
     setStatus(formatMatchCommandFailure(result));
     return;

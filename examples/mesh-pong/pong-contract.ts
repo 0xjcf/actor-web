@@ -255,12 +255,14 @@ export interface PongMatchState {
 export type PongMatchFailureReason =
   | 'controller-not-ready'
   | 'invalid-command'
+  | 'match-not-in-lobby'
   | 'match-not-running'
   | 'missing-controller'
   | 'not-authority'
   | 'not-session-owner'
   | 'not-seated-player'
   | 'session-mutation-not-allowed'
+  | 'side-already-claimed'
   | 'stale-generation';
 
 export type PongMatchCommandResult =
@@ -301,6 +303,18 @@ export type PongMatchCommandResult =
       readonly reason: 'session-mutation-not-allowed';
       readonly requestSessionId: string;
       readonly sessionId: string;
+      readonly phase: Exclude<PongMatchPhase, 'lobby'>;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'side-already-claimed';
+      readonly requestSessionId: string;
+      readonly ownerSessionId: string;
+      readonly side: PongSide;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'match-not-in-lobby';
       readonly phase: Exclude<PongMatchPhase, 'lobby'>;
     }
   | {
@@ -730,7 +744,7 @@ function resolveControllerSlots(
 ): readonly PongControllerSlot[] {
   const slots = new Map<PongSide, PongControllerSlot>();
   for (const session of sessions) {
-    if (!session.side) {
+    if (!session.side || slots.has(session.side)) {
       continue;
     }
     slots.set(session.side, {
@@ -881,6 +895,20 @@ export function syncMatchSession(
       requestSessionId,
       sessionId: session.sessionId,
       phase: match.phase,
+    };
+  }
+  const sideOwner = session.side
+    ? match.sessions.find(
+        (candidate) => candidate.sessionId !== session.sessionId && candidate.side === session.side
+      )
+    : undefined;
+  if (session.side && sideOwner) {
+    return {
+      ok: false,
+      reason: 'side-already-claimed',
+      requestSessionId,
+      ownerSessionId: sideOwner.sessionId,
+      side: session.side,
     };
   }
 
@@ -1052,6 +1080,13 @@ export function startMatchLifecycle(
   const generationFailure = hasExpectedGeneration(match, expectedGeneration);
   if (generationFailure) {
     return generationFailure;
+  }
+  if (match.phase !== 'lobby') {
+    return {
+      ok: false,
+      reason: 'match-not-in-lobby',
+      phase: match.phase,
+    };
   }
   const seatedFailure = requireSeatedPlayer(match, requestSessionId);
   if (seatedFailure) {
