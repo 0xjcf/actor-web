@@ -85,6 +85,12 @@ import {
   createPongControllerRequest,
   runPongControllerWithLlmProvider,
 } from './pong-controller';
+import {
+  createInitialPongRoom,
+  type PongRoomCommand,
+  type PongRoomResult,
+  type PongRoomState,
+} from './pong-room-contract';
 import { pong } from './pong-topology';
 import {
   bootstrapMeshPongUI,
@@ -844,6 +850,12 @@ function createTurnStepperHarness(
         return { ok: true, match: makeMatch() } satisfies PongMatchCommandResult;
       }),
     } as unknown as ActorRef<PongMatchState, PongMatchCommand>,
+    room: {
+      ask: vi.fn(async () => ({
+        ok: true,
+        room: createInitialPongRoom('test-room'),
+      })),
+    } as unknown as ActorRef<PongRoomState, PongRoomCommand>,
     score: {
       ask: vi.fn(async () => createInitialScore()),
     } as unknown as ActorRef<PongScoreState, ScoreCommand>,
@@ -1927,12 +1939,13 @@ describe('Mesh Pong transport parity', () => {
     });
   });
 
-  it('keeps the coordinator topology as the sole aggregate and places controllers on nodes a and b', () => {
+  it('separates pre-match room and match aggregates and places controllers on nodes a and b', () => {
     expect(Object.keys(pong.actors).sort()).toEqual([
       'controllerLeft',
       'controllerRight',
       'matchCoordinator',
       'playerSession',
+      'room',
     ]);
     expect('ball' in pong.actors).toBe(false);
     expect('lobby' in pong.actors).toBe(false);
@@ -1942,6 +1955,40 @@ describe('Mesh Pong transport parity', () => {
     expect(pong.actors.controllerLeft.node).toBe('a');
     expect(pong.actors.controllerRight.node).toBe('b');
     expect(pong.subscriptions).toEqual([]);
+  });
+
+  it('runs room authorization and revision invariants through the topology-owned actor', async () => {
+    const runtime = await startMeshPongLocal();
+    startedRuntimes.push(runtime);
+    const room = serverNode(runtime).requireActor('room') as ActorRef<
+      PongRoomState,
+      PongRoomCommand
+    >;
+
+    await expect(room.ask<PongRoomResult>({ type: 'GET_ROOM' })).resolves.toMatchObject({
+      ok: true,
+      room: { phase: 'empty', revision: 0 },
+    });
+    await expect(
+      room.ask<PongRoomResult>({
+        type: 'CREATE_ROOM',
+        requestSessionId: 'tab-a',
+        expectedRevision: 0,
+        code: 'PONG42',
+      })
+    ).resolves.toMatchObject({ ok: true, room: { revision: 1, hostSessionId: 'tab-a' } });
+    await expect(
+      room.ask<PongRoomResult>({
+        type: 'JOIN_ROOM',
+        requestSessionId: 'tab-b',
+        expectedRevision: 0,
+      })
+    ).resolves.toMatchObject({
+      ok: false,
+      reason: 'stale-revision',
+      expectedRevision: 0,
+      actualRevision: 1,
+    });
   });
 
   it('pauses exactly once and preserves remaining human sessions when authority disappears', () => {
@@ -4208,6 +4255,7 @@ describe('Mesh Pong transport parity', () => {
         'mesh-pong.test.ts: coordinator lifecycle + score parity across local, broadcast, websocket',
     });
     expect(MESH_PONG_SHARED_PARITY_PROOF.actors).toEqual([
+      'room',
       'matchCoordinator',
       'playerSession',
       'controllerLeft',
@@ -4273,10 +4321,10 @@ describe('Mesh Pong transport parity', () => {
 
     expect(html).toContain('<code>local = broadcast = mesh = websocket</code>');
     expect(html).toContain(
-      '<code>matchCoordinator / playerSession / controllerLeft / controllerRight</code>'
+      '<code>room / matchCoordinator / playerSession / controllerLeft / controllerRight</code>'
     );
     expect(html).toContain(
-      '<code id="proof-actors">matchCoordinator, playerSession, controllerLeft, controllerRight</code>'
+      '<code id="proof-actors">room, matchCoordinator, playerSession, controllerLeft, controllerRight</code>'
     );
     expect(html).not.toContain('ball / score / paddles');
   });
@@ -4526,15 +4574,20 @@ describe('Mesh Pong transport parity', () => {
     );
 
     expect(uiEntrypoint).toContain('function isCurrentRuntimeContext(');
+    expect(uiEntrypoint).toContain('function isCurrentWorkflowRuntimeContext(');
     expect(uiEntrypoint).toContain(
-      'shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs)'
+      'shouldApply: () =>\n      isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)'
     );
     expect(uiEntrypoint).toContain('options: { readonly shouldApply?: () => boolean } = {}');
     expect(uiEntrypoint).toContain('runMeshPongStartupSubstages({');
     expect(uiEntrypoint).toContain('hydrateCurrentSession(candidateRuntime, nextRefs, {');
     expect(uiEntrypoint).toContain('invalidateSwitchGeneration(generation)');
-    expect(uiEntrypoint).toContain('() => isCurrentRuntimeContext(currentRuntime, currentRefs)');
-    expect(uiEntrypoint).toContain('if (!isCurrentRuntimeContext(currentRuntime, currentRefs))');
+    expect(uiEntrypoint).toContain(
+      '() =>\n    isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)'
+    );
+    expect(uiEntrypoint).toContain(
+      'if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow))'
+    );
     expect(uiEntrypoint).toContain('renderLobby(nextMatch);');
     expect(uiEntrypoint).not.toContain('lobbyChannel?.postMessage');
 

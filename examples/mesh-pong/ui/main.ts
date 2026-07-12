@@ -50,8 +50,16 @@ import {
   usesPlannerController,
   usesSyntheticControllerSlot,
 } from '../pong-contract';
+import type { PongRoomCommand, PongRoomState } from '../pong-room-contract';
 import { pong } from '../pong-topology';
+import { mountMeshPongWorkflowHost } from '../workflow/mesh-pong-workflow-host';
+import {
+  createMeshPongWorkflowSource,
+  isPongRoomResult,
+  type MeshPongWorkflowSource,
+} from '../workflow/mesh-pong-workflow-source';
 import { drawPong } from './pong-canvas';
+import { renderMeshPongWorkflowScreen } from './screens/workflow-screen';
 
 type BrowserMode = BrowserPongTransportMode;
 type BrowserRuntime =
@@ -64,6 +72,7 @@ interface RuntimeRefs {
   readonly controllerLeft: ActorRef<PongControllerActorState, ControllerCommand>;
   readonly controllerRight: ActorRef<PongControllerActorState, ControllerCommand>;
   readonly matchCoordinator: ActorRef<PongMatchState, PongMatchCommand>;
+  readonly room: ActorRef<PongRoomState, PongRoomCommand>;
   readonly playerSession: ActorRef<PongPlayerSessionState, PlayerSessionCommand>;
 }
 
@@ -876,6 +885,7 @@ let statusValueElement: HTMLElement;
 let sessionValueElement: HTMLElement;
 let sideValueElement: HTMLElement;
 let lobbyValueElement: HTMLElement;
+let workflowRootElement: HTMLElement;
 let proofTopologyElement: HTMLElement;
 let proofBehaviorsElement: HTMLElement;
 let proofActorsElement: HTMLElement;
@@ -894,6 +904,8 @@ let loopHandle: number | null = null;
 let switchGeneration = 0;
 let playerSessionState: PongPlayerSessionState | null = null;
 let matchState: PongMatchState | null = null;
+let workflowSource: MeshPongWorkflowSource | null = null;
+let stopWorkflowHost: (() => void) | null = null;
 const keys = new Set<string>();
 let lifecycleStatus = 'idle';
 const controllerDiagnostics: Partial<Record<PongSide, string>> = {};
@@ -1147,6 +1159,33 @@ function renderPlayerSession(session: PongPlayerSessionState | null): void {
   }
 }
 
+function mountCanonicalWorkflow(nextRefs: RuntimeRefs): void {
+  stopWorkflowHost?.();
+  workflowSource?.close();
+  const source = createMeshPongWorkflowSource({
+    sessionId: browserSessionId,
+    actors: {
+      room: nextRefs.room,
+      matchCoordinator: nextRefs.matchCoordinator,
+    },
+  });
+  workflowSource = source;
+  stopWorkflowHost = mountMeshPongWorkflowHost(source, {
+    render: (projection) => {
+      renderMeshPongWorkflowScreen(workflowRootElement, projection);
+      startButtonElement.disabled = !projection.canStart;
+    },
+  });
+  void source.refresh().catch((error: unknown) => {
+    if (workflowSource !== source) {
+      return;
+    }
+    setStatus(
+      error instanceof Error ? `workflow sync failed: ${error.message}` : 'workflow sync failed'
+    );
+  });
+}
+
 export function isProjectedMatchReadyToStart(options: {
   readonly match: PongMatchState;
   readonly session: PongPlayerSessionState | null;
@@ -1168,12 +1207,6 @@ export function isProjectedMatchReadyToStart(options: {
 function renderLobby(match: PongMatchState): void {
   const readyControllers = match.controllers.filter((controller) => controller.ready).length;
   lobbyValueElement.textContent = `${readyControllers} / 2`;
-  startButtonElement.disabled = !isProjectedMatchReadyToStart({
-    match,
-    session: playerSessionState,
-    mode: selectedMatchMode(),
-    expectedGeneration: match.generation,
-  });
 }
 
 function applyProjectedMatch(
@@ -1340,6 +1373,16 @@ function isCurrentRuntimeContext(
   candidateRefs: RuntimeRefs
 ): boolean {
   return runtime === candidateRuntime && refs === candidateRefs;
+}
+
+function isCurrentWorkflowRuntimeContext(
+  candidateRuntime: BrowserRuntime,
+  candidateRefs: RuntimeRefs,
+  candidateWorkflow: MeshPongWorkflowSource
+): boolean {
+  return (
+    isCurrentRuntimeContext(candidateRuntime, candidateRefs) && workflowSource === candidateWorkflow
+  );
 }
 
 async function syncMatchForMode(
@@ -1543,6 +1586,7 @@ async function resolveRefs(candidate: BrowserRuntime): Promise<RuntimeRefs> {
         ? candidate.matchCoordinatorAddress
         : pong.actors.matchCoordinator.address
     ),
+    room: await waitForActor<PongRoomState, PongRoomCommand>(candidate, pong.actors.room.address),
     playerSession,
   };
 }
@@ -1785,6 +1829,10 @@ async function switchMode(mode: BrowserMode): Promise<void> {
   const previous = runtime;
   runtime = null;
   refs = null;
+  stopWorkflowHost?.();
+  stopWorkflowHost = null;
+  workflowSource?.close();
+  workflowSource = null;
   playerSessionState = null;
   matchState = null;
   stopTurnStepper();
@@ -1849,6 +1897,7 @@ async function switchMode(mode: BrowserMode): Promise<void> {
       activate: (nextSnapshot) => {
         runtime = candidateRuntime;
         refs = nextRefs;
+        mountCanonicalWorkflow(nextRefs);
         const activeRuntime = candidateRuntime;
         turnStepper = createMeshPongTurnStepper({
           runtime: activeRuntime,
@@ -2532,7 +2581,59 @@ async function tick(): Promise<void> {
 async function claimSide(side: 'left' | 'right'): Promise<void> {
   const currentRuntime = runtime;
   const currentRefs = refs;
-  if (!currentRuntime || !currentRefs) {
+  const currentWorkflow = workflowSource;
+  if (!currentRuntime || !currentRefs || !currentWorkflow) {
+    return;
+  }
+
+  await currentWorkflow.refresh();
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+    return;
+  }
+  let room = currentWorkflow.snapshot().context.room;
+  if (!room || room.phase === 'empty') {
+    const created = await currentWorkflow.send({ type: 'CREATE_ROOM', code: 'MESH' });
+    if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+      return;
+    }
+    if (!isPongRoomResult(created)) {
+      setStatus('workflow create projection failed');
+      return;
+    }
+    if (!created.ok && created.reason !== 'already-created') {
+      setStatus(created.reason);
+      return;
+    }
+    await currentWorkflow.refresh();
+    if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+      return;
+    }
+    room = currentWorkflow.snapshot().context.room;
+  }
+  if (!room?.members.some((member) => member.sessionId === browserSessionId)) {
+    const joined = await currentWorkflow.send({ type: 'JOIN_ROOM' });
+    if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+      return;
+    }
+    if (!isPongRoomResult(joined)) {
+      setStatus('workflow join projection failed');
+      return;
+    }
+    if (!joined.ok) {
+      setStatus(joined.reason);
+      return;
+    }
+  }
+  const claimed = await currentWorkflow.send({ type: 'CLAIM_SEAT', side, controller: 'human' });
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+    return;
+  }
+  if (!isPongRoomResult(claimed)) {
+    setStatus('workflow seat projection failed');
+    return;
+  }
+  if (!claimed.ok) {
+    setStatus(claimed.reason);
     return;
   }
 
@@ -2541,18 +2642,19 @@ async function claimSide(side: 'left' | 'right'): Promise<void> {
     side,
     controller: 'human',
   });
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
   await flushRuntime(currentRuntime);
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
   const synced = await syncCurrentSession(currentRuntime, currentRefs, {
-    shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs),
+    shouldApply: () =>
+      isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow),
     restoreAuthoritative: false,
   });
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
   if (!synced.ok) {
@@ -2567,23 +2669,38 @@ async function claimSide(side: 'left' | 'right'): Promise<void> {
 async function markReady(): Promise<void> {
   const currentRuntime = runtime;
   const currentRefs = refs;
-  if (!currentRuntime || !currentRefs) {
+  const currentWorkflow = workflowSource;
+  if (!currentRuntime || !currentRefs || !currentWorkflow) {
+    return;
+  }
+
+  const roomReady = await currentWorkflow.send({ type: 'SET_READY', ready: true });
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+    return;
+  }
+  if (!isPongRoomResult(roomReady)) {
+    setStatus('workflow readiness projection failed');
+    return;
+  }
+  if (!roomReady.ok) {
+    setStatus(roomReady.reason);
     return;
   }
 
   await currentRefs.playerSession.send({ type: 'SET_READY', ready: true });
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
   await flushRuntime(currentRuntime);
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
   const synced = await syncCurrentSession(currentRuntime, currentRefs, {
-    shouldApply: () => isCurrentRuntimeContext(currentRuntime, currentRefs),
+    shouldApply: () =>
+      isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow),
     restoreAuthoritative: false,
   });
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
   if (!synced.ok) {
@@ -2613,32 +2730,52 @@ async function startMatch(
 ): Promise<void> {
   const currentRuntime = runtime;
   const currentRefs = refs;
-  if (!currentRuntime || !currentRefs) {
+  const currentWorkflow = workflowSource;
+  if (!currentRuntime || !currentRefs || !currentWorkflow) {
     return;
   }
 
   clearControllerDiagnostics();
+  const roomStart = await currentWorkflow.send({ type: 'BEGIN_MATCH' });
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+    return;
+  }
+  if (!isPongRoomResult(roomStart)) {
+    setStatus('workflow start projection failed');
+    return;
+  }
+  if (!roomStart.ok) {
+    setStatus(roomStart.reason);
+    return;
+  }
   const synced = await syncMatchForMode(currentRuntime, currentRefs, mode, () =>
-    isCurrentRuntimeContext(currentRuntime, currentRefs)
+    isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)
   );
-  if (!synced || !isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!synced || !isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
   const currentMatch = await currentMatchState(currentRefs);
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+    return;
+  }
   const result = await currentRefs.matchCoordinator.ask<PongMatchCommandResult>({
     type: 'START_MATCH',
     requestSessionId: ownerSessionId,
     expectedGeneration: currentMatch.generation,
     mode: toLegacyMatchMode(mode),
   });
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
   await flushRuntime(currentRuntime);
-  if (!isCurrentRuntimeContext(currentRuntime, currentRefs)) {
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
     return;
   }
-  applyProjectedMatch(await currentMatchState(currentRefs), { renderStatus: false });
+  const projectedMatch = await currentMatchState(currentRefs);
+  if (!isCurrentWorkflowRuntimeContext(currentRuntime, currentRefs, currentWorkflow)) {
+    return;
+  }
+  applyProjectedMatch(projectedMatch, { renderStatus: false });
   if (!result.ok) {
     setStatus(formatMatchCommandFailure(result));
     return;
@@ -2670,6 +2807,7 @@ export function bootstrapMeshPongUI(): void {
   sessionValueElement = queryRequired<HTMLElement>(document, '#session-value');
   sideValueElement = queryRequired<HTMLElement>(document, '#side-value');
   lobbyValueElement = queryRequired<HTMLElement>(document, '#lobby-value');
+  workflowRootElement = queryRequired<HTMLElement>(document, '#workflow-screen');
   proofTopologyElement = queryRequired<HTMLElement>(document, '#proof-topology');
   proofBehaviorsElement = queryRequired<HTMLElement>(document, '#proof-behaviors');
   proofActorsElement = queryRequired<HTMLElement>(document, '#proof-actors');

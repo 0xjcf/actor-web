@@ -117,6 +117,30 @@
         align-items: start;
       }
 
+      .workflow-screen {
+        display: grid;
+        gap: 10px;
+        margin-bottom: 14px;
+        border: 1px solid #315b52;
+        border-radius: 8px;
+        background: rgba(16, 36, 31, 0.82);
+        padding: 14px;
+      }
+
+      .workflow-screen h2,
+      .workflow-screen h3,
+      .workflow-screen p {
+        margin: 0;
+      }
+
+      .workflow-screen article {
+        display: grid;
+        gap: 4px;
+        border: 1px solid rgba(49, 91, 82, 0.8);
+        border-radius: 6px;
+        padding: 10px;
+      }
+
       .stage {
         display: grid;
         gap: 12px;
@@ -277,6 +301,10 @@
   </head>
   <body>
     <main>
+      <section id="workflow-screen" class="workflow-screen" aria-live="polite">
+        <h2>Lobby</h2>
+        <p role="status">Connecting to the authoritative workflow.</p>
+      </section>
       <div class="topbar">
         <div class="brand">
           <h1>Mesh Pong</h1>
@@ -364,7 +392,7 @@
             </div>
             <div class="proof-chip">
               <span class="label">Actors</span>
-              <code>matchCoordinator / playerSession / controllerLeft / controllerRight</code>
+              <code>room / matchCoordinator / playerSession / controllerLeft / controllerRight</code>
             </div>
           </div>
         </div>
@@ -393,7 +421,7 @@
           </div>
           <div class="proof-item">
             <span class="label">Actors</span>
-            <code id="proof-actors">matchCoordinator, playerSession, controllerLeft, controllerRight</code>
+            <code id="proof-actors">room, matchCoordinator, playerSession, controllerLeft, controllerRight</code>
           </div>
           <div class="proof-item">
             <span class="label">Validation gate</span>
