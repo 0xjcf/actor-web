@@ -2251,6 +2251,99 @@ describe('Mesh Pong transport parity', () => {
     );
   });
 
+  it('rejects malformed match-coordinator commands without ticking or mutating state', async () => {
+    const runtime = await startMeshPongLocal();
+    startedRuntimes.push(runtime);
+    const { matchCoordinator } = await resolveSessionRefs(runtime);
+    const initialMatch = await currentMatchState(matchCoordinator);
+
+    await expect(
+      matchCoordinator.ask<PongMatchCommandResult>({
+        type: 'UNKNOWN_COMMAND',
+        requestSessionId: 'tab-a',
+        expectedGeneration: initialMatch.generation,
+      } as unknown as PongMatchCommand)
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'invalid-command',
+      missing: [],
+    });
+    await expect(currentMatchState(matchCoordinator)).resolves.toEqual(initialMatch);
+  });
+
+  it('preserves the first owner when another session claims the same match side', () => {
+    const first = syncMatchSession(createInitialMatchState(), 'tab-a', {
+      sessionId: 'tab-a',
+      controller: 'human',
+      side: 'left',
+      ready: true,
+    });
+    if (!first.ok) {
+      throw new Error(`Expected first sync, received ${first.reason}.`);
+    }
+
+    const conflict = syncMatchSession(first.match, 'tab-b', {
+      sessionId: 'tab-b',
+      controller: 'human',
+      side: 'left',
+      ready: true,
+    });
+
+    expect(conflict).toEqual({
+      ok: false,
+      reason: 'side-already-claimed',
+      requestSessionId: 'tab-b',
+      ownerSessionId: 'tab-a',
+      side: 'left',
+    });
+    expect(first.match.controllers).toEqual([
+      { sessionId: 'tab-a', controller: 'human', side: 'left', ready: true },
+    ]);
+  });
+
+  it('rejects START_MATCH once the authoritative match is already running', () => {
+    const first = syncMatchSession(createInitialMatchState(), 'tab-a', {
+      sessionId: 'tab-a',
+      controller: 'human',
+      side: 'left',
+      ready: true,
+    });
+    if (!first.ok) {
+      throw new Error(`Expected first sync, received ${first.reason}.`);
+    }
+    const second = syncMatchSession(first.match, 'tab-b', {
+      sessionId: 'tab-b',
+      controller: 'human',
+      side: 'right',
+      ready: true,
+    });
+    if (!second.ok) {
+      throw new Error(`Expected second sync, received ${second.reason}.`);
+    }
+    const started = startMatchLifecycle(
+      second.match,
+      'tab-a',
+      second.match.generation,
+      TWO_HUMAN_PONG_MATCH_MODE
+    );
+    if (!started.ok) {
+      throw new Error(`Expected match start, received ${started.reason}.`);
+    }
+
+    expect(
+      startMatchLifecycle(
+        started.match,
+        'tab-a',
+        started.match.generation,
+        TWO_HUMAN_PONG_MATCH_MODE
+      )
+    ).toEqual({
+      ok: false,
+      reason: 'match-not-in-lobby',
+      phase: 'running',
+    });
+  });
+
   it('starts one-player human plus MLX controller mode and emits bounded controller intents', async () => {
     const runtime = await startMeshPongLocal({
       tools: createActorAgentTools({
@@ -4314,6 +4407,29 @@ describe('Mesh Pong transport parity', () => {
     expect(uiEntrypoint).toContain('if (!isCurrentRuntimeContext(currentRuntime, currentRefs))');
     expect(uiEntrypoint).toContain('renderLobby(nextMatch);');
     expect(uiEntrypoint).not.toContain('lobbyChannel?.postMessage');
+
+    const returnToRoomSection = uiEntrypoint.slice(
+      uiEntrypoint.indexOf('async function returnToRoom(): Promise<void> {'),
+      uiEntrypoint.indexOf('function isBrowserRuntimeStartFailure(')
+    );
+    const staleGuardIndex = returnToRoomSection.indexOf(
+      'if (!isCurrentRuntimeContext(currentRuntime, currentRefs))'
+    );
+    expect(staleGuardIndex).toBeGreaterThan(-1);
+    expect(staleGuardIndex).toBeLessThan(returnToRoomSection.indexOf('applyProjectedMatch'));
+  });
+
+  it('retries websocket helper startup after a transient status failure', async () => {
+    const viteConfig = await readFile(path.resolve(meshPongExamplesDir, 'vite.config.ts'), 'utf8');
+    const statusSection = viteConfig.slice(
+      viteConfig.indexOf('async function meshPongWebSocketStatus()'),
+      viteConfig.indexOf("name: 'mesh-pong-websocket-helper'")
+    );
+
+    expect(statusSection).toContain('await ensureMeshPongWebSocketServer()');
+    expect(statusSection).not.toContain(
+      'if (meshPongWebSocketServerFailure && !meshPongWebSocketServer)'
+    );
   });
 
   it('accepts websocket as a real browser transport mode selection', () => {
