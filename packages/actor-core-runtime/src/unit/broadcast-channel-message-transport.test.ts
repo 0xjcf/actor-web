@@ -1025,6 +1025,7 @@ describe('ActorSystem BroadcastChannel directory readiness', () => {
   it('does not let a stale failure degrade a replacement incarnation', async () => {
     const transport = new ControlledDirectoryTransport();
     const system = new ActorSystemImpl({ nodeAddress: 'tab-a', transport });
+    const warnSpy = vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
     await system.start();
 
     try {
@@ -1047,6 +1048,7 @@ describe('ActorSystem BroadcastChannel directory readiness', () => {
         () => system.getClusterState().directoryReadiness?.[0]?.status === 'ready',
         'the replacement incarnation should become ready first'
       );
+      warnSpy.mockClear();
       transport.releaseDirectorySync(0);
       await nextTick();
 
@@ -1057,7 +1059,13 @@ describe('ActorSystem BroadcastChannel directory readiness', () => {
           status: 'ready',
         },
       ]);
+      expect(warnSpy).not.toHaveBeenCalledWith(
+        'ACTOR_SYSTEM',
+        'Failed to sync remote directory on transport connect',
+        expect.anything()
+      );
     } finally {
+      warnSpy.mockRestore();
       transport.releaseAllDirectorySyncs();
       await system.stop();
     }

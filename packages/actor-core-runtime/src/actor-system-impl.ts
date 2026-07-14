@@ -3849,25 +3849,34 @@ export class ActorSystemImpl implements ActorSystem {
           status: 'ready',
         });
       } catch (error) {
-        if (this.remoteDirectoryReadinessAttempts.get(node)?.token === token) {
-          const currentConnectionKey = this.getRemoteConnectionKey(node);
-          this.remoteDirectoryReadinessAttempts.delete(node);
-          if (
-            !(error instanceof StaleRemoteDirectorySyncError) &&
-            currentConnectionKey === connectionKey
-          ) {
-            this.remoteDirectoryReadinessFacts.set(node, {
-              ...readinessBase,
-              status: 'degraded',
-              failure: {
-                code: 'directory_sync_failed',
-                message: error instanceof Error ? error.message : String(error),
-              },
-            });
-          } else if (this.remoteDirectoryReadinessFacts.get(node)?.status === 'syncing') {
-            this.remoteDirectoryReadinessFacts.delete(node);
+        const currentAttempt = this.remoteDirectoryReadinessAttempts.get(node);
+        const currentConnectionKey = this.getRemoteConnectionKey(node);
+        const stale =
+          error instanceof StaleRemoteDirectorySyncError ||
+          currentAttempt?.token !== token ||
+          currentConnectionKey !== connectionKey;
+
+        if (stale) {
+          if (currentAttempt?.token === token) {
+            this.remoteDirectoryReadinessAttempts.delete(node);
+            if (this.remoteDirectoryReadinessFacts.get(node)?.status === 'syncing') {
+              this.remoteDirectoryReadinessFacts.delete(node);
+            }
           }
+          throw error instanceof StaleRemoteDirectorySyncError
+            ? error
+            : new StaleRemoteDirectorySyncError(node);
         }
+
+        this.remoteDirectoryReadinessAttempts.delete(node);
+        this.remoteDirectoryReadinessFacts.set(node, {
+          ...readinessBase,
+          status: 'degraded',
+          failure: {
+            code: 'directory_sync_failed',
+            message: error instanceof Error ? error.message : String(error),
+          },
+        });
         throw error;
       }
     });
