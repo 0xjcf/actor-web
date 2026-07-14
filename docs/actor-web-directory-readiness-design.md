@@ -56,11 +56,13 @@ ActorSystem currently performs these operations:
 8. On disconnect, ActorSystem removes the peer's directory entries and projection
    status becomes disconnected.
 
-Explicit `join()` already waits for the same readiness promise. `lookup()` also
-requests a directory sync on a connected-peer cache miss, but currently bypasses
-the deduplicated readiness method. The implementation should route this lookup
-recovery through `ensureRemoteDirectoryReady()` so automatic connection,
-explicit join, and on-demand lookup share one attempt lifecycle.
+Explicit `join()` waits for and reuses the same readiness promise. A connected-peer
+`lookup()` miss also routes through `ensureRemoteDirectoryReady()`: it joins an
+in-flight initial sync, but refreshes a peer that is already `ready` so actors
+registered after the accepted snapshot can be discovered. Concurrent misses
+deduplicate against that one refreshing `syncing` attempt. Automatic connection,
+explicit join, and on-demand lookup therefore share one attempt lifecycle while
+preserving lookup miss recovery.
 
 ## Target state machine
 
