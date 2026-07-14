@@ -2343,9 +2343,12 @@ operator explicitly asks for queue mutations.
 
 - Title: Expose directory readiness separately from transport membership status
 - Mode: 6-agent
-- Status: queued
-- Owner: runtime
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/expose-directory-readiness-separately-from-transport-members.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Mesh Pong headless room workflow foundation and Lobby Table screens
 
