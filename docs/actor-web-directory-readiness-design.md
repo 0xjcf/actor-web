@@ -1,7 +1,6 @@
 # Actor-Web Directory Readiness
 
-Status: accepted design for the active directory-readiness task. Runtime
-implementation and verification are still pending.
+Status: implemented runtime contract.
 
 ## Decision
 
@@ -47,10 +46,14 @@ ActorSystem currently performs these operations:
    the peer and its current connection identity.
 4. `requestDirectorySync()` sends `__runtime.directory.sync.request` and waits
    for `__runtime.directory.sync.response`.
-5. ActorSystem applies each returned `RuntimeDirectoryEntry` to its directory.
-6. Only after successful synchronization does ActorSystem replay remote
+5. The request returns candidate `RuntimeDirectoryEntry` values without
+   mutating the directory.
+6. ActorSystem confirms that the attempt token and peer incarnation are still
+   current, then atomically accepts the candidates and publishes `ready`.
+   Superseded responses apply nothing.
+7. Only after successful synchronization does ActorSystem replay remote
    projection watchers and outbound topology-subscription handshakes.
-7. On disconnect, ActorSystem removes the peer's directory entries and projection
+8. On disconnect, ActorSystem removes the peer's directory entries and projection
    status becomes disconnected.
 
 Explicit `join()` already waits for the same readiness promise. `lookup()` also
@@ -121,8 +124,7 @@ Compatibility meanings:
 
 - `undefined`: the producer does not support readiness reporting;
 - `[]`: readiness reporting is supported and there are no remote peers;
-- Actor-Web's implementation always returns the collection after this feature
-  lands.
+- Actor-Web's implementation always returns the collection.
 
 The public fact contains no Promise, raw `Error`, or private serialized
 connection key. `nodeId` and `incarnation` are copied as facts when the transport
