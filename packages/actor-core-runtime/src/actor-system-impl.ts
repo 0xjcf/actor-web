@@ -1270,7 +1270,7 @@ export class ActorSystemImpl implements ActorSystem {
     let location = await this.directory.lookup(address);
     const node = this.getAddressNode(address);
     if (!location && node && this.config.transport?.isConnected(node)) {
-      await this.ensureRemoteDirectoryReady(node);
+      await this.ensureRemoteDirectoryReady(node, { refreshIfReady: true });
       location = await this.directory.lookup(address);
     }
     if (!location) {
@@ -3800,12 +3800,18 @@ export class ActorSystemImpl implements ActorSystem {
     return identity ? JSON.stringify([identity.nodeId, identity.incarnation]) : undefined;
   }
 
-  private ensureRemoteDirectoryReady(node: string): Promise<void> {
+  private ensureRemoteDirectoryReady(
+    node: string,
+    options: { readonly refreshIfReady?: boolean } = {}
+  ): Promise<void> {
     const identity = this.getRemoteConnectionIdentity(node);
     const connectionKey = this.getRemoteConnectionKey(node);
     const existing = this.remoteDirectoryReadinessAttempts.get(node);
     if (existing && existing.connectionKey === connectionKey) {
-      return existing.promise;
+      const readiness = this.remoteDirectoryReadinessFacts.get(node);
+      if (!options.refreshIfReady || readiness?.status === 'syncing') {
+        return existing.promise;
+      }
     }
 
     const readinessBase = {

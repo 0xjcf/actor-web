@@ -878,6 +878,63 @@ describe('ActorSystem BroadcastChannel directory readiness', () => {
     }
   });
 
+  it('refreshes a ready directory once for concurrent lookup misses', async () => {
+    const transport = new ControlledDirectoryTransport();
+    const directory = new RecordingActorDirectory();
+    const system = new ActorSystemImpl({
+      nodeAddress: 'tab-a',
+      transport,
+      directory: { implementation: directory },
+    });
+    const remoteEntry: RuntimeDirectoryEntry = {
+      address: parseActorPath('actor://tab-b/registered-after-ready'),
+      location: 'tab-b',
+      timestamp: 2,
+      ttl: Number.POSITIVE_INFINITY,
+    };
+    await system.start();
+
+    try {
+      await transport.connect('tab-b');
+      transport.releaseDirectorySync();
+      await waitFor(
+        () => system.getClusterState().directoryReadiness?.[0]?.status === 'ready',
+        'the initial directory sync should become ready'
+      );
+      expect(transport.directorySyncRequests).toBe(1);
+
+      vi.spyOn(
+        system as unknown as {
+          primeRemoteProjectionWatcher(address: ActorAddress): Promise<void>;
+        },
+        'primeRemoteProjectionWatcher'
+      ).mockResolvedValue(undefined);
+      transport.queueDirectoryEntries([remoteEntry]);
+
+      const firstLookup = system.lookup(remoteEntry.address);
+      const secondLookup = system.lookup(remoteEntry.address);
+      await waitFor(
+        () => transport.directorySyncRequests === 2,
+        'concurrent misses should start exactly one refresh after ready'
+      );
+      expect(system.getClusterState().directoryReadiness).toMatchObject([
+        { nodeAddress: 'tab-b', status: 'syncing' },
+      ]);
+
+      transport.releaseDirectorySync();
+      const [firstRef, secondRef] = await Promise.all([firstLookup, secondLookup]);
+      expect(firstRef?.address).toBe(remoteEntry.address);
+      expect(secondRef?.address).toBe(remoteEntry.address);
+      expect(transport.directorySyncRequests).toBe(2);
+      expect(system.getClusterState().directoryReadiness).toMatchObject([
+        { nodeAddress: 'tab-b', status: 'ready' },
+      ]);
+    } finally {
+      transport.releaseAllDirectorySyncs();
+      await system.stop();
+    }
+  });
+
   it('removes readiness facts when the peer disconnects', async () => {
     const transport = new ControlledDirectoryTransport();
     const system = new ActorSystemImpl({ nodeAddress: 'tab-a', transport });
