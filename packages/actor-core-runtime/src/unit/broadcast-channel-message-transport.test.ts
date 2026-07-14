@@ -18,6 +18,7 @@ import {
 } from '../broadcast-channel-message-transport.js';
 import type { DirectoryReadinessFact as BrowserDirectoryReadinessFact } from '../browser.js';
 import type { DirectoryReadinessFact as RootDirectoryReadinessFact } from '../index.js';
+import { Logger } from '../logger.js';
 import {
   createRuntimeNodeIdentity,
   createRuntimeTransportFrame,
@@ -1057,6 +1058,81 @@ describe('ActorSystem BroadcastChannel directory readiness', () => {
         },
       ]);
     } finally {
+      transport.releaseAllDirectorySyncs();
+      await system.stop();
+    }
+  });
+
+  it('does not warn when a superseded directory sync completes stale', async () => {
+    const transport = new ControlledDirectoryTransport();
+    const system = new ActorSystemImpl({ nodeAddress: 'tab-a', transport });
+    const warnSpy = vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+    await system.start();
+
+    try {
+      await transport.connect('tab-b');
+      await waitFor(
+        () => transport.directorySyncRequests === 1,
+        'the first incarnation should start a sync'
+      );
+
+      transport.setPeerIdentity('tab-b', 'tab-b-replacement');
+      transport.emitTransportConnected('tab-b');
+      await waitFor(
+        () => transport.directorySyncRequests === 2,
+        'the replacement incarnation should start a sync'
+      );
+
+      transport.releaseDirectorySync(1);
+      await waitFor(
+        () => system.getClusterState().directoryReadiness?.[0]?.status === 'ready',
+        'the replacement incarnation should become ready first'
+      );
+      warnSpy.mockClear();
+      transport.releaseDirectorySync(0);
+      await nextTick();
+
+      expect(warnSpy).not.toHaveBeenCalledWith(
+        'ACTOR_SYSTEM',
+        'Failed to sync remote directory on transport connect',
+        expect.anything()
+      );
+    } finally {
+      warnSpy.mockRestore();
+      transport.releaseAllDirectorySyncs();
+      await system.stop();
+    }
+  });
+
+  it('still warns and publishes degraded when a current directory sync fails', async () => {
+    const transport = new ControlledDirectoryTransport();
+    const system = new ActorSystemImpl({ nodeAddress: 'tab-a', transport });
+    const warnSpy = vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+    await system.start();
+
+    try {
+      transport.failNextDirectorySync();
+      await transport.connect('tab-b');
+      await waitFor(
+        () => transport.directorySyncRequests === 1,
+        'the current incarnation should start a sync'
+      );
+      transport.releaseDirectorySync();
+      await waitFor(
+        () => system.getClusterState().directoryReadiness?.[0]?.status === 'degraded',
+        'a current sync failure should publish degraded'
+      );
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        'ACTOR_SYSTEM',
+        'Failed to sync remote directory on transport connect',
+        expect.objectContaining({
+          nodeAddress: 'tab-b',
+          error: 'Unexpected directory sync response: __runtime.remote.ask.response',
+        })
+      );
+    } finally {
+      warnSpy.mockRestore();
       transport.releaseAllDirectorySyncs();
       await system.stop();
     }

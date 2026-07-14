@@ -3453,6 +3453,12 @@ export class ActorSystemImpl implements ActorSystem {
     try {
       await this.ensureRemoteDirectoryReady(nodeAddress);
     } catch (error) {
+      if (error instanceof StaleRemoteDirectorySyncError) {
+        log.debug('Ignored superseded remote directory sync on transport connect', {
+          nodeAddress,
+        });
+        return;
+      }
       log.warn('Failed to sync remote directory on transport connect', {
         nodeAddress,
         error: error instanceof Error ? error.message : String(error),
