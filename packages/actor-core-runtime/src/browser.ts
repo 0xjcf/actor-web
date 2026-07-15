@@ -6,6 +6,7 @@ export type {
   ActorMessage,
   ActorSystem,
   ClusterState,
+  DirectoryReadinessFact,
   MessageTransport,
 } from './actor-system.js';
 export type {
