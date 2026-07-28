@@ -2407,9 +2407,12 @@ operator explicitly asks for queue mutations.
 
 - Title: Propagate authenticated principal context and emit command admission facts
 - Mode: 6-agent
-- Status: queued
+- Status: blocked
 - Owner: planner
 - Brief: .fas/tasks/propagate-authenticated-principal-context-and-emit-command-a.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Add durable agent-session checkpoint and rehydration seam
 
