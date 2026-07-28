@@ -2384,8 +2384,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Decide and prove reviewed dependency-chain admission for Actor-Web autonomy
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/decide-and-prove-reviewed-dependency-chain-admission-for-act.md
 - Automation mode: advisory
 - Verification lane: fast
@@ -2396,9 +2396,12 @@ operator explicitly asks for queue mutations.
 
 - Title: Define provider-neutral agent execution trace and receipt contract
 - Mode: 6-agent
-- Status: queued
-- Owner: planner
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/define-provider-neutral-agent-execution-trace-and-receipt-co.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Propagate authenticated principal context and emit command admission facts
 
