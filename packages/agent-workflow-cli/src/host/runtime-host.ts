@@ -15,6 +15,11 @@
 
 import { type ActorAgentLlmProvider, createActorAgentTools } from '@actor-web/agent';
 import type {
+  AgentExecutionAdmissionDecision,
+  AgentExecutionIdempotencyClaimPort,
+  AgentExecutionAdmissionPolicy,
+  AgentExecutionCommandMetadata,
+  AgentExecutionCommandPrincipal,
   ActorMessage,
   ActorRef,
   ActorToolRegistry,
@@ -22,7 +27,7 @@ import type {
   ActorWebTopologyInput,
   Message,
 } from '@actor-web/runtime';
-import { Logger, parse, startRuntime } from '@actor-web/runtime';
+import { admitAgentExecutionCommand, Logger, parse, startRuntime } from '@actor-web/runtime';
 import { loadModuleExport } from './load-module.js';
 
 const log = Logger.namespace('ACTOR_WEB_CLI_HOST');
@@ -59,6 +64,14 @@ export interface RuntimeHostOptions {
   readonly node?: string;
   readonly tools?: ActorToolRegistry;
   readonly agent?: RuntimeHostAgentOptions;
+  readonly commandAdmission?: RuntimeHostCommandAdmissionOptions;
+}
+
+export interface RuntimeHostCommandAdmissionOptions {
+  readonly principal?: AgentExecutionCommandPrincipal;
+  readonly policy?: AgentExecutionAdmissionPolicy;
+  readonly idempotency?: AgentExecutionIdempotencyClaimPort;
+  readonly onDecision?: (decision: AgentExecutionAdmissionDecision) => void | Promise<void>;
 }
 
 interface RegisteredActor {
@@ -68,6 +81,17 @@ interface RegisteredActor {
 }
 
 type AnyTopology = ActorWebTopology<ActorWebTopologyInput>;
+
+const RESERVED_ADMISSION_MESSAGE_KEYS = new Set([
+  'commandId',
+  'intentId',
+  'correlationId',
+  'revision',
+  'idempotencyKey',
+  'capability',
+  'approval',
+  'policyVersion',
+]);
 
 function isTopologyValue(value: unknown): value is AnyTopology {
   return (
@@ -97,6 +121,58 @@ function parseMessage(messageJson: string): HostResult<ActorMessage & Message> {
   return { ok: true, value: parsed as ActorMessage & Message };
 }
 
+function extractAdmissionMetadata(
+  message: ActorMessage & Message
+): {
+  readonly message: ActorMessage & Message;
+  readonly metadata: AgentExecutionCommandMetadata | undefined;
+} {
+  const metadata: {
+    commandId?: string;
+    intentId?: string;
+    correlationId?: string;
+    revision?: number;
+    idempotencyKey?: string;
+    capability?: string;
+    approval?: AgentExecutionCommandMetadata['approval'];
+    policyVersion?: string;
+  } = {};
+  const sanitizedEntries = Object.entries(message).filter(([key, value]) => {
+    if (!RESERVED_ADMISSION_MESSAGE_KEYS.has(key)) {
+      return true;
+    }
+    switch (key) {
+      case 'commandId':
+      case 'intentId':
+      case 'correlationId':
+      case 'idempotencyKey':
+      case 'capability':
+      case 'policyVersion':
+        if (typeof value === 'string') {
+          (metadata as Record<string, unknown>)[key] = value;
+        }
+        return false;
+      case 'revision':
+        if (typeof value === 'number') {
+          metadata.revision = value;
+        }
+        return false;
+      case 'approval':
+        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+          metadata.approval = value as AgentExecutionCommandMetadata['approval'];
+        }
+        return false;
+      default:
+        return false;
+    }
+  });
+
+  return {
+    message: Object.fromEntries(sanitizedEntries) as ActorMessage & Message,
+    metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+  };
+}
+
 function describeStatus(ref: ActorRef): string {
   try {
     const status = (ref.getSnapshot() as { status?: unknown }).status;
@@ -123,6 +199,14 @@ function resolveRuntimeHostTools(options: RuntimeHostOptions): ActorToolRegistry
   return {
     ...(options.tools ?? {}),
     ...createActorAgentTools({ llm: options.agent.llm }),
+  };
+}
+
+function defaultRuntimeHostPrincipal(): AgentExecutionCommandPrincipal {
+  return {
+    id: 'principal:cli-system',
+    kind: 'system',
+    role: 'operator',
   };
 }
 
@@ -229,8 +313,30 @@ export async function createRuntimeHost(
       if (!message.ok) {
         return message;
       }
+      const resolved = extractAdmissionMetadata(message.value);
       try {
-        await ref.send(message.value);
+        if (options.commandAdmission) {
+          const decision = await admitAgentExecutionCommand({
+            actorId: parse(ref.address).id,
+            sessionId: `runtime-host:${spawnNodeKey}`,
+            kind: 'send',
+            message: resolved.message,
+            principal: options.commandAdmission.principal ?? defaultRuntimeHostPrincipal(),
+            policy: options.commandAdmission.policy,
+            requireExplicitPolicy: true,
+            idempotency: options.commandAdmission.idempotency,
+            metadata: resolved.metadata,
+          });
+          await Promise.resolve(options.commandAdmission.onDecision?.(decision));
+          if (!decision.ok) {
+            const reason = decision.rejectionReceipt?.reason;
+            return {
+              ok: false,
+              error: `Send rejected: ${reason?.code ?? 'authorization_denied'}${reason?.detail ? ` (${reason.detail})` : ''}`,
+            };
+          }
+        }
+        await ref.send(resolved.message);
         await flush();
       } catch (error) {
         return {
@@ -250,8 +356,30 @@ export async function createRuntimeHost(
       if (!message.ok) {
         return message;
       }
+      const resolved = extractAdmissionMetadata(message.value);
       try {
-        const reply = await ref.ask(message.value, timeoutMs);
+        if (options.commandAdmission) {
+          const decision = await admitAgentExecutionCommand({
+            actorId: parse(ref.address).id,
+            sessionId: `runtime-host:${spawnNodeKey}`,
+            kind: 'ask',
+            message: resolved.message,
+            principal: options.commandAdmission.principal ?? defaultRuntimeHostPrincipal(),
+            policy: options.commandAdmission.policy,
+            requireExplicitPolicy: true,
+            idempotency: options.commandAdmission.idempotency,
+            metadata: resolved.metadata,
+          });
+          await Promise.resolve(options.commandAdmission.onDecision?.(decision));
+          if (!decision.ok) {
+            const reason = decision.rejectionReceipt?.reason;
+            return {
+              ok: false,
+              error: `Ask rejected: ${reason?.code ?? 'authorization_denied'}${reason?.detail ? ` (${reason.detail})` : ''}`,
+            };
+          }
+        }
+        const reply = await ref.ask(resolved.message, timeoutMs);
         return { ok: true, value: reply };
       } catch (error) {
         return {

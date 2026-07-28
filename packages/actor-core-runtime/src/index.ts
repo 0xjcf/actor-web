@@ -100,9 +100,21 @@ export {
 export type { AdapterFailureOptions } from './adapter-failure.js';
 export { raiseAdapterFailure } from './adapter-failure.js';
 export type {
+  AgentExecutionAdmissionDecision,
+  AgentExecutionAdmissionInput,
+  AgentExecutionIdempotencyClaimPort,
+  AgentExecutionIdempotencyClaimResult,
+  AgentExecutionAdmissionPolicy,
+  AgentExecutionAdmissionPolicyContext,
+  AgentExecutionAdmissionPolicyDecision,
   AgentExecutionAdmissionStage,
+  AgentExecutionApprovalMetadata,
   AgentExecutionAuthorizationFact,
   AgentExecutionAuthorizedReceipt,
+  AgentExecutionCommandKind,
+  AgentExecutionCommandMetadata,
+  AgentExecutionCommandPrincipal,
+  AgentExecutionCommandPrincipalKind,
   AgentExecutionCancellationFact,
   AgentExecutionCancellationReceipt,
   AgentExecutionCommandAdmissionFact,
@@ -137,6 +149,7 @@ export type {
 } from './agent-execution-contract.js';
 export {
   AGENT_EXECUTION_CONTRACT_VERSION,
+  admitAgentExecutionCommand,
   createAgentExecutionTrace,
   createAgentExecutionTraceIdempotencyKey,
   createExecutionAuthorizedReceipt,

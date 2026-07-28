@@ -26,9 +26,21 @@ export {
 } from './actor-tool-delivery.js';
 export type { ActorToolRegistry } from './actor-tools.js';
 export type {
+  AgentExecutionAdmissionDecision,
+  AgentExecutionAdmissionInput,
+  AgentExecutionIdempotencyClaimPort,
+  AgentExecutionIdempotencyClaimResult,
+  AgentExecutionAdmissionPolicy,
+  AgentExecutionAdmissionPolicyContext,
+  AgentExecutionAdmissionPolicyDecision,
   AgentExecutionAdmissionStage,
+  AgentExecutionApprovalMetadata,
   AgentExecutionAuthorizationFact,
   AgentExecutionAuthorizedReceipt,
+  AgentExecutionCommandKind,
+  AgentExecutionCommandMetadata,
+  AgentExecutionCommandPrincipal,
+  AgentExecutionCommandPrincipalKind,
   AgentExecutionCancellationFact,
   AgentExecutionCancellationReceipt,
   AgentExecutionCommandAdmissionFact,
@@ -63,6 +75,7 @@ export type {
 } from './agent-execution-contract.js';
 export {
   AGENT_EXECUTION_CONTRACT_VERSION,
+  admitAgentExecutionCommand,
   createAgentExecutionTrace,
   createAgentExecutionTraceIdempotencyKey,
   createExecutionAuthorizedReceipt,

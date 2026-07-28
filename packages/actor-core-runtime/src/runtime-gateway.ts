@@ -1,4 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
+import {
+  admitAgentExecutionCommand,
+  type AgentExecutionAdmissionDecision,
+  type AgentExecutionIdempotencyClaimPort,
+  type AgentExecutionAdmissionPolicy,
+  type AgentExecutionCommandMetadata,
+  type AgentExecutionCommandPrincipal,
+} from './agent-execution-contract.js';
 import type { ActorRef } from './actor-ref.js';
 import type { ActorAddress, ActorMessage } from './actor-system.js';
 import {
@@ -22,7 +30,7 @@ import {
   actorSnapshotsToTransitionRecord,
   actorSnapshotToRuntimeSnapshot,
 } from './runtime-projection.js';
-import type { Message } from './types.js';
+import type { JsonValue, Message } from './types.js';
 import { parse } from './utils/factories.js';
 
 export type {
@@ -110,6 +118,14 @@ export interface CreateRuntimeGatewayHubOptions<TAuthContext = unknown> {
     readonly connectionId: string;
     readonly clientVersion?: string;
   }>;
+  commandAdmission?: RuntimeGatewayCommandAdmissionOptions<TAuthContext>;
+}
+
+export interface RuntimeGatewayCommandAdmissionOptions<TAuthContext = unknown> {
+  readonly resolvePrincipal?: (authContext: TAuthContext) => AgentExecutionCommandPrincipal;
+  readonly policy?: AgentExecutionAdmissionPolicy;
+  readonly idempotency?: AgentExecutionIdempotencyClaimPort;
+  readonly onDecision?: (decision: AgentExecutionAdmissionDecision) => void | Promise<void>;
 }
 
 export class RuntimeGatewayScopeError extends Error {
@@ -386,6 +402,30 @@ function stableRuntimeGatewayAuthOwnerKey(authContext: unknown): string | null {
   }
 
   return `auth:${createHash('sha256').update(JSON.stringify(canonicalValue)).digest('base64url')}`;
+}
+
+function defaultGatewayPrincipal(
+  authContext: unknown,
+  fallbackConnectionId: string
+): AgentExecutionCommandPrincipal {
+  const ownerKey = stableRuntimeGatewayAuthOwnerKey(authContext);
+  return {
+    id: ownerKey ?? `principal:gateway:${fallbackConnectionId}`,
+    kind: 'authenticated',
+  };
+}
+
+function admissionErrorCodeForDecision(
+  decision: AgentExecutionAdmissionDecision
+): RuntimeGatewayErrorCode {
+  const reasonCode = decision.rejectionReceipt?.reason.code;
+  if (reasonCode === 'missing_principal') {
+    return 'unauthorized';
+  }
+  if (reasonCode === 'invalid_command_metadata') {
+    return 'invalid_frame';
+  }
+  return 'forbidden';
 }
 
 function toCanonicalScopeValue(value: unknown): unknown {
@@ -718,7 +758,8 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         message: string,
         recoverable: boolean,
         streamId?: string,
-        requestId?: string
+        requestId?: string,
+        rejection?: AgentExecutionAdmissionDecision['rejectionReceipt']
       ): void => {
         send({
           type: 'error',
@@ -727,7 +768,35 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           code,
           message,
           recoverable,
+          ...(rejection ? { rejection } : {}),
         });
+      };
+
+      const emitAdmissionDecision = async (
+        kind: 'send' | 'ask',
+        streamId: string,
+        message: Message,
+        metadata: AgentExecutionCommandMetadata | undefined
+      ): Promise<AgentExecutionAdmissionDecision> => {
+        const stream = streams.get(streamId);
+        const actorId = stream ? parse(stream.source.address).id : streamId;
+        const principal =
+          options.commandAdmission?.resolvePrincipal?.(authenticatedAuthContext) ??
+          defaultGatewayPrincipal(authenticatedAuthContext, connectionId);
+        const decision = await admitAgentExecutionCommand({
+          actorId,
+          sessionId: connectionId,
+          kind,
+          message: message as Message & Record<string, JsonValue | undefined>,
+          principal,
+          metadata,
+          policy: options.commandAdmission?.policy,
+          requireExplicitPolicy: true,
+          idempotency: options.commandAdmission?.idempotency,
+          now: () => new Date(),
+        });
+        await Promise.resolve(options.commandAdmission?.onDecision?.(decision));
+        return decision;
       };
 
       const sendStatus = (streamId: string, status: ProjectionTransportStatus): void => {
@@ -1118,7 +1187,8 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
       const sendCommand = async (
         streamId: string,
         requestId: unknown,
-        message: unknown
+        message: unknown,
+        metadata?: AgentExecutionCommandMetadata
       ): Promise<void> => {
         const normalizedRequestId = normalizeRequestId(requestId);
         const stream = commandStream(streamId, normalizedRequestId);
@@ -1149,6 +1219,36 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         }
 
         try {
+          if (options.commandAdmission) {
+            const decision = await emitAdmissionDecision(
+              'send',
+              streamId,
+              message as Message,
+              metadata
+            );
+            if (!decision.ok || !decision.authorizationReceipt) {
+              const rejection = decision.rejectionReceipt;
+              sendError(
+                admissionErrorCodeForDecision(decision),
+                rejection?.reason.detail
+                  ? `${rejection.reason.code}: ${rejection.reason.detail}`
+                  : rejection?.reason.code ?? 'Command admission rejected.',
+                false,
+                streamId,
+                normalizedRequestId,
+                rejection
+              );
+              return;
+            }
+            await stream.source.send(message);
+            send({
+              type: 'ack',
+              streamId,
+              ...(normalizedRequestId ? { requestId: normalizedRequestId } : {}),
+              authorization: decision.authorizationReceipt,
+            });
+            return;
+          }
           await stream.source.send(message);
           send({
             type: 'ack',
@@ -1170,7 +1270,8 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         streamId: string,
         requestId: unknown,
         message: unknown,
-        timeoutMs?: unknown
+        timeoutMs?: unknown,
+        metadata?: AgentExecutionCommandMetadata
       ): Promise<void> => {
         const normalizedRequestId = normalizeRequestId(requestId);
         const stream = commandStream(streamId, normalizedRequestId);
@@ -1227,6 +1328,37 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         }
 
         try {
+          if (options.commandAdmission) {
+            const decision = await emitAdmissionDecision(
+              'ask',
+              streamId,
+              message as Message,
+              metadata
+            );
+            if (!decision.ok || !decision.authorizationReceipt) {
+              const rejection = decision.rejectionReceipt;
+              sendError(
+                admissionErrorCodeForDecision(decision),
+                rejection?.reason.detail
+                  ? `${rejection.reason.code}: ${rejection.reason.detail}`
+                  : rejection?.reason.code ?? 'Command admission rejected.',
+                false,
+                streamId,
+                normalizedRequestId,
+                rejection
+              );
+              return;
+            }
+            const value = await stream.source.ask(message, normalizedTimeoutMs);
+            send({
+              type: 'reply',
+              streamId,
+              requestId: normalizedRequestId,
+              value,
+              authorization: decision.authorizationReceipt,
+            });
+            return;
+          }
           const value = await stream.source.ask(message, normalizedTimeoutMs);
           send({ type: 'reply', streamId, requestId: normalizedRequestId, value });
         } catch (error) {
@@ -1321,10 +1453,16 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             resyncStream(frame.streamId, frame.fromSequence);
             return;
           case 'send':
-            await sendCommand(frame.streamId, frame.requestId, frame.message);
+            await sendCommand(frame.streamId, frame.requestId, frame.message, frame.metadata);
             return;
           case 'ask':
-            await askCommand(frame.streamId, frame.requestId, frame.message, frame.timeoutMs);
+            await askCommand(
+              frame.streamId,
+              frame.requestId,
+              frame.message,
+              frame.timeoutMs,
+              frame.metadata
+            );
             return;
           case 'subscribe':
             if (typeof frame.streamId !== 'string' || frame.streamId.trim().length === 0) {

@@ -1,4 +1,5 @@
 import type { ActorEventSubscriptionOptions } from './actor-ref.js';
+import type { AgentExecutionCommandMetadata } from './agent-execution-contract.js';
 import type { ActorAddress, ActorMessage } from './actor-system.js';
 import {
   type ActorCommandSource,
@@ -110,7 +111,18 @@ export interface ClosableActorWebCommandSource<
   TMessage extends ActorMessage = ActorMessage,
   TEvent extends ActorMessage = ActorMessage,
 > extends ClosableActorWebReadModelSource<TContext, TEvent>,
-    ActorCommandSource<TContext, TMessage, TEvent> {}
+    ActorCommandSource<TContext, TMessage, TEvent> {
+  send(message: TMessage, metadata?: AgentExecutionCommandMetadata): Promise<void>;
+  ask<TResponse = JsonValue>(
+    message: TMessage,
+    timeout?: number | ActorWebAskOptions
+  ): Promise<TResponse>;
+}
+
+export interface ActorWebAskOptions {
+  readonly timeout?: number;
+  readonly metadata?: AgentExecutionCommandMetadata;
+}
 
 export type ClosableActorWebSource<
   TContext = unknown,
@@ -146,7 +158,7 @@ export function createActorWebSourceHandle<
     subscribeEvent: (listener, options) => readModel.subscribeEvent(listener, options),
     transportStatus: () => readModel.transportStatus(),
     subscribeTransportStatus: (listener) => readModel.subscribeTransportStatus(listener),
-    send: (message) => commandSource.send(message),
+    send: (message, metadata) => commandSource.send(message, metadata),
     ask: (message, timeout) => commandSource.ask(message, timeout),
     close: () => commandSource.close(),
   };
@@ -611,7 +623,7 @@ function createGatewayBackedSource<
         statusListeners.delete(listener);
       };
     },
-    async send(message: TMessage): Promise<void> {
+    async send(message: TMessage, metadata?: AgentExecutionCommandMetadata): Promise<void> {
       await ready;
       requestSequence += 1;
       const requestId = `actor-web-source-send-${requestSequence}`;
@@ -624,6 +636,7 @@ function createGatewayBackedSource<
             streamId,
             requestId,
             message: message as unknown as Message,
+            ...(metadata ? { metadata } : {}),
           });
         } catch (error) {
           takePendingSend(requestId);
@@ -631,10 +644,15 @@ function createGatewayBackedSource<
         }
       });
     },
-    async ask<TResponse = JsonValue>(message: TMessage, timeout?: number): Promise<TResponse> {
+    async ask<TResponse = JsonValue>(
+      message: TMessage,
+      timeout?: number | ActorWebAskOptions
+    ): Promise<TResponse> {
       await ready;
       requestSequence += 1;
       const requestId = `actor-web-source-request-${requestSequence}`;
+      const resolvedTimeout = typeof timeout === 'number' ? timeout : timeout?.timeout;
+      const metadata = typeof timeout === 'number' ? undefined : timeout?.metadata;
       return new Promise<TResponse>((resolve, reject) => {
         pendingAsks.set(requestId, {
           resolve: (value) => {
@@ -648,7 +666,8 @@ function createGatewayBackedSource<
             streamId,
             requestId,
             message: message as unknown as Message,
-            timeoutMs: timeout,
+            timeoutMs: resolvedTimeout,
+            ...(metadata ? { metadata } : {}),
           });
         } catch (error) {
           pendingAsks.delete(requestId);
