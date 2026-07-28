@@ -31,11 +31,10 @@ Actor-Web has correlation and causation fields on emitted events plus separate c
 - None recorded at task creation. Add rejected approaches during planning if scope tradeoffs appear.
 
 ## Affected files
-
-- docs
-- packages/runtime/src
-- packages/testing/src
-- packages/agent/src
+- packages/actor-core-runtime/src
+- packages/actor-core-testing/src
+- packages/actor-agent/src
+- docs/provider-neutral-agent-execution-contract.md
 
 ## Architecture Context
 
@@ -187,8 +186,26 @@ Actor-Web has correlation and causation fields on emitted events plus separate c
 ```
 
 ## Scope Amendments
+- Type: package-root-correction
+- Added at: 2026-07-28
+- Trigger: delegated staff-engineer live package-manifest check
+- Reason: The queued aliases packages/runtime, packages/testing, and packages/agent do not exist. Live manifests map the intended published surfaces to @actor-web/runtime in packages/actor-core-runtime, @actor-web/testing in packages/actor-core-testing, and @actor-web/agent in packages/actor-agent; an explicit documentation handoff path is required by the cross-repo deliverable.
+- Added paths: packages/actor-core-runtime/src | packages/actor-core-testing/src | packages/actor-agent/src | docs/provider-neutral-agent-execution-contract.md
+- Removed paths: docs | packages/runtime/src | packages/testing/src | packages/agent/src
+- Evidence source: package.json manifests and task-1785250528660 acceptance contract
+- Evidence: package.json manifests and task-1785250528660 acceptance contract | packages/actor-core-runtime/package.json,packages/actor-core-testing/package.json,packages/actor-agent/package.json
+- Accuracy signal: All three live manifests are version 0.2.0 and export the package names named by the task; the original roots are absent.
+- Follow-up needed: Regenerate planning and orchestration; restart the staff-engineer step before code writing.
 
-- None.
+- Type: package-root-correction
+- Added at: 2026-07-28
+- Trigger: corrected pipe-delimited scope refresh
+- Reason: Reconcile the active change envelope to the four verified Actor-Web package and handoff paths after removing absent alias roots from the brief.
+- Added paths: packages/actor-core-runtime/src, packages/actor-core-testing/src, packages/actor-agent/src, docs/provider-neutral-agent-execution-contract.md
+- Evidence source: live package manifests
+- Evidence: live package manifests | packages/actor-core-runtime/package.json|packages/actor-core-testing/package.json|packages/actor-agent/package.json
+- Accuracy signal: The brief now contains exactly four existing or explicitly planned paths and no absent package aliases.
+- Follow-up needed: Restart the read-only staff-engineer step under the new orchestration generation.
 
 ## Implementation plan
 
