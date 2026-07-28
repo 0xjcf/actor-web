@@ -188,6 +188,16 @@ The live queue is configured independent-only, so every task with dependsOn rema
 - Added at: 2026-07-28
 - Added paths: .fas-config.json, .fas/queue/tasks.json, .fas/state
 
+- Type: scope-correction
+- Added at: 2026-07-28
+- Trigger: Post-implementation ChangeSet and conformance review
+- Reason: The existing FAS admission and reconciliation primitives passed focused conformance, so the accepted Actor-Web implementation is config-only. Queue truth remains command-owned and unchanged; task-specific receipts under .fas/state are generated evidence rather than tracked implementation files.
+- Removed paths: .fas/queue/tasks.json, .fas/state
+- Evidence source: Live ChangeSet, task-specific conformance receipt, and queue reconciliation
+- Evidence: .fas-config.json | .fas/state/verification/dependency-chain-autonomy-conformance-2026-07-28.json | fas queue reconcile: reconcile:dry-run actions:0
+- Accuracy signal: Commit 1650f2fc changes only the accepted config surface, both final read-only reviewers found no queue or runtime-package drift, and the full verification lane passed.
+- Follow-up needed: None for this task; legacy depth-17 through depth-22 chains require a separate audit before any limit increase.
+
 ## Implementation plan
 
 - Capture the current Actor-Web independent-only routing, completed-prerequisite lineage, and superseded-edge fixtures as failing consumer conformance evidence.
