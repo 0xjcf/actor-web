@@ -12,6 +12,7 @@
 ### Exported runtime contract helpers
 
 - `AGENT_EXECUTION_CONTRACT_VERSION`
+- `admitAgentExecutionCommand`
 - `createAgentExecutionTrace`
 - `createAgentExecutionTraceIdempotencyKey`
 - `createExecutionCommandAdmissionReceipt`
@@ -32,6 +33,39 @@
 - `redactAgentExecutionValue`
 - `toAgentExecutionReceiptFromEventEnvelope`
 - `toAgentExecutionReceiptFromEffectRecord`
+
+### Admission helper surfaces
+
+- `AgentExecutionCommandPrincipal`
+  - credential-free only
+  - current principal kinds: `authenticated`, `local`, `system`
+- `AgentExecutionCommandMetadata`
+  - current additive metadata keys:
+    - `commandId`
+    - `intentId`
+    - `correlationId`
+    - `revision`
+    - `idempotencyKey`
+    - `capability`
+    - `approval`
+    - `policyVersion`
+- `AgentExecutionAdmissionPolicy`
+  - provider-neutral policy adapter surface for allow or deny decisions
+- `AgentExecutionIdempotencyClaimPort`
+  - provider-neutral duplicate-claim or duplicate-check surface at the admission seam
+  - current candidate behavior rejects duplicate idempotency keys before dispatch
+  - durable restart-safe duplicate recovery is deferred to checkpoint and rehydration work
+- gateway transport surface
+  - `RuntimeGatewayClientFrame.send.metadata`
+  - `RuntimeGatewayClientFrame.ask.metadata`
+  - `RuntimeGatewayServerFrame.ack.authorization`
+  - `RuntimeGatewayServerFrame.reply.authorization`
+  - `RuntimeGatewayServerFrame.error.rejection`
+- local or CLI host surface
+  - shared admission helper runs immediately before authoritative dispatch
+  - explicit local or system principal remains host-owned
+  - compatibility return shapes for legacy `send(message)` and `ask(message, timeout?)` stay intact
+  - when command admission is configured, the host must provide an explicit policy adapter and fail closed otherwise
 
 ### Exported testing contract helpers
 
@@ -155,20 +189,27 @@ These identities stay distinct. The contract does not collapse intent, authoriza
 
 - Models propose intent; Actor-Web alone validates, authorizes, transitions, persists, executes, checkpoints, resumes, reconciles, and emits authoritative facts or receipts.
 - Capability discovery is descriptive only and never substitutes for execution-time authorization.
-- Actor-Web rechecks command, payload, principal, approval, revision, idempotency, and policy at execution time.
+- Legacy compatibility remains versioned and additive: if a host does not opt into `commandAdmission`, existing command dispatch behavior may continue without additive admission receipts.
+- Once a host opts into `commandAdmission`, Actor-Web requires an explicit policy adapter, rechecks command, payload, principal, approval, revision, idempotency, and policy, and fails closed on missing policy or adapter failure.
+- Gateway authentication proves identity only; the gateway must reduce auth context to a credential-free principal before command admission.
+- Client metadata may propose command identifiers, intent, correlation, revision, idempotency, capability, or approval context, but client-supplied principal data is never authoritative.
+- Local and system-internal command paths use explicit trusted principals and the same admission helper, with bypass semantics expressed as facts instead of an implicit shortcut.
+- A duplicate idempotency key at the current admission seam is rejected before actor send or ask dispatch unless a later checkpoint or rehydration seam introduces a join-capable durable outcome.
 - Persisted effect intent is separate from effect attempt or outcome where atomicity matters.
 - External execution is nondeterministic.
 - The contract supports restart, replay, reconciliation, and no duplicate irreversible effects.
-- The contract does not claim exactly-once external execution.
+- The current task does not claim durable duplicate prevention across restart; exactly-once external execution remains out of scope.
 
 ## Verification receipts
 
 Focused checks completed on July 28, 2026:
 
-- `pnpm --filter @actor-web/runtime exec vitest run src/unit/agent-execution-contract.test.ts`
+- `pnpm --filter @actor-web/runtime exec vitest run src/unit/actor-web-source.test.ts src/unit/runtime-gateway.test.ts`
+- `pnpm --filter @actor-web/cli exec vitest run src/host/runtime-host.test.ts`
 - `pnpm --filter @actor-web/testing test`
 - `pnpm --filter @actor-web/runtime typecheck`
 - `pnpm --filter @actor-web/runtime build`
+- `pnpm --filter @actor-web/cli build`
 - `pnpm --filter @actor-web/testing typecheck`
 - `pnpm --filter @actor-web/testing build`
 
@@ -176,22 +217,10 @@ Docs check completed on July 28, 2026:
 
 - `pnpm exec markdownlint-cli2 --config .markdownlint.jsonc "docs/provider-neutral-agent-execution-contract.md"`
 
-Repository full gate completed on July 28, 2026:
-
-- format
-- lint
-- typecheck
-- tests
-- architecture drift
-- behavior boundaries
-- semantic index
-
-Independent FAS review completed on July 28, 2026:
-
-- passed with no findings
-
 Still pending before maturity can advance beyond candidate:
 
+- repository full gate
+- independent FAS review
 - human final review and merge
 - downstream reconfirmation in Ignite Element and FAS
 
