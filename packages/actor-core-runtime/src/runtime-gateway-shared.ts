@@ -1,9 +1,9 @@
-import type { ProjectionTransportStatus } from './projection-transport.js';
 import type {
   AgentExecutionAuthorizedReceipt,
   AgentExecutionCommandMetadata,
   AgentExecutionRejectedReceipt,
 } from './agent-execution-contract.js';
+import type { ProjectionTransportStatus } from './projection-transport.js';
 import type { RuntimeTransportAuthPayload } from './runtime-auth.js';
 import type {
   ActorEventProjection,

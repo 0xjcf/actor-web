@@ -1,6 +1,6 @@
 import type { ActorEventSubscriptionOptions } from './actor-ref.js';
-import type { AgentExecutionCommandMetadata } from './agent-execution-contract.js';
 import type { ActorAddress, ActorMessage } from './actor-system.js';
+import type { AgentExecutionCommandMetadata } from './agent-execution-contract.js';
 import {
   type ActorCommandSource,
   type ActorReadModelSource,
