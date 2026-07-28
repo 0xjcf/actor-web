@@ -39,6 +39,7 @@ The live queue is configured independent-only, so every task with dependsOn rema
 - None recorded at task creation. Add rejected approaches during planning if scope tradeoffs appear.
 
 ## Affected files
+
 - .fas-config.json
 - .fas/queue/tasks.json
 - .fas/state
@@ -203,8 +204,8 @@ The live queue is configured independent-only, so every task with dependsOn rema
 - Trigger: fas post-merge PR 52
 - Reason: FAS promoted validated memory candidates and refreshed two decision-memory evidence timestamps during required post-merge closeout.
 - Added paths: .fas/memory/decisions.md
-- Evidence source: fas post-merge https://github.com/0xjcf/actor-web/pull/52
-- Evidence: fas post-merge https://github.com/0xjcf/actor-web/pull/52 | .fas/memory/decisions.md
+- Evidence source: FAS post-merge for PR #52
+- Evidence: PR #52 | .fas/memory/decisions.md
 - Accuracy signal: Git diff contains only FAS metadata timestamp refreshes; PR review produced no new substantive memory lesson.
 - Follow-up needed: None
 
