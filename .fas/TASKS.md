@@ -2422,6 +2422,15 @@ operator explicitly asks for queue mutations.
 - Brief: .fas/tasks/recover-actor-web-fas-sqlite-memory-index-from-curated-proje.md
 - Automation mode: manual
 
+### Task: Support legacy orchestration-generation adoption for terminal closeout recovery
+
+- Title: Support legacy orchestration-generation adoption for terminal closeout recovery
+- Mode: 6-agent
+- Status: queued
+- Owner: planner
+- Brief: .fas/tasks/support-legacy-orchestration-generation-adoption-for-termina.md
+- Automation mode: manual
+
 ## Template
 
 ### Task: `<short task title>`
