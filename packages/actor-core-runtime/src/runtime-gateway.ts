@@ -1,14 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto';
+import type { ActorRef } from './actor-ref.js';
+import type { ActorAddress, ActorMessage } from './actor-system.js';
 import {
-  admitAgentExecutionCommand,
   type AgentExecutionAdmissionDecision,
-  type AgentExecutionIdempotencyClaimPort,
   type AgentExecutionAdmissionPolicy,
   type AgentExecutionCommandMetadata,
   type AgentExecutionCommandPrincipal,
+  type AgentExecutionIdempotencyClaimPort,
+  admitAgentExecutionCommand,
 } from './agent-execution-contract.js';
-import type { ActorRef } from './actor-ref.js';
-import type { ActorAddress, ActorMessage } from './actor-system.js';
 import {
   createProjectionTransportStatus,
   type ProjectionTransportStatus,
@@ -1232,7 +1232,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
                 admissionErrorCodeForDecision(decision),
                 rejection?.reason.detail
                   ? `${rejection.reason.code}: ${rejection.reason.detail}`
-                  : rejection?.reason.code ?? 'Command admission rejected.',
+                  : (rejection?.reason.code ?? 'Command admission rejected.'),
                 false,
                 streamId,
                 normalizedRequestId,
@@ -1341,7 +1341,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
                 admissionErrorCodeForDecision(decision),
                 rejection?.reason.detail
                   ? `${rejection.reason.code}: ${rejection.reason.detail}`
-                  : rejection?.reason.code ?? 'Command admission rejected.',
+                  : (rejection?.reason.code ?? 'Command admission rejected.'),
                 false,
                 streamId,
                 normalizedRequestId,

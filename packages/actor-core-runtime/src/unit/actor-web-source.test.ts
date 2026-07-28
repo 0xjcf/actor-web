@@ -241,18 +241,20 @@ describe('createActorWebSource', () => {
     });
     await sendPromise;
 
-    const askPromise = source.ask<number>({ type: 'GET_COUNT' }, {
-      timeout: 2500,
-      metadata: {
-        commandId: 'cmd-ask-1',
-        correlationId: 'corr-ask-1',
-        capability: 'shipment.read',
-      },
-    });
+    const askPromise = source.ask<number>(
+      { type: 'GET_COUNT' },
+      {
+        timeout: 2500,
+        metadata: {
+          commandId: 'cmd-ask-1',
+          correlationId: 'corr-ask-1',
+          capability: 'shipment.read',
+        },
+      }
+    );
     await Promise.resolve();
     const askFrame = socket.sentFrames.find(
-      (frame): frame is Extract<RuntimeGatewayClientFrame, { type: 'ask' }> =>
-        frame.type === 'ask'
+      (frame): frame is Extract<RuntimeGatewayClientFrame, { type: 'ask' }> => frame.type === 'ask'
     );
     if (!askFrame) {
       throw new Error('Expected ask frame');

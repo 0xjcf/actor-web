@@ -129,9 +129,7 @@ export type AgentExecutionIdempotencyClaimResult =
 
 export type AgentExecutionIdempotencyClaimPort = (
   context: AgentExecutionAdmissionPolicyContext
-) =>
-  | AgentExecutionIdempotencyClaimResult
-  | Promise<AgentExecutionIdempotencyClaimResult>;
+) => AgentExecutionIdempotencyClaimResult | Promise<AgentExecutionIdempotencyClaimResult>;
 
 export type AgentExecutionAdmissionPolicyDecision =
   | {
@@ -147,9 +145,7 @@ export type AgentExecutionAdmissionPolicyDecision =
 
 export type AgentExecutionAdmissionPolicy = (
   context: AgentExecutionAdmissionPolicyContext
-) =>
-  | AgentExecutionAdmissionPolicyDecision
-  | Promise<AgentExecutionAdmissionPolicyDecision>;
+) => AgentExecutionAdmissionPolicyDecision | Promise<AgentExecutionAdmissionPolicyDecision>;
 
 export interface AgentExecutionAdmissionInput {
   readonly actorId: string;
@@ -169,7 +165,9 @@ export interface AgentExecutionAdmissionInput {
 
 export interface AgentExecutionAdmissionDecision {
   readonly principal: AgentExecutionCommandPrincipal;
-  readonly metadata: Readonly<Required<Pick<AgentExecutionCommandMetadata, 'commandId'>> & AgentExecutionCommandMetadata>;
+  readonly metadata: Readonly<
+    Required<Pick<AgentExecutionCommandMetadata, 'commandId'>> & AgentExecutionCommandMetadata
+  >;
   readonly admissionReceipt: AgentExecutionCommandAdmissionReceipt;
   readonly authorizationReceipt?: AgentExecutionAuthorizedReceipt;
   readonly rejectionReceipt?: AgentExecutionRejectedReceipt;
@@ -750,7 +748,10 @@ function toCommandMetadata(
   };
 }
 
-function invalidAdmissionReason(detail: string, code = 'invalid_command_metadata'): AgentExecutionOutcomeFact {
+function invalidAdmissionReason(
+  detail: string,
+  code = 'invalid_command_metadata'
+): AgentExecutionOutcomeFact {
   return {
     code,
     detail,
@@ -796,7 +797,11 @@ function validateRawAdmissionMetadata(input: unknown): AgentExecutionOutcomeFact
   }
   if ('approval' in metadataInput) {
     const approvalInput = metadataInput.approval;
-    if (typeof approvalInput !== 'object' || approvalInput === null || Array.isArray(approvalInput)) {
+    if (
+      typeof approvalInput !== 'object' ||
+      approvalInput === null ||
+      Array.isArray(approvalInput)
+    ) {
       return invalidAdmissionReason('approval must be a JSON-safe object when provided.');
     }
     if (!isJsonSafeValue(approvalInput)) {
@@ -806,20 +811,11 @@ function validateRawAdmissionMetadata(input: unknown): AgentExecutionOutcomeFact
   return null;
 }
 
-function resolveAdmissionErrorCode(reasonCode: string): 'forbidden' | 'unauthorized' | 'invalid_frame' {
-  if (reasonCode === 'invalid_command_metadata') {
-    return 'invalid_frame';
-  }
-  if (reasonCode === 'missing_principal') {
-    return 'unauthorized';
-  }
-  return 'forbidden';
-}
-
 function createAdmissionTraceBase(
   input: AgentExecutionAdmissionInput,
   principal: AgentExecutionCommandPrincipal,
-  metadata: Required<Pick<AgentExecutionCommandMetadata, 'commandId'>> & AgentExecutionCommandMetadata,
+  metadata: Required<Pick<AgentExecutionCommandMetadata, 'commandId'>> &
+    AgentExecutionCommandMetadata,
   occurredAt: string
 ) {
   const traceId = `trace:${input.sessionId}:${metadata.commandId}`;
@@ -838,7 +834,8 @@ function createAdmissionTraceBase(
 }
 
 function validateAdmissionInput(
-  metadata: Required<Pick<AgentExecutionCommandMetadata, 'commandId'>> & AgentExecutionCommandMetadata,
+  metadata: Required<Pick<AgentExecutionCommandMetadata, 'commandId'>> &
+    AgentExecutionCommandMetadata,
   principal: AgentExecutionCommandPrincipal,
   message: AgentExecutionAdmissionInput['message'],
   now: Date
@@ -871,7 +868,10 @@ function validateAdmissionInput(
   if (metadata.correlationId !== undefined && !hasNonEmptyString(metadata.correlationId)) {
     return invalidAdmissionReason('correlationId must be a non-empty string when provided.');
   }
-  if (metadata.revision !== undefined && (!Number.isInteger(metadata.revision) || metadata.revision < 0)) {
+  if (
+    metadata.revision !== undefined &&
+    (!Number.isInteger(metadata.revision) || metadata.revision < 0)
+  ) {
     return invalidAdmissionReason('revision must be a non-negative integer.');
   }
   if (metadata.capability !== undefined && !hasNonEmptyString(metadata.capability)) {
@@ -912,7 +912,9 @@ export async function admitAgentExecutionCommand(
   const now = (input.now ?? (() => new Date()))();
   const occurredAt = now.toISOString();
   const principal =
-    typeof input.principal === 'object' && input.principal !== null && !Array.isArray(input.principal)
+    typeof input.principal === 'object' &&
+    input.principal !== null &&
+    !Array.isArray(input.principal)
       ? (input.principal as AgentExecutionCommandPrincipal)
       : ({
           id: '',
@@ -997,7 +999,9 @@ export async function admitAgentExecutionCommand(
       ...base,
       sequence: 1,
       admissionStage:
-        validationError.code === 'invalid_command_metadata' ? 'schema-admitted' : 'execution-authorized',
+        validationError.code === 'invalid_command_metadata'
+          ? 'schema-admitted'
+          : 'execution-authorized',
       admission: {
         discovery: 'descriptive_only',
         outcome: 'rejected',
@@ -1127,7 +1131,8 @@ export async function admitAgentExecutionCommand(
           admissionStage: 'execution-authorized',
           reason: {
             code: 'missing_idempotency_adapter',
-            detail: 'commandAdmission metadata.idempotencyKey requires an explicit idempotency adapter.',
+            detail:
+              'commandAdmission metadata.idempotencyKey requires an explicit idempotency adapter.',
           },
         });
         return {

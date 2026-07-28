@@ -116,8 +116,7 @@ const UNSUPPORTED_BEHAVIOR = Object.freeze({
 const CANDIDATE_ADMISSION_SEMANTICS = Object.freeze({
   legacyCompatibility: 'dispatch_without_admission_when_command_admission_is_unconfigured',
   admissionEnabled: 'explicit_policy_required',
-  idempotencyAdapterRequirement:
-    'fail_closed_when_metadata_requests_idempotency_without_adapter',
+  idempotencyAdapterRequirement: 'fail_closed_when_metadata_requests_idempotency_without_adapter',
   duplicateIdempotency: 'reject_before_dispatch',
   durableDuplicateRecovery: 'deferred_to_checkpoint_or_rehydration_work',
 } as const);

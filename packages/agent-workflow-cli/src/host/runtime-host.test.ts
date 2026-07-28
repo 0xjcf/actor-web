@@ -313,7 +313,8 @@ describe('createRuntimeHost', () => {
     const rejected = await host.send('counter', '{"type":"INCREMENT"}');
     expect(rejected).toEqual({
       ok: false,
-      error: 'Send rejected: missing_policy_adapter (commandAdmission requires an explicit policy adapter.)',
+      error:
+        'Send rejected: missing_policy_adapter (commandAdmission requires an explicit policy adapter.)',
     });
   });
 
@@ -354,22 +355,15 @@ describe('createRuntimeHost', () => {
     }
     host = started.value;
 
-    const duplicateSend = await host.send(
-      'counter',
-      '{"type":"INCREMENT"}',
-      { idempotencyKey: 'idem-duplicate' }
-    );
-    const duplicateAsk = await host.ask(
-      'counter',
-      '{"type":"GET_COUNT"}',
-      2000,
-      { idempotencyKey: 'idem-duplicate' }
-    );
-    const claimFailure = await host.send(
-      'counter',
-      '{"type":"INCREMENT"}',
-      { idempotencyKey: 'idem-claim-error' }
-    );
+    const duplicateSend = await host.send('counter', '{"type":"INCREMENT"}', {
+      idempotencyKey: 'idem-duplicate',
+    });
+    const duplicateAsk = await host.ask('counter', '{"type":"GET_COUNT"}', 2000, {
+      idempotencyKey: 'idem-duplicate',
+    });
+    const claimFailure = await host.send('counter', '{"type":"INCREMENT"}', {
+      idempotencyKey: 'idem-claim-error',
+    });
     const laterCount = await host.ask('counter', '{"type":"GET_COUNT"}', 2000);
 
     expect(duplicateSend).toEqual({
