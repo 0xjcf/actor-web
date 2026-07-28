@@ -2384,8 +2384,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Decide and prove reviewed dependency-chain admission for Actor-Web autonomy
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/decide-and-prove-reviewed-dependency-chain-admission-for-act.md
 - Automation mode: advisory
 - Verification lane: fast
