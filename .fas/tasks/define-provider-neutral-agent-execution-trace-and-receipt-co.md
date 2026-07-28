@@ -37,6 +37,155 @@ Actor-Web has correlation and causation fields on emitted events plus separate c
 - packages/testing/src
 - packages/agent/src
 
+## Architecture Context
+
+```json
+{
+  "schemaVersion": 1,
+  "responsibilityAxis": {
+    "intent": [
+      "Models and callers propose versioned command intent; an intent proposal is not execution authority."
+    ],
+    "behavior": [
+      "Actor behavior and FSM constraints determine whether schema-admitted input is domain-accepted.",
+      "Actor-Web rechecks command, payload, principal, approval, revision, idempotency, and policy before any execution attempt."
+    ],
+    "policies": [
+      "Capability discovery is descriptive and cannot authorize execution.",
+      "External execution is nondeterministic; success, timeout, retry, cancellation, authorization failure, and partial failure are durable reason-coded facts or receipts.",
+      "Sensitive principal, prompt, credential, and tool payload data is redacted without destroying join-key or audit utility."
+    ],
+    "capabilities": [
+      {
+        "name": "Provider-neutral execution trace and receipt validation",
+        "qualifier": "business",
+        "owner": "Actor-Web"
+      },
+      {
+        "name": "Authorization, transition, persistence, execution, checkpoint, resume, and reconciliation",
+        "qualifier": "runtime",
+        "owner": "Actor-Web"
+      },
+      {
+        "name": "Evidence normalization and FAS workflow or review policy",
+        "qualifier": "host-product",
+        "owner": "FAS"
+      },
+      {
+        "name": "Semantic fact projection and intent-command binding",
+        "qualifier": "host-product",
+        "owner": "Ignite Element"
+      }
+    ],
+    "ports": [
+      "Versioned JSON-safe execution trace and receipt contract",
+      "Runtime command-admission and effect-result facts",
+      "Testing conformance fixtures and assertion utilities"
+    ],
+    "adapters": [
+      "Existing ActorEventEnvelope compatibility adapter",
+      "Existing effect-journal compatibility adapter",
+      "Optional provider, FAS, and Ignite consumer adapters outside the provider-neutral runtime core"
+    ],
+    "infrastructure": [
+      "Actor-Web runtime persistence and effect journal",
+      "Actor-Web testing fixture storage"
+    ],
+    "projections": [
+      "Consumer-owned semantic read models joined by stable trace identities",
+      "FAS-owned evidence and workflow review projections"
+    ]
+  },
+  "executionAxis": {
+    "functionalCore": [
+      "Contract construction, validation, lifecycle transition rules, redaction classification, ordering checks, and idempotency decisions are deterministic and side-effect-free."
+    ],
+    "imperativeShell": [
+      "Actor-Web persists state plus effect intent where atomicity is required, invokes external effects, records durable outcomes, resumes, replays, and reconciles without duplicating irreversible effects."
+    ]
+  },
+  "ownership": [
+    {
+      "owner": "Actor-Web",
+      "responsibilities": [
+        "Own the provider-neutral runtime contract and authoritative lifecycle facts or receipts.",
+        "Preserve principal, intent, correlation, attempt, sequence, revision, checkpoint, and receipt identities.",
+        "Prove restart, replay, reconciliation, and duplicate suppression."
+      ],
+      "maturity": "current"
+    },
+    {
+      "owner": "FAS",
+      "responsibilities": [
+        "Normalize Actor-Web evidence and govern FAS workflow and review policy without becoming application behavior authority."
+      ],
+      "maturity": "current"
+    },
+    {
+      "owner": "Ignite Element",
+      "responsibilities": [
+        "Project semantic facts and bind intent commands without becoming execution authority."
+      ],
+      "maturity": "current"
+    }
+  ],
+  "maturity": [
+    {
+      "claim": "ActorEventEnvelope, command, effect-journal, and projection surfaces exist but do not yet form one provider-neutral execution trace.",
+      "status": "current",
+      "evidenceRefs": [
+        "packages/runtime/src",
+        "packages/agent/src"
+      ]
+    },
+    {
+      "claim": "The versioned JSON-safe execution trace, receipts, migration adapters, and conformance fixtures are the accepted target for this task.",
+      "status": "target",
+      "evidenceRefs": [
+        ".fas/tasks/define-provider-neutral-agent-execution-trace-and-receipt-co.md"
+      ]
+    },
+    {
+      "claim": "The implemented contract becomes a candidate until focused verification, full verification, independent review, and human merge complete.",
+      "status": "candidate",
+      "evidenceRefs": [
+        ".fas/state/verification/latest.json",
+        ".fas/state/boundary-review-findings.md"
+      ]
+    },
+    {
+      "claim": "Authenticated principal propagation, durable checkpoint rehydration, distributed CLI hosting, FAS control-plane conformance, and publication remain dependency-ordered follow-up tasks.",
+      "status": "deferred",
+      "evidenceRefs": [
+        ".fas/queue/tasks.json"
+      ]
+    }
+  ],
+  "boundaries": [
+    "Models propose; behavior and FSM constraints bound domain acceptance; Actor-Web alone authorizes and executes.",
+    "Schema-admitted, domain-accepted, and execution-authorized are distinct facts.",
+    "Capability discovery never substitutes for execution-time authorization.",
+    "FAS and Ignite integrations are additive and optional; each repository remains independently useful.",
+    "Actor-Web runtime packages contain no FAS-specific or Ignite-specific product semantics."
+  ],
+  "forbiddenCouplings": [
+    "Do not modify the FAS or Ignite Element repositories.",
+    "Do not make a model proposal, schema parse, capability advertisement, projection, or FAS review decision execution authority.",
+    "Do not collapse intent, command, effect attempt, receipt, reconciliation, and projection identities.",
+    "Do not claim exactly-once external execution; prove durable intent, idempotency, reconciliation, and no duplicate irreversible effects instead.",
+    "Do not expose secrets or raw sensitive payloads in conformance fixtures or receipts."
+  ],
+  "evidenceRefs": [
+    ".fas/state/task-packet.json",
+    ".fas/state/architect-check.json",
+    "packages/runtime/src",
+    "packages/testing/src",
+    "packages/agent/src",
+    "docs"
+  ]
+}
+```
+
 ## Scope Amendments
 
 - None.
