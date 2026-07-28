@@ -3404,6 +3404,62 @@ describe('runtime gateway hub', () => {
     detach();
   });
 
+  it('fails closed when metadata requests idempotency without an adapter', async () => {
+    const source = createFakeSource('ready');
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v2',
+        }),
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-missing-idempotency-adapter',
+      message: { type: 'SUBMIT', orderId: 'order-no-adapter' },
+      metadata: {
+        commandId: 'cmd-no-idem-adapter',
+        idempotencyKey: 'idem-no-adapter',
+      },
+    });
+    await flushGatewayFrames();
+
+    expect(source.sentMessages).toEqual([]);
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-missing-idempotency-adapter',
+        rejection: expect.objectContaining({
+          reason: expect.objectContaining({
+            code: 'missing_idempotency_adapter',
+            detail:
+              'commandAdmission metadata.idempotencyKey requires an explicit idempotency adapter.',
+          }),
+        }),
+      })
+    );
+
+    detach();
+  });
+
   it('rejects malformed command metadata without dispatching or throwing', async () => {
     const source = createFakeSource('ready');
     const hub = createRuntimeGatewayHub({
@@ -3452,6 +3508,29 @@ describe('runtime gateway hub', () => {
           reason: expect.objectContaining({
             code: 'invalid_command_metadata',
             detail: 'revision must be a non-negative integer.',
+          }),
+        }),
+      })
+    );
+
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-invalid-metadata-container',
+      message: { type: 'SUBMIT', orderId: 'order-invalid-metadata-container' },
+      metadata: null as never,
+    });
+    await flushGatewayFrames();
+
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-invalid-metadata-container',
+        code: 'invalid_frame',
+        rejection: expect.objectContaining({
+          reason: expect.objectContaining({
+            code: 'invalid_command_metadata',
+            detail: 'metadata must be a JSON object when provided.',
           }),
         }),
       })

@@ -4,6 +4,7 @@ import {
   type AgentExecutionEffectAttemptReceipt,
   type AgentExecutionEffectIntentReceipt,
   type AgentExecutionReceipt,
+  admitAgentExecutionCommand,
   createAgentExecutionTrace,
   createAgentExecutionTraceIdempotencyKey,
   createExecutionAuthorizedReceipt,
@@ -810,5 +811,124 @@ describe('agent execution contract', () => {
       'receipt-a',
       'receipt-b',
     ]);
+  });
+
+  it('rejects malformed public admission inputs without throwing', async () => {
+    await expect(
+      admitAgentExecutionCommand({
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        kind: 'send',
+        message: { type: 'RUN' },
+        principal: 'not-a-principal' as unknown as never,
+        metadata: null as unknown as never,
+        now: () => new Date('2026-07-28T12:00:00.000Z'),
+      })
+    ).resolves.toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'invalid_command_metadata',
+          detail: 'metadata must be a JSON object when provided.',
+        },
+      },
+    });
+  });
+
+  it('rejects present-but-empty idempotency metadata and does not call the claim port after policy denial', async () => {
+    const claimPort = vi.fn(async () => ({ outcome: 'available' as const }));
+
+    const invalid = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      metadata: {
+        commandId: 'cmd-empty-idempotency',
+        idempotencyKey: '',
+      },
+      now: () => new Date('2026-07-28T12:00:00.000Z'),
+    });
+
+    expect(invalid).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'invalid_command_metadata',
+          detail: 'idempotencyKey must be a non-empty string when provided.',
+        },
+      },
+    });
+
+    const denied = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      metadata: {
+        commandId: 'cmd-policy-denied',
+        idempotencyKey: 'idem-1',
+      },
+      policy: async () => ({
+        outcome: 'rejected',
+        policy: 'explicit-human-review',
+        code: 'policy_denied',
+      }),
+      requireExplicitPolicy: true,
+      idempotency: claimPort,
+      now: () => new Date('2026-07-28T12:00:01.000Z'),
+    });
+
+    expect(denied).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'policy_denied',
+        },
+      },
+    });
+    expect(claimPort).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when idempotency metadata is supplied without an idempotency adapter', async () => {
+    const decision = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      metadata: {
+        commandId: 'cmd-missing-idem-adapter',
+        idempotencyKey: 'idem-1',
+      },
+      policy: async () => ({
+        outcome: 'authorized',
+        policy: 'explicit-human-review',
+      }),
+      requireExplicitPolicy: true,
+      now: () => new Date('2026-07-28T12:00:02.000Z'),
+    });
+
+    expect(decision).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'missing_idempotency_adapter',
+          detail:
+            'commandAdmission metadata.idempotencyKey requires an explicit idempotency adapter.',
+        },
+      },
+    });
   });
 });

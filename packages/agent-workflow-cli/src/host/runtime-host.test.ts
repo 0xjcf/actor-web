@@ -356,16 +356,19 @@ describe('createRuntimeHost', () => {
 
     const duplicateSend = await host.send(
       'counter',
-      '{"type":"INCREMENT","idempotencyKey":"idem-duplicate"}'
+      '{"type":"INCREMENT"}',
+      { idempotencyKey: 'idem-duplicate' }
     );
     const duplicateAsk = await host.ask(
       'counter',
-      '{"type":"GET_COUNT","idempotencyKey":"idem-duplicate"}',
-      2000
+      '{"type":"GET_COUNT"}',
+      2000,
+      { idempotencyKey: 'idem-duplicate' }
     );
     const claimFailure = await host.send(
       'counter',
-      '{"type":"INCREMENT","idempotencyKey":"idem-claim-error"}'
+      '{"type":"INCREMENT"}',
+      { idempotencyKey: 'idem-claim-error' }
     );
     const laterCount = await host.ask('counter', '{"type":"GET_COUNT"}', 2000);
 
@@ -422,7 +425,7 @@ describe('createRuntimeHost', () => {
     }
     host = started.value;
 
-    const invalid = await host.send('counter', '{"type":"INCREMENT","revision":-1}');
+    const invalid = await host.send('counter', '{"type":"INCREMENT"}', { revision: -1 });
     const count = await host.ask('counter', '{"type":"GET_COUNT"}', 2000);
 
     expect(invalid).toEqual({
@@ -430,6 +433,94 @@ describe('createRuntimeHost', () => {
       error: 'Send rejected: invalid_command_metadata (revision must be a non-negative integer.)',
     });
     expect(count).toEqual({ ok: true, value: { count: 0 } });
+  });
+
+  it('preserves payload fields that overlap with admission vocabulary', async () => {
+    const observed: Array<ActorMessage & Message> = [];
+    await host.stop();
+    const overlapBehavior = defineBehavior<CounterMsg | (ActorMessage & Message)>()
+      .withContext({ count: 0 })
+      .onMessage(({ message, context }) => {
+        observed.push(message);
+        if (message.type === 'INCREMENT') {
+          const count = context.count + 1;
+          return { context: { count }, emit: [{ type: 'COUNT_CHANGED', count }] };
+        }
+        if (message.type === 'GET_COUNT') {
+          return { reply: { count: context.count } };
+        }
+        return { context };
+      })
+      .build();
+    const started = await createRuntimeHost(
+      defineActorWebTopology({
+        nodes: { local: node('local') },
+        actors: { counter: actor({ id: 'counter', node: 'local', behavior: overlapBehavior }) },
+      }),
+      {
+        commandAdmission: {
+          principal: {
+            id: 'principal:cli-system',
+            kind: 'system',
+          },
+          policy: async () => ({
+            outcome: 'authorized',
+            policy: 'cli-policy-v2',
+          }),
+        },
+      }
+    );
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+    host = started.value;
+
+    const payload = {
+      type: 'INCREMENT',
+      revision: 7,
+      capability: 'counter.increment',
+      approval: { state: 'granted' as const },
+      idempotencyKey: 'domain-owned-value',
+    };
+    const sent = await host.send('counter', JSON.stringify(payload));
+
+    expect(sent).toEqual({
+      ok: true,
+      value: expect.stringContaining('Sent INCREMENT'),
+    });
+    expect(observed.at(-1)).toEqual(payload);
+  });
+
+  it('fails closed when metadata supplies idempotency without an adapter', async () => {
+    await host.stop();
+    const started = await createRuntimeHost(buildCounterTopology(), {
+      commandAdmission: {
+        principal: {
+          id: 'principal:cli-system',
+          kind: 'system',
+        },
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'cli-policy-v2',
+        }),
+      },
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+    host = started.value;
+
+    const rejected = await host.send('counter', '{"type":"INCREMENT"}', {
+      idempotencyKey: 'idem-no-adapter',
+    });
+
+    expect(rejected).toEqual({
+      ok: false,
+      error:
+        'Send rejected: missing_idempotency_adapter (commandAdmission metadata.idempotencyKey requires an explicit idempotency adapter.)',
+    });
   });
 
   it('resolves targets by key and by actor:// path', async () => {

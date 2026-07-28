@@ -46,8 +46,17 @@ export interface RuntimeHost {
   readonly nodeKeys: readonly string[];
   listActors(): Promise<HostActorEntry[]>;
   spawnFromFile(behaviorPath: string, id: string): Promise<HostResult<HostActorEntry>>;
-  send(target: string, messageJson: string): Promise<HostResult<string>>;
-  ask(target: string, messageJson: string, timeoutMs?: number): Promise<HostResult<unknown>>;
+  send(
+    target: string,
+    messageJson: string,
+    metadata?: AgentExecutionCommandMetadata
+  ): Promise<HostResult<string>>;
+  ask(
+    target: string,
+    messageJson: string,
+    timeoutMs?: number,
+    metadata?: AgentExecutionCommandMetadata
+  ): Promise<HostResult<unknown>>;
   watch(target: string, onEvent: (event: ActorMessage) => void): HostResult<() => void>;
   /** Resolve a registry key or actor:// path to an ActorRef. */
   resolve(target: string): ActorRef | undefined;
@@ -82,17 +91,6 @@ interface RegisteredActor {
 
 type AnyTopology = ActorWebTopology<ActorWebTopologyInput>;
 
-const RESERVED_ADMISSION_MESSAGE_KEYS = new Set([
-  'commandId',
-  'intentId',
-  'correlationId',
-  'revision',
-  'idempotencyKey',
-  'capability',
-  'approval',
-  'policyVersion',
-]);
-
 function isTopologyValue(value: unknown): value is AnyTopology {
   return (
     typeof value === 'object' &&
@@ -119,58 +117,6 @@ function parseMessage(messageJson: string): HostResult<ActorMessage & Message> {
     return { ok: false, error: 'Message must have a string "type" field' };
   }
   return { ok: true, value: parsed as ActorMessage & Message };
-}
-
-function extractAdmissionMetadata(
-  message: ActorMessage & Message
-): {
-  readonly message: ActorMessage & Message;
-  readonly metadata: AgentExecutionCommandMetadata | undefined;
-} {
-  const metadata: {
-    commandId?: string;
-    intentId?: string;
-    correlationId?: string;
-    revision?: number;
-    idempotencyKey?: string;
-    capability?: string;
-    approval?: AgentExecutionCommandMetadata['approval'];
-    policyVersion?: string;
-  } = {};
-  const sanitizedEntries = Object.entries(message).filter(([key, value]) => {
-    if (!RESERVED_ADMISSION_MESSAGE_KEYS.has(key)) {
-      return true;
-    }
-    switch (key) {
-      case 'commandId':
-      case 'intentId':
-      case 'correlationId':
-      case 'idempotencyKey':
-      case 'capability':
-      case 'policyVersion':
-        if (typeof value === 'string') {
-          (metadata as Record<string, unknown>)[key] = value;
-        }
-        return false;
-      case 'revision':
-        if (typeof value === 'number') {
-          metadata.revision = value;
-        }
-        return false;
-      case 'approval':
-        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-          metadata.approval = value as AgentExecutionCommandMetadata['approval'];
-        }
-        return false;
-      default:
-        return false;
-    }
-  });
-
-  return {
-    message: Object.fromEntries(sanitizedEntries) as ActorMessage & Message,
-    metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-  };
 }
 
 function describeStatus(ref: ActorRef): string {
@@ -304,7 +250,7 @@ export async function createRuntimeHost(
       return { ok: true, value: toEntry(entry) };
     },
 
-    async send(target, messageJson) {
+    async send(target, messageJson, metadata) {
       const ref = resolve(target);
       if (!ref) {
         return { ok: false, error: unknownTargetError(target) };
@@ -313,19 +259,18 @@ export async function createRuntimeHost(
       if (!message.ok) {
         return message;
       }
-      const resolved = extractAdmissionMetadata(message.value);
       try {
         if (options.commandAdmission) {
           const decision = await admitAgentExecutionCommand({
             actorId: parse(ref.address).id,
             sessionId: `runtime-host:${spawnNodeKey}`,
             kind: 'send',
-            message: resolved.message,
+            message: message.value,
             principal: options.commandAdmission.principal ?? defaultRuntimeHostPrincipal(),
             policy: options.commandAdmission.policy,
             requireExplicitPolicy: true,
             idempotency: options.commandAdmission.idempotency,
-            metadata: resolved.metadata,
+            metadata,
           });
           await Promise.resolve(options.commandAdmission.onDecision?.(decision));
           if (!decision.ok) {
@@ -336,7 +281,7 @@ export async function createRuntimeHost(
             };
           }
         }
-        await ref.send(resolved.message);
+        await ref.send(message.value);
         await flush();
       } catch (error) {
         return {
@@ -347,7 +292,7 @@ export async function createRuntimeHost(
       return { ok: true, value: `Sent ${message.value.type} to ${ref.address}` };
     },
 
-    async ask(target, messageJson, timeoutMs) {
+    async ask(target, messageJson, timeoutMs, metadata) {
       const ref = resolve(target);
       if (!ref) {
         return { ok: false, error: unknownTargetError(target) };
@@ -356,19 +301,18 @@ export async function createRuntimeHost(
       if (!message.ok) {
         return message;
       }
-      const resolved = extractAdmissionMetadata(message.value);
       try {
         if (options.commandAdmission) {
           const decision = await admitAgentExecutionCommand({
             actorId: parse(ref.address).id,
             sessionId: `runtime-host:${spawnNodeKey}`,
             kind: 'ask',
-            message: resolved.message,
+            message: message.value,
             principal: options.commandAdmission.principal ?? defaultRuntimeHostPrincipal(),
             policy: options.commandAdmission.policy,
             requireExplicitPolicy: true,
             idempotency: options.commandAdmission.idempotency,
-            metadata: resolved.metadata,
+            metadata,
           });
           await Promise.resolve(options.commandAdmission.onDecision?.(decision));
           if (!decision.ok) {
@@ -379,7 +323,7 @@ export async function createRuntimeHost(
             };
           }
         }
-        const reply = await ref.ask(resolved.message, timeoutMs);
+        const reply = await ref.ask(message.value, timeoutMs);
         return { ok: true, value: reply };
       } catch (error) {
         return {

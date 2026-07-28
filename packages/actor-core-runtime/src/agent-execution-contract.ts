@@ -720,21 +720,33 @@ const AGENT_EXECUTION_ADMISSION_RECHECKS: readonly AgentExecutionRecheckField[] 
 ];
 
 function toCommandMetadata(
-  input: AgentExecutionCommandMetadata | undefined,
+  input: unknown,
   now: Date
 ): Required<Pick<AgentExecutionCommandMetadata, 'commandId'>> & AgentExecutionCommandMetadata {
+  const metadataInput =
+    typeof input === 'object' && input !== null && !Array.isArray(input)
+      ? (input as AgentExecutionCommandMetadata)
+      : undefined;
   return {
     commandId:
-      typeof input?.commandId === 'string' && input.commandId.trim().length > 0
-        ? input.commandId.trim()
+      typeof metadataInput?.commandId === 'string' && metadataInput.commandId.trim().length > 0
+        ? metadataInput.commandId.trim()
         : `command:${now.toISOString()}`,
-    ...(input?.intentId ? { intentId: input.intentId } : {}),
-    ...(input?.correlationId ? { correlationId: input.correlationId } : {}),
-    ...(input?.revision !== undefined ? { revision: input.revision } : {}),
-    ...(input?.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
-    ...(input?.capability ? { capability: input.capability } : {}),
-    ...(input?.approval ? { approval: freezeClone(input.approval) } : {}),
-    ...(input?.policyVersion ? { policyVersion: input.policyVersion } : {}),
+    ...('intentId' in (metadataInput ?? {}) ? { intentId: metadataInput?.intentId } : {}),
+    ...('correlationId' in (metadataInput ?? {})
+      ? { correlationId: metadataInput?.correlationId }
+      : {}),
+    ...('revision' in (metadataInput ?? {}) ? { revision: metadataInput?.revision } : {}),
+    ...('idempotencyKey' in (metadataInput ?? {})
+      ? { idempotencyKey: metadataInput?.idempotencyKey }
+      : {}),
+    ...('capability' in (metadataInput ?? {}) ? { capability: metadataInput?.capability } : {}),
+    ...('approval' in (metadataInput ?? {})
+      ? { approval: freezeClone(metadataInput?.approval) }
+      : {}),
+    ...('policyVersion' in (metadataInput ?? {})
+      ? { policyVersion: metadataInput?.policyVersion }
+      : {}),
   };
 }
 
@@ -743,6 +755,16 @@ function invalidAdmissionReason(detail: string, code = 'invalid_command_metadata
     code,
     detail,
   };
+}
+
+function validateAdmissionMetadataContainer(input: unknown): AgentExecutionOutcomeFact | null {
+  if (input === undefined) {
+    return null;
+  }
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return invalidAdmissionReason('metadata must be a JSON object when provided.');
+  }
+  return null;
 }
 
 function resolveAdmissionErrorCode(reasonCode: string): 'forbidden' | 'unauthorized' | 'invalid_frame' {
@@ -757,6 +779,7 @@ function resolveAdmissionErrorCode(reasonCode: string): 'forbidden' | 'unauthori
 
 function createAdmissionTraceBase(
   input: AgentExecutionAdmissionInput,
+  principal: AgentExecutionCommandPrincipal,
   metadata: Required<Pick<AgentExecutionCommandMetadata, 'commandId'>> & AgentExecutionCommandMetadata,
   occurredAt: string
 ) {
@@ -767,7 +790,7 @@ function createAdmissionTraceBase(
     sessionId: input.sessionId,
     commandId: metadata.commandId,
     ...(metadata.intentId ? { intentId: metadata.intentId } : {}),
-    principalId: input.principal.id,
+    principalId: principal.id,
     ...(metadata.revision !== undefined ? { revision: metadata.revision } : {}),
     ...(metadata.correlationId ? { correlationId: metadata.correlationId } : {}),
     occurredAt,
@@ -849,9 +872,52 @@ export async function admitAgentExecutionCommand(
 ): Promise<AgentExecutionAdmissionDecision> {
   const now = (input.now ?? (() => new Date()))();
   const occurredAt = now.toISOString();
+  const principal =
+    typeof input.principal === 'object' && input.principal !== null && !Array.isArray(input.principal)
+      ? (input.principal as AgentExecutionCommandPrincipal)
+      : ({
+          id: '',
+          kind: 'system',
+        } as const satisfies AgentExecutionCommandPrincipal);
+  const message =
+    typeof input.message === 'object' && input.message !== null && !Array.isArray(input.message)
+      ? (input.message as AgentExecutionAdmissionInput['message'])
+      : ({
+          type: '',
+        } as const satisfies AgentExecutionAdmissionInput['message']);
   const metadata = toCommandMetadata(input.metadata, now);
-  const base = createAdmissionTraceBase(input, metadata, occurredAt);
-  const validationError = validateAdmissionInput(metadata, input.principal, input.message, now);
+  const base = createAdmissionTraceBase(input, principal, metadata, occurredAt);
+  const metadataContainerError = validateAdmissionMetadataContainer(input.metadata);
+  if (metadataContainerError) {
+    const admissionReceipt = createExecutionCommandAdmissionReceipt({
+      receiptId: `${base.traceId}:admission:1`,
+      recordId: `${base.traceId}:record:admission:1`,
+      ...base,
+      sequence: 1,
+      admissionStage: 'schema-admitted',
+      admission: {
+        discovery: 'descriptive_only',
+        outcome: 'rejected',
+        rechecked: AGENT_EXECUTION_ADMISSION_RECHECKS,
+      },
+    });
+    const rejectionReceipt = createExecutionRejectedReceipt({
+      receiptId: `${base.traceId}:rejection:2`,
+      recordId: `${base.traceId}:record:rejection:2`,
+      ...base,
+      sequence: 2,
+      admissionStage: 'schema-admitted',
+      reason: metadataContainerError,
+    });
+    return {
+      ok: false,
+      principal,
+      metadata,
+      admissionReceipt,
+      rejectionReceipt,
+    };
+  }
+  const validationError = validateAdmissionInput(metadata, principal, message, now);
 
   if (validationError) {
     const admissionReceipt = createExecutionCommandAdmissionReceipt({
@@ -877,7 +943,7 @@ export async function admitAgentExecutionCommand(
     });
     return {
       ok: false,
-      principal: input.principal,
+      principal,
       metadata,
       admissionReceipt,
       rejectionReceipt,
@@ -911,7 +977,7 @@ export async function admitAgentExecutionCommand(
       });
       return {
         ok: false,
-        principal: input.principal,
+        principal,
         metadata,
         admissionReceipt,
         rejectionReceipt,
@@ -922,12 +988,86 @@ export async function admitAgentExecutionCommand(
       actorId: input.actorId,
       sessionId: input.sessionId,
       kind: input.kind,
-      message: input.message,
-      principal: input.principal,
+      message,
+      principal,
       metadata,
     };
 
-    if (input.idempotency) {
+    const policyDecision =
+      input.policy === undefined
+        ? {
+            outcome: 'authorized' as const,
+            policy: 'legacy-compatibility',
+          }
+        : await input.policy(policyContext);
+
+    if (policyDecision.outcome === 'rejected') {
+      const admissionReceipt = createExecutionCommandAdmissionReceipt({
+        receiptId: `${base.traceId}:admission:1`,
+        recordId: `${base.traceId}:record:admission:1`,
+        ...base,
+        sequence: 1,
+        admissionStage: 'execution-authorized',
+        admission: {
+          discovery: 'descriptive_only',
+          outcome: 'rejected',
+          rechecked: AGENT_EXECUTION_ADMISSION_RECHECKS,
+        },
+      });
+      const rejectionReceipt = createExecutionRejectedReceipt({
+        receiptId: `${base.traceId}:rejection:2`,
+        recordId: `${base.traceId}:record:rejection:2`,
+        ...base,
+        sequence: 2,
+        admissionStage: 'execution-authorized',
+        reason: {
+          code: policyDecision.code,
+          ...(policyDecision.detail ? { detail: policyDecision.detail } : {}),
+        },
+      });
+      return {
+        ok: false,
+        principal,
+        metadata,
+        admissionReceipt,
+        rejectionReceipt,
+      };
+    }
+
+    if (metadata.idempotencyKey !== undefined) {
+      if (input.idempotency === undefined) {
+        const admissionReceipt = createExecutionCommandAdmissionReceipt({
+          receiptId: `${base.traceId}:admission:1`,
+          recordId: `${base.traceId}:record:admission:1`,
+          ...base,
+          sequence: 1,
+          admissionStage: 'execution-authorized',
+          admission: {
+            discovery: 'descriptive_only',
+            outcome: 'rejected',
+            rechecked: AGENT_EXECUTION_ADMISSION_RECHECKS,
+          },
+        });
+        const rejectionReceipt = createExecutionRejectedReceipt({
+          receiptId: `${base.traceId}:rejection:2`,
+          recordId: `${base.traceId}:record:rejection:2`,
+          ...base,
+          sequence: 2,
+          admissionStage: 'execution-authorized',
+          reason: {
+            code: 'missing_idempotency_adapter',
+            detail: 'commandAdmission metadata.idempotencyKey requires an explicit idempotency adapter.',
+          },
+        });
+        return {
+          ok: false,
+          principal,
+          metadata,
+          admissionReceipt,
+          rejectionReceipt,
+        };
+      }
+
       let claimResult: AgentExecutionIdempotencyClaimResult;
       try {
         claimResult = await input.idempotency(policyContext);
@@ -957,7 +1097,7 @@ export async function admitAgentExecutionCommand(
         });
         return {
           ok: false,
-          principal: input.principal,
+          principal,
           metadata,
           admissionReceipt,
           rejectionReceipt,
@@ -990,21 +1130,13 @@ export async function admitAgentExecutionCommand(
         });
         return {
           ok: false,
-          principal: input.principal,
+          principal,
           metadata,
           admissionReceipt,
           rejectionReceipt,
         };
       }
     }
-
-    const policyDecision =
-      input.policy === undefined
-        ? {
-            outcome: 'authorized' as const,
-            policy: 'legacy-compatibility',
-          }
-        : await input.policy(policyContext);
 
     const admissionReceipt = createExecutionCommandAdmissionReceipt({
       receiptId: `${base.traceId}:admission:1`,
@@ -1025,7 +1157,7 @@ export async function admitAgentExecutionCommand(
         recordId: `${base.traceId}:record:authorization:2`,
         ...base,
         sequence: 2,
-        principal: input.principal,
+        principal,
         authorization: {
           policy: policyDecision.policy,
           decision: 'approved',
@@ -1033,7 +1165,7 @@ export async function admitAgentExecutionCommand(
       });
       return {
         ok: true,
-        principal: input.principal,
+        principal,
         metadata,
         admissionReceipt,
         authorizationReceipt,
@@ -1047,13 +1179,13 @@ export async function admitAgentExecutionCommand(
       sequence: 2,
       admissionStage: 'execution-authorized',
       reason: {
-        code: policyDecision.code,
-        ...(policyDecision.detail ? { detail: policyDecision.detail } : {}),
+        code: 'policy_adapter_failure',
+        detail: 'Admission policy returned an unsupported outcome.',
       },
     });
     return {
       ok: false,
-      principal: input.principal,
+      principal,
       metadata,
       admissionReceipt,
       rejectionReceipt,
@@ -1084,7 +1216,7 @@ export async function admitAgentExecutionCommand(
     });
     return {
       ok: false,
-      principal: input.principal,
+      principal,
       metadata,
       admissionReceipt,
       rejectionReceipt,

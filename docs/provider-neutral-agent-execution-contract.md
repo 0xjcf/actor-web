@@ -53,6 +53,7 @@
   - provider-neutral policy adapter surface for allow or deny decisions
 - `AgentExecutionIdempotencyClaimPort`
   - provider-neutral duplicate-claim or duplicate-check surface at the admission seam
+  - if command metadata carries `idempotencyKey`, command admission must fail closed unless this adapter is configured
   - current candidate behavior rejects duplicate idempotency keys before dispatch
   - durable restart-safe duplicate recovery is deferred to checkpoint and rehydration work
 - gateway transport surface
@@ -191,8 +192,11 @@ These identities stay distinct. The contract does not collapse intent, authoriza
 - Capability discovery is descriptive only and never substitutes for execution-time authorization.
 - Legacy compatibility remains versioned and additive: if a host does not opt into `commandAdmission`, existing command dispatch behavior may continue without additive admission receipts.
 - Once a host opts into `commandAdmission`, Actor-Web requires an explicit policy adapter, rechecks command, payload, principal, approval, revision, idempotency, and policy, and fails closed on missing policy or adapter failure.
+- Admission ordering is authoritative: validate metadata and principal, evaluate explicit policy, then perform idempotency claim or duplicate check, then emit authorization and dispatch.
+- Policy denial or expiry must not consume or claim an idempotency key.
 - Gateway authentication proves identity only; the gateway must reduce auth context to a credential-free principal before command admission.
 - Client metadata may propose command identifiers, intent, correlation, revision, idempotency, capability, or approval context, but client-supplied principal data is never authoritative.
+- Metadata is additive and optional. Actor payload fields that happen to use the same names remain part of the domain message unless a host explicitly passes separate admission metadata.
 - Local and system-internal command paths use explicit trusted principals and the same admission helper, with bypass semantics expressed as facts instead of an implicit shortcut.
 - A duplicate idempotency key at the current admission seam is rejected before actor send or ask dispatch unless a later checkpoint or rehydration seam introduces a join-capable durable outcome.
 - Persisted effect intent is separate from effect attempt or outcome where atomicity matters.
