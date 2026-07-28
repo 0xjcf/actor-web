@@ -2396,8 +2396,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Define provider-neutral agent execution trace and receipt contract
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/define-provider-neutral-agent-execution-trace-and-receipt-co.md
 - Verification lane: fast
 - Policy sensitivity: standard
