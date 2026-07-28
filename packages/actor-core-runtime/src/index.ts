@@ -34,6 +34,7 @@ export type {
   ActorSystem,
   AddressQuery,
   ClusterState,
+  DirectoryReadinessFact,
   MessageTransport,
   // JsonValue moved to types.js - import from there if needed
 } from './actor-system.js';

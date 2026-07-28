@@ -59,6 +59,7 @@ import type {
   ActorSupervisionStrategy,
   ActorSystem,
   ClusterState,
+  DirectoryReadinessFact,
   MessageTransport,
   SpawnOptions,
 } from './actor-system.js';
@@ -189,9 +190,32 @@ interface RemoteProjectionWatcher {
   eventSubscribed: boolean;
 }
 
-interface RemoteDirectoryReadiness {
+interface RemoteConnectionIdentity {
+  readonly nodeId: string;
+  readonly incarnation: string;
+}
+
+interface RemoteDirectoryReadinessAttempt {
+  readonly token: symbol;
   readonly connectionKey?: string;
   readonly promise: Promise<void>;
+}
+
+class StaleRemoteDirectorySyncError extends Error {
+  constructor(nodeAddress: string) {
+    super(`Directory sync result was superseded for ${nodeAddress}`);
+    this.name = 'StaleRemoteDirectorySyncError';
+  }
+}
+
+function cloneDirectoryReadinessFact(fact: DirectoryReadinessFact): DirectoryReadinessFact {
+  if (fact.status === 'degraded') {
+    return {
+      ...fact,
+      failure: { ...fact.failure },
+    };
+  }
+  return { ...fact };
 }
 
 interface OutboundRemoteProjectionSubscribers {
@@ -540,7 +564,8 @@ export class ActorSystemImpl implements ActorSystem {
   >();
   private actorProjectionState = new Map<string, ActorProjectionState>();
   private remoteProjectionWatchers = new Map<string, RemoteProjectionWatcher>();
-  private remoteDirectoryReadiness = new Map<string, RemoteDirectoryReadiness>();
+  private remoteDirectoryReadinessAttempts = new Map<string, RemoteDirectoryReadinessAttempt>();
+  private remoteDirectoryReadinessFacts = new Map<string, DirectoryReadinessFact>();
   private outboundRemoteProjectionSubscribers = new Map<
     string,
     OutboundRemoteProjectionSubscribers
@@ -1245,7 +1270,7 @@ export class ActorSystemImpl implements ActorSystem {
     let location = await this.directory.lookup(address);
     const node = this.getAddressNode(address);
     if (!location && node && this.config.transport?.isConnected(node)) {
-      await this.requestDirectorySync(node);
+      await this.ensureRemoteDirectoryReady(node, { refreshIfReady: true });
       location = await this.directory.lookup(address);
     }
     if (!location) {
@@ -1299,7 +1324,7 @@ export class ActorSystemImpl implements ActorSystem {
       totalActors: this.getLocalActorCount(),
       messagesPerSecond,
       uptime: totalUptime,
-      clusterState: this.clusterState,
+      clusterState: this.createClusterStateSnapshot(),
     };
   }
 
@@ -1316,7 +1341,7 @@ export class ActorSystemImpl implements ActorSystem {
         if (!this.config.transport.isConnected(node)) {
           await this.config.transport.connect(node);
         }
-        await this.ensureRemoteDirectoryReady(node, this.getRemoteConnectionKey(node));
+        await this.ensureRemoteDirectoryReady(node);
       }
     }
 
@@ -1339,7 +1364,8 @@ export class ActorSystemImpl implements ActorSystem {
     if (this.config.transport) {
       for (const node of this.config.transport.getConnectedNodes()) {
         await this.config.transport.disconnect(node);
-        this.remoteDirectoryReadiness.delete(node);
+        this.remoteDirectoryReadinessAttempts.delete(node);
+        this.remoteDirectoryReadinessFacts.delete(node);
       }
     }
 
@@ -1358,7 +1384,18 @@ export class ActorSystemImpl implements ActorSystem {
    * Get current cluster state
    */
   getClusterState(): ClusterState {
-    return { ...this.clusterState };
+    return this.createClusterStateSnapshot();
+  }
+
+  private createClusterStateSnapshot(): ClusterState {
+    return {
+      ...this.clusterState,
+      nodes: [...this.clusterState.nodes],
+      directoryReadiness: Array.from(
+        this.remoteDirectoryReadinessFacts.values(),
+        cloneDirectoryReadinessFact
+      ),
+    };
   }
 
   /**
@@ -3414,8 +3451,14 @@ export class ActorSystemImpl implements ActorSystem {
     };
 
     try {
-      await this.ensureRemoteDirectoryReady(nodeAddress, this.getRemoteConnectionKey(nodeAddress));
+      await this.ensureRemoteDirectoryReady(nodeAddress);
     } catch (error) {
+      if (error instanceof StaleRemoteDirectorySyncError) {
+        log.debug('Ignored superseded remote directory sync on transport connect', {
+          nodeAddress,
+        });
+        return;
+      }
       log.warn('Failed to sync remote directory on transport connect', {
         nodeAddress,
         error: error instanceof Error ? error.message : String(error),
@@ -3435,7 +3478,8 @@ export class ActorSystemImpl implements ActorSystem {
   }
 
   private async handleTransportDisconnected(nodeAddress: string): Promise<void> {
-    this.remoteDirectoryReadiness.delete(nodeAddress);
+    this.remoteDirectoryReadinessAttempts.delete(nodeAddress);
+    this.remoteDirectoryReadinessFacts.delete(nodeAddress);
     this.clusterState = {
       ...this.clusterState,
       nodes: this.clusterState.nodes.filter(
@@ -3724,7 +3768,7 @@ export class ActorSystemImpl implements ActorSystem {
     );
   }
 
-  private async requestDirectorySync(node: string): Promise<void> {
+  private async requestDirectorySync(node: string): Promise<RuntimeDirectoryEntry[]> {
     const requestId = this.correlationManager.generateId();
     const response = await this.sendRuntimeRequest<ActorMessage>(
       node,
@@ -3743,40 +3787,105 @@ export class ActorSystemImpl implements ActorSystem {
     }
 
     const syncResponse = response as ActorMessage & { entries: RuntimeDirectoryEntry[] };
-    for (const entry of syncResponse.entries) {
-      this.applyRemoteDirectoryEntry(entry);
-    }
+    return [...syncResponse.entries];
   }
 
-  private getRemoteConnectionKey(node: string): string | undefined {
+  private getRemoteConnectionIdentity(node: string): RemoteConnectionIdentity | undefined {
     const transport = this.config.transport as
       | (MessageTransport & {
           getPeerStats?(nodeAddress: string): {
-            readonly identity?: { readonly nodeId: string; readonly incarnation: string };
+            readonly identity?: RemoteConnectionIdentity;
           };
         })
       | undefined;
-    const identity = transport?.getPeerStats?.(node)?.identity;
+    return transport?.getPeerStats?.(node)?.identity;
+  }
+
+  private getRemoteConnectionKey(node: string): string | undefined {
+    const identity = this.getRemoteConnectionIdentity(node);
     return identity ? JSON.stringify([identity.nodeId, identity.incarnation]) : undefined;
   }
 
-  private ensureRemoteDirectoryReady(node: string, connectionKey?: string): Promise<void> {
-    const existing = this.remoteDirectoryReadiness.get(node);
-    if (existing && (!connectionKey || existing.connectionKey === connectionKey)) {
-      return existing.promise;
+  private ensureRemoteDirectoryReady(
+    node: string,
+    options: { readonly refreshIfReady?: boolean } = {}
+  ): Promise<void> {
+    const identity = this.getRemoteConnectionIdentity(node);
+    const connectionKey = this.getRemoteConnectionKey(node);
+    const existing = this.remoteDirectoryReadinessAttempts.get(node);
+    if (existing && existing.connectionKey === connectionKey) {
+      const readiness = this.remoteDirectoryReadinessFacts.get(node);
+      if (!options.refreshIfReady || readiness?.status === 'syncing') {
+        return existing.promise;
+      }
     }
 
-    const promise = this.requestDirectorySync(node);
-    const readiness: RemoteDirectoryReadiness = {
+    const readinessBase = {
+      nodeAddress: node,
+      ...(identity ? { nodeId: identity.nodeId, incarnation: identity.incarnation } : {}),
+    };
+    this.remoteDirectoryReadinessFacts.set(node, {
+      ...readinessBase,
+      status: 'syncing',
+    });
+
+    const token = Symbol(`directory-readiness:${node}`);
+    const promise = Promise.resolve().then(async () => {
+      try {
+        const entries = await this.requestDirectorySync(node);
+        const currentConnectionKey = this.getRemoteConnectionKey(node);
+        if (
+          this.remoteDirectoryReadinessAttempts.get(node)?.token !== token ||
+          currentConnectionKey !== connectionKey
+        ) {
+          throw new StaleRemoteDirectorySyncError(node);
+        }
+
+        for (const entry of entries) {
+          this.applyRemoteDirectoryEntry(entry);
+        }
+        this.remoteDirectoryReadinessFacts.set(node, {
+          ...readinessBase,
+          status: 'ready',
+        });
+      } catch (error) {
+        const currentAttempt = this.remoteDirectoryReadinessAttempts.get(node);
+        const currentConnectionKey = this.getRemoteConnectionKey(node);
+        const stale =
+          error instanceof StaleRemoteDirectorySyncError ||
+          currentAttempt?.token !== token ||
+          currentConnectionKey !== connectionKey;
+
+        if (stale) {
+          if (currentAttempt?.token === token) {
+            this.remoteDirectoryReadinessAttempts.delete(node);
+            if (this.remoteDirectoryReadinessFacts.get(node)?.status === 'syncing') {
+              this.remoteDirectoryReadinessFacts.delete(node);
+            }
+          }
+          throw error instanceof StaleRemoteDirectorySyncError
+            ? error
+            : new StaleRemoteDirectorySyncError(node);
+        }
+
+        this.remoteDirectoryReadinessAttempts.delete(node);
+        this.remoteDirectoryReadinessFacts.set(node, {
+          ...readinessBase,
+          status: 'degraded',
+          failure: {
+            code: 'directory_sync_failed',
+            message: error instanceof Error ? error.message : String(error),
+          },
+        });
+        throw error;
+      }
+    });
+    const attempt: RemoteDirectoryReadinessAttempt = {
+      token,
       ...(connectionKey ? { connectionKey } : {}),
       promise,
     };
-    this.remoteDirectoryReadiness.set(node, readiness);
-    void promise.catch(() => {
-      if (this.remoteDirectoryReadiness.get(node) === readiness) {
-        this.remoteDirectoryReadiness.delete(node);
-      }
-    });
+    this.remoteDirectoryReadinessAttempts.set(node, attempt);
     return promise;
   }
 

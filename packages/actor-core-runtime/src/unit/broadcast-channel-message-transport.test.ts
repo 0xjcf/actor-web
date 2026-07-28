@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ActorMessage, MessageTransport } from '../actor-system.js';
+import type {
+  ActorAddress,
+  ActorDirectory,
+  ActorMessage,
+  DirectoryReadinessFact,
+  MessageTransport,
+} from '../actor-system.js';
+import { parseActorPath } from '../actor-system.js';
 import { ActorSystemImpl } from '../actor-system-impl.js';
 import {
   BROADCAST_CHANNEL_TRANSPORT_PROTOCOL,
@@ -9,6 +16,9 @@ import {
   type BroadcastChannelTransportEnvelope,
   createBroadcastChannelMessageTransport,
 } from '../broadcast-channel-message-transport.js';
+import type { DirectoryReadinessFact as BrowserDirectoryReadinessFact } from '../browser.js';
+import type { DirectoryReadinessFact as RootDirectoryReadinessFact } from '../index.js';
+import { Logger } from '../logger.js';
 import {
   createRuntimeNodeIdentity,
   createRuntimeTransportFrame,
@@ -16,6 +26,7 @@ import {
   RUNTIME_TRANSPORT_PROTOCOL_VERSION,
   type RuntimeNodeIdentity,
 } from '../runtime-transport-contract.js';
+import type { RuntimeDirectoryEntry } from '../runtime-transport-protocol.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
 const transports: BroadcastChannelMessageTransport[] = [];
@@ -134,7 +145,9 @@ class FakeBroadcastChannel implements BroadcastChannelLike {
 class ControlledDirectoryTransport implements MessageTransport {
   private listener: ((event: { source: string; message: ActorMessage }) => void) | null = null;
   private readonly connectedNodes = new Set<string>();
-  private releaseSync: (() => void) | null = null;
+  private readonly releaseSyncs: Array<() => void> = [];
+  private readonly nextSyncEntries: RuntimeDirectoryEntry[][] = [];
+  private readonly peerIdentities = new Map<string, RuntimeNodeIdentity>();
   private rejectNextSync = false;
   directorySyncRequests = 0;
 
@@ -149,7 +162,7 @@ class ControlledDirectoryTransport implements MessageTransport {
     const requestId = (message as ActorMessage & { requestId: string }).requestId;
     if (this.rejectNextSync) {
       this.rejectNextSync = false;
-      this.releaseSync = () => {
+      this.releaseSyncs.push(() => {
         this.listener?.({
           source: destination,
           message: {
@@ -157,19 +170,20 @@ class ControlledDirectoryTransport implements MessageTransport {
             requestId,
           },
         });
-      };
+      });
       return;
     }
-    this.releaseSync = () => {
+    const entries = this.nextSyncEntries.shift() ?? [];
+    this.releaseSyncs.push(() => {
       this.listener?.({
         source: destination,
         message: {
           type: '__runtime.directory.sync.response',
           requestId,
-          entries: [],
+          entries,
         },
       });
-    };
+    });
   }
 
   subscribe(listener: (event: { source: string; message: ActorMessage }) => void): () => void {
@@ -183,16 +197,20 @@ class ControlledDirectoryTransport implements MessageTransport {
 
   async connect(address: string): Promise<void> {
     this.connectedNodes.add(address);
+    if (!this.peerIdentities.has(address)) {
+      this.peerIdentities.set(address, testIdentity(address));
+    }
     if (this.emitConnected) {
-      this.listener?.({
-        source: address,
-        message: { type: '__runtime.transport.connected', nodeAddress: address },
-      });
+      this.emitTransportConnected(address);
     }
   }
 
   async disconnect(address: string): Promise<void> {
     this.connectedNodes.delete(address);
+    this.listener?.({
+      source: address,
+      message: { type: '__runtime.transport.disconnected', nodeAddress: address },
+    });
   }
 
   getConnectedNodes(): string[] {
@@ -203,14 +221,82 @@ class ControlledDirectoryTransport implements MessageTransport {
     return this.connectedNodes.has(address);
   }
 
-  releaseDirectorySync(): void {
-    const release = this.releaseSync;
-    this.releaseSync = null;
+  getPeerStats(address: string): { readonly identity?: RuntimeNodeIdentity } | undefined {
+    const identity = this.peerIdentities.get(address);
+    return identity ? { identity } : undefined;
+  }
+
+  setPeerIdentity(address: string, incarnation: string): void {
+    this.peerIdentities.set(address, testIdentity(address, incarnation));
+  }
+
+  emitTransportConnected(address: string): void {
+    this.connectedNodes.add(address);
+    this.listener?.({
+      source: address,
+      message: { type: '__runtime.transport.connected', nodeAddress: address },
+    });
+  }
+
+  queueDirectoryEntries(entries: RuntimeDirectoryEntry[]): void {
+    this.nextSyncEntries.push(entries);
+  }
+
+  releaseDirectorySync(index = 0): void {
+    const [release] = this.releaseSyncs.splice(index, 1);
     release?.();
+  }
+
+  releaseAllDirectorySyncs(): void {
+    for (const release of this.releaseSyncs.splice(0)) {
+      release();
+    }
   }
 
   failNextDirectorySync(): void {
     this.rejectNextSync = true;
+  }
+}
+
+class RecordingActorDirectory implements ActorDirectory {
+  readonly appliedRemoteEntries: RuntimeDirectoryEntry[] = [];
+  private readonly entries = new Map<string, string>();
+
+  async register(address: ActorAddress, location: string): Promise<void> {
+    this.entries.set(address, location);
+  }
+
+  async unregister(address: ActorAddress): Promise<void> {
+    this.entries.delete(address);
+  }
+
+  async lookup(address: ActorAddress): Promise<string | undefined> {
+    return this.entries.get(address);
+  }
+
+  async find(): Promise<ActorAddress[]> {
+    return [];
+  }
+
+  async getAll(): Promise<Map<string, string>> {
+    return new Map(this.entries);
+  }
+
+  subscribeToChanges(): () => void {
+    return () => undefined;
+  }
+
+  applyRemoteEntry(entry: RuntimeDirectoryEntry): void {
+    this.appliedRemoteEntries.push(entry);
+    this.entries.set(entry.address, entry.location);
+  }
+
+  removeRemoteEntry(address: ActorAddress): void {
+    this.entries.delete(address);
+  }
+
+  exportEntries(): RuntimeDirectoryEntry[] {
+    return [];
   }
 }
 
@@ -615,6 +701,57 @@ describe('BroadcastChannelMessageTransport', () => {
 });
 
 describe('ActorSystem BroadcastChannel directory readiness', () => {
+  it('publishes syncing then ready facts through defensive public snapshots', async () => {
+    const transport = new ControlledDirectoryTransport();
+    const system = new ActorSystemImpl({
+      nodeAddress: 'tab-a',
+      transport,
+    });
+    await system.start();
+
+    try {
+      expect(system.getClusterState().directoryReadiness).toEqual([]);
+
+      await transport.connect('tab-b');
+      await waitFor(
+        () => system.getClusterState().directoryReadiness?.[0]?.status === 'syncing',
+        'tab-b should publish directory syncing while the response is pending'
+      );
+
+      const syncing: DirectoryReadinessFact = {
+        nodeAddress: 'tab-b',
+        nodeId: 'tab-b',
+        incarnation: 'tab-b-boot',
+        status: 'syncing',
+      };
+      const rootExport: RootDirectoryReadinessFact = syncing;
+      const browserExport: BrowserDirectoryReadinessFact = syncing;
+      expect(system.getClusterState().directoryReadiness).toEqual([rootExport]);
+      expect(browserExport.status).toBe('syncing');
+      expect(system.getClusterState().nodes).toContain('tab-b');
+
+      transport.releaseDirectorySync();
+      await waitFor(
+        () => system.getClusterState().directoryReadiness?.[0]?.status === 'ready',
+        'tab-b should publish directory ready after accepting the response'
+      );
+
+      const clusterSnapshot = system.getClusterState();
+      const statsSnapshot = await system.getSystemStats();
+      expect(statsSnapshot.clusterState).toEqual(clusterSnapshot);
+
+      (clusterSnapshot.nodes as string[]).push('mutated-node');
+      (clusterSnapshot.directoryReadiness as DirectoryReadinessFact[]).splice(0);
+      expect(system.getClusterState().nodes).not.toContain('mutated-node');
+      expect(system.getClusterState().directoryReadiness).toMatchObject([
+        { nodeAddress: 'tab-b', status: 'ready' },
+      ]);
+    } finally {
+      transport.releaseAllDirectorySyncs();
+      await system.stop();
+    }
+  });
+
   it('keeps join pending until the deduplicated remote directory sync completes', async () => {
     const transport = new ControlledDirectoryTransport();
     const system = new ActorSystemImpl({
@@ -675,6 +812,27 @@ describe('ActorSystem BroadcastChannel directory readiness', () => {
       transport.releaseDirectorySync();
       await expect(failedJoin).rejects.toThrow('Unexpected directory sync response');
 
+      const degraded = system.getClusterState().directoryReadiness?.[0];
+      expect(degraded).toMatchObject({
+        nodeAddress: 'tab-b',
+        nodeId: 'tab-b',
+        incarnation: 'tab-b-boot',
+        status: 'degraded',
+        failure: {
+          code: 'directory_sync_failed',
+          message: 'Unexpected directory sync response: __runtime.remote.ask.response',
+        },
+      });
+      if (degraded?.status === 'degraded') {
+        (degraded.failure as { message: string }).message = 'mutated failure';
+      }
+      expect(system.getClusterState().directoryReadiness?.[0]).toMatchObject({
+        status: 'degraded',
+        failure: {
+          message: 'Unexpected directory sync response: __runtime.remote.ask.response',
+        },
+      });
+
       let joined = false;
       const retry = system.join(['tab-b']).then(() => {
         joined = true;
@@ -683,11 +841,307 @@ describe('ActorSystem BroadcastChannel directory readiness', () => {
 
       expect(joined).toBe(false);
       expect(transport.directorySyncRequests).toBe(2);
+      expect(system.getClusterState().directoryReadiness).toMatchObject([
+        { nodeAddress: 'tab-b', status: 'syncing' },
+      ]);
 
       transport.releaseDirectorySync();
       await retry;
       expect(joined).toBe(true);
+      expect(system.getClusterState().directoryReadiness).toMatchObject([
+        { nodeAddress: 'tab-b', status: 'ready' },
+      ]);
     } finally {
+      transport.releaseAllDirectorySyncs();
+      await system.stop();
+    }
+  });
+
+  it('shares one readiness attempt between automatic connect and lookup miss recovery', async () => {
+    const transport = new ControlledDirectoryTransport();
+    const system = new ActorSystemImpl({ nodeAddress: 'tab-a', transport });
+    await system.start();
+
+    try {
+      await transport.connect('tab-b');
+      const lookup = system.lookup('actor://tab-b/missing');
+      await nextTick();
+
+      expect(transport.directorySyncRequests).toBe(1);
+      transport.releaseDirectorySync();
+      await expect(lookup).resolves.toBeUndefined();
+      expect(system.getClusterState().directoryReadiness).toMatchObject([
+        { nodeAddress: 'tab-b', status: 'ready' },
+      ]);
+    } finally {
+      transport.releaseAllDirectorySyncs();
+      await system.stop();
+    }
+  });
+
+  it('refreshes a ready directory once for concurrent lookup misses', async () => {
+    const transport = new ControlledDirectoryTransport();
+    const directory = new RecordingActorDirectory();
+    const system = new ActorSystemImpl({
+      nodeAddress: 'tab-a',
+      transport,
+      directory: { implementation: directory },
+    });
+    const remoteEntry: RuntimeDirectoryEntry = {
+      address: parseActorPath('actor://tab-b/registered-after-ready'),
+      location: 'tab-b',
+      timestamp: 2,
+      ttl: Number.POSITIVE_INFINITY,
+    };
+    await system.start();
+
+    try {
+      await transport.connect('tab-b');
+      transport.releaseDirectorySync();
+      await waitFor(
+        () => system.getClusterState().directoryReadiness?.[0]?.status === 'ready',
+        'the initial directory sync should become ready'
+      );
+      expect(transport.directorySyncRequests).toBe(1);
+
+      vi.spyOn(
+        system as unknown as {
+          primeRemoteProjectionWatcher(address: ActorAddress): Promise<void>;
+        },
+        'primeRemoteProjectionWatcher'
+      ).mockResolvedValue(undefined);
+      transport.queueDirectoryEntries([remoteEntry]);
+
+      const firstLookup = system.lookup(remoteEntry.address);
+      const secondLookup = system.lookup(remoteEntry.address);
+      await waitFor(
+        () => transport.directorySyncRequests === 2,
+        'concurrent misses should start exactly one refresh after ready'
+      );
+      expect(system.getClusterState().directoryReadiness).toMatchObject([
+        { nodeAddress: 'tab-b', status: 'syncing' },
+      ]);
+
+      transport.releaseDirectorySync();
+      const [firstRef, secondRef] = await Promise.all([firstLookup, secondLookup]);
+      expect(firstRef?.address).toBe(remoteEntry.address);
+      expect(secondRef?.address).toBe(remoteEntry.address);
+      expect(transport.directorySyncRequests).toBe(2);
+      expect(system.getClusterState().directoryReadiness).toMatchObject([
+        { nodeAddress: 'tab-b', status: 'ready' },
+      ]);
+    } finally {
+      transport.releaseAllDirectorySyncs();
+      await system.stop();
+    }
+  });
+
+  it('removes readiness facts when the peer disconnects', async () => {
+    const transport = new ControlledDirectoryTransport();
+    const system = new ActorSystemImpl({ nodeAddress: 'tab-a', transport });
+    await system.start();
+
+    try {
+      await transport.connect('tab-b');
+      transport.releaseDirectorySync();
+      await waitFor(
+        () => system.getClusterState().directoryReadiness?.[0]?.status === 'ready',
+        'tab-b should become ready before disconnect'
+      );
+
+      await transport.disconnect('tab-b');
+      await waitFor(
+        () => system.getClusterState().directoryReadiness?.length === 0,
+        'tab-b readiness should be removed after disconnect'
+      );
+      expect(system.getClusterState().nodes).not.toContain('tab-b');
+    } finally {
+      transport.releaseAllDirectorySyncs();
+      await system.stop();
+    }
+  });
+
+  it('does not apply a late directory snapshot from a replaced incarnation', async () => {
+    const transport = new ControlledDirectoryTransport();
+    const directory = new RecordingActorDirectory();
+    const oldEntry: RuntimeDirectoryEntry = {
+      address: parseActorPath('actor://tab-b/old-incarnation'),
+      location: 'tab-b',
+      timestamp: 1,
+      ttl: Number.POSITIVE_INFINITY,
+    };
+    const replacementEntry: RuntimeDirectoryEntry = {
+      address: parseActorPath('actor://tab-b/replacement-incarnation'),
+      location: 'tab-b',
+      timestamp: 2,
+      ttl: Number.POSITIVE_INFINITY,
+    };
+    const system = new ActorSystemImpl({
+      nodeAddress: 'tab-a',
+      transport,
+      directory: { implementation: directory },
+    });
+    await system.start();
+
+    try {
+      transport.queueDirectoryEntries([oldEntry]);
+      await transport.connect('tab-b');
+      await waitFor(
+        () => transport.directorySyncRequests === 1,
+        'the first incarnation should start a sync'
+      );
+
+      transport.setPeerIdentity('tab-b', 'tab-b-replacement');
+      transport.queueDirectoryEntries([replacementEntry]);
+      transport.emitTransportConnected('tab-b');
+      await waitFor(
+        () => transport.directorySyncRequests === 2,
+        'the replacement incarnation should start a separate sync'
+      );
+
+      transport.releaseDirectorySync(1);
+      await waitFor(
+        () => system.getClusterState().directoryReadiness?.[0]?.status === 'ready',
+        'the replacement incarnation should become ready first'
+      );
+      transport.releaseDirectorySync(0);
+      await nextTick();
+
+      expect(directory.appliedRemoteEntries).toEqual([replacementEntry]);
+      expect(system.getClusterState().directoryReadiness).toMatchObject([
+        {
+          nodeAddress: 'tab-b',
+          nodeId: 'tab-b',
+          incarnation: 'tab-b-replacement',
+          status: 'ready',
+        },
+      ]);
+    } finally {
+      transport.releaseAllDirectorySyncs();
+      await system.stop();
+    }
+  });
+
+  it('does not let a stale failure degrade a replacement incarnation', async () => {
+    const transport = new ControlledDirectoryTransport();
+    const system = new ActorSystemImpl({ nodeAddress: 'tab-a', transport });
+    const warnSpy = vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+    await system.start();
+
+    try {
+      transport.failNextDirectorySync();
+      await transport.connect('tab-b');
+      await waitFor(
+        () => transport.directorySyncRequests === 1,
+        'the first incarnation should start a sync'
+      );
+
+      transport.setPeerIdentity('tab-b', 'tab-b-replacement');
+      transport.emitTransportConnected('tab-b');
+      await waitFor(
+        () => transport.directorySyncRequests === 2,
+        'the replacement incarnation should start a sync'
+      );
+
+      transport.releaseDirectorySync(1);
+      await waitFor(
+        () => system.getClusterState().directoryReadiness?.[0]?.status === 'ready',
+        'the replacement incarnation should become ready first'
+      );
+      warnSpy.mockClear();
+      transport.releaseDirectorySync(0);
+      await nextTick();
+
+      expect(system.getClusterState().directoryReadiness).toMatchObject([
+        {
+          nodeAddress: 'tab-b',
+          incarnation: 'tab-b-replacement',
+          status: 'ready',
+        },
+      ]);
+      expect(warnSpy).not.toHaveBeenCalledWith(
+        'ACTOR_SYSTEM',
+        'Failed to sync remote directory on transport connect',
+        expect.anything()
+      );
+    } finally {
+      warnSpy.mockRestore();
+      transport.releaseAllDirectorySyncs();
+      await system.stop();
+    }
+  });
+
+  it('does not warn when a superseded directory sync completes stale', async () => {
+    const transport = new ControlledDirectoryTransport();
+    const system = new ActorSystemImpl({ nodeAddress: 'tab-a', transport });
+    const warnSpy = vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+    await system.start();
+
+    try {
+      await transport.connect('tab-b');
+      await waitFor(
+        () => transport.directorySyncRequests === 1,
+        'the first incarnation should start a sync'
+      );
+
+      transport.setPeerIdentity('tab-b', 'tab-b-replacement');
+      transport.emitTransportConnected('tab-b');
+      await waitFor(
+        () => transport.directorySyncRequests === 2,
+        'the replacement incarnation should start a sync'
+      );
+
+      transport.releaseDirectorySync(1);
+      await waitFor(
+        () => system.getClusterState().directoryReadiness?.[0]?.status === 'ready',
+        'the replacement incarnation should become ready first'
+      );
+      warnSpy.mockClear();
+      transport.releaseDirectorySync(0);
+      await nextTick();
+
+      expect(warnSpy).not.toHaveBeenCalledWith(
+        'ACTOR_SYSTEM',
+        'Failed to sync remote directory on transport connect',
+        expect.anything()
+      );
+    } finally {
+      warnSpy.mockRestore();
+      transport.releaseAllDirectorySyncs();
+      await system.stop();
+    }
+  });
+
+  it('still warns and publishes degraded when a current directory sync fails', async () => {
+    const transport = new ControlledDirectoryTransport();
+    const system = new ActorSystemImpl({ nodeAddress: 'tab-a', transport });
+    const warnSpy = vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+    await system.start();
+
+    try {
+      transport.failNextDirectorySync();
+      await transport.connect('tab-b');
+      await waitFor(
+        () => transport.directorySyncRequests === 1,
+        'the current incarnation should start a sync'
+      );
+      transport.releaseDirectorySync();
+      await waitFor(
+        () => system.getClusterState().directoryReadiness?.[0]?.status === 'degraded',
+        'a current sync failure should publish degraded'
+      );
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        'ACTOR_SYSTEM',
+        'Failed to sync remote directory on transport connect',
+        expect.objectContaining({
+          nodeAddress: 'tab-b',
+          error: 'Unexpected directory sync response: __runtime.remote.ask.response',
+        })
+      );
+    } finally {
+      warnSpy.mockRestore();
+      transport.releaseAllDirectorySyncs();
       await system.stop();
     }
   });

@@ -306,12 +306,50 @@ export interface ActorBehavior<
 }
 
 /**
+ * Directory synchronization status for one connected peer.
+ *
+ * Transport membership and directory readiness are separate facts: a peer can
+ * be connected while its current actor-address snapshot is still synchronizing
+ * or has failed to synchronize.
+ */
+export type DirectoryReadinessFact =
+  | {
+      readonly nodeAddress: string;
+      readonly nodeId?: string;
+      readonly incarnation?: string;
+      readonly status: 'syncing';
+    }
+  | {
+      readonly nodeAddress: string;
+      readonly nodeId?: string;
+      readonly incarnation?: string;
+      readonly status: 'ready';
+    }
+  | {
+      readonly nodeAddress: string;
+      readonly nodeId?: string;
+      readonly incarnation?: string;
+      readonly status: 'degraded';
+      readonly failure: {
+        readonly code: 'directory_sync_failed';
+        readonly message: string;
+      };
+    };
+
+/**
  * Cluster state information
  */
 export interface ClusterState {
   readonly nodes: string[];
   readonly leader?: string;
   readonly status: 'joining' | 'up' | 'leaving' | 'down';
+  /**
+   * Per-peer actor-directory readiness.
+   *
+   * `undefined` means the producer does not support readiness reporting;
+   * `[]` means it supports reporting and currently has no remote peers.
+   */
+  readonly directoryReadiness?: readonly DirectoryReadinessFact[];
 }
 
 /**

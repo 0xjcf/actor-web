@@ -1117,6 +1117,65 @@ snapshot.
 
 ## Runtime Transport
 
+### Cluster membership and directory readiness
+
+Transport membership and remote actor-directory readiness are separate runtime
+facts. A peer enters `ClusterState.nodes` when ActorSystem admits its live
+transport connection. ActorSystem then synchronizes the peer's exported actor
+addresses before publishing that peer as directory-ready.
+
+Read the current state through `system.getClusterState()` or the `clusterState`
+field returned by `system.getSystemStats()`:
+
+```ts
+import type { ClusterState, DirectoryReadinessFact } from '@actor-web/runtime';
+
+const cluster: ClusterState = system.getClusterState();
+const readiness: readonly DirectoryReadinessFact[] | undefined =
+  cluster.directoryReadiness;
+```
+
+`DirectoryReadinessFact` is a per-peer discriminated union:
+
+- `syncing`: the current peer incarnation's directory request is in flight;
+- `ready`: ActorSystem accepted the current incarnation's directory snapshot;
+- `degraded`: synchronization failed, with a serializable
+  `directory_sync_failed` code and message.
+
+Each fact includes `nodeAddress` and includes `nodeId` and `incarnation` when
+the transport supplies peer identity telemetry. Actor-Web returns defensive
+snapshots, so mutating a returned nodes array, readiness array, or failure
+object cannot alter runtime state.
+
+Compatibility semantics are explicit:
+
+- `directoryReadiness === undefined` means the `ClusterState` producer does
+  not support readiness reporting;
+- `directoryReadiness: []` means the producer supports it and has no remote
+  peers;
+- Actor-Web's `ActorSystemImpl` always supplies the collection.
+
+Automatic transport connection, explicit `join()`, and a connected-peer
+`lookup()` miss share one deduplicated readiness attempt. `join()` remains
+pending until that attempt succeeds. A failed attempt leaves a `degraded` fact
+but is evicted so a later join or lookup can retry. A new same-address peer
+incarnation supersedes the old attempt; late old responses cannot install
+directory entries or overwrite the replacement's status. Disconnect removes
+the peer's readiness fact and remote directory entries.
+
+Membership `up` is therefore a transport-liveness fact, not a guarantee that
+remote actor names already resolve. This preserves Actor-Web's scoped location
+transparency: local and remote actors use the same `ActorRef` APIs, while
+latency and failure remain observable. Ordinary `send()` remains at-most-once;
+Actor-Web does not buffer or retry application messages while directory sync is
+pending.
+
+`DirectoryReadinessFact` is exported from both `@actor-web/runtime` and
+`@actor-web/runtime/browser`. It is ActorSystem lifecycle observability, not a
+new actor behavior, topology, transport, or delivery primitive. See
+[Actor-Web Directory Readiness](./actor-web-directory-readiness-design.md) for
+the architecture and non-goals.
+
 ### `MessageTransport`
 
 `MessageTransport` is the distributed runtime seam:
