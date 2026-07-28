@@ -838,7 +838,6 @@ function createAdmissionTraceBase(
 }
 
 function validateAdmissionInput(
-  rawMetadata: unknown,
   metadata: Required<Pick<AgentExecutionCommandMetadata, 'commandId'>> & AgentExecutionCommandMetadata,
   principal: AgentExecutionCommandPrincipal,
   message: AgentExecutionAdmissionInput['message'],
@@ -875,10 +874,6 @@ function validateAdmissionInput(
   if (metadata.revision !== undefined && (!Number.isInteger(metadata.revision) || metadata.revision < 0)) {
     return invalidAdmissionReason('revision must be a non-negative integer.');
   }
-  const metadataInput =
-    typeof rawMetadata === 'object' && rawMetadata !== null && !Array.isArray(rawMetadata)
-      ? (rawMetadata as Record<string, unknown>)
-      : null;
   if (metadata.capability !== undefined && !hasNonEmptyString(metadata.capability)) {
     return invalidAdmissionReason('capability must be a non-empty string when provided.');
   }
@@ -993,7 +988,7 @@ export async function admitAgentExecutionCommand(
   }
   const metadata = toCommandMetadata(input.metadata, now);
   const base = createAdmissionTraceBase(input, principal, metadata, occurredAt);
-  const validationError = validateAdmissionInput(input.metadata, metadata, principal, message, now);
+  const validationError = validateAdmissionInput(metadata, principal, message, now);
 
   if (validationError) {
     const admissionReceipt = createExecutionCommandAdmissionReceipt({
