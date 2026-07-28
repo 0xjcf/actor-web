@@ -833,6 +833,31 @@ describe('agent execution contract', () => {
         },
       },
     });
+
+    await expect(
+      admitAgentExecutionCommand({
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        kind: 'send',
+        message: {
+          type: 'RUN',
+          fn: (() => 'unsafe') as unknown as never,
+        },
+        principal: {
+          id: 'principal-1',
+          kind: 'authenticated',
+        },
+        now: () => new Date('2026-07-28T12:00:00.000Z'),
+      })
+    ).resolves.toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'invalid_command_metadata',
+          detail: 'message must be JSON-safe.',
+        },
+      },
+    });
   });
 
   it('rejects present-but-empty idempotency metadata and does not call the claim port after policy denial', async () => {
@@ -927,6 +952,114 @@ describe('agent execution contract', () => {
           code: 'missing_idempotency_adapter',
           detail:
             'commandAdmission metadata.idempotencyKey requires an explicit idempotency adapter.',
+        },
+      },
+    });
+  });
+
+  it('rejects raw invalid metadata fields without throwing', async () => {
+    await expect(
+      admitAgentExecutionCommand({
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        kind: 'send',
+        message: { type: 'RUN' },
+        principal: {
+          id: 'principal-1',
+          kind: 'authenticated',
+        },
+        metadata: {
+          commandId: 42 as unknown as never,
+        },
+        now: () => new Date('2026-07-28T12:00:03.000Z'),
+      })
+    ).resolves.toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'invalid_command_metadata',
+          detail: 'commandId must be a non-empty string when provided.',
+        },
+      },
+    });
+
+    await expect(
+      admitAgentExecutionCommand({
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        kind: 'send',
+        message: { type: 'RUN' },
+        principal: {
+          id: 'principal-1',
+          kind: 'authenticated',
+        },
+        metadata: {
+          commandId: 'cmd-bad-idem',
+          idempotencyKey: 42 as unknown as never,
+        },
+        now: () => new Date('2026-07-28T12:00:04.000Z'),
+      })
+    ).resolves.toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'invalid_command_metadata',
+          detail: 'idempotencyKey must be a non-empty string when provided.',
+        },
+      },
+    });
+
+    await expect(
+      admitAgentExecutionCommand({
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        kind: 'send',
+        message: { type: 'RUN' },
+        principal: {
+          id: 'principal-1',
+          kind: 'authenticated',
+        },
+        metadata: {
+          commandId: 'cmd-bad-approval-array',
+          approval: ['nope'] as unknown as never,
+        },
+        now: () => new Date('2026-07-28T12:00:05.000Z'),
+      })
+    ).resolves.toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'invalid_command_metadata',
+          detail: 'approval must be a JSON-safe object when provided.',
+        },
+      },
+    });
+
+    await expect(
+      admitAgentExecutionCommand({
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        kind: 'send',
+        message: { type: 'RUN' },
+        principal: {
+          id: 'principal-1',
+          kind: 'authenticated',
+        },
+        metadata: {
+          commandId: 'cmd-bad-approval-function',
+          approval: {
+            state: 'granted',
+            verifier: (() => 'unsafe') as unknown as never,
+          },
+        },
+        now: () => new Date('2026-07-28T12:00:06.000Z'),
+      })
+    ).resolves.toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'invalid_command_metadata',
+          detail: 'approval must be a JSON-safe object when provided.',
         },
       },
     });

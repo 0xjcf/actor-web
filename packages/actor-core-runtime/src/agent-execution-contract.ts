@@ -767,6 +767,45 @@ function validateAdmissionMetadataContainer(input: unknown): AgentExecutionOutco
   return null;
 }
 
+function createFallbackCommandMetadata(
+  input: unknown,
+  now: Date
+): Required<Pick<AgentExecutionCommandMetadata, 'commandId'>> {
+  const metadataInput =
+    typeof input === 'object' && input !== null && !Array.isArray(input)
+      ? (input as { commandId?: unknown })
+      : undefined;
+  return {
+    commandId:
+      typeof metadataInput?.commandId === 'string' && metadataInput.commandId.trim().length > 0
+        ? metadataInput.commandId.trim()
+        : `command:${now.toISOString()}`,
+  };
+}
+
+function validateRawAdmissionMetadata(input: unknown): AgentExecutionOutcomeFact | null {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return null;
+  }
+  const metadataInput = input as Record<string, unknown>;
+  if ('commandId' in metadataInput && !hasNonEmptyString(metadataInput.commandId)) {
+    return invalidAdmissionReason('commandId must be a non-empty string when provided.');
+  }
+  if ('idempotencyKey' in metadataInput && !hasNonEmptyString(metadataInput.idempotencyKey)) {
+    return invalidAdmissionReason('idempotencyKey must be a non-empty string when provided.');
+  }
+  if ('approval' in metadataInput) {
+    const approvalInput = metadataInput.approval;
+    if (typeof approvalInput !== 'object' || approvalInput === null || Array.isArray(approvalInput)) {
+      return invalidAdmissionReason('approval must be a JSON-safe object when provided.');
+    }
+    if (!isJsonSafeValue(approvalInput)) {
+      return invalidAdmissionReason('approval must be a JSON-safe object when provided.');
+    }
+  }
+  return null;
+}
+
 function resolveAdmissionErrorCode(reasonCode: string): 'forbidden' | 'unauthorized' | 'invalid_frame' {
   if (reasonCode === 'invalid_command_metadata') {
     return 'invalid_frame';
@@ -799,6 +838,7 @@ function createAdmissionTraceBase(
 }
 
 function validateAdmissionInput(
+  rawMetadata: unknown,
   metadata: Required<Pick<AgentExecutionCommandMetadata, 'commandId'>> & AgentExecutionCommandMetadata,
   principal: AgentExecutionCommandPrincipal,
   message: AgentExecutionAdmissionInput['message'],
@@ -806,6 +846,9 @@ function validateAdmissionInput(
 ): AgentExecutionOutcomeFact | null {
   if (!hasNonEmptyString(message.type)) {
     return invalidAdmissionReason('message.type must be a non-empty string.');
+  }
+  if (!isJsonSafeValue(message)) {
+    return invalidAdmissionReason('message must be JSON-safe.');
   }
   if (!hasNonEmptyString(principal.id)) {
     return { code: 'missing_principal', detail: 'Command principal id is required.' };
@@ -832,9 +875,10 @@ function validateAdmissionInput(
   if (metadata.revision !== undefined && (!Number.isInteger(metadata.revision) || metadata.revision < 0)) {
     return invalidAdmissionReason('revision must be a non-negative integer.');
   }
-  if (metadata.idempotencyKey !== undefined && metadata.idempotencyKey.trim().length === 0) {
-    return invalidAdmissionReason('idempotencyKey must be a non-empty string when provided.');
-  }
+  const metadataInput =
+    typeof rawMetadata === 'object' && rawMetadata !== null && !Array.isArray(rawMetadata)
+      ? (rawMetadata as Record<string, unknown>)
+      : null;
   if (metadata.capability !== undefined && !hasNonEmptyString(metadata.capability)) {
     return invalidAdmissionReason('capability must be a non-empty string when provided.');
   }
@@ -885,14 +929,14 @@ export async function admitAgentExecutionCommand(
       : ({
           type: '',
         } as const satisfies AgentExecutionAdmissionInput['message']);
-  const metadata = toCommandMetadata(input.metadata, now);
-  const base = createAdmissionTraceBase(input, principal, metadata, occurredAt);
+  const fallbackMetadata = createFallbackCommandMetadata(input.metadata, now);
+  const fallbackBase = createAdmissionTraceBase(input, principal, fallbackMetadata, occurredAt);
   const metadataContainerError = validateAdmissionMetadataContainer(input.metadata);
   if (metadataContainerError) {
     const admissionReceipt = createExecutionCommandAdmissionReceipt({
-      receiptId: `${base.traceId}:admission:1`,
-      recordId: `${base.traceId}:record:admission:1`,
-      ...base,
+      receiptId: `${fallbackBase.traceId}:admission:1`,
+      recordId: `${fallbackBase.traceId}:record:admission:1`,
+      ...fallbackBase,
       sequence: 1,
       admissionStage: 'schema-admitted',
       admission: {
@@ -902,9 +946,9 @@ export async function admitAgentExecutionCommand(
       },
     });
     const rejectionReceipt = createExecutionRejectedReceipt({
-      receiptId: `${base.traceId}:rejection:2`,
-      recordId: `${base.traceId}:record:rejection:2`,
-      ...base,
+      receiptId: `${fallbackBase.traceId}:rejection:2`,
+      recordId: `${fallbackBase.traceId}:record:rejection:2`,
+      ...fallbackBase,
       sequence: 2,
       admissionStage: 'schema-admitted',
       reason: metadataContainerError,
@@ -912,12 +956,44 @@ export async function admitAgentExecutionCommand(
     return {
       ok: false,
       principal,
-      metadata,
+      metadata: fallbackMetadata,
       admissionReceipt,
       rejectionReceipt,
     };
   }
-  const validationError = validateAdmissionInput(metadata, principal, message, now);
+  const rawMetadataValidationError = validateRawAdmissionMetadata(input.metadata);
+  if (rawMetadataValidationError) {
+    const admissionReceipt = createExecutionCommandAdmissionReceipt({
+      receiptId: `${fallbackBase.traceId}:admission:1`,
+      recordId: `${fallbackBase.traceId}:record:admission:1`,
+      ...fallbackBase,
+      sequence: 1,
+      admissionStage: 'schema-admitted',
+      admission: {
+        discovery: 'descriptive_only',
+        outcome: 'rejected',
+        rechecked: AGENT_EXECUTION_ADMISSION_RECHECKS,
+      },
+    });
+    const rejectionReceipt = createExecutionRejectedReceipt({
+      receiptId: `${fallbackBase.traceId}:rejection:2`,
+      recordId: `${fallbackBase.traceId}:record:rejection:2`,
+      ...fallbackBase,
+      sequence: 2,
+      admissionStage: 'schema-admitted',
+      reason: rawMetadataValidationError,
+    });
+    return {
+      ok: false,
+      principal,
+      metadata: fallbackMetadata,
+      admissionReceipt,
+      rejectionReceipt,
+    };
+  }
+  const metadata = toCommandMetadata(input.metadata, now);
+  const base = createAdmissionTraceBase(input, principal, metadata, occurredAt);
+  const validationError = validateAdmissionInput(input.metadata, metadata, principal, message, now);
 
   if (validationError) {
     const admissionReceipt = createExecutionCommandAdmissionReceipt({
