@@ -1,4 +1,9 @@
 import type { ProjectionTransportStatus } from './projection-transport.js';
+import type {
+  AgentExecutionAuthorizedReceipt,
+  AgentExecutionCommandMetadata,
+  AgentExecutionRejectedReceipt,
+} from './agent-execution-contract.js';
 import type { RuntimeTransportAuthPayload } from './runtime-auth.js';
 import type {
   ActorEventProjection,
@@ -38,8 +43,21 @@ export type RuntimeGatewayClientFrame =
     }
   | { type: 'unsubscribe'; streamId: string }
   | { type: 'resync'; streamId: string; fromSequence?: number }
-  | { type: 'send'; streamId: string; requestId?: string; message: Message }
-  | { type: 'ask'; streamId: string; requestId: string; message: Message; timeoutMs?: number }
+  | {
+      type: 'send';
+      streamId: string;
+      requestId?: string;
+      message: Message;
+      metadata?: AgentExecutionCommandMetadata;
+    }
+  | {
+      type: 'ask';
+      streamId: string;
+      requestId: string;
+      message: Message;
+      timeoutMs?: number;
+      metadata?: AgentExecutionCommandMetadata;
+    }
   | { type: 'ping'; sentAt: string };
 
 export type RuntimeGatewayServerFrame =
@@ -74,9 +92,21 @@ export type RuntimeGatewayServerFrame =
       code: RuntimeGatewayErrorCode;
       message: string;
       recoverable: boolean;
+      rejection?: AgentExecutionRejectedReceipt;
     }
-  | { type: 'ack'; streamId: string; requestId?: string }
-  | { type: 'reply'; streamId: string; requestId: string; value: unknown }
+  | {
+      type: 'ack';
+      streamId: string;
+      requestId?: string;
+      authorization?: AgentExecutionAuthorizedReceipt;
+    }
+  | {
+      type: 'reply';
+      streamId: string;
+      requestId: string;
+      value: unknown;
+      authorization?: AgentExecutionAuthorizedReceipt;
+    }
   | { type: 'pong'; sentAt: string; serverTime: string };
 
 export type RuntimeGatewaySourceHandle<TSource = unknown, TCommandSource = never> = {

@@ -80,6 +80,102 @@ export interface AgentExecutionPrincipal {
   readonly [key: string]: JsonValue | undefined;
 }
 
+export type AgentExecutionCommandPrincipalKind = 'authenticated' | 'local' | 'system';
+
+export interface AgentExecutionCommandPrincipal extends AgentExecutionPrincipal {
+  readonly kind: AgentExecutionCommandPrincipalKind;
+}
+
+export interface AgentExecutionApprovalMetadata {
+  readonly state?: 'granted' | 'missing' | 'expired';
+  readonly expiresAt?: string;
+  readonly [key: string]: JsonValue | undefined;
+}
+
+export interface AgentExecutionCommandMetadata {
+  readonly commandId?: string;
+  readonly intentId?: string;
+  readonly correlationId?: string;
+  readonly revision?: number;
+  readonly idempotencyKey?: string;
+  readonly capability?: string;
+  readonly approval?: AgentExecutionApprovalMetadata;
+  readonly policyVersion?: string;
+}
+
+export type AgentExecutionCommandKind = 'send' | 'ask';
+
+export interface AgentExecutionAdmissionPolicyContext {
+  readonly actorId: string;
+  readonly sessionId: string;
+  readonly kind: AgentExecutionCommandKind;
+  readonly message: {
+    readonly type: string;
+    readonly [key: string]: unknown;
+  };
+  readonly principal: AgentExecutionCommandPrincipal;
+  readonly metadata: Readonly<AgentExecutionCommandMetadata>;
+}
+
+export type AgentExecutionIdempotencyClaimResult =
+  | {
+      readonly outcome: 'available';
+    }
+  | {
+      readonly outcome: 'duplicate';
+      readonly code?: string;
+      readonly detail?: string;
+    };
+
+export type AgentExecutionIdempotencyClaimPort = (
+  context: AgentExecutionAdmissionPolicyContext
+) =>
+  | AgentExecutionIdempotencyClaimResult
+  | Promise<AgentExecutionIdempotencyClaimResult>;
+
+export type AgentExecutionAdmissionPolicyDecision =
+  | {
+      readonly outcome: 'authorized';
+      readonly policy: string;
+    }
+  | {
+      readonly outcome: 'rejected';
+      readonly policy: string;
+      readonly code: string;
+      readonly detail?: string;
+    };
+
+export type AgentExecutionAdmissionPolicy = (
+  context: AgentExecutionAdmissionPolicyContext
+) =>
+  | AgentExecutionAdmissionPolicyDecision
+  | Promise<AgentExecutionAdmissionPolicyDecision>;
+
+export interface AgentExecutionAdmissionInput {
+  readonly actorId: string;
+  readonly sessionId: string;
+  readonly kind: AgentExecutionCommandKind;
+  readonly message: {
+    readonly type: string;
+    readonly [key: string]: unknown;
+  };
+  readonly principal: AgentExecutionCommandPrincipal;
+  readonly metadata?: AgentExecutionCommandMetadata;
+  readonly policy?: AgentExecutionAdmissionPolicy;
+  readonly requireExplicitPolicy?: boolean;
+  readonly idempotency?: AgentExecutionIdempotencyClaimPort;
+  readonly now?: () => Date;
+}
+
+export interface AgentExecutionAdmissionDecision {
+  readonly principal: AgentExecutionCommandPrincipal;
+  readonly metadata: Readonly<Required<Pick<AgentExecutionCommandMetadata, 'commandId'>> & AgentExecutionCommandMetadata>;
+  readonly admissionReceipt: AgentExecutionCommandAdmissionReceipt;
+  readonly authorizationReceipt?: AgentExecutionAuthorizedReceipt;
+  readonly rejectionReceipt?: AgentExecutionRejectedReceipt;
+  readonly ok: boolean;
+}
+
 export interface AgentExecutionAuthorizationFact {
   readonly policy: string;
   readonly decision: 'approved' | 'denied';
@@ -611,6 +707,389 @@ export function createExecutionRejectedReceipt(
     status: 'rejected',
     reason: freezeClone(receipt.reason),
   });
+}
+
+const AGENT_EXECUTION_ADMISSION_RECHECKS: readonly AgentExecutionRecheckField[] = [
+  'command',
+  'payload',
+  'principal',
+  'approval',
+  'revision',
+  'idempotency',
+  'policy',
+];
+
+function toCommandMetadata(
+  input: AgentExecutionCommandMetadata | undefined,
+  now: Date
+): Required<Pick<AgentExecutionCommandMetadata, 'commandId'>> & AgentExecutionCommandMetadata {
+  return {
+    commandId:
+      typeof input?.commandId === 'string' && input.commandId.trim().length > 0
+        ? input.commandId.trim()
+        : `command:${now.toISOString()}`,
+    ...(input?.intentId ? { intentId: input.intentId } : {}),
+    ...(input?.correlationId ? { correlationId: input.correlationId } : {}),
+    ...(input?.revision !== undefined ? { revision: input.revision } : {}),
+    ...(input?.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
+    ...(input?.capability ? { capability: input.capability } : {}),
+    ...(input?.approval ? { approval: freezeClone(input.approval) } : {}),
+    ...(input?.policyVersion ? { policyVersion: input.policyVersion } : {}),
+  };
+}
+
+function invalidAdmissionReason(detail: string, code = 'invalid_command_metadata'): AgentExecutionOutcomeFact {
+  return {
+    code,
+    detail,
+  };
+}
+
+function resolveAdmissionErrorCode(reasonCode: string): 'forbidden' | 'unauthorized' | 'invalid_frame' {
+  if (reasonCode === 'invalid_command_metadata') {
+    return 'invalid_frame';
+  }
+  if (reasonCode === 'missing_principal') {
+    return 'unauthorized';
+  }
+  return 'forbidden';
+}
+
+function createAdmissionTraceBase(
+  input: AgentExecutionAdmissionInput,
+  metadata: Required<Pick<AgentExecutionCommandMetadata, 'commandId'>> & AgentExecutionCommandMetadata,
+  occurredAt: string
+) {
+  const traceId = `trace:${input.sessionId}:${metadata.commandId}`;
+  return {
+    traceId,
+    actorId: input.actorId,
+    sessionId: input.sessionId,
+    commandId: metadata.commandId,
+    ...(metadata.intentId ? { intentId: metadata.intentId } : {}),
+    principalId: input.principal.id,
+    ...(metadata.revision !== undefined ? { revision: metadata.revision } : {}),
+    ...(metadata.correlationId ? { correlationId: metadata.correlationId } : {}),
+    occurredAt,
+    ...(metadata.idempotencyKey ? { idempotencyKey: metadata.idempotencyKey } : {}),
+  } as const;
+}
+
+function validateAdmissionInput(
+  metadata: Required<Pick<AgentExecutionCommandMetadata, 'commandId'>> & AgentExecutionCommandMetadata,
+  principal: AgentExecutionCommandPrincipal,
+  message: AgentExecutionAdmissionInput['message'],
+  now: Date
+): AgentExecutionOutcomeFact | null {
+  if (!hasNonEmptyString(message.type)) {
+    return invalidAdmissionReason('message.type must be a non-empty string.');
+  }
+  if (!hasNonEmptyString(principal.id)) {
+    return { code: 'missing_principal', detail: 'Command principal id is required.' };
+  }
+  if (
+    principal.kind !== 'authenticated' &&
+    principal.kind !== 'local' &&
+    principal.kind !== 'system'
+  ) {
+    return invalidAdmissionReason('principal.kind must be one of authenticated, local, or system.');
+  }
+  if (principal.role !== undefined && !hasNonEmptyString(principal.role)) {
+    return invalidAdmissionReason('principal.role must be a non-empty string when provided.');
+  }
+  if (!isJsonSafeValue(principal)) {
+    return invalidAdmissionReason('principal must be JSON-safe.');
+  }
+  if (metadata.intentId !== undefined && !hasNonEmptyString(metadata.intentId)) {
+    return invalidAdmissionReason('intentId must be a non-empty string when provided.');
+  }
+  if (metadata.correlationId !== undefined && !hasNonEmptyString(metadata.correlationId)) {
+    return invalidAdmissionReason('correlationId must be a non-empty string when provided.');
+  }
+  if (metadata.revision !== undefined && (!Number.isInteger(metadata.revision) || metadata.revision < 0)) {
+    return invalidAdmissionReason('revision must be a non-negative integer.');
+  }
+  if (metadata.idempotencyKey !== undefined && metadata.idempotencyKey.trim().length === 0) {
+    return invalidAdmissionReason('idempotencyKey must be a non-empty string when provided.');
+  }
+  if (metadata.capability !== undefined && !hasNonEmptyString(metadata.capability)) {
+    return invalidAdmissionReason('capability must be a non-empty string when provided.');
+  }
+  if (metadata.policyVersion !== undefined && !hasNonEmptyString(metadata.policyVersion)) {
+    return invalidAdmissionReason('policyVersion must be a non-empty string when provided.');
+  }
+  if (metadata.approval?.state !== undefined) {
+    if (
+      metadata.approval.state !== 'granted' &&
+      metadata.approval.state !== 'missing' &&
+      metadata.approval.state !== 'expired'
+    ) {
+      return invalidAdmissionReason(
+        'approval.state must be granted, missing, or expired when provided.'
+      );
+    }
+  }
+  if (metadata.approval !== undefined && !isJsonSafeValue(metadata.approval)) {
+    return invalidAdmissionReason('approval must be JSON-safe.');
+  }
+  if (metadata.approval?.expiresAt) {
+    const expiresAt = Date.parse(metadata.approval.expiresAt);
+    if (Number.isNaN(expiresAt)) {
+      return invalidAdmissionReason('approval.expiresAt must be a valid ISO-8601 timestamp.');
+    }
+    if (expiresAt <= now.getTime()) {
+      return { code: 'approval_expired', detail: 'approval.expiresAt is in the past.' };
+    }
+  }
+  return null;
+}
+
+export async function admitAgentExecutionCommand(
+  input: AgentExecutionAdmissionInput
+): Promise<AgentExecutionAdmissionDecision> {
+  const now = (input.now ?? (() => new Date()))();
+  const occurredAt = now.toISOString();
+  const metadata = toCommandMetadata(input.metadata, now);
+  const base = createAdmissionTraceBase(input, metadata, occurredAt);
+  const validationError = validateAdmissionInput(metadata, input.principal, input.message, now);
+
+  if (validationError) {
+    const admissionReceipt = createExecutionCommandAdmissionReceipt({
+      receiptId: `${base.traceId}:admission:1`,
+      recordId: `${base.traceId}:record:admission:1`,
+      ...base,
+      sequence: 1,
+      admissionStage:
+        validationError.code === 'invalid_command_metadata' ? 'schema-admitted' : 'execution-authorized',
+      admission: {
+        discovery: 'descriptive_only',
+        outcome: 'rejected',
+        rechecked: AGENT_EXECUTION_ADMISSION_RECHECKS,
+      },
+    });
+    const rejectionReceipt = createExecutionRejectedReceipt({
+      receiptId: `${base.traceId}:rejection:2`,
+      recordId: `${base.traceId}:record:rejection:2`,
+      ...base,
+      sequence: 2,
+      admissionStage: admissionReceipt.admissionStage,
+      reason: validationError,
+    });
+    return {
+      ok: false,
+      principal: input.principal,
+      metadata,
+      admissionReceipt,
+      rejectionReceipt,
+    };
+  }
+
+  try {
+    if (input.requireExplicitPolicy && input.policy === undefined) {
+      const admissionReceipt = createExecutionCommandAdmissionReceipt({
+        receiptId: `${base.traceId}:admission:1`,
+        recordId: `${base.traceId}:record:admission:1`,
+        ...base,
+        sequence: 1,
+        admissionStage: 'execution-authorized',
+        admission: {
+          discovery: 'descriptive_only',
+          outcome: 'rejected',
+          rechecked: AGENT_EXECUTION_ADMISSION_RECHECKS,
+        },
+      });
+      const rejectionReceipt = createExecutionRejectedReceipt({
+        receiptId: `${base.traceId}:rejection:2`,
+        recordId: `${base.traceId}:record:rejection:2`,
+        ...base,
+        sequence: 2,
+        admissionStage: 'execution-authorized',
+        reason: {
+          code: 'missing_policy_adapter',
+          detail: 'commandAdmission requires an explicit policy adapter.',
+        },
+      });
+      return {
+        ok: false,
+        principal: input.principal,
+        metadata,
+        admissionReceipt,
+        rejectionReceipt,
+      };
+    }
+
+    const policyContext: AgentExecutionAdmissionPolicyContext = {
+      actorId: input.actorId,
+      sessionId: input.sessionId,
+      kind: input.kind,
+      message: input.message,
+      principal: input.principal,
+      metadata,
+    };
+
+    if (input.idempotency) {
+      let claimResult: AgentExecutionIdempotencyClaimResult;
+      try {
+        claimResult = await input.idempotency(policyContext);
+      } catch (error) {
+        const admissionReceipt = createExecutionCommandAdmissionReceipt({
+          receiptId: `${base.traceId}:admission:1`,
+          recordId: `${base.traceId}:record:admission:1`,
+          ...base,
+          sequence: 1,
+          admissionStage: 'execution-authorized',
+          admission: {
+            discovery: 'descriptive_only',
+            outcome: 'rejected',
+            rechecked: AGENT_EXECUTION_ADMISSION_RECHECKS,
+          },
+        });
+        const rejectionReceipt = createExecutionRejectedReceipt({
+          receiptId: `${base.traceId}:rejection:2`,
+          recordId: `${base.traceId}:record:rejection:2`,
+          ...base,
+          sequence: 2,
+          admissionStage: 'execution-authorized',
+          reason: {
+            code: 'idempotency_adapter_failure',
+            detail: error instanceof Error ? error.message : String(error),
+          },
+        });
+        return {
+          ok: false,
+          principal: input.principal,
+          metadata,
+          admissionReceipt,
+          rejectionReceipt,
+        };
+      }
+
+      if (claimResult.outcome === 'duplicate') {
+        const admissionReceipt = createExecutionCommandAdmissionReceipt({
+          receiptId: `${base.traceId}:admission:1`,
+          recordId: `${base.traceId}:record:admission:1`,
+          ...base,
+          sequence: 1,
+          admissionStage: 'execution-authorized',
+          admission: {
+            discovery: 'descriptive_only',
+            outcome: 'rejected',
+            rechecked: AGENT_EXECUTION_ADMISSION_RECHECKS,
+          },
+        });
+        const rejectionReceipt = createExecutionRejectedReceipt({
+          receiptId: `${base.traceId}:rejection:2`,
+          recordId: `${base.traceId}:record:rejection:2`,
+          ...base,
+          sequence: 2,
+          admissionStage: 'execution-authorized',
+          reason: {
+            code: claimResult.code ?? 'duplicate_idempotency_key',
+            ...(claimResult.detail ? { detail: claimResult.detail } : {}),
+          },
+        });
+        return {
+          ok: false,
+          principal: input.principal,
+          metadata,
+          admissionReceipt,
+          rejectionReceipt,
+        };
+      }
+    }
+
+    const policyDecision =
+      input.policy === undefined
+        ? {
+            outcome: 'authorized' as const,
+            policy: 'legacy-compatibility',
+          }
+        : await input.policy(policyContext);
+
+    const admissionReceipt = createExecutionCommandAdmissionReceipt({
+      receiptId: `${base.traceId}:admission:1`,
+      recordId: `${base.traceId}:record:admission:1`,
+      ...base,
+      sequence: 1,
+      admissionStage: 'execution-authorized',
+      admission: {
+        discovery: 'descriptive_only',
+        outcome: policyDecision.outcome === 'authorized' ? 'admitted' : 'rejected',
+        rechecked: AGENT_EXECUTION_ADMISSION_RECHECKS,
+      },
+    });
+
+    if (policyDecision.outcome === 'authorized') {
+      const authorizationReceipt = createExecutionAuthorizedReceipt({
+        receiptId: `${base.traceId}:authorization:2`,
+        recordId: `${base.traceId}:record:authorization:2`,
+        ...base,
+        sequence: 2,
+        principal: input.principal,
+        authorization: {
+          policy: policyDecision.policy,
+          decision: 'approved',
+        },
+      });
+      return {
+        ok: true,
+        principal: input.principal,
+        metadata,
+        admissionReceipt,
+        authorizationReceipt,
+      };
+    }
+
+    const rejectionReceipt = createExecutionRejectedReceipt({
+      receiptId: `${base.traceId}:rejection:2`,
+      recordId: `${base.traceId}:record:rejection:2`,
+      ...base,
+      sequence: 2,
+      admissionStage: 'execution-authorized',
+      reason: {
+        code: policyDecision.code,
+        ...(policyDecision.detail ? { detail: policyDecision.detail } : {}),
+      },
+    });
+    return {
+      ok: false,
+      principal: input.principal,
+      metadata,
+      admissionReceipt,
+      rejectionReceipt,
+    };
+  } catch (error) {
+    const admissionReceipt = createExecutionCommandAdmissionReceipt({
+      receiptId: `${base.traceId}:admission:1`,
+      recordId: `${base.traceId}:record:admission:1`,
+      ...base,
+      sequence: 1,
+      admissionStage: 'execution-authorized',
+      admission: {
+        discovery: 'descriptive_only',
+        outcome: 'rejected',
+        rechecked: AGENT_EXECUTION_ADMISSION_RECHECKS,
+      },
+    });
+    const rejectionReceipt = createExecutionRejectedReceipt({
+      receiptId: `${base.traceId}:rejection:2`,
+      recordId: `${base.traceId}:record:rejection:2`,
+      ...base,
+      sequence: 2,
+      admissionStage: 'execution-authorized',
+      reason: {
+        code: 'policy_adapter_failure',
+        detail: error instanceof Error ? error.message : String(error),
+      },
+    });
+    return {
+      ok: false,
+      principal: input.principal,
+      metadata,
+      admissionReceipt,
+      rejectionReceipt,
+    };
+  }
 }
 
 export function createExecutionSuccessReceipt(
