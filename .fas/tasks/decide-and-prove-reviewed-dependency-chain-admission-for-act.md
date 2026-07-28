@@ -39,10 +39,10 @@ The live queue is configured independent-only, so every task with dependsOn rema
 - None recorded at task creation. Add rejected approaches during planning if scope tradeoffs appear.
 
 ## Affected files
-
 - .fas-config.json
 - .fas/queue/tasks.json
 - .fas/state
+- .fas/memory/decisions.md
 
 ## Architecture Context
 
@@ -197,6 +197,16 @@ The live queue is configured independent-only, so every task with dependsOn rema
 - Evidence: .fas-config.json | .fas/state/verification/dependency-chain-autonomy-conformance-2026-07-28.json | fas queue reconcile: reconcile:dry-run actions:0
 - Accuracy signal: Commit 1650f2fc changes only the accepted config surface, both final read-only reviewers found no queue or runtime-package drift, and the full verification lane passed.
 - Follow-up needed: None for this task; legacy depth-17 through depth-22 chains require a separate audit before any limit increase.
+
+- Type: post-merge-memory
+- Added at: 2026-07-28
+- Trigger: fas post-merge PR 52
+- Reason: FAS promoted validated memory candidates and refreshed two decision-memory evidence timestamps during required post-merge closeout.
+- Added paths: .fas/memory/decisions.md
+- Evidence source: fas post-merge https://github.com/0xjcf/actor-web/pull/52
+- Evidence: fas post-merge https://github.com/0xjcf/actor-web/pull/52 | .fas/memory/decisions.md
+- Accuracy signal: Git diff contains only FAS metadata timestamp refreshes; PR review produced no new substantive memory lesson.
+- Follow-up needed: None
 
 ## Implementation plan
 
