@@ -57,7 +57,9 @@ After the provider-neutral advisory-policy design is accepted, prove its example
 
 ## Dependencies
 
-- None known at task creation.
+- task-1783536373178 - prerequisite provider-neutral advisory-policy design.
+- task-1783538974610 - downstream utility-policy proof is blocked until this revisioned conformance proof completes.
+- This advisory chain remains parallel to the Evidence-Governed Agent Runtime epic and is not a prerequisite for its first FAS runtime-host conformance slice.
 
 ## Open questions
 

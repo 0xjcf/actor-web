@@ -57,9 +57,10 @@ Design the provider-neutral Actor-Web contract that lets Ignite structured Artif
 
 ## Dependencies
 
-- Depends on task-1783537940318 Design actor-web policy composition and Behavior Graph runtime model.
-- Depends on task-1783116444735 Design observation vocabulary for lattice artifact sources.
+- task-1783537940318 - prerequisite Behavior Graph policy-composition design.
+- task-1783116444735 - prerequisite lattice observation vocabulary.
 - Does not block task-1781880961715 Post-mesh scoping unless the design records a concrete location-transparency claim dependency.
+- Optional Ignite interop in the lattice-observation-vocabulary epic; it does not block the Evidence-Governed Agent Runtime critical path.
 
 ## Open questions
 

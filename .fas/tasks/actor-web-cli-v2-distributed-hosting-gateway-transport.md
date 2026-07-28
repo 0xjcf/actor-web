@@ -1,10 +1,12 @@
-# actor-web CLI v2: distributed hosting (--gateway/--transport
+# Superseded backlog brief: actor-web CLI v2 distributed hosting
 
 ## Source
 
 Created with `fas create-task` on 2026-06-10.
 
 ## Problem
+
+This pre-queue backlog brief is retained for audit and is superseded by queued `task-1785250582987` at `.fas/tasks/actor-web-cli-v2-distributed-hosting-gateway-transport-conne.md`.
 
 Design: docs/actor-web-cli-runtime-host-design.md (Phase v2). SEQUENCE AFTER CLI v1. Run agents across processes/machines: serve --gateway (WS gateway) and --transport (peer listen); connect ws://host:port --as node to operate against a remote node; remote send/watch. REQUIRES a transport auth story before leaving localhost (the Node WS transport has an auth hook). Maps to startActorWebNode/serveNode gateway+transport options and createActorWebClient.
 
