@@ -34,10 +34,8 @@ Actor-Web has correlation and causation fields on emitted events plus separate c
 
 - packages/actor-core-runtime/src
 - packages/actor-core-testing/src
-- packages/actor-agent/src
 - docs/provider-neutral-agent-execution-contract.md
 - .fas-config.json
-- packages/actor-core-testing/package.json
 - packages/actor-core-testing/vitest.config.ts
 
 ## Architecture Context
@@ -221,6 +219,16 @@ Actor-Web has correlation and causation fields on emitted events plus separate c
 - Evidence: fas validate-task | .fas/state/closeout-readiness/latest.json | PACKAGE_TESTS_COVERED_BY_VERIFICATION flagged the changed fixture; the existing package test inherited the root setup path and failed before executing tests.
 - Accuracy signal: pnpm --filter @actor-web/testing test must pass and appear in .fas-config.json testCommand
 - Follow-up needed: Rerun QA, SRE, reviewer, and one final full verification after the lane repair.
+
+- Type: intentional-non-change-reconciliation
+- Added at: 2026-07-28
+- Trigger: refreshed canonical ChangeSet and architecture/SRE scope review
+- Reason: The runtime and testing packages already own the provider-neutral contract and conformance fixture. Actor-agent must not become a second contract authority, and the testing package manifest required no edit for its existing test script to discover the new package-local Vitest config.
+- Removed paths: packages/actor-agent/src | packages/actor-core-testing/package.json
+- Evidence source: architect decision, commit ad58a4d0, and refreshed ChangeSet
+- Evidence: architect decision and refreshed ChangeSet | .fas/state/agent-orchestration-execution.json|.fas/state/packets/direct-1785267060643/change-set.json
+- Accuracy signal: The final ChangeSet has zero unexpected files, zero uncovered test files, and no cosmetic actor-agent or package-manifest edit.
+- Follow-up needed: Replan the final scope, rerun delegated read-only confirmation, then run one full verification and review.
 
 ## Implementation plan
 
