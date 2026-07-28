@@ -77,11 +77,11 @@
   },
   "monitorPacks": ["ci-regressions", "dependency-drift", "quality-checks"],
   "autonomyPolicy": {
-    "mode": "independent-only",
+    "mode": "stack-allowed",
     "runtimeMode": "active",
     "allowedTaskClasses": ["independent", "dependent", "monitor"],
     "maxActiveDraftPrs": 5,
-    "maxStackDepth": 3,
+    "maxStackDepth": 12,
     "forbiddenPaths": [],
     "forbiddenModules": [],
     "maxEstimatedToolCalls": null,
