@@ -38,6 +38,12 @@ describe('agent execution conformance fixtures', () => {
       expect(fixture.joinKeys).toContain('checkpointId');
       expect(fixture.redactionRules.secretKeys).toContain('authorization');
       expect(fixture.redactionRules.promptKeys).toContain('prompt');
+      expect(fixture.candidateAdmissionSemantics).toEqual({
+        legacyCompatibility: 'dispatch_without_admission_when_command_admission_is_unconfigured',
+        admissionEnabled: 'explicit_policy_required',
+        duplicateIdempotency: 'reject_before_dispatch',
+        durableDuplicateRecovery: 'deferred_to_checkpoint_or_rehydration_work',
+      });
     }
   });
 

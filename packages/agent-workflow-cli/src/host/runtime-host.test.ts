@@ -199,6 +199,239 @@ describe('createRuntimeHost', () => {
     expect(reply).toEqual({ ok: true, value: { count: 1 } });
   });
 
+  it('routes local send and ask through the shared admission seam with an explicit system principal', async () => {
+    const decisions: unknown[] = [];
+    await host.stop();
+    const started = await createRuntimeHost(buildCounterTopology(), {
+      commandAdmission: {
+        principal: {
+          id: 'principal:cli-system',
+          kind: 'system',
+          role: 'operator',
+        },
+        policy: async ({ principal }) => ({
+          outcome: 'authorized',
+          policy: `${principal.kind}-default-allow`,
+        }),
+        onDecision: (decision) => {
+          decisions.push(decision);
+        },
+      },
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+    host = started.value;
+
+    const sent = await host.send('counter', '{"type":"INCREMENT"}');
+    expect(sent.ok).toBe(true);
+
+    const reply = await host.ask('counter', '{"type":"GET_COUNT"}', 2000);
+    expect(reply).toEqual({ ok: true, value: { count: 1 } });
+    expect(decisions).toContainEqual(
+      expect.objectContaining({
+        principal: expect.objectContaining({
+          id: 'principal:cli-system',
+          kind: 'system',
+          role: 'operator',
+        }),
+        authorizationReceipt: expect.objectContaining({
+          authorization: expect.objectContaining({
+            policy: 'system-default-allow',
+            decision: 'approved',
+          }),
+        }),
+      })
+    );
+  });
+
+  it('fails closed when the local admission policy denies or throws', async () => {
+    await host.stop();
+    const started = await createRuntimeHost(buildCounterTopology(), {
+      commandAdmission: {
+        principal: {
+          id: 'principal:cli-system',
+          kind: 'system',
+        },
+        policy: async ({ message }) => {
+          if (message.type === 'GET_COUNT') {
+            throw new Error('policy offline');
+          }
+          return {
+            outcome: 'rejected',
+            policy: 'cli-policy-v1',
+            code: 'authorization_denied',
+            detail: 'manual approval missing',
+          };
+        },
+      },
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+    host = started.value;
+
+    const denied = await host.send('counter', '{"type":"INCREMENT"}');
+    expect(denied).toEqual({
+      ok: false,
+      error: 'Send rejected: authorization_denied (manual approval missing)',
+    });
+
+    const failedClosed = await host.ask('counter', '{"type":"GET_COUNT"}', 2000);
+    expect(failedClosed).toEqual({
+      ok: false,
+      error: 'Ask rejected: policy_adapter_failure (policy offline)',
+    });
+  });
+
+  it('preserves legacy local send or ask behavior when command admission is not configured', async () => {
+    const sent = await host.send('counter', '{"type":"INCREMENT"}');
+    expect(sent.ok).toBe(true);
+
+    const reply = await host.ask('counter', '{"type":"GET_COUNT"}', 2000);
+    expect(reply).toEqual({ ok: true, value: { count: 1 } });
+  });
+
+  it('fails closed when local command admission is configured without a policy adapter', async () => {
+    await host.stop();
+    const started = await createRuntimeHost(buildCounterTopology(), {
+      commandAdmission: {
+        principal: {
+          id: 'principal:cli-system',
+          kind: 'system',
+        },
+      },
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+    host = started.value;
+
+    const rejected = await host.send('counter', '{"type":"INCREMENT"}');
+    expect(rejected).toEqual({
+      ok: false,
+      error: 'Send rejected: missing_policy_adapter (commandAdmission requires an explicit policy adapter.)',
+    });
+  });
+
+  it('rejects duplicate idempotency claims before local send or ask dispatch and fails closed on claim errors', async () => {
+    await host.stop();
+    const decisions: unknown[] = [];
+    const started = await createRuntimeHost(buildCounterTopology(), {
+      commandAdmission: {
+        principal: {
+          id: 'principal:cli-system',
+          kind: 'system',
+        },
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'cli-policy-v2',
+        }),
+        idempotency: async ({ metadata, kind }) => {
+          if (metadata.idempotencyKey === 'idem-duplicate') {
+            return {
+              outcome: 'duplicate',
+              code: kind === 'ask' ? 'duplicate_idempotency_key' : undefined,
+              detail: 'duplicate command already observed',
+            };
+          }
+          if (metadata.idempotencyKey === 'idem-claim-error') {
+            throw new Error('claim store offline');
+          }
+          return { outcome: 'available' };
+        },
+        onDecision: (decision) => {
+          decisions.push(decision);
+        },
+      },
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+    host = started.value;
+
+    const duplicateSend = await host.send(
+      'counter',
+      '{"type":"INCREMENT","idempotencyKey":"idem-duplicate"}'
+    );
+    const duplicateAsk = await host.ask(
+      'counter',
+      '{"type":"GET_COUNT","idempotencyKey":"idem-duplicate"}',
+      2000
+    );
+    const claimFailure = await host.send(
+      'counter',
+      '{"type":"INCREMENT","idempotencyKey":"idem-claim-error"}'
+    );
+    const laterCount = await host.ask('counter', '{"type":"GET_COUNT"}', 2000);
+
+    expect(duplicateSend).toEqual({
+      ok: false,
+      error: 'Send rejected: duplicate_idempotency_key (duplicate command already observed)',
+    });
+    expect(duplicateAsk).toEqual({
+      ok: false,
+      error: 'Ask rejected: duplicate_idempotency_key (duplicate command already observed)',
+    });
+    expect(claimFailure).toEqual({
+      ok: false,
+      error: 'Send rejected: idempotency_adapter_failure (claim store offline)',
+    });
+    expect(laterCount).toEqual({ ok: true, value: { count: 0 } });
+    expect(decisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rejectionReceipt: expect.objectContaining({
+            reason: expect.objectContaining({
+              code: 'duplicate_idempotency_key',
+            }),
+          }),
+        }),
+        expect.objectContaining({
+          rejectionReceipt: expect.objectContaining({
+            reason: expect.objectContaining({
+              code: 'idempotency_adapter_failure',
+            }),
+          }),
+        }),
+      ])
+    );
+  });
+
+  it('rejects malformed local admission metadata without dispatching or throwing', async () => {
+    await host.stop();
+    const started = await createRuntimeHost(buildCounterTopology(), {
+      commandAdmission: {
+        principal: {
+          id: 'principal:cli-system',
+          kind: 'system',
+        },
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'cli-policy-v2',
+        }),
+      },
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+    host = started.value;
+
+    const invalid = await host.send('counter', '{"type":"INCREMENT","revision":-1}');
+    const count = await host.ask('counter', '{"type":"GET_COUNT"}', 2000);
+
+    expect(invalid).toEqual({
+      ok: false,
+      error: 'Send rejected: invalid_command_metadata (revision must be a non-negative integer.)',
+    });
+    expect(count).toEqual({ ok: true, value: { count: 0 } });
+  });
+
   it('resolves targets by key and by actor:// path', async () => {
     const byKey = host.resolve('counter');
     expect(byKey).toBeDefined();

@@ -182,6 +182,115 @@ describe('createActorWebSource', () => {
     source.close();
   });
 
+  it('forwards optional command metadata without making the client principal authoritative', async () => {
+    const socket = new FakeGatewaySocket();
+    const source = createActorWebCommandSource(
+      {
+        address: 'actor://server-node/shipment',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+          scope: { kind: 'shipment' },
+        },
+      },
+      {
+        createSocket: () => socket,
+        streamId: 'shipment-command',
+      }
+    );
+
+    socket.open();
+    socket.receive({
+      type: 'ready',
+      connectionId: 'command-connection',
+      heartbeatMs: 15000,
+      serverTime: '2026-04-25T18:00:00.000Z',
+    });
+    socket.receive({
+      type: 'status',
+      streamId: 'shipment-command',
+      status: {
+        state: 'connected',
+        updatedAt: Date.parse('2026-04-25T18:00:01.000Z'),
+      },
+    });
+
+    const sendPromise = source.send(
+      { type: 'RESET' },
+      {
+        commandId: 'cmd-send-1',
+        intentId: 'intent-reset',
+        correlationId: 'corr-send-1',
+        revision: 3,
+        idempotencyKey: 'idem-send-1',
+        capability: 'shipment.reset',
+        approval: { state: 'granted' },
+      }
+    );
+    await Promise.resolve();
+    const sendFrame = socket.sentFrames.find(
+      (frame): frame is Extract<RuntimeGatewayClientFrame, { type: 'send' }> =>
+        frame.type === 'send'
+    );
+    if (!sendFrame) {
+      throw new Error('Expected send frame');
+    }
+    socket.receive({
+      type: 'ack',
+      streamId: 'shipment-command',
+      requestId: sendFrame.requestId,
+    });
+    await sendPromise;
+
+    const askPromise = source.ask<number>({ type: 'GET_COUNT' }, {
+      timeout: 2500,
+      metadata: {
+        commandId: 'cmd-ask-1',
+        correlationId: 'corr-ask-1',
+        capability: 'shipment.read',
+      },
+    });
+    await Promise.resolve();
+    const askFrame = socket.sentFrames.find(
+      (frame): frame is Extract<RuntimeGatewayClientFrame, { type: 'ask' }> =>
+        frame.type === 'ask'
+    );
+    if (!askFrame) {
+      throw new Error('Expected ask frame');
+    }
+    socket.receive({
+      type: 'reply',
+      streamId: 'shipment-command',
+      requestId: askFrame.requestId,
+      value: 1,
+    });
+    await expect(askPromise).resolves.toBe(1);
+
+    expect(sendFrame).toMatchObject({
+      type: 'send',
+      metadata: {
+        commandId: 'cmd-send-1',
+        intentId: 'intent-reset',
+        correlationId: 'corr-send-1',
+        revision: 3,
+        idempotencyKey: 'idem-send-1',
+        capability: 'shipment.reset',
+        approval: { state: 'granted' },
+      },
+    });
+    expect(JSON.stringify(sendFrame)).not.toContain('principal');
+    expect(askFrame).toMatchObject({
+      type: 'ask',
+      timeoutMs: 2500,
+      metadata: {
+        commandId: 'cmd-ask-1',
+        correlationId: 'corr-ask-1',
+        capability: 'shipment.read',
+      },
+    });
+
+    source.close();
+  });
+
   it('keeps browser read-model sources command-free unless the host opts in', async () => {
     const socket = new FakeGatewaySocket();
     const source = createActorWebReadModelSource(

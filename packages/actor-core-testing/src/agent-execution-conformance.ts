@@ -64,6 +64,12 @@ export interface AgentExecutionConformanceFixture {
     readonly malformedTrace: 'invalid_receipts';
     readonly invalidTerminalLineage: 'invalid_terminal_lineage';
   }>;
+  readonly candidateAdmissionSemantics: Readonly<{
+    readonly legacyCompatibility: 'dispatch_without_admission_when_command_admission_is_unconfigured';
+    readonly admissionEnabled: 'explicit_policy_required';
+    readonly duplicateIdempotency: 'reject_before_dispatch';
+    readonly durableDuplicateRecovery: 'deferred_to_checkpoint_or_rehydration_work';
+  }>;
   readonly trace: AgentExecutionTrace;
   readonly expectedStatus: AgentExecutionTrace['status'];
 }
@@ -104,6 +110,13 @@ const UNSUPPORTED_BEHAVIOR = Object.freeze({
   unsupportedVersion: 'unsupported_version',
   malformedTrace: 'invalid_receipts',
   invalidTerminalLineage: 'invalid_terminal_lineage',
+} as const);
+
+const CANDIDATE_ADMISSION_SEMANTICS = Object.freeze({
+  legacyCompatibility: 'dispatch_without_admission_when_command_admission_is_unconfigured',
+  admissionEnabled: 'explicit_policy_required',
+  duplicateIdempotency: 'reject_before_dispatch',
+  durableDuplicateRecovery: 'deferred_to_checkpoint_or_rehydration_work',
 } as const);
 
 function occurredAt(offsetSeconds: number): string {
@@ -236,6 +249,7 @@ function createFixture(
     joinKeys: JOIN_KEYS,
     redactionRules: REDACTION_RULES,
     unsupportedBehavior: UNSUPPORTED_BEHAVIOR,
+    candidateAdmissionSemantics: CANDIDATE_ADMISSION_SEMANTICS,
     trace,
     expectedStatus: trace.status,
   });
