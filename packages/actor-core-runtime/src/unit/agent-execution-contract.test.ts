@@ -1,11 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import * as browserEntry from '../browser.js';
-import * as rootEntry from '../index.js';
-import * as nodeEntry from '../node.js';
-import {
-  actorMessageToEventEnvelope,
-  type ActorEventEnvelope,
-} from '../runtime-projection.js';
 import {
   type AgentExecutionCommandAdmissionReceipt,
   type AgentExecutionEffectAttemptReceipt,
@@ -13,9 +6,9 @@ import {
   type AgentExecutionReceipt,
   createAgentExecutionTrace,
   createAgentExecutionTraceIdempotencyKey,
-  createExecutionCommandAdmissionReceipt,
   createExecutionAuthorizedReceipt,
   createExecutionCancellationReceipt,
+  createExecutionCommandAdmissionReceipt,
   createExecutionEffectIntentReceipt,
   createExecutionReconciliationReceipt,
   createExecutionRejectedReceipt,
@@ -31,12 +24,9 @@ import {
   toAgentExecutionReceiptFromEventEnvelope,
   validateAgentExecutionTrace,
 } from '../agent-execution-contract.js';
-import {
-  createInMemoryNodeProviderLifecycleEffectJournal,
-  createNodeProviderLifecycleEffectIdempotencyKey,
-  createNodeProviderLifecycleEffectRecord,
-  type NodeProviderLifecycleEffectIdempotencyKey,
-} from '../node-provider-lifecycle-effect-journal.js';
+import * as browserEntry from '../browser.js';
+import * as rootEntry from '../index.js';
+import * as nodeEntry from '../node.js';
 import {
   type BrandedStringParseResult,
   createChildProcessHandle,
@@ -44,6 +34,13 @@ import {
   createProviderLifecycleActivationKey,
   createProviderLifecycleProcessFact,
 } from '../node-provider-lifecycle-contract.js';
+import {
+  createInMemoryNodeProviderLifecycleEffectJournal,
+  createNodeProviderLifecycleEffectIdempotencyKey,
+  createNodeProviderLifecycleEffectRecord,
+  type NodeProviderLifecycleEffectIdempotencyKey,
+} from '../node-provider-lifecycle-effect-journal.js';
+import { type ActorEventEnvelope, actorMessageToEventEnvelope } from '../runtime-projection.js';
 import { Address } from '../utils/factories.js';
 
 function expectValid<TValue extends string>(result: BrandedStringParseResult<TValue>): TValue {
@@ -139,7 +136,15 @@ function createCommandAdmissionReceipt(
     admission: {
       discovery: 'descriptive_only',
       outcome: 'admitted',
-      rechecked: ['command', 'payload', 'principal', 'approval', 'revision', 'idempotency', 'policy'],
+      rechecked: [
+        'command',
+        'payload',
+        'principal',
+        'approval',
+        'revision',
+        'idempotency',
+        'policy',
+      ],
     },
     ...overrides,
   });
@@ -161,7 +166,8 @@ function createEffectIntentReceipt(
     sequence: 35,
     attempt: 1,
     occurredAt: '2026-07-28T12:00:03.500Z',
-    idempotencyKey: 'agent-execution:key:trace=trace-1:command=command-1:effect=effect-1:attempt=effect-attempt-1',
+    idempotencyKey:
+      'agent-execution:key:trace=trace-1:command=command-1:effect=effect-1:attempt=effect-attempt-1',
     effect: {
       effectType: 'provider_call',
       irreversible: true,
@@ -417,7 +423,8 @@ describe('agent execution contract', () => {
       })
     ).toEqual({
       outcome: 'valid',
-      value: 'agent-execution:key:trace=trace-1:command=command-1:effect=effect-1:attempt=effect-attempt-1',
+      value:
+        'agent-execution:key:trace=trace-1:command=command-1:effect=effect-1:attempt=effect-attempt-1',
     });
 
     expect(journal.claim({ idempotencyKey: lifecycleKey, kind: 'spawn' })).toEqual({

@@ -310,7 +310,9 @@ function hasNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-function invalidStringResult<TValue extends string>(value: unknown): BrandedStringParseResult<TValue> {
+function invalidStringResult<TValue extends string>(
+  value: unknown
+): BrandedStringParseResult<TValue> {
   return {
     outcome: 'invalid',
     reason: 'expected_non_empty_string',
@@ -330,7 +332,10 @@ function isValidIsoTimestamp(value: unknown): value is string {
   return hasNonEmptyString(value) && Number.isFinite(Date.parse(value));
 }
 
-function isJsonSafeValue(value: unknown, seen: WeakSet<object> = new WeakSet()): value is JsonValue {
+function isJsonSafeValue(
+  value: unknown,
+  seen: WeakSet<object> = new WeakSet()
+): value is JsonValue {
   if (
     value === null ||
     typeof value === 'string' ||
@@ -456,10 +461,6 @@ function findTerminalLineageViolation(
   return { ok: true };
 }
 
-function normalizeJsonValue(value: JsonValue | undefined): JsonValue | undefined {
-  return value === undefined ? undefined : freezeClone(value);
-}
-
 function hasMatchingOptionalIdentity(
   receiptValue: string | number | undefined,
   traceValue: string | number | undefined
@@ -571,7 +572,10 @@ export function createAgentExecutionTraceIdempotencyKey(input: {
 }
 
 export function createExecutionAuthorizedReceipt(
-  receipt: Omit<AgentExecutionAuthorizedReceipt, 'version' | 'receiptKind' | 'status' | 'admissionStage'>
+  receipt: Omit<
+    AgentExecutionAuthorizedReceipt,
+    'version' | 'receiptKind' | 'status' | 'admissionStage'
+  >
 ): AgentExecutionAuthorizedReceipt {
   return normalizeReceipt({
     ...receipt,
@@ -742,9 +746,7 @@ function isKnownReceiptStatus(value: unknown): value is AgentExecutionReceiptSta
 
 function isKnownAdmissionStage(value: unknown): value is AgentExecutionAdmissionStage {
   return (
-    value === 'schema-admitted' ||
-    value === 'domain-accepted' ||
-    value === 'execution-authorized'
+    value === 'schema-admitted' || value === 'domain-accepted' || value === 'execution-authorized'
   );
 }
 
@@ -831,7 +833,8 @@ function validateReceiptShape(
         isJsonSafeValue(input.principal) &&
         isJsonObject(input.authorization) &&
         hasNonEmptyString(input.authorization.policy) &&
-        (input.authorization.decision === 'approved' || input.authorization.decision === 'denied') &&
+        (input.authorization.decision === 'approved' ||
+          input.authorization.decision === 'denied') &&
         isJsonSafeValue(input.authorization)
       );
     case 'rejection':
@@ -1163,11 +1166,7 @@ export function toAgentExecutionReceiptFromEffectRecord(
         ? ((record.result.process as { provider: string }).provider ?? undefined)
         : undefined;
   const status: AgentExecutionEffectAttemptReceipt['status'] =
-    outcomeCode === 'failed'
-      ? 'failed'
-      : outcomeCode === 'cancelled'
-        ? 'cancelled'
-        : 'succeeded';
+    outcomeCode === 'failed' ? 'failed' : outcomeCode === 'cancelled' ? 'cancelled' : 'succeeded';
 
   return createExecutionTimeoutOrEffectReceipt({
     version: AGENT_EXECUTION_CONTRACT_VERSION,

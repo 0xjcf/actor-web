@@ -8,9 +8,9 @@ import {
 
 describe('agent execution conformance fixtures', () => {
   it('publishes the required deterministic provider-neutral scenarios', () => {
-    expect(
-      listAgentExecutionConformanceFixtures().map((fixture) => fixture.name)
-    ).toStrictEqual<AgentExecutionConformanceFixtureName[]>([
+    expect(listAgentExecutionConformanceFixtures().map((fixture) => fixture.name)).toStrictEqual<
+      AgentExecutionConformanceFixtureName[]
+    >([
       'success',
       'schema-rejection',
       'domain-rejection',
@@ -42,14 +42,18 @@ describe('agent execution conformance fixtures', () => {
   });
 
   it('distinguishes the three rejection stages without collapsing them into execution success', () => {
-    expect(getAgentExecutionConformanceFixture('schema-rejection').trace.receipts[0]).toMatchObject({
-      admissionStage: 'schema-admitted',
-      status: 'rejected',
-    });
-    expect(getAgentExecutionConformanceFixture('domain-rejection').trace.receipts[0]).toMatchObject({
-      admissionStage: 'domain-accepted',
-      status: 'rejected',
-    });
+    expect(getAgentExecutionConformanceFixture('schema-rejection').trace.receipts[0]).toMatchObject(
+      {
+        admissionStage: 'schema-admitted',
+        status: 'rejected',
+      }
+    );
+    expect(getAgentExecutionConformanceFixture('domain-rejection').trace.receipts[0]).toMatchObject(
+      {
+        admissionStage: 'domain-accepted',
+        status: 'rejected',
+      }
+    );
     expect(
       getAgentExecutionConformanceFixture('authorization-rejection').trace.receipts[0]
     ).toMatchObject({
@@ -78,7 +82,15 @@ describe('agent execution conformance fixtures', () => {
       status: 'observed',
       admission: {
         discovery: 'descriptive_only',
-        rechecked: ['command', 'payload', 'principal', 'approval', 'revision', 'idempotency', 'policy'],
+        rechecked: [
+          'command',
+          'payload',
+          'principal',
+          'approval',
+          'revision',
+          'idempotency',
+          'policy',
+        ],
       },
     });
 

@@ -1,8 +1,11 @@
 import {
+  type AgentExecutionAdmissionStage,
+  type AgentExecutionTrace,
+  type AgentExecutionTraceValidationResult,
   createAgentExecutionTrace,
-  createExecutionCommandAdmissionReceipt,
   createExecutionAuthorizedReceipt,
   createExecutionCancellationReceipt,
+  createExecutionCommandAdmissionReceipt,
   createExecutionEffectIntentReceipt,
   createExecutionReconciliationReceipt,
   createExecutionRejectedReceipt,
@@ -11,9 +14,6 @@ import {
   createExecutionSuccessReceipt,
   createExecutionTimeoutReceipt,
   isAgentExecutionTrace,
-  type AgentExecutionAdmissionStage,
-  type AgentExecutionTrace,
-  type AgentExecutionTraceValidationResult,
   validateAgentExecutionTrace,
 } from '@actor-web/runtime';
 
@@ -124,7 +124,10 @@ function createBaseTraceInput(name: AgentExecutionConformanceFixtureName) {
   };
 }
 
-function createCommandAdmissionReceipt(name: AgentExecutionConformanceFixtureName, sequence: number) {
+function createCommandAdmissionReceipt(
+  name: AgentExecutionConformanceFixtureName,
+  sequence: number
+) {
   const trace = createBaseTraceInput(name);
   return createExecutionCommandAdmissionReceipt({
     receiptId: `fixture:${name}:admission:${sequence}`,
@@ -141,7 +144,15 @@ function createCommandAdmissionReceipt(name: AgentExecutionConformanceFixtureNam
     admission: {
       discovery: 'descriptive_only',
       outcome: 'admitted',
-      rechecked: ['command', 'payload', 'principal', 'approval', 'revision', 'idempotency', 'policy'],
+      rechecked: [
+        'command',
+        'payload',
+        'principal',
+        'approval',
+        'revision',
+        'idempotency',
+        'policy',
+      ],
     },
   });
 }
@@ -571,29 +582,30 @@ function createStaleProjectionFixture(): AgentExecutionConformanceFixture {
   );
 }
 
-const FIXTURE_MAP: Readonly<Record<AgentExecutionConformanceFixtureName, AgentExecutionConformanceFixture>> =
-  Object.freeze({
-    success: createSuccessFixture(),
-    'schema-rejection': createRejectedFixture(
-      'schema-rejection',
-      'schema-admitted',
-      'Schema validation failed before domain acceptance.'
-    ),
-    'domain-rejection': createRejectedFixture(
-      'domain-rejection',
-      'domain-accepted',
-      'Behavior and FSM constraints rejected the admitted command.'
-    ),
-    'authorization-rejection': createRejectedFixture(
-      'authorization-rejection',
-      'execution-authorized',
-      'Execution-time authorization denied the command.'
-    ),
-    'timeout-retry-success': createTimeoutRetrySuccessFixture(),
-    'duplicate-suppression': createDuplicateSuppressionFixture(),
-    interrupted: createInterruptedFixture(),
-    'stale-projection': createStaleProjectionFixture(),
-  });
+const FIXTURE_MAP: Readonly<
+  Record<AgentExecutionConformanceFixtureName, AgentExecutionConformanceFixture>
+> = Object.freeze({
+  success: createSuccessFixture(),
+  'schema-rejection': createRejectedFixture(
+    'schema-rejection',
+    'schema-admitted',
+    'Schema validation failed before domain acceptance.'
+  ),
+  'domain-rejection': createRejectedFixture(
+    'domain-rejection',
+    'domain-accepted',
+    'Behavior and FSM constraints rejected the admitted command.'
+  ),
+  'authorization-rejection': createRejectedFixture(
+    'authorization-rejection',
+    'execution-authorized',
+    'Execution-time authorization denied the command.'
+  ),
+  'timeout-retry-success': createTimeoutRetrySuccessFixture(),
+  'duplicate-suppression': createDuplicateSuppressionFixture(),
+  interrupted: createInterruptedFixture(),
+  'stale-projection': createStaleProjectionFixture(),
+});
 
 export function getAgentExecutionConformanceFixture(
   name: AgentExecutionConformanceFixtureName
@@ -631,7 +643,9 @@ export function assertAgentExecutionConformanceFixture(
 
   for (const receipt of fixture.trace.receipts) {
     if (receipt.traceId !== fixture.trace.traceId) {
-      throw new Error(`Fixture ${fixture.name} has receipt ${receipt.receiptId} on the wrong trace.`);
+      throw new Error(
+        `Fixture ${fixture.name} has receipt ${receipt.receiptId} on the wrong trace.`
+      );
     }
   }
 

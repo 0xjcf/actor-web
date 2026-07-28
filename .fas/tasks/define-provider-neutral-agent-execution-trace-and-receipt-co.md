@@ -31,6 +31,7 @@ Actor-Web has correlation and causation fields on emitted events plus separate c
 - None recorded at task creation. Add rejected approaches during planning if scope tradeoffs appear.
 
 ## Affected files
+
 - packages/actor-core-runtime/src
 - packages/actor-core-testing/src
 - packages/actor-agent/src
@@ -186,6 +187,7 @@ Actor-Web has correlation and causation fields on emitted events plus separate c
 ```
 
 ## Scope Amendments
+
 - Type: package-root-correction
 - Added at: 2026-07-28
 - Trigger: delegated staff-engineer live package-manifest check
