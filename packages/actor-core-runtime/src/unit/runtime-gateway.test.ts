@@ -3145,6 +3145,72 @@ describe('runtime gateway hub', () => {
     detach();
   });
 
+  it('rejects credential-bearing gateway principals before dispatch and never leaks them into decisions or frames', async () => {
+    const source = createFakeSource('ready');
+    const seenDecisions: unknown[] = [];
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:auth-1',
+          kind: 'authenticated',
+          Authorization: 'Bearer bearer-value-001',
+          claims: {
+            ApiKey: 'api-key-value-001',
+          },
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout.submit',
+        }),
+        onDecision: (decision) => {
+          seenDecisions.push(decision);
+        },
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-secret-principal',
+      message: { type: 'SUBMIT', orderId: 'order-gateway-secret' },
+      metadata: {
+        commandId: 'cmd-gateway-secret-principal',
+        capability: 'checkout.submit',
+      },
+    });
+    await flushGatewayFrames();
+
+    expect(source.sentMessages).toEqual([]);
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-secret-principal',
+        rejection: expect.objectContaining({
+          reason: expect.objectContaining({
+            code: 'credential_bearing_principal',
+          }),
+        }),
+      })
+    );
+    expect(JSON.stringify(connection.frames)).not.toContain('bearer-value-001');
+    expect(JSON.stringify(connection.frames)).not.toContain('api-key-value-001');
+    expect(JSON.stringify(seenDecisions)).not.toContain('bearer-value-001');
+    expect(JSON.stringify(seenDecisions)).not.toContain('api-key-value-001');
+
+    detach();
+  });
+
   it('fails closed when command admission denies or the policy adapter fails', async () => {
     const source = createFakeSource('ready');
     const hub = createRuntimeGatewayHub({

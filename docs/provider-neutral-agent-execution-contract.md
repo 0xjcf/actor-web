@@ -192,6 +192,7 @@ These identities stay distinct. The contract does not collapse intent, authoriza
 - Capability discovery is descriptive only and never substitutes for execution-time authorization.
 - Legacy compatibility remains versioned and additive: if a host does not opt into `commandAdmission`, existing command dispatch behavior may continue without additive admission receipts.
 - Once a host opts into `commandAdmission`, Actor-Web requires an explicit policy adapter, rechecks command, payload, principal, approval, revision, idempotency, and policy, and fails closed on missing policy or adapter failure.
+- Credential-bearing principal projections are malformed admission input. Actor-Web rejects secret-like principal keys such as `token`, `authorization`, and `apiKey` case-insensitively before policy, receipts, callbacks, or dispatch.
 - Admission ordering is authoritative: validate metadata and principal, evaluate explicit policy, then perform idempotency claim or duplicate check, then emit authorization and dispatch.
 - Policy denial or expiry must not consume or claim an idempotency key.
 - Gateway authentication proves identity only; the gateway must reduce auth context to a credential-free principal before command admission.

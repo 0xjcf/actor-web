@@ -1064,4 +1064,80 @@ describe('agent execution contract', () => {
       },
     });
   });
+
+  it('rejects credential-bearing principals without leaking secrets into the decision surface', async () => {
+    const tokenDecision = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+        token: 'secret-token',
+      } as AgentExecutionCommandPrincipal,
+      now: () => new Date('2026-07-28T12:00:07.000Z'),
+    });
+
+    expect(tokenDecision).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'credential_bearing_principal',
+          detail: 'principal.token is secret-bearing. Supply a credential-free principal.',
+        },
+      },
+    });
+    expect(JSON.stringify(tokenDecision)).not.toContain('secret-token');
+
+    const authorizationDecision = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-2',
+        kind: 'authenticated',
+        Authorization: 'Bearer secret-value',
+      } as AgentExecutionCommandPrincipal,
+      now: () => new Date('2026-07-28T12:00:08.000Z'),
+    });
+
+    expect(authorizationDecision).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'credential_bearing_principal',
+          detail: 'principal.Authorization is secret-bearing. Supply a credential-free principal.',
+        },
+      },
+    });
+    expect(JSON.stringify(authorizationDecision)).not.toContain('secret-value');
+
+    const apiKeyDecision = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-3',
+        kind: 'authenticated',
+        claims: {
+          ApiKey: 'key-123',
+        },
+      } as AgentExecutionCommandPrincipal,
+      now: () => new Date('2026-07-28T12:00:09.000Z'),
+    });
+
+    expect(apiKeyDecision).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'credential_bearing_principal',
+          detail: 'principal.claims.ApiKey is secret-bearing. Supply a credential-free principal.',
+        },
+      },
+    });
+    expect(JSON.stringify(apiKeyDecision)).not.toContain('key-123');
+  });
 });

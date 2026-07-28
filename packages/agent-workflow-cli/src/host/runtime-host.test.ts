@@ -246,6 +246,51 @@ describe('createRuntimeHost', () => {
     );
   });
 
+  it('rejects credential-bearing local principals before dispatch and never leaks them into callback facts', async () => {
+    const decisions: unknown[] = [];
+    await host.stop();
+    const started = await createRuntimeHost(buildCounterTopology(), {
+      commandAdmission: {
+        principal: {
+          id: 'principal:cli-system',
+          kind: 'system',
+          token: 'cli-secret-token',
+          claims: {
+            apiKey: 'cli-api-key',
+          },
+        } as AgentExecutionCommandPrincipal,
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'system-default-allow',
+        }),
+        onDecision: (decision) => {
+          decisions.push(decision);
+        },
+      },
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+    host = started.value;
+
+    const rejected = await host.send('counter', '{"type":"INCREMENT"}');
+    const reply = await host.ask('counter', '{"type":"GET_COUNT"}', 2000);
+
+    expect(rejected).toEqual({
+      ok: false,
+      error:
+        'Send rejected: credential_bearing_principal (principal.token is secret-bearing. Supply a credential-free principal.)',
+    });
+    expect(reply).toEqual({
+      ok: false,
+      error:
+        'Ask rejected: credential_bearing_principal (principal.token is secret-bearing. Supply a credential-free principal.)',
+    });
+    expect(JSON.stringify(decisions)).not.toContain('cli-secret-token');
+    expect(JSON.stringify(decisions)).not.toContain('cli-api-key');
+  });
+
   it('fails closed when the local admission policy denies or throws', async () => {
     await host.stop();
     const started = await createRuntimeHost(buildCounterTopology(), {

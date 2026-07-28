@@ -811,6 +811,44 @@ function validateRawAdmissionMetadata(input: unknown): AgentExecutionOutcomeFact
   return null;
 }
 
+function findCredentialBearingPrincipalPath(value: unknown, path = 'principal'): string | null {
+  if (Array.isArray(value)) {
+    for (const [index, entry] of value.entries()) {
+      const nestedPath = findCredentialBearingPrincipalPath(entry, `${path}[${index}]`);
+      if (nestedPath) {
+        return nestedPath;
+      }
+    }
+    return null;
+  }
+
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (shouldRedactKey(key) === 'secret') {
+      return `${path}.${key}`;
+    }
+    const nestedPath = findCredentialBearingPrincipalPath(entry, `${path}.${key}`);
+    if (nestedPath) {
+      return nestedPath;
+    }
+  }
+
+  return null;
+}
+
+function sanitizePrincipalForDecision(
+  principal: AgentExecutionCommandPrincipal
+): AgentExecutionCommandPrincipal {
+  const sanitized = redactAgentExecutionValue(principal);
+  if (typeof sanitized === 'object' && sanitized !== null && !Array.isArray(sanitized)) {
+    return sanitized as AgentExecutionCommandPrincipal;
+  }
+  return principal;
+}
+
 function createAdmissionTraceBase(
   input: AgentExecutionAdmissionInput,
   principal: AgentExecutionCommandPrincipal,
@@ -861,6 +899,13 @@ function validateAdmissionInput(
   }
   if (!isJsonSafeValue(principal)) {
     return invalidAdmissionReason('principal must be JSON-safe.');
+  }
+  const credentialBearingPrincipalPath = findCredentialBearingPrincipalPath(principal);
+  if (credentialBearingPrincipalPath) {
+    return {
+      code: 'credential_bearing_principal',
+      detail: `${credentialBearingPrincipalPath} is secret-bearing. Supply a credential-free principal.`,
+    };
   }
   if (metadata.intentId !== undefined && !hasNonEmptyString(metadata.intentId)) {
     return invalidAdmissionReason('intentId must be a non-empty string when provided.');
@@ -926,6 +971,7 @@ export async function admitAgentExecutionCommand(
       : ({
           type: '',
         } as const satisfies AgentExecutionAdmissionInput['message']);
+  const decisionPrincipal = sanitizePrincipalForDecision(principal);
   const fallbackMetadata = createFallbackCommandMetadata(input.metadata, now);
   const fallbackBase = createAdmissionTraceBase(input, principal, fallbackMetadata, occurredAt);
   const metadataContainerError = validateAdmissionMetadataContainer(input.metadata);
@@ -952,7 +998,7 @@ export async function admitAgentExecutionCommand(
     });
     return {
       ok: false,
-      principal,
+      principal: decisionPrincipal,
       metadata: fallbackMetadata,
       admissionReceipt,
       rejectionReceipt,
@@ -982,7 +1028,7 @@ export async function admitAgentExecutionCommand(
     });
     return {
       ok: false,
-      principal,
+      principal: decisionPrincipal,
       metadata: fallbackMetadata,
       admissionReceipt,
       rejectionReceipt,
@@ -1018,7 +1064,7 @@ export async function admitAgentExecutionCommand(
     });
     return {
       ok: false,
-      principal,
+      principal: decisionPrincipal,
       metadata,
       admissionReceipt,
       rejectionReceipt,
@@ -1052,7 +1098,7 @@ export async function admitAgentExecutionCommand(
       });
       return {
         ok: false,
-        principal,
+        principal: decisionPrincipal,
         metadata,
         admissionReceipt,
         rejectionReceipt,
@@ -1102,7 +1148,7 @@ export async function admitAgentExecutionCommand(
       });
       return {
         ok: false,
-        principal,
+        principal: decisionPrincipal,
         metadata,
         admissionReceipt,
         rejectionReceipt,
@@ -1137,7 +1183,7 @@ export async function admitAgentExecutionCommand(
         });
         return {
           ok: false,
-          principal,
+          principal: decisionPrincipal,
           metadata,
           admissionReceipt,
           rejectionReceipt,
@@ -1173,7 +1219,7 @@ export async function admitAgentExecutionCommand(
         });
         return {
           ok: false,
-          principal,
+          principal: decisionPrincipal,
           metadata,
           admissionReceipt,
           rejectionReceipt,
@@ -1206,7 +1252,7 @@ export async function admitAgentExecutionCommand(
         });
         return {
           ok: false,
-          principal,
+          principal: decisionPrincipal,
           metadata,
           admissionReceipt,
           rejectionReceipt,
@@ -1233,7 +1279,7 @@ export async function admitAgentExecutionCommand(
         recordId: `${base.traceId}:record:authorization:2`,
         ...base,
         sequence: 2,
-        principal,
+        principal: decisionPrincipal,
         authorization: {
           policy: policyDecision.policy,
           decision: 'approved',
@@ -1241,7 +1287,7 @@ export async function admitAgentExecutionCommand(
       });
       return {
         ok: true,
-        principal,
+        principal: decisionPrincipal,
         metadata,
         admissionReceipt,
         authorizationReceipt,
@@ -1261,7 +1307,7 @@ export async function admitAgentExecutionCommand(
     });
     return {
       ok: false,
-      principal,
+      principal: decisionPrincipal,
       metadata,
       admissionReceipt,
       rejectionReceipt,
@@ -1292,7 +1338,7 @@ export async function admitAgentExecutionCommand(
     });
     return {
       ok: false,
-      principal,
+      principal: decisionPrincipal,
       metadata,
       admissionReceipt,
       rejectionReceipt,
