@@ -36,6 +36,9 @@ Actor-Web has correlation and causation fields on emitted events plus separate c
 - packages/actor-core-testing/src
 - packages/actor-agent/src
 - docs/provider-neutral-agent-execution-contract.md
+- .fas-config.json
+- packages/actor-core-testing/package.json
+- packages/actor-core-testing/vitest.config.ts
 
 ## Architecture Context
 
@@ -208,6 +211,16 @@ Actor-Web has correlation and causation fields on emitted events plus separate c
 - Evidence: live package manifests | packages/actor-core-runtime/package.json|packages/actor-core-testing/package.json|packages/actor-agent/package.json
 - Accuracy signal: The brief now contains exactly four existing or explicitly planned paths and no absent package aliases.
 - Follow-up needed: Restart the read-only staff-engineer step under the new orchestration generation.
+
+- Type: test-lane-conformance
+- Added at: 2026-07-28
+- Trigger: canonical closeout ChangeSet gate
+- Reason: The new @actor-web/testing conformance fixture must run through a working package test lane and the FAS full test command.
+- Added paths: .fas-config.json, packages/actor-core-testing/package.json, packages/actor-core-testing/vitest.config.ts
+- Evidence source: fas validate-task
+- Evidence: fas validate-task | .fas/state/closeout-readiness/latest.json | PACKAGE_TESTS_COVERED_BY_VERIFICATION flagged the changed fixture; the existing package test inherited the root setup path and failed before executing tests.
+- Accuracy signal: pnpm --filter @actor-web/testing test must pass and appear in .fas-config.json testCommand
+- Follow-up needed: Rerun QA, SRE, reviewer, and one final full verification after the lane repair.
 
 ## Implementation plan
 
