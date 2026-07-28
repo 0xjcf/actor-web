@@ -29,8 +29,13 @@ describe('agent execution conformance fixtures', () => {
       expect(fixture.packageVersion).toBe('0.2.0');
       expect(fixture.sourceOfTruthOwner).toBe('Actor-Web');
       expect(fixture.supportedVersions).toEqual([1]);
+      expect(fixture.joinKeys).toContain('intentId');
+      expect(fixture.joinKeys).toContain('principalId');
       expect(fixture.joinKeys).toContain('traceId');
       expect(fixture.joinKeys).toContain('effectAttemptId');
+      expect(fixture.joinKeys).toContain('attempt');
+      expect(fixture.joinKeys).toContain('revision');
+      expect(fixture.joinKeys).toContain('checkpointId');
       expect(fixture.redactionRules.secretKeys).toContain('authorization');
       expect(fixture.redactionRules.promptKeys).toContain('prompt');
     }
@@ -64,5 +69,32 @@ describe('agent execution conformance fixtures', () => {
     expect(getAgentExecutionConformanceFixture('stale-projection').trace.status).toBe(
       'stale_projection'
     );
+  });
+
+  it('keeps discovery descriptive and persists effect intent before duplicate-suppressed execution', () => {
+    const success = getAgentExecutionConformanceFixture('success');
+    expect(success.trace.receipts[0]).toMatchObject({
+      receiptKind: 'command_admission',
+      status: 'observed',
+      admission: {
+        discovery: 'descriptive_only',
+        rechecked: ['command', 'payload', 'principal', 'approval', 'revision', 'idempotency', 'policy'],
+      },
+    });
+
+    const duplicate = getAgentExecutionConformanceFixture('duplicate-suppression');
+    const effectIntentIndex = duplicate.trace.receipts.findIndex(
+      (receipt) => receipt.receiptKind === 'effect_intent'
+    );
+    const resultIndex = duplicate.trace.receipts.findIndex(
+      (receipt) => receipt.receiptKind === 'result'
+    );
+    const reconciliationIndex = duplicate.trace.receipts.findIndex(
+      (receipt) => receipt.receiptKind === 'reconciliation'
+    );
+
+    expect(effectIntentIndex).toBeGreaterThan(-1);
+    expect(resultIndex).toBeGreaterThan(effectIntentIndex);
+    expect(reconciliationIndex).toBeGreaterThan(resultIndex);
   });
 });

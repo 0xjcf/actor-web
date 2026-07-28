@@ -1,7 +1,9 @@
 import {
   createAgentExecutionTrace,
+  createExecutionCommandAdmissionReceipt,
   createExecutionAuthorizedReceipt,
   createExecutionCancellationReceipt,
+  createExecutionEffectIntentReceipt,
   createExecutionReconciliationReceipt,
   createExecutionRejectedReceipt,
   createExecutionRetryReceipt,
@@ -36,6 +38,8 @@ export interface AgentExecutionConformanceFixture {
   readonly supportedVersions: readonly 1[];
   readonly sourceOfTruthOwner: 'Actor-Web';
   readonly joinKeys: readonly [
+    'intentId',
+    'principalId',
     'traceId',
     'receiptId',
     'recordId',
@@ -44,6 +48,10 @@ export interface AgentExecutionConformanceFixture {
     'commandId',
     'effectId',
     'effectAttemptId',
+    'attempt',
+    'sequence',
+    'revision',
+    'checkpointId',
     'correlationId',
     'causationId',
   ];
@@ -69,6 +77,8 @@ const BASE_CAUSATION_ID = 'cause-fixture';
 const BASE_EFFECT_ID = 'effect-fixture';
 
 const JOIN_KEYS = [
+  'intentId',
+  'principalId',
   'traceId',
   'receiptId',
   'recordId',
@@ -77,6 +87,10 @@ const JOIN_KEYS = [
   'commandId',
   'effectId',
   'effectAttemptId',
+  'attempt',
+  'sequence',
+  'revision',
+  'checkpointId',
   'correlationId',
   'causationId',
 ] as const;
@@ -103,9 +117,33 @@ function createBaseTraceInput(name: AgentExecutionConformanceFixtureName) {
     actorId: BASE_ACTOR_ID,
     sessionId: BASE_SESSION_ID,
     commandId: BASE_COMMAND_ID,
+    intentId: `intent:${name}`,
+    principalId: 'principal:operator',
     correlationId: BASE_CORRELATION_ID,
     causationId: BASE_CAUSATION_ID,
   };
+}
+
+function createCommandAdmissionReceipt(name: AgentExecutionConformanceFixtureName, sequence: number) {
+  const trace = createBaseTraceInput(name);
+  return createExecutionCommandAdmissionReceipt({
+    receiptId: `fixture:${name}:admission:${sequence}`,
+    traceId: trace.traceId,
+    recordId: `record:${name}:admission:${sequence}`,
+    actorId: trace.actorId,
+    sessionId: trace.sessionId,
+    commandId: trace.commandId,
+    intentId: trace.intentId,
+    principalId: trace.principalId,
+    sequence,
+    occurredAt: occurredAt(sequence),
+    admissionStage: 'execution-authorized',
+    admission: {
+      discovery: 'descriptive_only',
+      outcome: 'admitted',
+      rechecked: ['command', 'payload', 'principal', 'approval', 'revision', 'idempotency', 'policy'],
+    },
+  });
 }
 
 function createAuthorizedReceipt(
@@ -121,11 +159,13 @@ function createAuthorizedReceipt(
     actorId: trace.actorId,
     sessionId: trace.sessionId,
     commandId: trace.commandId,
+    intentId: trace.intentId,
+    principalId: trace.principalId,
     sequence,
     occurredAt: occurredAt(sequence),
     ...(effectAttemptId ? { effectId: BASE_EFFECT_ID, effectAttemptId } : {}),
     principal: {
-      id: 'principal:operator',
+      id: trace.principalId,
       role: 'operator',
     },
     authorization: {
@@ -154,6 +194,8 @@ function createRejectedFixture(
         actorId: trace.actorId,
         sessionId: trace.sessionId,
         commandId: trace.commandId,
+        intentId: trace.intentId,
+        principalId: trace.principalId,
         sequence: 10,
         occurredAt: occurredAt(10),
         admissionStage,
@@ -195,7 +237,29 @@ function createSuccessFixture(): AgentExecutionConformanceFixture {
     createAgentExecutionTrace({
       ...trace,
       receipts: [
+        createCommandAdmissionReceipt('success', 5),
         createAuthorizedReceipt('success', 10, 'effect-attempt-success-1'),
+        createExecutionEffectIntentReceipt({
+          receiptId: 'fixture:success:effect-intent',
+          traceId: trace.traceId,
+          recordId: 'record:success:effect-intent',
+          actorId: trace.actorId,
+          sessionId: trace.sessionId,
+          commandId: trace.commandId,
+          intentId: trace.intentId,
+          principalId: trace.principalId,
+          effectId: BASE_EFFECT_ID,
+          attempt: 1,
+          sequence: 15,
+          occurredAt: occurredAt(15),
+          idempotencyKey:
+            'agent-execution:key:trace=fixture:success:trace:command=command-fixture:effect=effect-fixture:attempt=effect-attempt-success-1',
+          effect: {
+            effectType: 'provider_call',
+            irreversible: true,
+            idempotencyScope: 'command-effect-attempt',
+          },
+        }),
         createExecutionSuccessReceipt({
           receiptId: 'fixture:success:result',
           traceId: trace.traceId,
@@ -203,8 +267,11 @@ function createSuccessFixture(): AgentExecutionConformanceFixture {
           actorId: trace.actorId,
           sessionId: trace.sessionId,
           commandId: trace.commandId,
+          intentId: trace.intentId,
+          principalId: trace.principalId,
           effectId: BASE_EFFECT_ID,
           effectAttemptId: 'effect-attempt-success-1',
+          attempt: 1,
           sequence: 20,
           occurredAt: occurredAt(20),
           provider: 'provider-neutral-fixture',
@@ -228,7 +295,29 @@ function createTimeoutRetrySuccessFixture(): AgentExecutionConformanceFixture {
     createAgentExecutionTrace({
       ...trace,
       receipts: [
+        createCommandAdmissionReceipt('timeout-retry-success', 5),
         createAuthorizedReceipt('timeout-retry-success', 10, 'effect-attempt-timeout-1'),
+        createExecutionEffectIntentReceipt({
+          receiptId: 'fixture:timeout-retry-success:effect-intent',
+          traceId: trace.traceId,
+          recordId: 'record:timeout-retry-success:effect-intent',
+          actorId: trace.actorId,
+          sessionId: trace.sessionId,
+          commandId: trace.commandId,
+          intentId: trace.intentId,
+          principalId: trace.principalId,
+          effectId: BASE_EFFECT_ID,
+          attempt: 1,
+          sequence: 15,
+          occurredAt: occurredAt(15),
+          idempotencyKey:
+            'agent-execution:key:trace=fixture:timeout-retry-success:trace:command=command-fixture:effect=effect-fixture:attempt=effect-attempt-timeout-1',
+          effect: {
+            effectType: 'provider_call',
+            irreversible: true,
+            idempotencyScope: 'command-effect-attempt',
+          },
+        }),
         createExecutionTimeoutReceipt({
           receiptId: 'fixture:timeout-retry-success:timeout',
           traceId: trace.traceId,
@@ -236,8 +325,11 @@ function createTimeoutRetrySuccessFixture(): AgentExecutionConformanceFixture {
           actorId: trace.actorId,
           sessionId: trace.sessionId,
           commandId: trace.commandId,
+          intentId: trace.intentId,
+          principalId: trace.principalId,
           effectId: BASE_EFFECT_ID,
           effectAttemptId: 'effect-attempt-timeout-1',
+          attempt: 1,
           sequence: 20,
           occurredAt: occurredAt(20),
           provider: 'provider-neutral-fixture',
@@ -250,8 +342,11 @@ function createTimeoutRetrySuccessFixture(): AgentExecutionConformanceFixture {
           actorId: trace.actorId,
           sessionId: trace.sessionId,
           commandId: trace.commandId,
+          intentId: trace.intentId,
+          principalId: trace.principalId,
           effectId: BASE_EFFECT_ID,
           effectAttemptId: 'effect-attempt-timeout-2',
+          attempt: 2,
           sequence: 30,
           occurredAt: occurredAt(30),
           provider: 'provider-neutral-fixture',
@@ -268,8 +363,11 @@ function createTimeoutRetrySuccessFixture(): AgentExecutionConformanceFixture {
           actorId: trace.actorId,
           sessionId: trace.sessionId,
           commandId: trace.commandId,
+          intentId: trace.intentId,
+          principalId: trace.principalId,
           effectId: BASE_EFFECT_ID,
           effectAttemptId: 'effect-attempt-timeout-2',
+          attempt: 2,
           sequence: 40,
           occurredAt: occurredAt(40),
           provider: 'provider-neutral-fixture',
@@ -293,7 +391,29 @@ function createDuplicateSuppressionFixture(): AgentExecutionConformanceFixture {
     createAgentExecutionTrace({
       ...trace,
       receipts: [
+        createCommandAdmissionReceipt('duplicate-suppression', 5),
         createAuthorizedReceipt('duplicate-suppression', 10, 'effect-attempt-duplicate-1'),
+        createExecutionEffectIntentReceipt({
+          receiptId: 'fixture:duplicate-suppression:effect-intent',
+          traceId: trace.traceId,
+          recordId: 'record:duplicate-suppression:effect-intent',
+          actorId: trace.actorId,
+          sessionId: trace.sessionId,
+          commandId: trace.commandId,
+          intentId: trace.intentId,
+          principalId: trace.principalId,
+          effectId: BASE_EFFECT_ID,
+          attempt: 1,
+          sequence: 15,
+          occurredAt: occurredAt(15),
+          idempotencyKey:
+            'agent-execution:key:trace=fixture:duplicate-suppression:trace:command=command-fixture:effect=effect-fixture:attempt=effect-attempt-duplicate-1',
+          effect: {
+            effectType: 'provider_call',
+            irreversible: true,
+            idempotencyScope: 'command-effect-attempt',
+          },
+        }),
         createExecutionSuccessReceipt({
           receiptId: 'fixture:duplicate-suppression:result',
           traceId: trace.traceId,
@@ -301,8 +421,11 @@ function createDuplicateSuppressionFixture(): AgentExecutionConformanceFixture {
           actorId: trace.actorId,
           sessionId: trace.sessionId,
           commandId: trace.commandId,
+          intentId: trace.intentId,
+          principalId: trace.principalId,
           effectId: BASE_EFFECT_ID,
           effectAttemptId: 'effect-attempt-duplicate-1',
+          attempt: 1,
           sequence: 20,
           occurredAt: occurredAt(20),
           provider: 'provider-neutral-fixture',
@@ -321,8 +444,11 @@ function createDuplicateSuppressionFixture(): AgentExecutionConformanceFixture {
           actorId: trace.actorId,
           sessionId: trace.sessionId,
           commandId: trace.commandId,
+          intentId: trace.intentId,
+          principalId: trace.principalId,
           effectId: BASE_EFFECT_ID,
           effectAttemptId: 'effect-attempt-duplicate-2',
+          attempt: 2,
           sequence: 30,
           occurredAt: occurredAt(30),
           provider: 'provider-neutral-fixture',
@@ -343,6 +469,7 @@ function createInterruptedFixture(): AgentExecutionConformanceFixture {
     createAgentExecutionTrace({
       ...trace,
       receipts: [
+        createCommandAdmissionReceipt('interrupted', 5),
         createAuthorizedReceipt('interrupted', 10, 'effect-attempt-cancel-1'),
         createExecutionCancellationReceipt({
           receiptId: 'fixture:interrupted:cancellation',
@@ -351,8 +478,11 @@ function createInterruptedFixture(): AgentExecutionConformanceFixture {
           actorId: trace.actorId,
           sessionId: trace.sessionId,
           commandId: trace.commandId,
+          intentId: trace.intentId,
+          principalId: trace.principalId,
           effectId: BASE_EFFECT_ID,
           effectAttemptId: 'effect-attempt-cancel-1',
+          attempt: 1,
           sequence: 20,
           occurredAt: occurredAt(20),
           provider: 'provider-neutral-fixture',
@@ -373,7 +503,29 @@ function createStaleProjectionFixture(): AgentExecutionConformanceFixture {
     createAgentExecutionTrace({
       ...trace,
       receipts: [
+        createCommandAdmissionReceipt('stale-projection', 5),
         createAuthorizedReceipt('stale-projection', 10, 'effect-attempt-projection-1'),
+        createExecutionEffectIntentReceipt({
+          receiptId: 'fixture:stale-projection:effect-intent',
+          traceId: trace.traceId,
+          recordId: 'record:stale-projection:effect-intent',
+          actorId: trace.actorId,
+          sessionId: trace.sessionId,
+          commandId: trace.commandId,
+          intentId: trace.intentId,
+          principalId: trace.principalId,
+          effectId: BASE_EFFECT_ID,
+          attempt: 1,
+          sequence: 15,
+          occurredAt: occurredAt(15),
+          idempotencyKey:
+            'agent-execution:key:trace=fixture:stale-projection:trace:command=command-fixture:effect=effect-fixture:attempt=effect-attempt-projection-1',
+          effect: {
+            effectType: 'provider_call',
+            irreversible: true,
+            idempotencyScope: 'command-effect-attempt',
+          },
+        }),
         createExecutionSuccessReceipt({
           receiptId: 'fixture:stale-projection:result',
           traceId: trace.traceId,
@@ -381,8 +533,11 @@ function createStaleProjectionFixture(): AgentExecutionConformanceFixture {
           actorId: trace.actorId,
           sessionId: trace.sessionId,
           commandId: trace.commandId,
+          intentId: trace.intentId,
+          principalId: trace.principalId,
           effectId: BASE_EFFECT_ID,
           effectAttemptId: 'effect-attempt-projection-1',
+          attempt: 1,
           sequence: 20,
           occurredAt: occurredAt(20),
           provider: 'provider-neutral-fixture',
@@ -399,8 +554,12 @@ function createStaleProjectionFixture(): AgentExecutionConformanceFixture {
           actorId: trace.actorId,
           sessionId: trace.sessionId,
           commandId: trace.commandId,
+          intentId: trace.intentId,
+          principalId: trace.principalId,
           sequence: 30,
           occurredAt: occurredAt(30),
+          checkpointId: 'checkpoint-stale-1',
+          revision: 4,
           projection: {
             checkpointId: 'checkpoint-stale-1',
             revision: 4,

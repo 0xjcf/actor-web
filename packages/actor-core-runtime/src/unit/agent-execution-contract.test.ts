@@ -7,12 +7,16 @@ import {
   type ActorEventEnvelope,
 } from '../runtime-projection.js';
 import {
+  type AgentExecutionCommandAdmissionReceipt,
   type AgentExecutionEffectAttemptReceipt,
+  type AgentExecutionEffectIntentReceipt,
   type AgentExecutionReceipt,
   createAgentExecutionTrace,
   createAgentExecutionTraceIdempotencyKey,
+  createExecutionCommandAdmissionReceipt,
   createExecutionAuthorizedReceipt,
   createExecutionCancellationReceipt,
+  createExecutionEffectIntentReceipt,
   createExecutionReconciliationReceipt,
   createExecutionRejectedReceipt,
   createExecutionRetryReceipt,
@@ -98,9 +102,12 @@ function createEffectAttemptReceipt(
     actorId: 'runtime://agent/session-1',
     sessionId: 'session-1',
     commandId: 'command-1',
+    intentId: 'intent-1',
+    principalId: 'user-1',
     effectId: 'effect-1',
     effectAttemptId: 'effect-attempt-1',
     sequence: 40,
+    attempt: 1,
     receiptKind: 'effect_attempt',
     status: 'succeeded',
     provider: 'provider-x',
@@ -112,6 +119,56 @@ function createEffectAttemptReceipt(
     },
     ...overrides,
   };
+}
+
+function createCommandAdmissionReceipt(
+  overrides: Partial<AgentExecutionCommandAdmissionReceipt> = {}
+): AgentExecutionCommandAdmissionReceipt {
+  return createExecutionCommandAdmissionReceipt({
+    receiptId: 'receipt-admission-1',
+    traceId: 'trace-1',
+    recordId: 'record-admission-1',
+    actorId: 'runtime://agent/session-1',
+    sessionId: 'session-1',
+    commandId: 'command-1',
+    intentId: 'intent-1',
+    principalId: 'user-1',
+    sequence: 15,
+    occurredAt: '2026-07-28T12:00:01.500Z',
+    admissionStage: 'execution-authorized',
+    admission: {
+      discovery: 'descriptive_only',
+      outcome: 'admitted',
+      rechecked: ['command', 'payload', 'principal', 'approval', 'revision', 'idempotency', 'policy'],
+    },
+    ...overrides,
+  });
+}
+
+function createEffectIntentReceipt(
+  overrides: Partial<AgentExecutionEffectIntentReceipt> = {}
+): AgentExecutionEffectIntentReceipt {
+  return createExecutionEffectIntentReceipt({
+    receiptId: 'receipt-effect-intent-1',
+    traceId: 'trace-1',
+    recordId: 'record-effect-intent-1',
+    actorId: 'runtime://agent/session-1',
+    sessionId: 'session-1',
+    commandId: 'command-1',
+    intentId: 'intent-1',
+    principalId: 'user-1',
+    effectId: 'effect-1',
+    sequence: 35,
+    attempt: 1,
+    occurredAt: '2026-07-28T12:00:03.500Z',
+    idempotencyKey: 'agent-execution:key:trace=trace-1:command=command-1:effect=effect-1:attempt=effect-attempt-1',
+    effect: {
+      effectType: 'provider_call',
+      irreversible: true,
+      idempotencyScope: 'command-effect-attempt',
+    },
+    ...overrides,
+  });
 }
 
 describe('agent execution contract', () => {
@@ -131,9 +188,12 @@ describe('agent execution contract', () => {
       actorId: 'runtime://agent/session-1',
       sessionId: 'session-1',
       commandId: 'command-1',
+      intentId: 'intent-1',
+      principalId: 'user-1',
       correlationId: 'corr-1',
       causationId: 'cause-1',
       receipts: [
+        createCommandAdmissionReceipt(),
         createExecutionAuthorizedReceipt({
           receiptId: 'receipt-authorized-1',
           traceId: 'trace-1',
@@ -141,11 +201,13 @@ describe('agent execution contract', () => {
           actorId: 'runtime://agent/session-1',
           sessionId: 'session-1',
           commandId: 'command-1',
+          intentId: 'intent-1',
           sequence: 30,
           occurredAt: '2026-07-28T12:00:03.000Z',
           principal: { id: 'user-1', role: 'operator' },
           authorization: { policy: 'allow-listed', decision: 'approved' },
         }),
+        createEffectIntentReceipt(),
         createExecutionSuccessReceipt({
           receiptId: 'receipt-success-1',
           traceId: 'trace-1',
@@ -153,6 +215,11 @@ describe('agent execution contract', () => {
           actorId: 'runtime://agent/session-1',
           sessionId: 'session-1',
           commandId: 'command-1',
+          intentId: 'intent-1',
+          principalId: 'user-1',
+          effectId: 'effect-1',
+          effectAttemptId: 'effect-attempt-1',
+          attempt: 1,
           sequence: 50,
           occurredAt: '2026-07-28T12:00:05.000Z',
           result: { output: { text: 'approved' } },
@@ -160,10 +227,12 @@ describe('agent execution contract', () => {
       ],
     });
 
-    expect(trace.receipts.map((receipt) => receipt.sequence)).toEqual([30, 50]);
+    expect(trace.receipts.map((receipt) => receipt.sequence)).toEqual([15, 30, 35, 50]);
     expect(trace.status).toBe('succeeded');
     expect(trace.lastReceipt?.receiptId).toBe('receipt-success-1');
     expect(trace.schemaVersion).toBe(1);
+    expect(trace.intentId).toBe('intent-1');
+    expect(trace.principalId).toBe('user-1');
     expect(isAgentExecutionTrace(trace)).toBe(true);
     expect(validateAgentExecutionTrace(trace)).toEqual({ ok: true });
   });
@@ -480,6 +549,156 @@ describe('agent execution contract', () => {
       reason: 'invalid_trace_id',
       value: '',
     });
+
+    const malformedInputs = [
+      {
+        schemaVersion: 1,
+        traceId: 'trace-1',
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        commandId: 'command-1',
+        receipts: [{}],
+      },
+      {
+        schemaVersion: 1,
+        traceId: 'trace-1',
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        commandId: 'command-1',
+        receipts: [
+          {
+            receiptId: 'receipt-1',
+            recordId: 'record-1',
+            traceId: 'trace-1',
+            actorId: 'runtime://agent/session-1',
+            sessionId: 'session-1',
+            commandId: 'command-1',
+            receiptKind: 'unknown',
+            status: 'observed',
+            sequence: 1,
+            occurredAt: '2026-07-28T12:00:01.000Z',
+          },
+        ],
+      },
+      {
+        schemaVersion: 1,
+        traceId: 'trace-1',
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        commandId: 'command-1',
+        receipts: [
+          {
+            receiptId: 'receipt-1',
+            recordId: 'record-1',
+            traceId: 'trace-1',
+            actorId: 'runtime://agent/session-1',
+            sessionId: 'session-1',
+            commandId: 'command-1',
+            receiptKind: 'event',
+            status: 'authorized',
+            sequence: 1,
+            occurredAt: '2026-07-28T12:00:01.000Z',
+            event: { kind: 'command', type: 'RUN', payload: {} },
+          },
+        ],
+      },
+      {
+        schemaVersion: 1,
+        traceId: 'trace-1',
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        commandId: 'command-1',
+        receipts: [
+          {
+            receiptId: '',
+            recordId: 'record-1',
+            traceId: 'trace-1',
+            actorId: 'runtime://agent/session-1',
+            sessionId: 'session-1',
+            commandId: 'command-1',
+            receiptKind: 'event',
+            status: 'observed',
+            sequence: 1,
+            occurredAt: '2026-07-28T12:00:01.000Z',
+            event: { kind: 'command', type: 'RUN', payload: {} },
+          },
+        ],
+      },
+      {
+        schemaVersion: 1,
+        traceId: 'trace-1',
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        commandId: 'command-1',
+        receipts: [
+          {
+            receiptId: 'receipt-1',
+            recordId: 'record-1',
+            traceId: 'trace-2',
+            actorId: 'runtime://agent/session-1',
+            sessionId: 'session-1',
+            commandId: 'command-1',
+            receiptKind: 'event',
+            status: 'observed',
+            sequence: 1,
+            occurredAt: '2026-07-28T12:00:01.000Z',
+            event: { kind: 'command', type: 'RUN', payload: {} },
+          },
+        ],
+      },
+      {
+        schemaVersion: 1,
+        traceId: 'trace-1',
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        commandId: 'command-1',
+        receipts: [
+          {
+            receiptId: 'receipt-1',
+            recordId: 'record-1',
+            traceId: 'trace-1',
+            actorId: 'runtime://agent/session-1',
+            sessionId: 'session-1',
+            commandId: 'command-1',
+            receiptKind: 'event',
+            status: 'observed',
+            sequence: Number.NaN,
+            occurredAt: 'invalid-date',
+            event: { kind: 'command', type: 'RUN', payload: {} },
+          },
+        ],
+      },
+      {
+        schemaVersion: 1,
+        traceId: 'trace-1',
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        commandId: 'command-1',
+        receipts: [
+          {
+            receiptId: 'receipt-1',
+            recordId: 'record-1',
+            traceId: 'trace-1',
+            actorId: 'runtime://agent/session-1',
+            sessionId: 'session-1',
+            commandId: 'command-1',
+            receiptKind: 'event',
+            status: 'observed',
+            sequence: 1,
+            occurredAt: '2026-07-28T12:00:01.000Z',
+            event: { kind: 'command', type: 'RUN', payload: { when: new Date() } },
+          },
+        ],
+      },
+    ];
+
+    for (const malformed of malformedInputs) {
+      expect(() => parseAgentExecutionTrace(malformed)).not.toThrow();
+      expect(parseAgentExecutionTrace(malformed)).toMatchObject({
+        ok: false,
+        reason: 'invalid_receipts',
+      });
+    }
   });
 
   it('redacts sensitive principal and tool payload fields while preserving join keys', () => {

@@ -65,6 +65,15 @@ export type AgentExecutionReceiptStatus =
   | 'partial_failure'
   | 'failed';
 
+export type AgentExecutionRecheckField =
+  | 'command'
+  | 'payload'
+  | 'principal'
+  | 'approval'
+  | 'revision'
+  | 'idempotency'
+  | 'policy';
+
 export interface AgentExecutionPrincipal {
   readonly id: string;
   readonly role?: string;
@@ -75,6 +84,12 @@ export interface AgentExecutionAuthorizationFact {
   readonly policy: string;
   readonly decision: 'approved' | 'denied';
   readonly [key: string]: JsonValue | undefined;
+}
+
+export interface AgentExecutionCommandAdmissionFact {
+  readonly discovery: 'descriptive_only';
+  readonly outcome: 'admitted' | 'rejected';
+  readonly rechecked: readonly AgentExecutionRecheckField[];
 }
 
 export interface AgentExecutionOutcomeFact {
@@ -105,6 +120,13 @@ export interface AgentExecutionStaleProjectionFact {
   readonly expectedRevision: number;
 }
 
+export interface AgentExecutionEffectIntentFact {
+  readonly effectType: string;
+  readonly irreversible: boolean;
+  readonly idempotencyScope: string;
+  readonly [key: string]: JsonValue | undefined;
+}
+
 export interface AgentExecutionResultFact {
   readonly output?: JsonValue;
   readonly [key: string]: JsonValue | undefined;
@@ -124,7 +146,12 @@ export interface AgentExecutionReceiptBase {
   readonly actorId: string;
   readonly sessionId: string;
   readonly commandId: string;
+  readonly intentId?: string;
+  readonly principalId?: string;
   readonly sequence: number;
+  readonly attempt?: number;
+  readonly revision?: number;
+  readonly checkpointId?: string;
   readonly receiptKind: string;
   readonly status: AgentExecutionReceiptStatus;
   readonly occurredAt: string;
@@ -134,6 +161,13 @@ export interface AgentExecutionReceiptBase {
   readonly effectAttemptId?: string;
   readonly provider?: string;
   readonly idempotencyKey?: string;
+}
+
+export interface AgentExecutionCommandAdmissionReceipt extends AgentExecutionReceiptBase {
+  readonly receiptKind: 'command_admission';
+  readonly status: 'observed';
+  readonly admissionStage: AgentExecutionAdmissionStage;
+  readonly admission: AgentExecutionCommandAdmissionFact;
 }
 
 export interface AgentExecutionEventReceipt extends AgentExecutionReceiptBase {
@@ -190,18 +224,32 @@ export interface AgentExecutionReconciliationReceipt extends AgentExecutionRecei
 export interface AgentExecutionStaleProjectionReceipt extends AgentExecutionReceiptBase {
   readonly receiptKind: 'projection';
   readonly status: 'stale_projection';
+  readonly checkpointId: string;
+  readonly revision: number;
   readonly projection: AgentExecutionStaleProjectionFact;
+}
+
+export interface AgentExecutionEffectIntentReceipt extends AgentExecutionReceiptBase {
+  readonly receiptKind: 'effect_intent';
+  readonly status: 'observed';
+  readonly effectId: string;
+  readonly attempt: number;
+  readonly effect: AgentExecutionEffectIntentFact;
 }
 
 export interface AgentExecutionEffectAttemptReceipt extends AgentExecutionReceiptBase {
   readonly receiptKind: 'effect_attempt';
   readonly status: 'succeeded' | 'partial_failure' | 'failed' | 'timeout' | 'cancelled';
+  readonly effectId: string;
+  readonly attempt: number;
   readonly outcome: AgentExecutionOutcomeFact;
 }
 
 export type AgentExecutionReceipt =
+  | AgentExecutionCommandAdmissionReceipt
   | AgentExecutionAuthorizedReceipt
   | AgentExecutionCancellationReceipt
+  | AgentExecutionEffectIntentReceipt
   | AgentExecutionEffectAttemptReceipt
   | AgentExecutionEventReceipt
   | AgentExecutionReconciliationReceipt
@@ -218,6 +266,11 @@ export interface AgentExecutionTrace {
   readonly actorId: string;
   readonly sessionId: string;
   readonly commandId: string;
+  readonly intentId?: string;
+  readonly principalId?: string;
+  readonly attempt?: number;
+  readonly revision?: number;
+  readonly checkpointId?: string;
   readonly correlationId?: string;
   readonly causationId?: string;
   readonly receipts: readonly AgentExecutionReceipt[];
@@ -243,6 +296,11 @@ export interface AgentExecutionTraceInput {
   readonly actorId: string;
   readonly sessionId: string;
   readonly commandId: string;
+  readonly intentId?: string;
+  readonly principalId?: string;
+  readonly attempt?: number;
+  readonly revision?: number;
+  readonly checkpointId?: string;
   readonly correlationId?: string;
   readonly causationId?: string;
   readonly receipts: readonly AgentExecutionReceipt[];
@@ -262,6 +320,48 @@ function invalidStringResult<TValue extends string>(value: unknown): BrandedStri
 
 function cloneJsonCompatible<TValue>(value: TValue): TValue {
   return value === undefined ? value : structuredClone(value);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isValidIsoTimestamp(value: unknown): value is string {
+  return hasNonEmptyString(value) && Number.isFinite(Date.parse(value));
+}
+
+function isJsonSafeValue(value: unknown, seen: WeakSet<object> = new WeakSet()): value is JsonValue {
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    return Number.isFinite(value as number) || typeof value !== 'number';
+  }
+
+  if (Array.isArray(value)) {
+    return value.every((entry) => isJsonSafeValue(entry, seen));
+  }
+
+  if (typeof value !== 'object') {
+    return false;
+  }
+
+  if (seen.has(value)) {
+    return false;
+  }
+
+  if (Object.getPrototypeOf(value) !== Object.prototype) {
+    return false;
+  }
+
+  seen.add(value);
+  const valid = Object.values(value as Record<string, unknown>).every((entry) =>
+    isJsonSafeValue(entry, seen)
+  );
+  seen.delete(value);
+  return valid;
 }
 
 function deepFreeze<TValue>(value: TValue): TValue {
@@ -360,6 +460,76 @@ function normalizeJsonValue(value: JsonValue | undefined): JsonValue | undefined
   return value === undefined ? undefined : freezeClone(value);
 }
 
+function hasMatchingOptionalIdentity(
+  receiptValue: string | number | undefined,
+  traceValue: string | number | undefined
+): boolean {
+  return receiptValue === undefined || traceValue === undefined || receiptValue === traceValue;
+}
+
+function validateReceiptBaseShape(
+  receipt: Record<string, unknown>,
+  trace: Pick<AgentExecutionTraceInput, 'traceId' | 'actorId' | 'sessionId' | 'commandId'> &
+    Partial<
+      Pick<
+        AgentExecutionTraceInput,
+        'intentId' | 'principalId' | 'attempt' | 'revision' | 'checkpointId'
+      >
+    >
+): boolean {
+  if (
+    !hasNonEmptyString(receipt.receiptId) ||
+    !hasNonEmptyString(receipt.recordId) ||
+    !hasNonEmptyString(receipt.traceId) ||
+    !hasNonEmptyString(receipt.actorId) ||
+    !hasNonEmptyString(receipt.sessionId) ||
+    !hasNonEmptyString(receipt.commandId) ||
+    !hasNonEmptyString(receipt.receiptKind) ||
+    !hasNonEmptyString(receipt.status) ||
+    !isFiniteNumber(receipt.sequence) ||
+    !isValidIsoTimestamp(receipt.occurredAt)
+  ) {
+    return false;
+  }
+
+  if (
+    receipt.traceId !== trace.traceId ||
+    receipt.actorId !== trace.actorId ||
+    receipt.sessionId !== trace.sessionId ||
+    receipt.commandId !== trace.commandId
+  ) {
+    return false;
+  }
+
+  if (
+    !hasMatchingOptionalIdentity(receipt.intentId as string | undefined, trace.intentId) ||
+    !hasMatchingOptionalIdentity(receipt.principalId as string | undefined, trace.principalId) ||
+    !hasMatchingOptionalIdentity(receipt.attempt as number | undefined, trace.attempt) ||
+    !hasMatchingOptionalIdentity(receipt.revision as number | undefined, trace.revision) ||
+    !hasMatchingOptionalIdentity(receipt.checkpointId as string | undefined, trace.checkpointId)
+  ) {
+    return false;
+  }
+
+  if (receipt.intentId !== undefined && !hasNonEmptyString(receipt.intentId)) {
+    return false;
+  }
+  if (receipt.principalId !== undefined && !hasNonEmptyString(receipt.principalId)) {
+    return false;
+  }
+  if (receipt.attempt !== undefined && !isFiniteNumber(receipt.attempt)) {
+    return false;
+  }
+  if (receipt.revision !== undefined && !isFiniteNumber(receipt.revision)) {
+    return false;
+  }
+  if (receipt.checkpointId !== undefined && !hasNonEmptyString(receipt.checkpointId)) {
+    return false;
+  }
+
+  return true;
+}
+
 function createReceiptIdFromRecord(recordId: string): string {
   return `receipt:${recordId}`;
 }
@@ -409,8 +579,21 @@ export function createExecutionAuthorizedReceipt(
     receiptKind: 'authorization',
     status: 'authorized',
     admissionStage: 'execution-authorized',
+    principalId: receipt.principalId ?? receipt.principal.id,
     principal: freezeClone(receipt.principal),
     authorization: freezeClone(receipt.authorization),
+  });
+}
+
+export function createExecutionCommandAdmissionReceipt(
+  receipt: Omit<AgentExecutionCommandAdmissionReceipt, 'version' | 'receiptKind' | 'status'>
+): AgentExecutionCommandAdmissionReceipt {
+  return normalizeReceipt({
+    ...receipt,
+    version: AGENT_EXECUTION_CONTRACT_VERSION,
+    receiptKind: 'command_admission',
+    status: 'observed',
+    admission: freezeClone(receipt.admission),
   });
 }
 
@@ -493,7 +676,21 @@ export function createExecutionStaleProjectionReceipt(
     version: AGENT_EXECUTION_CONTRACT_VERSION,
     receiptKind: 'projection',
     status: 'stale_projection',
+    checkpointId: receipt.checkpointId ?? receipt.projection.checkpointId,
+    revision: receipt.revision ?? receipt.projection.revision,
     projection: freezeClone(receipt.projection),
+  });
+}
+
+export function createExecutionEffectIntentReceipt(
+  receipt: Omit<AgentExecutionEffectIntentReceipt, 'version' | 'receiptKind' | 'status'>
+): AgentExecutionEffectIntentReceipt {
+  return normalizeReceipt({
+    ...receipt,
+    version: AGENT_EXECUTION_CONTRACT_VERSION,
+    receiptKind: 'effect_intent',
+    status: 'observed',
+    effect: freezeClone(receipt.effect),
   });
 }
 
@@ -527,6 +724,196 @@ export function sortAgentExecutionReceipts(
   );
 }
 
+function isKnownReceiptStatus(value: unknown): value is AgentExecutionReceiptStatus {
+  return (
+    value === 'observed' ||
+    value === 'authorized' ||
+    value === 'rejected' ||
+    value === 'succeeded' ||
+    value === 'timeout' ||
+    value === 'retrying' ||
+    value === 'cancelled' ||
+    value === 'reconciled' ||
+    value === 'stale_projection' ||
+    value === 'partial_failure' ||
+    value === 'failed'
+  );
+}
+
+function isKnownAdmissionStage(value: unknown): value is AgentExecutionAdmissionStage {
+  return (
+    value === 'schema-admitted' ||
+    value === 'domain-accepted' ||
+    value === 'execution-authorized'
+  );
+}
+
+function isRecheckField(value: unknown): value is AgentExecutionRecheckField {
+  return (
+    value === 'command' ||
+    value === 'payload' ||
+    value === 'principal' ||
+    value === 'approval' ||
+    value === 'revision' ||
+    value === 'idempotency' ||
+    value === 'policy'
+  );
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function validateReceiptShape(
+  input: unknown,
+  trace: Pick<AgentExecutionTraceInput, 'traceId' | 'actorId' | 'sessionId' | 'commandId'> &
+    Partial<
+      Pick<
+        AgentExecutionTraceInput,
+        'intentId' | 'principalId' | 'attempt' | 'revision' | 'checkpointId'
+      >
+    >
+): input is AgentExecutionReceipt {
+  if (!isJsonObject(input) || !validateReceiptBaseShape(input, trace)) {
+    return false;
+  }
+
+  if (!isKnownReceiptStatus(input.status)) {
+    return false;
+  }
+
+  if (input.effectId !== undefined && !hasNonEmptyString(input.effectId)) {
+    return false;
+  }
+  if (input.effectAttemptId !== undefined && !hasNonEmptyString(input.effectAttemptId)) {
+    return false;
+  }
+  if (input.provider !== undefined && !hasNonEmptyString(input.provider)) {
+    return false;
+  }
+  if (input.idempotencyKey !== undefined && !hasNonEmptyString(input.idempotencyKey)) {
+    return false;
+  }
+  if (input.correlationId !== undefined && !hasNonEmptyString(input.correlationId)) {
+    return false;
+  }
+  if (input.causationId !== undefined && !hasNonEmptyString(input.causationId)) {
+    return false;
+  }
+
+  switch (input.receiptKind) {
+    case 'command_admission':
+      return (
+        input.status === 'observed' &&
+        isKnownAdmissionStage(input.admissionStage) &&
+        isJsonObject(input.admission) &&
+        input.admission.discovery === 'descriptive_only' &&
+        (input.admission.outcome === 'admitted' || input.admission.outcome === 'rejected') &&
+        Array.isArray(input.admission.rechecked) &&
+        input.admission.rechecked.every(isRecheckField) &&
+        isJsonSafeValue(input.admission)
+      );
+    case 'event':
+      return (
+        input.status === 'observed' &&
+        isJsonObject(input.event) &&
+        hasNonEmptyString(input.event.kind) &&
+        hasNonEmptyString(input.event.type) &&
+        isJsonSafeValue(input.event.payload)
+      );
+    case 'authorization':
+      return (
+        input.status === 'authorized' &&
+        input.admissionStage === 'execution-authorized' &&
+        hasNonEmptyString(input.principalId) &&
+        isJsonObject(input.principal) &&
+        input.principal.id === input.principalId &&
+        isJsonSafeValue(input.principal) &&
+        isJsonObject(input.authorization) &&
+        hasNonEmptyString(input.authorization.policy) &&
+        (input.authorization.decision === 'approved' || input.authorization.decision === 'denied') &&
+        isJsonSafeValue(input.authorization)
+      );
+    case 'rejection':
+      return (
+        input.status === 'rejected' &&
+        isKnownAdmissionStage(input.admissionStage) &&
+        isJsonObject(input.reason) &&
+        hasNonEmptyString(input.reason.code) &&
+        (input.reason.detail === undefined || hasNonEmptyString(input.reason.detail)) &&
+        isJsonSafeValue(input.reason)
+      );
+    case 'result':
+      return (
+        input.status === 'succeeded' &&
+        isJsonObject(input.result) &&
+        (input.result.output === undefined || isJsonSafeValue(input.result.output))
+      );
+    case 'timeout':
+      return input.status === 'timeout' && isFiniteNumber(input.timeoutMs);
+    case 'retry':
+      return (
+        input.status === 'retrying' &&
+        isJsonObject(input.retry) &&
+        isFiniteNumber(input.retry.attempt) &&
+        hasNonEmptyString(input.retry.reason) &&
+        hasNonEmptyString(input.retry.policy) &&
+        input.attempt === input.retry.attempt
+      );
+    case 'cancellation':
+      return (
+        input.status === 'cancelled' &&
+        isJsonObject(input.cancellation) &&
+        hasNonEmptyString(input.cancellation.reason) &&
+        hasNonEmptyString(input.cancellation.requestedBy)
+      );
+    case 'reconciliation':
+      return (
+        input.status === 'reconciled' &&
+        isJsonObject(input.reconciliation) &&
+        hasNonEmptyString(input.reconciliation.outcome) &&
+        hasNonEmptyString(input.reconciliation.source)
+      );
+    case 'projection':
+      return (
+        input.status === 'stale_projection' &&
+        hasNonEmptyString(input.checkpointId) &&
+        isFiniteNumber(input.revision) &&
+        isJsonObject(input.projection) &&
+        input.projection.checkpointId === input.checkpointId &&
+        input.projection.revision === input.revision &&
+        isFiniteNumber(input.projection.expectedRevision)
+      );
+    case 'effect_intent':
+      return (
+        input.status === 'observed' &&
+        hasNonEmptyString(input.effectId) &&
+        isFiniteNumber(input.attempt) &&
+        isJsonObject(input.effect) &&
+        hasNonEmptyString(input.effect.effectType) &&
+        typeof input.effect.irreversible === 'boolean' &&
+        hasNonEmptyString(input.effect.idempotencyScope) &&
+        isJsonSafeValue(input.effect)
+      );
+    case 'effect_attempt':
+      return (
+        (input.status === 'succeeded' ||
+          input.status === 'partial_failure' ||
+          input.status === 'failed' ||
+          input.status === 'timeout' ||
+          input.status === 'cancelled') &&
+        hasNonEmptyString(input.effectId) &&
+        isFiniteNumber(input.attempt) &&
+        isJsonObject(input.outcome) &&
+        hasNonEmptyString(input.outcome.code) &&
+        (input.outcome.detail === undefined || hasNonEmptyString(input.outcome.detail)) &&
+        isJsonSafeValue(input.outcome)
+      );
+    default:
+      return false;
+  }
+}
+
 export function createAgentExecutionTrace(input: AgentExecutionTraceInput): AgentExecutionTrace {
   const receipts = sortAgentExecutionReceipts(input.receipts);
   return freezeClone({
@@ -536,6 +923,11 @@ export function createAgentExecutionTrace(input: AgentExecutionTraceInput): Agen
     actorId: input.actorId,
     sessionId: input.sessionId,
     commandId: input.commandId,
+    ...(input.intentId ? { intentId: input.intentId } : {}),
+    ...(input.principalId ? { principalId: input.principalId } : {}),
+    ...(input.attempt !== undefined ? { attempt: input.attempt } : {}),
+    ...(input.revision !== undefined ? { revision: input.revision } : {}),
+    ...(input.checkpointId ? { checkpointId: input.checkpointId } : {}),
     ...(input.correlationId ? { correlationId: input.correlationId } : {}),
     ...(input.causationId ? { causationId: input.causationId } : {}),
     receipts,
@@ -572,20 +964,60 @@ export function parseAgentExecutionTrace(input: unknown): AgentExecutionTracePar
   if (!hasNonEmptyString(value.commandId)) {
     return { ok: false, reason: 'invalid_command_id', value: value.commandId };
   }
+  if (value.intentId !== undefined && !hasNonEmptyString(value.intentId)) {
+    return { ok: false, reason: 'invalid_receipts', value: value.intentId };
+  }
+  if (value.principalId !== undefined && !hasNonEmptyString(value.principalId)) {
+    return { ok: false, reason: 'invalid_receipts', value: value.principalId };
+  }
+  if (value.attempt !== undefined && !isFiniteNumber(value.attempt)) {
+    return { ok: false, reason: 'invalid_receipts', value: value.attempt };
+  }
+  if (value.revision !== undefined && !isFiniteNumber(value.revision)) {
+    return { ok: false, reason: 'invalid_receipts', value: value.revision };
+  }
+  if (value.checkpointId !== undefined && !hasNonEmptyString(value.checkpointId)) {
+    return { ok: false, reason: 'invalid_receipts', value: value.checkpointId };
+  }
   if (!Array.isArray(value.receipts)) {
     return { ok: false, reason: 'invalid_receipts', value: value.receipts };
   }
 
-  const trace = createAgentExecutionTrace({
-    version: AGENT_EXECUTION_CONTRACT_VERSION,
+  const traceIdentity = {
     traceId: value.traceId,
     actorId: value.actorId,
     sessionId: value.sessionId,
     commandId: value.commandId,
-    ...(value.correlationId ? { correlationId: value.correlationId } : {}),
-    ...(value.causationId ? { causationId: value.causationId } : {}),
-    receipts: value.receipts as readonly AgentExecutionReceipt[],
-  });
+    ...(value.intentId ? { intentId: value.intentId } : {}),
+    ...(value.principalId ? { principalId: value.principalId } : {}),
+    ...(value.attempt !== undefined ? { attempt: value.attempt } : {}),
+    ...(value.revision !== undefined ? { revision: value.revision } : {}),
+    ...(value.checkpointId ? { checkpointId: value.checkpointId } : {}),
+  };
+  if (!value.receipts.every((receipt) => validateReceiptShape(receipt, traceIdentity))) {
+    return { ok: false, reason: 'invalid_receipts', value: value.receipts };
+  }
+
+  let trace: AgentExecutionTrace;
+  try {
+    trace = createAgentExecutionTrace({
+      version: AGENT_EXECUTION_CONTRACT_VERSION,
+      traceId: value.traceId,
+      actorId: value.actorId,
+      sessionId: value.sessionId,
+      commandId: value.commandId,
+      ...(value.intentId ? { intentId: value.intentId } : {}),
+      ...(value.principalId ? { principalId: value.principalId } : {}),
+      ...(value.attempt !== undefined ? { attempt: value.attempt } : {}),
+      ...(value.revision !== undefined ? { revision: value.revision } : {}),
+      ...(value.checkpointId ? { checkpointId: value.checkpointId } : {}),
+      ...(value.correlationId ? { correlationId: value.correlationId } : {}),
+      ...(value.causationId ? { causationId: value.causationId } : {}),
+      receipts: value.receipts as readonly AgentExecutionReceipt[],
+    });
+  } catch {
+    return { ok: false, reason: 'invalid_receipts', value: input };
+  }
   const validation = validateAgentExecutionTrace(trace);
   if (!validation.ok) {
     return {
@@ -659,6 +1091,11 @@ export function toAgentExecutionReceiptFromEventEnvelope(
     readonly actorId: string;
     readonly sessionId: string;
     readonly commandId: string;
+    readonly intentId?: string;
+    readonly principalId?: string;
+    readonly attempt?: number;
+    readonly revision?: number;
+    readonly checkpointId?: string;
     readonly sequence: number;
   }
 ): AgentExecutionEventReceipt {
@@ -670,6 +1107,11 @@ export function toAgentExecutionReceiptFromEventEnvelope(
     actorId: options.actorId,
     sessionId: options.sessionId,
     commandId: options.commandId,
+    ...(options.intentId ? { intentId: options.intentId } : {}),
+    ...(options.principalId ? { principalId: options.principalId } : {}),
+    ...(options.attempt !== undefined ? { attempt: options.attempt } : {}),
+    ...(options.revision !== undefined ? { revision: options.revision } : {}),
+    ...(options.checkpointId ? { checkpointId: options.checkpointId } : {}),
     sequence: options.sequence,
     receiptKind: 'event',
     status: 'observed',
@@ -696,8 +1138,13 @@ export function toAgentExecutionReceiptFromEffectRecord(
     readonly actorId: string;
     readonly sessionId: string;
     readonly commandId: string;
+    readonly intentId?: string;
+    readonly principalId?: string;
+    readonly revision?: number;
+    readonly checkpointId?: string;
     readonly effectId: string;
     readonly effectAttemptId: string;
+    readonly attempt: number;
     readonly sequence: number;
     readonly receiptId: string;
     readonly recordId: string;
@@ -730,8 +1177,13 @@ export function toAgentExecutionReceiptFromEffectRecord(
     actorId: options.actorId,
     sessionId: options.sessionId,
     commandId: options.commandId,
+    ...(options.intentId ? { intentId: options.intentId } : {}),
+    ...(options.principalId ? { principalId: options.principalId } : {}),
+    ...(options.revision !== undefined ? { revision: options.revision } : {}),
+    ...(options.checkpointId ? { checkpointId: options.checkpointId } : {}),
     effectId: options.effectId,
     effectAttemptId: options.effectAttemptId,
+    attempt: options.attempt,
     sequence: options.sequence,
     receiptKind: 'effect_attempt',
     status,
