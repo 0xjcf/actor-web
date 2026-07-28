@@ -1183,26 +1183,26 @@
 ### Task: actor-web CLI v2: distributed hosting (--gateway/--transport/connect)
 
 - Title: actor-web CLI v2: distributed hosting (--gateway/--transport/connect)
-- Mode: single-agent
-- Status: backlog
+- Mode: 6-agent
+- Status: queued
 - Owner: planner
-- Brief: .fas/tasks/actor-web-cli-v2-distributed-hosting-gateway-transport.md
+- Brief: .fas/tasks/actor-web-cli-v2-distributed-hosting-gateway-transport-conne.md
 
 ### Task: actor-web CLI v3: FAS control-plane integration
 
 - Title: actor-web CLI v3: FAS control-plane integration
 - Mode: 6-agent
-- Status: backlog
+- Status: queued
 - Owner: planner
 - Brief: .fas/tasks/actor-web-cli-v3-fas-control-plane-integration.md
 
-### Task: Publish @actor-web/cli to npm (deferred until the runtime host has a real surface)
+### Task: Publish @actor-web/cli after evidence-governed runtime-host conformance
 
-- Title: Publish @actor-web/cli to npm (deferred until the runtime host has a real surface)
-- Mode: single-agent
-- Status: deferred
-- Owner: runtime
-- Brief: .fas/tasks/publish-actor-web-cli-to-npm-deferred-until-the-runtime-ho.md
+- Title: Publish @actor-web/cli after evidence-governed runtime-host conformance
+- Mode: 4-agent
+- Status: queued
+- Owner: planner
+- Brief: .fas/tasks/publish-actor-web-cli-after-evidence-governed-runtime-host-c.md
 - Automation mode: advisory
 
 ### Task: Extend markdown lint coverage to docs/ and packages/ in the verify path
@@ -2379,6 +2379,60 @@ operator explicitly asks for queue mutations.
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/mesh-pong-revisioned-advisory-policy-conformance-proof.md
+
+### Task: Decide and prove reviewed dependency-chain admission for Actor-Web autonomy
+
+- Title: Decide and prove reviewed dependency-chain admission for Actor-Web autonomy
+- Mode: 6-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/decide-and-prove-reviewed-dependency-chain-admission-for-act.md
+- Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
+### Task: Define provider-neutral agent execution trace and receipt contract
+
+- Title: Define provider-neutral agent execution trace and receipt contract
+- Mode: 6-agent
+- Status: queued
+- Owner: planner
+- Brief: .fas/tasks/define-provider-neutral-agent-execution-trace-and-receipt-co.md
+
+### Task: Propagate authenticated principal context and emit command admission facts
+
+- Title: Propagate authenticated principal context and emit command admission facts
+- Mode: 6-agent
+- Status: queued
+- Owner: planner
+- Brief: .fas/tasks/propagate-authenticated-principal-context-and-emit-command-a.md
+
+### Task: Add durable agent-session checkpoint and rehydration seam
+
+- Title: Add durable agent-session checkpoint and rehydration seam
+- Mode: 6-agent
+- Status: queued
+- Owner: planner
+- Brief: .fas/tasks/add-durable-agent-session-checkpoint-and-rehydration-seam.md
+
+### Task: Recover Actor-Web FAS SQLite memory index from curated projections
+
+- Title: Recover Actor-Web FAS SQLite memory index from curated projections
+- Mode: single-agent
+- Status: queued
+- Owner: planner
+- Brief: .fas/tasks/recover-actor-web-fas-sqlite-memory-index-from-curated-proje.md
+- Automation mode: manual
+
+### Task: Support legacy orchestration-generation adoption for terminal closeout recovery
+
+- Title: Support legacy orchestration-generation adoption for terminal closeout recovery
+- Mode: 6-agent
+- Status: queued
+- Owner: planner
+- Brief: .fas/tasks/support-legacy-orchestration-generation-adoption-for-termina.md
+- Automation mode: manual
 
 ## Template
 
