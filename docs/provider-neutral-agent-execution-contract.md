@@ -166,7 +166,7 @@ These identities stay distinct. The contract does not collapse intent, authoriza
 Focused checks completed on July 28, 2026:
 
 - `pnpm --filter @actor-web/runtime exec vitest run src/unit/agent-execution-contract.test.ts`
-- `pnpm exec vitest run packages/actor-core-testing/src/agent-execution-conformance.test.ts`
+- `pnpm --filter @actor-web/testing test`
 - `pnpm --filter @actor-web/runtime typecheck`
 - `pnpm --filter @actor-web/runtime build`
 - `pnpm --filter @actor-web/testing typecheck`
@@ -176,10 +176,24 @@ Docs check completed on July 28, 2026:
 
 - `pnpm exec markdownlint-cli2 --config .markdownlint.jsonc "docs/provider-neutral-agent-execution-contract.md"`
 
-Pending root-owned gate:
+Repository full gate completed on July 28, 2026:
 
-- repository full verification is still pending
-- independent review and human merge are still pending
+- format
+- lint
+- typecheck
+- tests
+- architecture drift
+- behavior boundaries
+- semantic index
+
+Independent FAS review completed on July 28, 2026:
+
+- passed with no findings
+
+Still pending before maturity can advance beyond candidate:
+
+- human final review and merge
+- downstream reconfirmation in Ignite Element and FAS
 
 ## Downstream reconfirmation
 
