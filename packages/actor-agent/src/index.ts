@@ -84,6 +84,13 @@ export interface ActorAgentLoopContext {
   readonly lastError: ActorAgentError | null;
 }
 
+export interface ActorAgentLoopCheckpointState {
+  readonly history: readonly ActorAgentLlmMessage[];
+  readonly steps: number;
+  readonly pendingToolCalls: readonly ActorAgentToolCall[];
+  readonly lastError: ActorAgentError | null;
+}
+
 export type ActorAgentLoopStatus = 'responded' | 'waiting-for-tool';
 
 export type ActorAgentLoopReply =
@@ -122,6 +129,7 @@ export type ActorAgentLoopEvent =
 export interface ActorAgentLoopOptions {
   readonly system?: string;
   readonly initialHistory?: readonly ActorAgentLlmMessage[];
+  readonly initialCheckpointState?: ActorAgentLoopCheckpointState;
   readonly llmTimeoutMs?: number;
 }
 
@@ -140,11 +148,36 @@ function normalizeThrownError(error: unknown): ActorAgentError {
 }
 
 function createInitialContext(options: ActorAgentLoopOptions): ActorAgentLoopContext {
+  if (options.initialCheckpointState) {
+    return rehydrateActorAgentLoopContext(options.initialCheckpointState);
+  }
   return {
     history: [...(options.initialHistory ?? [])],
     steps: 0,
     pendingToolCalls: [],
     lastError: null,
+  };
+}
+
+export function createActorAgentLoopCheckpointState(
+  context: ActorAgentLoopContext
+): ActorAgentLoopCheckpointState {
+  return {
+    history: [...context.history],
+    steps: context.steps,
+    pendingToolCalls: [...context.pendingToolCalls],
+    lastError: context.lastError ? { ...context.lastError } : null,
+  };
+}
+
+export function rehydrateActorAgentLoopContext(
+  state: ActorAgentLoopCheckpointState
+): ActorAgentLoopContext {
+  return {
+    history: [...state.history],
+    steps: state.steps,
+    pendingToolCalls: [...state.pendingToolCalls],
+    lastError: state.lastError ? { ...state.lastError } : null,
   };
 }
 

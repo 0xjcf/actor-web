@@ -147,6 +147,33 @@ export type {
   AgentExecutionTraceValidationResult,
   BrandedStringParseResult as AgentExecutionBrandedStringParseResult,
 } from './agent-execution-contract.js';
+export type {
+  AgentSessionCheckpointActorIdentity,
+  AgentSessionCheckpointContinuation,
+  AgentSessionCheckpointEffectPhase,
+  AgentSessionCheckpointEffectState,
+  AgentSessionCheckpointEnvelope,
+  AgentSessionCheckpointParseResult,
+  AgentSessionCheckpointReadInput,
+  AgentSessionCheckpointReadOutcome,
+  AgentSessionCheckpointReadResult,
+  AgentSessionCheckpointReconciliationState,
+  AgentSessionCheckpointRehydrationOutcome,
+  AgentSessionCheckpointRehydrationResult,
+  AgentSessionCheckpointStore,
+  AgentSessionCheckpointWriteOutcome,
+  AgentSessionCheckpointWriteResult,
+  InMemoryAgentSessionCheckpointStore,
+} from './agent-session-checkpoint-store.js';
+export {
+  AGENT_SESSION_CHECKPOINT_SCHEMA_VERSION,
+  createAgentSessionCheckpointEnvelope,
+  createInMemoryAgentSessionCheckpointStore,
+  deriveAgentSessionCheckpointRehydration,
+  getAgentSessionCheckpointEnvelopeSizeBytes,
+  getAgentSessionCheckpointSupportedSchemaVersions,
+  parseAgentSessionCheckpointEnvelope,
+} from './agent-session-checkpoint-store.js';
 export {
   AGENT_EXECUTION_CONTRACT_VERSION,
   admitAgentExecutionCommand,
