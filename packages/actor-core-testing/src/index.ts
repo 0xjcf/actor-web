@@ -7,6 +7,11 @@ export type {
   AgentExecutionConformanceFixture,
   AgentExecutionConformanceFixtureName,
 } from './agent-execution-conformance.js';
+export type { AgentSessionCheckpointConformanceFixture } from './agent-session-checkpoint-conformance.js';
+export {
+  assertAgentSessionCheckpointConformanceFixture,
+  getAgentSessionCheckpointConformanceFixture,
+} from './agent-session-checkpoint-conformance.js';
 export {
   AGENT_EXECUTION_CONFORMANCE_SUPPORTED_VERSIONS,
   AGENT_EXECUTION_CONFORMANCE_SUPPORTED_VERSIONS as AGENT_EXECUTION_CONTRACT_SUPPORTED_VERSIONS,
