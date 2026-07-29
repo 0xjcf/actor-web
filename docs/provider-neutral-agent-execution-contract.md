@@ -237,14 +237,26 @@ Post-fix product implementation full gate:
   - behavior boundaries
   - semantic index
 
-Subsequent commits only update documentation and FAS workflow evidence; their
-focused Markdown and FAS fast-lane checks are recorded in the repository
-verification artifacts.
+Fresh review remediation completed on July 29, 2026 at candidate head
+`3385ad19`:
+
+- pre-auth gateway context remains `undefined` until verified
+- missing or failed principal resolution produces a sanitized
+  `schema-admitted` rejection with an explicit `unknown` principal and no
+  overstated rechecks
+- enabled gateway and CLI-host admission requires its principal, policy, and
+  durable decision hooks
+- malformed CLI admission modules fail before topology startup
+- focused runtime and CLI suites passed with 76 and 43 tests, respectively
+- the full FAS gate passed format, lint, typecheck, test, architecture drift,
+  behavior boundaries, and semantic index
 
 Last completed independent FAS validation:
 
-- QA and SRE validation completed on July 29, 2026 at head `fb1643be` with zero findings.
-- Reviewer validation completed on July 29, 2026 at head `fb1643be`; both runtime findings were confirmed fixed, and the reviewer approved with one low documentation-provenance correction applied by this docs-only follow-up.
+- QA and SRE validation completed on July 29, 2026 at head `3385ad19` with
+  zero findings.
+- Reviewer validation completed on July 29, 2026 at head `3385ad19` with
+  zero findings and an approval recommendation.
 
 Still pending before maturity can advance beyond candidate:
 

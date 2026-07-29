@@ -101,3 +101,7 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Generic auth context must survive wrapper layers without placeholder substitution.** If the core gateway passes verified context to scope and principal resolvers, public wrappers must preserve the same generic type and live value. Add a regression proving both hooks observe the same non-empty verified context.
 
 - **Fallback identity generation must be shared by failure paths too.** A collision-resistant helper in the normal admission contract is insufficient if pre-helper fail-closed branches mint timestamp-only IDs. Reuse one generator and test two same-tick rejections for distinct durable join keys.
+
+- **Pre-auth context must be explicitly absent, never fabricated through a type cast.** Carry `undefined` through wrapper and gateway seams until authentication produces verified context. A regression test should map absent context to an explicit untrusted principal, reject it, and prove the actor did not execute; do not normalize anonymous input as `kind: 'authenticated'`.
+
+- **Fail-closed receipts must not overstate completed admission work.** Gateway-local configuration and resolver failures happen before contract admission checks, so their stage, principal trust, and `rechecked` set must report only what actually occurred. Use an explicit `unknown` principal, a pre-authorization stage, and an empty or otherwise exact recheck set; contain and sanitize resolver exceptions with a distinct reason code.
