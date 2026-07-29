@@ -238,24 +238,28 @@ Post-fix product implementation full gate:
   - semantic index
 
 Fresh review remediation completed on July 29, 2026 at candidate head
-`3385ad19`:
+`4013f0e5`:
 
 - pre-auth gateway context remains `undefined` until verified
 - missing or failed principal resolution produces a sanitized
   `schema-admitted` rejection with an explicit `unknown` principal and no
   overstated rechecks
+- principal resolution may be synchronous or asynchronous and is awaited inside
+  the same fail-closed boundary
 - enabled gateway and CLI-host admission requires its principal, policy, and
   durable decision hooks
 - malformed CLI admission modules fail before topology startup
-- focused runtime and CLI suites passed with 76 and 43 tests, respectively
+- durable decision-sink failures emit fixed, redacted local operational
+  telemetry while preserving settlement and generic client errors
+- focused runtime and CLI-host suites passed with 78 and 40 tests, respectively
 - the full FAS gate passed format, lint, typecheck, test, architecture drift,
   behavior boundaries, and semantic index
 
 Last completed independent FAS validation:
 
-- QA and SRE validation completed on July 29, 2026 at head `3385ad19` with
+- QA and SRE validation completed on July 29, 2026 at head `4013f0e5` with
   zero findings.
-- Reviewer validation completed on July 29, 2026 at head `3385ad19` with
+- Reviewer validation completed on July 29, 2026 at head `4013f0e5` with
   zero findings and an approval recommendation.
 
 Still pending before maturity can advance beyond candidate:
