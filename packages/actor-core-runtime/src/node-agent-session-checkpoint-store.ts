@@ -6,7 +6,6 @@ import {
   type AgentSessionCheckpointReadResult,
   type AgentSessionCheckpointStore,
   type AgentSessionCheckpointWriteResult,
-  getAgentSessionCheckpointEnvelopeSizeBytes,
   getAgentSessionCheckpointSupportedSchemaVersions,
   parseAgentSessionCheckpointEnvelope,
 } from './agent-session-checkpoint-store.js';
@@ -16,6 +15,14 @@ export interface NodeFileSystemAgentSessionCheckpointStoreOptions {
   readonly maxBytes?: number;
   readonly now?: () => Date;
   readonly redactOpaqueContinuation?: boolean;
+}
+
+function serializeCheckpointEnvelope(envelope: AgentSessionCheckpointEnvelope): string {
+  return JSON.stringify(envelope, null, 2);
+}
+
+function measureSerializedCheckpointBytes(serializedEnvelope: string): number {
+  return new TextEncoder().encode(serializedEnvelope).byteLength;
 }
 
 function toSessionFilePath(directory: string, sessionId: string): string {
@@ -162,7 +169,8 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
         };
       }
       const nextEnvelope = redactOpaqueContinuation ? redactEnvelope(envelope) : envelope;
-      const sizeBytes = getAgentSessionCheckpointEnvelopeSizeBytes(nextEnvelope);
+      const serializedEnvelope = serializeCheckpointEnvelope(nextEnvelope);
+      const sizeBytes = measureSerializedCheckpointBytes(serializedEnvelope);
       if (sizeBytes > maxBytes) {
         return {
           outcome: 'too_large',
@@ -193,7 +201,7 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
       }
       try {
         await mkdir(options.directory, { recursive: true });
-        await writeFile(tempFilePath, JSON.stringify(nextEnvelope, null, 2));
+        await writeFile(tempFilePath, serializedEnvelope);
         await rename(tempFilePath, filePath);
       } catch (error) {
         await rm(tempFilePath, { force: true }).catch(() => undefined);
