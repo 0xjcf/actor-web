@@ -1,0 +1,242 @@
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import * as browserEntry from '../browser.js';
+import * as rootEntry from '../index.js';
+import * as nodeEntry from '../node.js';
+import {
+  createAgentSessionCheckpointEnvelope,
+  createInMemoryAgentSessionCheckpointStore,
+  deriveAgentSessionCheckpointRehydration,
+} from '../agent-session-checkpoint-store.js';
+
+function createCheckpointEnvelope(
+  overrides: Partial<Parameters<typeof createAgentSessionCheckpointEnvelope>[0]> = {}
+) {
+  return createAgentSessionCheckpointEnvelope({
+    sessionId: 'session:checkpoint:001',
+    checkpointId: 'checkpoint:001',
+    actor: {
+      actorId: 'runtime://agent/session:checkpoint:001',
+      sessionId: 'session:checkpoint:001',
+      turnId: 'turn:001',
+      traceId: 'trace:001',
+      commandId: 'command:001',
+      correlationId: 'corr:001',
+      causationId: 'cause:001',
+    },
+    deterministic: {
+      history: [{ role: 'user', content: 'Resume the prior turn.' }],
+      steps: 1,
+      pendingToolCalls: [],
+      lastError: null,
+    },
+    effect: {
+      effectId: 'effect:001',
+      effectAttemptId: 'effect-attempt:001',
+      phase: 'intent_recorded',
+      irreversible: true,
+      intent: {
+        effectType: 'tool_call',
+        toolName: 'repo.diff',
+        idempotencyScope: 'tool:repo.diff',
+      },
+    },
+      continuation: {
+        provider: 'test-provider',
+        adapter: 'test-provider-adapter',
+        formatVersion: 1,
+        payload: {
+          cursor: 'opaque-provider-state',
+        },
+        payloadBytes: new TextEncoder().encode(
+          JSON.stringify({
+            cursor: 'opaque-provider-state',
+          })
+        ).byteLength,
+        redaction: {
+          disposition: 'none',
+          fields: [],
+        },
+      },
+    reconciliation: {
+      status: 'pending',
+      reason: 'awaiting_effect_receipt',
+    },
+    recordedAt: '2026-07-29T13:45:00.000Z',
+    expiresAt: '2026-07-30T13:45:00.000Z',
+    ...overrides,
+  });
+}
+
+describe('agent session checkpoint store', () => {
+  it('stores provider-neutral checkpoint envelopes with explicit read/write outcomes', async () => {
+    const store = createInMemoryAgentSessionCheckpointStore();
+    const envelope = createCheckpointEnvelope();
+
+    await expect(
+      store.read({
+        sessionId: 'session:checkpoint:001',
+      })
+    ).resolves.toEqual({
+      outcome: 'missing',
+      sessionId: 'session:checkpoint:001',
+    });
+
+    await expect(store.write(envelope)).resolves.toEqual({
+      outcome: 'stored',
+      envelope,
+    });
+
+    await expect(
+      store.read({
+        sessionId: 'session:checkpoint:001',
+      })
+    ).resolves.toEqual({
+      outcome: 'present',
+      envelope,
+    });
+  });
+
+  it('derives duplicate, expired, and reconciliation-required outcomes without claiming silent replay', async () => {
+    const store = createInMemoryAgentSessionCheckpointStore();
+    const deferredEnvelope = createCheckpointEnvelope();
+
+    await expect(store.write(deferredEnvelope)).resolves.toEqual({
+      outcome: 'stored',
+      envelope: deferredEnvelope,
+    });
+    await expect(store.write(deferredEnvelope)).resolves.toEqual({
+      outcome: 'duplicate',
+      envelope: deferredEnvelope,
+      previous: deferredEnvelope,
+    });
+    await expect(
+      store.read({
+        sessionId: deferredEnvelope.sessionId,
+      })
+    ).resolves.toEqual({
+      outcome: 'present',
+      envelope: deferredEnvelope,
+    });
+    expect(
+      deriveAgentSessionCheckpointRehydration({
+        outcome: 'present',
+        envelope: deferredEnvelope,
+      })
+    ).toEqual({
+      outcome: 'deferred_for_reconciliation',
+      envelope: deferredEnvelope,
+      reason: 'Irreversible effect intent was recorded without a settled receipt.',
+    });
+
+    const expiredEnvelope = createCheckpointEnvelope({
+      checkpointId: 'checkpoint:expired',
+      recordedAt: '2026-07-29T13:45:00.000Z',
+      expiresAt: '2026-07-29T13:44:59.000Z',
+      reconciliation: {
+        status: 'clear',
+      },
+      effect: {
+        effectId: 'effect:expired',
+        effectAttemptId: 'effect-attempt:expired',
+        phase: 'receipt_recorded',
+        irreversible: true,
+        intent: { effectType: 'tool_call', toolName: 'repo.diff', idempotencyScope: 'tool:repo.diff' },
+        receipt: { outcome: 'ok' },
+      },
+    });
+    await expect(store.write(expiredEnvelope)).resolves.toEqual({
+      outcome: 'expired',
+      envelope: expiredEnvelope,
+    });
+  });
+
+  it('uses the node filesystem adapter for corrupt, version-mismatch, redacted, and stale checkpoints', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'actor-web-checkpoints-'));
+    const nodeStore = nodeEntry.createNodeFileSystemAgentSessionCheckpointStore({
+      directory,
+      redactOpaqueContinuation: true,
+    });
+    const envelope = createCheckpointEnvelope({
+      checkpointId: 'checkpoint:node',
+      staleAt: '2026-07-29T13:46:00.000Z',
+      reconciliation: {
+        status: 'clear',
+      },
+      effect: {
+        effectId: 'effect:node',
+        effectAttemptId: 'effect-attempt:node',
+        phase: 'receipt_recorded',
+        irreversible: true,
+        intent: { effectType: 'tool_call', toolName: 'repo.diff', idempotencyScope: 'tool:repo.diff' },
+        receipt: { outcome: 'ok' },
+      },
+    });
+
+    await expect(nodeStore.write(envelope)).resolves.toMatchObject({
+      outcome: 'stored',
+      envelope: {
+        checkpointId: 'checkpoint:node',
+        redactedFields: ['continuation.payload'],
+      },
+    });
+    const redactedRead = await nodeStore.read({ sessionId: envelope.sessionId });
+    expect(redactedRead).toMatchObject({
+      outcome: 'redacted',
+      envelope: {
+        checkpointId: 'checkpoint:node',
+      },
+      fields: ['continuation.payload'],
+    });
+    expect(
+      deriveAgentSessionCheckpointRehydration(redactedRead)
+    ).toMatchObject({
+      outcome: 'manual_recovery_required',
+      reason: 'redacted',
+    });
+
+    const rawFilePath = path.join(directory, `${encodeURIComponent(envelope.sessionId)}.json`);
+    await writeFile(
+      rawFilePath,
+      JSON.stringify({
+        schemaVersion: 99,
+        sessionId: envelope.sessionId,
+      })
+    );
+    await expect(nodeStore.read({ sessionId: envelope.sessionId })).resolves.toEqual({
+      outcome: 'version_mismatch',
+      sessionId: envelope.sessionId,
+      foundVersion: 99,
+      supportedVersions: [1],
+    });
+
+    await writeFile(rawFilePath, '{not-json');
+    await expect(nodeStore.read({ sessionId: envelope.sessionId })).resolves.toMatchObject({
+      outcome: 'corrupt',
+      sessionId: envelope.sessionId,
+    });
+
+    const staleStore = nodeEntry.createNodeFileSystemAgentSessionCheckpointStore({
+      directory,
+      now: () => new Date('2026-07-29T13:47:00.000Z'),
+    });
+    await writeFile(rawFilePath, JSON.stringify(envelope));
+    await expect(staleStore.read({ sessionId: envelope.sessionId })).resolves.toEqual({
+      outcome: 'stale',
+      envelope,
+    });
+  });
+});
+
+describe('agent session checkpoint exports', () => {
+  it('keeps provider-neutral checkpoint contracts on the root entrypoint and node durability on the node entrypoint', () => {
+    expect(rootEntry.createInMemoryAgentSessionCheckpointStore).toBeTypeOf('function');
+    expect(rootEntry.createAgentSessionCheckpointEnvelope).toBeTypeOf('function');
+    expect(rootEntry.parseAgentSessionCheckpointEnvelope).toBeTypeOf('function');
+    expect(nodeEntry.createNodeFileSystemAgentSessionCheckpointStore).toBeTypeOf('function');
+    expect('createNodeFileSystemAgentSessionCheckpointStore' in rootEntry).toBe(false);
+    expect('createNodeFileSystemAgentSessionCheckpointStore' in browserEntry).toBe(false);
+  });
+});

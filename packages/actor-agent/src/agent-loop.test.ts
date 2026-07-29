@@ -271,6 +271,68 @@ describe('@actor-web/agent loop behavior', () => {
     });
   });
 
+  it('rehydrates loop state from the checkpoint seam before the next turn resumes', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+
+    const behavior = agent.createAgentLoopBehavior({
+      initialCheckpointState: {
+        history: [
+          { role: 'user', content: 'Plan the rollout.' },
+          {
+            role: 'assistant',
+            content: 'Need the repo diff before I can continue.',
+            toolCalls: [
+              {
+                id: 'call-1',
+                name: 'repo.diff',
+                input: { taskId: 'task-1' },
+              },
+            ],
+          },
+        ],
+        steps: 1,
+        pendingToolCalls: [
+          {
+            id: 'call-1',
+            name: 'repo.diff',
+            input: { taskId: 'task-1' },
+          },
+        ],
+        lastError: null,
+      },
+    });
+
+    expect(behavior.context).toMatchObject({
+      history: [
+        { role: 'user', content: 'Plan the rollout.' },
+        {
+          role: 'assistant',
+          content: 'Need the repo diff before I can continue.',
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'repo.diff',
+              input: { taskId: 'task-1' },
+            },
+          ],
+        },
+      ],
+      steps: 1,
+      pendingToolCalls: [
+        {
+          id: 'call-1',
+          name: 'repo.diff',
+          input: { taskId: 'task-1' },
+        },
+      ],
+      lastError: null,
+    });
+  });
+
   it('does not re-enter the llm until all pending tool calls are resolved', async () => {
     const agent = await loadAgentModule();
     expect(agent).not.toBeNull();
