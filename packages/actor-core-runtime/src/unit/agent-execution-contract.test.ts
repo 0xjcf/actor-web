@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  type AgentExecutionCommandPrincipal,
   type AgentExecutionCommandAdmissionReceipt,
+  type AgentExecutionCommandPrincipal,
   type AgentExecutionEffectAttemptReceipt,
   type AgentExecutionEffectIntentReceipt,
   type AgentExecutionReceipt,

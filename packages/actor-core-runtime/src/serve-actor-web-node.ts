@@ -16,9 +16,9 @@ import { createNodeWebSocketMessageTransport } from './node-websocket-message-tr
 import type { RuntimeGatewayAuthProvider, RuntimeTransportAuthProvider } from './runtime-auth.js';
 import {
   createRuntimeGatewayHub,
-  type RuntimeGatewayCommandAdmissionOptions,
   createRuntimeGatewaySource,
   type RuntimeGatewayClientFrame,
+  type RuntimeGatewayCommandAdmissionOptions,
   type RuntimeGatewayConnectionAdapter,
   type RuntimeGatewayInvalidFrameEvent,
   type RuntimeGatewayObserverEvent,

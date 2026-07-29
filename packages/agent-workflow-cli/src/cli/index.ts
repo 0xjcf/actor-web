@@ -17,14 +17,14 @@ import { createInterface } from 'node:readline';
 import { Logger } from '@actor-web/runtime';
 import chalk from 'chalk';
 import { program } from 'commander';
+import { loadModuleExport } from '../host/load-module.js';
 import {
   createRuntimeHostFromFile,
   executeCommand,
-  type RuntimeHostCommandAdmissionOptions,
   type RuntimeHost,
+  type RuntimeHostCommandAdmissionOptions,
   splitExecScript,
 } from '../host/runtime-host.js';
-import { loadModuleExport } from '../host/load-module.js';
 import { getDescriptionSync, getVersionSync, initializePackageInfo } from '../package-info.js';
 
 const log = Logger.namespace('ACTOR_WEB_CLI');
