@@ -2418,9 +2418,12 @@ operator explicitly asks for queue mutations.
 
 - Title: Add durable agent-session checkpoint and rehydration seam
 - Mode: 6-agent
-- Status: queued
-- Owner: planner
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/add-durable-agent-session-checkpoint-and-rehydration-seam.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Recover Actor-Web FAS SQLite memory index from curated projections
 

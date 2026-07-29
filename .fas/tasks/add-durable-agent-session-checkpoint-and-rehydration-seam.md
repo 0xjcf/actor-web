@@ -32,14 +32,37 @@ The Actor-Web agent loop retains session and provider-loop context in memory; pr
 
 ## Affected files
 
-- packages/agent/src
-- packages/runtime/src
-- packages/testing/src
-- docs
+- packages/actor-agent/src
+- packages/actor-core-runtime/src
+- packages/actor-core-testing/src
 
 ## Scope Amendments
 
-- None.
+- Type: planning-correction
+- Added at: 2026-07-29T13:38:00Z
+- Trigger: task-start live package verification
+- Reason: Add the live package roots that correspond to the stale package/agent, package/runtime, and package/testing hints before delegated execution.
+- Added paths: packages/actor-agent/src, packages/actor-core-runtime/src, packages/actor-core-testing/src
+- Evidence source: repo-search
+- Evidence: repo-search | packages | rg --files confirms actor-agent, actor-core-runtime, and actor-core-testing are the live package roots.
+- Accuracy signal: high
+
+- Type: authority-refresh
+- Added at: closeout
+- Trigger: stale-affected-paths
+- Reason: Replace nonexistent legacy package roots with the three verified live Actor-Web package roots after current-head implementation and review.
+- Added paths: packages/actor-agent/src, packages/actor-core-runtime/src, packages/actor-core-testing/src
+- Evidence source: closeout-readiness
+- Evidence: closeout-readiness | .fas/state/closeout-readiness/latest.json | Closeout held only on missing packages/agent/src, packages/runtime/src, and packages/testing/src; all 10 implemented files are under the three live roots.
+- Accuracy signal: high
+
+- Type: authority-correction
+- Added at: closeout
+- Trigger: additive-refresh-did-not-remove-stale-roots
+- Reason: Reconcile the active task from the corrected authoritative brief after removing nonexistent packages/agent/src, packages/runtime/src, packages/testing/src, and non-deliverable docs scope.
+- Evidence source: repo-and-closeout
+- Evidence: repo-and-closeout | .fas/state/closeout-readiness/latest.json | All committed product changes are under packages/actor-agent/src, packages/actor-core-runtime/src, and packages/actor-core-testing/src; stale roots do not exist.
+- Accuracy signal: high
 
 ## Implementation plan
 
