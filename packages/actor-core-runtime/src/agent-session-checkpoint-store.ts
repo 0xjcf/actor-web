@@ -543,6 +543,7 @@ export function parseAgentSessionCheckpointEnvelope(
     !hasNonEmptyString(candidate.sessionId) ||
     !hasNonEmptyString(candidate.checkpointId) ||
     !isValidIdentity(candidate.actor) ||
+    candidate.actor.sessionId !== candidate.sessionId ||
     !isJsonValue(candidate.deterministic) ||
     !isValidEffectState(candidate.effect) ||
     !isValidContinuation(candidate.continuation) ||
