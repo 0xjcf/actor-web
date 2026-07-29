@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  type AgentExecutionCommandPrincipal,
   type AgentExecutionCommandAdmissionReceipt,
   type AgentExecutionEffectAttemptReceipt,
   type AgentExecutionEffectIntentReceipt,
@@ -1061,6 +1062,288 @@ describe('agent execution contract', () => {
           code: 'invalid_command_metadata',
           detail: 'approval must be a JSON-safe object when provided.',
         },
+      },
+    });
+  });
+
+  it('generates collision-resistant fallback command ids', async () => {
+    const now = () => new Date('2026-07-29T00:00:00.000Z');
+    const first = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      policy: async () => ({
+        outcome: 'authorized',
+        policy: 'allow',
+      }),
+      now,
+    });
+    const second = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      policy: async () => ({
+        outcome: 'authorized',
+        policy: 'allow',
+      }),
+      now,
+    });
+
+    expect(first.metadata.commandId).not.toBe(second.metadata.commandId);
+  });
+
+  it('rejects credential-bearing message and metadata values before policy', async () => {
+    const policy = vi.fn(async () => ({
+      outcome: 'authorized' as const,
+      policy: 'allow',
+    }));
+
+    const messageDecision = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: {
+        type: 'RUN',
+        token: 'payload-secret',
+      } as never,
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      policy,
+      now: () => new Date('2026-07-29T00:00:01.000Z'),
+    });
+
+    expect(messageDecision).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'credential_bearing_message',
+          detail:
+            'message.token is secret-bearing. Supply a credential-free command payload.',
+        },
+      },
+    });
+    expect(policy).not.toHaveBeenCalled();
+    expect(JSON.stringify(messageDecision)).not.toContain('payload-secret');
+
+    const metadataDecision = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      metadata: {
+        commandId: 'cmd-metadata-secret',
+        approval: {
+          Authorization: 'Bearer secret-value',
+        },
+      } as never,
+      policy,
+      now: () => new Date('2026-07-29T00:00:02.000Z'),
+    });
+
+    expect(metadataDecision).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'credential_bearing_metadata',
+          detail:
+            'metadata.approval.Authorization is secret-bearing. Supply credential-free command metadata.',
+        },
+      },
+    });
+    expect(policy).not.toHaveBeenCalled();
+    expect(JSON.stringify(metadataDecision)).not.toContain('secret-value');
+  });
+
+  it('rejects empty approval.expiresAt and malformed adapter result shapes', async () => {
+    const emptyExpiresAt = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      metadata: {
+        commandId: 'cmd-empty-expires',
+        approval: {
+          expiresAt: '',
+        },
+      },
+      now: () => new Date('2026-07-29T00:00:03.000Z'),
+    });
+
+    expect(emptyExpiresAt).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'invalid_command_metadata',
+          detail: 'approval.expiresAt must be a non-empty ISO-8601 timestamp when provided.',
+        },
+      },
+    });
+
+    const invalidPolicy = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      policy: async () =>
+        ({
+          outcome: 'authorized',
+          policy: '',
+        }) as never,
+      requireExplicitPolicy: true,
+      now: () => new Date('2026-07-29T00:00:04.000Z'),
+    });
+
+    expect(invalidPolicy).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'policy_adapter_invalid_result',
+          detail: 'Policy adapter must return a valid authorized or rejected decision.',
+        },
+      },
+    });
+
+    const invalidIdempotency = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      policy: async () => ({
+        outcome: 'authorized',
+        policy: 'allow',
+      }),
+      idempotency: async () =>
+        ({
+          outcome: 'available',
+        }) as never,
+      now: () => new Date('2026-07-29T00:00:05.000Z'),
+    });
+
+    expect(invalidIdempotency).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'idempotency_adapter_invalid_result',
+          detail:
+            'Idempotency adapter must return a valid available settlement or duplicate decision.',
+        },
+      },
+    });
+  });
+
+  it('sanitizes adapter exceptions and returns an idempotency settlement handle on authorized claims', async () => {
+    const policyFailure = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      policy: async () => {
+        throw new Error('Bearer leak-value');
+      },
+      requireExplicitPolicy: true,
+      now: () => new Date('2026-07-29T00:00:06.000Z'),
+    });
+
+    expect(policyFailure).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'policy_adapter_failure',
+          detail: 'Policy adapter threw before returning a decision.',
+        },
+      },
+    });
+    expect(JSON.stringify(policyFailure)).not.toContain('leak-value');
+
+    const idempotencyFailure = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      policy: async () => ({
+        outcome: 'authorized',
+        policy: 'allow',
+      }),
+      idempotency: async () => {
+        throw new Error('apiKey leak-value');
+      },
+      now: () => new Date('2026-07-29T00:00:07.000Z'),
+    });
+
+    expect(idempotencyFailure).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'idempotency_adapter_failure',
+          detail: 'Idempotency adapter threw before returning a claim result.',
+        },
+      },
+    });
+    expect(JSON.stringify(idempotencyFailure)).not.toContain('leak-value');
+
+    const settle = vi.fn(async () => {});
+    const authorized = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      policy: async () => ({
+        outcome: 'authorized',
+        policy: 'allow',
+      }),
+      idempotency: async () =>
+        ({
+          outcome: 'available',
+          settle,
+        }) as never,
+      now: () => new Date('2026-07-29T00:00:08.000Z'),
+    });
+
+    expect(authorized).toMatchObject({
+      ok: true,
+      idempotencyClaim: {
+        outcome: 'available',
+        settle: expect.any(Function),
       },
     });
   });

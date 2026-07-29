@@ -120,12 +120,20 @@ export interface AgentExecutionAdmissionPolicyContext {
 export type AgentExecutionIdempotencyClaimResult =
   | {
       readonly outcome: 'available';
+      readonly settle: (
+        outcome: AgentExecutionIdempotencySettlementOutcome
+      ) => void | Promise<void>;
     }
   | {
       readonly outcome: 'duplicate';
       readonly code?: string;
       readonly detail?: string;
     };
+
+export type AgentExecutionIdempotencySettlementOutcome =
+  | 'not_dispatched'
+  | 'dispatch_succeeded'
+  | 'dispatch_indeterminate';
 
 export type AgentExecutionIdempotencyClaimPort = (
   context: AgentExecutionAdmissionPolicyContext
@@ -171,6 +179,7 @@ export interface AgentExecutionAdmissionDecision {
   readonly admissionReceipt: AgentExecutionCommandAdmissionReceipt;
   readonly authorizationReceipt?: AgentExecutionAuthorizedReceipt;
   readonly rejectionReceipt?: AgentExecutionRejectedReceipt;
+  readonly idempotencyClaim?: Extract<AgentExecutionIdempotencyClaimResult, { outcome: 'available' }>;
   readonly ok: boolean;
 }
 
@@ -717,6 +726,8 @@ const AGENT_EXECUTION_ADMISSION_RECHECKS: readonly AgentExecutionRecheckField[] 
   'policy',
 ];
 
+let fallbackCommandIdSequence = 0;
+
 function toCommandMetadata(
   input: unknown,
   now: Date
@@ -729,7 +740,7 @@ function toCommandMetadata(
     commandId:
       typeof metadataInput?.commandId === 'string' && metadataInput.commandId.trim().length > 0
         ? metadataInput.commandId.trim()
-        : `command:${now.toISOString()}`,
+        : `command:${now.toISOString()}:${++fallbackCommandIdSequence}`,
     ...('intentId' in (metadataInput ?? {}) ? { intentId: metadataInput?.intentId } : {}),
     ...('correlationId' in (metadataInput ?? {})
       ? { correlationId: metadataInput?.correlationId }
@@ -780,8 +791,36 @@ function createFallbackCommandMetadata(
     commandId:
       typeof metadataInput?.commandId === 'string' && metadataInput.commandId.trim().length > 0
         ? metadataInput.commandId.trim()
-        : `command:${now.toISOString()}`,
+        : `command:${now.toISOString()}:${++fallbackCommandIdSequence}`,
   };
+}
+
+function findCredentialBearingPath(value: unknown, path: string): string | null {
+  if (Array.isArray(value)) {
+    for (const [index, entry] of value.entries()) {
+      const nestedPath = findCredentialBearingPath(entry, `${path}[${index}]`);
+      if (nestedPath) {
+        return nestedPath;
+      }
+    }
+    return null;
+  }
+
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (shouldRedactKey(key) === 'secret') {
+      return `${path}.${key}`;
+    }
+    const nestedPath = findCredentialBearingPath(entry, `${path}.${key}`);
+    if (nestedPath) {
+      return nestedPath;
+    }
+  }
+
+  return null;
 }
 
 function validateRawAdmissionMetadata(input: unknown): AgentExecutionOutcomeFact | null {
@@ -807,36 +846,27 @@ function validateRawAdmissionMetadata(input: unknown): AgentExecutionOutcomeFact
     if (!isJsonSafeValue(approvalInput)) {
       return invalidAdmissionReason('approval must be a JSON-safe object when provided.');
     }
+    if (
+      'expiresAt' in (approvalInput as Record<string, unknown>) &&
+      !hasNonEmptyString((approvalInput as Record<string, unknown>).expiresAt)
+    ) {
+      return invalidAdmissionReason(
+        'approval.expiresAt must be a non-empty ISO-8601 timestamp when provided.'
+      );
+    }
+  }
+  const credentialBearingMetadataPath = findCredentialBearingPath(metadataInput, 'metadata');
+  if (credentialBearingMetadataPath) {
+    return invalidAdmissionReason(
+      `${credentialBearingMetadataPath} is secret-bearing. Supply credential-free command metadata.`,
+      'credential_bearing_metadata'
+    );
   }
   return null;
 }
 
 function findCredentialBearingPrincipalPath(value: unknown, path = 'principal'): string | null {
-  if (Array.isArray(value)) {
-    for (const [index, entry] of value.entries()) {
-      const nestedPath = findCredentialBearingPrincipalPath(entry, `${path}[${index}]`);
-      if (nestedPath) {
-        return nestedPath;
-      }
-    }
-    return null;
-  }
-
-  if (typeof value !== 'object' || value === null) {
-    return null;
-  }
-
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-    if (shouldRedactKey(key) === 'secret') {
-      return `${path}.${key}`;
-    }
-    const nestedPath = findCredentialBearingPrincipalPath(entry, `${path}.${key}`);
-    if (nestedPath) {
-      return nestedPath;
-    }
-  }
-
-  return null;
+  return findCredentialBearingPath(value, path);
 }
 
 function sanitizePrincipalForDecision(
@@ -883,6 +913,13 @@ function validateAdmissionInput(
   }
   if (!isJsonSafeValue(message)) {
     return invalidAdmissionReason('message must be JSON-safe.');
+  }
+  const credentialBearingMessagePath = findCredentialBearingPath(message, 'message');
+  if (credentialBearingMessagePath) {
+    return {
+      code: 'credential_bearing_message',
+      detail: `${credentialBearingMessagePath} is secret-bearing. Supply a credential-free command payload.`,
+    };
   }
   if (!hasNonEmptyString(principal.id)) {
     return { code: 'missing_principal', detail: 'Command principal id is required.' };
@@ -949,6 +986,41 @@ function validateAdmissionInput(
     }
   }
   return null;
+}
+
+function isValidPolicyDecision(
+  value: unknown
+): value is AgentExecutionAdmissionPolicyDecision {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const decision = value as Record<string, unknown>;
+  if (decision.outcome === 'authorized') {
+    return hasNonEmptyString(decision.policy);
+  }
+  if (decision.outcome === 'rejected') {
+    return hasNonEmptyString(decision.policy) && hasNonEmptyString(decision.code);
+  }
+  return false;
+}
+
+function isValidIdempotencyClaimResult(
+  value: unknown
+): value is AgentExecutionIdempotencyClaimResult {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const result = value as Record<string, unknown>;
+  if (result.outcome === 'available') {
+    return typeof result.settle === 'function';
+  }
+  if (result.outcome === 'duplicate') {
+    return (
+      (result.code === undefined || hasNonEmptyString(result.code)) &&
+      (result.detail === undefined || hasNonEmptyString(result.detail))
+    );
+  }
+  return false;
 }
 
 export async function admitAgentExecutionCommand(
@@ -1122,6 +1194,39 @@ export async function admitAgentExecutionCommand(
           }
         : await input.policy(policyContext);
 
+    if (!isValidPolicyDecision(policyDecision)) {
+      const admissionReceipt = createExecutionCommandAdmissionReceipt({
+        receiptId: `${base.traceId}:admission:1`,
+        recordId: `${base.traceId}:record:admission:1`,
+        ...base,
+        sequence: 1,
+        admissionStage: 'execution-authorized',
+        admission: {
+          discovery: 'descriptive_only',
+          outcome: 'rejected',
+          rechecked: AGENT_EXECUTION_ADMISSION_RECHECKS,
+        },
+      });
+      const rejectionReceipt = createExecutionRejectedReceipt({
+        receiptId: `${base.traceId}:rejection:2`,
+        recordId: `${base.traceId}:record:rejection:2`,
+        ...base,
+        sequence: 2,
+        admissionStage: 'execution-authorized',
+        reason: {
+          code: 'policy_adapter_invalid_result',
+          detail: 'Policy adapter must return a valid authorized or rejected decision.',
+        },
+      });
+      return {
+        ok: false,
+        principal: decisionPrincipal,
+        metadata,
+        admissionReceipt,
+        rejectionReceipt,
+      };
+    }
+
     if (policyDecision.outcome === 'rejected') {
       const admissionReceipt = createExecutionCommandAdmissionReceipt({
         receiptId: `${base.traceId}:admission:1`,
@@ -1155,7 +1260,11 @@ export async function admitAgentExecutionCommand(
       };
     }
 
-    if (metadata.idempotencyKey !== undefined) {
+    let availableIdempotencyClaim:
+      | Extract<AgentExecutionIdempotencyClaimResult, { outcome: 'available' }>
+      | undefined;
+
+    if (input.idempotency !== undefined || metadata.idempotencyKey !== undefined) {
       if (input.idempotency === undefined) {
         const admissionReceipt = createExecutionCommandAdmissionReceipt({
           receiptId: `${base.traceId}:admission:1`,
@@ -1194,6 +1303,7 @@ export async function admitAgentExecutionCommand(
       try {
         claimResult = await input.idempotency(policyContext);
       } catch (error) {
+        void error;
         const admissionReceipt = createExecutionCommandAdmissionReceipt({
           receiptId: `${base.traceId}:admission:1`,
           recordId: `${base.traceId}:record:admission:1`,
@@ -1214,7 +1324,40 @@ export async function admitAgentExecutionCommand(
           admissionStage: 'execution-authorized',
           reason: {
             code: 'idempotency_adapter_failure',
-            detail: error instanceof Error ? error.message : String(error),
+            detail: 'Idempotency adapter threw before returning a claim result.',
+          },
+        });
+        return {
+          ok: false,
+          principal: decisionPrincipal,
+          metadata,
+          admissionReceipt,
+          rejectionReceipt,
+        };
+      }
+
+      if (!isValidIdempotencyClaimResult(claimResult)) {
+        const admissionReceipt = createExecutionCommandAdmissionReceipt({
+          receiptId: `${base.traceId}:admission:1`,
+          recordId: `${base.traceId}:record:admission:1`,
+          ...base,
+          sequence: 1,
+          admissionStage: 'execution-authorized',
+          admission: {
+            discovery: 'descriptive_only',
+            outcome: 'rejected',
+            rechecked: AGENT_EXECUTION_ADMISSION_RECHECKS,
+          },
+        });
+        const rejectionReceipt = createExecutionRejectedReceipt({
+          receiptId: `${base.traceId}:rejection:2`,
+          recordId: `${base.traceId}:record:rejection:2`,
+          ...base,
+          sequence: 2,
+          admissionStage: 'execution-authorized',
+          reason: {
+            code: 'idempotency_adapter_invalid_result',
+            detail: 'Idempotency adapter must return a valid available settlement or duplicate decision.',
           },
         });
         return {
@@ -1258,6 +1401,8 @@ export async function admitAgentExecutionCommand(
           rejectionReceipt,
         };
       }
+
+      availableIdempotencyClaim = claimResult;
     }
 
     const admissionReceipt = createExecutionCommandAdmissionReceipt({
@@ -1291,6 +1436,7 @@ export async function admitAgentExecutionCommand(
         metadata,
         admissionReceipt,
         authorizationReceipt,
+        ...(availableIdempotencyClaim ? { idempotencyClaim: availableIdempotencyClaim } : {}),
       };
     }
 
@@ -1313,6 +1459,7 @@ export async function admitAgentExecutionCommand(
       rejectionReceipt,
     };
   } catch (error) {
+    void error;
     const admissionReceipt = createExecutionCommandAdmissionReceipt({
       receiptId: `${base.traceId}:admission:1`,
       recordId: `${base.traceId}:record:admission:1`,
@@ -1333,7 +1480,7 @@ export async function admitAgentExecutionCommand(
       admissionStage: 'execution-authorized',
       reason: {
         code: 'policy_adapter_failure',
-        detail: error instanceof Error ? error.message : String(error),
+        detail: 'Policy adapter threw before returning a decision.',
       },
     });
     return {
