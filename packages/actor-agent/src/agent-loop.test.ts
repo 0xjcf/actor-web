@@ -333,6 +333,112 @@ describe('@actor-web/agent loop behavior', () => {
     });
   });
 
+  it('keeps logical turn continuity across a clean checkpoint restart without replaying the prior llm step', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+    const provider = vi
+      .fn<ActorAgentLlmProvider>()
+      .mockReturnValueOnce({
+        ok: true,
+        value: {
+          message: {
+            role: 'assistant',
+            content: 'Need the repo diff before I can continue.',
+            toolCalls: [
+              {
+                id: 'call-1',
+                name: 'repo.diff',
+                input: { taskId: 'task-1' },
+              },
+            ],
+          },
+        },
+      })
+      .mockReturnValueOnce({
+        ok: true,
+        value: {
+          message: {
+            role: 'assistant',
+            content: 'Diff observed, continue the same turn.',
+          },
+        },
+      });
+    const firstBehavior = agent.createAgentLoopBehavior({ system: 'You are a FAS planner.' });
+    const tools = createActorToolbox(
+      {
+        ...agent.createActorAgentToolRegistry({ llm: provider }),
+        'repo.diff': () => ({ ok: true, diff: 'changed files' }),
+      },
+      actorToolContext,
+      [agent.ACTOR_WEB_LLM_TOOL_NAME, 'repo.diff']
+    );
+
+    const started = await firstBehavior.onMessage?.(
+      createAgentParams({
+        behavior: firstBehavior,
+        tools,
+        message: { type: 'START_AGENT', prompt: 'plan task-1' },
+      })
+    );
+    const startedContext = readAgentLoopContext(started);
+
+    const resumedBehavior = agent.createAgentLoopBehavior({
+      initialCheckpointState: startedContext as {
+        readonly history: readonly { readonly role: string; readonly content: string }[];
+        readonly steps: number;
+        readonly pendingToolCalls: readonly { readonly id: string; readonly name: string; readonly input: unknown }[];
+        readonly lastError: null | { readonly code: string; readonly message: string };
+      },
+    });
+    const resumed = await resumedBehavior.onMessage?.({
+      message: {
+        type: 'OBSERVE_TOOL_RESULT',
+        toolCallId: 'call-1',
+        name: 'repo.diff',
+        ok: true,
+        output: { diff: 'changed files' },
+      },
+      context: resumedBehavior.context,
+      actor: {
+        getSnapshot: () => ({ context: resumedBehavior.context }),
+      },
+      tools,
+    });
+
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(provider.mock.calls[1]?.[0]).toMatchObject({
+      messages: [
+        { role: 'user', content: 'plan task-1' },
+        {
+          role: 'assistant',
+          content: 'Need the repo diff before I can continue.',
+        },
+        {
+          role: 'tool',
+          toolCallId: 'call-1',
+          toolName: 'repo.diff',
+        },
+      ],
+    });
+    expect(resumed).toMatchObject({
+      context: {
+        steps: 2,
+        pendingToolCalls: [],
+      },
+      reply: {
+        ok: true,
+        status: 'responded',
+        message: {
+          role: 'assistant',
+          content: 'Diff observed, continue the same turn.',
+        },
+      },
+    });
+  });
+
   it('does not re-enter the llm until all pending tool calls are resolved', async () => {
     const agent = await loadAgentModule();
     expect(agent).not.toBeNull();

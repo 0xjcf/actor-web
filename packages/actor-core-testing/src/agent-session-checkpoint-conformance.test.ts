@@ -48,4 +48,87 @@ describe('agent session checkpoint conformance fixture', () => {
       },
     });
   });
+
+  it('covers the accepted restart, crash, cancellation, reconciliation, and no-duplicate scenarios without claiming exactly-once recovery', () => {
+    const fixture = getAgentSessionCheckpointConformanceFixture();
+
+    expect(fixture.scenarios.map((scenario) => scenario.name)).toEqual([
+      'clean_restart_identity_continuity',
+      'crash_before_attempt',
+      'crash_between_attempt_and_receipt',
+      'crash_after_receipt_before_checkpoint',
+      'cancellation',
+      'manual_recovery',
+      'reconciliation',
+      'no_duplicate_irreversible_effect',
+    ]);
+
+    expect(fixture.scenarios.find((scenario) => scenario.name === 'clean_restart_identity_continuity'))
+      .toMatchObject({
+        proofSurface: 'checkpoint_seam',
+        outcome: {
+          outcome: 'resumed',
+          envelope: {
+            actor: {
+              actorId: 'runtime://agent/session:checkpoint:fixture',
+              sessionId: 'session:checkpoint:fixture',
+              turnId: 'turn:fixture:001',
+              traceId: 'trace:fixture:001',
+              commandId: 'command:fixture:001',
+              correlationId: 'corr:fixture:001',
+              causationId: 'cause:fixture:001',
+            },
+          },
+        },
+      });
+    expect(fixture.scenarios.find((scenario) => scenario.name === 'crash_before_attempt')).toMatchObject(
+      {
+        outcome: {
+          outcome: 'manual_recovery_required',
+          reason: 'missing',
+        },
+      }
+    );
+    expect(
+      fixture.scenarios.find((scenario) => scenario.name === 'crash_between_attempt_and_receipt')
+    ).toMatchObject({
+      outcome: {
+        outcome: 'deferred_for_reconciliation',
+      },
+    });
+    expect(
+      fixture.scenarios.find((scenario) => scenario.name === 'crash_after_receipt_before_checkpoint')
+    ).toMatchObject({
+      outcome: {
+        outcome: 'deferred_for_reconciliation',
+      },
+    });
+    expect(fixture.scenarios.find((scenario) => scenario.name === 'cancellation')).toMatchObject({
+      outcome: {
+        outcome: 'resumed',
+      },
+    });
+    expect(fixture.scenarios.find((scenario) => scenario.name === 'manual_recovery')).toMatchObject(
+      {
+        outcome: {
+          outcome: 'manual_recovery_required',
+          reason: 'corrupt',
+        },
+      }
+    );
+    expect(fixture.scenarios.find((scenario) => scenario.name === 'reconciliation')).toMatchObject(
+      {
+        outcome: {
+          outcome: 'deferred_for_reconciliation',
+        },
+      }
+    );
+    expect(
+      fixture.scenarios.find((scenario) => scenario.name === 'no_duplicate_irreversible_effect')
+    ).toMatchObject({
+      outcome: {
+        outcome: 'deferred_for_reconciliation',
+      },
+    });
+  });
 });

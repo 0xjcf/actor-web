@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -226,6 +226,90 @@ describe('agent session checkpoint store', () => {
     await expect(staleStore.read({ sessionId: envelope.sessionId })).resolves.toEqual({
       outcome: 'stale',
       envelope,
+    });
+  });
+
+  it('enforces too_large at the real persisted-byte boundary of the node adapter', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'actor-web-checkpoints-size-'));
+    const measurementStore = nodeEntry.createNodeFileSystemAgentSessionCheckpointStore({
+      directory,
+      redactOpaqueContinuation: true,
+    });
+    const envelope = createCheckpointEnvelope({
+      checkpointId: 'checkpoint:size-boundary',
+      reconciliation: {
+        status: 'clear',
+      },
+      effect: {
+        effectId: 'effect:size-boundary',
+        effectAttemptId: 'effect-attempt:size-boundary',
+        phase: 'receipt_recorded',
+        irreversible: true,
+        intent: { effectType: 'tool_call', toolName: 'repo.diff', idempotencyScope: 'tool:repo.diff' },
+        receipt: { outcome: 'ok' },
+      },
+    });
+
+    await expect(measurementStore.write(envelope)).resolves.toMatchObject({
+      outcome: 'stored',
+    });
+    const rawFilePath = path.join(directory, `${encodeURIComponent(envelope.sessionId)}.json`);
+    const persisted = await readFile(rawFilePath, 'utf8');
+    const persistedBytes = new TextEncoder().encode(persisted).byteLength;
+
+    const strictStore = nodeEntry.createNodeFileSystemAgentSessionCheckpointStore({
+      directory: await mkdtemp(path.join(tmpdir(), 'actor-web-checkpoints-too-large-')),
+      maxBytes: persistedBytes - 1,
+      redactOpaqueContinuation: true,
+    });
+
+    await expect(strictStore.write(envelope)).resolves.toEqual({
+      outcome: 'too_large',
+      envelope: expect.objectContaining({
+        checkpointId: 'checkpoint:size-boundary',
+      }),
+      sizeBytes: persistedBytes,
+      maxBytes: persistedBytes - 1,
+    });
+  });
+
+  it('returns manual recovery when no checkpoint exists before an attempt starts', () => {
+    expect(
+      deriveAgentSessionCheckpointRehydration({
+        outcome: 'missing',
+        sessionId: 'session:missing-before-attempt',
+      })
+    ).toEqual({
+      outcome: 'manual_recovery_required',
+      sessionId: 'session:missing-before-attempt',
+      reason: 'missing',
+    });
+  });
+
+  it('resumes after a settled receipt was checkpointed without forcing duplicate irreversible effects', () => {
+    const settledEnvelope = createCheckpointEnvelope({
+      checkpointId: 'checkpoint:settled',
+      reconciliation: {
+        status: 'clear',
+      },
+      effect: {
+        effectId: 'effect:settled',
+        effectAttemptId: 'effect-attempt:settled',
+        phase: 'receipt_recorded',
+        irreversible: true,
+        intent: { effectType: 'tool_call', toolName: 'repo.diff', idempotencyScope: 'tool:repo.diff' },
+        receipt: { outcome: 'ok' },
+      },
+    });
+
+    expect(
+      deriveAgentSessionCheckpointRehydration({
+        outcome: 'present',
+        envelope: settledEnvelope,
+      })
+    ).toEqual({
+      outcome: 'resumed',
+      envelope: settledEnvelope,
     });
   });
 });
