@@ -1,10 +1,10 @@
 import {
   AGENT_SESSION_CHECKPOINT_SCHEMA_VERSION,
-  createAgentSessionCheckpointEnvelope,
-  deriveAgentSessionCheckpointRehydration,
   type AgentSessionCheckpointReadOutcome,
   type AgentSessionCheckpointRehydrationOutcome,
   type AgentSessionCheckpointWriteOutcome,
+  createAgentSessionCheckpointEnvelope,
+  deriveAgentSessionCheckpointRehydration,
 } from '@actor-web/runtime';
 
 export interface AgentSessionCheckpointConformanceFixture {
