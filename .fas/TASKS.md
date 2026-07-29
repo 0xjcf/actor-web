@@ -2407,8 +2407,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Propagate authenticated principal context and emit command admission facts
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/propagate-authenticated-principal-context-and-emit-command-a.md
 - Verification lane: fast
 - Policy sensitivity: standard

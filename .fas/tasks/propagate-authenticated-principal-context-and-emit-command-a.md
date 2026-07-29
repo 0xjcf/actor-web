@@ -43,6 +43,9 @@ Gateway authentication already resolves an auth context, but send and ask do not
 - packages/actor-core-testing/src
 - packages/agent-workflow-cli/src/host
 - docs/provider-neutral-agent-execution-contract.md
+- packages/actor-core-runtime/src/serve-actor-web-node.ts
+- packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts
+- packages/agent-workflow-cli/src/cli/index.ts
 
 ## Architecture Context
 
@@ -205,6 +208,16 @@ Gateway authentication already resolves an auth context, but send and ask do not
   `packages/cli` to the live package directories.
 - Clarified that "migration" means a versioned additive API compatibility path,
   not a database migration.
+
+- Type: review-finding
+- Added at: 2026-07-29T02:43:15Z
+- Trigger: PR 54 blocking review findings exposed production served-gateway and CLI admission bypasses.
+- Reason: Thread provider-neutral commandAdmission configuration through the supported served-node and actor-web serve entry points, with focused regression coverage.
+- Added paths: packages/actor-core-runtime/src/serve-actor-web-node.ts, packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts, packages/agent-workflow-cli/src/cli/index.ts
+- Evidence source: GitHub PR review
+- Evidence: GitHub PR review | [PR 54](https://github.com/0xjcf/actor-web/pull/54) | Codex P1 findings: served gateway and shipped CLI entry could not opt into admission.
+- Accuracy signal: Verified against serve-actor-web-node.ts hub construction and cli/index.ts createRuntimeHostFromFile call.
+- Follow-up needed: Reconfirm runtime gateway and CLI admission conformance after focused and full verification.
 
 ## Implementation plan
 
