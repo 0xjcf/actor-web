@@ -226,7 +226,7 @@ Docs check completed on July 29, 2026:
 
 - `pnpm exec markdownlint-cli2 --config .markdownlint.jsonc "docs/provider-neutral-agent-execution-contract.md"`
 
-Last completed repository full gate:
+Post-fix product implementation full gate:
 
 - July 29, 2026 at head `fb1643be`
   - format
@@ -236,6 +236,10 @@ Last completed repository full gate:
   - architecture drift
   - behavior boundaries
   - semantic index
+
+Subsequent commits only update documentation and FAS workflow evidence; their
+focused Markdown and FAS fast-lane checks are recorded in the repository
+verification artifacts.
 
 Last completed independent FAS validation:
 
