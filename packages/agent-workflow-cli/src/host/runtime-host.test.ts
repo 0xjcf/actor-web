@@ -259,7 +259,7 @@ describe('createRuntimeHost', () => {
           policy: 'cli-policy-v3',
         }),
         onDecision: async () => {},
-      },
+      } as unknown as import('./runtime-host').RuntimeHostCommandAdmissionOptions,
     });
     expect(missingPrincipal.ok).toBe(true);
     if (!missingPrincipal.ok) {
@@ -284,7 +284,7 @@ describe('createRuntimeHost', () => {
           outcome: 'authorized',
           policy: 'cli-policy-v3',
         }),
-      },
+      } as unknown as import('./runtime-host').RuntimeHostCommandAdmissionOptions,
     });
     expect(missingSink.ok).toBe(true);
     if (!missingSink.ok) {
@@ -404,7 +404,7 @@ describe('createRuntimeHost', () => {
           kind: 'system',
         },
         onDecision: async () => {},
-      },
+      } as unknown as import('./runtime-host').RuntimeHostCommandAdmissionOptions,
     });
     expect(started.ok).toBe(true);
     if (!started.ok) {

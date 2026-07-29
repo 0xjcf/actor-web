@@ -80,7 +80,7 @@ export interface AgentExecutionPrincipal {
   readonly [key: string]: JsonValue | undefined;
 }
 
-export type AgentExecutionCommandPrincipalKind = 'authenticated' | 'local' | 'system';
+export type AgentExecutionCommandPrincipalKind = 'authenticated' | 'local' | 'system' | 'unknown';
 
 export interface AgentExecutionCommandPrincipal extends AgentExecutionPrincipal {
   readonly kind: AgentExecutionCommandPrincipalKind;

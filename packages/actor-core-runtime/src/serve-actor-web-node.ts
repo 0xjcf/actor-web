@@ -163,7 +163,7 @@ class ActorWebNodeGatewayConnection<TAuthContext>
 {
   constructor(
     private readonly socket: WebSocketLike,
-    readonly authContext: TAuthContext
+    readonly authContext: TAuthContext | undefined
   ) {}
 
   receive(
@@ -504,12 +504,7 @@ export async function serveNode<
         gatewayServer = created.server;
         gatewayUrl = created.url;
         gatewayServer.on('connection', (socket) => {
-          hub.attach(
-            new ActorWebNodeGatewayConnection<TGatewayAuthContext>(
-              socket,
-              {} as TGatewayAuthContext
-            )
-          );
+          hub.attach(new ActorWebNodeGatewayConnection<TGatewayAuthContext>(socket, undefined));
         });
       }
 

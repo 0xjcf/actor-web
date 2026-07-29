@@ -3157,7 +3157,7 @@ describe('runtime gateway hub', () => {
           policy: 'checkout-policy-v3',
         }),
         onDecision: async () => {},
-      },
+      } as unknown as Parameters<typeof createRuntimeGatewayHub>[0]['commandAdmission'],
       resolveScope: async () => source,
     });
     const missingResolverConnection = createFakeConnection({ authorityId: 'auth-1' });
@@ -3184,6 +3184,7 @@ describe('runtime gateway hub', () => {
         type: 'error',
         requestId: 'send-request-missing-resolver',
         rejection: expect.objectContaining({
+          admissionStage: 'schema-admitted',
           reason: expect.objectContaining({
             code: 'missing_principal',
             detail: 'commandAdmission requires an explicit principal resolver.',
@@ -3204,7 +3205,7 @@ describe('runtime gateway hub', () => {
           outcome: 'authorized',
           policy: 'checkout-policy-v3',
         }),
-      },
+      } as unknown as Parameters<typeof createRuntimeGatewayHub>[0]['commandAdmission'],
       resolveScope: async () => source,
     });
     const missingSinkConnection = createFakeConnection({ authorityId: 'auth-1' });
@@ -3231,6 +3232,7 @@ describe('runtime gateway hub', () => {
         type: 'error',
         requestId: 'ask-request-missing-sink',
         rejection: expect.objectContaining({
+          admissionStage: 'schema-admitted',
           reason: expect.objectContaining({
             code: 'missing_decision_sink',
             detail: 'commandAdmission requires an explicit durable decision sink.',
@@ -3240,6 +3242,59 @@ describe('runtime gateway hub', () => {
     );
     expect(source.askMessages).toEqual([]);
     detachMissingSink();
+  });
+
+  it('fails closed when resolvePrincipal throws and sanitizes the failure detail', async () => {
+    const source = createFakeSource('ready');
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => {
+          throw new Error('resolver-secret-token-007');
+        },
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v3',
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-principal-resolution-failure',
+      message: { type: 'SUBMIT', orderId: 'order-principal-resolution-failure' },
+      metadata: { commandId: 'cmd-principal-resolution-failure' },
+    });
+    await flushGatewayFrames();
+
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-principal-resolution-failure',
+        code: 'unauthorized',
+        rejection: expect.objectContaining({
+          admissionStage: 'schema-admitted',
+          reason: expect.objectContaining({
+            code: 'principal_resolution_failure',
+            detail: 'Principal resolver threw before returning a principal.',
+          }),
+        }),
+      })
+    );
+    expect(JSON.stringify(connection.frames)).not.toContain('resolver-secret-token-007');
+    expect(source.sentMessages).toEqual([]);
+    detach();
   });
 
   it('generates distinct fallback command ids for same-tick gateway admission rejections without client command ids', async () => {
@@ -3255,7 +3310,7 @@ describe('runtime gateway hub', () => {
             policy: 'checkout-policy-v3',
           }),
           onDecision: async () => {},
-        },
+        } as unknown as Parameters<typeof createRuntimeGatewayHub>[0]['commandAdmission'],
         resolveScope: async () => source,
       });
       const connection = createFakeConnection({ authorityId: 'auth-1' });
@@ -3471,7 +3526,7 @@ describe('runtime gateway hub', () => {
           kind: 'authenticated',
         }),
         onDecision: async () => {},
-      },
+      } as unknown as Parameters<typeof createRuntimeGatewayHub>[0]['commandAdmission'],
       resolveScope: async () => source,
     });
     const connection = createFakeConnection({ authorityId: 'auth-1' });
@@ -3504,6 +3559,7 @@ describe('runtime gateway hub', () => {
         requestId: 'send-request-missing-policy',
         code: 'forbidden',
         rejection: expect.objectContaining({
+          admissionStage: 'schema-admitted',
           reason: expect.objectContaining({
             code: 'missing_policy_adapter',
           }),

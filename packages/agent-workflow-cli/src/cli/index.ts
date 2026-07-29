@@ -14,6 +14,7 @@
  */
 
 import { createInterface } from 'node:readline';
+import { pathToFileURL } from 'node:url';
 import { Logger } from '@actor-web/runtime';
 import chalk from 'chalk';
 import { program } from 'commander';
@@ -37,7 +38,9 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-async function loadCommandAdmissionConfig(modulePath: string): Promise<CommandAdmissionLoadResult> {
+export async function loadCommandAdmissionConfig(
+  modulePath: string
+): Promise<CommandAdmissionLoadResult> {
   const loaded = await loadModuleExport(modulePath);
   if (!loaded.ok) {
     return loaded;
@@ -50,16 +53,16 @@ async function loadCommandAdmissionConfig(modulePath: string): Promise<CommandAd
   }
 
   const config = loaded.value as Record<string, unknown>;
-  if ('principal' in config && !isPlainObject(config.principal)) {
+  if (!('principal' in config) || !isPlainObject(config.principal)) {
     return {
       ok: false,
-      error: `${modulePath} commandAdmission.principal must be a JSON-safe object when provided.`,
+      error: `${modulePath} commandAdmission.principal must be a JSON-safe object.`,
     };
   }
-  if ('policy' in config && typeof config.policy !== 'function') {
+  if (typeof config.policy !== 'function') {
     return {
       ok: false,
-      error: `${modulePath} commandAdmission.policy must be a function when provided.`,
+      error: `${modulePath} commandAdmission.policy must be a function.`,
     };
   }
   if ('idempotency' in config && typeof config.idempotency !== 'function') {
@@ -68,14 +71,14 @@ async function loadCommandAdmissionConfig(modulePath: string): Promise<CommandAd
       error: `${modulePath} commandAdmission.idempotency must be a function when provided.`,
     };
   }
-  if ('onDecision' in config && typeof config.onDecision !== 'function') {
+  if (typeof config.onDecision !== 'function') {
     return {
       ok: false,
-      error: `${modulePath} commandAdmission.onDecision must be a function when provided.`,
+      error: `${modulePath} commandAdmission.onDecision must be a function.`,
     };
   }
 
-  return { ok: true, value: config as RuntimeHostCommandAdmissionOptions };
+  return { ok: true, value: config as unknown as RuntimeHostCommandAdmissionOptions };
 }
 
 function printOutcomeLines(lines: readonly string[], ok: boolean): void {
@@ -245,7 +248,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  log.error('CLI failed', error);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    log.error('CLI failed', error);
+    process.exit(1);
+  });
+}

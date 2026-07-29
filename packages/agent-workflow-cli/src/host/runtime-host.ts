@@ -80,10 +80,10 @@ export interface RuntimeHostOptions {
 }
 
 export interface RuntimeHostCommandAdmissionOptions {
-  readonly principal?: AgentExecutionCommandPrincipal;
-  readonly policy?: AgentExecutionAdmissionPolicy;
+  readonly principal: AgentExecutionCommandPrincipal;
+  readonly policy: AgentExecutionAdmissionPolicy;
   readonly idempotency?: AgentExecutionIdempotencyClaimPort;
-  readonly onDecision?: (decision: AgentExecutionAdmissionDecision) => void | Promise<void>;
+  readonly onDecision: (decision: AgentExecutionAdmissionDecision) => void | Promise<void>;
 }
 
 interface RegisteredActor {
@@ -175,6 +175,34 @@ function toRuntimeHostDispatchFailure<T>(label: 'Send' | 'Ask', detail: string):
     ok: false,
     error: `${label} failed: ${detail}`,
   };
+}
+
+function validateRuntimeHostCommandAdmissionConfig<T>(
+  commandAdmission: RuntimeHostOptions['commandAdmission'] | undefined,
+  label: 'Send' | 'Ask'
+): HostResult<T> | null {
+  if (!commandAdmission) {
+    return null;
+  }
+  if (!commandAdmission.principal) {
+    return {
+      ok: false,
+      error: `${label} rejected: missing_principal (commandAdmission requires an explicit principal.)`,
+    };
+  }
+  if (!commandAdmission.policy) {
+    return {
+      ok: false,
+      error: `${label} rejected: missing_policy_adapter (commandAdmission requires an explicit policy adapter.)`,
+    };
+  }
+  if (!commandAdmission.onDecision) {
+    return {
+      ok: false,
+      error: `${label} rejected: missing_decision_sink (commandAdmission requires an explicit durable decision sink.)`,
+    };
+  }
+  return null;
 }
 
 async function executeRuntimeHostDispatch<T>(input: {
@@ -310,12 +338,12 @@ export async function createRuntimeHost(
       }
       try {
         if (options.commandAdmission) {
-          if (!options.commandAdmission.principal) {
-            return {
-              ok: false,
-              error:
-                'Send rejected: missing_principal (commandAdmission requires an explicit principal.)',
-            };
+          const configError = validateRuntimeHostCommandAdmissionConfig<string>(
+            options.commandAdmission,
+            'Send'
+          );
+          if (configError) {
+            return configError;
           }
           const decision = await admitAgentExecutionCommand({
             actorId: ref.address,
@@ -328,16 +356,6 @@ export async function createRuntimeHost(
             idempotency: options.commandAdmission.idempotency,
             metadata,
           });
-          if (!options.commandAdmission.onDecision) {
-            if (decision.ok) {
-              await trySettleRuntimeHostClaim(decision, 'not_dispatched');
-            }
-            return {
-              ok: false,
-              error:
-                'Send rejected: missing_decision_sink (commandAdmission requires an explicit durable decision sink.)',
-            };
-          }
           try {
             await Promise.resolve(options.commandAdmission.onDecision(decision));
           } catch {
@@ -388,12 +406,12 @@ export async function createRuntimeHost(
       }
       try {
         if (options.commandAdmission) {
-          if (!options.commandAdmission.principal) {
-            return {
-              ok: false,
-              error:
-                'Ask rejected: missing_principal (commandAdmission requires an explicit principal.)',
-            };
+          const configError = validateRuntimeHostCommandAdmissionConfig<unknown>(
+            options.commandAdmission,
+            'Ask'
+          );
+          if (configError) {
+            return configError;
           }
           const decision = await admitAgentExecutionCommand({
             actorId: ref.address,
@@ -406,16 +424,6 @@ export async function createRuntimeHost(
             idempotency: options.commandAdmission.idempotency,
             metadata,
           });
-          if (!options.commandAdmission.onDecision) {
-            if (decision.ok) {
-              await trySettleRuntimeHostClaim(decision, 'not_dispatched');
-            }
-            return {
-              ok: false,
-              error:
-                'Ask rejected: missing_decision_sink (commandAdmission requires an explicit durable decision sink.)',
-            };
-          }
           try {
             await Promise.resolve(options.commandAdmission.onDecision(decision));
           } catch {

@@ -246,6 +246,119 @@ describe('serveNode', () => {
     }
   });
 
+  it('passes undefined gateway auth context before authentication is verified', async () => {
+    const resolveScopeAuthContexts: unknown[] = [];
+    const resolvePrincipalAuthContexts: unknown[] = [];
+    const decisions: unknown[] = [];
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+      },
+      actors: {
+        counter: actor({
+          id: 'counter',
+          node: 'server',
+          behavior: createCounterBehavior,
+          gateway: true,
+        }),
+      },
+    });
+
+    const served = await serveNode(topology, {
+      node: 'server',
+      gateway: {
+        resolveScope: async (scope, authContext) => {
+          resolveScopeAuthContexts.push({ scope, authContext });
+          return null;
+        },
+        commandAdmission: {
+          resolvePrincipal: (authContext) => {
+            resolvePrincipalAuthContexts.push(authContext);
+            return {
+              id: authContext === undefined ? 'principal:anonymous' : 'principal:unexpected-auth',
+              kind: 'authenticated',
+            };
+          },
+          policy: async () => ({
+            outcome: 'authorized',
+            policy: 'served-gateway-no-auth-context',
+          }),
+          onDecision: async (decision) => {
+            decisions.push(decision);
+          },
+        },
+      },
+    });
+
+    try {
+      const socket = new WebSocket(served.getGatewayUrl() ?? '');
+      const frames = collectFrames(socket);
+      await waitForSocketOpen(socket);
+      socket.send(JSON.stringify({ type: 'hello', clientVersion: 'test' }));
+      await expect(frames.nextFrame()).resolves.toMatchObject({ type: 'ready' });
+
+      socket.send(
+        JSON.stringify({
+          type: 'subscribe',
+          streamId: 'counter-stream',
+          scope: { kind: 'counter' },
+        })
+      );
+      await expect(frames.nextFrame()).resolves.toMatchObject({ type: 'status' });
+      await expect(frames.nextFrame()).resolves.toMatchObject({ type: 'snapshot' });
+
+      socket.send(
+        JSON.stringify({
+          type: 'send',
+          streamId: 'counter-stream',
+          requestId: 'send-request-undefined-auth-context',
+          message: { type: 'INCREMENT' },
+          metadata: { commandId: 'served-gateway-send-undefined-auth-context' },
+        })
+      );
+      await expect(frames.nextFrame()).resolves.toMatchObject({
+        type: 'ack',
+        requestId: 'send-request-undefined-auth-context',
+      });
+
+      await expect(
+        waitFor(
+          () => resolveScopeAuthContexts.at(0),
+          'Expected served gateway undefined auth context at resolveScope'
+        )
+      ).resolves.toEqual({
+        scope: { kind: 'counter' },
+        authContext: undefined,
+      });
+      await expect(
+        waitFor(
+          () =>
+            resolvePrincipalAuthContexts.length > 0
+              ? resolvePrincipalAuthContexts.length
+              : undefined,
+          'Expected served gateway undefined auth context at resolvePrincipal'
+        )
+      ).resolves.toBe(1);
+      await expect(resolvePrincipalAuthContexts.at(0)).toBeUndefined();
+      await expect(
+        waitFor(() => decisions.at(0), 'Expected served gateway undefined-auth decision')
+      ).resolves.toEqual(
+        expect.objectContaining({
+          principal: expect.objectContaining({
+            id: 'principal:anonymous',
+            kind: 'authenticated',
+          }),
+        })
+      );
+
+      const closePromise = waitForSocketClose(socket);
+      socket.close();
+      await closePromise;
+    } finally {
+      await served.stop();
+    }
+  });
+
   it('forwards provider-neutral command admission through the served gateway entrypoint', async () => {
     const decisions: unknown[] = [];
     const topology = defineActorWebTopology({

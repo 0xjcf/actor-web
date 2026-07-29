@@ -4,6 +4,7 @@ import type { ActorAddress, ActorMessage } from './actor-system.js';
 import {
   type AgentExecutionAdmissionDecision,
   type AgentExecutionAdmissionPolicy,
+  type AgentExecutionAdmissionStage,
   type AgentExecutionCommandMetadata,
   type AgentExecutionCommandPrincipal,
   type AgentExecutionIdempotencyClaimPort,
@@ -55,7 +56,7 @@ export type {
 } from './runtime-projection.js';
 
 export interface RuntimeGatewayConnectionAdapter<TAuthContext = unknown> {
-  readonly authContext: TAuthContext;
+  readonly authContext: TAuthContext | undefined;
   receive(
     listener: (frame: RuntimeGatewayClientFrame) => void,
     onInvalidFrame?: (event: RuntimeGatewayInvalidFrameEvent) => void
@@ -99,7 +100,7 @@ export type RuntimeGatewaySource = RuntimeGatewayCommandSource;
 
 export type RuntimeGatewayScopeResolver<TAuthContext = unknown> = (
   scope: RuntimeGatewayScopeDescriptor,
-  authContext: TAuthContext
+  authContext: TAuthContext | undefined
 ) => Promise<RuntimeGatewaySource | null>;
 
 export interface CreateRuntimeGatewaySourceOptions {
@@ -127,11 +128,17 @@ export interface CreateRuntimeGatewayHubOptions<TAuthContext = unknown> {
   commandAdmission?: RuntimeGatewayCommandAdmissionOptions<TAuthContext>;
 }
 
+const PRE_AUTH_RECHECKS: readonly ('command' | 'payload')[] = ['command', 'payload'];
+const PRINCIPAL_RESOLUTION_FAILURE_DETAIL =
+  'Principal resolver threw before returning a principal.';
+
 export interface RuntimeGatewayCommandAdmissionOptions<TAuthContext = unknown> {
-  readonly resolvePrincipal?: (authContext: TAuthContext) => AgentExecutionCommandPrincipal;
-  readonly policy?: AgentExecutionAdmissionPolicy;
+  readonly resolvePrincipal: (
+    authContext: TAuthContext | undefined
+  ) => AgentExecutionCommandPrincipal;
+  readonly policy: AgentExecutionAdmissionPolicy;
   readonly idempotency?: AgentExecutionIdempotencyClaimPort;
-  readonly onDecision?: (decision: AgentExecutionAdmissionDecision) => void | Promise<void>;
+  readonly onDecision: (decision: AgentExecutionAdmissionDecision) => void | Promise<void>;
 }
 
 export class RuntimeGatewayScopeError extends Error {
@@ -417,6 +424,17 @@ function createGatewayRejectedDecision(input: {
   readonly actorId: string;
   readonly sessionId: string;
   readonly commandId: string;
+  readonly admissionStage: AgentExecutionAdmissionStage;
+  readonly rechecked: readonly (
+    | 'command'
+    | 'payload'
+    | 'principal'
+    | 'approval'
+    | 'revision'
+    | 'idempotency'
+    | 'policy'
+  )[];
+  readonly principal?: AgentExecutionCommandPrincipal;
   readonly principalId?: string;
   readonly code: string;
   readonly detail: string;
@@ -433,19 +451,11 @@ function createGatewayRejectedDecision(input: {
     ...(input.principalId ? { principalId: input.principalId } : {}),
     sequence: 1,
     occurredAt,
-    admissionStage: 'execution-authorized',
+    admissionStage: input.admissionStage,
     admission: {
       discovery: 'descriptive_only',
       outcome: 'rejected',
-      rechecked: [
-        'command',
-        'payload',
-        'principal',
-        'approval',
-        'revision',
-        'idempotency',
-        'policy',
-      ],
+      rechecked: input.rechecked,
     },
   });
   const rejectionReceipt = createExecutionRejectedReceipt({
@@ -458,7 +468,7 @@ function createGatewayRejectedDecision(input: {
     ...(input.principalId ? { principalId: input.principalId } : {}),
     sequence: 2,
     occurredAt,
-    admissionStage: 'execution-authorized',
+    admissionStage: input.admissionStage,
     reason: {
       code: input.code,
       detail: input.detail,
@@ -466,16 +476,55 @@ function createGatewayRejectedDecision(input: {
   });
   return {
     ok: false,
-    principal: {
-      id: input.principalId ?? '',
-      kind: 'authenticated',
-    },
+    principal: input.principal ?? { id: 'principal:unknown', kind: 'unknown' },
     metadata: {
       commandId: input.commandId,
     },
     admissionReceipt,
     rejectionReceipt,
   };
+}
+
+function validateGatewayCommandAdmissionConfig<TAuthContext>(
+  actorId: string,
+  sessionId: string,
+  commandId: string,
+  commandAdmission: RuntimeGatewayCommandAdmissionOptions<TAuthContext> | undefined
+): AgentExecutionAdmissionDecision | null {
+  if (!commandAdmission?.resolvePrincipal) {
+    return createGatewayRejectedDecision({
+      actorId,
+      sessionId,
+      commandId,
+      admissionStage: 'schema-admitted',
+      rechecked: PRE_AUTH_RECHECKS,
+      code: 'missing_principal',
+      detail: 'commandAdmission requires an explicit principal resolver.',
+    });
+  }
+  if (!commandAdmission.policy) {
+    return createGatewayRejectedDecision({
+      actorId,
+      sessionId,
+      commandId,
+      admissionStage: 'schema-admitted',
+      rechecked: PRE_AUTH_RECHECKS,
+      code: 'missing_policy_adapter',
+      detail: 'commandAdmission requires an explicit policy adapter.',
+    });
+  }
+  if (!commandAdmission.onDecision) {
+    return createGatewayRejectedDecision({
+      actorId,
+      sessionId,
+      commandId,
+      admissionStage: 'schema-admitted',
+      rechecked: PRE_AUTH_RECHECKS,
+      code: 'missing_decision_sink',
+      detail: 'commandAdmission requires an explicit durable decision sink.',
+    });
+  }
+  return null;
 }
 
 async function settleGatewayClaim(
@@ -502,6 +551,9 @@ function admissionErrorCodeForDecision(
 ): RuntimeGatewayErrorCode {
   const reasonCode = decision.rejectionReceipt?.reason.code;
   if (reasonCode === 'missing_principal') {
+    return 'unauthorized';
+  }
+  if (reasonCode === 'principal_resolution_failure') {
     return 'unauthorized';
   }
   if (reasonCode === 'invalid_command_metadata') {
@@ -866,16 +918,41 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           typeof metadata?.commandId === 'string' && metadata.commandId.trim().length > 0
             ? metadata.commandId.trim()
             : createAgentExecutionFallbackCommandId(new Date());
-        if (!options.commandAdmission?.resolvePrincipal) {
+        const configRejection = validateGatewayCommandAdmissionConfig(
+          actorId,
+          connectionId,
+          commandId,
+          options.commandAdmission
+        );
+        if (configRejection) {
+          return configRejection;
+        }
+        const commandAdmission = options.commandAdmission;
+        if (!commandAdmission) {
           return createGatewayRejectedDecision({
             actorId,
             sessionId: connectionId,
             commandId,
-            code: 'missing_principal',
-            detail: 'commandAdmission requires an explicit principal resolver.',
+            admissionStage: 'schema-admitted',
+            rechecked: PRE_AUTH_RECHECKS,
+            code: 'missing_policy_adapter',
+            detail: 'commandAdmission requires an explicit policy adapter.',
           });
         }
-        const principal = options.commandAdmission.resolvePrincipal(authenticatedAuthContext);
+        let principal: AgentExecutionCommandPrincipal;
+        try {
+          principal = commandAdmission.resolvePrincipal(authenticatedAuthContext);
+        } catch {
+          return createGatewayRejectedDecision({
+            actorId,
+            sessionId: connectionId,
+            commandId,
+            admissionStage: 'schema-admitted',
+            rechecked: PRE_AUTH_RECHECKS,
+            code: 'principal_resolution_failure',
+            detail: PRINCIPAL_RESOLUTION_FAILURE_DETAIL,
+          });
+        }
         const decision = await admitAgentExecutionCommand({
           actorId,
           sessionId: connectionId,
@@ -883,26 +960,13 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           message: message as Message & Record<string, JsonValue | undefined>,
           principal,
           metadata,
-          policy: options.commandAdmission?.policy,
+          policy: commandAdmission.policy,
           requireExplicitPolicy: true,
-          idempotency: options.commandAdmission?.idempotency,
+          idempotency: commandAdmission.idempotency,
           now: () => new Date(),
         });
-        if (!options.commandAdmission?.onDecision) {
-          if (decision.ok) {
-            await trySettleGatewayClaim(decision, 'not_dispatched');
-          }
-          return createGatewayRejectedDecision({
-            actorId,
-            sessionId: connectionId,
-            commandId: decision.metadata.commandId,
-            ...(decision.principal.id ? { principalId: decision.principal.id } : {}),
-            code: 'missing_decision_sink',
-            detail: 'commandAdmission requires an explicit durable decision sink.',
-          });
-        }
         try {
-          await Promise.resolve(options.commandAdmission.onDecision(decision));
+          await Promise.resolve(commandAdmission.onDecision(decision));
         } catch {
           if (decision.ok) {
             await trySettleGatewayClaim(decision, 'not_dispatched');
@@ -911,6 +975,9 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             actorId,
             sessionId: connectionId,
             commandId: decision.metadata.commandId,
+            admissionStage: decision.admissionReceipt.admissionStage,
+            rechecked: decision.admissionReceipt.admission.rechecked,
+            principal: decision.principal,
             ...(decision.principal.id ? { principalId: decision.principal.id } : {}),
             code: 'decision_sink_failure',
             detail: DECISION_SINK_FAILURE_DETAIL,
