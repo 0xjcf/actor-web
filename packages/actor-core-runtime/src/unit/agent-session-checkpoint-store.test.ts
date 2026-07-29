@@ -218,6 +218,29 @@ describe('agent session checkpoint store', () => {
       sessionId: envelope.sessionId,
     });
 
+    await writeFile(
+      rawFilePath,
+      JSON.stringify({
+        ...envelope,
+        actor: {
+          ...envelope.actor,
+          sessionId: 'session:checkpoint:mismatched-actor',
+        },
+      })
+    );
+    const mismatchedRead = await nodeStore.read({ sessionId: envelope.sessionId });
+    expect(mismatchedRead).toEqual({
+      outcome: 'corrupt',
+      sessionId: envelope.sessionId,
+      detail: 'Checkpoint file is malformed or not JSON-safe.',
+    });
+    expect(deriveAgentSessionCheckpointRehydration(mismatchedRead)).toEqual({
+      outcome: 'manual_recovery_required',
+      sessionId: envelope.sessionId,
+      reason: 'corrupt',
+      detail: 'Checkpoint file is malformed or not JSON-safe.',
+    });
+
     const staleStore = nodeEntry.createNodeFileSystemAgentSessionCheckpointStore({
       directory,
       now: () => new Date('2026-07-29T13:47:00.000Z'),
