@@ -20,12 +20,32 @@ import type {
   ActorToolRegistry,
   ActorWebTopology,
   ActorWebTopologyInput,
+  AgentExecutionAdmissionDecision,
+  AgentExecutionAdmissionPolicy,
+  AgentExecutionCommandMetadata,
+  AgentExecutionCommandPrincipal,
+  AgentExecutionIdempotencyClaimPort,
   Message,
 } from '@actor-web/runtime';
-import { Logger, parse, startRuntime } from '@actor-web/runtime';
+import { admitAgentExecutionCommand, Logger, parse, startRuntime } from '@actor-web/runtime';
 import { loadModuleExport } from './load-module.js';
 
 const log = Logger.namespace('ACTOR_WEB_CLI_HOST');
+const DECISION_SINK_FAILURE_DETAIL = 'Decision sink threw before recording the admission decision.';
+const DISPATCH_OUTCOME_RECORD_FAILURE_DETAIL =
+  'Dispatch outcome could not be recorded after execution.';
+
+function classifyOperationalError(error: unknown): 'error_instance' | 'non_error_throwable' {
+  return error instanceof Error ? 'error_instance' : 'non_error_throwable';
+}
+
+function reportDecisionSinkFailure(label: 'Send' | 'Ask', error: unknown): void {
+  log.error('Decision sink failure', {
+    operation: label.toLowerCase(),
+    failure: 'decision_sink_failure',
+    errorClass: classifyOperationalError(error),
+  });
+}
 
 export type HostResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -41,8 +61,17 @@ export interface RuntimeHost {
   readonly nodeKeys: readonly string[];
   listActors(): Promise<HostActorEntry[]>;
   spawnFromFile(behaviorPath: string, id: string): Promise<HostResult<HostActorEntry>>;
-  send(target: string, messageJson: string): Promise<HostResult<string>>;
-  ask(target: string, messageJson: string, timeoutMs?: number): Promise<HostResult<unknown>>;
+  send(
+    target: string,
+    messageJson: string,
+    metadata?: AgentExecutionCommandMetadata
+  ): Promise<HostResult<string>>;
+  ask(
+    target: string,
+    messageJson: string,
+    timeoutMs?: number,
+    metadata?: AgentExecutionCommandMetadata
+  ): Promise<HostResult<unknown>>;
   watch(target: string, onEvent: (event: ActorMessage) => void): HostResult<() => void>;
   /** Resolve a registry key or actor:// path to an ActorRef. */
   resolve(target: string): ActorRef | undefined;
@@ -59,6 +88,14 @@ export interface RuntimeHostOptions {
   readonly node?: string;
   readonly tools?: ActorToolRegistry;
   readonly agent?: RuntimeHostAgentOptions;
+  readonly commandAdmission?: RuntimeHostCommandAdmissionOptions;
+}
+
+export interface RuntimeHostCommandAdmissionOptions {
+  readonly principal: AgentExecutionCommandPrincipal;
+  readonly policy: AgentExecutionAdmissionPolicy;
+  readonly idempotency?: AgentExecutionIdempotencyClaimPort;
+  readonly onDecision: (decision: AgentExecutionAdmissionDecision) => void | Promise<void>;
 }
 
 interface RegisteredActor {
@@ -124,6 +161,88 @@ function resolveRuntimeHostTools(options: RuntimeHostOptions): ActorToolRegistry
     ...(options.tools ?? {}),
     ...createActorAgentTools({ llm: options.agent.llm }),
   };
+}
+
+async function settleRuntimeHostClaim(
+  decision: AgentExecutionAdmissionDecision,
+  outcome: 'not_dispatched' | 'dispatch_succeeded' | 'dispatch_indeterminate'
+): Promise<void> {
+  await Promise.resolve(decision.idempotencyClaim?.settle(outcome));
+}
+
+async function trySettleRuntimeHostClaim(
+  decision: AgentExecutionAdmissionDecision,
+  outcome: 'not_dispatched' | 'dispatch_succeeded' | 'dispatch_indeterminate'
+): Promise<boolean> {
+  try {
+    await settleRuntimeHostClaim(decision, outcome);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function toRuntimeHostDispatchFailure<T>(label: 'Send' | 'Ask', detail: string): HostResult<T> {
+  return {
+    ok: false,
+    error: `${label} failed: ${detail}`,
+  };
+}
+
+function validateRuntimeHostCommandAdmissionConfig<T>(
+  commandAdmission: RuntimeHostOptions['commandAdmission'] | undefined,
+  label: 'Send' | 'Ask'
+): HostResult<T> | null {
+  if (!commandAdmission) {
+    return null;
+  }
+  if (!commandAdmission.principal) {
+    return {
+      ok: false,
+      error: `${label} rejected: missing_principal (commandAdmission requires an explicit principal.)`,
+    };
+  }
+  if (!commandAdmission.policy) {
+    return {
+      ok: false,
+      error: `${label} rejected: missing_policy_adapter (commandAdmission requires an explicit policy adapter.)`,
+    };
+  }
+  if (!commandAdmission.onDecision) {
+    return {
+      ok: false,
+      error: `${label} rejected: missing_decision_sink (commandAdmission requires an explicit durable decision sink.)`,
+    };
+  }
+  return null;
+}
+
+async function executeRuntimeHostDispatch<T>(input: {
+  readonly label: 'Send' | 'Ask';
+  readonly decision: AgentExecutionAdmissionDecision;
+  readonly dispatch: () => Promise<T>;
+}): Promise<HostResult<T>> {
+  let dispatchCompleted = false;
+
+  try {
+    const value = await input.dispatch();
+    dispatchCompleted = true;
+    const settled = await trySettleRuntimeHostClaim(input.decision, 'dispatch_succeeded');
+    if (!settled) {
+      return toRuntimeHostDispatchFailure(input.label, DISPATCH_OUTCOME_RECORD_FAILURE_DETAIL);
+    }
+    return { ok: true, value };
+  } catch (error) {
+    if (!dispatchCompleted) {
+      await trySettleRuntimeHostClaim(input.decision, 'dispatch_indeterminate');
+      return toRuntimeHostDispatchFailure(
+        input.label,
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+
+    return toRuntimeHostDispatchFailure(input.label, DISPATCH_OUTCOME_RECORD_FAILURE_DETAIL);
+  }
 }
 
 /**
@@ -220,7 +339,7 @@ export async function createRuntimeHost(
       return { ok: true, value: toEntry(entry) };
     },
 
-    async send(target, messageJson) {
+    async send(target, messageJson, metadata) {
       const ref = resolve(target);
       if (!ref) {
         return { ok: false, error: unknownTargetError(target) };
@@ -230,6 +349,54 @@ export async function createRuntimeHost(
         return message;
       }
       try {
+        if (options.commandAdmission) {
+          const configError = validateRuntimeHostCommandAdmissionConfig<string>(
+            options.commandAdmission,
+            'Send'
+          );
+          if (configError) {
+            return configError;
+          }
+          const decision = await admitAgentExecutionCommand({
+            actorId: ref.address,
+            sessionId: `runtime-host:${spawnNodeKey}`,
+            kind: 'send',
+            message: message.value,
+            principal: options.commandAdmission.principal,
+            policy: options.commandAdmission.policy,
+            requireExplicitPolicy: true,
+            idempotency: options.commandAdmission.idempotency,
+            metadata,
+          });
+          try {
+            await Promise.resolve(options.commandAdmission.onDecision(decision));
+          } catch (error) {
+            reportDecisionSinkFailure('Send', error);
+            if (decision.ok) {
+              await trySettleRuntimeHostClaim(decision, 'not_dispatched');
+            }
+            return {
+              ok: false,
+              error: `Send rejected: decision_sink_failure (${DECISION_SINK_FAILURE_DETAIL})`,
+            };
+          }
+          if (!decision.ok) {
+            const reason = decision.rejectionReceipt?.reason;
+            return {
+              ok: false,
+              error: `Send rejected: ${reason?.code ?? 'authorization_denied'}${reason?.detail ? ` (${reason.detail})` : ''}`,
+            };
+          }
+          return executeRuntimeHostDispatch({
+            label: 'Send',
+            decision,
+            dispatch: async () => {
+              await ref.send(message.value);
+              await flush();
+              return `Sent ${message.value.type} to ${ref.address}`;
+            },
+          });
+        }
         await ref.send(message.value);
         await flush();
       } catch (error) {
@@ -241,7 +408,7 @@ export async function createRuntimeHost(
       return { ok: true, value: `Sent ${message.value.type} to ${ref.address}` };
     },
 
-    async ask(target, messageJson, timeoutMs) {
+    async ask(target, messageJson, timeoutMs, metadata) {
       const ref = resolve(target);
       if (!ref) {
         return { ok: false, error: unknownTargetError(target) };
@@ -251,6 +418,50 @@ export async function createRuntimeHost(
         return message;
       }
       try {
+        if (options.commandAdmission) {
+          const configError = validateRuntimeHostCommandAdmissionConfig<unknown>(
+            options.commandAdmission,
+            'Ask'
+          );
+          if (configError) {
+            return configError;
+          }
+          const decision = await admitAgentExecutionCommand({
+            actorId: ref.address,
+            sessionId: `runtime-host:${spawnNodeKey}`,
+            kind: 'ask',
+            message: message.value,
+            principal: options.commandAdmission.principal,
+            policy: options.commandAdmission.policy,
+            requireExplicitPolicy: true,
+            idempotency: options.commandAdmission.idempotency,
+            metadata,
+          });
+          try {
+            await Promise.resolve(options.commandAdmission.onDecision(decision));
+          } catch (error) {
+            reportDecisionSinkFailure('Ask', error);
+            if (decision.ok) {
+              await trySettleRuntimeHostClaim(decision, 'not_dispatched');
+            }
+            return {
+              ok: false,
+              error: `Ask rejected: decision_sink_failure (${DECISION_SINK_FAILURE_DETAIL})`,
+            };
+          }
+          if (!decision.ok) {
+            const reason = decision.rejectionReceipt?.reason;
+            return {
+              ok: false,
+              error: `Ask rejected: ${reason?.code ?? 'authorization_denied'}${reason?.detail ? ` (${reason.detail})` : ''}`,
+            };
+          }
+          return executeRuntimeHostDispatch({
+            label: 'Ask',
+            decision,
+            dispatch: async () => ref.ask(message.value, timeoutMs),
+          });
+        }
         const reply = await ref.ask(message.value, timeoutMs);
         return { ok: true, value: reply };
       } catch (error) {

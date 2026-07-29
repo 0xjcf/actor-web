@@ -1587,16 +1587,20 @@ describe('runtime gateway hub', () => {
 
     expect(source.sentMessages).toEqual([{ type: 'SUBMIT', orderId: 'order-command-only' }]);
     expect(source.askMessages).toEqual([{ type: 'GET_STATUS' }]);
-    expect(connection.frames).toContainEqual({
-      type: 'ack',
-      streamId: 'fleet-command',
-    });
-    expect(connection.frames).toContainEqual({
-      type: 'reply',
-      streamId: 'fleet-command',
-      requestId: 'request-command-only',
-      value: { ok: true, messageType: 'GET_STATUS' },
-    });
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'ack',
+        streamId: 'fleet-command',
+      })
+    );
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'reply',
+        streamId: 'fleet-command',
+        requestId: 'request-command-only',
+        value: { ok: true, messageType: 'GET_STATUS' },
+      })
+    );
     expect(
       connection.frames.filter(
         (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'snapshot' }> =>
@@ -3027,11 +3031,13 @@ describe('runtime gateway hub', () => {
 
     expect(source.sentMessages).toEqual([{ type: 'SUBMIT', orderId: 'order-gateway' }]);
     expect(source.askMessages).toEqual([{ type: 'GET_COUNT' }]);
-    expect(connection.frames).toContainEqual({
-      type: 'ack',
-      streamId: 'checkout-main',
-      requestId: 'send-request-1',
-    });
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'ack',
+        streamId: 'checkout-main',
+        requestId: 'send-request-1',
+      })
+    );
     expect(
       connection.frames.find((frame) => (frame as { type?: string }).type === 'reply')
     ).toMatchObject({
@@ -3040,6 +3046,1135 @@ describe('runtime gateway hub', () => {
       requestId: 'request-1',
       value: { ok: true, messageType: 'GET_COUNT' },
     });
+    const legacyAck = connection.frames.find(
+      (frame) =>
+        (frame as { type?: string; requestId?: string }).type === 'ack' &&
+        (frame as { requestId?: string }).requestId === 'send-request-1'
+    ) as { authorization?: unknown } | undefined;
+    const legacyReply = connection.frames.find(
+      (frame) =>
+        (frame as { type?: string; requestId?: string }).type === 'reply' &&
+        (frame as { requestId?: string }).requestId === 'request-1'
+    ) as { authorization?: unknown } | undefined;
+    expect(legacyAck?.authorization).toBeUndefined();
+    expect(legacyReply?.authorization).toBeUndefined();
+
+    detach();
+  });
+
+  it('reduces authenticated gateway context to a credential-free principal and emits authorization facts before dispatch', async () => {
+    const source = createFakeSource('ready');
+    const seenDecisions: unknown[] = [];
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: (authContext) => ({
+          id: `principal:${(authContext as { authorityId: string }).authorityId}`,
+          kind: 'authenticated',
+          role: 'operator',
+        }),
+        policy: async ({ metadata }) => ({
+          outcome: 'authorized',
+          policy: metadata?.capability ?? 'runtime-default-allow',
+        }),
+        onDecision: (decision) => {
+          seenDecisions.push(decision);
+        },
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1', token: 'drop-me' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-credential-free',
+      message: { type: 'SUBMIT', orderId: 'order-gateway' },
+      metadata: {
+        commandId: 'cmd-gateway-send-1',
+        correlationId: 'corr-gateway-send-1',
+        capability: 'checkout.submit',
+        revision: 7,
+      },
+    });
+    await flushGatewayFrames();
+
+    expect(source.sentMessages).toEqual([{ type: 'SUBMIT', orderId: 'order-gateway' }]);
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'ack',
+        streamId: 'checkout-main',
+        requestId: 'send-request-credential-free',
+        authorization: expect.objectContaining({
+          principal: expect.objectContaining({
+            id: 'principal:auth-1',
+            kind: 'authenticated',
+            role: 'operator',
+          }),
+          authorization: expect.objectContaining({
+            policy: 'checkout.submit',
+            decision: 'approved',
+          }),
+        }),
+      })
+    );
+    expect(seenDecisions).toContainEqual(
+      expect.objectContaining({
+        admissionReceipt: expect.objectContaining({
+          actorId: 'actor://local/actor-ready',
+        }),
+        principal: expect.objectContaining({
+          id: 'principal:auth-1',
+          kind: 'authenticated',
+        }),
+        authorizationReceipt: expect.objectContaining({
+          authorization: expect.objectContaining({
+            policy: 'checkout.submit',
+            decision: 'approved',
+          }),
+        }),
+      })
+    );
+    expect(JSON.stringify(seenDecisions)).not.toContain('drop-me');
+
+    detach();
+  });
+
+  it('fails closed when opted-in gateway admission omits the explicit principal resolver or durable decision sink', async () => {
+    const source = createFakeSource('ready');
+    const missingResolverHub = createRuntimeGatewayHub({
+      commandAdmission: {
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v3',
+        }),
+        onDecision: async () => {},
+      } as unknown as Parameters<typeof createRuntimeGatewayHub>[0]['commandAdmission'],
+      resolveScope: async () => source,
+    });
+    const missingResolverConnection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detachMissingResolver = missingResolverHub.attach(missingResolverConnection);
+    missingResolverConnection.push({ type: 'hello' });
+    missingResolverConnection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    missingResolverConnection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-missing-resolver',
+      message: { type: 'SUBMIT', orderId: 'order-missing-resolver' },
+      metadata: { commandId: 'cmd-missing-resolver' },
+    });
+    await flushGatewayFrames();
+
+    expect(missingResolverConnection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-missing-resolver',
+        rejection: expect.objectContaining({
+          admissionStage: 'schema-admitted',
+          reason: expect.objectContaining({
+            code: 'missing_principal',
+            detail: 'commandAdmission requires an explicit principal resolver.',
+          }),
+        }),
+      })
+    );
+    expect(source.sentMessages).toEqual([]);
+    detachMissingResolver();
+
+    const missingSinkHub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v3',
+        }),
+      } as unknown as Parameters<typeof createRuntimeGatewayHub>[0]['commandAdmission'],
+      resolveScope: async () => source,
+    });
+    const missingSinkConnection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detachMissingSink = missingSinkHub.attach(missingSinkConnection);
+    missingSinkConnection.push({ type: 'hello' });
+    missingSinkConnection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    missingSinkConnection.push({
+      type: 'ask',
+      streamId: 'checkout-main',
+      requestId: 'ask-request-missing-sink',
+      message: { type: 'GET_COUNT' },
+      metadata: { commandId: 'cmd-missing-sink' },
+    });
+    await flushGatewayFrames();
+
+    expect(missingSinkConnection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'ask-request-missing-sink',
+        rejection: expect.objectContaining({
+          admissionStage: 'schema-admitted',
+          reason: expect.objectContaining({
+            code: 'missing_decision_sink',
+            detail: 'commandAdmission requires an explicit durable decision sink.',
+          }),
+        }),
+      })
+    );
+    expect(source.askMessages).toEqual([]);
+    detachMissingSink();
+  });
+
+  it('fails closed when resolvePrincipal throws and sanitizes the failure detail', async () => {
+    const source = createFakeSource('ready');
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => {
+          throw new Error('resolver-secret-token-007');
+        },
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v3',
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-principal-resolution-failure',
+      message: { type: 'SUBMIT', orderId: 'order-principal-resolution-failure' },
+      metadata: { commandId: 'cmd-principal-resolution-failure' },
+    });
+    await flushGatewayFrames();
+
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-principal-resolution-failure',
+        code: 'unauthorized',
+        rejection: expect.objectContaining({
+          admissionStage: 'schema-admitted',
+          reason: expect.objectContaining({
+            code: 'principal_resolution_failure',
+            detail: 'Principal resolver threw before returning a principal.',
+          }),
+        }),
+      })
+    );
+    expect(JSON.stringify(connection.frames)).not.toContain('resolver-secret-token-007');
+    expect(source.sentMessages).toEqual([]);
+    detach();
+  });
+
+  it('awaits async resolvePrincipal before authorizing gateway dispatch', async () => {
+    const source = createFakeSource('ready');
+    const decisions: AgentExecutionAdmissionDecision[] = [];
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: async (authContext) => ({
+          id: `principal:${(authContext as { authorityId: string }).authorityId}`,
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v3',
+        }),
+        onDecision: async (decision) => {
+          decisions.push(decision);
+        },
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-async-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-async-principal',
+      message: { type: 'SUBMIT', orderId: 'order-async-principal' },
+      metadata: { commandId: 'cmd-async-principal' },
+    });
+    await flushGatewayFrames();
+
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'ack',
+        requestId: 'send-request-async-principal',
+      })
+    );
+    expect(source.sentMessages).toContainEqual({
+      type: 'SUBMIT',
+      orderId: 'order-async-principal',
+    });
+    expect(decisions).toContainEqual(
+      expect.objectContaining({
+        principal: expect.objectContaining({
+          id: 'principal:auth-async-1',
+          kind: 'authenticated',
+        }),
+      })
+    );
+    detach();
+  });
+
+  it('fails closed when async resolvePrincipal rejects and sanitizes the failure detail', async () => {
+    const source = createFakeSource('ready');
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: async () => {
+          throw new Error('resolver-secret-token-async-008');
+        },
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v3',
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-principal-resolution-async-failure',
+      message: { type: 'SUBMIT', orderId: 'order-principal-resolution-async-failure' },
+      metadata: { commandId: 'cmd-principal-resolution-async-failure' },
+    });
+    await flushGatewayFrames();
+
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-principal-resolution-async-failure',
+        code: 'unauthorized',
+        rejection: expect.objectContaining({
+          admissionStage: 'schema-admitted',
+          reason: expect.objectContaining({
+            code: 'principal_resolution_failure',
+            detail: 'Principal resolver threw before returning a principal.',
+          }),
+        }),
+      })
+    );
+    expect(JSON.stringify(connection.frames)).not.toContain('resolver-secret-token-async-008');
+    expect(source.sentMessages).toEqual([]);
+    detach();
+  });
+
+  it('generates distinct fallback command ids for same-tick gateway admission rejections without client command ids', async () => {
+    vi.useFakeTimers();
+
+    try {
+      vi.setSystemTime(new Date('2026-07-29T03:30:00.000Z'));
+      const source = createFakeSource('ready');
+      const hub = createRuntimeGatewayHub({
+        commandAdmission: {
+          policy: async () => ({
+            outcome: 'authorized',
+            policy: 'checkout-policy-v3',
+          }),
+          onDecision: async () => {},
+        } as unknown as Parameters<typeof createRuntimeGatewayHub>[0]['commandAdmission'],
+        resolveScope: async () => source,
+      });
+      const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+      const detach = hub.attach(connection);
+      connection.push({ type: 'hello' });
+      connection.push({
+        type: 'subscribe',
+        streamId: 'checkout-main',
+        scope: { kind: 'checkout' },
+      });
+      await flushGatewayMicrotasks();
+      connection.push({
+        type: 'send',
+        streamId: 'checkout-main',
+        requestId: 'send-request-missing-resolver-1',
+        message: { type: 'SUBMIT', orderId: 'order-missing-resolver-1' },
+      });
+      connection.push({
+        type: 'send',
+        streamId: 'checkout-main',
+        requestId: 'send-request-missing-resolver-2',
+        message: { type: 'SUBMIT', orderId: 'order-missing-resolver-2' },
+      });
+      await flushGatewayMicrotasks();
+
+      const rejectionCommandIds = connection.frames
+        .filter(
+          (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'error' }> =>
+            typeof frame === 'object' &&
+            frame !== null &&
+            'type' in frame &&
+            frame.type === 'error' &&
+            frame.requestId !== undefined &&
+            frame.requestId.startsWith('send-request-missing-resolver-')
+        )
+        .map((frame) => frame.rejection?.commandId);
+
+      expect(rejectionCommandIds).toHaveLength(2);
+      expect(rejectionCommandIds[0]).toBeDefined();
+      expect(rejectionCommandIds[1]).toBeDefined();
+      expect(rejectionCommandIds[0]).not.toBe(rejectionCommandIds[1]);
+      detach();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects credential-bearing gateway principals before dispatch and never leaks them into decisions or frames', async () => {
+    const source = createFakeSource('ready');
+    const seenDecisions: unknown[] = [];
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:auth-1',
+          kind: 'authenticated',
+          Authorization: 'Bearer bearer-value-001',
+          claims: {
+            ApiKey: 'api-key-value-001',
+          },
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout.submit',
+        }),
+        onDecision: (decision) => {
+          seenDecisions.push(decision);
+        },
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-secret-principal',
+      message: { type: 'SUBMIT', orderId: 'order-gateway-secret' },
+      metadata: {
+        commandId: 'cmd-gateway-secret-principal',
+        capability: 'checkout.submit',
+      },
+    });
+    await flushGatewayFrames();
+
+    expect(source.sentMessages).toEqual([]);
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-secret-principal',
+        rejection: expect.objectContaining({
+          reason: expect.objectContaining({
+            code: 'credential_bearing_principal',
+          }),
+        }),
+      })
+    );
+    expect(JSON.stringify(connection.frames)).not.toContain('bearer-value-001');
+    expect(JSON.stringify(connection.frames)).not.toContain('api-key-value-001');
+    expect(JSON.stringify(seenDecisions)).not.toContain('bearer-value-001');
+    expect(JSON.stringify(seenDecisions)).not.toContain('api-key-value-001');
+
+    detach();
+  });
+
+  it('fails closed when command admission denies or the policy adapter fails', async () => {
+    const source = createFakeSource('ready');
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: (authContext) => ({
+          id: `principal:${(authContext as { authorityId: string }).authorityId}`,
+          kind: 'authenticated',
+        }),
+        policy: async ({ metadata }) => {
+          if (metadata?.commandId === 'cmd-policy-failure') {
+            throw new Error('policy offline');
+          }
+          return {
+            outcome: 'rejected',
+            policy: 'checkout-policy-v1',
+            code: 'authorization_denied',
+            detail: 'approval missing',
+          };
+        },
+        onDecision: async () => {},
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-denied',
+      message: { type: 'SUBMIT', orderId: 'order-denied' },
+      metadata: {
+        commandId: 'cmd-denied',
+        capability: 'checkout.submit',
+      },
+    });
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-policy-failure',
+      message: { type: 'SUBMIT', orderId: 'order-failed-closed' },
+      metadata: {
+        commandId: 'cmd-policy-failure',
+        capability: 'checkout.submit',
+      },
+    });
+    await flushGatewayFrames();
+    await flushGatewayFrames();
+
+    expect(source.sentMessages).toEqual([]);
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        streamId: 'checkout-main',
+        requestId: 'send-request-denied',
+        code: 'forbidden',
+        rejection: expect.objectContaining({
+          admissionStage: 'execution-authorized',
+          reason: expect.objectContaining({
+            code: 'authorization_denied',
+            detail: 'approval missing',
+          }),
+        }),
+      })
+    );
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        streamId: 'checkout-main',
+        requestId: 'send-request-policy-failure',
+        code: 'forbidden',
+        rejection: expect.objectContaining({
+          admissionStage: 'execution-authorized',
+          reason: expect.objectContaining({
+            code: 'policy_adapter_failure',
+            detail: 'Policy adapter threw before returning a decision.',
+          }),
+        }),
+      })
+    );
+
+    detach();
+  });
+
+  it('fails closed when command admission is configured without an explicit policy adapter', async () => {
+    const source = createFakeSource('ready');
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        onDecision: async () => {},
+      } as unknown as Parameters<typeof createRuntimeGatewayHub>[0]['commandAdmission'],
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-missing-policy',
+      message: { type: 'SUBMIT', orderId: 'order-missing-policy' },
+      metadata: {
+        commandId: 'cmd-missing-policy',
+      },
+    });
+    await flushGatewayFrames();
+
+    expect(source.sentMessages).toEqual([]);
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        streamId: 'checkout-main',
+        requestId: 'send-request-missing-policy',
+        code: 'forbidden',
+        rejection: expect.objectContaining({
+          admissionStage: 'schema-admitted',
+          reason: expect.objectContaining({
+            code: 'missing_policy_adapter',
+          }),
+        }),
+      })
+    );
+
+    detach();
+  });
+
+  it('rejects duplicate idempotency keys before gateway send or ask dispatch and fails closed on claim errors', async () => {
+    const source = createFakeSource('ready');
+    const claims: string[] = [];
+    const settlements: string[] = [];
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v2',
+        }),
+        idempotency: async ({ metadata }) => {
+          const key = metadata.idempotencyKey ?? '(missing)';
+          claims.push(key);
+          if (key === 'idem-duplicate') {
+            return {
+              outcome: 'duplicate',
+              detail: 'duplicate command already observed',
+            };
+          }
+          if (key === 'idem-claim-error') {
+            throw new Error('claim store offline');
+          }
+          return {
+            outcome: 'available',
+            settle: async (outcome) => {
+              settlements.push(outcome);
+            },
+          };
+        },
+        onDecision: async () => {},
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-duplicate',
+      message: { type: 'SUBMIT', orderId: 'order-duplicate' },
+      metadata: {
+        commandId: 'cmd-duplicate-send',
+        idempotencyKey: 'idem-duplicate',
+      },
+    });
+    connection.push({
+      type: 'ask',
+      streamId: 'checkout-main',
+      requestId: 'ask-request-duplicate',
+      message: { type: 'GET_COUNT' },
+      timeoutMs: 1000,
+      metadata: {
+        commandId: 'cmd-duplicate-ask',
+        idempotencyKey: 'idem-duplicate',
+      },
+    });
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-claim-error',
+      message: { type: 'SUBMIT', orderId: 'order-claim-error' },
+      metadata: {
+        commandId: 'cmd-claim-error',
+        idempotencyKey: 'idem-claim-error',
+      },
+    });
+    await flushGatewayFrames();
+    await flushGatewayFrames();
+
+    expect(source.sentMessages).toEqual([]);
+    expect(source.askMessages).toEqual([]);
+    expect(claims).toEqual(['idem-duplicate', 'idem-duplicate', 'idem-claim-error']);
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-duplicate',
+        rejection: expect.objectContaining({
+          reason: expect.objectContaining({
+            code: 'duplicate_idempotency_key',
+            detail: 'duplicate command already observed',
+          }),
+        }),
+      })
+    );
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'ask-request-duplicate',
+        rejection: expect.objectContaining({
+          reason: expect.objectContaining({
+            code: 'duplicate_idempotency_key',
+          }),
+        }),
+      })
+    );
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-claim-error',
+        rejection: expect.objectContaining({
+          reason: expect.objectContaining({
+            code: 'idempotency_adapter_failure',
+            detail: 'Idempotency adapter threw before returning a claim result.',
+          }),
+        }),
+      })
+    );
+    detach();
+  });
+
+  it('settles gateway idempotency claims for sink failures, send failures, and successful asks', async () => {
+    const sinkSource = createFakeSource('ready');
+    const sinkSettlements: string[] = [];
+    const sinkHub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v4',
+        }),
+        idempotency: async () => ({
+          outcome: 'available',
+          settle: async (outcome) => {
+            sinkSettlements.push(outcome);
+          },
+        }),
+        onDecision: async () => {
+          throw new Error('sink offline');
+        },
+      },
+      resolveScope: async () => sinkSource,
+    });
+    const sinkConnection = createFakeConnection({ authorityId: 'auth-1' });
+    const detachSink = sinkHub.attach(sinkConnection);
+    sinkConnection.push({ type: 'hello' });
+    sinkConnection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    sinkConnection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-sink-failure',
+      message: { type: 'SUBMIT', orderId: 'order-sink-failure' },
+      metadata: { commandId: 'cmd-sink-failure' },
+    });
+    await flushGatewayFrames();
+
+    expect(sinkConnection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-sink-failure',
+        rejection: expect.objectContaining({
+          reason: expect.objectContaining({
+            code: 'decision_sink_failure',
+            detail: 'Decision sink threw before recording the admission decision.',
+          }),
+        }),
+      })
+    );
+    expect(sinkSource.sentMessages).toEqual([]);
+    expect(sinkSettlements).toContain('not_dispatched');
+    expect(JSON.stringify(sinkConnection.frames)).not.toContain('sink offline');
+    detachSink();
+
+    const dispatchSource = createFakeSource('ready');
+    const originalSend = dispatchSource.send;
+    const dispatchSettlements: string[] = [];
+    dispatchSource.send = async () => {
+      throw new Error('dispatch exploded');
+    };
+    const dispatchHub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v4',
+        }),
+        idempotency: async () => ({
+          outcome: 'available',
+          settle: async (outcome) => {
+            dispatchSettlements.push(outcome);
+          },
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => dispatchSource,
+    });
+    const dispatchConnection = createFakeConnection({ authorityId: 'auth-1' });
+    const detachDispatch = dispatchHub.attach(dispatchConnection);
+    dispatchConnection.push({ type: 'hello' });
+    dispatchConnection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    dispatchConnection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-dispatch-failure',
+      message: { type: 'SUBMIT', orderId: 'order-dispatch-failure' },
+      metadata: { commandId: 'cmd-dispatch-failure' },
+    });
+    await flushGatewayFrames();
+
+    expect(dispatchConnection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-dispatch-failure',
+        code: 'internal_error',
+        message: 'dispatch exploded',
+      })
+    );
+    expect(dispatchSettlements).toContain('dispatch_indeterminate');
+    dispatchSource.send = originalSend;
+    detachDispatch();
+
+    const askSource = createFakeSource('ready');
+    const askSettlements: string[] = [];
+    const askHub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v4',
+        }),
+        idempotency: async () => ({
+          outcome: 'available',
+          settle: async (outcome) => {
+            askSettlements.push(outcome);
+          },
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => askSource,
+    });
+    const askConnection = createFakeConnection({ authorityId: 'auth-1' });
+    const detachAsk = askHub.attach(askConnection);
+    askConnection.push({ type: 'hello' });
+    askConnection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    askConnection.push({
+      type: 'ask',
+      streamId: 'checkout-main',
+      requestId: 'ask-request-idempotent-success',
+      message: { type: 'GET_COUNT' },
+      timeoutMs: 1000,
+      metadata: { commandId: 'cmd-ask-idempotent-success' },
+    });
+    await flushGatewayFrames();
+
+    expect(askConnection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'reply',
+        requestId: 'ask-request-idempotent-success',
+        authorization: expect.any(Object),
+      })
+    );
+    expect(askSettlements).toContain('dispatch_succeeded');
+    detachAsk();
+
+    const postDispatchSource = createFakeSource('ready');
+    const postDispatchSettlements: string[] = [];
+    const postDispatchHub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v4',
+        }),
+        idempotency: async () => ({
+          outcome: 'available',
+          settle: async (outcome) => {
+            postDispatchSettlements.push(outcome);
+            if (outcome === 'dispatch_succeeded') {
+              throw new Error('settlement secret gateway-token-789');
+            }
+          },
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => postDispatchSource,
+    });
+    const postDispatchConnection = createFakeConnection({ authorityId: 'auth-1' });
+    const detachPostDispatch = postDispatchHub.attach(postDispatchConnection);
+    postDispatchConnection.push({ type: 'hello' });
+    postDispatchConnection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    postDispatchConnection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-post-dispatch-settlement-failure',
+      message: { type: 'SUBMIT', orderId: 'order-post-dispatch-settlement-failure' },
+      metadata: { commandId: 'cmd-post-dispatch-settlement-failure' },
+    });
+    await flushGatewayFrames();
+
+    expect(postDispatchSource.sentMessages).toEqual([
+      { type: 'SUBMIT', orderId: 'order-post-dispatch-settlement-failure' },
+    ]);
+    expect(postDispatchSettlements).toEqual(['dispatch_succeeded']);
+    expect(postDispatchConnection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-post-dispatch-settlement-failure',
+        code: 'internal_error',
+        message: 'Dispatch outcome could not be recorded after execution.',
+      })
+    );
+    expect(JSON.stringify(postDispatchConnection.frames)).not.toContain('gateway-token-789');
+    expect(
+      postDispatchConnection.frames.filter(
+        (frame) =>
+          typeof frame === 'object' &&
+          frame !== null &&
+          'type' in frame &&
+          frame.type === 'ack' &&
+          'requestId' in frame &&
+          frame.requestId === 'send-request-post-dispatch-settlement-failure'
+      )
+    ).toHaveLength(0);
+    detachPostDispatch();
+  });
+
+  it('fails closed when metadata requests idempotency without an adapter', async () => {
+    const source = createFakeSource('ready');
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v2',
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-missing-idempotency-adapter',
+      message: { type: 'SUBMIT', orderId: 'order-no-adapter' },
+      metadata: {
+        commandId: 'cmd-no-idem-adapter',
+        idempotencyKey: 'idem-no-adapter',
+      },
+    });
+    await flushGatewayFrames();
+
+    expect(source.sentMessages).toEqual([]);
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-missing-idempotency-adapter',
+        rejection: expect.objectContaining({
+          reason: expect.objectContaining({
+            code: 'missing_idempotency_adapter',
+            detail:
+              'commandAdmission metadata.idempotencyKey requires an explicit idempotency adapter.',
+          }),
+        }),
+      })
+    );
+
+    detach();
+  });
+
+  it('rejects malformed command metadata without dispatching or throwing', async () => {
+    const source = createFakeSource('ready');
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v2',
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-invalid-metadata',
+      message: { type: 'SUBMIT', orderId: 'order-invalid-metadata' },
+      metadata: {
+        commandId: 'cmd-invalid-metadata',
+        revision: -1,
+      },
+    });
+    await flushGatewayFrames();
+
+    expect(source.sentMessages).toEqual([]);
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-invalid-metadata',
+        code: 'invalid_frame',
+        rejection: expect.objectContaining({
+          reason: expect.objectContaining({
+            code: 'invalid_command_metadata',
+            detail: 'revision must be a non-negative integer.',
+          }),
+        }),
+      })
+    );
+
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-invalid-metadata-container',
+      message: { type: 'SUBMIT', orderId: 'order-invalid-metadata-container' },
+      metadata: null as never,
+    });
+    await flushGatewayFrames();
+
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-invalid-metadata-container',
+        code: 'invalid_frame',
+        rejection: expect.objectContaining({
+          reason: expect.objectContaining({
+            code: 'invalid_command_metadata',
+            detail: 'metadata must be a JSON object when provided.',
+          }),
+        }),
+      })
+    );
 
     detach();
   });
@@ -3133,16 +4268,20 @@ describe('runtime gateway hub', () => {
       'start:SECOND',
       'finish:SECOND',
     ]);
-    expect(connection.frames).toContainEqual({
-      type: 'ack',
-      streamId: 'checkout-main',
-      requestId: 'send-request-1',
-    });
-    expect(connection.frames).toContainEqual({
-      type: 'ack',
-      streamId: 'checkout-main',
-      requestId: 'send-request-2',
-    });
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'ack',
+        streamId: 'checkout-main',
+        requestId: 'send-request-1',
+      })
+    );
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'ack',
+        streamId: 'checkout-main',
+        requestId: 'send-request-2',
+      })
+    );
 
     detach();
   });

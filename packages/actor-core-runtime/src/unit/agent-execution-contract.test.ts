@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   type AgentExecutionCommandAdmissionReceipt,
+  type AgentExecutionCommandPrincipal,
   type AgentExecutionEffectAttemptReceipt,
   type AgentExecutionEffectIntentReceipt,
   type AgentExecutionReceipt,
+  admitAgentExecutionCommand,
   createAgentExecutionTrace,
   createAgentExecutionTraceIdempotencyKey,
   createExecutionAuthorizedReceipt,
@@ -810,5 +812,614 @@ describe('agent execution contract', () => {
       'receipt-a',
       'receipt-b',
     ]);
+  });
+
+  it('rejects malformed public admission inputs without throwing', async () => {
+    await expect(
+      admitAgentExecutionCommand({
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        kind: 'send',
+        message: { type: 'RUN' },
+        principal: 'not-a-principal' as unknown as never,
+        metadata: null as unknown as never,
+        now: () => new Date('2026-07-28T12:00:00.000Z'),
+      })
+    ).resolves.toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'invalid_command_metadata',
+          detail: 'metadata must be a JSON object when provided.',
+        },
+      },
+    });
+
+    await expect(
+      admitAgentExecutionCommand({
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        kind: 'send',
+        message: {
+          type: 'RUN',
+          fn: (() => 'unsafe') as unknown as never,
+        },
+        principal: {
+          id: 'principal-1',
+          kind: 'authenticated',
+        },
+        now: () => new Date('2026-07-28T12:00:00.000Z'),
+      })
+    ).resolves.toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'invalid_command_metadata',
+          detail: 'message must be JSON-safe.',
+        },
+      },
+    });
+  });
+
+  it('rejects present-but-empty idempotency metadata and does not call the claim port after policy denial', async () => {
+    const claimPort = vi.fn(async () => ({ outcome: 'available' as const }));
+
+    const invalid = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      metadata: {
+        commandId: 'cmd-empty-idempotency',
+        idempotencyKey: '',
+      },
+      now: () => new Date('2026-07-28T12:00:00.000Z'),
+    });
+
+    expect(invalid).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'invalid_command_metadata',
+          detail: 'idempotencyKey must be a non-empty string when provided.',
+        },
+      },
+    });
+
+    const denied = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      metadata: {
+        commandId: 'cmd-policy-denied',
+        idempotencyKey: 'idem-1',
+      },
+      policy: async () => ({
+        outcome: 'rejected',
+        policy: 'explicit-human-review',
+        code: 'policy_denied',
+      }),
+      requireExplicitPolicy: true,
+      idempotency: claimPort,
+      now: () => new Date('2026-07-28T12:00:01.000Z'),
+    });
+
+    expect(denied).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'policy_denied',
+        },
+      },
+    });
+    expect(claimPort).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when idempotency metadata is supplied without an idempotency adapter', async () => {
+    const decision = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      metadata: {
+        commandId: 'cmd-missing-idem-adapter',
+        idempotencyKey: 'idem-1',
+      },
+      policy: async () => ({
+        outcome: 'authorized',
+        policy: 'explicit-human-review',
+      }),
+      requireExplicitPolicy: true,
+      now: () => new Date('2026-07-28T12:00:02.000Z'),
+    });
+
+    expect(decision).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'missing_idempotency_adapter',
+          detail:
+            'commandAdmission metadata.idempotencyKey requires an explicit idempotency adapter.',
+        },
+      },
+    });
+  });
+
+  it('rejects raw invalid metadata fields without throwing', async () => {
+    await expect(
+      admitAgentExecutionCommand({
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        kind: 'send',
+        message: { type: 'RUN' },
+        principal: {
+          id: 'principal-1',
+          kind: 'authenticated',
+        },
+        metadata: {
+          commandId: 42 as unknown as never,
+        },
+        now: () => new Date('2026-07-28T12:00:03.000Z'),
+      })
+    ).resolves.toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'invalid_command_metadata',
+          detail: 'commandId must be a non-empty string when provided.',
+        },
+      },
+    });
+
+    await expect(
+      admitAgentExecutionCommand({
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        kind: 'send',
+        message: { type: 'RUN' },
+        principal: {
+          id: 'principal-1',
+          kind: 'authenticated',
+        },
+        metadata: {
+          commandId: 'cmd-bad-idem',
+          idempotencyKey: 42 as unknown as never,
+        },
+        now: () => new Date('2026-07-28T12:00:04.000Z'),
+      })
+    ).resolves.toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'invalid_command_metadata',
+          detail: 'idempotencyKey must be a non-empty string when provided.',
+        },
+      },
+    });
+
+    await expect(
+      admitAgentExecutionCommand({
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        kind: 'send',
+        message: { type: 'RUN' },
+        principal: {
+          id: 'principal-1',
+          kind: 'authenticated',
+        },
+        metadata: {
+          commandId: 'cmd-bad-approval-array',
+          approval: ['nope'] as unknown as never,
+        },
+        now: () => new Date('2026-07-28T12:00:05.000Z'),
+      })
+    ).resolves.toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'invalid_command_metadata',
+          detail: 'approval must be a JSON-safe object when provided.',
+        },
+      },
+    });
+
+    await expect(
+      admitAgentExecutionCommand({
+        actorId: 'runtime://agent/session-1',
+        sessionId: 'session-1',
+        kind: 'send',
+        message: { type: 'RUN' },
+        principal: {
+          id: 'principal-1',
+          kind: 'authenticated',
+        },
+        metadata: {
+          commandId: 'cmd-bad-approval-function',
+          approval: {
+            state: 'granted',
+            verifier: (() => 'unsafe') as unknown as never,
+          },
+        },
+        now: () => new Date('2026-07-28T12:00:06.000Z'),
+      })
+    ).resolves.toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'invalid_command_metadata',
+          detail: 'approval must be a JSON-safe object when provided.',
+        },
+      },
+    });
+  });
+
+  it('generates collision-resistant fallback command ids', async () => {
+    const now = () => new Date('2026-07-29T00:00:00.000Z');
+    const first = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      policy: async () => ({
+        outcome: 'authorized',
+        policy: 'allow',
+      }),
+      now,
+    });
+    const second = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      policy: async () => ({
+        outcome: 'authorized',
+        policy: 'allow',
+      }),
+      now,
+    });
+
+    expect(first.metadata.commandId).not.toBe(second.metadata.commandId);
+  });
+
+  it('rejects credential-bearing message and metadata values before policy', async () => {
+    const policy = vi.fn(async () => ({
+      outcome: 'authorized' as const,
+      policy: 'allow',
+    }));
+
+    const messageDecision = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: {
+        type: 'RUN',
+        token: 'payload-secret',
+      } as never,
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      policy,
+      now: () => new Date('2026-07-29T00:00:01.000Z'),
+    });
+
+    expect(messageDecision).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'credential_bearing_message',
+          detail: 'message.token is secret-bearing. Supply a credential-free command payload.',
+        },
+      },
+    });
+    expect(policy).not.toHaveBeenCalled();
+    expect(JSON.stringify(messageDecision)).not.toContain('payload-secret');
+
+    const metadataDecision = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      metadata: {
+        commandId: 'cmd-metadata-secret',
+        approval: {
+          Authorization: 'Bearer secret-value',
+        },
+      } as never,
+      policy,
+      now: () => new Date('2026-07-29T00:00:02.000Z'),
+    });
+
+    expect(metadataDecision).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'credential_bearing_metadata',
+          detail:
+            'metadata.approval.Authorization is secret-bearing. Supply credential-free command metadata.',
+        },
+      },
+    });
+    expect(policy).not.toHaveBeenCalled();
+    expect(JSON.stringify(metadataDecision)).not.toContain('secret-value');
+  });
+
+  it('rejects empty approval.expiresAt and malformed adapter result shapes', async () => {
+    const emptyExpiresAt = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      metadata: {
+        commandId: 'cmd-empty-expires',
+        approval: {
+          expiresAt: '',
+        },
+      },
+      now: () => new Date('2026-07-29T00:00:03.000Z'),
+    });
+
+    expect(emptyExpiresAt).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'invalid_command_metadata',
+          detail: 'approval.expiresAt must be a non-empty ISO-8601 timestamp when provided.',
+        },
+      },
+    });
+
+    const invalidPolicy = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      policy: async () =>
+        ({
+          outcome: 'authorized',
+          policy: '',
+        }) as never,
+      requireExplicitPolicy: true,
+      now: () => new Date('2026-07-29T00:00:04.000Z'),
+    });
+
+    expect(invalidPolicy).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'policy_adapter_invalid_result',
+          detail: 'Policy adapter must return a valid authorized or rejected decision.',
+        },
+      },
+    });
+
+    const invalidIdempotency = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      policy: async () => ({
+        outcome: 'authorized',
+        policy: 'allow',
+      }),
+      idempotency: async () =>
+        ({
+          outcome: 'available',
+        }) as never,
+      now: () => new Date('2026-07-29T00:00:05.000Z'),
+    });
+
+    expect(invalidIdempotency).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'idempotency_adapter_invalid_result',
+          detail:
+            'Idempotency adapter must return a valid available settlement or duplicate decision.',
+        },
+      },
+    });
+  });
+
+  it('sanitizes adapter exceptions and returns an idempotency settlement handle on authorized claims', async () => {
+    const policyFailure = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      policy: async () => {
+        throw new Error('Bearer leak-value');
+      },
+      requireExplicitPolicy: true,
+      now: () => new Date('2026-07-29T00:00:06.000Z'),
+    });
+
+    expect(policyFailure).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'policy_adapter_failure',
+          detail: 'Policy adapter threw before returning a decision.',
+        },
+      },
+    });
+    expect(JSON.stringify(policyFailure)).not.toContain('leak-value');
+
+    const idempotencyFailure = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      policy: async () => ({
+        outcome: 'authorized',
+        policy: 'allow',
+      }),
+      idempotency: async () => {
+        throw new Error('apiKey leak-value');
+      },
+      now: () => new Date('2026-07-29T00:00:07.000Z'),
+    });
+
+    expect(idempotencyFailure).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'idempotency_adapter_failure',
+          detail: 'Idempotency adapter threw before returning a claim result.',
+        },
+      },
+    });
+    expect(JSON.stringify(idempotencyFailure)).not.toContain('leak-value');
+
+    const settle = vi.fn(async () => {});
+    const authorized = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+      },
+      policy: async () => ({
+        outcome: 'authorized',
+        policy: 'allow',
+      }),
+      idempotency: async () =>
+        ({
+          outcome: 'available',
+          settle,
+        }) as never,
+      now: () => new Date('2026-07-29T00:00:08.000Z'),
+    });
+
+    expect(authorized).toMatchObject({
+      ok: true,
+      idempotencyClaim: {
+        outcome: 'available',
+        settle: expect.any(Function),
+      },
+    });
+  });
+
+  it('rejects credential-bearing principals without leaking secrets into the decision surface', async () => {
+    const tokenDecision = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-1',
+        kind: 'authenticated',
+        token: 'secret-token',
+      } as AgentExecutionCommandPrincipal,
+      now: () => new Date('2026-07-28T12:00:07.000Z'),
+    });
+
+    expect(tokenDecision).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'credential_bearing_principal',
+          detail: 'principal.token is secret-bearing. Supply a credential-free principal.',
+        },
+      },
+    });
+    expect(JSON.stringify(tokenDecision)).not.toContain('secret-token');
+
+    const authorizationDecision = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-2',
+        kind: 'authenticated',
+        Authorization: 'Bearer secret-value',
+      } as AgentExecutionCommandPrincipal,
+      now: () => new Date('2026-07-28T12:00:08.000Z'),
+    });
+
+    expect(authorizationDecision).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'credential_bearing_principal',
+          detail: 'principal.Authorization is secret-bearing. Supply a credential-free principal.',
+        },
+      },
+    });
+    expect(JSON.stringify(authorizationDecision)).not.toContain('secret-value');
+
+    const apiKeyDecision = await admitAgentExecutionCommand({
+      actorId: 'runtime://agent/session-1',
+      sessionId: 'session-1',
+      kind: 'send',
+      message: { type: 'RUN' },
+      principal: {
+        id: 'principal-3',
+        kind: 'authenticated',
+        claims: {
+          ApiKey: 'key-123',
+        },
+      } as AgentExecutionCommandPrincipal,
+      now: () => new Date('2026-07-28T12:00:09.000Z'),
+    });
+
+    expect(apiKeyDecision).toMatchObject({
+      ok: false,
+      rejectionReceipt: {
+        reason: {
+          code: 'credential_bearing_principal',
+          detail: 'principal.claims.ApiKey is secret-bearing. Supply a credential-free principal.',
+        },
+      },
+    });
+    expect(JSON.stringify(apiKeyDecision)).not.toContain('key-123');
   });
 });

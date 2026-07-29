@@ -12,6 +12,7 @@
 ### Exported runtime contract helpers
 
 - `AGENT_EXECUTION_CONTRACT_VERSION`
+- `admitAgentExecutionCommand`
 - `createAgentExecutionTrace`
 - `createAgentExecutionTraceIdempotencyKey`
 - `createExecutionCommandAdmissionReceipt`
@@ -32,6 +33,42 @@
 - `redactAgentExecutionValue`
 - `toAgentExecutionReceiptFromEventEnvelope`
 - `toAgentExecutionReceiptFromEffectRecord`
+
+### Admission helper surfaces
+
+- `AgentExecutionCommandPrincipal`
+  - credential-free only
+  - current principal kinds: `authenticated`, `local`, `system`
+- `AgentExecutionCommandMetadata`
+  - current additive metadata keys:
+    - `commandId`
+    - `intentId`
+    - `correlationId`
+    - `revision`
+    - `idempotencyKey`
+    - `capability`
+    - `approval`
+    - `policyVersion`
+- `AgentExecutionAdmissionPolicy`
+  - provider-neutral policy adapter surface for allow or deny decisions
+- `AgentExecutionIdempotencyClaimPort`
+  - provider-neutral duplicate-claim or duplicate-check surface at the admission seam
+  - if command metadata carries `idempotencyKey`, command admission must fail closed unless this adapter is configured
+  - current candidate behavior rejects duplicate idempotency keys before dispatch
+  - authorized available claims now settle explicitly as `not_dispatched`, `dispatch_succeeded`, or `dispatch_indeterminate`
+  - durable restart-safe duplicate recovery is deferred to checkpoint and rehydration work
+- gateway transport surface
+  - `ActorWebNodeGatewayOptions.commandAdmission`
+  - `RuntimeGatewayClientFrame.send.metadata`
+  - `RuntimeGatewayClientFrame.ask.metadata`
+  - `RuntimeGatewayServerFrame.ack.authorization`
+  - `RuntimeGatewayServerFrame.reply.authorization`
+  - `RuntimeGatewayServerFrame.error.rejection`
+- local or CLI host surface
+  - shared admission helper runs immediately before authoritative dispatch
+  - explicit local or system principal remains host-owned
+  - compatibility return shapes for legacy `send(message)` and `ask(message, timeout?)` stay intact
+  - when command admission is configured, the host must provide an explicit policy adapter and fail closed otherwise
 
 ### Exported testing contract helpers
 
@@ -155,40 +192,75 @@ These identities stay distinct. The contract does not collapse intent, authoriza
 
 - Models propose intent; Actor-Web alone validates, authorizes, transitions, persists, executes, checkpoints, resumes, reconciles, and emits authoritative facts or receipts.
 - Capability discovery is descriptive only and never substitutes for execution-time authorization.
-- Actor-Web rechecks command, payload, principal, approval, revision, idempotency, and policy at execution time.
+- Legacy compatibility remains versioned and additive: if a host does not opt into `commandAdmission`, existing command dispatch behavior may continue without additive admission receipts.
+- Once a host opts into `commandAdmission`, Actor-Web requires an explicit policy adapter, rechecks command, payload, principal, approval, revision, idempotency, and policy, and fails closed on missing policy or adapter failure.
+- Credential-bearing principal projections are malformed admission input. Actor-Web rejects secret-like principal keys such as `token`, `authorization`, and `apiKey` case-insensitively before policy, receipts, callbacks, or dispatch.
+- Admission ordering is authoritative: validate metadata and principal, evaluate explicit policy, then perform idempotency claim or duplicate check, then emit authorization and dispatch.
+- Policy denial or expiry must not consume or claim an idempotency key.
+- Gateway authentication proves identity only; the gateway must reduce auth context to a credential-free principal before command admission.
+- Client metadata may propose command identifiers, intent, correlation, revision, idempotency, capability, or approval context, but client-supplied principal data is never authoritative.
+- Metadata is additive and optional. Actor payload fields that happen to use the same names remain part of the domain message unless a host explicitly passes separate admission metadata.
+- Local and system-internal command paths use explicit trusted principals and the same admission helper, with bypass semantics expressed as facts instead of an implicit shortcut.
+- Served gateway ingress requires an explicit principal resolver when `commandAdmission` is enabled.
+- Local or CLI host ingress requires an explicit trusted principal when `commandAdmission` is enabled.
+- Opted-in admission requires a durable `onDecision` sink before dispatch; sink failure settles any claimed idempotency key as `not_dispatched` and fails closed.
+- After a sinked authorization, successful dispatch settles claimed idempotency as `dispatch_succeeded`; dispatch failure after authorization settles it as `dispatch_indeterminate`.
+- A duplicate idempotency key at the current admission seam is rejected before actor send or ask dispatch unless a later checkpoint or rehydration seam introduces a join-capable durable outcome.
 - Persisted effect intent is separate from effect attempt or outcome where atomicity matters.
 - External execution is nondeterministic.
 - The contract supports restart, replay, reconciliation, and no duplicate irreversible effects.
-- The contract does not claim exactly-once external execution.
+- The current task does not claim durable duplicate prevention across restart; exactly-once external execution remains out of scope.
 
 ## Verification receipts
 
-Focused checks completed on July 28, 2026:
+Focused post-review checks completed on July 29, 2026 at implementation head `93a12d58`:
 
-- `pnpm --filter @actor-web/runtime exec vitest run src/unit/agent-execution-contract.test.ts`
-- `pnpm --filter @actor-web/testing test`
+- `pnpm --filter @actor-web/runtime exec vitest run src/unit/runtime-gateway.test.ts`
+- `pnpm --filter @actor-web/runtime exec vitest run src/unit/serve-actor-web-node.test.ts`
+  - required local WebSocket bind permission outside the default sandbox
 - `pnpm --filter @actor-web/runtime typecheck`
-- `pnpm --filter @actor-web/runtime build`
-- `pnpm --filter @actor-web/testing typecheck`
-- `pnpm --filter @actor-web/testing build`
+- `pnpm exec biome check packages/actor-core-runtime/src/agent-execution-contract.ts packages/actor-core-runtime/src/runtime-auth.ts packages/actor-core-runtime/src/runtime-gateway.ts packages/actor-core-runtime/src/serve-actor-web-node.ts packages/actor-core-runtime/src/unit/runtime-gateway.test.ts packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts`
+- `pnpm run architecture:check`
 
-Docs check completed on July 28, 2026:
+Docs check completed on July 29, 2026:
 
 - `pnpm exec markdownlint-cli2 --config .markdownlint.jsonc "docs/provider-neutral-agent-execution-contract.md"`
 
-Repository full gate completed on July 28, 2026:
+Post-fix product implementation full gate:
 
-- format
-- lint
-- typecheck
-- tests
-- architecture drift
-- behavior boundaries
-- semantic index
+- July 29, 2026 at head `fb1643be`
+  - format
+  - lint
+  - typecheck
+  - test
+  - architecture drift
+  - behavior boundaries
+  - semantic index
 
-Independent FAS review completed on July 28, 2026:
+Fresh review remediation completed on July 29, 2026 at candidate head
+`4013f0e5`:
 
-- passed with no findings
+- pre-auth gateway context remains `undefined` until verified
+- missing or failed principal resolution produces a sanitized
+  `schema-admitted` rejection with an explicit `unknown` principal and no
+  overstated rechecks
+- principal resolution may be synchronous or asynchronous and is awaited inside
+  the same fail-closed boundary
+- enabled gateway and CLI-host admission requires its principal, policy, and
+  durable decision hooks
+- malformed CLI admission modules fail before topology startup
+- durable decision-sink failures emit fixed, redacted local operational
+  telemetry while preserving settlement and generic client errors
+- focused runtime and CLI-host suites passed with 78 and 40 tests, respectively
+- the full FAS gate passed format, lint, typecheck, test, architecture drift,
+  behavior boundaries, and semantic index
+
+Last completed independent FAS validation:
+
+- QA and SRE validation completed on July 29, 2026 at head `4013f0e5` with
+  zero findings.
+- Reviewer validation completed on July 29, 2026 at head `4013f0e5` with
+  zero findings and an approval recommendation.
 
 Still pending before maturity can advance beyond candidate:
 

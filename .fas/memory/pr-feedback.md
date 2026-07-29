@@ -89,3 +89,21 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Documented telemetry counters need a live emission path.** Reducer-only tests can make a metric look supported while no runtime path emits the event. For scheduling metrics such as held/dropped/applied turns, add a harness test that forces the runtime condition and observes the emitted event.
 
 - **Rejected commands against active actor state should prove non-mutation.** For malformed or rejected commands on actors that can already be in a started/running state, assert the full pre-rejection context remains unchanged so stale or stray commands cannot stop live work.
+
+## PR #54 — authenticated command admission babysit (2026-07-29, 6-agent)
+
+- **An authoritative fact callback cannot be an optional observer.** If dispatch depends on an admission or authorization fact becoming durable, require the sink on the opted-in path, await it before dispatch, and fail closed when it is missing or throws. Add tests for sink failure before dispatch and sanitize callback exceptions instead of echoing adapter details.
+
+- **Idempotency claims need explicit settlement, not a one-way availability check.** Model at least `not_dispatched`, `dispatch_succeeded`, and `dispatch_indeterminate`; test sink failure, dispatch failure, and settlement failure after an irreversible effect. A post-dispatch settlement failure must not retry the effect or attempt a contradictory second settlement.
+
+- **Admission reviews must trace every production wrapper, not only the lower-level seam.** A correct gateway or host helper is still bypassable when `serveNode` or the shipped CLI cannot configure it. Verify the supported served-node and CLI entry points with focused tests and a real CLI invocation.
+
+- **Generic auth context must survive wrapper layers without placeholder substitution.** If the core gateway passes verified context to scope and principal resolvers, public wrappers must preserve the same generic type and live value. Add a regression proving both hooks observe the same non-empty verified context.
+
+- **Fallback identity generation must be shared by failure paths too.** A collision-resistant helper in the normal admission contract is insufficient if pre-helper fail-closed branches mint timestamp-only IDs. Reuse one generator and test two same-tick rejections for distinct durable join keys.
+
+- **Pre-auth context must be explicitly absent, never fabricated through a type cast.** Carry `undefined` through wrapper and gateway seams until authentication produces verified context. A regression test should map absent context to an explicit untrusted principal, reject it, and prove the actor did not execute; do not normalize anonymous input as `kind: 'authenticated'`.
+
+- **Fail-closed receipts must not overstate completed admission work.** Gateway-local configuration and resolver failures happen before contract admission checks, so their stage, principal trust, and `rechecked` set must report only what actually occurred. Use an explicit `unknown` principal, a pre-authorization stage, and an empty or otherwise exact recheck set; contain and sanitize resolver exceptions with a distinct reason code.
+
+- **Failure telemetry must preserve both operability and redaction.** Swallowing a durable sink exception leaves operators blind, but logging the raw throwable can leak the same credentials removed from client receipts. Emit a fixed local message with coarse safe classification and stable operation/failure codes, then test both that the signal exists and that thrown details appear in neither logs nor client output.

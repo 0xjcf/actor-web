@@ -18,6 +18,7 @@ import {
   createRuntimeGatewayHub,
   createRuntimeGatewaySource,
   type RuntimeGatewayClientFrame,
+  type RuntimeGatewayCommandAdmissionOptions,
   type RuntimeGatewayConnectionAdapter,
   type RuntimeGatewayInvalidFrameEvent,
   type RuntimeGatewayObserverEvent,
@@ -45,17 +46,26 @@ import type {
   ActorWebTopologyInput,
 } from './topology.js';
 
-export interface ActorWebNodeGatewayOptions<TActorKey extends string = string> {
+type ActorWebNodeGatewayAuthVerifyInput = {
+  readonly connectionId: string;
+  readonly clientVersion?: string;
+};
+
+export interface ActorWebNodeGatewayOptions<
+  TActorKey extends string = string,
+  TGatewayAuthContext = Record<string, never>,
+> {
   readonly host?: string;
   readonly port?: number;
   readonly expose?: readonly TActorKey[];
-  readonly resolveScope?: RuntimeGatewayScopeResolver<Record<string, never>>;
+  readonly resolveScope?: RuntimeGatewayScopeResolver<TGatewayAuthContext>;
   readonly inboundQueueLimit?: number;
   readonly observer?: (event: RuntimeGatewayObserverEvent) => void;
-  readonly auth?: RuntimeGatewayAuthProvider<{
-    readonly connectionId: string;
-    readonly clientVersion?: string;
-  }>;
+  readonly auth?: RuntimeGatewayAuthProvider<
+    ActorWebNodeGatewayAuthVerifyInput,
+    TGatewayAuthContext
+  >;
+  readonly commandAdmission?: RuntimeGatewayCommandAdmissionOptions<TGatewayAuthContext>;
 }
 
 export interface ActorWebNodeTransportOptions {
@@ -80,10 +90,13 @@ export interface ActorWebNodeTransportOptions {
 
 export interface ServeActorWebNodeOptions<
   TTopology extends ActorWebTopology<ActorWebTopologyInput>,
+  TGatewayAuthContext = Record<string, never>,
 > {
   readonly node: keyof TTopology['nodes'] & string;
   readonly host?: string;
-  readonly gateway?: boolean | ActorWebNodeGatewayOptions<keyof TTopology['actors'] & string>;
+  readonly gateway?:
+    | boolean
+    | ActorWebNodeGatewayOptions<keyof TTopology['actors'] & string, TGatewayAuthContext>;
   readonly transport?: boolean | ActorWebNodeTransportOptions;
   readonly peers?: Partial<Record<keyof TTopology['nodes'] & string, string>>;
   readonly connect?: readonly (keyof TTopology['nodes'] & string)[];
@@ -145,10 +158,13 @@ const GATEWAY_ACTOR_LOOKUP_ATTEMPTS = 20;
 const GATEWAY_ACTOR_LOOKUP_DELAY_MS = 25;
 const DEFAULT_TRANSPORT_HEARTBEAT_INTERVAL_MS = 15_000;
 
-class ActorWebNodeGatewayConnection implements RuntimeGatewayConnectionAdapter {
-  readonly authContext = {};
-
-  constructor(private readonly socket: WebSocketLike) {}
+class ActorWebNodeGatewayConnection<TAuthContext>
+  implements RuntimeGatewayConnectionAdapter<TAuthContext>
+{
+  constructor(
+    private readonly socket: WebSocketLike,
+    readonly authContext: TAuthContext | undefined
+  ) {}
 
   receive(
     listener: (frame: RuntimeGatewayClientFrame) => void,
@@ -232,9 +248,12 @@ async function closeWebSocketServer(server: WebSocketServerLike): Promise<void> 
   });
 }
 
-function normalizeGatewayOptions<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
-  gateway: ServeActorWebNodeOptions<TTopology>['gateway']
-): ActorWebNodeGatewayOptions<keyof TTopology['actors'] & string> | undefined {
+function normalizeGatewayOptions<
+  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
+  TGatewayAuthContext,
+>(
+  gateway: ServeActorWebNodeOptions<TTopology, TGatewayAuthContext>['gateway']
+): ActorWebNodeGatewayOptions<keyof TTopology['actors'] & string, TGatewayAuthContext> | undefined {
   return gateway === true ? {} : gateway || undefined;
 }
 
@@ -284,9 +303,12 @@ function wait(delayMs: number): Promise<void> {
   });
 }
 
-export async function serveNode<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
+export async function serveNode<
+  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
+  TGatewayAuthContext = Record<string, never>,
+>(
   topology: TTopology,
-  options: ServeActorWebNodeOptions<TTopology>
+  options: ServeActorWebNodeOptions<TTopology, TGatewayAuthContext>
 ): Promise<ServedActorWebNode<TTopology>> {
   const nodeDefinition = getActorWebNodeDefinition(topology, options.node);
 
@@ -419,12 +441,15 @@ export async function serveNode<TTopology extends ActorWebTopology<ActorWebTopol
 
   const hub = createRuntimeGatewayHub({
     ...(gatewayOptions?.auth ? { auth: gatewayOptions.auth } : {}),
+    ...(gatewayOptions?.commandAdmission
+      ? { commandAdmission: gatewayOptions.commandAdmission }
+      : {}),
     ...(gatewayOptions?.inboundQueueLimit !== undefined
       ? { inboundQueueLimit: gatewayOptions.inboundQueueLimit }
       : {}),
     ...(gatewayOptions?.observer ? { observer: gatewayOptions.observer } : {}),
-    resolveScope: async (scope) => {
-      const customSource = await gatewayOptions?.resolveScope?.(scope, {});
+    resolveScope: async (scope, authContext) => {
+      const customSource = await gatewayOptions?.resolveScope?.(scope, authContext);
       if (customSource) {
         return customSource;
       }
@@ -479,7 +504,7 @@ export async function serveNode<TTopology extends ActorWebTopology<ActorWebTopol
         gatewayServer = created.server;
         gatewayUrl = created.url;
         gatewayServer.on('connection', (socket) => {
-          hub.attach(new ActorWebNodeGatewayConnection(socket));
+          hub.attach(new ActorWebNodeGatewayConnection<TGatewayAuthContext>(socket, undefined));
         });
       }
 
