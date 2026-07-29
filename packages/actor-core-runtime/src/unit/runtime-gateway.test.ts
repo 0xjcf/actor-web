@@ -3242,6 +3242,68 @@ describe('runtime gateway hub', () => {
     detachMissingSink();
   });
 
+  it('generates distinct fallback command ids for same-tick gateway admission rejections without client command ids', async () => {
+    vi.useFakeTimers();
+
+    try {
+      vi.setSystemTime(new Date('2026-07-29T03:30:00.000Z'));
+      const source = createFakeSource('ready');
+      const hub = createRuntimeGatewayHub({
+        commandAdmission: {
+          policy: async () => ({
+            outcome: 'authorized',
+            policy: 'checkout-policy-v3',
+          }),
+          onDecision: async () => {},
+        },
+        resolveScope: async () => source,
+      });
+      const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+      const detach = hub.attach(connection);
+      connection.push({ type: 'hello' });
+      connection.push({
+        type: 'subscribe',
+        streamId: 'checkout-main',
+        scope: { kind: 'checkout' },
+      });
+      await flushGatewayMicrotasks();
+      connection.push({
+        type: 'send',
+        streamId: 'checkout-main',
+        requestId: 'send-request-missing-resolver-1',
+        message: { type: 'SUBMIT', orderId: 'order-missing-resolver-1' },
+      });
+      connection.push({
+        type: 'send',
+        streamId: 'checkout-main',
+        requestId: 'send-request-missing-resolver-2',
+        message: { type: 'SUBMIT', orderId: 'order-missing-resolver-2' },
+      });
+      await flushGatewayMicrotasks();
+
+      const rejectionCommandIds = connection.frames
+        .filter(
+          (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'error' }> =>
+            typeof frame === 'object' &&
+            frame !== null &&
+            'type' in frame &&
+            frame.type === 'error' &&
+            frame.requestId !== undefined &&
+            frame.requestId.startsWith('send-request-missing-resolver-')
+        )
+        .map((frame) => frame.rejection?.commandId);
+
+      expect(rejectionCommandIds).toHaveLength(2);
+      expect(rejectionCommandIds[0]).toBeDefined();
+      expect(rejectionCommandIds[1]).toBeDefined();
+      expect(rejectionCommandIds[0]).not.toBe(rejectionCommandIds[1]);
+      detach();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('rejects credential-bearing gateway principals before dispatch and never leaks them into decisions or frames', async () => {
     const source = createFakeSource('ready');
     const seenDecisions: unknown[] = [];

@@ -731,19 +731,27 @@ const AGENT_EXECUTION_ADMISSION_RECHECKS: readonly AgentExecutionRecheckField[] 
 
 let fallbackCommandIdSequence = 0;
 
+export function createAgentExecutionFallbackCommandId(now: Date): string {
+  fallbackCommandIdSequence += 1;
+  return `command:${now.toISOString()}:${fallbackCommandIdSequence}`;
+}
+
+function getCommandMetadataInput(input: unknown): AgentExecutionCommandMetadata | undefined {
+  return typeof input === 'object' && input !== null && !Array.isArray(input)
+    ? (input as AgentExecutionCommandMetadata)
+    : undefined;
+}
+
 function toCommandMetadata(
   input: unknown,
   now: Date
 ): Required<Pick<AgentExecutionCommandMetadata, 'commandId'>> & AgentExecutionCommandMetadata {
-  const metadataInput =
-    typeof input === 'object' && input !== null && !Array.isArray(input)
-      ? (input as AgentExecutionCommandMetadata)
-      : undefined;
+  const metadataInput = getCommandMetadataInput(input);
   return {
     commandId:
       typeof metadataInput?.commandId === 'string' && metadataInput.commandId.trim().length > 0
         ? metadataInput.commandId.trim()
-        : `command:${now.toISOString()}:${++fallbackCommandIdSequence}`,
+        : createAgentExecutionFallbackCommandId(now),
     ...('intentId' in (metadataInput ?? {}) ? { intentId: metadataInput?.intentId } : {}),
     ...('correlationId' in (metadataInput ?? {})
       ? { correlationId: metadataInput?.correlationId }
@@ -786,15 +794,12 @@ function createFallbackCommandMetadata(
   input: unknown,
   now: Date
 ): Required<Pick<AgentExecutionCommandMetadata, 'commandId'>> {
-  const metadataInput =
-    typeof input === 'object' && input !== null && !Array.isArray(input)
-      ? (input as { commandId?: unknown })
-      : undefined;
+  const metadataInput = getCommandMetadataInput(input);
   return {
     commandId:
       typeof metadataInput?.commandId === 'string' && metadataInput.commandId.trim().length > 0
         ? metadataInput.commandId.trim()
-        : `command:${now.toISOString()}:${++fallbackCommandIdSequence}`,
+        : createAgentExecutionFallbackCommandId(now),
   };
 }
 

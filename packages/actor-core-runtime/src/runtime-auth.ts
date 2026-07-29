@@ -28,18 +28,21 @@ export interface RuntimeTransportAuthProvider<TVerifyInput = object> {
   readonly verify?: RuntimeTransportAuthVerifier<TVerifyInput>;
 }
 
-export type RuntimeGatewayAuthResult =
-  | { readonly ok: true; readonly authContext?: unknown }
+export type RuntimeGatewayAuthResult<TAuthContext = unknown> =
+  | { readonly ok: true; readonly authContext?: TAuthContext }
   | { readonly ok: false; readonly reason: string };
 
-export type RuntimeGatewayAuthVerifier<TInput = object> = (
+export type RuntimeGatewayAuthVerifier<TInput = object, TAuthContext = unknown> = (
   input: TInput & {
     readonly auth?: RuntimeTransportAuthPayload;
     readonly token?: string;
   }
-) => boolean | RuntimeGatewayAuthResult | Promise<boolean | RuntimeGatewayAuthResult>;
+) =>
+  | boolean
+  | RuntimeGatewayAuthResult<TAuthContext>
+  | Promise<boolean | RuntimeGatewayAuthResult<TAuthContext>>;
 
-export interface RuntimeGatewayAuthProvider<TVerifyInput = object> {
+export interface RuntimeGatewayAuthProvider<TVerifyInput = object, TAuthContext = unknown> {
   readonly token?:
     | string
     | RuntimeTransportAuthPayload
@@ -48,8 +51,8 @@ export interface RuntimeGatewayAuthProvider<TVerifyInput = object> {
         | RuntimeTransportAuthPayload
         | undefined
         | Promise<string | RuntimeTransportAuthPayload | undefined>);
-  readonly verifyToken?: RuntimeGatewayAuthVerifier<TVerifyInput>;
-  readonly verify?: RuntimeGatewayAuthVerifier<TVerifyInput>;
+  readonly verifyToken?: RuntimeGatewayAuthVerifier<TVerifyInput, TAuthContext>;
+  readonly verify?: RuntimeGatewayAuthVerifier<TVerifyInput, TAuthContext>;
 }
 
 export async function resolveRuntimeAuthPayload<TInput = unknown>(
@@ -102,10 +105,10 @@ export async function verifyRuntimeAuth<TInput>(
   return result.ok ? { ok: true } : { ok: false, reason: result.reason };
 }
 
-export async function verifyRuntimeGatewayAuth<TInput>(
-  provider: RuntimeGatewayAuthProvider<TInput> | undefined,
+export async function verifyRuntimeGatewayAuth<TInput, TAuthContext>(
+  provider: RuntimeGatewayAuthProvider<TInput, TAuthContext> | undefined,
   input: TInput & { readonly auth?: RuntimeTransportAuthPayload }
-): Promise<RuntimeGatewayAuthResult> {
+): Promise<RuntimeGatewayAuthResult<TAuthContext>> {
   const verifier = provider?.verifyToken ?? provider?.verify;
   if (!verifier) {
     return { ok: true };

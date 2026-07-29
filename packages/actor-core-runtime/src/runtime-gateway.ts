@@ -8,6 +8,7 @@ import {
   type AgentExecutionCommandPrincipal,
   type AgentExecutionIdempotencyClaimPort,
   admitAgentExecutionCommand,
+  createAgentExecutionFallbackCommandId,
   createExecutionCommandAdmissionReceipt,
   createExecutionRejectedReceipt,
 } from './agent-execution-contract.js';
@@ -116,10 +117,13 @@ export interface CreateRuntimeGatewayHubOptions<TAuthContext = unknown> {
   replayStorage?: RuntimeGatewayReplayStorageProvider;
   onReplayStorageError?: (event: RuntimeGatewayReplayStorageErrorEvent) => void;
   observer?: (event: RuntimeGatewayObserverEvent) => void;
-  auth?: RuntimeGatewayAuthProvider<{
-    readonly connectionId: string;
-    readonly clientVersion?: string;
-  }>;
+  auth?: RuntimeGatewayAuthProvider<
+    {
+      readonly connectionId: string;
+      readonly clientVersion?: string;
+    },
+    TAuthContext
+  >;
   commandAdmission?: RuntimeGatewayCommandAdmissionOptions<TAuthContext>;
 }
 
@@ -861,7 +865,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         const commandId =
           typeof metadata?.commandId === 'string' && metadata.commandId.trim().length > 0
             ? metadata.commandId.trim()
-            : `command:${new Date().toISOString()}`;
+            : createAgentExecutionFallbackCommandId(new Date());
         if (!options.commandAdmission?.resolvePrincipal) {
           return createGatewayRejectedDecision({
             actorId,
