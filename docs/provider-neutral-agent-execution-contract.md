@@ -213,37 +213,45 @@ These identities stay distinct. The contract does not collapse intent, authoriza
 
 ## Verification receipts
 
-Focused checks completed on July 29, 2026:
+Focused post-review checks completed on July 29, 2026 at implementation head `93a12d58`:
 
-- `pnpm --filter @actor-web/runtime exec vitest run src/unit/actor-web-source.test.ts src/unit/runtime-gateway.test.ts`
-- `pnpm --filter @actor-web/cli exec vitest run src/host/runtime-host.test.ts`
+- `pnpm --filter @actor-web/runtime exec vitest run src/unit/runtime-gateway.test.ts`
 - `pnpm --filter @actor-web/runtime exec vitest run src/unit/serve-actor-web-node.test.ts`
-- `node --import tsx src/cli/index.ts serve <tmp-topology> --admission <tmp-admission> --exec 'send counter {"type":"INCREMENT"}; ask counter {"type":"GET_COUNT"} 2000'`
-- `pnpm --filter @actor-web/testing test`
+  - required local WebSocket bind permission outside the default sandbox
 - `pnpm --filter @actor-web/runtime typecheck`
-- `pnpm --filter @actor-web/runtime build`
-- `pnpm --filter @actor-web/cli build`
-- `pnpm --filter @actor-web/testing typecheck`
-- `pnpm --filter @actor-web/testing build`
+- `pnpm exec biome check packages/actor-core-runtime/src/agent-execution-contract.ts packages/actor-core-runtime/src/runtime-auth.ts packages/actor-core-runtime/src/runtime-gateway.ts packages/actor-core-runtime/src/serve-actor-web-node.ts packages/actor-core-runtime/src/unit/runtime-gateway.test.ts packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts`
+- `pnpm run architecture:check`
 
-Docs check completed on July 28, 2026:
+Docs check completed on July 29, 2026:
 
 - `pnpm exec markdownlint-cli2 --config .markdownlint.jsonc "docs/provider-neutral-agent-execution-contract.md"`
 
-Repository full gate completed on July 28, 2026 at head `f91aea90`:
+Last completed repository full gate:
 
-- format
-- lint
-- typecheck
-- test
-- architecture drift
-- behavior boundaries
-- semantic index
+- July 28, 2026 at head `f91aea90`
+  - format
+  - lint
+  - typecheck
+  - test
+  - architecture drift
+  - behavior boundaries
+  - semantic index
 
-Independent FAS QA, SRE, and reviewer validation completed on July 28, 2026 at head `f91aea90` with zero findings after the credential-containment retry.
+Last completed independent FAS validation:
+
+- QA, SRE, and reviewer validation completed on July 28, 2026 at head `f91aea90` with zero findings after the credential-containment retry.
+
+Pending post-fix validation at the current candidate head:
+
+- repository full gate after the served-gateway auth-context and fallback-commandId fixes
+- independent FAS QA rerun
+- independent FAS SRE rerun
+- independent reviewer rerun
 
 Still pending before maturity can advance beyond candidate:
 
+- post-fix repository full gate
+- post-fix independent QA, SRE, and reviewer validation
 - human final review and merge
 - downstream reconfirmation in Ignite Element and FAS
 
