@@ -246,6 +246,112 @@ describe('serveNode', () => {
     }
   });
 
+  it('forwards provider-neutral command admission through the served gateway entrypoint', async () => {
+    const decisions: unknown[] = [];
+    const topology = defineActorWebTopology({
+      nodes: {
+        server: node('server-node'),
+      },
+      actors: {
+        counter: actor({
+          id: 'counter',
+          node: 'server',
+          behavior: createCounterBehavior,
+          gateway: true,
+        }),
+      },
+    });
+
+    const served = await serveNode(topology, {
+      node: 'server',
+      gateway: {
+        commandAdmission: {
+          resolvePrincipal: () => ({
+            id: 'principal:served-gateway',
+            kind: 'authenticated',
+            role: 'operator',
+          }),
+          policy: async ({ metadata }) => ({
+            outcome: 'authorized',
+            policy: metadata.capability ?? 'served-gateway-default',
+          }),
+          onDecision: async (decision) => {
+            decisions.push(decision);
+          },
+        },
+      },
+    });
+
+    try {
+      const socket = new WebSocket(served.getGatewayUrl() ?? '');
+      const frames = collectFrames(socket);
+      await waitForSocketOpen(socket);
+      socket.send(JSON.stringify({ type: 'hello', clientVersion: 'test' }));
+      await expect(frames.nextFrame()).resolves.toMatchObject({ type: 'ready' });
+
+      socket.send(
+        JSON.stringify({
+          type: 'subscribe',
+          streamId: 'counter-stream',
+          scope: { kind: 'counter' },
+        })
+      );
+      await expect(frames.nextFrame()).resolves.toMatchObject({ type: 'status' });
+      await expect(frames.nextFrame()).resolves.toMatchObject({ type: 'snapshot' });
+
+      socket.send(
+        JSON.stringify({
+          type: 'send',
+          streamId: 'counter-stream',
+          requestId: 'send-request-1',
+          message: { type: 'INCREMENT' },
+          metadata: {
+            commandId: 'served-gateway-send-1',
+            capability: 'counter.increment',
+          },
+        })
+      );
+
+      const decision = await waitFor(
+        () => decisions.at(0),
+        'Expected served gateway admission decision'
+      );
+      expect(decision).toEqual(
+        expect.objectContaining({
+          admissionReceipt: expect.objectContaining({
+            actorId: 'actor://server-node/counter',
+          }),
+          authorizationReceipt: expect.objectContaining({
+            actorId: 'actor://server-node/counter',
+            principal: expect.objectContaining({
+              id: 'principal:served-gateway',
+              kind: 'authenticated',
+              role: 'operator',
+            }),
+            authorization: expect.objectContaining({
+              policy: 'counter.increment',
+              decision: 'approved',
+            }),
+          }),
+        })
+      );
+      await expect(
+        waitFor(
+          async () => {
+            const count = await served.requireActor('counter').ask<number>({ type: 'GET_COUNT' });
+            return count === 1 ? count : undefined;
+          },
+          'Expected served gateway send to reach the actor'
+        )
+      ).resolves.toBe(1);
+      const closePromise = waitForSocketClose(socket);
+      socket.close();
+      await closePromise;
+    } finally {
+      await served.stop();
+    }
+  });
+
   it('fails closed on malformed raw gateway JSON without throwing from the WebSocket callback', async () => {
     const topology = defineActorWebTopology({
       nodes: {

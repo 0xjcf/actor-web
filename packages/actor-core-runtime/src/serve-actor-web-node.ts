@@ -16,6 +16,7 @@ import { createNodeWebSocketMessageTransport } from './node-websocket-message-tr
 import type { RuntimeGatewayAuthProvider, RuntimeTransportAuthProvider } from './runtime-auth.js';
 import {
   createRuntimeGatewayHub,
+  type RuntimeGatewayCommandAdmissionOptions,
   createRuntimeGatewaySource,
   type RuntimeGatewayClientFrame,
   type RuntimeGatewayConnectionAdapter,
@@ -56,6 +57,7 @@ export interface ActorWebNodeGatewayOptions<TActorKey extends string = string> {
     readonly connectionId: string;
     readonly clientVersion?: string;
   }>;
+  readonly commandAdmission?: RuntimeGatewayCommandAdmissionOptions<Record<string, never>>;
 }
 
 export interface ActorWebNodeTransportOptions {
@@ -419,6 +421,9 @@ export async function serveNode<TTopology extends ActorWebTopology<ActorWebTopol
 
   const hub = createRuntimeGatewayHub({
     ...(gatewayOptions?.auth ? { auth: gatewayOptions.auth } : {}),
+    ...(gatewayOptions?.commandAdmission
+      ? { commandAdmission: gatewayOptions.commandAdmission }
+      : {}),
     ...(gatewayOptions?.inboundQueueLimit !== undefined
       ? { inboundQueueLimit: gatewayOptions.inboundQueueLimit }
       : {}),

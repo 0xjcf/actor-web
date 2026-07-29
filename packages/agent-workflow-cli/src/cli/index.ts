@@ -20,12 +20,65 @@ import { program } from 'commander';
 import {
   createRuntimeHostFromFile,
   executeCommand,
+  type RuntimeHostCommandAdmissionOptions,
   type RuntimeHost,
   splitExecScript,
 } from '../host/runtime-host.js';
+import { loadModuleExport } from '../host/load-module.js';
 import { getDescriptionSync, getVersionSync, initializePackageInfo } from '../package-info.js';
 
 const log = Logger.namespace('ACTOR_WEB_CLI');
+
+type CommandAdmissionLoadResult =
+  | { ok: true; value: RuntimeHostCommandAdmissionOptions }
+  | { ok: false; error: string };
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function loadCommandAdmissionConfig(
+  modulePath: string
+): Promise<CommandAdmissionLoadResult> {
+  const loaded = await loadModuleExport(modulePath);
+  if (!loaded.ok) {
+    return loaded;
+  }
+  if (!isPlainObject(loaded.value)) {
+    return {
+      ok: false,
+      error: `${modulePath} must export a commandAdmission object.`,
+    };
+  }
+
+  const config = loaded.value as Record<string, unknown>;
+  if ('principal' in config && !isPlainObject(config.principal)) {
+    return {
+      ok: false,
+      error: `${modulePath} commandAdmission.principal must be a JSON-safe object when provided.`,
+    };
+  }
+  if ('policy' in config && typeof config.policy !== 'function') {
+    return {
+      ok: false,
+      error: `${modulePath} commandAdmission.policy must be a function when provided.`,
+    };
+  }
+  if ('idempotency' in config && typeof config.idempotency !== 'function') {
+    return {
+      ok: false,
+      error: `${modulePath} commandAdmission.idempotency must be a function when provided.`,
+    };
+  }
+  if ('onDecision' in config && typeof config.onDecision !== 'function') {
+    return {
+      ok: false,
+      error: `${modulePath} commandAdmission.onDecision must be a function when provided.`,
+    };
+  }
+
+  return { ok: true, value: config as RuntimeHostCommandAdmissionOptions };
+}
 
 function printOutcomeLines(lines: readonly string[], ok: boolean): void {
   for (const line of lines) {
@@ -127,9 +180,29 @@ async function main() {
       .command('serve <topology>')
       .description('Host an in-process runtime node from a topology module and open the console')
       .option('--node <key>', 'topology node that dynamic spawns target (default: first node)')
+      .option(
+        '--admission <module>',
+        'load provider-neutral command admission config from a module export'
+      )
       .option('--exec <commands>', 'run semicolon-separated console commands, then exit')
-      .action(async (topologyPath: string, options: { node?: string; exec?: string }) => {
-        const started = await createRuntimeHostFromFile(topologyPath, { node: options.node });
+      .action(
+        async (
+          topologyPath: string,
+          options: { node?: string; admission?: string; exec?: string }
+        ) => {
+          const commandAdmission =
+            options.admission === undefined
+              ? undefined
+              : await loadCommandAdmissionConfig(options.admission);
+          if (commandAdmission && !commandAdmission.ok) {
+            console.error(chalk.red(commandAdmission.error));
+            process.exit(1);
+          }
+
+          const started = await createRuntimeHostFromFile(topologyPath, {
+            node: options.node,
+            ...(commandAdmission?.ok ? { commandAdmission: commandAdmission.value } : {}),
+          });
         if (!started.ok) {
           console.error(chalk.red(started.error));
           process.exit(1);
@@ -146,7 +219,8 @@ async function main() {
           process.exit(ok ? 0 : 1);
         }
         runConsole(host, nodeLabel);
-      });
+        }
+      );
 
     program
       .command('info')
@@ -155,7 +229,7 @@ async function main() {
         console.log(chalk.blue('actor-web CLI'));
         console.log(
           chalk.gray(
-            'v0 in-process runtime host: actor-web serve ./topology.(mjs|js|ts) [--node key] [--exec "ls; ..."]. Remote hosting (gateway/transport) arrives in v2 — see docs/actor-web-cli-runtime-host-design.md.'
+            'v0 in-process runtime host: actor-web serve ./topology.(mjs|js|ts) [--node key] [--admission ./command-admission.(mjs|js|ts)] [--exec "ls; ..."]. Remote hosting (gateway/transport) arrives in v2 — see docs/actor-web-cli-runtime-host-design.md.'
           )
         );
       });
