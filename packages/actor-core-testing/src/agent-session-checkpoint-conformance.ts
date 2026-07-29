@@ -34,30 +34,40 @@ export interface AgentSessionCheckpointConformanceScenario {
   readonly note: string;
 }
 
-const READ_OUTCOMES = [
-  'missing',
-  'present',
-  'stale',
-  'corrupt',
-  'version_mismatch',
-  'expired',
-  'redacted',
-] as const satisfies readonly AgentSessionCheckpointReadOutcome[];
+function getOutcomeKeys<TOutcome extends string>(
+  outcomes: Readonly<Record<TOutcome, true>>
+): readonly TOutcome[] {
+  return Object.freeze(Object.keys(outcomes) as TOutcome[]);
+}
 
-const WRITE_OUTCOMES = [
-  'stored',
-  'replaced',
-  'duplicate',
-  'too_large',
-  'expired',
-  'rejected',
-] as const satisfies readonly AgentSessionCheckpointWriteOutcome[];
+const READ_OUTCOME_SET: Readonly<Record<AgentSessionCheckpointReadOutcome, true>> = {
+  missing: true,
+  present: true,
+  stale: true,
+  corrupt: true,
+  version_mismatch: true,
+  expired: true,
+  redacted: true,
+};
 
-const REHYDRATION_OUTCOMES = [
-  'resumed',
-  'deferred_for_reconciliation',
-  'manual_recovery_required',
-] as const satisfies readonly AgentSessionCheckpointRehydrationOutcome[];
+const WRITE_OUTCOME_SET: Readonly<Record<AgentSessionCheckpointWriteOutcome, true>> = {
+  stored: true,
+  replaced: true,
+  duplicate: true,
+  too_large: true,
+  expired: true,
+  rejected: true,
+};
+
+const REHYDRATION_OUTCOME_SET: Readonly<Record<AgentSessionCheckpointRehydrationOutcome, true>> = {
+  resumed: true,
+  deferred_for_reconciliation: true,
+  manual_recovery_required: true,
+};
+
+const READ_OUTCOMES = getOutcomeKeys(READ_OUTCOME_SET);
+const WRITE_OUTCOMES = getOutcomeKeys(WRITE_OUTCOME_SET);
+const REHYDRATION_OUTCOMES = getOutcomeKeys(REHYDRATION_OUTCOME_SET);
 
 const REPRESENTATIVE_CHECKPOINT = createAgentSessionCheckpointEnvelope({
   sessionId: 'session:checkpoint:fixture',
@@ -157,6 +167,80 @@ const CANCELLATION_CHECKPOINT = createAgentSessionCheckpointEnvelope({
   },
 });
 
+const CRASH_BETWEEN_ATTEMPT_AND_RECEIPT_CHECKPOINT = createAgentSessionCheckpointEnvelope({
+  ...REPRESENTATIVE_CHECKPOINT,
+  checkpointId: 'checkpoint:fixture:attempt-without-receipt',
+  effect: {
+    effectId: 'effect:fixture:attempt-without-receipt',
+    effectAttemptId: 'effect-attempt:fixture:attempt-without-receipt',
+    phase: 'intent_recorded',
+    irreversible: true,
+    intent: {
+      effectType: 'tool_call',
+      toolName: 'repo.diff',
+      idempotencyScope: 'tool:repo.diff',
+    },
+  },
+  reconciliation: {
+    status: 'pending',
+    reason: 'awaiting_effect_receipt',
+  },
+});
+
+const CRASH_AFTER_RECEIPT_BEFORE_CHECKPOINT = createAgentSessionCheckpointEnvelope({
+  ...REPRESENTATIVE_CHECKPOINT,
+  checkpointId: 'checkpoint:fixture:receipt-ahead-of-checkpoint',
+  effect: {
+    effectId: 'effect:fixture:receipt-ahead-of-checkpoint',
+    effectAttemptId: 'effect-attempt:fixture:receipt-ahead-of-checkpoint',
+    phase: 'receipt_recorded',
+    irreversible: true,
+    intent: {
+      effectType: 'tool_call',
+      toolName: 'repo.diff',
+      idempotencyScope: 'tool:repo.diff',
+    },
+    receipt: {
+      outcome: 'ok',
+      source: 'effect_journal',
+    },
+  },
+  reconciliation: {
+    status: 'pending',
+    reason: 'effect_receipt_ahead_of_agent_checkpoint',
+  },
+});
+
+const RECONCILIATION_CHECKPOINT = createAgentSessionCheckpointEnvelope({
+  ...REPRESENTATIVE_CHECKPOINT,
+  checkpointId: 'checkpoint:fixture:reconciliation-cursor',
+  effect: null,
+  reconciliation: {
+    status: 'required',
+    reason: 'runtime_reconciliation_cursor_pending',
+  },
+});
+
+const NO_DUPLICATE_IRREVERSIBLE_EFFECT_CHECKPOINT = createAgentSessionCheckpointEnvelope({
+  ...REPRESENTATIVE_CHECKPOINT,
+  checkpointId: 'checkpoint:fixture:no-duplicate-effect',
+  effect: {
+    effectId: 'effect:fixture:no-duplicate-effect',
+    effectAttemptId: 'effect-attempt:fixture:no-duplicate-effect',
+    phase: 'reconciliation_required',
+    irreversible: true,
+    intent: {
+      effectType: 'tool_call',
+      toolName: 'repo.diff',
+      idempotencyScope: 'tool:repo.diff',
+    },
+  },
+  reconciliation: {
+    status: 'required',
+    reason: 'verify_irreversible_effect_before_retry',
+  },
+});
+
 const SCENARIOS = [
   {
     name: 'clean_restart_identity_continuity',
@@ -181,7 +265,7 @@ const SCENARIOS = [
     proofSurface: 'checkpoint_seam',
     outcome: deriveAgentSessionCheckpointRehydration({
       outcome: 'present',
-      envelope: REPRESENTATIVE_CHECKPOINT,
+      envelope: CRASH_BETWEEN_ATTEMPT_AND_RECEIPT_CHECKPOINT,
     }),
     note: 'An irreversible effect intent was recorded without a settled receipt, so rehydration defers to reconciliation.',
   },
@@ -190,9 +274,9 @@ const SCENARIOS = [
     proofSurface: 'checkpoint_seam',
     outcome: deriveAgentSessionCheckpointRehydration({
       outcome: 'present',
-      envelope: REPRESENTATIVE_CHECKPOINT,
+      envelope: CRASH_AFTER_RECEIPT_BEFORE_CHECKPOINT,
     }),
-    note: 'Without a newer persisted checkpoint, the durable seam still defers rather than claiming a silent post-receipt resume.',
+    note: 'An effect-journal receipt ahead of the agent checkpoint remains reconciliation-gated.',
   },
   {
     name: 'cancellation',
@@ -218,7 +302,7 @@ const SCENARIOS = [
     proofSurface: 'checkpoint_seam',
     outcome: deriveAgentSessionCheckpointRehydration({
       outcome: 'present',
-      envelope: REPRESENTATIVE_CHECKPOINT,
+      envelope: RECONCILIATION_CHECKPOINT,
     }),
     note: 'Pending reconciliation remains explicit and is not collapsed into resumed execution.',
   },
@@ -227,7 +311,7 @@ const SCENARIOS = [
     proofSurface: 'checkpoint_seam',
     outcome: deriveAgentSessionCheckpointRehydration({
       outcome: 'present',
-      envelope: REPRESENTATIVE_CHECKPOINT,
+      envelope: NO_DUPLICATE_IRREVERSIBLE_EFFECT_CHECKPOINT,
     }),
     note: 'The seam defers instead of replaying an irreversible effect whose receipt is not durably settled.',
   },

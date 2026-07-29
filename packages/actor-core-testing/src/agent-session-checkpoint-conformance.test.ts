@@ -95,6 +95,9 @@ describe('agent session checkpoint conformance fixture', () => {
     ).toMatchObject({
       outcome: {
         outcome: 'deferred_for_reconciliation',
+        envelope: {
+          checkpointId: 'checkpoint:fixture:attempt-without-receipt',
+        },
       },
     });
     expect(
@@ -104,6 +107,10 @@ describe('agent session checkpoint conformance fixture', () => {
     ).toMatchObject({
       outcome: {
         outcome: 'deferred_for_reconciliation',
+        envelope: {
+          checkpointId: 'checkpoint:fixture:receipt-ahead-of-checkpoint',
+        },
+        reason: 'effect_receipt_ahead_of_agent_checkpoint',
       },
     });
     expect(fixture.scenarios.find((scenario) => scenario.name === 'cancellation')).toMatchObject({
@@ -122,6 +129,10 @@ describe('agent session checkpoint conformance fixture', () => {
     expect(fixture.scenarios.find((scenario) => scenario.name === 'reconciliation')).toMatchObject({
       outcome: {
         outcome: 'deferred_for_reconciliation',
+        envelope: {
+          checkpointId: 'checkpoint:fixture:reconciliation-cursor',
+        },
+        reason: 'runtime_reconciliation_cursor_pending',
       },
     });
     expect(
@@ -129,6 +140,10 @@ describe('agent session checkpoint conformance fixture', () => {
     ).toMatchObject({
       outcome: {
         outcome: 'deferred_for_reconciliation',
+        envelope: {
+          checkpointId: 'checkpoint:fixture:no-duplicate-effect',
+        },
+        reason: 'verify_irreversible_effect_before_retry',
       },
     });
   });
