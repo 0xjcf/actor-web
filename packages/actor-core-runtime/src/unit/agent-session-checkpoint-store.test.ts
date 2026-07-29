@@ -2,14 +2,14 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import * as browserEntry from '../browser.js';
-import * as rootEntry from '../index.js';
-import * as nodeEntry from '../node.js';
 import {
   createAgentSessionCheckpointEnvelope,
   createInMemoryAgentSessionCheckpointStore,
   deriveAgentSessionCheckpointRehydration,
 } from '../agent-session-checkpoint-store.js';
+import * as browserEntry from '../browser.js';
+import * as rootEntry from '../index.js';
+import * as nodeEntry from '../node.js';
 
 function createCheckpointEnvelope(
   overrides: Partial<Parameters<typeof createAgentSessionCheckpointEnvelope>[0]> = {}
@@ -43,23 +43,23 @@ function createCheckpointEnvelope(
         idempotencyScope: 'tool:repo.diff',
       },
     },
-      continuation: {
-        provider: 'test-provider',
-        adapter: 'test-provider-adapter',
-        formatVersion: 1,
-        payload: {
-          cursor: 'opaque-provider-state',
-        },
-        payloadBytes: new TextEncoder().encode(
-          JSON.stringify({
-            cursor: 'opaque-provider-state',
-          })
-        ).byteLength,
-        redaction: {
-          disposition: 'none',
-          fields: [],
-        },
+    continuation: {
+      provider: 'test-provider',
+      adapter: 'test-provider-adapter',
+      formatVersion: 1,
+      payload: {
+        cursor: 'opaque-provider-state',
       },
+      payloadBytes: new TextEncoder().encode(
+        JSON.stringify({
+          cursor: 'opaque-provider-state',
+        })
+      ).byteLength,
+      redaction: {
+        disposition: 'none',
+        fields: [],
+      },
+    },
     reconciliation: {
       status: 'pending',
       reason: 'awaiting_effect_receipt',
@@ -143,7 +143,11 @@ describe('agent session checkpoint store', () => {
         effectAttemptId: 'effect-attempt:expired',
         phase: 'receipt_recorded',
         irreversible: true,
-        intent: { effectType: 'tool_call', toolName: 'repo.diff', idempotencyScope: 'tool:repo.diff' },
+        intent: {
+          effectType: 'tool_call',
+          toolName: 'repo.diff',
+          idempotencyScope: 'tool:repo.diff',
+        },
         receipt: { outcome: 'ok' },
       },
     });
@@ -170,7 +174,11 @@ describe('agent session checkpoint store', () => {
         effectAttemptId: 'effect-attempt:node',
         phase: 'receipt_recorded',
         irreversible: true,
-        intent: { effectType: 'tool_call', toolName: 'repo.diff', idempotencyScope: 'tool:repo.diff' },
+        intent: {
+          effectType: 'tool_call',
+          toolName: 'repo.diff',
+          idempotencyScope: 'tool:repo.diff',
+        },
         receipt: { outcome: 'ok' },
       },
     });
@@ -190,9 +198,7 @@ describe('agent session checkpoint store', () => {
       },
       fields: ['continuation.payload'],
     });
-    expect(
-      deriveAgentSessionCheckpointRehydration(redactedRead)
-    ).toMatchObject({
+    expect(deriveAgentSessionCheckpointRehydration(redactedRead)).toMatchObject({
       outcome: 'manual_recovery_required',
       reason: 'redacted',
     });
@@ -268,7 +274,11 @@ describe('agent session checkpoint store', () => {
         effectAttemptId: 'effect-attempt:size-boundary',
         phase: 'receipt_recorded',
         irreversible: true,
-        intent: { effectType: 'tool_call', toolName: 'repo.diff', idempotencyScope: 'tool:repo.diff' },
+        intent: {
+          effectType: 'tool_call',
+          toolName: 'repo.diff',
+          idempotencyScope: 'tool:repo.diff',
+        },
         receipt: { outcome: 'ok' },
       },
     });
@@ -320,7 +330,11 @@ describe('agent session checkpoint store', () => {
         effectAttemptId: 'effect-attempt:settled',
         phase: 'receipt_recorded',
         irreversible: true,
-        intent: { effectType: 'tool_call', toolName: 'repo.diff', idempotencyScope: 'tool:repo.diff' },
+        intent: {
+          effectType: 'tool_call',
+          toolName: 'repo.diff',
+          idempotencyScope: 'tool:repo.diff',
+        },
         receipt: { outcome: 'ok' },
       },
     });

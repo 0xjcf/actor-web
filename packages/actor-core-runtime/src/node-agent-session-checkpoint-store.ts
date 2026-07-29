@@ -33,9 +33,7 @@ function toTempFilePath(filePath: string, checkpointId: string): string {
   return `${filePath}.${encodeURIComponent(checkpointId)}.tmp`;
 }
 
-function redactEnvelope(
-  envelope: AgentSessionCheckpointEnvelope
-): AgentSessionCheckpointEnvelope {
+function redactEnvelope(envelope: AgentSessionCheckpointEnvelope): AgentSessionCheckpointEnvelope {
   if (envelope.continuation === null) {
     return envelope;
   }
@@ -47,12 +45,7 @@ function redactEnvelope(
       redaction: Object.freeze({
         disposition: 'metadata_only' as const,
         fields: Object.freeze(
-          Array.from(
-            new Set([
-              ...envelope.continuation.redaction.fields,
-              'continuation.payload',
-            ])
-          )
+          Array.from(new Set([...envelope.continuation.redaction.fields, 'continuation.payload']))
         ),
       }),
     }),
@@ -117,7 +110,7 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
       let parsedJson: unknown;
       try {
         parsedJson = JSON.parse(raw);
-      } catch (error) {
+      } catch {
         return {
           outcome: 'corrupt',
           sessionId: input.sessionId,
@@ -159,7 +152,9 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
         envelope: parsedEnvelope.value,
       };
     },
-    async write(envelope: AgentSessionCheckpointEnvelope): Promise<AgentSessionCheckpointWriteResult> {
+    async write(
+      envelope: AgentSessionCheckpointEnvelope
+    ): Promise<AgentSessionCheckpointWriteResult> {
       const writeNow = now();
       const expiresAt = envelope.expiresAt ? Date.parse(envelope.expiresAt) : null;
       if (expiresAt !== null && !Number.isNaN(expiresAt) && expiresAt <= writeNow.getTime()) {
@@ -182,7 +177,10 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
       const filePath = toSessionFilePath(options.directory, nextEnvelope.sessionId);
       const tempFilePath = toTempFilePath(filePath, nextEnvelope.checkpointId);
       const previous = await this.read({ sessionId: nextEnvelope.sessionId });
-      if (previous.outcome === 'present' && previous.envelope.checkpointId === nextEnvelope.checkpointId) {
+      if (
+        previous.outcome === 'present' &&
+        previous.envelope.checkpointId === nextEnvelope.checkpointId
+      ) {
         return {
           outcome: 'duplicate',
           envelope: previous.envelope,
@@ -203,7 +201,7 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
         await mkdir(options.directory, { recursive: true });
         await writeFile(tempFilePath, serializedEnvelope);
         await rename(tempFilePath, filePath);
-      } catch (error) {
+      } catch {
         await rm(tempFilePath, { force: true }).catch(() => undefined);
         return {
           outcome: 'rejected',

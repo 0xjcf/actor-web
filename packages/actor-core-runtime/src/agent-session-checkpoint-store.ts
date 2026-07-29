@@ -1,4 +1,4 @@
-import type { JsonObject, JsonValue } from './types.js';
+import type { JsonValue } from './types.js';
 
 export const AGENT_SESSION_CHECKPOINT_SCHEMA_VERSION = 1 as const;
 
@@ -387,9 +387,7 @@ function isValidEffectState(value: unknown): value is AgentSessionCheckpointEffe
   );
 }
 
-function isValidContinuation(
-  value: unknown
-): value is AgentSessionCheckpointContinuation | null {
+function isValidContinuation(value: unknown): value is AgentSessionCheckpointContinuation | null {
   if (value === null) {
     return true;
   }
@@ -418,9 +416,7 @@ function isValidContinuation(
   );
 }
 
-function isValidReconciliation(
-  value: unknown
-): value is AgentSessionCheckpointReconciliationState {
+function isValidReconciliation(value: unknown): value is AgentSessionCheckpointReconciliationState {
   if (!value || typeof value !== 'object') {
     return false;
   }
@@ -486,7 +482,11 @@ export function createAgentSessionCheckpointEnvelope(
   if (!isIsoDateString(input.recordedAt)) {
     throw new Error('Agent session checkpoint recordedAt must be an ISO timestamp.');
   }
-  if (input.expiresAt !== undefined && input.expiresAt !== null && !isIsoDateString(input.expiresAt)) {
+  if (
+    input.expiresAt !== undefined &&
+    input.expiresAt !== null &&
+    !isIsoDateString(input.expiresAt)
+  ) {
     throw new Error('Agent session checkpoint expiresAt must be an ISO timestamp when provided.');
   }
   if (input.staleAt !== undefined && input.staleAt !== null && !isIsoDateString(input.staleAt)) {
@@ -549,8 +549,16 @@ export function parseAgentSessionCheckpointEnvelope(
     !isValidContinuation(candidate.continuation) ||
     !isValidReconciliation(candidate.reconciliation) ||
     !isIsoDateString(candidate.recordedAt) ||
-    !(candidate.expiresAt === null || candidate.expiresAt === undefined || isIsoDateString(candidate.expiresAt)) ||
-    !(candidate.staleAt === null || candidate.staleAt === undefined || isIsoDateString(candidate.staleAt)) ||
+    !(
+      candidate.expiresAt === null ||
+      candidate.expiresAt === undefined ||
+      isIsoDateString(candidate.expiresAt)
+    ) ||
+    !(
+      candidate.staleAt === null ||
+      candidate.staleAt === undefined ||
+      isIsoDateString(candidate.staleAt)
+    ) ||
     !isValidStringArray(candidate.redactedFields) ||
     (candidate.metadata !== undefined && !isJsonValue(candidate.metadata))
   ) {
@@ -628,8 +636,7 @@ export function deriveAgentSessionCheckpointRehydration(
     case 'present': {
       const effect = result.envelope.effect;
       if (
-        effect &&
-        effect.irreversible &&
+        effect?.irreversible &&
         effect.phase === 'intent_recorded' &&
         effect.receipt === undefined
       ) {
@@ -647,7 +654,9 @@ export function deriveAgentSessionCheckpointRehydration(
         return {
           outcome: 'deferred_for_reconciliation',
           envelope: result.envelope,
-          reason: result.envelope.reconciliation.reason ?? 'Checkpoint requires reconciliation before resume.',
+          reason:
+            result.envelope.reconciliation.reason ??
+            'Checkpoint requires reconciliation before resume.',
         };
       }
       return {

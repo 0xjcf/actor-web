@@ -389,7 +389,11 @@ describe('@actor-web/agent loop behavior', () => {
       initialCheckpointState: startedContext as {
         readonly history: readonly { readonly role: string; readonly content: string }[];
         readonly steps: number;
-        readonly pendingToolCalls: readonly { readonly id: string; readonly name: string; readonly input: unknown }[];
+        readonly pendingToolCalls: readonly {
+          readonly id: string;
+          readonly name: string;
+          readonly input: unknown;
+        }[];
         readonly lastError: null | { readonly code: string; readonly message: string };
       },
     });
