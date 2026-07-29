@@ -55,8 +55,10 @@
   - provider-neutral duplicate-claim or duplicate-check surface at the admission seam
   - if command metadata carries `idempotencyKey`, command admission must fail closed unless this adapter is configured
   - current candidate behavior rejects duplicate idempotency keys before dispatch
+  - authorized available claims now settle explicitly as `not_dispatched`, `dispatch_succeeded`, or `dispatch_indeterminate`
   - durable restart-safe duplicate recovery is deferred to checkpoint and rehydration work
 - gateway transport surface
+  - `ActorWebNodeGatewayOptions.commandAdmission`
   - `RuntimeGatewayClientFrame.send.metadata`
   - `RuntimeGatewayClientFrame.ask.metadata`
   - `RuntimeGatewayServerFrame.ack.authorization`
@@ -199,6 +201,10 @@ These identities stay distinct. The contract does not collapse intent, authoriza
 - Client metadata may propose command identifiers, intent, correlation, revision, idempotency, capability, or approval context, but client-supplied principal data is never authoritative.
 - Metadata is additive and optional. Actor payload fields that happen to use the same names remain part of the domain message unless a host explicitly passes separate admission metadata.
 - Local and system-internal command paths use explicit trusted principals and the same admission helper, with bypass semantics expressed as facts instead of an implicit shortcut.
+- Served gateway ingress requires an explicit principal resolver when `commandAdmission` is enabled.
+- Local or CLI host ingress requires an explicit trusted principal when `commandAdmission` is enabled.
+- Opted-in admission requires a durable `onDecision` sink before dispatch; sink failure settles any claimed idempotency key as `not_dispatched` and fails closed.
+- After a sinked authorization, successful dispatch settles claimed idempotency as `dispatch_succeeded`; dispatch failure after authorization settles it as `dispatch_indeterminate`.
 - A duplicate idempotency key at the current admission seam is rejected before actor send or ask dispatch unless a later checkpoint or rehydration seam introduces a join-capable durable outcome.
 - Persisted effect intent is separate from effect attempt or outcome where atomicity matters.
 - External execution is nondeterministic.
@@ -207,10 +213,12 @@ These identities stay distinct. The contract does not collapse intent, authoriza
 
 ## Verification receipts
 
-Focused checks completed on July 28, 2026:
+Focused checks completed on July 29, 2026:
 
 - `pnpm --filter @actor-web/runtime exec vitest run src/unit/actor-web-source.test.ts src/unit/runtime-gateway.test.ts`
 - `pnpm --filter @actor-web/cli exec vitest run src/host/runtime-host.test.ts`
+- `pnpm --filter @actor-web/runtime exec vitest run src/unit/serve-actor-web-node.test.ts`
+- `node --import tsx src/cli/index.ts serve <tmp-topology> --admission <tmp-admission> --exec 'send counter {"type":"INCREMENT"}; ask counter {"type":"GET_COUNT"} 2000'`
 - `pnpm --filter @actor-web/testing test`
 - `pnpm --filter @actor-web/runtime typecheck`
 - `pnpm --filter @actor-web/runtime build`

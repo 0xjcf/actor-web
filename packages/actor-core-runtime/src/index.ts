@@ -345,6 +345,7 @@ export type {
   ActorSnapshotProjection,
   ActorTransitionRecord,
   RuntimeGatewayClientFrame,
+  RuntimeGatewayCommandAdmissionOptions,
   RuntimeGatewayCommandSource,
   RuntimeGatewayErrorCode,
   RuntimeGatewayReadModelSource,
