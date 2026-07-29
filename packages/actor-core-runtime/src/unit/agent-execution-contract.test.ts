@@ -1129,8 +1129,7 @@ describe('agent execution contract', () => {
       rejectionReceipt: {
         reason: {
           code: 'credential_bearing_message',
-          detail:
-            'message.token is secret-bearing. Supply a credential-free command payload.',
+          detail: 'message.token is secret-bearing. Supply a credential-free command payload.',
         },
       },
     });

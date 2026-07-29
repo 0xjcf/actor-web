@@ -430,7 +430,15 @@ function createGatewayRejectedDecision(input: {
     admission: {
       discovery: 'descriptive_only',
       outcome: 'rejected',
-      rechecked: ['command', 'payload', 'principal', 'approval', 'revision', 'idempotency', 'policy'],
+      rechecked: [
+        'command',
+        'payload',
+        'principal',
+        'approval',
+        'revision',
+        'idempotency',
+        'policy',
+      ],
     },
   });
   const rejectionReceipt = createExecutionRejectedReceipt({

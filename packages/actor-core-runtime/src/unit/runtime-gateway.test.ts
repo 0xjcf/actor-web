@@ -3320,12 +3320,12 @@ describe('runtime gateway hub', () => {
           if (metadata?.commandId === 'cmd-policy-failure') {
             throw new Error('policy offline');
           }
-        return {
-          outcome: 'rejected',
-          policy: 'checkout-policy-v1',
-          code: 'authorization_denied',
-          detail: 'approval missing',
-        };
+          return {
+            outcome: 'rejected',
+            policy: 'checkout-policy-v1',
+            code: 'authorization_denied',
+            detail: 'approval missing',
+          };
         },
         onDecision: async () => {},
       },

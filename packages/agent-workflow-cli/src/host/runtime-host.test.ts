@@ -270,8 +270,7 @@ describe('createRuntimeHost', () => {
     const principalRejected = await host.send('counter', '{"type":"INCREMENT"}');
     expect(principalRejected).toEqual({
       ok: false,
-      error:
-        'Send rejected: missing_principal (commandAdmission requires an explicit principal.)',
+      error: 'Send rejected: missing_principal (commandAdmission requires an explicit principal.)',
     });
 
     await host.stop();
@@ -485,7 +484,8 @@ describe('createRuntimeHost', () => {
     });
     expect(claimFailure).toEqual({
       ok: false,
-      error: 'Send rejected: idempotency_adapter_failure (Idempotency adapter threw before returning a claim result.)',
+      error:
+        'Send rejected: idempotency_adapter_failure (Idempotency adapter threw before returning a claim result.)',
     });
     expect(laterCount).toEqual({ ok: true, value: { count: 0 } });
     expect(decisions).toEqual(

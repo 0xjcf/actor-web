@@ -27,12 +27,7 @@ import type {
   AgentExecutionIdempotencyClaimPort,
   Message,
 } from '@actor-web/runtime';
-import {
-  admitAgentExecutionCommand,
-  Logger,
-  parse,
-  startRuntime,
-} from '@actor-web/runtime';
+import { admitAgentExecutionCommand, Logger, parse, startRuntime } from '@actor-web/runtime';
 import { loadModuleExport } from './load-module.js';
 
 const log = Logger.namespace('ACTOR_WEB_CLI_HOST');

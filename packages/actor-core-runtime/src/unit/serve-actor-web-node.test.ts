@@ -336,13 +336,10 @@ describe('serveNode', () => {
         })
       );
       await expect(
-        waitFor(
-          async () => {
-            const count = await served.requireActor('counter').ask<number>({ type: 'GET_COUNT' });
-            return count === 1 ? count : undefined;
-          },
-          'Expected served gateway send to reach the actor'
-        )
+        waitFor(async () => {
+          const count = await served.requireActor('counter').ask<number>({ type: 'GET_COUNT' });
+          return count === 1 ? count : undefined;
+        }, 'Expected served gateway send to reach the actor')
       ).resolves.toBe(1);
       const closePromise = waitForSocketClose(socket);
       socket.close();

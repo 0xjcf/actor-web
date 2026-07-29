@@ -37,9 +37,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-async function loadCommandAdmissionConfig(
-  modulePath: string
-): Promise<CommandAdmissionLoadResult> {
+async function loadCommandAdmissionConfig(modulePath: string): Promise<CommandAdmissionLoadResult> {
   const loaded = await loadModuleExport(modulePath);
   if (!loaded.ok) {
     return loaded;
@@ -203,22 +201,22 @@ async function main() {
             node: options.node,
             ...(commandAdmission?.ok ? { commandAdmission: commandAdmission.value } : {}),
           });
-        if (!started.ok) {
-          console.error(chalk.red(started.error));
-          process.exit(1);
-        }
-        const host = started.value;
-        const nodeLabel = options.node ?? host.nodeKeys[0] ?? 'local';
-        console.log(
-          chalk.green(`Hosting ${topologyPath} in-process`) +
-            chalk.gray(` (nodes: ${host.nodeKeys.join(', ')})`)
-        );
+          if (!started.ok) {
+            console.error(chalk.red(started.error));
+            process.exit(1);
+          }
+          const host = started.value;
+          const nodeLabel = options.node ?? host.nodeKeys[0] ?? 'local';
+          console.log(
+            chalk.green(`Hosting ${topologyPath} in-process`) +
+              chalk.gray(` (nodes: ${host.nodeKeys.join(', ')})`)
+          );
 
-        if (options.exec !== undefined) {
-          const ok = await runExecScript(host, options.exec);
-          process.exit(ok ? 0 : 1);
-        }
-        runConsole(host, nodeLabel);
+          if (options.exec !== undefined) {
+            const ok = await runExecScript(host, options.exec);
+            process.exit(ok ? 0 : 1);
+          }
+          runConsole(host, nodeLabel);
         }
       );
 

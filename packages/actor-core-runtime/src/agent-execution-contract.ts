@@ -179,7 +179,10 @@ export interface AgentExecutionAdmissionDecision {
   readonly admissionReceipt: AgentExecutionCommandAdmissionReceipt;
   readonly authorizationReceipt?: AgentExecutionAuthorizedReceipt;
   readonly rejectionReceipt?: AgentExecutionRejectedReceipt;
-  readonly idempotencyClaim?: Extract<AgentExecutionIdempotencyClaimResult, { outcome: 'available' }>;
+  readonly idempotencyClaim?: Extract<
+    AgentExecutionIdempotencyClaimResult,
+    { outcome: 'available' }
+  >;
   readonly ok: boolean;
 }
 
@@ -988,9 +991,7 @@ function validateAdmissionInput(
   return null;
 }
 
-function isValidPolicyDecision(
-  value: unknown
-): value is AgentExecutionAdmissionPolicyDecision {
+function isValidPolicyDecision(value: unknown): value is AgentExecutionAdmissionPolicyDecision {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return false;
   }
@@ -1357,7 +1358,8 @@ export async function admitAgentExecutionCommand(
           admissionStage: 'execution-authorized',
           reason: {
             code: 'idempotency_adapter_invalid_result',
-            detail: 'Idempotency adapter must return a valid available settlement or duplicate decision.',
+            detail:
+              'Idempotency adapter must return a valid available settlement or duplicate decision.',
           },
         });
         return {
