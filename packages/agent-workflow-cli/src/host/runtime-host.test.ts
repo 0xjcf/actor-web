@@ -13,12 +13,13 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
   type ActorMessage,
+  type AgentExecutionIdempotencySettlementOutcome,
   actor,
   defineActorWebTopology,
   defineBehavior,
   node,
 } from '@actor-web/runtime';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadModuleExport } from './load-module';
 import {
   createRuntimeHost,
@@ -231,6 +232,9 @@ describe('createRuntimeHost', () => {
     expect(reply).toEqual({ ok: true, value: { count: 1 } });
     expect(decisions).toContainEqual(
       expect.objectContaining({
+        admissionReceipt: expect.objectContaining({
+          actorId: 'actor://local/counter',
+        }),
         principal: expect.objectContaining({
           id: 'principal:cli-system',
           kind: 'system',
@@ -244,6 +248,57 @@ describe('createRuntimeHost', () => {
         }),
       })
     );
+  });
+
+  it('fails closed when local command admission omits the explicit principal or durable decision sink', async () => {
+    await host.stop();
+    const missingPrincipal = await createRuntimeHost(buildCounterTopology(), {
+      commandAdmission: {
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'cli-policy-v3',
+        }),
+        onDecision: async () => {},
+      },
+    });
+    expect(missingPrincipal.ok).toBe(true);
+    if (!missingPrincipal.ok) {
+      return;
+    }
+    host = missingPrincipal.value;
+
+    const principalRejected = await host.send('counter', '{"type":"INCREMENT"}');
+    expect(principalRejected).toEqual({
+      ok: false,
+      error:
+        'Send rejected: missing_principal (commandAdmission requires an explicit principal.)',
+    });
+
+    await host.stop();
+    const missingSink = await createRuntimeHost(buildCounterTopology(), {
+      commandAdmission: {
+        principal: {
+          id: 'principal:cli-system',
+          kind: 'system',
+        },
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'cli-policy-v3',
+        }),
+      },
+    });
+    expect(missingSink.ok).toBe(true);
+    if (!missingSink.ok) {
+      return;
+    }
+    host = missingSink.value;
+
+    const sinkRejected = await host.ask('counter', '{"type":"GET_COUNT"}', 2000);
+    expect(sinkRejected).toEqual({
+      ok: false,
+      error:
+        'Ask rejected: missing_decision_sink (commandAdmission requires an explicit durable decision sink.)',
+    });
   });
 
   it('rejects credential-bearing local principals before dispatch and never leaks them into callback facts', async () => {
@@ -310,6 +365,7 @@ describe('createRuntimeHost', () => {
             detail: 'manual approval missing',
           };
         },
+        onDecision: async () => {},
       },
     });
     expect(started.ok).toBe(true);
@@ -327,7 +383,8 @@ describe('createRuntimeHost', () => {
     const failedClosed = await host.ask('counter', '{"type":"GET_COUNT"}', 2000);
     expect(failedClosed).toEqual({
       ok: false,
-      error: 'Ask rejected: policy_adapter_failure (policy offline)',
+      error:
+        'Ask rejected: policy_adapter_failure (Policy adapter threw before returning a decision.)',
     });
   });
 
@@ -347,6 +404,7 @@ describe('createRuntimeHost', () => {
           id: 'principal:cli-system',
           kind: 'system',
         },
+        onDecision: async () => {},
       },
     });
     expect(started.ok).toBe(true);
@@ -366,6 +424,7 @@ describe('createRuntimeHost', () => {
   it('rejects duplicate idempotency claims before local send or ask dispatch and fails closed on claim errors', async () => {
     await host.stop();
     const decisions: unknown[] = [];
+    const settlements: AgentExecutionIdempotencySettlementOutcome[] = [];
     const started = await createRuntimeHost(buildCounterTopology(), {
       commandAdmission: {
         principal: {
@@ -387,7 +446,12 @@ describe('createRuntimeHost', () => {
           if (metadata.idempotencyKey === 'idem-claim-error') {
             throw new Error('claim store offline');
           }
-          return { outcome: 'available' };
+          return {
+            outcome: 'available',
+            settle: async (outcome) => {
+              settlements.push(outcome);
+            },
+          };
         },
         onDecision: (decision) => {
           decisions.push(decision);
@@ -421,7 +485,7 @@ describe('createRuntimeHost', () => {
     });
     expect(claimFailure).toEqual({
       ok: false,
-      error: 'Send rejected: idempotency_adapter_failure (claim store offline)',
+      error: 'Send rejected: idempotency_adapter_failure (Idempotency adapter threw before returning a claim result.)',
     });
     expect(laterCount).toEqual({ ok: true, value: { count: 0 } });
     expect(decisions).toEqual(
@@ -444,6 +508,104 @@ describe('createRuntimeHost', () => {
     );
   });
 
+  it('settles local idempotency claims before or after dispatch based on sink and dispatch outcomes', async () => {
+    await host.stop();
+    const sinkBlock = vi.fn(async () => {
+      throw new Error('sink offline');
+    });
+    const sinkSettlements: AgentExecutionIdempotencySettlementOutcome[] = [];
+    const sinkBlocked = await createRuntimeHost(buildCounterTopology(), {
+      commandAdmission: {
+        principal: {
+          id: 'principal:cli-system',
+          kind: 'system',
+        },
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'cli-policy-v4',
+        }),
+        idempotency: async () => ({
+          outcome: 'available',
+          settle: async (outcome) => {
+            sinkSettlements.push(outcome);
+          },
+        }),
+        onDecision: sinkBlock,
+      },
+    });
+    expect(sinkBlocked.ok).toBe(true);
+    if (!sinkBlocked.ok) {
+      return;
+    }
+    host = sinkBlocked.value;
+
+    const sinkFailure = await host.send('counter', '{"type":"INCREMENT"}');
+    const countAfterSinkFailure = await host.ask('counter', '{"type":"GET_COUNT"}', 2000);
+
+    expect(sinkFailure).toEqual({
+      ok: false,
+      error: 'Send rejected: decision_sink_failure (sink offline)',
+    });
+    expect(countAfterSinkFailure).toEqual({
+      ok: false,
+      error: 'Ask rejected: decision_sink_failure (sink offline)',
+    });
+    expect(sinkSettlements).toContain('not_dispatched');
+
+    await host.stop();
+    const throwingBehavior = defineBehavior<CounterMsg>()
+      .withContext({ count: 0 })
+      .onMessage(({ message, context }) => {
+        if (message.type === 'INCREMENT') {
+          throw new Error('dispatch exploded');
+        }
+        if (message.type === 'GET_COUNT') {
+          return { reply: { count: context.count } };
+        }
+        return {};
+      })
+      .build();
+    const dispatchSettlements: AgentExecutionIdempotencySettlementOutcome[] = [];
+    const dispatchBlocked = await createRuntimeHost(
+      defineActorWebTopology({
+        nodes: { local: node('local') },
+        actors: { counter: actor({ id: 'counter', node: 'local', behavior: throwingBehavior }) },
+      }),
+      {
+        commandAdmission: {
+          principal: {
+            id: 'principal:cli-system',
+            kind: 'system',
+          },
+          policy: async () => ({
+            outcome: 'authorized',
+            policy: 'cli-policy-v4',
+          }),
+          idempotency: async () => ({
+            outcome: 'available',
+            settle: async (outcome) => {
+              dispatchSettlements.push(outcome);
+            },
+          }),
+          onDecision: async () => {},
+        },
+      }
+    );
+    expect(dispatchBlocked.ok).toBe(true);
+    if (!dispatchBlocked.ok) {
+      return;
+    }
+    host = dispatchBlocked.value;
+
+    const dispatchFailure = await host.send('counter', '{"type":"INCREMENT"}');
+
+    expect(dispatchFailure).toEqual({
+      ok: false,
+      error: 'Send failed: dispatch exploded',
+    });
+    expect(dispatchSettlements).toContain('dispatch_indeterminate');
+  });
+
   it('rejects malformed local admission metadata without dispatching or throwing', async () => {
     await host.stop();
     const started = await createRuntimeHost(buildCounterTopology(), {
@@ -456,6 +618,7 @@ describe('createRuntimeHost', () => {
           outcome: 'authorized',
           policy: 'cli-policy-v2',
         }),
+        onDecision: async () => {},
       },
     });
     expect(started.ok).toBe(true);
@@ -506,6 +669,7 @@ describe('createRuntimeHost', () => {
             outcome: 'authorized',
             policy: 'cli-policy-v2',
           }),
+          onDecision: async () => {},
         },
       }
     );
@@ -543,6 +707,7 @@ describe('createRuntimeHost', () => {
           outcome: 'authorized',
           policy: 'cli-policy-v2',
         }),
+        onDecision: async () => {},
       },
     });
     expect(started.ok).toBe(true);

@@ -27,7 +27,12 @@ import type {
   AgentExecutionIdempotencyClaimPort,
   Message,
 } from '@actor-web/runtime';
-import { admitAgentExecutionCommand, Logger, parse, startRuntime } from '@actor-web/runtime';
+import {
+  admitAgentExecutionCommand,
+  Logger,
+  parse,
+  startRuntime,
+} from '@actor-web/runtime';
 import { loadModuleExport } from './load-module.js';
 
 const log = Logger.namespace('ACTOR_WEB_CLI_HOST');
@@ -148,12 +153,11 @@ function resolveRuntimeHostTools(options: RuntimeHostOptions): ActorToolRegistry
   };
 }
 
-function defaultRuntimeHostPrincipal(): AgentExecutionCommandPrincipal {
-  return {
-    id: 'principal:cli-system',
-    kind: 'system',
-    role: 'operator',
-  };
+async function settleRuntimeHostClaim(
+  decision: AgentExecutionAdmissionDecision,
+  outcome: 'not_dispatched' | 'dispatch_succeeded' | 'dispatch_indeterminate'
+): Promise<void> {
+  await Promise.resolve(decision.idempotencyClaim?.settle(outcome));
 }
 
 /**
@@ -261,18 +265,46 @@ export async function createRuntimeHost(
       }
       try {
         if (options.commandAdmission) {
+          if (!options.commandAdmission.principal) {
+            return {
+              ok: false,
+              error:
+                'Send rejected: missing_principal (commandAdmission requires an explicit principal.)',
+            };
+          }
           const decision = await admitAgentExecutionCommand({
-            actorId: parse(ref.address).id,
+            actorId: ref.address,
             sessionId: `runtime-host:${spawnNodeKey}`,
             kind: 'send',
             message: message.value,
-            principal: options.commandAdmission.principal ?? defaultRuntimeHostPrincipal(),
+            principal: options.commandAdmission.principal,
             policy: options.commandAdmission.policy,
             requireExplicitPolicy: true,
             idempotency: options.commandAdmission.idempotency,
             metadata,
           });
-          await Promise.resolve(options.commandAdmission.onDecision?.(decision));
+          if (!options.commandAdmission.onDecision) {
+            if (decision.ok) {
+              await settleRuntimeHostClaim(decision, 'not_dispatched');
+            }
+            return {
+              ok: false,
+              error:
+                'Send rejected: missing_decision_sink (commandAdmission requires an explicit durable decision sink.)',
+            };
+          }
+          try {
+            await Promise.resolve(options.commandAdmission.onDecision(decision));
+          } catch (error) {
+            if (decision.ok) {
+              await settleRuntimeHostClaim(decision, 'not_dispatched');
+            }
+            const detail = error instanceof Error ? error.message : String(error);
+            return {
+              ok: false,
+              error: `Send rejected: decision_sink_failure (${detail})`,
+            };
+          }
           if (!decision.ok) {
             const reason = decision.rejectionReceipt?.reason;
             return {
@@ -280,6 +312,15 @@ export async function createRuntimeHost(
               error: `Send rejected: ${reason?.code ?? 'authorization_denied'}${reason?.detail ? ` (${reason.detail})` : ''}`,
             };
           }
+          try {
+            await ref.send(message.value);
+            await flush();
+            await settleRuntimeHostClaim(decision, 'dispatch_succeeded');
+          } catch (error) {
+            await settleRuntimeHostClaim(decision, 'dispatch_indeterminate');
+            throw error;
+          }
+          return { ok: true, value: `Sent ${message.value.type} to ${ref.address}` };
         }
         await ref.send(message.value);
         await flush();
@@ -303,24 +344,60 @@ export async function createRuntimeHost(
       }
       try {
         if (options.commandAdmission) {
+          if (!options.commandAdmission.principal) {
+            return {
+              ok: false,
+              error:
+                'Ask rejected: missing_principal (commandAdmission requires an explicit principal.)',
+            };
+          }
           const decision = await admitAgentExecutionCommand({
-            actorId: parse(ref.address).id,
+            actorId: ref.address,
             sessionId: `runtime-host:${spawnNodeKey}`,
             kind: 'ask',
             message: message.value,
-            principal: options.commandAdmission.principal ?? defaultRuntimeHostPrincipal(),
+            principal: options.commandAdmission.principal,
             policy: options.commandAdmission.policy,
             requireExplicitPolicy: true,
             idempotency: options.commandAdmission.idempotency,
             metadata,
           });
-          await Promise.resolve(options.commandAdmission.onDecision?.(decision));
+          if (!options.commandAdmission.onDecision) {
+            if (decision.ok) {
+              await settleRuntimeHostClaim(decision, 'not_dispatched');
+            }
+            return {
+              ok: false,
+              error:
+                'Ask rejected: missing_decision_sink (commandAdmission requires an explicit durable decision sink.)',
+            };
+          }
+          try {
+            await Promise.resolve(options.commandAdmission.onDecision(decision));
+          } catch (error) {
+            if (decision.ok) {
+              await settleRuntimeHostClaim(decision, 'not_dispatched');
+            }
+            const detail = error instanceof Error ? error.message : String(error);
+            return {
+              ok: false,
+              error: `Ask rejected: decision_sink_failure (${detail})`,
+            };
+          }
           if (!decision.ok) {
             const reason = decision.rejectionReceipt?.reason;
             return {
               ok: false,
               error: `Ask rejected: ${reason?.code ?? 'authorization_denied'}${reason?.detail ? ` (${reason.detail})` : ''}`,
             };
+          }
+          try {
+            const reply = await ref.ask(message.value, timeoutMs);
+            await settleRuntimeHostClaim(decision, 'dispatch_succeeded');
+            return { ok: true, value: reply };
+          } catch (error) {
+            await settleRuntimeHostClaim(decision, 'dispatch_indeterminate');
+            throw error;
           }
         }
         const reply = await ref.ask(message.value, timeoutMs);

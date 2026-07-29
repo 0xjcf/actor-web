@@ -8,6 +8,8 @@ import {
   type AgentExecutionCommandPrincipal,
   type AgentExecutionIdempotencyClaimPort,
   admitAgentExecutionCommand,
+  createExecutionCommandAdmissionReceipt,
+  createExecutionRejectedReceipt,
 } from './agent-execution-contract.js';
 import {
   createProjectionTransportStatus,
@@ -404,15 +406,68 @@ function stableRuntimeGatewayAuthOwnerKey(authContext: unknown): string | null {
   return `auth:${createHash('sha256').update(JSON.stringify(canonicalValue)).digest('base64url')}`;
 }
 
-function defaultGatewayPrincipal(
-  authContext: unknown,
-  fallbackConnectionId: string
-): AgentExecutionCommandPrincipal {
-  const ownerKey = stableRuntimeGatewayAuthOwnerKey(authContext);
+function createGatewayRejectedDecision(input: {
+  readonly actorId: string;
+  readonly sessionId: string;
+  readonly commandId: string;
+  readonly principalId?: string;
+  readonly code: string;
+  readonly detail: string;
+}): AgentExecutionAdmissionDecision {
+  const occurredAt = new Date().toISOString();
+  const traceId = `trace:${input.sessionId}:${input.commandId}`;
+  const admissionReceipt = createExecutionCommandAdmissionReceipt({
+    receiptId: `${traceId}:admission:1`,
+    recordId: `${traceId}:record:admission:1`,
+    traceId,
+    actorId: input.actorId,
+    sessionId: input.sessionId,
+    commandId: input.commandId,
+    ...(input.principalId ? { principalId: input.principalId } : {}),
+    sequence: 1,
+    occurredAt,
+    admissionStage: 'execution-authorized',
+    admission: {
+      discovery: 'descriptive_only',
+      outcome: 'rejected',
+      rechecked: ['command', 'payload', 'principal', 'approval', 'revision', 'idempotency', 'policy'],
+    },
+  });
+  const rejectionReceipt = createExecutionRejectedReceipt({
+    receiptId: `${traceId}:rejection:2`,
+    recordId: `${traceId}:record:rejection:2`,
+    traceId,
+    actorId: input.actorId,
+    sessionId: input.sessionId,
+    commandId: input.commandId,
+    ...(input.principalId ? { principalId: input.principalId } : {}),
+    sequence: 2,
+    occurredAt,
+    admissionStage: 'execution-authorized',
+    reason: {
+      code: input.code,
+      detail: input.detail,
+    },
+  });
   return {
-    id: ownerKey ?? `principal:gateway:${fallbackConnectionId}`,
-    kind: 'authenticated',
+    ok: false,
+    principal: {
+      id: input.principalId ?? '',
+      kind: 'authenticated',
+    },
+    metadata: {
+      commandId: input.commandId,
+    },
+    admissionReceipt,
+    rejectionReceipt,
   };
+}
+
+async function settleGatewayClaim(
+  decision: AgentExecutionAdmissionDecision,
+  outcome: 'not_dispatched' | 'dispatch_succeeded' | 'dispatch_indeterminate'
+): Promise<void> {
+  await Promise.resolve(decision.idempotencyClaim?.settle(outcome));
 }
 
 function admissionErrorCodeForDecision(
@@ -779,10 +834,21 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         metadata: AgentExecutionCommandMetadata | undefined
       ): Promise<AgentExecutionAdmissionDecision> => {
         const stream = streams.get(streamId);
-        const actorId = stream ? parse(stream.source.address).id : streamId;
-        const principal =
-          options.commandAdmission?.resolvePrincipal?.(authenticatedAuthContext) ??
-          defaultGatewayPrincipal(authenticatedAuthContext, connectionId);
+        const actorId = stream ? stream.source.address : streamId;
+        const commandId =
+          typeof metadata?.commandId === 'string' && metadata.commandId.trim().length > 0
+            ? metadata.commandId.trim()
+            : `command:${new Date().toISOString()}`;
+        if (!options.commandAdmission?.resolvePrincipal) {
+          return createGatewayRejectedDecision({
+            actorId,
+            sessionId: connectionId,
+            commandId,
+            code: 'missing_principal',
+            detail: 'commandAdmission requires an explicit principal resolver.',
+          });
+        }
+        const principal = options.commandAdmission.resolvePrincipal(authenticatedAuthContext);
         const decision = await admitAgentExecutionCommand({
           actorId,
           sessionId: connectionId,
@@ -795,7 +861,34 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           idempotency: options.commandAdmission?.idempotency,
           now: () => new Date(),
         });
-        await Promise.resolve(options.commandAdmission?.onDecision?.(decision));
+        if (!options.commandAdmission?.onDecision) {
+          if (decision.ok) {
+            await settleGatewayClaim(decision, 'not_dispatched');
+          }
+          return createGatewayRejectedDecision({
+            actorId,
+            sessionId: connectionId,
+            commandId: decision.metadata.commandId,
+            ...(decision.principal.id ? { principalId: decision.principal.id } : {}),
+            code: 'missing_decision_sink',
+            detail: 'commandAdmission requires an explicit durable decision sink.',
+          });
+        }
+        try {
+          await Promise.resolve(options.commandAdmission.onDecision(decision));
+        } catch (error) {
+          if (decision.ok) {
+            await settleGatewayClaim(decision, 'not_dispatched');
+          }
+          return createGatewayRejectedDecision({
+            actorId,
+            sessionId: connectionId,
+            commandId: decision.metadata.commandId,
+            ...(decision.principal.id ? { principalId: decision.principal.id } : {}),
+            code: 'decision_sink_failure',
+            detail: error instanceof Error ? error.message : String(error),
+          });
+        }
         return decision;
       };
 
@@ -1240,13 +1333,19 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
               );
               return;
             }
-            await stream.source.send(message);
-            send({
-              type: 'ack',
-              streamId,
-              ...(normalizedRequestId ? { requestId: normalizedRequestId } : {}),
-              authorization: decision.authorizationReceipt,
-            });
+            try {
+              await stream.source.send(message);
+              await settleGatewayClaim(decision, 'dispatch_succeeded');
+              send({
+                type: 'ack',
+                streamId,
+                ...(normalizedRequestId ? { requestId: normalizedRequestId } : {}),
+                authorization: decision.authorizationReceipt,
+              });
+            } catch (error) {
+              await settleGatewayClaim(decision, 'dispatch_indeterminate');
+              throw error;
+            }
             return;
           }
           await stream.source.send(message);
@@ -1349,14 +1448,20 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
               );
               return;
             }
-            const value = await stream.source.ask(message, normalizedTimeoutMs);
-            send({
-              type: 'reply',
-              streamId,
-              requestId: normalizedRequestId,
-              value,
-              authorization: decision.authorizationReceipt,
-            });
+            try {
+              const value = await stream.source.ask(message, normalizedTimeoutMs);
+              await settleGatewayClaim(decision, 'dispatch_succeeded');
+              send({
+                type: 'reply',
+                streamId,
+                requestId: normalizedRequestId,
+                value,
+                authorization: decision.authorizationReceipt,
+              });
+            } catch (error) {
+              await settleGatewayClaim(decision, 'dispatch_indeterminate');
+              throw error;
+            }
             return;
           }
           const value = await stream.source.ask(message, normalizedTimeoutMs);

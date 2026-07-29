@@ -3128,6 +3128,9 @@ describe('runtime gateway hub', () => {
     );
     expect(seenDecisions).toContainEqual(
       expect.objectContaining({
+        admissionReceipt: expect.objectContaining({
+          actorId: 'actor://local/actor-ready',
+        }),
         principal: expect.objectContaining({
           id: 'principal:auth-1',
           kind: 'authenticated',
@@ -3143,6 +3146,100 @@ describe('runtime gateway hub', () => {
     expect(JSON.stringify(seenDecisions)).not.toContain('drop-me');
 
     detach();
+  });
+
+  it('fails closed when opted-in gateway admission omits the explicit principal resolver or durable decision sink', async () => {
+    const source = createFakeSource('ready');
+    const missingResolverHub = createRuntimeGatewayHub({
+      commandAdmission: {
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v3',
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => source,
+    });
+    const missingResolverConnection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detachMissingResolver = missingResolverHub.attach(missingResolverConnection);
+    missingResolverConnection.push({ type: 'hello' });
+    missingResolverConnection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    missingResolverConnection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-missing-resolver',
+      message: { type: 'SUBMIT', orderId: 'order-missing-resolver' },
+      metadata: { commandId: 'cmd-missing-resolver' },
+    });
+    await flushGatewayFrames();
+
+    expect(missingResolverConnection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-missing-resolver',
+        rejection: expect.objectContaining({
+          reason: expect.objectContaining({
+            code: 'missing_principal',
+            detail: 'commandAdmission requires an explicit principal resolver.',
+          }),
+        }),
+      })
+    );
+    expect(source.sentMessages).toEqual([]);
+    detachMissingResolver();
+
+    const missingSinkHub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v3',
+        }),
+      },
+      resolveScope: async () => source,
+    });
+    const missingSinkConnection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detachMissingSink = missingSinkHub.attach(missingSinkConnection);
+    missingSinkConnection.push({ type: 'hello' });
+    missingSinkConnection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    missingSinkConnection.push({
+      type: 'ask',
+      streamId: 'checkout-main',
+      requestId: 'ask-request-missing-sink',
+      message: { type: 'GET_COUNT' },
+      metadata: { commandId: 'cmd-missing-sink' },
+    });
+    await flushGatewayFrames();
+
+    expect(missingSinkConnection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'ask-request-missing-sink',
+        rejection: expect.objectContaining({
+          reason: expect.objectContaining({
+            code: 'missing_decision_sink',
+            detail: 'commandAdmission requires an explicit durable decision sink.',
+          }),
+        }),
+      })
+    );
+    expect(source.askMessages).toEqual([]);
+    detachMissingSink();
   });
 
   it('rejects credential-bearing gateway principals before dispatch and never leaks them into decisions or frames', async () => {
@@ -3223,13 +3320,14 @@ describe('runtime gateway hub', () => {
           if (metadata?.commandId === 'cmd-policy-failure') {
             throw new Error('policy offline');
           }
-          return {
-            outcome: 'rejected',
-            policy: 'checkout-policy-v1',
-            code: 'authorization_denied',
-            detail: 'approval missing',
-          };
+        return {
+          outcome: 'rejected',
+          policy: 'checkout-policy-v1',
+          code: 'authorization_denied',
+          detail: 'approval missing',
+        };
         },
+        onDecision: async () => {},
       },
       resolveScope: async () => source,
     });
@@ -3293,7 +3391,7 @@ describe('runtime gateway hub', () => {
           admissionStage: 'execution-authorized',
           reason: expect.objectContaining({
             code: 'policy_adapter_failure',
-            detail: 'policy offline',
+            detail: 'Policy adapter threw before returning a decision.',
           }),
         }),
       })
@@ -3310,6 +3408,7 @@ describe('runtime gateway hub', () => {
           id: 'principal:gateway-authenticated',
           kind: 'authenticated',
         }),
+        onDecision: async () => {},
       },
       resolveScope: async () => source,
     });
@@ -3356,6 +3455,7 @@ describe('runtime gateway hub', () => {
   it('rejects duplicate idempotency keys before gateway send or ask dispatch and fails closed on claim errors', async () => {
     const source = createFakeSource('ready');
     const claims: string[] = [];
+    const settlements: string[] = [];
     const hub = createRuntimeGatewayHub({
       commandAdmission: {
         resolvePrincipal: () => ({
@@ -3378,8 +3478,14 @@ describe('runtime gateway hub', () => {
           if (key === 'idem-claim-error') {
             throw new Error('claim store offline');
           }
-          return { outcome: 'available' };
+          return {
+            outcome: 'available',
+            settle: async (outcome) => {
+              settlements.push(outcome);
+            },
+          };
         },
+        onDecision: async () => {},
       },
       resolveScope: async () => source,
     });
@@ -3461,13 +3567,179 @@ describe('runtime gateway hub', () => {
         rejection: expect.objectContaining({
           reason: expect.objectContaining({
             code: 'idempotency_adapter_failure',
-            detail: 'claim store offline',
+            detail: 'Idempotency adapter threw before returning a claim result.',
           }),
         }),
       })
     );
-
     detach();
+  });
+
+  it('settles gateway idempotency claims for sink failures, send failures, and successful asks', async () => {
+    const sinkSource = createFakeSource('ready');
+    const sinkSettlements: string[] = [];
+    const sinkHub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v4',
+        }),
+        idempotency: async () => ({
+          outcome: 'available',
+          settle: async (outcome) => {
+            sinkSettlements.push(outcome);
+          },
+        }),
+        onDecision: async () => {
+          throw new Error('sink offline');
+        },
+      },
+      resolveScope: async () => sinkSource,
+    });
+    const sinkConnection = createFakeConnection({ authorityId: 'auth-1' });
+    const detachSink = sinkHub.attach(sinkConnection);
+    sinkConnection.push({ type: 'hello' });
+    sinkConnection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    sinkConnection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-sink-failure',
+      message: { type: 'SUBMIT', orderId: 'order-sink-failure' },
+      metadata: { commandId: 'cmd-sink-failure' },
+    });
+    await flushGatewayFrames();
+
+    expect(sinkConnection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-sink-failure',
+        rejection: expect.objectContaining({
+          reason: expect.objectContaining({
+            code: 'decision_sink_failure',
+            detail: 'sink offline',
+          }),
+        }),
+      })
+    );
+    expect(sinkSource.sentMessages).toEqual([]);
+    expect(sinkSettlements).toContain('not_dispatched');
+    detachSink();
+
+    const dispatchSource = createFakeSource('ready');
+    const originalSend = dispatchSource.send;
+    const dispatchSettlements: string[] = [];
+    dispatchSource.send = async () => {
+      throw new Error('dispatch exploded');
+    };
+    const dispatchHub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v4',
+        }),
+        idempotency: async () => ({
+          outcome: 'available',
+          settle: async (outcome) => {
+            dispatchSettlements.push(outcome);
+          },
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => dispatchSource,
+    });
+    const dispatchConnection = createFakeConnection({ authorityId: 'auth-1' });
+    const detachDispatch = dispatchHub.attach(dispatchConnection);
+    dispatchConnection.push({ type: 'hello' });
+    dispatchConnection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    dispatchConnection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-dispatch-failure',
+      message: { type: 'SUBMIT', orderId: 'order-dispatch-failure' },
+      metadata: { commandId: 'cmd-dispatch-failure' },
+    });
+    await flushGatewayFrames();
+
+    expect(dispatchConnection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-dispatch-failure',
+        code: 'internal_error',
+        message: 'dispatch exploded',
+      })
+    );
+    expect(dispatchSettlements).toContain('dispatch_indeterminate');
+    dispatchSource.send = originalSend;
+    detachDispatch();
+
+    const askSource = createFakeSource('ready');
+    const askSettlements: string[] = [];
+    const askHub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v4',
+        }),
+        idempotency: async () => ({
+          outcome: 'available',
+          settle: async (outcome) => {
+            askSettlements.push(outcome);
+          },
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => askSource,
+    });
+    const askConnection = createFakeConnection({ authorityId: 'auth-1' });
+    const detachAsk = askHub.attach(askConnection);
+    askConnection.push({ type: 'hello' });
+    askConnection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    askConnection.push({
+      type: 'ask',
+      streamId: 'checkout-main',
+      requestId: 'ask-request-idempotent-success',
+      message: { type: 'GET_COUNT' },
+      timeoutMs: 1000,
+      metadata: { commandId: 'cmd-ask-idempotent-success' },
+    });
+    await flushGatewayFrames();
+
+    expect(askConnection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'reply',
+        requestId: 'ask-request-idempotent-success',
+        authorization: expect.any(Object),
+      })
+    );
+    expect(askSettlements).toContain('dispatch_succeeded');
+    detachAsk();
   });
 
   it('fails closed when metadata requests idempotency without an adapter', async () => {
@@ -3482,6 +3754,7 @@ describe('runtime gateway hub', () => {
           outcome: 'authorized',
           policy: 'checkout-policy-v2',
         }),
+        onDecision: async () => {},
       },
       resolveScope: async () => source,
     });
@@ -3538,6 +3811,7 @@ describe('runtime gateway hub', () => {
           outcome: 'authorized',
           policy: 'checkout-policy-v2',
         }),
+        onDecision: async () => {},
       },
       resolveScope: async () => source,
     });
