@@ -228,7 +228,7 @@ Docs check completed on July 29, 2026:
 
 Last completed repository full gate:
 
-- July 29, 2026 at head `1898042b`
+- July 29, 2026 at head `fb1643be`
   - format
   - lint
   - typecheck
@@ -239,19 +239,11 @@ Last completed repository full gate:
 
 Last completed independent FAS validation:
 
-- QA, SRE, and reviewer validation completed on July 28, 2026 at head `f91aea90` with zero findings after the credential-containment retry.
-
-Pending post-fix validation at the current candidate head:
-
-- repository full gate after the served-gateway auth-context and fallback-commandId fixes
-- independent FAS QA rerun
-- independent FAS SRE rerun
-- independent reviewer rerun
+- QA and SRE validation completed on July 29, 2026 at head `fb1643be` with zero findings.
+- Reviewer validation completed on July 29, 2026 at head `fb1643be`; both runtime findings were confirmed fixed, and the reviewer approved with one low documentation-provenance correction applied by this docs-only follow-up.
 
 Still pending before maturity can advance beyond candidate:
 
-- post-fix repository full gate
-- post-fix independent QA, SRE, and reviewer validation
 - human final review and merge
 - downstream reconfirmation in Ignite Element and FAS
 
