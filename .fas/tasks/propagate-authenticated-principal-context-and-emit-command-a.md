@@ -46,6 +46,8 @@ Gateway authentication already resolves an auth context, but send and ask do not
 - packages/actor-core-runtime/src/serve-actor-web-node.ts
 - packages/actor-core-runtime/src/unit/serve-actor-web-node.test.ts
 - packages/agent-workflow-cli/src/cli/index.ts
+- packages/actor-core-runtime/src/runtime-auth.ts
+- .fas/memory/pr-feedback.md
 
 ## Architecture Context
 
@@ -218,6 +220,16 @@ Gateway authentication already resolves an auth context, but send and ask do not
 - Evidence: GitHub PR review | [PR 54](https://github.com/0xjcf/actor-web/pull/54) | Codex P1 findings: served gateway and shipped CLI entry could not opt into admission.
 - Accuracy signal: Verified against serve-actor-web-node.ts hub construction and cli/index.ts createRuntimeHostFromFile call.
 - Follow-up needed: Reconfirm runtime gateway and CLI admission conformance after focused and full verification.
+
+- Type: review-finding
+- Added at: 2026-07-29T04:00:30Z
+- Trigger: Final PR 54 review required typed auth-context propagation, and babysit closeout required durable review-memory capture.
+- Reason: Include the runtime auth generic needed to preserve verified context through served gateway hooks and the project-local PR feedback memory required by the babysit workflow.
+- Added paths: packages/actor-core-runtime/src/runtime-auth.ts, .fas/memory/pr-feedback.md
+- Evidence source: FAS reviewer and fas-babysit
+- Evidence: FAS reviewer and fas-babysit | [PR 54](https://github.com/0xjcf/actor-web/pull/54) | Reviewer found served-node auth context was stripped; babysit requires reusable review lessons after each sweep.
+- Accuracy signal: Verified against runtime-auth.ts generic propagation and committed PR #54 memory entry.
+- Follow-up needed: Downstream Ignite/FAS reconfirmation remains required after merge; no downstream repository edits were made.
 
 ## Implementation plan
 
