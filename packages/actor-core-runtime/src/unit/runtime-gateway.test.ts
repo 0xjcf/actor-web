@@ -3625,13 +3625,14 @@ describe('runtime gateway hub', () => {
         rejection: expect.objectContaining({
           reason: expect.objectContaining({
             code: 'decision_sink_failure',
-            detail: 'sink offline',
+            detail: 'Decision sink threw before recording the admission decision.',
           }),
         }),
       })
     );
     expect(sinkSource.sentMessages).toEqual([]);
     expect(sinkSettlements).toContain('not_dispatched');
+    expect(JSON.stringify(sinkConnection.frames)).not.toContain('sink offline');
     detachSink();
 
     const dispatchSource = createFakeSource('ready');
@@ -3740,6 +3741,75 @@ describe('runtime gateway hub', () => {
     );
     expect(askSettlements).toContain('dispatch_succeeded');
     detachAsk();
+
+    const postDispatchSource = createFakeSource('ready');
+    const postDispatchSettlements: string[] = [];
+    const postDispatchHub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v4',
+        }),
+        idempotency: async () => ({
+          outcome: 'available',
+          settle: async (outcome) => {
+            postDispatchSettlements.push(outcome);
+            if (outcome === 'dispatch_succeeded') {
+              throw new Error('settlement secret gateway-token-789');
+            }
+          },
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => postDispatchSource,
+    });
+    const postDispatchConnection = createFakeConnection({ authorityId: 'auth-1' });
+    const detachPostDispatch = postDispatchHub.attach(postDispatchConnection);
+    postDispatchConnection.push({ type: 'hello' });
+    postDispatchConnection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    postDispatchConnection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-post-dispatch-settlement-failure',
+      message: { type: 'SUBMIT', orderId: 'order-post-dispatch-settlement-failure' },
+      metadata: { commandId: 'cmd-post-dispatch-settlement-failure' },
+    });
+    await flushGatewayFrames();
+
+    expect(postDispatchSource.sentMessages).toEqual([
+      { type: 'SUBMIT', orderId: 'order-post-dispatch-settlement-failure' },
+    ]);
+    expect(postDispatchSettlements).toEqual(['dispatch_succeeded']);
+    expect(postDispatchConnection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-post-dispatch-settlement-failure',
+        code: 'internal_error',
+        message: 'Dispatch outcome could not be recorded after execution.',
+      })
+    );
+    expect(JSON.stringify(postDispatchConnection.frames)).not.toContain('gateway-token-789');
+    expect(
+      postDispatchConnection.frames.filter(
+        (frame) =>
+          typeof frame === 'object' &&
+          frame !== null &&
+          'type' in frame &&
+          frame.type === 'ack' &&
+          'requestId' in frame &&
+          frame.requestId === 'send-request-post-dispatch-settlement-failure'
+      )
+    ).toHaveLength(0);
+    detachPostDispatch();
   });
 
   it('fails closed when metadata requests idempotency without an adapter', async () => {

@@ -544,13 +544,17 @@ describe('createRuntimeHost', () => {
 
     expect(sinkFailure).toEqual({
       ok: false,
-      error: 'Send rejected: decision_sink_failure (sink offline)',
+      error:
+        'Send rejected: decision_sink_failure (Decision sink threw before recording the admission decision.)',
     });
     expect(countAfterSinkFailure).toEqual({
       ok: false,
-      error: 'Ask rejected: decision_sink_failure (sink offline)',
+      error:
+        'Ask rejected: decision_sink_failure (Decision sink threw before recording the admission decision.)',
     });
     expect(sinkSettlements).toContain('not_dispatched');
+    expect(JSON.stringify(sinkFailure)).not.toContain('sink offline');
+    expect(JSON.stringify(countAfterSinkFailure)).not.toContain('sink offline');
 
     await host.stop();
     const throwingBehavior = defineBehavior<CounterMsg>()
@@ -604,6 +608,52 @@ describe('createRuntimeHost', () => {
       error: 'Send failed: dispatch exploded',
     });
     expect(dispatchSettlements).toContain('dispatch_indeterminate');
+
+    await host.stop();
+    const postDispatchSettlements: AgentExecutionIdempotencySettlementOutcome[] = [];
+    let dispatchCount = 0;
+    const postDispatchBlocked = await createRuntimeHost(buildCounterTopology(), {
+      commandAdmission: {
+        principal: {
+          id: 'principal:cli-system',
+          kind: 'system',
+        },
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'cli-policy-v4',
+        }),
+        idempotency: async () => ({
+          outcome: 'available',
+          settle: async (outcome) => {
+            postDispatchSettlements.push(outcome);
+            if (outcome === 'dispatch_succeeded') {
+              throw new Error('settlement secret settlement-token-123');
+            }
+          },
+        }),
+        onDecision: async () => {},
+      },
+    });
+    expect(postDispatchBlocked.ok).toBe(true);
+    if (!postDispatchBlocked.ok) {
+      return;
+    }
+    host = postDispatchBlocked.value;
+
+    const dispatched = await host.send('counter', '{"type":"INCREMENT"}');
+    const counterRef = host.resolve('counter');
+    const counterSnapshot = counterRef?.getSnapshot() as
+      | { context?: { count?: number } }
+      | undefined;
+
+    expect(dispatched).toEqual({
+      ok: false,
+      error: 'Send failed: Dispatch outcome could not be recorded after execution.',
+    });
+    dispatchCount = counterSnapshot?.context?.count ?? -1;
+    expect(dispatchCount).toBe(1);
+    expect(postDispatchSettlements).toEqual(['dispatch_succeeded']);
+    expect(JSON.stringify(dispatched)).not.toContain('settlement-token-123');
   });
 
   it('rejects malformed local admission metadata without dispatching or throwing', async () => {

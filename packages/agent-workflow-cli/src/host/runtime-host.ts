@@ -31,6 +31,9 @@ import { admitAgentExecutionCommand, Logger, parse, startRuntime } from '@actor-
 import { loadModuleExport } from './load-module.js';
 
 const log = Logger.namespace('ACTOR_WEB_CLI_HOST');
+const DECISION_SINK_FAILURE_DETAIL = 'Decision sink threw before recording the admission decision.';
+const DISPATCH_OUTCOME_RECORD_FAILURE_DETAIL =
+  'Dispatch outcome could not be recorded after execution.';
 
 export type HostResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -153,6 +156,53 @@ async function settleRuntimeHostClaim(
   outcome: 'not_dispatched' | 'dispatch_succeeded' | 'dispatch_indeterminate'
 ): Promise<void> {
   await Promise.resolve(decision.idempotencyClaim?.settle(outcome));
+}
+
+async function trySettleRuntimeHostClaim(
+  decision: AgentExecutionAdmissionDecision,
+  outcome: 'not_dispatched' | 'dispatch_succeeded' | 'dispatch_indeterminate'
+): Promise<boolean> {
+  try {
+    await settleRuntimeHostClaim(decision, outcome);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function toRuntimeHostDispatchFailure<T>(label: 'Send' | 'Ask', detail: string): HostResult<T> {
+  return {
+    ok: false,
+    error: `${label} failed: ${detail}`,
+  };
+}
+
+async function executeRuntimeHostDispatch<T>(input: {
+  readonly label: 'Send' | 'Ask';
+  readonly decision: AgentExecutionAdmissionDecision;
+  readonly dispatch: () => Promise<T>;
+}): Promise<HostResult<T>> {
+  let dispatchCompleted = false;
+
+  try {
+    const value = await input.dispatch();
+    dispatchCompleted = true;
+    const settled = await trySettleRuntimeHostClaim(input.decision, 'dispatch_succeeded');
+    if (!settled) {
+      return toRuntimeHostDispatchFailure(input.label, DISPATCH_OUTCOME_RECORD_FAILURE_DETAIL);
+    }
+    return { ok: true, value };
+  } catch (error) {
+    if (!dispatchCompleted) {
+      await trySettleRuntimeHostClaim(input.decision, 'dispatch_indeterminate');
+      return toRuntimeHostDispatchFailure(
+        input.label,
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+
+    return toRuntimeHostDispatchFailure(input.label, DISPATCH_OUTCOME_RECORD_FAILURE_DETAIL);
+  }
 }
 
 /**
@@ -280,7 +330,7 @@ export async function createRuntimeHost(
           });
           if (!options.commandAdmission.onDecision) {
             if (decision.ok) {
-              await settleRuntimeHostClaim(decision, 'not_dispatched');
+              await trySettleRuntimeHostClaim(decision, 'not_dispatched');
             }
             return {
               ok: false,
@@ -290,14 +340,13 @@ export async function createRuntimeHost(
           }
           try {
             await Promise.resolve(options.commandAdmission.onDecision(decision));
-          } catch (error) {
+          } catch {
             if (decision.ok) {
-              await settleRuntimeHostClaim(decision, 'not_dispatched');
+              await trySettleRuntimeHostClaim(decision, 'not_dispatched');
             }
-            const detail = error instanceof Error ? error.message : String(error);
             return {
               ok: false,
-              error: `Send rejected: decision_sink_failure (${detail})`,
+              error: `Send rejected: decision_sink_failure (${DECISION_SINK_FAILURE_DETAIL})`,
             };
           }
           if (!decision.ok) {
@@ -307,15 +356,15 @@ export async function createRuntimeHost(
               error: `Send rejected: ${reason?.code ?? 'authorization_denied'}${reason?.detail ? ` (${reason.detail})` : ''}`,
             };
           }
-          try {
-            await ref.send(message.value);
-            await flush();
-            await settleRuntimeHostClaim(decision, 'dispatch_succeeded');
-          } catch (error) {
-            await settleRuntimeHostClaim(decision, 'dispatch_indeterminate');
-            throw error;
-          }
-          return { ok: true, value: `Sent ${message.value.type} to ${ref.address}` };
+          return executeRuntimeHostDispatch({
+            label: 'Send',
+            decision,
+            dispatch: async () => {
+              await ref.send(message.value);
+              await flush();
+              return `Sent ${message.value.type} to ${ref.address}`;
+            },
+          });
         }
         await ref.send(message.value);
         await flush();
@@ -359,7 +408,7 @@ export async function createRuntimeHost(
           });
           if (!options.commandAdmission.onDecision) {
             if (decision.ok) {
-              await settleRuntimeHostClaim(decision, 'not_dispatched');
+              await trySettleRuntimeHostClaim(decision, 'not_dispatched');
             }
             return {
               ok: false,
@@ -369,14 +418,13 @@ export async function createRuntimeHost(
           }
           try {
             await Promise.resolve(options.commandAdmission.onDecision(decision));
-          } catch (error) {
+          } catch {
             if (decision.ok) {
-              await settleRuntimeHostClaim(decision, 'not_dispatched');
+              await trySettleRuntimeHostClaim(decision, 'not_dispatched');
             }
-            const detail = error instanceof Error ? error.message : String(error);
             return {
               ok: false,
-              error: `Ask rejected: decision_sink_failure (${detail})`,
+              error: `Ask rejected: decision_sink_failure (${DECISION_SINK_FAILURE_DETAIL})`,
             };
           }
           if (!decision.ok) {
@@ -386,14 +434,11 @@ export async function createRuntimeHost(
               error: `Ask rejected: ${reason?.code ?? 'authorization_denied'}${reason?.detail ? ` (${reason.detail})` : ''}`,
             };
           }
-          try {
-            const reply = await ref.ask(message.value, timeoutMs);
-            await settleRuntimeHostClaim(decision, 'dispatch_succeeded');
-            return { ok: true, value: reply };
-          } catch (error) {
-            await settleRuntimeHostClaim(decision, 'dispatch_indeterminate');
-            throw error;
-          }
+          return executeRuntimeHostDispatch({
+            label: 'Ask',
+            decision,
+            dispatch: async () => ref.ask(message.value, timeoutMs),
+          });
         }
         const reply = await ref.ask(message.value, timeoutMs);
         return { ok: true, value: reply };

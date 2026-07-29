@@ -321,6 +321,9 @@ type RuntimeGatewayStreamState = {
 const OUTBOUND_SEND_FAILURE_THRESHOLD = 3;
 const OUTBOUND_SEND_ATTEMPT_TIMEOUT_MS = 5000;
 const DEFAULT_INBOUND_QUEUE_LIMIT = 64;
+const DECISION_SINK_FAILURE_DETAIL = 'Decision sink threw before recording the admission decision.';
+const DISPATCH_OUTCOME_RECORD_FAILURE_MESSAGE =
+  'Dispatch outcome could not be recorded after execution.';
 
 export type RuntimeGatewayReplayFrame = Extract<
   RuntimeGatewayServerFrame,
@@ -476,6 +479,18 @@ async function settleGatewayClaim(
   outcome: 'not_dispatched' | 'dispatch_succeeded' | 'dispatch_indeterminate'
 ): Promise<void> {
   await Promise.resolve(decision.idempotencyClaim?.settle(outcome));
+}
+
+async function trySettleGatewayClaim(
+  decision: AgentExecutionAdmissionDecision,
+  outcome: 'not_dispatched' | 'dispatch_succeeded' | 'dispatch_indeterminate'
+): Promise<boolean> {
+  try {
+    await settleGatewayClaim(decision, outcome);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function admissionErrorCodeForDecision(
@@ -871,7 +886,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         });
         if (!options.commandAdmission?.onDecision) {
           if (decision.ok) {
-            await settleGatewayClaim(decision, 'not_dispatched');
+            await trySettleGatewayClaim(decision, 'not_dispatched');
           }
           return createGatewayRejectedDecision({
             actorId,
@@ -884,9 +899,9 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         }
         try {
           await Promise.resolve(options.commandAdmission.onDecision(decision));
-        } catch (error) {
+        } catch {
           if (decision.ok) {
-            await settleGatewayClaim(decision, 'not_dispatched');
+            await trySettleGatewayClaim(decision, 'not_dispatched');
           }
           return createGatewayRejectedDecision({
             actorId,
@@ -894,7 +909,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             commandId: decision.metadata.commandId,
             ...(decision.principal.id ? { principalId: decision.principal.id } : {}),
             code: 'decision_sink_failure',
-            detail: error instanceof Error ? error.message : String(error),
+            detail: DECISION_SINK_FAILURE_DETAIL,
           });
         }
         return decision;
@@ -1343,7 +1358,17 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             }
             try {
               await stream.source.send(message);
-              await settleGatewayClaim(decision, 'dispatch_succeeded');
+              const settled = await trySettleGatewayClaim(decision, 'dispatch_succeeded');
+              if (!settled) {
+                sendError(
+                  'internal_error',
+                  DISPATCH_OUTCOME_RECORD_FAILURE_MESSAGE,
+                  false,
+                  streamId,
+                  normalizedRequestId
+                );
+                return;
+              }
               send({
                 type: 'ack',
                 streamId,
@@ -1351,8 +1376,14 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
                 authorization: decision.authorizationReceipt,
               });
             } catch (error) {
-              await settleGatewayClaim(decision, 'dispatch_indeterminate');
-              throw error;
+              await trySettleGatewayClaim(decision, 'dispatch_indeterminate');
+              sendError(
+                'internal_error',
+                error instanceof Error ? error.message : 'Runtime command failed.',
+                false,
+                streamId,
+                normalizedRequestId
+              );
             }
             return;
           }
@@ -1458,7 +1489,17 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             }
             try {
               const value = await stream.source.ask(message, normalizedTimeoutMs);
-              await settleGatewayClaim(decision, 'dispatch_succeeded');
+              const settled = await trySettleGatewayClaim(decision, 'dispatch_succeeded');
+              if (!settled) {
+                sendError(
+                  'internal_error',
+                  DISPATCH_OUTCOME_RECORD_FAILURE_MESSAGE,
+                  false,
+                  streamId,
+                  normalizedRequestId
+                );
+                return;
+              }
               send({
                 type: 'reply',
                 streamId,
@@ -1467,8 +1508,14 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
                 authorization: decision.authorizationReceipt,
               });
             } catch (error) {
-              await settleGatewayClaim(decision, 'dispatch_indeterminate');
-              throw error;
+              await trySettleGatewayClaim(decision, 'dispatch_indeterminate');
+              sendError(
+                'internal_error',
+                error instanceof Error ? error.message : 'Runtime ask failed.',
+                false,
+                streamId,
+                normalizedRequestId
+              );
             }
             return;
           }
