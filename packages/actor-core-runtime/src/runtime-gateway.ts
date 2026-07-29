@@ -128,7 +128,7 @@ export interface CreateRuntimeGatewayHubOptions<TAuthContext = unknown> {
   commandAdmission?: RuntimeGatewayCommandAdmissionOptions<TAuthContext>;
 }
 
-const PRE_AUTH_RECHECKS: readonly ('command' | 'payload')[] = ['command', 'payload'];
+const PRE_AUTH_RECHECKS: readonly [] = [];
 const PRINCIPAL_RESOLUTION_FAILURE_DETAIL =
   'Principal resolver threw before returning a principal.';
 

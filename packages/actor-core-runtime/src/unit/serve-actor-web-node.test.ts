@@ -246,7 +246,7 @@ describe('serveNode', () => {
     }
   });
 
-  it('passes undefined gateway auth context before authentication is verified', async () => {
+  it('passes undefined gateway auth context before authentication is verified and does not authorize it by default', async () => {
     const resolveScopeAuthContexts: unknown[] = [];
     const resolvePrincipalAuthContexts: unknown[] = [];
     const decisions: unknown[] = [];
@@ -275,14 +275,22 @@ describe('serveNode', () => {
           resolvePrincipal: (authContext) => {
             resolvePrincipalAuthContexts.push(authContext);
             return {
-              id: authContext === undefined ? 'principal:anonymous' : 'principal:unexpected-auth',
-              kind: 'authenticated',
+              id: authContext === undefined ? 'principal:unknown' : 'principal:unexpected-auth',
+              kind: authContext === undefined ? 'unknown' : 'authenticated',
             };
           },
-          policy: async () => ({
-            outcome: 'authorized',
-            policy: 'served-gateway-no-auth-context',
-          }),
+          policy: async ({ principal }) =>
+            principal.kind === 'unknown'
+              ? {
+                  outcome: 'rejected',
+                  policy: 'served-gateway-no-auth-context',
+                  code: 'authorization_denied',
+                  detail: 'Unverified gateway auth context cannot authorize execution.',
+                }
+              : {
+                  outcome: 'authorized',
+                  policy: 'served-gateway-no-auth-context',
+                },
           onDecision: async (decision) => {
             decisions.push(decision);
           },
@@ -316,10 +324,6 @@ describe('serveNode', () => {
           metadata: { commandId: 'served-gateway-send-undefined-auth-context' },
         })
       );
-      await expect(frames.nextFrame()).resolves.toMatchObject({
-        type: 'ack',
-        requestId: 'send-request-undefined-auth-context',
-      });
 
       await expect(
         waitFor(
@@ -344,11 +348,16 @@ describe('serveNode', () => {
         waitFor(() => decisions.at(0), 'Expected served gateway undefined-auth decision')
       ).resolves.toEqual(
         expect.objectContaining({
+          ok: false,
           principal: expect.objectContaining({
-            id: 'principal:anonymous',
-            kind: 'authenticated',
+            id: 'principal:unknown',
+            kind: 'unknown',
           }),
         })
+      );
+      await served.system.flush();
+      await expect(served.requireActor('counter').ask<number>({ type: 'GET_COUNT' })).resolves.toBe(
+        0
       );
 
       const closePromise = waitForSocketClose(socket);
