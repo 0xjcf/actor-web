@@ -201,27 +201,70 @@ function isIsoDateString(value: unknown): value is string {
   return hasNonEmptyString(value) && !Number.isNaN(Date.parse(value));
 }
 
-function isJsonValue(value: unknown): value is JsonValue {
+function isJsonValue(value: unknown, ancestors = new WeakSet<object>()): value is JsonValue {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') {
     return true;
   }
   if (typeof value === 'number') {
     return Number.isFinite(value);
   }
-  if (Array.isArray(value)) {
-    return value.every((entry) => isJsonValue(entry));
-  }
   if (typeof value !== 'object') {
     return false;
   }
+  if (ancestors.has(value)) {
+    return false;
+  }
+  ancestors.add(value);
+  if (Array.isArray(value)) {
+    try {
+      for (let index = 0; index < value.length; index += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        if (
+          !descriptor ||
+          !descriptor.enumerable ||
+          !('value' in descriptor) ||
+          !isJsonValue(descriptor.value, ancestors)
+        ) {
+          return false;
+        }
+      }
+      return Reflect.ownKeys(value).every((key) => {
+        if (key === 'length') {
+          return true;
+        }
+        if (typeof key !== 'string') {
+          return false;
+        }
+        const index = Number(key);
+        return (
+          Number.isInteger(index) && index >= 0 && index < value.length && String(index) === key
+        );
+      });
+    } finally {
+      ancestors.delete(value);
+    }
+  }
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) {
+    ancestors.delete(value);
     return false;
   }
-  if (typeof (value as { readonly toJSON?: unknown }).toJSON === 'function') {
-    return false;
+  try {
+    return Reflect.ownKeys(value).every((key) => {
+      if (typeof key !== 'string') {
+        return false;
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      return (
+        !!descriptor &&
+        descriptor.enumerable &&
+        'value' in descriptor &&
+        isJsonValue(descriptor.value, ancestors)
+      );
+    });
+  } finally {
+    ancestors.delete(value);
   }
-  return Object.values(value as Record<string, unknown>).every((entry) => isJsonValue(entry));
 }
 
 function cloneJson<TValue extends JsonValue>(value: TValue): TValue {

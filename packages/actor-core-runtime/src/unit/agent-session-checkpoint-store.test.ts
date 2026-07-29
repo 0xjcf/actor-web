@@ -193,6 +193,24 @@ describe('agent session checkpoint store', () => {
       'Agent session checkpoint deterministic state must be JSON-safe.'
     );
 
+    const cyclicState: Record<string, unknown> = {};
+    cyclicState.self = cyclicState;
+    const invalidCyclicState = {
+      ...envelope,
+      deterministic: cyclicState,
+    } as unknown as Parameters<typeof createAgentSessionCheckpointEnvelope>[0];
+    expect(() => createAgentSessionCheckpointEnvelope(invalidCyclicState)).toThrow(
+      'Agent session checkpoint deterministic state must be JSON-safe.'
+    );
+
+    const invalidSparseState = {
+      ...envelope,
+      deterministic: new Array(1),
+    } as unknown as Parameters<typeof createAgentSessionCheckpointEnvelope>[0];
+    expect(() => createAgentSessionCheckpointEnvelope(invalidSparseState)).toThrow(
+      'Agent session checkpoint deterministic state must be JSON-safe.'
+    );
+
     const serializedEnvelope = JSON.parse(JSON.stringify(envelope)) as Record<string, unknown>;
     const continuation = serializedEnvelope.continuation as Record<string, unknown>;
     expect(
