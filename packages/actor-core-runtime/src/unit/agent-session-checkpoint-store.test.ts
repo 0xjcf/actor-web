@@ -6,6 +6,7 @@ import {
   createAgentSessionCheckpointEnvelope,
   createInMemoryAgentSessionCheckpointStore,
   deriveAgentSessionCheckpointRehydration,
+  parseAgentSessionCheckpointEnvelope,
 } from '../agent-session-checkpoint-store.js';
 import * as browserEntry from '../browser.js';
 import * as rootEntry from '../index.js';
@@ -157,11 +158,120 @@ describe('agent session checkpoint store', () => {
     });
   });
 
+  it('rejects construction and parsing inputs that cannot round-trip as the checkpoint contract', () => {
+    const envelope = createCheckpointEnvelope();
+    const invalidIdentity = {
+      ...envelope,
+      actor: {
+        ...envelope.actor,
+        actorId: '',
+      },
+    } as Parameters<typeof createAgentSessionCheckpointEnvelope>[0];
+    expect(() => createAgentSessionCheckpointEnvelope(invalidIdentity)).toThrow(
+      'Agent session checkpoint actor identity is invalid.'
+    );
+
+    const invalidEffect = {
+      ...envelope,
+      effect: {
+        ...envelope.effect,
+        phase: 'unknown',
+      },
+    } as unknown as Parameters<typeof createAgentSessionCheckpointEnvelope>[0];
+    expect(() => createAgentSessionCheckpointEnvelope(invalidEffect)).toThrow(
+      'Agent session checkpoint effect state is invalid.'
+    );
+
+    const customJson = Object.defineProperty({ state: 'not-round-trippable' }, 'toJSON', {
+      value: () => ({ state: 'different' }),
+    });
+    const invalidDeterministicState = {
+      ...envelope,
+      deterministic: customJson,
+    } as unknown as Parameters<typeof createAgentSessionCheckpointEnvelope>[0];
+    expect(() => createAgentSessionCheckpointEnvelope(invalidDeterministicState)).toThrow(
+      'Agent session checkpoint deterministic state must be JSON-safe.'
+    );
+
+    const serializedEnvelope = JSON.parse(JSON.stringify(envelope)) as Record<string, unknown>;
+    const continuation = serializedEnvelope.continuation as Record<string, unknown>;
+    expect(
+      parseAgentSessionCheckpointEnvelope({
+        ...serializedEnvelope,
+        continuation: {
+          ...continuation,
+          payloadBytes: Number(continuation.payloadBytes) + 1,
+        },
+      })
+    ).toMatchObject({
+      ok: false,
+      reason: 'corrupt',
+    });
+    expect(
+      parseAgentSessionCheckpointEnvelope({
+        ...serializedEnvelope,
+        continuation: {
+          ...continuation,
+          redaction: {
+            disposition: 'metadata_only',
+            fields: ['continuation.payload'],
+          },
+        },
+      })
+    ).toMatchObject({
+      ok: false,
+      reason: 'corrupt',
+    });
+  });
+
+  it('invalidates an expired provider continuation before rehydration', async () => {
+    const store = createInMemoryAgentSessionCheckpointStore();
+    const envelope = createCheckpointEnvelope({
+      checkpointId: 'checkpoint:expired-continuation',
+      continuation: {
+        provider: 'test-provider',
+        adapter: 'test-provider-adapter',
+        formatVersion: 1,
+        payload: {
+          cursor: 'opaque-provider-state',
+        },
+        payloadBytes: new TextEncoder().encode(
+          JSON.stringify({
+            cursor: 'opaque-provider-state',
+          })
+        ).byteLength,
+        expiresAt: '2026-07-30T13:45:00.000Z',
+        redaction: {
+          disposition: 'none',
+          fields: [],
+        },
+      },
+      expiresAt: '2026-08-01T13:45:00.000Z',
+    });
+
+    await expect(store.write(envelope)).resolves.toMatchObject({
+      outcome: 'stored',
+    });
+    const readResult = await store.read({
+      sessionId: envelope.sessionId,
+      now: () => new Date('2026-07-31T13:45:00.000Z'),
+    });
+    expect(readResult).toEqual({
+      outcome: 'expired',
+      envelope,
+    });
+    expect(deriveAgentSessionCheckpointRehydration(readResult)).toMatchObject({
+      outcome: 'manual_recovery_required',
+      reason: 'expired',
+    });
+  });
+
   it('uses the node filesystem adapter for corrupt, version-mismatch, redacted, and stale checkpoints', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'actor-web-checkpoints-'));
     const nodeStore = nodeEntry.createNodeFileSystemAgentSessionCheckpointStore({
       directory,
       redactOpaqueContinuation: true,
+      now: () => new Date('2026-07-29T13:45:30.000Z'),
     });
     const envelope = createCheckpointEnvelope({
       checkpointId: 'checkpoint:node',
@@ -202,6 +312,19 @@ describe('agent session checkpoint store', () => {
       outcome: 'manual_recovery_required',
       reason: 'redacted',
     });
+    const staleRedactedStore = nodeEntry.createNodeFileSystemAgentSessionCheckpointStore({
+      directory,
+      now: () => new Date('2026-07-29T13:47:00.000Z'),
+    });
+    await expect(staleRedactedStore.read({ sessionId: envelope.sessionId })).resolves.toMatchObject(
+      {
+        outcome: 'stale',
+        envelope: {
+          checkpointId: 'checkpoint:node',
+          redactedFields: ['continuation.payload'],
+        },
+      }
+    );
 
     const rawFilePath = path.join(directory, `${encodeURIComponent(envelope.sessionId)}.json`);
     await writeFile(
@@ -303,6 +426,34 @@ describe('agent session checkpoint store', () => {
       }),
       sizeBytes: persistedBytes,
       maxBytes: persistedBytes - 1,
+    });
+  });
+
+  it('serializes same-session filesystem writes across store instances in one host process', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'actor-web-checkpoints-concurrent-'));
+    const firstStore = nodeEntry.createNodeFileSystemAgentSessionCheckpointStore({
+      directory,
+      redactOpaqueContinuation: false,
+      now: () => new Date('2026-07-29T13:45:30.000Z'),
+    });
+    const secondStore = nodeEntry.createNodeFileSystemAgentSessionCheckpointStore({
+      directory,
+      redactOpaqueContinuation: false,
+      now: () => new Date('2026-07-29T13:45:30.000Z'),
+    });
+    const firstEnvelope = createCheckpointEnvelope({
+      checkpointId: 'checkpoint:concurrent:first',
+    });
+    const secondEnvelope = createCheckpointEnvelope({
+      checkpointId: 'checkpoint:concurrent:second',
+    });
+
+    await expect(
+      Promise.all([firstStore.write(firstEnvelope), secondStore.write(secondEnvelope)])
+    ).resolves.toMatchObject([{ outcome: 'stored' }, { outcome: 'replaced' }]);
+    await expect(firstStore.read({ sessionId: firstEnvelope.sessionId })).resolves.toEqual({
+      outcome: 'present',
+      envelope: secondEnvelope,
     });
   });
 

@@ -177,6 +177,7 @@ export type {
   AgentSessionCheckpointEffectPhase,
   AgentSessionCheckpointEffectState,
   AgentSessionCheckpointEnvelope,
+  AgentSessionCheckpointEnvelopeInput,
   AgentSessionCheckpointParseResult,
   AgentSessionCheckpointReadInput,
   AgentSessionCheckpointReadOutcome,

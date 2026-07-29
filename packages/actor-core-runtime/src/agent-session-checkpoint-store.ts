@@ -202,18 +202,23 @@ function isIsoDateString(value: unknown): value is string {
 }
 
 function isJsonValue(value: unknown): value is JsonValue {
-  if (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean'
-  ) {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') {
     return true;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value);
   }
   if (Array.isArray(value)) {
     return value.every((entry) => isJsonValue(entry));
   }
   if (typeof value !== 'object') {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    return false;
+  }
+  if (typeof (value as { readonly toJSON?: unknown }).toJSON === 'function') {
     return false;
   }
   return Object.values(value as Record<string, unknown>).every((entry) => isJsonValue(entry));
@@ -323,15 +328,15 @@ function classifyReadResult(
   envelope: AgentSessionCheckpointEnvelope,
   now: Date
 ): AgentSessionCheckpointReadResult {
-  if (envelope.redactedFields.length > 0) {
-    return {
-      outcome: 'redacted',
-      envelope,
-      fields: envelope.redactedFields,
-    };
-  }
   const expiresAtMs = toDateMs(envelope.expiresAt);
   if (expiresAtMs !== null && expiresAtMs <= now.getTime()) {
+    return {
+      outcome: 'expired',
+      envelope,
+    };
+  }
+  const continuationExpiresAtMs = toDateMs(envelope.continuation?.expiresAt);
+  if (continuationExpiresAtMs !== null && continuationExpiresAtMs <= now.getTime()) {
     return {
       outcome: 'expired',
       envelope,
@@ -342,6 +347,13 @@ function classifyReadResult(
     return {
       outcome: 'stale',
       envelope,
+    };
+  }
+  if (envelope.redactedFields.length > 0) {
+    return {
+      outcome: 'redacted',
+      envelope,
+      fields: envelope.redactedFields,
     };
   }
   return {
@@ -395,24 +407,36 @@ function isValidContinuation(value: unknown): value is AgentSessionCheckpointCon
     return false;
   }
   const candidate = value as Record<string, unknown>;
+  if (
+    !(
+      hasNonEmptyString(candidate.provider) &&
+      hasNonEmptyString(candidate.adapter) &&
+      typeof candidate.formatVersion === 'number' &&
+      Number.isInteger(candidate.formatVersion) &&
+      candidate.formatVersion >= 1 &&
+      (candidate.payload === null || isJsonValue(candidate.payload)) &&
+      typeof candidate.payloadBytes === 'number' &&
+      Number.isInteger(candidate.payloadBytes) &&
+      candidate.payloadBytes >= 0 &&
+      (candidate.expiresAt === undefined ||
+        candidate.expiresAt === null ||
+        isIsoDateString(candidate.expiresAt)) &&
+      !!candidate.redaction &&
+      typeof candidate.redaction === 'object' &&
+      (((candidate.redaction as Record<string, unknown>).disposition === 'none' &&
+        isValidStringArray((candidate.redaction as Record<string, unknown>).fields)) ||
+        ((candidate.redaction as Record<string, unknown>).disposition === 'metadata_only' &&
+          isValidStringArray((candidate.redaction as Record<string, unknown>).fields)))
+    )
+  ) {
+    return false;
+  }
+  const redaction = candidate.redaction as Record<string, unknown>;
+  if (redaction.disposition === 'metadata_only') {
+    return candidate.payload === null;
+  }
   return (
-    hasNonEmptyString(candidate.provider) &&
-    hasNonEmptyString(candidate.adapter) &&
-    typeof candidate.formatVersion === 'number' &&
-    Number.isFinite(candidate.formatVersion) &&
-    (candidate.payload === null || isJsonValue(candidate.payload)) &&
-    typeof candidate.payloadBytes === 'number' &&
-    Number.isFinite(candidate.payloadBytes) &&
-    candidate.payloadBytes >= 0 &&
-    (candidate.expiresAt === undefined ||
-      candidate.expiresAt === null ||
-      isIsoDateString(candidate.expiresAt)) &&
-    !!candidate.redaction &&
-    typeof candidate.redaction === 'object' &&
-    (((candidate.redaction as Record<string, unknown>).disposition === 'none' &&
-      isValidStringArray((candidate.redaction as Record<string, unknown>).fields)) ||
-      ((candidate.redaction as Record<string, unknown>).disposition === 'metadata_only' &&
-        isValidStringArray((candidate.redaction as Record<string, unknown>).fields)))
+    candidate.payloadBytes === getContinuationPayloadBytes(candidate.payload as JsonValue | null)
   );
 }
 
@@ -476,8 +500,23 @@ export function createAgentSessionCheckpointEnvelope(
   if (!hasNonEmptyString(input.checkpointId)) {
     throw new Error('Agent session checkpoint requires a non-empty checkpointId.');
   }
+  if (!isValidIdentity(input.actor)) {
+    throw new Error('Agent session checkpoint actor identity is invalid.');
+  }
   if (input.actor.sessionId !== input.sessionId) {
     throw new Error('Actor sessionId must match the checkpoint sessionId.');
+  }
+  if (!isValidEffectState(input.effect)) {
+    throw new Error('Agent session checkpoint effect state is invalid.');
+  }
+  if (!isValidContinuation(input.continuation)) {
+    throw new Error('Agent session checkpoint continuation is invalid.');
+  }
+  if (!isValidReconciliation(input.reconciliation)) {
+    throw new Error('Agent session checkpoint reconciliation state is invalid.');
+  }
+  if (input.redactedFields !== undefined && !isValidStringArray(input.redactedFields)) {
+    throw new Error('Agent session checkpoint redactedFields are invalid.');
   }
   if (!isIsoDateString(input.recordedAt)) {
     throw new Error('Agent session checkpoint recordedAt must be an ISO timestamp.');
@@ -497,24 +536,6 @@ export function createAgentSessionCheckpointEnvelope(
   }
   if (input.metadata !== undefined && !isJsonValue(input.metadata)) {
     throw new Error('Agent session checkpoint metadata must be JSON-safe.');
-  }
-  if (input.continuation) {
-    if (
-      input.continuation.redaction.disposition === 'none' &&
-      input.continuation.payloadBytes !== getContinuationPayloadBytes(input.continuation.payload)
-    ) {
-      throw new Error(
-        'Agent session checkpoint continuation payloadBytes must match the stored payload size.'
-      );
-    }
-    if (
-      input.continuation.redaction.disposition === 'metadata_only' &&
-      input.continuation.payload !== null
-    ) {
-      throw new Error(
-        'Agent session checkpoint metadata-only continuation redaction must omit the payload.'
-      );
-    }
   }
   return normalizeEnvelope(input);
 }
@@ -684,7 +705,11 @@ export function createInMemoryAgentSessionCheckpointStore(): InMemoryAgentSessio
     async write(envelope) {
       const now = new Date();
       const expiresAt = toDateMs(envelope.expiresAt);
-      if (expiresAt !== null && expiresAt <= now.getTime()) {
+      const continuationExpiresAt = toDateMs(envelope.continuation?.expiresAt);
+      if (
+        (expiresAt !== null && expiresAt <= now.getTime()) ||
+        (continuationExpiresAt !== null && continuationExpiresAt <= now.getTime())
+      ) {
         return {
           outcome: 'expired',
           envelope,

@@ -17,6 +17,30 @@ export interface NodeFileSystemAgentSessionCheckpointStoreOptions {
   readonly redactOpaqueContinuation?: boolean;
 }
 
+const processLocalSessionWriteChains = new Map<string, Promise<void>>();
+
+async function withProcessLocalSessionWriteLock<TResult>(
+  sessionFilePath: string,
+  operation: () => Promise<TResult>
+): Promise<TResult> {
+  const previous = processLocalSessionWriteChains.get(sessionFilePath) ?? Promise.resolve();
+  let release: () => void = () => undefined;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const chain = previous.then(() => current);
+  processLocalSessionWriteChains.set(sessionFilePath, chain);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (processLocalSessionWriteChains.get(sessionFilePath) === chain) {
+      processLocalSessionWriteChains.delete(sessionFilePath);
+    }
+  }
+}
+
 function serializeCheckpointEnvelope(envelope: AgentSessionCheckpointEnvelope): string {
   return JSON.stringify(envelope, null, 2);
 }
@@ -81,6 +105,11 @@ function classifyParseFailure(
   };
 }
 
+/**
+ * Coordinates same-session writes across store instances in this Node process.
+ * A host that shares the directory across processes must enforce single-writer
+ * session ownership before calling this adapter.
+ */
 export function createNodeFileSystemAgentSessionCheckpointStore(
   options: NodeFileSystemAgentSessionCheckpointStoreOptions
 ): AgentSessionCheckpointStore {
@@ -125,14 +154,16 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
       const expiresAt = parsedEnvelope.value.expiresAt
         ? Date.parse(parsedEnvelope.value.expiresAt)
         : null;
-      if (parsedEnvelope.value.redactedFields.length > 0) {
+      if (expiresAt !== null && expiresAt <= readNow.getTime()) {
         return {
-          outcome: 'redacted',
+          outcome: 'expired',
           envelope: parsedEnvelope.value,
-          fields: parsedEnvelope.value.redactedFields,
         };
       }
-      if (expiresAt !== null && !Number.isNaN(expiresAt) && expiresAt <= readNow.getTime()) {
+      const continuationExpiresAt = parsedEnvelope.value.continuation?.expiresAt
+        ? Date.parse(parsedEnvelope.value.continuation.expiresAt)
+        : null;
+      if (continuationExpiresAt !== null && continuationExpiresAt <= readNow.getTime()) {
         return {
           outcome: 'expired',
           envelope: parsedEnvelope.value,
@@ -141,10 +172,17 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
       const staleAt = parsedEnvelope.value.staleAt
         ? Date.parse(parsedEnvelope.value.staleAt)
         : null;
-      if (staleAt !== null && !Number.isNaN(staleAt) && staleAt <= readNow.getTime()) {
+      if (staleAt !== null && staleAt <= readNow.getTime()) {
         return {
           outcome: 'stale',
           envelope: parsedEnvelope.value,
+        };
+      }
+      if (parsedEnvelope.value.redactedFields.length > 0) {
+        return {
+          outcome: 'redacted',
+          envelope: parsedEnvelope.value,
+          fields: parsedEnvelope.value.redactedFields,
         };
       }
       return {
@@ -163,6 +201,19 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
           envelope,
         };
       }
+      const continuationExpiresAt = envelope.continuation?.expiresAt
+        ? Date.parse(envelope.continuation.expiresAt)
+        : null;
+      if (
+        continuationExpiresAt !== null &&
+        !Number.isNaN(continuationExpiresAt) &&
+        continuationExpiresAt <= writeNow.getTime()
+      ) {
+        return {
+          outcome: 'expired',
+          envelope,
+        };
+      }
       const nextEnvelope = redactOpaqueContinuation ? redactEnvelope(envelope) : envelope;
       const serializedEnvelope = serializeCheckpointEnvelope(nextEnvelope);
       const sizeBytes = measureSerializedCheckpointBytes(serializedEnvelope);
@@ -176,55 +227,60 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
       }
       const filePath = toSessionFilePath(options.directory, nextEnvelope.sessionId);
       const tempFilePath = toTempFilePath(filePath, nextEnvelope.checkpointId);
-      const previous = await this.read({ sessionId: nextEnvelope.sessionId });
-      if (
-        previous.outcome === 'present' &&
-        previous.envelope.checkpointId === nextEnvelope.checkpointId
-      ) {
-        return {
-          outcome: 'duplicate',
-          envelope: previous.envelope,
-          previous: previous.envelope,
-        };
-      }
-      if (
-        previous.outcome === 'redacted' &&
-        previous.envelope.checkpointId === nextEnvelope.checkpointId
-      ) {
-        return {
-          outcome: 'duplicate',
-          envelope: previous.envelope,
-          previous: previous.envelope,
-        };
-      }
-      try {
-        await mkdir(options.directory, { recursive: true });
-        await writeFile(tempFilePath, serializedEnvelope);
-        await rename(tempFilePath, filePath);
-      } catch {
-        await rm(tempFilePath, { force: true }).catch(() => undefined);
-        return {
-          outcome: 'rejected',
-          envelope: nextEnvelope,
-          reason: 'filesystem_write_failed',
-        };
-      }
-      if (
-        previous.outcome === 'present' ||
-        previous.outcome === 'stale' ||
-        previous.outcome === 'expired' ||
-        previous.outcome === 'redacted'
-      ) {
-        return {
-          outcome: 'replaced',
-          envelope: nextEnvelope,
-          previous: previous.envelope,
-        };
-      }
-      return {
-        outcome: 'stored',
-        envelope: nextEnvelope,
-      };
+      return withProcessLocalSessionWriteLock<AgentSessionCheckpointWriteResult>(
+        filePath,
+        async () => {
+          const previous = await this.read({ sessionId: nextEnvelope.sessionId });
+          if (
+            previous.outcome === 'present' &&
+            previous.envelope.checkpointId === nextEnvelope.checkpointId
+          ) {
+            return {
+              outcome: 'duplicate',
+              envelope: previous.envelope,
+              previous: previous.envelope,
+            };
+          }
+          if (
+            previous.outcome === 'redacted' &&
+            previous.envelope.checkpointId === nextEnvelope.checkpointId
+          ) {
+            return {
+              outcome: 'duplicate',
+              envelope: previous.envelope,
+              previous: previous.envelope,
+            };
+          }
+          try {
+            await mkdir(options.directory, { recursive: true });
+            await writeFile(tempFilePath, serializedEnvelope);
+            await rename(tempFilePath, filePath);
+          } catch {
+            await rm(tempFilePath, { force: true }).catch(() => undefined);
+            return {
+              outcome: 'rejected',
+              envelope: nextEnvelope,
+              reason: 'filesystem_write_failed',
+            };
+          }
+          if (
+            previous.outcome === 'present' ||
+            previous.outcome === 'stale' ||
+            previous.outcome === 'expired' ||
+            previous.outcome === 'redacted'
+          ) {
+            return {
+              outcome: 'replaced',
+              envelope: nextEnvelope,
+              previous: previous.envelope,
+            };
+          }
+          return {
+            outcome: 'stored',
+            envelope: nextEnvelope,
+          };
+        }
+      );
     },
   };
 }
