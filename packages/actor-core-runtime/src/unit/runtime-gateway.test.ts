@@ -3297,6 +3297,118 @@ describe('runtime gateway hub', () => {
     detach();
   });
 
+  it('awaits async resolvePrincipal before authorizing gateway dispatch', async () => {
+    const source = createFakeSource('ready');
+    const decisions: AgentExecutionAdmissionDecision[] = [];
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: async (authContext) => ({
+          id: `principal:${(authContext as { authorityId: string }).authorityId}`,
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v3',
+        }),
+        onDecision: async (decision) => {
+          decisions.push(decision);
+        },
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-async-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-async-principal',
+      message: { type: 'SUBMIT', orderId: 'order-async-principal' },
+      metadata: { commandId: 'cmd-async-principal' },
+    });
+    await flushGatewayFrames();
+
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'ack',
+        requestId: 'send-request-async-principal',
+      })
+    );
+    expect(source.sentMessages).toContainEqual({
+      type: 'SUBMIT',
+      orderId: 'order-async-principal',
+    });
+    expect(decisions).toContainEqual(
+      expect.objectContaining({
+        principal: expect.objectContaining({
+          id: 'principal:auth-async-1',
+          kind: 'authenticated',
+        }),
+      })
+    );
+    detach();
+  });
+
+  it('fails closed when async resolvePrincipal rejects and sanitizes the failure detail', async () => {
+    const source = createFakeSource('ready');
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: async () => {
+          throw new Error('resolver-secret-token-async-008');
+        },
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v3',
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-principal-resolution-async-failure',
+      message: { type: 'SUBMIT', orderId: 'order-principal-resolution-async-failure' },
+      metadata: { commandId: 'cmd-principal-resolution-async-failure' },
+    });
+    await flushGatewayFrames();
+
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        requestId: 'send-request-principal-resolution-async-failure',
+        code: 'unauthorized',
+        rejection: expect.objectContaining({
+          admissionStage: 'schema-admitted',
+          reason: expect.objectContaining({
+            code: 'principal_resolution_failure',
+            detail: 'Principal resolver threw before returning a principal.',
+          }),
+        }),
+      })
+    );
+    expect(JSON.stringify(connection.frames)).not.toContain('resolver-secret-token-async-008');
+    expect(source.sentMessages).toEqual([]);
+    detach();
+  });
+
   it('generates distinct fallback command ids for same-tick gateway admission rejections without client command ids', async () => {
     vi.useFakeTimers();
 

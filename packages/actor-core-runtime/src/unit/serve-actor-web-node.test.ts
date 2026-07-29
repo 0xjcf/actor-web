@@ -57,13 +57,18 @@ function waitForSocketClose(socket: WebSocket): Promise<{ code: number; reason: 
   });
 }
 
-function collectFrames(socket: WebSocket): { nextFrame(): Promise<RuntimeGatewayServerFrame> } {
+function collectFrames(socket: WebSocket): {
+  nextFrame(): Promise<RuntimeGatewayServerFrame>;
+  allFrames(): readonly RuntimeGatewayServerFrame[];
+} {
   const frames: RuntimeGatewayServerFrame[] = [];
+  const allFrames: RuntimeGatewayServerFrame[] = [];
   const waiters: Array<(frame: RuntimeGatewayServerFrame) => void> = [];
   socket.on('message', (data) => {
     const frame = JSON.parse(
       Buffer.from(data as Buffer).toString('utf8')
     ) as RuntimeGatewayServerFrame;
+    allFrames.push(frame);
     const waiter = waiters.shift();
     if (waiter) {
       waiter(frame);
@@ -83,6 +88,9 @@ function collectFrames(socket: WebSocket): { nextFrame(): Promise<RuntimeGateway
       return new Promise((resolve) => {
         waiters.push(resolve);
       });
+    },
+    allFrames(): readonly RuntimeGatewayServerFrame[] {
+      return allFrames;
     },
   };
 }
@@ -250,6 +258,7 @@ describe('serveNode', () => {
     const resolveScopeAuthContexts: unknown[] = [];
     const resolvePrincipalAuthContexts: unknown[] = [];
     const decisions: unknown[] = [];
+    let socket: WebSocket | undefined;
     const topology = defineActorWebTopology({
       nodes: {
         server: node('server-node'),
@@ -299,7 +308,7 @@ describe('serveNode', () => {
     });
 
     try {
-      const socket = new WebSocket(served.getGatewayUrl() ?? '');
+      socket = new WebSocket(served.getGatewayUrl() ?? '');
       const frames = collectFrames(socket);
       await waitForSocketOpen(socket);
       socket.send(JSON.stringify({ type: 'hello', clientVersion: 'test' }));
@@ -355,15 +364,27 @@ describe('serveNode', () => {
           }),
         })
       );
+      expect(frames.allFrames()).toContainEqual(
+        expect.objectContaining({
+          type: 'error',
+          streamId: 'counter-stream',
+          requestId: 'send-request-undefined-auth-context',
+          code: 'invalid_frame',
+          rejection: expect.objectContaining({
+            admissionStage: 'schema-admitted',
+            reason: expect.objectContaining({
+              code: 'invalid_command_metadata',
+              detail: 'principal.kind must be one of authenticated, local, or system.',
+            }),
+          }),
+        })
+      );
       await served.system.flush();
       await expect(served.requireActor('counter').ask<number>({ type: 'GET_COUNT' })).resolves.toBe(
         0
       );
-
-      const closePromise = waitForSocketClose(socket);
-      socket.close();
-      await closePromise;
     } finally {
+      socket?.terminate();
       await served.stop();
     }
   });

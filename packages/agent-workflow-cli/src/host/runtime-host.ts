@@ -35,6 +35,18 @@ const DECISION_SINK_FAILURE_DETAIL = 'Decision sink threw before recording the a
 const DISPATCH_OUTCOME_RECORD_FAILURE_DETAIL =
   'Dispatch outcome could not be recorded after execution.';
 
+function classifyOperationalError(error: unknown): 'error_instance' | 'non_error_throwable' {
+  return error instanceof Error ? 'error_instance' : 'non_error_throwable';
+}
+
+function reportDecisionSinkFailure(label: 'Send' | 'Ask', error: unknown): void {
+  log.error('Decision sink failure', {
+    operation: label.toLowerCase(),
+    failure: 'decision_sink_failure',
+    errorClass: classifyOperationalError(error),
+  });
+}
+
 export type HostResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 export interface HostActorEntry {
@@ -358,7 +370,8 @@ export async function createRuntimeHost(
           });
           try {
             await Promise.resolve(options.commandAdmission.onDecision(decision));
-          } catch {
+          } catch (error) {
+            reportDecisionSinkFailure('Send', error);
             if (decision.ok) {
               await trySettleRuntimeHostClaim(decision, 'not_dispatched');
             }
@@ -426,7 +439,8 @@ export async function createRuntimeHost(
           });
           try {
             await Promise.resolve(options.commandAdmission.onDecision(decision));
-          } catch {
+          } catch (error) {
+            reportDecisionSinkFailure('Ask', error);
             if (decision.ok) {
               await trySettleRuntimeHostClaim(decision, 'not_dispatched');
             }

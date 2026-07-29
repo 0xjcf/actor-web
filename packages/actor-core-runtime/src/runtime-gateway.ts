@@ -135,7 +135,7 @@ const PRINCIPAL_RESOLUTION_FAILURE_DETAIL =
 export interface RuntimeGatewayCommandAdmissionOptions<TAuthContext = unknown> {
   readonly resolvePrincipal: (
     authContext: TAuthContext | undefined
-  ) => AgentExecutionCommandPrincipal;
+  ) => AgentExecutionCommandPrincipal | Promise<AgentExecutionCommandPrincipal>;
   readonly policy: AgentExecutionAdmissionPolicy;
   readonly idempotency?: AgentExecutionIdempotencyClaimPort;
   readonly onDecision: (decision: AgentExecutionAdmissionDecision) => void | Promise<void>;
@@ -490,41 +490,52 @@ function validateGatewayCommandAdmissionConfig<TAuthContext>(
   sessionId: string,
   commandId: string,
   commandAdmission: RuntimeGatewayCommandAdmissionOptions<TAuthContext> | undefined
-): AgentExecutionAdmissionDecision | null {
+):
+  | { readonly ok: true; readonly value: RuntimeGatewayCommandAdmissionOptions<TAuthContext> }
+  | { readonly ok: false; readonly decision: AgentExecutionAdmissionDecision } {
   if (!commandAdmission?.resolvePrincipal) {
-    return createGatewayRejectedDecision({
-      actorId,
-      sessionId,
-      commandId,
-      admissionStage: 'schema-admitted',
-      rechecked: PRE_AUTH_RECHECKS,
-      code: 'missing_principal',
-      detail: 'commandAdmission requires an explicit principal resolver.',
-    });
+    return {
+      ok: false,
+      decision: createGatewayRejectedDecision({
+        actorId,
+        sessionId,
+        commandId,
+        admissionStage: 'schema-admitted',
+        rechecked: PRE_AUTH_RECHECKS,
+        code: 'missing_principal',
+        detail: 'commandAdmission requires an explicit principal resolver.',
+      }),
+    };
   }
   if (!commandAdmission.policy) {
-    return createGatewayRejectedDecision({
-      actorId,
-      sessionId,
-      commandId,
-      admissionStage: 'schema-admitted',
-      rechecked: PRE_AUTH_RECHECKS,
-      code: 'missing_policy_adapter',
-      detail: 'commandAdmission requires an explicit policy adapter.',
-    });
+    return {
+      ok: false,
+      decision: createGatewayRejectedDecision({
+        actorId,
+        sessionId,
+        commandId,
+        admissionStage: 'schema-admitted',
+        rechecked: PRE_AUTH_RECHECKS,
+        code: 'missing_policy_adapter',
+        detail: 'commandAdmission requires an explicit policy adapter.',
+      }),
+    };
   }
   if (!commandAdmission.onDecision) {
-    return createGatewayRejectedDecision({
-      actorId,
-      sessionId,
-      commandId,
-      admissionStage: 'schema-admitted',
-      rechecked: PRE_AUTH_RECHECKS,
-      code: 'missing_decision_sink',
-      detail: 'commandAdmission requires an explicit durable decision sink.',
-    });
+    return {
+      ok: false,
+      decision: createGatewayRejectedDecision({
+        actorId,
+        sessionId,
+        commandId,
+        admissionStage: 'schema-admitted',
+        rechecked: PRE_AUTH_RECHECKS,
+        code: 'missing_decision_sink',
+        detail: 'commandAdmission requires an explicit durable decision sink.',
+      }),
+    };
   }
-  return null;
+  return { ok: true, value: commandAdmission };
 }
 
 async function settleGatewayClaim(
@@ -918,30 +929,21 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           typeof metadata?.commandId === 'string' && metadata.commandId.trim().length > 0
             ? metadata.commandId.trim()
             : createAgentExecutionFallbackCommandId(new Date());
-        const configRejection = validateGatewayCommandAdmissionConfig(
+        const validatedCommandAdmission = validateGatewayCommandAdmissionConfig(
           actorId,
           connectionId,
           commandId,
           options.commandAdmission
         );
-        if (configRejection) {
-          return configRejection;
+        if (!validatedCommandAdmission.ok) {
+          return validatedCommandAdmission.decision;
         }
-        const commandAdmission = options.commandAdmission;
-        if (!commandAdmission) {
-          return createGatewayRejectedDecision({
-            actorId,
-            sessionId: connectionId,
-            commandId,
-            admissionStage: 'schema-admitted',
-            rechecked: PRE_AUTH_RECHECKS,
-            code: 'missing_policy_adapter',
-            detail: 'commandAdmission requires an explicit policy adapter.',
-          });
-        }
+        const commandAdmission = validatedCommandAdmission.value;
         let principal: AgentExecutionCommandPrincipal;
         try {
-          principal = commandAdmission.resolvePrincipal(authenticatedAuthContext);
+          principal = await Promise.resolve(
+            commandAdmission.resolvePrincipal(authenticatedAuthContext)
+          );
         } catch {
           return createGatewayRejectedDecision({
             actorId,

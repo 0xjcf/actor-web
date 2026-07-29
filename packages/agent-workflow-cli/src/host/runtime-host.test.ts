@@ -17,7 +17,9 @@ import {
   actor,
   defineActorWebTopology,
   defineBehavior,
+  enableDevModeForCLI,
   node,
+  resetDevMode,
 } from '@actor-web/runtime';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadModuleExport } from './load-module';
@@ -510,6 +512,8 @@ describe('createRuntimeHost', () => {
 
   it('settles local idempotency claims before or after dispatch based on sink and dispatch outcomes', async () => {
     await host.stop();
+    enableDevModeForCLI();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     const sinkBlock = vi.fn(async () => {
       throw new Error('sink offline');
     });
@@ -555,6 +559,25 @@ describe('createRuntimeHost', () => {
     expect(sinkSettlements).toContain('not_dispatched');
     expect(JSON.stringify(sinkFailure)).not.toContain('sink offline');
     expect(JSON.stringify(countAfterSinkFailure)).not.toContain('sink offline');
+    expect(consoleError).toHaveBeenCalledWith(
+      '❌ [ACTOR_WEB_CLI_HOST] Decision sink failure',
+      expect.objectContaining({
+        operation: 'send',
+        failure: 'decision_sink_failure',
+        errorClass: 'error_instance',
+      })
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      '❌ [ACTOR_WEB_CLI_HOST] Decision sink failure',
+      expect.objectContaining({
+        operation: 'ask',
+        failure: 'decision_sink_failure',
+        errorClass: 'error_instance',
+      })
+    );
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain('sink offline');
+    consoleError.mockRestore();
+    resetDevMode();
 
     await host.stop();
     const throwingBehavior = defineBehavior<CounterMsg>()
