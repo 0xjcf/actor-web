@@ -14,6 +14,11 @@ export {
   getAgentExecutionConformanceFixture,
   listAgentExecutionConformanceFixtures,
 } from './agent-execution-conformance.js';
+export type { AgentSessionCheckpointConformanceFixture } from './agent-session-checkpoint-conformance.js';
+export {
+  assertAgentSessionCheckpointConformanceFixture,
+  getAgentSessionCheckpointConformanceFixture,
+} from './agent-session-checkpoint-conformance.js';
 export type { StateAnalysisResult } from './state-machine-analysis.js';
 // State machine analysis utilities
 export {

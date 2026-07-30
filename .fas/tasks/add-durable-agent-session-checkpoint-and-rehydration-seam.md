@@ -32,14 +32,66 @@ The Actor-Web agent loop retains session and provider-loop context in memory; pr
 
 ## Affected files
 
-- packages/agent/src
-- packages/runtime/src
-- packages/testing/src
-- docs
+- packages/actor-agent/src
+- packages/actor-core-runtime/src
+- packages/actor-core-testing/src
+- .fas/memory/pr-feedback.md
 
 ## Scope Amendments
 
-- None.
+- Type: planning-correction
+- Added at: 2026-07-29T13:38:00Z
+- Trigger: task-start live package verification
+- Reason: Add the live package roots that correspond to the stale package/agent, package/runtime, and package/testing hints before delegated execution.
+- Added paths: packages/actor-agent/src, packages/actor-core-runtime/src, packages/actor-core-testing/src
+- Evidence source: repo-search
+- Evidence: repo-search | packages | rg --files confirms actor-agent, actor-core-runtime, and actor-core-testing are the live package roots.
+- Accuracy signal: high
+
+- Type: authority-refresh
+- Added at: closeout
+- Trigger: stale-affected-paths
+- Reason: Replace nonexistent legacy package roots with the three verified live Actor-Web package roots after current-head implementation and review.
+- Added paths: packages/actor-agent/src, packages/actor-core-runtime/src, packages/actor-core-testing/src
+- Evidence source: closeout-readiness
+- Evidence: closeout-readiness | .fas/state/closeout-readiness/latest.json | Closeout held only on missing packages/agent/src, packages/runtime/src, and packages/testing/src; all 10 implemented files are under the three live roots.
+- Accuracy signal: high
+
+- Type: authority-correction
+- Added at: closeout
+- Trigger: additive-refresh-did-not-remove-stale-roots
+- Reason: Reconcile the active task from the corrected authoritative brief after removing nonexistent packages/agent/src, packages/runtime/src, packages/testing/src, and non-deliverable docs scope.
+- Evidence source: repo-and-closeout
+- Evidence: repo-and-closeout | .fas/state/closeout-readiness/latest.json | All committed product changes are under packages/actor-agent/src, packages/actor-core-runtime/src, and packages/actor-core-testing/src; stale roots do not exist.
+- Accuracy signal: high
+
+- Type: review-closeout
+- Added at: 2026-07-29T22:20:00-04:00
+- Trigger: PR #55 babysit feedback capture
+- Reason: Record reusable checkpoint and rehydration review lessons required by the FAS babysit workflow.
+- Added paths: .fas/memory/pr-feedback.md
+- Evidence source: PR review
+- Evidence: PR #55 | unresolved review threads and pre-push CodeRabbit review | Reusable durability boundary lessons were captured after regression verification.
+- Accuracy signal: high
+
+- Type: review-feedback-scope-narrowing
+- Added at: 2026-07-30
+- Trigger: PR 55 CodeRabbit requested canonical checkpoint read classification after the original implementation was already committed
+- Reason: This resumed review-fix workflow starts at PR head 71661469 and changes only the runtime classifier seam; actor-agent and actor-core-testing were completed in the prior reviewed implementation and are not missing work in this delta
+- Removed planned paths: packages/actor-agent/src, packages/actor-core-testing/src
+- Evidence source: PR 55 CodeRabbit review 4814795614 and current git diff
+- Evidence: PR 55 CodeRabbit review 4814795614 and current git diff | packages/actor-core-runtime/src/agent-session-checkpoint-store.ts | Current delta is limited to the shared classifier, Node adapter reuse, focused runtime test, and PR feedback memory
+- Accuracy signal: Delegated architect, QA, SRE, and reviewer all confirmed no actor-agent or actor-core-testing changes are required
+- Follow-up needed: None; downstream consumers must reconfirm only after publication task task-1785250788704
+
+- Type: external-review-correctness-expansion
+- Added at: 2026-07-30
+- Trigger: PR 55 CodeRabbit review bc9ddc9d-2246-4bee-aa93-545564dcc4af found stale-or-expired duplicate drift and a stat-read allocation race
+- Reason: Both findings affect authoritative idempotency and bounded durable checkpoint reads and must be fixed before merge
+- Evidence source: PR 55 CodeRabbit review 4817733296
+- Evidence: PR 55 CodeRabbit review 4817733296 | packages/actor-core-runtime/src/node-agent-session-checkpoint-store.ts | Treat same checkpointId as duplicate for every envelope-bearing prior outcome and replace stat/readFile with a maxBytes+1 capped read
+- Accuracy signal: Verified against current Node and in-memory store implementations
+- Follow-up needed: Reconfirm with focused parity tests, full FAS verification, local CodeRabbit, and GitHub @coderabbit review
 
 ## Implementation plan
 

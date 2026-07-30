@@ -171,6 +171,37 @@ export {
   toAgentExecutionReceiptFromEventEnvelope,
   validateAgentExecutionTrace,
 } from './agent-execution-contract.js';
+export type {
+  AgentSessionCheckpointActorIdentity,
+  AgentSessionCheckpointContinuation,
+  AgentSessionCheckpointContinuationFormat,
+  AgentSessionCheckpointEffectPhase,
+  AgentSessionCheckpointEffectState,
+  AgentSessionCheckpointEnvelope,
+  AgentSessionCheckpointEnvelopeInput,
+  AgentSessionCheckpointParseResult,
+  AgentSessionCheckpointReadInput,
+  AgentSessionCheckpointReadOutcome,
+  AgentSessionCheckpointReadResult,
+  AgentSessionCheckpointReconciliationState,
+  AgentSessionCheckpointRehydrationOptions,
+  AgentSessionCheckpointRehydrationOutcome,
+  AgentSessionCheckpointRehydrationResult,
+  AgentSessionCheckpointStore,
+  AgentSessionCheckpointWriteOutcome,
+  AgentSessionCheckpointWriteResult,
+  InMemoryAgentSessionCheckpointStore,
+  InMemoryAgentSessionCheckpointStoreOptions,
+} from './agent-session-checkpoint-store.js';
+export {
+  AGENT_SESSION_CHECKPOINT_SCHEMA_VERSION,
+  createAgentSessionCheckpointEnvelope,
+  createInMemoryAgentSessionCheckpointStore,
+  deriveAgentSessionCheckpointRehydration,
+  getAgentSessionCheckpointEnvelopeSizeBytes,
+  getAgentSessionCheckpointSupportedSchemaVersions,
+  parseAgentSessionCheckpointEnvelope,
+} from './agent-session-checkpoint-store.js';
 // Auto-publishing system (Phase 2.1)
 export {
   AutoPublishingRegistry,

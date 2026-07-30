@@ -97,6 +97,8 @@ export {
   toAgentExecutionReceiptFromEventEnvelope,
   validateAgentExecutionTrace,
 } from './agent-execution-contract.js';
+export type { AgentSessionCheckpointStore } from './agent-session-checkpoint-store.js';
+export { createNodeFileSystemAgentSessionCheckpointStore } from './node-agent-session-checkpoint-store.js';
 export type {
   NodeProviderActor,
   NodeProviderActorClock,
