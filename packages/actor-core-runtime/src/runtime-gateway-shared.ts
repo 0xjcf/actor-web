@@ -1,8 +1,8 @@
 import type {
-  AgentExecutionTrace,
   AgentExecutionAuthorizedReceipt,
   AgentExecutionCommandMetadata,
   AgentExecutionRejectedReceipt,
+  AgentExecutionTrace,
 } from './agent-execution-contract.js';
 import type { ProjectionTransportStatus } from './projection-transport.js';
 import type { RuntimeTransportAuthPayload } from './runtime-auth.js';

@@ -3,8 +3,8 @@ import {
   type ActorWebGatewaySocket,
   createActorWebCommandSource,
   createActorWebReadModelSource,
-  createActorWebTraceSource,
   createActorWebSource,
+  createActorWebTraceSource,
 } from '../actor-web-source.js';
 import type { RuntimeGatewayClientFrame, RuntimeGatewayServerFrame } from '../runtime-gateway.js';
 

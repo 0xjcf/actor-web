@@ -8,16 +8,15 @@ import {
   type ProjectionTransportStatus,
 } from '../projection-transport.js';
 import {
-  createRuntimeGatewayTraceSource,
   type ActorEventProjection,
   type ActorRuntimeSnapshot,
   type ActorSnapshotProjection,
   type ActorTransitionRecord,
-  type RuntimeGatewayTraceProjection,
   createRuntimeGatewayCommandSource,
   createRuntimeGatewayHub,
   createRuntimeGatewayReadModelSource,
   createRuntimeGatewaySource,
+  createRuntimeGatewayTraceSource,
   type RuntimeGatewayClientFrame,
   type RuntimeGatewayConnectionAdapter,
   type RuntimeGatewayInvalidFrameEvent,
@@ -1668,7 +1667,8 @@ describe('runtime gateway hub', () => {
     await flushGatewayFrames();
 
     const firstTraceFrames = connection.frames.filter(
-      (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'trace' }> => frame.type === 'trace'
+      (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'trace' }> =>
+        frame.type === 'trace'
     );
     expect(firstTraceFrames.at(-1)?.projection).toMatchObject({
       fact: {
@@ -1684,7 +1684,8 @@ describe('runtime gateway hub', () => {
     await flushGatewayFrames();
 
     const replayedFrames = connection.frames.filter(
-      (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'trace' }> => frame.type === 'trace'
+      (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'trace' }> =>
+        frame.type === 'trace'
     );
     expect(replayedFrames.some((frame) => frame.sequence === 2)).toBe(true);
     expect(replayedFrames.some((frame) => frame.sequence === 3)).toBe(true);
@@ -1708,7 +1709,8 @@ describe('runtime gateway hub', () => {
     await flushGatewayFrames();
 
     const fallbackTrace = latestOnlyConnection.frames.findLast(
-      (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'trace' }> => frame.type === 'trace'
+      (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'trace' }> =>
+        frame.type === 'trace'
     );
     expect(fallbackTrace?.projection).toMatchObject({
       cursor: expect.any(String),

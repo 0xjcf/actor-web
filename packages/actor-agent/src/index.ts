@@ -363,13 +363,11 @@ export function createAgentLoopBehavior(
   options: ActorAgentLoopOptions = {}
 ): ActorBehavior<ActorAgentLoopMessage, ActorAgentLoopEvent, ActorAgentToolRegistry> {
   let checkpointBootstrapped = false;
-  let checkpointBootstrapPromise:
-    | Promise<
-        | { readonly kind: 'noop' }
-        | { readonly kind: 'ready'; readonly context: ActorAgentLoopContext }
-        | { readonly kind: 'blocked'; readonly error: ActorAgentError }
-      >
-    | null = null;
+  let checkpointBootstrapPromise: Promise<
+    | { readonly kind: 'noop' }
+    | { readonly kind: 'ready'; readonly context: ActorAgentLoopContext }
+    | { readonly kind: 'blocked'; readonly error: ActorAgentError }
+  > | null = null;
 
   const bootstrapCheckpoint = async (
     context: ActorAgentLoopContext
@@ -378,7 +376,8 @@ export function createAgentLoopBehavior(
     | { readonly kind: 'ready'; readonly context: ActorAgentLoopContext }
     | { readonly kind: 'blocked'; readonly error: ActorAgentError }
   > => {
-    if (!options.checkpoint) {
+    const checkpoint = options.checkpoint;
+    if (!checkpoint) {
       checkpointBootstrapped = true;
       return { kind: 'noop' };
     }
@@ -387,9 +386,9 @@ export function createAgentLoopBehavior(
     }
     checkpointBootstrapPromise ??= (async () => {
       try {
-        const readResult = await options.checkpoint!.store.read({
-          sessionId: options.checkpoint!.sessionId,
-          now: options.checkpoint!.now,
+        const readResult = await checkpoint.store.read({
+          sessionId: checkpoint.sessionId,
+          now: checkpoint.now,
         });
         const rehydration = deriveAgentSessionCheckpointRehydration(readResult);
         switch (rehydration.outcome) {
@@ -457,8 +456,7 @@ export function createAgentLoopBehavior(
           error: checkpointState.error,
         });
       }
-      const activeContext =
-        checkpointState.kind === 'ready' ? checkpointState.context : context;
+      const activeContext = checkpointState.kind === 'ready' ? checkpointState.context : context;
 
       if (message.type === 'GET_AGENT_CONTEXT') {
         return { reply: activeContext, context: activeContext };
@@ -590,7 +588,7 @@ export function createAgentLoopBehavior(
                   step,
                   message: assistantMessage,
                 },
-            ];
+              ];
 
         if (options.checkpoint) {
           await writeCheckpointEnvelope(options.checkpoint, nextContext, {

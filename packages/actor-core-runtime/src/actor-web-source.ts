@@ -13,6 +13,7 @@ import {
   type ProjectionTransportStatus,
 } from './projection-transport.js';
 import { type RuntimeGatewayAuthProvider, resolveRuntimeAuthPayload } from './runtime-auth.js';
+import type { RuntimeGatewayTraceProjection } from './runtime-gateway.js';
 import type {
   RuntimeGatewayClientFrame,
   RuntimeGatewayScopeDescriptor,
@@ -31,7 +32,6 @@ import type {
 } from './topology.js';
 import type { ActorSnapshot, JsonValue, Message } from './types.js';
 import { Address, parse } from './utils/factories.js';
-import type { RuntimeGatewayTraceProjection } from './runtime-gateway.js';
 
 export interface ActorWebGatewaySocket {
   readonly readyState: number;

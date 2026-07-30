@@ -76,15 +76,15 @@ export type {
   ClosableActorWebCommandSource,
   ClosableActorWebReadModelSource,
   ClosableActorWebSource,
-  ClosableActorWebTraceSource,
   ClosableActorWebSourceHandle,
+  ClosableActorWebTraceSource,
 } from './actor-web-source.js';
 export {
   createActorWebCommandSource,
   createActorWebReadModelSource,
   createActorWebSource,
-  createActorWebTraceSource,
   createActorWebSourceHandle,
+  createActorWebTraceSource,
 } from './actor-web-source.js';
 export type {
   AgentExecutionAdmissionDecision,

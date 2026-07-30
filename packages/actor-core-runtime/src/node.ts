@@ -26,6 +26,24 @@ export {
 } from './actor-tool-delivery.js';
 export type { ActorToolRegistry } from './actor-tools.js';
 export type {
+  ActorWebAddressSourceInput,
+  ActorWebGatewaySocket,
+  ActorWebSourceGatewayOptions,
+  ActorWebSourceOptions,
+  ClosableActorWebCommandSource,
+  ClosableActorWebReadModelSource,
+  ClosableActorWebSource,
+  ClosableActorWebSourceHandle,
+  ClosableActorWebTraceSource,
+} from './actor-web-source.js';
+export {
+  createActorWebCommandSource,
+  createActorWebReadModelSource,
+  createActorWebSource,
+  createActorWebSourceHandle,
+  createActorWebTraceSource,
+} from './actor-web-source.js';
+export type {
   AgentExecutionAdmissionDecision,
   AgentExecutionAdmissionInput,
   AgentExecutionAdmissionPolicy,
@@ -99,24 +117,6 @@ export {
 } from './agent-execution-contract.js';
 export type { AgentSessionCheckpointStore } from './agent-session-checkpoint-store.js';
 export { createNodeFileSystemAgentSessionCheckpointStore } from './node-agent-session-checkpoint-store.js';
-export type {
-  ActorWebAddressSourceInput,
-  ActorWebGatewaySocket,
-  ActorWebSourceGatewayOptions,
-  ActorWebSourceOptions,
-  ClosableActorWebCommandSource,
-  ClosableActorWebReadModelSource,
-  ClosableActorWebSource,
-  ClosableActorWebTraceSource,
-  ClosableActorWebSourceHandle,
-} from './actor-web-source.js';
-export {
-  createActorWebCommandSource,
-  createActorWebReadModelSource,
-  createActorWebSource,
-  createActorWebTraceSource,
-  createActorWebSourceHandle,
-} from './actor-web-source.js';
 export type {
   NodeProviderActor,
   NodeProviderActorClock,
