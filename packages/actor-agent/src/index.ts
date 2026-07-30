@@ -161,6 +161,7 @@ function normalizeThrownError(error: unknown): ActorAgentError {
       ? 'LLM_TOOL_UNAVAILABLE'
       : 'AGENT_LOOP_FAILED',
     message,
+    cause: error,
   };
 }
 
@@ -189,7 +190,12 @@ export function createActorAgentLoopCheckpointState(
     history: [...context.history],
     steps: context.steps,
     pendingToolCalls: [...context.pendingToolCalls],
-    lastError: context.lastError ? { ...context.lastError } : null,
+    lastError: context.lastError
+      ? {
+          code: context.lastError.code,
+          message: context.lastError.message,
+        }
+      : null,
   };
 }
 
@@ -266,7 +272,24 @@ function createObservedToolMessage(
 }
 
 function isCheckpointStateCandidate(value: unknown): value is ActorAgentLoopCheckpointState {
-  return typeof value === 'object' && value !== null;
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  const history = candidate.history;
+  const pendingToolCalls = candidate.pendingToolCalls;
+  const lastError = candidate.lastError;
+  return (
+    (candidate.system === undefined || typeof candidate.system === 'string') &&
+    Array.isArray(history) &&
+    history.every(isActorAgentLlmMessage) &&
+    typeof candidate.steps === 'number' &&
+    Number.isInteger(candidate.steps) &&
+    candidate.steps >= 0 &&
+    Array.isArray(pendingToolCalls) &&
+    pendingToolCalls.every(isActorAgentToolCall) &&
+    (lastError === null || isActorAgentError(lastError))
+  );
 }
 
 function createCheckpointError(code: string, message: string, cause?: unknown): ActorAgentError {
@@ -291,6 +314,138 @@ function createCheckpointIdentity(
     correlationId: `corr:${checkpoint.sessionId}:${step}`,
     causationId: `cause:${checkpoint.sessionId}:${step}`,
   } as const;
+}
+
+function isActorAgentToolCall(value: unknown): value is ActorAgentToolCall {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.id === 'string' && typeof candidate.name === 'string' && 'input' in candidate
+  );
+}
+
+function isActorAgentLlmMessage(value: unknown): value is ActorAgentLlmMessage {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    (candidate.role === 'system' ||
+      candidate.role === 'user' ||
+      candidate.role === 'assistant' ||
+      candidate.role === 'tool') &&
+    typeof candidate.content === 'string' &&
+    (candidate.toolCallId === undefined || typeof candidate.toolCallId === 'string') &&
+    (candidate.toolName === undefined || typeof candidate.toolName === 'string') &&
+    (candidate.toolCalls === undefined ||
+      (Array.isArray(candidate.toolCalls) && candidate.toolCalls.every(isActorAgentToolCall)))
+  );
+}
+
+function isActorAgentError(value: unknown): value is ActorAgentError {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.code === 'string' && typeof candidate.message === 'string';
+}
+
+function sanitizeCheckpointReceipt(receipt: unknown): JsonValue {
+  if (
+    typeof receipt === 'object' &&
+    receipt !== null &&
+    'ok' in receipt &&
+    (receipt as { ok: unknown }).ok === true &&
+    'value' in receipt
+  ) {
+    const value = (receipt as { value: { message?: ActorAgentLlmMessage; usage?: JsonValue } })
+      .value;
+    return {
+      ok: true,
+      value: {
+        ...(value.usage === undefined ? {} : { usage: value.usage }),
+        ...(value.message
+          ? {
+              message: {
+                role: value.message.role,
+                ...(value.message.toolCallId === undefined
+                  ? {}
+                  : { toolCallId: value.message.toolCallId }),
+                ...(value.message.toolName === undefined
+                  ? {}
+                  : { toolName: value.message.toolName }),
+                ...(value.message.toolCalls === undefined
+                  ? {}
+                  : {
+                      toolCalls: value.message.toolCalls.map((toolCall) => ({
+                        id: toolCall.id,
+                        name: toolCall.name,
+                        input: toolCall.input as JsonValue,
+                      })),
+                    }),
+              },
+            }
+          : {}),
+      },
+    };
+  }
+  if (
+    typeof receipt === 'object' &&
+    receipt !== null &&
+    'ok' in receipt &&
+    (receipt as { ok: unknown }).ok === false &&
+    'error' in receipt
+  ) {
+    const error = (receipt as { error?: ActorAgentError }).error;
+    return {
+      ok: false,
+      ...(error
+        ? {
+            error: {
+              code: error.code,
+              message: error.message,
+            },
+          }
+        : {}),
+    };
+  }
+  return {
+    recorded: true,
+  };
+}
+
+function createCheckpointWriteFailure(
+  writeResult: AgentSessionCheckpointWriteResult
+): ActorAgentError {
+  return createCheckpointError(
+    'CHECKPOINT_WRITE_FAILED',
+    `Checkpoint write failed: ${writeResult.outcome}${
+      'reason' in writeResult && typeof writeResult.reason === 'string'
+        ? ` (${writeResult.reason})`
+        : ''
+    }.`,
+    writeResult
+  );
+}
+
+async function requireCheckpointWriteStored(
+  checkpoint: NonNullable<ActorAgentLoopOptions['checkpoint']>,
+  context: ActorAgentLoopContext,
+  input: {
+    readonly step: number;
+    readonly phase: 'intent_recorded' | 'receipt_recorded' | 'reconciliation_required';
+    readonly irreversible: boolean;
+    readonly intent?: unknown;
+    readonly receipt?: unknown;
+    readonly reconciliationReason?: string;
+  }
+): Promise<void> {
+  const writeResult = await writeCheckpointEnvelope(checkpoint, context, input);
+  if (writeResult.outcome !== 'stored' && writeResult.outcome !== 'replaced') {
+    throw createCheckpointWriteFailure(writeResult);
+  }
 }
 
 async function writeCheckpointEnvelope(
@@ -318,7 +473,9 @@ async function writeCheckpointEnvelope(
         phase: input.phase,
         irreversible: input.irreversible,
         ...(input.intent === undefined ? {} : { intent: input.intent as JsonValue }),
-        ...(input.receipt === undefined ? {} : { receipt: input.receipt as JsonValue }),
+        ...(input.receipt === undefined
+          ? {}
+          : { receipt: sanitizeCheckpointReceipt(input.receipt) }),
       },
       continuation: null,
       reconciliation:
@@ -402,8 +559,13 @@ export function createAgentLoopBehavior(
                 ),
               } as const;
             }
-            checkpointBootstrapped = true;
-            return { kind: 'ready', context } as const;
+            return {
+              kind: 'blocked',
+              error: createCheckpointError(
+                'CHECKPOINT_INVALID_STATE',
+                'Checkpoint deterministic state is invalid.'
+              ),
+            } as const;
           case 'deferred_for_reconciliation':
             return {
               kind: 'blocked',
@@ -441,6 +603,8 @@ export function createAgentLoopBehavior(
     const result = await checkpointBootstrapPromise;
     if (result.kind === 'ready' || result.kind === 'noop') {
       checkpointBootstrapped = true;
+    } else {
+      checkpointBootstrapPromise = null;
     }
     return result;
   };
@@ -518,7 +682,7 @@ export function createAgentLoopBehavior(
 
       try {
         if (options.checkpoint) {
-          await writeCheckpointEnvelope(options.checkpoint, executionContext, {
+          await requireCheckpointWriteStored(options.checkpoint, executionContext, {
             step,
             phase: 'intent_recorded',
             irreversible: true,
@@ -545,7 +709,7 @@ export function createAgentLoopBehavior(
             emitPrefix: observedToolEvents,
           });
           if (options.checkpoint) {
-            await writeCheckpointEnvelope(options.checkpoint, failure.context, {
+            await requireCheckpointWriteStored(options.checkpoint, failure.context, {
               step,
               phase: 'receipt_recorded',
               irreversible: true,
@@ -591,7 +755,7 @@ export function createAgentLoopBehavior(
               ];
 
         if (options.checkpoint) {
-          await writeCheckpointEnvelope(options.checkpoint, nextContext, {
+          await requireCheckpointWriteStored(options.checkpoint, nextContext, {
             step,
             phase: 'receipt_recorded',
             irreversible: true,
@@ -615,16 +779,30 @@ export function createAgentLoopBehavior(
           emitPrefix: observedToolEvents,
         });
         if (options.checkpoint) {
-          await writeCheckpointEnvelope(options.checkpoint, failure.context, {
-            step,
-            phase: 'reconciliation_required',
-            irreversible: true,
-            intent: {
-              tool: ACTOR_WEB_LLM_TOOL_NAME,
-              messageType: message.type,
-            },
-            reconciliationReason: failure.reply.ok ? undefined : failure.reply.error.message,
-          });
+          try {
+            await requireCheckpointWriteStored(options.checkpoint, failure.context, {
+              step,
+              phase: 'reconciliation_required',
+              irreversible: true,
+              intent: {
+                tool: ACTOR_WEB_LLM_TOOL_NAME,
+                messageType: message.type,
+              },
+              reconciliationReason: failure.reply.ok ? undefined : failure.reply.error.message,
+            });
+          } catch (durabilityError) {
+            return createFailureResult({
+              context: executionContext,
+              error: {
+                ...failure.reply.error,
+                cause: {
+                  original: failure.reply.error.cause,
+                  durability: normalizeThrownError(durabilityError),
+                },
+              },
+              emitPrefix: observedToolEvents,
+            });
+          }
         }
         return failure;
       }

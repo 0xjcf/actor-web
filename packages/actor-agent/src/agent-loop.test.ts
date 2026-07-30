@@ -672,6 +672,463 @@ describe('@actor-web/agent loop behavior', () => {
     });
   });
 
+  it('fails closed before dispatch when the checkpoint intent write is rejected', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+
+    const provider = vi.fn<ActorAgentLlmProvider>().mockReturnValue({
+      ok: true,
+      value: {
+        message: {
+          role: 'assistant',
+          content: 'should not run',
+        },
+      },
+    });
+    const behavior = agent.createAgentLoopBehavior({
+      system: 'Checkpoint-gated planner.',
+      checkpoint: {
+        store: {
+          read: async () => ({ outcome: 'missing', sessionId: 'session:agent:write-failure' }),
+          write: async (envelope) => ({
+            outcome: 'rejected' as const,
+            envelope: envelope as never,
+            reason: 'checkpoint write rejected',
+          }),
+        },
+        sessionId: 'session:agent:write-failure',
+      },
+    });
+    const tools = createActorToolbox(
+      agent.createActorAgentToolRegistry({ llm: provider }),
+      actorToolContext,
+      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+    );
+
+    const result = await behavior.onMessage?.(
+      createAgentParams({
+        behavior,
+        tools,
+        message: { type: 'START_AGENT', prompt: 'blocked by checkpoint write' },
+      })
+    );
+
+    expect(provider).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      reply: {
+        ok: false,
+        error: {
+          code: 'AGENT_LOOP_FAILED',
+        },
+      },
+    });
+  });
+
+  it('does not silently resume from checkpoint envelopes with invalid deterministic state', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+
+    const resumedStore = createInMemoryAgentSessionCheckpointStore();
+    await resumedStore.write(
+      createAgentSessionCheckpointEnvelope({
+        sessionId: 'session:agent:invalid-state',
+        checkpointId: 'checkpoint:agent:invalid-state',
+        actor: {
+          actorId: 'actor://local/researcher',
+          sessionId: 'session:agent:invalid-state',
+          turnId: 'turn:1',
+          traceId: 'trace:invalid-state:1',
+          commandId: 'cmd:invalid-state:1',
+          correlationId: 'corr:invalid-state:1',
+          causationId: 'cause:invalid-state:1',
+        },
+        deterministic: {
+          system: 'Resume from store.',
+          history: 'not-an-array',
+          steps: 1,
+          pendingToolCalls: [],
+          lastError: null,
+        } as never,
+        effect: {
+          effectId: 'effect:invalid-state',
+          effectAttemptId: 'effect-attempt:invalid-state',
+          phase: 'receipt_recorded',
+          irreversible: true,
+          intent: { tool: 'llm' },
+          receipt: { ok: true },
+        },
+        continuation: null,
+        reconciliation: { status: 'clear' },
+        recordedAt: '2026-04-25T18:00:00.000Z',
+      })
+    );
+
+    const provider = vi.fn<ActorAgentLlmProvider>().mockReturnValue({
+      ok: true,
+      value: {
+        message: {
+          role: 'assistant',
+          content: 'should not run',
+        },
+      },
+    });
+    const behavior = agent.createAgentLoopBehavior({
+      checkpoint: {
+        store: resumedStore,
+        sessionId: 'session:agent:invalid-state',
+        actorId: 'actor://local/researcher',
+      },
+    });
+    const tools = createActorToolbox(
+      agent.createActorAgentToolRegistry({ llm: provider }),
+      actorToolContext,
+      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+    );
+
+    const result = await behavior.onMessage?.(
+      createAgentParams({
+        behavior,
+        tools,
+        message: { type: 'START_AGENT', prompt: 'resume invalid state' },
+      })
+    );
+
+    expect(provider).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      reply: {
+        ok: false,
+      },
+    });
+  });
+
+  it('fails closed when the checkpoint receipt write fails after the llm returns', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+
+    const provider = vi.fn<ActorAgentLlmProvider>().mockReturnValue({
+      ok: true,
+      value: {
+        message: {
+          role: 'assistant',
+          content: 'checkpoint receipt should gate success',
+        },
+      },
+    });
+    const writes: unknown[] = [];
+    const behavior = agent.createAgentLoopBehavior({
+      system: 'Checkpoint-gated planner.',
+      checkpoint: {
+        store: {
+          read: async () => ({ outcome: 'missing', sessionId: 'session:agent:receipt-failure' }),
+          write: async (envelope) => {
+            writes.push(envelope);
+            return writes.length === 1
+              ? ({ outcome: 'stored', envelope } as const)
+              : ({
+                  outcome: 'rejected',
+                  envelope,
+                  reason: 'checkpoint receipt rejected',
+                } as const);
+          },
+        },
+        sessionId: 'session:agent:receipt-failure',
+      },
+    });
+    const tools = createActorToolbox(
+      agent.createActorAgentToolRegistry({ llm: provider }),
+      actorToolContext,
+      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+    );
+
+    const result = await behavior.onMessage?.(
+      createAgentParams({
+        behavior,
+        tools,
+        message: { type: 'START_AGENT', prompt: 'receipt write must gate success' },
+      })
+    );
+
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      reply: {
+        ok: false,
+        error: {
+          code: 'AGENT_LOOP_FAILED',
+        },
+      },
+    });
+  });
+
+  it('preserves the original thrown error as cause when checkpoint writes throw', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+
+    const checkpointError = new Error('checkpoint store unavailable');
+    const provider = vi.fn<ActorAgentLlmProvider>().mockReturnValue({
+      ok: true,
+      value: {
+        message: {
+          role: 'assistant',
+          content: 'should not matter',
+        },
+      },
+    });
+    const behavior = agent.createAgentLoopBehavior({
+      system: 'Checkpoint-gated planner.',
+      checkpoint: {
+        store: {
+          read: async () => ({ outcome: 'missing', sessionId: 'session:agent:checkpoint-cause' }),
+          write: async () => {
+            throw checkpointError;
+          },
+        },
+        sessionId: 'session:agent:checkpoint-cause',
+      },
+    });
+    const tools = createActorToolbox(
+      agent.createActorAgentToolRegistry({ llm: provider }),
+      actorToolContext,
+      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+    );
+
+    const result = await behavior.onMessage?.(
+      createAgentParams({
+        behavior,
+        tools,
+        message: { type: 'START_AGENT', prompt: 'preserve cause' },
+      })
+    );
+
+    expect(result).toMatchObject({
+      reply: {
+        ok: false,
+        error: {
+          code: 'AGENT_LOOP_FAILED',
+        },
+      },
+    });
+    expect(result).toMatchObject({
+      reply: {
+        error: {
+          cause: {
+            original: checkpointError,
+            durability: {
+              code: 'AGENT_LOOP_FAILED',
+              cause: checkpointError,
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('redacts raw provider message content from checkpoint receipts', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+
+    const writes: unknown[] = [];
+    const behavior = agent.createAgentLoopBehavior({
+      system: 'Checkpoint-gated planner.',
+      checkpoint: {
+        store: {
+          read: async () => ({ outcome: 'missing', sessionId: 'session:agent:redacted-receipt' }),
+          write: async (envelope) => {
+            writes.push(envelope);
+            return { outcome: 'stored' as const, envelope };
+          },
+        },
+        sessionId: 'session:agent:redacted-receipt',
+      },
+    });
+    const tools = createActorToolbox(
+      agent.createActorAgentToolRegistry({
+        llm: () => ({
+          ok: true,
+          value: {
+            message: {
+              role: 'assistant',
+              content: 'raw provider content should not be checkpointed',
+            },
+          },
+        }),
+      }),
+      actorToolContext,
+      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+    );
+
+    await behavior.onMessage?.(
+      createAgentParams({
+        behavior,
+        tools,
+        message: { type: 'START_AGENT', prompt: 'redact raw receipt' },
+      })
+    );
+
+    const receiptEnvelope = writes[1] as {
+      effect?: {
+        receipt?: {
+          ok: true;
+          value?: {
+            message?: Record<string, unknown>;
+          };
+        };
+      };
+    };
+    expect(receiptEnvelope.effect?.receipt).toMatchObject({
+      ok: true,
+      value: {
+        message: {
+          role: 'assistant',
+        },
+      },
+    });
+    expect(receiptEnvelope.effect?.receipt?.value?.message).not.toHaveProperty('content');
+  });
+
+  it('retries checkpoint bootstrap after a blocked read instead of caching the blocked result', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+
+    const resumedStore = createInMemoryAgentSessionCheckpointStore();
+    await resumedStore.write(
+      createAgentSessionCheckpointEnvelope({
+        sessionId: 'session:agent:bootstrap-retry',
+        checkpointId: 'checkpoint:agent:bootstrap-retry',
+        actor: {
+          actorId: 'actor://local/researcher',
+          sessionId: 'session:agent:bootstrap-retry',
+          turnId: 'turn:1',
+          traceId: 'trace:bootstrap-retry:1',
+          commandId: 'cmd:bootstrap-retry:1',
+          correlationId: 'corr:bootstrap-retry:1',
+          causationId: 'cause:bootstrap-retry:1',
+        },
+        deterministic: {
+          system: 'Resume from store.',
+          history: [{ role: 'user', content: 'Plan task-3' }],
+          steps: 0,
+          pendingToolCalls: [],
+          lastError: null,
+        },
+        effect: {
+          effectId: 'effect:bootstrap-retry',
+          effectAttemptId: 'effect-attempt:bootstrap-retry',
+          phase: 'intent_recorded',
+          irreversible: true,
+          intent: { tool: 'llm' },
+        },
+        continuation: null,
+        reconciliation: { status: 'clear' },
+        recordedAt: '2026-04-25T18:00:00.000Z',
+      })
+    );
+
+    const provider = vi.fn<ActorAgentLlmProvider>().mockReturnValue({
+      ok: true,
+      value: {
+        message: {
+          role: 'assistant',
+          content: 'bootstrap resumed after retry',
+        },
+      },
+    });
+    const behavior = agent.createAgentLoopBehavior({
+      checkpoint: {
+        store: resumedStore,
+        sessionId: 'session:agent:bootstrap-retry',
+        actorId: 'actor://local/researcher',
+      },
+    });
+    const tools = createActorToolbox(
+      agent.createActorAgentToolRegistry({ llm: provider }),
+      actorToolContext,
+      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+    );
+
+    const blocked = await behavior.onMessage?.(
+      createAgentParams({
+        behavior,
+        tools,
+        message: { type: 'START_AGENT', prompt: 'should block first' },
+      })
+    );
+    expect(blocked).toMatchObject({
+      reply: {
+        ok: false,
+        error: {
+          code: 'CHECKPOINT_RECONCILIATION_REQUIRED',
+        },
+      },
+    });
+
+    await resumedStore.write(
+      createAgentSessionCheckpointEnvelope({
+        sessionId: 'session:agent:bootstrap-retry',
+        checkpointId: 'checkpoint:agent:bootstrap-retry-ready',
+        actor: {
+          actorId: 'actor://local/researcher',
+          sessionId: 'session:agent:bootstrap-retry',
+          turnId: 'turn:2',
+          traceId: 'trace:bootstrap-retry:2',
+          commandId: 'cmd:bootstrap-retry:2',
+          correlationId: 'corr:bootstrap-retry:2',
+          causationId: 'cause:bootstrap-retry:2',
+        },
+        deterministic: {
+          system: 'Resume from store.',
+          history: [{ role: 'user', content: 'Plan task-3' }],
+          steps: 0,
+          pendingToolCalls: [],
+          lastError: null,
+        },
+        effect: {
+          effectId: 'effect:bootstrap-retry-ready',
+          effectAttemptId: 'effect-attempt:bootstrap-retry-ready',
+          phase: 'receipt_recorded',
+          irreversible: true,
+          intent: { tool: 'llm' },
+          receipt: { ok: true },
+        },
+        continuation: null,
+        reconciliation: { status: 'clear' },
+        recordedAt: '2026-04-25T18:00:01.000Z',
+      })
+    );
+
+    const resumed = await behavior.onMessage?.(
+      createAgentParams({
+        behavior,
+        tools,
+        message: { type: 'START_AGENT', prompt: 'should retry bootstrap' },
+      })
+    );
+
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(resumed).toMatchObject({
+      reply: {
+        ok: true,
+      },
+    });
+  });
+
   it('does not re-enter the llm until all pending tool calls are resolved', async () => {
     const agent = await loadAgentModule();
     expect(agent).not.toBeNull();
