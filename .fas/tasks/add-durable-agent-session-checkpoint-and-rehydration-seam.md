@@ -84,6 +84,15 @@ The Actor-Web agent loop retains session and provider-loop context in memory; pr
 - Accuracy signal: Delegated architect, QA, SRE, and reviewer all confirmed no actor-agent or actor-core-testing changes are required
 - Follow-up needed: None; downstream consumers must reconfirm only after publication task task-1785250788704
 
+- Type: external-review-correctness-expansion
+- Added at: 2026-07-30
+- Trigger: PR 55 CodeRabbit review bc9ddc9d-2246-4bee-aa93-545564dcc4af found stale-or-expired duplicate drift and a stat-read allocation race
+- Reason: Both findings affect authoritative idempotency and bounded durable checkpoint reads and must be fixed before merge
+- Evidence source: PR 55 CodeRabbit review 4817733296
+- Evidence: PR 55 CodeRabbit review 4817733296 | packages/actor-core-runtime/src/node-agent-session-checkpoint-store.ts | Treat same checkpointId as duplicate for every envelope-bearing prior outcome and replace stat/readFile with a maxBytes+1 capped read
+- Accuracy signal: Verified against current Node and in-memory store implementations
+- Follow-up needed: Reconfirm with focused parity tests, full FAS verification, local CodeRabbit, and GitHub @coderabbit review
+
 ## Implementation plan
 
 - Separate provider-neutral resumable session facts from provider-specific opaque continuation data and define the versioned checkpoint/storage ports.

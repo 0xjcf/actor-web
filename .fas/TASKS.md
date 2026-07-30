@@ -2418,8 +2418,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Add durable agent-session checkpoint and rehydration seam
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/add-durable-agent-session-checkpoint-and-rehydration-seam.md
 - Verification lane: fast
 - Policy sensitivity: standard
