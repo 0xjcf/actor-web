@@ -35,6 +35,7 @@ The Actor-Web agent loop retains session and provider-loop context in memory; pr
 - packages/actor-agent/src
 - packages/actor-core-runtime/src
 - packages/actor-core-testing/src
+- .fas/memory/pr-feedback.md
 
 ## Scope Amendments
 
@@ -62,6 +63,15 @@ The Actor-Web agent loop retains session and provider-loop context in memory; pr
 - Reason: Reconcile the active task from the corrected authoritative brief after removing nonexistent packages/agent/src, packages/runtime/src, packages/testing/src, and non-deliverable docs scope.
 - Evidence source: repo-and-closeout
 - Evidence: repo-and-closeout | .fas/state/closeout-readiness/latest.json | All committed product changes are under packages/actor-agent/src, packages/actor-core-runtime/src, and packages/actor-core-testing/src; stale roots do not exist.
+- Accuracy signal: high
+
+- Type: review-closeout
+- Added at: 2026-07-29T22:20:00-04:00
+- Trigger: PR #55 babysit feedback capture
+- Reason: Record reusable checkpoint and rehydration review lessons required by the FAS babysit workflow.
+- Added paths: .fas/memory/pr-feedback.md
+- Evidence source: PR review
+- Evidence: PR #55 | unresolved review threads and pre-push CodeRabbit review | Reusable durability boundary lessons were captured after regression verification.
 - Accuracy signal: high
 
 ## Implementation plan
