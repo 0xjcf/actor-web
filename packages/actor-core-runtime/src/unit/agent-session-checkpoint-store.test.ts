@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   classifyAgentSessionCheckpointReadResult,
   createAgentSessionCheckpointEnvelope,
@@ -20,6 +20,12 @@ const TEST_CONTINUATION_FORMATS = [
     formatVersion: 1,
   },
 ] as const;
+
+afterEach(() => {
+  vi.doUnmock('node:fs/promises');
+  vi.resetModules();
+  vi.restoreAllMocks();
+});
 
 function createCheckpointEnvelope(
   overrides: Partial<Parameters<typeof createAgentSessionCheckpointEnvelope>[0]> = {}
@@ -624,6 +630,155 @@ describe('agent session checkpoint store', () => {
       outcome: 'stale',
       envelope,
     });
+  });
+
+  it('treats same checkpointId writes as duplicate after a stale persisted outcome', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'actor-web-checkpoints-duplicate-'));
+    const initialStore = nodeEntry.createNodeFileSystemAgentSessionCheckpointStore({
+      directory,
+      redactOpaqueContinuation: false,
+      now: () => new Date('2026-07-29T13:45:30.000Z'),
+    });
+
+    const staleEnvelope = createCheckpointEnvelope({
+      checkpointId: 'checkpoint:stale-duplicate',
+      staleAt: '2026-07-29T13:46:00.000Z',
+      expiresAt: '2026-07-30T13:45:00.000Z',
+      effect: null,
+      reconciliation: {
+        status: 'clear',
+      },
+    });
+    await expect(initialStore.write(staleEnvelope)).resolves.toMatchObject({
+      outcome: 'stored',
+    });
+
+    const staleStore = nodeEntry.createNodeFileSystemAgentSessionCheckpointStore({
+      directory,
+      redactOpaqueContinuation: false,
+      now: () => new Date('2026-07-29T13:47:00.000Z'),
+    });
+    await expect(staleStore.read({ sessionId: staleEnvelope.sessionId })).resolves.toEqual({
+      outcome: 'stale',
+      envelope: staleEnvelope,
+    });
+    await expect(staleStore.write(staleEnvelope)).resolves.toEqual({
+      outcome: 'duplicate',
+      envelope: staleEnvelope,
+      previous: staleEnvelope,
+    });
+  });
+
+  it('treats same checkpointId writes as duplicate after an expired persisted outcome', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'actor-web-checkpoints-duplicate-'));
+    const initialStore = nodeEntry.createNodeFileSystemAgentSessionCheckpointStore({
+      directory,
+      redactOpaqueContinuation: false,
+      now: () => new Date('2026-07-29T13:45:30.000Z'),
+    });
+    const expiredStore = nodeEntry.createNodeFileSystemAgentSessionCheckpointStore({
+      directory,
+      redactOpaqueContinuation: false,
+      now: () => new Date('2026-07-29T13:47:00.000Z'),
+    });
+    const expiredEnvelope = createCheckpointEnvelope({
+      checkpointId: 'checkpoint:expired-duplicate',
+      expiresAt: '2026-07-29T13:46:00.000Z',
+      effect: null,
+      reconciliation: {
+        status: 'clear',
+      },
+    });
+    await expect(initialStore.write(expiredEnvelope)).resolves.toMatchObject({
+      outcome: 'stored',
+    });
+    await expect(expiredStore.read({ sessionId: expiredEnvelope.sessionId })).resolves.toEqual({
+      outcome: 'expired',
+      envelope: expiredEnvelope,
+    });
+    await expect(expiredStore.write(expiredEnvelope)).resolves.toEqual({
+      outcome: 'duplicate',
+      envelope: expiredEnvelope,
+      previous: expiredEnvelope,
+    });
+  });
+
+  it('caps persisted checkpoint reads without relying on stat plus readFile', async () => {
+    const maxBytes = 64;
+    const sessionId = 'session:checkpoint:read-cap';
+    const mockedClose = vi.fn(async () => undefined);
+    const mockedRead = vi.fn(async (buffer: Buffer) => {
+      buffer.fill('x');
+      return {
+        bytesRead: maxBytes + 1,
+        buffer,
+      };
+    });
+    const mockedReadFile = vi.fn(async () => Buffer.alloc(maxBytes + 1, 'x'));
+    const mockedOpen = vi.fn(async () => ({
+      read: mockedRead,
+      close: mockedClose,
+    }));
+
+    vi.doMock('node:fs/promises', async () => {
+      const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      return {
+        ...actual,
+        open: mockedOpen,
+        readFile: mockedReadFile,
+      };
+    });
+
+    const nodeModule = await import('../node-agent-session-checkpoint-store.js');
+    const nodeStore = nodeModule.createNodeFileSystemAgentSessionCheckpointStore({
+      directory: '/tmp/actor-web-checkpoints-read-cap',
+      maxBytes,
+    });
+
+    await expect(nodeStore.read({ sessionId })).resolves.toEqual({
+      outcome: 'corrupt',
+      sessionId,
+      detail: 'checkpoint_too_large',
+    });
+    expect(mockedOpen).toHaveBeenCalledTimes(1);
+    expect(mockedRead).toHaveBeenCalledTimes(1);
+    expect(mockedClose).toHaveBeenCalledTimes(1);
+    expect(mockedReadFile).not.toHaveBeenCalled();
+  });
+
+  it('closes the capped-read file handle when a node checkpoint read fails mid-stream', async () => {
+    const sessionId = 'session:checkpoint:read-error';
+    const mockedClose = vi.fn(async () => undefined);
+    const mockedRead = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    const mockedOpen = vi.fn(async () => ({
+      read: mockedRead,
+      close: mockedClose,
+    }));
+
+    vi.doMock('node:fs/promises', async () => {
+      const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      return {
+        ...actual,
+        open: mockedOpen,
+      };
+    });
+
+    const nodeModule = await import('../node-agent-session-checkpoint-store.js');
+    const nodeStore = nodeModule.createNodeFileSystemAgentSessionCheckpointStore({
+      directory: '/tmp/actor-web-checkpoints-read-error',
+      maxBytes: 64,
+    });
+
+    await expect(nodeStore.read({ sessionId })).resolves.toEqual({
+      outcome: 'corrupt',
+      sessionId,
+      detail: 'filesystem_read_failed',
+    });
+    expect(mockedOpen).toHaveBeenCalledTimes(1);
+    expect(mockedRead).toHaveBeenCalledTimes(1);
+    expect(mockedClose).toHaveBeenCalledTimes(1);
   });
 
   it('enforces too_large at the real persisted-byte boundary of the node adapter', async () => {
