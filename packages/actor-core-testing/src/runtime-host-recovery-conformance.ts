@@ -30,7 +30,9 @@ export function getRuntimeHostRecoveryConformanceFixture(): RuntimeHostRecoveryC
   );
   assertAgentSessionCheckpointConformanceFixture();
   if (!executionFixture) {
-    throw new Error('Runtime host recovery conformance requires the duplicate-suppression fixture.');
+    throw new Error(
+      'Runtime host recovery conformance requires the duplicate-suppression fixture.'
+    );
   }
   assertAgentExecutionConformanceFixture(executionFixture);
 
