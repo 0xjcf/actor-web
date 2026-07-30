@@ -172,6 +172,8 @@ async function runExecScript(host: RuntimeHost, script: string): Promise<boolean
     const outcome = await executeCommand(host, command, watches, {
       onEvent: (target, event) =>
         console.log(`${chalk.cyan(`[${target}]`)} ${JSON.stringify(event)}`),
+      onTrace: (target, projection) =>
+        console.log(`${chalk.yellow(`[trace:${target}]`)} ${JSON.stringify(projection)}`),
     });
     printOutcomeLines(outcome.lines, outcome.ok);
     if (!outcome.ok) {
@@ -201,6 +203,8 @@ function runConsole(host: RuntimeHost, nodeLabel: string): void {
     void executeCommand(host, line, watches, {
       onEvent: (target, event) =>
         console.log(`${chalk.cyan(`[${target}]`)} ${JSON.stringify(event)}`),
+      onTrace: (target, projection) =>
+        console.log(`${chalk.yellow(`[trace:${target}]`)} ${JSON.stringify(projection)}`),
     })
       .then((outcome) => {
         printOutcomeLines(outcome.lines, outcome.ok);

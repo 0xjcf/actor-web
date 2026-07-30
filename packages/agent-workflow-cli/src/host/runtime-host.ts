@@ -27,20 +27,25 @@ import type {
   AgentExecutionIdempotencyClaimPort,
   AgentSessionCheckpointStore,
   ClusterState,
+  ClosableActorWebSource,
+  ClosableActorWebTraceSource,
   Message,
   ProjectionTransportStatus,
   RuntimeGatewayAuthProvider,
   RuntimeTransportStatus,
 } from '@actor-web/runtime';
+import {
+  createActorWebSource,
+  createActorWebTraceSource,
+} from '@actor-web/runtime';
 import { admitAgentExecutionCommand, Logger, parse, startRuntime } from '@actor-web/runtime';
-import type { ClosableActorWebSource } from '../../../actor-core-runtime/src/actor-web-source.js';
-import { createActorWebSource } from '../../../actor-core-runtime/src/actor-web-source.js';
 import type {
   ActorWebNodeGatewayOptions,
   ActorWebNodeTransportOptions,
   ServeActorWebNodeOptions,
   ServedActorWebNode,
 } from '../../../actor-core-runtime/src/serve-actor-web-node.js';
+import type { RuntimeGatewayTraceProjection } from '../../../actor-core-runtime/src/runtime-gateway-shared.js';
 import { serveNode } from '../../../actor-core-runtime/src/serve-actor-web-node.js';
 import { loadModuleExport } from './load-module.js';
 
@@ -88,6 +93,10 @@ export interface RuntimeHost {
     metadata?: AgentExecutionCommandMetadata
   ): Promise<HostResult<unknown>>;
   watch(target: string, onEvent: (event: ActorMessage) => void): HostResult<() => void>;
+  watchTrace(
+    target: string,
+    onTrace: (projection: RuntimeGatewayTraceProjection) => void
+  ): HostResult<() => void>;
   /** Resolve a registry key or actor:// path to an ActorRef. */
   resolve(target: string): ActorRef | undefined;
   /** Drain in-flight messages on every started node. */
@@ -461,6 +470,7 @@ export async function createRuntimeHost(
     string,
     ClosableActorWebSource<unknown, ActorMessage, ActorMessage>
   >();
+  const remoteTraceSourceCache = new Map<string, ClosableActorWebTraceSource>();
   let remoteTransportStatus: ProjectionTransportStatus | null = null;
   let remoteTransportReason: string | null = null;
 
@@ -584,6 +594,44 @@ export async function createRuntimeHost(
       remoteTransportReason = status.reason ?? null;
     });
     remoteSourceCache.set(actorKey, source);
+    return source;
+  };
+
+  const getRemoteTraceSource = (target: string): ClosableActorWebTraceSource | undefined => {
+    if (!options.remote) {
+      return undefined;
+    }
+    const actorEntry = Object.entries(topology.actors).find(
+      ([key, descriptor]) =>
+        key === target || descriptor.address === target || parse(descriptor.address).id === target
+    );
+    if (!actorEntry) {
+      return undefined;
+    }
+    const [actorKey, actorDescriptor] = actorEntry;
+    const cached = remoteTraceSourceCache.get(actorKey);
+    if (cached) {
+      return cached;
+    }
+    const source = createActorWebTraceSource({
+      actor: actorDescriptor,
+      gateway: {
+        ...options.remote.gateway,
+        scope: {
+          ...(actorDescriptor.gateway?.scope ?? {}),
+          params: {
+            ...(actorDescriptor.gateway?.scope.params ?? {}),
+            stream: 'trace',
+          },
+        },
+      },
+      streamId: `actor-web-cli-remote-trace-${actorKey}`,
+    });
+    source.subscribeTransportStatus((status) => {
+      remoteTransportStatus = status;
+      remoteTransportReason = status.reason ?? null;
+    });
+    remoteTraceSourceCache.set(actorKey, source);
     return source;
   };
 
@@ -887,6 +935,21 @@ export async function createRuntimeHost(
       return { ok: true, value: unsubscribe };
     },
 
+    watchTrace(target, onTrace) {
+      if (!options.remote) {
+        return {
+          ok: false,
+          error: 'Trace watch requires a remote gateway-backed host.',
+        };
+      }
+      const source = getRemoteTraceSource(target);
+      if (!source) {
+        return { ok: false, error: unknownTargetError(target) };
+      }
+      const unsubscribe = source.subscribeTrace(onTrace);
+      return { ok: true, value: unsubscribe };
+    },
+
     resolve,
     flush,
 
@@ -895,7 +958,11 @@ export async function createRuntimeHost(
         for (const source of remoteSourceCache.values()) {
           source.close();
         }
+        for (const source of remoteTraceSourceCache.values()) {
+          source.close();
+        }
         remoteSourceCache.clear();
+        remoteTraceSourceCache.clear();
         return;
       }
       if (servedNode) {
@@ -943,6 +1010,8 @@ export interface CommandOutcome {
 export interface CommandContext {
   /** Receives watch events; the REPL prints them, tests collect them. */
   readonly onEvent?: (target: string, event: ActorMessage) => void;
+  /** Receives trace projections; the REPL prints them, tests collect them. */
+  readonly onTrace?: (target: string, projection: RuntimeGatewayTraceProjection) => void;
 }
 
 const HELP_LINES = [
@@ -953,7 +1022,9 @@ const HELP_LINES = [
   '  send <target> <json>            fire-and-forget message',
   '  ask <target> <json> [timeout]   request/response (timeout in ms)',
   '  watch <target>                  stream emitted events to the console',
+  '  watch-trace <target>            stream gateway trace and receipt projections',
   '  unwatch <target>                stop streaming',
+  '  unwatch-trace <target>          stop streaming gateway trace projections',
   '  help                            show this help',
   '  exit                            stop the host and leave',
 ];
@@ -1141,6 +1212,25 @@ export async function executeCommand(
       return { ok: true, lines: [`Watching ${target} (unwatch ${target} to stop)`] };
     }
 
+    case 'watch-trace': {
+      const [target] = rest;
+      if (!target) {
+        return { ok: false, lines: ['Usage: watch-trace <target>'] };
+      }
+      const watchKey = `trace:${target}`;
+      if (watches.has(watchKey)) {
+        return { ok: true, lines: [`Already tracing ${target}`] };
+      }
+      const result = host.watchTrace(target, (projection) => {
+        context.onTrace?.(target, projection);
+      });
+      if (!result.ok) {
+        return { ok: false, lines: [result.error] };
+      }
+      watches.set(watchKey, result.value);
+      return { ok: true, lines: [`Tracing ${target} (unwatch-trace ${target} to stop)`] };
+    }
+
     case 'unwatch': {
       const [target] = rest;
       if (!target) {
@@ -1153,6 +1243,21 @@ export async function executeCommand(
       unsubscribe();
       watches.delete(target);
       return { ok: true, lines: [`Stopped watching ${target}`] };
+    }
+
+    case 'unwatch-trace': {
+      const [target] = rest;
+      if (!target) {
+        return { ok: false, lines: ['Usage: unwatch-trace <target>'] };
+      }
+      const watchKey = `trace:${target}`;
+      const unsubscribe = watches.get(watchKey);
+      if (!unsubscribe) {
+        return { ok: false, lines: [`Not tracing ${target}`] };
+      }
+      unsubscribe();
+      watches.delete(watchKey);
+      return { ok: true, lines: [`Stopped tracing ${target}`] };
     }
 
     default:

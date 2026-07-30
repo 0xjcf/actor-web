@@ -211,8 +211,17 @@ The current code lands the smallest coherent v2 host slice:
 Still deferred in this slice:
 
 - live generic checkpoint persistence injection into arbitrary hosted actors
-- richer trace/receipt tail streaming beyond gateway transport reasons, runtime
-  receipts, and the recovery/conformance fixtures
+
+Trace and receipt streaming now rides the same runtime gateway contract as the
+browser/runtime sources:
+
+- the CLI remote host exposes `watch-trace <target>` / `unwatch-trace <target>`
+  over the shared command grammar
+- trace subscriptions use the provider-neutral gateway trace stream with bounded
+  replay, redacted result payloads, cursor/resync recovery, and overflow or
+  dispatch-failure facts
+- the operator surface stays separate from event `watch`, so receipt tails do
+  not get conflated with domain event streams
 
 ## Agent layer (sketch)
 

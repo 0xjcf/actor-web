@@ -539,10 +539,18 @@ describe('createRuntimeHost', () => {
 
     try {
       const events: ActorMessage[] = [];
+      const traces: unknown[] = [];
       const watching = connected.value.watch('counter', (event) => {
         events.push(event);
       });
       expect(watching.ok).toBe(true);
+      const traceWatches = new Map<string, () => void>();
+      const tracing = await executeCommand(connected.value, 'watch-trace counter', traceWatches, {
+        onTrace: (_target, projection) => {
+          traces.push(projection);
+        },
+      });
+      expect(tracing.ok).toBe(true);
 
       const sent = await connected.value.send('counter', '{"type":"INCREMENT"}', {
         capability: 'counter.increment',
@@ -566,6 +574,63 @@ describe('createRuntimeHost', () => {
           count: 1,
         })
       );
+      await waitFor(
+        () =>
+          traces.some(
+            (projection) =>
+              typeof projection === 'object' &&
+              projection !== null &&
+              'trace' in projection &&
+              Boolean(
+                (projection as { trace?: { commandId?: string } | null }).trace?.commandId ===
+                  'cmd-remote-ask-1'
+              )
+          )
+            ? true
+            : undefined,
+        'Expected remote trace projections after gateway send and ask'
+      );
+      expect(traces).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            trace: expect.objectContaining({
+              commandId: 'cmd-remote-send-1',
+              receipts: expect.arrayContaining([
+                expect.objectContaining({
+                  receiptKind: 'authorization',
+                  authorization: expect.objectContaining({
+                    policy: 'counter.increment',
+                  }),
+                }),
+                expect.objectContaining({
+                  receiptKind: 'result',
+                }),
+              ]),
+            }),
+          }),
+          expect.objectContaining({
+            trace: expect.objectContaining({
+              commandId: 'cmd-remote-ask-1',
+              receipts: expect.arrayContaining([
+                expect.objectContaining({
+                  receiptKind: 'authorization',
+                  authorization: expect.objectContaining({
+                    policy: 'counter.read',
+                  }),
+                }),
+                expect.objectContaining({
+                  receiptKind: 'result',
+                  result: expect.objectContaining({
+                    output: {
+                      count: 1,
+                    },
+                  }),
+                }),
+              ]),
+            }),
+          }),
+        ])
+      );
       expect(status.mode).toBe('remote');
       expect(status.readiness).toEqual({
         process: 'ready',
@@ -585,6 +650,8 @@ describe('createRuntimeHost', () => {
           'readiness.policyAdmission=authenticated',
         ])
       );
+      const untraced = await executeCommand(connected.value, 'unwatch-trace counter', traceWatches);
+      expect(untraced.ok).toBe(true);
       expect(decisions).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -1553,7 +1620,17 @@ describe('executeCommand', () => {
 
   it('help lists every verb and exit signals shutdown', async () => {
     const help = await executeCommand(host, 'help', watches);
-    for (const verb of ['ls', 'spawn', 'send', 'ask', 'watch', 'unwatch', 'exit']) {
+    for (const verb of [
+      'ls',
+      'spawn',
+      'send',
+      'ask',
+      'watch',
+      'watch-trace',
+      'unwatch',
+      'unwatch-trace',
+      'exit',
+    ]) {
       expect(help.lines.join('\n')).toContain(verb);
     }
 

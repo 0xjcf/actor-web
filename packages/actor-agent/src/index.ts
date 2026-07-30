@@ -2,6 +2,7 @@ import type {
   ActorBehavior,
   AgentSessionCheckpointStore,
   AgentSessionCheckpointWriteResult,
+  JsonValue,
 } from '@actor-web/runtime';
 import {
   createAgentSessionCheckpointEnvelope,
@@ -310,14 +311,14 @@ async function writeCheckpointEnvelope(
       sessionId: checkpoint.sessionId,
       checkpointId: `checkpoint:${checkpoint.sessionId}:${input.step}:${input.phase}`,
       actor: createCheckpointIdentity(checkpoint, input.step),
-      deterministic: createActorAgentLoopCheckpointState(context),
+      deterministic: createActorAgentLoopCheckpointState(context) as unknown as JsonValue,
       effect: {
         effectId: `effect:${checkpoint.sessionId}:${input.step}`,
         effectAttemptId: `effect-attempt:${checkpoint.sessionId}:${input.step}`,
         phase: input.phase,
         irreversible: input.irreversible,
-        ...(input.intent === undefined ? {} : { intent: input.intent }),
-        ...(input.receipt === undefined ? {} : { receipt: input.receipt }),
+        ...(input.intent === undefined ? {} : { intent: input.intent as JsonValue }),
+        ...(input.receipt === undefined ? {} : { receipt: input.receipt as JsonValue }),
       },
       continuation: null,
       reconciliation:
@@ -624,7 +625,7 @@ export function createAgentLoopBehavior(
               tool: ACTOR_WEB_LLM_TOOL_NAME,
               messageType: message.type,
             },
-            reconciliationReason: failure.error.message,
+            reconciliationReason: failure.reply.ok ? undefined : failure.reply.error.message,
           });
         }
         return failure;

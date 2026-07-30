@@ -22,7 +22,8 @@ export interface RuntimeGatewayScopeDescriptor {
 export type RuntimeGatewayTraceFactCode =
   | 'trace_buffer_overflow'
   | 'trace_malformed'
-  | 'trace_unsupported';
+  | 'trace_unsupported'
+  | 'trace_dispatch_failed';
 
 export interface RuntimeGatewayTraceFact {
   readonly code: RuntimeGatewayTraceFactCode;

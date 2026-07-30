@@ -536,6 +536,63 @@ function stableRuntimeGatewayAuthOwnerKey(authContext: unknown): string | null {
   return `auth:${createHash('sha256').update(JSON.stringify(canonicalValue)).digest('base64url')}`;
 }
 
+function asTraceSource(source: RuntimeGatewaySource): RuntimeGatewayTraceSource | null {
+  return 'appendTrace' in source &&
+    typeof source.appendTrace === 'function' &&
+    'appendTraceFact' in source &&
+    typeof source.appendTraceFact === 'function'
+    ? (source as RuntimeGatewayTraceSource)
+    : null;
+}
+
+function createGatewayDecisionTrace(
+  decision: AgentExecutionAdmissionDecision,
+  receipts: readonly (
+    | AgentExecutionAdmissionDecision['admissionReceipt']
+    | NonNullable<AgentExecutionAdmissionDecision['authorizationReceipt']>
+    | NonNullable<AgentExecutionAdmissionDecision['rejectionReceipt']>
+    | ReturnType<typeof createExecutionSuccessReceipt>
+    | ReturnType<typeof createExecutionTimeoutReceipt>
+  )[]
+): AgentExecutionTrace {
+  const firstReceipt = receipts[0] ?? decision.admissionReceipt;
+  return createAgentExecutionTrace({
+    traceId: firstReceipt.traceId,
+    actorId: firstReceipt.actorId,
+    sessionId: firstReceipt.sessionId,
+    commandId: firstReceipt.commandId,
+    ...(decision.principal.id ? { principalId: decision.principal.id } : {}),
+    ...(firstReceipt.correlationId ? { correlationId: firstReceipt.correlationId } : {}),
+    ...(firstReceipt.causationId ? { causationId: firstReceipt.causationId } : {}),
+    receipts,
+  });
+}
+
+function appendGatewayDecisionTrace(
+  stream: RuntimeGatewayStreamState,
+  decision: AgentExecutionAdmissionDecision,
+  receipts: readonly (
+    | AgentExecutionAdmissionDecision['admissionReceipt']
+    | NonNullable<AgentExecutionAdmissionDecision['authorizationReceipt']>
+    | NonNullable<AgentExecutionAdmissionDecision['rejectionReceipt']>
+    | ReturnType<typeof createExecutionSuccessReceipt>
+    | ReturnType<typeof createExecutionTimeoutReceipt>
+  )[]
+): void {
+  asTraceSource(stream.source)?.appendTrace(createGatewayDecisionTrace(decision, receipts));
+}
+
+function appendGatewayTraceFact(
+  stream: RuntimeGatewayStreamState,
+  code: RuntimeGatewayTraceFact['code'],
+  message: string
+): void {
+  asTraceSource(stream.source)?.appendTraceFact({
+    code,
+    message,
+  });
+}
+
 function createGatewayRejectedDecision(input: {
   readonly actorId: string;
   readonly sessionId: string;
@@ -1577,6 +1634,10 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
               metadata
             );
             if (!decision.ok || !decision.authorizationReceipt) {
+              appendGatewayDecisionTrace(stream, decision, [
+                decision.admissionReceipt,
+                ...(decision.rejectionReceipt ? [decision.rejectionReceipt] : []),
+              ]);
               const rejection = decision.rejectionReceipt;
               sendError(
                 admissionErrorCodeForDecision(decision),
@@ -1592,6 +1653,22 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             }
             try {
               await stream.source.send(message);
+              appendGatewayDecisionTrace(stream, decision, [
+                decision.admissionReceipt,
+                decision.authorizationReceipt,
+                createExecutionSuccessReceipt({
+                  receiptId: `${decision.authorizationReceipt.traceId}:result:${decision.authorizationReceipt.sequence + 1}`,
+                  recordId: `${decision.authorizationReceipt.traceId}:record:result:${decision.authorizationReceipt.sequence + 1}`,
+                  traceId: decision.authorizationReceipt.traceId,
+                  actorId: decision.authorizationReceipt.actorId,
+                  sessionId: decision.authorizationReceipt.sessionId,
+                  commandId: decision.authorizationReceipt.commandId,
+                  ...(decision.principal.id ? { principalId: decision.principal.id } : {}),
+                  sequence: decision.authorizationReceipt.sequence + 1,
+                  occurredAt: new Date().toISOString(),
+                  result: {},
+                }),
+              ]);
               const settled = await trySettleGatewayClaim(decision, 'dispatch_succeeded');
               if (!settled) {
                 sendError(
@@ -1610,6 +1687,11 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
                 authorization: decision.authorizationReceipt,
               });
             } catch (error) {
+              appendGatewayTraceFact(
+                stream,
+                'trace_dispatch_failed',
+                error instanceof Error ? error.message : 'Runtime command failed.'
+              );
               await trySettleGatewayClaim(decision, 'dispatch_indeterminate');
               sendError(
                 'internal_error',
@@ -1708,6 +1790,10 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
               metadata
             );
             if (!decision.ok || !decision.authorizationReceipt) {
+              appendGatewayDecisionTrace(stream, decision, [
+                decision.admissionReceipt,
+                ...(decision.rejectionReceipt ? [decision.rejectionReceipt] : []),
+              ]);
               const rejection = decision.rejectionReceipt;
               sendError(
                 admissionErrorCodeForDecision(decision),
@@ -1723,6 +1809,27 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             }
             try {
               const value = await stream.source.ask(message, normalizedTimeoutMs);
+              appendGatewayDecisionTrace(stream, decision, [
+                decision.admissionReceipt,
+                decision.authorizationReceipt,
+                createExecutionSuccessReceipt({
+                  receiptId: `${decision.authorizationReceipt.traceId}:result:${decision.authorizationReceipt.sequence + 1}`,
+                  recordId: `${decision.authorizationReceipt.traceId}:record:result:${decision.authorizationReceipt.sequence + 1}`,
+                  traceId: decision.authorizationReceipt.traceId,
+                  actorId: decision.authorizationReceipt.actorId,
+                  sessionId: decision.authorizationReceipt.sessionId,
+                  commandId: decision.authorizationReceipt.commandId,
+                  ...(decision.principal.id ? { principalId: decision.principal.id } : {}),
+                  sequence: decision.authorizationReceipt.sequence + 1,
+                  occurredAt: new Date().toISOString(),
+                  result: {
+                    output:
+                      redactAgentExecutionValue(value) === undefined
+                        ? null
+                        : (redactAgentExecutionValue(value) as JsonValue),
+                  },
+                }),
+              ]);
               const settled = await trySettleGatewayClaim(decision, 'dispatch_succeeded');
               if (!settled) {
                 sendError(
@@ -1742,6 +1849,11 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
                 authorization: decision.authorizationReceipt,
               });
             } catch (error) {
+              appendGatewayTraceFact(
+                stream,
+                'trace_dispatch_failed',
+                error instanceof Error ? error.message : 'Runtime ask failed.'
+              );
               await trySettleGatewayClaim(decision, 'dispatch_indeterminate');
               sendError(
                 'internal_error',
