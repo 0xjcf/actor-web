@@ -13,13 +13,13 @@ import {
   type ProjectionTransportStatus,
 } from './projection-transport.js';
 import { type RuntimeGatewayAuthProvider, resolveRuntimeAuthPayload } from './runtime-auth.js';
-import type { RuntimeGatewayTraceProjection } from './runtime-gateway.js';
 import type {
   RuntimeGatewayClientFrame,
   RuntimeGatewayScopeDescriptor,
   RuntimeGatewayServerFrame,
   RuntimeGatewaySourceHandle,
   RuntimeGatewaySubscribeMode,
+  RuntimeGatewayTraceProjection,
 } from './runtime-gateway-shared.js';
 import { createRuntimeGatewaySourceHandle } from './runtime-gateway-shared.js';
 import type { ActorEventProjection, ActorSnapshotProjection } from './runtime-projection.js';
