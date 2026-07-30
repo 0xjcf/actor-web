@@ -21,7 +21,10 @@ export {
   type HostActorEntry,
   type HostResult,
   type RuntimeHost,
+  type RuntimeHostCheckpointOptions,
   type RuntimeHostDistributedOptions,
+  type RuntimeHostRemoteOptions,
+  type RuntimeHostReadinessStatus,
   type RuntimeHostStatus,
   splitExecScript,
 } from './host/runtime-host.js';
@@ -50,12 +53,14 @@ export async function getCLIInfo() {
     status: 'v2-distributed-runtime-host',
     features: [
       'In-process or distributed runtime hosting from a topology module',
+      'Standalone remote gateway operator shells',
       'Localhost-safe gateway and transport listeners',
+      'Explicit checkpoint dependency and readiness reporting',
       'Operator console (REPL and --exec scripting)',
       'Explicit host status with transport and directory readiness facts',
       'Dynamic actor spawn from behavior modules (in-process mode)',
       'send/ask messaging and emitted-event watching',
     ] as const,
-    commands: ['serve', 'info'] as const,
+    commands: ['serve', 'connect', 'info'] as const,
   } as const;
 }

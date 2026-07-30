@@ -179,8 +179,9 @@ actor-web ask   actor://worker/agent/r1 '{"type":"QUERY", ...}' [--timeout 5000]
 actor-web watch actor://worker/agent/r1
     # stream the actor's emitted events to the terminal (subscribeEvent)
 
-actor-web connect ws://host:port --as worker
-    # target-state remote client mode; not in the current implementation slice
+actor-web connect ./topology.ts ws://host:port [--token gateway-secret]
+    # attach a standalone operator shell to a remote gateway using the
+    # topology's actor keys and gateway scopes
 ```
 
 `serve` hosts; the other verbs are a client that talks to either an in-process
@@ -194,19 +195,24 @@ The current code lands the smallest coherent v2 host slice:
 
 - `serve` can run in-process or as a distributed runtime node over the
   existing `serveNode` transport/gateway seams.
+- `connect` can attach a standalone operator shell to an authenticated remote
+  gateway using the existing Actor-Web source/gateway contracts.
 - The shell exposes explicit host status, transport membership, and directory
-  readiness as separate facts.
+  readiness as separate facts, including operator-visible transport degradation
+  reasons from gateway status/error frames.
 - Cross-node `send`/`ask` works from the hosting shell once peer directory
   readiness converges.
 - Gateway and transport listeners stay localhost-safe unless the operator opts
   into unsafe exposure explicitly.
+- Checkpoint readiness is a typed host dependency: the CLI can require and
+  surface a checkpoint store, but it does not retroactively inject generic
+  checkpoint persistence into arbitrary topology behaviors.
 
 Still deferred in this slice:
 
-- remote `connect` as a standalone client workflow
-- gateway auth/admission wiring for non-localhost exposure
-- checkpoint-store injection as a live CLI host seam
-- trace/receipt streaming beyond the existing runtime and conformance surfaces
+- live generic checkpoint persistence injection into arbitrary hosted actors
+- richer trace/receipt tail streaming beyond gateway transport reasons, runtime
+  receipts, and the recovery/conformance fixtures
 
 ## Agent layer (sketch)
 

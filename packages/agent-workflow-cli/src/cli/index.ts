@@ -18,11 +18,13 @@ import { pathToFileURL } from 'node:url';
 import { Logger } from '@actor-web/runtime';
 import chalk from 'chalk';
 import { program } from 'commander';
+import { createNodeFileSystemAgentSessionCheckpointStore } from '../../../actor-core-runtime/src/node-agent-session-checkpoint-store.js';
 import { loadModuleExport } from '../host/load-module.js';
 import {
   createRuntimeHostFromFile,
   executeCommand,
   type RuntimeHost,
+  type RuntimeHostCheckpointOptions,
   type RuntimeHostCommandAdmissionOptions,
   splitExecScript,
 } from '../host/runtime-host.js';
@@ -126,6 +128,25 @@ function parsePeerMappings(input: readonly string[] | undefined): PeerMappingPar
         return entry.value;
       })
     ),
+  };
+}
+
+function resolveCheckpointOptions(input: {
+  checkpointDir?: string;
+  requireCheckpointStore?: boolean;
+}): RuntimeHostCheckpointOptions | undefined {
+  if (!input.checkpointDir && !input.requireCheckpointStore) {
+    return undefined;
+  }
+  return {
+    ...(input.checkpointDir
+      ? {
+          store: createNodeFileSystemAgentSessionCheckpointStore({
+            directory: input.checkpointDir,
+          }),
+        }
+      : {}),
+    ...(input.requireCheckpointStore ? { required: true } : {}),
   };
 }
 
@@ -245,6 +266,14 @@ async function main() {
         '--allow-unsafe-exposure',
         'allow --gateway or --transport listeners to bind outside localhost'
       )
+      .option(
+        '--checkpoint-dir <dir>',
+        'persist host checkpoint envelopes in this directory and report checkpoint readiness'
+      )
+      .option(
+        '--require-checkpoint-store',
+        'fail closed when checkpoint readiness is required but no checkpoint store is configured'
+      )
       .option('--exec <commands>', 'run semicolon-separated console commands, then exit')
       .action(
         async (
@@ -257,6 +286,8 @@ async function main() {
             connect?: string[];
             peer?: string[];
             allowUnsafeExposure?: boolean;
+            checkpointDir?: string;
+            requireCheckpointStore?: boolean;
             exec?: string;
           }
         ) => {
@@ -274,6 +305,7 @@ async function main() {
             process.exit(1);
           }
 
+          const checkpoint = resolveCheckpointOptions(options);
           const distributed =
             options.gateway ||
             options.transport ||
@@ -294,6 +326,7 @@ async function main() {
             node: options.node,
             ...(commandAdmission?.ok ? { commandAdmission: commandAdmission.value } : {}),
             ...(distributed ? { distributed } : {}),
+            ...(checkpoint ? { checkpoint } : {}),
           });
           if (!started.ok) {
             console.error(chalk.red(started.error));
@@ -323,13 +356,66 @@ async function main() {
       );
 
     program
+      .command('connect <topology> <gatewayUrl>')
+      .description('Connect an operator shell to a remote runtime gateway using a topology module')
+      .option('--token <token>', 'send a gateway auth token on the hello frame')
+      .option(
+        '--checkpoint-dir <dir>',
+        'persist host checkpoint envelopes in this directory and report checkpoint readiness'
+      )
+      .option(
+        '--require-checkpoint-store',
+        'fail closed when checkpoint readiness is required but no checkpoint store is configured'
+      )
+      .option('--exec <commands>', 'run semicolon-separated console commands, then exit')
+      .action(
+        async (
+          topologyPath: string,
+          gatewayUrl: string,
+          options: {
+            token?: string;
+            checkpointDir?: string;
+            requireCheckpointStore?: boolean;
+            exec?: string;
+          }
+        ) => {
+          const checkpoint = resolveCheckpointOptions(options);
+          const started = await createRuntimeHostFromFile(topologyPath, {
+            remote: {
+              gateway: {
+                url: gatewayUrl,
+                ...(options.token ? { auth: { token: options.token } } : {}),
+              },
+            },
+            ...(checkpoint ? { checkpoint } : {}),
+          });
+          if (!started.ok) {
+            console.error(chalk.red(started.error));
+            process.exit(1);
+          }
+          const host = started.value;
+          const status = host.getStatus();
+          console.log(
+            chalk.green(`Connected ${topologyPath} to remote gateway`) +
+              chalk.gray(` (${status.gatewayUrl ?? gatewayUrl})`)
+          );
+
+          if (options.exec !== undefined) {
+            const ok = await runExecScript(host, options.exec);
+            process.exit(ok ? 0 : 1);
+          }
+          runConsole(host, 'remote');
+        }
+      );
+
+    program
       .command('info')
       .description('Show CLI status')
       .action(() => {
         console.log(chalk.blue('actor-web CLI'));
         console.log(
           chalk.gray(
-            'Distributed runtime host: actor-web serve ./topology.(mjs|js|ts) [--node key] [--gateway] [--transport] [--peer worker=ws://127.0.0.1:9001] [--connect worker] [--admission ./command-admission.(mjs|js|ts)] [--exec "status; ls; ..."]. See docs/actor-web-cli-runtime-host-design.md.'
+            'Distributed runtime host: actor-web serve ./topology.(mjs|js|ts) [--node key] [--gateway] [--transport] [--peer worker=ws://127.0.0.1:9001] [--connect worker] [--admission ./command-admission.(mjs|js|ts)] [--checkpoint-dir ./.actor-web/checkpoints] [--exec "status; ls; ..."]; actor-web connect ./topology.(mjs|js|ts) ws://127.0.0.1:9000 [--token gateway-secret]. See docs/actor-web-cli-runtime-host-design.md.'
           )
         );
       });
