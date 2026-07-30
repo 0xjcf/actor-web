@@ -708,9 +708,10 @@ describe('agent session checkpoint store', () => {
     const sessionId = 'session:checkpoint:read-cap';
     const mockedClose = vi.fn(async () => undefined);
     const mockedRead = vi.fn(async (buffer: Buffer) => {
+      expect(buffer.byteLength).toBe(maxBytes + 1);
       buffer.fill('x');
       return {
-        bytesRead: maxBytes + 1,
+        bytesRead: buffer.byteLength,
         buffer,
       };
     });
