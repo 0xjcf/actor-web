@@ -332,7 +332,7 @@ function validateDistributedSecurityRequirements(
         'Distributed host rejected: missing_gateway_admission (non-localhost gateway exposure requires explicit command admission.)',
     };
   }
-  if (options.checkpoint?.required && !options.checkpoint.store) {
+  if (!options.checkpoint?.store) {
     return {
       ok: false,
       error:

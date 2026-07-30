@@ -480,6 +480,41 @@ describe('createRuntimeHost', () => {
     });
   });
 
+  it('fails closed when non-localhost gateway exposure omits checkpoint configuration entirely', async () => {
+    await host.stop();
+
+    const missingCheckpoint = await createRuntimeHost(buildCounterTopology(), {
+      node: 'local',
+      distributed: {
+        gateway: {
+          host: '0.0.0.0',
+          expose: ['counter'],
+          auth: {
+            verifyToken: ({ token }) => token === 'gateway-secret',
+          },
+          commandAdmission: {
+            resolvePrincipal: () => ({
+              id: 'principal:served-gateway',
+              kind: 'authenticated',
+            }),
+            policy: async () => ({
+              outcome: 'authorized',
+              policy: 'served-gateway-default',
+            }),
+            onDecision: async () => {},
+          },
+        },
+        allowUnsafeExposure: true,
+      },
+    });
+
+    expect(missingCheckpoint).toEqual({
+      ok: false,
+      error:
+        'Distributed host rejected: missing_checkpoint_store (non-localhost gateway exposure requires an explicit checkpoint store.)',
+    });
+  });
+
   it('connects to an authenticated remote gateway and runs send, ask, watch, and status through the remote host shell', async () => {
     await host.stop();
     const decisions: unknown[] = [];
