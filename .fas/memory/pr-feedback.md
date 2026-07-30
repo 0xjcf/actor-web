@@ -107,3 +107,13 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Fail-closed receipts must not overstate completed admission work.** Gateway-local configuration and resolver failures happen before contract admission checks, so their stage, principal trust, and `rechecked` set must report only what actually occurred. Use an explicit `unknown` principal, a pre-authorization stage, and an empty or otherwise exact recheck set; contain and sanitize resolver exceptions with a distinct reason code.
 
 - **Failure telemetry must preserve both operability and redaction.** Swallowing a durable sink exception leaves operators blind, but logging the raw throwable can leak the same credentials removed from client receipts. Emit a fixed local message with coarse safe classification and stable operation/failure codes, then test both that the signal exists and that thrown details appear in neither logs nor client output.
+
+## PR #55 — durable agent-session checkpoint babysit (2026-07-29, 6-agent)
+
+- **Opaque continuation presence does not prove resumability.** Rehydration must fail closed unless the active adapter explicitly supports the checkpoint's exact provider, adapter, and format version. Metadata-only continuation records are evidence of redaction, never resumable payloads, even when a top-level redaction list is empty.
+
+- **Filesystem checkpoint keys must be bound to parsed envelope identity.** A filename derived from session A must not return a valid envelope for session B. Canonicalize storage directories before process-local locking, reject unencodable identifiers as durable failure outcomes, enforce size limits before allocation with a post-read backstop, and create checkpoint files with owner-only permissions.
+
+- **Durable loop snapshots must include behavior-affecting configuration.** Message-specific system instructions alter subsequent provider requests and therefore belong in the checkpoint projection. A restart test should capture a message override, rehydrate without reconstructing options, and prove the next provider call retains that instruction.
+
+- **Time-sensitive conformance fixtures need non-expiring defaults and injected clocks.** Fixed near-future expiry dates turn green fixtures red as wall time advances. Keep representative cross-repo fixtures non-expiring, and prove expiry separately with an injected clock at the public store boundary.
