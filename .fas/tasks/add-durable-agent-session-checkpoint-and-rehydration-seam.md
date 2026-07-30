@@ -74,6 +74,16 @@ The Actor-Web agent loop retains session and provider-loop context in memory; pr
 - Evidence: PR #55 | unresolved review threads and pre-push CodeRabbit review | Reusable durability boundary lessons were captured after regression verification.
 - Accuracy signal: high
 
+- Type: review-feedback-scope-narrowing
+- Added at: 2026-07-30
+- Trigger: PR 55 CodeRabbit requested canonical checkpoint read classification after the original implementation was already committed
+- Reason: This resumed review-fix workflow starts at PR head 71661469 and changes only the runtime classifier seam; actor-agent and actor-core-testing were completed in the prior reviewed implementation and are not missing work in this delta
+- Removed planned paths: packages/actor-agent/src, packages/actor-core-testing/src
+- Evidence source: PR 55 CodeRabbit review 4814795614 and current git diff
+- Evidence: PR 55 CodeRabbit review 4814795614 and current git diff | packages/actor-core-runtime/src/agent-session-checkpoint-store.ts | Current delta is limited to the shared classifier, Node adapter reuse, focused runtime test, and PR feedback memory
+- Accuracy signal: Delegated architect, QA, SRE, and reviewer all confirmed no actor-agent or actor-core-testing changes are required
+- Follow-up needed: None; downstream consumers must reconfirm only after publication task task-1785250788704
+
 ## Implementation plan
 
 - Separate provider-neutral resumable session facts from provider-specific opaque continuation data and define the versioned checkpoint/storage ports.
