@@ -13,11 +13,12 @@ describe('@actor-web/cli stub', () => {
     expect(info.version).toMatch(/^\d+\.\d+\.\d+/);
   });
 
-  it('describes the v0 runtime-host surface', async () => {
+  it('describes the distributed runtime-host surface', async () => {
     const cli = await getCLIInfo();
     expect(cli.name).toBe('@actor-web/cli');
-    expect(cli.status).toBe('v0-in-process-host');
+    expect(cli.status).toBe('v2-distributed-runtime-host');
     expect(cli.commands).toContain('serve');
+    expect(cli.features).toContain('Localhost-safe gateway and transport listeners');
   });
 
   it('rejects malformed admission modules before topology startup', async () => {

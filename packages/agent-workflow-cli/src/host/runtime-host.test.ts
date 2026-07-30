@@ -53,6 +53,33 @@ function buildCounterTopology() {
   });
 }
 
+function buildDistributedCounterTopology() {
+  const counter = defineBehavior<CounterMsg>()
+    .withContext({ count: 0 })
+    .onMessage(({ message, context }) => {
+      if (message.type === 'INCREMENT') {
+        const count = context.count + 1;
+        return { context: { count }, emit: [{ type: 'COUNT_CHANGED', count }] };
+      }
+      if (message.type === 'GET_COUNT') {
+        return { reply: { count: context.count } };
+      }
+      return {};
+    })
+    .build();
+
+  return defineActorWebTopology({
+    nodes: {
+      server: node('server-node'),
+      worker: node('worker-node'),
+    },
+    actors: {
+      serverCounter: actor({ id: 'server-counter', node: 'server', behavior: counter }),
+      workerCounter: actor({ id: 'worker-counter', node: 'worker', behavior: counter }),
+    },
+  });
+}
+
 type AgentPackage = {
   readonly ACTOR_WEB_LLM_TOOL_NAME: 'llm';
   createAgentLoopBehavior(options?: { readonly system?: string }): unknown;
@@ -83,6 +110,26 @@ function buildAgentLoopTopology(input: {
       }),
     },
   });
+}
+
+async function waitFor<T>(
+  read: () => T | undefined | Promise<T | undefined>,
+  message: string,
+  timeoutMs = 2_000
+): Promise<T> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const value = await read();
+    if (value !== undefined) {
+      return value;
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+  }
+
+  throw new Error(message);
 }
 
 // ============================================================================
@@ -200,6 +247,144 @@ describe('createRuntimeHost', () => {
 
     const reply = await host.ask('counter', '{"type":"GET_COUNT"}', 2000);
     expect(reply).toEqual({ ok: true, value: { count: 1 } });
+  });
+
+  it('surfaces distributed transport membership separately from directory readiness facts', async () => {
+    await host.stop();
+    const topology = buildDistributedCounterTopology();
+    const workerStarted = await createRuntimeHost(topology, {
+      node: 'worker',
+      distributed: {
+        transport: true,
+      },
+    });
+    expect(workerStarted.ok).toBe(true);
+    if (!workerStarted.ok) {
+      return;
+    }
+
+    const serverStarted = await createRuntimeHost(topology, {
+      node: 'server',
+      distributed: {
+        transport: true,
+        peers: {
+          worker: workerStarted.value.getStatus().transportUrl ?? '',
+        },
+        connect: ['worker'],
+      },
+    });
+    expect(serverStarted.ok).toBe(true);
+    if (!serverStarted.ok) {
+      await workerStarted.value.stop();
+      return;
+    }
+
+    try {
+      const status = await waitFor(async () => {
+        const next = serverStarted.value.getStatus();
+        const peer = next.transport?.peers.find((entry) => entry.nodeAddress === 'worker-node');
+        const readiness = next.cluster?.directoryReadiness?.find(
+          (entry) => entry.nodeAddress === 'worker-node'
+        );
+        return peer?.connected && readiness?.status === 'ready' ? next : undefined;
+      }, 'Expected distributed host status to report connected transport and ready directory');
+
+      expect(status.mode).toBe('distributed');
+      expect(status.gatewayUrl).toBeNull();
+      expect(status.transportUrl).toMatch(/^ws:\/\/127\.0\.0\.1:/);
+      expect(status.transport).toMatchObject({
+        connectedNodes: ['worker-node'],
+      });
+      expect(status.cluster?.directoryReadiness).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            nodeAddress: 'worker-node',
+            status: 'ready',
+          }),
+        ])
+      );
+    } finally {
+      await serverStarted.value.stop();
+      await workerStarted.value.stop();
+    }
+  });
+
+  it('routes distributed send and ask to remote actor addresses after peer readiness', async () => {
+    await host.stop();
+    const topology = buildDistributedCounterTopology();
+    const workerStarted = await createRuntimeHost(topology, {
+      node: 'worker',
+      distributed: {
+        transport: true,
+      },
+    });
+    expect(workerStarted.ok).toBe(true);
+    if (!workerStarted.ok) {
+      return;
+    }
+
+    const serverStarted = await createRuntimeHost(topology, {
+      node: 'server',
+      distributed: {
+        transport: true,
+        peers: {
+          worker: workerStarted.value.getStatus().transportUrl ?? '',
+        },
+        connect: ['worker'],
+      },
+    });
+    expect(serverStarted.ok).toBe(true);
+    if (!serverStarted.ok) {
+      await workerStarted.value.stop();
+      return;
+    }
+
+    try {
+      await waitFor(
+        () =>
+          serverStarted.value.getStatus().cluster?.directoryReadiness?.[0]?.status === 'ready'
+            ? true
+            : undefined,
+        'Expected remote directory readiness before cross-node send'
+      );
+
+      const sent = await serverStarted.value.send(
+        'actor://worker-node/worker-counter',
+        '{"type":"INCREMENT"}'
+      );
+      const reply = await serverStarted.value.ask(
+        'actor://worker-node/worker-counter',
+        '{"type":"GET_COUNT"}',
+        2_000
+      );
+
+      expect(sent).toEqual({
+        ok: true,
+        value: 'Sent INCREMENT to actor://worker-node/worker-counter',
+      });
+      expect(reply).toEqual({ ok: true, value: { count: 1 } });
+    } finally {
+      await serverStarted.value.stop();
+      await workerStarted.value.stop();
+    }
+  });
+
+  it('fails closed when distributed exposure leaves localhost without an explicit unsafe override', async () => {
+    await host.stop();
+    const started = await createRuntimeHost(buildDistributedCounterTopology(), {
+      node: 'server',
+      distributed: {
+        gateway: {
+          host: '0.0.0.0',
+        },
+      },
+    });
+
+    expect(started).toEqual({
+      ok: false,
+      error:
+        'Distributed host rejected: unsafe_exposure_requires_override (gateway host "0.0.0.0" is not loopback-safe. Pass allowUnsafeExposure to bind outside localhost.)',
+    });
   });
 
   it('routes local send and ask through the shared admission seam with an explicit system principal', async () => {
@@ -821,6 +1006,14 @@ describe('createRuntimeHost', () => {
     const seen = events.length;
     await host.send('counter', '{"type":"INCREMENT"}');
     expect(events).toHaveLength(seen);
+  });
+
+  it('renders host status through the shared console command path', async () => {
+    const outcome = await executeCommand(host, 'status', new Map());
+    expect(outcome).toEqual({
+      ok: true,
+      lines: ['mode=in-process node=local', 'gateway=(disabled)', 'transport=(disabled)'],
+    });
   });
 
   it('returns facts for unknown targets and malformed messages', async () => {
