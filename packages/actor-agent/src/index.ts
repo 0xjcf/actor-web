@@ -78,6 +78,7 @@ export type ActorAgentLoopMessage =
   | { readonly type: 'GET_AGENT_CONTEXT' };
 
 export interface ActorAgentLoopContext {
+  readonly system?: string;
   readonly history: readonly ActorAgentLlmMessage[];
   readonly steps: number;
   readonly pendingToolCalls: readonly ActorAgentToolCall[];
@@ -85,6 +86,7 @@ export interface ActorAgentLoopContext {
 }
 
 export interface ActorAgentLoopCheckpointState {
+  readonly system?: string;
   readonly history: readonly ActorAgentLlmMessage[];
   readonly steps: number;
   readonly pendingToolCalls: readonly ActorAgentToolCall[];
@@ -149,9 +151,14 @@ function normalizeThrownError(error: unknown): ActorAgentError {
 
 function createInitialContext(options: ActorAgentLoopOptions): ActorAgentLoopContext {
   if (options.initialCheckpointState) {
-    return rehydrateActorAgentLoopContext(options.initialCheckpointState);
+    const context = rehydrateActorAgentLoopContext(options.initialCheckpointState);
+    return {
+      ...context,
+      system: context.system ?? options.system,
+    };
   }
   return {
+    system: options.system,
     history: [...(options.initialHistory ?? [])],
     steps: 0,
     pendingToolCalls: [],
@@ -163,6 +170,7 @@ export function createActorAgentLoopCheckpointState(
   context: ActorAgentLoopContext
 ): ActorAgentLoopCheckpointState {
   return {
+    system: context.system,
     history: [...context.history],
     steps: context.steps,
     pendingToolCalls: [...context.pendingToolCalls],
@@ -174,6 +182,7 @@ export function rehydrateActorAgentLoopContext(
   state: ActorAgentLoopCheckpointState
 ): ActorAgentLoopContext {
   return {
+    system: state.system,
     history: [...state.history],
     steps: state.steps,
     pendingToolCalls: [...state.pendingToolCalls],
@@ -285,6 +294,10 @@ export function createAgentLoopBehavior(
         message.type === 'OBSERVE_TOOL_RESULT'
           ? context.pendingToolCalls.filter((toolCall) => toolCall.id !== message.toolCallId)
           : context.pendingToolCalls;
+      const system =
+        message.type === 'START_AGENT'
+          ? (message.system ?? context.system ?? options.system)
+          : (context.system ?? options.system);
       const messages = [...context.history, ...nextMessages];
       const observedToolEvents: ActorAgentLoopEvent[] =
         message.type === 'OBSERVE_TOOL_RESULT'
@@ -301,6 +314,7 @@ export function createAgentLoopBehavior(
       if (message.type === 'OBSERVE_TOOL_RESULT' && pendingToolCalls.length > 0) {
         return {
           context: {
+            system,
             history: messages,
             steps: context.steps,
             pendingToolCalls,
@@ -322,8 +336,7 @@ export function createAgentLoopBehavior(
         const result = await tools.execute<ActorAgentLlmResult, ActorAgentLlmRequest>(
           ACTOR_WEB_LLM_TOOL_NAME,
           {
-            system:
-              message.type === 'START_AGENT' ? (message.system ?? options.system) : options.system,
+            system,
             messages,
             tools: toolNamesForModel(tools),
           },
@@ -334,6 +347,7 @@ export function createAgentLoopBehavior(
           return createFailureResult({
             context: {
               ...context,
+              system,
               history: messages,
               pendingToolCalls,
             },
@@ -345,6 +359,7 @@ export function createAgentLoopBehavior(
         const assistantMessage = result.value.message;
         const toolCalls = assistantMessage.toolCalls ?? [];
         const nextContext: ActorAgentLoopContext = {
+          system,
           history: [...messages, assistantMessage],
           steps: step,
           pendingToolCalls: [...pendingToolCalls, ...toolCalls],
@@ -381,6 +396,7 @@ export function createAgentLoopBehavior(
         return createFailureResult({
           context: {
             ...context,
+            system,
             history: messages,
             pendingToolCalls,
           },

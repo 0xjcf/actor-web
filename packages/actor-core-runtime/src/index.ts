@@ -174,6 +174,7 @@ export {
 export type {
   AgentSessionCheckpointActorIdentity,
   AgentSessionCheckpointContinuation,
+  AgentSessionCheckpointContinuationFormat,
   AgentSessionCheckpointEffectPhase,
   AgentSessionCheckpointEffectState,
   AgentSessionCheckpointEnvelope,
@@ -183,12 +184,14 @@ export type {
   AgentSessionCheckpointReadOutcome,
   AgentSessionCheckpointReadResult,
   AgentSessionCheckpointReconciliationState,
+  AgentSessionCheckpointRehydrationOptions,
   AgentSessionCheckpointRehydrationOutcome,
   AgentSessionCheckpointRehydrationResult,
   AgentSessionCheckpointStore,
   AgentSessionCheckpointWriteOutcome,
   AgentSessionCheckpointWriteResult,
   InMemoryAgentSessionCheckpointStore,
+  InMemoryAgentSessionCheckpointStoreOptions,
 } from './agent-session-checkpoint-store.js';
 export {
   AGENT_SESSION_CHECKPOINT_SCHEMA_VERSION,

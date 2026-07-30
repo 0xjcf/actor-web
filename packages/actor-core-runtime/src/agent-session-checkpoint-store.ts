@@ -62,6 +62,16 @@ export interface AgentSessionCheckpointContinuation {
   };
 }
 
+export interface AgentSessionCheckpointContinuationFormat {
+  readonly provider: string;
+  readonly adapter: string;
+  readonly formatVersion: number;
+}
+
+export interface AgentSessionCheckpointRehydrationOptions {
+  readonly supportedContinuationFormats?: readonly AgentSessionCheckpointContinuationFormat[];
+}
+
 export interface AgentSessionCheckpointReconciliationState {
   readonly status: 'clear' | 'pending' | 'required';
   readonly reason?: string;
@@ -155,7 +165,8 @@ export type AgentSessionCheckpointRehydrationResult =
         | 'corrupt'
         | 'version_mismatch'
         | 'expired'
-        | 'redacted';
+        | 'redacted'
+        | 'continuation_incompatible';
       readonly detail?: string;
       readonly envelope?: AgentSessionCheckpointEnvelope;
     };
@@ -173,6 +184,10 @@ export interface AgentSessionCheckpointStore {
 export interface InMemoryAgentSessionCheckpointStore extends AgentSessionCheckpointStore {
   getSnapshot(): Readonly<Record<string, AgentSessionCheckpointEnvelope>>;
   clear(): void;
+}
+
+export interface InMemoryAgentSessionCheckpointStoreOptions {
+  readonly now?: () => Date;
 }
 
 export interface AgentSessionCheckpointEnvelopeInput {
@@ -198,7 +213,23 @@ function hasNonEmptyString(value: unknown): value is string {
 }
 
 function isIsoDateString(value: unknown): value is string {
-  return hasNonEmptyString(value) && !Number.isNaN(Date.parse(value));
+  if (!hasNonEmptyString(value) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) {
+    return false;
+  }
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+}
+
+function isEncodableIdentifier(value: unknown): value is string {
+  if (!hasNonEmptyString(value)) {
+    return false;
+  }
+  try {
+    encodeURIComponent(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isJsonValue(value: unknown, ancestors = new WeakSet<object>()): value is JsonValue {
@@ -392,11 +423,15 @@ function classifyReadResult(
       envelope,
     };
   }
-  if (envelope.redactedFields.length > 0) {
+  const continuationRedacted = envelope.continuation?.redaction.disposition === 'metadata_only';
+  if (envelope.redactedFields.length > 0 || continuationRedacted) {
     return {
       outcome: 'redacted',
       envelope,
-      fields: envelope.redactedFields,
+      fields:
+        envelope.redactedFields.length > 0
+          ? envelope.redactedFields
+          : (envelope.continuation?.redaction.fields ?? []),
     };
   }
   return {
@@ -537,10 +572,10 @@ function normalizeEnvelope(
 export function createAgentSessionCheckpointEnvelope(
   input: AgentSessionCheckpointEnvelopeInput
 ): AgentSessionCheckpointEnvelope {
-  if (!hasNonEmptyString(input.sessionId)) {
+  if (!isEncodableIdentifier(input.sessionId)) {
     throw new Error('Agent session checkpoint requires a non-empty sessionId.');
   }
-  if (!hasNonEmptyString(input.checkpointId)) {
+  if (!isEncodableIdentifier(input.checkpointId)) {
     throw new Error('Agent session checkpoint requires a non-empty checkpointId.');
   }
   if (!isValidIdentity(input.actor)) {
@@ -604,8 +639,8 @@ export function parseAgentSessionCheckpointEnvelope(
     };
   }
   if (
-    !hasNonEmptyString(candidate.sessionId) ||
-    !hasNonEmptyString(candidate.checkpointId) ||
+    !isEncodableIdentifier(candidate.sessionId) ||
+    !isEncodableIdentifier(candidate.checkpointId) ||
     !isValidIdentity(candidate.actor) ||
     candidate.actor.sessionId !== candidate.sessionId ||
     !isJsonValue(candidate.deterministic) ||
@@ -652,7 +687,8 @@ export function parseAgentSessionCheckpointEnvelope(
 }
 
 export function deriveAgentSessionCheckpointRehydration(
-  result: AgentSessionCheckpointReadResult
+  result: AgentSessionCheckpointReadResult,
+  options: AgentSessionCheckpointRehydrationOptions = {}
 ): AgentSessionCheckpointRehydrationResult {
   switch (result.outcome) {
     case 'missing':
@@ -698,6 +734,33 @@ export function deriveAgentSessionCheckpointRehydration(
         detail: result.fields?.join(','),
       };
     case 'present': {
+      const continuation = result.envelope.continuation;
+      if (continuation?.redaction.disposition === 'metadata_only') {
+        return {
+          outcome: 'manual_recovery_required',
+          sessionId: result.envelope.sessionId,
+          reason: 'redacted',
+          envelope: result.envelope,
+          detail: continuation.redaction.fields.join(','),
+        };
+      }
+      if (
+        continuation &&
+        !(options.supportedContinuationFormats ?? []).some(
+          (supported) =>
+            supported.provider === continuation.provider &&
+            supported.adapter === continuation.adapter &&
+            supported.formatVersion === continuation.formatVersion
+        )
+      ) {
+        return {
+          outcome: 'manual_recovery_required',
+          sessionId: result.envelope.sessionId,
+          reason: 'continuation_incompatible',
+          envelope: result.envelope,
+          detail: `Unsupported continuation format: ${continuation.provider}/${continuation.adapter}@${continuation.formatVersion}`,
+        };
+      }
       const effect = result.envelope.effect;
       if (
         effect?.irreversible &&
@@ -731,7 +794,9 @@ export function deriveAgentSessionCheckpointRehydration(
   }
 }
 
-export function createInMemoryAgentSessionCheckpointStore(): InMemoryAgentSessionCheckpointStore {
+export function createInMemoryAgentSessionCheckpointStore(
+  options: InMemoryAgentSessionCheckpointStoreOptions = {}
+): InMemoryAgentSessionCheckpointStore {
   const entries = new Map<string, AgentSessionCheckpointEnvelope>();
 
   return {
@@ -743,10 +808,10 @@ export function createInMemoryAgentSessionCheckpointStore(): InMemoryAgentSessio
           sessionId: input.sessionId,
         };
       }
-      return classifyReadResult(envelope, (input.now ?? (() => new Date()))());
+      return classifyReadResult(envelope, (input.now ?? options.now ?? (() => new Date()))());
     },
     async write(envelope) {
-      const now = new Date();
+      const now = (options.now ?? (() => new Date()))();
       const expiresAt = toDateMs(envelope.expiresAt);
       const continuationExpiresAt = toDateMs(envelope.continuation?.expiresAt);
       if (
@@ -780,7 +845,7 @@ export function createInMemoryAgentSessionCheckpointStore(): InMemoryAgentSessio
       };
     },
     getSnapshot() {
-      const snapshot: Record<string, AgentSessionCheckpointEnvelope> = {};
+      const snapshot = Object.create(null) as Record<string, AgentSessionCheckpointEnvelope>;
       for (const [sessionId, envelope] of entries.entries()) {
         snapshot[sessionId] = envelope;
       }

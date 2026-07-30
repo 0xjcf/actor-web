@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   type AgentSessionCheckpointEnvelope,
@@ -49,12 +49,22 @@ function measureSerializedCheckpointBytes(serializedEnvelope: string): number {
   return new TextEncoder().encode(serializedEnvelope).byteLength;
 }
 
-function toSessionFilePath(directory: string, sessionId: string): string {
-  return path.join(directory, `${encodeURIComponent(sessionId)}.json`);
+function encodeCheckpointIdentifier(value: string): string | null {
+  try {
+    return encodeURIComponent(value);
+  } catch {
+    return null;
+  }
 }
 
-function toTempFilePath(filePath: string, checkpointId: string): string {
-  return `${filePath}.${encodeURIComponent(checkpointId)}.tmp`;
+function toSessionFilePath(directory: string, sessionId: string): string | null {
+  const encodedSessionId = encodeCheckpointIdentifier(sessionId);
+  return encodedSessionId === null ? null : path.join(directory, `${encodedSessionId}.json`);
+}
+
+function toTempFilePath(filePath: string, checkpointId: string): string | null {
+  const encodedCheckpointId = encodeCheckpointIdentifier(checkpointId);
+  return encodedCheckpointId === null ? null : `${filePath}.${encodedCheckpointId}.tmp`;
 }
 
 function redactEnvelope(envelope: AgentSessionCheckpointEnvelope): AgentSessionCheckpointEnvelope {
@@ -113,83 +123,120 @@ function classifyParseFailure(
 export function createNodeFileSystemAgentSessionCheckpointStore(
   options: NodeFileSystemAgentSessionCheckpointStoreOptions
 ): AgentSessionCheckpointStore {
+  const directory = path.resolve(options.directory);
   const maxBytes = options.maxBytes ?? 256 * 1024;
   const now = options.now ?? (() => new Date());
   const redactOpaqueContinuation = options.redactOpaqueContinuation ?? true;
 
-  return {
-    async read(input: AgentSessionCheckpointReadInput) {
-      const filePath = toSessionFilePath(options.directory, input.sessionId);
-      let raw: string;
-      try {
-        raw = await readFile(filePath, 'utf8');
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-          return {
-            outcome: 'missing',
-            sessionId: input.sessionId,
-          };
-        }
+  const readCheckpoint = async (
+    input: AgentSessionCheckpointReadInput
+  ): Promise<AgentSessionCheckpointReadResult> => {
+    const filePath = toSessionFilePath(directory, input.sessionId);
+    if (filePath === null) {
+      return {
+        outcome: 'corrupt',
+        sessionId: input.sessionId,
+        detail: 'invalid_session_id',
+      };
+    }
+    let rawBytes: Buffer;
+    try {
+      const fileStats = await stat(filePath);
+      if (fileStats.size > maxBytes) {
         return {
           outcome: 'corrupt',
           sessionId: input.sessionId,
-          detail: 'filesystem_read_failed',
+          detail: 'checkpoint_too_large',
         };
       }
-      let parsedJson: unknown;
-      try {
-        parsedJson = JSON.parse(raw);
-      } catch {
+      rawBytes = await readFile(filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         return {
-          outcome: 'corrupt',
+          outcome: 'missing',
           sessionId: input.sessionId,
-          detail: 'invalid_json',
-        };
-      }
-      const parsedEnvelope = parseAgentSessionCheckpointEnvelope(parsedJson);
-      if (!parsedEnvelope.ok) {
-        return classifyParseFailure(input.sessionId, parsedEnvelope);
-      }
-      const readNow = input.now?.() ?? now();
-      const expiresAt = parsedEnvelope.value.expiresAt
-        ? Date.parse(parsedEnvelope.value.expiresAt)
-        : null;
-      if (expiresAt !== null && expiresAt <= readNow.getTime()) {
-        return {
-          outcome: 'expired',
-          envelope: parsedEnvelope.value,
-        };
-      }
-      const continuationExpiresAt = parsedEnvelope.value.continuation?.expiresAt
-        ? Date.parse(parsedEnvelope.value.continuation.expiresAt)
-        : null;
-      if (continuationExpiresAt !== null && continuationExpiresAt <= readNow.getTime()) {
-        return {
-          outcome: 'expired',
-          envelope: parsedEnvelope.value,
-        };
-      }
-      const staleAt = parsedEnvelope.value.staleAt
-        ? Date.parse(parsedEnvelope.value.staleAt)
-        : null;
-      if (staleAt !== null && staleAt <= readNow.getTime()) {
-        return {
-          outcome: 'stale',
-          envelope: parsedEnvelope.value,
-        };
-      }
-      if (parsedEnvelope.value.redactedFields.length > 0) {
-        return {
-          outcome: 'redacted',
-          envelope: parsedEnvelope.value,
-          fields: parsedEnvelope.value.redactedFields,
         };
       }
       return {
-        outcome: 'present',
+        outcome: 'corrupt',
+        sessionId: input.sessionId,
+        detail: 'filesystem_read_failed',
+      };
+    }
+    if (rawBytes.byteLength > maxBytes) {
+      return {
+        outcome: 'corrupt',
+        sessionId: input.sessionId,
+        detail: 'checkpoint_too_large',
+      };
+    }
+    let parsedJson: unknown;
+    try {
+      parsedJson = JSON.parse(rawBytes.toString('utf8'));
+    } catch {
+      return {
+        outcome: 'corrupt',
+        sessionId: input.sessionId,
+        detail: 'invalid_json',
+      };
+    }
+    const parsedEnvelope = parseAgentSessionCheckpointEnvelope(parsedJson);
+    if (!parsedEnvelope.ok) {
+      return classifyParseFailure(input.sessionId, parsedEnvelope);
+    }
+    if (parsedEnvelope.value.sessionId !== input.sessionId) {
+      return {
+        outcome: 'corrupt',
+        sessionId: input.sessionId,
+        detail: 'session_id_mismatch',
+      };
+    }
+    const readNow = input.now?.() ?? now();
+    const expiresAt = parsedEnvelope.value.expiresAt
+      ? Date.parse(parsedEnvelope.value.expiresAt)
+      : null;
+    if (expiresAt !== null && expiresAt <= readNow.getTime()) {
+      return {
+        outcome: 'expired',
         envelope: parsedEnvelope.value,
       };
-    },
+    }
+    const continuationExpiresAt = parsedEnvelope.value.continuation?.expiresAt
+      ? Date.parse(parsedEnvelope.value.continuation.expiresAt)
+      : null;
+    if (continuationExpiresAt !== null && continuationExpiresAt <= readNow.getTime()) {
+      return {
+        outcome: 'expired',
+        envelope: parsedEnvelope.value,
+      };
+    }
+    const staleAt = parsedEnvelope.value.staleAt ? Date.parse(parsedEnvelope.value.staleAt) : null;
+    if (staleAt !== null && staleAt <= readNow.getTime()) {
+      return {
+        outcome: 'stale',
+        envelope: parsedEnvelope.value,
+      };
+    }
+    const continuationRedacted =
+      parsedEnvelope.value.continuation?.redaction.disposition === 'metadata_only';
+    if (parsedEnvelope.value.redactedFields.length > 0 || continuationRedacted) {
+      return {
+        outcome: 'redacted',
+        envelope: parsedEnvelope.value,
+        fields:
+          parsedEnvelope.value.redactedFields.length > 0
+            ? parsedEnvelope.value.redactedFields
+            : (parsedEnvelope.value.continuation?.redaction.fields ?? []),
+      };
+    }
+    return {
+      outcome: 'present',
+      envelope: parsedEnvelope.value,
+    };
+  };
+
+  return {
+    read: readCheckpoint,
     async write(
       envelope: AgentSessionCheckpointEnvelope
     ): Promise<AgentSessionCheckpointWriteResult> {
@@ -225,12 +272,26 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
           maxBytes,
         };
       }
-      const filePath = toSessionFilePath(options.directory, nextEnvelope.sessionId);
+      const filePath = toSessionFilePath(directory, nextEnvelope.sessionId);
+      if (filePath === null) {
+        return {
+          outcome: 'rejected',
+          envelope: nextEnvelope,
+          reason: 'invalid_session_id',
+        };
+      }
       const tempFilePath = toTempFilePath(filePath, nextEnvelope.checkpointId);
+      if (tempFilePath === null) {
+        return {
+          outcome: 'rejected',
+          envelope: nextEnvelope,
+          reason: 'invalid_checkpoint_id',
+        };
+      }
       return withProcessLocalSessionWriteLock<AgentSessionCheckpointWriteResult>(
         filePath,
         async () => {
-          const previous = await this.read({ sessionId: nextEnvelope.sessionId });
+          const previous = await readCheckpoint({ sessionId: nextEnvelope.sessionId });
           if (
             previous.outcome === 'present' &&
             previous.envelope.checkpointId === nextEnvelope.checkpointId
@@ -252,8 +313,8 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
             };
           }
           try {
-            await mkdir(options.directory, { recursive: true });
-            await writeFile(tempFilePath, serializedEnvelope);
+            await mkdir(directory, { recursive: true });
+            await writeFile(tempFilePath, serializedEnvelope, { mode: 0o600 });
             await rename(tempFilePath, filePath);
           } catch {
             await rm(tempFilePath, { force: true }).catch(() => undefined);

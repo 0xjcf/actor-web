@@ -68,6 +68,21 @@ const REHYDRATION_OUTCOME_SET: Readonly<Record<AgentSessionCheckpointRehydration
 const READ_OUTCOMES = getOutcomeKeys(READ_OUTCOME_SET);
 const WRITE_OUTCOMES = getOutcomeKeys(WRITE_OUTCOME_SET);
 const REHYDRATION_OUTCOMES = getOutcomeKeys(REHYDRATION_OUTCOME_SET);
+const FIXTURE_CONTINUATION_FORMATS = [
+  {
+    provider: 'fixture-provider',
+    adapter: 'fixture-provider-adapter',
+    formatVersion: 1,
+  },
+] as const;
+
+function deriveFixtureRehydration(
+  result: Parameters<typeof deriveAgentSessionCheckpointRehydration>[0]
+): ReturnType<typeof deriveAgentSessionCheckpointRehydration> {
+  return deriveAgentSessionCheckpointRehydration(result, {
+    supportedContinuationFormats: FIXTURE_CONTINUATION_FORMATS,
+  });
+}
 
 const REPRESENTATIVE_CHECKPOINT = createAgentSessionCheckpointEnvelope({
   sessionId: 'session:checkpoint:fixture',
@@ -120,7 +135,7 @@ const REPRESENTATIVE_CHECKPOINT = createAgentSessionCheckpointEnvelope({
     reason: 'awaiting_effect_receipt',
   },
   recordedAt: '2026-07-29T13:45:00.000Z',
-  expiresAt: '2026-07-30T13:45:00.000Z',
+  expiresAt: null,
 });
 
 const CLEAN_RESTART_CHECKPOINT = createAgentSessionCheckpointEnvelope({
@@ -245,7 +260,7 @@ const SCENARIOS = [
   {
     name: 'clean_restart_identity_continuity',
     proofSurface: 'checkpoint_seam',
-    outcome: deriveAgentSessionCheckpointRehydration({
+    outcome: deriveFixtureRehydration({
       outcome: 'present',
       envelope: CLEAN_RESTART_CHECKPOINT,
     }),
@@ -254,7 +269,7 @@ const SCENARIOS = [
   {
     name: 'crash_before_attempt',
     proofSurface: 'checkpoint_seam',
-    outcome: deriveAgentSessionCheckpointRehydration({
+    outcome: deriveFixtureRehydration({
       outcome: 'missing',
       sessionId: 'session:checkpoint:fixture',
     }),
@@ -263,7 +278,7 @@ const SCENARIOS = [
   {
     name: 'crash_between_attempt_and_receipt',
     proofSurface: 'checkpoint_seam',
-    outcome: deriveAgentSessionCheckpointRehydration({
+    outcome: deriveFixtureRehydration({
       outcome: 'present',
       envelope: CRASH_BETWEEN_ATTEMPT_AND_RECEIPT_CHECKPOINT,
     }),
@@ -272,7 +287,7 @@ const SCENARIOS = [
   {
     name: 'crash_after_receipt_before_checkpoint',
     proofSurface: 'checkpoint_seam',
-    outcome: deriveAgentSessionCheckpointRehydration({
+    outcome: deriveFixtureRehydration({
       outcome: 'present',
       envelope: CRASH_AFTER_RECEIPT_BEFORE_CHECKPOINT,
     }),
@@ -281,7 +296,7 @@ const SCENARIOS = [
   {
     name: 'cancellation',
     proofSurface: 'checkpoint_seam',
-    outcome: deriveAgentSessionCheckpointRehydration({
+    outcome: deriveFixtureRehydration({
       outcome: 'present',
       envelope: CANCELLATION_CHECKPOINT,
     }),
@@ -290,7 +305,7 @@ const SCENARIOS = [
   {
     name: 'manual_recovery',
     proofSurface: 'checkpoint_seam',
-    outcome: deriveAgentSessionCheckpointRehydration({
+    outcome: deriveFixtureRehydration({
       outcome: 'corrupt',
       sessionId: 'session:checkpoint:fixture',
       detail: 'invalid_json',
@@ -300,7 +315,7 @@ const SCENARIOS = [
   {
     name: 'reconciliation',
     proofSurface: 'checkpoint_seam',
-    outcome: deriveAgentSessionCheckpointRehydration({
+    outcome: deriveFixtureRehydration({
       outcome: 'present',
       envelope: RECONCILIATION_CHECKPOINT,
     }),
@@ -309,7 +324,7 @@ const SCENARIOS = [
   {
     name: 'no_duplicate_irreversible_effect',
     proofSurface: 'checkpoint_seam',
-    outcome: deriveAgentSessionCheckpointRehydration({
+    outcome: deriveFixtureRehydration({
       outcome: 'present',
       envelope: NO_DUPLICATE_IRREVERSIBLE_EFFECT_CHECKPOINT,
     }),
@@ -337,7 +352,7 @@ export function assertAgentSessionCheckpointConformanceFixture(): {
 } {
   return {
     ok: true,
-    rehydration: deriveAgentSessionCheckpointRehydration({
+    rehydration: deriveFixtureRehydration({
       outcome: 'present',
       envelope: REPRESENTATIVE_CHECKPOINT,
     }),
