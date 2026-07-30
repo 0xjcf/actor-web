@@ -15,6 +15,7 @@ import {
   type ActorMessage,
   type AgentExecutionIdempotencySettlementOutcome,
   actor,
+  createInMemoryAgentSessionCheckpointStore,
   defineActorWebTopology,
   defineBehavior,
   enableDevModeForCLI,
@@ -385,6 +386,227 @@ describe('createRuntimeHost', () => {
       error:
         'Distributed host rejected: unsafe_exposure_requires_override (gateway host "0.0.0.0" is not loopback-safe. Pass allowUnsafeExposure to bind outside localhost.)',
     });
+  });
+
+  it('fails closed when non-localhost gateway exposure is enabled without auth, admission, and checkpoint readiness', async () => {
+    await host.stop();
+    const checkpointStore = createInMemoryAgentSessionCheckpointStore();
+
+    const missingAuth = await createRuntimeHost(buildCounterTopology(), {
+      node: 'local',
+      distributed: {
+        gateway: {
+          host: '0.0.0.0',
+          expose: ['counter'],
+          commandAdmission: {
+            resolvePrincipal: () => ({
+              id: 'principal:served-gateway',
+              kind: 'authenticated',
+            }),
+            policy: async () => ({
+              outcome: 'authorized',
+              policy: 'served-gateway-default',
+            }),
+            onDecision: async () => {},
+          },
+        },
+        allowUnsafeExposure: true,
+      },
+      checkpoint: {
+        store: checkpointStore,
+        required: true,
+      },
+    });
+    expect(missingAuth).toEqual({
+      ok: false,
+      error:
+        'Distributed host rejected: missing_gateway_auth (non-localhost gateway exposure requires explicit gateway authentication.)',
+    });
+
+    const missingAdmission = await createRuntimeHost(buildCounterTopology(), {
+      node: 'local',
+      distributed: {
+        gateway: {
+          host: '0.0.0.0',
+          expose: ['counter'],
+          auth: {
+            verifyToken: ({ token }) => token === 'gateway-secret',
+          },
+        },
+        allowUnsafeExposure: true,
+      },
+      checkpoint: {
+        store: checkpointStore,
+        required: true,
+      },
+    });
+    expect(missingAdmission).toEqual({
+      ok: false,
+      error:
+        'Distributed host rejected: missing_gateway_admission (non-localhost gateway exposure requires explicit command admission.)',
+    });
+
+    const missingCheckpoint = await createRuntimeHost(buildCounterTopology(), {
+      node: 'local',
+      distributed: {
+        gateway: {
+          host: '0.0.0.0',
+          expose: ['counter'],
+          auth: {
+            verifyToken: ({ token }) => token === 'gateway-secret',
+          },
+          commandAdmission: {
+            resolvePrincipal: () => ({
+              id: 'principal:served-gateway',
+              kind: 'authenticated',
+            }),
+            policy: async () => ({
+              outcome: 'authorized',
+              policy: 'served-gateway-default',
+            }),
+            onDecision: async () => {},
+          },
+        },
+        allowUnsafeExposure: true,
+      },
+      checkpoint: {
+        required: true,
+      },
+    });
+    expect(missingCheckpoint).toEqual({
+      ok: false,
+      error:
+        'Distributed host rejected: missing_checkpoint_store (non-localhost gateway exposure requires an explicit checkpoint store.)',
+    });
+  });
+
+  it('connects to an authenticated remote gateway and runs send, ask, watch, and status through the remote host shell', async () => {
+    await host.stop();
+    const decisions: unknown[] = [];
+    const checkpointStore = createInMemoryAgentSessionCheckpointStore();
+    const served = await createRuntimeHost(buildCounterTopology(), {
+      node: 'local',
+      distributed: {
+        gateway: {
+          expose: ['counter'],
+          auth: {
+            verifyToken: ({ token }) => token === 'gateway-secret',
+          },
+          commandAdmission: {
+            resolvePrincipal: () => ({
+              id: 'principal:served-gateway',
+              kind: 'authenticated',
+            }),
+            policy: async ({ metadata }) => ({
+              outcome: 'authorized',
+              policy: metadata.capability ?? 'served-gateway-default',
+            }),
+            onDecision: async (decision) => {
+              decisions.push(decision);
+            },
+          },
+        },
+      },
+      checkpoint: {
+        store: checkpointStore,
+        required: true,
+      },
+    });
+    expect(served.ok).toBe(true);
+    if (!served.ok) {
+      return;
+    }
+
+    const connected = await createRuntimeHost(buildCounterTopology(), {
+      remote: {
+        gateway: {
+          url: served.value.getStatus().gatewayUrl ?? '',
+          auth: {
+            token: 'gateway-secret',
+          },
+        },
+      },
+      checkpoint: {
+        store: checkpointStore,
+        required: true,
+      },
+    });
+    expect(connected.ok).toBe(true);
+    if (!connected.ok) {
+      await served.value.stop();
+      return;
+    }
+
+    try {
+      const events: ActorMessage[] = [];
+      const watching = connected.value.watch('counter', (event) => {
+        events.push(event);
+      });
+      expect(watching.ok).toBe(true);
+
+      const sent = await connected.value.send('counter', '{"type":"INCREMENT"}', {
+        capability: 'counter.increment',
+        commandId: 'cmd-remote-send-1',
+      });
+      const reply = await connected.value.ask('counter', '{"type":"GET_COUNT"}', 2_000, {
+        capability: 'counter.read',
+        commandId: 'cmd-remote-ask-1',
+      });
+      const status = connected.value.getStatus();
+      const statusOutcome = await executeCommand(connected.value, 'status', new Map());
+
+      expect(sent).toEqual({
+        ok: true,
+        value: 'Sent INCREMENT to actor://local/counter',
+      });
+      expect(reply).toEqual({ ok: true, value: { count: 1 } });
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: 'COUNT_CHANGED',
+          count: 1,
+        })
+      );
+      expect(status.mode).toBe('remote');
+      expect(status.readiness).toEqual({
+        process: 'ready',
+        transport: 'connected',
+        directory: 'remote',
+        checkpointStore: 'ready',
+        policyAdmission: 'authenticated',
+      });
+      expect(statusOutcome.lines).toEqual(
+        expect.arrayContaining([
+          'mode=remote node=local',
+          `gateway=${served.value.getStatus().gatewayUrl}`,
+          'readiness.process=ready',
+          'readiness.transport=connected',
+          'readiness.directory=remote',
+          'readiness.checkpointStore=ready',
+          'readiness.policyAdmission=authenticated',
+        ])
+      );
+      expect(decisions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            authorizationReceipt: expect.objectContaining({
+              authorization: expect.objectContaining({
+                policy: 'counter.increment',
+              }),
+            }),
+          }),
+          expect.objectContaining({
+            authorizationReceipt: expect.objectContaining({
+              authorization: expect.objectContaining({
+                policy: 'counter.read',
+              }),
+            }),
+          }),
+        ])
+      );
+    } finally {
+      await connected.value.stop();
+      await served.value.stop();
+    }
   });
 
   it('routes local send and ask through the shared admission seam with an explicit system principal', async () => {

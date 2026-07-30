@@ -18,7 +18,9 @@ describe('@actor-web/cli stub', () => {
     expect(cli.name).toBe('@actor-web/cli');
     expect(cli.status).toBe('v2-distributed-runtime-host');
     expect(cli.commands).toContain('serve');
+    expect(cli.commands).toContain('connect');
     expect(cli.features).toContain('Localhost-safe gateway and transport listeners');
+    expect(cli.features).toContain('Standalone remote gateway operator shells');
   });
 
   it('rejects malformed admission modules before topology startup', async () => {
