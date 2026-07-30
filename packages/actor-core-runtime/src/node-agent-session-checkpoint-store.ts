@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, open, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   type AgentSessionCheckpointEnvelope,
@@ -7,7 +7,9 @@ import {
   type AgentSessionCheckpointStore,
   type AgentSessionCheckpointWriteResult,
   classifyAgentSessionCheckpointReadResult,
+  hasAgentSessionCheckpointEnvelope,
   getAgentSessionCheckpointSupportedSchemaVersions,
+  isDuplicateAgentSessionCheckpointReadResult,
   parseAgentSessionCheckpointEnvelope,
 } from './agent-session-checkpoint-store.js';
 
@@ -116,6 +118,72 @@ function classifyParseFailure(
   };
 }
 
+async function readCheckpointFileCapped(
+  filePath: string,
+  maxBytes: number
+): Promise<
+  | { readonly ok: true; readonly rawBytes: Buffer }
+  | {
+      readonly ok: false;
+      readonly outcome: 'missing' | 'corrupt';
+      readonly sessionId?: string;
+      readonly detail?: 'checkpoint_too_large' | 'filesystem_read_failed';
+    }
+> {
+  let fileHandle: Awaited<ReturnType<typeof open>> | null = null;
+  try {
+    fileHandle = await open(filePath, 'r');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return {
+        ok: false,
+        outcome: 'missing',
+      };
+    }
+    return {
+      ok: false,
+      outcome: 'corrupt',
+      detail: 'filesystem_read_failed',
+    };
+  }
+
+  const chunks: Buffer[] = [];
+  let bytesReadTotal = 0;
+  try {
+    while (bytesReadTotal <= maxBytes) {
+      const chunkSize = Math.min(64 * 1024, maxBytes + 1 - bytesReadTotal);
+      const buffer = Buffer.allocUnsafe(chunkSize);
+      const { bytesRead } = await fileHandle.read(buffer, 0, chunkSize, null);
+      if (bytesRead === 0) {
+        break;
+      }
+      chunks.push(buffer.subarray(0, bytesRead));
+      bytesReadTotal += bytesRead;
+    }
+  } catch {
+    return {
+      ok: false,
+      outcome: 'corrupt',
+      detail: 'filesystem_read_failed',
+    };
+  } finally {
+    await fileHandle.close().catch(() => undefined);
+  }
+
+  if (bytesReadTotal > maxBytes) {
+    return {
+      ok: false,
+      outcome: 'corrupt',
+      detail: 'checkpoint_too_large',
+    };
+  }
+
+  return {
+    ok: true,
+    rawBytes: Buffer.concat(chunks, bytesReadTotal),
+  };
+}
+
 /**
  * Coordinates same-session writes across store instances in this Node process.
  * A host that shares the directory across processes must enforce single-writer
@@ -140,19 +208,9 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
         detail: 'invalid_session_id',
       };
     }
-    let rawBytes: Buffer;
-    try {
-      const fileStats = await stat(filePath);
-      if (fileStats.size > maxBytes) {
-        return {
-          outcome: 'corrupt',
-          sessionId: input.sessionId,
-          detail: 'checkpoint_too_large',
-        };
-      }
-      rawBytes = await readFile(filePath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    const rawRead = await readCheckpointFileCapped(filePath, maxBytes);
+    if (!rawRead.ok) {
+      if (rawRead.outcome === 'missing') {
         return {
           outcome: 'missing',
           sessionId: input.sessionId,
@@ -161,19 +219,12 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
       return {
         outcome: 'corrupt',
         sessionId: input.sessionId,
-        detail: 'filesystem_read_failed',
-      };
-    }
-    if (rawBytes.byteLength > maxBytes) {
-      return {
-        outcome: 'corrupt',
-        sessionId: input.sessionId,
-        detail: 'checkpoint_too_large',
+        detail: rawRead.detail ?? 'filesystem_read_failed',
       };
     }
     let parsedJson: unknown;
     try {
-      parsedJson = JSON.parse(rawBytes.toString('utf8'));
+      parsedJson = JSON.parse(rawRead.rawBytes.toString('utf8'));
     } catch {
       return {
         outcome: 'corrupt',
@@ -200,27 +251,6 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
     async write(
       envelope: AgentSessionCheckpointEnvelope
     ): Promise<AgentSessionCheckpointWriteResult> {
-      const writeNow = now();
-      const expiresAt = envelope.expiresAt ? Date.parse(envelope.expiresAt) : null;
-      if (expiresAt !== null && !Number.isNaN(expiresAt) && expiresAt <= writeNow.getTime()) {
-        return {
-          outcome: 'expired',
-          envelope,
-        };
-      }
-      const continuationExpiresAt = envelope.continuation?.expiresAt
-        ? Date.parse(envelope.continuation.expiresAt)
-        : null;
-      if (
-        continuationExpiresAt !== null &&
-        !Number.isNaN(continuationExpiresAt) &&
-        continuationExpiresAt <= writeNow.getTime()
-      ) {
-        return {
-          outcome: 'expired',
-          envelope,
-        };
-      }
       const nextEnvelope = redactOpaqueContinuation ? redactEnvelope(envelope) : envelope;
       const serializedEnvelope = serializeCheckpointEnvelope(nextEnvelope);
       const sizeBytes = measureSerializedCheckpointBytes(serializedEnvelope);
@@ -252,24 +282,35 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
         filePath,
         async () => {
           const previous = await readCheckpoint({ sessionId: nextEnvelope.sessionId });
-          if (
-            previous.outcome === 'present' &&
-            previous.envelope.checkpointId === nextEnvelope.checkpointId
-          ) {
+          const previousEnvelope = hasAgentSessionCheckpointEnvelope(previous)
+            ? previous.envelope
+            : undefined;
+          if (isDuplicateAgentSessionCheckpointReadResult(previous, nextEnvelope.checkpointId)) {
             return {
               outcome: 'duplicate',
               envelope: previous.envelope,
               previous: previous.envelope,
             };
           }
+          const writeNow = now();
+          const expiresAt = nextEnvelope.expiresAt ? Date.parse(nextEnvelope.expiresAt) : null;
+          if (expiresAt !== null && !Number.isNaN(expiresAt) && expiresAt <= writeNow.getTime()) {
+            return {
+              outcome: 'expired',
+              envelope: nextEnvelope,
+            };
+          }
+          const continuationExpiresAt = nextEnvelope.continuation?.expiresAt
+            ? Date.parse(nextEnvelope.continuation.expiresAt)
+            : null;
           if (
-            previous.outcome === 'redacted' &&
-            previous.envelope.checkpointId === nextEnvelope.checkpointId
+            continuationExpiresAt !== null &&
+            !Number.isNaN(continuationExpiresAt) &&
+            continuationExpiresAt <= writeNow.getTime()
           ) {
             return {
-              outcome: 'duplicate',
-              envelope: previous.envelope,
-              previous: previous.envelope,
+              outcome: 'expired',
+              envelope: nextEnvelope,
             };
           }
           try {
@@ -284,16 +325,11 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
               reason: 'filesystem_write_failed',
             };
           }
-          if (
-            previous.outcome === 'present' ||
-            previous.outcome === 'stale' ||
-            previous.outcome === 'expired' ||
-            previous.outcome === 'redacted'
-          ) {
+          if (previousEnvelope) {
             return {
               outcome: 'replaced',
               envelope: nextEnvelope,
-              previous: previous.envelope,
+              previous: previousEnvelope,
             };
           }
           return {

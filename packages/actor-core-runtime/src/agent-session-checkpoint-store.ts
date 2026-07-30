@@ -398,6 +398,30 @@ function toDateMs(value: string | null | undefined): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
+export function hasAgentSessionCheckpointEnvelope(
+  result: AgentSessionCheckpointReadResult
+): result is Extract<
+  AgentSessionCheckpointReadResult,
+  { readonly outcome: 'present' | 'redacted' | 'stale' | 'expired' }
+> {
+  return (
+    result.outcome === 'present' ||
+    result.outcome === 'redacted' ||
+    result.outcome === 'stale' ||
+    result.outcome === 'expired'
+  );
+}
+
+export function isDuplicateAgentSessionCheckpointReadResult(
+  result: AgentSessionCheckpointReadResult,
+  checkpointId: string
+): result is Extract<
+  AgentSessionCheckpointReadResult,
+  { readonly outcome: 'present' | 'redacted' | 'stale' | 'expired' }
+> {
+  return hasAgentSessionCheckpointEnvelope(result) && result.envelope.checkpointId === checkpointId;
+}
+
 export function classifyAgentSessionCheckpointReadResult(
   envelope: AgentSessionCheckpointEnvelope,
   now: Date
@@ -815,6 +839,17 @@ export function createInMemoryAgentSessionCheckpointStore(
     },
     async write(envelope) {
       const now = (options.now ?? (() => new Date()))();
+      const previousEnvelope = entries.get(envelope.sessionId);
+      if (previousEnvelope) {
+        const previousResult = classifyAgentSessionCheckpointReadResult(previousEnvelope, now);
+        if (isDuplicateAgentSessionCheckpointReadResult(previousResult, envelope.checkpointId)) {
+          return {
+            outcome: 'duplicate',
+            envelope: previousResult.envelope,
+            previous: previousResult.envelope,
+          };
+        }
+      }
       const expiresAt = toDateMs(envelope.expiresAt);
       const continuationExpiresAt = toDateMs(envelope.continuation?.expiresAt);
       if (
@@ -826,14 +861,7 @@ export function createInMemoryAgentSessionCheckpointStore(
           envelope,
         };
       }
-      const previous = entries.get(envelope.sessionId);
-      if (previous?.checkpointId === envelope.checkpointId) {
-        return {
-          outcome: 'duplicate',
-          envelope: previous,
-          previous,
-        };
-      }
+      const previous = previousEnvelope;
       entries.set(envelope.sessionId, envelope);
       if (previous) {
         return {
