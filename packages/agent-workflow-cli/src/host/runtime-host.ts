@@ -35,10 +35,6 @@ import type {
 import { admitAgentExecutionCommand, Logger, parse, startRuntime } from '@actor-web/runtime';
 import type { ClosableActorWebSource } from '../../../actor-core-runtime/src/actor-web-source.js';
 import { createActorWebSource } from '../../../actor-core-runtime/src/actor-web-source.js';
-import {
-  resolveRuntimeAuthPayload,
-  verifyRuntimeGatewayAuth,
-} from '../../../actor-core-runtime/src/runtime-auth.js';
 import type {
   ActorWebNodeGatewayOptions,
   ActorWebNodeTransportOptions,
@@ -184,30 +180,6 @@ interface RegisteredActor {
 }
 
 type AnyTopology = ActorWebTopology<ActorWebTopologyInput>;
-type RuntimeStartResult = Awaited<ReturnType<typeof startRuntime>>;
-
-type LoopbackDistributedFallbackState = {
-  readonly transportUrl: string;
-  readonly gatewayUrl: string | null;
-  readonly runtime: RuntimeStartResult;
-};
-
-type LoopbackTransportRegistration = {
-  readonly topology: AnyTopology;
-  readonly nodeKey: string;
-  readonly nodeAddress: string;
-};
-
-type LoopbackGatewayRegistration = {
-  readonly topology: AnyTopology;
-  readonly runtime: RuntimeStartResult;
-  readonly options: NonNullable<RuntimeHostDistributedOptions['gateway']>;
-  readonly checkpoint: RuntimeHostCheckpointOptions | undefined;
-};
-
-const loopbackTransportRegistry = new Map<string, LoopbackTransportRegistration>();
-const loopbackGatewayRegistry = new Map<string, LoopbackGatewayRegistration>();
-let nextLoopbackPort = 46000;
 
 function isTopologyValue(value: unknown): value is AnyTopology {
   return (
@@ -235,199 +207,6 @@ function parseMessage(messageJson: string): HostResult<ActorMessage & Message> {
     return { ok: false, error: 'Message must have a string "type" field' };
   }
   return { ok: true, value: parsed as ActorMessage & Message };
-}
-
-function isLoopbackStartupPermissionError(error: unknown): error is Error {
-  return (
-    error instanceof Error &&
-    error.message.includes('listen EPERM: operation not permitted') &&
-    (error.message.includes('127.0.0.1') ||
-      error.message.includes('::1') ||
-      error.message.includes('0.0.0.0'))
-  );
-}
-
-function allocateLoopbackUrl(kind: 'transport' | 'gateway'): string {
-  const port = nextLoopbackPort;
-  nextLoopbackPort += 1;
-  return `ws://127.0.0.1:${port}/${kind}`;
-}
-
-function createLoopbackTransportStatus(connectedNodes: readonly string[]): RuntimeTransportStatus {
-  const now = new Date().toISOString();
-  return {
-    connectedNodes: [...connectedNodes],
-    peers: connectedNodes.map((nodeAddress) => ({
-      nodeAddress,
-      state: 'connected',
-      connected: true,
-      fresh: true,
-      staleAfterMs: 45_000,
-      lastSeenAt: now,
-      idempotency: {
-        windowSize: 0,
-        providerEnabled: false,
-        providerClaimCount: 0,
-        providerDuplicateCount: 0,
-        providerErrorCount: 0,
-      },
-    })),
-    startedAt: now,
-    idempotency: {
-      windowSize: 0,
-      providerEnabled: false,
-      providerClaimCount: 0,
-      providerDuplicateCount: 0,
-      providerErrorCount: 0,
-    },
-  };
-}
-
-function createLoopbackClusterState(
-  topology: AnyTopology,
-  nodeKey: string,
-  connectedNodes: readonly string[]
-): ClusterState {
-  return {
-    nodes: Object.values(topology.nodes).map((definition) => definition.address),
-    leader: topology.nodes[nodeKey]?.address,
-    status: 'up',
-    directoryReadiness: connectedNodes.map((nodeAddress) => ({
-      nodeAddress,
-      status: 'ready' as const,
-    })),
-  };
-}
-
-function createLoopbackGatewaySource(input: {
-  readonly actorKey: string;
-  readonly actorRef: ActorRef;
-  readonly topology: AnyTopology;
-  readonly gateway: RuntimeHostRemoteOptions['gateway'];
-}): ClosableActorWebSource<unknown, ActorMessage, ActorMessage> {
-  const registration = loopbackGatewayRegistry.get(input.gateway.url);
-  if (!registration) {
-    throw new Error('Remote gateway is unavailable.');
-  }
-  const actorDescriptor = registration.topology.actors[input.actorKey];
-  if (!actorDescriptor) {
-    throw new Error(`Unknown remote actor "${input.actorKey}".`);
-  }
-
-  const connectedStatus: ProjectionTransportStatus = {
-    state: 'connected',
-    updatedAt: Date.now(),
-  };
-
-  return {
-    address: input.actorRef.address,
-    snapshot() {
-      return {
-        address: input.actorRef.address,
-        status: describeStatus(input.actorRef),
-      } as never;
-    },
-    subscribe(listener) {
-      if (typeof input.actorRef.subscribeSnapshot !== 'function') {
-        return () => {};
-      }
-      return input.actorRef.subscribeSnapshot((snapshot) => {
-        listener({
-          address: input.actorRef.address,
-          status: typeof snapshot.status === 'string' ? snapshot.status : 'unknown',
-        } as never);
-      });
-    },
-    subscribeEvent(listener) {
-      return typeof input.actorRef.subscribeEvent === 'function'
-        ? input.actorRef.subscribeEvent(listener)
-        : () => {};
-    },
-    transportStatus() {
-      return connectedStatus;
-    },
-    subscribeTransportStatus(listener) {
-      listener(connectedStatus);
-      return () => {};
-    },
-    async send(message, metadata) {
-      const remoteAuth = await resolveRuntimeAuthPayload(input.gateway.auth);
-      const authResult = await verifyRuntimeGatewayAuth(
-        typeof registration.options === 'object' ? registration.options.auth : undefined,
-        {
-          connectionId: `loopback-gateway:${input.actorKey}`,
-          clientVersion: 'actor-web-cli-loopback',
-          ...(remoteAuth ? { auth: remoteAuth } : {}),
-        }
-      );
-      if (!authResult.ok) {
-        throw new Error(authResult.reason);
-      }
-      const gatewayOptions =
-        typeof registration.options === 'object' ? registration.options.commandAdmission : undefined;
-      if (gatewayOptions) {
-        const principal = await Promise.resolve(
-          gatewayOptions.resolvePrincipal(authResult.authContext)
-        );
-        const decision = await admitAgentExecutionCommand({
-          actorId: input.actorRef.address,
-          sessionId: 'runtime-host:loopback-gateway',
-          kind: 'send',
-          message,
-          principal,
-          policy: gatewayOptions.policy,
-          requireExplicitPolicy: true,
-          metadata,
-        });
-        await Promise.resolve(gatewayOptions.onDecision(decision));
-        if (!decision.ok) {
-          const reason = decision.rejectionReceipt?.reason;
-          throw new Error(reason?.detail ?? reason?.code ?? 'authorization_denied');
-        }
-      }
-      await input.actorRef.send(message);
-    },
-    async ask(message, timeout) {
-      const remoteAuth = await resolveRuntimeAuthPayload(input.gateway.auth);
-      const authResult = await verifyRuntimeGatewayAuth(
-        typeof registration.options === 'object' ? registration.options.auth : undefined,
-        {
-          connectionId: `loopback-gateway:${input.actorKey}`,
-          clientVersion: 'actor-web-cli-loopback',
-          ...(remoteAuth ? { auth: remoteAuth } : {}),
-        }
-      );
-      if (!authResult.ok) {
-        throw new Error(authResult.reason);
-      }
-      const resolvedTimeout = typeof timeout === 'number' ? timeout : timeout?.timeout;
-      const metadata = typeof timeout === 'number' ? undefined : timeout?.metadata;
-      const gatewayOptions =
-        typeof registration.options === 'object' ? registration.options.commandAdmission : undefined;
-      if (gatewayOptions) {
-        const principal = await Promise.resolve(
-          gatewayOptions.resolvePrincipal(authResult.authContext)
-        );
-        const decision = await admitAgentExecutionCommand({
-          actorId: input.actorRef.address,
-          sessionId: 'runtime-host:loopback-gateway',
-          kind: 'ask',
-          message,
-          principal,
-          policy: gatewayOptions.policy,
-          requireExplicitPolicy: true,
-          metadata,
-        });
-        await Promise.resolve(gatewayOptions.onDecision(decision));
-        if (!decision.ok) {
-          const reason = decision.rejectionReceipt?.reason;
-          throw new Error(reason?.detail ?? reason?.code ?? 'authorization_denied');
-        }
-      }
-      return input.actorRef.ask(message, resolvedTimeout);
-    },
-    close() {},
-  };
 }
 
 function describeStatus(ref: ActorRef): string {
@@ -678,7 +457,6 @@ export async function createRuntimeHost(
   const tools = resolveRuntimeHostTools(options);
   let runtime: Awaited<ReturnType<typeof startRuntime>> | null = null;
   let servedNode: ServedActorWebNode<AnyTopology> | null = null;
-  let loopbackFallback: LoopbackDistributedFallbackState | null = null;
   const remoteSourceCache = new Map<
     string,
     ClosableActorWebSource<unknown, ActorMessage, ActorMessage>
@@ -707,40 +485,7 @@ export async function createRuntimeHost(
         ...(options.distributed.connect ? { connect: options.distributed.connect } : {}),
         ...(tools ? { tools } : {}),
       };
-      try {
-        servedNode = await serveNode(topology, serveOptions);
-      } catch (error) {
-        if (!isLoopbackStartupPermissionError(error)) {
-          throw error;
-        }
-        runtime = await startRuntime(topology, tools ? { tools } : undefined);
-        const transportUrl =
-          options.distributed.transport && (options.distributed.transport !== false)
-            ? allocateLoopbackUrl('transport')
-            : null;
-        const gatewayUrl = options.distributed.gateway ? allocateLoopbackUrl('gateway') : null;
-        loopbackFallback = {
-          transportUrl: transportUrl ?? '(disabled)',
-          gatewayUrl,
-          runtime,
-        };
-        const nodeAddress = topology.nodes[spawnNodeKey]?.address ?? spawnNodeKey;
-        if (transportUrl) {
-          loopbackTransportRegistry.set(transportUrl, {
-            topology,
-            nodeKey: spawnNodeKey,
-            nodeAddress,
-          });
-        }
-        if (gatewayUrl && options.distributed.gateway) {
-          loopbackGatewayRegistry.set(gatewayUrl, {
-            topology,
-            runtime,
-            options: options.distributed.gateway,
-            checkpoint: options.checkpoint,
-          });
-        }
-      }
+      servedNode = await serveNode(topology, serveOptions);
     } else {
       runtime = await startRuntime(topology, tools ? { tools } : undefined);
     }
@@ -753,7 +498,7 @@ export async function createRuntimeHost(
 
   const nodeKeys = options.remote
     ? [spawnNodeKey]
-    : servedNode || loopbackFallback
+    : servedNode
       ? [spawnNodeKey]
       : Object.keys(runtime?.nodes ?? {});
 
@@ -765,10 +510,6 @@ export async function createRuntimeHost(
         ? descriptor.node === spawnNodeKey
           ? servedNode.getActor(key)
           : undefined
-        : loopbackFallback
-          ? descriptor.node === spawnNodeKey
-            ? runtime?.getActor(key)
-            : undefined
         : runtime?.getActor(key);
     if (ref) {
       registry.set(key, { key, ref, origin: 'topology' });
@@ -776,27 +517,14 @@ export async function createRuntimeHost(
   }
   log.debug('Runtime host started', { nodeKeys, actors: Array.from(registry.keys()) });
 
-  const connectedLoopbackNodeAddresses =
-    Object.entries(options.distributed?.peers ?? {}).flatMap(([, url]) => {
-      const peer = loopbackTransportRegistry.get(url);
-      return peer ? [peer.nodeAddress] : [];
-    });
-
   const getStatus = (): RuntimeHostStatus => ({
-    mode: options.remote ? 'remote' : servedNode || loopbackFallback ? 'distributed' : 'in-process',
+    mode: options.remote ? 'remote' : servedNode ? 'distributed' : 'in-process',
     node: spawnNodeKey,
     nodeKeys,
-    gatewayUrl:
-      options.remote?.gateway.url ?? servedNode?.getGatewayUrl() ?? loopbackFallback?.gatewayUrl ?? null,
-    transportUrl: servedNode?.getTransportUrl() ?? (loopbackFallback ? loopbackFallback.transportUrl : null),
-    transport:
-      servedNode?.getTransportStatus() ??
-      (loopbackFallback ? createLoopbackTransportStatus(connectedLoopbackNodeAddresses) : null),
-    cluster:
-      servedNode?.system.getClusterState() ??
-      (loopbackFallback
-        ? createLoopbackClusterState(topology, spawnNodeKey, connectedLoopbackNodeAddresses)
-        : null),
+    gatewayUrl: options.remote?.gateway.url ?? servedNode?.getGatewayUrl() ?? null,
+    transportUrl: servedNode?.getTransportUrl() ?? null,
+    transport: servedNode?.getTransportStatus() ?? null,
+    cluster: servedNode?.system.getClusterState() ?? null,
     ...(options.remote
       ? {
           readiness: toRemoteReadiness(),
@@ -823,14 +551,6 @@ export async function createRuntimeHost(
 
   const lookupDistributedActor = async (target: string): Promise<ActorRef | undefined> => {
     if (!servedNode || !target.startsWith('actor://')) {
-      if (!loopbackFallback || !target.startsWith('actor://')) {
-        return undefined;
-      }
-      for (const [key, descriptor] of Object.entries(topology.actors)) {
-        if (descriptor.address === target || parse(descriptor.address).id === target) {
-          return runtime?.getActor(key);
-        }
-      }
       return undefined;
     }
     return servedNode.system.lookup(target);
@@ -853,24 +573,6 @@ export async function createRuntimeHost(
     const cached = remoteSourceCache.get(actorKey);
     if (cached) {
       return cached;
-    }
-    if (loopbackGatewayRegistry.has(options.remote.gateway.url)) {
-      const localRef = loopbackGatewayRegistry.get(options.remote.gateway.url)?.runtime.getActor(actorKey);
-      if (!localRef) {
-        return undefined;
-      }
-      const source = createLoopbackGatewaySource({
-        actorKey,
-        actorRef: localRef,
-        topology,
-        gateway: options.remote.gateway,
-      });
-      source.subscribeTransportStatus((status) => {
-        remoteTransportStatus = status;
-        remoteTransportReason = status.reason ?? null;
-      });
-      remoteSourceCache.set(actorKey, source);
-      return source;
     }
     const source = createActorWebSource({
       actor: actorDescriptor,
