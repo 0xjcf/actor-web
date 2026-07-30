@@ -8,10 +8,12 @@ import {
   type ProjectionTransportStatus,
 } from '../projection-transport.js';
 import {
+  createRuntimeGatewayTraceSource,
   type ActorEventProjection,
   type ActorRuntimeSnapshot,
   type ActorSnapshotProjection,
   type ActorTransitionRecord,
+  type RuntimeGatewayTraceProjection,
   createRuntimeGatewayCommandSource,
   createRuntimeGatewayHub,
   createRuntimeGatewayReadModelSource,
@@ -1610,6 +1612,109 @@ describe('runtime gateway hub', () => {
       )
     ).toEqual([]);
 
+    detach();
+  });
+
+  it('supports trace-only subscriptions with bounded replay and resync fallback', async () => {
+    const baseSource = createFakeSource('ready', 'trace-source');
+    const source = createRuntimeGatewayTraceSource(baseSource, {
+      bufferSize: 2,
+      now: () => new Date('2026-04-25T18:00:00.000Z'),
+    });
+    const replayStorage = createMapBackedReplayStorageFixture();
+    const hub = createRuntimeGatewayHub({
+      replayStorage: replayStorage.provider,
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'trace-main',
+      scope: { kind: 'trace-source', params: { stream: 'trace' } },
+      mode: 'trace-only',
+    });
+    await flushGatewayFrames();
+
+    source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:1',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:1',
+      commandId: 'cmd:1',
+      receipts: [],
+      status: 'pending',
+    });
+    source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:2',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:2',
+      commandId: 'cmd:2',
+      receipts: [],
+      status: 'pending',
+    });
+    source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:3',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:3',
+      commandId: 'cmd:3',
+      receipts: [],
+      status: 'pending',
+    });
+    await flushGatewayFrames();
+
+    const firstTraceFrames = connection.frames.filter(
+      (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'trace' }> => frame.type === 'trace'
+    );
+    expect(firstTraceFrames.at(-1)?.projection).toMatchObject({
+      fact: {
+        code: 'trace_buffer_overflow',
+      },
+    });
+
+    connection.push({
+      type: 'resync',
+      streamId: 'trace-main',
+      fromSequence: 2,
+    });
+    await flushGatewayFrames();
+
+    const replayedFrames = connection.frames.filter(
+      (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'trace' }> => frame.type === 'trace'
+    );
+    expect(replayedFrames.some((frame) => frame.sequence === 2)).toBe(true);
+    expect(replayedFrames.some((frame) => frame.sequence === 3)).toBe(true);
+
+    const latestOnlyConnection = createFakeConnection({ authorityId: 'auth-1' });
+    const latestOnlyDetach = hub.attach(latestOnlyConnection);
+    latestOnlyConnection.push({ type: 'hello' });
+    latestOnlyConnection.push({
+      type: 'subscribe',
+      streamId: 'trace-main',
+      scope: { kind: 'trace-source', params: { stream: 'trace' } },
+      mode: 'trace-only',
+    });
+    await flushGatewayFrames();
+
+    latestOnlyConnection.push({
+      type: 'resync',
+      streamId: 'trace-main',
+      fromSequence: 99,
+    });
+    await flushGatewayFrames();
+
+    const fallbackTrace = latestOnlyConnection.frames.findLast(
+      (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'trace' }> => frame.type === 'trace'
+    );
+    expect(fallbackTrace?.projection).toMatchObject({
+      cursor: expect.any(String),
+    });
+
+    latestOnlyDetach();
     detach();
   });
 

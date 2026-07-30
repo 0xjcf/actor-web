@@ -76,12 +76,14 @@ export type {
   ClosableActorWebCommandSource,
   ClosableActorWebReadModelSource,
   ClosableActorWebSource,
+  ClosableActorWebTraceSource,
   ClosableActorWebSourceHandle,
 } from './actor-web-source.js';
 export {
   createActorWebCommandSource,
   createActorWebReadModelSource,
   createActorWebSource,
+  createActorWebTraceSource,
   createActorWebSourceHandle,
 } from './actor-web-source.js';
 export type {

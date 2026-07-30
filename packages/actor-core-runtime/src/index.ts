@@ -97,6 +97,24 @@ export {
   createActorWebReadModelClient,
   startRuntime,
 } from './actor-web-client.js';
+export type {
+  ActorWebAddressSourceInput,
+  ActorWebGatewaySocket,
+  ActorWebSourceGatewayOptions,
+  ActorWebSourceOptions,
+  ClosableActorWebCommandSource,
+  ClosableActorWebReadModelSource,
+  ClosableActorWebSource,
+  ClosableActorWebTraceSource,
+  ClosableActorWebSourceHandle,
+} from './actor-web-source.js';
+export {
+  createActorWebCommandSource,
+  createActorWebReadModelSource,
+  createActorWebSource,
+  createActorWebTraceSource,
+  createActorWebSourceHandle,
+} from './actor-web-source.js';
 export type { AdapterFailureOptions } from './adapter-failure.js';
 export { raiseAdapterFailure } from './adapter-failure.js';
 export type {

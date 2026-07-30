@@ -1,4 +1,8 @@
-import { createActorToolbox } from '@actor-web/runtime';
+import {
+  createActorToolbox,
+  createAgentSessionCheckpointEnvelope,
+  createInMemoryAgentSessionCheckpointStore,
+} from '@actor-web/runtime';
 import { describe, expect, it, vi } from 'vitest';
 
 type ActorAgentLlmProvider = (
@@ -32,6 +36,15 @@ type AgentModule = {
         readonly input: unknown;
       }[];
       readonly lastError: null | { readonly code: string; readonly message: string };
+    };
+    readonly checkpoint?: {
+      readonly store: {
+        read(input: { readonly sessionId: string }): Promise<unknown>;
+        write(envelope: unknown): Promise<unknown>;
+      };
+      readonly sessionId: string;
+      readonly actorId?: string;
+      readonly now?: () => Date;
     };
   }): AgentLoopBehaviorHarness;
 };
@@ -459,6 +472,203 @@ describe('@actor-web/agent loop behavior', () => {
           content: 'Diff observed, continue the same turn.',
         },
       },
+    });
+  });
+
+  it('loads checkpoint-store state before the next turn and defers pre-receipt restart reconciliation', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+
+    const resumedStore = createInMemoryAgentSessionCheckpointStore();
+    await resumedStore.write(
+      createAgentSessionCheckpointEnvelope({
+        sessionId: 'session:agent:resume',
+        checkpointId: 'checkpoint:agent:resume',
+        actor: {
+          actorId: 'actor://local/researcher',
+          sessionId: 'session:agent:resume',
+          turnId: 'turn:1',
+          traceId: 'trace:1',
+          commandId: 'cmd:1',
+          correlationId: 'corr:1',
+          causationId: 'cause:1',
+        },
+        deterministic: {
+          system: 'Resume from store.',
+          history: [
+            { role: 'user', content: 'Plan task-1' },
+            {
+              role: 'assistant',
+              content: 'Need the repo diff before I can continue.',
+              toolCalls: [{ id: 'call-1', name: 'repo.diff', input: { taskId: 'task-1' } }],
+            },
+          ],
+          steps: 1,
+          pendingToolCalls: [{ id: 'call-1', name: 'repo.diff', input: { taskId: 'task-1' } }],
+          lastError: null,
+        },
+        effect: {
+          effectId: 'effect:resume',
+          effectAttemptId: 'effect-attempt:resume',
+          phase: 'receipt_recorded',
+          irreversible: true,
+          intent: { tool: 'llm' },
+          receipt: { ok: true },
+        },
+        continuation: null,
+        reconciliation: { status: 'clear' },
+        recordedAt: '2026-04-25T18:00:00.000Z',
+      })
+    );
+
+    const provider = vi.fn<ActorAgentLlmProvider>().mockReturnValue({
+      ok: true,
+      value: {
+        message: {
+          role: 'assistant',
+          content: 'Diff observed, continue the same turn.',
+        },
+      },
+    });
+    const resumedBehavior = agent.createAgentLoopBehavior({
+      checkpoint: {
+        store: resumedStore,
+        sessionId: 'session:agent:resume',
+        actorId: 'actor://local/researcher',
+        now: () => new Date('2026-04-25T18:00:01.000Z'),
+      },
+    });
+    const resumedTools = createActorToolbox(
+      {
+        ...agent.createActorAgentToolRegistry({ llm: provider }),
+        'repo.diff': () => ({ ok: true, diff: 'changed files' }),
+      },
+      actorToolContext,
+      [agent.ACTOR_WEB_LLM_TOOL_NAME, 'repo.diff']
+    );
+
+    const resumed = await resumedBehavior.onMessage?.({
+      message: {
+        type: 'OBSERVE_TOOL_RESULT',
+        toolCallId: 'call-1',
+        name: 'repo.diff',
+        ok: true,
+        output: { diff: 'changed files' },
+      },
+      context: resumedBehavior.context,
+      actor: {
+        getSnapshot: () => ({ context: resumedBehavior.context }),
+      },
+      tools: resumedTools,
+    });
+
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(provider.mock.calls[0]?.[0]).toMatchObject({
+      system: 'Resume from store.',
+      messages: [
+        { role: 'user', content: 'Plan task-1' },
+        {
+          role: 'assistant',
+          content: 'Need the repo diff before I can continue.',
+        },
+        {
+          role: 'tool',
+          toolCallId: 'call-1',
+          toolName: 'repo.diff',
+        },
+      ],
+    });
+    expect(resumed).toMatchObject({
+      reply: {
+        ok: true,
+        status: 'responded',
+      },
+    });
+
+    const reconciliationStore = createInMemoryAgentSessionCheckpointStore();
+    await reconciliationStore.write(
+      createAgentSessionCheckpointEnvelope({
+        sessionId: 'session:agent:reconcile',
+        checkpointId: 'checkpoint:agent:reconcile',
+        actor: {
+          actorId: 'actor://local/researcher',
+          sessionId: 'session:agent:reconcile',
+          turnId: 'turn:1',
+          traceId: 'trace:reconcile:1',
+          commandId: 'cmd:reconcile:1',
+          correlationId: 'corr:reconcile:1',
+          causationId: 'cause:reconcile:1',
+        },
+        deterministic: {
+          system: 'Resume from store.',
+          history: [{ role: 'user', content: 'Plan task-2' }],
+          steps: 0,
+          pendingToolCalls: [],
+          lastError: null,
+        },
+        effect: {
+          effectId: 'effect:reconcile',
+          effectAttemptId: 'effect-attempt:reconcile',
+          phase: 'intent_recorded',
+          irreversible: true,
+          intent: { tool: 'llm' },
+        },
+        continuation: null,
+        reconciliation: { status: 'clear' },
+        recordedAt: '2026-04-25T18:00:00.000Z',
+      })
+    );
+
+    const blockedProvider = vi.fn<ActorAgentLlmProvider>().mockReturnValue({
+      ok: true,
+      value: {
+        message: {
+          role: 'assistant',
+          content: 'should not run',
+        },
+      },
+    });
+    const blockedBehavior = agent.createAgentLoopBehavior({
+      checkpoint: {
+        store: reconciliationStore,
+        sessionId: 'session:agent:reconcile',
+        actorId: 'actor://local/researcher',
+        now: () => new Date('2026-04-25T18:00:01.000Z'),
+      },
+    });
+    const blockedTools = createActorToolbox(
+      agent.createActorAgentToolRegistry({ llm: blockedProvider }),
+      actorToolContext,
+      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+    );
+
+    const blocked = await blockedBehavior.onMessage?.(
+      createAgentParams({
+        behavior: blockedBehavior,
+        tools: blockedTools,
+        message: { type: 'START_AGENT', prompt: 'plan task-2' },
+      })
+    );
+
+    expect(blockedProvider).not.toHaveBeenCalled();
+    expect(blocked).toMatchObject({
+      reply: {
+        ok: false,
+        error: {
+          code: 'CHECKPOINT_RECONCILIATION_REQUIRED',
+        },
+      },
+      emit: [
+        {
+          type: 'AGENT_STEP_FAILED',
+          error: {
+            code: 'CHECKPOINT_RECONCILIATION_REQUIRED',
+          },
+        },
+      ],
     });
   });
 

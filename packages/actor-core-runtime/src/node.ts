@@ -100,6 +100,24 @@ export {
 export type { AgentSessionCheckpointStore } from './agent-session-checkpoint-store.js';
 export { createNodeFileSystemAgentSessionCheckpointStore } from './node-agent-session-checkpoint-store.js';
 export type {
+  ActorWebAddressSourceInput,
+  ActorWebGatewaySocket,
+  ActorWebSourceGatewayOptions,
+  ActorWebSourceOptions,
+  ClosableActorWebCommandSource,
+  ClosableActorWebReadModelSource,
+  ClosableActorWebSource,
+  ClosableActorWebTraceSource,
+  ClosableActorWebSourceHandle,
+} from './actor-web-source.js';
+export {
+  createActorWebCommandSource,
+  createActorWebReadModelSource,
+  createActorWebSource,
+  createActorWebTraceSource,
+  createActorWebSourceHandle,
+} from './actor-web-source.js';
+export type {
   NodeProviderActor,
   NodeProviderActorClock,
   NodeProviderActorCommand,

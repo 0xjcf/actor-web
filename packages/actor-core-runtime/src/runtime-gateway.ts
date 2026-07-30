@@ -5,13 +5,19 @@ import {
   type AgentExecutionAdmissionDecision,
   type AgentExecutionAdmissionPolicy,
   type AgentExecutionAdmissionStage,
+  type AgentExecutionTrace,
   type AgentExecutionCommandMetadata,
   type AgentExecutionCommandPrincipal,
   type AgentExecutionIdempotencyClaimPort,
   admitAgentExecutionCommand,
+  createAgentExecutionTrace,
   createAgentExecutionFallbackCommandId,
   createExecutionCommandAdmissionReceipt,
   createExecutionRejectedReceipt,
+  createExecutionSuccessReceipt,
+  createExecutionTimeoutReceipt,
+  isAgentExecutionTrace,
+  redactAgentExecutionValue,
 } from './agent-execution-contract.js';
 import {
   createProjectionTransportStatus,
@@ -24,6 +30,8 @@ import type {
   RuntimeGatewayScopeDescriptor,
   RuntimeGatewayServerFrame,
   RuntimeGatewaySubscribeMode,
+  RuntimeGatewayTraceFact,
+  RuntimeGatewayTraceProjection,
 } from './runtime-gateway-shared.js';
 import {
   type ActorEventProjection,
@@ -44,6 +52,9 @@ export type {
   RuntimeGatewayServerFrame,
   RuntimeGatewaySourceHandle,
   RuntimeGatewaySubscribeMode,
+  RuntimeGatewayTraceFact,
+  RuntimeGatewayTraceFactCode,
+  RuntimeGatewayTraceProjection,
 } from './runtime-gateway-shared.js';
 export { createRuntimeGatewaySourceHandle } from './runtime-gateway-shared.js';
 export type {
@@ -98,6 +109,13 @@ export interface RuntimeGatewayCommandSource extends RuntimeGatewayReadModelSour
 
 export type RuntimeGatewaySource = RuntimeGatewayCommandSource;
 
+export interface RuntimeGatewayTraceSource extends RuntimeGatewaySource {
+  latestTrace(): RuntimeGatewayTraceProjection | null;
+  subscribeTrace(listener: (projection: RuntimeGatewayTraceProjection) => void): () => void;
+  appendTrace(trace: AgentExecutionTrace | unknown): RuntimeGatewayTraceProjection;
+  appendTraceFact(fact: RuntimeGatewayTraceFact): RuntimeGatewayTraceProjection;
+}
+
 export type RuntimeGatewayScopeResolver<TAuthContext = unknown> = (
   scope: RuntimeGatewayScopeDescriptor,
   authContext: TAuthContext | undefined
@@ -126,6 +144,11 @@ export interface CreateRuntimeGatewayHubOptions<TAuthContext = unknown> {
     TAuthContext
   >;
   commandAdmission?: RuntimeGatewayCommandAdmissionOptions<TAuthContext>;
+}
+
+export interface CreateRuntimeGatewayTraceSourceOptions {
+  readonly bufferSize?: number;
+  readonly now?: () => Date;
 }
 
 const PRE_AUTH_RECHECKS: readonly [] = [];
@@ -312,6 +335,97 @@ export function createRuntimeGatewaySource(
   return createRuntimeGatewayCommandSource(actorRef, options);
 }
 
+function createTraceCursor(address: string, sequence: number): string {
+  return `${address}#trace:${sequence}`;
+}
+
+function toTraceProjection(
+  address: string,
+  sequence: number,
+  observedAt: string,
+  trace: AgentExecutionTrace | null,
+  fact: RuntimeGatewayTraceFact | null
+): RuntimeGatewayTraceProjection {
+  return {
+    address,
+    cursor: createTraceCursor(address, sequence),
+    observedAt,
+    trace,
+    fact,
+  };
+}
+
+export function createRuntimeGatewayTraceSource(
+  source: RuntimeGatewaySource,
+  options: CreateRuntimeGatewayTraceSourceOptions = {}
+): RuntimeGatewayTraceSource {
+  const listeners = new Set<(projection: RuntimeGatewayTraceProjection) => void>();
+  const bufferSize = options.bufferSize ?? 64;
+  const now = options.now ?? (() => new Date());
+  let sequence = 0;
+  let projections: RuntimeGatewayTraceProjection[] = [];
+
+  const storeProjection = (
+    trace: AgentExecutionTrace | null,
+    fact: RuntimeGatewayTraceFact | null,
+    observedAt = now().toISOString()
+  ): RuntimeGatewayTraceProjection => {
+    sequence += 1;
+    const projection = toTraceProjection(source.address, sequence, observedAt, trace, fact);
+    projections = [...projections, projection];
+    if (bufferSize > 0 && projections.length > bufferSize) {
+      const droppedCount = projections.length - bufferSize;
+      projections = projections.slice(-bufferSize);
+      sequence += 1;
+      const overflowProjection = toTraceProjection(source.address, sequence, observedAt, null, {
+        code: 'trace_buffer_overflow',
+        message: 'Dropped older traces while applying bounded backpressure.',
+        droppedCount,
+      });
+      projections = [...projections, overflowProjection].slice(-bufferSize);
+      for (const listener of Array.from(listeners)) {
+        listener(projection);
+      }
+      for (const listener of Array.from(listeners)) {
+        listener(overflowProjection);
+      }
+      return overflowProjection;
+    }
+
+    for (const listener of Array.from(listeners)) {
+      listener(projection);
+    }
+    return projection;
+  };
+
+  return {
+    ...source,
+    latestTrace() {
+      return projections.at(-1) ?? null;
+    },
+    subscribeTrace(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    appendTrace(trace) {
+      if (isAgentExecutionTrace(trace)) {
+        return storeProjection(trace, null);
+      }
+
+      return storeProjection(null, {
+        code: 'trace_malformed',
+        message: 'Trace input did not satisfy the AgentExecutionTrace contract.',
+        detail: typeof trace === 'object' && trace !== null ? 'invalid_shape' : String(trace),
+      });
+    },
+    appendTraceFact(fact) {
+      return storeProjection(null, fact);
+    },
+  };
+}
+
 type RuntimeGatewayStreamState = {
   mode: RuntimeGatewaySubscribeMode;
   replaySessionId: string;
@@ -323,10 +437,12 @@ type RuntimeGatewayStreamState = {
   sequence: number;
   replayFrames: RuntimeGatewayReplayFrame[];
   lastSnapshot: ActorSnapshotProjection | null;
+  lastTrace: RuntimeGatewayTraceProjection | null;
   unsubscribeSnapshot: () => void;
   unsubscribeEvent: () => void;
   unsubscribeStatus: () => void;
   unsubscribeTransition: () => void;
+  unsubscribeTrace: () => void;
 };
 
 const OUTBOUND_SEND_FAILURE_THRESHOLD = 3;
@@ -338,7 +454,7 @@ const DISPATCH_OUTCOME_RECORD_FAILURE_MESSAGE =
 
 export type RuntimeGatewayReplayFrame = Extract<
   RuntimeGatewayServerFrame,
-  { type: 'snapshot' | 'event' | 'transition' }
+  { type: 'snapshot' | 'event' | 'transition' | 'trace' }
 >;
 
 export interface RuntimeGatewayReplayStorageProvider {
@@ -618,6 +734,9 @@ function replayFrameAddress(frame: RuntimeGatewayReplayFrame): ActorAddress | nu
   if (frame.type === 'snapshot' || frame.type === 'event') {
     return frame.projection.address;
   }
+  if (frame.type === 'trace') {
+    return frame.projection.address as ActorAddress;
+  }
 
   return null;
 }
@@ -645,6 +764,19 @@ function restoredReplayFramesMatchSource(
   }
 
   return false;
+}
+
+function latestTraceFromFrames(
+  frames: RuntimeGatewayReplayFrame[]
+): RuntimeGatewayTraceProjection | null {
+  for (let index = frames.length - 1; index >= 0; index -= 1) {
+    const frame = frames[index];
+    if (frame?.type === 'trace') {
+      return frame.projection;
+    }
+  }
+
+  return null;
 }
 
 function normalizeInboundQueueLimit(value: number | undefined): number {
@@ -709,6 +841,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         safeUnsubscribe(stream.unsubscribeEvent);
         safeUnsubscribe(stream.unsubscribeStatus);
         safeUnsubscribe(stream.unsubscribeTransition);
+        safeUnsubscribe(stream.unsubscribeTrace);
         return stream;
       };
 
@@ -1191,10 +1324,12 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           sequence: replayFrames.at(-1)?.sequence ?? 0,
           replayFrames,
           lastSnapshot: latestSnapshotFromFrames(replayFrames),
+          lastTrace: latestTraceFromFrames(replayFrames),
           unsubscribeSnapshot: () => {},
           unsubscribeEvent: () => {},
           unsubscribeStatus: () => {},
           unsubscribeTransition: () => {},
+          unsubscribeTrace: () => {},
         };
 
         const cleanupDetachedStream = (): void => {
@@ -1203,6 +1338,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           safeUnsubscribe(stream.unsubscribeEvent);
           safeUnsubscribe(stream.unsubscribeStatus);
           safeUnsubscribe(stream.unsubscribeTransition);
+          safeUnsubscribe(stream.unsubscribeTrace);
         };
 
         try {
@@ -1253,6 +1389,23 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
                   });
                 })
               : () => {};
+          }
+
+          if (mode === 'trace-only' && 'subscribeTrace' in source) {
+            const traceSource = source as RuntimeGatewayTraceSource;
+            stream.lastTrace = traceSource.latestTrace();
+            stream.unsubscribeTrace = traceSource.subscribeTrace((projection) => {
+              if (!isCurrentStream(streamId, stream)) {
+                return;
+              }
+
+              stream.lastTrace = projection;
+              sendSequenced(streamId, stream, {
+                type: 'trace',
+                streamId,
+                projection,
+              });
+            });
           }
         } catch (error) {
           cleanupDetachedStream();
@@ -1318,6 +1471,14 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         if (canReplay) {
           for (const frame of replayFrames) {
             send(frame);
+          }
+        } else if (stream.mode === 'trace-only') {
+          if (stream.lastTrace) {
+            sendSequenced(streamId, stream, {
+              type: 'trace',
+              streamId,
+              projection: stream.lastTrace,
+            });
           }
         } else {
           const projection = stream.source.snapshot();
@@ -1709,11 +1870,12 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             if (
               frame.mode !== undefined &&
               frame.mode !== 'full' &&
-              frame.mode !== 'command-only'
+              frame.mode !== 'command-only' &&
+              frame.mode !== 'trace-only'
             ) {
               sendError(
                 'invalid_frame',
-                'subscribe mode must be either full or command-only.',
+                'subscribe mode must be full, command-only, or trace-only.',
                 true
               );
               return;

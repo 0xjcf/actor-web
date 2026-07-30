@@ -3,6 +3,7 @@ import {
   type ActorWebGatewaySocket,
   createActorWebCommandSource,
   createActorWebReadModelSource,
+  createActorWebTraceSource,
   createActorWebSource,
 } from '../actor-web-source.js';
 import type { RuntimeGatewayClientFrame, RuntimeGatewayServerFrame } from '../runtime-gateway.js';
@@ -902,6 +903,106 @@ describe('createActorWebSource', () => {
 
     await expect(legacyError).resolves.toBe('legacy send failed');
     await expect(targetedError).resolves.toBe('targeted send failed');
+
+    source.close();
+  });
+
+  it('subscribes to trace-only gateway streams and requests resync on sequence gaps', () => {
+    const socket = new FakeGatewaySocket();
+    const source = createActorWebTraceSource(
+      {
+        address: 'actor://server-node/shipment',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+          scope: { kind: 'shipment', params: { stream: 'trace' } },
+        },
+      },
+      {
+        createSocket: () => socket,
+        streamId: 'shipment-trace',
+      }
+    );
+    const traces: unknown[] = [];
+    const statuses: string[] = [];
+
+    source.subscribeTrace((projection) => {
+      traces.push(projection);
+    });
+    source.subscribeTransportStatus((status) => {
+      statuses.push(status.state);
+    });
+
+    socket.open();
+    socket.receive({
+      type: 'ready',
+      connectionId: 'trace-connection',
+      heartbeatMs: 15000,
+      serverTime: '2026-04-25T18:00:00.000Z',
+    });
+    socket.receive({
+      type: 'status',
+      streamId: 'shipment-trace',
+      status: {
+        state: 'connected',
+        updatedAt: Date.parse('2026-04-25T18:00:01.000Z'),
+      },
+    });
+    socket.receive({
+      type: 'trace',
+      streamId: 'shipment-trace',
+      sequence: 1,
+      projection: {
+        address: 'actor://server-node/shipment',
+        cursor: 'trace:shipment:1',
+        observedAt: '2026-04-25T18:00:01.000Z',
+        trace: {
+          schemaVersion: 1,
+          traceId: 'trace:shipment:1',
+          actorId: 'actor://server-node/shipment',
+          sessionId: 'session:shipment:1',
+          commandId: 'cmd:shipment:1',
+          receipts: [],
+          status: 'pending',
+        },
+        fact: null,
+      },
+    });
+    socket.receive({
+      type: 'trace',
+      streamId: 'shipment-trace',
+      sequence: 3,
+      projection: {
+        address: 'actor://server-node/shipment',
+        cursor: 'trace:shipment:3',
+        observedAt: '2026-04-25T18:00:03.000Z',
+        trace: null,
+        fact: {
+          code: 'trace_buffer_overflow',
+          message: 'Dropped older traces while applying bounded backpressure.',
+          droppedCount: 1,
+        },
+      },
+    });
+
+    expect(socket.sentFrames[1]).toEqual({
+      type: 'subscribe',
+      streamId: 'shipment-trace',
+      scope: { kind: 'shipment', params: { stream: 'trace' } },
+      mode: 'trace-only',
+    });
+    expect(socket.sentFrames.at(-1)).toEqual({
+      type: 'resync',
+      streamId: 'shipment-trace',
+      fromSequence: 2,
+    });
+    expect(traces).toHaveLength(1);
+    expect(traces[0]).toMatchObject({
+      cursor: 'trace:shipment:1',
+      trace: {
+        traceId: 'trace:shipment:1',
+      },
+    });
+    expect(statuses).toContain('degraded');
 
     source.close();
   });

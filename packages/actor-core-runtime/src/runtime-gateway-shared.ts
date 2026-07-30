@@ -1,4 +1,5 @@
 import type {
+  AgentExecutionTrace,
   AgentExecutionAuthorizedReceipt,
   AgentExecutionCommandMetadata,
   AgentExecutionRejectedReceipt,
@@ -16,6 +17,26 @@ import type { Message } from './types.js';
 export interface RuntimeGatewayScopeDescriptor {
   kind: string;
   params?: Record<string, string>;
+}
+
+export type RuntimeGatewayTraceFactCode =
+  | 'trace_buffer_overflow'
+  | 'trace_malformed'
+  | 'trace_unsupported';
+
+export interface RuntimeGatewayTraceFact {
+  readonly code: RuntimeGatewayTraceFactCode;
+  readonly message: string;
+  readonly detail?: string;
+  readonly droppedCount?: number;
+}
+
+export interface RuntimeGatewayTraceProjection {
+  readonly address: string;
+  readonly cursor: string;
+  readonly observedAt: string;
+  readonly trace: AgentExecutionTrace | null;
+  readonly fact: RuntimeGatewayTraceFact | null;
 }
 
 export type RuntimeGatewayErrorCode =
@@ -81,6 +102,12 @@ export type RuntimeGatewayServerFrame =
       transition: ActorTransitionRecord;
     }
   | {
+      type: 'trace';
+      streamId: string;
+      sequence: number;
+      projection: RuntimeGatewayTraceProjection;
+    }
+  | {
       type: 'status';
       streamId: string;
       status: ProjectionTransportStatus;
@@ -142,6 +169,6 @@ export function createRuntimeGatewaySourceHandle<TSource, TCommandSource>(
   } as RuntimeGatewaySourceHandle<TSource, TCommandSource>;
 }
 
-export type RuntimeGatewaySubscribeMode = 'full' | 'command-only';
+export type RuntimeGatewaySubscribeMode = 'full' | 'command-only' | 'trace-only';
 
 export type { ActorProjectionEventKind };
