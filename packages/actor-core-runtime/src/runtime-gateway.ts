@@ -364,6 +364,7 @@ export function createRuntimeGatewayTraceSource(
   const now = options.now ?? (() => new Date());
   let sequence = 0;
   let projections: RuntimeGatewayTraceProjection[] = [];
+  let latestTraceProjection: RuntimeGatewayTraceProjection | null = null;
 
   const storeProjection = (
     trace: AgentExecutionTrace | null,
@@ -372,6 +373,9 @@ export function createRuntimeGatewayTraceSource(
   ): RuntimeGatewayTraceProjection => {
     sequence += 1;
     const projection = toTraceProjection(source.address, sequence, observedAt, trace, fact);
+    if (projection.trace) {
+      latestTraceProjection = projection;
+    }
     projections = [...projections, projection];
     if (bufferSize > 0 && projections.length > bufferSize) {
       const droppedCount = projections.length - bufferSize;
@@ -401,7 +405,7 @@ export function createRuntimeGatewayTraceSource(
   return {
     ...source,
     latestTrace() {
-      return projections.at(-1) ?? null;
+      return latestTraceProjection;
     },
     subscribeTrace(listener) {
       listeners.add(listener);
@@ -826,6 +830,13 @@ function restoredReplayFramesMatchSource(
 function latestTraceFromFrames(
   frames: RuntimeGatewayReplayFrame[]
 ): RuntimeGatewayTraceProjection | null {
+  for (let index = frames.length - 1; index >= 0; index -= 1) {
+    const frame = frames[index];
+    if (frame?.type === 'trace' && frame.projection.trace) {
+      return frame.projection;
+    }
+  }
+
   for (let index = frames.length - 1; index >= 0; index -= 1) {
     const frame = frames[index];
     if (frame?.type === 'trace') {
@@ -1448,8 +1459,11 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
               : () => {};
           }
 
-          if (mode === 'trace-only' && 'subscribeTrace' in source) {
-            const traceSource = source as RuntimeGatewayTraceSource;
+          if (mode === 'trace-only') {
+            const traceSource = asTraceSource(source);
+            if (!traceSource) {
+              throw new Error('Runtime scope does not expose trace streaming.');
+            }
             stream.lastTrace = traceSource.latestTrace();
             stream.unsubscribeTrace = traceSource.subscribeTrace((projection) => {
               if (!isCurrentStream(streamId, stream)) {
@@ -1656,18 +1670,6 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
               appendGatewayDecisionTrace(stream, decision, [
                 decision.admissionReceipt,
                 decision.authorizationReceipt,
-                createExecutionSuccessReceipt({
-                  receiptId: `${decision.authorizationReceipt.traceId}:result:${decision.authorizationReceipt.sequence + 1}`,
-                  recordId: `${decision.authorizationReceipt.traceId}:record:result:${decision.authorizationReceipt.sequence + 1}`,
-                  traceId: decision.authorizationReceipt.traceId,
-                  actorId: decision.authorizationReceipt.actorId,
-                  sessionId: decision.authorizationReceipt.sessionId,
-                  commandId: decision.authorizationReceipt.commandId,
-                  ...(decision.principal.id ? { principalId: decision.principal.id } : {}),
-                  sequence: decision.authorizationReceipt.sequence + 1,
-                  occurredAt: new Date().toISOString(),
-                  result: {},
-                }),
               ]);
               const settled = await trySettleGatewayClaim(decision, 'dispatch_succeeded');
               if (!settled) {

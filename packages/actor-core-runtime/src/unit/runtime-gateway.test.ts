@@ -2,7 +2,9 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { emit, setup } from 'xstate';
 import type { ActorRef } from '../actor-ref.js';
+import * as browserEntry from '../browser.js';
 import { createActorRef } from '../create-actor-ref.js';
+import * as rootEntry from '../index.js';
 import {
   createProjectionTransportStatus,
   type ProjectionTransportStatus,
@@ -1718,6 +1720,40 @@ describe('runtime gateway hub', () => {
 
     latestOnlyDetach();
     detach();
+  });
+
+  it('preserves the latest trace when bounded overflow emits an overflow fact', () => {
+    const baseSource = createFakeSource('ready', 'trace-source');
+    const source = createRuntimeGatewayTraceSource(baseSource, {
+      bufferSize: 1,
+      now: () => new Date('2026-04-25T18:00:00.000Z'),
+    });
+
+    source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:1',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:1',
+      commandId: 'cmd:1',
+      receipts: [],
+      status: 'pending',
+    });
+    source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:2',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:2',
+      commandId: 'cmd:2',
+      receipts: [],
+      status: 'pending',
+    });
+
+    expect(source.latestTrace()).toMatchObject({
+      trace: expect.objectContaining({
+        traceId: 'trace:2',
+      }),
+      fact: null,
+    });
   });
 
   it('falls back to latest snapshot when requested replay range is unavailable', async () => {
@@ -4079,7 +4115,7 @@ describe('runtime gateway hub', () => {
     expect(askSettlements).toContain('dispatch_succeeded');
     detachAsk();
 
-    const postDispatchSource = createFakeSource('ready');
+    const postDispatchSource = createRuntimeGatewayTraceSource(createFakeSource('ready'));
     const postDispatchSettlements: string[] = [];
     const postDispatchHub = createRuntimeGatewayHub({
       commandAdmission: {
@@ -4146,6 +4182,10 @@ describe('runtime gateway hub', () => {
           frame.requestId === 'send-request-post-dispatch-settlement-failure'
       )
     ).toHaveLength(0);
+    const postDispatchTrace = postDispatchSource.latestTrace();
+    expect(postDispatchTrace?.trace?.receipts.some((receipt) => receipt.kind === 'success')).toBe(
+      false
+    );
     detachPostDispatch();
   });
 
@@ -4204,6 +4244,39 @@ describe('runtime gateway hub', () => {
     );
 
     detach();
+  });
+
+  it('fails trace-only subscriptions when the resolved source does not implement trace streaming', async () => {
+    const sourceWithoutTrace = createFakeSource('ready') as RuntimeGatewaySource;
+    const hub = createRuntimeGatewayHub({
+      resolveScope: async () => sourceWithoutTrace,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'trace-main',
+      scope: { kind: 'checkout', params: { stream: 'trace' } },
+      mode: 'trace-only',
+    });
+    await flushGatewayFrames();
+
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        streamId: 'trace-main',
+        code: 'internal_error',
+        message: 'Runtime scope does not expose trace streaming.',
+      })
+    );
+    detach();
+  });
+
+  it('exports runtime trace helpers from the public root and browser entrypoints', () => {
+    expect(typeof rootEntry.createRuntimeGatewayTraceSource).toBe('function');
+    expect(typeof browserEntry.createRuntimeGatewayTraceSource).toBe('function');
   });
 
   it('rejects malformed command metadata without dispatching or throwing', async () => {

@@ -287,6 +287,10 @@ function invokeListenerSafely<TValue>(listener: (value: TValue) => void, value: 
   }
 }
 
+function createGatewayFrameParseError(): Error {
+  return new Error('Actor-Web gateway sent an invalid JSON frame.');
+}
+
 function resolveGatewayBackedSourceInput(
   input:
     | ActorWebActorDescriptor
@@ -484,18 +488,38 @@ function createGatewayBackedSource<
       return;
     }
 
-    void resolveRuntimeAuthPayload(options.gateway.auth).then((auth) => {
-      sendFrame({
-        type: 'hello',
-        clientVersion: options.clientVersion ?? 'actor-web-source',
-        ...(auth ? { auth } : {}),
-      });
-    }, rejectPending);
+    void resolveRuntimeAuthPayload(options.gateway.auth).then(
+      (auth) => {
+        sendFrame({
+          type: 'hello',
+          clientVersion: options.clientVersion ?? 'actor-web-source',
+          ...(auth ? { auth } : {}),
+        });
+      },
+      (error) => {
+        const resolvedError =
+          error instanceof Error ? error : new Error('Actor-Web gateway authentication failed.');
+        rejectPending(resolvedError);
+        currentStatus = createProjectionTransportStatus('degraded', {
+          reason: resolvedError.message,
+        });
+        emitStatus();
+      }
+    );
   });
 
   socket.addEventListener('message', (event) => {
     const frameText = typeof event.data === 'string' ? event.data : String(event.data);
-    const frame = JSON.parse(frameText) as RuntimeGatewayServerFrame;
+    let frame: RuntimeGatewayServerFrame;
+    try {
+      frame = JSON.parse(frameText) as RuntimeGatewayServerFrame;
+    } catch {
+      const error = createGatewayFrameParseError();
+      rejectPending(error);
+      currentStatus = createProjectionTransportStatus('degraded', { reason: error.message });
+      emitStatus();
+      return;
+    }
 
     switch (frame.type) {
       case 'ready':
@@ -760,18 +784,36 @@ function createGatewayBackedTraceSource(
       return;
     }
 
-    void resolveRuntimeAuthPayload(options.gateway.auth).then((auth) => {
-      sendFrame({
-        type: 'hello',
-        clientVersion: options.clientVersion ?? 'actor-web-source',
-        ...(auth ? { auth } : {}),
-      });
-    });
+    void resolveRuntimeAuthPayload(options.gateway.auth).then(
+      (auth) => {
+        sendFrame({
+          type: 'hello',
+          clientVersion: options.clientVersion ?? 'actor-web-source',
+          ...(auth ? { auth } : {}),
+        });
+      },
+      (error) => {
+        const resolvedError =
+          error instanceof Error ? error : new Error('Actor-Web gateway authentication failed.');
+        currentStatus = createProjectionTransportStatus('degraded', {
+          reason: resolvedError.message,
+        });
+        emitStatus();
+      }
+    );
   });
 
   socket.addEventListener('message', (event) => {
     const frameText = typeof event.data === 'string' ? event.data : String(event.data);
-    const frame = JSON.parse(frameText) as RuntimeGatewayServerFrame;
+    let frame: RuntimeGatewayServerFrame;
+    try {
+      frame = JSON.parse(frameText) as RuntimeGatewayServerFrame;
+    } catch {
+      const error = createGatewayFrameParseError();
+      currentStatus = createProjectionTransportStatus('degraded', { reason: error.message });
+      emitStatus();
+      return;
+    }
 
     switch (frame.type) {
       case 'ready':

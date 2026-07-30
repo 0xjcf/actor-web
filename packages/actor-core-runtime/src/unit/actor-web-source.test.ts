@@ -42,6 +42,10 @@ class FakeGatewaySocket implements ActorWebGatewaySocket {
     this.emit('message', { data: JSON.stringify(frame) });
   }
 
+  receiveRaw(data: string): void {
+    this.emit('message', { data });
+  }
+
   private emit(type: string, event?: unknown): void {
     for (const listener of Array.from(this.listeners.get(type) ?? [])) {
       listener(event);
@@ -1003,6 +1007,138 @@ describe('createActorWebSource', () => {
       },
     });
     expect(statuses).toContain('degraded');
+
+    source.close();
+  });
+
+  it('degrades read-model sources when gateway auth resolution rejects before hello', async () => {
+    const socket = new FakeGatewaySocket();
+    const source = createActorWebSource(
+      {
+        address: 'actor://server-node/shipment',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+          auth: {
+            token: async () => {
+              throw new Error('auth provider rejected');
+            },
+          },
+        },
+      },
+      {
+        createSocket: () => socket,
+        streamId: 'shipment-stream',
+      }
+    );
+    const statuses: string[] = [];
+    const ready = source.subscribeTransportStatus((status) => {
+      statuses.push(status.state);
+    });
+
+    socket.open();
+    await expect(source.send({ type: 'SUBMIT' })).rejects.toThrow('auth provider rejected');
+    expect(statuses).toContain('degraded');
+    expect(source.transportStatus()).toMatchObject({
+      state: 'degraded',
+      reason: 'auth provider rejected',
+    });
+    expect(socket.sentFrames).toEqual([]);
+
+    ready();
+    source.close();
+  });
+
+  it('degrades read-model sources when the gateway sends malformed JSON', () => {
+    const socket = new FakeGatewaySocket();
+    const source = createActorWebSource(
+      {
+        address: 'actor://server-node/shipment',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+        },
+      },
+      {
+        createSocket: () => socket,
+        streamId: 'shipment-stream',
+      }
+    );
+    const statuses: string[] = [];
+
+    source.subscribeTransportStatus((status) => {
+      statuses.push(status.state);
+    });
+
+    socket.open();
+    expect(() => socket.receiveRaw('{"type":"snapshot"')).not.toThrow();
+    expect(statuses).toContain('degraded');
+    expect(source.transportStatus()).toMatchObject({
+      state: 'degraded',
+      reason: 'Actor-Web gateway sent an invalid JSON frame.',
+    });
+
+    source.close();
+  });
+
+  it('degrades trace-only sources when gateway auth resolution rejects before hello', async () => {
+    const socket = new FakeGatewaySocket();
+    const source = createActorWebTraceSource(
+      {
+        address: 'actor://server-node/shipment',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+          auth: {
+            token: async () => {
+              throw new Error('trace auth rejected');
+            },
+          },
+        },
+      },
+      {
+        createSocket: () => socket,
+        streamId: 'shipment-trace',
+      }
+    );
+
+    socket.open();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(source.transportStatus()).toMatchObject({
+      state: 'degraded',
+      reason: 'trace auth rejected',
+    });
+    expect(socket.sentFrames).toEqual([]);
+
+    source.close();
+  });
+
+  it('degrades trace-only sources when the gateway sends malformed JSON', () => {
+    const socket = new FakeGatewaySocket();
+    const source = createActorWebTraceSource(
+      {
+        address: 'actor://server-node/shipment',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+        },
+      },
+      {
+        createSocket: () => socket,
+        streamId: 'shipment-trace',
+      }
+    );
+    const statuses: string[] = [];
+
+    source.subscribeTransportStatus((status) => {
+      statuses.push(status.state);
+    });
+
+    socket.open();
+    expect(() => socket.receiveRaw('{"type":"trace"')).not.toThrow();
+    expect(statuses).toContain('degraded');
+    expect(source.transportStatus()).toMatchObject({
+      state: 'degraded',
+      reason: 'Actor-Web gateway sent an invalid JSON frame.',
+    });
 
     source.close();
   });

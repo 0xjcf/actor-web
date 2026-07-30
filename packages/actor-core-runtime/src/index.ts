@@ -393,6 +393,7 @@ export type {
   ActorRuntimeSnapshot,
   ActorSnapshotProjection,
   ActorTransitionRecord,
+  CreateRuntimeGatewayTraceSourceOptions,
   RuntimeGatewayClientFrame,
   RuntimeGatewayCommandAdmissionOptions,
   RuntimeGatewayCommandSource,
@@ -405,6 +406,8 @@ export type {
   RuntimeGatewayScopeResolver,
   RuntimeGatewayServerFrame,
   RuntimeGatewaySourceHandle,
+  RuntimeGatewayTraceProjection,
+  RuntimeGatewayTraceSource,
 } from './runtime-gateway.js';
 export {
   createRuntimeGatewayCommandSource,
@@ -412,6 +415,7 @@ export {
   createRuntimeGatewayReadModelSource,
   createRuntimeGatewaySource,
   createRuntimeGatewaySourceHandle,
+  createRuntimeGatewayTraceSource,
   RuntimeGatewayScopeError,
 } from './runtime-gateway.js';
 export type {

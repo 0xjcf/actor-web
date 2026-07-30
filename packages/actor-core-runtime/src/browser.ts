@@ -228,6 +228,13 @@ export type {
 } from './runtime-gateway-shared.js';
 export { createRuntimeGatewaySourceHandle } from './runtime-gateway-shared.js';
 export type {
+  CreateRuntimeGatewayTraceSourceOptions,
+  RuntimeGatewayTraceProjection,
+  RuntimeGatewayTraceSource,
+  RuntimeGatewayTraceSourceInput,
+} from './runtime-gateway-trace-source.js';
+export { createRuntimeGatewayTraceSource } from './runtime-gateway-trace-source.js';
+export type {
   InMemoryRuntimePeerDiscoveryProvider,
   RuntimePeerDiscoveryEndpointInput,
   RuntimePeerDiscoveryEvent,
