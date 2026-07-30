@@ -31,15 +31,30 @@ Promote the existing v2 design into the recoverable distributed runtime host for
 
 ## Affected files
 
-- packages/cli/src
-- packages/runtime/src
-- packages/agent/src
-- packages/testing/src
-- docs/actor-web-cli-runtime-host-design.md
+- packages/agent-workflow-cli/src
+- packages/actor-core-runtime/src
 
 ## Scope Amendments
 
-- None.
+- Type: plan correction
+- Added at: 2026-07-30
+- Trigger: FAS architect found stale package-root aliases in the generated write envelope before implementation.
+- Reason: Use the live Actor-Web package roots so the implementation and verification scope matches the repository without widening product ownership.
+- Added paths: the live CLI, runtime, agent, testing, and runtime-host design-document roots recorded by the original orchestration generation
+- Evidence source: fas_architect handoff
+- Evidence: fas_architect handoff | .fas/state/agent-orchestration-execution.json | missingPlannedFileCount=4 for packages/cli, packages/runtime, packages/agent, and packages/testing; live roots are agent-workflow-cli, actor-core-runtime, actor-agent, and actor-core-testing.
+- Accuracy signal: Confirmed by live tree and domain map before source edits.
+- Follow-up needed: Refresh task scope and replan before fas_staff_engineer.
+
+- Type: recovered-generation scope adoption
+- Added at: 2026-07-30
+- Trigger: The FAS runtime auto-requeued the active task after the original current-task binding disappeared during delegated SRE review.
+- Reason: The recovered generation starts at `da665259`, after the agent, testing, and design-doc slices were already committed and verified. Keep those commits as authoritative task evidence while limiting the recovered change envelope to the remaining runtime and CLI fixes instead of adding artificial churn.
+- Added paths: packages/agent-workflow-cli/src, packages/actor-core-runtime/src
+- Evidence source: git history and prior orchestration receipts
+- Evidence: `0ba48577..da665259` contains the accepted agent checkpoint, recovery fixture, distributed host, trace/receipt, tests, and design-doc work; `.fas/state/agent-orchestration-execution.json` preserves the original generation receipts.
+- Accuracy signal: Current recovered-generation commits are `aec42966` and `b7dc74f8`; full PR review still covers `0ba48577..b7dc74f8`.
+- Follow-up needed: Refresh task scope and replan, then reconfirm current-head full verification and review receipts.
 
 ## Implementation plan
 
