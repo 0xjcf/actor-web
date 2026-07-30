@@ -1,6 +1,6 @@
 import {
   assertAgentExecutionConformanceFixture,
-  getAgentExecutionConformanceFixture,
+  listAgentExecutionConformanceFixtures,
 } from './agent-execution-conformance.js';
 import {
   assertAgentSessionCheckpointConformanceFixture,
@@ -25,8 +25,13 @@ export interface RuntimeHostRecoveryConformanceFixture {
 
 export function getRuntimeHostRecoveryConformanceFixture(): RuntimeHostRecoveryConformanceFixture {
   const checkpointFixture = getAgentSessionCheckpointConformanceFixture();
-  const executionFixture = getAgentExecutionConformanceFixture('duplicate-suppression');
-  assertAgentSessionCheckpointConformanceFixture(checkpointFixture);
+  const executionFixture = listAgentExecutionConformanceFixtures().find(
+    (fixture) => fixture.name === 'duplicate-suppression'
+  );
+  assertAgentSessionCheckpointConformanceFixture();
+  if (!executionFixture) {
+    throw new Error('Runtime host recovery conformance requires the duplicate-suppression fixture.');
+  }
   assertAgentExecutionConformanceFixture(executionFixture);
 
   const crashBetweenAttemptAndReceipt = checkpointFixture.scenarios.find(
@@ -41,6 +46,19 @@ export function getRuntimeHostRecoveryConformanceFixture(): RuntimeHostRecoveryC
   if (!crashBetweenAttemptAndReceipt || !noDuplicateEffect || !reconciliationReceipt) {
     throw new Error('Runtime host recovery conformance fixture prerequisites are unavailable.');
   }
+  if (crashBetweenAttemptAndReceipt.outcome.outcome !== 'deferred_for_reconciliation') {
+    throw new Error(
+      'Runtime host recovery fixture requires pre-receipt restart to remain reconciliation-gated.'
+    );
+  }
+  if (noDuplicateEffect.outcome.outcome !== 'deferred_for_reconciliation') {
+    throw new Error(
+      'Runtime host recovery fixture requires duplicate irreversible effects to stay reconciliation-gated.'
+    );
+  }
+  if (reconciliationReceipt.receiptKind !== 'reconciliation') {
+    throw new Error('Runtime host recovery fixture requires an explicit reconciliation receipt.');
+  }
 
   return Object.freeze({
     name: 'agent-loop-restart-recovery',
@@ -50,9 +68,9 @@ export function getRuntimeHostRecoveryConformanceFixture(): RuntimeHostRecoveryC
     sourceOfTruthOwner: 'Actor-Web',
     checkpointScenario: 'crash_between_attempt_and_receipt',
     expected: Object.freeze({
-      restartBeforeReceipt: crashBetweenAttemptAndReceipt.outcome.outcome,
-      noDuplicateIrreversibleEffect: noDuplicateEffect.outcome.outcome,
-      reconciliationReceiptRequired: reconciliationReceipt.receiptKind === 'reconciliation',
+      restartBeforeReceipt: 'deferred_for_reconciliation',
+      noDuplicateIrreversibleEffect: 'deferred_for_reconciliation',
+      reconciliationReceiptRequired: true,
     }),
   });
 }
@@ -64,7 +82,9 @@ export function assertRuntimeHostRecoveryConformanceFixture(
     throw new Error(`Unexpected runtime host recovery fixture ${fixture.name}.`);
   }
   if (fixture.expected.restartBeforeReceipt !== 'deferred_for_reconciliation') {
-    throw new Error('Runtime host recovery fixture must defer pre-receipt restarts for reconciliation.');
+    throw new Error(
+      'Runtime host recovery fixture must defer pre-receipt restarts for reconciliation.'
+    );
   }
   if (fixture.expected.noDuplicateIrreversibleEffect !== 'deferred_for_reconciliation') {
     throw new Error(
