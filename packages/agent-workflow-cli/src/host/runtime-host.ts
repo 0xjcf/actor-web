@@ -15,7 +15,6 @@
 
 import { type ActorAgentLlmProvider, createActorAgentTools } from '@actor-web/agent';
 import type {
-  AgentSessionCheckpointStore,
   ActorMessage,
   ActorRef,
   ActorToolRegistry,
@@ -26,11 +25,12 @@ import type {
   AgentExecutionCommandMetadata,
   AgentExecutionCommandPrincipal,
   AgentExecutionIdempotencyClaimPort,
+  AgentSessionCheckpointStore,
   ClusterState,
   Message,
   ProjectionTransportStatus,
-  RuntimeTransportStatus,
   RuntimeGatewayAuthProvider,
+  RuntimeTransportStatus,
 } from '@actor-web/runtime';
 import { admitAgentExecutionCommand, Logger, parse, startRuntime } from '@actor-web/runtime';
 import type { ClosableActorWebSource } from '../../../actor-core-runtime/src/actor-web-source.js';
@@ -330,7 +330,9 @@ function validateDistributedSecurityRequirements(
   return null;
 }
 
-function validateCheckpointRequirements(options: RuntimeHostOptions): HostResult<RuntimeHost> | null {
+function validateCheckpointRequirements(
+  options: RuntimeHostOptions
+): HostResult<RuntimeHost> | null {
   if (options.checkpoint?.required && !options.checkpoint.store) {
     return {
       ok: false,
@@ -455,7 +457,10 @@ export async function createRuntimeHost(
   const tools = resolveRuntimeHostTools(options);
   let runtime: Awaited<ReturnType<typeof startRuntime>> | null = null;
   let servedNode: ServedActorWebNode<AnyTopology> | null = null;
-  const remoteSourceCache = new Map<string, ClosableActorWebSource<unknown, ActorMessage, ActorMessage>>();
+  const remoteSourceCache = new Map<
+    string,
+    ClosableActorWebSource<unknown, ActorMessage, ActorMessage>
+  >();
   let remoteTransportStatus: ProjectionTransportStatus | null = null;
   let remoteTransportReason: string | null = null;
 
@@ -491,17 +496,21 @@ export async function createRuntimeHost(
     };
   }
 
-  const nodeKeys = options.remote ? [spawnNodeKey] : servedNode ? [spawnNodeKey] : Object.keys(runtime?.nodes ?? {});
+  const nodeKeys = options.remote
+    ? [spawnNodeKey]
+    : servedNode
+      ? [spawnNodeKey]
+      : Object.keys(runtime?.nodes ?? {});
 
   const registry = new Map<string, RegisteredActor>();
   for (const [key, descriptor] of Object.entries(topology.actors)) {
     const ref = options.remote
       ? undefined
       : servedNode
-      ? descriptor.node === spawnNodeKey
-        ? servedNode.getActor(key)
-        : undefined
-      : runtime?.getActor(key);
+        ? descriptor.node === spawnNodeKey
+          ? servedNode.getActor(key)
+          : undefined
+        : runtime?.getActor(key);
     if (ref) {
       registry.set(key, { key, ref, origin: 'topology' });
     }
@@ -554,7 +563,8 @@ export async function createRuntimeHost(
       return undefined;
     }
     const actorEntry = Object.entries(topology.actors).find(
-      ([key, descriptor]) => key === target || descriptor.address === target || parse(descriptor.address).id === target
+      ([key, descriptor]) =>
+        key === target || descriptor.address === target || parse(descriptor.address).id === target
     );
     if (!actorEntry) {
       return undefined;
@@ -564,13 +574,11 @@ export async function createRuntimeHost(
     if (cached) {
       return cached;
     }
-    const source = createActorWebSource(
-      {
-        actor: actorDescriptor,
-        gateway: options.remote.gateway,
-        streamId: `actor-web-cli-remote-${actorKey}`,
-      }
-    );
+    const source = createActorWebSource({
+      actor: actorDescriptor,
+      gateway: options.remote.gateway,
+      streamId: `actor-web-cli-remote-${actorKey}`,
+    });
     source.subscribeTransportStatus((status) => {
       remoteTransportStatus = status;
       remoteTransportReason = status.reason ?? null;

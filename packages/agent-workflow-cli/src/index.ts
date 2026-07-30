@@ -23,8 +23,8 @@ export {
   type RuntimeHost,
   type RuntimeHostCheckpointOptions,
   type RuntimeHostDistributedOptions,
-  type RuntimeHostRemoteOptions,
   type RuntimeHostReadinessStatus,
+  type RuntimeHostRemoteOptions,
   type RuntimeHostStatus,
   splitExecScript,
 } from './host/runtime-host.js';
