@@ -153,7 +153,7 @@ Dependency direction is one-way: `cli → agent → runtime`. The runtime never
 imports the agent package; the CLI's agent support is an optional capability,
 not a hard dependency.
 
-## CLI surface (v0)
+## CLI surface
 
 A minimal, kubectl-for-actors shape:
 
@@ -161,6 +161,10 @@ A minimal, kubectl-for-actors shape:
 actor-web serve ./topology.ts --node worker [--gateway] [--transport]
     # host a runtime node from a topology; optionally expose a WS gateway
     # and/or accept peer connections
+
+actor-web serve ./topology.ts --node server --transport --peer worker=ws://127.0.0.1:9001 --connect worker
+    # host a distributed node, join explicit peers, and operate through the
+    # same local shell with transport/directory status facts
 
 actor-web ls [--node worker]
     # list live actors (id, type, status) via the directory
@@ -176,13 +180,33 @@ actor-web watch actor://worker/agent/r1
     # stream the actor's emitted events to the terminal (subscribeEvent)
 
 actor-web connect ws://host:port --as worker
-    # operate against a remote node instead of an in-process one
+    # target-state remote client mode; not in the current implementation slice
 ```
 
 `serve` hosts; the other verbs are a client that talks to either an in-process
 system or a remote node over the gateway. All of these map directly to existing
 runtime calls (`serveNode`, `system.lookup`, `spawn`, `send`/`ask`,
 `subscribeEvent`, `createActorWebClient`).
+
+### Current implementation slice
+
+The current code lands the smallest coherent v2 host slice:
+
+- `serve` can run in-process or as a distributed runtime node over the
+  existing `serveNode` transport/gateway seams.
+- The shell exposes explicit host status, transport membership, and directory
+  readiness as separate facts.
+- Cross-node `send`/`ask` works from the hosting shell once peer directory
+  readiness converges.
+- Gateway and transport listeners stay localhost-safe unless the operator opts
+  into unsafe exposure explicitly.
+
+Still deferred in this slice:
+
+- remote `connect` as a standalone client workflow
+- gateway auth/admission wiring for non-localhost exposure
+- checkpoint-store injection as a live CLI host seam
+- trace/receipt streaming beyond the existing runtime and conformance surfaces
 
 ## Agent layer (sketch)
 
@@ -229,7 +253,8 @@ The host merges that provider into the runtime tool registry as `llm`; topology
 
 - **Agent loop + LLM tool** — does not exist; build in the agent layer.
 - **Persistence/durability** — agents are in-memory; surviving a node restart
-  needs snapshotting (out of scope for v0; note it).
+  needs snapshotting and a host-wired checkpoint seam (still deferred in the
+  current v2 slice).
 - **Observability** — a usable `watch`/`ls` may need richer introspection than
   the current snapshot exposes (the system snapshot reports the wrapper state,
   not inner machine state; see the cli test findings in PR #14).
@@ -249,8 +274,11 @@ The host merges that provider into the runtime tool registry as `llm`; topology
    tool + agent-loop behavior); the CLI registers it when hosting agents.
    Single-node multi-agent choreography via `emit`/`subscribe`. `toolAccess`
    enforced.
-3. **v2 — distributed.** `--gateway`/`--transport`/`connect`: run agents across
-   processes/machines; remote `send`/`watch`. Requires the auth story.
+3. **v2 — distributed host shell.** `--gateway`/`--transport`/`--peer`/`--connect`:
+   run a topology node across processes/machines, expose explicit transport and
+   directory readiness facts, and allow cross-node `send`/`ask` from the local
+   shell. Gateway auth, standalone remote-client `connect`, and checkpoint
+   recovery stay deferred.
 4. **v3 — FAS integration.** FAS emits topology + behaviors + `toolAccess`; the
    CLI runs them. The control-plane/data-plane loop is closed.
 
