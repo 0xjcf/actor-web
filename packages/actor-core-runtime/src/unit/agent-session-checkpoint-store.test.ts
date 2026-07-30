@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  classifyAgentSessionCheckpointReadResult,
   createAgentSessionCheckpointEnvelope,
   createInMemoryAgentSessionCheckpointStore,
   deriveAgentSessionCheckpointRehydration,
@@ -170,6 +171,87 @@ describe('agent session checkpoint store', () => {
     await expect(store.write(expiredEnvelope)).resolves.toEqual({
       outcome: 'expired',
       envelope: expiredEnvelope,
+    });
+  });
+
+  it('classifies checkpoint read precedence as expired before stale before redacted before present', () => {
+    const now = new Date('2026-07-29T13:47:00.000Z');
+
+    const expiredContinuationEnvelope = createCheckpointEnvelope({
+      checkpointId: 'checkpoint:expired-continuation-precedence',
+      staleAt: '2026-07-29T13:46:00.000Z',
+      redactedFields: ['continuation.payload'],
+      continuation: {
+        provider: 'test-provider',
+        adapter: 'test-provider-adapter',
+        formatVersion: 1,
+        payload: {
+          cursor: 'opaque-provider-state',
+        },
+        payloadBytes: new TextEncoder().encode(
+          JSON.stringify({
+            cursor: 'opaque-provider-state',
+          })
+        ).byteLength,
+        expiresAt: '2026-07-29T13:46:30.000Z',
+        redaction: {
+          disposition: 'none',
+          fields: [],
+        },
+      },
+    });
+    expect(
+      classifyAgentSessionCheckpointReadResult(expiredContinuationEnvelope, now)
+    ).toMatchObject({
+      outcome: 'expired',
+      envelope: expiredContinuationEnvelope,
+    });
+
+    const staleRedactedEnvelope = createCheckpointEnvelope({
+      checkpointId: 'checkpoint:stale-redacted-precedence',
+      staleAt: '2026-07-29T13:46:00.000Z',
+      redactedFields: ['continuation.payload'],
+    });
+    expect(classifyAgentSessionCheckpointReadResult(staleRedactedEnvelope, now)).toMatchObject({
+      outcome: 'stale',
+      envelope: staleRedactedEnvelope,
+    });
+
+    const metadataOnlyEnvelope = createCheckpointEnvelope({
+      checkpointId: 'checkpoint:redacted-fallback',
+      continuation: {
+        provider: 'test-provider',
+        adapter: 'test-provider-adapter',
+        formatVersion: 1,
+        payload: null,
+        payloadBytes: 0,
+        redaction: {
+          disposition: 'metadata_only',
+          fields: ['continuation.resumeToken'],
+        },
+      },
+      redactedFields: [],
+      effect: null,
+      reconciliation: {
+        status: 'clear',
+      },
+    });
+    expect(classifyAgentSessionCheckpointReadResult(metadataOnlyEnvelope, now)).toEqual({
+      outcome: 'redacted',
+      envelope: metadataOnlyEnvelope,
+      fields: ['continuation.resumeToken'],
+    });
+
+    const presentEnvelope = createCheckpointEnvelope({
+      checkpointId: 'checkpoint:present-precedence',
+      effect: null,
+      reconciliation: {
+        status: 'clear',
+      },
+    });
+    expect(classifyAgentSessionCheckpointReadResult(presentEnvelope, now)).toEqual({
+      outcome: 'present',
+      envelope: presentEnvelope,
     });
   });
 
@@ -386,7 +468,9 @@ describe('agent session checkpoint store', () => {
   });
 
   it('invalidates an expired provider continuation before rehydration', async () => {
-    const store = createInMemoryAgentSessionCheckpointStore();
+    const store = createInMemoryAgentSessionCheckpointStore({
+      now: () => new Date('2026-07-29T13:45:30.000Z'),
+    });
     const envelope = createCheckpointEnvelope({
       checkpointId: 'checkpoint:expired-continuation',
       continuation: {
