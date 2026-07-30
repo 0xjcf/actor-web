@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -11,6 +11,14 @@ import {
 import * as browserEntry from '../browser.js';
 import * as rootEntry from '../index.js';
 import * as nodeEntry from '../node.js';
+
+const TEST_CONTINUATION_FORMATS = [
+  {
+    provider: 'test-provider',
+    adapter: 'test-provider-adapter',
+    formatVersion: 1,
+  },
+] as const;
 
 function createCheckpointEnvelope(
   overrides: Partial<Parameters<typeof createAgentSessionCheckpointEnvelope>[0]> = {}
@@ -66,14 +74,16 @@ function createCheckpointEnvelope(
       reason: 'awaiting_effect_receipt',
     },
     recordedAt: '2026-07-29T13:45:00.000Z',
-    expiresAt: '2026-07-30T13:45:00.000Z',
+    expiresAt: null,
     ...overrides,
   });
 }
 
 describe('agent session checkpoint store', () => {
   it('stores provider-neutral checkpoint envelopes with explicit read/write outcomes', async () => {
-    const store = createInMemoryAgentSessionCheckpointStore();
+    const store = createInMemoryAgentSessionCheckpointStore({
+      now: () => new Date('2026-07-29T13:45:30.000Z'),
+    });
     const envelope = createCheckpointEnvelope();
 
     await expect(
@@ -122,10 +132,15 @@ describe('agent session checkpoint store', () => {
       envelope: deferredEnvelope,
     });
     expect(
-      deriveAgentSessionCheckpointRehydration({
-        outcome: 'present',
-        envelope: deferredEnvelope,
-      })
+      deriveAgentSessionCheckpointRehydration(
+        {
+          outcome: 'present',
+          envelope: deferredEnvelope,
+        },
+        {
+          supportedContinuationFormats: TEST_CONTINUATION_FORMATS,
+        }
+      )
     ).toEqual({
       outcome: 'deferred_for_reconciliation',
       envelope: deferredEnvelope,
@@ -240,6 +255,134 @@ describe('agent session checkpoint store', () => {
       ok: false,
       reason: 'corrupt',
     });
+    expect(() =>
+      createCheckpointEnvelope({
+        sessionId: '\ud800',
+        actor: {
+          ...envelope.actor,
+          sessionId: '\ud800',
+        },
+      })
+    ).toThrow('Agent session checkpoint requires a non-empty sessionId.');
+    expect(() =>
+      createCheckpointEnvelope({
+        checkpointId: '\ud800',
+      })
+    ).toThrow('Agent session checkpoint requires a non-empty checkpointId.');
+    expect(() =>
+      createCheckpointEnvelope({
+        recordedAt: '2026-07-29 13:45:00Z',
+      })
+    ).toThrow('Agent session checkpoint recordedAt must be an ISO timestamp.');
+  });
+
+  it('requires exact adapter continuation compatibility and never resumes metadata-only payloads', async () => {
+    const envelope = createCheckpointEnvelope({
+      reconciliation: {
+        status: 'clear',
+      },
+      effect: null,
+    });
+    const present = {
+      outcome: 'present' as const,
+      envelope,
+    };
+
+    expect(deriveAgentSessionCheckpointRehydration(present)).toMatchObject({
+      outcome: 'manual_recovery_required',
+      reason: 'continuation_incompatible',
+    });
+    expect(
+      deriveAgentSessionCheckpointRehydration(present, {
+        supportedContinuationFormats: [
+          {
+            provider: 'test-provider',
+            adapter: 'test-provider-adapter',
+            formatVersion: 2,
+          },
+        ],
+      })
+    ).toMatchObject({
+      outcome: 'manual_recovery_required',
+      reason: 'continuation_incompatible',
+    });
+    expect(
+      deriveAgentSessionCheckpointRehydration(present, {
+        supportedContinuationFormats: TEST_CONTINUATION_FORMATS,
+      })
+    ).toEqual({
+      outcome: 'resumed',
+      envelope,
+    });
+
+    const metadataOnlyEnvelope = createCheckpointEnvelope({
+      checkpointId: 'checkpoint:metadata-only',
+      continuation: {
+        provider: 'test-provider',
+        adapter: 'test-provider-adapter',
+        formatVersion: 1,
+        payload: null,
+        payloadBytes: 0,
+        redaction: {
+          disposition: 'metadata_only',
+          fields: [],
+        },
+      },
+      redactedFields: [],
+      reconciliation: {
+        status: 'clear',
+      },
+      effect: null,
+    });
+    const store = createInMemoryAgentSessionCheckpointStore();
+    await expect(store.write(metadataOnlyEnvelope)).resolves.toMatchObject({
+      outcome: 'stored',
+    });
+    const read = await store.read({ sessionId: metadataOnlyEnvelope.sessionId });
+    expect(read).toEqual({
+      outcome: 'redacted',
+      envelope: metadataOnlyEnvelope,
+      fields: [],
+    });
+    expect(deriveAgentSessionCheckpointRehydration(read)).toMatchObject({
+      outcome: 'manual_recovery_required',
+      reason: 'redacted',
+    });
+  });
+
+  it('uses an injected in-memory clock for deterministic expiry and preserves __proto__ sessions', async () => {
+    let now = new Date('2026-07-29T13:45:00.000Z');
+    const store = createInMemoryAgentSessionCheckpointStore({
+      now: () => now,
+    });
+    const expiringEnvelope = createCheckpointEnvelope({
+      expiresAt: '2026-07-29T13:46:00.000Z',
+    });
+    await expect(store.write(expiringEnvelope)).resolves.toMatchObject({
+      outcome: 'stored',
+    });
+    now = new Date('2026-07-29T13:46:00.000Z');
+    await expect(store.read({ sessionId: expiringEnvelope.sessionId })).resolves.toEqual({
+      outcome: 'expired',
+      envelope: expiringEnvelope,
+    });
+
+    const prototypeEnvelope = createCheckpointEnvelope({
+      sessionId: '__proto__',
+      checkpointId: 'checkpoint:prototype',
+      actor: {
+        ...expiringEnvelope.actor,
+        sessionId: '__proto__',
+      },
+      expiresAt: null,
+    });
+    await expect(store.write(prototypeEnvelope)).resolves.toMatchObject({
+      outcome: 'stored',
+    });
+    const snapshot = store.getSnapshot();
+    expect(Object.getPrototypeOf(snapshot)).toBeNull();
+    expect(Object.hasOwn(snapshot, '__proto__')).toBe(true);
+    expect(snapshot.__proto__).toBe(prototypeEnvelope);
   });
 
   it('invalidates an expired provider continuation before rehydration', async () => {
@@ -447,6 +590,76 @@ describe('agent session checkpoint store', () => {
     });
   });
 
+  it('fails closed for filesystem identity, size, encoding, and permission boundaries', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'actor-web-checkpoints-hardened-'));
+    const store = nodeEntry.createNodeFileSystemAgentSessionCheckpointStore({
+      directory,
+      redactOpaqueContinuation: false,
+      now: () => new Date('2026-07-29T13:45:30.000Z'),
+    });
+    const envelope = createCheckpointEnvelope({
+      checkpointId: 'checkpoint:hardened',
+    });
+    const { write } = store;
+
+    await expect(write(envelope)).resolves.toMatchObject({
+      outcome: 'stored',
+    });
+    const rawFilePath = path.join(directory, `${encodeURIComponent(envelope.sessionId)}.json`);
+    const fileStats = await stat(rawFilePath);
+    expect(fileStats.mode & 0o777).toBe(0o600);
+
+    const otherEnvelope = createCheckpointEnvelope({
+      sessionId: 'session:checkpoint:other',
+      checkpointId: 'checkpoint:other',
+      actor: {
+        ...envelope.actor,
+        sessionId: 'session:checkpoint:other',
+      },
+    });
+    await writeFile(rawFilePath, JSON.stringify(otherEnvelope));
+    await expect(store.read({ sessionId: envelope.sessionId })).resolves.toEqual({
+      outcome: 'corrupt',
+      sessionId: envelope.sessionId,
+      detail: 'session_id_mismatch',
+    });
+
+    const smallStore = nodeEntry.createNodeFileSystemAgentSessionCheckpointStore({
+      directory,
+      maxBytes: 16,
+    });
+    await writeFile(rawFilePath, JSON.stringify(envelope));
+    await expect(smallStore.read({ sessionId: envelope.sessionId })).resolves.toEqual({
+      outcome: 'corrupt',
+      sessionId: envelope.sessionId,
+      detail: 'checkpoint_too_large',
+    });
+
+    await expect(store.read({ sessionId: '\ud800' })).resolves.toEqual({
+      outcome: 'corrupt',
+      sessionId: '\ud800',
+      detail: 'invalid_session_id',
+    });
+    await expect(
+      store.write({
+        ...envelope,
+        sessionId: '\ud800',
+      })
+    ).resolves.toMatchObject({
+      outcome: 'rejected',
+      reason: 'invalid_session_id',
+    });
+    await expect(
+      store.write({
+        ...envelope,
+        checkpointId: '\ud800',
+      })
+    ).resolves.toMatchObject({
+      outcome: 'rejected',
+      reason: 'invalid_checkpoint_id',
+    });
+  });
+
   it('serializes same-session filesystem writes across store instances in one host process', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'actor-web-checkpoints-concurrent-'));
     const firstStore = nodeEntry.createNodeFileSystemAgentSessionCheckpointStore({
@@ -455,7 +668,7 @@ describe('agent session checkpoint store', () => {
       now: () => new Date('2026-07-29T13:45:30.000Z'),
     });
     const secondStore = nodeEntry.createNodeFileSystemAgentSessionCheckpointStore({
-      directory,
+      directory: path.relative(process.cwd(), directory),
       redactOpaqueContinuation: false,
       now: () => new Date('2026-07-29T13:45:30.000Z'),
     });
@@ -509,10 +722,15 @@ describe('agent session checkpoint store', () => {
     });
 
     expect(
-      deriveAgentSessionCheckpointRehydration({
-        outcome: 'present',
-        envelope: settledEnvelope,
-      })
+      deriveAgentSessionCheckpointRehydration(
+        {
+          outcome: 'present',
+          envelope: settledEnvelope,
+        },
+        {
+          supportedContinuationFormats: TEST_CONTINUATION_FORMATS,
+        }
+      )
     ).toEqual({
       outcome: 'resumed',
       envelope: settledEnvelope,

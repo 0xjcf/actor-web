@@ -20,7 +20,20 @@ type AgentModule = {
   createActorAgentToolRegistry(input: {
     readonly llm: ActorAgentLlmProvider;
   }): Record<string, (...args: readonly unknown[]) => unknown>;
-  createAgentLoopBehavior(options?: { readonly system?: string }): AgentLoopBehaviorHarness;
+  createAgentLoopBehavior(options?: {
+    readonly system?: string;
+    readonly initialCheckpointState?: {
+      readonly system?: string;
+      readonly history: readonly { readonly role: string; readonly content: string }[];
+      readonly steps: number;
+      readonly pendingToolCalls: readonly {
+        readonly id: string;
+        readonly name: string;
+        readonly input: unknown;
+      }[];
+      readonly lastError: null | { readonly code: string; readonly message: string };
+    };
+  }): AgentLoopBehaviorHarness;
 };
 
 type AgentLoopResultWithContext = {
@@ -366,7 +379,7 @@ describe('@actor-web/agent loop behavior', () => {
           },
         },
       });
-    const firstBehavior = agent.createAgentLoopBehavior({ system: 'You are a FAS planner.' });
+    const firstBehavior = agent.createAgentLoopBehavior({ system: 'Default planner policy.' });
     const tools = createActorToolbox(
       {
         ...agent.createActorAgentToolRegistry({ llm: provider }),
@@ -380,13 +393,18 @@ describe('@actor-web/agent loop behavior', () => {
       createAgentParams({
         behavior: firstBehavior,
         tools,
-        message: { type: 'START_AGENT', prompt: 'plan task-1' },
+        message: {
+          type: 'START_AGENT',
+          prompt: 'plan task-1',
+          system: 'Use the task-specific restart policy.',
+        },
       })
     );
     const startedContext = readAgentLoopContext(started);
 
     const resumedBehavior = agent.createAgentLoopBehavior({
       initialCheckpointState: startedContext as {
+        readonly system?: string;
         readonly history: readonly { readonly role: string; readonly content: string }[];
         readonly steps: number;
         readonly pendingToolCalls: readonly {
@@ -414,6 +432,7 @@ describe('@actor-web/agent loop behavior', () => {
 
     expect(provider).toHaveBeenCalledTimes(2);
     expect(provider.mock.calls[1]?.[0]).toMatchObject({
+      system: 'Use the task-specific restart policy.',
       messages: [
         { role: 'user', content: 'plan task-1' },
         {
