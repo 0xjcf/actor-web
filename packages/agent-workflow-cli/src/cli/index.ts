@@ -2,12 +2,12 @@
 
 /**
  * actor-web CLI entry point — terminal host for the actor-web runtime
- * (design doc: docs/actor-web-cli-runtime-host-design.md, phase v0).
+ * (design doc: docs/actor-web-cli-runtime-host-design.md, v2 distributed-host slice).
  *
- * `serve` boots an in-process runtime node from a topology module and opens an
- * operator console (interactive REPL, or scripted via --exec). In v0 there is
- * no network and no LLM; the console verbs (ls/spawn/send/ask/watch) operate
- * on the in-process system. Remote connection arrives in v2.
+ * `serve` boots either an in-process host or a thin distributed node host from
+ * a topology module and opens an operator console (interactive REPL, or
+ * scripted via --exec). Distributed mode reuses the runtime's existing node,
+ * transport, and gateway seams; the CLI remains an operator shell.
  *
  * Convention: user-facing program output goes to stdout via `console.log`;
  * diagnostics and failures go through the runtime `Logger`.
@@ -85,6 +85,48 @@ function printOutcomeLines(lines: readonly string[], ok: boolean): void {
   for (const line of lines) {
     console.log(ok ? line : chalk.red(line));
   }
+}
+
+function collectRepeatableOption(value: string, previous: string[] = []): string[] {
+  return [...previous, value];
+}
+
+type PeerMappingParseResult =
+  | { ok: true; value: Record<string, string> | undefined }
+  | { ok: false; error: string };
+
+function parsePeerMappings(input: readonly string[] | undefined): PeerMappingParseResult {
+  if (!input || input.length === 0) {
+    return { ok: true, value: undefined };
+  }
+  const mappings = input.map((entry) => {
+    const separator = entry.indexOf('=');
+    if (separator <= 0 || separator === entry.length - 1) {
+      return {
+        ok: false as const,
+        error: `Invalid --peer mapping "${entry}". Expected <node>=<ws-url>.`,
+      };
+    }
+    return {
+      ok: true as const,
+      value: [entry.slice(0, separator), entry.slice(separator + 1)] as const,
+    };
+  });
+  const invalid = mappings.find((entry) => !entry.ok);
+  if (invalid && !invalid.ok) {
+    return invalid;
+  }
+  return {
+    ok: true,
+    value: Object.fromEntries(
+      mappings.map((entry) => {
+        if (!entry.ok) {
+          return ['', ''];
+        }
+        return entry.value;
+      })
+    ),
+  };
 }
 
 async function shutdown(host: RuntimeHost, watches: Map<string, () => void>): Promise<void> {
@@ -185,11 +227,38 @@ async function main() {
         '--admission <module>',
         'load provider-neutral command admission config from a module export'
       )
+      .option('--gateway', 'expose a localhost-only runtime gateway for this node')
+      .option('--transport', 'accept localhost-only runtime transport peers for this node')
+      .option(
+        '--connect <node>',
+        'connect this node to a named topology peer (repeatable; requires matching --peer mapping)',
+        collectRepeatableOption,
+        []
+      )
+      .option(
+        '--peer <node=url>',
+        'provide a topology peer WebSocket URL mapping (repeatable)',
+        collectRepeatableOption,
+        []
+      )
+      .option(
+        '--allow-unsafe-exposure',
+        'allow --gateway or --transport listeners to bind outside localhost'
+      )
       .option('--exec <commands>', 'run semicolon-separated console commands, then exit')
       .action(
         async (
           topologyPath: string,
-          options: { node?: string; admission?: string; exec?: string }
+          options: {
+            node?: string;
+            admission?: string;
+            gateway?: boolean;
+            transport?: boolean;
+            connect?: string[];
+            peer?: string[];
+            allowUnsafeExposure?: boolean;
+            exec?: string;
+          }
         ) => {
           const commandAdmission =
             options.admission === undefined
@@ -199,10 +268,32 @@ async function main() {
             console.error(chalk.red(commandAdmission.error));
             process.exit(1);
           }
+          const peerMappings = parsePeerMappings(options.peer);
+          if (!peerMappings.ok) {
+            console.error(chalk.red(peerMappings.error));
+            process.exit(1);
+          }
+
+          const distributed =
+            options.gateway ||
+            options.transport ||
+            (options.connect?.length ?? 0) > 0 ||
+            (options.peer?.length ?? 0) > 0
+              ? {
+                  ...(options.gateway ? { gateway: true } : {}),
+                  ...(options.transport ? { transport: true } : {}),
+                  ...(options.connect && options.connect.length > 0
+                    ? { connect: options.connect }
+                    : {}),
+                  ...(peerMappings.value ? { peers: peerMappings.value } : {}),
+                  ...(options.allowUnsafeExposure ? { allowUnsafeExposure: true } : {}),
+                }
+              : undefined;
 
           const started = await createRuntimeHostFromFile(topologyPath, {
             node: options.node,
             ...(commandAdmission?.ok ? { commandAdmission: commandAdmission.value } : {}),
+            ...(distributed ? { distributed } : {}),
           });
           if (!started.ok) {
             console.error(chalk.red(started.error));
@@ -210,10 +301,18 @@ async function main() {
           }
           const host = started.value;
           const nodeLabel = options.node ?? host.nodeKeys[0] ?? 'local';
+          const status = host.getStatus();
           console.log(
-            chalk.green(`Hosting ${topologyPath} in-process`) +
-              chalk.gray(` (nodes: ${host.nodeKeys.join(', ')})`)
+            chalk.green(
+              `Hosting ${topologyPath} ${status.mode === 'distributed' ? 'as a distributed node' : 'in-process'}`
+            ) + chalk.gray(` (nodes: ${host.nodeKeys.join(', ')})`)
           );
+          if (status.gatewayUrl) {
+            console.log(chalk.gray(`Gateway: ${status.gatewayUrl}`));
+          }
+          if (status.transportUrl) {
+            console.log(chalk.gray(`Transport: ${status.transportUrl}`));
+          }
 
           if (options.exec !== undefined) {
             const ok = await runExecScript(host, options.exec);
@@ -230,7 +329,7 @@ async function main() {
         console.log(chalk.blue('actor-web CLI'));
         console.log(
           chalk.gray(
-            'v0 in-process runtime host: actor-web serve ./topology.(mjs|js|ts) [--node key] [--admission ./command-admission.(mjs|js|ts)] [--exec "ls; ..."]. Remote hosting (gateway/transport) arrives in v2 — see docs/actor-web-cli-runtime-host-design.md.'
+            'Distributed runtime host: actor-web serve ./topology.(mjs|js|ts) [--node key] [--gateway] [--transport] [--peer worker=ws://127.0.0.1:9001] [--connect worker] [--admission ./command-admission.(mjs|js|ts)] [--exec "status; ls; ..."]. See docs/actor-web-cli-runtime-host-design.md.'
           )
         );
       });

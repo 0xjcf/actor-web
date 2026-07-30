@@ -25,9 +25,18 @@ import type {
   AgentExecutionCommandMetadata,
   AgentExecutionCommandPrincipal,
   AgentExecutionIdempotencyClaimPort,
+  ClusterState,
   Message,
+  RuntimeTransportStatus,
 } from '@actor-web/runtime';
 import { admitAgentExecutionCommand, Logger, parse, startRuntime } from '@actor-web/runtime';
+import type {
+  ActorWebNodeGatewayOptions,
+  ActorWebNodeTransportOptions,
+  ServeActorWebNodeOptions,
+  ServedActorWebNode,
+} from '../../../actor-core-runtime/src/serve-actor-web-node.js';
+import { serveNode } from '../../../actor-core-runtime/src/serve-actor-web-node.js';
 import { loadModuleExport } from './load-module.js';
 
 const log = Logger.namespace('ACTOR_WEB_CLI_HOST');
@@ -59,6 +68,7 @@ export interface HostActorEntry {
 export interface RuntimeHost {
   /** Topology node keys started by this host. */
   readonly nodeKeys: readonly string[];
+  getStatus(): RuntimeHostStatus;
   listActors(): Promise<HostActorEntry[]>;
   spawnFromFile(behaviorPath: string, id: string): Promise<HostResult<HostActorEntry>>;
   send(
@@ -89,6 +99,39 @@ export interface RuntimeHostOptions {
   readonly tools?: ActorToolRegistry;
   readonly agent?: RuntimeHostAgentOptions;
   readonly commandAdmission?: RuntimeHostCommandAdmissionOptions;
+  readonly distributed?: RuntimeHostDistributedOptions;
+}
+
+export interface RuntimeHostDistributedOptions {
+  readonly host?: string;
+  readonly gateway?:
+    | boolean
+    | Pick<ActorWebNodeGatewayOptions<string>, 'host' | 'port' | 'expose' | 'inboundQueueLimit'>;
+  readonly transport?:
+    | boolean
+    | Pick<
+        ActorWebNodeTransportOptions,
+        | 'listen'
+        | 'connectTimeoutMs'
+        | 'heartbeatIntervalMs'
+        | 'heartbeatTimeoutMs'
+        | 'outboundQueueLimit'
+        | 'idempotencyWindowSize'
+        | 'idempotencyProvider'
+      >;
+  readonly peers?: Record<string, string>;
+  readonly connect?: readonly string[];
+  readonly allowUnsafeExposure?: boolean;
+}
+
+export interface RuntimeHostStatus {
+  readonly mode: 'in-process' | 'distributed';
+  readonly node: string;
+  readonly nodeKeys: readonly string[];
+  readonly gatewayUrl: string | null;
+  readonly transportUrl: string | null;
+  readonly transport: RuntimeTransportStatus | null;
+  readonly cluster: ClusterState | null;
 }
 
 export interface RuntimeHostCommandAdmissionOptions {
@@ -161,6 +204,51 @@ function resolveRuntimeHostTools(options: RuntimeHostOptions): ActorToolRegistry
     ...(options.tools ?? {}),
     ...createActorAgentTools({ llm: options.agent.llm }),
   };
+}
+
+function isLoopbackHost(host: string | undefined): boolean {
+  if (!host) {
+    return true;
+  }
+  return host === '127.0.0.1' || host === '::1' || host === 'localhost';
+}
+
+function createUnsafeExposureError(
+  surface: 'gateway' | 'transport',
+  host: string
+): HostResult<RuntimeHost> {
+  return {
+    ok: false,
+    error:
+      'Distributed host rejected: unsafe_exposure_requires_override ' +
+      `(${surface} host "${host}" is not loopback-safe. Pass allowUnsafeExposure to bind outside localhost.)`,
+  };
+}
+
+function validateDistributedExposure(
+  options: RuntimeHostDistributedOptions | undefined
+): HostResult<RuntimeHost> | null {
+  if (!options || options.allowUnsafeExposure) {
+    return null;
+  }
+  const distributedHost = options.host;
+  const gatewayHost =
+    typeof options.gateway === 'object'
+      ? (options.gateway.host ?? distributedHost)
+      : distributedHost;
+  if (options.gateway && !isLoopbackHost(gatewayHost)) {
+    return createUnsafeExposureError('gateway', gatewayHost ?? '0.0.0.0');
+  }
+  const transportListen =
+    typeof options.transport === 'object' ? options.transport.listen : options.transport;
+  const transportHost =
+    typeof transportListen === 'object'
+      ? (transportListen.host ?? distributedHost)
+      : distributedHost;
+  if (transportListen && !isLoopbackHost(transportHost)) {
+    return createUnsafeExposureError('transport', transportHost ?? '0.0.0.0');
+  }
+  return null;
 }
 
 async function settleRuntimeHostClaim(
@@ -252,10 +340,39 @@ export async function createRuntimeHost(
   topology: AnyTopology,
   options: RuntimeHostOptions = {}
 ): Promise<HostResult<RuntimeHost>> {
-  let runtime: Awaited<ReturnType<typeof startRuntime>>;
+  const unsafeExposure = validateDistributedExposure(options.distributed);
+  if (unsafeExposure) {
+    return unsafeExposure;
+  }
+
+  const topologyNodeKeys = Object.keys(topology.nodes);
+  const spawnNodeKey = options.node ?? topologyNodeKeys[0];
+  if (spawnNodeKey && !topology.nodes[spawnNodeKey]) {
+    return {
+      ok: false,
+      error: `Node "${spawnNodeKey}" not found in topology. Available nodes: ${topologyNodeKeys.join(', ')}`,
+    };
+  }
+
+  const tools = resolveRuntimeHostTools(options);
+  let runtime: Awaited<ReturnType<typeof startRuntime>> | null = null;
+  let servedNode: ServedActorWebNode<AnyTopology> | null = null;
+
   try {
-    const tools = resolveRuntimeHostTools(options);
-    runtime = await startRuntime(topology, tools ? { tools } : undefined);
+    if (options.distributed) {
+      const serveOptions: ServeActorWebNodeOptions<AnyTopology> = {
+        node: spawnNodeKey,
+        ...(options.distributed.host ? { host: options.distributed.host } : {}),
+        ...(options.distributed.gateway ? { gateway: options.distributed.gateway } : {}),
+        ...(options.distributed.transport ? { transport: options.distributed.transport } : {}),
+        ...(options.distributed.peers ? { peers: options.distributed.peers } : {}),
+        ...(options.distributed.connect ? { connect: options.distributed.connect } : {}),
+        ...(tools ? { tools } : {}),
+      };
+      servedNode = await serveNode(topology, serveOptions);
+    } else {
+      runtime = await startRuntime(topology, tools ? { tools } : undefined);
+    }
   } catch (error) {
     return {
       ok: false,
@@ -263,24 +380,30 @@ export async function createRuntimeHost(
     };
   }
 
-  const nodeKeys = Object.keys(runtime.nodes);
-  const spawnNodeKey = options.node ?? nodeKeys[0];
-  if (options.node && !runtime.nodes[options.node]) {
-    await runtime.stop();
-    return {
-      ok: false,
-      error: `Node "${options.node}" not found in topology. Available nodes: ${nodeKeys.join(', ')}`,
-    };
-  }
+  const nodeKeys = servedNode ? [spawnNodeKey] : Object.keys(runtime?.nodes ?? {});
 
   const registry = new Map<string, RegisteredActor>();
-  for (const key of Object.keys(topology.actors)) {
-    const ref = runtime.getActor(key);
+  for (const [key, descriptor] of Object.entries(topology.actors)) {
+    const ref = servedNode
+      ? descriptor.node === spawnNodeKey
+        ? servedNode.getActor(key)
+        : undefined
+      : runtime?.getActor(key);
     if (ref) {
       registry.set(key, { key, ref, origin: 'topology' });
     }
   }
   log.debug('Runtime host started', { nodeKeys, actors: Array.from(registry.keys()) });
+
+  const getStatus = (): RuntimeHostStatus => ({
+    mode: servedNode ? 'distributed' : 'in-process',
+    node: spawnNodeKey,
+    nodeKeys,
+    gatewayUrl: servedNode?.getGatewayUrl() ?? null,
+    transportUrl: servedNode?.getTransportUrl() ?? null,
+    transport: servedNode?.getTransportStatus() ?? null,
+    cluster: servedNode?.system.getClusterState() ?? null,
+  });
 
   const resolve = (target: string): ActorRef | undefined => {
     const byKey = registry.get(target);
@@ -295,25 +418,69 @@ export async function createRuntimeHost(
     return undefined;
   };
 
+  const lookupDistributedActor = async (target: string): Promise<ActorRef | undefined> => {
+    if (!servedNode || !target.startsWith('actor://')) {
+      return undefined;
+    }
+    return servedNode.system.lookup(target);
+  };
+
+  const resolveForDispatch = async (target: string): Promise<ActorRef | undefined> => {
+    const local = resolve(target);
+    if (local) {
+      return local;
+    }
+    return lookupDistributedActor(target);
+  };
+
   const unknownTargetError = (target: string): string =>
     `Unknown actor "${target}". Known: ${Array.from(registry.keys()).join(', ') || '(none)'}`;
 
   const flush = async (): Promise<void> => {
+    if (servedNode) {
+      await servedNode.system.flush();
+      return;
+    }
     for (const key of nodeKeys) {
-      await runtime.nodes[key]?.system.flush();
+      await runtime?.nodes[key]?.system.flush();
     }
   };
 
   const host: RuntimeHost = {
     nodeKeys,
+    getStatus,
 
     async listActors() {
-      return Array.from(registry.values()).map(toEntry);
+      if (!servedNode) {
+        return Array.from(registry.values()).map(toEntry);
+      }
+      const actors = await Promise.all(
+        Object.entries(topology.actors).map(async ([key, descriptor]) => {
+          const ref =
+            registry.get(key)?.ref ?? (await servedNode?.system.lookup(descriptor.address));
+          if (!ref) {
+            return null;
+          }
+          return toEntry({
+            key,
+            ref,
+            origin: descriptor.node === spawnNodeKey ? 'topology' : 'spawned',
+          });
+        })
+      );
+      return actors.filter((entry): entry is HostActorEntry => entry !== null);
     },
 
     async spawnFromFile(behaviorPath, id) {
       if (registry.has(id)) {
         return { ok: false, error: `Actor id "${id}" is already registered` };
+      }
+      if (servedNode) {
+        return {
+          ok: false,
+          error:
+            'Spawn failed: distributed runtime hosts do not support dynamic spawn through the CLI shell yet.',
+        };
       }
       const loaded = await loadModuleExport(behaviorPath);
       if (!loaded.ok) {
@@ -340,7 +507,7 @@ export async function createRuntimeHost(
     },
 
     async send(target, messageJson, metadata) {
-      const ref = resolve(target);
+      const ref = await resolveForDispatch(target);
       if (!ref) {
         return { ok: false, error: unknownTargetError(target) };
       }
@@ -409,7 +576,7 @@ export async function createRuntimeHost(
     },
 
     async ask(target, messageJson, timeoutMs, metadata) {
-      const ref = resolve(target);
+      const ref = await resolveForDispatch(target);
       if (!ref) {
         return { ok: false, error: unknownTargetError(target) };
       }
@@ -488,7 +655,11 @@ export async function createRuntimeHost(
     flush,
 
     async stop() {
-      await runtime.stop();
+      if (servedNode) {
+        await servedNode.stop();
+        return;
+      }
+      await runtime?.stop();
     },
   };
 
@@ -534,6 +705,7 @@ export interface CommandContext {
 const HELP_LINES = [
   'Commands:',
   '  ls                              list actors (key, origin, status, path)',
+  '  status                          show host, transport, and directory readiness status',
   '  spawn <file> <id>               spawn a behavior module as a new actor',
   '  send <target> <json>            fire-and-forget message',
   '  ask <target> <json> [timeout]   request/response (timeout in ms)',
@@ -626,6 +798,30 @@ export async function executeCommand(
           (entry) => `${entry.key}  [${entry.origin}/${entry.status}]  ${entry.path}`
         ),
       };
+    }
+
+    case 'status': {
+      const status = host.getStatus();
+      const lines = [
+        `mode=${status.mode} node=${status.node}`,
+        `gateway=${status.gatewayUrl ?? '(disabled)'}`,
+        `transport=${status.transportUrl ?? '(disabled)'}`,
+      ];
+      if (status.transport) {
+        lines.push(
+          `transport.connected=${status.transport.connectedNodes.length} peers=${status.transport.peers.length}`
+        );
+      }
+      if (status.cluster?.directoryReadiness) {
+        if (status.cluster.directoryReadiness.length === 0) {
+          lines.push('directoryReadiness=(none)');
+        } else {
+          for (const readiness of status.cluster.directoryReadiness) {
+            lines.push(`directoryReadiness.${readiness.nodeAddress}=${readiness.status}`);
+          }
+        }
+      }
+      return { ok: true, lines };
     }
 
     case 'spawn': {
