@@ -398,7 +398,7 @@ function toDateMs(value: string | null | undefined): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-function classifyReadResult(
+export function classifyAgentSessionCheckpointReadResult(
   envelope: AgentSessionCheckpointEnvelope,
   now: Date
 ): AgentSessionCheckpointReadResult {
@@ -808,7 +808,10 @@ export function createInMemoryAgentSessionCheckpointStore(
           sessionId: input.sessionId,
         };
       }
-      return classifyReadResult(envelope, (input.now ?? options.now ?? (() => new Date()))());
+      return classifyAgentSessionCheckpointReadResult(
+        envelope,
+        (input.now ?? options.now ?? (() => new Date()))()
+      );
     },
     async write(envelope) {
       const now = (options.now ?? (() => new Date()))();

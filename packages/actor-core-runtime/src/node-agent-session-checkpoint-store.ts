@@ -6,6 +6,7 @@ import {
   type AgentSessionCheckpointReadResult,
   type AgentSessionCheckpointStore,
   type AgentSessionCheckpointWriteResult,
+  classifyAgentSessionCheckpointReadResult,
   getAgentSessionCheckpointSupportedSchemaVersions,
   parseAgentSessionCheckpointEnvelope,
 } from './agent-session-checkpoint-store.js';
@@ -191,48 +192,7 @@ export function createNodeFileSystemAgentSessionCheckpointStore(
         detail: 'session_id_mismatch',
       };
     }
-    const readNow = input.now?.() ?? now();
-    const expiresAt = parsedEnvelope.value.expiresAt
-      ? Date.parse(parsedEnvelope.value.expiresAt)
-      : null;
-    if (expiresAt !== null && expiresAt <= readNow.getTime()) {
-      return {
-        outcome: 'expired',
-        envelope: parsedEnvelope.value,
-      };
-    }
-    const continuationExpiresAt = parsedEnvelope.value.continuation?.expiresAt
-      ? Date.parse(parsedEnvelope.value.continuation.expiresAt)
-      : null;
-    if (continuationExpiresAt !== null && continuationExpiresAt <= readNow.getTime()) {
-      return {
-        outcome: 'expired',
-        envelope: parsedEnvelope.value,
-      };
-    }
-    const staleAt = parsedEnvelope.value.staleAt ? Date.parse(parsedEnvelope.value.staleAt) : null;
-    if (staleAt !== null && staleAt <= readNow.getTime()) {
-      return {
-        outcome: 'stale',
-        envelope: parsedEnvelope.value,
-      };
-    }
-    const continuationRedacted =
-      parsedEnvelope.value.continuation?.redaction.disposition === 'metadata_only';
-    if (parsedEnvelope.value.redactedFields.length > 0 || continuationRedacted) {
-      return {
-        outcome: 'redacted',
-        envelope: parsedEnvelope.value,
-        fields:
-          parsedEnvelope.value.redactedFields.length > 0
-            ? parsedEnvelope.value.redactedFields
-            : (parsedEnvelope.value.continuation?.redaction.fields ?? []),
-      };
-    }
-    return {
-      outcome: 'present',
-      envelope: parsedEnvelope.value,
-    };
+    return classifyAgentSessionCheckpointReadResult(parsedEnvelope.value, input.now?.() ?? now());
   };
 
   return {
