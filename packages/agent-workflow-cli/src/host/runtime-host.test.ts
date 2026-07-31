@@ -1731,7 +1731,7 @@ describe('spawnFromFile', () => {
     }
   });
 
-  it('fails spawnFromFile with an explicit runtime-null fact when no started runtime is available', async () => {
+  it('rejects remote-mode spawnFromFile requests before any local runtime lookup', async () => {
     await host.stop();
 
     const started = await createRuntimeHost(buildCounterTopology(), {
