@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   type ActorWebGatewaySocket,
   createActorWebCommandSource,
@@ -1008,7 +1008,128 @@ describe('createActorWebSource', () => {
     });
     expect(statuses).toContain('degraded');
 
+    socket.receive({
+      type: 'trace',
+      streamId: 'shipment-trace',
+      sequence: 4,
+      projection: {
+        address: 'actor://server-node/shipment',
+        cursor: 'trace:shipment:latest',
+        observedAt: '2026-04-25T18:00:04.000Z',
+        trace: {
+          schemaVersion: 1,
+          traceId: 'trace:shipment:latest',
+          actorId: 'actor://server-node/shipment',
+          sessionId: 'session:shipment:latest',
+          commandId: 'cmd:shipment:latest',
+          receipts: [],
+          status: 'pending',
+        },
+        fact: null,
+      },
+    });
+    expect(traces).toHaveLength(2);
+    expect(traces.at(-1)).toMatchObject({
+      cursor: 'trace:shipment:latest',
+    });
+
     source.close();
+  });
+
+  it('reconnects trace-only sources with the prior replay identity and cursor', async () => {
+    vi.useFakeTimers();
+    try {
+      const sockets = [new FakeGatewaySocket(), new FakeGatewaySocket()];
+      let socketIndex = 0;
+      const source = createActorWebTraceSource(
+        {
+          address: 'actor://server-node/shipment',
+          gateway: {
+            url: 'ws://gateway.local/runtime',
+            scope: { kind: 'shipment', params: { stream: 'trace' } },
+          },
+        },
+        {
+          createSocket: () => sockets[socketIndex++] as FakeGatewaySocket,
+          streamId: 'shipment-trace',
+          reconnectDelayMs: 5,
+        }
+      );
+      const traces: string[] = [];
+      source.subscribeTrace((projection) => {
+        traces.push(projection.cursor);
+      });
+
+      sockets[0]?.open();
+      sockets[0]?.receive({
+        type: 'ready',
+        connectionId: 'trace-connection-1',
+        heartbeatMs: 15000,
+        serverTime: '2026-04-25T18:00:00.000Z',
+      });
+      sockets[0]?.receive({
+        type: 'trace',
+        streamId: 'shipment-trace',
+        sequence: 1,
+        projection: {
+          address: 'actor://server-node/shipment',
+          cursor: 'trace:shipment:1',
+          observedAt: '2026-04-25T18:00:01.000Z',
+          trace: null,
+          fact: { code: 'trace_malformed', message: 'first trace' },
+        },
+      });
+      sockets[0]?.close();
+
+      await vi.advanceTimersByTimeAsync(5);
+      expect(socketIndex).toBe(2);
+      sockets[1]?.open();
+      expect(sockets[1]?.sentFrames[0]).toEqual({
+        type: 'hello',
+        clientVersion: 'actor-web-source',
+        lastConnectionId: 'trace-connection-1',
+      });
+      sockets[1]?.receive({
+        type: 'ready',
+        connectionId: 'trace-connection-2',
+        heartbeatMs: 15000,
+        serverTime: '2026-04-25T18:00:02.000Z',
+      });
+      expect(sockets[1]?.sentFrames[1]).toEqual({
+        type: 'subscribe',
+        streamId: 'shipment-trace',
+        scope: { kind: 'shipment', params: { stream: 'trace' } },
+        mode: 'trace-only',
+        fromSequence: 2,
+      });
+      sockets[1]?.receive({
+        type: 'status',
+        streamId: 'shipment-trace',
+        status: {
+          state: 'connected',
+          updatedAt: Date.parse('2026-04-25T18:00:02.000Z'),
+        },
+      });
+      sockets[1]?.receive({
+        type: 'trace',
+        streamId: 'shipment-trace',
+        sequence: 4,
+        projection: {
+          address: 'actor://server-node/shipment',
+          cursor: 'trace:shipment:4',
+          observedAt: '2026-04-25T18:00:02.000Z',
+          trace: null,
+          fact: { code: 'trace_malformed', message: 'latest fallback trace' },
+        },
+      });
+
+      expect(traces).toEqual(['trace:shipment:1', 'trace:shipment:4']);
+      source.close();
+      await vi.runAllTimersAsync();
+      expect(socketIndex).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('degrades read-model sources when gateway auth resolution rejects before hello', async () => {

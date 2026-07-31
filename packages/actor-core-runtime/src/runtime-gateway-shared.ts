@@ -40,6 +40,10 @@ export interface RuntimeGatewayTraceProjection {
   readonly fact: RuntimeGatewayTraceFact | null;
 }
 
+export function createRuntimeGatewayTraceCursor(address: string, sequence: number): string {
+  return `${address}#trace:${sequence}`;
+}
+
 export type RuntimeGatewayErrorCode =
   | 'invalid_frame'
   | 'invalid_scope'

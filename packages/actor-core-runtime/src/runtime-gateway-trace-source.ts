@@ -4,6 +4,7 @@ import type {
   RuntimeGatewayTraceFact,
   RuntimeGatewayTraceProjection,
 } from './runtime-gateway-shared.js';
+import { createRuntimeGatewayTraceCursor } from './runtime-gateway-shared.js';
 
 export interface RuntimeGatewayTraceSourceInput {
   readonly address: string;
@@ -21,10 +22,6 @@ export type RuntimeGatewayTraceSource<TSource extends RuntimeGatewayTraceSourceI
   appendTraceFact(fact: RuntimeGatewayTraceFact): RuntimeGatewayTraceProjection;
 };
 
-function createTraceCursor(address: string, sequence: number): string {
-  return `trace:${address}:${sequence}`;
-}
-
 function toTraceProjection(
   address: string,
   sequence: number,
@@ -34,7 +31,7 @@ function toTraceProjection(
 ): RuntimeGatewayTraceProjection {
   return {
     address,
-    cursor: createTraceCursor(address, sequence),
+    cursor: createRuntimeGatewayTraceCursor(address, sequence),
     observedAt,
     trace,
     fact,
@@ -51,6 +48,16 @@ export function createRuntimeGatewayTraceSource<TSource extends RuntimeGatewayTr
   let sequence = 0;
   let projections: RuntimeGatewayTraceProjection[] = [];
   let latestTraceProjection: RuntimeGatewayTraceProjection | null = null;
+
+  const notifyListeners = (projection: RuntimeGatewayTraceProjection): void => {
+    for (const listener of Array.from(listeners)) {
+      try {
+        listener(projection);
+      } catch {
+        // Trace observers are advisory and must not affect authoritative runtime behavior.
+      }
+    }
+  };
 
   const storeProjection = (
     trace: AgentExecutionTrace | null,
@@ -73,18 +80,12 @@ export function createRuntimeGatewayTraceSource<TSource extends RuntimeGatewayTr
         droppedCount,
       });
       projections = [...projections, overflowProjection].slice(-bufferSize);
-      for (const listener of Array.from(listeners)) {
-        listener(projection);
-      }
-      for (const listener of Array.from(listeners)) {
-        listener(overflowProjection);
-      }
+      notifyListeners(projection);
+      notifyListeners(overflowProjection);
       return projection;
     }
 
-    for (const listener of Array.from(listeners)) {
-      listener(projection);
-    }
+    notifyListeners(projection);
     return projection;
   };
 

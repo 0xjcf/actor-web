@@ -33,6 +33,7 @@ import type {
   RuntimeGatewayTraceFact,
   RuntimeGatewayTraceProjection,
 } from './runtime-gateway-shared.js';
+import { createRuntimeGatewayTraceCursor } from './runtime-gateway-shared.js';
 import {
   type ActorEventProjection,
   type ActorProjectionEventKind,
@@ -335,10 +336,6 @@ export function createRuntimeGatewaySource(
   return createRuntimeGatewayCommandSource(actorRef, options);
 }
 
-function createTraceCursor(address: string, sequence: number): string {
-  return `${address}#trace:${sequence}`;
-}
-
 function toTraceProjection(
   address: string,
   sequence: number,
@@ -348,7 +345,7 @@ function toTraceProjection(
 ): RuntimeGatewayTraceProjection {
   return {
     address,
-    cursor: createTraceCursor(address, sequence),
+    cursor: createRuntimeGatewayTraceCursor(address, sequence),
     observedAt,
     trace,
     fact,
@@ -365,6 +362,16 @@ export function createRuntimeGatewayTraceSource(
   let sequence = 0;
   let projections: RuntimeGatewayTraceProjection[] = [];
   let latestTraceProjection: RuntimeGatewayTraceProjection | null = null;
+
+  const notifyListeners = (projection: RuntimeGatewayTraceProjection): void => {
+    for (const listener of Array.from(listeners)) {
+      try {
+        listener(projection);
+      } catch {
+        // Trace observers are advisory and must not affect authoritative runtime behavior.
+      }
+    }
+  };
 
   const storeProjection = (
     trace: AgentExecutionTrace | null,
@@ -387,18 +394,12 @@ export function createRuntimeGatewayTraceSource(
         droppedCount,
       });
       projections = [...projections, overflowProjection].slice(-bufferSize);
-      for (const listener of Array.from(listeners)) {
-        listener(projection);
-      }
-      for (const listener of Array.from(listeners)) {
-        listener(overflowProjection);
-      }
+      notifyListeners(projection);
+      notifyListeners(overflowProjection);
       return projection;
     }
 
-    for (const listener of Array.from(listeners)) {
-      listener(projection);
-    }
+    notifyListeners(projection);
     return projection;
   };
 
@@ -1362,7 +1363,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
 
         const replayStorageStreamId = runtimeGatewayReplayStorageStreamId(streamId, scope);
         const restoredReplayFrames =
-          mode === 'full' && replayStorage
+          mode !== 'command-only' && replayStorage
             ? await Promise.resolve()
                 .then(() => replayStorage.loadFrames(replaySessionId, replayStorageStreamId))
                 .then((frames) => trimReplayFrames(frames))
@@ -1695,7 +1696,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
               appendGatewayTraceFact(
                 stream,
                 'trace_dispatch_failed',
-                error instanceof Error ? error.message : 'Runtime command failed.'
+                'Runtime command dispatch failed.'
               );
               await trySettleGatewayClaim(decision, 'dispatch_indeterminate');
               sendError(
@@ -1855,7 +1856,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
               appendGatewayTraceFact(
                 stream,
                 'trace_dispatch_failed',
-                error instanceof Error ? error.message : 'Runtime ask failed.'
+                'Runtime ask dispatch failed.'
               );
               await trySettleGatewayClaim(decision, 'dispatch_indeterminate');
               sendError(
@@ -1996,6 +1997,9 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
               return;
             }
             await subscribeStream(frame.streamId, frame.scope, frame.mode ?? 'full');
+            if (frame.fromSequence !== undefined) {
+              resyncStream(frame.streamId, frame.fromSequence);
+            }
             return;
         }
       };

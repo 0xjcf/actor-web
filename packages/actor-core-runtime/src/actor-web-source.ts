@@ -58,6 +58,7 @@ export interface ActorWebSourceOptions {
   readonly streamId?: string;
   readonly createSocket?: (url: string) => ActorWebGatewaySocket;
   readonly clientVersion?: string;
+  readonly reconnectDelayMs?: number;
 }
 
 export interface ActorWebSourceFactoryContext {
@@ -724,15 +725,19 @@ function createGatewayBackedTraceSource(
   options: ActorWebSourceOptions
 ): ClosableActorWebTraceSource {
   const streamId = options.streamId ?? `actor-web-${parse(address).id}`;
-  const socket = (options.createSocket ?? defaultSocket)(options.gateway.url);
+  const createSocket = options.createSocket ?? defaultSocket;
   const statusListeners = new Set<(status: ProjectionTransportStatus) => void>();
   const traceListeners = new Set<(projection: RuntimeGatewayTraceProjection) => void>();
+  let socket!: ActorWebGatewaySocket;
   let currentStatus = createProjectionTransportStatus('replaying', {
     reason: 'Connecting to Actor-Web gateway',
   });
   let latestTrace: RuntimeGatewayTraceProjection | null = null;
   let lastSequence = 0;
   let resyncInProgress = false;
+  let lastConnectionId: string | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let closed = false;
 
   const emitStatus = (): void => {
     for (const listener of Array.from(statusListeners)) {
@@ -766,6 +771,12 @@ function createGatewayBackedTraceSource(
       return false;
     }
 
+    if (resyncInProgress) {
+      lastSequence = frame.sequence;
+      resyncInProgress = false;
+      return true;
+    }
+
     resyncInProgress = true;
     currentStatus = createProjectionTransportStatus('degraded', {
       reason: `Gateway stream sequence gap: expected ${expectedSequence}, received ${frame.sequence}.`,
@@ -775,103 +786,133 @@ function createGatewayBackedTraceSource(
     return false;
   };
 
-  socket.addEventListener('open', () => {
-    if (!options.gateway.auth) {
-      sendFrame({
-        type: 'hello',
-        clientVersion: options.clientVersion ?? 'actor-web-source',
-      });
-      return;
-    }
+  const connect = (): void => {
+    const connectedSocket = createSocket(options.gateway.url);
+    socket = connectedSocket;
 
-    void resolveRuntimeAuthPayload(options.gateway.auth).then(
-      (auth) => {
+    connectedSocket.addEventListener('open', () => {
+      if (closed || socket !== connectedSocket) {
+        return;
+      }
+      if (!options.gateway.auth) {
         sendFrame({
           type: 'hello',
           clientVersion: options.clientVersion ?? 'actor-web-source',
-          ...(auth ? { auth } : {}),
+          ...(lastConnectionId ? { lastConnectionId } : {}),
         });
-      },
-      (error) => {
-        const resolvedError =
-          error instanceof Error ? error : new Error('Actor-Web gateway authentication failed.');
-        currentStatus = createProjectionTransportStatus('degraded', {
-          reason: resolvedError.message,
-        });
-        emitStatus();
+        return;
       }
-    );
-  });
 
-  socket.addEventListener('message', (event) => {
-    const frameText = typeof event.data === 'string' ? event.data : String(event.data);
-    let frame: RuntimeGatewayServerFrame;
-    try {
-      frame = JSON.parse(frameText) as RuntimeGatewayServerFrame;
-    } catch {
-      const error = createGatewayFrameParseError();
-      currentStatus = createProjectionTransportStatus('degraded', { reason: error.message });
-      emitStatus();
-      return;
-    }
+      void resolveRuntimeAuthPayload(options.gateway.auth).then(
+        (auth) => {
+          if (closed || socket !== connectedSocket) {
+            return;
+          }
+          sendFrame({
+            type: 'hello',
+            clientVersion: options.clientVersion ?? 'actor-web-source',
+            ...(lastConnectionId ? { lastConnectionId } : {}),
+            ...(auth ? { auth } : {}),
+          });
+        },
+        (error) => {
+          if (closed || socket !== connectedSocket) {
+            return;
+          }
+          const resolvedError =
+            error instanceof Error ? error : new Error('Actor-Web gateway authentication failed.');
+          currentStatus = createProjectionTransportStatus('degraded', {
+            reason: resolvedError.message,
+          });
+          emitStatus();
+        }
+      );
+    });
 
-    switch (frame.type) {
-      case 'ready':
-        currentStatus = createProjectionTransportStatus('replaying', {
-          reason: 'Subscribing to Actor-Web gateway',
-        });
-        emitStatus();
-        sendFrame({
-          type: 'subscribe',
-          streamId,
-          scope,
-          mode: 'trace-only',
-        });
+    connectedSocket.addEventListener('message', (event) => {
+      if (closed || socket !== connectedSocket) {
         return;
-      case 'trace':
-        if (!acceptSequence(frame)) {
+      }
+      const frameText = typeof event.data === 'string' ? event.data : String(event.data);
+      let frame: RuntimeGatewayServerFrame;
+      try {
+        frame = JSON.parse(frameText) as RuntimeGatewayServerFrame;
+      } catch {
+        const error = createGatewayFrameParseError();
+        currentStatus = createProjectionTransportStatus('degraded', { reason: error.message });
+        emitStatus();
+        return;
+      }
+
+      switch (frame.type) {
+        case 'ready':
+          lastConnectionId = frame.connectionId;
+          currentStatus = createProjectionTransportStatus('replaying', {
+            reason: 'Subscribing to Actor-Web gateway',
+          });
+          emitStatus();
+          if (lastSequence > 0) {
+            resyncInProgress = true;
+          }
+          sendFrame({
+            type: 'subscribe',
+            streamId,
+            scope,
+            mode: 'trace-only',
+            ...(lastSequence > 0 ? { fromSequence: lastSequence + 1 } : {}),
+          });
           return;
-        }
-        latestTrace = frame.projection;
-        emitTrace(frame.projection);
-        return;
-      case 'status':
-        if (frame.status.state !== 'replaying') {
-          resyncInProgress = false;
-        }
-        currentStatus =
-          frame.status.state === 'local'
-            ? createProjectionTransportStatus('connected', { updatedAt: frame.status.updatedAt })
-            : frame.status;
-        emitStatus();
-        return;
-      case 'error':
-        currentStatus = createProjectionTransportStatus('degraded', { reason: frame.message });
-        emitStatus();
-        return;
-      case 'pong':
-      case 'snapshot':
-      case 'event':
-      case 'transition':
-      case 'ack':
-      case 'reply':
-        return;
-    }
-  });
-
-  socket.addEventListener('close', () => {
-    currentStatus = createProjectionTransportStatus('disconnected', {
-      reason: 'Actor-Web gateway disconnected.',
+        case 'trace':
+          if (!acceptSequence(frame)) {
+            return;
+          }
+          latestTrace = frame.projection;
+          emitTrace(frame.projection);
+          return;
+        case 'status':
+          currentStatus =
+            frame.status.state === 'local'
+              ? createProjectionTransportStatus('connected', { updatedAt: frame.status.updatedAt })
+              : frame.status;
+          emitStatus();
+          return;
+        case 'error':
+          currentStatus = createProjectionTransportStatus('degraded', { reason: frame.message });
+          emitStatus();
+          return;
+        case 'pong':
+        case 'snapshot':
+        case 'event':
+        case 'transition':
+        case 'ack':
+        case 'reply':
+          return;
+      }
     });
-    emitStatus();
-  });
 
-  socket.addEventListener('error', () => {
-    currentStatus = createProjectionTransportStatus('degraded', {
-      reason: 'Actor-Web gateway connection failed.',
+    connectedSocket.addEventListener('close', () => {
+      if (closed || socket !== connectedSocket) {
+        return;
+      }
+      currentStatus = createProjectionTransportStatus('disconnected', {
+        reason: 'Actor-Web gateway disconnected.',
+      });
+      emitStatus();
+      reconnectTimer = setTimeout(connect, options.reconnectDelayMs ?? 250);
     });
-    emitStatus();
-  });
+
+    connectedSocket.addEventListener('error', () => {
+      if (closed || socket !== connectedSocket) {
+        return;
+      }
+      currentStatus = createProjectionTransportStatus('degraded', {
+        reason: 'Actor-Web gateway connection failed.',
+      });
+      emitStatus();
+    });
+  };
+
+  connect();
 
   return {
     address,
@@ -898,6 +939,11 @@ function createGatewayBackedTraceSource(
       };
     },
     close() {
+      closed = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
       socket.close();
       traceListeners.clear();
       statusListeners.clear();

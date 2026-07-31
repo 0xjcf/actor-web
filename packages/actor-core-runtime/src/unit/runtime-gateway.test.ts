@@ -32,6 +32,7 @@ import {
   type RuntimeGatewayServerFrame,
   type RuntimeGatewaySource,
 } from '../runtime-gateway.js';
+import { createRuntimeGatewayTraceSource as createStandaloneRuntimeGatewayTraceSource } from '../runtime-gateway-trace-source.js';
 import type { Message } from '../types.js';
 import { Address } from '../utils/factories.js';
 
@@ -1678,6 +1679,11 @@ describe('runtime gateway hub', () => {
         code: 'trace_buffer_overflow',
       },
     });
+    const firstConnectionId = connection.frames.find(
+      (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'ready' }> =>
+        typeof frame === 'object' && frame !== null && (frame as { type?: string }).type === 'ready'
+    )?.connectionId;
+    expect(firstConnectionId).toEqual(expect.any(String));
 
     connection.push({
       type: 'resync',
@@ -1695,14 +1701,22 @@ describe('runtime gateway hub', () => {
 
     const latestOnlyConnection = createFakeConnection({ authorityId: 'auth-1' });
     const latestOnlyDetach = hub.attach(latestOnlyConnection);
-    latestOnlyConnection.push({ type: 'hello' });
+    latestOnlyConnection.push({ type: 'hello', lastConnectionId: firstConnectionId });
     latestOnlyConnection.push({
       type: 'subscribe',
       streamId: 'trace-main',
       scope: { kind: 'trace-source', params: { stream: 'trace' } },
       mode: 'trace-only',
+      fromSequence: 2,
     });
     await flushGatewayFrames();
+
+    const resumedTraceFrames = latestOnlyConnection.frames.filter(
+      (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'trace' }> =>
+        frame.type === 'trace'
+    );
+    expect(resumedTraceFrames.some((frame) => frame.sequence === 2)).toBe(true);
+    expect(resumedTraceFrames.some((frame) => frame.sequence === 3)).toBe(true);
 
     latestOnlyConnection.push({
       type: 'resync',
@@ -1820,6 +1834,157 @@ describe('runtime gateway hub', () => {
       factCode: 'trace_buffer_overflow',
       droppedCount: 2,
     });
+  });
+
+  it('isolates trace observers and uses one cursor contract across runtime entrypoints', () => {
+    const baseSource = createFakeSource('ready', 'trace-observer');
+    const rootSource = createRuntimeGatewayTraceSource(baseSource);
+    const standaloneSource = createStandaloneRuntimeGatewayTraceSource({
+      address: baseSource.address,
+    });
+    const observed: string[] = [];
+
+    rootSource.subscribeTrace(() => {
+      throw new Error('observer failure must remain advisory');
+    });
+    rootSource.subscribeTrace((projection) => {
+      observed.push(projection.cursor);
+    });
+
+    const rootProjection = rootSource.appendTraceFact({
+      code: 'trace_malformed',
+      message: 'root trace',
+    });
+    const standaloneProjection = standaloneSource.appendTraceFact({
+      code: 'trace_malformed',
+      message: 'standalone trace',
+    });
+
+    expect(observed).toEqual([rootProjection.cursor]);
+    expect(standaloneProjection.cursor).toBe(rootProjection.cursor);
+  });
+
+  it('keeps throwing trace observers outside authoritative dispatch settlement', async () => {
+    const source = createRuntimeGatewayTraceSource(createFakeSource('ready'));
+    const settlements: string[] = [];
+    source.subscribeTrace(() => {
+      throw new Error('observer secret must not affect dispatch');
+    });
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v4',
+        }),
+        idempotency: async () => ({
+          outcome: 'available',
+          settle: async (outcome) => {
+            settlements.push(outcome);
+          },
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-observer-isolation',
+      message: { type: 'SUBMIT', orderId: 'order-observer-isolation' },
+      metadata: { commandId: 'cmd-observer-isolation' },
+    });
+    await flushGatewayFrames();
+
+    expect(source.sentMessages).toEqual([{ type: 'SUBMIT', orderId: 'order-observer-isolation' }]);
+    expect(settlements).toEqual(['dispatch_succeeded']);
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'ack',
+        requestId: 'send-request-observer-isolation',
+      })
+    );
+    detach();
+  });
+
+  it('redacts provider exception details from durable trace facts', async () => {
+    const baseSource = createFakeSource('ready');
+    baseSource.send = async () => {
+      throw new Error('provider secret command-token-123');
+    };
+    baseSource.ask = async () => {
+      throw new Error('provider secret ask-token-456');
+    };
+    const source = createRuntimeGatewayTraceSource(baseSource);
+    const traceFacts: unknown[] = [];
+    source.subscribeTrace((projection) => {
+      if (projection.fact) {
+        traceFacts.push(projection.fact);
+      }
+    });
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v4',
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-redacted-trace',
+      message: { type: 'SUBMIT', orderId: 'order-redacted-trace' },
+      metadata: { commandId: 'cmd-redacted-send' },
+    });
+    await flushGatewayFrames();
+    expect(traceFacts.at(-1)).toEqual({
+      code: 'trace_dispatch_failed',
+      message: 'Runtime command dispatch failed.',
+    });
+
+    connection.push({
+      type: 'ask',
+      streamId: 'checkout-main',
+      requestId: 'ask-request-redacted-trace',
+      message: { type: 'GET_COUNT' },
+      metadata: { commandId: 'cmd-redacted-ask' },
+    });
+    await flushGatewayFrames();
+    expect(traceFacts.at(-1)).toEqual({
+      code: 'trace_dispatch_failed',
+      message: 'Runtime ask dispatch failed.',
+    });
+    expect(JSON.stringify(traceFacts)).not.toContain('ask-token-456');
+    detach();
   });
 
   it('classifies primitive malformed traces without echoing the raw primitive', () => {
