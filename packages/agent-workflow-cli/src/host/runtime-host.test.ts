@@ -654,13 +654,13 @@ describe('createRuntimeHost', () => {
               commandId: 'cmd-remote-send-1',
               receipts: expect.arrayContaining([
                 expect.objectContaining({
+                  receiptKind: 'command_admission',
+                }),
+                expect.objectContaining({
                   receiptKind: 'authorization',
                   authorization: expect.objectContaining({
                     policy: 'counter.increment',
                   }),
-                }),
-                expect.objectContaining({
-                  receiptKind: 'result',
                 }),
               ]),
             }),
@@ -669,6 +669,9 @@ describe('createRuntimeHost', () => {
             trace: expect.objectContaining({
               commandId: 'cmd-remote-ask-1',
               receipts: expect.arrayContaining([
+                expect.objectContaining({
+                  receiptKind: 'command_admission',
+                }),
                 expect.objectContaining({
                   receiptKind: 'authorization',
                   authorization: expect.objectContaining({
@@ -688,6 +691,17 @@ describe('createRuntimeHost', () => {
           }),
         ])
       );
+      const remoteSendTrace = traces.find(
+        (projection) =>
+          typeof projection === 'object' &&
+          projection !== null &&
+          'trace' in projection &&
+          (projection as { trace?: { commandId?: string } | null }).trace?.commandId ===
+            'cmd-remote-send-1'
+      ) as { trace?: { receipts?: Array<{ receiptKind?: string }> } | null } | undefined;
+      expect(
+        remoteSendTrace?.trace?.receipts?.some((receipt) => receipt.receiptKind === 'result')
+      ).toBe(false);
       expect(status.mode).toBe('remote');
       expect(status.readiness).toEqual({
         process: 'ready',
