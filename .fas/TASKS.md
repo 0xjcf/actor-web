@@ -2473,7 +2473,7 @@ operator explicitly asks for queue mutations.
 ### Task: Week 5 learning product: distributed delivery semantics
 
 - Title: Week 5 learning product: distributed delivery semantics
-- Mode: single-agent
+- Mode: 6-agent
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/week-5-learning-product-distributed-delivery-semantics.md
@@ -2481,7 +2481,7 @@ operator explicitly asks for queue mutations.
 ### Task: Week 6 learning product: durable execution idempotency and reconciliation
 
 - Title: Week 6 learning product: durable execution idempotency and reconciliation
-- Mode: single-agent
+- Mode: 6-agent
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/week-6-learning-product-durable-execution-idempotency-and-re.md
@@ -2489,7 +2489,7 @@ operator explicitly asks for queue mutations.
 ### Task: Week 7 learning product: authentication authorization and capabilities
 
 - Title: Week 7 learning product: authentication authorization and capabilities
-- Mode: single-agent
+- Mode: 6-agent
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/week-7-learning-product-authentication-authorization-and-cap.md
@@ -2497,7 +2497,7 @@ operator explicitly asks for queue mutations.
 ### Task: Week 8 learning product: facts traces CQRS and projections
 
 - Title: Week 8 learning product: facts traces CQRS and projections
-- Mode: single-agent
+- Mode: 6-agent
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/week-8-learning-product-facts-traces-cqrs-and-projections.md
@@ -2537,7 +2537,7 @@ operator explicitly asks for queue mutations.
 ### Task: Week 9 learning product: ecosystem authority and adapter boundaries
 
 - Title: Week 9 learning product: ecosystem authority and adapter boundaries
-- Mode: single-agent
+- Mode: 6-agent
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/week-9-learning-product-ecosystem-authority-and-adapter-boun.md
@@ -2546,7 +2546,7 @@ operator explicitly asks for queue mutations.
 ### Task: Week 10 learning product: conformance capstone and failure proofs
 
 - Title: Week 10 learning product: conformance capstone and failure proofs
-- Mode: single-agent
+- Mode: 6-agent
 - Status: queued
 - Owner: runtime
 - Brief: .fas/tasks/week-10-learning-product-conformance-capstone-and-failure-pr.md
