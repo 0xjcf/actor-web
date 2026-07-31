@@ -516,7 +516,8 @@ function createGatewayBackedSource<
       frame = JSON.parse(frameText) as RuntimeGatewayServerFrame;
     } catch {
       const error = createGatewayFrameParseError();
-      rejectPending(error);
+      // A malformed frame is isolated to that frame. Preserve pending
+      // readiness and commands so a later valid projection can recover.
       currentStatus = createProjectionTransportStatus('degraded', { reason: error.message });
       emitStatus();
       return;
@@ -837,6 +838,7 @@ function createGatewayBackedTraceSource(
             reason: resolvedError.message,
           });
           emitStatus();
+          connectedSocket.close();
         }
       );
     });

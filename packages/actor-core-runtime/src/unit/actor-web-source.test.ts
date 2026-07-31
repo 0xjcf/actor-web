@@ -11,6 +11,7 @@ import type { RuntimeGatewayClientFrame, RuntimeGatewayServerFrame } from '../ru
 class FakeGatewaySocket implements ActorWebGatewaySocket {
   readonly readyState = 1;
   readonly sentFrames: RuntimeGatewayClientFrame[] = [];
+  closeCalls = 0;
   private readonly listeners = new Map<string, Set<(event?: unknown) => void>>();
 
   send(data: string): void {
@@ -18,6 +19,7 @@ class FakeGatewaySocket implements ActorWebGatewaySocket {
   }
 
   close(): void {
+    this.closeCalls += 1;
     this.emit('close');
   }
 
@@ -202,6 +204,10 @@ describe('createActorWebSource', () => {
         streamId: 'shipment-command',
       }
     );
+    const statuses: string[] = [];
+    source.subscribeTransportStatus((status) => {
+      statuses.push(status.state);
+    });
 
     socket.open();
     socket.receive({
@@ -1256,7 +1262,7 @@ describe('createActorWebSource', () => {
     source.close();
   });
 
-  it('degrades read-model sources when the gateway sends malformed JSON', () => {
+  it('recovers pending readiness and commands after a malformed gateway frame', async () => {
     const socket = new FakeGatewaySocket();
     const source = createActorWebSource(
       {
@@ -1277,12 +1283,50 @@ describe('createActorWebSource', () => {
     });
 
     socket.open();
+    const pendingSend = source.send({ type: 'SUBMIT' });
     expect(() => socket.receiveRaw('{"type":"snapshot"')).not.toThrow();
     expect(statuses).toContain('degraded');
     expect(source.transportStatus()).toMatchObject({
       state: 'degraded',
       reason: 'Actor-Web gateway sent an invalid JSON frame.',
     });
+    socket.receive({
+      type: 'ready',
+      connectionId: 'connection-after-malformed-frame',
+      heartbeatMs: 15000,
+      serverTime: '2026-04-25T18:00:00.000Z',
+    });
+    socket.receive({
+      type: 'snapshot',
+      streamId: 'shipment-stream',
+      sequence: 1,
+      projection: {
+        address: source.address,
+        snapshot: {
+          actorId: 'shipment',
+          stateLabel: 'ready',
+          status: 'running',
+          createdAt: '2026-04-25T18:00:00.000Z',
+          updatedAt: '2026-04-25T18:00:01.000Z',
+          correlationId: 'shipment',
+          lastEventType: null,
+        },
+        value: 'ready',
+        context: { status: 'ready' },
+      },
+    });
+    await Promise.resolve();
+    const sendFrame = socket.sentFrames.find((frame) => frame.type === 'send');
+    expect(sendFrame).toMatchObject({
+      type: 'send',
+      message: { type: 'SUBMIT' },
+    });
+    socket.receive({
+      type: 'ack',
+      streamId: 'shipment-stream',
+      ...(sendFrame?.type === 'send' ? { requestId: sendFrame.requestId } : {}),
+    });
+    await expect(pendingSend).resolves.toBeUndefined();
 
     source.close();
   });
@@ -1306,16 +1350,19 @@ describe('createActorWebSource', () => {
         streamId: 'shipment-trace',
       }
     );
+    const statuses: string[] = [];
+    source.subscribeTransportStatus((status) => {
+      statuses.push(status.state);
+    });
 
     socket.open();
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(source.transportStatus()).toMatchObject({
-      state: 'degraded',
-      reason: 'trace auth rejected',
-    });
+    expect(source.transportStatus().state).toBe('disconnected');
+    expect(statuses).toContain('degraded');
     expect(socket.sentFrames).toEqual([]);
+    expect(socket.closeCalls).toBe(1);
 
     source.close();
   });
