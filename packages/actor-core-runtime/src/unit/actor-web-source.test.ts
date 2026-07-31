@@ -1163,6 +1163,62 @@ describe('createActorWebSource', () => {
     }
   });
 
+  it('backs off failed trace reconnects and resets the delay after ready', async () => {
+    vi.useFakeTimers();
+    try {
+      const sockets = [
+        new FakeGatewaySocket(),
+        new FakeGatewaySocket(),
+        new FakeGatewaySocket(),
+        new FakeGatewaySocket(),
+      ];
+      let socketIndex = 0;
+      const source = createActorWebTraceSource(
+        {
+          address: 'actor://server-node/shipment',
+          gateway: {
+            url: 'ws://gateway.local/runtime',
+            scope: { kind: 'shipment', params: { stream: 'trace' } },
+          },
+        },
+        {
+          createSocket: () => sockets[socketIndex++] as FakeGatewaySocket,
+          streamId: 'shipment-trace-backoff',
+          reconnectDelayMs: 5,
+        }
+      );
+
+      sockets[0]?.open();
+      sockets[0]?.close();
+      await vi.advanceTimersByTimeAsync(5);
+      expect(socketIndex).toBe(2);
+
+      sockets[1]?.open();
+      sockets[1]?.close();
+      await vi.advanceTimersByTimeAsync(5);
+      expect(socketIndex).toBe(2);
+      await vi.advanceTimersByTimeAsync(5);
+      expect(socketIndex).toBe(3);
+
+      sockets[2]?.open();
+      sockets[2]?.receive({
+        type: 'ready',
+        connectionId: 'trace-connection-recovered',
+        heartbeatMs: 15000,
+        serverTime: '2026-04-25T18:00:00.000Z',
+      });
+      sockets[2]?.close();
+      await vi.advanceTimersByTimeAsync(5);
+      expect(socketIndex).toBe(4);
+
+      source.close();
+      await vi.runAllTimersAsync();
+      expect(socketIndex).toBe(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('degrades read-model sources when gateway auth resolution rejects before hello', async () => {
     const socket = new FakeGatewaySocket();
     const source = createActorWebSource(

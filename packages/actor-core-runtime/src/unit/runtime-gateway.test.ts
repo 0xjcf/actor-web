@@ -1876,34 +1876,36 @@ describe('runtime gateway hub', () => {
       }
     });
 
+    const authorizationReceipt = {
+      ...agentExecutionContract.createExecutionAuthorizedReceipt({
+        receiptId: 'receipt:sanitized:1',
+        recordId: 'record:sanitized:1',
+        traceId: 'trace:sanitized:1',
+        actorId: 'actor://local/trace-sanitizer',
+        sessionId: 'session:sanitized:1',
+        commandId: 'command:sanitized:1',
+        principalId: 'principal:sanitized:1',
+        sequence: 1,
+        occurredAt: '2026-04-25T18:00:00.000Z',
+        principal: {
+          id: 'principal:sanitized:1',
+          apiToken: 'principal-secret',
+        },
+        authorization: {
+          policy: 'trace-policy-v1',
+          decision: 'approved',
+          credential: 'authorization-secret',
+        },
+      }),
+      unknownSecretExtension: 'must-not-be-published',
+    };
     const trace = agentExecutionContract.createAgentExecutionTrace({
       traceId: 'trace:sanitized:1',
       actorId: 'actor://local/trace-sanitizer',
       sessionId: 'session:sanitized:1',
       commandId: 'command:sanitized:1',
       principalId: 'principal:sanitized:1',
-      receipts: [
-        agentExecutionContract.createExecutionAuthorizedReceipt({
-          receiptId: 'receipt:sanitized:1',
-          recordId: 'record:sanitized:1',
-          traceId: 'trace:sanitized:1',
-          actorId: 'actor://local/trace-sanitizer',
-          sessionId: 'session:sanitized:1',
-          commandId: 'command:sanitized:1',
-          principalId: 'principal:sanitized:1',
-          sequence: 1,
-          occurredAt: '2026-04-25T18:00:00.000Z',
-          principal: {
-            id: 'principal:sanitized:1',
-            apiToken: 'principal-secret',
-          },
-          authorization: {
-            policy: 'trace-policy-v1',
-            decision: 'approved',
-            credential: 'authorization-secret',
-          },
-        }),
-      ],
+      receipts: [authorizationReceipt],
     });
     const projection = source.appendTrace(trace);
     source.appendTraceFact({
@@ -1929,6 +1931,8 @@ describe('runtime gateway hub', () => {
         },
       ],
     });
+    expect(JSON.stringify(projection.trace)).not.toContain('unknownSecretExtension');
+    expect(JSON.stringify(projection.trace)).not.toContain('must-not-be-published');
     expect(observedFacts).toContain('trace_buffer_overflow');
   });
 

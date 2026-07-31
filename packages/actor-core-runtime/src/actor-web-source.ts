@@ -737,6 +737,9 @@ function createGatewayBackedTraceSource(
   let resyncInProgress = false;
   let lastConnectionId: string | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  const reconnectBaseDelayMs = Math.max(1, options.reconnectDelayMs ?? 250);
+  const reconnectMaxDelayMs = Math.max(reconnectBaseDelayMs, 5_000);
+  let reconnectDelayMs = reconnectBaseDelayMs;
   let closed = false;
 
   const emitStatus = (): void => {
@@ -856,6 +859,7 @@ function createGatewayBackedTraceSource(
       switch (frame.type) {
         case 'ready':
           lastConnectionId = frame.connectionId;
+          reconnectDelayMs = reconnectBaseDelayMs;
           currentStatus = createProjectionTransportStatus('replaying', {
             reason: 'Subscribing to Actor-Web gateway',
           });
@@ -907,7 +911,9 @@ function createGatewayBackedTraceSource(
         reason: 'Actor-Web gateway disconnected.',
       });
       emitStatus();
-      reconnectTimer = setTimeout(connect, options.reconnectDelayMs ?? 250);
+      const delayMs = reconnectDelayMs;
+      reconnectDelayMs = Math.min(reconnectMaxDelayMs, reconnectDelayMs * 2);
+      reconnectTimer = setTimeout(connect, delayMs);
     });
 
     connectedSocket.addEventListener('error', () => {
