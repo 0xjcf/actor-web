@@ -262,6 +262,7 @@
       .code-panel {
         min-width: 0;
         overflow: hidden;
+        background: var(--code);
       }
 
       .code-panel h2,
@@ -271,24 +272,110 @@
       }
 
       .code-panel h2 {
-        padding: 14px 16px;
-        border-bottom: 1px solid var(--line);
+        padding: 14px 16px 4px;
+        color: var(--code-ink);
       }
 
-      pre {
-        min-height: 100%;
+      .code-status {
+        min-height: 3.2em;
         margin: 0;
-        padding: 18px;
-        overflow: auto;
-        background: var(--code);
-        color: var(--code-ink);
-        font-size: 0.88rem;
-        line-height: 1.62;
-        tab-size: 2;
+        padding: 0 16px 12px;
+        border-bottom: 1px solid color-mix(in srgb, var(--code-ink) 22%, transparent);
+        color: color-mix(in srgb, var(--code-ink) 76%, transparent);
+        font-size: 0.8rem;
       }
 
       code {
         font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      }
+
+      .source-code {
+        min-height: calc(100% - 78px);
+        margin: 0;
+        padding: 14px 0 18px;
+        overflow: auto;
+        color: var(--code-ink);
+        counter-reset: source-line;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 0.84rem;
+        line-height: 1.55;
+        list-style: none;
+        tab-size: 2;
+      }
+
+      .source-code li {
+        counter-increment: source-line;
+      }
+
+      .source-line {
+        display: grid;
+        width: 100%;
+        min-height: 2.25em;
+        grid-template-columns: 3.2em minmax(max-content, 1fr) auto;
+        align-items: stretch;
+        padding: 0;
+        border: 0;
+        border-left: 4px solid transparent;
+        border-radius: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        white-space: pre;
+      }
+
+      button.source-line:hover {
+        border-color: color-mix(in srgb, var(--code-ink) 42%, transparent);
+        background: color-mix(in srgb, var(--code-ink) 8%, transparent);
+      }
+
+      button.source-line:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: -3px;
+      }
+
+      .source-line::before {
+        padding: 0.34em 0.8em 0.34em 0;
+        color: color-mix(in srgb, var(--code-ink) 48%, transparent);
+        content: counter(source-line);
+        text-align: right;
+        user-select: none;
+      }
+
+      .source-line code {
+        display: block;
+        padding: 0.34em 1em 0.34em 0.8em;
+      }
+
+      .source-step-reference {
+        align-self: center;
+        padding: 0.2em 0.8em;
+        color: color-mix(in srgb, var(--code-ink) 64%, transparent);
+        font-size: 0.72rem;
+        white-space: nowrap;
+      }
+
+      .source-line[data-focus="executing"] {
+        border-left-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 24%, var(--code));
+      }
+
+      .source-line[data-focus="related"] {
+        border-left-color: var(--line-strong);
+        background: color-mix(in srgb, var(--line-strong) 18%, var(--code));
+      }
+
+      .source-line[data-focus="host"] {
+        border-left-color: var(--success);
+        background:
+          repeating-linear-gradient(
+            -45deg,
+            color-mix(in srgb, var(--success) 13%, transparent) 0,
+            color-mix(in srgb, var(--success) 13%, transparent) 7px,
+            transparent 7px,
+            transparent 14px
+          ),
+          var(--code);
       }
 
       .diagram {
@@ -332,6 +419,10 @@
       }
 
       .zone h2 {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 6px;
         margin: 0 0 8px;
         color: var(--muted);
         font-size: 0.74rem;
@@ -341,6 +432,13 @@
 
       .zone[data-active="true"] h2 {
         color: var(--accent-ink);
+      }
+
+      .zone-code-reference {
+        color: inherit;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        letter-spacing: 0;
+        text-transform: none;
       }
 
       .zone ol {
@@ -613,7 +711,7 @@
           grid-template-columns: 1fr;
         }
 
-        .code-panel pre {
+        .source-code {
           min-height: 230px;
         }
       }
@@ -685,9 +783,9 @@
   <body>
     <main>
       <nav class="product-nav" aria-label="Learning product">
-        <a href="../README.md">Learn Actor-Web</a>
-        <a href="../guide/01-javascript-concurrency-and-mailboxes.md">Chapter 1 guide</a>
-        <a href="../workbook/01-javascript-concurrency-and-mailboxes.md">Week 1 workbook</a>
+        <a href="../index.html">Learn Actor-Web</a>
+        <a href="../guide/01-javascript-concurrency-and-mailboxes.html">Chapter 1 guide</a>
+        <a href="../workbook/01-javascript-concurrency-and-mailboxes.html">Week 1 workbook</a>
         <a href="https://nodejs.org/learn/asynchronous-work/event-loop-timers-and-nexttick">Node.js source</a>
       </nav>
 
@@ -744,7 +842,8 @@
       <div class="workspace">
         <section class="code-panel" aria-labelledby="scenario-code-heading">
           <h2 id="scenario-code-heading">Scenario code</h2>
-          <pre><code id="scenario-code"></code></pre>
+          <p id="code-status" class="code-status" aria-live="polite"></p>
+          <ol id="scenario-code" class="source-code" aria-label="Scenario source code"></ol>
         </section>
 
         <section
@@ -846,6 +945,10 @@
 
         function step(zone, token, title, detail, zones, predict) {
           return { zone, token, title, detail, zones: zones || {}, predict };
+        }
+
+        function codeFocus(mode, lines, label) {
+          return { mode, lines, label };
         }
 
         const scenarios = {
@@ -1019,6 +1122,100 @@
           },
         };
 
+        const codeFocusByScenario = {
+          "promise-timer": [
+            codeFocus("related", [1, 2, 3, 4], "The host has selected this script, but no line has started yet."),
+            codeFocus("executing", [1], "The initial script begins on the JavaScript stack."),
+            codeFocus("executing", [1], "The first synchronous log executes."),
+            codeFocus("executing", [2], "This line registers the timer with the host."),
+            codeFocus("executing", [3], "This line queues the fulfilled Promise reaction."),
+            codeFocus("executing", [4], "The final synchronous log executes before queued callbacks."),
+            codeFocus("related", [3], "The Promise callback is ready at the microtask checkpoint."),
+            codeFocus("executing", [3], "The callback created on this line logs promise."),
+            codeFocus("related", [2], "The timer callback is eligible for a later task turn."),
+            codeFocus("executing", [2], "The callback created on this line logs timer."),
+          ],
+          blocking: [
+            codeFocus("executing", [1], "The script registers the timer before entering CPU work."),
+            codeFocus("host", [1], "The host tracks this timer; no JavaScript callback is executing."),
+            codeFocus("executing", [2, 3, 4, 5], "The synchronous loop occupies the JavaScript isolate."),
+            codeFocus("executing", [6], "The script can log only after the loop returns."),
+            codeFocus("related", [1], "The ready timer is queued until the stack is available."),
+            codeFocus("executing", [1], "The delayed timer callback finally executes."),
+          ],
+          "await-yields": [
+            codeFocus("executing", [1, 2, 7], "The call enters handler and runs through the first log."),
+            codeFocus("host", [3], "The network read remains pending outside the JavaScript stack."),
+            codeFocus("executing", [6], "The unrelated timer callback executes while handler is suspended."),
+            codeFocus("host", [3], "The network operation is still pending; no handler line is executing."),
+            codeFocus("related", [3, 4], "The fulfilled await queues the handler continuation."),
+            codeFocus("executing", [4], "The resumed handler executes its completion log."),
+          ],
+          "node-io-cycle": [
+            codeFocus("executing", [1, 2], "The script registers the asynchronous file read."),
+            codeFocus("host", [2], "Node enters the host loop while the read remains pending."),
+            codeFocus("host", [2], "Node checks pending callbacks; this file callback is not executing."),
+            codeFocus("host", [2], "Node performs internal idle/prepare work; no application line executes."),
+            codeFocus("executing", [2, 3, 4, 5], "Poll invokes the file callback, which schedules immediate and timer work."),
+            codeFocus("host", [3, 4], "Node checks job queues; neither scheduled callback executes here."),
+            codeFocus("executing", [4], "The check phase executes the setImmediate callback."),
+            codeFocus("host", [], "Node checks close callbacks; this scenario has no matching source line."),
+            codeFocus("executing", [3], "The timers phase executes the setTimeout callback."),
+          ],
+          "node-job-checkpoint": [
+            codeFocus("executing", [1, 2, 3, 4], "The CommonJS script logs and schedules all three callbacks."),
+            codeFocus("executing", [4], "Node executes the process.nextTick callback first."),
+            codeFocus("executing", [3], "Node executes the Promise reaction next."),
+            codeFocus("host", [2], "Node reaches poll with setImmediate ready; no callback executes yet."),
+            codeFocus("executing", [2], "The check phase executes the setImmediate callback."),
+          ],
+          "actor-sequential": [
+            codeFocus("executing", [1], "The caller sends message A."),
+            codeFocus("related", [3], "Actor-Web enqueues A in the actor-scoped mailbox."),
+            codeFocus("related", [4], "Actor-Web requests a later host turn."),
+            codeFocus("executing", [2], "The caller sends B before the scheduled round starts."),
+            codeFocus("related", [4], "The scheduled processing callback enters from the Node check phase."),
+            codeFocus("related", [5], "Actor-Web awaits delivery of A before selecting another message."),
+            codeFocus("related", [5], "After A settles, Actor-Web delivers B."),
+            codeFocus("host", [], "The mailbox is idle; no scenario line is executing."),
+          ],
+          "actor-batch-101": [
+            codeFocus("executing", [1, 2, 3], "The caller sends the bounded 101-message burst."),
+            codeFocus("related", [4], "Actor-Web schedules the first processing round."),
+            codeFocus("related", [4], "The runtime sequentially handles the first 100 messages."),
+            codeFocus("related", [5], "The remaining message causes Actor-Web to yield and reschedule."),
+            codeFocus("host", [5], "A later host callback starts round two."),
+            codeFocus("related", [5], "Round two delivers message 101."),
+            codeFocus("host", [], "The actor is idle; no scenario line is executing."),
+          ],
+          "actor-shared-isolate": [
+            codeFocus("executing", [1, 2, 3], "The caller schedules a timer and messages for two actors."),
+            codeFocus("executing", [2], "Actor A's synchronous handler occupies the shared isolate."),
+            codeFocus("executing", [3], "Actor B can execute only after actor A returns."),
+            codeFocus("related", [4], "This comparison moves CPU work behind a worker boundary."),
+            codeFocus("host", [4], "The worker runs in parallel while the actor awaits its result."),
+          ],
+          "overflow-drop": [
+            codeFocus("executing", [1, 2, 3, 4, 5, 6, 7], "The loop fills the three-slot mailbox."),
+            codeFocus("executing", [6], "The enqueue for D returns false under the drop policy."),
+            codeFocus("executing", [6], "The enqueue for E is dropped for the same reason."),
+            codeFocus("executing", [8], "The consumer dequeues A and creates capacity."),
+          ],
+          "overflow-fail": [
+            codeFocus("executing", [1, 2, 3, 4, 5, 6, 7], "The loop fills the three-slot mailbox."),
+            codeFocus("executing", [6], "The enqueue for D raises MailboxError."),
+            codeFocus("executing", [6], "A later enqueue for E raises MailboxError too."),
+            codeFocus("executing", [8], "The consumer dequeues A and creates capacity."),
+          ],
+          "overflow-park": [
+            codeFocus("executing", [1, 2, 3, 4, 5, 6, 7], "The loop fills the three-slot mailbox."),
+            codeFocus("related", [6], "The await for D remains pending until capacity opens."),
+            codeFocus("related", [6], "The await for E parks behind D."),
+            codeFocus("executing", [8], "Dequeuing A admits D and settles its pending enqueue."),
+            codeFocus("executing", [8], "Dequeuing B admits E and settles its pending enqueue."),
+          ],
+        };
+
         function createOverflowScenario(policy) {
           const common = {
             projection: "actor",
@@ -1029,7 +1226,10 @@
               "  capacity: 3,",
               "  overflowStrategy: OverflowStrategy." + policy.toUpperCase() + ",",
               "});",
-              "// enqueue A, B, C, D, E",
+              "for (const type of ['A', 'B', 'C', 'D', 'E']) {",
+              "  await mailbox.enqueue({ type });",
+              "}",
+              "mailbox.dequeue();",
             ].join("\n"),
           };
 
@@ -1079,6 +1279,7 @@
         );
         const scenarioSelect = document.getElementById("scenario");
         const codeElement = document.getElementById("scenario-code");
+        const codeStatus = document.getElementById("code-status");
         const diagram = document.getElementById("diagram");
         const runner = document.getElementById("runner");
         const previousButton = document.getElementById("previous");
@@ -1140,7 +1341,14 @@
             zone.dataset.active = "false";
 
             const heading = document.createElement("h2");
-            heading.textContent = definition[1];
+            const headingText = document.createElement("span");
+            headingText.textContent = definition[1];
+            heading.appendChild(headingText);
+
+            const codeReference = document.createElement("span");
+            codeReference.className = "zone-code-reference";
+            codeReference.dataset.zoneCodeReference = "";
+            heading.appendChild(codeReference);
             zone.appendChild(heading);
 
             const list = document.createElement("ol");
@@ -1171,6 +1379,133 @@
           });
         }
 
+        function currentCodeFocus() {
+          const focuses = codeFocusByScenario[scenarioKey];
+          const scenario = currentScenario();
+          if (!focuses || focuses.length !== scenario.steps.length) {
+            throw new Error("Code focus must map every step in " + scenarioKey + ".");
+          }
+          return focuses[stepIndex];
+        }
+
+        function codeStepsForLine(lineNumber) {
+          return codeFocusByScenario[scenarioKey]
+            .map(function (focus, index) {
+              return focus.lines.includes(lineNumber) ? index : -1;
+            })
+            .filter(function (index) {
+              return index >= 0;
+            });
+        }
+
+        function formatReference(values, prefix, emptyLabel) {
+          if (values.length === 0) return emptyLabel;
+
+          const groups = [];
+          let start = values[0];
+          let end = values[0];
+          for (let index = 1; index < values.length; index += 1) {
+            if (values[index] === end + 1) {
+              end = values[index];
+            } else {
+              groups.push(
+                start === end ? prefix + start : prefix + start + "–" + end,
+              );
+              start = values[index];
+              end = values[index];
+            }
+          }
+          groups.push(start === end ? prefix + start : prefix + start + "–" + end);
+          return groups.join(", ");
+        }
+
+        function formatLineReference(lines) {
+          return formatReference(lines, "L", "no source line");
+        }
+
+        function formatStepReference(steps) {
+          return formatReference(
+            steps.map(function (index) {
+              return index + 1;
+            }),
+            "S",
+            "",
+          );
+        }
+
+        function selectStepForCodeLine(lineNumber) {
+          const matchingSteps = codeStepsForLine(lineNumber);
+          if (matchingSteps.length === 0) return;
+
+          if (autoplayTimer) {
+            window.clearInterval(autoplayTimer);
+            autoplayTimer = null;
+          }
+
+          stepIndex =
+            matchingSteps.find(function (index) {
+              return index > stepIndex;
+            }) ?? matchingSteps[0];
+          render();
+        }
+
+        function renderCode(scenario, focus) {
+          codeElement.replaceChildren();
+
+          scenario.code.split("\n").forEach(function (source, index) {
+            const lineNumber = index + 1;
+            const matchingSteps = codeStepsForLine(lineNumber);
+            const item = document.createElement("li");
+            const line = document.createElement(matchingSteps.length > 0 ? "button" : "span");
+            line.className = "source-line";
+            line.dataset.codeLine = String(lineNumber);
+
+            if (matchingSteps.length > 0) {
+              line.type = "button";
+              line.dataset.steps = matchingSteps
+                .map(function (matchingStep) {
+                  return String(matchingStep + 1);
+                })
+                .join(",");
+              line.setAttribute(
+                "aria-label",
+                "Show the next phase related to line " + lineNumber + ": " + source.trim(),
+              );
+              line.addEventListener("click", function () {
+                selectStepForCodeLine(lineNumber);
+              });
+            }
+
+            if (focus.lines.includes(lineNumber)) {
+              line.dataset.focus = focus.mode;
+              line.setAttribute("aria-describedby", "code-status");
+            }
+
+            const code = document.createElement("code");
+            code.textContent = source || " ";
+            line.appendChild(code);
+
+            if (matchingSteps.length > 0) {
+              const stepReference = document.createElement("span");
+              stepReference.className = "source-step-reference";
+              stepReference.dataset.codeStepReference = "";
+              stepReference.textContent = formatStepReference(matchingSteps);
+              line.appendChild(stepReference);
+            }
+            item.appendChild(line);
+            codeElement.appendChild(item);
+          });
+
+          const reference = formatLineReference(focus.lines);
+          const prefix =
+            focus.mode === "executing"
+              ? "Executing "
+              : focus.mode === "related"
+                ? "Related "
+                : "Host phase · ";
+          codeStatus.textContent = prefix + reference + " — " + focus.label;
+        }
+
         function positionRunner() {
           const current = currentStep();
           const zone = diagram.querySelector('[data-zone="' + current.zone + '"]');
@@ -1190,6 +1525,7 @@
 
           const scenario = currentScenario();
           const current = currentStep();
+          const focus = currentCodeFocus();
 
           projectionButtons.forEach(function (button) {
             button.setAttribute(
@@ -1198,7 +1534,7 @@
             );
           });
 
-          codeElement.textContent = scenario.code;
+          renderCode(scenario, focus);
           diagram.querySelectorAll("[data-zone-list]").forEach(function (list) {
             renderList(list, current.zones[list.dataset.zoneList]);
           });
@@ -1211,6 +1547,15 @@
             } else {
               zone.removeAttribute("aria-current");
             }
+
+            const reference = zone.querySelector("[data-zone-code-reference]");
+            reference.textContent = active
+              ? focus.mode === "host"
+                ? focus.lines.length > 0
+                  ? "host · " + formatLineReference(focus.lines)
+                  : "host only"
+                : formatLineReference(focus.lines)
+              : "";
           });
 
           runner.textContent = current.token;

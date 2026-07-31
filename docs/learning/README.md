@@ -1,5 +1,8 @@
 # Learn Actor-Web
 
+[Open the web learning experience](./index.html) for the guide, workbook, and
+interactive lab as one navigable product.
+
 ## Two products, two jobs
 
 Actor-Web has two complementary learning products alongside the official
@@ -57,7 +60,7 @@ content is ready.
 
 | Week | Topic | Status | Guide | Workbook | Lab |
 | --- | --- | --- | --- | --- | --- |
-| 1 | JavaScript concurrency and actor mailboxes | Available | [Read](./guide/01-javascript-concurrency-and-mailboxes.md) | [Practice](./workbook/01-javascript-concurrency-and-mailboxes.md) | [Open](./labs/week-01-event-loop-and-mailbox.html) |
+| 1 | JavaScript concurrency and actor mailboxes | Available | [Read](./guide/01-javascript-concurrency-and-mailboxes.html) | [Practice](./workbook/01-javascript-concurrency-and-mailboxes.html) | [Open](./labs/week-01-event-loop-and-mailbox.html) |
 | 2 | Actor model and OTP behaviors | Planned | Course map only | Planned | Planned |
 | 3 | Supervision and failure domains | Planned | Course map only | Planned | Planned |
 | 4 | Behaviors, FSMs, and statecharts | Planned | Course map only | Planned | Planned |

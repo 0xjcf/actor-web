@@ -1,0 +1,856 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Practice JavaScript scheduling and Actor-Web mailbox concepts through predictions, bounded experiments, and source traces." />
+    <title>Week 1 Workbook: JavaScript Concurrency and Actor Mailboxes</title>
+    <link rel="stylesheet" href="../assets/learning-page.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <nav class="product-nav" aria-label="Learning products">
+      <a href="../index.html">Learning home</a>
+      <a href="../guide/01-javascript-concurrency-and-mailboxes.html">Guide</a>
+      <a href="../workbook/01-javascript-concurrency-and-mailboxes.html" aria-current="page">Workbook</a>
+      <a href="../labs/week-01-event-loop-and-mailbox.html">Interactive lab</a>
+    </nav>
+    <div class="reading-layout">
+      <aside class="table-of-contents" aria-label="On this page">
+        <div class="table-of-contents-inner">
+          <p class="table-of-contents-title">On this page</p>
+          <nav id="TOC" role="doc-toc">
+          <ul>
+          <li><a
+          href="#week-1-workbook-javascript-concurrency-and-actor-mailboxes"
+          id="toc-week-1-workbook-javascript-concurrency-and-actor-mailboxes">Week
+          1 Workbook: JavaScript Concurrency and Actor Mailboxes</a>
+          <ul>
+          <li><a href="#companion-material"
+          id="toc-companion-material">Companion material</a></li>
+          <li><a href="#preflight" id="toc-preflight">Preflight</a></li>
+          <li><a href="#prediction-sheet"
+          id="toc-prediction-sheet">Prediction sheet</a></li>
+          <li><a href="#session-1-javascript-and-node-scheduling"
+          id="toc-session-1-javascript-and-node-scheduling">Session 1:
+          JavaScript and Node scheduling</a>
+          <ul>
+          <li><a href="#lab-route" id="toc-lab-route">Lab route</a></li>
+          <li><a href="#exercise-1a-ordering-by-prediction"
+          id="toc-exercise-1a-ordering-by-prediction">Exercise 1A:
+          ordering by prediction</a></li>
+          <li><a href="#exercise-1b-node-context-changes-ordering"
+          id="toc-exercise-1b-node-context-changes-ordering">Exercise
+          1B: Node context changes ordering</a></li>
+          <li><a href="#exercise-1c-bounded-microtask-starvation"
+          id="toc-exercise-1c-bounded-microtask-starvation">Exercise 1C:
+          bounded microtask starvation</a></li>
+          </ul></li>
+          <li><a
+          href="#session-2-cooperative-scheduling-and-parallelism"
+          id="toc-session-2-cooperative-scheduling-and-parallelism">Session
+          2: cooperative scheduling and parallelism</a>
+          <ul>
+          <li><a href="#exercise-2a-measure-timer-delay"
+          id="toc-exercise-2a-measure-timer-delay">Exercise 2A: measure
+          timer delay</a></li>
+          <li><a href="#exercise-2b-blocking-versus-awaiting"
+          id="toc-exercise-2b-blocking-versus-awaiting">Exercise 2B:
+          blocking versus awaiting</a></li>
+          <li><a href="#exercise-2c-choose-the-execution-boundary"
+          id="toc-exercise-2c-choose-the-execution-boundary">Exercise
+          2C: choose the execution boundary</a></li>
+          </ul></li>
+          <li><a href="#session-3-build-and-inspect-a-mailbox"
+          id="toc-session-3-build-and-inspect-a-mailbox">Session 3:
+          build and inspect a mailbox</a>
+          <ul>
+          <li><a href="#exercise-3a-implement-a-bounded-fifo"
+          id="toc-exercise-3a-implement-a-bounded-fifo">Exercise 3A:
+          implement a bounded FIFO</a></li>
+          <li><a href="#exercise-3b-compare-with-actor-web"
+          id="toc-exercise-3b-compare-with-actor-web">Exercise 3B:
+          compare with Actor-Web</a></li>
+          <li><a href="#exercise-3c-trace-actor-web-scheduling"
+          id="toc-exercise-3c-trace-actor-web-scheduling">Exercise 3C:
+          trace Actor-Web scheduling</a></li>
+          <li><a href="#exercise-3d-pressure-policies-in-the-lab"
+          id="toc-exercise-3d-pressure-policies-in-the-lab">Exercise 3D:
+          pressure policies in the lab</a></li>
+          </ul></li>
+          <li><a href="#failure-experiment-two-actors-one-isolate"
+          id="toc-failure-experiment-two-actors-one-isolate">Failure
+          experiment: two actors, one isolate</a></li>
+          <li><a href="#the-101-message-fairness-experiment"
+          id="toc-the-101-message-fairness-experiment">The 101-message
+          fairness experiment</a></li>
+          <li><a href="#exit-assessment" id="toc-exit-assessment">Exit
+          assessment</a>
+          <ul>
+          <li><a href="#teach-back-prompt"
+          id="toc-teach-back-prompt">Teach-back prompt</a></li>
+          </ul></li>
+          <li><a href="#completion-evidence"
+          id="toc-completion-evidence">Completion evidence</a></li>
+          </ul></li>
+          </ul>
+          </nav>
+        </div>
+      </aside>
+      <main id="main-content" class="reading-page">
+        <p class="eyebrow">Actor-Web Workbook · Week 1</p>
+        <section
+        id="week-1-workbook-javascript-concurrency-and-actor-mailboxes"
+        class="level1">
+        <h1>Week 1 Workbook: JavaScript Concurrency and Actor
+        Mailboxes</h1>
+
+
+        <section id="companion-material" class="level2">
+        <h2>Companion material</h2>
+        <ul>
+        <li><a
+        href="../guide/01-javascript-concurrency-and-mailboxes.html">Guide
+        Chapter 1</a></li>
+        <li><a
+        href="../labs/week-01-event-loop-and-mailbox.html">Interactive
+        event-loop and mailbox lab</a></li>
+        <li><a
+        href="https://nodejs.org/learn/asynchronous-work/event-loop-timers-and-nexttick">Node.js
+        event-loop guide</a></li>
+        <li><a
+        href="https://nodejs.org/learn/asynchronous-work/dont-block-the-event-loop">Node.js:
+        do not block the event loop</a></li>
+        </ul>
+        </section>
+        <section id="preflight" class="level2">
+        <h2>Preflight</h2>
+        <p>Estimated time: five to seven hours across three
+        sessions.</p>
+        <p>You need:</p>
+        <ul>
+        <li>Node.js 20 or newer for the documented current timer-phase
+        behavior</li>
+        <li>working knowledge of functions, arrays, Promises, and
+        <code>async</code>/<code>await</code></li>
+        <li>a browser for the interactive lab</li>
+        <li>a disposable terminal for bounded timing experiments</li>
+        </ul>
+        <p>Safety rules:</p>
+        <ul>
+        <li>keep every busy loop at or below 250 milliseconds</li>
+        <li>bound recursive microtask experiments to a fixed count</li>
+        <li>never run an infinite loop to prove starvation</li>
+        <li>use fake messages and effects</li>
+        <li>stop if a local machine becomes unresponsive</li>
+        </ul>
+        </section>
+        <section id="prediction-sheet" class="level2">
+        <h2>Prediction sheet</h2>
+        <p>Complete the prediction and confidence columns before opening
+        the guide or advancing the matching animation.</p>
+        <table>
+        <thead>
+        <tr>
+        <th>Prompt</th>
+        <th>Prediction</th>
+        <th>Confidence</th>
+        <th>Observation</th>
+        <th>Revised rule</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+        <td>What is the output order of synchronous logs, a fulfilled
+        Promise reaction, and a zero timer?</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>Can a ready timer interrupt a running callback?</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>Where does <code>setImmediate(...)</code> run in Node?</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>What runs first when <code>setImmediate</code> and a zero
+        timer are scheduled inside an I/O callback?</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>While actor A awaits I/O, can actor B progress in the same
+        isolate?</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>While actor A runs synchronous CPU work, can actor B
+        progress in the same isolate?</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>What happens to message 1001 in a full default mailbox?</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>Does one-message-at-a-time handling make
+        <code>send(...)</code> durable?</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        </tbody>
+        </table>
+        </section>
+        <section id="session-1-javascript-and-node-scheduling"
+        class="level2">
+        <h2>Session 1: JavaScript and Node scheduling</h2>
+        <section id="lab-route" class="level3">
+        <h3>Lab route</h3>
+        <p>Open the <a
+        href="../labs/week-01-event-loop-and-mailbox.html">interactive
+        lab</a>, choose <strong>JavaScript queues</strong>, and run
+        these scenarios in order:</p>
+        <p>For every phase, read the correlated source highlight:
+        <strong>Executing</strong> marks code running now,
+        <strong>Related</strong> marks code that scheduled or explains
+        queued work, and <strong>Host phase</strong> means the runtime
+        is progressing without executing that source line. Select any
+        correlated code line to jump to its next matching phase.</p>
+        <ol type="1">
+        <li>Promise before timer</li>
+        <li>Blocking callback</li>
+        <li>Awaiting I/O yields</li>
+        </ol>
+        <p>Before every <strong>Next</strong> action, say where the work
+        token will move and which output line will appear next.</p>
+        <p>Then choose <strong>Node.js phases</strong> and run:</p>
+        <ol type="1">
+        <li>I/O through poll, check, and timers</li>
+        <li><code>nextTick</code>, Promise, and macrotask</li>
+        </ol>
+        </section>
+        <section id="exercise-1a-ordering-by-prediction" class="level3">
+        <h3>Exercise 1A: ordering by prediction</h3>
+        <p>Write the expected output before running:</p>
+        <pre class="js"><code>console.log(&#39;script:start&#39;);
+
+queueMicrotask(() =&gt; console.log(&#39;microtask:one&#39;));
+
+Promise.resolve().then(() =&gt; {
+  console.log(&#39;promise:one&#39;);
+  queueMicrotask(() =&gt; console.log(&#39;microtask:two&#39;));
+});
+
+setTimeout(() =&gt; console.log(&#39;timer&#39;), 0);
+
+console.log(&#39;script:end&#39;);</code></pre>
+        <p>Run it in a browser console and Node. Record:</p>
+        <ul>
+        <li>output order</li>
+        <li>which lines run on the initial stack</li>
+        <li>which callbacks are microtasks</li>
+        <li>which callback requires a later host task</li>
+        <li>whether multiple runs differ</li>
+        </ul>
+        </section>
+        <section id="exercise-1b-node-context-changes-ordering"
+        class="level3">
+        <h3>Exercise 1B: Node context changes ordering</h3>
+        <p>Save this as a CommonJS file such as
+        <code>ordering.cjs</code> and run it several times:</p>
+        <pre class="js"><code>setTimeout(() =&gt; console.log(&#39;timeout&#39;), 0);
+setImmediate(() =&gt; console.log(&#39;immediate&#39;));</code></pre>
+        <p>Then move the same pair into an I/O callback:</p>
+        <pre class="js"><code>const fs = require(&#39;node:fs&#39;);
+
+fs.readFile(__filename, () =&gt; {
+  setTimeout(() =&gt; console.log(&#39;timeout&#39;), 0);
+  setImmediate(() =&gt; console.log(&#39;immediate&#39;));
+});</code></pre>
+        <p>Explain the difference using <code>poll</code>,
+        <code>check</code>, and <code>timers</code>. Do not describe the
+        main-module ordering as a stable guarantee.</p>
+        </section>
+        <section id="exercise-1c-bounded-microtask-starvation"
+        class="level3">
+        <h3>Exercise 1C: bounded microtask starvation</h3>
+        <pre class="js"><code>let remaining = 10_000;
+
+function continueInMicrotask() {
+  remaining -= 1;
+  if (remaining &gt; 0) queueMicrotask(continueInMicrotask);
+}
+
+setTimeout(() =&gt; console.log(&#39;timer&#39;), 0);
+queueMicrotask(continueInMicrotask);</code></pre>
+        <p>Observe when the timer runs. Then answer:</p>
+        <ol type="1">
+        <li>Why does the JavaScript call stack not overflow?</li>
+        <li>Why can the timer still be delayed?</li>
+        <li>What would make the experiment unsafe?</li>
+        </ol>
+        </section>
+        </section>
+        <section id="session-2-cooperative-scheduling-and-parallelism"
+        class="level2">
+        <h2>Session 2: cooperative scheduling and parallelism</h2>
+        <section id="exercise-2a-measure-timer-delay" class="level3">
+        <h3>Exercise 2A: measure timer delay</h3>
+        <pre class="js"><code>const requestedAt = performance.now();
+
+setTimeout(() =&gt; {
+  console.log({ actualDelay: performance.now() - requestedAt });
+}, 25);
+
+const blockStartedAt = performance.now();
+while (performance.now() - blockStartedAt &lt; 250) {
+  // Deliberate, bounded failure injection.
+}</code></pre>
+        <p>Record the requested threshold and actual delay. Explain the
+        result without saying the timer is broken.</p>
+        </section>
+        <section id="exercise-2b-blocking-versus-awaiting"
+        class="level3">
+        <h3>Exercise 2B: blocking versus awaiting</h3>
+        <p>Create two small functions:</p>
+        <pre class="js"><code>async function blockFor250Ms() {
+  const until = performance.now() + 250;
+  while (performance.now() &lt; until) {
+    // bounded experiment
+  }
+}
+
+async function waitFor250Ms() {
+  await new Promise((resolve) =&gt; setTimeout(resolve, 250));
+}</code></pre>
+        <p>For each function, schedule a separate zero timer before
+        calling it. Record whether the timer can run while the function
+        is unfinished.</p>
+        <p>Explain the distinction:</p>
+        <pre class="text"><code>unfinished operation != JavaScript thread occupied</code></pre>
+        </section>
+        <section id="exercise-2c-choose-the-execution-boundary"
+        class="level3">
+        <h3>Exercise 2C: choose the execution boundary</h3>
+        <p>For each workload, choose one response and state the maximum
+        input and latency budget behind your decision:</p>
+        <ul>
+        <li>keep synchronous because work is small and bounded</li>
+        <li>partition across event-loop turns</li>
+        <li>use asynchronous I/O</li>
+        <li>use a worker-thread pool</li>
+        <li>use a separate process or remote worker</li>
+        <li>reject or shed work before it grows</li>
+        </ul>
+        <table>
+        <thead>
+        <tr>
+        <th>Workload</th>
+        <th>Choice</th>
+        <th>Maximum input</th>
+        <th>Latency budget</th>
+        <th>Why</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+        <td>Parse a 2 KB command payload</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>Hash a multi-gigabyte file</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>Wait for a database response</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>Apply 50 deterministic FSM transitions</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>Render an unbounded recursive template</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        </tbody>
+        </table>
+        </section>
+        </section>
+        <section id="session-3-build-and-inspect-a-mailbox"
+        class="level2">
+        <h2>Session 3: build and inspect a mailbox</h2>
+        <section id="exercise-3a-implement-a-bounded-fifo"
+        class="level3">
+        <h3>Exercise 3A: implement a bounded FIFO</h3>
+        <p>Implement the smallest queue that satisfies this contract
+        before reading Actor-Web's mailbox implementation:</p>
+        <pre class="ts"><code>interface QueueStats {
+  readonly size: number;
+  readonly capacity: number;
+  readonly totalEnqueued: number;
+  readonly totalDequeued: number;
+  readonly totalDropped: number;
+  readonly totalFailed: number;
+}
+
+type OverflowPolicy = &#39;drop&#39; | &#39;fail&#39; | &#39;park&#39;;
+
+interface BoundedFifo&lt;T&gt; {
+  enqueue(value: T): boolean | Promise&lt;boolean&gt;;
+  dequeue(): T | undefined;
+  readonly stats: QueueStats;
+}</code></pre>
+        <p>Build in four passes:</p>
+        <ol type="1">
+        <li>A roughly 20-line FIFO with a fixed capacity and
+        <code>drop</code>.</li>
+        <li>Add <code>fail</code> with an explicit error.</li>
+        <li>Add <code>park</code> by retaining a bounded waiter and
+        settling it when dequeueing creates capacity.</li>
+        <li>Add the statistics without changing queue ordering.</li>
+        </ol>
+        <p>For <code>park</code>, increment <code>totalEnqueued</code>
+        only when the waiting value is actually inserted into the FIFO
+        and its Promise settles. A pending waiter is not yet an enqueued
+        value.</p>
+        <p>Tests to write:</p>
+        <ul>
+        <li>values dequeue in FIFO order</li>
+        <li>enqueue succeeds below capacity</li>
+        <li><code>drop</code> returns <code>false</code> and increments
+        <code>totalDropped</code></li>
+        <li><code>fail</code> throws and increments
+        <code>totalFailed</code></li>
+        <li><code>park</code> remains pending while full and settles
+        after a dequeue</li>
+        <li>statistics remain unchanged while a sender is parked, then
+        <code>totalEnqueued</code> increments exactly once when
+        dequeueing admits it</li>
+        <li>one dequeue admits at most one parked sender</li>
+        <li>statistics remain internally consistent</li>
+        </ul>
+        <p>Do not copy Actor-Web first. The comparison is valuable only
+        if you encounter the design choices yourself.</p>
+        </section>
+        <section id="exercise-3b-compare-with-actor-web" class="level3">
+        <h3>Exercise 3B: compare with Actor-Web</h3>
+        <p>Read <a
+        href="../../../packages/actor-core-runtime/src/messaging/mailbox.ts"><code>mailbox.ts</code></a>
+        and its adjacent tests. Locate:</p>
+        <ul>
+        <li><code>MailboxConfig</code></li>
+        <li><code>OverflowStrategy</code></li>
+        <li><code>enqueue(...)</code></li>
+        <li><code>dequeue(...)</code></li>
+        <li><code>parkSender(...)</code></li>
+        <li><code>tryUnparkSender(...)</code></li>
+        <li>mailbox statistics</li>
+        </ul>
+        <p>Complete the comparison:</p>
+        <table>
+        <thead>
+        <tr>
+        <th>Concern</th>
+        <th>Your queue</th>
+        <th>Actor-Web <code>BoundedMailbox</code></th>
+        <th>Why the difference matters</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+        <td>Default capacity</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>Default policy</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>FIFO storage</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>Parked senders</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>Stop behavior</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>Metrics</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>Error representation</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        </tbody>
+        </table>
+        </section>
+        <section id="exercise-3c-trace-actor-web-scheduling"
+        class="level3">
+        <h3>Exercise 3C: trace Actor-Web scheduling</h3>
+        <p>Read:</p>
+        <ol type="1">
+        <li><a
+        href="../../../packages/actor-core-runtime/src/actor-ref.ts"><code>actor-ref.ts</code></a></li>
+        <li><a
+        href="../../../packages/actor-core-runtime/src/actor-system-impl.ts"><code>actor-system-impl.ts</code></a></li>
+        <li><a
+        href="../../../packages/actor-core-runtime/src/unit/message-delivery.test.ts"><code>message-delivery.test.ts</code></a></li>
+        <li><a
+        href="../../../packages/actor-core-runtime/src/integration/async-messaging.test.ts"><code>async-messaging.test.ts</code></a></li>
+        </ol>
+        <p>Find and annotate:</p>
+        <ul>
+        <li>the public <code>send(...)</code> delegation</li>
+        <li>the local enqueue path</li>
+        <li><code>scheduleMacrotask</code></li>
+        <li><code>startMessageProcessingLoop(...)</code></li>
+        <li><code>processActorMessages(...)</code></li>
+        <li>the <code>await</code> around local delivery</li>
+        <li>the 100-message batch limit</li>
+        <li>rescheduling when messages remain</li>
+        </ul>
+        <p>Draw your own version of this path from memory:</p>
+        <pre class="text"><code>send -&gt; route -&gt; mailbox -&gt; schedule -&gt; dequeue -&gt; await handler -&gt; yield</code></pre>
+        <p>Label each arrow as JavaScript, Node/browser host, Actor-Web
+        runtime, or application behavior.</p>
+        </section>
+        <section id="exercise-3d-pressure-policies-in-the-lab"
+        class="level3">
+        <h3>Exercise 3D: pressure policies in the lab</h3>
+        <p>Choose <strong>Actor-Web overlay</strong> in the interactive
+        lab. Run <strong>Mailbox overflow</strong> three times,
+        selecting <code>drop</code>, <code>fail</code>, and
+        <code>park</code> before advancing.</p>
+        <p>Use capacity three and messages A through E. Record:</p>
+        <table>
+        <thead>
+        <tr>
+        <th>Policy</th>
+        <th>A-C</th>
+        <th>D</th>
+        <th>E</th>
+        <th>Producer outcome</th>
+        <th>Stats changed</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+        <td><code>drop</code></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td><code>fail</code></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td><code>park</code></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        </tbody>
+        </table>
+        <p>Then answer: which policy would you choose for telemetry, an
+        approval command, and a replaceable pointer-move update? The
+        mailbox cannot answer this for you; state the domain
+        reasoning.</p>
+        </section>
+        </section>
+        <section id="failure-experiment-two-actors-one-isolate"
+        class="level2">
+        <h2>Failure experiment: two actors, one isolate</h2>
+        <p>Place actor A and actor B in the same local Actor-Web runtime
+        and JavaScript isolate. Give actor A a primary work message, a
+        <code>FOLLOW_UP</code> message, and a <code>READ_STATE</code>
+        request. Give actor B a fast message.</p>
+        <p>Record these completion events with timestamps:</p>
+        <pre class="text"><code>A_PRIMARY_STARTED
+A_PRIMARY_DONE
+A_FOLLOW_UP_DONE
+B_DONE
+TIMER_FIRED
+CPU_RESULT</code></pre>
+        <p>For every variant, use this order:</p>
+        <ol type="1">
+        <li>schedule a zero timer</li>
+        <li>send the primary work message to actor A</li>
+        <li>immediately send <code>FOLLOW_UP</code> to actor A</li>
+        <li>send the fast message to actor B</li>
+        <li>wait for all expected completion events with a fixed
+        five-second deadline</li>
+        <li>if the deadline expires, record every missing event and
+        cleanly terminate actors, worker threads, child processes, and
+        outstanding timers before the variant fails</li>
+        <li>compare timestamps rather than relying on log order
+        alone</li>
+        </ol>
+        <p>Run these variants:</p>
+        <ul>
+        <li><strong>Synchronous CPU:</strong> actor A performs a bounded
+        250-millisecond busy loop.</li>
+        <li><strong>Asynchronous wait:</strong> actor A awaits a
+        250-millisecond timer.</li>
+        <li><strong>Worker thread:</strong> actor A remains in the local
+        runtime and awaits a Promise settled by a worker-thread result.
+        The worker owns the CPU-heavy JavaScript.</li>
+        <li><strong>Child process:</strong> actor A remains local and
+        awaits a correlated result from a separate process. Record
+        process completion separately from actor A's
+        <code>A_PRIMARY_DONE</code> event.</li>
+        </ul>
+        <p>Complete the observation matrix:</p>
+        <table>
+        <thead>
+        <tr>
+        <th>Work</th>
+        <th><code>A_FOLLOW_UP_DONE</code> waits?</th>
+        <th><code>B_DONE</code> progresses?</th>
+        <th><code>TIMER_FIRED</code> progresses?</th>
+        <th>Parallel CPU?</th>
+        <th>Completion evidence</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+        <td>Actor A synchronous busy loop</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>Actor A awaits asynchronous timer</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>Actor A awaits worker-thread result</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        <tr>
+        <td>Actor A awaits child-process result</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        </tr>
+        </tbody>
+        </table>
+        <p>Keep state isolation as a separate assertion from timing:</p>
+        <ol type="1">
+        <li>Confirm that actor B receives no supported public reference
+        to actor A's context. An <code>ActorRef</code> can send or ask;
+        it does not expose <code>actorA.context</code>.</li>
+        <li>Have actor A answer <code>READ_STATE</code> with a detached
+        JSON-safe snapshot.</li>
+        <li>Let actor B mutate its local copy of that snapshot.</li>
+        <li>Ask actor A for state again and assert that actor A's state
+        is unchanged.</li>
+        </ol>
+        <p>The detached copy in step 2 is an application discipline, not
+        automatic deep cloning by Actor-Web. Passing shared mutable
+        object references in local messages would reintroduce
+        shared-state hazards and should be recorded as a deliberate
+        failure of the actor boundary.</p>
+        <p>The experiment should prove both:</p>
+        <ol type="1">
+        <li>actor B cannot access actor A's private context through the
+        supported public actor reference, and mutating a detached reply
+        does not change actor A</li>
+        <li>state isolation does not guarantee CPU isolation inside one
+        JavaScript isolate</li>
+        </ol>
+        </section>
+        <section id="the-101-message-fairness-experiment"
+        class="level2">
+        <h2>The 101-message fairness experiment</h2>
+        <p>Use the lab's <strong>101-message fairness batch</strong>
+        scenario, then reproduce the idea with a test or trace. Separate
+        admission evidence from processing evidence:</p>
+        <ol type="1">
+        <li>Create a direct <code>BoundedMailbox</code> fixture with
+        capacity at least <code>101</code> and a non-dropping policy
+        such as <code>fail</code>.</li>
+        <li>Enqueue 101 sequence-numbered no-op messages and track every
+        enqueue result.</li>
+        <li>Before measuring processing, assert
+        <code>totalEnqueued === 101</code>,
+        <code>totalDropped === 0</code>, and
+        <code>totalFailed === 0</code>.</li>
+        <li>In the actor-processing trace, count handled sequence
+        numbers rather than treating resolved <code>send(...)</code>
+        Promises as proof of admission. The current drop path can
+        resolve without accepting the message.</li>
+        <li>Record the first processing round and identify the
+        rescheduling boundary after message 100.</li>
+        <li>Record message 101 in the next processing round and assert
+        that every sequence number from 1 through 101 was handled
+        exactly once in this local experiment.</li>
+        </ol>
+        <p>Explain why the boundary improves cooperative fairness but is
+        not:</p>
+        <ul>
+        <li>a CPU preemption point inside a handler</li>
+        <li>a durable checkpoint</li>
+        <li>an acknowledgement of all 100 messages</li>
+        <li>a business transaction</li>
+        </ul>
+        </section>
+        <section id="exit-assessment" class="level2">
+        <h2>Exit assessment</h2>
+        <p>Answer without opening the guide:</p>
+        <ol type="1">
+        <li>Why does a fulfilled Promise reaction precede a later timer
+        in the introductory example?</li>
+        <li>Why is <code>process.nextTick(...)</code> absent from Node's
+        phase diagram?</li>
+        <li>What are the two jobs of the poll phase?</li>
+        <li>Where does <code>setImmediate(...)</code> run?</li>
+        <li>Why can <code>setImmediate</code> and a zero timer change
+        order depending on context?</li>
+        <li>What must happen before a queued callback executes?</li>
+        <li>Can a ready timer interrupt an actor handler?</li>
+        <li>What changes when an actor handler awaits I/O?</li>
+        <li>What does one-message-at-a-time handling protect?</li>
+        <li>Which shared resource still lets one actor delay
+        another?</li>
+        <li>Why does Actor-Web yield after a 100-message batch?</li>
+        <li>Compare <code>drop</code>, <code>fail</code>, and
+        <code>park</code> as system-design decisions.</li>
+        <li>What execution boundary enables parallel CPU-intensive
+        JavaScript?</li>
+        <li>Why does a mailbox not make <code>send(...)</code>
+        durable?</li>
+        </ol>
+        <section id="teach-back-prompt" class="level3">
+        <h3>Teach-back prompt</h3>
+        <p>Explain this statement to another JavaScript developer:</p>
+        <blockquote>
+        <p>Actor serialization solves ownership and ordering for one
+        actor. Cooperative event-loop scheduling solves neither CPU
+        isolation nor preemption.</p>
+        </blockquote>
+        <p>Your explanation must use one code example, one Actor-Web
+        source symbol, and one failure observation.</p>
+        </section>
+        </section>
+        <section id="completion-evidence" class="level2">
+        <h2>Completion evidence</h2>
+        <p>Copy the <a
+        href="./learning-record-template.md">learning-record template
+        (Markdown)</a> from the repository and include:</p>
+        <ul>
+        <li>the completed prediction sheet</li>
+        <li>your bounded FIFO implementation and policy tests</li>
+        <li>the blocking-versus-awaiting observation matrix</li>
+        <li>the Actor-Web source trace</li>
+        <li>one screenshot or written trace from each lab
+        projection</li>
+        <li>your exit-assessment answers</li>
+        <li>the teach-back explanation</li>
+        </ul>
+        <p>You are ready for Week 2 when you can trace a message from
+        <code>send(...)</code> to the handler and explain, without
+        contradiction, why actor state is serialized while the
+        JavaScript isolate can still be starved.</p>
+        <p>Required learning-product verification:</p>
+        <pre class="bash"><code>pnpm test:learning
+pnpm exec markdownlint-cli2 --config .markdownlint.jsonc \
+  &quot;docs/learning/**/*.md&quot; \
+  &quot;docs/actor-web-architecture-study-guide.md&quot; \
+  &quot;README.md&quot;
+pnpm test:docs</code></pre>
+        <p>This repository does not expose a root
+        <code>verify.sh</code>; do not substitute a nonexistent command
+        for the real project scripts above.</p>
+        <p>Supplementary focused Actor-Web runtime evidence:</p>
+        <pre class="bash"><code>pnpm --filter @actor-web/runtime exec vitest run \
+  src/unit/message-delivery.test.ts \
+  src/integration/async-messaging.test.ts</code></pre>
+
+
+        </section>
+        </section>
+        <footer class="page-footer">
+          <p>Actor-Web Learning · Week 1 · JavaScript concurrency and actor mailboxes</p>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>

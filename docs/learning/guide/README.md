@@ -43,7 +43,7 @@ Reconfirm drift-prone implementation details before changing runtime behavior.
 
 | Chapter | Architectural question | Status |
 | --- | --- | --- |
-| [1. JavaScript concurrency and actor mailboxes](./01-javascript-concurrency-and-mailboxes.md) | If JavaScript is single-threaded, why do we need an actor concurrency model? | Current |
+| [1. JavaScript concurrency and actor mailboxes](./01-javascript-concurrency-and-mailboxes.html) | If JavaScript is single-threaded, why do we need an actor concurrency model? | Current |
 | 2. Actor identity and OTP behaviors | What does an actor provide that a class with async methods does not? | Planned |
 | 3. Supervision and failure domains | When is "let it crash" safer than catching an error? | Planned |
 | 4. Behaviors, FSMs, and statecharts | Why should a model propose rather than choose arbitrary transitions? | Planned |
@@ -66,5 +66,5 @@ New chapters should follow the
 - links to a workbook module with observable completion evidence
 - remains useful without Ignite Element, FAS, or another optional integration
 
-Return to the [learning-product home](../README.md) or open the
+Return to the [learning-product home](../index.html) or open the
 [workbook](../workbook/README.md).

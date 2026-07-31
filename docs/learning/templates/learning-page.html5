@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="$description$" />
+    <title>$pagetitle$</title>
+    <link rel="stylesheet" href="../assets/learning-page.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <nav class="product-nav" aria-label="Learning products">
+      <a href="../index.html">Learning home</a>
+      <a href="../guide/01-javascript-concurrency-and-mailboxes.html"$if(guide)$ aria-current="page"$endif$>Guide</a>
+      <a href="../workbook/01-javascript-concurrency-and-mailboxes.html"$if(workbook)$ aria-current="page"$endif$>Workbook</a>
+      <a href="../labs/week-01-event-loop-and-mailbox.html">Interactive lab</a>
+    </nav>
+    <div class="reading-layout">
+      <aside class="table-of-contents" aria-label="On this page">
+        <div class="table-of-contents-inner">
+          <p class="table-of-contents-title">On this page</p>
+          <nav id="TOC" role="doc-toc">
+            $toc$
+          </nav>
+        </div>
+      </aside>
+      <main id="main-content" class="reading-page">
+        <p class="eyebrow">$producttype$</p>
+        $body$
+        <footer class="page-footer">
+          <p>Actor-Web Learning · Week 1 · JavaScript concurrency and actor mailboxes</p>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Learn how JavaScript scheduling, Node.js phases, and Actor-Web mailboxes provide different concurrency guarantees." />
+    <title>Chapter 1: JavaScript Concurrency and Actor Mailboxes</title>
+    <link rel="stylesheet" href="../assets/learning-page.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <nav class="product-nav" aria-label="Learning products">
+      <a href="../index.html">Learning home</a>
+      <a href="../guide/01-javascript-concurrency-and-mailboxes.html" aria-current="page">Guide</a>
+      <a href="../workbook/01-javascript-concurrency-and-mailboxes.html">Workbook</a>
+      <a href="../labs/week-01-event-loop-and-mailbox.html">Interactive lab</a>
+    </nav>
+    <div class="reading-layout">
+      <aside class="table-of-contents" aria-label="On this page">
+        <div class="table-of-contents-inner">
+          <p class="table-of-contents-title">On this page</p>
+          <nav id="TOC" role="doc-toc">
+          <ul>
+          <li><a
+          href="#chapter-1-javascript-concurrency-and-actor-mailboxes"
+          id="toc-chapter-1-javascript-concurrency-and-actor-mailboxes">Chapter
+          1: JavaScript Concurrency and Actor Mailboxes</a>
+          <ul>
+          <li><a href="#the-question" id="toc-the-question">The
+          question</a></li>
+          <li><a href="#why-this-chapter-comes-first"
+          id="toc-why-this-chapter-comes-first">Why this chapter comes
+          first</a></li>
+          <li><a href="#outcomes" id="toc-outcomes">Outcomes</a></li>
+          <li><a href="#four-layers-four-different-questions"
+          id="toc-four-layers-four-different-questions">Four layers,
+          four different questions</a></li>
+          <li><a href="#vocabulary"
+          id="toc-vocabulary">Vocabulary</a></li>
+          <li><a href="#model-1-run-to-completion"
+          id="toc-model-1-run-to-completion">Model 1: run to
+          completion</a></li>
+          <li><a href="#model-2-the-nodejs-phase-loop"
+          id="toc-model-2-the-nodejs-phase-loop">Model 2: the Node.js
+          phase loop</a>
+          <ul>
+          <li><a
+          href="#nexttick-and-promise-jobs-are-checkpoints-not-phases"
+          id="toc-nexttick-and-promise-jobs-are-checkpoints-not-phases"><code>nextTick</code>
+          and Promise jobs are checkpoints, not phases</a></li>
+          <li><a href="#setimmediate-versus-settimeout0"
+          id="toc-setimmediate-versus-settimeout0"><code>setImmediate</code>
+          versus <code>setTimeout(0)</code></a></li>
+          </ul></li>
+          <li><a href="#model-3-concurrency-is-not-parallel-javascript"
+          id="toc-model-3-concurrency-is-not-parallel-javascript">Model
+          3: concurrency is not parallel JavaScript</a></li>
+          <li><a href="#model-4-an-actor-mailbox-is-a-different-queue"
+          id="toc-model-4-an-actor-mailbox-is-a-different-queue">Model
+          4: an actor mailbox is a different queue</a></li>
+          <li><a href="#synchronous-work-versus-await"
+          id="toc-synchronous-work-versus-await">Synchronous work versus
+          <code>await</code></a></li>
+          <li><a href="#trace-a-local-actor-web-message"
+          id="toc-trace-a-local-actor-web-message">Trace a local
+          Actor-Web message</a>
+          <ul>
+          <li><a href="#why-the-100-message-batch-exists"
+          id="toc-why-the-100-message-batch-exists">Why the 100-message
+          batch exists</a></li>
+          </ul></li>
+          <li><a href="#capacity-and-pressure-policy"
+          id="toc-capacity-and-pressure-policy">Capacity and pressure
+          policy</a></li>
+          <li><a href="#actor-web-and-erlangelixir"
+          id="toc-actor-web-and-erlangelixir">Actor-Web and
+          Erlang/Elixir</a></li>
+          <li><a href="#failure-boundary"
+          id="toc-failure-boundary">Failure boundary</a></li>
+          <li><a href="#maturity-ledger"
+          id="toc-maturity-ledger">Maturity ledger</a></li>
+          <li><a href="#answer-the-question"
+          id="toc-answer-the-question">Answer the question</a></li>
+          <li><a href="#continue-in-the-workbook"
+          id="toc-continue-in-the-workbook">Continue in the
+          workbook</a></li>
+          </ul></li>
+          </ul>
+          </nav>
+        </div>
+      </aside>
+      <main id="main-content" class="reading-page">
+        <p class="eyebrow">Actor-Web Learning Guide · Chapter 1</p>
+        <section
+        id="chapter-1-javascript-concurrency-and-actor-mailboxes"
+        class="level1">
+        <h1>Chapter 1: JavaScript Concurrency and Actor Mailboxes</h1>
+        <section id="the-question" class="level2">
+        <h2>The question</h2>
+        <blockquote>
+        <p>If JavaScript executes one stack at a time, why do we still
+        need an actor concurrency model?</p>
+        </blockquote>
+        <p>Because "one JavaScript stack" and "one owner of mutable
+        state" are different guarantees.</p>
+        <p>The JavaScript runtime decides when callbacks receive
+        execution time. An actor runtime decides which identity owns
+        state, how messages wait for that identity, how one message is
+        selected, and what happens when demand exceeds capacity.
+        Actor-Web relies on JavaScript scheduling; it does not replace
+        it.</p>
+        </section>
+        <section id="why-this-chapter-comes-first" class="level2">
+        <h2>Why this chapter comes first</h2>
+        <p>Every later Actor-Web guarantee runs on top of a host
+        scheduler. Before studying supervision, distribution, durable
+        execution, or agent authorization, you need to be able to
+        distinguish:</p>
+        <ul>
+        <li>work that is waiting from JavaScript that is executing</li>
+        <li>concurrent operations from parallel JavaScript
+        execution</li>
+        <li>a host callback queue from an actor mailbox</li>
+        <li>serialized state mutation from fair CPU scheduling</li>
+        <li>asynchronous waiting from synchronous blocking</li>
+        </ul>
+        <p>Without those distinctions, it is easy to attribute VM-level
+        guarantees to an application-level actor library.</p>
+        </section>
+        <section id="outcomes" class="level2">
+        <h2>Outcomes</h2>
+        <p>After this chapter, you can:</p>
+        <ul>
+        <li>predict the order of synchronous code, Promise reactions,
+        Node <code>process.nextTick(...)</code>, timers, and
+        <code>setImmediate(...)</code> in bounded examples</li>
+        <li>explain the purpose of the Node.js timers,
+        pending-callbacks, poll, check, and close-callbacks phases</li>
+        <li>explain why a timer threshold is not an execution
+        deadline</li>
+        <li>distinguish concurrency, cooperative scheduling, and CPU
+        parallelism</li>
+        <li>trace a local Actor-Web <code>send(...)</code> through
+        mailbox scheduling and handling</li>
+        <li>explain <code>drop</code>, <code>fail</code>, and
+        <code>park</code> as different pressure decisions</li>
+        <li>state exactly what one-message-at-a-time handling
+        protects</li>
+        <li>explain why a long actor handler can still starve unrelated
+        actors</li>
+        </ul>
+        </section>
+        <section id="four-layers-four-different-questions"
+        class="level2">
+        <h2>Four layers, four different questions</h2>
+        <p>Use this ladder instead of one overloaded "event loop"
+        diagram:</p>
+        <table>
+        <thead>
+        <tr>
+        <th>Layer</th>
+        <th>Owns</th>
+        <th>Question it answers</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+        <td>JavaScript execution</td>
+        <td>The current call stack and language jobs</td>
+        <td>What JavaScript is executing now?</td>
+        </tr>
+        <tr>
+        <td>Host scheduling</td>
+        <td>Timers, I/O readiness, phase queues, and task selection</td>
+        <td>Which callback can receive a turn next?</td>
+        </tr>
+        <tr>
+        <td>Actor-Web runtime</td>
+        <td>Actor identity, mailbox, routing, processing rounds, and
+        pressure</td>
+        <td>Which message may this actor handle next?</td>
+        </tr>
+        <tr>
+        <td>Application behavior</td>
+        <td>Domain context, valid transitions, and effects</td>
+        <td>What should this message mean in the current state?</td>
+        </tr>
+        </tbody>
+        </table>
+        <p>The layers interact, but none substitutes for the layer above
+        or below it.</p>
+        </section>
+        <section id="vocabulary" class="level2">
+        <h2>Vocabulary</h2>
+        <table>
+        <thead>
+        <tr>
+        <th>Term</th>
+        <th>Meaning in this chapter</th>
+        <th>Important boundary</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+        <td>Call stack</td>
+        <td>The JavaScript frames executing synchronously now</td>
+        <td>A queued callback cannot interrupt it</td>
+        </tr>
+        <tr>
+        <td>Task or macrotask</td>
+        <td>A host-scheduled unit such as a script, timer callback, or
+        <code>setImmediate</code> callback</td>
+        <td>Exact sources and ordering differ by host</td>
+        </tr>
+        <tr>
+        <td>Microtask</td>
+        <td>A language/runtime job such as a Promise reaction</td>
+        <td>Microtasks run before the host selects a later
+        macrotask</td>
+        </tr>
+        <tr>
+        <td><code>nextTick</code> queue</td>
+        <td>Node-specific callbacks processed after the current
+        operation</td>
+        <td>It is not a libuv event-loop phase</td>
+        </tr>
+        <tr>
+        <td>Event-loop phase</td>
+        <td>A Node/libuv stage with a class of callbacks or I/O
+        work</td>
+        <td>It is host scheduling, not actor scheduling</td>
+        </tr>
+        <tr>
+        <td>Concurrency</td>
+        <td>Multiple operations are in progress over overlapping
+        time</td>
+        <td>It does not require simultaneous JavaScript execution</td>
+        </tr>
+        <tr>
+        <td>Parallelism</td>
+        <td>Work executes simultaneously on multiple CPU execution
+        resources</td>
+        <td>Requires workers, processes, or another parallel
+        runtime</td>
+        </tr>
+        <tr>
+        <td>Cooperative scheduling</td>
+        <td>Running JavaScript must return control to the host or cross
+        a host scheduling boundary before host work progresses</td>
+        <td>Awaiting an already-settled Promise can continue through
+        microtasks and still delay timers or I/O</td>
+        </tr>
+        <tr>
+        <td>Actor mailbox</td>
+        <td>A queue of messages addressed to one actor identity</td>
+        <td>It is not a Node phase queue or automatically durable</td>
+        </tr>
+        <tr>
+        <td>Backpressure</td>
+        <td>The producer is made to wait or reduce demand</td>
+        <td>Actor-Web's <code>park</code> policy is the direct example
+        here</td>
+        </tr>
+        <tr>
+        <td>Load shedding</td>
+        <td>Excess work is deliberately discarded</td>
+        <td>Actor-Web's <code>drop</code> policy is the direct example
+        here</td>
+        </tr>
+        </tbody>
+        </table>
+        </section>
+        <section id="model-1-run-to-completion" class="level2">
+        <h2>Model 1: run to completion</h2>
+        <p>JavaScript executes the current stack synchronously. A
+        callback waiting elsewhere cannot preempt it.</p>
+        <pre class="js"><code>console.log(&#39;A&#39;);
+
+setTimeout(() =&gt; console.log(&#39;timer&#39;), 0);
+
+Promise.resolve().then(() =&gt; console.log(&#39;promise&#39;));
+
+console.log(&#39;B&#39;);</code></pre>
+        <p>For the introductory browser-style model, the output is:</p>
+        <pre class="text"><code>A
+B
+promise
+timer</code></pre>
+        <p>The initial script owns the stack until it returns. The
+        fulfilled Promise reaction waits in the microtask queue. The
+        zero-millisecond timer becomes eligible for a later task; zero
+        does not mean immediate and does not reserve CPU time.</p>
+        <p>This model is deliberately smaller than Node.js. It is useful
+        because it isolates the language-level relationship between the
+        current stack, microtasks, and later host callbacks.</p>
+        </section>
+        <section id="model-2-the-nodejs-phase-loop" class="level2">
+        <h2>Model 2: the Node.js phase loop</h2>
+        <p>Node.js adds host-specific structure. Its current simplified
+        phase model is:</p>
+        <pre class="text"><code>startup-compatible timers
+          |
+          v
+pending callbacks
+          |
+          v
+idle, prepare (internal)
+          |
+          v         incoming connections and data
+        poll &lt;----------------------------------+
+          |
+          v
+        check          setImmediate callbacks
+          |
+          v
+close callbacks
+          |
+          v
+        timers         setTimeout and setInterval callbacks
+          |
+          +--------------------&gt; next iteration</code></pre>
+        <p>The essential phases are:</p>
+        <ul>
+        <li><strong>pending callbacks</strong> executes selected I/O
+        callbacks deferred from the previous iteration</li>
+        <li><strong>idle, prepare</strong> is internal runtime
+        machinery</li>
+        <li><strong>poll</strong> waits for and processes most I/O
+        events</li>
+        <li><strong>check</strong> runs <code>setImmediate(...)</code>
+        callbacks</li>
+        <li><strong>close callbacks</strong> runs callbacks such as
+        abrupt socket close handling</li>
+        <li><strong>timers</strong> runs eligible
+        <code>setTimeout(...)</code> and <code>setInterval(...)</code>
+        callbacks</li>
+        </ul>
+        <p>Starting with Node 20's libuv version, timers normally run
+        after poll in an iteration. A compatibility timer pass can still
+        occur before entering the loop. This detail is one reason a
+        learning diagram should identify the Node version and remain a
+        projection rather than claiming to be an exact execution
+        trace.</p>
+        <p>Read the current primary source before relying on a phase
+        detail:</p>
+        <ul>
+        <li><a
+        href="https://nodejs.org/learn/asynchronous-work/event-loop-timers-and-nexttick">Node.js
+        event loop, timers, and <code>nextTick</code></a></li>
+        <li><a
+        href="https://nodejs.org/learn/asynchronous-work/understanding-setimmediate">Node.js
+        <code>setImmediate(...)</code></a></li>
+        </ul>
+        <section
+        id="nexttick-and-promise-jobs-are-checkpoints-not-phases"
+        class="level3">
+        <h3><code>nextTick</code> and Promise jobs are checkpoints, not
+        phases</h3>
+        <p>The official phase diagram intentionally omits
+        <code>process.nextTick(...)</code> because the
+        <code>nextTick</code> queue is processed after the current
+        operation rather than as a libuv phase. Promise reactions use
+        the Promise microtask queue.</p>
+        <p>For the bounded CommonJS examples in Node's learning
+        material, reason in this order after the current operation:</p>
+        <pre class="text"><code>current JavaScript operation completes
+  -&gt; process.nextTick queue
+  -&gt; Promise microtask queue
+  -&gt; later macrotask / event-loop callback</code></pre>
+        <p>Do not turn this into an unqualified global ordering rule. ES
+        modules begin in an asynchronous context, callbacks can schedule
+        more jobs, and timer versus <code>setImmediate</code> ordering
+        depends on where the calls were made.</p>
+        </section>
+        <section id="setimmediate-versus-settimeout0" class="level3">
+        <h3><code>setImmediate</code> versus
+        <code>setTimeout(0)</code></h3>
+        <p>When both are scheduled from the main module, their relative
+        ordering can vary. When both are scheduled inside an I/O
+        callback, Node reaches the check phase before the next timer
+        opportunity, so <code>setImmediate(...)</code> runs first.</p>
+        <p>That contextual behavior matters to Actor-Web because its
+        normal scheduler uses <code>setImmediate(...)</code> when the
+        host provides it.</p>
+        </section>
+        </section>
+        <section id="model-3-concurrency-is-not-parallel-javascript"
+        class="level2">
+        <h2>Model 3: concurrency is not parallel JavaScript</h2>
+        <p>One JavaScript isolate can coordinate many operations that
+        are simultaneously in progress:</p>
+        <ul>
+        <li>a network request can wait in the operating system</li>
+        <li>a filesystem operation can run through libuv's worker
+        pool</li>
+        <li>a timer threshold can elapse</li>
+        <li>several actor mailboxes can contain messages</li>
+        </ul>
+        <p>The JavaScript callbacks that react to those operations still
+        need turns on the isolate's thread.</p>
+        <pre class="js"><code>setTimeout(() =&gt; console.log(&#39;timer finally ran&#39;), 0);
+
+const startedAt = performance.now();
+while (performance.now() - startedAt &lt; 250) {
+  // The timer may be ready, but JavaScript cannot run its callback yet.
+}</code></pre>
+        <p>Node's rule of thumb is to keep each callback's work small. A
+        long callback prevents other clients and callbacks on the
+        event-loop thread from getting a turn. See <a
+        href="https://nodejs.org/learn/asynchronous-work/dont-block-the-event-loop">Do
+        not block the event loop</a>.</p>
+        <p>For CPU-intensive JavaScript that must run in parallel, use a
+        worker-thread pool, a separate process, or another execution
+        boundary. Node's <a
+        href="https://nodejs.org/api/worker_threads.html"><code>worker_threads</code>
+        documentation</a> distinguishes CPU-intensive JavaScript from
+        the asynchronous I/O that Node can already handle
+        efficiently.</p>
+        </section>
+        <section id="model-4-an-actor-mailbox-is-a-different-queue"
+        class="level2">
+        <h2>Model 4: an actor mailbox is a different queue</h2>
+        <p>The event loop schedules callbacks for an isolate. An
+        Actor-Web mailbox queues messages for one actor identity.</p>
+        <table>
+        <thead>
+        <tr>
+        <th>Host scheduler concern</th>
+        <th>Actor mailbox concern</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+        <td>When can this callback receive a turn?</td>
+        <td>Which message may this actor handle next?</td>
+        </tr>
+        <tr>
+        <td>Coordinates timers, I/O, microtasks, and phase
+        callbacks</td>
+        <td>Coordinates messages addressed to one actor</td>
+        </tr>
+        <tr>
+        <td>A long callback delays the isolate</td>
+        <td>A full mailbox applies an actor pressure policy</td>
+        </tr>
+        <tr>
+        <td>Knows nothing about actor identity</td>
+        <td>Scopes sequencing and statistics to one actor</td>
+        </tr>
+        <tr>
+        <td>Does not provide domain ordering</td>
+        <td>Preserves local FIFO dequeueing without creating global
+        order</td>
+        </tr>
+        </tbody>
+        </table>
+        <p>Actor serialization gives a state-ownership rule:</p>
+        <blockquote>
+        <p>Actor-Web does not dequeue the next message for an actor
+        until the current delivery has settled.</p>
+        </blockquote>
+        <p>That prevents overlapping handling of two messages against
+        the same actor context. It does not make the JavaScript callback
+        preemptible.</p>
+        </section>
+        <section id="synchronous-work-versus-await" class="level2">
+        <h2>Synchronous work versus <code>await</code></h2>
+        <p>These handlers are both sequential from the actor's
+        perspective, but they treat the host scheduler differently.</p>
+        <pre class="ts"><code>async function cpuHeavyHandler(): Promise&lt;void&gt; {
+  const until = performance.now() + 250;
+  while (performance.now() &lt; until) {
+    // Synchronous work blocks every callback on this isolate.
+  }
+}</code></pre>
+        <pre class="ts"><code>async function ioHandler(): Promise&lt;void&gt; {
+  const result = await readFromNetwork();
+  consume(result);
+}</code></pre>
+        <p>While <code>ioHandler</code> is awaiting, the host can run
+        other callbacks. Actor-Web still waits for that delivery before
+        taking the same actor's next message. Therefore:</p>
+        <ul>
+        <li>the same actor remains logically serialized</li>
+        <li>other actors can progress while the awaited operation is
+        pending</li>
+        <li>synchronous work before or after the <code>await</code> can
+        still block the isolate</li>
+        <li><code>await</code> does not automatically move CPU work to
+        another thread</li>
+        </ul>
+        </section>
+        <section id="trace-a-local-actor-web-message" class="level2">
+        <h2>Trace a local Actor-Web message</h2>
+        <p>Read these files in order:</p>
+        <ol type="1">
+        <li><a
+        href="../../../packages/actor-core-runtime/src/actor-ref.ts"><code>actor-ref.ts</code></a></li>
+        <li><a
+        href="../../../packages/actor-core-runtime/src/actor-system-impl.ts"><code>actor-system-impl.ts</code></a></li>
+        <li><a
+        href="../../../packages/actor-core-runtime/src/messaging/mailbox.ts"><code>mailbox.ts</code></a></li>
+        <li><a
+        href="../../../packages/actor-core-runtime/src/unit/message-delivery.test.ts"><code>message-delivery.test.ts</code></a></li>
+        <li><a
+        href="../../../packages/actor-core-runtime/src/integration/async-messaging.test.ts"><code>async-messaging.test.ts</code></a></li>
+        </ol>
+        <p>The current normal local path is:</p>
+        <pre class="text"><code>ActorRef.send(message)
+  -&gt; actor system resolves the actor address
+  -&gt; message enters that actor&#39;s BoundedMailbox
+  -&gt; runtime schedules processActorMessages on a future macrotask
+  -&gt; Node uses setImmediate; other hosts fall back to setTimeout(0)
+  -&gt; runtime dequeues and awaits one delivery at a time
+  -&gt; after at most 100 messages, remaining work is scheduled for another turn</code></pre>
+        <p>The scheduler is implemented by
+        <code>scheduleMacrotask</code> in <a
+        href="../../../packages/actor-core-runtime/src/actor-system-impl.ts"><code>actor-system-impl.ts</code></a>.
+        The same file contains
+        <code>startMessageProcessingLoop(...)</code>,
+        <code>processActorMessages(...)</code>, and the 100-message
+        safety limit.</p>
+        <p>On Node, <code>setImmediate(...)</code> places the processing
+        callback in the check phase. On a host without
+        <code>setImmediate</code>, the timer fallback reaches the host's
+        timer or task mechanism. The mailbox itself remains outside both
+        mechanisms.</p>
+        <section id="why-the-100-message-batch-exists" class="level3">
+        <h3>Why the 100-message batch exists</h3>
+        <p>One processing callback can handle up to 100 available
+        messages. If more remain, Actor-Web schedules another
+        macrotask.</p>
+        <p>This is a cooperative fairness valve:</p>
+        <ul>
+        <li>it prevents one continuously non-empty mailbox from
+        retaining the same processing round forever</li>
+        <li>it gives the host a scheduling boundary at which other
+        callbacks can run</li>
+        <li>it does not interrupt one slow handler</li>
+        <li>it is not a transaction boundary, acknowledgement, retry, or
+        durability guarantee</li>
+        </ul>
+        </section>
+        </section>
+        <section id="capacity-and-pressure-policy" class="level2">
+        <h2>Capacity and pressure policy</h2>
+        <p>The current default <code>BoundedMailbox</code> has:</p>
+        <ul>
+        <li>capacity <code>1000</code></li>
+        <li>overflow strategy <code>drop</code></li>
+        <li>metrics enabled</li>
+        <li>FIFO dequeueing within the mailbox</li>
+        </ul>
+        <p>The three policies express different producer/consumer
+        relationships:</p>
+        <table>
+        <thead>
+        <tr>
+        <th>Policy</th>
+        <th>Full-mailbox behavior</th>
+        <th>System design meaning</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+        <td><code>drop</code></td>
+        <td>Reject the new enqueue and increment
+        <code>totalDropped</code></td>
+        <td>Shed excess work to protect bounded memory</td>
+        </tr>
+        <tr>
+        <td><code>fail</code></td>
+        <td>Raise an explicit mailbox failure and increment
+        <code>totalFailed</code></td>
+        <td>Force the caller/runtime to handle overload as an error</td>
+        </tr>
+        <tr>
+        <td><code>park</code></td>
+        <td>Return a Promise that settles when dequeueing creates
+        capacity</td>
+        <td>Apply backpressure by making the producer wait</td>
+        </tr>
+        </tbody>
+        </table>
+        <p>The mailbox exposes:</p>
+        <pre class="text"><code>size
+capacity
+totalEnqueued
+totalDequeued
+totalDropped
+totalFailed
+utilizationRatio</code></pre>
+        <p>These are runtime pressure facts. They do not determine which
+        domain command is safe to drop. Choosing a pressure policy still
+        requires application judgment.</p>
+        </section>
+        <section id="actor-web-and-erlangelixir" class="level2">
+        <h2>Actor-Web and Erlang/Elixir</h2>
+        <p>The resemblance is real:</p>
+        <ul>
+        <li>actors/processes own isolated state</li>
+        <li>messages wait in per-identity mailboxes</li>
+        <li>behavior is separated from runtime machinery</li>
+        <li>supervision makes recovery policy explicit</li>
+        </ul>
+        <p>The scheduling guarantee differs. The BEAM uses multiple
+        scheduler threads and time-slices lightweight Erlang processes.
+        Actor-Web runs behavior handlers as JavaScript callbacks on the
+        host isolate. Actor-Web can yield between processing rounds and
+        across awaited operations, but it cannot preempt arbitrary
+        synchronous JavaScript inside a handler.</p>
+        <p>The useful conclusion is not that one runtime is "more
+        actor-like." It is that the same actor vocabulary sits on
+        different execution substrates and therefore provides different
+        fault-isolation and fairness guarantees.</p>
+        </section>
+        <section id="failure-boundary" class="level2">
+        <h2>Failure boundary</h2>
+        <p>After reading this chapter, none of these claims are
+        justified:</p>
+        <ul>
+        <li>Actor-Web actors are BEAM processes.</li>
+        <li>A mailbox makes CPU-heavy JavaScript preemptible.</li>
+        <li><code>await</code> moves JavaScript computation to another
+        thread.</li>
+        <li>A Promise callback always precedes every possible Node
+        callback.</li>
+        <li>A zero-millisecond timer runs immediately.</li>
+        <li>FIFO within one actor creates global ordering across actors
+        or nodes.</li>
+        <li><code>send(...)</code> is durable, acknowledged, or
+        retried.</li>
+        <li>A 100-message processing batch is a business
+        transaction.</li>
+        <li>A bounded mailbox can decide the product meaning of lost
+        work.</li>
+        </ul>
+        </section>
+        <section id="maturity-ledger" class="level2">
+        <h2>Maturity ledger</h2>
+        <table>
+        <thead>
+        <tr>
+        <th>Claim</th>
+        <th>Maturity</th>
+        <th>Evidence</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+        <td>Actor-Web has a bounded local mailbox with
+        <code>drop</code>, <code>fail</code>, and <code>park</code></td>
+        <td>current</td>
+        <td><code>messaging/mailbox.ts</code> and focused mailbox
+        tests</td>
+        </tr>
+        <tr>
+        <td>Normal actor processing uses <code>setImmediate</code> or a
+        timer fallback</td>
+        <td>current</td>
+        <td><code>scheduleMacrotask</code> in
+        <code>actor-system-impl.ts</code></td>
+        </tr>
+        <tr>
+        <td>One actor delivery is awaited before its next message is
+        dequeued</td>
+        <td>current</td>
+        <td><code>processActorMessages(...)</code></td>
+        </tr>
+        <tr>
+        <td>Processing yields after at most 100 messages when more
+        remain</td>
+        <td>current</td>
+        <td><code>processActorMessages(...)</code></td>
+        </tr>
+        <tr>
+        <td>Ordinary send is a durable inbox protocol</td>
+        <td>deferred</td>
+        <td>No general transactional mailbox, state, inbox, and outbox
+        guarantee</td>
+        </tr>
+        <tr>
+        <td>Actor-Web provides BEAM-style preemptive scheduling</td>
+        <td>deferred</td>
+        <td>JavaScript host scheduling remains authoritative; VM-level
+        preemption is a non-goal</td>
+        </tr>
+        </tbody>
+        </table>
+        </section>
+        <section id="answer-the-question" class="level2">
+        <h2>Answer the question</h2>
+        <p>JavaScript's one-stack-at-a-time rule prevents two JavaScript
+        frames from executing simultaneously in one isolate, but it does
+        not create actor identity, state ownership, per-actor queues,
+        capacity policy, remote addressing, or supervision. Actor-Web
+        supplies those application/runtime semantics.</p>
+        <p>The actor model prevents overlapping mutation of one actor's
+        context by serializing that actor's messages. It does not
+        prevent event-loop starvation, because the selected handler
+        still runs as cooperatively scheduled JavaScript. Fairness
+        depends on short synchronous work, awaited I/O, bounded
+        processing rounds, and explicit parallel execution boundaries
+        for CPU-heavy work.</p>
+        </section>
+        <section id="continue-in-the-workbook" class="level2">
+        <h2>Continue in the workbook</h2>
+        <p>Complete the <a
+        href="../workbook/01-javascript-concurrency-and-mailboxes.html">Week
+        1 workbook</a> and use the <a
+        href="../labs/week-01-event-loop-and-mailbox.html">interactive
+        lab</a> to test each layer of the model.</p>
+        </section>
+        </section>
+        <footer class="page-footer">
+          <p>Actor-Web Learning · Week 1 · JavaScript concurrency and actor mailboxes</p>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>
