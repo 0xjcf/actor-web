@@ -515,6 +515,28 @@ describe('createRuntimeHost', () => {
     });
   });
 
+  it('fails closed when non-localhost transport exposure is enabled without explicit transport auth', async () => {
+    await host.stop();
+
+    const missingTransportAuth = await createRuntimeHost(buildCounterTopology(), {
+      node: 'local',
+      distributed: {
+        transport: {
+          listen: {
+            host: '0.0.0.0',
+          },
+        },
+        allowUnsafeExposure: true,
+      },
+    });
+
+    expect(missingTransportAuth).toEqual({
+      ok: false,
+      error:
+        'Distributed host rejected: missing_transport_auth (non-localhost transport exposure requires explicit transport authentication.)',
+    });
+  });
+
   it('connects to an authenticated remote gateway and runs send, ask, watch, and status through the remote host shell', async () => {
     await host.stop();
     const decisions: unknown[] = [];

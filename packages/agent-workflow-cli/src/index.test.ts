@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,6 +22,16 @@ describe('@actor-web/cli stub', () => {
     expect(cli.commands).toContain('connect');
     expect(cli.features).toContain('Localhost-safe gateway and transport listeners');
     expect(cli.features).toContain('Standalone remote gateway operator shells');
+  });
+
+  it('uses public runtime entrypoints instead of deep actor-core-runtime src imports', () => {
+    const runtimeHostSource = readFileSync(
+      new URL('./host/runtime-host.ts', import.meta.url),
+      'utf8'
+    );
+
+    expect(runtimeHostSource).not.toContain('../../../actor-core-runtime/src/');
+    expect(runtimeHostSource).toContain('@actor-web/runtime/node');
   });
 
   it('rejects malformed admission modules before topology startup', async () => {

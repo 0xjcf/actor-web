@@ -42,14 +42,13 @@ import {
   parse,
   startRuntime,
 } from '@actor-web/runtime';
-import type { RuntimeGatewayTraceProjection } from '../../../actor-core-runtime/src/runtime-gateway-shared.js';
 import type {
   ActorWebNodeGatewayOptions,
   ActorWebNodeTransportOptions,
   ServeActorWebNodeOptions,
   ServedActorWebNode,
-} from '../../../actor-core-runtime/src/serve-actor-web-node.js';
-import { serveNode } from '../../../actor-core-runtime/src/serve-actor-web-node.js';
+} from '@actor-web/runtime/node';
+import { serveNode } from '@actor-web/runtime/node';
 import { loadModuleExport } from './load-module.js';
 
 const log = Logger.namespace('ACTOR_WEB_CLI_HOST');
@@ -140,6 +139,7 @@ export interface RuntimeHostDistributedOptions {
         | 'outboundQueueLimit'
         | 'idempotencyWindowSize'
         | 'idempotencyProvider'
+        | 'auth'
       >;
   readonly peers?: Record<string, string>;
   readonly connect?: readonly string[];
@@ -192,6 +192,9 @@ interface RegisteredActor {
 }
 
 type AnyTopology = ActorWebTopology<ActorWebTopologyInput>;
+type RuntimeGatewayTraceProjection = NonNullable<
+  ReturnType<ClosableActorWebTraceSource['latestTrace']>
+>;
 
 function isTopologyValue(value: unknown): value is AnyTopology {
   return (
@@ -311,32 +314,60 @@ function requiresNonLocalhostGatewayHardening(
   return gatewayOptions;
 }
 
+function requiresNonLocalhostTransportHardening(
+  options: RuntimeHostOptions
+): Pick<ActorWebNodeTransportOptions, 'auth'> | null {
+  if (!options.distributed?.allowUnsafeExposure || !options.distributed.transport) {
+    return null;
+  }
+  const distributedHost = options.distributed.host;
+  const transportOptions =
+    options.distributed.transport === true ? {} : (options.distributed.transport ?? {});
+  const transportListen = transportOptions.listen;
+  const transportHost =
+    typeof transportListen === 'object'
+      ? (transportListen.host ?? distributedHost ?? '127.0.0.1')
+      : (distributedHost ?? '127.0.0.1');
+  if (!transportListen || isLoopbackHost(transportHost)) {
+    return null;
+  }
+
+  return transportOptions;
+}
+
 function validateDistributedSecurityRequirements(
   options: RuntimeHostOptions
 ): HostResult<RuntimeHost> | null {
   const gatewayOptions = requiresNonLocalhostGatewayHardening(options);
-  if (!gatewayOptions) {
-    return null;
+  if (gatewayOptions) {
+    if (!gatewayOptions.auth) {
+      return {
+        ok: false,
+        error:
+          'Distributed host rejected: missing_gateway_auth (non-localhost gateway exposure requires explicit gateway authentication.)',
+      };
+    }
+    if (!gatewayOptions.commandAdmission) {
+      return {
+        ok: false,
+        error:
+          'Distributed host rejected: missing_gateway_admission (non-localhost gateway exposure requires explicit command admission.)',
+      };
+    }
+    if (!options.checkpoint?.store) {
+      return {
+        ok: false,
+        error:
+          'Distributed host rejected: missing_checkpoint_store (non-localhost gateway exposure requires an explicit checkpoint store.)',
+      };
+    }
   }
-  if (!gatewayOptions.auth) {
+  const transportOptions = requiresNonLocalhostTransportHardening(options);
+  if (transportOptions && !transportOptions.auth) {
     return {
       ok: false,
       error:
-        'Distributed host rejected: missing_gateway_auth (non-localhost gateway exposure requires explicit gateway authentication.)',
-    };
-  }
-  if (!gatewayOptions.commandAdmission) {
-    return {
-      ok: false,
-      error:
-        'Distributed host rejected: missing_gateway_admission (non-localhost gateway exposure requires explicit command admission.)',
-    };
-  }
-  if (!options.checkpoint?.store) {
-    return {
-      ok: false,
-      error:
-        'Distributed host rejected: missing_checkpoint_store (non-localhost gateway exposure requires an explicit checkpoint store.)',
+        'Distributed host rejected: missing_transport_auth (non-localhost transport exposure requires explicit transport authentication.)',
     };
   }
   return null;
