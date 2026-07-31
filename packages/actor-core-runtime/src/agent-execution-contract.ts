@@ -1974,6 +1974,56 @@ export function redactAgentExecutionValue(value: unknown): unknown {
   return String(value);
 }
 
+const AGENT_EXECUTION_RECEIPT_PAYLOAD_KEYS = [
+  'admission',
+  'event',
+  'principal',
+  'authorization',
+  'reason',
+  'result',
+  'retry',
+  'cancellation',
+  'reconciliation',
+  'projection',
+  'effect',
+  'outcome',
+] as const;
+
+/**
+ * Redacts extension-bearing receipt payloads while preserving authoritative
+ * trace, principal, command, idempotency, sequence, and receipt join keys.
+ */
+export function sanitizeAgentExecutionTrace(trace: AgentExecutionTrace): AgentExecutionTrace {
+  const receipts = trace.receipts.map((receipt) => {
+    const sanitized = { ...receipt } as Record<string, unknown>;
+    for (const key of AGENT_EXECUTION_RECEIPT_PAYLOAD_KEYS) {
+      if (key in receipt) {
+        sanitized[key] = redactAgentExecutionValue(
+          (receipt as unknown as Record<string, unknown>)[key]
+        );
+      }
+    }
+    return sanitized as unknown as AgentExecutionReceipt;
+  });
+
+  return createAgentExecutionTrace({
+    version: trace.version,
+    schemaVersion: trace.schemaVersion,
+    traceId: trace.traceId,
+    actorId: trace.actorId,
+    sessionId: trace.sessionId,
+    commandId: trace.commandId,
+    ...(trace.intentId ? { intentId: trace.intentId } : {}),
+    ...(trace.principalId ? { principalId: trace.principalId } : {}),
+    ...(trace.attempt !== undefined ? { attempt: trace.attempt } : {}),
+    ...(trace.revision !== undefined ? { revision: trace.revision } : {}),
+    ...(trace.checkpointId ? { checkpointId: trace.checkpointId } : {}),
+    ...(trace.correlationId ? { correlationId: trace.correlationId } : {}),
+    ...(trace.causationId ? { causationId: trace.causationId } : {}),
+    receipts,
+  });
+}
+
 export function toAgentExecutionReceiptFromEventEnvelope(
   envelope: ActorEventEnvelope,
   options: {

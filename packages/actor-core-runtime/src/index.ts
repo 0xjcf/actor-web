@@ -184,6 +184,7 @@ export {
   isAgentExecutionTrace,
   parseAgentExecutionTrace,
   redactAgentExecutionValue,
+  sanitizeAgentExecutionTrace,
   sortAgentExecutionReceipts,
   toAgentExecutionReceiptFromEffectRecord,
   toAgentExecutionReceiptFromEventEnvelope,

@@ -758,11 +758,18 @@ function createGatewayBackedTraceSource(
   const acceptSequence = (
     frame: Extract<RuntimeGatewayServerFrame, { type: 'trace'; sequence: number }>
   ): boolean => {
+    if (resyncInProgress && frame.sequence === 1 && lastSequence > 0) {
+      // The prior replay owner was unavailable (for example after a gateway
+      // restart), so accept the new authoritative stream from its first frame.
+      lastSequence = 0;
+    }
     const expectedSequence = lastSequence + 1;
     if (frame.sequence === expectedSequence) {
       lastSequence = frame.sequence;
       if (resyncInProgress) {
         resyncInProgress = false;
+        currentStatus = createProjectionTransportStatus('connected');
+        emitStatus();
       }
       return true;
     }
@@ -774,6 +781,8 @@ function createGatewayBackedTraceSource(
     if (resyncInProgress) {
       lastSequence = frame.sequence;
       resyncInProgress = false;
+      currentStatus = createProjectionTransportStatus('connected');
+      emitStatus();
       return true;
     }
 

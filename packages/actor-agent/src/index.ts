@@ -624,32 +624,34 @@ async function reconcileAgentSessionCheckpoint(input: {
       : envelope.deterministic;
   const nextContext = rehydrateActorAgentLoopContext(nextState);
   const effect = envelope.effect;
-  const reconciledEnvelope: AgentSessionCheckpointEnvelope = createAgentSessionCheckpointEnvelope({
-    sessionId: envelope.sessionId,
-    checkpointId: `${envelope.checkpointId}:reconciled:${input.receipt.receiptId}`,
-    actor: envelope.actor,
-    deterministic: createActorAgentLoopCheckpointState(nextContext) as unknown as JsonValue,
-    effect: effect
-      ? {
-          ...effect,
-          phase: 'receipt_recorded',
-          receipt: {
-            receiptId: input.receipt.receiptId,
-            receiptKind: 'reconciliation',
-            status: 'reconciled',
-            outcome: input.receipt.outcome,
-          },
-        }
-      : null,
-    continuation: envelope.continuation,
-    reconciliation: { status: 'clear' },
-    recordedAt: (input.checkpoint.now ?? (() => new Date()))().toISOString(),
-    expiresAt: envelope.expiresAt,
-    staleAt: null,
-    redactedFields: envelope.redactedFields,
-    ...(envelope.metadata === undefined ? {} : { metadata: envelope.metadata }),
-  });
   try {
+    const reconciledEnvelope: AgentSessionCheckpointEnvelope = createAgentSessionCheckpointEnvelope(
+      {
+        sessionId: envelope.sessionId,
+        checkpointId: `${envelope.checkpointId}:reconciled:${input.receipt.receiptId}`,
+        actor: envelope.actor,
+        deterministic: createActorAgentLoopCheckpointState(nextContext) as unknown as JsonValue,
+        effect: effect
+          ? {
+              ...effect,
+              phase: 'receipt_recorded',
+              receipt: {
+                receiptId: input.receipt.receiptId,
+                receiptKind: 'reconciliation',
+                status: 'reconciled',
+                outcome: input.receipt.outcome,
+              },
+            }
+          : null,
+        continuation: envelope.continuation,
+        reconciliation: { status: 'clear' },
+        recordedAt: (input.checkpoint.now ?? (() => new Date()))().toISOString(),
+        expiresAt: envelope.expiresAt,
+        staleAt: null,
+        redactedFields: envelope.redactedFields,
+        ...(envelope.metadata === undefined ? {} : { metadata: envelope.metadata }),
+      }
+    );
     const writeResult = await input.checkpoint.store.write(reconciledEnvelope);
     if (!isCheckpointWriteDurable(writeResult)) {
       return {
@@ -982,16 +984,24 @@ export function createAgentLoopBehavior(
               ];
 
         if (options.checkpoint) {
-          await requireCheckpointWriteStored(options.checkpoint, nextContext, {
-            step,
-            phase: 'receipt_recorded',
-            irreversible: true,
-            intent: {
-              tool: ACTOR_WEB_LLM_TOOL_NAME,
-              messageType: message.type,
-            },
-            receipt: result,
-          });
+          try {
+            await requireCheckpointWriteStored(options.checkpoint, nextContext, {
+              step,
+              phase: 'receipt_recorded',
+              irreversible: true,
+              intent: {
+                tool: ACTOR_WEB_LLM_TOOL_NAME,
+                messageType: message.type,
+              },
+              receipt: result,
+            });
+          } catch (durabilityError) {
+            return createFailureResult({
+              context: nextContext,
+              error: normalizeThrownError(durabilityError),
+              emitPrefix: [...observedToolEvents, ...emit],
+            });
+          }
         }
 
         return {

@@ -1032,6 +1032,7 @@ describe('createActorWebSource', () => {
     expect(traces.at(-1)).toMatchObject({
       cursor: 'trace:shipment:latest',
     });
+    expect(source.transportStatus().state).toBe('connected');
 
     source.close();
   });
@@ -1039,7 +1040,7 @@ describe('createActorWebSource', () => {
   it('reconnects trace-only sources with the prior replay identity and cursor', async () => {
     vi.useFakeTimers();
     try {
-      const sockets = [new FakeGatewaySocket(), new FakeGatewaySocket()];
+      const sockets = [new FakeGatewaySocket(), new FakeGatewaySocket(), new FakeGatewaySocket()];
       let socketIndex = 0;
       const source = createActorWebTraceSource(
         {
@@ -1124,9 +1125,39 @@ describe('createActorWebSource', () => {
       });
 
       expect(traces).toEqual(['trace:shipment:1', 'trace:shipment:4']);
+      expect(source.transportStatus().state).toBe('connected');
+
+      sockets[1]?.close();
+      await vi.advanceTimersByTimeAsync(5);
+      expect(socketIndex).toBe(3);
+      sockets[2]?.open();
+      sockets[2]?.receive({
+        type: 'ready',
+        connectionId: 'trace-connection-after-restart',
+        heartbeatMs: 15000,
+        serverTime: '2026-04-25T18:00:03.000Z',
+      });
+      expect(sockets[2]?.sentFrames[1]).toMatchObject({
+        type: 'subscribe',
+        fromSequence: 5,
+      });
+      sockets[2]?.receive({
+        type: 'trace',
+        streamId: 'shipment-trace',
+        sequence: 1,
+        projection: {
+          address: 'actor://server-node/shipment',
+          cursor: 'trace:shipment:restart:1',
+          observedAt: '2026-04-25T18:00:03.000Z',
+          trace: null,
+          fact: { code: 'trace_malformed', message: 'new gateway replay owner' },
+        },
+      });
+      expect(traces).toEqual(['trace:shipment:1', 'trace:shipment:4', 'trace:shipment:restart:1']);
+      expect(source.transportStatus().state).toBe('connected');
       source.close();
       await vi.runAllTimersAsync();
-      expect(socketIndex).toBe(2);
+      expect(socketIndex).toBe(3);
     } finally {
       vi.useRealTimers();
     }

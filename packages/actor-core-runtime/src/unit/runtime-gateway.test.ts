@@ -1864,6 +1864,74 @@ describe('runtime gateway hub', () => {
     expect(standaloneProjection.cursor).toBe(rootProjection.cursor);
   });
 
+  it('bounds non-positive trace buffers and redacts extension payloads without losing join keys', () => {
+    const source = createStandaloneRuntimeGatewayTraceSource(
+      { address: 'actor://local/trace-sanitizer' },
+      { bufferSize: 0 }
+    );
+    const observedFacts: string[] = [];
+    source.subscribeTrace((projection) => {
+      if (projection.fact) {
+        observedFacts.push(projection.fact.code);
+      }
+    });
+
+    const trace = agentExecutionContract.createAgentExecutionTrace({
+      traceId: 'trace:sanitized:1',
+      actorId: 'actor://local/trace-sanitizer',
+      sessionId: 'session:sanitized:1',
+      commandId: 'command:sanitized:1',
+      principalId: 'principal:sanitized:1',
+      receipts: [
+        agentExecutionContract.createExecutionAuthorizedReceipt({
+          receiptId: 'receipt:sanitized:1',
+          recordId: 'record:sanitized:1',
+          traceId: 'trace:sanitized:1',
+          actorId: 'actor://local/trace-sanitizer',
+          sessionId: 'session:sanitized:1',
+          commandId: 'command:sanitized:1',
+          principalId: 'principal:sanitized:1',
+          sequence: 1,
+          occurredAt: '2026-04-25T18:00:00.000Z',
+          principal: {
+            id: 'principal:sanitized:1',
+            apiToken: 'principal-secret',
+          },
+          authorization: {
+            policy: 'trace-policy-v1',
+            decision: 'approved',
+            credential: 'authorization-secret',
+          },
+        }),
+      ],
+    });
+    const projection = source.appendTrace(trace);
+    source.appendTraceFact({
+      code: 'trace_malformed',
+      message: 'force bounded eviction',
+    });
+
+    expect(projection.trace).toMatchObject({
+      traceId: 'trace:sanitized:1',
+      commandId: 'command:sanitized:1',
+      principalId: 'principal:sanitized:1',
+      receipts: [
+        {
+          principal: {
+            id: 'principal:sanitized:1',
+            apiToken: '[redacted:secret]',
+          },
+          authorization: {
+            policy: 'trace-policy-v1',
+            decision: 'approved',
+            credential: '[redacted:secret]',
+          },
+        },
+      ],
+    });
+    expect(observedFacts).toContain('trace_buffer_overflow');
+  });
+
   it('keeps throwing trace observers outside authoritative dispatch settlement', async () => {
     const source = createRuntimeGatewayTraceSource(createFakeSource('ready'));
     const settlements: string[] = [];

@@ -810,6 +810,7 @@ describe('@actor-web/agent loop behavior', () => {
     }
 
     const store = createInMemoryAgentSessionCheckpointStore();
+    const readSpy = vi.spyOn(store, 'read');
     const provider = vi.fn<ActorAgentLlmProvider>().mockReturnValue({
       ok: true,
       value: {
@@ -858,6 +859,7 @@ describe('@actor-web/agent loop behavior', () => {
         ],
       },
     });
+    expect(readSpy).toHaveBeenCalledTimes(2);
   });
 
   it('keeps the live process reconciliation-gated after a post-dispatch durability failure', async () => {
@@ -1086,6 +1088,14 @@ describe('@actor-web/agent loop behavior', () => {
           code: 'CHECKPOINT_WRITE_FAILED',
         },
       },
+    });
+    expect(writes).toHaveLength(2);
+    expect(readAgentLoopContext(result)).toMatchObject({
+      steps: 1,
+      history: [
+        { role: 'user', content: 'receipt write must gate success' },
+        { role: 'assistant', content: 'checkpoint receipt should gate success' },
+      ],
     });
   });
 
@@ -1955,6 +1965,89 @@ describe('@actor-web/agent loop behavior', () => {
       ],
     });
     expect(resumed).toMatchObject({ reply: { ok: true, status: 'responded' } });
+  });
+
+  it('returns a structured reconciliation failure when envelope construction throws', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+
+    const envelope = createAgentSessionCheckpointEnvelope({
+      sessionId: 'session:agent:reconciliation-clock-failure',
+      checkpointId: 'checkpoint:agent:reconciliation-clock-failure',
+      actor: {
+        actorId: 'actor://local/researcher',
+        sessionId: 'session:agent:reconciliation-clock-failure',
+        turnId: 'turn:1',
+        traceId: 'trace:reconciliation-clock-failure:1',
+        commandId: 'cmd:reconciliation-clock-failure:1',
+        correlationId: 'corr:reconciliation-clock-failure:1',
+        causationId: 'cause:reconciliation-clock-failure:1',
+      },
+      deterministic: {
+        history: [{ role: 'user', content: 'reconcile this turn' }],
+        steps: 0,
+        pendingToolCalls: [],
+        lastError: null,
+      },
+      effect: {
+        effectId: 'effect:reconciliation-clock-failure:1',
+        effectAttemptId: 'effect-attempt:reconciliation-clock-failure:1',
+        phase: 'intent_recorded',
+        irreversible: true,
+        intent: { tool: 'llm' },
+      },
+      continuation: null,
+      reconciliation: { status: 'required', reason: 'receipt unknown' },
+      recordedAt: '2026-04-25T18:00:00.000Z',
+    });
+    const write = vi.fn();
+    const behavior = agent.createAgentLoopBehavior({
+      checkpoint: {
+        store: {
+          read: async () => ({ outcome: 'present', envelope }) as never,
+          write,
+        },
+        sessionId: envelope.sessionId,
+        now: () => new Date(Number.NaN),
+      },
+    });
+    const tools = createActorToolbox(
+      agent.createActorAgentToolRegistry({
+        llm: () => ({
+          ok: true,
+          value: { message: { role: 'assistant', content: 'unused' } },
+        }),
+      }),
+      actorToolContext,
+      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+    );
+
+    const result = await behavior.onMessage?.(
+      createAgentParams({
+        behavior,
+        tools,
+        message: {
+          type: 'RECONCILE_AGENT_SESSION',
+          receipt: {
+            receiptId: 'receipt:reconciliation-clock-failure:1',
+            outcome: 'effect_not_applied',
+          },
+        },
+      })
+    );
+
+    expect(result).toMatchObject({
+      reply: {
+        ok: false,
+        error: {
+          code: 'CHECKPOINT_WRITE_FAILED',
+        },
+      },
+    });
+    expect(write).not.toHaveBeenCalled();
   });
 
   it('preserves ok:false tool results when re-entering the llm after the final tool reply', async () => {

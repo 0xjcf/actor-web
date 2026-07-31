@@ -44,6 +44,30 @@ export function createRuntimeGatewayTraceCursor(address: string, sequence: numbe
   return `${address}#trace:${sequence}`;
 }
 
+export function toRuntimeGatewayTraceProjection(
+  address: string,
+  sequence: number,
+  observedAt: string,
+  trace: AgentExecutionTrace | null,
+  fact: RuntimeGatewayTraceFact | null
+): RuntimeGatewayTraceProjection {
+  return {
+    address,
+    cursor: createRuntimeGatewayTraceCursor(address, sequence),
+    observedAt,
+    trace,
+    fact,
+  };
+}
+
+/** Trace buffers always retain at least one projection. */
+export function normalizeRuntimeGatewayTraceBufferSize(bufferSize: number | undefined): number {
+  if (bufferSize === undefined || !Number.isFinite(bufferSize)) {
+    return 64;
+  }
+  return Math.max(1, Math.floor(bufferSize));
+}
+
 export type RuntimeGatewayErrorCode =
   | 'invalid_frame'
   | 'invalid_scope'

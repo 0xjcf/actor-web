@@ -1,16 +1,20 @@
 import type { AgentExecutionTrace } from './agent-execution-contract.js';
-import { isAgentExecutionTrace } from './agent-execution-contract.js';
+import { isAgentExecutionTrace, sanitizeAgentExecutionTrace } from './agent-execution-contract.js';
 import type {
   RuntimeGatewayTraceFact,
   RuntimeGatewayTraceProjection,
 } from './runtime-gateway-shared.js';
-import { createRuntimeGatewayTraceCursor } from './runtime-gateway-shared.js';
+import {
+  normalizeRuntimeGatewayTraceBufferSize,
+  toRuntimeGatewayTraceProjection,
+} from './runtime-gateway-shared.js';
 
 export interface RuntimeGatewayTraceSourceInput {
   readonly address: string;
 }
 
 export interface CreateRuntimeGatewayTraceSourceOptions {
+  /** Maximum retained projections. Values below one are clamped to one. */
   readonly bufferSize?: number;
   readonly now?: () => Date;
 }
@@ -22,28 +26,12 @@ export type RuntimeGatewayTraceSource<TSource extends RuntimeGatewayTraceSourceI
   appendTraceFact(fact: RuntimeGatewayTraceFact): RuntimeGatewayTraceProjection;
 };
 
-function toTraceProjection(
-  address: string,
-  sequence: number,
-  observedAt: string,
-  trace: AgentExecutionTrace | null,
-  fact: RuntimeGatewayTraceFact | null
-): RuntimeGatewayTraceProjection {
-  return {
-    address,
-    cursor: createRuntimeGatewayTraceCursor(address, sequence),
-    observedAt,
-    trace,
-    fact,
-  };
-}
-
 export function createRuntimeGatewayTraceSource<TSource extends RuntimeGatewayTraceSourceInput>(
   source: TSource,
   options: CreateRuntimeGatewayTraceSourceOptions = {}
 ): RuntimeGatewayTraceSource<TSource> {
   const listeners = new Set<(projection: RuntimeGatewayTraceProjection) => void>();
-  const bufferSize = options.bufferSize ?? 64;
+  const bufferSize = normalizeRuntimeGatewayTraceBufferSize(options.bufferSize);
   const now = options.now ?? (() => new Date());
   let sequence = 0;
   let projections: RuntimeGatewayTraceProjection[] = [];
@@ -65,20 +53,32 @@ export function createRuntimeGatewayTraceSource<TSource extends RuntimeGatewayTr
     observedAt = now().toISOString()
   ): RuntimeGatewayTraceProjection => {
     sequence += 1;
-    const projection = toTraceProjection(source.address, sequence, observedAt, trace, fact);
+    const projection = toRuntimeGatewayTraceProjection(
+      source.address,
+      sequence,
+      observedAt,
+      trace,
+      fact
+    );
     if (projection.trace) {
       latestTraceProjection = projection;
     }
     projections = [...projections, projection];
-    if (bufferSize > 0 && projections.length > bufferSize) {
+    if (projections.length > bufferSize) {
       const droppedCount = projections.length - bufferSize + 1;
       projections = projections.slice(-bufferSize);
       sequence += 1;
-      const overflowProjection = toTraceProjection(source.address, sequence, observedAt, null, {
-        code: 'trace_buffer_overflow',
-        message: 'Dropped older traces while applying bounded backpressure.',
-        droppedCount,
-      });
+      const overflowProjection = toRuntimeGatewayTraceProjection(
+        source.address,
+        sequence,
+        observedAt,
+        null,
+        {
+          code: 'trace_buffer_overflow',
+          message: 'Dropped older traces while applying bounded backpressure.',
+          droppedCount,
+        }
+      );
       projections = [...projections, overflowProjection].slice(-bufferSize);
       notifyListeners(projection);
       notifyListeners(overflowProjection);
@@ -102,7 +102,7 @@ export function createRuntimeGatewayTraceSource<TSource extends RuntimeGatewayTr
     },
     appendTrace(trace) {
       if (isAgentExecutionTrace(trace)) {
-        return storeProjection(trace, null);
+        return storeProjection(sanitizeAgentExecutionTrace(trace), null);
       }
 
       return storeProjection(null, {

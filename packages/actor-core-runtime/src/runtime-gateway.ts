@@ -18,6 +18,7 @@ import {
   type createExecutionTimeoutReceipt,
   isAgentExecutionTrace,
   redactAgentExecutionValue,
+  sanitizeAgentExecutionTrace,
 } from './agent-execution-contract.js';
 import {
   createProjectionTransportStatus,
@@ -33,7 +34,10 @@ import type {
   RuntimeGatewayTraceFact,
   RuntimeGatewayTraceProjection,
 } from './runtime-gateway-shared.js';
-import { createRuntimeGatewayTraceCursor } from './runtime-gateway-shared.js';
+import {
+  normalizeRuntimeGatewayTraceBufferSize,
+  toRuntimeGatewayTraceProjection,
+} from './runtime-gateway-shared.js';
 import {
   type ActorEventProjection,
   type ActorProjectionEventKind,
@@ -336,28 +340,12 @@ export function createRuntimeGatewaySource(
   return createRuntimeGatewayCommandSource(actorRef, options);
 }
 
-function toTraceProjection(
-  address: string,
-  sequence: number,
-  observedAt: string,
-  trace: AgentExecutionTrace | null,
-  fact: RuntimeGatewayTraceFact | null
-): RuntimeGatewayTraceProjection {
-  return {
-    address,
-    cursor: createRuntimeGatewayTraceCursor(address, sequence),
-    observedAt,
-    trace,
-    fact,
-  };
-}
-
 export function createRuntimeGatewayTraceSource(
   source: RuntimeGatewaySource,
   options: CreateRuntimeGatewayTraceSourceOptions = {}
 ): RuntimeGatewayTraceSource {
   const listeners = new Set<(projection: RuntimeGatewayTraceProjection) => void>();
-  const bufferSize = options.bufferSize ?? 64;
+  const bufferSize = normalizeRuntimeGatewayTraceBufferSize(options.bufferSize);
   const now = options.now ?? (() => new Date());
   let sequence = 0;
   let projections: RuntimeGatewayTraceProjection[] = [];
@@ -379,20 +367,32 @@ export function createRuntimeGatewayTraceSource(
     observedAt = now().toISOString()
   ): RuntimeGatewayTraceProjection => {
     sequence += 1;
-    const projection = toTraceProjection(source.address, sequence, observedAt, trace, fact);
+    const projection = toRuntimeGatewayTraceProjection(
+      source.address,
+      sequence,
+      observedAt,
+      trace,
+      fact
+    );
     if (projection.trace) {
       latestTraceProjection = projection;
     }
     projections = [...projections, projection];
-    if (bufferSize > 0 && projections.length > bufferSize) {
+    if (projections.length > bufferSize) {
       const droppedCount = projections.length - bufferSize + 1;
       projections = projections.slice(-bufferSize);
       sequence += 1;
-      const overflowProjection = toTraceProjection(source.address, sequence, observedAt, null, {
-        code: 'trace_buffer_overflow',
-        message: 'Dropped older traces while applying bounded backpressure.',
-        droppedCount,
-      });
+      const overflowProjection = toRuntimeGatewayTraceProjection(
+        source.address,
+        sequence,
+        observedAt,
+        null,
+        {
+          code: 'trace_buffer_overflow',
+          message: 'Dropped older traces while applying bounded backpressure.',
+          droppedCount,
+        }
+      );
       projections = [...projections, overflowProjection].slice(-bufferSize);
       notifyListeners(projection);
       notifyListeners(overflowProjection);
@@ -416,7 +416,7 @@ export function createRuntimeGatewayTraceSource(
     },
     appendTrace(trace) {
       if (isAgentExecutionTrace(trace)) {
-        return storeProjection(trace, null);
+        return storeProjection(sanitizeAgentExecutionTrace(trace), null);
       }
 
       return storeProjection(null, {
