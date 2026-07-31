@@ -914,6 +914,7 @@ describe('@actor-web/agent loop behavior', () => {
       })
     );
 
+    expect(provider).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       reply: {
         ok: false,
