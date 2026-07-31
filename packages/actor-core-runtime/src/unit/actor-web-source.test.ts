@@ -1023,6 +1023,7 @@ describe('createActorWebSource', () => {
         cursor: 'trace:shipment:latest',
         observedAt: '2026-04-25T18:00:04.000Z',
         trace: {
+          version: 1,
           schemaVersion: 1,
           traceId: 'trace:shipment:latest',
           actorId: 'actor://server-node/shipment',
