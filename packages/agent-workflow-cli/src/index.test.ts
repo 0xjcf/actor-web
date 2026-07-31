@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadCommandAdmissionConfig } from './cli/index.js';
+import { loadCommandAdmissionConfig, validateDistributedCliOptions } from './cli/index.js';
 import { getCLIInfo, getPackageInfo } from './index';
 
 describe('@actor-web/cli stub', () => {
@@ -25,13 +25,33 @@ describe('@actor-web/cli stub', () => {
   });
 
   it('uses public runtime entrypoints instead of deep actor-core-runtime src imports', () => {
-    const runtimeHostSource = readFileSync(
-      new URL('./host/runtime-host.ts', import.meta.url),
-      'utf8'
-    );
+    const runtimeSources = [
+      readFileSync(new URL('./host/runtime-host.ts', import.meta.url), 'utf8'),
+      readFileSync(new URL('./cli/index.ts', import.meta.url), 'utf8'),
+    ];
 
-    expect(runtimeHostSource).not.toContain('../../../actor-core-runtime/src/');
-    expect(runtimeHostSource).toContain('@actor-web/runtime/node');
+    expect(runtimeSources.join('\n')).not.toContain('../../../actor-core-runtime/src/');
+    expect(runtimeSources.join('\n')).toContain('@actor-web/runtime/node');
+  });
+
+  it('rejects unmapped connect targets and ineffective unsafe-exposure flags', () => {
+    expect(
+      validateDistributedCliOptions({
+        connect: ['worker'],
+        peers: { storage: 'ws://127.0.0.1:9001' },
+      })
+    ).toEqual({
+      ok: false,
+      error: 'Invalid --connect target "worker": add a matching --peer worker=<ws-url> mapping.',
+    });
+    expect(
+      validateDistributedCliOptions({
+        allowUnsafeExposure: true,
+      })
+    ).toEqual({
+      ok: false,
+      error: '--allow-unsafe-exposure requires --gateway or --transport.',
+    });
   });
 
   it('rejects malformed admission modules before topology startup', async () => {

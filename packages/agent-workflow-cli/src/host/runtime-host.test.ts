@@ -243,6 +243,19 @@ describe('createRuntimeHost', () => {
     expect(actors[0].path).toContain('counter');
   });
 
+  it('reports explicit readiness for in-process hosts', () => {
+    expect(host.getStatus()).toMatchObject({
+      mode: 'in-process',
+      readiness: {
+        process: 'ready',
+        transport: 'local',
+        directory: 'local',
+        checkpointStore: 'missing',
+        policyAdmission: 'unconfigured',
+      },
+    });
+  });
+
   it('sends a message and observes the effect via ask', async () => {
     const sent = await host.send('counter', '{"type":"INCREMENT"}');
     expect(sent.ok).toBe(true);
@@ -305,6 +318,13 @@ describe('createRuntimeHost', () => {
           }),
         ])
       );
+      expect(status.readiness).toEqual({
+        process: 'ready',
+        transport: 'connected',
+        directory: 'ready',
+        checkpointStore: 'missing',
+        policyAdmission: 'unconfigured',
+      });
     } finally {
       await serverStarted.value.stop();
       await workerStarted.value.stop();
@@ -350,15 +370,8 @@ describe('createRuntimeHost', () => {
         'Expected remote directory readiness before cross-node send'
       );
 
-      const sent = await serverStarted.value.send(
-        'actor://worker-node/worker-counter',
-        '{"type":"INCREMENT"}'
-      );
-      const reply = await serverStarted.value.ask(
-        'actor://worker-node/worker-counter',
-        '{"type":"GET_COUNT"}',
-        2_000
-      );
+      const sent = await serverStarted.value.send('workerCounter', '{"type":"INCREMENT"}');
+      const reply = await serverStarted.value.ask('worker-counter', '{"type":"GET_COUNT"}', 2_000);
 
       expect(sent).toEqual({
         ok: true,
@@ -649,6 +662,12 @@ describe('createRuntimeHost', () => {
     });
 
     await remoteHost.value.stop();
+    expect(remoteHost.value.getStatus()).toMatchObject({
+      readiness: {
+        transport: 'replaying',
+      },
+      transportReason: null,
+    });
     vi.doUnmock('@actor-web/runtime');
   });
 
@@ -1778,7 +1797,16 @@ describe('createRuntimeHost', () => {
     const outcome = await executeCommand(host, 'status', new Map());
     expect(outcome).toEqual({
       ok: true,
-      lines: ['mode=in-process node=local', 'gateway=(disabled)', 'transport=(disabled)'],
+      lines: [
+        'mode=in-process node=local',
+        'gateway=(disabled)',
+        'transport=(disabled)',
+        'readiness.process=ready',
+        'readiness.transport=local',
+        'readiness.directory=local',
+        'readiness.checkpointStore=missing',
+        'readiness.policyAdmission=unconfigured',
+      ],
     });
   });
 

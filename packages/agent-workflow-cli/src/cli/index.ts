@@ -16,9 +16,9 @@
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { Logger } from '@actor-web/runtime';
+import { createNodeFileSystemAgentSessionCheckpointStore } from '@actor-web/runtime/node';
 import chalk from 'chalk';
 import { program } from 'commander';
-import { createNodeFileSystemAgentSessionCheckpointStore } from '../../../actor-core-runtime/src/node-agent-session-checkpoint-store.js';
 import { loadModuleExport } from '../host/load-module.js';
 import {
   createRuntimeHostFromFile,
@@ -129,6 +129,30 @@ function parsePeerMappings(input: readonly string[] | undefined): PeerMappingPar
       })
     ),
   };
+}
+
+export function validateDistributedCliOptions(input: {
+  readonly connect?: readonly string[];
+  readonly peers?: Readonly<Record<string, string>>;
+  readonly gateway?: boolean;
+  readonly transport?: boolean;
+  readonly allowUnsafeExposure?: boolean;
+}): { ok: true } | { ok: false; error: string } {
+  for (const target of input.connect ?? []) {
+    if (!input.peers?.[target]) {
+      return {
+        ok: false,
+        error: `Invalid --connect target "${target}": add a matching --peer ${target}=<ws-url> mapping.`,
+      };
+    }
+  }
+  if (input.allowUnsafeExposure && !input.gateway && !input.transport) {
+    return {
+      ok: false,
+      error: '--allow-unsafe-exposure requires --gateway or --transport.',
+    };
+  }
+  return { ok: true };
 }
 
 function resolveCheckpointOptions(input: {
@@ -306,6 +330,17 @@ async function main() {
           const peerMappings = parsePeerMappings(options.peer);
           if (!peerMappings.ok) {
             console.error(chalk.red(peerMappings.error));
+            process.exit(1);
+          }
+          const distributedOptions = validateDistributedCliOptions({
+            connect: options.connect,
+            peers: peerMappings.value,
+            gateway: options.gateway,
+            transport: options.transport,
+            allowUnsafeExposure: options.allowUnsafeExposure,
+          });
+          if (!distributedOptions.ok) {
+            console.error(chalk.red(distributedOptions.error));
             process.exit(1);
           }
 

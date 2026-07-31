@@ -369,6 +369,29 @@ function pickWorstRemoteTransportStatus(
   return worst;
 }
 
+function toDistributedTransportReadiness(
+  status: RuntimeTransportStatus | null
+): RuntimeHostReadinessStatus['transport'] {
+  if (!status || status.peers.length === 0) {
+    return 'local';
+  }
+  const connectedCount = status.peers.filter((peer) => peer.connected && peer.fresh).length;
+  if (connectedCount === status.peers.length) {
+    return 'connected';
+  }
+  return connectedCount > 0 ? 'degraded' : 'disconnected';
+}
+
+function toDistributedDirectoryReadiness(
+  cluster: ClusterState | null
+): RuntimeHostReadinessStatus['directory'] {
+  const facts = cluster?.directoryReadiness;
+  if (!facts) {
+    return 'unavailable';
+  }
+  return facts.every((fact) => fact.status === 'ready') ? 'ready' : 'unavailable';
+}
+
 function validateDistributedSecurityRequirements(
   options: RuntimeHostOptions
 ): HostResult<RuntimeHost> | null {
@@ -569,6 +592,23 @@ export async function createRuntimeHost(
     policyAdmission: options.remote?.gateway.auth ? 'authenticated' : 'unconfigured',
   });
 
+  const toLocalReadiness = (): RuntimeHostReadinessStatus => {
+    const transport = servedNode?.getTransportStatus() ?? null;
+    const cluster = servedNode?.system.getClusterState() ?? null;
+    const distributedGateway =
+      typeof options.distributed?.gateway === 'object' ? options.distributed.gateway : undefined;
+    return {
+      process: 'ready',
+      transport: servedNode ? toDistributedTransportReadiness(transport) : 'local',
+      directory: servedNode ? toDistributedDirectoryReadiness(cluster) : 'local',
+      checkpointStore: options.checkpoint?.store ? 'ready' : 'missing',
+      policyAdmission:
+        options.commandAdmission || distributedGateway?.commandAdmission
+          ? 'explicit'
+          : 'unconfigured',
+    };
+  };
+
   try {
     if (options.remote) {
       // Remote mode is gateway-backed; actor sources are opened lazily.
@@ -622,11 +662,9 @@ export async function createRuntimeHost(
     transportUrl: servedNode?.getTransportUrl() ?? null,
     transport: servedNode?.getTransportStatus() ?? null,
     cluster: servedNode?.system.getClusterState() ?? null,
+    readiness: options.remote ? toRemoteReadiness() : toLocalReadiness(),
     ...(options.remote
-      ? {
-          readiness: toRemoteReadiness(),
-          transportReason: pickWorstRemoteTransportStatus(remoteTransportStatuses)?.reason ?? null,
-        }
+      ? { transportReason: pickWorstRemoteTransportStatus(remoteTransportStatuses)?.reason ?? null }
       : {}),
   });
 
@@ -647,10 +685,20 @@ export async function createRuntimeHost(
   };
 
   const lookupDistributedActor = async (target: string): Promise<ActorRef | undefined> => {
-    if (!servedNode || !target.startsWith('actor://')) {
+    if (!servedNode) {
       return undefined;
     }
-    return servedNode.system.lookup(target);
+    const descriptor = Object.entries(topology.actors).find(
+      ([key, actorDescriptor]) =>
+        key === target ||
+        actorDescriptor.address === target ||
+        parse(actorDescriptor.address).id === target
+    )?.[1];
+    const address = descriptor?.address ?? target;
+    if (!address.startsWith('actor://')) {
+      return undefined;
+    }
+    return servedNode.system.lookup(address);
   };
 
   const getRemoteSource = (
@@ -1060,6 +1108,7 @@ export async function createRuntimeHost(
         }
         remoteSourceCache.clear();
         remoteTraceSourceCache.clear();
+        remoteTransportStatuses.clear();
         return;
       }
       if (servedNode) {
