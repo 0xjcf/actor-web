@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { emit, setup } from 'xstate';
 import type { ActorRef } from '../actor-ref.js';
+import * as agentExecutionContract from '../agent-execution-contract.js';
 import * as browserEntry from '../browser.js';
 import { createActorRef } from '../create-actor-ref.js';
 import * as rootEntry from '../index.js';
@@ -1754,6 +1755,142 @@ describe('runtime gateway hub', () => {
       }),
       fact: null,
     });
+  });
+
+  it('returns the appended trace projection when overflow occurs and counts both evictions', () => {
+    const baseSource = createFakeSource('ready', 'trace-source');
+    const source = createRuntimeGatewayTraceSource(baseSource, {
+      bufferSize: 2,
+      now: () => new Date('2026-04-25T18:00:00.000Z'),
+    });
+    const seen: Array<{ traceId?: string; factCode?: string; droppedCount?: number }> = [];
+
+    source.subscribeTrace((projection) => {
+      seen.push({
+        traceId: projection.trace?.traceId,
+        factCode: projection.fact?.code,
+        droppedCount: projection.fact?.droppedCount,
+      });
+    });
+
+    source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:1',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:1',
+      commandId: 'cmd:1',
+      receipts: [],
+      status: 'pending',
+    });
+    source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:2',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:2',
+      commandId: 'cmd:2',
+      receipts: [],
+      status: 'pending',
+    });
+    source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:3',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:3',
+      commandId: 'cmd:3',
+      receipts: [],
+      status: 'pending',
+    });
+    const latestReturned = source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:4',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:4',
+      commandId: 'cmd:4',
+      receipts: [],
+      status: 'pending',
+    });
+
+    expect(latestReturned).toMatchObject({
+      trace: expect.objectContaining({
+        traceId: 'trace:4',
+      }),
+      fact: null,
+    });
+    expect(seen.at(-1)).toMatchObject({
+      factCode: 'trace_buffer_overflow',
+      droppedCount: 2,
+    });
+  });
+
+  it('classifies primitive malformed traces without echoing the raw primitive', () => {
+    const baseSource = createFakeSource('ready', 'trace-source');
+    const source = createRuntimeGatewayTraceSource(baseSource);
+
+    const projection = source.appendTrace('secret-token');
+
+    expect(projection).toMatchObject({
+      trace: null,
+      fact: {
+        code: 'trace_malformed',
+        detail: 'invalid_primitive:string',
+      },
+    });
+  });
+
+  it('records ask results with null output when redaction returns undefined', async () => {
+    const source = createRuntimeGatewayTraceSource(createFakeSource('ready'));
+    const redactSpy = vi
+      .spyOn(agentExecutionContract, 'redactAgentExecutionValue')
+      .mockReturnValue(undefined);
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v4',
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'ready' },
+    });
+    await flushGatewayFrames();
+    connection.push({
+      type: 'ask',
+      streamId: 'checkout-main',
+      requestId: 'ask-request-null-redaction',
+      message: { type: 'GET_COUNT' },
+      timeoutMs: 1000,
+      metadata: { commandId: 'cmd-ask-null-redaction' },
+    });
+    await flushGatewayFrames();
+
+    const askTrace = source.latestTrace();
+    expect(askTrace?.trace?.receipts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          receiptKind: 'result',
+          result: expect.objectContaining({
+            output: null,
+          }),
+        }),
+      ])
+    );
+    expect(redactSpy).toHaveBeenCalledTimes(1);
+
+    redactSpy.mockRestore();
+    detach();
   });
 
   it('falls back to latest snapshot when requested replay range is unavailable', async () => {

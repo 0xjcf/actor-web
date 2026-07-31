@@ -378,7 +378,7 @@ export function createRuntimeGatewayTraceSource(
     }
     projections = [...projections, projection];
     if (bufferSize > 0 && projections.length > bufferSize) {
-      const droppedCount = projections.length - bufferSize;
+      const droppedCount = projections.length - bufferSize + 1;
       projections = projections.slice(-bufferSize);
       sequence += 1;
       const overflowProjection = toTraceProjection(source.address, sequence, observedAt, null, {
@@ -393,7 +393,7 @@ export function createRuntimeGatewayTraceSource(
       for (const listener of Array.from(listeners)) {
         listener(overflowProjection);
       }
-      return overflowProjection;
+      return projection;
     }
 
     for (const listener of Array.from(listeners)) {
@@ -421,7 +421,10 @@ export function createRuntimeGatewayTraceSource(
       return storeProjection(null, {
         code: 'trace_malformed',
         message: 'Trace input did not satisfy the AgentExecutionTrace contract.',
-        detail: typeof trace === 'object' && trace !== null ? 'invalid_shape' : String(trace),
+        detail:
+          typeof trace === 'object' && trace !== null
+            ? 'invalid_shape'
+            : `invalid_primitive:${typeof trace}`,
       });
     },
     appendTraceFact(fact) {
@@ -1811,6 +1814,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             }
             try {
               const value = await stream.source.ask(message, normalizedTimeoutMs);
+              const redactedOutput = redactAgentExecutionValue(value);
               appendGatewayDecisionTrace(stream, decision, [
                 decision.admissionReceipt,
                 decision.authorizationReceipt,
@@ -1825,10 +1829,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
                   sequence: decision.authorizationReceipt.sequence + 1,
                   occurredAt: new Date().toISOString(),
                   result: {
-                    output:
-                      redactAgentExecutionValue(value) === undefined
-                        ? null
-                        : (redactAgentExecutionValue(value) as JsonValue),
+                    output: redactedOutput === undefined ? null : (redactedOutput as JsonValue),
                   },
                 }),
               ]);
