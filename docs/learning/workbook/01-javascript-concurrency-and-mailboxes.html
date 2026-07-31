@@ -724,9 +724,11 @@ CPU_RESULT</code></pre>
         </div>
         <p>Keep state isolation as a separate assertion from timing:</p>
         <ol type="1">
-        <li>Confirm that actor B receives no supported public reference
-        to actor A's context. An <code>ActorRef</code> can send or ask;
-        it does not expose <code>actorA.context</code>.</li>
+        <li>Confirm that <code>ActorRef</code> does not expose a direct
+        <code>actorA.context</code> field. Actor B can observe context
+        through the supported <code>actorA.getSnapshot().context</code>
+        API; that observation is not promised to be a detached clone or
+        a mutation boundary.</li>
         <li>Have actor A answer <code>READ_STATE</code> with a detached
         JSON-safe snapshot.</li>
         <li>Let actor B mutate its local copy of that snapshot.</li>
@@ -737,12 +739,16 @@ CPU_RESULT</code></pre>
         automatic deep cloning by Actor-Web. Passing shared mutable
         object references in local messages would reintroduce
         shared-state hazards and should be recorded as a deliberate
-        failure of the actor boundary.</p>
+        failure of the actor boundary. Do not mutate
+        <code>getSnapshot().context</code> in this experiment: the
+        current API exposes it for observation and does not promise to
+        deep-clone or freeze nested values.</p>
         <p>The experiment should prove both:</p>
         <ol type="1">
-        <li>actor B cannot access actor A's private context through the
-        supported public actor reference, and mutating a detached reply
-        does not change actor A</li>
+        <li>actor B can observe actor A through
+        <code>getSnapshot()</code> but has no direct context field or
+        actor-owned mutation API, and mutating a deliberately detached
+        <code>READ_STATE</code> reply does not change actor A</li>
         <li>state isolation does not guarantee CPU isolation inside one
         JavaScript isolate</li>
         </ol>

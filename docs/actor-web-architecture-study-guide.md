@@ -9,11 +9,11 @@ design judgment, not just vocabulary.
 
 Completed weekly modules live in the
 [Actor-Web learning product](./learning/README.md), which separates a readable
-book from a hands-on workbook and interactive labs. Week 1 is available in both
-formats; later weeks remain planned until their content is complete.
+book from a hands-on workbook and interactive labs. Week 1 is complete across
+all three surfaces; later weeks remain planned until their content is complete.
 
 Snapshot used for this guide: `@actor-web/runtime` and `@actor-web/testing`
-`0.2.0`, plus the recoverable CLI-host work on
+`0.2.0`, plus the recoverable CLI-host work merged by
 [PR 56](https://github.com/0xjcf/actor-web/pull/56) as of July 31, 2026. Always
 verify current source before treating a maturity statement here as a shipped
 guarantee.
@@ -109,16 +109,22 @@ Design question I can now answer:
 
 ## The architecture in one picture
 
+This is the **accepted target-state authority map**, not a claim that every
+box is a current published guarantee. It combines the current actor/runtime
+foundation with candidate admission, checkpoint, receipt, and recovery seams
+and the still-target FAS conformance boundary. The maturity table below is the
+authority for what is current, candidate, accepted target, or deferred.
+
 ```mermaid
 flowchart TB
     Human["Human reviewer\nfinal authority"]
     FAS["FAS control plane\nworkflow policy and evidence"]
     Model["Model or provider adapter\nproposes intent"]
-    Admission["Actor-Web admission\nvalidate identity and authorize"]
+    Admission["Actor-Web admission\ncandidate staged validation"]
     Behavior["Behavior and FSM\nconstrain transitions"]
-    Durable["Durable turn boundary\nstate plus effect intent"]
+    Durable["Durable turn boundary\naccepted target; narrow candidate seam"]
     Adapter["Capability adapter\nperforms nondeterministic effect"]
-    Facts["Receipts and checkpoint state\nauthoritative runtime records"]
+    Facts["Receipts and checkpoint state\ncandidate runtime records"]
     Ignite["Ignite Element\nprojects facts and binds commands"]
 
     Human --> FAS
@@ -137,9 +143,10 @@ The important direction is not the arrow layout; it is the authority boundary:
 
 - Models propose.
 - Behaviors and state machines constrain legal transitions.
-- Actor-Web owns runtime validation, authorization, transition, persistence,
-  execution, checkpointing, resumption, reconciliation, and authoritative
-  runtime receipts.
+- In the accepted target state, Actor-Web owns runtime validation,
+  authorization, transition, persistence, execution, checkpointing,
+  resumption, reconciliation, and authoritative runtime receipts. Current and
+  candidate coverage is limited to the rows in the maturity table below.
 - FAS owns workflow meaning, review policy, evidence normalization, and
   control-plane decisions.
 - Ignite Element owns semantic projection and intent binding, not execution.
@@ -187,9 +194,9 @@ diagram.
 | --- | --- | --- |
 | Isolated actor context, mailbox, `send`, `ask`, and emitted events | Current | Usable runtime behavior with documented at-most-once boundaries |
 | Topology, placement, supervision, runtime transport, gateway, and sources | Current | Implemented, but with the documented supervision and delivery limitations |
-| Provider-neutral execution trace, staged admission, receipts, and validation | Source candidate | Contract version 1 exists in runtime/testing source; publication maturity is separate |
-| Agent-session checkpoint and rehydration seam | Source candidate | Narrow agent-session recovery exists; it is not generic durable actor state |
-| Recoverable distributed CLI host | PR candidate | PR 56 connects hosting, readiness, checkpoint dependency, trace streaming, and recovery proofs |
+| Provider-neutral execution trace, staged admission, receipts, and validation | Candidate (source) | Contract version 1 exists in runtime/testing source; publication maturity is separate |
+| Agent-session checkpoint and rehydration seam | Candidate (source) | Narrow agent-session recovery exists; it is not generic durable actor state |
+| Recoverable distributed CLI host | Candidate (merged source) | PR 56 connects hosting, readiness, checkpoint dependency, trace streaming, and recovery proofs; package publication is separate |
 | FAS control-plane conformance over the runtime host | Accepted target | The next dependency-chain concern after PR 56; must be proved in FAS-owned mappings and policy |
 | Published downstream contract | Deferred | Release/publication claims wait for runtime-host and FAS conformance |
 | Generic transactional mailbox, actor state, inbox, outbox, and effect intent | Deferred | Do not infer this from the narrower checkpoint seam |
@@ -203,6 +210,11 @@ to refresh these labels before making a decision.
 ## Ten-week learning path
 
 ### Week 1: JavaScript concurrency and the mailbox
+
+The repository contains all three Week 1 surfaces. The canonical Pages links
+below become a **current publication** only after the Docs workflow deploys
+them from `main`; if any URL does not resolve, treat publication as candidate
+and use the matching files under `docs/learning/` locally.
 
 [Read Chapter 1](https://0xjcf.github.io/actor-web/learning/guide/01-javascript-concurrency-and-mailboxes.html),
 [complete the workbook](https://0xjcf.github.io/actor-web/learning/workbook/01-javascript-concurrency-and-mailboxes.html),
@@ -424,7 +436,12 @@ Read in this repository:
 4. [`agent-session-checkpoint-conformance.ts`](../packages/actor-core-testing/src/agent-session-checkpoint-conformance.ts)
 5. [`runtime-host-recovery-conformance.ts`](../packages/actor-core-testing/src/runtime-host-recovery-conformance.ts)
 
-The key turn has this shape:
+The accepted target protocol has this shape:
+
+> Maturity boundary: current Actor-Web does not provide this as a generic
+> transactional actor turn. The candidate agent-session checkpoint and receipt
+> seams prove a narrower recovery path; generic atomic state-plus-effect-intent
+> persistence remains deferred.
 
 ```text
 1. Validate and authorize the command.

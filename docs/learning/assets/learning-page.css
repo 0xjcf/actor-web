@@ -265,7 +265,7 @@ pre code {
 }
 
 .table-wrap:focus-visible {
-  outline: 3px solid var(--focus);
+  outline: 3px solid var(--accent);
   outline-offset: 3px;
 }
 
