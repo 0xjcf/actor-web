@@ -157,15 +157,15 @@ saying the timer is broken.
 
 Create two small functions:
 
-```ts
-async function blockFor250Ms(): Promise<void> {
+```js
+async function blockFor250Ms() {
   const until = performance.now() + 250;
   while (performance.now() < until) {
     // bounded experiment
   }
 }
 
-async function waitFor250Ms(): Promise<void> {
+async function waitFor250Ms() {
   await new Promise((resolve) => setTimeout(resolve, 250));
 }
 ```
@@ -347,8 +347,11 @@ For every variant, use this order:
 2. send the primary work message to actor A
 3. immediately send `FOLLOW_UP` to actor A
 4. send the fast message to actor B
-5. wait for all expected completion events
-6. compare their timestamps rather than relying on log order alone
+5. wait for all expected completion events with a fixed five-second deadline
+6. if the deadline expires, record every missing event and cleanly terminate
+   actors, worker threads, child processes, and outstanding timers before the
+   variant fails
+7. compare timestamps rather than relying on log order alone
 
 Run these variants:
 
@@ -461,7 +464,21 @@ You are ready for Week 2 when you can trace a message from `send(...)` to the
 handler and explain, without contradiction, why actor state is serialized while
 the JavaScript isolate can still be starved.
 
-Optional focused Actor-Web verification:
+Required learning-product verification:
+
+```bash
+pnpm test:learning
+pnpm exec markdownlint-cli2 --config .markdownlint.jsonc \
+  "docs/learning/**/*.md" \
+  "docs/actor-web-architecture-study-guide.md" \
+  "README.md"
+pnpm test:docs
+```
+
+This repository does not expose a root `verify.sh`; do not substitute a
+nonexistent command for the real project scripts above.
+
+Supplementary focused Actor-Web runtime evidence:
 
 ```bash
 pnpm --filter @actor-web/runtime exec vitest run \
