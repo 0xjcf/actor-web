@@ -446,6 +446,9 @@ describe('Counter Actor', () => {
 
 ## 📖 Documentation
 
+- [Actor-Web Documentation Site](https://0xjcf.github.io/actor-web/)
+- [Learn Actor-Web: Guide, Workbook, and Labs](./docs/learning/README.md)
+- [Architecture Study Guide and Ten-Week Curriculum](./docs/actor-web-architecture-study-guide.md)
 - [API Reference](./docs/API.md)
 - [Runtime Package](./packages/actor-core-runtime/README.md)
 - [CLI Package](./packages/agent-workflow-cli/README.md)
