@@ -19,6 +19,11 @@ export {
   assertAgentSessionCheckpointConformanceFixture,
   getAgentSessionCheckpointConformanceFixture,
 } from './agent-session-checkpoint-conformance.js';
+export type { RuntimeHostRecoveryConformanceFixture } from './runtime-host-recovery-conformance.js';
+export {
+  assertRuntimeHostRecoveryConformanceFixture,
+  getRuntimeHostRecoveryConformanceFixture,
+} from './runtime-host-recovery-conformance.js';
 export type { StateAnalysisResult } from './state-machine-analysis.js';
 // State machine analysis utilities
 export {

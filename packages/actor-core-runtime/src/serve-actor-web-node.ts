@@ -17,6 +17,7 @@ import type { RuntimeGatewayAuthProvider, RuntimeTransportAuthProvider } from '.
 import {
   createRuntimeGatewayHub,
   createRuntimeGatewaySource,
+  createRuntimeGatewayTraceSource,
   type RuntimeGatewayClientFrame,
   type RuntimeGatewayCommandAdmissionOptions,
   type RuntimeGatewayConnectionAdapter,
@@ -366,6 +367,7 @@ export async function serveNode<
     supervisors: resolveOwnedActorWebSupervisorGroups(topology, options.node),
   });
   const actors = new Map<string, ActorRef<unknown, ActorMessage>>();
+  const gatewaySources = new Map<string, RuntimeGatewaySource>();
   const actorHandles = createActorWebNodeActorHandles(
     system,
     topology,
@@ -422,6 +424,11 @@ export async function serveNode<
     actorKey: string,
     actorDescriptor: ActorWebActorDescriptor
   ): Promise<RuntimeGatewaySource | null> => {
+    const cachedSource = gatewaySources.get(actorKey);
+    if (cachedSource) {
+      return cachedSource;
+    }
+
     let actorRef = actors.get(actorKey);
     for (let attempt = 0; !actorRef && attempt < GATEWAY_ACTOR_LOOKUP_ATTEMPTS; attempt += 1) {
       actorRef = await system.lookup(actorDescriptor.address);
@@ -434,9 +441,13 @@ export async function serveNode<
       return null;
     }
 
-    return createRuntimeGatewaySource(actorRef, {
-      sourceActor: actorDescriptor.address,
-    });
+    const source = createRuntimeGatewayTraceSource(
+      createRuntimeGatewaySource(actorRef, {
+        sourceActor: actorDescriptor.address,
+      })
+    );
+    gatewaySources.set(actorKey, source);
+    return source;
   };
 
   const hub = createRuntimeGatewayHub({
@@ -584,6 +595,7 @@ export async function serveNode<
 
       discoveryPeerUrls.clear();
       actors.clear();
+      gatewaySources.clear();
       throw startupError;
     }
   };
@@ -636,6 +648,7 @@ export async function serveNode<
 
     discoveryPeerUrls.clear();
     actors.clear();
+    gatewaySources.clear();
 
     if (stopError) {
       throw stopError;

@@ -2,15 +2,16 @@
  * @actor-web/cli — terminal host for the actor-web runtime
  * (design doc: docs/actor-web-cli-runtime-host-design.md).
  *
- * v0 surface: an in-process runtime host (`actor-web serve <topology>`) with an
- * operator console (ls/spawn/send/ask/watch). The programmatic host API is
- * exported here so tests and embedders can drive it without a subprocess.
+ * Current surface: an operator host that can run in-process or as a
+ * distributed runtime node (`actor-web serve <topology> --gateway --transport
+ * --connect ...`). The programmatic host API is exported here so tests and
+ * embedders can drive it without a subprocess.
  *
  * @author Actor-Web Team
  */
 
 export { type LoadModuleOptions, type LoadResult, loadModuleExport } from './host/load-module.js';
-// Runtime host (v0)
+// Runtime host
 export {
   type CommandContext,
   type CommandOutcome,
@@ -20,6 +21,11 @@ export {
   type HostActorEntry,
   type HostResult,
   type RuntimeHost,
+  type RuntimeHostCheckpointOptions,
+  type RuntimeHostDistributedOptions,
+  type RuntimeHostReadinessStatus,
+  type RuntimeHostRemoteOptions,
+  type RuntimeHostStatus,
   splitExecScript,
 } from './host/runtime-host.js';
 
@@ -44,13 +50,17 @@ export async function getCLIInfo() {
     name: packageInfo.name,
     description: packageInfo.description,
     version: packageInfo.version,
-    status: 'v0-in-process-host',
+    status: 'v2-distributed-runtime-host',
     features: [
-      'In-process runtime hosting from a topology module',
+      'In-process or distributed runtime hosting from a topology module',
+      'Standalone remote gateway operator shells',
+      'Localhost-safe gateway and transport listeners',
+      'Explicit checkpoint dependency and readiness reporting',
       'Operator console (REPL and --exec scripting)',
-      'Dynamic actor spawn from behavior modules',
+      'Explicit host status with transport and directory readiness facts',
+      'Dynamic actor spawn from behavior modules (in-process mode)',
       'send/ask messaging and emitted-event watching',
     ] as const,
-    commands: ['serve', 'info'] as const,
+    commands: ['serve', 'connect', 'info'] as const,
   } as const;
 }

@@ -26,6 +26,24 @@ export {
 } from './actor-tool-delivery.js';
 export type { ActorToolRegistry } from './actor-tools.js';
 export type {
+  ActorWebAddressSourceInput,
+  ActorWebGatewaySocket,
+  ActorWebSourceGatewayOptions,
+  ActorWebSourceOptions,
+  ClosableActorWebCommandSource,
+  ClosableActorWebReadModelSource,
+  ClosableActorWebSource,
+  ClosableActorWebSourceHandle,
+  ClosableActorWebTraceSource,
+} from './actor-web-source.js';
+export {
+  createActorWebCommandSource,
+  createActorWebReadModelSource,
+  createActorWebSource,
+  createActorWebSourceHandle,
+  createActorWebTraceSource,
+} from './actor-web-source.js';
+export type {
   AgentExecutionAdmissionDecision,
   AgentExecutionAdmissionInput,
   AgentExecutionAdmissionPolicy,
@@ -92,6 +110,7 @@ export {
   isAgentExecutionTrace,
   parseAgentExecutionTrace,
   redactAgentExecutionValue,
+  sanitizeAgentExecutionTrace,
   sortAgentExecutionReceipts,
   toAgentExecutionReceiptFromEffectRecord,
   toAgentExecutionReceiptFromEventEnvelope,

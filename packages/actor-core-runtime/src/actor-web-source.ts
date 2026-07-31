@@ -19,6 +19,7 @@ import type {
   RuntimeGatewayServerFrame,
   RuntimeGatewaySourceHandle,
   RuntimeGatewaySubscribeMode,
+  RuntimeGatewayTraceProjection,
 } from './runtime-gateway-shared.js';
 import { createRuntimeGatewaySourceHandle } from './runtime-gateway-shared.js';
 import type { ActorEventProjection, ActorSnapshotProjection } from './runtime-projection.js';
@@ -57,6 +58,7 @@ export interface ActorWebSourceOptions {
   readonly streamId?: string;
   readonly createSocket?: (url: string) => ActorWebGatewaySocket;
   readonly clientVersion?: string;
+  readonly reconnectDelayMs?: number;
 }
 
 export interface ActorWebSourceFactoryContext {
@@ -129,6 +131,14 @@ export type ClosableActorWebSource<
   TMessage extends ActorMessage = ActorMessage,
   TEvent extends ActorMessage = ActorMessage,
 > = ClosableActorWebCommandSource<TContext, TMessage, TEvent>;
+
+export interface ClosableActorWebTraceSource
+  extends Pick<ClosableActorWebReadModelSource<unknown, ActorMessage>, 'address' | 'close'> {
+  latestTrace(): RuntimeGatewayTraceProjection | null;
+  subscribeTrace(listener: (projection: RuntimeGatewayTraceProjection) => void): () => void;
+  transportStatus(): ProjectionTransportStatus;
+  subscribeTransportStatus(listener: (status: ProjectionTransportStatus) => void): () => void;
+}
 
 export type ClosableActorWebSourceHandle<
   TContext = unknown,
@@ -276,6 +286,10 @@ function invokeListenerSafely<TValue>(listener: (value: TValue) => void, value: 
   } catch {
     // Listener failures must not interrupt gateway delivery fanout.
   }
+}
+
+function createGatewayFrameParseError(): Error {
+  return new Error('Actor-Web gateway sent an invalid JSON frame.');
 }
 
 function resolveGatewayBackedSourceInput(
@@ -475,18 +489,39 @@ function createGatewayBackedSource<
       return;
     }
 
-    void resolveRuntimeAuthPayload(options.gateway.auth).then((auth) => {
-      sendFrame({
-        type: 'hello',
-        clientVersion: options.clientVersion ?? 'actor-web-source',
-        ...(auth ? { auth } : {}),
-      });
-    }, rejectPending);
+    void resolveRuntimeAuthPayload(options.gateway.auth).then(
+      (auth) => {
+        sendFrame({
+          type: 'hello',
+          clientVersion: options.clientVersion ?? 'actor-web-source',
+          ...(auth ? { auth } : {}),
+        });
+      },
+      (error) => {
+        const resolvedError =
+          error instanceof Error ? error : new Error('Actor-Web gateway authentication failed.');
+        rejectPending(resolvedError);
+        currentStatus = createProjectionTransportStatus('degraded', {
+          reason: resolvedError.message,
+        });
+        emitStatus();
+      }
+    );
   });
 
   socket.addEventListener('message', (event) => {
     const frameText = typeof event.data === 'string' ? event.data : String(event.data);
-    const frame = JSON.parse(frameText) as RuntimeGatewayServerFrame;
+    let frame: RuntimeGatewayServerFrame;
+    try {
+      frame = JSON.parse(frameText) as RuntimeGatewayServerFrame;
+    } catch {
+      const error = createGatewayFrameParseError();
+      // A malformed frame is isolated to that frame. Preserve pending
+      // readiness and commands so a later valid projection can recover.
+      currentStatus = createProjectionTransportStatus('degraded', { reason: error.message });
+      emitStatus();
+      return;
+    }
 
     switch (frame.type) {
       case 'ready':
@@ -685,6 +720,254 @@ function createGatewayBackedSource<
   };
 }
 
+function createGatewayBackedTraceSource(
+  address: ActorAddress,
+  scope: RuntimeGatewayScopeDescriptor,
+  options: ActorWebSourceOptions
+): ClosableActorWebTraceSource {
+  const streamId = options.streamId ?? `actor-web-${parse(address).id}`;
+  const createSocket = options.createSocket ?? defaultSocket;
+  const statusListeners = new Set<(status: ProjectionTransportStatus) => void>();
+  const traceListeners = new Set<(projection: RuntimeGatewayTraceProjection) => void>();
+  let socket!: ActorWebGatewaySocket;
+  let currentStatus = createProjectionTransportStatus('replaying', {
+    reason: 'Connecting to Actor-Web gateway',
+  });
+  let latestTrace: RuntimeGatewayTraceProjection | null = null;
+  let lastSequence = 0;
+  let resyncInProgress = false;
+  let lastConnectionId: string | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  const reconnectBaseDelayMs = Math.max(1, options.reconnectDelayMs ?? 250);
+  const reconnectMaxDelayMs = Math.max(reconnectBaseDelayMs, 5_000);
+  let reconnectDelayMs = reconnectBaseDelayMs;
+  let closed = false;
+
+  const emitStatus = (): void => {
+    for (const listener of Array.from(statusListeners)) {
+      invokeListenerSafely(listener, currentStatus);
+    }
+  };
+
+  const emitTrace = (projection: RuntimeGatewayTraceProjection): void => {
+    for (const listener of Array.from(traceListeners)) {
+      invokeListenerSafely(listener, projection);
+    }
+  };
+
+  const sendFrame = (frame: RuntimeGatewayClientFrame): void => {
+    socket.send(JSON.stringify(frame));
+  };
+
+  const acceptSequence = (
+    frame: Extract<RuntimeGatewayServerFrame, { type: 'trace'; sequence: number }>
+  ): boolean => {
+    if (resyncInProgress && frame.sequence === 1 && lastSequence > 0) {
+      // The prior replay owner was unavailable (for example after a gateway
+      // restart), so accept the new authoritative stream from its first frame.
+      lastSequence = 0;
+    }
+    const expectedSequence = lastSequence + 1;
+    if (frame.sequence === expectedSequence) {
+      lastSequence = frame.sequence;
+      if (resyncInProgress) {
+        resyncInProgress = false;
+        currentStatus = createProjectionTransportStatus('connected');
+        emitStatus();
+      }
+      return true;
+    }
+
+    if (frame.sequence <= lastSequence) {
+      return false;
+    }
+
+    if (resyncInProgress) {
+      lastSequence = frame.sequence;
+      resyncInProgress = false;
+      currentStatus = createProjectionTransportStatus('connected');
+      emitStatus();
+      return true;
+    }
+
+    resyncInProgress = true;
+    currentStatus = createProjectionTransportStatus('degraded', {
+      reason: `Gateway stream sequence gap: expected ${expectedSequence}, received ${frame.sequence}.`,
+    });
+    emitStatus();
+    sendFrame({ type: 'resync', streamId, fromSequence: expectedSequence });
+    return false;
+  };
+
+  const connect = (): void => {
+    const connectedSocket = createSocket(options.gateway.url);
+    socket = connectedSocket;
+
+    connectedSocket.addEventListener('open', () => {
+      if (closed || socket !== connectedSocket) {
+        return;
+      }
+      if (!options.gateway.auth) {
+        sendFrame({
+          type: 'hello',
+          clientVersion: options.clientVersion ?? 'actor-web-source',
+          ...(lastConnectionId ? { lastConnectionId } : {}),
+        });
+        return;
+      }
+
+      void resolveRuntimeAuthPayload(options.gateway.auth).then(
+        (auth) => {
+          if (closed || socket !== connectedSocket) {
+            return;
+          }
+          sendFrame({
+            type: 'hello',
+            clientVersion: options.clientVersion ?? 'actor-web-source',
+            ...(lastConnectionId ? { lastConnectionId } : {}),
+            ...(auth ? { auth } : {}),
+          });
+        },
+        (error) => {
+          if (closed || socket !== connectedSocket) {
+            return;
+          }
+          const resolvedError =
+            error instanceof Error ? error : new Error('Actor-Web gateway authentication failed.');
+          currentStatus = createProjectionTransportStatus('degraded', {
+            reason: resolvedError.message,
+          });
+          emitStatus();
+          connectedSocket.close();
+        }
+      );
+    });
+
+    connectedSocket.addEventListener('message', (event) => {
+      if (closed || socket !== connectedSocket) {
+        return;
+      }
+      const frameText = typeof event.data === 'string' ? event.data : String(event.data);
+      let frame: RuntimeGatewayServerFrame;
+      try {
+        frame = JSON.parse(frameText) as RuntimeGatewayServerFrame;
+      } catch {
+        const error = createGatewayFrameParseError();
+        currentStatus = createProjectionTransportStatus('degraded', { reason: error.message });
+        emitStatus();
+        return;
+      }
+
+      switch (frame.type) {
+        case 'ready':
+          lastConnectionId = frame.connectionId;
+          reconnectDelayMs = reconnectBaseDelayMs;
+          currentStatus = createProjectionTransportStatus('replaying', {
+            reason: 'Subscribing to Actor-Web gateway',
+          });
+          emitStatus();
+          if (lastSequence > 0) {
+            resyncInProgress = true;
+          }
+          sendFrame({
+            type: 'subscribe',
+            streamId,
+            scope,
+            mode: 'trace-only',
+            ...(lastSequence > 0 ? { fromSequence: lastSequence + 1 } : {}),
+          });
+          return;
+        case 'trace':
+          if (!acceptSequence(frame)) {
+            return;
+          }
+          latestTrace = frame.projection;
+          emitTrace(frame.projection);
+          return;
+        case 'status':
+          currentStatus =
+            frame.status.state === 'local'
+              ? createProjectionTransportStatus('connected', { updatedAt: frame.status.updatedAt })
+              : frame.status;
+          emitStatus();
+          return;
+        case 'error':
+          currentStatus = createProjectionTransportStatus('degraded', { reason: frame.message });
+          emitStatus();
+          return;
+        case 'pong':
+        case 'snapshot':
+        case 'event':
+        case 'transition':
+        case 'ack':
+        case 'reply':
+          return;
+      }
+    });
+
+    connectedSocket.addEventListener('close', () => {
+      if (closed || socket !== connectedSocket) {
+        return;
+      }
+      currentStatus = createProjectionTransportStatus('disconnected', {
+        reason: 'Actor-Web gateway disconnected.',
+      });
+      emitStatus();
+      const delayMs = reconnectDelayMs;
+      reconnectDelayMs = Math.min(reconnectMaxDelayMs, reconnectDelayMs * 2);
+      reconnectTimer = setTimeout(connect, delayMs);
+    });
+
+    connectedSocket.addEventListener('error', () => {
+      if (closed || socket !== connectedSocket) {
+        return;
+      }
+      currentStatus = createProjectionTransportStatus('degraded', {
+        reason: 'Actor-Web gateway connection failed.',
+      });
+      emitStatus();
+    });
+  };
+
+  connect();
+
+  return {
+    address,
+    latestTrace() {
+      return latestTrace;
+    },
+    subscribeTrace(listener) {
+      traceListeners.add(listener);
+      if (latestTrace) {
+        invokeListenerSafely(listener, latestTrace);
+      }
+      return () => {
+        traceListeners.delete(listener);
+      };
+    },
+    transportStatus() {
+      return currentStatus;
+    },
+    subscribeTransportStatus(listener) {
+      statusListeners.add(listener);
+      invokeListenerSafely(listener, currentStatus);
+      return () => {
+        statusListeners.delete(listener);
+      };
+    },
+    close() {
+      closed = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      socket.close();
+      traceListeners.clear();
+      statusListeners.clear();
+    },
+  };
+}
+
 export function createActorWebReadModelSource<TActor extends ActorWebActorDescriptor>(
   input: ActorWebActorSourceInput<TActor>
 ): ClosableActorWebReadModelSource<ActorWebActorContext<TActor>, ActorWebActorEvent<TActor>>;
@@ -780,4 +1063,15 @@ export function createActorWebSource(
   const resolved = resolveGatewayBackedSourceInput(input, options);
 
   return createGatewayBackedSource(resolved.address, resolved.scope, resolved.options);
+}
+
+export function createActorWebTraceSource(
+  input:
+    | ActorWebActorDescriptor
+    | ActorWebActorSourceInput<ActorWebActorDescriptor>
+    | ActorWebAddressSourceInput,
+  options?: ActorWebSourceOptions | Omit<ActorWebSourceOptions, 'gateway'>
+): ClosableActorWebTraceSource {
+  const resolved = resolveGatewayBackedSourceInput(input, options);
+  return createGatewayBackedTraceSource(resolved.address, resolved.scope, resolved.options);
 }

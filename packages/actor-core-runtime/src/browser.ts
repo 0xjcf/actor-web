@@ -77,12 +77,14 @@ export type {
   ClosableActorWebReadModelSource,
   ClosableActorWebSource,
   ClosableActorWebSourceHandle,
+  ClosableActorWebTraceSource,
 } from './actor-web-source.js';
 export {
   createActorWebCommandSource,
   createActorWebReadModelSource,
   createActorWebSource,
   createActorWebSourceHandle,
+  createActorWebTraceSource,
 } from './actor-web-source.js';
 export type {
   AgentExecutionAdmissionDecision,
@@ -151,6 +153,7 @@ export {
   isAgentExecutionTrace,
   parseAgentExecutionTrace,
   redactAgentExecutionValue,
+  sanitizeAgentExecutionTrace,
   sortAgentExecutionReceipts,
   toAgentExecutionReceiptFromEffectRecord,
   toAgentExecutionReceiptFromEventEnvelope,
@@ -223,8 +226,15 @@ export type {
   RuntimeGatewayScopeDescriptor,
   RuntimeGatewayServerFrame,
   RuntimeGatewaySourceHandle,
+  RuntimeGatewayTraceProjection,
 } from './runtime-gateway-shared.js';
 export { createRuntimeGatewaySourceHandle } from './runtime-gateway-shared.js';
+export type {
+  CreateRuntimeGatewayTraceSourceOptions,
+  RuntimeGatewayTraceSource,
+  RuntimeGatewayTraceSourceInput,
+} from './runtime-gateway-trace-source.js';
+export { createRuntimeGatewayTraceSource } from './runtime-gateway-trace-source.js';
 export type {
   InMemoryRuntimePeerDiscoveryProvider,
   RuntimePeerDiscoveryEndpointInput,

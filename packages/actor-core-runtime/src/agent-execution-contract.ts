@@ -1974,6 +1974,111 @@ export function redactAgentExecutionValue(value: unknown): unknown {
   return String(value);
 }
 
+const AGENT_EXECUTION_RECEIPT_BASE_KEYS = [
+  'version',
+  'receiptId',
+  'traceId',
+  'recordId',
+  'actorId',
+  'sessionId',
+  'commandId',
+  'intentId',
+  'principalId',
+  'sequence',
+  'attempt',
+  'revision',
+  'checkpointId',
+  'receiptKind',
+  'status',
+  'occurredAt',
+  'correlationId',
+  'causationId',
+  'effectId',
+  'effectAttemptId',
+  'provider',
+  'idempotencyKey',
+] as const;
+
+function sanitizeAgentExecutionReceipt(receipt: AgentExecutionReceipt): AgentExecutionReceipt {
+  const source = receipt as unknown as Record<string, unknown>;
+  const sanitized: Record<string, unknown> = {};
+  for (const key of AGENT_EXECUTION_RECEIPT_BASE_KEYS) {
+    if (source[key] !== undefined) {
+      sanitized[key] = source[key];
+    }
+  }
+
+  switch (receipt.receiptKind) {
+    case 'command_admission':
+      sanitized.admissionStage = receipt.admissionStage;
+      sanitized.admission = redactAgentExecutionValue(receipt.admission);
+      break;
+    case 'event':
+      sanitized.event = redactAgentExecutionValue(receipt.event);
+      break;
+    case 'authorization':
+      sanitized.admissionStage = receipt.admissionStage;
+      sanitized.principal = redactAgentExecutionValue(receipt.principal);
+      sanitized.authorization = redactAgentExecutionValue(receipt.authorization);
+      break;
+    case 'rejection':
+      sanitized.admissionStage = receipt.admissionStage;
+      sanitized.reason = redactAgentExecutionValue(receipt.reason);
+      break;
+    case 'result':
+      sanitized.result = redactAgentExecutionValue(receipt.result);
+      break;
+    case 'timeout':
+      sanitized.timeoutMs = receipt.timeoutMs;
+      break;
+    case 'retry':
+      sanitized.retry = redactAgentExecutionValue(receipt.retry);
+      break;
+    case 'cancellation':
+      sanitized.cancellation = redactAgentExecutionValue(receipt.cancellation);
+      break;
+    case 'reconciliation':
+      sanitized.reconciliation = redactAgentExecutionValue(receipt.reconciliation);
+      break;
+    case 'projection':
+      sanitized.projection = redactAgentExecutionValue(receipt.projection);
+      break;
+    case 'effect_intent':
+      sanitized.effect = redactAgentExecutionValue(receipt.effect);
+      break;
+    case 'effect_attempt':
+      sanitized.outcome = redactAgentExecutionValue(receipt.outcome);
+      break;
+  }
+
+  return sanitized as unknown as AgentExecutionReceipt;
+}
+
+/**
+ * Redacts extension-bearing receipt payloads while preserving authoritative
+ * trace, principal, command, idempotency, sequence, and receipt join keys.
+ */
+export function sanitizeAgentExecutionTrace(trace: AgentExecutionTrace): AgentExecutionTrace {
+  const receipts = trace.receipts.map(sanitizeAgentExecutionReceipt);
+
+  return createAgentExecutionTrace({
+    version: trace.version,
+    schemaVersion: trace.schemaVersion,
+    traceId: trace.traceId,
+    actorId: trace.actorId,
+    sessionId: trace.sessionId,
+    commandId: trace.commandId,
+    ...(trace.intentId ? { intentId: trace.intentId } : {}),
+    ...(trace.principalId ? { principalId: trace.principalId } : {}),
+    ...(trace.attempt !== undefined ? { attempt: trace.attempt } : {}),
+    ...(trace.revision !== undefined ? { revision: trace.revision } : {}),
+    ...(trace.checkpointId ? { checkpointId: trace.checkpointId } : {}),
+    ...(trace.correlationId ? { correlationId: trace.correlationId } : {}),
+    ...(trace.causationId ? { causationId: trace.causationId } : {}),
+    receipts,
+  });
+}
+
 export function toAgentExecutionReceiptFromEventEnvelope(
   envelope: ActorEventEnvelope,
   options: {

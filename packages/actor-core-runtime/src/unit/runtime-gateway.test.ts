@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { emit, setup } from 'xstate';
 import type { ActorRef } from '../actor-ref.js';
+import * as agentExecutionContract from '../agent-execution-contract.js';
+import * as browserEntry from '../browser.js';
 import { createActorRef } from '../create-actor-ref.js';
+import * as rootEntry from '../index.js';
 import {
   createProjectionTransportStatus,
   type ProjectionTransportStatus,
@@ -16,6 +19,7 @@ import {
   createRuntimeGatewayHub,
   createRuntimeGatewayReadModelSource,
   createRuntimeGatewaySource,
+  createRuntimeGatewayTraceSource,
   type RuntimeGatewayClientFrame,
   type RuntimeGatewayConnectionAdapter,
   type RuntimeGatewayInvalidFrameEvent,
@@ -28,6 +32,7 @@ import {
   type RuntimeGatewayServerFrame,
   type RuntimeGatewaySource,
 } from '../runtime-gateway.js';
+import { createRuntimeGatewayTraceSource as createStandaloneRuntimeGatewayTraceSource } from '../runtime-gateway-trace-source.js';
 import type { Message } from '../types.js';
 import { Address } from '../utils/factories.js';
 
@@ -1610,6 +1615,524 @@ describe('runtime gateway hub', () => {
       )
     ).toEqual([]);
 
+    detach();
+  });
+
+  it('supports trace-only subscriptions with bounded replay and resync fallback', async () => {
+    const baseSource = createFakeSource('ready', 'trace-source');
+    const source = createRuntimeGatewayTraceSource(baseSource, {
+      bufferSize: 2,
+      now: () => new Date('2026-04-25T18:00:00.000Z'),
+    });
+    const replayStorage = createMapBackedReplayStorageFixture();
+    const hub = createRuntimeGatewayHub({
+      replayStorage: replayStorage.provider,
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'trace-main',
+      scope: { kind: 'trace-source', params: { stream: 'trace' } },
+      mode: 'trace-only',
+    });
+    await flushGatewayFrames();
+
+    source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:1',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:1',
+      commandId: 'cmd:1',
+      receipts: [],
+      status: 'pending',
+    });
+    source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:2',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:2',
+      commandId: 'cmd:2',
+      receipts: [],
+      status: 'pending',
+    });
+    source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:3',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:3',
+      commandId: 'cmd:3',
+      receipts: [],
+      status: 'pending',
+    });
+    await flushGatewayFrames();
+
+    const firstTraceFrames = connection.frames.filter(
+      (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'trace' }> =>
+        frame.type === 'trace'
+    );
+    expect(firstTraceFrames.at(-1)?.projection).toMatchObject({
+      fact: {
+        code: 'trace_buffer_overflow',
+      },
+    });
+    const firstConnectionId = connection.frames.find(
+      (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'ready' }> =>
+        typeof frame === 'object' && frame !== null && (frame as { type?: string }).type === 'ready'
+    )?.connectionId;
+    expect(firstConnectionId).toEqual(expect.any(String));
+
+    const framesBeforeResync = connection.frames.length;
+    connection.push({
+      type: 'resync',
+      streamId: 'trace-main',
+      fromSequence: 2,
+    });
+    await flushGatewayFrames();
+
+    const replayedFrames = connection.frames
+      .slice(framesBeforeResync)
+      .filter(
+        (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'trace' }> =>
+          frame.type === 'trace'
+      );
+    expect(replayedFrames.some((frame) => frame.sequence === 2)).toBe(true);
+    expect(replayedFrames.some((frame) => frame.sequence === 3)).toBe(true);
+
+    const latestOnlyConnection = createFakeConnection({ authorityId: 'auth-1' });
+    const latestOnlyDetach = hub.attach(latestOnlyConnection);
+    latestOnlyConnection.push({ type: 'hello', lastConnectionId: firstConnectionId });
+    latestOnlyConnection.push({
+      type: 'subscribe',
+      streamId: 'trace-main',
+      scope: { kind: 'trace-source', params: { stream: 'trace' } },
+      mode: 'trace-only',
+      fromSequence: 2,
+    });
+    await flushGatewayFrames();
+
+    const resumedTraceFrames = latestOnlyConnection.frames.filter(
+      (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'trace' }> =>
+        frame.type === 'trace'
+    );
+    expect(resumedTraceFrames.some((frame) => frame.sequence === 2)).toBe(true);
+    expect(resumedTraceFrames.some((frame) => frame.sequence === 3)).toBe(true);
+
+    latestOnlyConnection.push({
+      type: 'resync',
+      streamId: 'trace-main',
+      fromSequence: 99,
+    });
+    await flushGatewayFrames();
+
+    const fallbackTrace = latestOnlyConnection.frames.findLast(
+      (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'trace' }> =>
+        frame.type === 'trace'
+    );
+    expect(fallbackTrace?.projection).toMatchObject({
+      cursor: expect.any(String),
+    });
+
+    latestOnlyDetach();
+    detach();
+  });
+
+  it('preserves the latest trace when bounded overflow emits an overflow fact', () => {
+    const baseSource = createFakeSource('ready', 'trace-source');
+    const source = createRuntimeGatewayTraceSource(baseSource, {
+      bufferSize: 1,
+      now: () => new Date('2026-04-25T18:00:00.000Z'),
+    });
+
+    source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:1',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:1',
+      commandId: 'cmd:1',
+      receipts: [],
+      status: 'pending',
+    });
+    source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:2',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:2',
+      commandId: 'cmd:2',
+      receipts: [],
+      status: 'pending',
+    });
+
+    expect(source.latestTrace()).toMatchObject({
+      trace: expect.objectContaining({
+        traceId: 'trace:2',
+      }),
+      fact: null,
+    });
+  });
+
+  it('returns appended traces while overflow facts count only retained-window evictions', () => {
+    const baseSource = createFakeSource('ready', 'trace-source');
+    const source = createRuntimeGatewayTraceSource(baseSource, {
+      bufferSize: 2,
+      now: () => new Date('2026-04-25T18:00:00.000Z'),
+    });
+    const seen: Array<{ traceId?: string; factCode?: string; droppedCount?: number }> = [];
+
+    source.subscribeTrace((projection) => {
+      seen.push({
+        traceId: projection.trace?.traceId,
+        factCode: projection.fact?.code,
+        droppedCount: projection.fact?.droppedCount,
+      });
+    });
+
+    source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:1',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:1',
+      commandId: 'cmd:1',
+      receipts: [],
+      status: 'pending',
+    });
+    source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:2',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:2',
+      commandId: 'cmd:2',
+      receipts: [],
+      status: 'pending',
+    });
+    source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:3',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:3',
+      commandId: 'cmd:3',
+      receipts: [],
+      status: 'pending',
+    });
+    const latestReturned = source.appendTrace({
+      schemaVersion: 1,
+      traceId: 'trace:4',
+      actorId: 'actor://local/actor-trace-source',
+      sessionId: 'session:4',
+      commandId: 'cmd:4',
+      receipts: [],
+      status: 'pending',
+    });
+
+    expect(latestReturned).toMatchObject({
+      trace: expect.objectContaining({
+        traceId: 'trace:4',
+      }),
+      fact: null,
+    });
+    expect(seen.at(-1)).toMatchObject({
+      factCode: 'trace_buffer_overflow',
+      droppedCount: 1,
+    });
+  });
+
+  it('isolates trace observers and uses one cursor contract across runtime entrypoints', () => {
+    const baseSource = createFakeSource('ready', 'trace-observer');
+    const rootSource = createRuntimeGatewayTraceSource(baseSource);
+    const standaloneSource = createStandaloneRuntimeGatewayTraceSource({
+      address: baseSource.address,
+    });
+    const observed: string[] = [];
+
+    rootSource.subscribeTrace(() => {
+      throw new Error('observer failure must remain advisory');
+    });
+    rootSource.subscribeTrace((projection) => {
+      observed.push(projection.cursor);
+    });
+
+    const rootProjection = rootSource.appendTraceFact({
+      code: 'trace_malformed',
+      message: 'root trace',
+    });
+    const standaloneProjection = standaloneSource.appendTraceFact({
+      code: 'trace_malformed',
+      message: 'standalone trace',
+    });
+
+    expect(observed).toEqual([rootProjection.cursor]);
+    expect(standaloneProjection.cursor).toBe(rootProjection.cursor);
+  });
+
+  it('bounds non-positive trace buffers and redacts extension payloads without losing join keys', () => {
+    const source = createStandaloneRuntimeGatewayTraceSource(
+      { address: 'actor://local/trace-sanitizer' },
+      { bufferSize: 0 }
+    );
+    const observedFacts: string[] = [];
+    source.subscribeTrace((projection) => {
+      if (projection.fact) {
+        observedFacts.push(projection.fact.code);
+      }
+    });
+
+    const authorizationReceipt = {
+      ...agentExecutionContract.createExecutionAuthorizedReceipt({
+        receiptId: 'receipt:sanitized:1',
+        recordId: 'record:sanitized:1',
+        traceId: 'trace:sanitized:1',
+        actorId: 'actor://local/trace-sanitizer',
+        sessionId: 'session:sanitized:1',
+        commandId: 'command:sanitized:1',
+        principalId: 'principal:sanitized:1',
+        sequence: 1,
+        occurredAt: '2026-04-25T18:00:00.000Z',
+        principal: {
+          id: 'principal:sanitized:1',
+          apiToken: 'principal-secret',
+        },
+        authorization: {
+          policy: 'trace-policy-v1',
+          decision: 'approved',
+          credential: 'authorization-secret',
+        },
+      }),
+      unknownSecretExtension: 'must-not-be-published',
+    };
+    const trace = agentExecutionContract.createAgentExecutionTrace({
+      traceId: 'trace:sanitized:1',
+      actorId: 'actor://local/trace-sanitizer',
+      sessionId: 'session:sanitized:1',
+      commandId: 'command:sanitized:1',
+      principalId: 'principal:sanitized:1',
+      receipts: [authorizationReceipt],
+    });
+    const projection = source.appendTrace(trace);
+    source.appendTraceFact({
+      code: 'trace_malformed',
+      message: 'force bounded eviction',
+    });
+
+    expect(projection.trace).toMatchObject({
+      traceId: 'trace:sanitized:1',
+      commandId: 'command:sanitized:1',
+      principalId: 'principal:sanitized:1',
+      receipts: [
+        {
+          principal: {
+            id: 'principal:sanitized:1',
+            apiToken: '[redacted:secret]',
+          },
+          authorization: {
+            policy: 'trace-policy-v1',
+            decision: 'approved',
+            credential: '[redacted:secret]',
+          },
+        },
+      ],
+    });
+    expect(JSON.stringify(projection.trace)).not.toContain('unknownSecretExtension');
+    expect(JSON.stringify(projection.trace)).not.toContain('must-not-be-published');
+    expect(observedFacts).toContain('trace_buffer_overflow');
+  });
+
+  it('keeps throwing trace observers outside authoritative dispatch settlement', async () => {
+    const source = createRuntimeGatewayTraceSource(createFakeSource('ready'));
+    const settlements: string[] = [];
+    source.subscribeTrace(() => {
+      throw new Error('observer secret must not affect dispatch');
+    });
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v4',
+        }),
+        idempotency: async () => ({
+          outcome: 'available',
+          settle: async (outcome) => {
+            settlements.push(outcome);
+          },
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-observer-isolation',
+      message: { type: 'SUBMIT', orderId: 'order-observer-isolation' },
+      metadata: { commandId: 'cmd-observer-isolation' },
+    });
+    await flushGatewayFrames();
+
+    expect(source.sentMessages).toEqual([{ type: 'SUBMIT', orderId: 'order-observer-isolation' }]);
+    expect(settlements).toEqual(['dispatch_succeeded']);
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'ack',
+        requestId: 'send-request-observer-isolation',
+      })
+    );
+    detach();
+  });
+
+  it('redacts provider exception details from durable trace facts', async () => {
+    const baseSource = createFakeSource('ready');
+    baseSource.send = async () => {
+      throw new Error('provider secret command-token-123');
+    };
+    baseSource.ask = async () => {
+      throw new Error('provider secret ask-token-456');
+    };
+    const source = createRuntimeGatewayTraceSource(baseSource);
+    const traceFacts: unknown[] = [];
+    source.subscribeTrace((projection) => {
+      if (projection.fact) {
+        traceFacts.push(projection.fact);
+      }
+    });
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v4',
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'checkout' },
+    });
+    await flushGatewayFrames();
+
+    connection.push({
+      type: 'send',
+      streamId: 'checkout-main',
+      requestId: 'send-request-redacted-trace',
+      message: { type: 'SUBMIT', orderId: 'order-redacted-trace' },
+      metadata: { commandId: 'cmd-redacted-send' },
+    });
+    await flushGatewayFrames();
+    expect(traceFacts.at(-1)).toEqual({
+      code: 'trace_dispatch_failed',
+      message: 'Runtime command dispatch failed.',
+    });
+
+    connection.push({
+      type: 'ask',
+      streamId: 'checkout-main',
+      requestId: 'ask-request-redacted-trace',
+      message: { type: 'GET_COUNT' },
+      metadata: { commandId: 'cmd-redacted-ask' },
+    });
+    await flushGatewayFrames();
+    expect(traceFacts.at(-1)).toEqual({
+      code: 'trace_dispatch_failed',
+      message: 'Runtime ask dispatch failed.',
+    });
+    expect(JSON.stringify(traceFacts)).not.toContain('ask-token-456');
+    detach();
+  });
+
+  it('classifies primitive malformed traces without echoing the raw primitive', () => {
+    const baseSource = createFakeSource('ready', 'trace-source');
+    const source = createRuntimeGatewayTraceSource(baseSource);
+
+    const projection = source.appendTrace('secret-token');
+
+    expect(projection).toMatchObject({
+      trace: null,
+      fact: {
+        code: 'trace_malformed',
+        detail: 'invalid_primitive:string',
+      },
+    });
+  });
+
+  it('records ask results with null output when redaction returns undefined', async () => {
+    const source = createRuntimeGatewayTraceSource(createFakeSource('ready'));
+    const redactSpy = vi
+      .spyOn(agentExecutionContract, 'redactAgentExecutionValue')
+      .mockReturnValue(undefined);
+    const hub = createRuntimeGatewayHub({
+      commandAdmission: {
+        resolvePrincipal: () => ({
+          id: 'principal:gateway-authenticated',
+          kind: 'authenticated',
+        }),
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'checkout-policy-v4',
+        }),
+        onDecision: async () => {},
+      },
+      resolveScope: async () => source,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'checkout-main',
+      scope: { kind: 'ready' },
+    });
+    await flushGatewayFrames();
+    connection.push({
+      type: 'ask',
+      streamId: 'checkout-main',
+      requestId: 'ask-request-null-redaction',
+      message: { type: 'GET_COUNT' },
+      timeoutMs: 1000,
+      metadata: { commandId: 'cmd-ask-null-redaction' },
+    });
+    await flushGatewayFrames();
+
+    const askTrace = source.latestTrace();
+    expect(askTrace?.trace?.receipts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          receiptKind: 'result',
+          result: expect.objectContaining({
+            output: null,
+          }),
+        }),
+      ])
+    );
+    expect(redactSpy).toHaveBeenCalledWith({
+      ok: true,
+      messageType: 'GET_COUNT',
+    });
+
+    redactSpy.mockRestore();
     detach();
   });
 
@@ -3972,7 +4495,7 @@ describe('runtime gateway hub', () => {
     expect(askSettlements).toContain('dispatch_succeeded');
     detachAsk();
 
-    const postDispatchSource = createFakeSource('ready');
+    const postDispatchSource = createRuntimeGatewayTraceSource(createFakeSource('ready'));
     const postDispatchSettlements: string[] = [];
     const postDispatchHub = createRuntimeGatewayHub({
       commandAdmission: {
@@ -4039,6 +4562,12 @@ describe('runtime gateway hub', () => {
           frame.requestId === 'send-request-post-dispatch-settlement-failure'
       )
     ).toHaveLength(0);
+    const postDispatchTrace = postDispatchSource.latestTrace();
+    expect(
+      postDispatchTrace?.trace?.receipts.some(
+        (receipt) => receipt.receiptKind === 'result' && receipt.status === 'succeeded'
+      )
+    ).toBe(false);
     detachPostDispatch();
   });
 
@@ -4097,6 +4626,39 @@ describe('runtime gateway hub', () => {
     );
 
     detach();
+  });
+
+  it('fails trace-only subscriptions when the resolved source does not implement trace streaming', async () => {
+    const sourceWithoutTrace = createFakeSource('ready') as RuntimeGatewaySource;
+    const hub = createRuntimeGatewayHub({
+      resolveScope: async () => sourceWithoutTrace,
+    });
+    const connection = createFakeConnection({ authorityId: 'auth-1' });
+
+    const detach = hub.attach(connection);
+    connection.push({ type: 'hello' });
+    connection.push({
+      type: 'subscribe',
+      streamId: 'trace-main',
+      scope: { kind: 'checkout', params: { stream: 'trace' } },
+      mode: 'trace-only',
+    });
+    await flushGatewayFrames();
+
+    expect(connection.frames).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        streamId: 'trace-main',
+        code: 'internal_error',
+        message: 'Runtime scope does not expose trace streaming.',
+      })
+    );
+    detach();
+  });
+
+  it('exports runtime trace helpers from the public root and browser entrypoints', () => {
+    expect(typeof rootEntry.createRuntimeGatewayTraceSource).toBe('function');
+    expect(typeof browserEntry.createRuntimeGatewayTraceSource).toBe('function');
   });
 
   it('rejects malformed command metadata without dispatching or throwing', async () => {

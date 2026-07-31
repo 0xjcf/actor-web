@@ -97,6 +97,24 @@ export {
   createActorWebReadModelClient,
   startRuntime,
 } from './actor-web-client.js';
+export type {
+  ActorWebAddressSourceInput,
+  ActorWebGatewaySocket,
+  ActorWebSourceGatewayOptions,
+  ActorWebSourceOptions,
+  ClosableActorWebCommandSource,
+  ClosableActorWebReadModelSource,
+  ClosableActorWebSource,
+  ClosableActorWebSourceHandle,
+  ClosableActorWebTraceSource,
+} from './actor-web-source.js';
+export {
+  createActorWebCommandSource,
+  createActorWebReadModelSource,
+  createActorWebSource,
+  createActorWebSourceHandle,
+  createActorWebTraceSource,
+} from './actor-web-source.js';
 export type { AdapterFailureOptions } from './adapter-failure.js';
 export { raiseAdapterFailure } from './adapter-failure.js';
 export type {
@@ -166,6 +184,7 @@ export {
   isAgentExecutionTrace,
   parseAgentExecutionTrace,
   redactAgentExecutionValue,
+  sanitizeAgentExecutionTrace,
   sortAgentExecutionReceipts,
   toAgentExecutionReceiptFromEffectRecord,
   toAgentExecutionReceiptFromEventEnvelope,
@@ -375,6 +394,7 @@ export type {
   ActorRuntimeSnapshot,
   ActorSnapshotProjection,
   ActorTransitionRecord,
+  CreateRuntimeGatewayTraceSourceOptions,
   RuntimeGatewayClientFrame,
   RuntimeGatewayCommandAdmissionOptions,
   RuntimeGatewayCommandSource,
@@ -387,6 +407,8 @@ export type {
   RuntimeGatewayScopeResolver,
   RuntimeGatewayServerFrame,
   RuntimeGatewaySourceHandle,
+  RuntimeGatewayTraceProjection,
+  RuntimeGatewayTraceSource,
 } from './runtime-gateway.js';
 export {
   createRuntimeGatewayCommandSource,
@@ -394,6 +416,7 @@ export {
   createRuntimeGatewayReadModelSource,
   createRuntimeGatewaySource,
   createRuntimeGatewaySourceHandle,
+  createRuntimeGatewayTraceSource,
   RuntimeGatewayScopeError,
 } from './runtime-gateway.js';
 export type {

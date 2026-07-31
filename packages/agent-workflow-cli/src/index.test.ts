@@ -1,8 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadCommandAdmissionConfig } from './cli/index.js';
+import { loadCommandAdmissionConfig, validateDistributedCliOptions } from './cli/index.js';
 import { getCLIInfo, getPackageInfo } from './index';
 
 describe('@actor-web/cli stub', () => {
@@ -13,11 +14,44 @@ describe('@actor-web/cli stub', () => {
     expect(info.version).toMatch(/^\d+\.\d+\.\d+/);
   });
 
-  it('describes the v0 runtime-host surface', async () => {
+  it('describes the distributed runtime-host surface', async () => {
     const cli = await getCLIInfo();
     expect(cli.name).toBe('@actor-web/cli');
-    expect(cli.status).toBe('v0-in-process-host');
+    expect(cli.status).toBe('v2-distributed-runtime-host');
     expect(cli.commands).toContain('serve');
+    expect(cli.commands).toContain('connect');
+    expect(cli.features).toContain('Localhost-safe gateway and transport listeners');
+    expect(cli.features).toContain('Standalone remote gateway operator shells');
+  });
+
+  it('uses public runtime entrypoints instead of deep actor-core-runtime src imports', () => {
+    const runtimeSources = [
+      readFileSync(new URL('./host/runtime-host.ts', import.meta.url), 'utf8'),
+      readFileSync(new URL('./cli/index.ts', import.meta.url), 'utf8'),
+    ];
+
+    expect(runtimeSources.join('\n')).not.toContain('../../../actor-core-runtime/src/');
+    expect(runtimeSources.join('\n')).toContain('@actor-web/runtime/node');
+  });
+
+  it('rejects unmapped connect targets and ineffective unsafe-exposure flags', () => {
+    expect(
+      validateDistributedCliOptions({
+        connect: ['worker'],
+        peers: { storage: 'ws://127.0.0.1:9001' },
+      })
+    ).toEqual({
+      ok: false,
+      error: 'Invalid --connect target "worker": add a matching --peer worker=<ws-url> mapping.',
+    });
+    expect(
+      validateDistributedCliOptions({
+        allowUnsafeExposure: true,
+      })
+    ).toEqual({
+      ok: false,
+      error: '--allow-unsafe-exposure requires --gateway or --transport.',
+    });
   });
 
   it('rejects malformed admission modules before topology startup', async () => {

@@ -8,10 +8,17 @@ import {
   type AgentExecutionCommandMetadata,
   type AgentExecutionCommandPrincipal,
   type AgentExecutionIdempotencyClaimPort,
+  type AgentExecutionTrace,
   admitAgentExecutionCommand,
   createAgentExecutionFallbackCommandId,
+  createAgentExecutionTrace,
   createExecutionCommandAdmissionReceipt,
   createExecutionRejectedReceipt,
+  createExecutionSuccessReceipt,
+  type createExecutionTimeoutReceipt,
+  isAgentExecutionTrace,
+  redactAgentExecutionValue,
+  sanitizeAgentExecutionTrace,
 } from './agent-execution-contract.js';
 import {
   createProjectionTransportStatus,
@@ -24,6 +31,12 @@ import type {
   RuntimeGatewayScopeDescriptor,
   RuntimeGatewayServerFrame,
   RuntimeGatewaySubscribeMode,
+  RuntimeGatewayTraceFact,
+  RuntimeGatewayTraceProjection,
+} from './runtime-gateway-shared.js';
+import {
+  normalizeRuntimeGatewayTraceBufferSize,
+  toRuntimeGatewayTraceProjection,
 } from './runtime-gateway-shared.js';
 import {
   type ActorEventProjection,
@@ -44,6 +57,9 @@ export type {
   RuntimeGatewayServerFrame,
   RuntimeGatewaySourceHandle,
   RuntimeGatewaySubscribeMode,
+  RuntimeGatewayTraceFact,
+  RuntimeGatewayTraceFactCode,
+  RuntimeGatewayTraceProjection,
 } from './runtime-gateway-shared.js';
 export { createRuntimeGatewaySourceHandle } from './runtime-gateway-shared.js';
 export type {
@@ -98,6 +114,13 @@ export interface RuntimeGatewayCommandSource extends RuntimeGatewayReadModelSour
 
 export type RuntimeGatewaySource = RuntimeGatewayCommandSource;
 
+export interface RuntimeGatewayTraceSource extends RuntimeGatewaySource {
+  latestTrace(): RuntimeGatewayTraceProjection | null;
+  subscribeTrace(listener: (projection: RuntimeGatewayTraceProjection) => void): () => void;
+  appendTrace(trace: AgentExecutionTrace | unknown): RuntimeGatewayTraceProjection;
+  appendTraceFact(fact: RuntimeGatewayTraceFact): RuntimeGatewayTraceProjection;
+}
+
 export type RuntimeGatewayScopeResolver<TAuthContext = unknown> = (
   scope: RuntimeGatewayScopeDescriptor,
   authContext: TAuthContext | undefined
@@ -126,6 +149,11 @@ export interface CreateRuntimeGatewayHubOptions<TAuthContext = unknown> {
     TAuthContext
   >;
   commandAdmission?: RuntimeGatewayCommandAdmissionOptions<TAuthContext>;
+}
+
+export interface CreateRuntimeGatewayTraceSourceOptions {
+  readonly bufferSize?: number;
+  readonly now?: () => Date;
 }
 
 const PRE_AUTH_RECHECKS: readonly [] = [];
@@ -312,6 +340,97 @@ export function createRuntimeGatewaySource(
   return createRuntimeGatewayCommandSource(actorRef, options);
 }
 
+export function createRuntimeGatewayTraceSource(
+  source: RuntimeGatewaySource,
+  options: CreateRuntimeGatewayTraceSourceOptions = {}
+): RuntimeGatewayTraceSource {
+  const listeners = new Set<(projection: RuntimeGatewayTraceProjection) => void>();
+  const bufferSize = normalizeRuntimeGatewayTraceBufferSize(options.bufferSize);
+  const now = options.now ?? (() => new Date());
+  let sequence = 0;
+  let projections: RuntimeGatewayTraceProjection[] = [];
+  let latestTraceProjection: RuntimeGatewayTraceProjection | null = null;
+
+  const notifyListeners = (projection: RuntimeGatewayTraceProjection): void => {
+    for (const listener of Array.from(listeners)) {
+      try {
+        listener(projection);
+      } catch {
+        // Trace observers are advisory and must not affect authoritative runtime behavior.
+      }
+    }
+  };
+
+  const storeProjection = (
+    trace: AgentExecutionTrace | null,
+    fact: RuntimeGatewayTraceFact | null,
+    observedAt = now().toISOString()
+  ): RuntimeGatewayTraceProjection => {
+    sequence += 1;
+    const projection = toRuntimeGatewayTraceProjection(
+      source.address,
+      sequence,
+      observedAt,
+      trace,
+      fact
+    );
+    if (projection.trace) {
+      latestTraceProjection = projection;
+    }
+    projections = [...projections, projection];
+    notifyListeners(projection);
+    if (projections.length > bufferSize) {
+      const droppedCount = projections.length - bufferSize;
+      projections = projections.slice(-bufferSize);
+      sequence += 1;
+      const overflowProjection = toRuntimeGatewayTraceProjection(
+        source.address,
+        sequence,
+        observedAt,
+        null,
+        {
+          code: 'trace_buffer_overflow',
+          message: 'Dropped older traces while applying bounded backpressure.',
+          droppedCount,
+        }
+      );
+      notifyListeners(overflowProjection);
+    }
+
+    return projection;
+  };
+
+  return {
+    ...source,
+    latestTrace() {
+      return latestTraceProjection;
+    },
+    subscribeTrace(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    appendTrace(trace) {
+      if (isAgentExecutionTrace(trace)) {
+        return storeProjection(sanitizeAgentExecutionTrace(trace), null);
+      }
+
+      return storeProjection(null, {
+        code: 'trace_malformed',
+        message: 'Trace input did not satisfy the AgentExecutionTrace contract.',
+        detail:
+          typeof trace === 'object' && trace !== null
+            ? 'invalid_shape'
+            : `invalid_primitive:${typeof trace}`,
+      });
+    },
+    appendTraceFact(fact) {
+      return storeProjection(null, fact);
+    },
+  };
+}
+
 type RuntimeGatewayStreamState = {
   mode: RuntimeGatewaySubscribeMode;
   replaySessionId: string;
@@ -323,10 +442,12 @@ type RuntimeGatewayStreamState = {
   sequence: number;
   replayFrames: RuntimeGatewayReplayFrame[];
   lastSnapshot: ActorSnapshotProjection | null;
+  lastTrace: RuntimeGatewayTraceProjection | null;
   unsubscribeSnapshot: () => void;
   unsubscribeEvent: () => void;
   unsubscribeStatus: () => void;
   unsubscribeTransition: () => void;
+  unsubscribeTrace: () => void;
 };
 
 const OUTBOUND_SEND_FAILURE_THRESHOLD = 3;
@@ -338,7 +459,7 @@ const DISPATCH_OUTCOME_RECORD_FAILURE_MESSAGE =
 
 export type RuntimeGatewayReplayFrame = Extract<
   RuntimeGatewayServerFrame,
-  { type: 'snapshot' | 'event' | 'transition' }
+  { type: 'snapshot' | 'event' | 'transition' | 'trace' }
 >;
 
 export interface RuntimeGatewayReplayStorageProvider {
@@ -418,6 +539,63 @@ function stableRuntimeGatewayAuthOwnerKey(authContext: unknown): string | null {
   }
 
   return `auth:${createHash('sha256').update(JSON.stringify(canonicalValue)).digest('base64url')}`;
+}
+
+function asTraceSource(source: RuntimeGatewaySource): RuntimeGatewayTraceSource | null {
+  return 'appendTrace' in source &&
+    typeof source.appendTrace === 'function' &&
+    'appendTraceFact' in source &&
+    typeof source.appendTraceFact === 'function'
+    ? (source as RuntimeGatewayTraceSource)
+    : null;
+}
+
+function createGatewayDecisionTrace(
+  decision: AgentExecutionAdmissionDecision,
+  receipts: readonly (
+    | AgentExecutionAdmissionDecision['admissionReceipt']
+    | NonNullable<AgentExecutionAdmissionDecision['authorizationReceipt']>
+    | NonNullable<AgentExecutionAdmissionDecision['rejectionReceipt']>
+    | ReturnType<typeof createExecutionSuccessReceipt>
+    | ReturnType<typeof createExecutionTimeoutReceipt>
+  )[]
+): AgentExecutionTrace {
+  const firstReceipt = receipts[0] ?? decision.admissionReceipt;
+  return createAgentExecutionTrace({
+    traceId: firstReceipt.traceId,
+    actorId: firstReceipt.actorId,
+    sessionId: firstReceipt.sessionId,
+    commandId: firstReceipt.commandId,
+    ...(decision.principal.id ? { principalId: decision.principal.id } : {}),
+    ...(firstReceipt.correlationId ? { correlationId: firstReceipt.correlationId } : {}),
+    ...(firstReceipt.causationId ? { causationId: firstReceipt.causationId } : {}),
+    receipts,
+  });
+}
+
+function appendGatewayDecisionTrace(
+  stream: RuntimeGatewayStreamState,
+  decision: AgentExecutionAdmissionDecision,
+  receipts: readonly (
+    | AgentExecutionAdmissionDecision['admissionReceipt']
+    | NonNullable<AgentExecutionAdmissionDecision['authorizationReceipt']>
+    | NonNullable<AgentExecutionAdmissionDecision['rejectionReceipt']>
+    | ReturnType<typeof createExecutionSuccessReceipt>
+    | ReturnType<typeof createExecutionTimeoutReceipt>
+  )[]
+): void {
+  asTraceSource(stream.source)?.appendTrace(createGatewayDecisionTrace(decision, receipts));
+}
+
+function appendGatewayTraceFact(
+  stream: RuntimeGatewayStreamState,
+  code: RuntimeGatewayTraceFact['code'],
+  message: string
+): void {
+  asTraceSource(stream.source)?.appendTraceFact({
+    code,
+    message,
+  });
 }
 
 function createGatewayRejectedDecision(input: {
@@ -618,6 +796,9 @@ function replayFrameAddress(frame: RuntimeGatewayReplayFrame): ActorAddress | nu
   if (frame.type === 'snapshot' || frame.type === 'event') {
     return frame.projection.address;
   }
+  if (frame.type === 'trace') {
+    return frame.projection.address as ActorAddress;
+  }
 
   return null;
 }
@@ -645,6 +826,26 @@ function restoredReplayFramesMatchSource(
   }
 
   return false;
+}
+
+function latestTraceFromFrames(
+  frames: RuntimeGatewayReplayFrame[]
+): RuntimeGatewayTraceProjection | null {
+  for (let index = frames.length - 1; index >= 0; index -= 1) {
+    const frame = frames[index];
+    if (frame?.type === 'trace' && frame.projection.trace) {
+      return frame.projection;
+    }
+  }
+
+  for (let index = frames.length - 1; index >= 0; index -= 1) {
+    const frame = frames[index];
+    if (frame?.type === 'trace') {
+      return frame.projection;
+    }
+  }
+
+  return null;
 }
 
 function normalizeInboundQueueLimit(value: number | undefined): number {
@@ -709,6 +910,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         safeUnsubscribe(stream.unsubscribeEvent);
         safeUnsubscribe(stream.unsubscribeStatus);
         safeUnsubscribe(stream.unsubscribeTransition);
+        safeUnsubscribe(stream.unsubscribeTrace);
         return stream;
       };
 
@@ -1158,7 +1360,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
 
         const replayStorageStreamId = runtimeGatewayReplayStorageStreamId(streamId, scope);
         const restoredReplayFrames =
-          mode === 'full' && replayStorage
+          mode !== 'command-only' && replayStorage
             ? await Promise.resolve()
                 .then(() => replayStorage.loadFrames(replaySessionId, replayStorageStreamId))
                 .then((frames) => trimReplayFrames(frames))
@@ -1191,10 +1393,12 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           sequence: replayFrames.at(-1)?.sequence ?? 0,
           replayFrames,
           lastSnapshot: latestSnapshotFromFrames(replayFrames),
+          lastTrace: latestTraceFromFrames(replayFrames),
           unsubscribeSnapshot: () => {},
           unsubscribeEvent: () => {},
           unsubscribeStatus: () => {},
           unsubscribeTransition: () => {},
+          unsubscribeTrace: () => {},
         };
 
         const cleanupDetachedStream = (): void => {
@@ -1203,6 +1407,7 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
           safeUnsubscribe(stream.unsubscribeEvent);
           safeUnsubscribe(stream.unsubscribeStatus);
           safeUnsubscribe(stream.unsubscribeTransition);
+          safeUnsubscribe(stream.unsubscribeTrace);
         };
 
         try {
@@ -1253,6 +1458,26 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
                   });
                 })
               : () => {};
+          }
+
+          if (mode === 'trace-only') {
+            const traceSource = asTraceSource(source);
+            if (!traceSource) {
+              throw new Error('Runtime scope does not expose trace streaming.');
+            }
+            stream.lastTrace = traceSource.latestTrace();
+            stream.unsubscribeTrace = traceSource.subscribeTrace((projection) => {
+              if (!isCurrentStream(streamId, stream)) {
+                return;
+              }
+
+              stream.lastTrace = projection;
+              sendSequenced(streamId, stream, {
+                type: 'trace',
+                streamId,
+                projection,
+              });
+            });
           }
         } catch (error) {
           cleanupDetachedStream();
@@ -1318,6 +1543,14 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
         if (canReplay) {
           for (const frame of replayFrames) {
             send(frame);
+          }
+        } else if (stream.mode === 'trace-only') {
+          if (stream.lastTrace) {
+            sendSequenced(streamId, stream, {
+              type: 'trace',
+              streamId,
+              projection: stream.lastTrace,
+            });
           }
         } else {
           const projection = stream.source.snapshot();
@@ -1416,6 +1649,10 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
               metadata
             );
             if (!decision.ok || !decision.authorizationReceipt) {
+              appendGatewayDecisionTrace(stream, decision, [
+                decision.admissionReceipt,
+                ...(decision.rejectionReceipt ? [decision.rejectionReceipt] : []),
+              ]);
               const rejection = decision.rejectionReceipt;
               sendError(
                 admissionErrorCodeForDecision(decision),
@@ -1431,6 +1668,10 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             }
             try {
               await stream.source.send(message);
+              appendGatewayDecisionTrace(stream, decision, [
+                decision.admissionReceipt,
+                decision.authorizationReceipt,
+              ]);
               const settled = await trySettleGatewayClaim(decision, 'dispatch_succeeded');
               if (!settled) {
                 sendError(
@@ -1449,6 +1690,11 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
                 authorization: decision.authorizationReceipt,
               });
             } catch (error) {
+              appendGatewayTraceFact(
+                stream,
+                'trace_dispatch_failed',
+                'Runtime command dispatch failed.'
+              );
               await trySettleGatewayClaim(decision, 'dispatch_indeterminate');
               sendError(
                 'internal_error',
@@ -1547,6 +1793,10 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
               metadata
             );
             if (!decision.ok || !decision.authorizationReceipt) {
+              appendGatewayDecisionTrace(stream, decision, [
+                decision.admissionReceipt,
+                ...(decision.rejectionReceipt ? [decision.rejectionReceipt] : []),
+              ]);
               const rejection = decision.rejectionReceipt;
               sendError(
                 admissionErrorCodeForDecision(decision),
@@ -1562,6 +1812,25 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             }
             try {
               const value = await stream.source.ask(message, normalizedTimeoutMs);
+              const redactedOutput = redactAgentExecutionValue(value);
+              appendGatewayDecisionTrace(stream, decision, [
+                decision.admissionReceipt,
+                decision.authorizationReceipt,
+                createExecutionSuccessReceipt({
+                  receiptId: `${decision.authorizationReceipt.traceId}:result:${decision.authorizationReceipt.sequence + 1}`,
+                  recordId: `${decision.authorizationReceipt.traceId}:record:result:${decision.authorizationReceipt.sequence + 1}`,
+                  traceId: decision.authorizationReceipt.traceId,
+                  actorId: decision.authorizationReceipt.actorId,
+                  sessionId: decision.authorizationReceipt.sessionId,
+                  commandId: decision.authorizationReceipt.commandId,
+                  ...(decision.principal.id ? { principalId: decision.principal.id } : {}),
+                  sequence: decision.authorizationReceipt.sequence + 1,
+                  occurredAt: new Date().toISOString(),
+                  result: {
+                    output: redactedOutput === undefined ? null : (redactedOutput as JsonValue),
+                  },
+                }),
+              ]);
               const settled = await trySettleGatewayClaim(decision, 'dispatch_succeeded');
               if (!settled) {
                 sendError(
@@ -1581,6 +1850,11 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
                 authorization: decision.authorizationReceipt,
               });
             } catch (error) {
+              appendGatewayTraceFact(
+                stream,
+                'trace_dispatch_failed',
+                'Runtime ask dispatch failed.'
+              );
               await trySettleGatewayClaim(decision, 'dispatch_indeterminate');
               sendError(
                 'internal_error',
@@ -1709,16 +1983,20 @@ export function createRuntimeGatewayHub<TAuthContext = unknown>(
             if (
               frame.mode !== undefined &&
               frame.mode !== 'full' &&
-              frame.mode !== 'command-only'
+              frame.mode !== 'command-only' &&
+              frame.mode !== 'trace-only'
             ) {
               sendError(
                 'invalid_frame',
-                'subscribe mode must be either full or command-only.',
+                'subscribe mode must be full, command-only, or trace-only.',
                 true
               );
               return;
             }
             await subscribeStream(frame.streamId, frame.scope, frame.mode ?? 'full');
+            if (frame.fromSequence !== undefined) {
+              resyncStream(frame.streamId, frame.fromSequence);
+            }
             return;
         }
       };

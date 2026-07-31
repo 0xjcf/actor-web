@@ -2,6 +2,7 @@ import type {
   AgentExecutionAuthorizedReceipt,
   AgentExecutionCommandMetadata,
   AgentExecutionRejectedReceipt,
+  AgentExecutionTrace,
 } from './agent-execution-contract.js';
 import type { ProjectionTransportStatus } from './projection-transport.js';
 import type { RuntimeTransportAuthPayload } from './runtime-auth.js';
@@ -16,6 +17,55 @@ import type { Message } from './types.js';
 export interface RuntimeGatewayScopeDescriptor {
   kind: string;
   params?: Record<string, string>;
+}
+
+export type RuntimeGatewayTraceFactCode =
+  | 'trace_buffer_overflow'
+  | 'trace_malformed'
+  | 'trace_unsupported'
+  | 'trace_dispatch_failed';
+
+export interface RuntimeGatewayTraceFact {
+  readonly code: RuntimeGatewayTraceFactCode;
+  readonly message: string;
+  readonly detail?: string;
+  readonly droppedCount?: number;
+}
+
+export interface RuntimeGatewayTraceProjection {
+  readonly address: string;
+  readonly cursor: string;
+  readonly observedAt: string;
+  readonly trace: AgentExecutionTrace | null;
+  readonly fact: RuntimeGatewayTraceFact | null;
+}
+
+export function createRuntimeGatewayTraceCursor(address: string, sequence: number): string {
+  return `${address}#trace:${sequence}`;
+}
+
+export function toRuntimeGatewayTraceProjection(
+  address: string,
+  sequence: number,
+  observedAt: string,
+  trace: AgentExecutionTrace | null,
+  fact: RuntimeGatewayTraceFact | null
+): RuntimeGatewayTraceProjection {
+  return {
+    address,
+    cursor: createRuntimeGatewayTraceCursor(address, sequence),
+    observedAt,
+    trace,
+    fact,
+  };
+}
+
+/** Trace buffers always retain at least one projection. */
+export function normalizeRuntimeGatewayTraceBufferSize(bufferSize: number | undefined): number {
+  if (bufferSize === undefined || !Number.isFinite(bufferSize)) {
+    return 64;
+  }
+  return Math.max(1, Math.floor(bufferSize));
 }
 
 export type RuntimeGatewayErrorCode =
@@ -81,6 +131,12 @@ export type RuntimeGatewayServerFrame =
       transition: ActorTransitionRecord;
     }
   | {
+      type: 'trace';
+      streamId: string;
+      sequence: number;
+      projection: RuntimeGatewayTraceProjection;
+    }
+  | {
       type: 'status';
       streamId: string;
       status: ProjectionTransportStatus;
@@ -142,6 +198,6 @@ export function createRuntimeGatewaySourceHandle<TSource, TCommandSource>(
   } as RuntimeGatewaySourceHandle<TSource, TCommandSource>;
 }
 
-export type RuntimeGatewaySubscribeMode = 'full' | 'command-only';
+export type RuntimeGatewaySubscribeMode = 'full' | 'command-only' | 'trace-only';
 
 export type { ActorProjectionEventKind };

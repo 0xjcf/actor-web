@@ -15,10 +15,12 @@ import {
   type ActorMessage,
   type AgentExecutionIdempotencySettlementOutcome,
   actor,
+  createInMemoryAgentSessionCheckpointStore,
   defineActorWebTopology,
   defineBehavior,
   enableDevModeForCLI,
   node,
+  type ProjectionTransportStatus,
   resetDevMode,
 } from '@actor-web/runtime';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -53,6 +55,33 @@ function buildCounterTopology() {
   });
 }
 
+function buildDistributedCounterTopology() {
+  const counter = defineBehavior<CounterMsg>()
+    .withContext({ count: 0 })
+    .onMessage(({ message, context }) => {
+      if (message.type === 'INCREMENT') {
+        const count = context.count + 1;
+        return { context: { count }, emit: [{ type: 'COUNT_CHANGED', count }] };
+      }
+      if (message.type === 'GET_COUNT') {
+        return { reply: { count: context.count } };
+      }
+      return {};
+    })
+    .build();
+
+  return defineActorWebTopology({
+    nodes: {
+      server: node('server-node'),
+      worker: node('worker-node'),
+    },
+    actors: {
+      serverCounter: actor({ id: 'server-counter', node: 'server', behavior: counter }),
+      workerCounter: actor({ id: 'worker-counter', node: 'worker', behavior: counter }),
+    },
+  });
+}
+
 type AgentPackage = {
   readonly ACTOR_WEB_LLM_TOOL_NAME: 'llm';
   createAgentLoopBehavior(options?: { readonly system?: string }): unknown;
@@ -83,6 +112,26 @@ function buildAgentLoopTopology(input: {
       }),
     },
   });
+}
+
+async function waitFor<T>(
+  read: () => T | undefined | Promise<T | undefined>,
+  message: string,
+  timeoutMs = 2_000
+): Promise<T> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const value = await read();
+    if (value !== undefined) {
+      return value;
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+  }
+
+  throw new Error(message);
 }
 
 // ============================================================================
@@ -194,12 +243,933 @@ describe('createRuntimeHost', () => {
     expect(actors[0].path).toContain('counter');
   });
 
+  it('reports explicit readiness for in-process hosts', () => {
+    expect(host.getStatus()).toMatchObject({
+      mode: 'in-process',
+      readiness: {
+        process: 'ready',
+        transport: 'local',
+        directory: 'local',
+        checkpointStore: 'missing',
+        policyAdmission: 'unconfigured',
+      },
+    });
+  });
+
   it('sends a message and observes the effect via ask', async () => {
     const sent = await host.send('counter', '{"type":"INCREMENT"}');
     expect(sent.ok).toBe(true);
 
     const reply = await host.ask('counter', '{"type":"GET_COUNT"}', 2000);
     expect(reply).toEqual({ ok: true, value: { count: 1 } });
+  });
+
+  it('surfaces distributed transport membership separately from directory readiness facts', async () => {
+    await host.stop();
+    const topology = buildDistributedCounterTopology();
+    const workerStarted = await createRuntimeHost(topology, {
+      node: 'worker',
+      distributed: {
+        transport: true,
+      },
+    });
+    expect(workerStarted.ok).toBe(true);
+    if (!workerStarted.ok) {
+      return;
+    }
+
+    const serverStarted = await createRuntimeHost(topology, {
+      node: 'server',
+      distributed: {
+        transport: true,
+        peers: {
+          worker: workerStarted.value.getStatus().transportUrl ?? '',
+        },
+        connect: ['worker'],
+      },
+    });
+    expect(serverStarted.ok).toBe(true);
+    if (!serverStarted.ok) {
+      await workerStarted.value.stop();
+      return;
+    }
+
+    try {
+      const status = await waitFor(async () => {
+        const next = serverStarted.value.getStatus();
+        const peer = next.transport?.peers.find((entry) => entry.nodeAddress === 'worker-node');
+        const readiness = next.cluster?.directoryReadiness?.find(
+          (entry) => entry.nodeAddress === 'worker-node'
+        );
+        return peer?.connected && readiness?.status === 'ready' ? next : undefined;
+      }, 'Expected distributed host status to report connected transport and ready directory');
+
+      expect(status.mode).toBe('distributed');
+      expect(status.gatewayUrl).toBeNull();
+      expect(status.transportUrl).toMatch(/^ws:\/\/127\.0\.0\.1:/);
+      expect(status.transport).toMatchObject({
+        connectedNodes: ['worker-node'],
+      });
+      expect(status.cluster?.directoryReadiness).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            nodeAddress: 'worker-node',
+            status: 'ready',
+          }),
+        ])
+      );
+      expect(status.readiness).toEqual({
+        process: 'ready',
+        transport: 'connected',
+        directory: 'ready',
+        checkpointStore: 'missing',
+        policyAdmission: 'unconfigured',
+      });
+    } finally {
+      await serverStarted.value.stop();
+      await workerStarted.value.stop();
+    }
+  });
+
+  it('routes distributed send and ask to remote actor addresses after peer readiness', async () => {
+    await host.stop();
+    const topology = buildDistributedCounterTopology();
+    const workerStarted = await createRuntimeHost(topology, {
+      node: 'worker',
+      distributed: {
+        transport: true,
+      },
+    });
+    expect(workerStarted.ok).toBe(true);
+    if (!workerStarted.ok) {
+      return;
+    }
+
+    const serverStarted = await createRuntimeHost(topology, {
+      node: 'server',
+      distributed: {
+        transport: true,
+        peers: {
+          worker: workerStarted.value.getStatus().transportUrl ?? '',
+        },
+        connect: ['worker'],
+      },
+    });
+    expect(serverStarted.ok).toBe(true);
+    if (!serverStarted.ok) {
+      await workerStarted.value.stop();
+      return;
+    }
+
+    try {
+      await waitFor(
+        () =>
+          serverStarted.value.getStatus().cluster?.directoryReadiness?.[0]?.status === 'ready'
+            ? true
+            : undefined,
+        'Expected remote directory readiness before cross-node send'
+      );
+
+      const sent = await serverStarted.value.send('workerCounter', '{"type":"INCREMENT"}');
+      const reply = await serverStarted.value.ask('worker-counter', '{"type":"GET_COUNT"}', 2_000);
+
+      expect(sent).toEqual({
+        ok: true,
+        value: 'Sent INCREMENT to actor://worker-node/worker-counter',
+      });
+      expect(reply).toEqual({ ok: true, value: { count: 1 } });
+    } finally {
+      await serverStarted.value.stop();
+      await workerStarted.value.stop();
+    }
+  });
+
+  it('fails closed when distributed exposure leaves localhost without an explicit unsafe override', async () => {
+    await host.stop();
+    const started = await createRuntimeHost(buildDistributedCounterTopology(), {
+      node: 'server',
+      distributed: {
+        gateway: {
+          host: '0.0.0.0',
+        },
+      },
+    });
+
+    expect(started).toEqual({
+      ok: false,
+      error:
+        'Distributed host rejected: unsafe_exposure_requires_override (gateway host "0.0.0.0" is not loopback-safe. Pass allowUnsafeExposure to bind outside localhost.)',
+    });
+  });
+
+  it('fails closed when non-localhost gateway exposure is enabled without auth, admission, and checkpoint readiness', async () => {
+    await host.stop();
+    const checkpointStore = createInMemoryAgentSessionCheckpointStore();
+
+    const missingAuth = await createRuntimeHost(buildCounterTopology(), {
+      node: 'local',
+      distributed: {
+        gateway: {
+          host: '0.0.0.0',
+          expose: ['counter'],
+          commandAdmission: {
+            resolvePrincipal: () => ({
+              id: 'principal:served-gateway',
+              kind: 'authenticated',
+            }),
+            policy: async () => ({
+              outcome: 'authorized',
+              policy: 'served-gateway-default',
+            }),
+            onDecision: async () => {},
+          },
+        },
+        allowUnsafeExposure: true,
+      },
+      checkpoint: {
+        store: checkpointStore,
+        required: true,
+      },
+    });
+    expect(missingAuth).toEqual({
+      ok: false,
+      error:
+        'Distributed host rejected: missing_gateway_auth (non-localhost gateway exposure requires explicit gateway authentication.)',
+    });
+
+    const missingAdmission = await createRuntimeHost(buildCounterTopology(), {
+      node: 'local',
+      distributed: {
+        gateway: {
+          host: '0.0.0.0',
+          expose: ['counter'],
+          auth: {
+            verifyToken: ({ token }) => token === 'gateway-secret',
+          },
+        },
+        allowUnsafeExposure: true,
+      },
+      checkpoint: {
+        store: checkpointStore,
+        required: true,
+      },
+    });
+    expect(missingAdmission).toEqual({
+      ok: false,
+      error:
+        'Distributed host rejected: missing_gateway_admission (non-localhost gateway exposure requires explicit command admission.)',
+    });
+
+    const missingCheckpoint = await createRuntimeHost(buildCounterTopology(), {
+      node: 'local',
+      distributed: {
+        gateway: {
+          host: '0.0.0.0',
+          expose: ['counter'],
+          auth: {
+            verifyToken: ({ token }) => token === 'gateway-secret',
+          },
+          commandAdmission: {
+            resolvePrincipal: () => ({
+              id: 'principal:served-gateway',
+              kind: 'authenticated',
+            }),
+            policy: async () => ({
+              outcome: 'authorized',
+              policy: 'served-gateway-default',
+            }),
+            onDecision: async () => {},
+          },
+        },
+        allowUnsafeExposure: true,
+      },
+      checkpoint: {
+        required: true,
+      },
+    });
+    expect(missingCheckpoint).toEqual({
+      ok: false,
+      error:
+        'Distributed host rejected: missing_checkpoint_store (non-localhost gateway exposure requires an explicit checkpoint store.)',
+    });
+  });
+
+  it('fails closed when non-localhost gateway exposure omits checkpoint configuration entirely', async () => {
+    await host.stop();
+
+    const missingCheckpoint = await createRuntimeHost(buildCounterTopology(), {
+      node: 'local',
+      distributed: {
+        gateway: {
+          host: '0.0.0.0',
+          expose: ['counter'],
+          auth: {
+            verifyToken: ({ token }) => token === 'gateway-secret',
+          },
+          commandAdmission: {
+            resolvePrincipal: () => ({
+              id: 'principal:served-gateway',
+              kind: 'authenticated',
+            }),
+            policy: async () => ({
+              outcome: 'authorized',
+              policy: 'served-gateway-default',
+            }),
+            onDecision: async () => {},
+          },
+        },
+        allowUnsafeExposure: true,
+      },
+    });
+
+    expect(missingCheckpoint).toEqual({
+      ok: false,
+      error:
+        'Distributed host rejected: missing_checkpoint_store (non-localhost gateway exposure requires an explicit checkpoint store.)',
+    });
+  });
+
+  it('fails closed when non-localhost transport exposure is enabled without explicit transport auth', async () => {
+    await host.stop();
+
+    const missingTransportAuth = await createRuntimeHost(buildCounterTopology(), {
+      node: 'local',
+      distributed: {
+        transport: {
+          listen: {
+            host: '0.0.0.0',
+          },
+        },
+        allowUnsafeExposure: true,
+      },
+    });
+
+    expect(missingTransportAuth).toEqual({
+      ok: false,
+      error:
+        'Distributed host rejected: missing_transport_auth (non-localhost transport exposure requires explicit transport authentication.)',
+    });
+  });
+
+  it('treats object transport without listen as an active non-loopback transport for preflight guards', async () => {
+    await host.stop();
+
+    const missingTransportAuth = await createRuntimeHost(buildCounterTopology(), {
+      node: 'local',
+      distributed: {
+        host: '0.0.0.0',
+        transport: {},
+        allowUnsafeExposure: true,
+      },
+    });
+
+    expect(missingTransportAuth).toEqual({
+      ok: false,
+      error:
+        'Distributed host rejected: missing_transport_auth (non-localhost transport exposure requires explicit transport authentication.)',
+    });
+  });
+
+  it('aggregates remote transport status by worst active source instead of last writer wins', async () => {
+    vi.resetModules();
+
+    const sourceStatusListeners = new Set<(status: ProjectionTransportStatus) => void>();
+    const traceStatusListeners = new Set<(status: ProjectionTransportStatus) => void>();
+    const commandSource = {
+      address: 'actor://local/counter',
+      snapshot: () => ({ status: 'running' }),
+      subscribe: () => () => {},
+      subscribeEvent: () => () => {},
+      transportStatus: () => ({ state: 'connected', updatedAt: Date.now() }),
+      subscribeTransportStatus: (listener: (status: ProjectionTransportStatus) => void) => {
+        sourceStatusListeners.add(listener);
+        listener({
+          state: 'degraded',
+          reason: 'command source degraded',
+          updatedAt: Date.now(),
+        });
+        return () => {
+          sourceStatusListeners.delete(listener);
+        };
+      },
+      send: async () => {},
+      ask: async () => ({ count: 1 }),
+      close: () => {},
+    };
+    const traceSource = {
+      address: 'actor://local/counter',
+      latestTrace: () => null,
+      subscribeTrace: () => () => {},
+      transportStatus: () => ({ state: 'connected', updatedAt: Date.now() }),
+      subscribeTransportStatus: (listener: (status: ProjectionTransportStatus) => void) => {
+        traceStatusListeners.add(listener);
+        listener({
+          state: 'connected',
+          updatedAt: Date.now(),
+        });
+        return () => {
+          traceStatusListeners.delete(listener);
+        };
+      },
+      close: () => {},
+    };
+
+    vi.doMock('@actor-web/runtime', async () => {
+      const actual =
+        await vi.importActual<typeof import('@actor-web/runtime')>('@actor-web/runtime');
+      return {
+        ...actual,
+        createActorWebSource: () => commandSource,
+        createActorWebTraceSource: () => traceSource,
+      };
+    });
+
+    const runtimeHostModule = await import('./runtime-host');
+    const remoteHost = await runtimeHostModule.createRuntimeHost(buildCounterTopology(), {
+      remote: {
+        gateway: {
+          url: 'ws://127.0.0.1:9000/runtime',
+        },
+      },
+    });
+    expect(remoteHost.ok).toBe(true);
+    if (!remoteHost.ok) {
+      vi.doUnmock('@actor-web/runtime');
+      return;
+    }
+
+    await remoteHost.value.send('counter', '{"type":"INCREMENT"}');
+    const traceWatches = new Map<string, () => void>();
+    const tracing = runtimeHostModule.executeCommand(
+      remoteHost.value,
+      'watch-trace counter',
+      traceWatches
+    );
+    await expect(tracing).resolves.toMatchObject({ ok: true });
+
+    for (const listener of Array.from(traceStatusListeners)) {
+      listener({
+        state: 'connected',
+        updatedAt: Date.now(),
+      });
+    }
+
+    expect(remoteHost.value.getStatus()).toMatchObject({
+      readiness: {
+        transport: 'degraded',
+      },
+      transportReason: 'command source degraded',
+    });
+
+    await remoteHost.value.stop();
+    expect(remoteHost.value.getStatus()).toMatchObject({
+      readiness: {
+        transport: 'replaying',
+      },
+      transportReason: null,
+    });
+    vi.doUnmock('@actor-web/runtime');
+  });
+
+  it('rejects conflicting remote and distributed host options before startup', async () => {
+    await host.stop();
+
+    const started = await createRuntimeHost(buildCounterTopology(), {
+      remote: {
+        gateway: {
+          url: 'ws://127.0.0.1:9000/runtime',
+        },
+      },
+      distributed: {
+        gateway: true,
+      },
+    });
+
+    expect(started).toEqual({
+      ok: false,
+      error:
+        'Runtime host rejected: remote_conflicts_with_distributed (remote hosts cannot also configure distributed hosting options.)',
+    });
+  });
+
+  it('lists remote actors from topology/cache state without opening remote sources', async () => {
+    vi.resetModules();
+
+    const createActorWebSource = vi.fn(() => {
+      throw new Error('remote source should stay unopened during listActors');
+    });
+
+    vi.doMock('@actor-web/runtime', async () => {
+      const actual =
+        await vi.importActual<typeof import('@actor-web/runtime')>('@actor-web/runtime');
+      return {
+        ...actual,
+        createActorWebSource,
+      };
+    });
+
+    const runtimeHostModule = await import('./runtime-host');
+    const remoteHost = await runtimeHostModule.createRuntimeHost(buildCounterTopology(), {
+      remote: {
+        gateway: {
+          url: 'ws://127.0.0.1:9000/runtime',
+        },
+      },
+    });
+    expect(remoteHost.ok).toBe(true);
+    if (!remoteHost.ok) {
+      vi.doUnmock('@actor-web/runtime');
+      return;
+    }
+
+    const actors = await remoteHost.value.listActors();
+
+    expect(createActorWebSource).not.toHaveBeenCalled();
+    expect(actors).toEqual([
+      {
+        key: 'counter',
+        path: 'actor://local/counter',
+        origin: 'topology',
+        status: 'unknown',
+      },
+    ]);
+
+    await remoteHost.value.stop();
+    vi.doUnmock('@actor-web/runtime');
+  });
+
+  it('normalizes remote watch events to the same raw actor message shape as local watch', async () => {
+    vi.resetModules();
+
+    const wrappedEvent = {
+      type: 'COUNT_CHANGED',
+      count: 1,
+      address: 'actor://local/counter',
+      toJSON() {
+        return {
+          type: this.type,
+          count: this.count,
+          address: this.address,
+        };
+      },
+    };
+    let subscribedListener: ((event: unknown) => void) | null = null;
+    const commandSource = {
+      address: 'actor://local/counter',
+      snapshot: () => ({ status: 'running' }),
+      subscribe: () => () => {},
+      subscribeEvent: (listener: (event: unknown) => void) => {
+        subscribedListener = listener;
+        return () => {
+          subscribedListener = null;
+        };
+      },
+      transportStatus: () => ({ state: 'connected', updatedAt: Date.now() }),
+      subscribeTransportStatus: () => () => {},
+      send: async () => {},
+      ask: async () => ({ count: 1 }),
+      close: () => {},
+    };
+
+    vi.doMock('@actor-web/runtime', async () => {
+      const actual =
+        await vi.importActual<typeof import('@actor-web/runtime')>('@actor-web/runtime');
+      return {
+        ...actual,
+        createActorWebSource: () => commandSource,
+      };
+    });
+
+    const runtimeHostModule = await import('./runtime-host');
+    const remoteHost = await runtimeHostModule.createRuntimeHost(buildCounterTopology(), {
+      remote: {
+        gateway: {
+          url: 'ws://127.0.0.1:9000/runtime',
+        },
+      },
+    });
+    expect(remoteHost.ok).toBe(true);
+    if (!remoteHost.ok) {
+      vi.doUnmock('@actor-web/runtime');
+      return;
+    }
+
+    const events: unknown[] = [];
+    const watching = remoteHost.value.watch('counter', (event) => {
+      events.push(event);
+    });
+    expect(watching.ok).toBe(true);
+
+    subscribedListener?.(wrappedEvent);
+
+    expect(events).toEqual([
+      {
+        type: 'COUNT_CHANGED',
+        count: 1,
+      },
+    ]);
+
+    if (watching.ok) {
+      watching.value();
+    }
+    await remoteHost.value.stop();
+    vi.doUnmock('@actor-web/runtime');
+  });
+
+  it('ranks disconnected remote readiness worse than degraded when aggregating source health', async () => {
+    vi.resetModules();
+
+    const sourceStatusListeners = new Set<(status: ProjectionTransportStatus) => void>();
+    const traceStatusListeners = new Set<(status: ProjectionTransportStatus) => void>();
+    const commandSource = {
+      address: 'actor://local/counter',
+      snapshot: () => ({ status: 'running' }),
+      subscribe: () => () => {},
+      subscribeEvent: () => () => {},
+      transportStatus: () => ({ state: 'connected', updatedAt: Date.now() }),
+      subscribeTransportStatus: (listener: (status: ProjectionTransportStatus) => void) => {
+        sourceStatusListeners.add(listener);
+        listener({
+          state: 'degraded',
+          reason: 'command source degraded',
+          updatedAt: Date.now(),
+        });
+        return () => {
+          sourceStatusListeners.delete(listener);
+        };
+      },
+      send: async () => {},
+      ask: async () => ({ count: 1 }),
+      close: () => {},
+    };
+    const traceSource = {
+      address: 'actor://local/counter',
+      latestTrace: () => null,
+      subscribeTrace: () => () => {},
+      transportStatus: () => ({ state: 'connected', updatedAt: Date.now() }),
+      subscribeTransportStatus: (listener: (status: ProjectionTransportStatus) => void) => {
+        traceStatusListeners.add(listener);
+        listener({
+          state: 'disconnected',
+          reason: 'trace source disconnected',
+          updatedAt: Date.now(),
+        });
+        return () => {
+          traceStatusListeners.delete(listener);
+        };
+      },
+      close: () => {},
+    };
+
+    vi.doMock('@actor-web/runtime', async () => {
+      const actual =
+        await vi.importActual<typeof import('@actor-web/runtime')>('@actor-web/runtime');
+      return {
+        ...actual,
+        createActorWebSource: () => commandSource,
+        createActorWebTraceSource: () => traceSource,
+      };
+    });
+
+    const runtimeHostModule = await import('./runtime-host');
+    const remoteHost = await runtimeHostModule.createRuntimeHost(buildCounterTopology(), {
+      remote: {
+        gateway: {
+          url: 'ws://127.0.0.1:9000/runtime',
+        },
+      },
+    });
+    expect(remoteHost.ok).toBe(true);
+    if (!remoteHost.ok) {
+      vi.doUnmock('@actor-web/runtime');
+      return;
+    }
+
+    await remoteHost.value.send('counter', '{"type":"INCREMENT"}');
+    const traceWatches = new Map<string, () => void>();
+    const tracing = runtimeHostModule.executeCommand(
+      remoteHost.value,
+      'watch-trace counter',
+      traceWatches
+    );
+    await expect(tracing).resolves.toMatchObject({ ok: true });
+
+    expect(remoteHost.value.getStatus()).toMatchObject({
+      readiness: {
+        transport: 'disconnected',
+      },
+      transportReason: 'trace source disconnected',
+    });
+
+    await remoteHost.value.stop();
+    vi.doUnmock('@actor-web/runtime');
+  });
+
+  it('fails closed when remote hosts are given local commandAdmission options', async () => {
+    await host.stop();
+
+    const started = await createRuntimeHost(buildCounterTopology(), {
+      remote: {
+        gateway: {
+          url: 'ws://127.0.0.1:9000/runtime',
+        },
+      },
+      commandAdmission: {
+        principal: {
+          id: 'principal:cli-system',
+          kind: 'system',
+        },
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'system-default-allow',
+        }),
+        onDecision: async () => {},
+      },
+    });
+
+    expect(started).toEqual({
+      ok: false,
+      error:
+        'Runtime host rejected: remote_gateway_owns_admission (remote hosts must configure command admission on the authoritative gateway instead of local host options.)',
+    });
+  });
+
+  it('rejects a topology with no nodes even when no explicit node is requested', async () => {
+    await host.stop();
+
+    const started = await createRuntimeHost({ nodes: {}, actors: {} } as never, {});
+
+    expect(started).toEqual({
+      ok: false,
+      error: 'Runtime host rejected: topology must declare at least one node.',
+    });
+  });
+
+  it('rejects a topology with no nodes before runtime startup', async () => {
+    await host.stop();
+
+    const started = await createRuntimeHost(
+      {
+        nodes: {},
+        actors: {},
+      } as ReturnType<typeof defineActorWebTopology>,
+      {}
+    );
+
+    expect(started).toEqual({
+      ok: false,
+      error: 'Runtime host rejected: topology must declare at least one node.',
+    });
+  });
+
+  it('connects to an authenticated remote gateway and runs send, ask, watch, and status through the remote host shell', async () => {
+    await host.stop();
+    const decisions: unknown[] = [];
+    const checkpointStore = createInMemoryAgentSessionCheckpointStore();
+    const served = await createRuntimeHost(buildCounterTopology(), {
+      node: 'local',
+      distributed: {
+        gateway: {
+          expose: ['counter'],
+          auth: {
+            verifyToken: ({ token }) => token === 'gateway-secret',
+          },
+          commandAdmission: {
+            resolvePrincipal: () => ({
+              id: 'principal:served-gateway',
+              kind: 'authenticated',
+            }),
+            policy: async ({ metadata }) => ({
+              outcome: 'authorized',
+              policy: metadata.capability ?? 'served-gateway-default',
+            }),
+            onDecision: async (decision) => {
+              decisions.push(decision);
+            },
+          },
+        },
+      },
+      checkpoint: {
+        store: checkpointStore,
+        required: true,
+      },
+    });
+    expect(served.ok).toBe(true);
+    if (!served.ok) {
+      return;
+    }
+
+    const connected = await createRuntimeHost(buildCounterTopology(), {
+      remote: {
+        gateway: {
+          url: served.value.getStatus().gatewayUrl ?? '',
+          auth: {
+            token: 'gateway-secret',
+          },
+        },
+      },
+      checkpoint: {
+        store: checkpointStore,
+        required: true,
+      },
+    });
+    expect(connected.ok).toBe(true);
+    if (!connected.ok) {
+      await served.value.stop();
+      return;
+    }
+
+    try {
+      const events: ActorMessage[] = [];
+      const traces: unknown[] = [];
+      const watching = connected.value.watch('counter', (event) => {
+        events.push(event);
+      });
+      expect(watching.ok).toBe(true);
+      const traceWatches = new Map<string, () => void>();
+      const tracing = await executeCommand(connected.value, 'watch-trace counter', traceWatches, {
+        onTrace: (_target, projection) => {
+          traces.push(projection);
+        },
+      });
+      expect(tracing.ok).toBe(true);
+
+      const sent = await connected.value.send('counter', '{"type":"INCREMENT"}', {
+        capability: 'counter.increment',
+        commandId: 'cmd-remote-send-1',
+      });
+      const reply = await connected.value.ask('counter', '{"type":"GET_COUNT"}', 2_000, {
+        capability: 'counter.read',
+        commandId: 'cmd-remote-ask-1',
+      });
+      const status = connected.value.getStatus();
+      const statusOutcome = await executeCommand(connected.value, 'status', new Map());
+
+      expect(sent).toEqual({
+        ok: true,
+        value: 'Sent INCREMENT to actor://local/counter',
+      });
+      expect(reply).toEqual({ ok: true, value: { count: 1 } });
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: 'COUNT_CHANGED',
+          count: 1,
+        })
+      );
+      await waitFor(
+        () =>
+          traces.some(
+            (projection) =>
+              typeof projection === 'object' &&
+              projection !== null &&
+              'trace' in projection &&
+              Boolean(
+                (projection as { trace?: { commandId?: string } | null }).trace?.commandId ===
+                  'cmd-remote-ask-1'
+              )
+          )
+            ? true
+            : undefined,
+        'Expected remote trace projections after gateway send and ask'
+      );
+      expect(traces).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            trace: expect.objectContaining({
+              commandId: 'cmd-remote-send-1',
+              receipts: expect.arrayContaining([
+                expect.objectContaining({
+                  receiptKind: 'command_admission',
+                }),
+                expect.objectContaining({
+                  receiptKind: 'authorization',
+                  authorization: expect.objectContaining({
+                    policy: 'counter.increment',
+                  }),
+                }),
+              ]),
+            }),
+          }),
+          expect.objectContaining({
+            trace: expect.objectContaining({
+              commandId: 'cmd-remote-ask-1',
+              receipts: expect.arrayContaining([
+                expect.objectContaining({
+                  receiptKind: 'command_admission',
+                }),
+                expect.objectContaining({
+                  receiptKind: 'authorization',
+                  authorization: expect.objectContaining({
+                    policy: 'counter.read',
+                  }),
+                }),
+                expect.objectContaining({
+                  receiptKind: 'result',
+                  result: expect.objectContaining({
+                    output: {
+                      count: 1,
+                    },
+                  }),
+                }),
+              ]),
+            }),
+          }),
+        ])
+      );
+      const remoteSendTrace = traces.find(
+        (projection) =>
+          typeof projection === 'object' &&
+          projection !== null &&
+          'trace' in projection &&
+          (projection as { trace?: { commandId?: string } | null }).trace?.commandId ===
+            'cmd-remote-send-1'
+      ) as { trace?: { receipts?: Array<{ receiptKind?: string }> } | null } | undefined;
+      expect(
+        remoteSendTrace?.trace?.receipts?.some((receipt) => receipt.receiptKind === 'result')
+      ).toBe(false);
+      expect(status.mode).toBe('remote');
+      expect(status.readiness).toEqual({
+        process: 'ready',
+        transport: 'connected',
+        directory: 'remote',
+        checkpointStore: 'ready',
+        policyAdmission: 'authenticated',
+      });
+      expect(statusOutcome.lines).toEqual(
+        expect.arrayContaining([
+          'mode=remote node=local',
+          `gateway=${served.value.getStatus().gatewayUrl}`,
+          'readiness.process=ready',
+          'readiness.transport=connected',
+          'readiness.directory=remote',
+          'readiness.checkpointStore=ready',
+          'readiness.policyAdmission=authenticated',
+        ])
+      );
+      const untraced = await executeCommand(connected.value, 'unwatch-trace counter', traceWatches);
+      expect(untraced.ok).toBe(true);
+      expect(decisions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            authorizationReceipt: expect.objectContaining({
+              authorization: expect.objectContaining({
+                policy: 'counter.increment',
+              }),
+            }),
+          }),
+          expect.objectContaining({
+            authorizationReceipt: expect.objectContaining({
+              authorization: expect.objectContaining({
+                policy: 'counter.read',
+              }),
+            }),
+          }),
+        ])
+      );
+    } finally {
+      await connected.value.stop();
+      await served.value.stop();
+    }
   });
 
   it('routes local send and ask through the shared admission seam with an explicit system principal', async () => {
@@ -823,6 +1793,23 @@ describe('createRuntimeHost', () => {
     expect(events).toHaveLength(seen);
   });
 
+  it('renders host status through the shared console command path', async () => {
+    const outcome = await executeCommand(host, 'status', new Map());
+    expect(outcome).toEqual({
+      ok: true,
+      lines: [
+        'mode=in-process node=local',
+        'gateway=(disabled)',
+        'transport=(disabled)',
+        'readiness.process=ready',
+        'readiness.transport=local',
+        'readiness.directory=local',
+        'readiness.checkpointStore=missing',
+        'readiness.policyAdmission=unconfigured',
+      ],
+    });
+  });
+
   it('returns facts for unknown targets and malformed messages', async () => {
     const unknown = await host.send('nope', '{"type":"X"}');
     expect(unknown.ok).toBe(false);
@@ -1034,6 +2021,30 @@ describe('spawnFromFile', () => {
       expect(spawned.error).toContain('Module not found');
     }
   });
+
+  it('rejects remote-mode spawnFromFile requests before any local runtime lookup', async () => {
+    await host.stop();
+
+    const started = await createRuntimeHost(buildCounterTopology(), {
+      remote: {
+        gateway: {
+          url: 'ws://127.0.0.1:9999/runtime',
+        },
+      },
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+
+    host = started.value;
+    const spawned = await host.spawnFromFile(behaviorFile, 'ghost');
+    expect(spawned).toEqual({
+      ok: false,
+      error:
+        'Spawn failed: remote runtime hosts do not support dynamic spawn through the CLI shell.',
+    });
+  });
 });
 
 // ============================================================================
@@ -1138,7 +2149,17 @@ describe('executeCommand', () => {
 
   it('help lists every verb and exit signals shutdown', async () => {
     const help = await executeCommand(host, 'help', watches);
-    for (const verb of ['ls', 'spawn', 'send', 'ask', 'watch', 'unwatch', 'exit']) {
+    for (const verb of [
+      'ls',
+      'spawn',
+      'send',
+      'ask',
+      'watch',
+      'watch-trace',
+      'unwatch',
+      'unwatch-trace',
+      'exit',
+    ]) {
       expect(help.lines.join('\n')).toContain(verb);
     }
 

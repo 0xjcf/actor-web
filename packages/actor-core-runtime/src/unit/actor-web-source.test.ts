@@ -1,15 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   type ActorWebGatewaySocket,
   createActorWebCommandSource,
   createActorWebReadModelSource,
   createActorWebSource,
+  createActorWebTraceSource,
 } from '../actor-web-source.js';
 import type { RuntimeGatewayClientFrame, RuntimeGatewayServerFrame } from '../runtime-gateway.js';
 
 class FakeGatewaySocket implements ActorWebGatewaySocket {
   readonly readyState = 1;
   readonly sentFrames: RuntimeGatewayClientFrame[] = [];
+  closeCalls = 0;
   private readonly listeners = new Map<string, Set<(event?: unknown) => void>>();
 
   send(data: string): void {
@@ -17,6 +19,7 @@ class FakeGatewaySocket implements ActorWebGatewaySocket {
   }
 
   close(): void {
+    this.closeCalls += 1;
     this.emit('close');
   }
 
@@ -39,6 +42,10 @@ class FakeGatewaySocket implements ActorWebGatewaySocket {
 
   receive(frame: RuntimeGatewayServerFrame): void {
     this.emit('message', { data: JSON.stringify(frame) });
+  }
+
+  receiveRaw(data: string): void {
+    this.emit('message', { data });
   }
 
   private emit(type: string, event?: unknown): void {
@@ -197,6 +204,10 @@ describe('createActorWebSource', () => {
         streamId: 'shipment-command',
       }
     );
+    const statuses: string[] = [];
+    source.subscribeTransportStatus((status) => {
+      statuses.push(status.state);
+    });
 
     socket.open();
     socket.receive({
@@ -902,6 +913,488 @@ describe('createActorWebSource', () => {
 
     await expect(legacyError).resolves.toBe('legacy send failed');
     await expect(targetedError).resolves.toBe('targeted send failed');
+
+    source.close();
+  });
+
+  it('subscribes to trace-only gateway streams and requests resync on sequence gaps', () => {
+    const socket = new FakeGatewaySocket();
+    const source = createActorWebTraceSource(
+      {
+        address: 'actor://server-node/shipment',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+          scope: { kind: 'shipment', params: { stream: 'trace' } },
+        },
+      },
+      {
+        createSocket: () => socket,
+        streamId: 'shipment-trace',
+      }
+    );
+    const traces: unknown[] = [];
+    const statuses: string[] = [];
+
+    source.subscribeTrace((projection) => {
+      traces.push(projection);
+    });
+    source.subscribeTransportStatus((status) => {
+      statuses.push(status.state);
+    });
+
+    socket.open();
+    socket.receive({
+      type: 'ready',
+      connectionId: 'trace-connection',
+      heartbeatMs: 15000,
+      serverTime: '2026-04-25T18:00:00.000Z',
+    });
+    socket.receive({
+      type: 'status',
+      streamId: 'shipment-trace',
+      status: {
+        state: 'connected',
+        updatedAt: Date.parse('2026-04-25T18:00:01.000Z'),
+      },
+    });
+    socket.receive({
+      type: 'trace',
+      streamId: 'shipment-trace',
+      sequence: 1,
+      projection: {
+        address: 'actor://server-node/shipment',
+        cursor: 'trace:shipment:1',
+        observedAt: '2026-04-25T18:00:01.000Z',
+        trace: {
+          schemaVersion: 1,
+          traceId: 'trace:shipment:1',
+          actorId: 'actor://server-node/shipment',
+          sessionId: 'session:shipment:1',
+          commandId: 'cmd:shipment:1',
+          receipts: [],
+          status: 'pending',
+        },
+        fact: null,
+      },
+    });
+    socket.receive({
+      type: 'trace',
+      streamId: 'shipment-trace',
+      sequence: 3,
+      projection: {
+        address: 'actor://server-node/shipment',
+        cursor: 'trace:shipment:3',
+        observedAt: '2026-04-25T18:00:03.000Z',
+        trace: null,
+        fact: {
+          code: 'trace_buffer_overflow',
+          message: 'Dropped older traces while applying bounded backpressure.',
+          droppedCount: 1,
+        },
+      },
+    });
+
+    expect(socket.sentFrames[1]).toEqual({
+      type: 'subscribe',
+      streamId: 'shipment-trace',
+      scope: { kind: 'shipment', params: { stream: 'trace' } },
+      mode: 'trace-only',
+    });
+    expect(socket.sentFrames.at(-1)).toEqual({
+      type: 'resync',
+      streamId: 'shipment-trace',
+      fromSequence: 2,
+    });
+    expect(traces).toHaveLength(1);
+    expect(traces[0]).toMatchObject({
+      cursor: 'trace:shipment:1',
+      trace: {
+        traceId: 'trace:shipment:1',
+      },
+    });
+    expect(statuses).toContain('degraded');
+
+    socket.receive({
+      type: 'trace',
+      streamId: 'shipment-trace',
+      sequence: 4,
+      projection: {
+        address: 'actor://server-node/shipment',
+        cursor: 'trace:shipment:latest',
+        observedAt: '2026-04-25T18:00:04.000Z',
+        trace: {
+          version: 1,
+          schemaVersion: 1,
+          traceId: 'trace:shipment:latest',
+          actorId: 'actor://server-node/shipment',
+          sessionId: 'session:shipment:latest',
+          commandId: 'cmd:shipment:latest',
+          receipts: [],
+          status: 'pending',
+        },
+        fact: null,
+      },
+    });
+    expect(traces).toHaveLength(2);
+    expect(traces.at(-1)).toMatchObject({
+      cursor: 'trace:shipment:latest',
+    });
+    expect(source.transportStatus().state).toBe('connected');
+
+    source.close();
+  });
+
+  it('reconnects trace-only sources with the prior replay identity and cursor', async () => {
+    vi.useFakeTimers();
+    try {
+      const sockets = [new FakeGatewaySocket(), new FakeGatewaySocket(), new FakeGatewaySocket()];
+      let socketIndex = 0;
+      const source = createActorWebTraceSource(
+        {
+          address: 'actor://server-node/shipment',
+          gateway: {
+            url: 'ws://gateway.local/runtime',
+            scope: { kind: 'shipment', params: { stream: 'trace' } },
+          },
+        },
+        {
+          createSocket: () => sockets[socketIndex++] as FakeGatewaySocket,
+          streamId: 'shipment-trace',
+          reconnectDelayMs: 5,
+        }
+      );
+      const traces: string[] = [];
+      source.subscribeTrace((projection) => {
+        traces.push(projection.cursor);
+      });
+
+      sockets[0]?.open();
+      sockets[0]?.receive({
+        type: 'ready',
+        connectionId: 'trace-connection-1',
+        heartbeatMs: 15000,
+        serverTime: '2026-04-25T18:00:00.000Z',
+      });
+      sockets[0]?.receive({
+        type: 'trace',
+        streamId: 'shipment-trace',
+        sequence: 1,
+        projection: {
+          address: 'actor://server-node/shipment',
+          cursor: 'trace:shipment:1',
+          observedAt: '2026-04-25T18:00:01.000Z',
+          trace: null,
+          fact: { code: 'trace_malformed', message: 'first trace' },
+        },
+      });
+      sockets[0]?.close();
+
+      await vi.advanceTimersByTimeAsync(5);
+      expect(socketIndex).toBe(2);
+      sockets[1]?.open();
+      expect(sockets[1]?.sentFrames[0]).toEqual({
+        type: 'hello',
+        clientVersion: 'actor-web-source',
+        lastConnectionId: 'trace-connection-1',
+      });
+      sockets[1]?.receive({
+        type: 'ready',
+        connectionId: 'trace-connection-2',
+        heartbeatMs: 15000,
+        serverTime: '2026-04-25T18:00:02.000Z',
+      });
+      expect(sockets[1]?.sentFrames[1]).toEqual({
+        type: 'subscribe',
+        streamId: 'shipment-trace',
+        scope: { kind: 'shipment', params: { stream: 'trace' } },
+        mode: 'trace-only',
+        fromSequence: 2,
+      });
+      sockets[1]?.receive({
+        type: 'status',
+        streamId: 'shipment-trace',
+        status: {
+          state: 'connected',
+          updatedAt: Date.parse('2026-04-25T18:00:02.000Z'),
+        },
+      });
+      sockets[1]?.receive({
+        type: 'trace',
+        streamId: 'shipment-trace',
+        sequence: 4,
+        projection: {
+          address: 'actor://server-node/shipment',
+          cursor: 'trace:shipment:4',
+          observedAt: '2026-04-25T18:00:02.000Z',
+          trace: null,
+          fact: { code: 'trace_malformed', message: 'latest fallback trace' },
+        },
+      });
+
+      expect(traces).toEqual(['trace:shipment:1', 'trace:shipment:4']);
+      expect(source.transportStatus().state).toBe('connected');
+
+      sockets[1]?.close();
+      await vi.advanceTimersByTimeAsync(5);
+      expect(socketIndex).toBe(3);
+      sockets[2]?.open();
+      sockets[2]?.receive({
+        type: 'ready',
+        connectionId: 'trace-connection-after-restart',
+        heartbeatMs: 15000,
+        serverTime: '2026-04-25T18:00:03.000Z',
+      });
+      expect(sockets[2]?.sentFrames[1]).toMatchObject({
+        type: 'subscribe',
+        fromSequence: 5,
+      });
+      sockets[2]?.receive({
+        type: 'trace',
+        streamId: 'shipment-trace',
+        sequence: 1,
+        projection: {
+          address: 'actor://server-node/shipment',
+          cursor: 'trace:shipment:restart:1',
+          observedAt: '2026-04-25T18:00:03.000Z',
+          trace: null,
+          fact: { code: 'trace_malformed', message: 'new gateway replay owner' },
+        },
+      });
+      expect(traces).toEqual(['trace:shipment:1', 'trace:shipment:4', 'trace:shipment:restart:1']);
+      expect(source.transportStatus().state).toBe('connected');
+      source.close();
+      await vi.runAllTimersAsync();
+      expect(socketIndex).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('backs off failed trace reconnects and resets the delay after ready', async () => {
+    vi.useFakeTimers();
+    try {
+      const sockets = [
+        new FakeGatewaySocket(),
+        new FakeGatewaySocket(),
+        new FakeGatewaySocket(),
+        new FakeGatewaySocket(),
+      ];
+      let socketIndex = 0;
+      const source = createActorWebTraceSource(
+        {
+          address: 'actor://server-node/shipment',
+          gateway: {
+            url: 'ws://gateway.local/runtime',
+            scope: { kind: 'shipment', params: { stream: 'trace' } },
+          },
+        },
+        {
+          createSocket: () => sockets[socketIndex++] as FakeGatewaySocket,
+          streamId: 'shipment-trace-backoff',
+          reconnectDelayMs: 5,
+        }
+      );
+
+      sockets[0]?.open();
+      sockets[0]?.close();
+      await vi.advanceTimersByTimeAsync(5);
+      expect(socketIndex).toBe(2);
+
+      sockets[1]?.open();
+      sockets[1]?.close();
+      await vi.advanceTimersByTimeAsync(5);
+      expect(socketIndex).toBe(2);
+      await vi.advanceTimersByTimeAsync(5);
+      expect(socketIndex).toBe(3);
+
+      sockets[2]?.open();
+      sockets[2]?.receive({
+        type: 'ready',
+        connectionId: 'trace-connection-recovered',
+        heartbeatMs: 15000,
+        serverTime: '2026-04-25T18:00:00.000Z',
+      });
+      sockets[2]?.close();
+      await vi.advanceTimersByTimeAsync(5);
+      expect(socketIndex).toBe(4);
+
+      source.close();
+      await vi.runAllTimersAsync();
+      expect(socketIndex).toBe(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('degrades read-model sources when gateway auth resolution rejects before hello', async () => {
+    const socket = new FakeGatewaySocket();
+    const source = createActorWebSource(
+      {
+        address: 'actor://server-node/shipment',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+          auth: {
+            token: async () => {
+              throw new Error('auth provider rejected');
+            },
+          },
+        },
+      },
+      {
+        createSocket: () => socket,
+        streamId: 'shipment-stream',
+      }
+    );
+    const statuses: string[] = [];
+    const ready = source.subscribeTransportStatus((status) => {
+      statuses.push(status.state);
+    });
+
+    socket.open();
+    await expect(source.send({ type: 'SUBMIT' })).rejects.toThrow('auth provider rejected');
+    expect(statuses).toContain('degraded');
+    expect(source.transportStatus()).toMatchObject({
+      state: 'degraded',
+      reason: 'auth provider rejected',
+    });
+    expect(socket.sentFrames).toEqual([]);
+
+    ready();
+    source.close();
+  });
+
+  it('recovers pending readiness and commands after a malformed gateway frame', async () => {
+    const socket = new FakeGatewaySocket();
+    const source = createActorWebSource(
+      {
+        address: 'actor://server-node/shipment',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+        },
+      },
+      {
+        createSocket: () => socket,
+        streamId: 'shipment-stream',
+      }
+    );
+    const statuses: string[] = [];
+
+    source.subscribeTransportStatus((status) => {
+      statuses.push(status.state);
+    });
+
+    socket.open();
+    const pendingSend = source.send({ type: 'SUBMIT' });
+    expect(() => socket.receiveRaw('{"type":"snapshot"')).not.toThrow();
+    expect(statuses).toContain('degraded');
+    expect(source.transportStatus()).toMatchObject({
+      state: 'degraded',
+      reason: 'Actor-Web gateway sent an invalid JSON frame.',
+    });
+    socket.receive({
+      type: 'ready',
+      connectionId: 'connection-after-malformed-frame',
+      heartbeatMs: 15000,
+      serverTime: '2026-04-25T18:00:00.000Z',
+    });
+    socket.receive({
+      type: 'snapshot',
+      streamId: 'shipment-stream',
+      sequence: 1,
+      projection: {
+        address: source.address,
+        snapshot: {
+          actorId: 'shipment',
+          stateLabel: 'ready',
+          status: 'running',
+          createdAt: '2026-04-25T18:00:00.000Z',
+          updatedAt: '2026-04-25T18:00:01.000Z',
+          correlationId: 'shipment',
+          lastEventType: null,
+        },
+        value: 'ready',
+        context: { status: 'ready' },
+      },
+    });
+    await Promise.resolve();
+    const sendFrame = socket.sentFrames.find((frame) => frame.type === 'send');
+    expect(sendFrame).toMatchObject({
+      type: 'send',
+      message: { type: 'SUBMIT' },
+    });
+    socket.receive({
+      type: 'ack',
+      streamId: 'shipment-stream',
+      ...(sendFrame?.type === 'send' ? { requestId: sendFrame.requestId } : {}),
+    });
+    await expect(pendingSend).resolves.toBeUndefined();
+
+    source.close();
+  });
+
+  it('degrades trace-only sources when gateway auth resolution rejects before hello', async () => {
+    const socket = new FakeGatewaySocket();
+    const source = createActorWebTraceSource(
+      {
+        address: 'actor://server-node/shipment',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+          auth: {
+            token: async () => {
+              throw new Error('trace auth rejected');
+            },
+          },
+        },
+      },
+      {
+        createSocket: () => socket,
+        streamId: 'shipment-trace',
+      }
+    );
+    const statuses: string[] = [];
+    source.subscribeTransportStatus((status) => {
+      statuses.push(status.state);
+    });
+
+    socket.open();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(source.transportStatus().state).toBe('disconnected');
+    expect(statuses).toContain('degraded');
+    expect(socket.sentFrames).toEqual([]);
+    expect(socket.closeCalls).toBe(1);
+
+    source.close();
+  });
+
+  it('degrades trace-only sources when the gateway sends malformed JSON', () => {
+    const socket = new FakeGatewaySocket();
+    const source = createActorWebTraceSource(
+      {
+        address: 'actor://server-node/shipment',
+        gateway: {
+          url: 'ws://gateway.local/runtime',
+        },
+      },
+      {
+        createSocket: () => socket,
+        streamId: 'shipment-trace',
+      }
+    );
+    const statuses: string[] = [];
+
+    source.subscribeTransportStatus((status) => {
+      statuses.push(status.state);
+    });
+
+    socket.open();
+    expect(() => socket.receiveRaw('{"type":"trace"')).not.toThrow();
+    expect(statuses).toContain('degraded');
+    expect(source.transportStatus()).toMatchObject({
+      state: 'degraded',
+      reason: 'Actor-Web gateway sent an invalid JSON frame.',
+    });
 
     source.close();
   });
