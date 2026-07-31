@@ -1887,7 +1887,10 @@ describe('runtime gateway hub', () => {
         }),
       ])
     );
-    expect(redactSpy).toHaveBeenCalledTimes(1);
+    expect(redactSpy).toHaveBeenCalledWith({
+      ok: true,
+      messageType: 'GET_COUNT',
+    });
 
     redactSpy.mockRestore();
     detach();
