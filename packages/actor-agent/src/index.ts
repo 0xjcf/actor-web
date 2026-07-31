@@ -778,6 +778,7 @@ export function createAgentLoopBehavior(
           error: normalizeThrownError(error),
           emitPrefix: observedToolEvents,
         });
+        const failureError = failure.reply.ok ? null : failure.reply.error;
         if (options.checkpoint) {
           try {
             await requireCheckpointWriteStored(options.checkpoint, failure.context, {
@@ -788,15 +789,19 @@ export function createAgentLoopBehavior(
                 tool: ACTOR_WEB_LLM_TOOL_NAME,
                 messageType: message.type,
               },
-              reconciliationReason: failure.reply.ok ? undefined : failure.reply.error.message,
+              reconciliationReason: failureError?.message,
             });
           } catch (durabilityError) {
+            if (!failureError) {
+              return failure;
+            }
             return createFailureResult({
               context: executionContext,
               error: {
-                ...failure.reply.error,
+                code: failureError.code,
+                message: failureError.message,
                 cause: {
-                  original: failure.reply.error.cause,
+                  original: failureError.cause,
                   durability: normalizeThrownError(durabilityError),
                 },
               },

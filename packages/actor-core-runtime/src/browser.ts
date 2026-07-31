@@ -225,11 +225,11 @@ export type {
   RuntimeGatewayScopeDescriptor,
   RuntimeGatewayServerFrame,
   RuntimeGatewaySourceHandle,
+  RuntimeGatewayTraceProjection,
 } from './runtime-gateway-shared.js';
 export { createRuntimeGatewaySourceHandle } from './runtime-gateway-shared.js';
 export type {
   CreateRuntimeGatewayTraceSourceOptions,
-  RuntimeGatewayTraceProjection,
   RuntimeGatewayTraceSource,
   RuntimeGatewayTraceSourceInput,
 } from './runtime-gateway-trace-source.js';
