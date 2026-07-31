@@ -30,12 +30,12 @@ Promote the existing v2 design into the recoverable distributed runtime host for
 - None recorded at task creation. Add rejected approaches during planning if scope tradeoffs appear.
 
 ## Affected files
-
 - docs/actor-web-cli-runtime-host-design.md
 - packages/actor-agent/src
 - packages/agent-workflow-cli/vitest.config.ts
 - packages/agent-workflow-cli/src
 - packages/actor-core-runtime/src
+- .fas/memory/pr-feedback.md
 
 ## Scope Amendments
 
@@ -78,6 +78,16 @@ Promote the existing v2 design into the recoverable distributed runtime host for
 - Evidence: `src/index.test.ts` proves `runtime-host.ts` no longer imports `../../../actor-core-runtime/src/`; the package test runner must resolve `@actor-web/runtime/node` to the live workspace source.
 - Accuracy signal: This is test-runner wiring only and does not broaden runtime product semantics.
 - Follow-up needed: Refresh task scope before committing the alias.
+
+- Type: PR babysit review memory
+- Added at: 2026-07-30
+- Trigger: The invoked fas-babysit workflow requires reusable PR feedback to be persisted before closeout.
+- Reason: Record reusable checkpoint, trace replay, redaction, buffer, reconnect, source recovery, and public-entrypoint lessons from PR 56 without widening product ownership.
+- Added paths: .fas/memory/pr-feedback.md
+- Evidence source: fas-babysit review triage and local CodeRabbit committed-diff passes
+- Evidence: fas-babysit review triage and local CodeRabbit committed-diff passes | .fas/memory/pr-feedback.md | Review lessons are project-local FAS memory required by the babysit workflow; product implementation remains within the existing agent, runtime, and CLI roots.
+- Accuracy signal: All product changes have focused tests; the memory file contains reusable patterns only.
+- Follow-up needed: Refresh scope, replan closeout artifacts, and reconfirm current-head full verification.
 
 ## Implementation plan
 
