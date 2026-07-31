@@ -1009,7 +1009,11 @@ export async function createRuntimeHost(
           return { ok: false, error: unknownTargetError(target) };
         }
         const unsubscribe = source.subscribeEvent((event) => {
-          const { address: _address, toJSON: _toJSON, ...message } = event as ActorMessage & {
+          const {
+            address: _address,
+            toJSON: _toJSON,
+            ...message
+          } = event as ActorMessage & {
             readonly address?: string;
             readonly toJSON?: unknown;
           };
