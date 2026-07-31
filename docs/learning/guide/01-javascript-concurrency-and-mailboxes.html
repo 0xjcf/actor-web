@@ -155,7 +155,8 @@
         <h2>Four layers, four different questions</h2>
         <p>Use this ladder instead of one overloaded "event loop"
         diagram:</p>
-        <table>
+        <div class="table-wrap" tabindex="0">
+          <table>
         <thead>
         <tr>
         <th>Layer</th>
@@ -186,13 +187,15 @@
         <td>What should this message mean in the current state?</td>
         </tr>
         </tbody>
-        </table>
+          </table>
+        </div>
         <p>The layers interact, but none substitutes for the layer above
         or below it.</p>
         </section>
         <section id="vocabulary" class="level2">
         <h2>Vocabulary</h2>
-        <table>
+        <div class="table-wrap" tabindex="0">
+          <table>
         <thead>
         <tr>
         <th>Term</th>
@@ -268,7 +271,8 @@
         here</td>
         </tr>
         </tbody>
-        </table>
+          </table>
+        </div>
         </section>
         <section id="model-1-run-to-completion" class="level2">
         <h2>Model 1: run to completion</h2>
@@ -422,7 +426,8 @@ while (performance.now() - startedAt &lt; 250) {
         <h2>Model 4: an actor mailbox is a different queue</h2>
         <p>The event loop schedules callbacks for an isolate. An
         Actor-Web mailbox queues messages for one actor identity.</p>
-        <table>
+        <div class="table-wrap" tabindex="0">
+          <table>
         <thead>
         <tr>
         <th>Host scheduler concern</th>
@@ -453,7 +458,8 @@ while (performance.now() - startedAt &lt; 250) {
         order</td>
         </tr>
         </tbody>
-        </table>
+          </table>
+        </div>
         <p>Actor serialization gives a state-ownership rule:</p>
         <blockquote>
         <p>Actor-Web does not dequeue the next message for an actor
@@ -553,7 +559,8 @@ while (performance.now() - startedAt &lt; 250) {
         </ul>
         <p>The three policies express different producer/consumer
         relationships:</p>
-        <table>
+        <div class="table-wrap" tabindex="0">
+          <table>
         <thead>
         <tr>
         <th>Policy</th>
@@ -581,7 +588,8 @@ while (performance.now() - startedAt &lt; 250) {
         <td>Apply backpressure by making the producer wait</td>
         </tr>
         </tbody>
-        </table>
+          </table>
+        </div>
         <p>The mailbox exposes:</p>
         <pre class="text"><code>size
 capacity
@@ -638,7 +646,8 @@ utilizationRatio</code></pre>
         </section>
         <section id="maturity-ledger" class="level2">
         <h2>Maturity ledger</h2>
-        <table>
+        <div class="table-wrap" tabindex="0">
+          <table>
         <thead>
         <tr>
         <th>Claim</th>
@@ -686,7 +695,8 @@ utilizationRatio</code></pre>
         preemption is a non-goal</td>
         </tr>
         </tbody>
-        </table>
+          </table>
+        </div>
         </section>
         <section id="answer-the-question" class="level2">
         <h2>Answer the question</h2>

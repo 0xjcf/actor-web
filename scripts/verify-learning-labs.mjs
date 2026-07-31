@@ -99,6 +99,13 @@ function verifyLearningPages() {
         document.querySelector('link[href$="learning-page.css"]'),
         `${page} must load the shared learning-page stylesheet.`
       );
+      const tables = Array.from(document.querySelectorAll('table'));
+      if (tables.length > 0) {
+        invariant(
+          tables.every((table) => table.parentElement?.matches('.table-wrap[tabindex="0"]')),
+          `${page} tables must preserve semantics inside keyboard-scrollable wrappers.`
+        );
+      }
     } finally {
       window.close();
     }
@@ -190,10 +197,15 @@ function verifyWeekOneLab() {
           `Scenario ${scenarioValue} must correlate a code line with a later phase.`
         );
         const initialCounter = document.querySelector('#step-counter')?.textContent;
+        const selectedCodeLine = forwardCodeLine.dataset.codeLine;
         forwardCodeLine.click();
         invariant(
           document.querySelector('#step-counter')?.textContent !== initialCounter,
           `Scenario ${scenarioValue} code selection must navigate to a correlated phase.`
+        );
+        invariant(
+          document.activeElement?.dataset.codeLine === selectedCodeLine,
+          `Scenario ${scenarioValue} code selection must preserve focus after rendering.`
         );
         const resetButton = document.querySelector('#reset');
         invariant(resetButton, 'Week 1 lab must render a Reset button.');

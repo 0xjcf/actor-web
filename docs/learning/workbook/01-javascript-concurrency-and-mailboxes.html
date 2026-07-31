@@ -149,7 +149,8 @@
         <h2>Prediction sheet</h2>
         <p>Complete the prediction and confidence columns before opening
         the guide or advancing the matching animation.</p>
-        <table>
+        <div class="table-wrap" tabindex="0">
+          <table>
         <thead>
         <tr>
         <th>Prompt</th>
@@ -222,7 +223,8 @@
         <td></td>
         </tr>
         </tbody>
-        </table>
+          </table>
+        </div>
         </section>
         <section id="session-1-javascript-and-node-scheduling"
         class="level2">
@@ -365,7 +367,8 @@ async function waitFor250Ms() {
         <li>use a separate process or remote worker</li>
         <li>reject or shed work before it grows</li>
         </ul>
-        <table>
+        <div class="table-wrap" tabindex="0">
+          <table>
         <thead>
         <tr>
         <th>Workload</th>
@@ -412,7 +415,8 @@ async function waitFor250Ms() {
         <td></td>
         </tr>
         </tbody>
-        </table>
+          </table>
+        </div>
         </section>
         </section>
         <section id="session-3-build-and-inspect-a-mailbox"
@@ -486,7 +490,8 @@ interface BoundedFifo&lt;T&gt; {
         <li>mailbox statistics</li>
         </ul>
         <p>Complete the comparison:</p>
-        <table>
+        <div class="table-wrap" tabindex="0">
+          <table>
         <thead>
         <tr>
         <th>Concern</th>
@@ -539,7 +544,8 @@ interface BoundedFifo&lt;T&gt; {
         <td></td>
         </tr>
         </tbody>
-        </table>
+          </table>
+        </div>
         </section>
         <section id="exercise-3c-trace-actor-web-scheduling"
         class="level3">
@@ -579,7 +585,8 @@ interface BoundedFifo&lt;T&gt; {
         selecting <code>drop</code>, <code>fail</code>, and
         <code>park</code> before advancing.</p>
         <p>Use capacity three and messages A through E. Record:</p>
-        <table>
+        <div class="table-wrap" tabindex="0">
+          <table>
         <thead>
         <tr>
         <th>Policy</th>
@@ -616,7 +623,8 @@ interface BoundedFifo&lt;T&gt; {
         <td></td>
         </tr>
         </tbody>
-        </table>
+          </table>
+        </div>
         <p>Then answer: which policy would you choose for telemetry, an
         approval command, and a replaceable pointer-move update? The
         mailbox cannot answer this for you; state the domain
@@ -666,7 +674,8 @@ CPU_RESULT</code></pre>
         <code>A_PRIMARY_DONE</code> event.</li>
         </ul>
         <p>Complete the observation matrix:</p>
-        <table>
+        <div class="table-wrap" tabindex="0">
+          <table>
         <thead>
         <tr>
         <th>Work</th>
@@ -711,7 +720,8 @@ CPU_RESULT</code></pre>
         <td></td>
         </tr>
         </tbody>
-        </table>
+          </table>
+        </div>
         <p>Keep state isolation as a separate assertion from timing:</p>
         <ol type="1">
         <li>Confirm that actor B receives no supported public reference

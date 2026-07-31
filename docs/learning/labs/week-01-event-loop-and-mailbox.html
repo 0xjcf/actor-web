@@ -1436,6 +1436,7 @@
         function selectStepForCodeLine(lineNumber) {
           const matchingSteps = codeStepsForLine(lineNumber);
           if (matchingSteps.length === 0) return;
+          const activatedLineNumber = String(lineNumber);
 
           if (autoplayTimer) {
             window.clearInterval(autoplayTimer);
@@ -1447,6 +1448,11 @@
               return index > stepIndex;
             }) ?? matchingSteps[0];
           render();
+
+          const rebuiltLine = codeElement.querySelector(
+            'button.source-line[data-code-line="' + activatedLineNumber + '"]',
+          );
+          if (rebuiltLine) rebuiltLine.focus();
         }
 
         function renderCode(scenario, focus) {

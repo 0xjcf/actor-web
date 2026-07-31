@@ -264,11 +264,14 @@ pre code {
   overflow-x: auto;
 }
 
+.table-wrap:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
 table {
-  display: block;
   width: 100%;
   min-width: 620px;
-  overflow-x: auto;
   border-collapse: collapse;
   background: color-mix(in srgb, var(--panel) 86%, transparent);
   font-size: 0.9rem;
