@@ -1,5 +1,7 @@
 import type {
   ActorBehavior,
+  AgentSessionCheckpointEnvelope,
+  AgentSessionCheckpointReadResult,
   AgentSessionCheckpointStore,
   AgentSessionCheckpointWriteResult,
   JsonValue,
@@ -84,7 +86,17 @@ export type ActorAgentLoopMessage =
       readonly ok: boolean;
       readonly output: unknown;
     }
+  | {
+      readonly type: 'RECONCILE_AGENT_SESSION';
+      readonly receipt: ActorAgentReconciliationReceipt;
+      readonly checkpointState?: ActorAgentLoopCheckpointState;
+    }
   | { readonly type: 'GET_AGENT_CONTEXT' };
+
+export interface ActorAgentReconciliationReceipt {
+  readonly receiptId: string;
+  readonly outcome: 'effect_applied' | 'effect_not_applied';
+}
 
 export interface ActorAgentLoopContext {
   readonly system?: string;
@@ -112,6 +124,12 @@ export type ActorAgentLoopReply =
       readonly toolCalls: readonly ActorAgentToolCall[];
       readonly usage?: ActorAgentTokenUsage;
     }
+  | {
+      readonly ok: true;
+      readonly status: 'reconciled';
+      readonly receiptId: string;
+      readonly outcome: ActorAgentReconciliationReceipt['outcome'];
+    }
   | { readonly ok: false; readonly error: ActorAgentError };
 
 export type ActorAgentLoopEvent =
@@ -135,6 +153,11 @@ export type ActorAgentLoopEvent =
       readonly type: 'AGENT_STEP_FAILED';
       readonly step: number;
       readonly error: ActorAgentError;
+    }
+  | {
+      readonly type: 'AGENT_SESSION_RECONCILED';
+      readonly receiptId: string;
+      readonly outcome: ActorAgentReconciliationReceipt['outcome'];
     };
 
 export interface ActorAgentLoopOptions {
@@ -457,10 +480,16 @@ async function requireCheckpointWriteStored(
     readonly intent?: unknown;
     readonly receipt?: unknown;
     readonly reconciliationReason?: string;
+    readonly checkpointKey?: string;
+    readonly effectKey?: string;
   }
 ): Promise<void> {
   const writeResult = await writeCheckpointEnvelope(checkpoint, context, input);
-  if (writeResult.outcome !== 'stored' && writeResult.outcome !== 'replaced') {
+  if (
+    writeResult.outcome !== 'stored' &&
+    writeResult.outcome !== 'replaced' &&
+    writeResult.outcome !== 'duplicate'
+  ) {
     throw createCheckpointWriteFailure(writeResult);
   }
 }
@@ -475,18 +504,22 @@ async function writeCheckpointEnvelope(
     readonly intent?: unknown;
     readonly receipt?: unknown;
     readonly reconciliationReason?: string;
+    readonly checkpointKey?: string;
+    readonly effectKey?: string;
   }
 ): Promise<AgentSessionCheckpointWriteResult> {
   const recordedAt = (checkpoint.now ?? (() => new Date()))().toISOString();
+  const checkpointKey = input.checkpointKey ?? input.phase;
+  const effectKey = input.effectKey ?? String(input.step);
   return checkpoint.store.write(
     createAgentSessionCheckpointEnvelope({
       sessionId: checkpoint.sessionId,
-      checkpointId: `checkpoint:${checkpoint.sessionId}:${input.step}:${input.phase}`,
+      checkpointId: `checkpoint:${checkpoint.sessionId}:${input.step}:${checkpointKey}`,
       actor: createCheckpointIdentity(checkpoint, input.step),
       deterministic: createActorAgentLoopCheckpointState(context) as unknown as JsonValue,
       effect: {
-        effectId: `effect:${checkpoint.sessionId}:${input.step}`,
-        effectAttemptId: `effect-attempt:${checkpoint.sessionId}:${input.step}`,
+        effectId: `effect:${checkpoint.sessionId}:${effectKey}`,
+        effectAttemptId: `effect-attempt:${checkpoint.sessionId}:${effectKey}`,
         phase: input.phase,
         irreversible: input.irreversible,
         ...(input.intent === undefined ? {} : { intent: input.intent as JsonValue }),
@@ -506,6 +539,136 @@ async function writeCheckpointEnvelope(
       recordedAt,
     })
   );
+}
+
+function isCheckpointWriteDurable(writeResult: AgentSessionCheckpointWriteResult): boolean {
+  return (
+    writeResult.outcome === 'stored' ||
+    writeResult.outcome === 'replaced' ||
+    writeResult.outcome === 'duplicate'
+  );
+}
+
+async function reconcileAgentSessionCheckpoint(input: {
+  readonly checkpoint: NonNullable<ActorAgentLoopOptions['checkpoint']>;
+  readonly receipt: ActorAgentReconciliationReceipt;
+  readonly checkpointState?: ActorAgentLoopCheckpointState;
+}): Promise<
+  | { readonly ok: true; readonly context: ActorAgentLoopContext }
+  | { readonly ok: false; readonly error: ActorAgentError }
+> {
+  if (input.receipt.receiptId.trim().length === 0) {
+    return {
+      ok: false,
+      error: createCheckpointError(
+        'CHECKPOINT_RECONCILIATION_INVALID',
+        'Reconciliation requires a non-empty receiptId.'
+      ),
+    };
+  }
+
+  let readResult: AgentSessionCheckpointReadResult;
+  try {
+    readResult = await input.checkpoint.store.read({
+      sessionId: input.checkpoint.sessionId,
+      now: input.checkpoint.now,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: createCheckpointError(
+        'CHECKPOINT_READ_FAILED',
+        `Checkpoint read failed: ${toErrorMessage(error)}`,
+        error
+      ),
+    };
+  }
+
+  const rehydration = deriveAgentSessionCheckpointRehydration(readResult);
+  if (rehydration.outcome !== 'deferred_for_reconciliation') {
+    return {
+      ok: false,
+      error: createCheckpointError(
+        'CHECKPOINT_RECONCILIATION_NOT_REQUIRED',
+        'The current checkpoint is not awaiting reconciliation.'
+      ),
+    };
+  }
+
+  const envelope = rehydration.envelope;
+  if (!isCheckpointStateCandidate(envelope.deterministic)) {
+    return {
+      ok: false,
+      error: createCheckpointError(
+        'CHECKPOINT_INVALID_STATE',
+        'Checkpoint deterministic state is invalid.'
+      ),
+    };
+  }
+  if (
+    input.receipt.outcome === 'effect_applied' &&
+    !isCheckpointStateCandidate(input.checkpointState)
+  ) {
+    return {
+      ok: false,
+      error: createCheckpointError(
+        'CHECKPOINT_RECONCILIATION_INVALID',
+        'Applied-effect reconciliation requires the resulting deterministic checkpoint state.'
+      ),
+    };
+  }
+
+  const nextState =
+    input.receipt.outcome === 'effect_applied'
+      ? (input.checkpointState as ActorAgentLoopCheckpointState)
+      : envelope.deterministic;
+  const nextContext = rehydrateActorAgentLoopContext(nextState);
+  const effect = envelope.effect;
+  const reconciledEnvelope: AgentSessionCheckpointEnvelope = createAgentSessionCheckpointEnvelope({
+    sessionId: envelope.sessionId,
+    checkpointId: `${envelope.checkpointId}:reconciled:${input.receipt.receiptId}`,
+    actor: envelope.actor,
+    deterministic: createActorAgentLoopCheckpointState(nextContext) as unknown as JsonValue,
+    effect: effect
+      ? {
+          ...effect,
+          phase: 'receipt_recorded',
+          receipt: {
+            receiptId: input.receipt.receiptId,
+            receiptKind: 'reconciliation',
+            status: 'reconciled',
+            outcome: input.receipt.outcome,
+          },
+        }
+      : null,
+    continuation: envelope.continuation,
+    reconciliation: { status: 'clear' },
+    recordedAt: (input.checkpoint.now ?? (() => new Date()))().toISOString(),
+    expiresAt: envelope.expiresAt,
+    staleAt: null,
+    redactedFields: envelope.redactedFields,
+    ...(envelope.metadata === undefined ? {} : { metadata: envelope.metadata }),
+  });
+  try {
+    const writeResult = await input.checkpoint.store.write(reconciledEnvelope);
+    if (!isCheckpointWriteDurable(writeResult)) {
+      return {
+        ok: false,
+        error: createCheckpointWriteFailure(writeResult),
+      };
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: createCheckpointError(
+        'CHECKPOINT_WRITE_FAILED',
+        `Checkpoint write failed: ${toErrorMessage(error)}`,
+        error
+      ),
+    };
+  }
+
+  return { ok: true, context: nextContext };
 }
 
 export function createActorAgentToolRegistry(input: {
@@ -536,13 +699,6 @@ export function createActorAgentToolRegistry(input: {
 export function createAgentLoopBehavior(
   options: ActorAgentLoopOptions = {}
 ): ActorBehavior<ActorAgentLoopMessage, ActorAgentLoopEvent, ActorAgentToolRegistry> {
-  let checkpointBootstrapped = false;
-  let checkpointBootstrapPromise: Promise<
-    | { readonly kind: 'noop' }
-    | { readonly kind: 'ready'; readonly context: ActorAgentLoopContext }
-    | { readonly kind: 'blocked'; readonly error: ActorAgentError }
-  > | null = null;
-
   const bootstrapCheckpoint = async (
     context: ActorAgentLoopContext
   ): Promise<
@@ -552,82 +708,105 @@ export function createAgentLoopBehavior(
   > => {
     const checkpoint = options.checkpoint;
     if (!checkpoint) {
-      checkpointBootstrapped = true;
       return { kind: 'noop' };
     }
-    if (checkpointBootstrapped) {
-      return { kind: 'ready', context };
-    }
-    checkpointBootstrapPromise ??= (async () => {
-      try {
-        const readResult = await checkpoint.store.read({
-          sessionId: checkpoint.sessionId,
-          now: checkpoint.now,
-        });
-        const rehydration = deriveAgentSessionCheckpointRehydration(readResult);
-        switch (rehydration.outcome) {
-          case 'resumed':
-            if (isCheckpointStateCandidate(rehydration.envelope.deterministic)) {
-              checkpointBootstrapped = true;
-              return {
-                kind: 'ready',
-                context: rehydrateActorAgentLoopContext(
-                  rehydration.envelope.deterministic as ActorAgentLoopCheckpointState
-                ),
-              } as const;
-            }
+    try {
+      const readResult = await checkpoint.store.read({
+        sessionId: checkpoint.sessionId,
+        now: checkpoint.now,
+      });
+      const rehydration = deriveAgentSessionCheckpointRehydration(readResult);
+      switch (rehydration.outcome) {
+        case 'resumed':
+          if (isCheckpointStateCandidate(rehydration.envelope.deterministic)) {
             return {
-              kind: 'blocked',
-              error: createCheckpointError(
-                'CHECKPOINT_INVALID_STATE',
-                'Checkpoint deterministic state is invalid.'
+              kind: 'ready',
+              context: rehydrateActorAgentLoopContext(
+                rehydration.envelope.deterministic as ActorAgentLoopCheckpointState
               ),
             } as const;
-          case 'deferred_for_reconciliation':
-            return {
-              kind: 'blocked',
-              error: createCheckpointError(
-                'CHECKPOINT_RECONCILIATION_REQUIRED',
-                rehydration.reason
-              ),
-            } as const;
-          case 'manual_recovery_required':
-            if (rehydration.reason === 'missing') {
-              return { kind: 'ready', context } as const;
-            }
-            return {
-              kind: 'blocked',
-              error: createCheckpointError(
-                'CHECKPOINT_RECOVERY_REQUIRED',
-                rehydration.detail ?? `Checkpoint recovery required: ${rehydration.reason}.`
-              ),
-            } as const;
-        }
-      } catch (error) {
-        return {
-          kind: 'blocked',
-          error: createCheckpointError(
-            'CHECKPOINT_READ_FAILED',
-            `Checkpoint read failed: ${toErrorMessage(error)}`,
-            error
-          ),
-        } as const;
+          }
+          return {
+            kind: 'blocked',
+            error: createCheckpointError(
+              'CHECKPOINT_INVALID_STATE',
+              'Checkpoint deterministic state is invalid.'
+            ),
+          } as const;
+        case 'deferred_for_reconciliation':
+          return {
+            kind: 'blocked',
+            error: createCheckpointError('CHECKPOINT_RECONCILIATION_REQUIRED', rehydration.reason),
+          } as const;
+        case 'manual_recovery_required':
+          if (rehydration.reason === 'missing') {
+            return { kind: 'ready', context } as const;
+          }
+          return {
+            kind: 'blocked',
+            error: createCheckpointError(
+              'CHECKPOINT_RECOVERY_REQUIRED',
+              rehydration.detail ?? `Checkpoint recovery required: ${rehydration.reason}.`
+            ),
+          } as const;
       }
-    })();
-
-    const result = await checkpointBootstrapPromise;
-    if (result.kind === 'ready' || result.kind === 'noop') {
-      checkpointBootstrapped = true;
-    } else {
-      checkpointBootstrapPromise = null;
+    } catch (error) {
+      return {
+        kind: 'blocked',
+        error: createCheckpointError(
+          'CHECKPOINT_READ_FAILED',
+          `Checkpoint read failed: ${toErrorMessage(error)}`,
+          error
+        ),
+      } as const;
     }
-    return result;
   };
 
   return defineBehavior<ActorAgentLoopMessage, ActorAgentLoopEvent>()
     .withTools<ActorAgentToolRegistry>()
     .withContext(createInitialContext(options))
     .onMessage(async ({ message, context, tools }) => {
+      if (message.type === 'RECONCILE_AGENT_SESSION') {
+        if (!options.checkpoint) {
+          return createFailureResult({
+            context,
+            error: createCheckpointError(
+              'CHECKPOINT_RECONCILIATION_UNAVAILABLE',
+              'Agent-session reconciliation requires a configured checkpoint store.'
+            ),
+          });
+        }
+        const reconciliation = await reconcileAgentSessionCheckpoint({
+          checkpoint: options.checkpoint,
+          receipt: message.receipt,
+          ...(message.checkpointState === undefined
+            ? {}
+            : { checkpointState: message.checkpointState }),
+        });
+        if (!reconciliation.ok) {
+          return createFailureResult({
+            context,
+            error: reconciliation.error,
+          });
+        }
+        return {
+          context: reconciliation.context,
+          reply: {
+            ok: true,
+            status: 'reconciled',
+            receiptId: message.receipt.receiptId,
+            outcome: message.receipt.outcome,
+          },
+          emit: [
+            {
+              type: 'AGENT_SESSION_RECONCILED',
+              receiptId: message.receipt.receiptId,
+              outcome: message.receipt.outcome,
+            },
+          ],
+        };
+      }
+
       const checkpointState = await bootstrapCheckpoint(context);
       if (checkpointState.kind === 'blocked') {
         return createFailureResult({
@@ -674,6 +853,28 @@ export function createAgentLoopBehavior(
           pendingToolCalls,
           lastError: null,
         } satisfies ActorAgentLoopContext;
+        if (options.checkpoint) {
+          try {
+            await requireCheckpointWriteStored(options.checkpoint, waitingContext, {
+              step: activeContext.steps,
+              phase: 'receipt_recorded',
+              irreversible: true,
+              checkpointKey: `tool_result:${message.toolCallId}`,
+              effectKey: `tool_result:${message.toolCallId}`,
+              intent: {
+                tool: message.name,
+                toolCallId: message.toolCallId,
+              },
+              receipt: { recorded: true },
+            });
+          } catch (error) {
+            return createFailureResult({
+              context: activeContext,
+              error: normalizeThrownError(error),
+              emitPrefix: observedToolEvents,
+            });
+          }
+        }
         return {
           context: waitingContext,
           reply: {
@@ -695,6 +896,7 @@ export function createAgentLoopBehavior(
         lastError: null,
       };
 
+      let dispatched = false;
       try {
         if (options.checkpoint) {
           await requireCheckpointWriteStored(options.checkpoint, executionContext, {
@@ -707,6 +909,7 @@ export function createAgentLoopBehavior(
             },
           });
         }
+        dispatched = true;
         const result = await tools.execute<ActorAgentLlmResult, ActorAgentLlmRequest>(
           ACTOR_WEB_LLM_TOOL_NAME,
           {
@@ -803,7 +1006,7 @@ export function createAgentLoopBehavior(
           emitPrefix: observedToolEvents,
         });
         const failureError = failure.reply.ok ? null : failure.reply.error;
-        if (options.checkpoint) {
+        if (options.checkpoint && dispatched) {
           try {
             await requireCheckpointWriteStored(options.checkpoint, failure.context, {
               step,
