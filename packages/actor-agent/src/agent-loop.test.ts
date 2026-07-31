@@ -721,7 +721,7 @@ describe('@actor-web/agent loop behavior', () => {
       reply: {
         ok: false,
         error: {
-          code: 'AGENT_LOOP_FAILED',
+          code: 'CHECKPOINT_WRITE_FAILED',
         },
       },
     });
@@ -862,7 +862,7 @@ describe('@actor-web/agent loop behavior', () => {
       reply: {
         ok: false,
         error: {
-          code: 'AGENT_LOOP_FAILED',
+          code: 'CHECKPOINT_WRITE_FAILED',
         },
       },
     });
@@ -1125,6 +1125,253 @@ describe('@actor-web/agent loop behavior', () => {
     expect(resumed).toMatchObject({
       reply: {
         ok: true,
+      },
+    });
+  });
+
+  it('retries checkpoint bootstrap after manual recovery is blocked instead of silently proceeding', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+
+    const resumedStore = createInMemoryAgentSessionCheckpointStore();
+    await resumedStore.write(
+      createAgentSessionCheckpointEnvelope({
+        sessionId: 'session:agent:manual-retry',
+        checkpointId: 'checkpoint:agent:manual-retry-blocked',
+        actor: {
+          actorId: 'actor://local/researcher',
+          sessionId: 'session:agent:manual-retry',
+          turnId: 'turn:1',
+          traceId: 'trace:manual-retry:1',
+          commandId: 'cmd:manual-retry:1',
+          correlationId: 'corr:manual-retry:1',
+          causationId: 'cause:manual-retry:1',
+        },
+        deterministic: {
+          system: 'Resume from store.',
+          history: [{ role: 'user', content: 'Plan task-4' }],
+          steps: 0,
+          pendingToolCalls: [],
+          lastError: null,
+        },
+        effect: {
+          effectId: 'effect:manual-retry',
+          effectAttemptId: 'effect-attempt:manual-retry',
+          phase: 'intent_recorded',
+          irreversible: true,
+          intent: { tool: 'llm' },
+        },
+        continuation: null,
+        reconciliation: { status: 'clear' },
+        recordedAt: '2026-04-25T18:00:00.000Z',
+        staleAt: '2026-04-25T18:00:00.000Z',
+      })
+    );
+
+    let reads = 0;
+    const provider = vi.fn<ActorAgentLlmProvider>().mockReturnValue({
+      ok: true,
+      value: {
+        message: {
+          role: 'assistant',
+          content: 'manual recovery resolved on retry',
+        },
+      },
+    });
+    const behavior = agent.createAgentLoopBehavior({
+      checkpoint: {
+        store: {
+          read: async () => {
+            reads += 1;
+            return reads === 1
+              ? resumedStore.read({ sessionId: 'session:agent:manual-retry' })
+              : ({ outcome: 'missing', sessionId: 'session:agent:manual-retry' } as const);
+          },
+          write: async (envelope) => ({ outcome: 'stored' as const, envelope }),
+        },
+        sessionId: 'session:agent:manual-retry',
+      },
+    });
+    const tools = createActorToolbox(
+      agent.createActorAgentToolRegistry({ llm: provider }),
+      actorToolContext,
+      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+    );
+
+    const blocked = await behavior.onMessage?.(
+      createAgentParams({
+        behavior,
+        tools,
+        message: { type: 'START_AGENT', prompt: 'should block first' },
+      })
+    );
+    expect(blocked).toMatchObject({
+      reply: {
+        ok: false,
+        error: {
+          code: 'CHECKPOINT_RECOVERY_REQUIRED',
+        },
+      },
+    });
+    expect(provider).not.toHaveBeenCalled();
+
+    const resumed = await behavior.onMessage?.(
+      createAgentParams({
+        behavior,
+        tools,
+        message: { type: 'START_AGENT', prompt: 'should retry after manual recovery' },
+      })
+    );
+    expect(reads).toBe(2);
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(resumed).toMatchObject({
+      reply: {
+        ok: true,
+      },
+    });
+  });
+
+  it('retries checkpoint bootstrap after a read failure instead of silently proceeding', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+
+    let reads = 0;
+    const provider = vi.fn<ActorAgentLlmProvider>().mockReturnValue({
+      ok: true,
+      value: {
+        message: {
+          role: 'assistant',
+          content: 'read failure resolved on retry',
+        },
+      },
+    });
+    const behavior = agent.createAgentLoopBehavior({
+      checkpoint: {
+        store: {
+          read: async () => {
+            reads += 1;
+            if (reads === 1) {
+              throw new Error('checkpoint read unavailable');
+            }
+            return { outcome: 'missing', sessionId: 'session:agent:read-retry' } as const;
+          },
+          write: async (envelope) => ({ outcome: 'stored' as const, envelope }),
+        },
+        sessionId: 'session:agent:read-retry',
+      },
+    });
+    const tools = createActorToolbox(
+      agent.createActorAgentToolRegistry({ llm: provider }),
+      actorToolContext,
+      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+    );
+
+    const blocked = await behavior.onMessage?.(
+      createAgentParams({
+        behavior,
+        tools,
+        message: { type: 'START_AGENT', prompt: 'should block on read failure' },
+      })
+    );
+    expect(blocked).toMatchObject({
+      reply: {
+        ok: false,
+        error: {
+          code: 'CHECKPOINT_READ_FAILED',
+        },
+      },
+    });
+    expect(provider).not.toHaveBeenCalled();
+
+    const resumed = await behavior.onMessage?.(
+      createAgentParams({
+        behavior,
+        tools,
+        message: { type: 'START_AGENT', prompt: 'should retry after read failure' },
+      })
+    );
+    expect(reads).toBe(2);
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(resumed).toMatchObject({
+      reply: {
+        ok: true,
+      },
+    });
+  });
+
+  it('preserves the original llm failure when the receipt checkpoint write fails', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+
+    const llmFailure = {
+      code: 'LLM_TOOL_UNAVAILABLE',
+      message: 'provider offline',
+      cause: 'vendor:test-provider',
+    } as const;
+    const writes: unknown[] = [];
+    const behavior = agent.createAgentLoopBehavior({
+      checkpoint: {
+        store: {
+          read: async () => ({
+            outcome: 'missing',
+            sessionId: 'session:agent:llm-failure-receipt',
+          }),
+          write: async (envelope) => {
+            writes.push(envelope);
+            return writes.length === 1
+              ? ({ outcome: 'stored', envelope } as const)
+              : ({
+                  outcome: 'rejected',
+                  envelope,
+                  reason: 'checkpoint receipt rejected',
+                } as const);
+          },
+        },
+        sessionId: 'session:agent:llm-failure-receipt',
+      },
+    });
+    const tools = createActorToolbox(
+      agent.createActorAgentToolRegistry({
+        llm: () => ({
+          ok: false,
+          error: llmFailure,
+        }),
+      }),
+      actorToolContext,
+      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+    );
+
+    const result = await behavior.onMessage?.(
+      createAgentParams({
+        behavior,
+        tools,
+        message: { type: 'START_AGENT', prompt: 'preserve original llm failure' },
+      })
+    );
+
+    expect(result).toMatchObject({
+      reply: {
+        ok: false,
+        error: {
+          code: llmFailure.code,
+          message: llmFailure.message,
+          cause: {
+            original: llmFailure.cause,
+            durability: {
+              code: 'CHECKPOINT_WRITE_FAILED',
+              message: 'Checkpoint write failed: rejected (checkpoint receipt rejected).',
+            },
+          },
+        },
       },
     });
   });

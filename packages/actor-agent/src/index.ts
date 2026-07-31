@@ -155,6 +155,9 @@ function toErrorMessage(error: unknown): string {
 }
 
 function normalizeThrownError(error: unknown): ActorAgentError {
+  if (isActorAgentError(error)) {
+    return error;
+  }
   const message = toErrorMessage(error);
   return {
     code: message.includes(`Actor tool "${ACTOR_WEB_LLM_TOOL_NAME}" is not registered.`)
@@ -186,7 +189,7 @@ export function createActorAgentLoopCheckpointState(
   context: ActorAgentLoopContext
 ): ActorAgentLoopCheckpointState {
   return {
-    system: context.system,
+    ...(context.system === undefined ? {} : { system: context.system }),
     history: [...context.history],
     steps: context.steps,
     pendingToolCalls: [...context.pendingToolCalls],
@@ -254,6 +257,20 @@ function createFailureResult(input: {
         error: input.error,
       },
     ],
+  };
+}
+
+function composeFailureWithDurability(
+  error: ActorAgentError,
+  durabilityError: unknown
+): ActorAgentError {
+  return {
+    code: error.code,
+    message: error.message,
+    cause: {
+      original: error.cause,
+      durability: normalizeThrownError(durabilityError),
+    },
   };
 }
 
@@ -575,7 +592,6 @@ export function createAgentLoopBehavior(
               ),
             } as const;
           case 'manual_recovery_required':
-            checkpointBootstrapped = true;
             if (rehydration.reason === 'missing') {
               return { kind: 'ready', context } as const;
             }
@@ -588,7 +604,6 @@ export function createAgentLoopBehavior(
             } as const;
         }
       } catch (error) {
-        checkpointBootstrapped = true;
         return {
           kind: 'blocked',
           error: createCheckpointError(
@@ -703,22 +718,31 @@ export function createAgentLoopBehavior(
         );
 
         if (!result.ok) {
+          const failureError = result.error;
           const failure = createFailureResult({
             context: executionContext,
-            error: result.error,
+            error: failureError,
             emitPrefix: observedToolEvents,
           });
           if (options.checkpoint) {
-            await requireCheckpointWriteStored(options.checkpoint, failure.context, {
-              step,
-              phase: 'receipt_recorded',
-              irreversible: true,
-              intent: {
-                tool: ACTOR_WEB_LLM_TOOL_NAME,
-                messageType: message.type,
-              },
-              receipt: result,
-            });
+            try {
+              await requireCheckpointWriteStored(options.checkpoint, failure.context, {
+                step,
+                phase: 'receipt_recorded',
+                irreversible: true,
+                intent: {
+                  tool: ACTOR_WEB_LLM_TOOL_NAME,
+                  messageType: message.type,
+                },
+                receipt: result,
+              });
+            } catch (durabilityError) {
+              return createFailureResult({
+                context: executionContext,
+                error: composeFailureWithDurability(failureError, durabilityError),
+                emitPrefix: observedToolEvents,
+              });
+            }
           }
           return failure;
         }
@@ -797,14 +821,7 @@ export function createAgentLoopBehavior(
             }
             return createFailureResult({
               context: executionContext,
-              error: {
-                code: failureError.code,
-                message: failureError.message,
-                cause: {
-                  original: failureError.cause,
-                  durability: normalizeThrownError(durabilityError),
-                },
-              },
+              error: composeFailureWithDurability(failureError, durabilityError),
               emitPrefix: observedToolEvents,
             });
           }
