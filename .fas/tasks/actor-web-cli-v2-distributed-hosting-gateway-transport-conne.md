@@ -30,6 +30,7 @@ Promote the existing v2 design into the recoverable distributed runtime host for
 - None recorded at task creation. Add rejected approaches during planning if scope tradeoffs appear.
 
 ## Affected files
+
 - docs/actor-web-cli-runtime-host-design.md
 - packages/actor-agent/src
 - packages/agent-workflow-cli/vitest.config.ts
