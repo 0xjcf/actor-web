@@ -1685,6 +1685,7 @@ describe('runtime gateway hub', () => {
     )?.connectionId;
     expect(firstConnectionId).toEqual(expect.any(String));
 
+    const framesBeforeResync = connection.frames.length;
     connection.push({
       type: 'resync',
       streamId: 'trace-main',
@@ -1692,10 +1693,12 @@ describe('runtime gateway hub', () => {
     });
     await flushGatewayFrames();
 
-    const replayedFrames = connection.frames.filter(
-      (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'trace' }> =>
-        frame.type === 'trace'
-    );
+    const replayedFrames = connection.frames
+      .slice(framesBeforeResync)
+      .filter(
+        (frame): frame is Extract<RuntimeGatewayServerFrame, { type: 'trace' }> =>
+          frame.type === 'trace'
+      );
     expect(replayedFrames.some((frame) => frame.sequence === 2)).toBe(true);
     expect(replayedFrames.some((frame) => frame.sequence === 3)).toBe(true);
 
@@ -1771,7 +1774,7 @@ describe('runtime gateway hub', () => {
     });
   });
 
-  it('returns the appended trace projection when overflow occurs and counts both evictions', () => {
+  it('returns appended traces while overflow facts count only retained-window evictions', () => {
     const baseSource = createFakeSource('ready', 'trace-source');
     const source = createRuntimeGatewayTraceSource(baseSource, {
       bufferSize: 2,
@@ -1832,7 +1835,7 @@ describe('runtime gateway hub', () => {
     });
     expect(seen.at(-1)).toMatchObject({
       factCode: 'trace_buffer_overflow',
-      droppedCount: 2,
+      droppedCount: 1,
     });
   });
 

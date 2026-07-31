@@ -64,8 +64,9 @@ export function createRuntimeGatewayTraceSource<TSource extends RuntimeGatewayTr
       latestTraceProjection = projection;
     }
     projections = [...projections, projection];
+    notifyListeners(projection);
     if (projections.length > bufferSize) {
-      const droppedCount = projections.length - bufferSize + 1;
+      const droppedCount = projections.length - bufferSize;
       projections = projections.slice(-bufferSize);
       sequence += 1;
       const overflowProjection = toRuntimeGatewayTraceProjection(
@@ -79,13 +80,9 @@ export function createRuntimeGatewayTraceSource<TSource extends RuntimeGatewayTr
           droppedCount,
         }
       );
-      projections = [...projections, overflowProjection].slice(-bufferSize);
-      notifyListeners(projection);
       notifyListeners(overflowProjection);
-      return projection;
     }
 
-    notifyListeners(projection);
     return projection;
   };
 
