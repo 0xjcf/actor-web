@@ -267,17 +267,20 @@ The host merges that provider into the runtime tool registry as `llm`; topology
 ## Runtime gaps to close before this is real
 
 - **Agent loop + LLM tool** — does not exist; build in the agent layer.
-- **Persistence/durability** — agents are in-memory; surviving a node restart
-  needs snapshotting and a host-wired checkpoint seam (still deferred in the
-  current v2 slice).
+- **General durable actor recovery** — the v2 slice now ships an explicit
+  host-wired checkpoint seam plus agent-session restart recovery for the
+  recoverable agent-host path. What remains deferred is a more generic
+  arbitrary-actor durability story beyond that seam.
 - **Observability** — a usable `watch`/`ls` may need richer introspection than
   the current snapshot exposes (the system snapshot reports the wrapper state,
   not inner machine state; see the cli test findings in PR #14).
 - **DX maturity** — `actor-web-actor-dx-design.md` marks the locked DX as
   "target design, not yet fully implemented." Treat v0 as dogfooding, not a
   product.
-- **Transport security/auth** — the WS transport has an `auth` hook; any
-  remote/`--gateway` use must define an auth story before leaving localhost.
+- **Generic operator policy seams** — gateway auth, explicit command-admission,
+  checkpoint readiness, and remote `connect` now ship in the v2 slice. What
+  remains deferred is broader policy packaging for arbitrary operator/runtime
+  products beyond the current CLI host shell.
 
 ## Phasing
 
@@ -292,8 +295,11 @@ The host merges that provider into the runtime tool registry as `llm`; topology
 3. **v2 — distributed host shell.** `--gateway`/`--transport`/`--peer`/`--connect`:
    run a topology node across processes/machines, expose explicit transport and
    directory readiness facts, and allow cross-node `send`/`ask` from the local
-   shell. Gateway auth, standalone remote-client `connect`, and checkpoint
-   recovery stay deferred.
+   shell. This now includes gateway auth, standalone remote-client `connect`,
+   checkpoint-store readiness, receipt/trace streaming, and recoverable
+   agent-session restart proofs. The remaining deferred work is the genuinely
+   generic durability/policy layer for arbitrary actor products beyond the
+   current host shell.
 4. **v3 — FAS integration.** FAS emits topology + behaviors + `toolAccess`; the
    CLI runs them. The control-plane/data-plane loop is closed.
 
