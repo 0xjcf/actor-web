@@ -7,6 +7,7 @@ import { Window } from 'happy-dom';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const learningRoot = resolve(repositoryRoot, 'docs/learning');
 const weekOneLab = resolve(learningRoot, 'labs/week-01-event-loop-and-mailbox.html');
+const MAX_STEPS_PER_SCENARIO = 100;
 
 function invariant(condition, message) {
   if (!condition) {
@@ -81,7 +82,13 @@ function verifyWeekOneLab() {
         scenarioSelect.dispatchEvent(new window.Event('change'));
         scenarioCount += 1;
 
+        let stepGuard = 0;
         while (true) {
+          stepGuard += 1;
+          invariant(
+            stepGuard <= MAX_STEPS_PER_SCENARIO,
+            `Scenario ${scenarioValue} exceeded ${MAX_STEPS_PER_SCENARIO} steps without disabling Next.`
+          );
           const activeZone = document.querySelector('.zone[data-active="true"]');
           invariant(activeZone, `Scenario ${scenarioValue} must have one active zone.`);
           invariant(

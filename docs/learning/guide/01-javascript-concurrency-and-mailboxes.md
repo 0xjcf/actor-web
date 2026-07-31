@@ -67,7 +67,7 @@ The layers interact, but none substitutes for the layer above or below it.
 | Event-loop phase | A Node/libuv stage with a class of callbacks or I/O work | It is host scheduling, not actor scheduling |
 | Concurrency | Multiple operations are in progress over overlapping time | It does not require simultaneous JavaScript execution |
 | Parallelism | Work executes simultaneously on multiple CPU execution resources | Requires workers, processes, or another parallel runtime |
-| Cooperative scheduling | Running JavaScript must return or await before other work progresses | A long synchronous handler monopolizes its isolate |
+| Cooperative scheduling | Running JavaScript must return control to the host or cross a host scheduling boundary before host work progresses | Awaiting an already-settled Promise can continue through microtasks and still delay timers or I/O |
 | Actor mailbox | A queue of messages addressed to one actor identity | It is not a Node phase queue or automatically durable |
 | Backpressure | The producer is made to wait or reduce demand | Actor-Web's `park` policy is the direct example here |
 | Load shedding | Excess work is deliberately discarded | Actor-Web's `drop` policy is the direct example here |
@@ -378,12 +378,12 @@ After reading this chapter, none of these claims are justified:
 
 | Claim | Maturity | Evidence |
 | --- | --- | --- |
-| Actor-Web has a bounded local mailbox with `drop`, `fail`, and `park` | Current | `messaging/mailbox.ts` and focused mailbox tests |
-| Normal actor processing uses `setImmediate` or a timer fallback | Current | `scheduleMacrotask` in `actor-system-impl.ts` |
-| One actor delivery is awaited before its next message is dequeued | Current | `processActorMessages(...)` |
-| Processing yields after at most 100 messages when more remain | Current | `processActorMessages(...)` |
-| Current ordinary send is a durable inbox protocol | Deferred | No general transactional mailbox, state, inbox, and outbox guarantee |
-| Actor-Web provides BEAM-style preemptive scheduling | Non-goal | JavaScript host scheduling remains authoritative |
+| Actor-Web has a bounded local mailbox with `drop`, `fail`, and `park` | current | `messaging/mailbox.ts` and focused mailbox tests |
+| Normal actor processing uses `setImmediate` or a timer fallback | current | `scheduleMacrotask` in `actor-system-impl.ts` |
+| One actor delivery is awaited before its next message is dequeued | current | `processActorMessages(...)` |
+| Processing yields after at most 100 messages when more remain | current | `processActorMessages(...)` |
+| Ordinary send is a durable inbox protocol | deferred | No general transactional mailbox, state, inbox, and outbox guarantee |
+| Actor-Web provides BEAM-style preemptive scheduling | deferred | JavaScript host scheduling remains authoritative; VM-level preemption is a non-goal |
 
 ## Answer the question
 

@@ -2,7 +2,8 @@
 
 ## Two products, two jobs
 
-Actor-Web has two complementary documentation products:
+Actor-Web has two complementary learning products alongside the official
+documentation:
 
 | Product | Use it when you need to | Primary question |
 | --- | --- | --- |

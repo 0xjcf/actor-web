@@ -118,7 +118,7 @@ flowchart TB
     Behavior["Behavior and FSM\nconstrain transitions"]
     Durable["Durable turn boundary\nstate plus effect intent"]
     Adapter["Capability adapter\nperforms nondeterministic effect"]
-    Facts["Receipts and checkpoints\nauthoritative runtime facts"]
+    Facts["Receipts and checkpoint state\nauthoritative runtime records"]
     Ignite["Ignite Element\nprojects facts and binds commands"]
 
     Human --> FAS

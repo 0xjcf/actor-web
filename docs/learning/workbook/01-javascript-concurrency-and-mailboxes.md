@@ -92,7 +92,7 @@ Run it in a browser console and Node. Record:
 
 ### Exercise 1B: Node context changes ordering
 
-Run this CommonJS file several times:
+Save this as a CommonJS file such as `ordering.cjs` and run it several times:
 
 ```js
 setTimeout(() => console.log('timeout'), 0);
@@ -233,6 +233,10 @@ Build in four passes:
    creates capacity.
 4. Add the statistics without changing queue ordering.
 
+For `park`, increment `totalEnqueued` only when the waiting value is actually
+inserted into the FIFO and its Promise settles. A pending waiter is not yet an
+enqueued value.
+
 Tests to write:
 
 - values dequeue in FIFO order
@@ -240,6 +244,8 @@ Tests to write:
 - `drop` returns `false` and increments `totalDropped`
 - `fail` throws and increments `totalFailed`
 - `park` remains pending while full and settles after a dequeue
+- statistics remain unchanged while a sender is parked, then
+  `totalEnqueued` increments exactly once when dequeueing admits it
 - one dequeue admits at most one parked sender
 - statistics remain internally consistent
 
@@ -320,40 +326,87 @@ state the domain reasoning.
 
 ## Failure experiment: two actors, one isolate
 
-Create actor A with a bounded 250-millisecond busy loop and actor B with a fast
-handler. In this order:
+Place actor A and actor B in the same local Actor-Web runtime and JavaScript
+isolate. Give actor A a primary work message, a `FOLLOW_UP` message, and a
+`READ_STATE` request. Give actor B a fast message.
+
+Record these completion events with timestamps:
+
+```text
+A_PRIMARY_STARTED
+A_PRIMARY_DONE
+A_FOLLOW_UP_DONE
+B_DONE
+TIMER_FIRED
+CPU_RESULT
+```
+
+For every variant, use this order:
 
 1. schedule a zero timer
-2. send the slow message to actor A
-3. send the fast message to actor B
-4. record completion times
-5. replace actor A's busy loop with an awaited 250-millisecond timer
-6. repeat
+2. send the primary work message to actor A
+3. immediately send `FOLLOW_UP` to actor A
+4. send the fast message to actor B
+5. wait for all expected completion events
+6. compare their timestamps rather than relying on log order alone
+
+Run these variants:
+
+- **Synchronous CPU:** actor A performs a bounded 250-millisecond busy loop.
+- **Asynchronous wait:** actor A awaits a 250-millisecond timer.
+- **Worker thread:** actor A remains in the local runtime and awaits a Promise
+  settled by a worker-thread result. The worker owns the CPU-heavy JavaScript.
+- **Child process:** actor A remains local and awaits a correlated result from a
+  separate process. Record process completion separately from actor A's
+  `A_PRIMARY_DONE` event.
 
 Complete the observation matrix:
 
-| Work | Same actor waits? | Other actor same isolate progresses? | Timer progresses? | True CPU parallelism? |
-| --- | --- | --- | --- | --- |
-| Actor A synchronous busy loop |  |  |  |  |
-| Actor A awaits asynchronous timer |  |  |  |  |
-| CPU work in a worker thread |  |  |  |  |
-| Actor on a separate process/node |  |  |  |  |
+| Work | `A_FOLLOW_UP_DONE` waits? | `B_DONE` progresses? | `TIMER_FIRED` progresses? | Parallel CPU? | Completion evidence |
+| --- | --- | --- | --- | --- | --- |
+| Actor A synchronous busy loop |  |  |  |  |  |
+| Actor A awaits asynchronous timer |  |  |  |  |  |
+| Actor A awaits worker-thread result |  |  |  |  |  |
+| Actor A awaits child-process result |  |  |  |  |  |
+
+Keep state isolation as a separate assertion from timing:
+
+1. Confirm that actor B receives no supported public reference to actor A's
+   context. An `ActorRef` can send or ask; it does not expose `actorA.context`.
+2. Have actor A answer `READ_STATE` with a detached JSON-safe snapshot.
+3. Let actor B mutate its local copy of that snapshot.
+4. Ask actor A for state again and assert that actor A's state is unchanged.
+
+The detached copy in step 2 is an application discipline, not automatic deep
+cloning by Actor-Web. Passing shared mutable object references in local messages
+would reintroduce shared-state hazards and should be recorded as a deliberate
+failure of the actor boundary.
 
 The experiment should prove both:
 
-1. actor B never mutates actor A's private context
+1. actor B cannot access actor A's private context through the supported public
+   actor reference, and mutating a detached reply does not change actor A
 2. state isolation does not guarantee CPU isolation inside one JavaScript
    isolate
 
 ## The 101-message fairness experiment
 
 Use the lab's **101-message fairness batch** scenario, then reproduce the idea
-with a test or trace:
+with a test or trace. Separate admission evidence from processing evidence:
 
-1. queue 101 bounded no-op messages for one actor
-2. record the first processing round
-3. identify the rescheduling boundary after message 100
-4. record message 101 in the next processing round
+1. Create a direct `BoundedMailbox` fixture with capacity at least `101` and a
+   non-dropping policy such as `fail`.
+2. Enqueue 101 sequence-numbered no-op messages and track every enqueue result.
+3. Before measuring processing, assert `totalEnqueued === 101`,
+   `totalDropped === 0`, and `totalFailed === 0`.
+4. In the actor-processing trace, count handled sequence numbers rather than
+   treating resolved `send(...)` Promises as proof of admission. The current
+   drop path can resolve without accepting the message.
+5. Record the first processing round and identify the rescheduling boundary
+   after message 100.
+6. Record message 101 in the next processing round and assert that every
+   sequence number from 1 through 101 was handled exactly once in this local
+   experiment.
 
 Explain why the boundary improves cooperative fairness but is not:
 

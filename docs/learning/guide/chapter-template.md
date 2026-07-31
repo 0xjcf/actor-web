@@ -56,7 +56,7 @@ differences explicitly.
 
 | Claim | Maturity | Evidence |
 | --- | --- | --- |
-| Example guarantee | Current, accepted target, candidate, or deferred | Source, test, fixture, or ADR |
+| Example guarantee | current, accepted target, candidate, or deferred | Source, test, fixture, or ADR |
 
 ## Summary
 
