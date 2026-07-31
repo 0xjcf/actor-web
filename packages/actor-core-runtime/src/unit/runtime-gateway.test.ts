@@ -4320,9 +4320,11 @@ describe('runtime gateway hub', () => {
       )
     ).toHaveLength(0);
     const postDispatchTrace = postDispatchSource.latestTrace();
-    expect(postDispatchTrace?.trace?.receipts.some((receipt) => receipt.kind === 'success')).toBe(
-      false
-    );
+    expect(
+      postDispatchTrace?.trace?.receipts.some(
+        (receipt) => receipt.receiptKind === 'result' && receipt.status === 'succeeded'
+      )
+    ).toBe(false);
     detachPostDispatch();
   });
 

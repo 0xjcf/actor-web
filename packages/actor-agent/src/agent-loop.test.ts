@@ -803,6 +803,9 @@ describe('@actor-web/agent loop behavior', () => {
     expect(result).toMatchObject({
       reply: {
         ok: false,
+        error: {
+          code: 'CHECKPOINT_INVALID_STATE',
+        },
       },
     });
   });
@@ -979,6 +982,7 @@ describe('@actor-web/agent loop behavior', () => {
       })
     );
 
+    expect(writes).toHaveLength(2);
     const receiptEnvelope = writes[1] as {
       effect?: {
         receipt?: {
