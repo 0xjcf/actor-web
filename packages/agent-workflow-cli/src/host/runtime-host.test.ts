@@ -652,6 +652,269 @@ describe('createRuntimeHost', () => {
     vi.doUnmock('@actor-web/runtime');
   });
 
+  it('rejects conflicting remote and distributed host options before startup', async () => {
+    await host.stop();
+
+    const started = await createRuntimeHost(buildCounterTopology(), {
+      remote: {
+        gateway: {
+          url: 'ws://127.0.0.1:9000/runtime',
+        },
+      },
+      distributed: {
+        gateway: true,
+      },
+    });
+
+    expect(started).toEqual({
+      ok: false,
+      error:
+        'Runtime host rejected: remote_conflicts_with_distributed (remote hosts cannot also configure distributed hosting options.)',
+    });
+  });
+
+  it('lists remote actors from topology/cache state without opening remote sources', async () => {
+    vi.resetModules();
+
+    const createActorWebSource = vi.fn(() => {
+      throw new Error('remote source should stay unopened during listActors');
+    });
+
+    vi.doMock('@actor-web/runtime', async () => {
+      const actual =
+        await vi.importActual<typeof import('@actor-web/runtime')>('@actor-web/runtime');
+      return {
+        ...actual,
+        createActorWebSource,
+      };
+    });
+
+    const runtimeHostModule = await import('./runtime-host');
+    const remoteHost = await runtimeHostModule.createRuntimeHost(buildCounterTopology(), {
+      remote: {
+        gateway: {
+          url: 'ws://127.0.0.1:9000/runtime',
+        },
+      },
+    });
+    expect(remoteHost.ok).toBe(true);
+    if (!remoteHost.ok) {
+      vi.doUnmock('@actor-web/runtime');
+      return;
+    }
+
+    const actors = await remoteHost.value.listActors();
+
+    expect(createActorWebSource).not.toHaveBeenCalled();
+    expect(actors).toEqual([
+      {
+        key: 'counter',
+        path: 'actor://local/counter',
+        origin: 'topology',
+        status: 'unknown',
+      },
+    ]);
+
+    await remoteHost.value.stop();
+    vi.doUnmock('@actor-web/runtime');
+  });
+
+  it('normalizes remote watch events to the same raw actor message shape as local watch', async () => {
+    vi.resetModules();
+
+    const wrappedEvent = {
+      type: 'COUNT_CHANGED',
+      count: 1,
+      address: 'actor://local/counter',
+      toJSON() {
+        return {
+          type: this.type,
+          count: this.count,
+          address: this.address,
+        };
+      },
+    };
+    let subscribedListener: ((event: unknown) => void) | null = null;
+    const commandSource = {
+      address: 'actor://local/counter',
+      snapshot: () => ({ status: 'running' }),
+      subscribe: () => () => {},
+      subscribeEvent: (listener: (event: unknown) => void) => {
+        subscribedListener = listener;
+        return () => {
+          subscribedListener = null;
+        };
+      },
+      transportStatus: () => ({ state: 'connected', updatedAt: Date.now() }),
+      subscribeTransportStatus: () => () => {},
+      send: async () => {},
+      ask: async () => ({ count: 1 }),
+      close: () => {},
+    };
+
+    vi.doMock('@actor-web/runtime', async () => {
+      const actual =
+        await vi.importActual<typeof import('@actor-web/runtime')>('@actor-web/runtime');
+      return {
+        ...actual,
+        createActorWebSource: () => commandSource,
+      };
+    });
+
+    const runtimeHostModule = await import('./runtime-host');
+    const remoteHost = await runtimeHostModule.createRuntimeHost(buildCounterTopology(), {
+      remote: {
+        gateway: {
+          url: 'ws://127.0.0.1:9000/runtime',
+        },
+      },
+    });
+    expect(remoteHost.ok).toBe(true);
+    if (!remoteHost.ok) {
+      vi.doUnmock('@actor-web/runtime');
+      return;
+    }
+
+    const events: unknown[] = [];
+    const watching = remoteHost.value.watch('counter', (event) => {
+      events.push(event);
+    });
+    expect(watching.ok).toBe(true);
+
+    subscribedListener?.(wrappedEvent);
+
+    expect(events).toEqual([
+      {
+        type: 'COUNT_CHANGED',
+        count: 1,
+      },
+    ]);
+
+    if (watching.ok) {
+      watching.value();
+    }
+    await remoteHost.value.stop();
+    vi.doUnmock('@actor-web/runtime');
+  });
+
+  it('ranks disconnected remote readiness worse than degraded when aggregating source health', async () => {
+    vi.resetModules();
+
+    const sourceStatusListeners = new Set<(status: ProjectionTransportStatus) => void>();
+    const traceStatusListeners = new Set<(status: ProjectionTransportStatus) => void>();
+    const commandSource = {
+      address: 'actor://local/counter',
+      snapshot: () => ({ status: 'running' }),
+      subscribe: () => () => {},
+      subscribeEvent: () => () => {},
+      transportStatus: () => ({ state: 'connected', updatedAt: Date.now() }),
+      subscribeTransportStatus: (listener: (status: ProjectionTransportStatus) => void) => {
+        sourceStatusListeners.add(listener);
+        listener({
+          state: 'degraded',
+          reason: 'command source degraded',
+          updatedAt: Date.now(),
+        });
+        return () => {
+          sourceStatusListeners.delete(listener);
+        };
+      },
+      send: async () => {},
+      ask: async () => ({ count: 1 }),
+      close: () => {},
+    };
+    const traceSource = {
+      address: 'actor://local/counter',
+      latestTrace: () => null,
+      subscribeTrace: () => () => {},
+      transportStatus: () => ({ state: 'connected', updatedAt: Date.now() }),
+      subscribeTransportStatus: (listener: (status: ProjectionTransportStatus) => void) => {
+        traceStatusListeners.add(listener);
+        listener({
+          state: 'disconnected',
+          reason: 'trace source disconnected',
+          updatedAt: Date.now(),
+        });
+        return () => {
+          traceStatusListeners.delete(listener);
+        };
+      },
+      close: () => {},
+    };
+
+    vi.doMock('@actor-web/runtime', async () => {
+      const actual =
+        await vi.importActual<typeof import('@actor-web/runtime')>('@actor-web/runtime');
+      return {
+        ...actual,
+        createActorWebSource: () => commandSource,
+        createActorWebTraceSource: () => traceSource,
+      };
+    });
+
+    const runtimeHostModule = await import('./runtime-host');
+    const remoteHost = await runtimeHostModule.createRuntimeHost(buildCounterTopology(), {
+      remote: {
+        gateway: {
+          url: 'ws://127.0.0.1:9000/runtime',
+        },
+      },
+    });
+    expect(remoteHost.ok).toBe(true);
+    if (!remoteHost.ok) {
+      vi.doUnmock('@actor-web/runtime');
+      return;
+    }
+
+    await remoteHost.value.send('counter', '{"type":"INCREMENT"}');
+    const traceWatches = new Map<string, () => void>();
+    const tracing = runtimeHostModule.executeCommand(
+      remoteHost.value,
+      'watch-trace counter',
+      traceWatches
+    );
+    await expect(tracing).resolves.toMatchObject({ ok: true });
+
+    expect(remoteHost.value.getStatus()).toMatchObject({
+      readiness: {
+        transport: 'disconnected',
+      },
+      transportReason: 'trace source disconnected',
+    });
+
+    await remoteHost.value.stop();
+    vi.doUnmock('@actor-web/runtime');
+  });
+
+  it('fails closed when remote hosts are given local commandAdmission options', async () => {
+    await host.stop();
+
+    const started = await createRuntimeHost(buildCounterTopology(), {
+      remote: {
+        gateway: {
+          url: 'ws://127.0.0.1:9000/runtime',
+        },
+      },
+      commandAdmission: {
+        principal: {
+          id: 'principal:cli-system',
+          kind: 'system',
+        },
+        policy: async () => ({
+          outcome: 'authorized',
+          policy: 'system-default-allow',
+        }),
+        onDecision: async () => {},
+      },
+    });
+
+    expect(started).toEqual({
+      ok: false,
+      error:
+        'Runtime host rejected: remote_gateway_owns_admission (remote hosts must configure command admission on the authoritative gateway instead of local host options.)',
+    });
+  });
+
   it('rejects a topology with no nodes even when no explicit node is requested', async () => {
     await host.stop();
 

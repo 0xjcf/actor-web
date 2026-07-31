@@ -339,8 +339,8 @@ function requiresNonLocalhostTransportHardening(
 }
 
 const REMOTE_TRANSPORT_STATUS_SEVERITY: Record<RuntimeHostReadinessStatus['transport'], number> = {
-  degraded: 4,
-  disconnected: 3,
+  disconnected: 4,
+  degraded: 3,
   replaying: 2,
   connected: 1,
   local: 0,
@@ -509,6 +509,20 @@ export async function createRuntimeHost(
   topology: AnyTopology,
   options: RuntimeHostOptions = {}
 ): Promise<HostResult<RuntimeHost>> {
+  if (options.remote && options.distributed) {
+    return {
+      ok: false,
+      error:
+        'Runtime host rejected: remote_conflicts_with_distributed (remote hosts cannot also configure distributed hosting options.)',
+    };
+  }
+  if (options.remote && options.commandAdmission) {
+    return {
+      ok: false,
+      error:
+        'Runtime host rejected: remote_gateway_owns_admission (remote hosts must configure command admission on the authoritative gateway instead of local host options.)',
+    };
+  }
   const unsafeExposure = validateDistributedExposure(options.distributed);
   if (unsafeExposure) {
     return unsafeExposure;
@@ -740,8 +754,7 @@ export async function createRuntimeHost(
     async listActors() {
       if (options.remote) {
         return Object.entries(topology.actors).map(([key, descriptor]) => {
-          const source = getRemoteSource(key);
-          const status = source?.snapshot().status ?? 'unknown';
+          const status = remoteSourceCache.get(key)?.snapshot().status ?? 'unknown';
           return {
             key,
             path: descriptor.address,
@@ -995,7 +1008,13 @@ export async function createRuntimeHost(
         if (!source) {
           return { ok: false, error: unknownTargetError(target) };
         }
-        const unsubscribe = source.subscribeEvent(onEvent);
+        const unsubscribe = source.subscribeEvent((event) => {
+          const { address: _address, toJSON: _toJSON, ...message } = event as ActorMessage & {
+            readonly address?: string;
+            readonly toJSON?: unknown;
+          };
+          onEvent(message);
+        });
         return { ok: true, value: unsubscribe };
       }
       const ref = resolve(target);
