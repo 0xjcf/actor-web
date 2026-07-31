@@ -1,6 +1,6 @@
 # Learn Actor-Web
 
-[Open the web learning experience](./index.html) for the guide, workbook, and
+[Open the web learning experience](https://0xjcf.github.io/actor-web/learning/) for the guide, workbook, and
 interactive lab as one navigable product.
 
 ## Two products, two jobs
@@ -60,7 +60,7 @@ content is ready.
 
 | Week | Topic | Status | Guide | Workbook | Lab |
 | --- | --- | --- | --- | --- | --- |
-| 1 | JavaScript concurrency and actor mailboxes | Available | [Read](./guide/01-javascript-concurrency-and-mailboxes.html) | [Practice](./workbook/01-javascript-concurrency-and-mailboxes.html) | [Open](./labs/week-01-event-loop-and-mailbox.html) |
+| 1 | JavaScript concurrency and actor mailboxes | Available | [Read](https://0xjcf.github.io/actor-web/learning/guide/01-javascript-concurrency-and-mailboxes.html) | [Practice](https://0xjcf.github.io/actor-web/learning/workbook/01-javascript-concurrency-and-mailboxes.html) | [Open](https://0xjcf.github.io/actor-web/learning/labs/week-01-event-loop-and-mailbox.html) |
 | 2 | Actor model and OTP behaviors | Planned | Course map only | Planned | Planned |
 | 3 | Supervision and failure domains | Planned | Course map only | Planned | Planned |
 | 4 | Behaviors, FSMs, and statecharts | Planned | Course map only | Planned | Planned |

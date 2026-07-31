@@ -204,9 +204,9 @@ to refresh these labels before making a decision.
 
 ### Week 1: JavaScript concurrency and the mailbox
 
-[Read Chapter 1](./learning/guide/01-javascript-concurrency-and-mailboxes.html),
-[complete the workbook](./learning/workbook/01-javascript-concurrency-and-mailboxes.html),
-and [open the interactive lab](./learning/labs/week-01-event-loop-and-mailbox.html).
+[Read Chapter 1](https://0xjcf.github.io/actor-web/learning/guide/01-javascript-concurrency-and-mailboxes.html),
+[complete the workbook](https://0xjcf.github.io/actor-web/learning/workbook/01-javascript-concurrency-and-mailboxes.html),
+and [open the interactive lab](https://0xjcf.github.io/actor-web/learning/labs/week-01-event-loop-and-mailbox.html).
 
 **Question to answer:** If JavaScript is single-threaded, why do we still need
 an actor concurrency model?

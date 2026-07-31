@@ -20,7 +20,7 @@ Every workbook module uses this loop:
 
 | Week | Workbook | Interactive lab | Status |
 | --- | --- | --- | --- |
-| 1 | [JavaScript concurrency and actor mailboxes](./01-javascript-concurrency-and-mailboxes.html) | [Event loop and mailbox lab](../labs/week-01-event-loop-and-mailbox.html) | Available |
+| 1 | [JavaScript concurrency and actor mailboxes](https://0xjcf.github.io/actor-web/learning/workbook/01-javascript-concurrency-and-mailboxes.html) | [Event loop and mailbox lab](https://0xjcf.github.io/actor-web/learning/labs/week-01-event-loop-and-mailbox.html) | Available |
 | 2-10 | Planned | Planned | Not yet available |
 
 ## What to record
@@ -63,4 +63,4 @@ include:
 - explicit completion evidence
 
 Return to the [learning guide](../guide/README.md) or the
-[learning-product home](../index.html).
+[learning-product home](https://0xjcf.github.io/actor-web/learning/).

@@ -6,7 +6,7 @@
   "description": "Actor-Web documentation site (VitePress).",
   "scripts": {
     "dev": "vitepress dev",
-    "build": "vitepress build",
+    "build": "vitepress build && node scripts/publish-learning.mjs",
     "preview": "vitepress preview",
     "check:contrast": "node scripts/check-contrast.mjs",
     "test:contrast": "vitepress build && node scripts/check-contrast.mjs"
