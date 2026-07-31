@@ -31,6 +31,9 @@ Promote the existing v2 design into the recoverable distributed runtime host for
 
 ## Affected files
 
+- docs/actor-web-cli-runtime-host-design.md
+- packages/actor-agent/src
+- packages/agent-workflow-cli/vitest.config.ts
 - packages/agent-workflow-cli/src
 - packages/actor-core-runtime/src
 
@@ -55,6 +58,26 @@ Promote the existing v2 design into the recoverable distributed runtime host for
 - Evidence: `0ba48577..da665259` contains the accepted agent checkpoint, recovery fixture, distributed host, trace/receipt, tests, and design-doc work; `.fas/state/agent-orchestration-execution.json` preserves the original generation receipts.
 - Accuracy signal: Current recovered-generation commits are `aec42966` and `b7dc74f8`; full PR review still covers `0ba48577..b7dc74f8`.
 - Follow-up needed: Refresh task scope and replan, then reconfirm current-head full verification and review receipts.
+
+- Type: external-review hardening
+- Added at: 2026-07-30
+- Trigger: Local CodeRabbit review against `main` returned correctness, security, redaction, recovery, trace-buffer, and public-surface findings after the first full gate.
+- Reason: Reopen the writer lifecycle and address every justified finding before push, including fail-closed checkpoint writes, retryable recovery gates, redacted checkpoint receipts, transport authentication, trace semantics, malformed input handling, public exports, and stale roadmap statements.
+- Added paths: docs/actor-web-cli-runtime-host-design.md, packages/actor-agent/src, packages/agent-workflow-cli/src, packages/actor-core-runtime/src
+- Evidence source: local CodeRabbit committed-diff review
+- Evidence: `coderabbit review --agent -t committed --base main -c AGENTS.md` completed with 17 findings on `488b9f94`.
+- Accuracy signal: Each finding must be reproduced or inspected against current source; invalid or duplicate findings remain documented as skipped rather than implemented blindly.
+- Follow-up needed: Replan, run TDD/focused verification, repeat QA/SRE/reviewer, rerun the full gate, and repeat CodeRabbit before push.
+
+- Type: scope clarification
+- Added at: 2026-07-30
+- Trigger: Replacing CLI deep source imports with the public `@actor-web/runtime/node` subpath requires the CLI package's existing Vitest alias table to resolve that public workspace entrypoint.
+- Reason: Add the minimal two-line node-subpath alias beside the existing runtime root and browser aliases; this keeps tests on public package boundaries instead of stale build output or forbidden source imports.
+- Added paths: packages/agent-workflow-cli/vitest.config.ts
+- Evidence source: focused CLI public-entrypoint red test
+- Evidence: `src/index.test.ts` proves `runtime-host.ts` no longer imports `../../../actor-core-runtime/src/`; the package test runner must resolve `@actor-web/runtime/node` to the live workspace source.
+- Accuracy signal: This is test-runner wiring only and does not broaden runtime product semantics.
+- Follow-up needed: Refresh task scope before committing the alias.
 
 ## Implementation plan
 

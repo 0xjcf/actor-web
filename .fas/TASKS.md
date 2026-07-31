@@ -1184,8 +1184,8 @@
 
 - Title: actor-web CLI v2: distributed hosting (--gateway/--transport/connect)
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/actor-web-cli-v2-distributed-hosting-gateway-transport-conne.md
 - Verification lane: fast
 - Policy sensitivity: standard
