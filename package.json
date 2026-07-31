@@ -53,6 +53,7 @@
     "docs:contrast": "pnpm --filter docs-site test:contrast",
     "docs:lint:md": "markdownlint-cli2 --config docs/site/.markdownlint.jsonc \"docs/site/**/*.md\" \"#**/node_modules/**\" \"#**/dist/**\"",
     "test:docs": "pnpm --filter docs-site build",
+    "test:learning": "node scripts/verify-learning-labs.mjs",
     "utils:date": "./scripts/date-utils.sh current",
     "utils:date-scan": "./scripts/date-utils.sh scan",
     "utils:date-fix": "./scripts/date-utils.sh fix-all",

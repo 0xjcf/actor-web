@@ -1,0 +1,1319 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Interactive Actor-Web learning lab for JavaScript queues, Node.js event-loop phases, and actor mailboxes."
+    />
+    <title>Week 1 Lab: JavaScript Concurrency and Actor Mailboxes</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --page: #f5f7fb;
+        --panel: #ffffff;
+        --panel-soft: #eef2f8;
+        --ink: #142033;
+        --muted: #526176;
+        --line: #c8d1de;
+        --line-strong: #8190a5;
+        --accent: #9a5a00;
+        --accent-soft: #fff1d3;
+        --accent-ink: #4b2a00;
+        --danger: #a52a2a;
+        --danger-soft: #ffeded;
+        --success: #25613c;
+        --success-soft: #e8f6ed;
+        --code: #101722;
+        --code-ink: #e8eef8;
+        --shadow: 0 12px 36px rgb(22 34 52 / 10%);
+        --radius-sm: 6px;
+        --radius-md: 10px;
+        --radius-lg: 16px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --page: #0d1320;
+          --panel: #131d2c;
+          --panel-soft: #1a2637;
+          --ink: #edf3fc;
+          --muted: #acb9cb;
+          --line: #39485d;
+          --line-strong: #74849b;
+          --accent: #ffc15c;
+          --accent-soft: #3b2b0e;
+          --accent-ink: #fff4dc;
+          --danger: #ff9898;
+          --danger-soft: #3e2025;
+          --success: #83d9a1;
+          --success-soft: #183528;
+          --code: #090e16;
+          --code-ink: #e8eef8;
+          --shadow: 0 16px 42px rgb(0 0 0 / 26%);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        background: var(--page);
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 32rem),
+          var(--page);
+        color: var(--ink);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.55;
+      }
+
+      a {
+        color: var(--accent);
+        text-underline-offset: 0.18em;
+      }
+
+      a:hover {
+        text-decoration-thickness: 0.15em;
+      }
+
+      button,
+      select {
+        font: inherit;
+      }
+
+      button:focus-visible,
+      select:focus-visible,
+      a:focus-visible {
+        outline: 3px solid color-mix(in srgb, var(--accent) 68%, transparent);
+        outline-offset: 3px;
+      }
+
+      main {
+        width: min(1480px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 30px 0 48px;
+      }
+
+      .product-nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 18px;
+        margin-bottom: 24px;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      header {
+        max-width: 940px;
+        margin-bottom: 24px;
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        color: var(--accent);
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        margin-bottom: 12px;
+        font-size: clamp(2rem, 5vw, 3.5rem);
+        line-height: 1.04;
+        letter-spacing: -0.035em;
+      }
+
+      header p {
+        margin-bottom: 0;
+        color: var(--muted);
+        font-size: clamp(1rem, 2vw, 1.16rem);
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: minmax(330px, 1.45fr) minmax(220px, 0.9fr) auto;
+        gap: 16px;
+        align-items: end;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .field,
+      fieldset {
+        min-width: 0;
+        margin: 0;
+        padding: 0;
+        border: 0;
+      }
+
+      label,
+      legend {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      select {
+        width: 100%;
+        min-height: 44px;
+        padding: 8px 36px 8px 12px;
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius-sm);
+        background: var(--panel-soft);
+        color: var(--ink);
+      }
+
+      .projection-switch,
+      .control-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      button {
+        min-height: 42px;
+        padding: 8px 13px;
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius-sm);
+        background: var(--panel-soft);
+        color: var(--ink);
+        cursor: pointer;
+      }
+
+      button:hover:not(:disabled) {
+        border-color: var(--accent);
+      }
+
+      button[aria-pressed="true"],
+      button.primary {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: var(--page);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.48;
+      }
+
+      .control-stack {
+        display: grid;
+        gap: 8px;
+        justify-items: end;
+      }
+
+      .step-counter {
+        min-height: 1.2em;
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+
+      .scenario-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        margin: 18px 0;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .scenario-meta strong {
+        color: var(--ink);
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: minmax(280px, 0.68fr) minmax(620px, 1.75fr);
+        gap: 18px;
+        align-items: stretch;
+      }
+
+      .code-panel,
+      .explanation {
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .code-panel {
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      .code-panel h2,
+      .explanation h2 {
+        margin: 0;
+        font-size: 1rem;
+      }
+
+      .code-panel h2 {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      pre {
+        min-height: 100%;
+        margin: 0;
+        padding: 18px;
+        overflow: auto;
+        background: var(--code);
+        color: var(--code-ink);
+        font-size: 0.88rem;
+        line-height: 1.62;
+        tab-size: 2;
+      }
+
+      code {
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      }
+
+      .diagram {
+        position: relative;
+        display: grid;
+        min-width: 0;
+        min-height: 600px;
+        gap: 12px;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background:
+          linear-gradient(color-mix(in srgb, var(--line) 18%, transparent) 1px, transparent 1px),
+          linear-gradient(90deg, color-mix(in srgb, var(--line) 18%, transparent) 1px, transparent 1px),
+          var(--panel-soft);
+        background-size: 28px 28px;
+        box-shadow: var(--shadow);
+        isolation: isolate;
+      }
+
+      .zone {
+        position: relative;
+        z-index: 1;
+        min-width: 0;
+        min-height: 112px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        background: color-mix(in srgb, var(--panel) 94%, transparent);
+        transition:
+          border-color 180ms ease,
+          background 180ms ease,
+          transform 180ms ease;
+      }
+
+      .zone[data-active="true"] {
+        z-index: 2;
+        border-color: var(--accent);
+        background: var(--accent-soft);
+        transform: translateY(-2px);
+      }
+
+      .zone h2 {
+        margin: 0 0 8px;
+        color: var(--muted);
+        font-size: 0.74rem;
+        letter-spacing: 0.055em;
+        text-transform: uppercase;
+      }
+
+      .zone[data-active="true"] h2 {
+        color: var(--accent-ink);
+      }
+
+      .zone ol {
+        display: grid;
+        gap: 5px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .zone li {
+        padding: 5px 7px;
+        border-radius: 4px;
+        background: color-mix(in srgb, var(--panel-soft) 76%, transparent);
+        overflow-wrap: anywhere;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 0.78rem;
+      }
+
+      .zone li.empty {
+        background: transparent;
+        color: var(--muted);
+        font-family: inherit;
+        font-style: italic;
+      }
+
+      .phase::after {
+        position: absolute;
+        right: 50%;
+        bottom: -15px;
+        z-index: 4;
+        color: var(--line-strong);
+        content: "↓";
+        font-size: 1rem;
+        transform: translateX(50%);
+      }
+
+      .phase.phase-last::after {
+        right: auto;
+        bottom: -4px;
+        left: -74px;
+        content: "↺ next iteration";
+        font-size: 0.72rem;
+        white-space: nowrap;
+        transform: none;
+      }
+
+      .runner {
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 8;
+        max-width: 150px;
+        padding: 6px 9px;
+        border: 2px solid var(--accent);
+        border-radius: 999px;
+        background: var(--accent);
+        color: var(--page);
+        box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 28%, transparent);
+        font-size: 0.74rem;
+        font-weight: 800;
+        line-height: 1.2;
+        text-align: center;
+        pointer-events: none;
+        transition: transform 420ms cubic-bezier(0.2, 0.75, 0.25, 1);
+      }
+
+      .diagram[data-projection="conceptual"] {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-rows: repeat(2, minmax(230px, 1fr));
+      }
+
+      .diagram[data-projection="conceptual"] [data-zone="stack"] {
+        grid-area: 1 / 1;
+      }
+
+      .diagram[data-projection="conceptual"] [data-zone="runtime"] {
+        grid-area: 1 / 2;
+      }
+
+      .diagram[data-projection="conceptual"] [data-zone="other"] {
+        grid-area: 1 / 3;
+      }
+
+      .diagram[data-projection="conceptual"] [data-zone="microtasks"] {
+        grid-area: 2 / 1;
+      }
+
+      .diagram[data-projection="conceptual"] [data-zone="tasks"] {
+        grid-area: 2 / 2;
+      }
+
+      .diagram[data-projection="conceptual"] [data-zone="output"] {
+        grid-area: 2 / 3;
+      }
+
+      .diagram[data-projection="node"] {
+        grid-template-columns: minmax(165px, 0.78fr) minmax(240px, 1.05fr) minmax(180px, 0.82fr);
+        grid-template-rows: repeat(7, minmax(68px, auto));
+      }
+
+      .diagram[data-projection="node"] .zone {
+        min-height: 64px;
+      }
+
+      .diagram[data-projection="node"] [data-zone="stack"] {
+        grid-area: 1 / 1 / 4 / 2;
+      }
+
+      .diagram[data-projection="node"] [data-zone="checkpoint"] {
+        grid-area: 4 / 1 / 8 / 2;
+      }
+
+      .diagram[data-projection="node"] [data-zone="timers-entry"] {
+        grid-area: 1 / 2;
+      }
+
+      .diagram[data-projection="node"] [data-zone="pending"] {
+        grid-area: 2 / 2;
+      }
+
+      .diagram[data-projection="node"] [data-zone="idle"] {
+        grid-area: 3 / 2;
+      }
+
+      .diagram[data-projection="node"] [data-zone="poll"] {
+        grid-area: 4 / 2;
+      }
+
+      .diagram[data-projection="node"] [data-zone="check"] {
+        grid-area: 5 / 2;
+      }
+
+      .diagram[data-projection="node"] [data-zone="close"] {
+        grid-area: 6 / 2;
+      }
+
+      .diagram[data-projection="node"] [data-zone="timers"] {
+        grid-area: 7 / 2;
+      }
+
+      .diagram[data-projection="node"] [data-zone="io"] {
+        grid-area: 3 / 3 / 5 / 4;
+        align-self: center;
+      }
+
+      .diagram[data-projection="node"] [data-zone="output"] {
+        grid-area: 5 / 3 / 8 / 4;
+      }
+
+      .diagram[data-projection="actor"] {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-rows: repeat(3, minmax(170px, 1fr));
+      }
+
+      .diagram[data-projection="actor"] [data-zone="caller"] {
+        grid-area: 1 / 1;
+      }
+
+      .diagram[data-projection="actor"] [data-zone="mailbox"] {
+        grid-area: 1 / 2;
+      }
+
+      .diagram[data-projection="actor"] [data-zone="scheduler"] {
+        grid-area: 1 / 3;
+      }
+
+      .diagram[data-projection="actor"] [data-zone="check"] {
+        grid-area: 1 / 4;
+      }
+
+      .diagram[data-projection="actor"] [data-zone="output"] {
+        grid-area: 2 / 1 / 4 / 2;
+      }
+
+      .diagram[data-projection="actor"] [data-zone="stats"] {
+        grid-area: 2 / 2 / 4 / 3;
+      }
+
+      .diagram[data-projection="actor"] [data-zone="behavior"] {
+        grid-area: 2 / 3;
+      }
+
+      .diagram[data-projection="actor"] [data-zone="other-actor"] {
+        grid-area: 3 / 3;
+      }
+
+      .diagram[data-projection="actor"] [data-zone="timers"] {
+        grid-area: 2 / 4;
+      }
+
+      .diagram[data-projection="actor"] [data-zone="worker"] {
+        grid-area: 3 / 4;
+      }
+
+      .explanation {
+        display: grid;
+        grid-template-columns: minmax(0, 1.5fr) minmax(240px, 0.8fr);
+        gap: 18px;
+        margin-top: 18px;
+        padding: 18px;
+      }
+
+      .explanation p {
+        margin: 8px 0 0;
+      }
+
+      .prediction {
+        padding: 14px;
+        border-left: 4px solid var(--accent);
+        border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+        background: var(--accent-soft);
+        color: var(--accent-ink);
+      }
+
+      .prediction strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 0.78rem;
+        letter-spacing: 0.055em;
+        text-transform: uppercase;
+      }
+
+      .prediction p {
+        margin: 0;
+      }
+
+      .lab-notes {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .lab-note {
+        margin: 0;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        background: var(--panel);
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+
+      .lab-note strong {
+        color: var(--ink);
+      }
+
+      .danger-note {
+        border-color: color-mix(in srgb, var(--danger) 40%, var(--line));
+        background: var(--danger-soft);
+      }
+
+      .success-note {
+        border-color: color-mix(in srgb, var(--success) 40%, var(--line));
+        background: var(--success-soft);
+      }
+
+      @media (max-width: 1080px) {
+        .controls {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .control-stack {
+          grid-column: 1 / -1;
+          justify-items: start;
+        }
+
+        .workspace {
+          grid-template-columns: 1fr;
+        }
+
+        .code-panel pre {
+          min-height: 230px;
+        }
+      }
+
+      @media (max-width: 800px) {
+        main {
+          width: min(100% - 20px, 1480px);
+          padding-top: 18px;
+        }
+
+        .controls,
+        .explanation,
+        .lab-notes {
+          grid-template-columns: 1fr;
+        }
+
+        .controls {
+          padding: 14px;
+        }
+
+        .diagram[data-projection] {
+          display: flex;
+          min-height: 0;
+          flex-direction: column;
+        }
+
+        .zone,
+        .diagram[data-projection="node"] .zone {
+          min-height: 118px;
+        }
+
+        .phase::after {
+          right: 50%;
+          bottom: -15px;
+          left: auto;
+          content: "↓";
+          transform: translateX(50%);
+        }
+
+        .runner {
+          max-width: 120px;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .projection-switch,
+        .control-group {
+          display: grid;
+          grid-template-columns: 1fr;
+        }
+
+        button {
+          width: 100%;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition-duration: 0.001ms !important;
+          animation-duration: 0.001ms !important;
+          animation-iteration-count: 1 !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <nav class="product-nav" aria-label="Learning product">
+        <a href="../README.md">Learn Actor-Web</a>
+        <a href="../guide/01-javascript-concurrency-and-mailboxes.md">Chapter 1 guide</a>
+        <a href="../workbook/01-javascript-concurrency-and-mailboxes.md">Week 1 workbook</a>
+        <a href="https://nodejs.org/learn/asynchronous-work/event-loop-timers-and-nexttick">Node.js source</a>
+      </nav>
+
+      <header>
+        <p class="eyebrow">Actor-Web Workbook · Week 1</p>
+        <h1>JavaScript concurrency and actor mailboxes</h1>
+        <p>
+          Move through three layers without blending them: conceptual JavaScript queues,
+          Node.js event-loop phases, and Actor-Web's actor-scoped scheduling. Predict the
+          next location before advancing.
+        </p>
+      </header>
+
+      <section class="controls" aria-label="Lab controls">
+        <fieldset>
+          <legend>Projection</legend>
+          <div class="projection-switch" id="projection-switch">
+            <button type="button" data-projection-button="conceptual" aria-pressed="true">
+              JavaScript queues
+            </button>
+            <button type="button" data-projection-button="node" aria-pressed="false">
+              Node.js phases
+            </button>
+            <button type="button" data-projection-button="actor" aria-pressed="false">
+              Actor-Web overlay
+            </button>
+          </div>
+        </fieldset>
+
+        <div class="field">
+          <label for="scenario">Scenario</label>
+          <select id="scenario"></select>
+        </div>
+
+        <div class="control-stack">
+          <div class="control-group" aria-label="Step controls">
+            <button id="previous" type="button">Previous</button>
+            <button id="play" type="button" class="primary" aria-pressed="false">
+              Autoplay
+            </button>
+            <button id="next" type="button">Next</button>
+            <button id="reset" type="button">Reset</button>
+          </div>
+          <div id="step-counter" class="step-counter" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <div class="scenario-meta" aria-live="polite">
+        <span><strong>Layer:</strong> <span id="layer-name"></span></span>
+        <span><strong>Question:</strong> <span id="scenario-question"></span></span>
+        <span><strong>Model:</strong> <span id="model-note"></span></span>
+      </div>
+
+      <div class="workspace">
+        <section class="code-panel" aria-labelledby="scenario-code-heading">
+          <h2 id="scenario-code-heading">Scenario code</h2>
+          <pre><code id="scenario-code"></code></pre>
+        </section>
+
+        <section
+          id="diagram"
+          class="diagram"
+          data-projection="conceptual"
+          role="img"
+          aria-label="Conceptual JavaScript scheduling projection"
+          aria-describedby="step-detail"
+        >
+          <div id="runner" class="runner" aria-hidden="true"></div>
+        </section>
+      </div>
+
+      <section class="explanation" aria-live="polite" aria-atomic="true">
+        <div>
+          <h2 id="step-title"></h2>
+          <p id="step-detail"></p>
+        </div>
+        <div class="prediction">
+          <strong>Before you advance</strong>
+          <p id="prediction-prompt"></p>
+        </div>
+      </section>
+
+      <section class="lab-notes" aria-label="Lab boundaries">
+        <p class="lab-note">
+          <strong>Projection, not profiler:</strong> the diagrams explain ordering and
+          ownership. They do not display a real process trace or every host implementation
+          detail.
+        </p>
+        <p class="lab-note success-note">
+          <strong>Source mapping:</strong> Actor-Web's Node path uses
+          <code>setImmediate</code>, awaits one actor delivery at a time, and yields after a
+          maximum 100-message batch when work remains.
+        </p>
+        <p class="lab-note danger-note">
+          <strong>Safety:</strong> blocking, starvation, and CPU-heavy scenarios are simulated.
+          Use only the workbook's bounded experiments in a disposable local process.
+        </p>
+      </section>
+    </main>
+
+    <script>
+      (function () {
+        "use strict";
+
+        const projections = {
+          conceptual: {
+            label: "JavaScript execution and host queues",
+            aria: "Conceptual JavaScript scheduling projection",
+            note: "Platform-neutral teaching model",
+            zones: [
+              ["stack", "Call stack"],
+              ["runtime", "Host runtime"],
+              ["other", "Other in-flight work"],
+              ["microtasks", "Microtask queue"],
+              ["tasks", "Task / macrotask queue"],
+              ["output", "Observable output"],
+            ],
+          },
+          node: {
+            label: "Node.js event-loop host scheduling",
+            aria: "Node.js event-loop phase projection with incoming I/O and job checkpoints",
+            note: "Simplified current Node 20-plus phase model",
+            zones: [
+              ["stack", "JavaScript call stack"],
+              ["checkpoint", "Job checkpoint: nextTick then Promise"],
+              ["timers-entry", "Timers: startup compatibility", "phase"],
+              ["pending", "Pending callbacks", "phase"],
+              ["idle", "Idle, prepare: internal", "phase"],
+              ["poll", "Poll: I/O readiness and callbacks", "phase"],
+              ["check", "Check: setImmediate", "phase"],
+              ["close", "Close callbacks", "phase"],
+              ["timers", "Timers: setTimeout / setInterval", "phase phase-last"],
+              ["io", "Incoming connections, data, I/O"],
+              ["output", "Observable output"],
+            ],
+          },
+          actor: {
+            label: "Actor-Web runtime over the host scheduler",
+            aria: "Actor-Web actor mailbox and host scheduling projection",
+            note: "Current normal local runtime path; synchronous test mode excluded",
+            zones: [
+              ["caller", "Caller"],
+              ["mailbox", "Actor mailbox"],
+              ["scheduler", "Actor-Web scheduler"],
+              ["check", "Node check phase"],
+              ["output", "Observable output"],
+              ["stats", "Mailbox statistics / pressure"],
+              ["behavior", "Behavior call stack"],
+              ["other-actor", "Other actor, same isolate"],
+              ["timers", "Host timers / callbacks"],
+              ["worker", "Worker thread or process"],
+            ],
+          },
+        };
+
+        function step(zone, token, title, detail, zones, predict) {
+          return { zone, token, title, detail, zones: zones || {}, predict };
+        }
+
+        const scenarios = {
+          "promise-timer": {
+            projection: "conceptual",
+            label: "Promise before timer",
+            question: "Why does the Promise reaction run before a ready zero timer?",
+            code: [
+              "console.log('A');",
+              "setTimeout(() => console.log('timer'), 0);",
+              "Promise.resolve().then(() => console.log('promise'));",
+              "console.log('B');",
+            ].join("\n"),
+            steps: [
+              step("tasks", "initial script", "The initial script is a task", "The host selects the script. Nothing inside it has executed yet.", { tasks: ["initial script"] }, "Which zone receives the script when the host starts executing it?"),
+              step("stack", "script", "The script owns the stack", "JavaScript runs this stack to completion. A queued callback cannot interrupt it.", { stack: ["initial script"] }, "Will the timer or Promise callback be able to run before the next synchronous log?"),
+              step("output", "log A", "Synchronous output appears", "console.log('A') runs inside the current script turn.", { stack: ["initial script", "console.log('A')"], output: ["A"] }, "Where will the zero-timer callback wait?"),
+              step("runtime", "timer registration", "The timer becomes host work", "Zero is an eligibility threshold, not an instruction to interrupt the stack.", { stack: ["initial script", "setTimeout(...)"], runtime: ["timer callback: waiting"], output: ["A"] }, "When the Promise fulfills, which queue receives its reaction?"),
+              step("microtasks", "Promise reaction", "The Promise reaction is queued", "The reaction waits as a microtask until the current script completes.", { stack: ["initial script", "Promise.then(...)"], runtime: ["timer callback: eligible"], microtasks: ["promise callback"], output: ["A"] }, "Does the script still have synchronous work?"),
+              step("output", "log B", "The script continues", "B appears before either queued callback because the script still owns the stack.", { stack: ["initial script", "console.log('B')"], runtime: ["timer callback: eligible"], microtasks: ["promise callback"], output: ["A", "B"] }, "After the stack unwinds, will the host select the timer or drain the microtask?"),
+              step("microtasks", "promise callback", "The microtask checkpoint runs", "The Promise reaction receives a turn before the host selects a later task.", { runtime: ["timer callback: eligible"], microtasks: ["promise callback"], output: ["A", "B"] }, "What output line appears next?"),
+              step("output", "log promise", "The Promise callback completes", "The ready timer still needs a task turn.", { stack: ["promise callback"], runtime: ["timer callback: eligible"], output: ["A", "B", "promise"] }, "Which queued callback can the host select now?"),
+              step("tasks", "timer callback", "The timer receives a task turn", "Only now can the eligible timer callback enter JavaScript.", { tasks: ["timer callback"], output: ["A", "B", "promise"] }, "What is the final output order?"),
+              step("output", "log timer", "Eligibility finally becomes execution", "The final order is A, B, promise, timer.", { stack: ["timer callback"], output: ["A", "B", "promise", "timer"] }, "Can a zero timer ever preempt a running JavaScript stack?"),
+            ],
+          },
+          blocking: {
+            projection: "conceptual",
+            label: "Blocking callback",
+            question: "What stops progressing while synchronous JavaScript monopolizes the isolate?",
+            code: [
+              "setTimeout(() => console.log('timer'), 0);",
+              "const until = performance.now() + 250;",
+              "while (performance.now() < until) {",
+              "  // simulated in this lab",
+              "}",
+              "console.log('script done');",
+            ].join("\n"),
+            steps: [
+              step("stack", "script", "The script starts running", "The script registers a timer before entering bounded CPU work.", { stack: ["initial script"] }, "Can the timer callback execute while this stack remains active?"),
+              step("runtime", "timer", "The host tracks the timer", "The threshold can elapse independently, but the callback still needs JavaScript execution time.", { stack: ["initial script"], runtime: ["timer: waiting"] }, "Where will the callback wait after it becomes eligible?"),
+              step("stack", "busy loop", "Synchronous CPU work occupies the isolate", "The timer is eligible and other callbacks may be ready, but none can enter the occupied stack.", { stack: ["initial script", "busy loop: 250 ms"], tasks: ["timer: ready but blocked"], other: ["I/O callback: ready", "other actor: ready"] }, "Which listed work item can make progress now?"),
+              step("output", "script done", "The blocking work returns", "Only after the loop ends can the script log and unwind.", { stack: ["console.log('script done')"], tasks: ["timer callback"], other: ["I/O callback", "other actor"], output: ["script done"] }, "What can the host select after the stack becomes empty?"),
+              step("tasks", "timer callback", "Queued callbacks can progress again", "Ready work gets turns only after synchronous JavaScript returns.", { tasks: ["timer callback"], other: ["I/O callback", "other actor"], output: ["script done"] }, "Did actor state isolation make this CPU work preemptible?"),
+              step("output", "log timer", "The timer was delayed, not broken", "The threshold described eligibility. The occupied isolate delayed execution.", { output: ["script done", "timer"] }, "What boundary would enable CPU work to run in parallel?"),
+            ],
+          },
+          "await-yields": {
+            projection: "conceptual",
+            label: "Awaiting I/O yields",
+            question: "How can an unfinished handler allow unrelated JavaScript to progress?",
+            code: [
+              "async function handler() {",
+              "  console.log('handler:start');",
+              "  const data = await readFromNetwork();",
+              "  console.log('handler:done', data);",
+              "}",
+              "setTimeout(() => console.log('timer'), 0);",
+              "void handler();",
+            ].join("\n"),
+            steps: [
+              step("stack", "handler", "The async function starts synchronously", "Code before the first await uses the current JavaScript stack.", { stack: ["script", "handler()"], output: ["handler:start"] }, "What happens to the stack when the Promise remains pending?"),
+              step("runtime", "network read", "The operation waits outside the stack", "The async function is unfinished, but JavaScript returns control to the host while I/O is pending.", { runtime: ["network read: pending"], tasks: ["timer callback"], other: ["unrelated callbacks can run"], output: ["handler:start"] }, "Can the ready timer run before the handler finishes?"),
+              step("tasks", "timer callback", "Unrelated work receives a turn", "Awaiting did not occupy the JavaScript thread.", { runtime: ["network read: pending"], tasks: ["timer callback"], output: ["handler:start"] }, "What output appears while the handler is still unfinished?"),
+              step("output", "log timer", "The timer progresses during the await", "The operation remains pending while other JavaScript executes.", { runtime: ["network read: pending"], output: ["handler:start", "timer"] }, "When the network result arrives, how does the async function resume?"),
+              step("microtasks", "async continuation", "The fulfilled await queues continuation work", "The continuation can resume through the Promise job machinery after the current operation.", { microtasks: ["resume handler with data"], output: ["handler:start", "timer"] }, "Does resuming the handler mean its CPU work is parallel?"),
+              step("output", "handler done", "The handler completes later", "Unfinished and thread-occupying are different states. CPU work inside the continuation still runs on the isolate.", { stack: ["handler continuation"], output: ["handler:start", "timer", "handler:done DATA"] }, "For one actor, may its next message run before this delivery settles?"),
+            ],
+          },
+          "node-io-cycle": {
+            projection: "node",
+            label: "I/O through poll, check, and timers",
+            question: "Why does setImmediate run before a zero timer when both are scheduled inside I/O?",
+            code: [
+              "const fs = require('node:fs');",
+              "fs.readFile(__filename, () => {",
+              "  setTimeout(() => console.log('timeout'), 0);",
+              "  setImmediate(() => console.log('immediate'));",
+              "});",
+            ].join("\n"),
+            steps: [
+              step("stack", "initial script", "The script registers asynchronous I/O", "Node submits or registers the file read, then the initial stack unwinds.", { stack: ["initial script", "fs.readFile(...)"], io: ["file read: pending"] }, "Which phase retrieves ready I/O events?"),
+              step("timers-entry", "loop entry", "Node enters its host loop", "A compatibility timer opportunity can occur before the current phase cycle.", { io: ["file read: pending"], "timers-entry": ["no eligible timer"] }, "After pending and internal phases, where can Node wait for the file result?"),
+              step("pending", "phase", "Pending callbacks are checked", "This phase handles selected deferred system callbacks, not the ordinary completed file read in this example.", { pending: ["none for this example"], io: ["file read: pending"] }, "Is idle/prepare an application callback phase?"),
+              step("idle", "internal phase", "Idle and prepare are internal", "The projection includes the phase for fidelity but application code does not schedule work here.", { idle: ["Node/libuv internal work"], io: ["file read: nearly ready"] }, "Which phase receives the completed file-read callback?"),
+              step("poll", "file callback", "Poll processes the I/O callback", "Inside the callback, code schedules one setImmediate and one zero timer.", { stack: ["fs.readFile callback"], poll: ["file-read callback"], check: ["setImmediate callback"], timers: ["zero timer: eligible later"], io: ["file data delivered"] }, "After this poll callback and job checkpoint, which phase comes next?"),
+              step("checkpoint", "job checkpoint", "Node checks nextTick and Promise jobs", "Neither queue has work in this example, so the phase loop can continue.", { checkpoint: ["nextTick: empty", "Promise jobs: empty"], check: ["setImmediate callback"], timers: ["zero timer"] }, "Will check or timers run first in this I/O-cycle context?"),
+              step("check", "setImmediate", "Check runs setImmediate", "The check phase follows poll, so immediate runs before the later timer opportunity.", { stack: ["setImmediate callback"], check: ["setImmediate callback"], timers: ["zero timer"], output: ["immediate"] }, "Which phase handles abrupt close callbacks?"),
+              step("close", "phase", "Close callbacks receive their phase", "There is no close callback in this example.", { close: ["none"], timers: ["zero timer"], output: ["immediate"] }, "Which ready callback remains?"),
+              step("timers", "zero timer", "The timers phase runs the timeout", "The contextual output is immediate, then timeout.", { stack: ["timer callback"], timers: ["setTimeout callback"], output: ["immediate", "timeout"] }, "Would main-module scheduling give the same deterministic ordering?"),
+            ],
+          },
+          "node-job-checkpoint": {
+            projection: "node",
+            label: "nextTick, Promise, and macrotask",
+            question: "Why are nextTick and Promise work drawn beside, rather than inside, the phase loop?",
+            code: [
+              "console.log('start');",
+              "setImmediate(() => console.log('immediate'));",
+              "Promise.resolve().then(() => console.log('promise'));",
+              "process.nextTick(() => console.log('nextTick'));",
+            ].join("\n"),
+            steps: [
+              step("stack", "script", "The CommonJS script runs", "It schedules one nextTick callback, one Promise reaction, and one setImmediate callback.", { stack: ["initial script"], checkpoint: ["nextTick callback", "Promise reaction"], check: ["setImmediate callback"], output: ["start"] }, "When the current operation ends, which queue is checked first?"),
+              step("checkpoint", "nextTick", "The nextTick queue runs first", "process.nextTick is not a libuv phase. It runs after the current operation before the loop continues.", { stack: ["nextTick callback"], checkpoint: ["nextTick callback", "Promise reaction"], check: ["setImmediate callback"], output: ["start", "nextTick"] }, "Which queued job runs before the macrotask?"),
+              step("checkpoint", "Promise reaction", "Promise microtasks follow", "The Promise reaction runs before Node advances to the later setImmediate callback.", { stack: ["Promise reaction"], checkpoint: ["Promise reaction"], check: ["setImmediate callback"], output: ["start", "nextTick", "promise"] }, "Which Node phase owns setImmediate?"),
+              step("poll", "poll", "The phase loop reaches poll", "With setImmediate ready, Node can leave an idle poll and continue to check.", { poll: ["no I/O callbacks"], check: ["setImmediate callback"], output: ["start", "nextTick", "promise"] }, "What output remains?"),
+              step("check", "setImmediate", "The check phase runs the macrotask", "The final bounded CommonJS order is start, nextTick, promise, immediate.", { stack: ["setImmediate callback"], check: ["setImmediate callback"], output: ["start", "nextTick", "promise", "immediate"] }, "Why should this not be generalized unchanged to every ES-module context?"),
+            ],
+          },
+          "actor-sequential": {
+            projection: "actor",
+            label: "Two messages, one actor",
+            question: "How does Actor-Web serialize one actor without replacing the host scheduler?",
+            code: [
+              "void actor.send({ type: 'A' });",
+              "void actor.send({ type: 'B' });",
+              "// enqueue per actor",
+              "// schedule with setImmediate on Node",
+              "// await one delivery before dequeueing the next",
+            ].join("\n"),
+            steps: [
+              step("caller", "send A", "The caller addresses message A", "Actor-Web resolves the actor identity and local route.", { caller: ["actor.send(A)"] }, "Where does a local message wait before behavior handling?"),
+              step("mailbox", "message A", "A enters the bounded actor mailbox", "The mailbox owns actor-scoped FIFO waiting and pressure statistics.", { caller: ["send A returned control"], mailbox: ["A"], stats: ["size 1 / 1000", "enqueued 1"] }, "What host work must Actor-Web request before handling A?"),
+              step("scheduler", "processing round", "Actor-Web schedules processing", "On Node, scheduleMacrotask uses setImmediate. Other hosts fall back to a zero timer.", { mailbox: ["A"], scheduler: ["processActorMessages scheduled"], check: ["setImmediate callback"] }, "If B is sent before that callback runs, where will B wait?"),
+              step("mailbox", "message B", "B queues behind A", "The actor already has a processing round scheduled, so B joins the same mailbox.", { caller: ["actor.send(B)"], mailbox: ["A", "B"], stats: ["size 2 / 1000", "enqueued 2"] }, "Which Node phase gives the actor-processing callback a turn?"),
+              step("check", "processing callback", "Node check runs Actor-Web processing", "The host selects the setImmediate callback; Actor-Web can now dequeue actor work.", { mailbox: ["A", "B"], check: ["processActorMessages"] }, "Which message is dequeued first?"),
+              step("behavior", "handle A", "The behavior handles A", "Actor-Web awaits local delivery before selecting this actor's next message.", { mailbox: ["B"], behavior: ["deliver A", "await handler A"], stats: ["size 1", "dequeued 1"] }, "Can B mutate the actor context while A remains unsettled?"),
+              step("behavior", "handle B", "B receives the next actor turn", "After A settles, B is dequeued and delivered in the same bounded processing round.", { behavior: ["deliver B", "await handler B"], stats: ["size 0", "dequeued 2"], output: ["handled A"] }, "What does FIFO here not order?"),
+              step("output", "batch complete", "The mailbox becomes idle", "The local order is A then B. This does not create global order across actors or nodes and does not make send durable.", { stats: ["size 0 / 1000", "enqueued 2", "dequeued 2"], output: ["handled A", "handled B"] }, "What can still starve another actor in the same isolate?"),
+            ],
+          },
+          "actor-batch-101": {
+            projection: "actor",
+            label: "101-message fairness batch",
+            question: "What does Actor-Web's 100-message processing limit actually guarantee?",
+            code: [
+              "for (let i = 1; i <= 101; i += 1) {",
+              "  void actor.send({ type: 'NOOP', sequence: i });",
+              "}",
+              "// process at most 100 in one round",
+              "// schedule another macrotask when messages remain",
+            ].join("\n"),
+            steps: [
+              step("mailbox", "101 messages", "A burst fills one actor mailbox", "All 101 bounded no-op messages wait for the same actor identity.", { mailbox: ["1", "2", "...", "100", "101"], stats: ["size 101", "enqueued 101"] }, "How many messages may one processing round handle?"),
+              step("scheduler", "round 1", "Actor-Web schedules the first round", "The host will run processActorMessages on a future macrotask.", { mailbox: ["1 ... 101"], scheduler: ["processing round 1"], check: ["setImmediate callback 1"] }, "Where does the Node host run this callback?"),
+              step("behavior", "messages 1-100", "The first round processes a bounded batch", "Actor-Web sequentially awaits messages 1 through 100. This summary does not imply they execute simultaneously.", { mailbox: ["101"], behavior: ["handled 1", "handled 2", "...", "handled 100"], stats: ["size 1", "dequeued 100"] }, "Can the runtime interrupt any one slow handler inside this batch?"),
+              step("scheduler", "yield boundary", "The batch limit creates a host boundary", "Because message 101 remains, Actor-Web schedules another macrotask and returns from round 1.", { mailbox: ["101"], scheduler: ["processing round 2 scheduled"], check: ["setImmediate callback 2"], "other-actor": ["eligible for a host turn"], timers: ["eligible callbacks can run"] }, "What unrelated work may receive a turn at this boundary?"),
+              step("check", "round 2", "The host selects the continuation", "A later check-phase callback begins the second processing round.", { mailbox: ["101"], check: ["processActorMessages round 2"] }, "Which message remains?"),
+              step("behavior", "message 101", "The final message is delivered", "Message 101 is sequentially handled in the new processing round.", { behavior: ["handle 101"], stats: ["size 0", "dequeued 101"] }, "Is the round boundary a durable checkpoint or acknowledgement?"),
+              step("output", "idle", "Fairness improved without a stronger delivery claim", "The batch limit is a cooperative yield valve, not CPU preemption, persistence, acknowledgement, or a business transaction.", { output: ["handled 1 ... 100", "yielded", "handled 101"], stats: ["size 0", "enqueued 101", "dequeued 101"] }, "Which guarantee would require a separate durable protocol?"),
+            ],
+          },
+          "actor-shared-isolate": {
+            projection: "actor",
+            label: "Shared isolate versus worker",
+            question: "What remains isolated when one actor performs CPU-heavy JavaScript?",
+            code: [
+              "setTimeout(() => console.log('timer'), 0);",
+              "void actorA.send({ type: 'CPU_HEAVY' });",
+              "void actorB.send({ type: 'FAST' });",
+              "// compare synchronous CPU work with worker-thread offload",
+            ].join("\n"),
+            steps: [
+              step("mailbox", "A + B", "Two actors receive independent messages", "Each actor owns a different mailbox and private context.", { mailbox: ["actor A: CPU_HEAVY", "actor B: FAST"], "other-actor": ["B context is separate"], timers: ["zero timer"] }, "Does separate state imply separate JavaScript threads?"),
+              step("behavior", "actor A busy", "Actor A enters synchronous CPU work", "The selected handler occupies the isolate. Actor B cannot enter JavaScript even though its state is independent.", { behavior: ["actor A busy loop"], "other-actor": ["actor B ready but blocked"], timers: ["timer ready but blocked"], stats: ["mailboxes remain isolated"] }, "Which guarantee remains true while progress is blocked?"),
+              step("other-actor", "actor B", "Actor B runs after A returns", "Actor B never mutated actor A's context, but it still shared actor A's CPU scheduler.", { behavior: ["actor A complete"], "other-actor": ["actor B FAST handler"], timers: ["timer ready"], output: ["actor A done", "actor B done"] }, "How could CPU-heavy work stop occupying this isolate?"),
+              step("worker", "CPU job", "Move CPU work to a worker boundary", "Actor A can await a worker result while the worker executes JavaScript in parallel.", { behavior: ["actor A awaiting result"], worker: ["CPU job running in parallel"], "other-actor": ["actor B can receive turns"], timers: ["timer can receive a turn"] }, "Does awaiting a worker allow actor A's next message to overtake the current delivery?"),
+              step("output", "progress", "Isolation and parallelism are now separate choices", "Actor A remains logically serialized; actor B and timers progress; CPU work runs behind a parallel execution boundary.", { output: ["actor B done", "timer", "worker result", "actor A done"], stats: ["actor A context isolated", "actor B context isolated"] }, "What additional boundary would isolate process crashes as well as CPU work?"),
+            ],
+          },
+        };
+
+        function createOverflowScenario(policy) {
+          const common = {
+            projection: "actor",
+            label: "Mailbox overflow: " + policy,
+            question: "What should the runtime do when demand exceeds capacity?",
+            code: [
+              "const mailbox = BoundedMailbox.create({",
+              "  capacity: 3,",
+              "  overflowStrategy: OverflowStrategy." + policy.toUpperCase() + ",",
+              "});",
+              "// enqueue A, B, C, D, E",
+            ].join("\n"),
+          };
+
+          const base = [
+            step("mailbox", "A, B, C", "The mailbox reaches capacity", "Messages A through C fill the three available slots.", { mailbox: ["A", "B", "C"], stats: ["size 3 / 3", "enqueued 3", "dropped 0", "failed 0"] }, "What will the " + policy + " policy do with D?"),
+          ];
+
+          if (policy === "drop") {
+            common.steps = base.concat([
+              step("stats", "drop D", "D is shed", "enqueue returns false. The queue remains bounded and totalDropped increments.", { mailbox: ["A", "B", "C"], stats: ["size 3 / 3", "enqueued 3", "dropped 1", "failed 0"], output: ["enqueue D -> false"] }, "Will E receive a different outcome while no capacity has opened?"),
+              step("stats", "drop E", "E is shed for the same reason", "Dropping protects bounded memory but loses work. The policy cannot decide whether the product meaning was safe to discard.", { mailbox: ["A", "B", "C"], stats: ["size 3 / 3", "enqueued 3", "dropped 2", "failed 0"], output: ["enqueue D -> false", "enqueue E -> false"] }, "Which workloads are replaceable enough for load shedding?"),
+              step("mailbox", "dequeue A", "Consumer progress creates capacity", "A is removed. Previously dropped work does not reappear.", { mailbox: ["B", "C"], stats: ["size 2 / 3", "enqueued 3", "dequeued 1", "dropped 2"] }, "Would retrying D require an application protocol?"),
+            ]);
+          } else if (policy === "fail") {
+            common.steps = base.concat([
+              step("stats", "fail D", "D produces an explicit failure", "The mailbox increments totalFailed and raises a MailboxError for the overflow attempt.", { mailbox: ["A", "B", "C"], stats: ["size 3 / 3", "enqueued 3", "dropped 0", "failed 1"], output: ["enqueue D -> MailboxError"] }, "If the caller catches the error and tries E, what happens?"),
+              step("stats", "fail E", "E fails explicitly too", "Fail-fast makes overload visible, but the caller must decide whether to reject, retry, or transform the work.", { mailbox: ["A", "B", "C"], stats: ["size 3 / 3", "enqueued 3", "failed 2"], output: ["D -> MailboxError", "E -> MailboxError"] }, "Does an explicit failure prove the command never executed elsewhere?"),
+              step("mailbox", "dequeue A", "Capacity returns after consumption", "A later enqueue could now succeed. Failure itself does not create a retry policy.", { mailbox: ["B", "C"], stats: ["size 2 / 3", "enqueued 3", "dequeued 1", "failed 2"] }, "Which layer should own retry and idempotency meaning?"),
+            ]);
+          } else {
+            common.steps = base.concat([
+              step("stats", "park D", "D's sender waits", "enqueue returns a pending Promise. D is not counted as enqueued until capacity admits it.", { mailbox: ["A", "B", "C"], stats: ["size 3 / 3", "enqueued 3", "parked senders: D"], output: ["enqueue D -> pending"] }, "What happens when E also arrives while the queue remains full?"),
+              step("stats", "park E", "E waits behind D", "Both producers are backpressured instead of losing work or receiving an immediate failure.", { mailbox: ["A", "B", "C"], stats: ["size 3 / 3", "enqueued 3", "parked senders: D, E"], output: ["D -> pending", "E -> pending"] }, "How many parked senders can one dequeue admit?"),
+              step("mailbox", "dequeue A", "One dequeue admits D", "Removing A creates one slot. Actor-Web admits the first parked sender into that slot and settles D's Promise.", { mailbox: ["B", "C", "D"], stats: ["size 3 / 3", "enqueued 4", "dequeued 1", "parked senders: E"], output: ["D -> true", "E -> pending"] }, "What must happen before E can be admitted?"),
+              step("mailbox", "dequeue B", "The next dequeue admits E", "Backpressure couples producer progress to consumer capacity.", { mailbox: ["C", "D", "E"], stats: ["size 3 / 3", "enqueued 5", "dequeued 2", "parked senders: none"], output: ["D -> true", "E -> true"] }, "What resource can still grow if producers park without their own bound?"),
+            ]);
+          }
+
+          return common;
+        }
+
+        const scenarioOrder = {
+          conceptual: ["promise-timer", "blocking", "await-yields"],
+          node: ["node-io-cycle", "node-job-checkpoint"],
+          actor: [
+            "actor-sequential",
+            "actor-batch-101",
+            "overflow-drop",
+            "overflow-fail",
+            "overflow-park",
+            "actor-shared-isolate",
+          ],
+        };
+
+        const projectionButtons = Array.from(
+          document.querySelectorAll("[data-projection-button]"),
+        );
+        const scenarioSelect = document.getElementById("scenario");
+        const codeElement = document.getElementById("scenario-code");
+        const diagram = document.getElementById("diagram");
+        const runner = document.getElementById("runner");
+        const previousButton = document.getElementById("previous");
+        const playButton = document.getElementById("play");
+        const nextButton = document.getElementById("next");
+        const resetButton = document.getElementById("reset");
+        const counter = document.getElementById("step-counter");
+        const stepTitle = document.getElementById("step-title");
+        const stepDetail = document.getElementById("step-detail");
+        const predictionPrompt = document.getElementById("prediction-prompt");
+        const layerName = document.getElementById("layer-name");
+        const scenarioQuestion = document.getElementById("scenario-question");
+        const modelNote = document.getElementById("model-note");
+
+        let projectionKey = "conceptual";
+        let scenarioKey = scenarioOrder[projectionKey][0];
+        let stepIndex = 0;
+        let autoplayTimer = null;
+        let renderedProjection = null;
+
+        function scenarioByKey(key) {
+          if (key === "overflow-drop") return createOverflowScenario("drop");
+          if (key === "overflow-fail") return createOverflowScenario("fail");
+          if (key === "overflow-park") return createOverflowScenario("park");
+          return scenarios[key];
+        }
+
+        function currentScenario() {
+          return scenarioByKey(scenarioKey);
+        }
+
+        function currentStep() {
+          return currentScenario().steps[stepIndex];
+        }
+
+        function renderScenarioOptions() {
+          scenarioSelect.replaceChildren();
+          scenarioOrder[projectionKey].forEach(function (key) {
+            const scenario = scenarioByKey(key);
+            const option = document.createElement("option");
+            option.value = key;
+            option.textContent = scenario.label;
+            scenarioSelect.appendChild(option);
+          });
+          scenarioSelect.value = scenarioKey;
+        }
+
+        function renderProjection() {
+          if (renderedProjection === projectionKey) return;
+
+          Array.from(diagram.querySelectorAll(".zone")).forEach(function (zone) {
+            zone.remove();
+          });
+
+          projections[projectionKey].zones.forEach(function (definition) {
+            const zone = document.createElement("section");
+            zone.className = "zone" + (definition[2] ? " " + definition[2] : "");
+            zone.dataset.zone = definition[0];
+            zone.dataset.active = "false";
+
+            const heading = document.createElement("h2");
+            heading.textContent = definition[1];
+            zone.appendChild(heading);
+
+            const list = document.createElement("ol");
+            list.dataset.zoneList = definition[0];
+            zone.appendChild(list);
+            diagram.insertBefore(zone, runner);
+          });
+
+          diagram.dataset.projection = projectionKey;
+          diagram.setAttribute("aria-label", projections[projectionKey].aria);
+          renderedProjection = projectionKey;
+        }
+
+        function renderList(element, values) {
+          element.replaceChildren();
+          if (!values || values.length === 0) {
+            const emptyItem = document.createElement("li");
+            emptyItem.className = "empty";
+            emptyItem.textContent = "empty";
+            element.appendChild(emptyItem);
+            return;
+          }
+
+          values.forEach(function (value) {
+            const item = document.createElement("li");
+            item.textContent = value;
+            element.appendChild(item);
+          });
+        }
+
+        function positionRunner() {
+          const current = currentStep();
+          const zone = diagram.querySelector('[data-zone="' + current.zone + '"]');
+          if (!zone) return;
+
+          const diagramRect = diagram.getBoundingClientRect();
+          const zoneRect = zone.getBoundingClientRect();
+          const x = zoneRect.left - diagramRect.left + zoneRect.width / 2 - runner.offsetWidth / 2;
+          const y = zoneRect.top - diagramRect.top + zoneRect.height / 2 - runner.offsetHeight / 2;
+
+          runner.style.transform =
+            "translate(" + Math.max(4, x) + "px, " + Math.max(4, y) + "px)";
+        }
+
+        function render() {
+          renderProjection();
+
+          const scenario = currentScenario();
+          const current = currentStep();
+
+          projectionButtons.forEach(function (button) {
+            button.setAttribute(
+              "aria-pressed",
+              String(button.dataset.projectionButton === projectionKey),
+            );
+          });
+
+          codeElement.textContent = scenario.code;
+          diagram.querySelectorAll("[data-zone-list]").forEach(function (list) {
+            renderList(list, current.zones[list.dataset.zoneList]);
+          });
+
+          diagram.querySelectorAll("[data-zone]").forEach(function (zone) {
+            const active = zone.dataset.zone === current.zone;
+            zone.dataset.active = String(active);
+            if (active) {
+              zone.setAttribute("aria-current", "step");
+            } else {
+              zone.removeAttribute("aria-current");
+            }
+          });
+
+          runner.textContent = current.token;
+          stepTitle.textContent = current.title;
+          stepDetail.textContent = current.detail;
+          predictionPrompt.textContent = current.predict;
+          layerName.textContent = projections[projectionKey].label;
+          scenarioQuestion.textContent = scenario.question;
+          modelNote.textContent = projections[projectionKey].note;
+          counter.textContent = "Step " + (stepIndex + 1) + " of " + scenario.steps.length;
+
+          previousButton.disabled = stepIndex === 0;
+          nextButton.disabled = stepIndex === scenario.steps.length - 1;
+          playButton.textContent = autoplayTimer ? "Pause" : "Autoplay";
+          playButton.setAttribute("aria-pressed", String(Boolean(autoplayTimer)));
+
+          window.requestAnimationFrame(positionRunner);
+        }
+
+        function stopAutoplay() {
+          if (autoplayTimer) {
+            window.clearInterval(autoplayTimer);
+            autoplayTimer = null;
+          }
+          render();
+        }
+
+        function advance() {
+          const finalIndex = currentScenario().steps.length - 1;
+          if (stepIndex >= finalIndex) {
+            stopAutoplay();
+            return;
+          }
+          stepIndex += 1;
+          render();
+        }
+
+        function toggleAutoplay() {
+          if (autoplayTimer) {
+            stopAutoplay();
+            return;
+          }
+
+          if (stepIndex === currentScenario().steps.length - 1) {
+            stepIndex = 0;
+          }
+
+          autoplayTimer = window.setInterval(advance, 1900);
+          render();
+        }
+
+        function selectProjection(nextProjection) {
+          if (nextProjection === projectionKey) return;
+          stopAutoplay();
+          projectionKey = nextProjection;
+          scenarioKey = scenarioOrder[projectionKey][0];
+          stepIndex = 0;
+          renderedProjection = null;
+          renderScenarioOptions();
+          render();
+        }
+
+        projectionButtons.forEach(function (button) {
+          button.addEventListener("click", function () {
+            selectProjection(button.dataset.projectionButton);
+          });
+        });
+
+        scenarioSelect.addEventListener("change", function () {
+          stopAutoplay();
+          scenarioKey = scenarioSelect.value;
+          stepIndex = 0;
+          render();
+        });
+
+        previousButton.addEventListener("click", function () {
+          if (autoplayTimer) stopAutoplay();
+          if (stepIndex > 0) stepIndex -= 1;
+          render();
+        });
+
+        nextButton.addEventListener("click", function () {
+          if (autoplayTimer) stopAutoplay();
+          advance();
+        });
+
+        resetButton.addEventListener("click", function () {
+          if (autoplayTimer) {
+            window.clearInterval(autoplayTimer);
+            autoplayTimer = null;
+          }
+          stepIndex = 0;
+          render();
+        });
+
+        playButton.addEventListener("click", toggleAutoplay);
+        window.addEventListener("resize", positionRunner);
+        document.addEventListener("visibilitychange", function () {
+          if (document.hidden && autoplayTimer) stopAutoplay();
+        });
+
+        renderScenarioOptions();
+        render();
+      })();
+    </script>
+  </body>
+</html>
