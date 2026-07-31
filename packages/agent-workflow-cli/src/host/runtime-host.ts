@@ -292,7 +292,8 @@ function validateDistributedExposure(
     typeof transportListen === 'object'
       ? (transportListen.host ?? distributedHost)
       : distributedHost;
-  if (transportListen && !isLoopbackHost(transportHost)) {
+  const transportActive = options.transport === true || typeof options.transport === 'object';
+  if (transportActive && !isLoopbackHost(transportHost)) {
     return createUnsafeExposureError('transport', transportHost ?? '0.0.0.0');
   }
   return null;
@@ -328,11 +329,44 @@ function requiresNonLocalhostTransportHardening(
     typeof transportListen === 'object'
       ? (transportListen.host ?? distributedHost ?? '127.0.0.1')
       : (distributedHost ?? '127.0.0.1');
-  if (!transportListen || isLoopbackHost(transportHost)) {
+  const transportActive =
+    options.distributed.transport === true || typeof options.distributed.transport === 'object';
+  if (!transportActive || isLoopbackHost(transportHost)) {
     return null;
   }
 
   return transportOptions;
+}
+
+const REMOTE_TRANSPORT_STATUS_SEVERITY: Record<RuntimeHostReadinessStatus['transport'], number> = {
+  degraded: 4,
+  disconnected: 3,
+  replaying: 2,
+  connected: 1,
+  local: 0,
+};
+
+function toRemoteTransportReadiness(
+  status: ProjectionTransportStatus | null
+): RuntimeHostReadinessStatus['transport'] {
+  return status?.state ?? 'replaying';
+}
+
+function pickWorstRemoteTransportStatus(
+  statuses: ReadonlyMap<string, ProjectionTransportStatus>
+): ProjectionTransportStatus | null {
+  let worst: ProjectionTransportStatus | null = null;
+  let worstSeverity = -1;
+
+  for (const status of statuses.values()) {
+    const severity = REMOTE_TRANSPORT_STATUS_SEVERITY[toRemoteTransportReadiness(status)];
+    if (severity > worstSeverity) {
+      worst = status;
+      worstSeverity = severity;
+    }
+  }
+
+  return worst;
 }
 
 function validateDistributedSecurityRequirements(
@@ -489,6 +523,12 @@ export async function createRuntimeHost(
   }
 
   const topologyNodeKeys = Object.keys(topology.nodes);
+  if (topologyNodeKeys.length === 0) {
+    return {
+      ok: false,
+      error: 'Runtime host rejected: topology must declare at least one node.',
+    };
+  }
   const spawnNodeKey = options.node ?? topologyNodeKeys[0];
   if (spawnNodeKey && !topology.nodes[spawnNodeKey]) {
     return {
@@ -505,12 +545,11 @@ export async function createRuntimeHost(
     ClosableActorWebSource<unknown, ActorMessage, ActorMessage>
   >();
   const remoteTraceSourceCache = new Map<string, ClosableActorWebTraceSource>();
-  let remoteTransportStatus: ProjectionTransportStatus | null = null;
-  let remoteTransportReason: string | null = null;
+  const remoteTransportStatuses = new Map<string, ProjectionTransportStatus>();
 
   const toRemoteReadiness = (): RuntimeHostReadinessStatus => ({
     process: 'ready',
-    transport: remoteTransportStatus?.state ?? 'replaying',
+    transport: toRemoteTransportReadiness(pickWorstRemoteTransportStatus(remoteTransportStatuses)),
     directory: 'remote',
     checkpointStore: options.checkpoint?.store ? 'ready' : 'missing',
     policyAdmission: options.remote?.gateway.auth ? 'authenticated' : 'unconfigured',
@@ -572,7 +611,7 @@ export async function createRuntimeHost(
     ...(options.remote
       ? {
           readiness: toRemoteReadiness(),
-          transportReason: remoteTransportReason,
+          transportReason: pickWorstRemoteTransportStatus(remoteTransportStatuses)?.reason ?? null,
         }
       : {}),
   });
@@ -624,8 +663,7 @@ export async function createRuntimeHost(
       streamId: `actor-web-cli-remote-${actorKey}`,
     });
     source.subscribeTransportStatus((status) => {
-      remoteTransportStatus = status;
-      remoteTransportReason = status.reason ?? null;
+      remoteTransportStatuses.set(`command:${actorKey}`, status);
     });
     remoteSourceCache.set(actorKey, source);
     return source;
@@ -662,8 +700,7 @@ export async function createRuntimeHost(
       streamId: `actor-web-cli-remote-trace-${actorKey}`,
     });
     source.subscribeTransportStatus((status) => {
-      remoteTransportStatus = status;
-      remoteTransportReason = status.reason ?? null;
+      remoteTransportStatuses.set(`trace:${actorKey}`, status);
     });
     remoteTraceSourceCache.set(actorKey, source);
     return source;
@@ -750,6 +787,9 @@ export async function createRuntimeHost(
           error:
             'Spawn failed: distributed runtime hosts do not support dynamic spawn through the CLI shell yet.',
         };
+      }
+      if (!runtime) {
+        return { ok: false, error: 'Spawn failed: runtime is not started.' };
       }
       const loaded = await loadModuleExport(behaviorPath);
       if (!loaded.ok) {

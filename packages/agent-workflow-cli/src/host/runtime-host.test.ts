@@ -20,6 +20,7 @@ import {
   defineBehavior,
   enableDevModeForCLI,
   node,
+  type ProjectionTransportStatus,
   resetDevMode,
 } from '@actor-web/runtime';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -534,6 +535,148 @@ describe('createRuntimeHost', () => {
       ok: false,
       error:
         'Distributed host rejected: missing_transport_auth (non-localhost transport exposure requires explicit transport authentication.)',
+    });
+  });
+
+  it('treats object transport without listen as an active non-loopback transport for preflight guards', async () => {
+    await host.stop();
+
+    const missingTransportAuth = await createRuntimeHost(buildCounterTopology(), {
+      node: 'local',
+      distributed: {
+        host: '0.0.0.0',
+        transport: {},
+        allowUnsafeExposure: true,
+      },
+    });
+
+    expect(missingTransportAuth).toEqual({
+      ok: false,
+      error:
+        'Distributed host rejected: missing_transport_auth (non-localhost transport exposure requires explicit transport authentication.)',
+    });
+  });
+
+  it('aggregates remote transport status by worst active source instead of last writer wins', async () => {
+    vi.resetModules();
+
+    const sourceStatusListeners = new Set<(status: ProjectionTransportStatus) => void>();
+    const traceStatusListeners = new Set<(status: ProjectionTransportStatus) => void>();
+    const commandSource = {
+      address: 'actor://local/counter',
+      snapshot: () => ({ status: 'running' }),
+      subscribe: () => () => {},
+      subscribeEvent: () => () => {},
+      transportStatus: () => ({ state: 'connected', updatedAt: Date.now() }),
+      subscribeTransportStatus: (listener: (status: ProjectionTransportStatus) => void) => {
+        sourceStatusListeners.add(listener);
+        listener({
+          state: 'degraded',
+          reason: 'command source degraded',
+          updatedAt: Date.now(),
+        });
+        return () => {
+          sourceStatusListeners.delete(listener);
+        };
+      },
+      send: async () => {},
+      ask: async () => ({ count: 1 }),
+      close: () => {},
+    };
+    const traceSource = {
+      address: 'actor://local/counter',
+      latestTrace: () => null,
+      subscribeTrace: () => () => {},
+      transportStatus: () => ({ state: 'connected', updatedAt: Date.now() }),
+      subscribeTransportStatus: (listener: (status: ProjectionTransportStatus) => void) => {
+        traceStatusListeners.add(listener);
+        listener({
+          state: 'connected',
+          updatedAt: Date.now(),
+        });
+        return () => {
+          traceStatusListeners.delete(listener);
+        };
+      },
+      close: () => {},
+    };
+
+    vi.doMock('@actor-web/runtime', async () => {
+      const actual =
+        await vi.importActual<typeof import('@actor-web/runtime')>('@actor-web/runtime');
+      return {
+        ...actual,
+        createActorWebSource: () => commandSource,
+        createActorWebTraceSource: () => traceSource,
+      };
+    });
+
+    const runtimeHostModule = await import('./runtime-host');
+    const remoteHost = await runtimeHostModule.createRuntimeHost(buildCounterTopology(), {
+      remote: {
+        gateway: {
+          url: 'ws://127.0.0.1:9000/runtime',
+        },
+      },
+    });
+    expect(remoteHost.ok).toBe(true);
+    if (!remoteHost.ok) {
+      vi.doUnmock('@actor-web/runtime');
+      return;
+    }
+
+    await remoteHost.value.send('counter', '{"type":"INCREMENT"}');
+    const traceWatches = new Map<string, () => void>();
+    const tracing = runtimeHostModule.executeCommand(
+      remoteHost.value,
+      'watch-trace counter',
+      traceWatches
+    );
+    await expect(tracing).resolves.toMatchObject({ ok: true });
+
+    for (const listener of Array.from(traceStatusListeners)) {
+      listener({
+        state: 'connected',
+        updatedAt: Date.now(),
+      });
+    }
+
+    expect(remoteHost.value.getStatus()).toMatchObject({
+      readiness: {
+        transport: 'degraded',
+      },
+      transportReason: 'command source degraded',
+    });
+
+    await remoteHost.value.stop();
+    vi.doUnmock('@actor-web/runtime');
+  });
+
+  it('rejects a topology with no nodes even when no explicit node is requested', async () => {
+    await host.stop();
+
+    const started = await createRuntimeHost({ nodes: {}, actors: {} } as never, {});
+
+    expect(started).toEqual({
+      ok: false,
+      error: 'Runtime host rejected: topology must declare at least one node.',
+    });
+  });
+
+  it('rejects a topology with no nodes before runtime startup', async () => {
+    await host.stop();
+
+    const started = await createRuntimeHost(
+      {
+        nodes: {},
+        actors: {},
+      } as ReturnType<typeof defineActorWebTopology>,
+      {}
+    );
+
+    expect(started).toEqual({
+      ok: false,
+      error: 'Runtime host rejected: topology must declare at least one node.',
     });
   });
 
@@ -1586,6 +1729,30 @@ describe('spawnFromFile', () => {
     if (!spawned.ok) {
       expect(spawned.error).toContain('Module not found');
     }
+  });
+
+  it('fails spawnFromFile with an explicit runtime-null fact when no started runtime is available', async () => {
+    await host.stop();
+
+    const started = await createRuntimeHost(buildCounterTopology(), {
+      remote: {
+        gateway: {
+          url: 'ws://127.0.0.1:9999/runtime',
+        },
+      },
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      return;
+    }
+
+    host = started.value;
+    const spawned = await host.spawnFromFile(behaviorFile, 'ghost');
+    expect(spawned).toEqual({
+      ok: false,
+      error:
+        'Spawn failed: remote runtime hosts do not support dynamic spawn through the CLI shell.',
+    });
   });
 });
 
