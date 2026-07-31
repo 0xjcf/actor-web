@@ -201,7 +201,7 @@
         cursor: pointer;
       }
 
-      button:hover:not(:disabled) {
+      button:hover:not(.is-unavailable) {
         border-color: var(--accent);
       }
 
@@ -212,7 +212,7 @@
         color: var(--page);
       }
 
-      button:disabled {
+      button.is-unavailable {
         cursor: not-allowed;
         opacity: 0.48;
       }
@@ -1567,12 +1567,17 @@
           modelNote.textContent = projections[projectionKey].note;
           counter.textContent = "Step " + (stepIndex + 1) + " of " + scenario.steps.length;
 
-          previousButton.disabled = stepIndex === 0;
-          nextButton.disabled = stepIndex === scenario.steps.length - 1;
+          setStepAvailability(previousButton, stepIndex > 0);
+          setStepAvailability(nextButton, stepIndex < scenario.steps.length - 1);
           playButton.textContent = autoplayTimer ? "Pause" : "Autoplay";
           playButton.setAttribute("aria-pressed", String(Boolean(autoplayTimer)));
 
           window.requestAnimationFrame(positionRunner);
+        }
+
+        function setStepAvailability(button, isAvailable) {
+          button.setAttribute("aria-disabled", String(!isAvailable));
+          button.classList.toggle("is-unavailable", !isAvailable);
         }
 
         function stopAutoplay() {

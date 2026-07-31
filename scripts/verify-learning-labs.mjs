@@ -36,11 +36,14 @@ function verifyLocalLinks() {
 
   for (const file of learningFiles) {
     const source = readFileSync(file, 'utf8');
-    const pattern = extname(file) === '.html' ? /href="([^"]+)"/g : /\[[^\]]*\]\(([^)]+)\)/g;
+    const isHtml = extname(file) === '.html';
+    const pattern = isHtml
+      ? /href="([^"]+)"/g
+      : /\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
 
     for (const match of source.matchAll(pattern)) {
-      const href = match[1].split('#')[0];
-      if (!href || /^(https?:|mailto:)/.test(href)) {
+      const href = (isHtml ? match[1] : (match[1] ?? match[2])).split('#')[0];
+      if (!href || /^(?:https?:|mailto:|tel:|\/\/)/.test(href)) {
         continue;
       }
 
@@ -68,7 +71,10 @@ function verifyLearningPages() {
   for (const page of learningPages) {
     invariant(existsSync(page), `Missing learning page: ${page}`);
     const html = readFileSync(page, 'utf8');
-    const window = new Window({ url: `http://localhost/${page.split('/').at(-1)}` });
+    const window = new Window({
+      url: `http://localhost/${page.split('/').at(-1)}`,
+      settings: { disableJavaScriptEvaluation: false },
+    });
     try {
       window.document.write(html);
       const document = window.document;
@@ -123,13 +129,17 @@ function verifyLearningPages() {
 
 function verifyWeekOneLab() {
   const html = readFileSync(weekOneLab, 'utf8');
-  const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
-  invariant(scriptMatch, 'Week 1 lab must contain one inline script.');
+  const scriptMatches = Array.from(html.matchAll(/<script>([\s\S]*?)<\/script>/g));
+  invariant(scriptMatches.length === 1, 'Week 1 lab must contain one inline script.');
+  const [scriptMatch] = scriptMatches;
 
   const ids = Array.from(html.matchAll(/id="([^"]+)"/g), (match) => match[1]);
   invariant(ids.length === new Set(ids).size, 'Week 1 lab must not contain duplicate IDs.');
 
-  const window = new Window({ url: 'http://localhost/week-01.html' });
+  const window = new Window({
+    url: 'http://localhost/week-01.html',
+    settings: { disableJavaScriptEvaluation: false },
+  });
   try {
     window.document.write(html.replace(scriptMatch[0], ''));
     window.eval(scriptMatch[1]);
@@ -194,10 +204,14 @@ function verifyWeekOneLab() {
           stepGuard += 1;
           invariant(
             stepGuard <= MAX_STEPS_PER_SCENARIO,
-            `Scenario ${scenarioValue} exceeded ${MAX_STEPS_PER_SCENARIO} steps without disabling Next.`
+            `Scenario ${scenarioValue} exceeded ${MAX_STEPS_PER_SCENARIO} steps without reaching its final step.`
           );
-          const activeZone = document.querySelector('.zone[data-active="true"]');
-          invariant(activeZone, `Scenario ${scenarioValue} must have one active zone.`);
+          const activeZones = Array.from(document.querySelectorAll('.zone[data-active="true"]'));
+          invariant(
+            activeZones.length === 1,
+            `Scenario ${scenarioValue} must have one active zone.`
+          );
+          const [activeZone] = activeZones;
           invariant(
             document.querySelector('#step-title')?.textContent,
             `Scenario ${scenarioValue} must render a step title.`
@@ -243,7 +257,8 @@ function verifyWeekOneLab() {
 
           const nextButton = document.querySelector('#next');
           invariant(nextButton, 'Week 1 lab must render a Next button.');
-          if (nextButton.disabled) {
+          invariant(!nextButton.disabled, 'Step controls must remain keyboard-focusable.');
+          if (nextButton.getAttribute('aria-disabled') === 'true') {
             break;
           }
           nextButton.click();
