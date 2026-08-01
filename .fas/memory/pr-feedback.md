@@ -193,3 +193,15 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Cross-actor starvation fixtures must control processing-turn order, not only enqueue order.** Separate actor loops can already have scheduled callbacks. Begin with idle actors and release actor A's callback first, or hold the scheduler until both admissions and the intended callback order are established.
 
 - **Serialization claims must exclude synchronous test mode unless it is separately serialized.** Immediate test-mode delivery can overlap suspended handlers when sends are concurrent. Teach one-message-at-a-time as a normal-processing-loop guarantee and do not use test mode as production serialization evidence.
+
+- **Private actor state is an API boundary, not proof that local references are immutable.** Architecture comparisons must qualify that snapshots and message payloads can share nested object references unless applications detach, freeze, or otherwise treat them as immutable values.
+
+- **Internal policy implementations must not be presented as public spawned-actor configuration.** A direct mailbox test can prove drop, fail, and park behavior while the actor-system API still installs one fixed policy; maturity ledgers must name both facts.
+
+- **Semantic heading corrections need presentation regression coverage.** When card titles move from `h2` to `h3` for hierarchy, extend the component selector and verifier so global heading margins do not distort the cards.
+
+- **Responsive pseudo-element overrides must match the specificity of their desktop variants.** A mobile base selector cannot reset a more-specific final-step connector; target both variants and reset every inherited positioning, content, typography, and transform property that changes meaning.
+
+- **Reusable learning templates must parameterize chapter identity.** Navigation targets, current-page state, week labels, and topic labels cannot remain pinned to Week 1 when the template is intended to generate later chapters.
+
+- **Code line numbers are meaningful text and need contrast proofs in every state.** Verify their foreground against base, executing, related, and host-highlight backgrounds in both themes rather than checking only the default code panel.
