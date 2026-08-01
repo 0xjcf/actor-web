@@ -211,3 +211,7 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Exit assessments must preserve every qualification established by the lesson.** Do not end a chapter with a shorthand guarantee that drops normal-loop, immutable-value, actor-owned-mutation, or test-mode boundaries taught in the detailed material.
 
 - **CSS verification must stay inside the owning brace-delimited block.** Unbounded regex searches can satisfy a media-query or theme assertion with declarations from later rules; extract the intended nested block first, then inspect only its declarations.
+
+- **Per-theme assertions must resolve paired tokens from the same theme block.** Stylesheet-wide match order is not an ownership guarantee; extract each root and compare its foreground and background values together.
+
+- **Executable HTML verification needs a constrained process boundary.** When a DOM harness enables JavaScript evaluation, run it in a timed child with frozen intrinsics and explicit permission denials for writes, subprocesses, and workers; a VM flag alone does not contain evaluator escape paths.
