@@ -155,3 +155,5 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Security-fixed dependency locks need matching manifest floors.** A patched lockfile does not prevent a future resolver from selecting an older vulnerable version when the declared semver range still admits it; set the manifest's minimum to the first accepted fixed release and keep untrusted-document evaluation in a separately constrained process.
 
 - **HTML link verification should parse attributes and contain normalized deployed paths.** Regexes that recognize only lowercase double-quoted `href` values miss valid HTML forms, while prefix checks before path normalization admit traversal; use a no-evaluation DOM parse and reject normalized site-root targets outside the published learning root.
+
+- **Animated teaching surfaces need one authoritative live-region narrative.** Step counters, metadata, and code correlation may update visually on every frame without each becoming a screen-reader announcement; keep one atomic explanation region active and expose supporting text through ordinary labels and descriptions.

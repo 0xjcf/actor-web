@@ -237,6 +237,16 @@ function verifyLearningPages() {
           'The learning home must nest three h3 product cards beneath the Week 1 h2.'
         );
       }
+      if (page === weekOneLab) {
+        const activeLiveRegions = Array.from(
+          document.querySelectorAll('[aria-live]:not([aria-live="off"])')
+        );
+        invariant(
+          activeLiveRegions.length === 1 &&
+            activeLiveRegions[0].matches('.explanation[aria-live="polite"][aria-atomic="true"]'),
+          'The Week 1 lab must use its explanation as the sole active live region.'
+        );
+      }
       const tables = Array.from(document.querySelectorAll('table'));
       if (tables.length > 0) {
         invariant(
