@@ -771,10 +771,14 @@ CPU_RESULT</code></pre>
         <code>totalEnqueued === 101</code>,
         <code>totalDropped === 0</code>, and
         <code>totalFailed === 0</code>.</li>
-        <li>In the actor-processing trace, count handled sequence
-        numbers rather than treating resolved <code>send(...)</code>
-        Promises as proof of admission. The current drop path can
-        resolve without accepting the message.</li>
+        <li>For the actor-processing trace, establish that all 101
+        messages are admitted before processing turn 1. Either hold the
+        scheduler in a controlled harness until mailbox facts prove the
+        boundary, or explicitly constrain local routing, directory
+        lookup, and send hooks so their admissions settle before the
+        scheduled processing macrotask. Concurrent <code>send(...)</code>
+        invocation alone does not prove the 100/1 split; a resolved drop
+        path also does not prove acceptance.</li>
         <li>Record the first processing round and identify the
         rescheduling boundary after successful delivery 100.</li>
         <li>Record message 101 in the next processing round and assert

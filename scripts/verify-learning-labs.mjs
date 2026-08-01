@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 import { Window } from 'happy-dom';
 
+import { PUBLISHABLE_LEARNING_EXTENSIONS } from '../docs/site/scripts/learning-publication-contract.mjs';
+
 const verifierPath = fileURLToPath(import.meta.url);
 const repositoryRoot = resolve(dirname(verifierPath), '..');
 const learningRoot = resolve(repositoryRoot, 'docs/learning');
@@ -51,6 +53,10 @@ function isWithinLearningRoot(target) {
     !pathFromLearningRoot.startsWith(`..${sep}`) &&
     !isAbsolute(pathFromLearningRoot)
   );
+}
+
+function isPublishableLearningTarget(target) {
+  return PUBLISHABLE_LEARNING_EXTENSIONS.has(extname(target));
 }
 
 function classifyLearningHref(file, href) {
@@ -153,6 +159,10 @@ function verifyLearningHrefClassification() {
     'Repository-only Markdown may link from the learning trail to source documentation.'
   );
   invariant(
+    !isPublishableLearningTarget(classifyLearningHref(guidePage, '../README.md').target),
+    'Published HTML targets must use an extension copied into the Pages artifact.'
+  );
+  invariant(
     classifyLearningHref(guidePage, '../workbook/%E0%A4%A.html').kind === 'invalid',
     'Malformed percent-encoded links must fail closed.'
   );
@@ -190,6 +200,11 @@ function verifyLocalLinks() {
       }
       if (classification.kind === 'invalid') {
         linkErrors.push(`${file}: ${classification.message}`);
+        continue;
+      }
+
+      if (isHtml && !isPublishableLearningTarget(classification.target)) {
+        linkErrors.push(`${file}: HTML link targets an unpublished file: ${href}`);
         continue;
       }
 
@@ -318,6 +333,14 @@ function verifyLearningPages() {
       lab.includes("await actorB.send({ type: 'FAST' });") &&
       lab.includes('local admission has no delayed async send hook'),
     "The shared-isolate lesson must establish and qualify both actors' admission order."
+  );
+  invariant(
+    lab.includes('await Promise.all(admissions); // all 101 accepted') &&
+      lab.includes('local admission settles before processing turn 1') &&
+      workbook
+        .replace(/\s+/g, ' ')
+        .includes('Concurrent <code>send(...)</code> invocation alone does not prove'),
+    'The 101-message lesson must establish its complete-admission boundary.'
   );
   invariant(
     guide.includes('prevents overlapping <em>actor-owned</em> context mutation') &&

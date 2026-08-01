@@ -2,19 +2,15 @@ import { cpSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
 import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  PUBLISHABLE_LEARNING_EXTENSIONS,
+  REQUIRED_LEARNING_PAGES,
+} from './learning-publication-contract.mjs';
+
 const docsSiteRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const learningSource = resolve(docsSiteRoot, '../learning');
 const learningTarget = resolve(docsSiteRoot, '.vitepress/dist/learning');
-const publishableExtensions = new Set(['.css', '.html', '.js', '.json', '.png', '.svg', '.webp']);
-const requiredPages = [
-  'index.html',
-  'week-01-javascript-event-loop-and-actor-mailboxes.html',
-  'guide/01-javascript-concurrency-and-mailboxes.html',
-  'workbook/01-javascript-concurrency-and-mailboxes.html',
-  'labs/week-01-event-loop-and-mailbox.html',
-];
-
-for (const page of requiredPages) {
+for (const page of REQUIRED_LEARNING_PAGES) {
   if (!existsSync(resolve(learningSource, page))) {
     throw new Error(`Required learning page is missing: ${resolve(learningSource, page)}`);
   }
@@ -25,11 +21,11 @@ mkdirSync(dirname(learningTarget), { recursive: true });
 cpSync(learningSource, learningTarget, {
   recursive: true,
   filter(source) {
-    return statSync(source).isDirectory() || publishableExtensions.has(extname(source));
+    return statSync(source).isDirectory() || PUBLISHABLE_LEARNING_EXTENSIONS.has(extname(source));
   },
 });
 
-for (const page of requiredPages) {
+for (const page of REQUIRED_LEARNING_PAGES) {
   if (!existsSync(resolve(learningTarget, page))) {
     throw new Error(`Learning page was not copied into the Pages artifact: ${page}`);
   }
