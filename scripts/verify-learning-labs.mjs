@@ -324,6 +324,7 @@ function verifyLearningPages() {
   const workbook = readFileSync(learningPages[3], 'utf8');
   const learningHome = readFileSync(learningPages[0], 'utf8');
   const lab = readFileSync(weekOneLab, 'utf8');
+  const normalizedGuide = guide.replace(/\s+/g, ' ');
   const architectureGuide = readFileSync(
     resolve(repositoryRoot, 'docs/actor-web-architecture-study-guide.md'),
     'utf8'
@@ -349,18 +350,18 @@ function verifyLearningPages() {
     'The workbook must teach the phase-to-code interaction.'
   );
   invariant(
-    lab.includes("await actor.send({ type: 'A' });") &&
+    lab.includes("fixture.sendAndVerifyAdmission(actor, { type: 'A' })") &&
       lab.includes('FIFO follows admission order, not concurrent call order'),
-    'The sequential actor lesson must establish admission order before claiming FIFO.'
+    'The sequential actor lesson must independently verify admission before claiming FIFO.'
   );
   invariant(
-    lab.includes("await actorA.send({ type: 'CPU_HEAVY' });") &&
-      lab.includes("await actorB.send({ type: 'FAST' });") &&
-      lab.includes('local admission has no delayed async send hook'),
-    "The shared-isolate lesson must establish and qualify both actors' admission order."
+    lab.includes("fixture.sendAndVerifyAdmission(actorA, { type: 'CPU_HEAVY' })") &&
+      lab.includes("fixture.sendAndVerifyAdmission(actorB, { type: 'FAST' })") &&
+      lab.includes('fixture.releaseActorAProcessingFirst();'),
+    "The shared-isolate lesson must establish both admissions and actor A's processing turn."
   );
   invariant(
-    lab.includes('await Promise.all(admissions); // all 101 accepted') &&
+    lab.includes('await Promise.all(admissions); // independent accepted-enqueue facts') &&
       lab.includes('local admission settles before processing turn 1') &&
       workbook
         .replace(/\s+/g, ' ')
@@ -403,8 +404,10 @@ function verifyLearningPages() {
     'Overflow listings must expose drop results and preserve later fail attempts.'
   );
   invariant(
-    guide.includes('prevents overlapping <em>actor-owned</em> context mutation') &&
-      guide.includes('does not deep-clone or freeze every'),
+    normalizedGuide.includes('prevents overlapping <em>actor-owned</em> context mutation') &&
+      normalizedGuide.includes('does not deep-clone or freeze every') &&
+      normalizedGuide.includes('concurrent sends can overlap suspended') &&
+      normalizedGuide.includes('Synchronous test mode is an explicit exception'),
     'The guide must qualify serialized mutation with the external-reference boundary.'
   );
   invariant(

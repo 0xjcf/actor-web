@@ -838,9 +838,10 @@ CPU_RESULT</code></pre>
         <h3>Teach-back prompt</h3>
         <p>Explain this statement to another JavaScript developer:</p>
         <blockquote>
-        <p>Actor serialization solves ownership and ordering for one
-        actor. Cooperative event-loop scheduling solves neither CPU
-        isolation nor preemption.</p>
+        <p>The normal Actor-Web processing loop solves ownership and
+        ordering for one actor. Synchronous test mode is excluded;
+        cooperative event-loop scheduling solves neither CPU isolation
+        nor preemption.</p>
         </blockquote>
         <p>Your explanation must use one code example, one Actor-Web
         source symbol, and one failure observation.</p>
@@ -863,8 +864,9 @@ CPU_RESULT</code></pre>
         </ul>
         <p>You are ready for Week 2 when you can trace a message from
         <code>send(...)</code> to the handler and explain, without
-        contradiction, why actor state is serialized while the
-        JavaScript isolate can still be starved.</p>
+        contradiction, why normal-loop actor state is serialized while
+        the JavaScript isolate can still be starved, and why synchronous
+        test mode is not evidence for that serialization guarantee.</p>
         <p>Required learning-product verification:</p>
         <pre class="bash"><code>pnpm test:learning
 pnpm exec markdownlint-cli2 --config .markdownlint.jsonc \

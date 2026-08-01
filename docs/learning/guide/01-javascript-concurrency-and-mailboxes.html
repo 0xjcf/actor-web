@@ -462,14 +462,19 @@ while (performance.now() - startedAt &lt; 250) {
         </tbody>
           </table>
         </div>
-        <p>Actor serialization gives a state-ownership rule:</p>
+        <p>The normal local processing loop gives a state-ownership
+        rule; synchronous test mode is excluded:</p>
         <blockquote>
-        <p>Actor-Web does not dequeue the next message for an actor
-        until the current delivery has settled.</p>
+        <p>During normal processing, Actor-Web does not dequeue the next
+        message for an actor until the current delivery has
+        settled.</p>
         </blockquote>
         <p>That prevents overlapping handling of two messages against
-        the same actor context. It does not make the JavaScript callback
-        preemptible.</p>
+        the same actor context in the normal loop. Synchronous test mode
+        delivers immediately; concurrent sends can overlap suspended
+        handlers there, so it must not be used as evidence of the
+        normal serialization guarantee. Neither mode makes a JavaScript
+        callback preemptible.</p>
         </section>
         <section id="synchronous-work-versus-await" class="level2">
         <h2>Synchronous work versus <code>await</code></h2>
@@ -489,7 +494,8 @@ while (performance.now() - startedAt &lt; 250) {
         other callbacks. Actor-Web still waits for that delivery before
         taking the same actor's next message. Therefore:</p>
         <ul>
-        <li>the same actor remains logically serialized</li>
+        <li>the same actor remains logically serialized in the normal
+        processing loop</li>
         <li>other actors can progress while the awaited operation is
         pending</li>
         <li>synchronous work before or after the <code>await</code> can
@@ -712,13 +718,16 @@ utilizationRatio</code></pre>
         not create actor identity, state ownership, per-actor queues,
         capacity policy, remote addressing, or supervision. Actor-Web
         supplies those application/runtime semantics.</p>
-        <p>The actor model serializes one actor's messages, which
-        prevents overlapping <em>actor-owned</em> context mutation when
+        <p>Actor-Web's normal processing loop serializes one actor's
+        messages, which prevents overlapping <em>actor-owned</em>
+        context mutation when
         callers treat message payloads and observed snapshots as
         immutable values. Actor-Web does not deep-clone or freeze every
         local object reference: mutating a shared payload or
         <code>getSnapshot().context</code> outside the actor boundary can
-        reintroduce shared-state hazards. Serialization also does not
+        reintroduce shared-state hazards. Synchronous test mode is an
+        explicit exception: concurrent sends can overlap suspended
+        immediate deliveries. Normal-loop serialization also does not
         prevent event-loop starvation, because the selected handler
         still runs as cooperatively scheduled JavaScript. Fairness
         depends on short synchronous work, awaited I/O, bounded
