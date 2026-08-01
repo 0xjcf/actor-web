@@ -131,3 +131,11 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Advisory observers must not change authoritative outcomes.** Contain trace-listener exceptions outside dispatch and settlement, rebuild published receipt payloads from an explicit field allowlist so unknown extensions cannot bypass redaction, preserve authoritative join keys, clamp trace buffers to a positive bound, keep overflow markers transient so they do not evict real retained projections, and sanitize provider exception text before it becomes a broadcast or durable trace fact.
 
 - **Public-entrypoint boundary tests must inspect executable entrypoints too.** Checking only library helpers misses deep source imports in CLI binaries that work in a monorepo but fail in the published package. Include the shipped CLI source in the boundary assertion and import node-only adapters from the public node entrypoint.
+
+## PR #57 — Week 1 learning product babysit (2026-08-01, supplemental learning)
+
+- **Executable teaching listings must be able to reach every narrated phase.** Awaiting a parked enqueue inline prevents later producers and consumer progress from ever appearing, while an uncaught fail policy stops at the first rejection. For backpressure lessons, start concurrent enqueue attempts before opening capacity, catch expected per-attempt failures, and keep code-to-phase mappings under executable verification.
+
+- **Learning claims must trace the exact runtime counter, including failure paths.** A nominal batch limit may count only successful deliveries, so error-heavy resumed workloads can exceed the stated bound. Qualify documentation and fixtures to the counter that production code actually advances, and create separate runtime work if attempted-delivery fairness should change.
+
+- **DOM test execution needs an explicit trust and process boundary.** Keep static page validation on the default no-evaluation path, use a security-fixed DOM implementation, enable JavaScript only for the interactive page that needs it, and run that evaluation in a child process so page code cannot mutate the verifier's isolate.
