@@ -177,3 +177,7 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Learning evidence links should identify an immutable reviewed revision.** Links to runtime source and tests on a mutable default branch can silently rewrite a lesson after publication. Pin evidence URLs to a commit SHA or release tag, name that revision in the guide, and update the pin deliberately when the lesson is revalidated.
 
 - **One-time event-loop bootstrap work must sit outside the recurring phase cycle.** When a compatibility timer pass can occur only before entering the normal loop, diagrams should label it as bootstrap and start the cycle at the first recurring phase rather than drawing bootstrap work as if every iteration repeats it.
+
+- **Mailboxes own queue pressure, while the runtime loop owns serialized delivery.** Architecture comparisons should not attribute one-message-at-a-time handling to the bounded queue itself; describe capacity and overflow at the mailbox boundary and sequencing at the actor-processing boundary.
+
+- **Overflow examples must surface returned admission outcomes.** When a drop policy returns `false`, capture and report that boolean in the executable listing so narrated output is produced by visible code. Keep fail examples running after expected rejection and update every correlated line reference when listings grow.
