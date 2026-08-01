@@ -393,12 +393,16 @@ function verifyWeekOneLab() {
 }
 
 function verifyWeekOneLabIsolated() {
-  const child = spawnSync(process.execPath, [verifierPath, '--verify-week-one-lab-child'], {
-    cwd: repositoryRoot,
-    encoding: 'utf8',
-    timeout: 15_000,
-    maxBuffer: 1_000_000,
-  });
+  const child = spawnSync(
+    process.execPath,
+    ['--disallow-code-generation-from-strings', verifierPath, '--verify-week-one-lab-child'],
+    {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+      timeout: 15_000,
+      maxBuffer: 1_000_000,
+    }
+  );
   invariant(
     child.status === 0,
     `Isolated Week 1 lab verification failed${child.signal ? ` (${child.signal})` : ''}${child.error ? `: ${child.error.message}` : ''}:\n${child.stderr || child.stdout}`

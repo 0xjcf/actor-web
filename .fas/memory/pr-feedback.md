@@ -151,3 +151,5 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Architecture decision summaries must carry maturity labels for unshipped guarantees.** A concise rationale table can accidentally turn an accepted target into a present-tense runtime promise; prefix candidate, accepted-target, and deferred decisions explicitly wherever readers may encounter them without the surrounding maturity matrix.
 
 - **Recovery guidance must keep receipt status separate from rehydration outcome.** `timeout` and `partial_failure` can remain non-terminal execution facts, while an unknown post-call result maps checkpoint recovery to `deferred_for_reconciliation`; block automatic retry until an authoritative reconciliation receipt records the outcome.
+
+- **Security-fixed dependency locks need matching manifest floors.** A patched lockfile does not prevent a future resolver from selecting an older vulnerable version when the declared semver range still admits it; set the manifest's minimum to the first accepted fixed release and keep untrusted-document evaluation in a separately constrained process.
