@@ -442,20 +442,6 @@ function verifyLearningPages() {
       mobilePhaseConnector.includes('transform: translateX(50%);'),
     'The mobile phase connector must reset the higher-specificity final loop connector.'
   );
-  const mutedColors = Array.from(
-    learningStylesheet.matchAll(/--muted:\s*(#[\da-f]{6})/gi),
-    (match) => match[1]
-  );
-  const panelSoftColors = Array.from(
-    learningStylesheet.matchAll(/--panel-soft:\s*(#[\da-f]{6})/gi),
-    (match) => match[1]
-  );
-  invariant(
-    mutedColors.length === 2 &&
-      panelSoftColors.length === 2 &&
-      mutedColors.every((color, index) => contrastRatio(color, panelSoftColors[index]) >= 4.5),
-    'The phase-loop text token must meet WCAG AA against the diagram base in both themes.'
-  );
   const darkThemeStyles = extractCssBlock(
     learningStylesheet,
     '@media (prefers-color-scheme: dark)'
@@ -466,6 +452,14 @@ function verifyLearningPages() {
   ];
   const themeColor = (block, token) =>
     block?.match(new RegExp(`--${token}:\\s*(#[\\da-f]{6})`, 'i'))?.[1];
+  invariant(
+    themeBlocks.every((block) => {
+      const muted = themeColor(block, 'muted');
+      const panelSoft = themeColor(block, 'panel-soft');
+      return Boolean(muted && panelSoft) && contrastRatio(muted, panelSoft) >= 4.5;
+    }),
+    'The phase-loop text token must meet WCAG AA against the diagram base in both themes.'
+  );
   invariant(
     /\.source-line::before\s*{[^}]*color: var\(--code-ink\);/s.test(lab) &&
       themeBlocks.every((block) => {
@@ -713,7 +707,14 @@ function verifyWeekOneLab() {
 function verifyWeekOneLabIsolated() {
   const child = spawnSync(
     process.execPath,
-    ['--disallow-code-generation-from-strings', verifierPath, '--verify-week-one-lab-child'],
+    [
+      '--permission',
+      `--allow-fs-read=${repositoryRoot}`,
+      '--disallow-code-generation-from-strings',
+      '--frozen-intrinsics',
+      verifierPath,
+      '--verify-week-one-lab-child',
+    ],
     {
       cwd: repositoryRoot,
       encoding: 'utf8',
@@ -736,6 +737,12 @@ function verifyWeekOneLabIsolated() {
 }
 
 if (process.argv[2] === '--verify-week-one-lab-child') {
+  invariant(
+    process.permission?.has('fs.write') === false &&
+      process.permission.has('child') === false &&
+      process.permission.has('worker') === false,
+    'The lab evaluator child must deny filesystem writes, subprocesses, and workers.'
+  );
   console.log(JSON.stringify(verifyWeekOneLab()));
 } else {
   verifyLearningHrefClassification();
