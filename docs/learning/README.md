@@ -19,6 +19,7 @@ verify_route() {
 
 for route in \
   https://0xjcf.github.io/actor-web/learning/ \
+  https://0xjcf.github.io/actor-web/learning/week-01-javascript-event-loop-and-actor-mailboxes.html \
   https://0xjcf.github.io/actor-web/learning/guide/01-javascript-concurrency-and-mailboxes.html \
   https://0xjcf.github.io/actor-web/learning/workbook/01-javascript-concurrency-and-mailboxes.html \
   https://0xjcf.github.io/actor-web/learning/labs/week-01-event-loop-and-mailbox.html
