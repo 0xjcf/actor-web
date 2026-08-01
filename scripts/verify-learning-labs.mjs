@@ -360,6 +360,7 @@ function verifyLearningPages() {
     resolve(repositoryRoot, 'docs/actor-web-architecture-study-guide.md'),
     'utf8'
   );
+  const normalizedArchitectureGuide = architectureGuide.replace(/\s+/g, ' ');
   const learningStylesheet = readFileSync(
     resolve(learningRoot, 'assets/learning-page.css'),
     'utf8'
@@ -432,9 +433,15 @@ function verifyLearningPages() {
     'The phase-loop return label must use an AA-capable text token.'
   );
   const mobileLabStyles = extractCssBlock(lab, '@media (max-width: 800px)');
+  const mobileLabPage = extractCssBlock(mobileLabStyles ?? '', '.lab-page');
   const mobilePhaseConnector = extractCssBlock(
     mobileLabStyles ?? '',
     '.phase::after,\n        .phase.phase-last::after'
+  );
+  invariant(
+    mobileLabPage?.includes('width: min(100% - 20px, 1480px);') &&
+      mobileLabPage.includes('padding-top: 18px;'),
+    'The mobile lab-page rule must override the base class width and padding.'
   );
   invariant(
     mobilePhaseConnector?.includes('left: auto;') &&
@@ -523,6 +530,22 @@ function verifyLearningPages() {
       architectureGuide.includes('overlapping actor-owned context mutation') &&
       architectureGuide.includes('synchronous test mode as an exception'),
     'The architecture exit test must scope serialization to normal processing and immutable values.'
+  );
+  invariant(
+    architectureGuide.includes('authenticated principal without retained credential material') &&
+      architectureGuide.includes('removes raw tokens, passwords') &&
+      !architectureGuide.includes('credential-free principal'),
+    'The architecture guide must define principal sanitization after host authentication.'
+  );
+  invariant(
+    normalizedArchitectureGuide.includes(
+      "adapter's declared idempotency-key scope and retention window"
+    ) &&
+      normalizedArchitectureGuide.includes(
+        'production claim additionally requires provider-side evidence'
+      ) &&
+      normalizedArchitectureGuide.includes('where is the provider-side evidence?'),
+    'The capstone must bound duplicate-effect proof to evidenced provider idempotency semantics.'
   );
   invariant(
     normalizedGuide.includes('internal bounded-mailbox implementation supports') &&

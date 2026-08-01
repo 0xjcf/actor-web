@@ -680,13 +680,19 @@ Read:
 Ignite or CLI intent
   -> source or gateway command frame
   -> authenticated host context
-  -> credential-free principal
+  -> authenticated principal without retained credential material
   -> schema and metadata validation
   -> application-owned policy adapter
   -> idempotency claim
   -> durable decision sink
   -> actor dispatch or rejection receipt
 ```
+
+Here, **authenticated principal without retained credential material** means
+the host authenticates the caller first, then removes raw tokens, passwords,
+and other reusable secrets before constructing the principal context. The
+context retains only the identity, claims, authentication provenance, and
+correlation data needed for policy and audit.
 
 Read:
 
@@ -759,7 +765,7 @@ Milestones:
 2. Put coordinator and worker behind typed `ActorRef` protocols.
 3. Add a bounded mailbox and record its overflow behavior.
 4. Place the worker on a second node and prove message-loss behavior.
-5. Require an authenticated, credential-free principal.
+5. Require an authenticated principal without retained credential material.
 6. Separate schema admission, domain acceptance, and execution authorization.
 7. Persist job state plus effect intent before the provider call.
 8. Use stable intent, command, effect, attempt, correlation, checkpoint, and
@@ -767,7 +773,10 @@ Milestones:
 9. Crash at every persistence/effect boundary.
 10. On an unknown effect result, require reconciliation instead of automatic
     repetition.
-11. Prove no duplicate irreversible effect with a deduplicating fake adapter.
+11. Prove no duplicate irreversible effect only within the deduplicating fake
+    adapter's declared idempotency-key scope and retention window. A production
+    claim additionally requires provider-side evidence that the real adapter
+    offers equivalent idempotency scope and retention.
 12. Consume the JSON-safe conformance fixture from a separate test package.
 13. Project the facts into a UI without granting the UI execution authority.
 14. Write a two-page ADR explaining every guarantee and non-guarantee.
@@ -783,6 +792,8 @@ from its tests and receipts:
 - What outcome is known, unknown, or partial?
 - From which checkpoint can execution safely continue?
 - What needs reconciliation or human review?
+- Which adapter or provider idempotency scope and retention window supports the
+  no-duplicate claim, and where is the provider-side evidence?
 - Which record is authoritative and which is only a projection?
 
 ## A repeatable design-review rubric
