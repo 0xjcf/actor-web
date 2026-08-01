@@ -209,3 +209,5 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Cross-actor workbook procedures must control callback selection as explicitly as companion labs.** Verified admissions do not decide which actor processing callback runs first; require actor A to enter the blocking handler before actor B's callback is released or measured.
 
 - **Exit assessments must preserve every qualification established by the lesson.** Do not end a chapter with a shorthand guarantee that drops normal-loop, immutable-value, actor-owned-mutation, or test-mode boundaries taught in the detailed material.
+
+- **CSS verification must stay inside the owning brace-delimited block.** Unbounded regex searches can satisfy a media-query or theme assertion with declarations from later rules; extract the intended nested block first, then inspect only its declarations.
