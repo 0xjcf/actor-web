@@ -44,6 +44,15 @@ function collectHtmlHrefs(file, source) {
   }
 }
 
+function isWithinLearningRoot(target) {
+  const pathFromLearningRoot = relative(learningRoot, target);
+  return (
+    pathFromLearningRoot !== '..' &&
+    !pathFromLearningRoot.startsWith(`..${sep}`) &&
+    !isAbsolute(pathFromLearningRoot)
+  );
+}
+
 function classifyLearningHref(file, href) {
   const trimmedHref = href.trim();
   if (
@@ -83,12 +92,7 @@ function classifyLearningHref(file, href) {
       };
     }
     const target = resolve(repositoryRoot, 'docs', siteRelativePath);
-    const pathFromLearningRoot = relative(learningRoot, target);
-    if (
-      pathFromLearningRoot === '..' ||
-      pathFromLearningRoot.startsWith(`..${sep}`) ||
-      isAbsolute(pathFromLearningRoot)
-    ) {
+    if (!isWithinLearningRoot(target)) {
       return {
         kind: 'invalid',
         message: `Root-relative learning link escapes the learning root: ${href}`,
@@ -97,7 +101,15 @@ function classifyLearningHref(file, href) {
     return { kind: 'local', target };
   }
 
-  return { kind: 'local', target: resolve(dirname(file), decodedPath) };
+  const target = resolve(dirname(file), decodedPath);
+  if (extname(file) === '.html' && !isWithinLearningRoot(target)) {
+    return {
+      kind: 'invalid',
+      message: `Published learning link escapes the learning root: ${href}`,
+    };
+  }
+
+  return { kind: 'local', target };
 }
 
 function verifyLearningHrefClassification() {
@@ -128,6 +140,17 @@ function verifyLearningHrefClassification() {
   invariant(
     classifyLearningHref(guidePage, '/actor-web/learning/../../package.json').kind === 'invalid',
     'Root-relative learning links must not escape the learning root after normalization.'
+  );
+  invariant(
+    classifyLearningHref(guidePage, '../../../package.json').kind === 'invalid',
+    'Published relative learning links must not escape the copied learning root.'
+  );
+  invariant(
+    classifyLearningHref(
+      resolve(learningRoot, 'guide/README.md'),
+      '../../actor-web-architecture-study-guide.md'
+    ).target === resolve(repositoryRoot, 'docs/actor-web-architecture-study-guide.md'),
+    'Repository-only Markdown may link from the learning trail to source documentation.'
   );
   invariant(
     classifyLearningHref(guidePage, '../workbook/%E0%A4%A.html').kind === 'invalid',
@@ -289,6 +312,17 @@ function verifyLearningPages() {
     lab.includes("await actor.send({ type: 'A' });") &&
       lab.includes('FIFO follows admission order, not concurrent call order'),
     'The sequential actor lesson must establish admission order before claiming FIFO.'
+  );
+  invariant(
+    lab.includes("await actorA.send({ type: 'CPU_HEAVY' });") &&
+      lab.includes("await actorB.send({ type: 'FAST' });") &&
+      lab.includes('local admission has no delayed async send hook'),
+    "The shared-isolate lesson must establish and qualify both actors' admission order."
+  );
+  invariant(
+    guide.includes('prevents overlapping <em>actor-owned</em> context mutation') &&
+      guide.includes('does not deep-clone or freeze every'),
+    'The guide must qualify serialized mutation with the external-reference boundary.'
   );
 
   return learningPages.length;

@@ -707,8 +707,13 @@ utilizationRatio</code></pre>
         not create actor identity, state ownership, per-actor queues,
         capacity policy, remote addressing, or supervision. Actor-Web
         supplies those application/runtime semantics.</p>
-        <p>The actor model prevents overlapping mutation of one actor's
-        context by serializing that actor's messages. It does not
+        <p>The actor model serializes one actor's messages, which
+        prevents overlapping <em>actor-owned</em> context mutation when
+        callers treat message payloads and observed snapshots as
+        immutable values. Actor-Web does not deep-clone or freeze every
+        local object reference: mutating a shared payload or
+        <code>getSnapshot().context</code> outside the actor boundary can
+        reintroduce shared-state hazards. Serialization also does not
         prevent event-loop starvation, because the selected handler
         still runs as cooperatively scheduled JavaScript. Fairness
         depends on short synchronous work, awaited I/O, bounded
