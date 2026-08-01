@@ -1413,6 +1413,14 @@
         }
 
         function renderCode(scenario, focus) {
+          const activeSourceLine = document.activeElement;
+          const focusedLineNumber =
+            activeSourceLine &&
+            activeSourceLine.matches("button.source-line[data-code-line]") &&
+            codeElement.contains(activeSourceLine)
+              ? activeSourceLine.dataset.codeLine
+              : null;
+
           codeElement.replaceChildren();
 
           scenario.code.split("\n").forEach(function (source, index) {
@@ -1458,6 +1466,13 @@
             item.appendChild(line);
             codeElement.appendChild(item);
           });
+
+          if (focusedLineNumber) {
+            const rebuiltFocusedLine = codeElement.querySelector(
+              'button.source-line[data-code-line="' + focusedLineNumber + '"]',
+            );
+            if (rebuiltFocusedLine) rebuiltFocusedLine.focus();
+          }
 
           const reference = formatLineReference(focus.lines);
           const prefix =

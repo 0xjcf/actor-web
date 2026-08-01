@@ -434,6 +434,13 @@ function verifyWeekOneLab() {
           document.activeElement?.dataset.codeLine === selectedCodeLine,
           `Scenario ${scenarioValue} code selection must preserve focus after rendering.`
         );
+        const nextButton = document.querySelector('#next');
+        invariant(nextButton, 'Week 1 lab must render a Next button.');
+        nextButton.click();
+        invariant(
+          document.activeElement?.dataset.codeLine === selectedCodeLine,
+          `Scenario ${scenarioValue} step rendering must preserve focused source-line identity.`
+        );
         const resetButton = document.querySelector('#reset');
         invariant(resetButton, 'Week 1 lab must render a Reset button.');
         resetButton.click();
