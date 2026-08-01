@@ -448,9 +448,15 @@ The accepted target protocol has this shape:
 2. Decide the next deterministic state and effect intent.
 3. Persist state plus intent at the required atomic boundary.
 4. Attempt the external effect using a stable idempotency key.
-5. Record a success, failure, timeout, cancellation, or partial-failure receipt.
-6. On restart, inspect checkpoint, intent, attempt, and receipt lineage.
-7. Resume only when safe; otherwise reconcile before another attempt.
+5. Record the execution outcome as a success, failure, timeout, cancellation,
+   or partial-failure receipt. `timeout` and `partial_failure` are non-terminal
+   receipt statuses; they are not checkpoint rehydration outcomes.
+6. On restart, inspect checkpoint, intent, attempt, and receipt lineage. If the
+   external call may have occurred but no settled result was recorded,
+   rehydration transitions to `deferred_for_reconciliation`.
+7. Block automatic retry while reconciliation is required. Resume or attempt
+   again only after a reconciliation receipt records the observed outcome and
+   the current policy permits the next transition.
 ```
 
 Exercise: simulate crashes at every boundary: before intent, after intent,
@@ -717,7 +723,7 @@ Use this table as a decision-review checklist rather than doctrine.
 | Behaviors and FSMs constrain models | Probabilistic output cannot define application truth safely | Domain transitions must be modeled and maintained deliberately |
 | `send`, `ask`, and `emit` stay distinct | Commands, request/reply, and facts have different coupling and failure semantics | More vocabulary than a single generic event bus |
 | At-most-once is documented honestly | A transport cannot promise durable business completion by enqueueing once | Reliable workflows need application protocols and storage |
-| State and irreversible effect intent meet at a durable boundary | A crash must not lose why an external call should happen | Requires storage design, versioning, and recovery policy |
+| Accepted target: state and irreversible effect intent meet at a durable boundary | A crash must not lose why an external call should happen | Requires storage design, versioning, and recovery policy |
 | External outcomes become receipts | Provider calls are nondeterministic and may be uncertain | More records and lineage to manage |
 | Retries use stable idempotency identity | Timeouts and transient failures require repetition without duplicate harm | Every adapter needs a clear deduplication scope and retention policy |
 | Uncertain effects reconcile instead of replaying blindly | A timeout or crash after a call does not prove the call failed | Some work pauses for observation or human review |
