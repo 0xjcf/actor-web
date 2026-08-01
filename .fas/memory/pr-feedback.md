@@ -139,3 +139,5 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Learning claims must trace the exact runtime counter, including failure paths.** A nominal batch limit may count only successful deliveries, so error-heavy resumed workloads can exceed the stated bound. Qualify documentation and fixtures to the counter that production code actually advances, and create separate runtime work if attempted-delivery fairness should change.
 
 - **DOM test execution needs an explicit trust and process boundary.** Keep static page validation on the default no-evaluation path, use a security-fixed DOM implementation, enable JavaScript only for the interactive page that needs it, and run that evaluation in a child process so page code cannot mutate the verifier's isolate.
+
+- **Static link validators must model deployed URL semantics before filesystem resolution.** Strip query strings and fragments, decode percent-encoded paths with a fail-closed error path, classify every URI scheme and protocol-relative URL as non-local, and resolve root-relative links through the deployed site base instead of the current file's directory.
