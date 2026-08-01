@@ -215,3 +215,9 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Per-theme assertions must resolve paired tokens from the same theme block.** Stylesheet-wide match order is not an ownership guarantee; extract each root and compare its foreground and background values together.
 
 - **Executable HTML verification needs a constrained process boundary.** When a DOM harness enables JavaScript evaluation, run it in a timed child with frozen intrinsics and explicit permission denials for writes, subprocesses, and workers; a VM flag alone does not contain evaluator escape paths.
+
+- **Responsive overrides must match the selector that owns the base declaration.** An element selector inside a media query cannot override an always-applied class selector; target the component class and verify the declarations inside that media block.
+
+- **Sanitized principal language must preserve authentication provenance.** Prefer authenticated principal without retained credential material, and define that the host authenticates before removing reusable secrets while retaining identity, claims, provenance, and correlation data.
+
+- **No-duplicate-effect proofs inherit provider idempotency limits.** A deduplicating fake proves safety only within its declared key scope and retention window; production claims require equivalent provider-side evidence from the real adapter.
