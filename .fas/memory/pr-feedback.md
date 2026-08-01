@@ -173,3 +173,7 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Fairness-batch demonstrations need a proven preload boundary.** Concurrent `send` invocation cannot guarantee that every message reaches the mailbox before the first scheduled processing turn when routing or hooks can yield. Hold processing in a harness or explicitly constrain and verify admission timing before teaching an exact 100/1 split.
 
 - **Rebuilt interactive code listings must preserve source-line focus.** When step, autoplay, scenario, or projection rendering replaces correlated line controls, capture a focused source-line identity before replacement and restore it only when the rebuilt listing contains the same focusable line. Do not rely only on the direct code-line click handler.
+
+- **Learning evidence links should identify an immutable reviewed revision.** Links to runtime source and tests on a mutable default branch can silently rewrite a lesson after publication. Pin evidence URLs to a commit SHA or release tag, name that revision in the guide, and update the pin deliberately when the lesson is revalidated.
+
+- **One-time event-loop bootstrap work must sit outside the recurring phase cycle.** When a compatibility timer pass can occur only before entering the normal loop, diagrams should label it as bootstrap and start the cycle at the first recurring phase rather than drawing bootstrap work as if every iteration repeats it.
