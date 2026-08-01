@@ -44,6 +44,21 @@ function contrastRatio(foreground, background) {
   return (luminances[0] + 0.05) / (luminances[1] + 0.05);
 }
 
+function mixHex(foreground, foregroundWeight, background) {
+  const foregroundChannels = foreground
+    .slice(1)
+    .match(/.{2}/g)
+    .map((channel) => Number.parseInt(channel, 16));
+  const backgroundChannels = background
+    .slice(1)
+    .match(/.{2}/g)
+    .map((channel) => Number.parseInt(channel, 16));
+  const mixedChannels = foregroundChannels.map((channel, index) =>
+    Math.round(channel * foregroundWeight + backgroundChannels[index] * (1 - foregroundWeight))
+  );
+  return `#${mixedChannels.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
+}
+
 function collectFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = resolve(directory, entry.name);
@@ -333,9 +348,23 @@ function verifyLearningPages() {
     resolve(learningRoot, 'assets/learning-page.css'),
     'utf8'
   );
+  const learningPageTemplate = readFileSync(
+    resolve(learningRoot, 'templates/learning-page.html5'),
+    'utf8'
+  );
   invariant(
     learningHome.includes('week-01-javascript-event-loop-and-actor-mailboxes.html'),
     'The learning home must link to the complete Week 1 path.'
+  );
+  invariant(
+    /\.product-card h2,\s*\.product-card h3\s*{/.test(learningStylesheet),
+    'Guide, workbook, and lab cards must share compact heading styles across h2 and h3.'
+  );
+  invariant(
+    ['$guidehref$', '$workbookhref$', '$labhref$', '$weeklabel$', '$topiclabel$'].every((token) =>
+      learningPageTemplate.includes(token)
+    ) && !learningPageTemplate.includes('01-javascript-concurrency-and-mailboxes.html'),
+    'The reusable learning template must require chapter-specific navigation and footer metadata.'
   );
   invariant(
     guide.includes('id="TOC"'),
@@ -384,6 +413,12 @@ function verifyLearningPages() {
     /\.phase\.phase-last::after\s*{[^}]*color: var\(--muted\);/s.test(lab),
     'The phase-loop return label must use an AA-capable text token.'
   );
+  invariant(
+    /@media \(max-width: 800px\)[\s\S]*?\.phase::after,\s*\.phase\.phase-last::after\s*{[^}]*left: auto;[^}]*content: "↓";[^}]*transform: translateX\(50%\);/s.test(
+      lab
+    ),
+    'The mobile phase connector must reset the higher-specificity final loop connector.'
+  );
   const mutedColors = Array.from(
     learningStylesheet.matchAll(/--muted:\s*(#[\da-f]{6})/gi),
     (match) => match[1]
@@ -397,6 +432,35 @@ function verifyLearningPages() {
       panelSoftColors.length === 2 &&
       mutedColors.every((color, index) => contrastRatio(color, panelSoftColors[index]) >= 4.5),
     'The phase-loop text token must meet WCAG AA against the diagram base in both themes.'
+  );
+  const themeBlocks = [
+    learningStylesheet.match(/:root\s*{([\s\S]*?)}/)?.[1],
+    learningStylesheet.match(
+      /@media \(prefers-color-scheme: dark\)\s*{\s*:root\s*{([\s\S]*?)}/
+    )?.[1],
+  ];
+  const themeColor = (block, token) =>
+    block?.match(new RegExp(`--${token}:\\s*(#[\\da-f]{6})`, 'i'))?.[1];
+  invariant(
+    /\.source-line::before\s*{[^}]*color: var\(--code-ink\);/s.test(lab) &&
+      themeBlocks.every((block) => {
+        const code = themeColor(block, 'code');
+        const codeInk = themeColor(block, 'code-ink');
+        const accent = themeColor(block, 'accent');
+        const lineStrong = themeColor(block, 'line-strong');
+        const success = themeColor(block, 'success');
+        if (!code || !codeInk || !accent || !lineStrong || !success) return false;
+        const sourceLineBackgrounds = [
+          code,
+          mixHex(accent, 0.24, code),
+          mixHex(lineStrong, 0.18, code),
+          mixHex(success, 0.13, code),
+        ];
+        return sourceLineBackgrounds.every(
+          (background) => contrastRatio(codeInk, background) >= 4.5
+        );
+      }),
+    'Source-line numbers must meet WCAG AA in both themes and every focus state.'
   );
   invariant(
     lab.includes('report(type, admitted); // false when dropped') &&
@@ -428,6 +492,18 @@ function verifyLearningPages() {
       'Bound queued work; the actor runtime serializes message handling per actor'
     ),
     'The architecture guide must distinguish mailbox pressure from runtime serialization.'
+  );
+  invariant(
+    architectureGuide.includes(
+      'local snapshots and payloads still rely on immutable-value discipline'
+    ),
+    'The architecture guide must not imply that local context and payload references are cloned.'
+  );
+  invariant(
+    normalizedGuide.includes('internal bounded-mailbox implementation supports') &&
+      normalizedGuide.includes('Spawned actors currently use a fixed dropping mailbox') &&
+      normalizedGuide.includes('public runtime API does not expose'),
+    'The maturity ledger must distinguish internal overflow policies from spawned-actor APIs.'
   );
 
   return learningPages.length;

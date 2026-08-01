@@ -670,11 +670,13 @@ utilizationRatio</code></pre>
         </thead>
         <tbody>
         <tr>
-        <td>Actor-Web has a bounded local mailbox with
+        <td>Actor-Web's internal bounded-mailbox implementation supports
         <code>drop</code>, <code>fail</code>, and <code>park</code></td>
         <td>current</td>
-        <td><code>messaging/mailbox.ts</code> and focused mailbox
-        tests</td>
+        <td><code>messaging/mailbox.ts</code> and focused direct-mailbox
+        tests. Spawned actors currently use a fixed dropping mailbox;
+        the public runtime API does not expose <code>fail</code> or
+        <code>park</code> selection.</td>
         </tr>
         <tr>
         <td>Normal actor processing uses <code>setImmediate</code> or a

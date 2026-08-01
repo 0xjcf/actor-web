@@ -250,7 +250,7 @@
 
       .source-line::before {
         padding: 0.34em 0.8em 0.34em 0;
-        color: color-mix(in srgb, var(--code-ink) 48%, transparent);
+        color: var(--code-ink);
         content: counter(source-line);
         text-align: right;
         user-select: none;
@@ -658,11 +658,15 @@
           min-height: 118px;
         }
 
-        .phase::after {
+        .phase::after,
+        .phase.phase-last::after {
           right: 50%;
           bottom: -15px;
           left: auto;
+          color: var(--line-strong);
           content: "↓";
+          font-size: 1rem;
+          white-space: normal;
           transform: translateX(50%);
         }
 

@@ -339,7 +339,8 @@ tbody tr:hover {
   box-shadow: var(--shadow);
 }
 
-.product-card h2 {
+.product-card h2,
+.product-card h3 {
   margin: 0 0 10px;
   padding: 0;
   border: 0;

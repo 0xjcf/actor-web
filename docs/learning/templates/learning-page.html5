@@ -11,9 +11,9 @@
     <a class="skip-link" href="#main-content">Skip to content</a>
     <nav class="product-nav" aria-label="Learning products">
       <a href="../index.html">Learning home</a>
-      <a href="../guide/01-javascript-concurrency-and-mailboxes.html"$if(guide)$ aria-current="page"$endif$>Guide</a>
-      <a href="../workbook/01-javascript-concurrency-and-mailboxes.html"$if(workbook)$ aria-current="page"$endif$>Workbook</a>
-      <a href="../labs/week-01-event-loop-and-mailbox.html">Interactive lab</a>
+      <a href="$guidehref$"$if(guide)$ aria-current="page"$endif$>Guide</a>
+      <a href="$workbookhref$"$if(workbook)$ aria-current="page"$endif$>Workbook</a>
+      <a href="$labhref$"$if(lab)$ aria-current="page"$endif$>Interactive lab</a>
     </nav>
     <div class="reading-layout">
       <aside class="table-of-contents" aria-label="On this page">
@@ -28,7 +28,7 @@
         <p class="eyebrow">$producttype$</p>
         $body$
         <footer class="page-footer">
-          <p>Actor-Web Learning · Week 1 · JavaScript concurrency and actor mailboxes</p>
+          <p>Actor-Web Learning · $weeklabel$ · $topiclabel$</p>
         </footer>
       </main>
     </div>
