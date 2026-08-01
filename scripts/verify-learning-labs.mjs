@@ -17,6 +17,7 @@ const learningPages = [
   weekOneLab,
 ];
 const MAX_STEPS_PER_SCENARIO = 100;
+const SITE_BASE_PATH = '/actor-web/';
 
 function invariant(condition, message) {
   if (!condition) {
@@ -31,11 +32,86 @@ function collectFiles(directory) {
   });
 }
 
+function classifyLearningHref(file, href) {
+  const trimmedHref = href.trim();
+  if (
+    !trimmedHref ||
+    trimmedHref.startsWith('#') ||
+    trimmedHref.startsWith('//') ||
+    /^[a-z][a-z\d+.-]*:/i.test(trimmedHref)
+  ) {
+    return { kind: 'non-local' };
+  }
+
+  const encodedPath = trimmedHref.split(/[?#]/, 1)[0];
+  if (!encodedPath) {
+    return { kind: 'non-local' };
+  }
+
+  let decodedPath;
+  try {
+    decodedPath = decodeURIComponent(encodedPath);
+  } catch {
+    return { kind: 'invalid', message: `Invalid percent-encoded link: ${href}` };
+  }
+
+  if (decodedPath.startsWith('/')) {
+    if (!decodedPath.startsWith(SITE_BASE_PATH)) {
+      return {
+        kind: 'invalid',
+        message: `Root-relative link must use the ${SITE_BASE_PATH} site base: ${href}`,
+      };
+    }
+
+    const siteRelativePath = decodedPath.slice(SITE_BASE_PATH.length);
+    if (siteRelativePath !== 'learning' && !siteRelativePath.startsWith('learning/')) {
+      return {
+        kind: 'invalid',
+        message: `Learning verification cannot resolve this site-root path: ${href}`,
+      };
+    }
+    return { kind: 'local', target: resolve(repositoryRoot, 'docs', siteRelativePath) };
+  }
+
+  return { kind: 'local', target: resolve(dirname(file), decodedPath) };
+}
+
+function verifyLearningHrefClassification() {
+  const guidePage = resolve(learningRoot, 'guide/chapter.html');
+  invariant(
+    classifyLearningHref(guidePage, '../index.html?source=guide#week-one').target ===
+      resolve(learningRoot, 'index.html'),
+    'Local link verification must remove query strings and fragments.'
+  );
+  invariant(
+    classifyLearningHref(guidePage, '../workbook/Week%201.html').target ===
+      resolve(learningRoot, 'workbook/Week 1.html'),
+    'Local link verification must decode percent-encoded paths.'
+  );
+  invariant(
+    classifyLearningHref(guidePage, 'data:text/plain,example').kind === 'non-local',
+    'Non-hierarchical schemes must not be resolved as filesystem paths.'
+  );
+  invariant(
+    classifyLearningHref(guidePage, '/actor-web/learning/index.html').target ===
+      resolve(learningRoot, 'index.html'),
+    'Root-relative learning links must resolve through the GitHub Pages site base.'
+  );
+  invariant(
+    classifyLearningHref(guidePage, '/learning/index.html').kind === 'invalid',
+    'Root-relative links outside the GitHub Pages site base must fail closed.'
+  );
+  invariant(
+    classifyLearningHref(guidePage, '../workbook/%E0%A4%A.html').kind === 'invalid',
+    'Malformed percent-encoded links must fail closed.'
+  );
+}
+
 function verifyLocalLinks() {
   const learningFiles = collectFiles(learningRoot).filter((path) =>
     ['.html', '.md'].includes(extname(path))
   );
-  const missingLinks = [];
+  const linkErrors = [];
 
   for (const file of learningFiles) {
     const source = readFileSync(file, 'utf8');
@@ -45,19 +121,23 @@ function verifyLocalLinks() {
       : /\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
 
     for (const match of source.matchAll(pattern)) {
-      const href = (isHtml ? match[1] : (match[1] ?? match[2])).split('#')[0];
-      if (!href || /^(?:https?:|mailto:|tel:|\/\/)/.test(href)) {
+      const href = isHtml ? match[1] : (match[1] ?? match[2]);
+      const classification = classifyLearningHref(file, href);
+      if (classification.kind === 'non-local') {
+        continue;
+      }
+      if (classification.kind === 'invalid') {
+        linkErrors.push(`${file}: ${classification.message}`);
         continue;
       }
 
-      const target = resolve(dirname(file), href);
-      if (!existsSync(target)) {
-        missingLinks.push(`${file}: ${href}`);
+      if (!existsSync(classification.target)) {
+        linkErrors.push(`${file}: ${href}`);
       }
     }
   }
 
-  invariant(missingLinks.length === 0, `Missing local learning links:\n${missingLinks.join('\n')}`);
+  invariant(linkErrors.length === 0, `Invalid local learning links:\n${linkErrors.join('\n')}`);
 }
 
 function verifyLearningPages() {
@@ -327,6 +407,7 @@ function verifyWeekOneLabIsolated() {
 if (process.argv[2] === '--verify-week-one-lab-child') {
   console.log(JSON.stringify(verifyWeekOneLab()));
 } else {
+  verifyLearningHrefClassification();
   verifyLocalLinks();
   const pageCount = verifyLearningPages();
   const result = verifyWeekOneLabIsolated();
