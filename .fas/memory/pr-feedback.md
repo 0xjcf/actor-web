@@ -146,7 +146,7 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 
 - **Isolated verifier failures must preserve process-launch diagnostics.** When a child process cannot start, report the spawn error alongside its signal and captured output; otherwise infrastructure failures look like silent assertion failures inside the child.
 
-- **Publication maturity requires deployed-route evidence, not a green build.** Keep unreleased learning surfaces labeled candidate with local artifact paths; promote them to available only after the main-branch deployment succeeds and every canonical route returns exact HTTP 200, rejecting redirects as well as errors. Multi-route verification snippets must propagate the first failed check instead of allowing a later success to determine the shell exit status.
+- **Publication maturity requires deployed-route evidence, not a green build.** Keep unreleased learning surfaces labeled candidate with local artifact paths; promote them to available only after the main-branch deployment succeeds and every canonical route returns exact HTTP 200, rejecting redirects as well as errors. Multi-route verification snippets must propagate the first failed check instead of allowing a later success to determine the shell exit status, and bound both connection and total request time.
 
 - **Architecture decision summaries must carry independent maturity labels.** A concise rationale table can accidentally turn a candidate or accepted target into a present-tense runtime promise; prefix every row with current, candidate, accepted-target, deferred, or governance maturity wherever readers may encounter it without the surrounding maturity matrix.
 

@@ -13,7 +13,7 @@ successfully deploys from `main` and every canonical route returns HTTP 200:
 
 ```sh
 verify_route() {
-  status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$1") || return 1
+  status=$(curl --silent --show-error --connect-timeout 10 --max-time 30 --output /dev/null --write-out '%{http_code}' "$1") || return 1
   test "$status" = "200"
 }
 
