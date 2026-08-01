@@ -167,3 +167,7 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Two-actor starvation demonstrations must establish both admissions before claiming one actor is ready but blocked.** Await actor A's admission before starting actor B, and state whether asynchronous send hooks or directory lookup can delay B beyond the scheduled processing turn.
 
 - **Serialized delivery protects actor-owned mutation only under an immutable-value discipline.** Local message payloads and `getSnapshot().context` can retain shared mutable references because Actor-Web does not promise universal deep cloning or freezing. Teach that external mutation can pierce the actor boundary even though handlers remain serialized.
+
+- **Source-tree existence does not prove a learning link will be published.** HTML link validation and the static publisher must consume one extension or manifest contract, so links to tracked Markdown or other excluded files fail before deployment even when they remain inside `docs/learning`.
+
+- **Fairness-batch demonstrations need a proven preload boundary.** Concurrent `send` invocation cannot guarantee that every message reaches the mailbox before the first scheduled processing turn when routing or hooks can yield. Hold processing in a harness or explicitly constrain and verify admission timing before teaching an exact 100/1 split.
