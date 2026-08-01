@@ -20,6 +20,7 @@ const learningPages = [
 ];
 const MAX_STEPS_PER_SCENARIO = 100;
 const SITE_BASE_PATH = '/actor-web/';
+const ACTOR_WEB_EVIDENCE_REVISION = '0552a23c8dbcdc40d175cf7f84099919b7d85dac';
 
 function invariant(condition, message) {
   if (!condition) {
@@ -346,6 +347,19 @@ function verifyLearningPages() {
     guide.includes('prevents overlapping <em>actor-owned</em> context mutation') &&
       guide.includes('does not deep-clone or freeze every'),
     'The guide must qualify serialized mutation with the external-reference boundary.'
+  );
+  invariant(
+    guide.includes('one-time bootstrap only') &&
+      guide.includes('pending callbacks &lt;------------------------------------+') &&
+      !guide.includes('startup-compatible timers\n          |\n          v\npending callbacks'),
+    'The Node phase diagram must keep bootstrap timers outside the recurring loop.'
+  );
+  invariant(
+    guide.includes(`blob/${ACTOR_WEB_EVIDENCE_REVISION}/packages/`) &&
+      workbook.includes(`blob/${ACTOR_WEB_EVIDENCE_REVISION}/packages/`) &&
+      !guide.includes('blob/main/packages/') &&
+      !workbook.includes('blob/main/packages/'),
+    'Actor-Web runtime evidence links must use the reviewed immutable revision.'
   );
 
   return learningPages.length;
