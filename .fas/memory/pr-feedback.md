@@ -146,10 +146,12 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 
 - **Isolated verifier failures must preserve process-launch diagnostics.** When a child process cannot start, report the spawn error alongside its signal and captured output; otherwise infrastructure failures look like silent assertion failures inside the child.
 
-- **Publication maturity requires deployed-route evidence, not a green build.** Keep unreleased learning surfaces labeled candidate with local artifact paths; promote them to available only after the main-branch deployment succeeds and every canonical route returns the expected success status.
+- **Publication maturity requires deployed-route evidence, not a green build.** Keep unreleased learning surfaces labeled candidate with local artifact paths; promote them to available only after the main-branch deployment succeeds and every canonical route returns exact HTTP 200, rejecting redirects as well as errors.
 
 - **Architecture decision summaries must carry maturity labels for unshipped guarantees.** A concise rationale table can accidentally turn an accepted target into a present-tense runtime promise; prefix candidate, accepted-target, and deferred decisions explicitly wherever readers may encounter them without the surrounding maturity matrix.
 
 - **Recovery guidance must keep receipt status separate from rehydration outcome.** `timeout` and `partial_failure` can remain non-terminal execution facts, while an unknown post-call result maps checkpoint recovery to `deferred_for_reconciliation`; block automatic retry until an authoritative reconciliation receipt records the outcome.
 
 - **Security-fixed dependency locks need matching manifest floors.** A patched lockfile does not prevent a future resolver from selecting an older vulnerable version when the declared semver range still admits it; set the manifest's minimum to the first accepted fixed release and keep untrusted-document evaluation in a separately constrained process.
+
+- **HTML link verification should parse attributes and contain normalized deployed paths.** Regexes that recognize only lowercase double-quoted `href` values miss valid HTML forms, while prefix checks before path normalization admit traversal; use a no-evaluation DOM parse and reject normalized site-root targets outside the published learning root.

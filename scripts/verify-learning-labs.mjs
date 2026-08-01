@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { dirname, extname, resolve } from 'node:path';
+import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { Window } from 'happy-dom';
@@ -30,6 +30,18 @@ function collectFiles(directory) {
     const path = resolve(directory, entry.name);
     return entry.isDirectory() ? collectFiles(path) : [path];
   });
+}
+
+function collectHtmlHrefs(file, source) {
+  const window = new Window({ url: `http://localhost/${file.split('/').at(-1)}` });
+  try {
+    window.document.write(source.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ''));
+    return Array.from(window.document.querySelectorAll('[href]'), (element) =>
+      element.getAttribute('href')
+    ).filter((href) => href !== null);
+  } finally {
+    window.close();
+  }
 }
 
 function classifyLearningHref(file, href) {
@@ -70,7 +82,19 @@ function classifyLearningHref(file, href) {
         message: `Learning verification cannot resolve this site-root path: ${href}`,
       };
     }
-    return { kind: 'local', target: resolve(repositoryRoot, 'docs', siteRelativePath) };
+    const target = resolve(repositoryRoot, 'docs', siteRelativePath);
+    const pathFromLearningRoot = relative(learningRoot, target);
+    if (
+      pathFromLearningRoot === '..' ||
+      pathFromLearningRoot.startsWith(`..${sep}`) ||
+      isAbsolute(pathFromLearningRoot)
+    ) {
+      return {
+        kind: 'invalid',
+        message: `Root-relative learning link escapes the learning root: ${href}`,
+      };
+    }
+    return { kind: 'local', target };
   }
 
   return { kind: 'local', target: resolve(dirname(file), decodedPath) };
@@ -102,8 +126,19 @@ function verifyLearningHrefClassification() {
     'Root-relative links outside the GitHub Pages site base must fail closed.'
   );
   invariant(
+    classifyLearningHref(guidePage, '/actor-web/learning/../../package.json').kind === 'invalid',
+    'Root-relative learning links must not escape the learning root after normalization.'
+  );
+  invariant(
     classifyLearningHref(guidePage, '../workbook/%E0%A4%A.html').kind === 'invalid',
     'Malformed percent-encoded links must fail closed.'
+  );
+  invariant(
+    collectHtmlHrefs(
+      guidePage,
+      '<a HREF="double.html"></a><a href=unquoted.html></a><a href=\'single.html\'></a>'
+    ).join('|') === 'double.html|unquoted.html|single.html',
+    'HTML link verification must parse case-insensitive, quoted, and unquoted href attributes.'
   );
 }
 
@@ -116,12 +151,16 @@ function verifyLocalLinks() {
   for (const file of learningFiles) {
     const source = readFileSync(file, 'utf8');
     const isHtml = extname(file) === '.html';
-    const pattern = isHtml
-      ? /href="([^"]+)"/g
-      : /\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
+    const hrefs = isHtml
+      ? collectHtmlHrefs(file, source)
+      : Array.from(
+          source.matchAll(
+            /\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g
+          ),
+          (match) => match[1] ?? match[2]
+        );
 
-    for (const match of source.matchAll(pattern)) {
-      const href = isHtml ? match[1] : (match[1] ?? match[2]);
+    for (const href of hrefs) {
       const classification = classifyLearningHref(file, href);
       if (classification.kind === 'non-local') {
         continue;

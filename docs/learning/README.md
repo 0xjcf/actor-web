@@ -12,10 +12,15 @@ Promote Week 1 from **candidate** to **available** only after the Docs workflow
 successfully deploys from `main` and every canonical route returns HTTP 200:
 
 ```sh
-curl --fail --silent --show-error --output /dev/null https://0xjcf.github.io/actor-web/learning/
-curl --fail --silent --show-error --output /dev/null https://0xjcf.github.io/actor-web/learning/guide/01-javascript-concurrency-and-mailboxes.html
-curl --fail --silent --show-error --output /dev/null https://0xjcf.github.io/actor-web/learning/workbook/01-javascript-concurrency-and-mailboxes.html
-curl --fail --silent --show-error --output /dev/null https://0xjcf.github.io/actor-web/learning/labs/week-01-event-loop-and-mailbox.html
+verify_route() {
+  status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$1") || return 1
+  test "$status" = "200"
+}
+
+verify_route https://0xjcf.github.io/actor-web/learning/
+verify_route https://0xjcf.github.io/actor-web/learning/guide/01-javascript-concurrency-and-mailboxes.html
+verify_route https://0xjcf.github.io/actor-web/learning/workbook/01-javascript-concurrency-and-mailboxes.html
+verify_route https://0xjcf.github.io/actor-web/learning/labs/week-01-event-loop-and-mailbox.html
 ```
 
 If deployment or route verification is incomplete, retain the candidate label
