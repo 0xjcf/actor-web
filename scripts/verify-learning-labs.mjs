@@ -308,6 +308,10 @@ function verifyLearningPages() {
   const workbook = readFileSync(learningPages[3], 'utf8');
   const learningHome = readFileSync(learningPages[0], 'utf8');
   const lab = readFileSync(weekOneLab, 'utf8');
+  const architectureGuide = readFileSync(
+    resolve(repositoryRoot, 'docs/actor-web-architecture-study-guide.md'),
+    'utf8'
+  );
   invariant(
     learningHome.includes('week-01-javascript-event-loop-and-actor-mailboxes.html'),
     'The learning home must link to the complete Week 1 path.'
@@ -344,6 +348,11 @@ function verifyLearningPages() {
     'The 101-message lesson must establish its complete-admission boundary.'
   );
   invariant(
+    lab.includes('report(type, admitted); // false when dropped') &&
+      lab.includes('continue so E is attempted after D fails'),
+    'Overflow listings must expose drop results and preserve later fail attempts.'
+  );
+  invariant(
     guide.includes('prevents overlapping <em>actor-owned</em> context mutation') &&
       guide.includes('does not deep-clone or freeze every'),
     'The guide must qualify serialized mutation with the external-reference boundary.'
@@ -360,6 +369,12 @@ function verifyLearningPages() {
       !guide.includes('blob/main/packages/') &&
       !workbook.includes('blob/main/packages/'),
     'Actor-Web runtime evidence links must use the reviewed immutable revision.'
+  );
+  invariant(
+    architectureGuide.includes(
+      'Bound queued work; the actor runtime serializes message handling per actor'
+    ),
+    'The architecture guide must distinguish mailbox pressure from runtime serialization.'
   );
 
   return learningPages.length;

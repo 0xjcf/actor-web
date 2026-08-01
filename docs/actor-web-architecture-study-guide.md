@@ -40,7 +40,7 @@ The family resemblance is real:
 | Erlang/OTP idea | Actor-Web counterpart | Shared reason |
 | --- | --- | --- |
 | Lightweight process with private state | Actor with isolated `context` | Remove shared mutable state from the concurrency model |
-| Process mailbox | Bounded actor mailbox | Serialize message handling per actor |
+| Process mailbox | Bounded actor mailbox | Bound queued work; the actor runtime serializes message handling per actor |
 | `Pid ! Message` / `GenServer.cast` | `ActorRef.send(message)` | Directed, asynchronous command without a reply contract |
 | `GenServer.call` | `ActorRef.ask(message, timeout)` | Request/reply with an explicit timeout |
 | `gen_server` behavior callbacks | `defineBehavior(...).withContext(...).onMessage(...)` | Separate reusable runtime machinery from application behavior |

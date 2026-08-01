@@ -1120,16 +1120,16 @@
             codeFocus("host", [9], "The worker runs in parallel while the actor awaits its result."),
           ],
           "overflow-drop": [
-            codeFocus("executing", [1, 2, 3, 4, 5, 6, 7], "The loop fills the three-slot mailbox."),
-            codeFocus("executing", [6], "The enqueue for D returns false under the drop policy."),
-            codeFocus("executing", [6], "The enqueue for E is dropped for the same reason."),
-            codeFocus("executing", [8], "The consumer dequeues A and creates capacity."),
+            codeFocus("executing", [1, 2, 3, 4, 5, 6, 7, 8], "The loop fills the three-slot mailbox."),
+            codeFocus("executing", [6, 7], "The enqueue for D returns false and the caller reports it."),
+            codeFocus("executing", [6, 7], "The enqueue for E is dropped and reported for the same reason."),
+            codeFocus("executing", [9], "The consumer dequeues A and creates capacity."),
           ],
           "overflow-fail": [
-            codeFocus("executing", [1, 2, 3, 4, 5, 6, 7], "The loop fills the three-slot mailbox."),
-            codeFocus("executing", [6], "The enqueue for D raises MailboxError."),
-            codeFocus("executing", [6], "A later enqueue for E raises MailboxError too."),
-            codeFocus("executing", [8], "The consumer dequeues A and creates capacity."),
+            codeFocus("executing", [1, 2, 3, 4, 5, 6, 7, 8], "The loop fills the three-slot mailbox."),
+            codeFocus("executing", [6, 7], "The enqueue for D raises MailboxError without aborting the loop."),
+            codeFocus("executing", [6, 7], "A later enqueue for E raises MailboxError too."),
+            codeFocus("executing", [9], "The consumer dequeues A and creates capacity."),
           ],
           "overflow-park": [
             codeFocus("executing", [1, 2, 3, 4, 5, 6], "The enqueue attempts fill the three-slot mailbox."),
@@ -1162,7 +1162,10 @@
                   "for (const type of ['A', 'B', 'C', 'D', 'E']) {",
                   policy === "fail"
                     ? "  try { await mailbox.enqueue({ type }); } catch (error) { report(error); }"
-                    : "  await mailbox.enqueue({ type });",
+                    : "  const admitted = await mailbox.enqueue({ type });",
+                  policy === "fail"
+                    ? "  // continue so E is attempted after D fails"
+                    : "  report(type, admitted); // false when dropped",
                   "}",
                   "mailbox.dequeue();",
                 ];
