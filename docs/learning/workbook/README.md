@@ -16,11 +16,11 @@ Every workbook module uses this loop:
 6. **Trace evidence** into Actor-Web source and tests.
 7. **Record the guarantee and non-guarantee.**
 
-## Available modules
+## Candidate modules
 
 | Week | Workbook | Interactive lab | Status |
 | --- | --- | --- | --- |
-| 1 | [JavaScript concurrency and actor mailboxes](https://0xjcf.github.io/actor-web/learning/workbook/01-javascript-concurrency-and-mailboxes.html) | [Event loop and mailbox lab](https://0xjcf.github.io/actor-web/learning/labs/week-01-event-loop-and-mailbox.html) | Available |
+| 1 | [JavaScript concurrency and actor mailboxes](./01-javascript-concurrency-and-mailboxes.html) | [Event loop and mailbox lab](../labs/week-01-event-loop-and-mailbox.html) | Candidate until the Pages publication gate passes |
 | 2-10 | Planned | Planned | Not yet available |
 
 ## What to record

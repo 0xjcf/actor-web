@@ -145,3 +145,5 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Document-structure checks should prove containment, not count matching fragments.** Parse the page, locate the intended section heading, and assert that each lower-level card heading is inside that section so unrelated markup cannot satisfy the hierarchy contract.
 
 - **Isolated verifier failures must preserve process-launch diagnostics.** When a child process cannot start, report the spawn error alongside its signal and captured output; otherwise infrastructure failures look like silent assertion failures inside the child.
+
+- **Publication maturity requires deployed-route evidence, not a green build.** Keep unreleased learning surfaces labeled candidate with local artifact paths; promote them to available only after the main-branch deployment succeeds and every canonical route returns the expected success status.

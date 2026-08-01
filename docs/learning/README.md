@@ -1,7 +1,25 @@
 # Learn Actor-Web
 
-[Open the web learning experience](https://0xjcf.github.io/actor-web/learning/) for the guide, workbook, and
-interactive lab as one navigable product.
+**Publication maturity: candidate.** Until the Docs workflow deploys this
+content from `main` and the publication gate below passes, use the repository's
+[learning home](./index.html), [Week 1 guide](./guide/01-javascript-concurrency-and-mailboxes.html),
+[workbook](./workbook/01-javascript-concurrency-and-mailboxes.html), and
+[interactive lab](./labs/week-01-event-loop-and-mailbox.html).
+
+## Publication gate
+
+Promote Week 1 from **candidate** to **available** only after the Docs workflow
+successfully deploys from `main` and every canonical route returns HTTP 200:
+
+```sh
+curl --fail --silent --show-error --output /dev/null https://0xjcf.github.io/actor-web/learning/
+curl --fail --silent --show-error --output /dev/null https://0xjcf.github.io/actor-web/learning/guide/01-javascript-concurrency-and-mailboxes.html
+curl --fail --silent --show-error --output /dev/null https://0xjcf.github.io/actor-web/learning/workbook/01-javascript-concurrency-and-mailboxes.html
+curl --fail --silent --show-error --output /dev/null https://0xjcf.github.io/actor-web/learning/labs/week-01-event-loop-and-mailbox.html
+```
+
+If deployment or route verification is incomplete, retain the candidate label
+and local links. A successful build alone does not prove publication.
 
 ## Two products, two jobs
 
@@ -60,7 +78,7 @@ content is ready.
 
 | Week | Topic | Status | Guide | Workbook | Lab |
 | --- | --- | --- | --- | --- | --- |
-| 1 | JavaScript concurrency and actor mailboxes | Available | [Read](https://0xjcf.github.io/actor-web/learning/guide/01-javascript-concurrency-and-mailboxes.html) | [Practice](https://0xjcf.github.io/actor-web/learning/workbook/01-javascript-concurrency-and-mailboxes.html) | [Open](https://0xjcf.github.io/actor-web/learning/labs/week-01-event-loop-and-mailbox.html) |
+| 1 | JavaScript concurrency and actor mailboxes | Candidate | [Read](./guide/01-javascript-concurrency-and-mailboxes.html) | [Practice](./workbook/01-javascript-concurrency-and-mailboxes.html) | [Open](./labs/week-01-event-loop-and-mailbox.html) |
 | 2 | Actor model and OTP behaviors | Planned | Course map only | Planned | Planned |
 | 3 | Supervision and failure domains | Planned | Course map only | Planned | Planned |
 | 4 | Behaviors, FSMs, and statecharts | Planned | Course map only | Planned | Planned |
