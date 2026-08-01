@@ -141,3 +141,7 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **DOM test execution needs an explicit trust and process boundary.** Keep static page validation on the default no-evaluation path, use a security-fixed DOM implementation, enable JavaScript only for the interactive page that needs it, and run that evaluation in a child process so page code cannot mutate the verifier's isolate.
 
 - **Static link validators must model deployed URL semantics before filesystem resolution.** Strip query strings and fragments, decode percent-encoded paths with a fail-closed error path, classify every URI scheme and protocol-relative URL as non-local, and resolve root-relative links through the deployed site base instead of the current file's directory.
+
+- **Document-structure checks should prove containment, not count matching fragments.** Parse the page, locate the intended section heading, and assert that each lower-level card heading is inside that section so unrelated markup cannot satisfy the hierarchy contract.
+
+- **Isolated verifier failures must preserve process-launch diagnostics.** When a child process cannot start, report the spawn error alongside its signal and captured output; otherwise infrastructure failures look like silent assertion failures inside the child.

@@ -185,6 +185,19 @@ function verifyLearningPages() {
         document.querySelector('link[href$="learning-page.css"]'),
         `${page} must load the shared learning-page stylesheet.`
       );
+      if (page === learningPages[0]) {
+        const weekOneHeading = Array.from(document.querySelectorAll('h2')).find((heading) =>
+          heading.textContent.trim().startsWith('Week 1:')
+        );
+        const weekOneSection = weekOneHeading?.closest('section');
+        const productCards = Array.from(weekOneSection?.querySelectorAll('.product-card') ?? []);
+        invariant(
+          weekOneSection &&
+            productCards.length === 3 &&
+            productCards.every((card) => card.querySelector('h3')),
+          'The learning home must nest three h3 product cards beneath the Week 1 h2.'
+        );
+      }
       const tables = Array.from(document.querySelectorAll('table'));
       if (tables.length > 0) {
         invariant(
@@ -209,10 +222,6 @@ function verifyLearningPages() {
   invariant(
     learningHome.includes('week-01-javascript-event-loop-and-actor-mailboxes.html'),
     'The learning home must link to the complete Week 1 path.'
-  );
-  invariant(
-    Array.from(learningHome.matchAll(/<article class="product-card">[\s\S]*?<h3>/g)).length === 3,
-    'The learning home product cards must nest h3 headings beneath the Week 1 h2.'
   );
   invariant(
     guide.includes('id="TOC"'),
@@ -392,7 +401,7 @@ function verifyWeekOneLabIsolated() {
   });
   invariant(
     child.status === 0,
-    `Isolated Week 1 lab verification failed${child.signal ? ` (${child.signal})` : ''}:\n${child.stderr || child.stdout}`
+    `Isolated Week 1 lab verification failed${child.signal ? ` (${child.signal})` : ''}${child.error ? `: ${child.error.message}` : ''}:\n${child.stderr || child.stdout}`
   );
 
   try {
