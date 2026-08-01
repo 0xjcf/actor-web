@@ -181,3 +181,9 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Mailboxes own queue pressure, while the runtime loop owns serialized delivery.** Architecture comparisons should not attribute one-message-at-a-time handling to the bounded queue itself; describe capacity and overflow at the mailbox boundary and sequencing at the actor-processing boundary.
 
 - **Overflow examples must surface returned admission outcomes.** When a drop policy returns `false`, capture and report that boolean in the executable listing so narrated output is produced by visible code. Keep fail examples running after expected rejection and update every correlated line reference when listings grow.
+
+- **Await demonstrations must control Promise settlement ordering.** A generic I/O helper may return an already-fulfilled Promise, letting its microtask continuation beat a timer. If a lesson promises unrelated timer progress while a handler remains unfinished, define a fixture that stays pending through that timer turn or explicitly qualify the alternative order.
+
+- **Workbook concurrency experiments need the same admission constraints as their labs.** Await and verify the intended actor order before processing begins, using a held scheduler when available or an explicit no-delayed-routing-or-hook constraint, so a slower admission cannot invalidate the measured starvation claim.
+
+- **Diagram labels are text even when attached to decorative lines.** Small loop-return or phase annotations must use an AA-capable text token in both themes; do not inherit a low-contrast border token simply because the label is rendered with a pseudo-element.
