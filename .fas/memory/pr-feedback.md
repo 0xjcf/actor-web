@@ -205,3 +205,7 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Reusable learning templates must parameterize chapter identity.** Navigation targets, current-page state, week labels, and topic labels cannot remain pinned to Week 1 when the template is intended to generate later chapters.
 
 - **Code line numbers are meaningful text and need contrast proofs in every state.** Verify their foreground against base, executing, related, and host-highlight backgrounds in both themes rather than checking only the default code panel.
+
+- **Cross-actor workbook procedures must control callback selection as explicitly as companion labs.** Verified admissions do not decide which actor processing callback runs first; require actor A to enter the blocking handler before actor B's callback is released or measured.
+
+- **Exit assessments must preserve every qualification established by the lesson.** Do not end a chapter with a shorthand guarantee that drops normal-loop, immutable-value, actor-owned-mutation, or test-mode boundaries taught in the detailed material.
