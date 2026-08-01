@@ -394,6 +394,7 @@
         right: auto;
         bottom: -4px;
         left: -74px;
+        color: var(--muted);
         content: "↺ next iteration";
         font-size: 0.72rem;
         white-space: nowrap;
@@ -918,6 +919,8 @@
             label: "Awaiting I/O yields",
             question: "How can an unfinished handler allow unrelated JavaScript to progress?",
             code: [
+              "// fixture keeps network pending through the zero-timer turn",
+              "const readFromNetwork = () => new Promise((resolve) => setTimeout(() => resolve('DATA'), 25));",
               "async function handler() {",
               "  console.log('handler:start');",
               "  const data = await readFromNetwork();",
@@ -927,8 +930,8 @@
               "void handler();",
             ].join("\n"),
             steps: [
-              step("stack", "handler", "The async function starts synchronously", "Code before the first await uses the current JavaScript stack.", { stack: ["script", "handler()"], output: ["handler:start"] }, "What happens to the stack when the Promise remains pending?"),
-              step("runtime", "network read", "The operation waits outside the stack", "The async function is unfinished, but JavaScript returns control to the host while I/O is pending.", { runtime: ["network read: pending"], tasks: ["timer callback"], other: ["unrelated callbacks can run"], output: ["handler:start"] }, "Can the ready timer run before the handler finishes?"),
+              step("stack", "handler", "The async function starts synchronously", "The fixture's network Promise uses a later 25-millisecond timer, while the unrelated zero timer is registered before handler starts. Code before the first await uses the current JavaScript stack.", { stack: ["script", "handler()"], output: ["handler:start"] }, "What happens to the stack when the fixture Promise remains pending?"),
+              step("runtime", "network read", "The fixture remains pending outside the stack", "The async function is unfinished, but JavaScript returns control to the host. This controlled delay keeps the network Promise pending through the unrelated timer's turn; an already-fulfilled Promise would produce a different order.", { runtime: ["network fixture: pending 25 ms"], tasks: ["zero-timer callback"], other: ["unrelated callbacks can run"], output: ["handler:start"] }, "Can the ready timer run before the handler finishes?"),
               step("tasks", "timer callback", "Unrelated work receives a turn", "Awaiting did not occupy the JavaScript thread.", { runtime: ["network read: pending"], tasks: ["timer callback"], output: ["handler:start"] }, "What output appears while the handler is still unfinished?"),
               step("output", "log timer", "The timer progresses during the await", "The operation remains pending while other JavaScript executes.", { runtime: ["network read: pending"], output: ["handler:start", "timer"] }, "When the network result arrives, how does the async function resume?"),
               step("microtasks", "async continuation", "The fulfilled await queues continuation work", "The continuation can resume through the Promise job machinery after the current operation.", { microtasks: ["resume handler with data"], output: ["handler:start", "timer"] }, "Does resuming the handler mean its CPU work is parallel?"),
@@ -1068,12 +1071,12 @@
             codeFocus("executing", [1], "The delayed timer callback finally executes."),
           ],
           "await-yields": [
-            codeFocus("executing", [1, 2, 7], "The call enters handler and runs through the first log."),
-            codeFocus("host", [3], "The network read remains pending outside the JavaScript stack."),
-            codeFocus("executing", [6], "The unrelated timer callback executes while handler is suspended."),
-            codeFocus("host", [3], "The network operation is still pending; no handler line is executing."),
-            codeFocus("related", [3, 4], "The fulfilled await queues the handler continuation."),
-            codeFocus("executing", [4], "The resumed handler executes its completion log."),
+            codeFocus("executing", [3, 4, 9], "The call enters handler and runs through the first log."),
+            codeFocus("host", [1, 2, 5], "The controlled network fixture remains pending outside the JavaScript stack."),
+            codeFocus("executing", [8], "The unrelated zero-timer callback executes while handler is suspended."),
+            codeFocus("host", [1, 2, 5], "The controlled network operation is still pending; no handler line is executing."),
+            codeFocus("related", [5, 6], "The fulfilled await queues the handler continuation."),
+            codeFocus("executing", [6], "The resumed handler executes its completion log."),
           ],
           "node-io-cycle": [
             codeFocus("executing", [1, 2], "The script registers the asynchronous file read."),

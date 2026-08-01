@@ -28,6 +28,22 @@ function invariant(condition, message) {
   }
 }
 
+function relativeLuminance(hexColor) {
+  const channels = hexColor
+    .slice(1)
+    .match(/.{2}/g)
+    .map((channel) => Number.parseInt(channel, 16) / 255)
+    .map((channel) => (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+function contrastRatio(foreground, background) {
+  const luminances = [relativeLuminance(foreground), relativeLuminance(background)].sort(
+    (left, right) => right - left
+  );
+  return (luminances[0] + 0.05) / (luminances[1] + 0.05);
+}
+
 function collectFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = resolve(directory, entry.name);
@@ -312,6 +328,10 @@ function verifyLearningPages() {
     resolve(repositoryRoot, 'docs/actor-web-architecture-study-guide.md'),
     'utf8'
   );
+  const learningStylesheet = readFileSync(
+    resolve(learningRoot, 'assets/learning-page.css'),
+    'utf8'
+  );
   invariant(
     learningHome.includes('week-01-javascript-event-loop-and-actor-mailboxes.html'),
     'The learning home must link to the complete Week 1 path.'
@@ -346,6 +366,36 @@ function verifyLearningPages() {
         .replace(/\s+/g, ' ')
         .includes('Concurrent <code>send(...)</code> invocation alone does not prove'),
     'The 101-message lesson must establish its complete-admission boundary.'
+  );
+  invariant(
+    lab.includes('fixture keeps network pending through the zero-timer turn') &&
+      lab.includes("setTimeout(() => resolve('DATA'), 25)") &&
+      lab.includes('an already-fulfilled Promise would produce a different order'),
+    'The awaited-I/O lesson must prove that its fixture remains pending through timer progress.'
+  );
+  invariant(
+    workbook.replace(/\s+/g, ' ').includes('hold actor processing in a controlled harness') &&
+      workbook.includes('<code>await actorA.send(PRIMARY)</code>') &&
+      workbook.includes('<code>await actorB.send(FAST)</code>'),
+    'The two-actor workbook experiment must establish admission before processing.'
+  );
+  invariant(
+    /\.phase\.phase-last::after\s*{[^}]*color: var\(--muted\);/s.test(lab),
+    'The phase-loop return label must use an AA-capable text token.'
+  );
+  const mutedColors = Array.from(
+    learningStylesheet.matchAll(/--muted:\s*(#[\da-f]{6})/gi),
+    (match) => match[1]
+  );
+  const panelSoftColors = Array.from(
+    learningStylesheet.matchAll(/--panel-soft:\s*(#[\da-f]{6})/gi),
+    (match) => match[1]
+  );
+  invariant(
+    mutedColors.length === 2 &&
+      panelSoftColors.length === 2 &&
+      mutedColors.every((color, index) => contrastRatio(color, panelSoftColors[index]) >= 4.5),
+    'The phase-loop text token must meet WCAG AA against the diagram base in both themes.'
   );
   invariant(
     lab.includes('report(type, admitted); // false when dropped') &&

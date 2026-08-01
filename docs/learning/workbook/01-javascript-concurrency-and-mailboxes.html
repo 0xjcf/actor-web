@@ -653,9 +653,19 @@ CPU_RESULT</code></pre>
         <li>configure actor A's primary handler to emit
         <code>A_PRIMARY_STARTED</code>, then schedule the zero timer
         immediately before starting the variant's work</li>
-        <li>send the primary work message to actor A</li>
-        <li>immediately send <code>FOLLOW_UP</code> to actor A</li>
-        <li>send the fast message to actor B</li>
+        <li>hold actor processing in a controlled harness until the
+        three admissions below are verified; if using the live
+        scheduler instead, constrain local routing, directory lookup,
+        and send hooks so no admission yields past the scheduled
+        processing turn</li>
+        <li><code>await actorA.send(PRIMARY)</code> and verify that the
+        primary message was admitted</li>
+        <li><code>await actorA.send(FOLLOW_UP)</code> and verify its
+        admission after the primary message</li>
+        <li><code>await actorB.send(FAST)</code> and verify actor B's
+        admission before actor A begins processing</li>
+        <li>release the controlled processing turn only after all three
+        admissions are established</li>
         <li>wait for all expected completion events with a fixed
         five-second deadline</li>
         <li>if the deadline expires, record every missing event and
