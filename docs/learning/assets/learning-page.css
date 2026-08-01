@@ -10,7 +10,9 @@
   --accent: #9a5a00;
   --accent-soft: #fff1d3;
   --accent-ink: #4b2a00;
+  --danger: #a52a2a;
   --danger-soft: #ffeded;
+  --success: #25613c;
   --success-soft: #e8f6ed;
   --code: #101722;
   --code-ink: #e8eef8;
@@ -32,7 +34,9 @@
     --accent: #ffc15c;
     --accent-soft: #3b2b0e;
     --accent-ink: #fff4dc;
+    --danger: #ff9898;
     --danger-soft: #3e2025;
+    --success: #83d9a1;
     --success-soft: #183528;
     --code: #090e16;
     --code-ink: #e8eef8;

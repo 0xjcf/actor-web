@@ -149,7 +149,7 @@
         <h2>Prediction sheet</h2>
         <p>Complete the prediction and confidence columns before opening
         the guide or advancing the matching animation.</p>
-        <div class="table-wrap" tabindex="0">
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Week 1 prediction sheet">
           <table>
         <thead>
         <tr>
@@ -367,7 +367,7 @@ async function waitFor250Ms() {
         <li>use a separate process or remote worker</li>
         <li>reject or shed work before it grows</li>
         </ul>
-        <div class="table-wrap" tabindex="0">
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Execution boundary choices">
           <table>
         <thead>
         <tr>
@@ -490,7 +490,7 @@ interface BoundedFifo&lt;T&gt; {
         <li>mailbox statistics</li>
         </ul>
         <p>Complete the comparison:</p>
-        <div class="table-wrap" tabindex="0">
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Bounded FIFO comparison">
           <table>
         <thead>
         <tr>
@@ -585,7 +585,7 @@ interface BoundedFifo&lt;T&gt; {
         selecting <code>drop</code>, <code>fail</code>, and
         <code>park</code> before advancing.</p>
         <p>Use capacity three and messages A through E. Record:</p>
-        <div class="table-wrap" tabindex="0">
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Mailbox pressure policy observations">
           <table>
         <thead>
         <tr>
@@ -647,7 +647,9 @@ TIMER_FIRED
 CPU_RESULT</code></pre>
         <p>For every variant, use this order:</p>
         <ol type="1">
-        <li>schedule a zero timer</li>
+        <li>configure actor A's primary handler to emit
+        <code>A_PRIMARY_STARTED</code>, then schedule the zero timer
+        immediately before starting the variant's work</li>
         <li>send the primary work message to actor A</li>
         <li>immediately send <code>FOLLOW_UP</code> to actor A</li>
         <li>send the fast message to actor B</li>
@@ -674,7 +676,7 @@ CPU_RESULT</code></pre>
         <code>A_PRIMARY_DONE</code> event.</li>
         </ul>
         <p>Complete the observation matrix:</p>
-        <div class="table-wrap" tabindex="0">
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Two actors one isolate observations">
           <table>
         <thead>
         <tr>
@@ -763,8 +765,8 @@ CPU_RESULT</code></pre>
         <li>Create a direct <code>BoundedMailbox</code> fixture with
         capacity at least <code>101</code> and a non-dropping policy
         such as <code>fail</code>.</li>
-        <li>Enqueue 101 sequence-numbered no-op messages and track every
-        enqueue result.</li>
+        <li>Enqueue 101 sequence-numbered no-op messages whose handlers
+        complete successfully, and track every enqueue result.</li>
         <li>Before measuring processing, assert
         <code>totalEnqueued === 101</code>,
         <code>totalDropped === 0</code>, and
@@ -774,13 +776,14 @@ CPU_RESULT</code></pre>
         Promises as proof of admission. The current drop path can
         resolve without accepting the message.</li>
         <li>Record the first processing round and identify the
-        rescheduling boundary after message 100.</li>
+        rescheduling boundary after successful delivery 100.</li>
         <li>Record message 101 in the next processing round and assert
         that every sequence number from 1 through 101 was handled
         exactly once in this local experiment.</li>
         </ol>
-        <p>Explain why the boundary improves cooperative fairness but is
-        not:</p>
+        <p>Explain why the boundary improves cooperative fairness for
+        successful-delivery batches, why failed deliveries do not currently
+        advance the counter, and why the boundary is not:</p>
         <ul>
         <li>a CPU preemption point inside a handler</li>
         <li>a durable checkpoint</li>

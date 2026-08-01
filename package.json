@@ -95,7 +95,7 @@
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^2.1.4",
     "@xstate/graph": "^3.0.4",
-    "happy-dom": "^18.0.1",
+    "happy-dom": "^20.0.2",
     "ignite-element": "3.0.0-beta.8",
     "markdownlint-cli2": "^0.22.1",
     "tsup": "^8.3.5",
@@ -105,7 +105,7 @@
     "ws": "^8.18.3"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "pnpm": {
     "overrides": {

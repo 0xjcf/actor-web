@@ -155,7 +155,7 @@
         <h2>Four layers, four different questions</h2>
         <p>Use this ladder instead of one overloaded "event loop"
         diagram:</p>
-        <div class="table-wrap" tabindex="0">
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Four learning layers">
           <table>
         <thead>
         <tr>
@@ -194,7 +194,7 @@
         </section>
         <section id="vocabulary" class="level2">
         <h2>Vocabulary</h2>
-        <div class="table-wrap" tabindex="0">
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Week 1 vocabulary">
           <table>
         <thead>
         <tr>
@@ -426,7 +426,7 @@ while (performance.now() - startedAt &lt; 250) {
         <h2>Model 4: an actor mailbox is a different queue</h2>
         <p>The event loop schedules callbacks for an isolate. An
         Actor-Web mailbox queues messages for one actor identity.</p>
-        <div class="table-wrap" tabindex="0">
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Host scheduler and actor mailbox comparison">
           <table>
         <thead>
         <tr>
@@ -518,13 +518,13 @@ while (performance.now() - startedAt &lt; 250) {
   -&gt; runtime schedules processActorMessages on a future macrotask
   -&gt; Node uses setImmediate; other hosts fall back to setTimeout(0)
   -&gt; runtime dequeues and awaits one delivery at a time
-  -&gt; after at most 100 messages, remaining work is scheduled for another turn</code></pre>
+  -&gt; after 100 successful deliveries, remaining work is scheduled for another turn</code></pre>
         <p>The scheduler is implemented by
         <code>scheduleMacrotask</code> in <a
         href="https://github.com/0xjcf/actor-web/blob/main/packages/actor-core-runtime/src/actor-system-impl.ts"><code>actor-system-impl.ts</code></a>.
         The same file contains
         <code>startMessageProcessingLoop(...)</code>,
-        <code>processActorMessages(...)</code>, and the 100-message
+        <code>processActorMessages(...)</code>, and the 100-successful-delivery
         safety limit.</p>
         <p>On Node, <code>setImmediate(...)</code> places the processing
         callback in the check phase. On a host without
@@ -533,10 +533,12 @@ while (performance.now() - startedAt &lt; 250) {
         mechanisms.</p>
         <section id="why-the-100-message-batch-exists" class="level3">
         <h3>Why the 100-message batch exists</h3>
-        <p>One processing callback can handle up to 100 available
-        messages. If more remain, Actor-Web schedules another
-        macrotask.</p>
-        <p>This is a cooperative fairness valve:</p>
+        <p>One processing callback records up to 100 successful
+        deliveries. If more messages remain, Actor-Web schedules another
+        macrotask. The counter advances only after delivery succeeds, so
+        error-heavy workloads that resume after supervision are not currently
+        bounded by this counter.</p>
+        <p>For successful-delivery batches, this is a cooperative fairness valve:</p>
         <ul>
         <li>it prevents one continuously non-empty mailbox from
         retaining the same processing round forever</li>
@@ -559,7 +561,7 @@ while (performance.now() - startedAt &lt; 250) {
         </ul>
         <p>The three policies express different producer/consumer
         relationships:</p>
-        <div class="table-wrap" tabindex="0">
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Mailbox overflow policies">
           <table>
         <thead>
         <tr>
@@ -646,7 +648,7 @@ utilizationRatio</code></pre>
         </section>
         <section id="maturity-ledger" class="level2">
         <h2>Maturity ledger</h2>
-        <div class="table-wrap" tabindex="0">
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Week 1 maturity ledger">
           <table>
         <thead>
         <tr>
@@ -677,8 +679,8 @@ utilizationRatio</code></pre>
         <td><code>processActorMessages(...)</code></td>
         </tr>
         <tr>
-        <td>Processing yields after at most 100 messages when more
-        remain</td>
+        <td>Processing yields after 100 successful deliveries when more
+        messages remain; failed deliveries do not advance that counter</td>
         <td>current</td>
         <td><code>processActorMessages(...)</code></td>
         </tr>

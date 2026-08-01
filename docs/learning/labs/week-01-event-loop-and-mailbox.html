@@ -8,136 +8,50 @@
       content="Interactive Actor-Web learning lab for JavaScript queues, Node.js event-loop phases, and actor mailboxes."
     />
     <title>Week 1 Lab: JavaScript Concurrency and Actor Mailboxes</title>
+    <link rel="stylesheet" href="../assets/learning-page.css" />
     <style>
-      :root {
-        color-scheme: light dark;
-        --page: #f5f7fb;
-        --panel: #ffffff;
-        --panel-soft: #eef2f8;
-        --ink: #142033;
-        --muted: #526176;
-        --line: #c8d1de;
-        --line-strong: #8190a5;
-        --accent: #9a5a00;
-        --accent-soft: #fff1d3;
-        --accent-ink: #4b2a00;
-        --danger: #a52a2a;
-        --danger-soft: #ffeded;
-        --success: #25613c;
-        --success-soft: #e8f6ed;
-        --code: #101722;
-        --code-ink: #e8eef8;
-        --shadow: 0 12px 36px rgb(22 34 52 / 10%);
-        --radius-sm: 6px;
-        --radius-md: 10px;
-        --radius-lg: 16px;
-      }
-
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --page: #0d1320;
-          --panel: #131d2c;
-          --panel-soft: #1a2637;
-          --ink: #edf3fc;
-          --muted: #acb9cb;
-          --line: #39485d;
-          --line-strong: #74849b;
-          --accent: #ffc15c;
-          --accent-soft: #3b2b0e;
-          --accent-ink: #fff4dc;
-          --danger: #ff9898;
-          --danger-soft: #3e2025;
-          --success: #83d9a1;
-          --success-soft: #183528;
-          --code: #090e16;
-          --code-ink: #e8eef8;
-          --shadow: 0 16px 42px rgb(0 0 0 / 26%);
-        }
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      html {
-        background: var(--page);
-      }
-
-      body {
-        margin: 0;
-        background:
-          radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 32rem),
-          var(--page);
-        color: var(--ink);
-        font-family:
-          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        line-height: 1.55;
-      }
-
-      a {
-        color: var(--accent);
-        text-underline-offset: 0.18em;
-      }
-
-      a:hover {
-        text-decoration-thickness: 0.15em;
-      }
-
       button,
       select {
         font: inherit;
       }
 
       button:focus-visible,
-      select:focus-visible,
-      a:focus-visible {
+      select:focus-visible {
         outline: 3px solid color-mix(in srgb, var(--accent) 68%, transparent);
         outline-offset: 3px;
       }
 
-      main {
+      .lab-page {
         width: min(1480px, calc(100% - 32px));
         margin: 0 auto;
         padding: 30px 0 48px;
       }
 
-      .product-nav {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px 18px;
-        margin-bottom: 24px;
-        color: var(--muted);
-        font-size: 0.92rem;
-      }
-
-      header {
+      .lab-page header {
         max-width: 940px;
         margin-bottom: 24px;
       }
 
-      .eyebrow {
-        margin: 0 0 8px;
-        color: var(--accent);
-        font-size: 0.78rem;
-        font-weight: 700;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-      }
-
-      h1,
-      h2,
-      p {
+      .lab-page h1,
+      .lab-page h2,
+      .lab-page p {
         margin-top: 0;
       }
 
-      h1 {
+      .lab-page h1 {
         margin-bottom: 12px;
         font-size: clamp(2rem, 5vw, 3.5rem);
         line-height: 1.04;
         letter-spacing: -0.035em;
       }
 
-      header p {
+      .lab-page h2 {
+        margin-bottom: 1rem;
+        padding-top: 0;
+        border-top: 0;
+      }
+
+      .lab-page header p {
         margin-bottom: 0;
         color: var(--muted);
         font-size: clamp(1rem, 2vw, 1.16rem);
@@ -781,16 +695,18 @@
     </style>
   </head>
   <body>
-    <main>
-      <nav class="product-nav" aria-label="Learning product">
-        <a href="../index.html">Learn Actor-Web</a>
-        <a href="../guide/01-javascript-concurrency-and-mailboxes.html">Chapter 1 guide</a>
-        <a href="../workbook/01-javascript-concurrency-and-mailboxes.html">Week 1 workbook</a>
-        <a href="https://nodejs.org/learn/asynchronous-work/event-loop-timers-and-nexttick">Node.js source</a>
-      </nav>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <nav class="product-nav" aria-label="Learning product">
+      <a href="../index.html">Learn Actor-Web</a>
+      <a href="../guide/01-javascript-concurrency-and-mailboxes.html">Chapter 1 guide</a>
+      <a href="../workbook/01-javascript-concurrency-and-mailboxes.html">Week 1 workbook</a>
+      <a href="./week-01-event-loop-and-mailbox.html" aria-current="page">Interactive lab</a>
+      <a href="https://nodejs.org/learn/asynchronous-work/event-loop-timers-and-nexttick">Node.js source</a>
+    </nav>
+    <main id="main-content" class="lab-page">
 
       <header>
-        <p class="eyebrow">Actor-Web Workbook · Week 1</p>
+        <p class="eyebrow">Actor-Web Lab · Week 1</p>
         <h1>JavaScript concurrency and actor mailboxes</h1>
         <p>
           Move through three layers without blending them: conceptual JavaScript queues,
@@ -878,8 +794,9 @@
         </p>
         <p class="lab-note success-note">
           <strong>Source mapping:</strong> Actor-Web's Node path uses
-          <code>setImmediate</code>, awaits one actor delivery at a time, and yields after a
-          maximum 100-message batch when work remains.
+          <code>setImmediate</code>, awaits one actor delivery at a time, and yields after 100
+          successful deliveries when work remains. Failed deliveries are dequeued but do not
+          currently advance that successful-delivery counter.
         </p>
         <p class="lab-note danger-note">
           <strong>Safety:</strong> blocking, starvation, and CPU-heavy scenarios are simulated.
@@ -1084,16 +1001,16 @@
           "actor-batch-101": {
             projection: "actor",
             label: "101-message fairness batch",
-            question: "What does Actor-Web's 100-message processing limit actually guarantee?",
+            question: "What does Actor-Web's 100-successful-delivery limit actually guarantee?",
             code: [
               "for (let i = 1; i <= 101; i += 1) {",
               "  void actor.send({ type: 'NOOP', sequence: i });",
               "}",
-              "// process at most 100 in one round",
+              "// process at most 100 successful deliveries in one round",
               "// schedule another macrotask when messages remain",
             ].join("\n"),
             steps: [
-              step("mailbox", "101 messages", "A burst fills one actor mailbox", "All 101 bounded no-op messages wait for the same actor identity.", { mailbox: ["1", "2", "...", "100", "101"], stats: ["size 101", "enqueued 101"] }, "How many messages may one processing round handle?"),
+              step("mailbox", "101 messages", "A burst fills one actor mailbox", "All 101 bounded no-op messages wait for the same actor identity, and this scenario assumes every delivery succeeds.", { mailbox: ["1", "2", "...", "100", "101"], stats: ["size 101", "enqueued 101"] }, "How many successful deliveries may one processing round record?"),
               step("scheduler", "round 1", "Actor-Web schedules the first round", "The host will run processActorMessages on a future macrotask.", { mailbox: ["1 ... 101"], scheduler: ["processing round 1"], check: ["setImmediate callback 1"] }, "Where does the Node host run this callback?"),
               step("behavior", "messages 1-100", "The first round processes a bounded batch", "Actor-Web sequentially awaits messages 1 through 100. This summary does not imply they execute simultaneously.", { mailbox: ["101"], behavior: ["handled 1", "handled 2", "...", "handled 100"], stats: ["size 1", "dequeued 100"] }, "Can the runtime interrupt any one slow handler inside this batch?"),
               step("scheduler", "yield boundary", "The batch limit creates a host boundary", "Because message 101 remains, Actor-Web schedules another macrotask and returns from round 1.", { mailbox: ["101"], scheduler: ["processing round 2 scheduled"], check: ["setImmediate callback 2"], "other-actor": ["eligible for a host turn"], timers: ["eligible callbacks can run"] }, "What unrelated work may receive a turn at this boundary?"),
@@ -1107,14 +1024,18 @@
             label: "Shared isolate versus worker",
             question: "What remains isolated when one actor performs CPU-heavy JavaScript?",
             code: [
-              "setTimeout(() => console.log('timer'), 0);",
+              "async function handleCpuHeavy() {",
+              "  setTimeout(() => console.log('timer'), 0);",
+              "  const until = performance.now() + 250;",
+              "  while (performance.now() < until) {}",
+              "}",
               "void actorA.send({ type: 'CPU_HEAVY' });",
               "void actorB.send({ type: 'FAST' });",
               "// compare synchronous CPU work with worker-thread offload",
             ].join("\n"),
             steps: [
-              step("mailbox", "A + B", "Two actors receive independent messages", "Each actor owns a different mailbox and private context.", { mailbox: ["actor A: CPU_HEAVY", "actor B: FAST"], "other-actor": ["B context is separate"], timers: ["zero timer"] }, "Does separate state imply separate JavaScript threads?"),
-              step("behavior", "actor A busy", "Actor A enters synchronous CPU work", "The selected handler occupies the isolate. Actor B cannot enter JavaScript even though its state is independent.", { behavior: ["actor A busy loop"], "other-actor": ["actor B ready but blocked"], timers: ["timer ready but blocked"], stats: ["mailboxes remain isolated"] }, "Which guarantee remains true while progress is blocked?"),
+              step("mailbox", "A + B", "Two actors receive independent messages", "Each actor owns a different mailbox and private context.", { mailbox: ["actor A: CPU_HEAVY", "actor B: FAST"], "other-actor": ["B context is separate"] }, "Does separate state imply separate JavaScript threads?"),
+              step("behavior", "actor A busy", "Actor A enters synchronous CPU work", "Actor A registers the zero timer immediately before its bounded busy loop. The selected handler then occupies the isolate, so actor B and the timer cannot enter JavaScript.", { behavior: ["register zero timer", "actor A busy loop"], "other-actor": ["actor B ready but blocked"], timers: ["timer ready but blocked"], stats: ["mailboxes remain isolated"] }, "Which guarantee remains true while progress is blocked?"),
               step("other-actor", "actor B", "Actor B runs after A returns", "Actor B never mutated actor A's context, but it still shared actor A's CPU scheduler.", { behavior: ["actor A complete"], "other-actor": ["actor B FAST handler"], timers: ["timer ready"], output: ["actor A done", "actor B done"] }, "How could CPU-heavy work stop occupying this isolate?"),
               step("worker", "CPU job", "Move CPU work to a worker boundary", "Actor A can await a worker result while the worker executes JavaScript in parallel.", { behavior: ["actor A awaiting result"], worker: ["CPU job running in parallel"], "other-actor": ["actor B can receive turns"], timers: ["timer can receive a turn"] }, "Does awaiting a worker allow actor A's next message to overtake the current delivery?"),
               step("output", "progress", "Isolation and parallelism are now separate choices", "Actor A remains logically serialized; actor B and timers progress; CPU work runs behind a parallel execution boundary.", { output: ["actor B done", "timer", "worker result", "actor A done"], stats: ["actor A context isolated", "actor B context isolated"] }, "What additional boundary would isolate process crashes as well as CPU work?"),
@@ -1189,11 +1110,11 @@
             codeFocus("host", [], "The actor is idle; no scenario line is executing."),
           ],
           "actor-shared-isolate": [
-            codeFocus("executing", [1, 2, 3], "The caller schedules a timer and messages for two actors."),
-            codeFocus("executing", [2], "Actor A's synchronous handler occupies the shared isolate."),
-            codeFocus("executing", [3], "Actor B can execute only after actor A returns."),
-            codeFocus("related", [4], "This comparison moves CPU work behind a worker boundary."),
-            codeFocus("host", [4], "The worker runs in parallel while the actor awaits its result."),
+            codeFocus("executing", [6, 7], "The caller sends messages to two actors."),
+            codeFocus("executing", [1, 2, 3, 4], "Actor A registers the timer, then its synchronous handler occupies the shared isolate."),
+            codeFocus("executing", [7], "Actor B can execute only after actor A returns."),
+            codeFocus("related", [8], "This comparison moves CPU work behind a worker boundary."),
+            codeFocus("host", [8], "The worker runs in parallel while the actor awaits its result."),
           ],
           "overflow-drop": [
             codeFocus("executing", [1, 2, 3, 4, 5, 6, 7], "The loop fills the three-slot mailbox."),
@@ -1208,29 +1129,45 @@
             codeFocus("executing", [8], "The consumer dequeues A and creates capacity."),
           ],
           "overflow-park": [
-            codeFocus("executing", [1, 2, 3, 4, 5, 6, 7], "The loop fills the three-slot mailbox."),
-            codeFocus("related", [6], "The await for D remains pending until capacity opens."),
-            codeFocus("related", [6], "The await for E parks behind D."),
-            codeFocus("executing", [8], "Dequeuing A admits D and settles its pending enqueue."),
+            codeFocus("executing", [1, 2, 3, 4, 5, 6], "The enqueue attempts fill the three-slot mailbox."),
+            codeFocus("related", [6], "The Promise for D remains pending until capacity opens."),
+            codeFocus("related", [6], "The Promise for E parks behind D."),
+            codeFocus("executing", [7], "Dequeuing A admits D and settles its pending enqueue."),
             codeFocus("executing", [8], "Dequeuing B admits E and settles its pending enqueue."),
           ],
         };
 
         function createOverflowScenario(policy) {
+          const code =
+            policy === "park"
+              ? [
+                  "const mailbox = BoundedMailbox.create({",
+                  "  capacity: 3,",
+                  "  overflowStrategy: OverflowStrategy.PARK,",
+                  "});",
+                  "const pending = ['A', 'B', 'C', 'D', 'E'].map((type) =>",
+                  "  mailbox.enqueue({ type }));",
+                  "mailbox.dequeue(); // admits D",
+                  "mailbox.dequeue(); // admits E",
+                  "await Promise.all(pending);",
+                ]
+              : [
+                  "const mailbox = BoundedMailbox.create({",
+                  "  capacity: 3,",
+                  "  overflowStrategy: OverflowStrategy." + policy.toUpperCase() + ",",
+                  "});",
+                  "for (const type of ['A', 'B', 'C', 'D', 'E']) {",
+                  policy === "fail"
+                    ? "  try { await mailbox.enqueue({ type }); } catch (error) { report(error); }"
+                    : "  await mailbox.enqueue({ type });",
+                  "}",
+                  "mailbox.dequeue();",
+                ];
           const common = {
             projection: "actor",
             label: "Mailbox overflow: " + policy,
             question: "What should the runtime do when demand exceeds capacity?",
-            code: [
-              "const mailbox = BoundedMailbox.create({",
-              "  capacity: 3,",
-              "  overflowStrategy: OverflowStrategy." + policy.toUpperCase() + ",",
-              "});",
-              "for (const type of ['A', 'B', 'C', 'D', 'E']) {",
-              "  await mailbox.enqueue({ type });",
-              "}",
-              "mailbox.dequeue();",
-            ].join("\n"),
+            code: code.join("\n"),
           };
 
           const base = [
@@ -1379,17 +1316,33 @@
           });
         }
 
-        function currentCodeFocus() {
+        const reportedInvalidFocusMaps = new Set();
+
+        function currentCodeFocusMap() {
           const focuses = codeFocusByScenario[scenarioKey];
           const scenario = currentScenario();
           if (!focuses || focuses.length !== scenario.steps.length) {
-            throw new Error("Code focus must map every step in " + scenarioKey + ".");
+            if (!reportedInvalidFocusMaps.has(scenarioKey)) {
+              console.error("Code focus must map every step in " + scenarioKey + ".");
+              reportedInvalidFocusMaps.add(scenarioKey);
+            }
+            return scenario.steps.map(function () {
+              return codeFocus(
+                "host",
+                [],
+                "Source correlation is unavailable for this step."
+              );
+            });
           }
-          return focuses[stepIndex];
+          return focuses;
+        }
+
+        function currentCodeFocus() {
+          return currentCodeFocusMap()[stepIndex];
         }
 
         function codeStepsForLine(lineNumber) {
-          return codeFocusByScenario[scenarioKey]
+          return currentCodeFocusMap()
             .map(function (focus, index) {
               return focus.lines.includes(lineNumber) ? index : -1;
             })

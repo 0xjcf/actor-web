@@ -1,10 +1,12 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { Window } from 'happy-dom';
 
-const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const verifierPath = fileURLToPath(import.meta.url);
+const repositoryRoot = resolve(dirname(verifierPath), '..');
 const learningRoot = resolve(repositoryRoot, 'docs/learning');
 const weekOneLab = resolve(learningRoot, 'labs/week-01-event-loop-and-mailbox.html');
 const learningPages = [
@@ -12,6 +14,7 @@ const learningPages = [
   resolve(learningRoot, 'week-01-javascript-event-loop-and-actor-mailboxes.html'),
   resolve(learningRoot, 'guide/01-javascript-concurrency-and-mailboxes.html'),
   resolve(learningRoot, 'workbook/01-javascript-concurrency-and-mailboxes.html'),
+  weekOneLab,
 ];
 const MAX_STEPS_PER_SCENARIO = 100;
 
@@ -73,10 +76,9 @@ function verifyLearningPages() {
     const html = readFileSync(page, 'utf8');
     const window = new Window({
       url: `http://localhost/${page.split('/').at(-1)}`,
-      settings: { disableJavaScriptEvaluation: false },
     });
     try {
-      window.document.write(html);
+      window.document.write(html.replace(/<script>[\s\S]*?<\/script>/g, ''));
       const document = window.document;
       const ids = Array.from(document.querySelectorAll('[id]'), (element) => element.id);
       invariant(ids.length === new Set(ids).size, `${page} must not contain duplicate IDs.`);
@@ -87,6 +89,10 @@ function verifyLearningPages() {
         `${page} must begin its heading hierarchy with the h1.`
       );
       invariant(document.querySelector('.product-nav'), `${page} must provide product navigation.`);
+      invariant(
+        !document.querySelector('main .product-nav'),
+        `${page} product navigation must remain outside the main-content skip target.`
+      );
       invariant(
         document.querySelector('a.skip-link[href="#main-content"]'),
         `${page} must provide a skip link.`
@@ -102,7 +108,13 @@ function verifyLearningPages() {
       const tables = Array.from(document.querySelectorAll('table'));
       if (tables.length > 0) {
         invariant(
-          tables.every((table) => table.parentElement?.matches('.table-wrap[tabindex="0"]')),
+          tables.every((table) => {
+            const wrapper = table.parentElement;
+            return (
+              wrapper?.matches('.table-wrap[tabindex="0"][role="region"]') &&
+              Boolean(wrapper.getAttribute('aria-label') || wrapper.getAttribute('aria-labelledby'))
+            );
+          }),
           `${page} tables must preserve semantics inside keyboard-scrollable wrappers.`
         );
       }
@@ -117,6 +129,10 @@ function verifyLearningPages() {
   invariant(
     learningHome.includes('week-01-javascript-event-loop-and-actor-mailboxes.html'),
     'The learning home must link to the complete Week 1 path.'
+  );
+  invariant(
+    Array.from(learningHome.matchAll(/<article class="product-card">[\s\S]*?<h3>/g)).length === 3,
+    'The learning home product cards must nest h3 headings beneath the Week 1 h2.'
   );
   invariant(
     guide.includes('id="TOC"'),
@@ -145,7 +161,7 @@ function verifyWeekOneLab() {
 
   const window = new Window({
     url: 'http://localhost/week-01.html',
-    settings: { disableJavaScriptEvaluation: false },
+    settings: { enableJavaScriptEvaluation: true },
   });
   try {
     window.document.write(html.replace(scriptMatch[0], ''));
@@ -287,9 +303,34 @@ function verifyWeekOneLab() {
   }
 }
 
-verifyLocalLinks();
-const pageCount = verifyLearningPages();
-const result = verifyWeekOneLab();
-console.log(
-  `Learning products verified: ${pageCount} web pages, ${result.projections} lab projections, ${result.scenarios} scenarios, ${result.states} states.`
-);
+function verifyWeekOneLabIsolated() {
+  const child = spawnSync(process.execPath, [verifierPath, '--verify-week-one-lab-child'], {
+    cwd: repositoryRoot,
+    encoding: 'utf8',
+    timeout: 15_000,
+    maxBuffer: 1_000_000,
+  });
+  invariant(
+    child.status === 0,
+    `Isolated Week 1 lab verification failed${child.signal ? ` (${child.signal})` : ''}:\n${child.stderr || child.stdout}`
+  );
+
+  try {
+    return JSON.parse(child.stdout.trim());
+  } catch (error) {
+    throw new Error(
+      `Isolated Week 1 lab verification returned invalid JSON: ${error instanceof Error ? error.message : 'unknown parse failure'}`
+    );
+  }
+}
+
+if (process.argv[2] === '--verify-week-one-lab-child') {
+  console.log(JSON.stringify(verifyWeekOneLab()));
+} else {
+  verifyLocalLinks();
+  const pageCount = verifyLearningPages();
+  const result = verifyWeekOneLabIsolated();
+  console.log(
+    `Learning products verified: ${pageCount} web pages, ${result.projections} lab projections, ${result.scenarios} scenarios, ${result.states} states.`
+  );
+}
