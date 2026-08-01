@@ -171,3 +171,5 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Source-tree existence does not prove a learning link will be published.** HTML link validation and the static publisher must consume one extension or manifest contract, so links to tracked Markdown or other excluded files fail before deployment even when they remain inside `docs/learning`.
 
 - **Fairness-batch demonstrations need a proven preload boundary.** Concurrent `send` invocation cannot guarantee that every message reaches the mailbox before the first scheduled processing turn when routing or hooks can yield. Hold processing in a harness or explicitly constrain and verify admission timing before teaching an exact 100/1 split.
+
+- **Rebuilt interactive code listings must preserve source-line focus.** When step, autoplay, scenario, or projection rendering replaces correlated line controls, capture a focused source-line identity before replacement and restore it only when the rebuilt listing contains the same focusable line. Do not rely only on the direct code-line click handler.
