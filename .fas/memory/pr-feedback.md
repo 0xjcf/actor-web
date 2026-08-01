@@ -187,3 +187,9 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Workbook concurrency experiments need the same admission constraints as their labs.** Await and verify the intended actor order before processing begins, using a held scheduler when available or an explicit no-delayed-routing-or-hook constraint, so a slower admission cannot invalidate the measured starvation claim.
 
 - **Diagram labels are text even when attached to decorative lines.** Small loop-return or phase annotations must use an AA-capable text token in both themes; do not inherit a low-contrast border token simply because the label is rendered with a pseudo-element.
+
+- **A fulfilled send Promise is not an admission receipt.** Filtering, missing routes, drop, or contained mailbox failure can settle without accepted enqueue. Any lesson that depends on admission order must use independent mailbox facts or a controlled harness that rejects non-admission outcomes.
+
+- **Cross-actor starvation fixtures must control processing-turn order, not only enqueue order.** Separate actor loops can already have scheduled callbacks. Begin with idle actors and release actor A's callback first, or hold the scheduler until both admissions and the intended callback order are established.
+
+- **Serialization claims must exclude synchronous test mode unless it is separately serialized.** Immediate test-mode delivery can overlap suspended handlers when sends are concurrent. Teach one-message-at-a-time as a normal-processing-loop guarantee and do not use test mode as production serialization evidence.
