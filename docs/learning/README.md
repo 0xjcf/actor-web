@@ -17,10 +17,14 @@ verify_route() {
   test "$status" = "200"
 }
 
-verify_route https://0xjcf.github.io/actor-web/learning/
-verify_route https://0xjcf.github.io/actor-web/learning/guide/01-javascript-concurrency-and-mailboxes.html
-verify_route https://0xjcf.github.io/actor-web/learning/workbook/01-javascript-concurrency-and-mailboxes.html
-verify_route https://0xjcf.github.io/actor-web/learning/labs/week-01-event-loop-and-mailbox.html
+for route in \
+  https://0xjcf.github.io/actor-web/learning/ \
+  https://0xjcf.github.io/actor-web/learning/guide/01-javascript-concurrency-and-mailboxes.html \
+  https://0xjcf.github.io/actor-web/learning/workbook/01-javascript-concurrency-and-mailboxes.html \
+  https://0xjcf.github.io/actor-web/learning/labs/week-01-event-loop-and-mailbox.html
+do
+  verify_route "$route" || exit 1
+done
 ```
 
 If deployment or route verification is incomplete, retain the candidate label

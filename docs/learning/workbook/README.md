@@ -63,4 +63,4 @@ include:
 - explicit completion evidence
 
 Return to the [learning guide](../guide/README.md) or the
-[learning-product home](https://0xjcf.github.io/actor-web/learning/).
+[learning-product home](../index.html).
