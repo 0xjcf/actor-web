@@ -59,6 +59,22 @@ function mixHex(foreground, foregroundWeight, background) {
   return `#${mixedChannels.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
 }
 
+function extractCssBlock(source, prelude) {
+  const preludeStart = source.indexOf(prelude);
+  if (preludeStart === -1) return null;
+  const openingBrace = source.indexOf('{', preludeStart + prelude.length);
+  if (openingBrace === -1) return null;
+
+  let depth = 0;
+  for (let index = openingBrace; index < source.length; index += 1) {
+    if (source[index] === '{') depth += 1;
+    if (source[index] !== '}') continue;
+    depth -= 1;
+    if (depth === 0) return source.slice(openingBrace + 1, index);
+  }
+  return null;
+}
+
 function collectFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = resolve(directory, entry.name);
@@ -415,10 +431,15 @@ function verifyLearningPages() {
     /\.phase\.phase-last::after\s*{[^}]*color: var\(--muted\);/s.test(lab),
     'The phase-loop return label must use an AA-capable text token.'
   );
+  const mobileLabStyles = extractCssBlock(lab, '@media (max-width: 800px)');
+  const mobilePhaseConnector = extractCssBlock(
+    mobileLabStyles ?? '',
+    '.phase::after,\n        .phase.phase-last::after'
+  );
   invariant(
-    /@media \(max-width: 800px\)[\s\S]*?\.phase::after,\s*\.phase\.phase-last::after\s*{[^}]*left: auto;[^}]*content: "↓";[^}]*transform: translateX\(50%\);/s.test(
-      lab
-    ),
+    mobilePhaseConnector?.includes('left: auto;') &&
+      mobilePhaseConnector.includes('content: "↓";') &&
+      mobilePhaseConnector.includes('transform: translateX(50%);'),
     'The mobile phase connector must reset the higher-specificity final loop connector.'
   );
   const mutedColors = Array.from(
@@ -435,11 +456,13 @@ function verifyLearningPages() {
       mutedColors.every((color, index) => contrastRatio(color, panelSoftColors[index]) >= 4.5),
     'The phase-loop text token must meet WCAG AA against the diagram base in both themes.'
   );
+  const darkThemeStyles = extractCssBlock(
+    learningStylesheet,
+    '@media (prefers-color-scheme: dark)'
+  );
   const themeBlocks = [
-    learningStylesheet.match(/:root\s*{([\s\S]*?)}/)?.[1],
-    learningStylesheet.match(
-      /@media \(prefers-color-scheme: dark\)\s*{\s*:root\s*{([\s\S]*?)}/
-    )?.[1],
+    extractCssBlock(learningStylesheet, ':root'),
+    extractCssBlock(darkThemeStyles ?? '', ':root'),
   ];
   const themeColor = (block, token) =>
     block?.match(new RegExp(`--${token}:\\s*(#[\\da-f]{6})`, 'i'))?.[1];
