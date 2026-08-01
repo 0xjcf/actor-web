@@ -406,8 +406,10 @@ function verifyLearningPages() {
   invariant(
     workbook.replace(/\s+/g, ' ').includes('hold actor processing in a controlled harness') &&
       workbook.includes('<code>await actorA.send(PRIMARY)</code>') &&
-      workbook.includes('<code>await actorB.send(FAST)</code>'),
-    'The two-actor workbook experiment must establish admission before processing.'
+      workbook.includes('<code>await actorB.send(FAST)</code>') &&
+      workbook.includes('<code>fixture.releaseActorAProcessingFirst()</code>') &&
+      workbook.includes("do not release actor B's"),
+    'The two-actor workbook experiment must establish admission and release actor A first.'
   );
   invariant(
     /\.phase\.phase-last::after\s*{[^}]*color: var\(--muted\);/s.test(lab),
@@ -498,6 +500,12 @@ function verifyLearningPages() {
       'local snapshots and payloads still rely on immutable-value discipline'
     ),
     'The architecture guide must not imply that local context and payload references are cloned.'
+  );
+  invariant(
+    architectureGuide.includes('normal local processing loop and when callers') &&
+      architectureGuide.includes('overlapping actor-owned context mutation') &&
+      architectureGuide.includes('synchronous test mode as an exception'),
+    'The architecture exit test must scope serialization to normal processing and immutable values.'
   );
   invariant(
     normalizedGuide.includes('internal bounded-mailbox implementation supports') &&

@@ -664,8 +664,10 @@ CPU_RESULT</code></pre>
         admission after the primary message</li>
         <li><code>await actorB.send(FAST)</code> and verify actor B's
         admission before actor A begins processing</li>
-        <li>release the controlled processing turn only after all three
-        admissions are established</li>
+        <li>after all three admissions are established, call
+        <code>fixture.releaseActorAProcessingFirst()</code> (or the
+        equivalent harness operation) and do not release actor B's
+        callback before <code>A_PRIMARY_STARTED</code> is observed</li>
         <li>wait for all expected completion events with a fixed
         five-second deadline</li>
         <li>if the deadline expires, record every missing event and

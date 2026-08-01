@@ -248,8 +248,11 @@ Exercise:
 3. Run one deliberately blocking handler and observe what stops progressing.
 4. Compare your result with `BoundedMailbox` statistics and tests.
 
-Exit test: explain why "one message at a time" prevents concurrent mutation of
-one actor's context but does not prevent event-loop starvation.
+Exit test: explain why, in the normal local processing loop and when callers
+treat payloads and observed snapshots as immutable values, "one message at a
+time" prevents overlapping actor-owned context mutation but does not prevent
+event-loop starvation. Also name synchronous test mode as an exception to that
+normal-loop serialization claim.
 
 ### Week 2: The actor model and OTP behaviors
 
