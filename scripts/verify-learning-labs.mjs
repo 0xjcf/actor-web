@@ -268,6 +268,7 @@ function verifyLearningPages() {
   const guide = readFileSync(learningPages[2], 'utf8');
   const workbook = readFileSync(learningPages[3], 'utf8');
   const learningHome = readFileSync(learningPages[0], 'utf8');
+  const lab = readFileSync(weekOneLab, 'utf8');
   invariant(
     learningHome.includes('week-01-javascript-event-loop-and-actor-mailboxes.html'),
     'The learning home must link to the complete Week 1 path.'
@@ -283,6 +284,11 @@ function verifyLearningPages() {
   invariant(
     workbook.replace(/\s+/g, ' ').includes('Select any correlated code line'),
     'The workbook must teach the phase-to-code interaction.'
+  );
+  invariant(
+    lab.includes("await actor.send({ type: 'A' });") &&
+      lab.includes('FIFO follows admission order, not concurrent call order'),
+    'The sequential actor lesson must establish admission order before claiming FIFO.'
   );
 
   return learningPages.length;

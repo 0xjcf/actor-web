@@ -148,7 +148,7 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 
 - **Publication maturity requires deployed-route evidence, not a green build.** Keep unreleased learning surfaces labeled candidate with local artifact paths; promote them to available only after the main-branch deployment succeeds and every canonical route returns exact HTTP 200, rejecting redirects as well as errors. Multi-route verification snippets must propagate the first failed check instead of allowing a later success to determine the shell exit status.
 
-- **Architecture decision summaries must carry maturity labels for unshipped guarantees.** A concise rationale table can accidentally turn an accepted target into a present-tense runtime promise; prefix candidate, accepted-target, and deferred decisions explicitly wherever readers may encounter them without the surrounding maturity matrix.
+- **Architecture decision summaries must carry independent maturity labels.** A concise rationale table can accidentally turn a candidate or accepted target into a present-tense runtime promise; prefix every row with current, candidate, accepted-target, deferred, or governance maturity wherever readers may encounter it without the surrounding maturity matrix.
 
 - **Recovery guidance must keep receipt status separate from rehydration outcome.** `timeout` and `partial_failure` can remain non-terminal execution facts, while an unknown post-call result maps checkpoint recovery to `deferred_for_reconciliation`; block automatic retry until an authoritative reconciliation receipt records the outcome.
 
@@ -157,3 +157,7 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **HTML link verification should parse attributes and contain normalized deployed paths.** Regexes that recognize only lowercase double-quoted `href` values miss valid HTML forms, while prefix checks before path normalization admit traversal; use a no-evaluation DOM parse and reject normalized site-root targets outside the published learning root.
 
 - **Animated teaching surfaces need one authoritative live-region narrative.** Step counters, metadata, and code correlation may update visually on every frame without each becoming a screen-reader announcement; keep one atomic explanation region active and expose supporting text through ordinary labels and descriptions.
+
+- **Mailbox FIFO orders completed admission, not concurrent send invocation.** Asynchronous send interceptors or directory lookup can let a later call reach the mailbox first. Sequentially await admission when a lesson needs deterministic order, and qualify whether the projection assumes no delayed hook before the scheduled processing turn.
+
+- **Lower-level runtime slices must show routing and the mailbox before actor delivery.** Local send and ask enter the actor system, run routing and interception, enqueue, and later dequeue before delivery looks up the actor instance and behavior handler; reversing that sequence teaches the wrong authority and pressure boundary.

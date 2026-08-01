@@ -634,9 +634,10 @@ the repository horizontally.
 
 ```text
 ActorRef.send or ActorRef.ask
-  -> actor instance
+  -> actor-system routing, interceptors, and directory lookup
   -> bounded mailbox
-  -> behavior handler
+  -> scheduled processing and dequeue
+  -> actor instance and behavior handler
   -> next context, reply, emitted event, or MessagePlan
   -> snapshot/event subscription
 ```
@@ -644,10 +645,11 @@ ActorRef.send or ActorRef.ask
 Read:
 
 1. [`actor-ref.ts`](../packages/actor-core-runtime/src/actor-ref.ts)
-2. [`actor-instance.ts`](../packages/actor-core-runtime/src/actor-instance.ts)
+2. [`actor-system-impl.ts`](../packages/actor-core-runtime/src/actor-system-impl.ts)
 3. [`mailbox.ts`](../packages/actor-core-runtime/src/messaging/mailbox.ts)
-4. [`fluent-behavior-builder.ts`](../packages/actor-core-runtime/src/fluent-behavior-builder.ts)
-5. [`otp-message-plan-processor.ts`](../packages/actor-core-runtime/src/otp-message-plan-processor.ts)
+4. [`actor-instance.ts`](../packages/actor-core-runtime/src/actor-instance.ts)
+5. [`fluent-behavior-builder.ts`](../packages/actor-core-runtime/src/fluent-behavior-builder.ts)
+6. [`otp-message-plan-processor.ts`](../packages/actor-core-runtime/src/otp-message-plan-processor.ts)
 
 ### Slice B: from an address to another node
 
@@ -719,21 +721,21 @@ Use this table as a decision-review checklist rather than doctrine.
 
 | Decision | Problem it addresses | Cost or limitation we accept |
 | --- | --- | --- |
-| Actors own mutable state | Shared-state races and unclear concurrency ownership | Message protocols, mailbox pressure, and eventual coordination are more explicit work |
-| Behaviors and FSMs constrain models | Probabilistic output cannot define application truth safely | Domain transitions must be modeled and maintained deliberately |
-| `send`, `ask`, and `emit` stay distinct | Commands, request/reply, and facts have different coupling and failure semantics | More vocabulary than a single generic event bus |
-| At-most-once is documented honestly | A transport cannot promise durable business completion by enqueueing once | Reliable workflows need application protocols and storage |
+| Current: actors own mutable state | Shared-state races and unclear concurrency ownership | Message protocols, mailbox pressure, and eventual coordination are more explicit work |
+| Current: behaviors and FSMs constrain models | Probabilistic output cannot define application truth safely | Domain transitions must be modeled and maintained deliberately |
+| Current: `send`, `ask`, and `emit` stay distinct | Commands, request/reply, and facts have different coupling and failure semantics | More vocabulary than a single generic event bus |
+| Current: at-most-once is documented honestly | A transport cannot promise durable business completion by enqueueing once | Reliable workflows need application protocols and storage |
 | Accepted target: state and irreversible effect intent meet at a durable boundary | A crash must not lose why an external call should happen | Requires storage design, versioning, and recovery policy |
-| External outcomes become receipts | Provider calls are nondeterministic and may be uncertain | More records and lineage to manage |
-| Retries use stable idempotency identity | Timeouts and transient failures require repetition without duplicate harm | Every adapter needs a clear deduplication scope and retention policy |
-| Uncertain effects reconcile instead of replaying blindly | A timeout or crash after a call does not prove the call failed | Some work pauses for observation or human review |
-| Admission has three stages | Valid JSON, valid domain action, and authorized execution are different claims | More explicit rejection states and tests |
-| Execution rechecks current authority | Discovery, cached approval, and projections can become stale | A last-moment policy dependency can reject previously visible actions |
-| Runtime contracts are JSON-safe and versioned | Downstream repos and providers need a stable, language-neutral seam | Rich runtime objects must be projected into stricter data shapes |
-| Ports are provider-neutral; adapters live downstream | Core packages must stay independently useful and avoid dependency cycles | Consumers own translation code and reconfirm compatibility |
-| FAS is control plane; Actor-Web is data plane | Workflow governance and runtime execution evolve at different rates | Cross-plane contracts and reconciliation are required |
-| Ignite projects facts rather than owning execution | UI state is derived, possibly stale, and not a security boundary | Commands must travel back through authoritative admission |
-| Humans keep final review and merge | Automated evidence can be incomplete or wrong | Full autonomy stops at an explicit governance boundary |
+| Candidate source contract: external outcomes become receipts | Provider calls are nondeterministic and may be uncertain | More records and lineage to manage |
+| Candidate source contract: retries use stable idempotency identity | Timeouts and transient failures require repetition without duplicate harm | Every adapter needs a clear deduplication scope and retention policy |
+| Candidate recovery seam: uncertain effects reconcile instead of replaying blindly | A timeout or crash after a call does not prove the call failed | Some work pauses for observation or human review |
+| Candidate source contract: admission has three stages | Valid JSON, valid domain action, and authorized execution are different claims | More explicit rejection states and tests |
+| Candidate source contract: execution rechecks current authority | Discovery, cached approval, and projections can become stale | A last-moment policy dependency can reject previously visible actions |
+| Candidate source contract: runtime contracts are JSON-safe and versioned | Downstream repos and providers need a stable, language-neutral seam | Rich runtime objects must be projected into stricter data shapes |
+| Current architecture: ports are provider-neutral; adapters live downstream | Core packages must stay independently useful and avoid dependency cycles | Consumers own translation code and reconfirm compatibility |
+| Accepted ecosystem boundary: FAS is control plane; Actor-Web is data plane | Workflow governance and runtime execution evolve at different rates | Cross-plane contracts and reconciliation are required |
+| Accepted ecosystem boundary: Ignite projects facts rather than owning execution | UI state is derived, possibly stale, and not a security boundary | Commands must travel back through authoritative admission |
+| Current governance: humans keep final review and merge | Automated evidence can be incomplete or wrong | Full autonomy stops at an explicit governance boundary |
 
 ## Capstone: build a recoverable, evidence-governed worker
 
