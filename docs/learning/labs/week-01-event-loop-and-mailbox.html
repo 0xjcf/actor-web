@@ -1163,9 +1163,10 @@
                   "}",
                   "mailbox.dequeue();",
                 ];
+          const policyLabel = policy.charAt(0).toUpperCase() + policy.slice(1);
           const common = {
             projection: "actor",
-            label: "Mailbox overflow: " + policy,
+            label: "Mailbox overflow: " + policyLabel,
             question: "What should the runtime do when demand exceeds capacity?",
             code: code.join("\n"),
           };

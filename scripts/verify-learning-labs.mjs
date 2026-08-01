@@ -326,6 +326,16 @@ function verifyWeekOneLab() {
 
       const scenarioValues = Array.from(scenarioSelect.options, (option) => option.value);
       invariant(scenarioValues.length > 0, `Projection ${projection} must contain scenarios.`);
+      for (const option of scenarioSelect.options) {
+        if (option.value.startsWith('overflow-')) {
+          const policy = option.value.slice('overflow-'.length);
+          const policyLabel = policy.charAt(0).toUpperCase() + policy.slice(1);
+          invariant(
+            option.textContent === `Mailbox overflow: ${policyLabel}`,
+            `Scenario ${option.value} must display its policy in title case.`
+          );
+        }
+      }
 
       for (const scenarioValue of scenarioValues) {
         scenarioSelect.value = scenarioValue;
