@@ -161,3 +161,9 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Mailbox FIFO orders completed admission, not concurrent send invocation.** Asynchronous send interceptors or directory lookup can let a later call reach the mailbox first. Sequentially await admission when a lesson needs deterministic order, and qualify whether the projection assumes no delayed hook before the scheduled processing turn.
 
 - **Lower-level runtime slices must show routing and the mailbox before actor delivery.** Local send and ask enter the actor system, run routing and interception, enqueue, and later dequeue before delivery looks up the actor instance and behavior handler; reversing that sequence teaches the wrong authority and pressure boundary.
+
+- **Published HTML links must remain inside the copied documentation root.** A relative link can resolve to an existing repository file and still break after static publication. Reject normalized HTML targets outside `docs/learning`, while allowing repository-only Markdown trails to link deliberately to source and architecture material outside that subtree.
+
+- **Two-actor starvation demonstrations must establish both admissions before claiming one actor is ready but blocked.** Await actor A's admission before starting actor B, and state whether asynchronous send hooks or directory lookup can delay B beyond the scheduled processing turn.
+
+- **Serialized delivery protects actor-owned mutation only under an immutable-value discipline.** Local message payloads and `getSnapshot().context` can retain shared mutable references because Actor-Web does not promise universal deep cloning or freezing. Teach that external mutation can pierce the actor boundary even though handlers remain serialized.
