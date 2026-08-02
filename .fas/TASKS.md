@@ -2446,6 +2446,112 @@ operator explicitly asks for queue mutations.
 - Brief: .fas/tasks/support-legacy-orchestration-generation-adoption-for-termina.md
 - Automation mode: manual
 
+### Task: Week 2 learning product: actor model and OTP behaviors
+
+- Title: Week 2 learning product: actor model and OTP behaviors
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/week-2-learning-product-actor-model-and-otp-behaviors.md
+
+### Task: Week 3 learning product: supervision and failure domains
+
+- Title: Week 3 learning product: supervision and failure domains
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/week-3-learning-product-supervision-and-failure-domains.md
+
+### Task: Week 4 learning product: behaviors FSMs and statecharts
+
+- Title: Week 4 learning product: behaviors FSMs and statecharts
+- Mode: single-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/week-4-learning-product-behaviors-fsms-and-statecharts.md
+
+### Task: Week 5 learning product: distributed delivery semantics
+
+- Title: Week 5 learning product: distributed delivery semantics
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/week-5-learning-product-distributed-delivery-semantics.md
+
+### Task: Week 6 learning product: durable execution idempotency and reconciliation
+
+- Title: Week 6 learning product: durable execution idempotency and reconciliation
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/week-6-learning-product-durable-execution-idempotency-and-re.md
+
+### Task: Week 7 learning product: authentication authorization and capabilities
+
+- Title: Week 7 learning product: authentication authorization and capabilities
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/week-7-learning-product-authentication-authorization-and-cap.md
+
+### Task: Week 8 learning product: facts traces CQRS and projections
+
+- Title: Week 8 learning product: facts traces CQRS and projections
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/week-8-learning-product-facts-traces-cqrs-and-projections.md
+
+### Task: Week 9 learning product: ports adapters and ecosystem authority
+
+- Title: Week 9 learning product: ports adapters and ecosystem authority
+- Mode: single-agent
+- Status: done
+- Owner: reviewer
+- Brief: .fas/tasks/week-9-learning-product-ports-adapters-and-ecosystem-authori.md
+
+### Task: Week 10 learning product: conformance and failure-oriented testing
+
+- Title: Week 10 learning product: conformance and failure-oriented testing
+- Mode: single-agent
+- Status: done
+- Owner: reviewer
+- Brief: .fas/tasks/week-10-learning-product-conformance-and-failure-oriented-te.md
+
+### Task: Week 9 learning product: ecosystem ports adapters and authority
+
+- Title: Week 9 learning product: ecosystem ports adapters and authority
+- Mode: single-agent
+- Status: done
+- Owner: reviewer
+- Brief: .fas/tasks/week-9-learning-product-ecosystem-ports-adapters-and-authori.md
+
+### Task: Week 10 learning product: conformance and failure-oriented proofs
+
+- Title: Week 10 learning product: conformance and failure-oriented proofs
+- Mode: single-agent
+- Status: done
+- Owner: reviewer
+- Brief: .fas/tasks/week-10-learning-product-conformance-and-failure-oriented-pr.md
+
+### Task: Week 9 learning product: ecosystem authority and adapter boundaries
+
+- Title: Week 9 learning product: ecosystem authority and adapter boundaries
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/week-9-learning-product-ecosystem-authority-and-adapter-boun.md
+- Automation mode: manual
+
+### Task: Week 10 learning product: conformance capstone and failure proofs
+
+- Title: Week 10 learning product: conformance capstone and failure proofs
+- Mode: 6-agent
+- Status: queued
+- Owner: runtime
+- Brief: .fas/tasks/week-10-learning-product-conformance-capstone-and-failure-pr.md
+- Automation mode: manual
+
 ## Template
 
 ### Task: `<short task title>`
