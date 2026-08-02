@@ -1,15 +1,17 @@
 # Learn Actor-Web
 
-**Publication maturity: candidate.** Until the Docs workflow deploys this
-content from `main` and the publication gate below passes, use the repository's
-[learning home](./index.html), [Week 1 guide](./guide/01-javascript-concurrency-and-mailboxes.html),
-[workbook](./workbook/01-javascript-concurrency-and-mailboxes.html), and
-[interactive lab](./labs/week-01-event-loop-and-mailbox.html).
+**Publication maturity: available.** The Docs workflow deployed Week 1 from
+`main` at merge commit `fbc04fd325738a517ebf8252aa57773b6150bf7b`, and the
+publication gate below passed on 2026-08-01. Open the published
+[learning home](https://0xjcf.github.io/actor-web/learning/),
+[Week 1 guide](https://0xjcf.github.io/actor-web/learning/guide/01-javascript-concurrency-and-mailboxes.html),
+[workbook](https://0xjcf.github.io/actor-web/learning/workbook/01-javascript-concurrency-and-mailboxes.html),
+or [interactive lab](https://0xjcf.github.io/actor-web/learning/labs/week-01-event-loop-and-mailbox.html).
 
 ## Publication gate
 
-Promote Week 1 from **candidate** to **available** only after the Docs workflow
-successfully deploys from `main` and every canonical route returns HTTP 200:
+Week 1 moved from **candidate** to **available** only after the Docs workflow
+successfully deployed from `main` and every canonical route returned HTTP 200:
 
 ```sh
 verify_route() {
@@ -28,8 +30,10 @@ do
 done
 ```
 
-If deployment or route verification is incomplete, retain the candidate label
-and local links. A successful build alone does not prove publication.
+If a future deployment or route verification is incomplete, do not use that
+deployment as evidence of availability. A successful build alone does not
+prove publication. Use the matching files under `docs/learning/` locally until
+both deployment and route verification pass again.
 
 ## Two products, two jobs
 
@@ -88,7 +92,7 @@ content is ready.
 
 | Week | Topic | Status | Guide | Workbook | Lab |
 | --- | --- | --- | --- | --- | --- |
-| 1 | JavaScript concurrency and actor mailboxes | Candidate | [Read](./guide/01-javascript-concurrency-and-mailboxes.html) | [Practice](./workbook/01-javascript-concurrency-and-mailboxes.html) | [Open](./labs/week-01-event-loop-and-mailbox.html) |
+| 1 | JavaScript concurrency and actor mailboxes | Available | [Read](./guide/01-javascript-concurrency-and-mailboxes.html) | [Practice](./workbook/01-javascript-concurrency-and-mailboxes.html) | [Open](./labs/week-01-event-loop-and-mailbox.html) |
 | 2 | Actor model and OTP behaviors | Planned | Course map only | Planned | Planned |
 | 3 | Supervision and failure domains | Planned | Course map only | Planned | Planned |
 | 4 | Behaviors, FSMs, and statecharts | Planned | Course map only | Planned | Planned |

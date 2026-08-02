@@ -212,9 +212,11 @@ to refresh these labels before making a decision.
 ### Week 1: JavaScript concurrency and the mailbox
 
 The repository contains all three Week 1 surfaces. The canonical Pages links
-below become a **current publication** only after the Docs workflow deploys
-them from `main`; if any URL does not resolve, treat publication as candidate
-and use the matching files under `docs/learning/` locally.
+below are a **current publication**: the Docs workflow deployed merge commit
+`fbc04fd325738a517ebf8252aa57773b6150bf7b`, and every canonical route returned
+HTTP 200 on 2026-08-01. If a future deployment fails that gate, use the matching
+files under `docs/learning/` locally and do not cite the failed deployment as
+availability evidence.
 
 [Read Chapter 1](https://0xjcf.github.io/actor-web/learning/guide/01-javascript-concurrency-and-mailboxes.html),
 [complete the workbook](https://0xjcf.github.io/actor-web/learning/workbook/01-javascript-concurrency-and-mailboxes.html),
