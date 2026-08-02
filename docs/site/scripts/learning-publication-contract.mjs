@@ -15,3 +15,9 @@ export const REQUIRED_LEARNING_PAGES = [
   'workbook/01-javascript-concurrency-and-mailboxes.html',
   'labs/week-01-event-loop-and-mailbox.html',
 ];
+
+export const ACTOR_WEB_DOCS_ORIGIN = 'https://0xjcf.github.io/actor-web/';
+
+export const REQUIRED_LEARNING_ROUTES = REQUIRED_LEARNING_PAGES.map((page) =>
+  page === 'index.html' ? 'learning/' : `learning/${page}`
+);

@@ -77,7 +77,7 @@ a:hover {
 }
 
 a:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--accent) 68%, transparent);
+  outline: 3px solid var(--accent);
   outline-offset: 3px;
 }
 

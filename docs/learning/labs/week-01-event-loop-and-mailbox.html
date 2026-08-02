@@ -17,7 +17,7 @@
 
       button:focus-visible,
       select:focus-visible {
-        outline: 3px solid color-mix(in srgb, var(--accent) 68%, transparent);
+        outline: 3px solid var(--accent);
         outline-offset: 3px;
       }
 
@@ -1048,7 +1048,7 @@
               step("behavior", "actor A busy", "Actor A enters synchronous CPU work first", "The controlled scheduler has selected actor A before actor B. Actor A registers the zero timer immediately before its bounded busy loop, then occupies the isolate so actor B and the timer cannot enter JavaScript.", { behavior: ["register zero timer", "actor A busy loop"], "other-actor": ["actor B ready but blocked"], timers: ["timer ready but blocked"], stats: ["mailboxes remain isolated"] }, "Which guarantee remains true while progress is blocked?"),
               step("other-actor", "actor B", "Actor B runs after A returns", "Actor B never mutated actor A's context, but it still shared actor A's CPU scheduler.", { behavior: ["actor A complete"], "other-actor": ["actor B FAST handler"], timers: ["timer ready"], output: ["actor A done", "actor B done"] }, "How could CPU-heavy work stop occupying this isolate?"),
               step("worker", "CPU job", "Move CPU work to a worker boundary", "Actor A can await a worker result while the worker executes JavaScript in parallel.", { behavior: ["actor A awaiting result"], worker: ["CPU job running in parallel"], "other-actor": ["actor B can receive turns"], timers: ["timer can receive a turn"] }, "Does awaiting a worker allow actor A's next message to overtake the current delivery?"),
-              step("output", "progress", "Isolation and parallelism are now separate choices", "Actor A remains logically serialized; actor B and timers progress; CPU work runs behind a parallel execution boundary.", { output: ["actor B done", "timer", "worker result", "actor A done"], stats: ["actor A context isolated", "actor B context isolated"] }, "What additional boundary would isolate process crashes as well as CPU work?"),
+              step("output", "progress", "Isolation and parallelism are now separate choices", "Actor A remains logically serialized; actor B, the timer, and the worker can progress in an order the host does not guarantee. Only the worker result before actor A completion is required here.", { output: ["unordered progress: actor B / timer / worker", "required edge: worker result → actor A done"], stats: ["actor A context isolated", "actor B context isolated"] }, "What additional boundary would isolate process crashes as well as CPU work?"),
             ],
           },
         };

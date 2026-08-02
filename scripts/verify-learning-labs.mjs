@@ -5,7 +5,11 @@ import { fileURLToPath } from 'node:url';
 
 import { Window } from 'happy-dom';
 
-import { PUBLISHABLE_LEARNING_EXTENSIONS } from '../docs/site/scripts/learning-publication-contract.mjs';
+import {
+  ACTOR_WEB_DOCS_ORIGIN,
+  PUBLISHABLE_LEARNING_EXTENSIONS,
+  REQUIRED_LEARNING_ROUTES,
+} from '../docs/site/scripts/learning-publication-contract.mjs';
 
 const verifierPath = fileURLToPath(import.meta.url);
 const repositoryRoot = resolve(dirname(verifierPath), '..');
@@ -73,6 +77,12 @@ function extractCssBlock(source, prelude) {
     if (depth === 0) return source.slice(openingBrace + 1, index);
   }
   return null;
+}
+
+function permissionFlagForNodeVersion(version) {
+  const major = Number.parseInt(version.split('.')[0], 10);
+  invariant(Number.isInteger(major), `Invalid Node version: ${version}`);
+  return major >= 22 ? '--permission' : '--experimental-permission';
 }
 
 function collectFiles(directory) {
@@ -374,6 +384,18 @@ function verifyLearningPages() {
     'The learning home must link to the complete Week 1 path.'
   );
   invariant(
+    permissionFlagForNodeVersion('20.0.0') === '--experimental-permission' &&
+      permissionFlagForNodeVersion('22.0.0') === '--permission',
+    'The isolated lab verifier must use the permission flag supported by each Node engine.'
+  );
+  invariant(
+    REQUIRED_LEARNING_ROUTES.length === learningPages.length &&
+      REQUIRED_LEARNING_ROUTES.every((route) =>
+        new URL(route, ACTOR_WEB_DOCS_ORIGIN).href.startsWith(ACTOR_WEB_DOCS_ORIGIN)
+      ),
+    'Every required learning page must publish one same-origin sitemap route.'
+  );
+  invariant(
     /\.product-card h2,\s*\.product-card h3\s*{/.test(learningStylesheet),
     'Guide, workbook, and lab cards must share compact heading styles across h2 and h3.'
   );
@@ -468,6 +490,18 @@ function verifyLearningPages() {
     'The phase-loop text token must meet WCAG AA against the diagram base in both themes.'
   );
   invariant(
+    /a:focus-visible\s*{[^}]*outline: 3px solid var\(--accent\);/s.test(learningStylesheet) &&
+      themeBlocks.every((block) => {
+        const accent = themeColor(block, 'accent');
+        const surfaces = ['page', 'panel', 'panel-soft'].map((token) => themeColor(block, token));
+        return (
+          Boolean(accent) &&
+          surfaces.every((surface) => Boolean(surface) && contrastRatio(accent, surface) >= 3)
+        );
+      }),
+    'Link focus rings must meet 3:1 non-text contrast on every learning surface in both themes.'
+  );
+  invariant(
     /\.source-line::before\s*{[^}]*color: var\(--code-ink\);/s.test(lab) &&
       themeBlocks.every((block) => {
         const code = themeColor(block, 'code');
@@ -492,6 +526,12 @@ function verifyLearningPages() {
     lab.includes('report(type, admitted); // false when dropped') &&
       lab.includes('continue so E is attempted after D fails'),
     'Overflow listings must expose drop results and preserve later fail attempts.'
+  );
+  invariant(
+    lab.includes('unordered progress: actor B / timer / worker') &&
+      lab.includes('required edge: worker result → actor A done') &&
+      !lab.includes('output: ["actor B done", "timer", "worker result", "actor A done"]'),
+    'Worker offload must show only its required partial order, not a host completion sequence.'
   );
   invariant(
     normalizedGuide.includes('prevents overlapping <em>actor-owned</em> context mutation') &&
@@ -731,7 +771,7 @@ function verifyWeekOneLabIsolated() {
   const child = spawnSync(
     process.execPath,
     [
-      '--permission',
+      permissionFlagForNodeVersion(process.versions.node),
       `--allow-fs-read=${repositoryRoot}`,
       '--disallow-code-generation-from-strings',
       '--frozen-intrinsics',
