@@ -15,7 +15,7 @@
     "test:labs-mesh": "pnpm --filter @actor-web/labs-mesh test",
     "test:examples": "vitest run --config examples/vitest.config.ts",
     "test:agent": "pnpm --filter @actor-web/agent test",
-    "test:all": "pnpm test && pnpm test:agent && pnpm test:cli",
+    "test:all": "pnpm test && pnpm test:agent && pnpm test:cli && pnpm test:learning",
     "lint": "biome check . && pnpm lint:md",
     "lint:md": "markdownlint-cli2 --config .markdownlint.jsonc \".fas/TASKS.md\" \".fas/tasks/**/*.md\"",
     "lint:md:all": "markdownlint-cli2 --config .markdownlint.jsonc \"*.md\" \".github/**/*.md\" \".fas/TASKS.md\" \".fas/tasks/**/*.md\" \"docs/**/*.md\" \"examples/**/*.md\" \"packages/**/*.md\" \"tests/**/*.md\" \"#**/node_modules/**\" \"#**/dist/**\" \"#.pnpm-store/**\"",
@@ -53,6 +53,7 @@
     "docs:contrast": "pnpm --filter docs-site test:contrast",
     "docs:lint:md": "markdownlint-cli2 --config docs/site/.markdownlint.jsonc \"docs/site/**/*.md\" \"#**/node_modules/**\" \"#**/dist/**\"",
     "test:docs": "pnpm --filter docs-site build",
+    "test:learning": "node scripts/verify-learning-labs.mjs",
     "utils:date": "./scripts/date-utils.sh current",
     "utils:date-scan": "./scripts/date-utils.sh scan",
     "utils:date-fix": "./scripts/date-utils.sh fix-all",
@@ -94,7 +95,7 @@
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^2.1.4",
     "@xstate/graph": "^3.0.4",
-    "happy-dom": "^18.0.1",
+    "happy-dom": "^20.8.8",
     "ignite-element": "3.0.0-beta.8",
     "markdownlint-cli2": "^0.22.1",
     "tsup": "^8.3.5",
@@ -104,7 +105,7 @@
     "ws": "^8.18.3"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "pnpm": {
     "overrides": {

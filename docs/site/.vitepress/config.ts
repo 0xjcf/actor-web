@@ -23,6 +23,11 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: 'Overview', link: '/overview/what-is-actor-web' },
+      {
+        text: 'Learn',
+        link: 'https://0xjcf.github.io/actor-web/learning/',
+        target: '_self',
+      },
       { text: 'Getting Started', link: '/getting-started/your-first-actor' },
       { text: 'Concepts', link: '/concepts/actors-and-behaviors' },
       { text: 'Guides', link: '/guides/ignite-element' },

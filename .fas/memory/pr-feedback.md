@@ -131,3 +131,101 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Advisory observers must not change authoritative outcomes.** Contain trace-listener exceptions outside dispatch and settlement, rebuild published receipt payloads from an explicit field allowlist so unknown extensions cannot bypass redaction, preserve authoritative join keys, clamp trace buffers to a positive bound, keep overflow markers transient so they do not evict real retained projections, and sanitize provider exception text before it becomes a broadcast or durable trace fact.
 
 - **Public-entrypoint boundary tests must inspect executable entrypoints too.** Checking only library helpers misses deep source imports in CLI binaries that work in a monorepo but fail in the published package. Include the shipped CLI source in the boundary assertion and import node-only adapters from the public node entrypoint.
+
+## PR #57 — Week 1 learning product babysit (2026-08-01, supplemental learning)
+
+- **Executable teaching listings must be able to reach every narrated phase.** Awaiting a parked enqueue inline prevents later producers and consumer progress from ever appearing, while an uncaught fail policy stops at the first rejection. For backpressure lessons, start concurrent enqueue attempts before opening capacity, catch expected per-attempt failures, and keep code-to-phase mappings under executable verification.
+
+- **Learning claims must trace the exact runtime counter, including failure paths.** A nominal batch limit may count only successful deliveries, so error-heavy resumed workloads can exceed the stated bound. Qualify documentation and fixtures to the counter that production code actually advances, and create separate runtime work if attempted-delivery fairness should change.
+
+- **DOM test execution needs an explicit trust and process boundary.** Keep static page validation on the default no-evaluation path, use a security-fixed DOM implementation, enable JavaScript only for the interactive page that needs it, and run that evaluation in a child process so page code cannot mutate the verifier's isolate.
+
+- **Static link validators must model deployed URL semantics before filesystem resolution.** Strip query strings and fragments, decode percent-encoded paths with a fail-closed error path, classify every URI scheme and protocol-relative URL as non-local, and resolve root-relative links through the deployed site base instead of the current file's directory.
+
+- **Document-structure checks should prove containment, not count matching fragments.** Parse the page, locate the intended section heading, and assert that each lower-level card heading is inside that section so unrelated markup cannot satisfy the hierarchy contract.
+
+- **Isolated verifier failures must preserve process-launch diagnostics.** When a child process cannot start, report the spawn error alongside its signal and captured output; otherwise infrastructure failures look like silent assertion failures inside the child.
+
+- **Publication maturity requires deployed-route evidence, not a green build.** Keep unreleased learning surfaces labeled candidate with local artifact paths; promote them to available only after the main-branch deployment succeeds and every canonical route returns exact HTTP 200, rejecting redirects as well as errors. Multi-route verification snippets must propagate the first failed check instead of allowing a later success to determine the shell exit status, and bound both connection and total request time.
+
+- **Architecture decision summaries must carry independent maturity labels.** A concise rationale table can accidentally turn a candidate or accepted target into a present-tense runtime promise; prefix every row with current, candidate, accepted-target, deferred, or governance maturity wherever readers may encounter it without the surrounding maturity matrix.
+
+- **Recovery guidance must keep receipt status separate from rehydration outcome.** `timeout` and `partial_failure` can remain non-terminal execution facts, while an unknown post-call result maps checkpoint recovery to `deferred_for_reconciliation`; block automatic retry until an authoritative reconciliation receipt records the outcome.
+
+- **Security-fixed dependency locks need matching manifest floors.** A patched lockfile does not prevent a future resolver from selecting an older vulnerable version when the declared semver range still admits it; set the manifest's minimum to the first accepted fixed release and keep untrusted-document evaluation in a separately constrained process.
+
+- **HTML link verification should parse attributes and contain normalized deployed paths.** Regexes that recognize only lowercase double-quoted `href` values miss valid HTML forms, while prefix checks before path normalization admit traversal; use a no-evaluation DOM parse and reject normalized site-root targets outside the published learning root.
+
+- **Animated teaching surfaces need one authoritative live-region narrative.** Step counters, metadata, and code correlation may update visually on every frame without each becoming a screen-reader announcement; keep one atomic explanation region active and expose supporting text through ordinary labels and descriptions.
+
+- **Mailbox FIFO orders completed admission, not concurrent send invocation.** Asynchronous send interceptors or directory lookup can let a later call reach the mailbox first. Sequentially await admission when a lesson needs deterministic order, and qualify whether the projection assumes no delayed hook before the scheduled processing turn.
+
+- **Lower-level runtime slices must show routing and the mailbox before actor delivery.** Local send and ask enter the actor system, run routing and interception, enqueue, and later dequeue before delivery looks up the actor instance and behavior handler; reversing that sequence teaches the wrong authority and pressure boundary.
+
+- **Published HTML links must remain inside the copied documentation root.** A relative link can resolve to an existing repository file and still break after static publication. Reject normalized HTML targets outside `docs/learning`, while allowing repository-only Markdown trails to link deliberately to source and architecture material outside that subtree.
+
+- **Two-actor starvation demonstrations must establish both admissions before claiming one actor is ready but blocked.** Await actor A's admission before starting actor B, and state whether asynchronous send hooks or directory lookup can delay B beyond the scheduled processing turn.
+
+- **Serialized delivery protects actor-owned mutation only under an immutable-value discipline.** Local message payloads and `getSnapshot().context` can retain shared mutable references because Actor-Web does not promise universal deep cloning or freezing. Teach that external mutation can pierce the actor boundary even though handlers remain serialized.
+
+- **Source-tree existence does not prove a learning link will be published.** HTML link validation and the static publisher must consume one extension or manifest contract, so links to tracked Markdown or other excluded files fail before deployment even when they remain inside `docs/learning`.
+
+- **Fairness-batch demonstrations need a proven preload boundary.** Concurrent `send` invocation cannot guarantee that every message reaches the mailbox before the first scheduled processing turn when routing or hooks can yield. Hold processing in a harness or explicitly constrain and verify admission timing before teaching an exact 100/1 split.
+
+- **Rebuilt interactive code listings must preserve source-line focus.** When step, autoplay, scenario, or projection rendering replaces correlated line controls, capture a focused source-line identity before replacement and restore it only when the rebuilt listing contains the same focusable line. Do not rely only on the direct code-line click handler.
+
+- **Learning evidence links should identify an immutable reviewed revision.** Links to runtime source and tests on a mutable default branch can silently rewrite a lesson after publication. Pin evidence URLs to a commit SHA or release tag, name that revision in the guide, and update the pin deliberately when the lesson is revalidated.
+
+- **One-time event-loop bootstrap work must sit outside the recurring phase cycle.** When a compatibility timer pass can occur only before entering the normal loop, diagrams should label it as bootstrap and start the cycle at the first recurring phase rather than drawing bootstrap work as if every iteration repeats it.
+
+- **Mailboxes own queue pressure, while the runtime loop owns serialized delivery.** Architecture comparisons should not attribute one-message-at-a-time handling to the bounded queue itself; describe capacity and overflow at the mailbox boundary and sequencing at the actor-processing boundary.
+
+- **Overflow examples must surface returned admission outcomes.** When a drop policy returns `false`, capture and report that boolean in the executable listing so narrated output is produced by visible code. Keep fail examples running after expected rejection and update every correlated line reference when listings grow.
+
+- **Await demonstrations must control Promise settlement ordering.** A generic I/O helper may return an already-fulfilled Promise, letting its microtask continuation beat a timer. If a lesson promises unrelated timer progress while a handler remains unfinished, define a fixture that stays pending through that timer turn or explicitly qualify the alternative order.
+
+- **Workbook concurrency experiments need the same admission constraints as their labs.** Await and verify the intended actor order before processing begins, using a held scheduler when available or an explicit no-delayed-routing-or-hook constraint, so a slower admission cannot invalidate the measured starvation claim.
+
+- **Diagram labels are text even when attached to decorative lines.** Small loop-return or phase annotations must use an AA-capable text token in both themes; do not inherit a low-contrast border token simply because the label is rendered with a pseudo-element.
+
+- **A fulfilled send Promise is not an admission receipt.** Filtering, missing routes, drop, or contained mailbox failure can settle without accepted enqueue. Any lesson that depends on admission order must use independent mailbox facts or a controlled harness that rejects non-admission outcomes.
+
+- **Cross-actor starvation fixtures must control processing-turn order, not only enqueue order.** Separate actor loops can already have scheduled callbacks. Begin with idle actors and release actor A's callback first, or hold the scheduler until both admissions and the intended callback order are established.
+
+- **Serialization claims must exclude synchronous test mode unless it is separately serialized.** Immediate test-mode delivery can overlap suspended handlers when sends are concurrent. Teach one-message-at-a-time as a normal-processing-loop guarantee and do not use test mode as production serialization evidence.
+
+- **Private actor state is an API boundary, not proof that local references are immutable.** Architecture comparisons must qualify that snapshots and message payloads can share nested object references unless applications detach, freeze, or otherwise treat them as immutable values.
+
+- **Internal policy implementations must not be presented as public spawned-actor configuration.** A direct mailbox test can prove drop, fail, and park behavior while the actor-system API still installs one fixed policy; maturity ledgers must name both facts.
+
+- **Semantic heading corrections need presentation regression coverage.** When card titles move from `h2` to `h3` for hierarchy, extend the component selector and verifier so global heading margins do not distort the cards.
+
+- **Responsive pseudo-element overrides must match the specificity of their desktop variants.** A mobile base selector cannot reset a more-specific final-step connector; target both variants and reset every inherited positioning, content, typography, and transform property that changes meaning.
+
+- **Reusable learning templates must parameterize chapter identity.** Navigation targets, current-page state, week labels, and topic labels cannot remain pinned to Week 1 when the template is intended to generate later chapters.
+
+- **Code line numbers are meaningful text and need contrast proofs in every state.** Verify their foreground against base, executing, related, and host-highlight backgrounds in both themes rather than checking only the default code panel.
+
+- **Cross-actor workbook procedures must control callback selection as explicitly as companion labs.** Verified admissions do not decide which actor processing callback runs first; require actor A to enter the blocking handler before actor B's callback is released or measured.
+
+- **Exit assessments must preserve every qualification established by the lesson.** Do not end a chapter with a shorthand guarantee that drops normal-loop, immutable-value, actor-owned-mutation, or test-mode boundaries taught in the detailed material.
+
+- **CSS verification must stay inside the owning brace-delimited block.** Unbounded regex searches can satisfy a media-query or theme assertion with declarations from later rules; extract the intended nested block first, then inspect only its declarations.
+
+- **Per-theme assertions must resolve paired tokens from the same theme block.** Stylesheet-wide match order is not an ownership guarantee; extract each root and compare its foreground and background values together.
+
+- **Executable HTML verification needs a constrained process boundary.** When a DOM harness enables JavaScript evaluation, run it in a timed child with frozen intrinsics and explicit permission denials for writes, subprocesses, and workers; a VM flag alone does not contain evaluator escape paths.
+
+- **Responsive overrides must match the selector that owns the base declaration.** An element selector inside a media query cannot override an always-applied class selector; target the component class and verify the declarations inside that media block.
+
+- **Sanitized principal language must preserve authentication provenance.** Prefer authenticated principal without retained credential material, and define that the host authenticates before removing reusable secrets while retaining identity, claims, provenance, and correlation data.
+
+- **No-duplicate-effect proofs inherit provider idempotency limits.** A deduplicating fake proves safety only within its declared key scope and retention window; production claims require equivalent provider-side evidence from the real adapter.
+
+- **Child-process security flags must follow the declared Node engine range.** Node 20 exposes the permission model under the experimental flag while later supported releases accept the stable spelling; select it from the running major version and test both branches.
+
+- **Post-build static routes must be appended to generated discovery indexes.** Copying standalone HTML after VitePress builds makes routes reachable but omits them from its sitemap unless the publisher and route contract update that artifact together.
+
+- **Parallel offload diagrams should show partial order, not invented completion order.** When actor, timer, and worker progress are independently host-scheduled, present an unordered set plus only proven edges such as worker result before the awaiting actor completes.
+
+- **Focus indicators need non-text contrast against every component surface.** Use a fully opaque accessible token and calculate at least 3:1 against page, panel, and panel-soft backgrounds in both themes.
