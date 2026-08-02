@@ -221,3 +221,11 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Sanitized principal language must preserve authentication provenance.** Prefer authenticated principal without retained credential material, and define that the host authenticates before removing reusable secrets while retaining identity, claims, provenance, and correlation data.
 
 - **No-duplicate-effect proofs inherit provider idempotency limits.** A deduplicating fake proves safety only within its declared key scope and retention window; production claims require equivalent provider-side evidence from the real adapter.
+
+- **Child-process security flags must follow the declared Node engine range.** Node 20 exposes the permission model under the experimental flag while later supported releases accept the stable spelling; select it from the running major version and test both branches.
+
+- **Post-build static routes must be appended to generated discovery indexes.** Copying standalone HTML after VitePress builds makes routes reachable but omits them from its sitemap unless the publisher and route contract update that artifact together.
+
+- **Parallel offload diagrams should show partial order, not invented completion order.** When actor, timer, and worker progress are independently host-scheduled, present an unordered set plus only proven edges such as worker result before the awaiting actor completes.
+
+- **Focus indicators need non-text contrast against every component surface.** Use a fully opaque accessible token and calculate at least 3:1 against page, panel, and panel-soft backgrounds in both themes.
