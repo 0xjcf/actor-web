@@ -1206,10 +1206,13 @@
 
 - Title: Publish @actor-web/cli after evidence-governed runtime-host conformance
 - Mode: 4-agent
-- Status: queued
-- Owner: planner
+- Status: implementing
+- Owner: implementer
 - Brief: .fas/tasks/publish-actor-web-cli-after-evidence-governed-runtime-host-c.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Extend markdown lint coverage to docs/ and packages/ in the verify path
 
