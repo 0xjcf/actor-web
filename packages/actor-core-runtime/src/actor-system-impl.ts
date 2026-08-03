@@ -884,6 +884,7 @@ export class ActorSystemImpl implements ActorSystem {
 
     // Stop the system timeout manager
     this.systemTimeoutManager.destroy();
+    this.deadLetterQueue.stop();
 
     // Clear directory resources when the implementation owns cleanup hooks.
     await this.cleanupDirectory();
