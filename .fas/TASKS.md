@@ -1195,9 +1195,12 @@
 
 - Title: actor-web CLI v3: FAS control-plane integration
 - Mode: 6-agent
-- Status: queued
-- Owner: planner
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/actor-web-cli-v3-fas-control-plane-integration.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Publish @actor-web/cli after evidence-governed runtime-host conformance
 
