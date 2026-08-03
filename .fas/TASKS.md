@@ -2556,8 +2556,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Add production Ollama and MLX tool-call adapter for @actor-web/agent
 - Mode: 6-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/add-production-ollama-and-mlx-tool-call-adapter-for-actor-we.md
 - Verification lane: fast
 - Policy sensitivity: standard
