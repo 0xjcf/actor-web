@@ -3,7 +3,7 @@
  * @description Comprehensive tests for Correlation Manager implementation
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActorMessage } from '../actor-system.js';
 import {
   type CorrelationManagerConfig,
@@ -484,6 +484,44 @@ describe.skip('MockCorrelationManager', () => {
       // ✅ CORRECT: Properly handle the rejected promise
       await expect(requestPromise).rejects.toThrow('Mock timeout');
     });
+  });
+});
+
+describe('PureXStateCorrelationManager timeout cleanup', () => {
+  let manager: PureXStateCorrelationManager;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    manager = new PureXStateCorrelationManager();
+  });
+
+  afterEach(() => {
+    manager.clearAllRequests();
+    vi.useRealTimers();
+  });
+
+  it('cancels the timeout when a request resolves', async () => {
+    const promise = manager.registerRequest('corr-resolve', 1_000);
+
+    expect((manager as any).timeoutManager.getActiveTimeoutCount()).toBe(1);
+
+    manager.handleResponse('corr-resolve', mockResponse);
+
+    await expect(promise).resolves.toBe(mockResponse);
+    expect(manager.getPendingRequestCount()).toBe(0);
+    expect((manager as any).timeoutManager.getActiveTimeoutCount()).toBe(0);
+  });
+
+  it('cancels the timeout when a request errors', async () => {
+    const promise = manager.registerRequest('corr-error', 1_000);
+
+    expect((manager as any).timeoutManager.getActiveTimeoutCount()).toBe(1);
+
+    manager.handleError('corr-error', new Error('boom'));
+
+    await expect(promise).rejects.toThrow('boom');
+    expect(manager.getPendingRequestCount()).toBe(0);
+    expect((manager as any).timeoutManager.getActiveTimeoutCount()).toBe(0);
   });
 });
 
