@@ -3,9 +3,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { raiseAdapterFailure } from '@actor-web/runtime';
 
-// Get current file directory in ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const moduleDirectory =
+  typeof __dirname === 'string' ? __dirname : dirname(fileURLToPath(import.meta.url));
 
 /**
  * Interface for package.json structure
@@ -43,7 +42,7 @@ export async function loadPackageInfo(): Promise<PackageInfo> {
 
 async function readPackageInfo(): Promise<PackageInfo> {
   try {
-    const packagePath = resolve(__dirname, '../package.json');
+    const packagePath = resolve(moduleDirectory, '../package.json');
     const packageText = await readFile(packagePath, 'utf-8');
     return JSON.parse(packageText) as PackageInfo;
   } catch (error) {

@@ -1,99 +1,93 @@
 # @actor-web/cli
 
-> **Status: v0 — in-process runtime host.** A terminal console over the
-> actor-web runtime. No network and no LLM yet; remote hosting arrives in v2.
-> Design: [`docs/actor-web-cli-runtime-host-design.md`](../../docs/actor-web-cli-runtime-host-design.md).
+`@actor-web/cli` is the distributed Actor-Web runtime host and remote operator
+shell. It packages the v2 distributed runtime-host surface and the v3
+authenticated control-plane recovery path without taking ownership of
+provider-specific workflow policy.
 
-For the CLI v3 FAS dogfood path, the consumer-facing conformance target lives in
-`@actor-web/testing`, not in the runtime host package itself:
+## What ships
 
-- `getControlPlaneConformanceFixture()`
-- `listControlPlaneConformanceScenarios()`
-- `assertControlPlaneConformanceFixture()`
+- `actor-web serve <topology>` starts an in-process or distributed host from a
+  topology module.
+- `actor-web connect <topology> <gateway-url>` attaches a remote operator shell
+  to an authenticated gateway.
+- The programmatic API exports `createRuntimeHost`, `createRuntimeHostFromFile`,
+  `executeCommand`, `splitExecScript`, and the runtime-host types from the
+  package root.
 
-That neutral fixture fixes the proof obligations for `success`, `rejection`,
-`interruption_resume`, `duplicate_suppression`, `stale_projection`, and
-`operator_reconciliation` without embedding FAS-specific runtime vocabulary into
-Actor-Web.
+## Security defaults
 
-Versioning for that dogfood contract is split deliberately:
+- Gateway and transport listeners stay loopback-only unless you pass an
+  explicit unsafe-exposure override.
+- Remote shells authenticate at the authoritative gateway; the CLI does not own
+  provider policy.
+- Checkpoint readiness can be required explicitly and is mandatory for
+  non-localhost distributed exposure.
+- Command admission belongs at the gateway/runtime boundary, not in downstream
+  product adapters.
 
-- `packageVersion`: npm/package release of `@actor-web/cli`, `@actor-web/testing`,
-  or the consumer adapter;
-- `schemaVersion`: serialized gateway trace/watch payload shape;
-- `contractVersion`: required neutral conformance scenarios and receipt
-  expectations exposed to consumers.
+## Distributed and recovery surface
 
-Fail closed when:
+The shipped console and programmatic API cover:
 
-- the received `schemaVersion` is unsupported;
-- the required `contractVersion` is unsupported;
-- a required scenario name is unknown; or
-- a required receipt expectation is unknown.
+- host `status` and readiness facts for process, transport, directory, checkpoint
+  store, and policy admission;
+- `watch-trace` gateway projection and receipt streaming for remote sessions;
+- authenticated `send` and `ask` command admission over remote gateways;
+- checkpoint-backed interruption, import, resume, and reconciliation flows; and
+- graceful shutdown through `flush()` plus `stop()`.
 
-Preserve canonical gateway provenance in conformance runs:
+## FAS adapter boundary
 
-- use authenticated remote `watchTrace` projections as the primary evidence;
-- keep runtime `receiptKind: 'projection'` with `status: 'stale_projection'`
-  intact rather than flattening it into a made-up receipt kind;
-- treat local actor events and direct host reads as supplementary state
-  correlation only.
+Actor-Web owns the provider-neutral operator shell, runtime-host lifecycle,
+authenticated gateway connection, and trace/receipt plumbing. FAS-specific
+workflow semantics, durable execution policy, and downstream control-plane
+adapters stay outside this package.
 
-Authenticated local dogfood commands:
+The neutral consumer-facing conformance contract lives in `@actor-web/testing`.
+That package owns the reusable executable control-plane fixture and scenario
+expectations; `@actor-web/cli` stays focused on exposing the real host surface
+that adapters exercise.
+
+## Compatibility
+
+- Node.js `>=18`
+- ESM and CommonJS programmatic imports through the package root export
+- Packed artifacts are expected to install outside the monorepo after workspace
+  dependencies are rewritten during packing/versioning
+
+## CLI examples
+
+Local host:
 
 ```bash
-pnpm --filter @actor-web/testing build
-pnpm --filter @actor-web/cli exec vitest run src/host/runtime-host-control-plane-conformance.test.ts
+actor-web serve ./topology.mjs --checkpoint-dir ./.actor-web/checkpoints --exec 'status; ls; exit'
 ```
 
-That conformance test is expected to serve an authenticated gateway, connect a
-remote runtime host with token auth, subscribe through `watchTrace`, and
-re-establish the served host plus remote trace watch before checkpoint
-import/resume after a restart.
-
-## What it does
-
-`serve` boots an in-process runtime node from a topology module and opens an
-operator console:
+Distributed host with authenticated remote access:
 
 ```bash
-actor-web serve ./topology.mjs            # interactive console
-actor-web serve ./topology.mjs --node worker
-actor-web serve ./topology.mjs --exec 'ls; send counter {"type":"INCREMENT"}; ask counter {"type":"GET_COUNT"}'
+actor-web serve ./topology.mjs \
+  --gateway \
+  --transport \
+  --peer worker=ws://127.0.0.1:9001 \
+  --connect worker \
+  --checkpoint-dir ./.actor-web/checkpoints
+
+actor-web connect ./topology.mjs ws://127.0.0.1:9000 --token gateway-secret --exec 'status; watch-trace controlPlaneSession; exit'
 ```
 
-Console verbs:
+## Programmatic API
 
-```text
-ls                              list actors (key, origin, status, path)
-spawn <file> <id>               spawn a behavior module as a new actor
-send <target> <json>            fire-and-forget message
-ask <target> <json> [timeout]   request/response (timeout in ms)
-watch <target>                  stream emitted events to the console
-watch-trace <target>            stream gateway trace projections (remote only)
-unwatch <target>                stop streaming
-unwatch-trace <target>          stop trace streaming
-help / exit
-```
-
-Targets resolve by registry key (topology key or spawned id) or full
-`actor://node/type/id` path.
-
-## Topology and behavior modules
-
-A topology module default-exports a `defineActorWebTopology(...)` value; a
-behavior module default-exports a `defineBehavior()` value (built or builder):
-
-```js
-// topology.mjs
+```ts
+import { createRuntimeHost } from '@actor-web/cli';
 import { actor, defineActorWebTopology, defineBehavior, node } from '@actor-web/runtime';
 
 const counter = defineBehavior()
   .withContext({ count: 0 })
   .onMessage(({ message, context }) => {
     if (message.type === 'INCREMENT') {
-      const count = context.count + 1;
-      return { context: { count }, emit: [{ type: 'COUNT_CHANGED', count }] };
+      return { context: { count: context.count + 1 } };
     }
     if (message.type === 'GET_COUNT') {
       return { reply: { count: context.count } };
@@ -101,45 +95,21 @@ const counter = defineBehavior()
     return {};
   });
 
-export default defineActorWebTopology({
+const topology = defineActorWebTopology({
   nodes: { local: node('local') },
   actors: { counter: actor({ id: 'counter', node: 'local', behavior: counter }) },
 });
-```
-
-TypeScript modules work when the CLI runs under a TS loader (e.g. `pnpm dev` /
-tsx); otherwise point at compiled `.js`/`.mjs`.
-
-## Programmatic API
-
-The host is exported for tests and embedders:
-
-```ts
-import { createRuntimeHost, executeCommand } from '@actor-web/cli';
 
 const started = await createRuntimeHost(topology);
 if (started.ok) {
   const host = started.value;
   await host.send('counter', '{"type":"INCREMENT"}');
-  const reply = await host.ask('counter', '{"type":"GET_COUNT"}');
   await host.stop();
 }
 ```
 
-Operations return facts (`{ ok: true, value } | { ok: false, error }`) instead
-of throwing for expected failures.
+## Removed surface
 
-## What was removed
-
-The previous git-workflow surface (`aw` save/ship/sync/worktrees/agent
-coordination, plus a stubbed "git actor") was removed in v0's ground-clearing.
-It duplicated FAS and plain git. The reusable state-machine analysis utilities
-continue to live in `@actor-web/testing`.
-
-## Development
-
-```bash
-pnpm --filter @actor-web/cli dev serve ./topology.mjs   # run via tsx
-pnpm --filter @actor-web/cli test                       # vitest
-pnpm --filter @actor-web/cli build                      # tsc
-```
+The old git-workflow console (`save`, `ship`, `sync`, git actor coordination,
+and similar commands) is not part of the distributed runtime-host package and
+must not appear in packed artifacts.
