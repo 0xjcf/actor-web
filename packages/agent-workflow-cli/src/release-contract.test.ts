@@ -121,9 +121,7 @@ function assertReleasePlanForCli(status: ChangesetStatus): void {
 
 async function packPackage(packageDir: string, packDir: string): Promise<string> {
   const before = new Set(
-    (await readdir(packDir).catch(() => []))
-      .filter((entry) => entry.endsWith('.tgz'))
-      .sort()
+    (await readdir(packDir).catch(() => [])).filter((entry) => entry.endsWith('.tgz')).sort()
   );
   await runCommand('pnpm', ['pack', '--pack-destination', packDir, '--json'], {
     cwd: packageDir,
@@ -152,7 +150,9 @@ describe('@actor-web/cli release contract', () => {
 
   it('keeps the source manifest alpha while changesets plans the first stable public release', async () => {
     const manifest = await readJson<CliPackageManifest>(resolve(packageRoot, 'package.json'));
-    const changesetConfig = await readJson<ChangesetConfig>(resolve(repoRoot, '.changeset/config.json'));
+    const changesetConfig = await readJson<ChangesetConfig>(
+      resolve(repoRoot, '.changeset/config.json')
+    );
     const changesetStatus = await readChangesetStatus();
 
     expect(manifest.name).toBe('@actor-web/cli');
@@ -187,15 +187,16 @@ describe('@actor-web/cli release contract', () => {
     assertReleasePlanForCli(changesetStatus);
   });
 
-  it(
-    'packs a clean consumer-ready artifact with rewritten workspace dependencies',
-    async () => {
+  it('packs a clean consumer-ready artifact with rewritten workspace dependencies', async () => {
     const packDir = await makeTempDir('actor-web-cli-pack-');
     await runCommand('pnpm', ['--filter', '@actor-web/runtime', 'build'], { cwd: repoRoot });
     await runCommand('pnpm', ['--filter', '@actor-web/agent', 'build'], { cwd: repoRoot });
     await runCommand('pnpm', ['--filter', '@actor-web/cli', 'build'], { cwd: repoRoot });
 
-    const runtimeTarball = await packPackage(resolve(repoRoot, 'packages/actor-core-runtime'), packDir);
+    const runtimeTarball = await packPackage(
+      resolve(repoRoot, 'packages/actor-core-runtime'),
+      packDir
+    );
     const agentTarball = await packPackage(resolve(repoRoot, 'packages/actor-agent'), packDir);
     const cliTarball = await packPackage(packageRoot, packDir);
 
@@ -257,7 +258,10 @@ describe('@actor-web/cli release contract', () => {
     ]);
     for (const [dependency, source] of externalDeps) {
       const segments = dependency.split('/');
-      const packageName = segments.pop()!;
+      const packageName = segments.pop();
+      if (!packageName) {
+        throw new Error(`Invalid dependency name: ${dependency}`);
+      }
       const targetDir = join(consumerNodeModules, ...segments);
       await mkdir(targetDir, { recursive: true });
       await symlink(source, join(targetDir, packageName));
@@ -315,6 +319,17 @@ describe('@actor-web/cli release contract', () => {
     expect(serveResult.stdout).toContain('Sent INCREMENT');
     expect(serveResult.stdout).toContain('{"count":1}');
 
+    const consumerBinDir = join(consumerNodeModules, '.bin');
+    await mkdir(consumerBinDir, { recursive: true });
+    await symlink(
+      join(consumerDir, 'node_modules/@actor-web/cli/dist/cli/index.js'),
+      join(consumerBinDir, 'actor-web')
+    );
+    const binInfoResult = await runCommand('node', ['./node_modules/.bin/actor-web', 'info'], {
+      cwd: consumerDir,
+    });
+    expect(binInfoResult.stdout).toContain('actor-web CLI');
+
     const apiSmokePath = join(consumerDir, 'api-smoke.mjs');
     await writeFile(
       apiSmokePath,
@@ -345,7 +360,7 @@ describe('@actor-web/cli release contract', () => {
         "    if (message.type === 'INTERRUPT_AGENT_SESSION') {",
         '      const next = {',
         '        ...current,',
-        '        checkpointId: `checkpoint:${message.sessionId}:${current.revision + 1}`,',
+        '        checkpointId: `checkpoint:\\u0024{message.sessionId}:\\u0024{current.revision + 1}`,',
         '        revision: current.revision + 1,',
         '        status: "interrupted",',
         '        reconciliationState: "pending",',
@@ -409,7 +424,7 @@ describe('@actor-web/cli release contract', () => {
         '      expose: ["controlPlaneSession"],',
         '      commandAdmission: {',
         '        resolvePrincipal: () => ({ id: "principal:control-plane-operator", kind: "authenticated", role: "operator" }),',
-        '        policy: async ({ message }) => ({ outcome: "authorized", policy: `control-plane:${message.type.toLowerCase()}` }),',
+        `        policy: async ({ message }) => ({ outcome: "authorized", policy: \`control-plane:\${message.type.toLowerCase()}\` }),`,
         '        idempotency: async () => ({ outcome: "available", settle: async () => {} }),',
         '        onDecision: async () => {},',
         '      },',
@@ -444,7 +459,7 @@ describe('@actor-web/cli release contract', () => {
         'const remote = remoteStarted.value;',
         '',
         'const remoteStatus = remote.getStatus();',
-        'if (remoteStatus.mode !== "remote") throw new Error(`expected remote mode, got ${remoteStatus.mode}`);',
+        `if (remoteStatus.mode !== "remote") throw new Error(\`expected remote mode, got \${remoteStatus.mode}\`);`,
         'if (remoteStatus.readiness?.policyAdmission !== "authenticated") throw new Error("remote auth readiness missing");',
         '',
         'const traces = [];',
@@ -467,7 +482,7 @@ describe('@actor-web/cli release contract', () => {
         '    }',
         '    await new Promise((resolve) => setTimeout(resolve, 25));',
         '  }',
-        '  throw new Error(`trace watch missed ${commandId}`);',
+        '  throw new Error(`trace watch missed \\u0024{commandId}`);',
         '}',
         'const traceWatch = remote.watchTrace("controlPlaneSession", (projection) => traces.push(projection));',
         'if (!traceWatch.ok) throw new Error(traceWatch.error);',
@@ -555,7 +570,5 @@ describe('@actor-web/cli release contract', () => {
       expect(exportSmoke.stdout).toContain('"serve"');
       expect(exportSmoke.stdout).toContain('"info"');
     }
-    },
-    15_000
-  );
+  }, 15_000);
 });
