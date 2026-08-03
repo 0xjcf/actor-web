@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   type ExecutableControlPlaneConformanceDriver,
   type ExecutableControlPlaneConformanceTraceWatch,
+  type ExecutableControlPlaneTraceEvent,
   runExecutableControlPlaneConformance,
 } from '../../../actor-core-testing/src/index.js';
 import { createRuntimeHost, type RuntimeHost } from './runtime-host';
@@ -307,11 +308,50 @@ async function readSession(host: RuntimeHost, sessionId: string): Promise<Sessio
   return result.value as SessionRecord;
 }
 
+async function waitForTraceEvent(
+  traceEvents: readonly ExecutableControlPlaneTraceEvent[],
+  predicate: (event: ExecutableControlPlaneTraceEvent) => boolean,
+  message: string,
+  timeoutMs = 500
+): Promise<ExecutableControlPlaneTraceEvent> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const matched = traceEvents.find(predicate);
+    if (matched) {
+      return matched;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(message);
+}
+
 function createDriverRuntime() {
   let host: RuntimeHost | undefined;
   const traceEvents: ExecutableControlPlaneTraceEvent[] = [];
   const decisions: unknown[] = [];
   let checkpoint: SessionRecord | undefined;
+  let stopWatch: (() => void) | undefined;
+
+  const attachWatch = (activeHost: RuntimeHost): void => {
+    stopWatch?.();
+    const watch = activeHost.watch(CONTROL_PLANE_ACTOR_KEY, (event) => {
+      if (isTraceEvent(event)) {
+        traceEvents.push({
+          scenario: event.scenario,
+          receiptKind: event.receiptKind,
+          commandType: event.commandType,
+          sessionId: event.sessionId,
+          revision: event.revision,
+          detail: event.detail,
+        });
+      }
+    });
+    expect(watch.ok).toBe(true);
+    if (!watch.ok) {
+      throw new Error(watch.error);
+    }
+    stopWatch = watch.value;
+  };
 
   const createHost = async (): Promise<RuntimeHost> => {
     const started = await createRuntimeHost(buildControlPlaneTopology(), {
@@ -355,6 +395,18 @@ function createDriverRuntime() {
           };
         },
         onDecision: async (decision) => {
+          const messageType =
+            typeof (
+              decision as {
+                readonly message?: { readonly type?: unknown };
+              }
+            ).message?.type === 'string'
+              ? ((
+                  decision as {
+                    readonly message?: { readonly type?: string };
+                  }
+                ).message?.type ?? 'unknown')
+              : 'unknown';
           const sessionId =
             typeof (
               decision as {
@@ -376,7 +428,7 @@ function createDriverRuntime() {
                   ? 'duplicate_suppression'
                   : 'rejection',
               receiptKind: 'rejection',
-              commandType: decision.admissionReceipt.commandType,
+              commandType: messageType,
               sessionId,
               detail: decision.rejectionReceipt?.reason?.detail,
             });
@@ -385,21 +437,16 @@ function createDriverRuntime() {
 
           traceEvents.push({
             scenario:
-              decision.admissionReceipt.commandType === 'RECONCILE_AGENT_SESSION'
-                ? 'operator_reconciliation'
-                : 'success',
+              messageType === 'RECONCILE_AGENT_SESSION' ? 'operator_reconciliation' : 'success',
             receiptKind: 'command_admission',
-            commandType: decision.admissionReceipt.commandType,
+            commandType: messageType,
             sessionId,
           });
           traceEvents.push({
             scenario:
-              decision.authorizationReceipt?.commandType === 'RECONCILE_AGENT_SESSION'
-                ? 'operator_reconciliation'
-                : 'success',
+              messageType === 'RECONCILE_AGENT_SESSION' ? 'operator_reconciliation' : 'success',
             receiptKind: 'authorization',
-            commandType:
-              decision.authorizationReceipt?.commandType ?? decision.admissionReceipt.commandType,
+            commandType: messageType,
             sessionId,
           });
         },
@@ -410,6 +457,7 @@ function createDriverRuntime() {
       throw new Error(started.error);
     }
     host = started.value;
+    attachWatch(host);
     return host;
   };
 
@@ -418,30 +466,18 @@ function createDriverRuntime() {
   const driver: ExecutableControlPlaneConformanceDriver = {
     describeTarget: () => 'createRuntimeHost(control-plane-session local executable driver)',
     async watchTrace(): Promise<ExecutableControlPlaneConformanceTraceWatch> {
-      const activeHost = await ensureHost();
-      const watch = activeHost.watch(CONTROL_PLANE_ACTOR_KEY, (event) => {
-        if (isTraceEvent(event)) {
-          traceEvents.push({
-            scenario: event.scenario,
-            receiptKind: event.receiptKind,
-            commandType: event.commandType,
-            sessionId: event.sessionId,
-            revision: event.revision,
-            detail: event.detail,
-          });
-        }
-      });
-      expect(watch.ok).toBe(true);
-      if (!watch.ok) {
-        throw new Error(watch.error);
-      }
+      await ensureHost();
       return {
         traceEvents,
-        stop: watch.value,
+        stop: () => {
+          stopWatch?.();
+          stopWatch = undefined;
+        },
       };
     },
     async rejectUnauthorized(watch) {
       const activeHost = await ensureHost();
+      const startIndex = watch.traceEvents.length;
       const rejected = await activeHost.send(
         CONTROL_PLANE_ACTOR_KEY,
         JSON.stringify({
@@ -450,11 +486,18 @@ function createDriverRuntime() {
         })
       );
       expect(rejected.ok).toBe(false);
+      await waitForTraceEvent(
+        watch.traceEvents,
+        (event) => event.scenario === 'rejection' && event.receiptKind === 'rejection',
+        'expected rejection trace event'
+      );
       const session = await readSession(activeHost, 'deny-session-1');
       return {
         ok: true,
         evidence: {
-          traceEvents: watch.traceEvents.filter((event) => event.scenario === 'rejection'),
+          traceEvents: watch.traceEvents
+            .slice(startIndex)
+            .filter((event) => event.scenario === 'rejection' && event.receiptKind === 'rejection'),
           effectCount: session.effectCount,
           authoritativeRevision: session.revision,
           reconciliationState: session.reconciliationState,
@@ -463,6 +506,7 @@ function createDriverRuntime() {
     },
     async executeAuthorized(watch) {
       const activeHost = await ensureHost();
+      const startIndex = watch.traceEvents.length;
       const sent = await activeHost.send(
         CONTROL_PLANE_ACTOR_KEY,
         JSON.stringify({
@@ -471,11 +515,22 @@ function createDriverRuntime() {
         })
       );
       expect(sent.ok).toBe(true);
+      await activeHost.flush();
+      await waitForTraceEvent(
+        watch.traceEvents,
+        (event) =>
+          event.scenario === 'success' &&
+          event.sessionId === 'exec-session-1' &&
+          event.receiptKind === 'result',
+        'expected success result trace event for exec-session-1'
+      );
       const session = await readSession(activeHost, 'exec-session-1');
       return {
         ok: true,
         evidence: {
-          traceEvents: watch.traceEvents.filter((event) => event.scenario === 'success'),
+          traceEvents: watch.traceEvents
+            .slice(startIndex)
+            .filter((event) => event.scenario === 'success'),
           effectCount: session.effectCount,
           authoritativeRevision: session.revision,
           reconciliationState: session.reconciliationState,
@@ -484,6 +539,7 @@ function createDriverRuntime() {
     },
     async interruptAndResume(watch) {
       const activeHost = await ensureHost();
+      const startIndex = watch.traceEvents.length;
       const interrupted = await activeHost.ask(
         CONTROL_PLANE_ACTOR_KEY,
         JSON.stringify({
@@ -504,6 +560,8 @@ function createDriverRuntime() {
       );
       expect(exported.ok).toBe(true);
       checkpoint = exported.ok ? (exported.value as SessionRecord) : undefined;
+      stopWatch?.();
+      stopWatch = undefined;
       await activeHost.stop();
       host = undefined;
       const restarted = await ensureHost();
@@ -528,13 +586,24 @@ function createDriverRuntime() {
       );
       expect(resumed.ok).toBe(true);
       await restarted.flush();
+      await waitForTraceEvent(
+        watch.traceEvents,
+        (event) =>
+          event.scenario === 'interruption_resume' &&
+          event.sessionId === 'resume-session-1' &&
+          event.receiptKind === 'reconciliation',
+        'expected interruption_resume reconciliation trace event for resume-session-1'
+      );
       const session = await readSession(restarted, 'resume-session-1');
       return {
         ok: true,
         evidence: {
-          traceEvents: watch.traceEvents.filter(
-            (event) => event.scenario === 'interruption_resume'
-          ),
+          traceEvents: watch.traceEvents
+            .slice(startIndex)
+            .filter(
+              (event) =>
+                event.scenario === 'interruption_resume' && event.sessionId === 'resume-session-1'
+            ),
           checkpointId: session.checkpointId ?? undefined,
           authoritativeRevision: session.revision,
           effectCount: session.effectCount,
@@ -544,6 +613,7 @@ function createDriverRuntime() {
     },
     async suppressDuplicateEffect(watch) {
       const activeHost = await ensureHost();
+      const startIndex = watch.traceEvents.length;
       const first = await activeHost.send(
         CONTROL_PLANE_ACTOR_KEY,
         JSON.stringify({
@@ -566,17 +636,24 @@ function createDriverRuntime() {
         }
       );
       expect(duplicate.ok).toBe(false);
+      await waitForTraceEvent(
+        watch.traceEvents,
+        (event) => event.scenario === 'duplicate_suppression' && event.receiptKind === 'rejection',
+        'expected duplicate_suppression rejection trace event'
+      );
       const session = await readSession(activeHost, 'duplicate-session-1');
       return {
         ok: true,
         evidence: {
-          traceEvents: watch.traceEvents.filter(
-            (event) =>
-              event.scenario === 'duplicate_suppression' ||
-              (event.scenario === 'success' &&
-                event.commandType === 'START_AGENT_SESSION' &&
-                event.sessionId === 'duplicate-session-1')
-          ),
+          traceEvents: watch.traceEvents
+            .slice(startIndex)
+            .filter(
+              (event) =>
+                event.scenario === 'duplicate_suppression' ||
+                (event.scenario === 'success' &&
+                  event.commandType === 'START_AGENT_SESSION' &&
+                  event.sessionId === 'duplicate-session-1')
+            ),
           effectCount: session.effectCount,
           authoritativeRevision: session.revision,
           reconciliationState: session.reconciliationState,
@@ -585,6 +662,7 @@ function createDriverRuntime() {
     },
     async detectStaleProjection(watch) {
       const activeHost = await ensureHost();
+      const startIndex = watch.traceEvents.length;
       const started = await activeHost.send(
         CONTROL_PLANE_ACTOR_KEY,
         JSON.stringify({
@@ -612,26 +690,23 @@ function createDriverRuntime() {
           })
         : undefined;
       expect(response?.stale).toBe(true);
-      const scenarioTraceEvents = watch.traceEvents.filter(
-        (event) => event.scenario === 'stale_projection'
+      await waitForTraceEvent(
+        watch.traceEvents,
+        (event) =>
+          event.scenario === 'stale_projection' &&
+          event.sessionId === 'stale-session-1' &&
+          event.receiptKind === 'stale_projection',
+        'expected stale_projection trace event for stale-session-1'
       );
-      if (
-        response?.stale &&
-        !scenarioTraceEvents.some((event) => event.receiptKind === 'stale_projection')
-      ) {
-        scenarioTraceEvents.push({
-          scenario: 'stale_projection',
-          receiptKind: 'stale_projection',
-          commandType: 'SET_PROJECTION_REVISION',
-          sessionId: 'stale-session-1',
-          revision: response.session.revision,
-          detail: `projection=${response.session.projectionRevision} expected=${response.session.expectedProjectionRevision}`,
-        });
-      }
       return {
         ok: true,
         evidence: {
-          traceEvents: scenarioTraceEvents,
+          traceEvents: watch.traceEvents
+            .slice(startIndex)
+            .filter(
+              (event) =>
+                event.scenario === 'stale_projection' && event.sessionId === 'stale-session-1'
+            ),
           authoritativeRevision: response?.session.revision,
           projectedRevision: response?.session.projectionRevision,
           reconciliationState: response?.session.reconciliationState,
@@ -640,6 +715,7 @@ function createDriverRuntime() {
     },
     async reconcileSession(watch) {
       const activeHost = await ensureHost();
+      const startIndex = watch.traceEvents.length;
       const reconciled = await activeHost.ask(
         CONTROL_PLANE_ACTOR_KEY,
         JSON.stringify({
@@ -651,32 +727,29 @@ function createDriverRuntime() {
       );
       expect(reconciled.ok).toBe(true);
       await activeHost.flush();
-      const session = await readSession(activeHost, 'resume-session-1');
-      const scenarioTraceEvents = watch.traceEvents.filter(
-        (event) => event.scenario === 'operator_reconciliation'
+      await waitForTraceEvent(
+        watch.traceEvents,
+        (event) =>
+          event.scenario === 'operator_reconciliation' &&
+          event.sessionId === 'resume-session-1' &&
+          event.receiptKind === 'reconciliation',
+        'expected operator_reconciliation reconciliation trace event for resume-session-1'
       );
-      if (!scenarioTraceEvents.some((event) => event.receiptKind === 'reconciliation')) {
-        scenarioTraceEvents.push({
-          scenario: 'operator_reconciliation',
-          receiptKind: 'reconciliation',
-          commandType: 'RECONCILE_AGENT_SESSION',
-          sessionId: 'resume-session-1',
-          revision: session.revision,
-        });
-      }
-      if (!scenarioTraceEvents.some((event) => event.receiptKind === 'result')) {
-        scenarioTraceEvents.push({
-          scenario: 'operator_reconciliation',
-          receiptKind: 'result',
-          commandType: 'RECONCILE_AGENT_SESSION',
-          sessionId: 'resume-session-1',
-          revision: session.revision,
-        });
-      }
+      await waitForTraceEvent(
+        watch.traceEvents,
+        (event) =>
+          event.scenario === 'operator_reconciliation' &&
+          event.sessionId === 'resume-session-1' &&
+          event.receiptKind === 'result',
+        'expected operator_reconciliation result trace event for resume-session-1'
+      );
+      const session = await readSession(activeHost, 'resume-session-1');
       return {
         ok: true,
         evidence: {
-          traceEvents: scenarioTraceEvents,
+          traceEvents: watch.traceEvents
+            .slice(startIndex)
+            .filter((event) => event.scenario === 'operator_reconciliation'),
           authoritativeRevision: session.revision,
           effectCount: session.effectCount,
           reconciliationState: session.reconciliationState,
@@ -689,6 +762,8 @@ function createDriverRuntime() {
   return {
     driver,
     stop: async () => {
+      stopWatch?.();
+      stopWatch = undefined;
       if (host) {
         await host.stop();
         host = undefined;
