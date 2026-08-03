@@ -2552,6 +2552,17 @@ operator explicitly asks for queue mutations.
 - Brief: .fas/tasks/week-10-learning-product-conformance-capstone-and-failure-pr.md
 - Automation mode: manual
 
+### Task: Add production Ollama and MLX tool-call adapter for @actor-web/agent
+
+- Title: Add production Ollama and MLX tool-call adapter for @actor-web/agent
+- Mode: 6-agent
+- Status: implementing
+- Owner: implementer
+- Brief: .fas/tasks/add-production-ollama-and-mlx-tool-call-adapter-for-actor-we.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
 ## Template
 
 ### Task: `<short task title>`
