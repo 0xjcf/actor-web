@@ -16,6 +16,7 @@ import type {
   ActorToolRegistry,
 } from '@actor-web/runtime/browser';
 import { defineBehavior } from '@actor-web/runtime/browser';
+
 export type { OpenAiCompatibleLlmProviderOptions } from './openai-compatible-llm-provider.js';
 export { createOpenAiCompatibleLlmProvider } from './openai-compatible-llm-provider.js';
 
@@ -270,7 +271,9 @@ function toolDefinitionsForModel(
     return undefined;
   }
   const allowedToolNames = new Set(allowedTools);
-  const authorizedDefinitions = requested.filter((definition) => allowedToolNames.has(definition.name));
+  const authorizedDefinitions = requested.filter((definition) =>
+    allowedToolNames.has(definition.name)
+  );
   return authorizedDefinitions.length > 0 ? authorizedDefinitions : undefined;
 }
 

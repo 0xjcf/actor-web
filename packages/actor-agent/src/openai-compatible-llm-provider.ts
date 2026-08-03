@@ -5,9 +5,9 @@ import type {
   ActorAgentLlmProvider,
   ActorAgentLlmRequest,
   ActorAgentLlmResult,
+  ActorAgentTokenUsage,
   ActorAgentToolCall,
   ActorAgentToolDefinition,
-  ActorAgentTokenUsage,
 } from './index.js';
 
 export interface OpenAiCompatibleLlmProviderOptions {
