@@ -4,6 +4,11 @@ import { defineBehavior } from '@actor-web/runtime';
 import { startActorWebNode } from '@actor-web/runtime/browser';
 import { actor, defineActorWebTopology, node, tool } from '@actor-web/runtime/topology';
 import { afterEach, describe, expect, it } from 'vitest';
+import {
+  assertControlPlaneConformanceFixture,
+  getControlPlaneConformanceFixture,
+  listControlPlaneConformanceScenarios,
+} from '../../packages/actor-core-testing/src/index.js';
 import { describeFasCoordinationModes, summarizeLatticeActivation } from './fas-behaviors';
 import {
   type FasAgentLoopExampleRuntime,
@@ -120,6 +125,20 @@ describe('fas-agent-loop example', () => {
       'supervisor',
       'taskBoard',
       'taskRun',
+    ]);
+  });
+
+  it('points FAS consumers at the neutral control-plane conformance contract', () => {
+    const fixture = getControlPlaneConformanceFixture();
+
+    expect(assertControlPlaneConformanceFixture(fixture)).toEqual({ ok: true });
+    expect(listControlPlaneConformanceScenarios().map((scenario) => scenario.name)).toEqual([
+      'success',
+      'rejection',
+      'interruption_resume',
+      'duplicate_suppression',
+      'stale_projection',
+      'operator_reconciliation',
     ]);
   });
 

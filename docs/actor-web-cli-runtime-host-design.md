@@ -113,6 +113,26 @@ The boundary between the planes is a small, explicit handoff:
 The CLI consumes exactly these three and nothing else from FAS. FAS never
 imports actor-web (preserving the decoupling already completed).
 
+### Neutral conformance surface for CLI v3 dogfooding
+
+The CLI v3 dogfood path now has a consumer-facing conformance target in
+`@actor-web/testing`: `getControlPlaneConformanceFixture()`,
+`listControlPlaneConformanceScenarios()`, and
+`assertControlPlaneConformanceFixture()`.
+
+That fixture is intentionally provider-neutral and consumer-owned:
+
+- Actor-Web supplies the execution-trace, checkpoint-recovery, reconciliation,
+  and audit proof surfaces.
+- FAS or another control plane maps its own policy and operator vocabulary onto
+  that neutral fixture instead of becoming a runtime dependency.
+- The required scenarios are fixed at: `success`, `rejection`,
+  `interruption_resume`, `duplicate_suppression`, `stale_projection`, and
+  `operator_reconciliation`.
+
+This is the contract the CLI/example should dogfood while the higher-level FAS
+consumer wiring is being completed.
+
 ## Actors vs agents
 
 The runtime gives us **actors**. An **agent** is an actor whose behavior loop

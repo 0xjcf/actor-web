@@ -17,6 +17,13 @@ adds lattice declarations beside it so the same Research -> Planning -> Coding
 This is the near-term FAS control-plane shape: one coordinator owns ordering,
 timeouts, retries, and user-facing progress.
 
+The example now points at the neutral CLI v3 conformance surface in
+`@actor-web/testing` rather than treating this topology as the runtime contract
+itself. Consumers should prove their adapter against
+`getControlPlaneConformanceFixture()` and the fixed scenario list:
+`success`, `rejection`, `interruption_resume`, `duplicate_suppression`,
+`stale_projection`, and `operator_reconciliation`.
+
 ## Stigmergic lattice
 
 The same topology also declares a `workspace` lattice actor plus dependency

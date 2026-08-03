@@ -4,6 +4,18 @@
 > actor-web runtime. No network and no LLM yet; remote hosting arrives in v2.
 > Design: [`docs/actor-web-cli-runtime-host-design.md`](../../docs/actor-web-cli-runtime-host-design.md).
 
+For the CLI v3 FAS dogfood path, the consumer-facing conformance target lives in
+`@actor-web/testing`, not in the runtime host package itself:
+
+- `getControlPlaneConformanceFixture()`
+- `listControlPlaneConformanceScenarios()`
+- `assertControlPlaneConformanceFixture()`
+
+That neutral fixture fixes the proof obligations for `success`, `rejection`,
+`interruption_resume`, `duplicate_suppression`, `stale_projection`, and
+`operator_reconciliation` without embedding FAS-specific runtime vocabulary into
+Actor-Web.
+
 ## What it does
 
 `serve` boots an in-process runtime node from a topology module and opens an
