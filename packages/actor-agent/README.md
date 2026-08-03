@@ -111,7 +111,8 @@ raw thrown network error text in expected failure facts.
 ## Live conformance
 
 The package includes an opt-in live lane for an already-running compatible
-server. It is skipped by default and is not part of CI.
+server. It is skipped by default and is not part of CI. The configured model
+must support tool calling.
 
 ```bash
 ACTOR_AGENT_OPENAI_COMPAT_ENDPOINT=http://127.0.0.1:11434/v1/chat/completions \
@@ -126,7 +127,9 @@ Optional environment variables:
 - `ACTOR_AGENT_OPENAI_COMPAT_CREDENTIALS`
 
 The test only verifies a caller-configured endpoint. It does not start or
-install Ollama, MLX, models, credentials, or any local server process.
+install Ollama, MLX, models, credentials, or any local server process. The
+lane requests a single `report_ready` tool call and verifies the normalized
+tool-call payload, but it does not execute any capability.
 
 ## Message contract
 
