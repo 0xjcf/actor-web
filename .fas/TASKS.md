@@ -1206,8 +1206,8 @@
 
 - Title: Publish @actor-web/cli after evidence-governed runtime-host conformance
 - Mode: 4-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/publish-actor-web-cli-after-evidence-governed-runtime-host-c.md
 - Automation mode: advisory
 - Verification lane: fast

@@ -40,11 +40,8 @@ The CLI now has v0/v1 implementation, so the remaining publication gate is no lo
 
 ## Affected files
 
-- packages/cli
 - .changeset
 - docs
-- package.json
-- pnpm-lock.yaml
 - packages/agent-workflow-cli
 - packages/actor-core-runtime/src/pure-xstate-utilities.ts
 - packages/actor-core-runtime/src/unit/correlation-manager.test.ts
@@ -82,6 +79,16 @@ The CLI now has v0/v1 implementation, so the remaining publication gate is no lo
 - Evidence: root privileged packed-consumer async_hooks diagnostic | packages/actor-core-runtime/src/actor-system-impl.ts | The only surviving timer had delay 60000 and an XState scheduler stack; DistributedActorDirectory cleanup stopped its intervals, while DeadLetterQueue.stop was never invoked from ActorSystemImpl.stopSystem.
 - Accuracy signal: high: repeated privileged reproduction, exact delay match, and lifecycle call-site inspection
 - Follow-up needed: Add a failing lifecycle regression, stop DeadLetterQueue during system shutdown, rerun focused runtime verification, and prove the packed CLI smoke exits naturally.
+
+- Type: closeout scope reconciliation
+- Added at: 2026-08-03T22:50:00Z
+- Trigger: Current closeout readiness reported three missing planned paths after implementation and full verification completed.
+- Reason: Remove obsolete discovery placeholders that were not required by the release implementation: packages/cli does not exist, and the root package.json and pnpm-lock.yaml required no changes.
+- Removed paths: packages/cli, package.json, pnpm-lock.yaml
+- Evidence source: current ChangeSet, package manifests, and stable release dry-run
+- Evidence: packages/agent-workflow-cli/package.json is the actual @actor-web/cli manifest; Changesets rewrote workspace dependencies in the temporary versioned worktree without root manifest or lockfile edits.
+- Accuracy signal: high
+- Follow-up needed: Replan and refresh closeout readiness so the execution envelope reflects the implemented release surface.
 
 ## Implementation plan
 
