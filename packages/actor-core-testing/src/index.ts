@@ -28,6 +28,15 @@ export {
   getControlPlaneConformanceFixture,
   listControlPlaneConformanceScenarios,
 } from './control-plane-conformance.js';
+export type {
+  ExecutableControlPlaneConformanceDriver,
+  ExecutableControlPlaneConformanceReport,
+  ExecutableControlPlaneConformanceTraceWatch,
+  ExecutableControlPlaneScenarioEvidence,
+  ExecutableControlPlaneScenarioResult,
+  ExecutableControlPlaneTraceEvent,
+} from './executable-control-plane-conformance.js';
+export { runExecutableControlPlaneConformance } from './executable-control-plane-conformance.js';
 export type { RuntimeHostRecoveryConformanceFixture } from './runtime-host-recovery-conformance.js';
 export {
   assertRuntimeHostRecoveryConformanceFixture,
