@@ -189,9 +189,9 @@ export function getControlPlaneConformanceFixture(): ControlPlaneConformanceFixt
   });
 }
 
-export function assertControlPlaneConformanceFixture(
-  fixture: ControlPlaneConformanceFixture
-): { ok: true } {
+export function assertControlPlaneConformanceFixture(fixture: ControlPlaneConformanceFixture): {
+  ok: true;
+} {
   if (fixture.packageName !== '@actor-web/testing') {
     throw new Error(`Unexpected control-plane fixture package ${fixture.packageName}.`);
   }
