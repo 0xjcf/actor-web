@@ -490,6 +490,19 @@ describe.skip('MockCorrelationManager', () => {
 describe('PureXStateCorrelationManager timeout cleanup', () => {
   let manager: PureXStateCorrelationManager;
 
+  const getTimeoutManager = (
+    candidate: PureXStateCorrelationManager
+  ): {
+    timeoutManager: {
+      getActiveTimeoutCount(): number;
+    };
+  } =>
+    candidate as unknown as {
+      timeoutManager: {
+        getActiveTimeoutCount(): number;
+      };
+    };
+
   beforeEach(() => {
     vi.useFakeTimers();
     manager = new PureXStateCorrelationManager();
@@ -503,25 +516,25 @@ describe('PureXStateCorrelationManager timeout cleanup', () => {
   it('cancels the timeout when a request resolves', async () => {
     const promise = manager.registerRequest('corr-resolve', 1_000);
 
-    expect((manager as any).timeoutManager.getActiveTimeoutCount()).toBe(1);
+    expect(getTimeoutManager(manager).timeoutManager.getActiveTimeoutCount()).toBe(1);
 
     manager.handleResponse('corr-resolve', mockResponse);
 
     await expect(promise).resolves.toBe(mockResponse);
     expect(manager.getPendingRequestCount()).toBe(0);
-    expect((manager as any).timeoutManager.getActiveTimeoutCount()).toBe(0);
+    expect(getTimeoutManager(manager).timeoutManager.getActiveTimeoutCount()).toBe(0);
   });
 
   it('cancels the timeout when a request errors', async () => {
     const promise = manager.registerRequest('corr-error', 1_000);
 
-    expect((manager as any).timeoutManager.getActiveTimeoutCount()).toBe(1);
+    expect(getTimeoutManager(manager).timeoutManager.getActiveTimeoutCount()).toBe(1);
 
     manager.handleError('corr-error', new Error('boom'));
 
     await expect(promise).rejects.toThrow('boom');
     expect(manager.getPendingRequestCount()).toBe(0);
-    expect((manager as any).timeoutManager.getActiveTimeoutCount()).toBe(0);
+    expect(getTimeoutManager(manager).timeoutManager.getActiveTimeoutCount()).toBe(0);
   });
 });
 
