@@ -402,7 +402,7 @@ describe('@actor-web/cli release contract', () => {
         'const serverStarted = await createRuntimeHost(topology, {',
         "  node: 'server',",
         '  distributed: {',
-        '    gateway: { auth: { token: "gateway-secret" } },',
+        '    gateway: { auth: { token: "gateway-secret" }, expose: ["controlPlaneSession"] },',
         '  },',
         '  checkpoint: {',
         '    store: serverCheckpoints,',
