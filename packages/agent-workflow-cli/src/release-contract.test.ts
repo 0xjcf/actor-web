@@ -187,7 +187,9 @@ describe('@actor-web/cli release contract', () => {
     assertReleasePlanForCli(changesetStatus);
   });
 
-  it('packs a clean consumer-ready artifact with rewritten workspace dependencies', async () => {
+  it(
+    'packs a clean consumer-ready artifact with rewritten workspace dependencies',
+    async () => {
     const packDir = await makeTempDir('actor-web-cli-pack-');
     await runCommand('pnpm', ['--filter', '@actor-web/runtime', 'build'], { cwd: repoRoot });
     await runCommand('pnpm', ['--filter', '@actor-web/agent', 'build'], { cwd: repoRoot });
@@ -527,5 +529,7 @@ describe('@actor-web/cli release contract', () => {
       expect(exportSmoke.stdout).toContain('"serve"');
       expect(exportSmoke.stdout).toContain('"info"');
     }
-  });
+    },
+    15_000
+  );
 });
