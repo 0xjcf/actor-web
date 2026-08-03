@@ -1,8 +1,8 @@
 import {
   actor,
+  createInMemoryAgentSessionCheckpointStore,
   defineActorWebTopology,
   defineBehavior,
-  type Message,
   node,
 } from '@actor-web/runtime';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -288,10 +288,6 @@ function buildControlPlaneTopology() {
   });
 }
 
-function isTraceEvent(event: Message): event is SessionEvent & { type: 'TRACE_UPDATED' } {
-  return event.type === 'TRACE_UPDATED';
-}
-
 async function readSession(host: RuntimeHost, sessionId: string): Promise<SessionRecord> {
   const result = await host.ask(
     CONTROL_PLANE_ACTOR_KEY,
@@ -325,170 +321,396 @@ async function waitForTraceEvent(
   throw new Error(message);
 }
 
-function createDriverRuntime() {
-  let host: RuntimeHost | undefined;
-  const traceEvents: ExecutableControlPlaneTraceEvent[] = [];
-  const decisions: unknown[] = [];
-  let checkpoint: SessionRecord | undefined;
-  let stopWatch: (() => void) | undefined;
+type GatewayTraceReceipt = {
+  readonly receiptId?: string;
+  readonly receiptKind?: string;
+  readonly status?: string;
+  readonly reason?: {
+    readonly code?: string;
+    readonly detail?: string;
+  };
+  readonly result?: {
+    readonly output?: unknown;
+  };
+};
 
-  const attachWatch = (activeHost: RuntimeHost): void => {
-    stopWatch?.();
-    const watch = activeHost.watch(CONTROL_PLANE_ACTOR_KEY, (event) => {
-      if (isTraceEvent(event)) {
-        traceEvents.push({
-          scenario: event.scenario,
-          receiptKind: event.receiptKind,
-          commandType: event.commandType,
-          sessionId: event.sessionId,
-          revision: event.revision,
-          detail: event.detail,
-        });
+type GatewayTrace = {
+  readonly traceId?: string;
+  readonly commandId?: string;
+  readonly revision?: number;
+  readonly receipts?: readonly GatewayTraceReceipt[];
+};
+
+type GatewayTraceProjection = {
+  readonly trace?: GatewayTrace | null;
+};
+
+type CommandTraceContext = {
+  readonly scenario: ExecutableControlPlaneTraceEvent['scenario'];
+  readonly commandType: string;
+  readonly sessionId: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isSessionRecord(value: unknown): value is SessionRecord {
+  return (
+    isRecord(value) &&
+    typeof value.sessionId === 'string' &&
+    typeof value.revision === 'number' &&
+    typeof value.projectionRevision === 'number' &&
+    typeof value.expectedProjectionRevision === 'number' &&
+    typeof value.effectCount === 'number' &&
+    typeof value.reconciliationState === 'string' &&
+    typeof value.status === 'string'
+  );
+}
+
+function mapGatewayReceiptEvent(
+  receipt: GatewayTraceReceipt,
+  context: CommandTraceContext,
+  trace: GatewayTrace
+): ExecutableControlPlaneTraceEvent | null {
+  const revision = typeof trace.revision === 'number' ? trace.revision : undefined;
+
+  if (receipt.receiptKind === 'command_admission') {
+    return {
+      scenario: context.scenario,
+      receiptKind: 'command_admission',
+      receiptStatus: 'observed',
+      commandType: context.commandType,
+      sessionId: context.sessionId,
+      revision,
+      provenance: 'gateway_receipt',
+    };
+  }
+
+  if (receipt.receiptKind === 'authorization') {
+    return {
+      scenario: context.scenario,
+      receiptKind: 'authorization',
+      receiptStatus: 'authorized',
+      commandType: context.commandType,
+      sessionId: context.sessionId,
+      revision,
+      provenance: 'gateway_receipt',
+    };
+  }
+
+  if (receipt.receiptKind === 'result') {
+    return {
+      scenario: context.scenario,
+      receiptKind: 'result',
+      receiptStatus: 'succeeded',
+      commandType: context.commandType,
+      sessionId: context.sessionId,
+      revision,
+      provenance: 'gateway_receipt',
+    };
+  }
+
+  if (receipt.receiptKind === 'rejection') {
+    return {
+      scenario: context.scenario,
+      receiptKind: 'rejection',
+      receiptStatus: 'rejected',
+      commandType: context.commandType,
+      sessionId: context.sessionId,
+      revision,
+      detail: receipt.reason?.detail,
+      reasonCode: receipt.reason?.code,
+      provenance: 'gateway_receipt',
+    };
+  }
+
+  if (receipt.receiptKind === 'reconciliation') {
+    return {
+      scenario: context.scenario,
+      receiptKind: 'reconciliation',
+      receiptStatus: 'reconciled',
+      commandType: context.commandType,
+      sessionId: context.sessionId,
+      revision,
+      provenance: 'gateway_receipt',
+    };
+  }
+
+  if (receipt.receiptKind === 'projection' && receipt.status === 'stale_projection') {
+    return {
+      scenario: context.scenario,
+      receiptKind: 'projection',
+      receiptStatus: 'stale_projection',
+      commandType: context.commandType,
+      sessionId: context.sessionId,
+      revision,
+      provenance: 'gateway_receipt',
+    };
+  }
+
+  return null;
+}
+
+function deriveGatewayResultEvidence(
+  receipt: GatewayTraceReceipt,
+  context: CommandTraceContext
+): ExecutableControlPlaneTraceEvent[] {
+  const output = receipt.result?.output;
+
+  if (context.scenario === 'interruption_resume' && isSessionRecord(output)) {
+    if (output.reconciliationState === 'pending') {
+      return [
+        {
+          scenario: 'interruption_resume',
+          receiptKind: 'reconciliation',
+          commandType: context.commandType,
+          sessionId: context.sessionId,
+          revision: output.revision,
+          detail: 'resume_requires_reconciliation',
+          provenance: 'gateway_result_output',
+        },
+      ];
+    }
+    return [];
+  }
+
+  if (context.scenario === 'operator_reconciliation' && isSessionRecord(output)) {
+    if (output.reconciliationState === 'clear') {
+      return [
+        {
+          scenario: 'operator_reconciliation',
+          receiptKind: 'reconciliation',
+          commandType: context.commandType,
+          sessionId: context.sessionId,
+          revision: output.revision,
+          detail: 'operator_reconciliation_completed',
+          provenance: 'gateway_result_output',
+        },
+      ];
+    }
+    return [];
+  }
+
+  if (
+    context.scenario === 'stale_projection' &&
+    isRecord(output) &&
+    output.stale === true &&
+    isSessionRecord(output.session)
+  ) {
+    return [
+      {
+        scenario: 'stale_projection',
+        receiptKind: 'projection',
+        receiptStatus: 'stale_projection',
+        commandType: context.commandType,
+        sessionId: context.sessionId,
+        revision: output.session.revision,
+        detail: `projection=${output.session.projectionRevision} expected=${output.session.expectedProjectionRevision}`,
+        provenance: 'gateway_result_output',
+      },
+    ];
+  }
+
+  return [];
+}
+
+function createDriverRuntime() {
+  const checkpointStore = createInMemoryAgentSessionCheckpointStore();
+  let servedHost: RuntimeHost | undefined;
+  let remoteHost: RuntimeHost | undefined;
+  const traceEvents: ExecutableControlPlaneTraceEvent[] = [];
+  const seenEvidenceKeys = new Set<string>();
+  const commandContexts = new Map<string, CommandTraceContext>();
+  let checkpoint: SessionRecord | undefined;
+  let stopTraceWatch: (() => void) | undefined;
+
+  const trackCommand = (commandId: string, context: CommandTraceContext) => {
+    commandContexts.set(commandId, context);
+    return { commandId };
+  };
+
+  const appendProjectionEvidence = (projection: GatewayTraceProjection): void => {
+    const trace = projection.trace;
+    if (!trace?.commandId) {
+      return;
+    }
+    const context = commandContexts.get(trace.commandId);
+    if (!context) {
+      return;
+    }
+
+    for (const receipt of trace.receipts ?? []) {
+      const receiptKey =
+        receipt.receiptId ??
+        `${trace.traceId ?? trace.commandId}:${receipt.receiptKind ?? 'unknown'}:${receipt.status ?? 'unknown'}`;
+      if (seenEvidenceKeys.has(receiptKey)) {
+        continue;
       }
+      seenEvidenceKeys.add(receiptKey);
+
+      const mapped = mapGatewayReceiptEvent(receipt, context, trace);
+      if (mapped) {
+        traceEvents.push(mapped);
+      }
+
+      if (receipt.receiptKind === 'result') {
+        for (const derived of deriveGatewayResultEvidence(receipt, context)) {
+          const derivedKey = `${receiptKey}:${derived.receiptKind}:${derived.detail ?? derived.provenance}`;
+          if (!seenEvidenceKeys.has(derivedKey)) {
+            seenEvidenceKeys.add(derivedKey);
+            traceEvents.push(derived);
+          }
+        }
+      }
+    }
+  };
+
+  const attachRemoteTraceWatch = (activeHost: RuntimeHost): void => {
+    stopTraceWatch?.();
+    const watch = activeHost.watchTrace(CONTROL_PLANE_ACTOR_KEY, (projection) => {
+      appendProjectionEvidence(projection as GatewayTraceProjection);
     });
     expect(watch.ok).toBe(true);
     if (!watch.ok) {
       throw new Error(watch.error);
     }
-    stopWatch = watch.value;
+    stopTraceWatch = watch.value;
   };
 
-  const createHost = async (): Promise<RuntimeHost> => {
+  const createServedHost = async (): Promise<RuntimeHost> => {
     const started = await createRuntimeHost(buildControlPlaneTopology(), {
-      commandAdmission: {
-        principal: {
-          id: 'principal:control-plane-operator',
-          kind: 'authenticated',
-          role: 'operator',
-        },
-        policy: async ({ message }) => {
-          if (
-            message.type === 'START_AGENT_SESSION' &&
-            typeof (message as { sessionId?: unknown }).sessionId === 'string' &&
-            (message as { sessionId: string }).sessionId.startsWith('deny-')
-          ) {
-            return {
-              outcome: 'rejected' as const,
-              policy: 'control-plane-default',
-              code: 'authorization_denied',
-              detail: 'operator approval missing',
-            };
-          }
-
-          return {
-            outcome: 'authorized' as const,
-            policy: `control-plane:${message.type.toLowerCase()}`,
-          };
-        },
-        idempotency: async ({ metadata }) => {
-          if (metadata.idempotencyKey === 'duplicate-session-start') {
-            return {
-              outcome: 'duplicate' as const,
-              code: 'duplicate_idempotency_key',
-              detail: 'duplicate session start suppressed',
-            };
-          }
-
-          return {
-            outcome: 'available' as const,
-            settle: async () => {},
-          };
-        },
-        onDecision: async (decision) => {
-          const messageType =
-            typeof (
-              decision as {
-                readonly message?: { readonly type?: unknown };
+      node: 'local',
+      distributed: {
+        gateway: {
+          expose: [CONTROL_PLANE_ACTOR_KEY],
+          auth: {
+            verifyToken: ({ token }) => token === 'gateway-secret',
+          },
+          commandAdmission: {
+            resolvePrincipal: () => ({
+              id: 'principal:control-plane-operator',
+              kind: 'authenticated',
+              role: 'operator',
+            }),
+            policy: async ({ message }) => {
+              if (
+                message.type === 'START_AGENT_SESSION' &&
+                typeof (message as { sessionId?: unknown }).sessionId === 'string' &&
+                (message as { sessionId: string }).sessionId.startsWith('deny-')
+              ) {
+                return {
+                  outcome: 'rejected' as const,
+                  policy: 'control-plane-default',
+                  code: 'authorization_denied',
+                  detail: 'operator approval missing',
+                };
               }
-            ).message?.type === 'string'
-              ? ((
-                  decision as {
-                    readonly message?: { readonly type?: string };
-                  }
-                ).message?.type ?? 'unknown')
-              : 'unknown';
-          const sessionId =
-            typeof (
-              decision as {
-                readonly message?: { readonly sessionId?: unknown };
+
+              return {
+                outcome: 'authorized' as const,
+                policy: `control-plane:${message.type.toLowerCase()}`,
+              };
+            },
+            idempotency: async ({ metadata }) => {
+              if (metadata.idempotencyKey === 'duplicate-session-start') {
+                return {
+                  outcome: 'duplicate' as const,
+                  code: 'duplicate_idempotency_key',
+                  detail: 'duplicate session start suppressed',
+                };
               }
-            ).message?.sessionId === 'string'
-              ? ((
-                  decision as {
-                    readonly message?: { readonly sessionId?: string };
-                  }
-                ).message?.sessionId ?? 'unknown')
-              : 'unknown';
 
-          decisions.push(decision);
-          if (!decision.ok) {
-            traceEvents.push({
-              scenario:
-                decision.rejectionReceipt?.reason?.code === 'duplicate_idempotency_key'
-                  ? 'duplicate_suppression'
-                  : 'rejection',
-              receiptKind: 'rejection',
-              commandType: messageType,
-              sessionId,
-              detail: decision.rejectionReceipt?.reason?.detail,
-            });
-            return;
-          }
-
-          traceEvents.push({
-            scenario:
-              messageType === 'RECONCILE_AGENT_SESSION' ? 'operator_reconciliation' : 'success',
-            receiptKind: 'command_admission',
-            commandType: messageType,
-            sessionId,
-          });
-          traceEvents.push({
-            scenario:
-              messageType === 'RECONCILE_AGENT_SESSION' ? 'operator_reconciliation' : 'success',
-            receiptKind: 'authorization',
-            commandType: messageType,
-            sessionId,
-          });
+              return {
+                outcome: 'available' as const,
+                settle: async () => {},
+              };
+            },
+            onDecision: async () => {},
+          },
         },
+      },
+      checkpoint: {
+        store: checkpointStore,
+        required: true,
       },
     });
     expect(started.ok).toBe(true);
     if (!started.ok) {
       throw new Error(started.error);
     }
-    host = started.value;
-    attachWatch(host);
-    return host;
+    servedHost = started.value;
+    return servedHost;
   };
 
-  const ensureHost = async (): Promise<RuntimeHost> => host ?? createHost();
+  const createRemoteHost = async (): Promise<RuntimeHost> => {
+    const served = servedHost ?? (await createServedHost());
+    const gatewayUrl = served.getStatus().gatewayUrl;
+    if (!gatewayUrl) {
+      throw new Error('Expected authenticated control-plane gateway URL.');
+    }
+    const started = await createRuntimeHost(buildControlPlaneTopology(), {
+      remote: {
+        gateway: {
+          url: gatewayUrl,
+          auth: {
+            token: 'gateway-secret',
+          },
+        },
+      },
+      checkpoint: {
+        store: checkpointStore,
+        required: true,
+      },
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) {
+      throw new Error(started.error);
+    }
+    remoteHost = started.value;
+    attachRemoteTraceWatch(remoteHost);
+    return remoteHost;
+  };
+
+  const ensureRemoteHost = async (): Promise<RuntimeHost> => remoteHost ?? createRemoteHost();
 
   const driver: ExecutableControlPlaneConformanceDriver = {
-    describeTarget: () => 'createRuntimeHost(control-plane-session local executable driver)',
+    describeTarget: () =>
+      'createRuntimeHost(control-plane-session authenticated remote gateway executable driver)',
     async watchTrace(): Promise<ExecutableControlPlaneConformanceTraceWatch> {
-      await ensureHost();
+      await ensureRemoteHost();
       return {
         traceEvents,
         stop: () => {
-          stopWatch?.();
-          stopWatch = undefined;
+          stopTraceWatch?.();
+          stopTraceWatch = undefined;
         },
       };
     },
     async rejectUnauthorized(watch) {
-      const activeHost = await ensureHost();
+      const activeHost = await ensureRemoteHost();
       const startIndex = watch.traceEvents.length;
-      const rejected = await activeHost.send(
+      const rejected = await activeHost.ask(
         CONTROL_PLANE_ACTOR_KEY,
         JSON.stringify({
           type: 'START_AGENT_SESSION',
+          sessionId: 'deny-session-1',
+        }),
+        2_000,
+        trackCommand('cmd:reject:deny-session-1', {
+          scenario: 'rejection',
+          commandType: 'START_AGENT_SESSION',
           sessionId: 'deny-session-1',
         })
       );
       expect(rejected.ok).toBe(false);
       await waitForTraceEvent(
         watch.traceEvents,
-        (event) => event.scenario === 'rejection' && event.receiptKind === 'rejection',
+        (event) =>
+          event.scenario === 'rejection' &&
+          event.receiptKind === 'rejection' &&
+          event.reasonCode === 'authorization_denied' &&
+          event.provenance === 'gateway_receipt',
         'expected rejection trace event'
       );
       const session = await readSession(activeHost, 'deny-session-1');
@@ -505,23 +727,29 @@ function createDriverRuntime() {
       };
     },
     async executeAuthorized(watch) {
-      const activeHost = await ensureHost();
+      const activeHost = await ensureRemoteHost();
       const startIndex = watch.traceEvents.length;
-      const sent = await activeHost.send(
+      const sent = await activeHost.ask(
         CONTROL_PLANE_ACTOR_KEY,
         JSON.stringify({
           type: 'START_AGENT_SESSION',
           sessionId: 'exec-session-1',
+        }),
+        2_000,
+        trackCommand('cmd:success:exec-session-1', {
+          scenario: 'success',
+          commandType: 'START_AGENT_SESSION',
+          sessionId: 'exec-session-1',
         })
       );
       expect(sent.ok).toBe(true);
-      await activeHost.flush();
       await waitForTraceEvent(
         watch.traceEvents,
         (event) =>
           event.scenario === 'success' &&
           event.sessionId === 'exec-session-1' &&
-          event.receiptKind === 'result',
+          event.receiptKind === 'result' &&
+          event.provenance === 'gateway_receipt',
         'expected success result trace event for exec-session-1'
       );
       const session = await readSession(activeHost, 'exec-session-1');
@@ -538,7 +766,7 @@ function createDriverRuntime() {
       };
     },
     async interruptAndResume(watch) {
-      const activeHost = await ensureHost();
+      const activeHost = await ensureRemoteHost();
       const startIndex = watch.traceEvents.length;
       const interrupted = await activeHost.ask(
         CONTROL_PLANE_ACTOR_KEY,
@@ -546,25 +774,32 @@ function createDriverRuntime() {
           type: 'INTERRUPT_AGENT_SESSION',
           sessionId: 'resume-session-1',
         }),
-        2_000
+        2_000,
+        {
+          commandId: 'cmd:interrupt:resume-session-1',
+        }
       );
       expect(interrupted.ok).toBe(true);
-      await activeHost.flush();
       const exported = await activeHost.ask(
         CONTROL_PLANE_ACTOR_KEY,
         JSON.stringify({
           type: 'EXPORT_AGENT_SESSION_CHECKPOINT',
           sessionId: 'resume-session-1',
         }),
-        2_000
+        2_000,
+        {
+          commandId: 'cmd:export:resume-session-1',
+        }
       );
       expect(exported.ok).toBe(true);
       checkpoint = exported.ok ? (exported.value as SessionRecord) : undefined;
-      stopWatch?.();
-      stopWatch = undefined;
-      await activeHost.stop();
-      host = undefined;
-      const restarted = await ensureHost();
+      stopTraceWatch?.();
+      stopTraceWatch = undefined;
+      await remoteHost?.stop();
+      remoteHost = undefined;
+      await servedHost?.stop();
+      servedHost = undefined;
+      const restarted = await ensureRemoteHost();
       expect(checkpoint).toBeDefined();
       const imported = await restarted.ask(
         CONTROL_PLANE_ACTOR_KEY,
@@ -573,7 +808,10 @@ function createDriverRuntime() {
           sessionId: 'resume-session-1',
           checkpoint,
         }),
-        2_000
+        2_000,
+        {
+          commandId: 'cmd:import:resume-session-1',
+        }
       );
       expect(imported.ok).toBe(true);
       const resumed = await restarted.ask(
@@ -582,16 +820,21 @@ function createDriverRuntime() {
           type: 'RESUME_AGENT_SESSION',
           sessionId: 'resume-session-1',
         }),
-        2_000
+        2_000,
+        trackCommand('cmd:resume:resume-session-1', {
+          scenario: 'interruption_resume',
+          commandType: 'RESUME_AGENT_SESSION',
+          sessionId: 'resume-session-1',
+        })
       );
       expect(resumed.ok).toBe(true);
-      await restarted.flush();
       await waitForTraceEvent(
         watch.traceEvents,
         (event) =>
           event.scenario === 'interruption_resume' &&
           event.sessionId === 'resume-session-1' &&
-          event.receiptKind === 'reconciliation',
+          event.receiptKind === 'reconciliation' &&
+          event.provenance === 'gateway_result_output',
         'expected interruption_resume reconciliation trace event for resume-session-1'
       );
       const session = await readSession(restarted, 'resume-session-1');
@@ -612,33 +855,45 @@ function createDriverRuntime() {
       };
     },
     async suppressDuplicateEffect(watch) {
-      const activeHost = await ensureHost();
+      const activeHost = await ensureRemoteHost();
       const startIndex = watch.traceEvents.length;
-      const first = await activeHost.send(
+      const first = await activeHost.ask(
         CONTROL_PLANE_ACTOR_KEY,
         JSON.stringify({
           type: 'START_AGENT_SESSION',
           sessionId: 'duplicate-session-1',
         }),
+        2_000,
         {
+          commandId: 'cmd:duplicate:first',
           idempotencyKey: 'first-session-start',
         }
       );
       expect(first.ok).toBe(true);
-      const duplicate = await activeHost.send(
+      const duplicate = await activeHost.ask(
         CONTROL_PLANE_ACTOR_KEY,
         JSON.stringify({
           type: 'START_AGENT_SESSION',
           sessionId: 'duplicate-session-1',
         }),
+        2_000,
         {
+          ...trackCommand('cmd:duplicate:second', {
+            scenario: 'duplicate_suppression',
+            commandType: 'START_AGENT_SESSION',
+            sessionId: 'duplicate-session-1',
+          }),
           idempotencyKey: 'duplicate-session-start',
         }
       );
       expect(duplicate.ok).toBe(false);
       await waitForTraceEvent(
         watch.traceEvents,
-        (event) => event.scenario === 'duplicate_suppression' && event.receiptKind === 'rejection',
+        (event) =>
+          event.scenario === 'duplicate_suppression' &&
+          event.receiptKind === 'rejection' &&
+          event.reasonCode === 'duplicate_idempotency_key' &&
+          event.provenance === 'gateway_receipt',
         'expected duplicate_suppression rejection trace event'
       );
       const session = await readSession(activeHost, 'duplicate-session-1');
@@ -661,14 +916,18 @@ function createDriverRuntime() {
       };
     },
     async detectStaleProjection(watch) {
-      const activeHost = await ensureHost();
+      const activeHost = await ensureRemoteHost();
       const startIndex = watch.traceEvents.length;
-      const started = await activeHost.send(
+      const started = await activeHost.ask(
         CONTROL_PLANE_ACTOR_KEY,
         JSON.stringify({
           type: 'START_AGENT_SESSION',
           sessionId: 'stale-session-1',
-        })
+        }),
+        2_000,
+        {
+          commandId: 'cmd:stale:start',
+        }
       );
       expect(started.ok).toBe(true);
       const stale = await activeHost.ask(
@@ -679,10 +938,14 @@ function createDriverRuntime() {
           revision: 0,
           expectedRevision: 2,
         }),
-        2_000
+        2_000,
+        trackCommand('cmd:stale:projection', {
+          scenario: 'stale_projection',
+          commandType: 'SET_PROJECTION_REVISION',
+          sessionId: 'stale-session-1',
+        })
       );
       expect(stale.ok).toBe(true);
-      await activeHost.flush();
       const response = stale.ok
         ? (stale.value as {
             session: SessionRecord;
@@ -695,7 +958,9 @@ function createDriverRuntime() {
         (event) =>
           event.scenario === 'stale_projection' &&
           event.sessionId === 'stale-session-1' &&
-          event.receiptKind === 'stale_projection',
+          event.receiptKind === 'projection' &&
+          event.receiptStatus === 'stale_projection' &&
+          event.provenance === 'gateway_result_output',
         'expected stale_projection trace event for stale-session-1'
       );
       return {
@@ -714,7 +979,7 @@ function createDriverRuntime() {
       };
     },
     async reconcileSession(watch) {
-      const activeHost = await ensureHost();
+      const activeHost = await ensureRemoteHost();
       const startIndex = watch.traceEvents.length;
       const reconciled = await activeHost.ask(
         CONTROL_PLANE_ACTOR_KEY,
@@ -723,16 +988,21 @@ function createDriverRuntime() {
           sessionId: 'resume-session-1',
           revision: 3,
         }),
-        2_000
+        2_000,
+        trackCommand('cmd:reconcile:resume-session-1', {
+          scenario: 'operator_reconciliation',
+          commandType: 'RECONCILE_AGENT_SESSION',
+          sessionId: 'resume-session-1',
+        })
       );
       expect(reconciled.ok).toBe(true);
-      await activeHost.flush();
       await waitForTraceEvent(
         watch.traceEvents,
         (event) =>
           event.scenario === 'operator_reconciliation' &&
           event.sessionId === 'resume-session-1' &&
-          event.receiptKind === 'reconciliation',
+          event.receiptKind === 'reconciliation' &&
+          event.provenance === 'gateway_result_output',
         'expected operator_reconciliation reconciliation trace event for resume-session-1'
       );
       await waitForTraceEvent(
@@ -740,7 +1010,8 @@ function createDriverRuntime() {
         (event) =>
           event.scenario === 'operator_reconciliation' &&
           event.sessionId === 'resume-session-1' &&
-          event.receiptKind === 'result',
+          event.receiptKind === 'result' &&
+          event.provenance === 'gateway_receipt',
         'expected operator_reconciliation result trace event for resume-session-1'
       );
       const session = await readSession(activeHost, 'resume-session-1');
@@ -762,12 +1033,12 @@ function createDriverRuntime() {
   return {
     driver,
     stop: async () => {
-      stopWatch?.();
-      stopWatch = undefined;
-      if (host) {
-        await host.stop();
-        host = undefined;
-      }
+      stopTraceWatch?.();
+      stopTraceWatch = undefined;
+      await remoteHost?.stop();
+      remoteHost = undefined;
+      await servedHost?.stop();
+      servedHost = undefined;
     },
   };
 }

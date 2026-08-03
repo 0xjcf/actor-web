@@ -13,12 +13,21 @@ export interface ExecutableControlPlaneTraceEvent {
     | 'authorization'
     | 'result'
     | 'reconciliation'
-    | 'stale_projection'
+    | 'projection'
     | 'rejection';
+  readonly receiptStatus?:
+    | 'observed'
+    | 'authorized'
+    | 'succeeded'
+    | 'reconciled'
+    | 'stale_projection'
+    | 'rejected';
   readonly commandType: string;
   readonly sessionId: string;
   readonly revision?: number;
   readonly detail?: string;
+  readonly reasonCode?: string;
+  readonly provenance: 'gateway_receipt' | 'gateway_result_output';
 }
 
 export interface ExecutableControlPlaneScenarioEvidence {
@@ -76,16 +85,28 @@ export interface ExecutableControlPlaneConformanceReport {
   }>;
 }
 
+type ExpectedExecutableReceipt =
+  | ExecutableControlPlaneTraceEvent['receiptKind']
+  | {
+      readonly kind: ExecutableControlPlaneTraceEvent['receiptKind'];
+      readonly status?: NonNullable<ExecutableControlPlaneTraceEvent['receiptStatus']>;
+    };
+
 function expectReceiptKinds(
   evidence: ExecutableControlPlaneScenarioEvidence,
-  expectedKinds: readonly ExecutableControlPlaneTraceEvent['receiptKind'][],
+  expectedKinds: readonly ExpectedExecutableReceipt[],
   scenario: string
 ): void {
-  const actualKinds = evidence.traceEvents.map((event) => event.receiptKind);
-  for (const kind of expectedKinds) {
-    if (!actualKinds.includes(kind)) {
+  for (const expected of expectedKinds) {
+    const kind = typeof expected === 'string' ? expected : expected.kind;
+    const status = typeof expected === 'string' ? undefined : expected.status;
+    const matched = evidence.traceEvents.some(
+      (event) =>
+        event.receiptKind === kind && (status === undefined || event.receiptStatus === status)
+    );
+    if (!matched) {
       throw new Error(
-        `Executable control-plane conformance for ${scenario} is missing receipt kind ${kind}.`
+        `Executable control-plane conformance for ${scenario} is missing receipt evidence ${kind}${status ? `:${status}` : ''}.`
       );
     }
   }
@@ -121,7 +142,11 @@ export async function runExecutableControlPlaneConformance(
     }
 
     const staleProjection = await driver.detectStaleProjection(watch);
-    expectReceiptKinds(staleProjection.evidence, ['stale_projection'], 'stale_projection');
+    expectReceiptKinds(
+      staleProjection.evidence,
+      [{ kind: 'projection', status: 'stale_projection' }],
+      'stale_projection'
+    );
     if (
       staleProjection.evidence.projectedRevision === undefined ||
       staleProjection.evidence.authoritativeRevision === undefined ||
