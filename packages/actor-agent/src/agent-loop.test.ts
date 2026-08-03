@@ -10,6 +10,11 @@ type ActorAgentLlmProvider = (
     readonly system?: string;
     readonly messages: readonly { readonly role: string; readonly content: string }[];
     readonly tools: readonly string[];
+    readonly toolDefinitions?: readonly {
+      readonly name: string;
+      readonly description?: string;
+      readonly inputSchema?: unknown;
+    }[];
   },
   context: { readonly actorId: string; readonly nodeAddress: string; readonly signal: AbortSignal }
 ) => unknown;
@@ -26,6 +31,11 @@ type AgentModule = {
   }): Record<string, (...args: readonly unknown[]) => unknown>;
   createAgentLoopBehavior(options?: {
     readonly system?: string;
+    readonly toolDefinitions?: readonly {
+      readonly name: string;
+      readonly description?: string;
+      readonly inputSchema?: unknown;
+    }[];
     readonly initialCheckpointState?: {
       readonly system?: string;
       readonly history: readonly { readonly role: string; readonly content: string }[];
@@ -263,6 +273,79 @@ describe('@actor-web/agent loop behavior', () => {
         },
       ],
     });
+  });
+
+  it('passes authorized tool definitions through to the llm request while preserving tool names', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+    const provider = vi.fn<ActorAgentLlmProvider>(() => ({
+      ok: true,
+      value: {
+        message: {
+          role: 'assistant',
+          content: 'No tool needed.',
+        },
+      },
+    }));
+    const behavior = agent.createAgentLoopBehavior({
+      system: 'You are a FAS planner.',
+      toolDefinitions: [
+        {
+          name: 'repo.diff',
+          description: 'Read the current diff for a task.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              taskId: { type: 'string' },
+            },
+            required: ['taskId'],
+          },
+        },
+        {
+          name: 'secret.admin',
+          description: 'Must never be exposed when it is not authorized.',
+        },
+      ],
+    });
+    const tools = createActorToolbox(
+      {
+        ...agent.createActorAgentToolRegistry({ llm: provider }),
+        'repo.diff': () => ({ ok: true, diff: 'changed files' }),
+      },
+      actorToolContext,
+      [agent.ACTOR_WEB_LLM_TOOL_NAME, 'repo.diff']
+    );
+
+    await behavior.onMessage?.(
+      createAgentParams({
+        behavior,
+        tools,
+        message: { type: 'START_AGENT', prompt: 'plan task-1' },
+      })
+    );
+
+    expect(provider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tools: ['repo.diff'],
+        toolDefinitions: [
+          {
+            name: 'repo.diff',
+            description: 'Read the current diff for a task.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                taskId: { type: 'string' },
+              },
+              required: ['taskId'],
+            },
+          },
+        ],
+      }),
+      expect.anything()
+    );
   });
 
   it('returns errors as facts when toolAccess does not allow llm', async () => {
