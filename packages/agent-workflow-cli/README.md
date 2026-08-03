@@ -16,6 +16,41 @@ That neutral fixture fixes the proof obligations for `success`, `rejection`,
 `operator_reconciliation` without embedding FAS-specific runtime vocabulary into
 Actor-Web.
 
+Versioning for that dogfood contract is split deliberately:
+
+- `packageVersion`: npm/package release of `@actor-web/cli`, `@actor-web/testing`,
+  or the consumer adapter;
+- `schemaVersion`: serialized gateway trace/watch payload shape;
+- `contractVersion`: required neutral conformance scenarios and receipt
+  expectations exposed to consumers.
+
+Fail closed when:
+
+- the received `schemaVersion` is unsupported;
+- the required `contractVersion` is unsupported;
+- a required scenario name is unknown; or
+- a required receipt expectation is unknown.
+
+Preserve canonical gateway provenance in conformance runs:
+
+- use authenticated remote `watchTrace` projections as the primary evidence;
+- keep runtime `receiptKind: 'projection'` with `status: 'stale_projection'`
+  intact rather than flattening it into a made-up receipt kind;
+- treat local actor events and direct host reads as supplementary state
+  correlation only.
+
+Authenticated local dogfood commands:
+
+```bash
+pnpm --filter @actor-web/testing build
+pnpm --filter @actor-web/cli exec vitest run src/host/runtime-host-control-plane-conformance.test.ts
+```
+
+That conformance test is expected to serve an authenticated gateway, connect a
+remote runtime host with token auth, subscribe through `watchTrace`, and
+re-establish the served host plus remote trace watch before checkpoint
+import/resume after a restart.
+
 ## What it does
 
 `serve` boots an in-process runtime node from a topology module and opens an
@@ -35,7 +70,9 @@ spawn <file> <id>               spawn a behavior module as a new actor
 send <target> <json>            fire-and-forget message
 ask <target> <json> [timeout]   request/response (timeout in ms)
 watch <target>                  stream emitted events to the console
+watch-trace <target>            stream gateway trace projections (remote only)
 unwatch <target>                stop streaming
+unwatch-trace <target>          stop trace streaming
 help / exit
 ```
 
