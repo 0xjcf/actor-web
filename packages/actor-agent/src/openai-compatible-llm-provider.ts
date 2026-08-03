@@ -100,7 +100,9 @@ function mapUsage(usage: OpenAiCompatibleResponse['usage']): ActorAgentTokenUsag
     return undefined;
   }
   const inputTokens = isFiniteNumber(usage.prompt_tokens) ? usage.prompt_tokens : undefined;
-  const outputTokens = isFiniteNumber(usage.completion_tokens) ? usage.completion_tokens : undefined;
+  const outputTokens = isFiniteNumber(usage.completion_tokens)
+    ? usage.completion_tokens
+    : undefined;
   const totalTokens = isFiniteNumber(usage.total_tokens) ? usage.total_tokens : undefined;
   if (inputTokens === undefined && outputTokens === undefined && totalTokens === undefined) {
     return undefined;
@@ -121,9 +123,7 @@ function serializeToolCallInput(input: unknown): string {
   }
 }
 
-function toWireMessages(
-  request: ActorAgentLlmRequest
-): readonly OpenAiCompatibleRequestMessage[] {
+function toWireMessages(request: ActorAgentLlmRequest): readonly OpenAiCompatibleRequestMessage[] {
   const wireMessages: OpenAiCompatibleRequestMessage[] = [];
   if (request.system) {
     wireMessages.push({
@@ -161,16 +161,16 @@ function toWireMessages(
   return wireMessages;
 }
 
-function toWireTools(
-  toolDefinitions: readonly ActorAgentToolDefinition[] | undefined
-): readonly {
-  readonly type: 'function';
-  readonly function: {
-    readonly name: string;
-    readonly description?: string;
-    readonly parameters?: unknown;
-  };
-}[] | undefined {
+function toWireTools(toolDefinitions: readonly ActorAgentToolDefinition[] | undefined):
+  | readonly {
+      readonly type: 'function';
+      readonly function: {
+        readonly name: string;
+        readonly description?: string;
+        readonly parameters?: unknown;
+      };
+    }[]
+  | undefined {
   if (!toolDefinitions || toolDefinitions.length === 0) {
     return undefined;
   }
@@ -191,7 +191,9 @@ function filterAuthorizedToolDefinitions(
   if (!toolDefinitions || toolDefinitions.length === 0) {
     return undefined;
   }
-  const authorizedDefinitions = toolDefinitions.filter((definition) => allowedTools.has(definition.name));
+  const authorizedDefinitions = toolDefinitions.filter((definition) =>
+    allowedTools.has(definition.name)
+  );
   return authorizedDefinitions.length > 0 ? authorizedDefinitions : undefined;
 }
 
@@ -201,7 +203,10 @@ function isAbortError(error: unknown): boolean {
 
 function classifyAbort(signal: AbortSignal): ActorAgentLlmResult {
   const reason = signal.reason;
-  if (reason instanceof ActorToolTimeoutError || (isRecord(reason) && reason.code === 'ACTOR_TOOL_TIMEOUT')) {
+  if (
+    reason instanceof ActorToolTimeoutError ||
+    (isRecord(reason) && reason.code === 'ACTOR_TOOL_TIMEOUT')
+  ) {
     const timeoutMs =
       reason instanceof ActorToolTimeoutError
         ? reason.timeoutMs
@@ -232,18 +237,76 @@ async function readJsonResponse(
   if (signal.aborted) {
     throw signal.reason;
   }
+  const body = response.body;
+  if (!body) {
+    return (await response.json()) as OpenAiCompatibleResponse;
+  }
+
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let released = false;
+  let settled = false;
+  const releaseReader = (): void => {
+    if (released) {
+      return;
+    }
+    released = true;
+    try {
+      reader.releaseLock();
+    } catch {
+      // Ignore release errors after cancellation/stream termination.
+    }
+  };
+
   return await new Promise<OpenAiCompatibleResponse>((resolve, reject) => {
-    const abortListener = () => {
-      reject(signal.reason);
+    const settleResolve = (value: OpenAiCompatibleResponse): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(value);
     };
+    const settleReject = (error: unknown): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(error);
+    };
+    const abortListener = () => {
+      void reader
+        .cancel(signal.reason)
+        .catch(() => undefined)
+        .then(() => {
+          settleReject(signal.reason);
+        });
+    };
+
+    const pump = async (): Promise<void> => {
+      try {
+        let text = '';
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) {
+            text += decoder.decode();
+            settleResolve(JSON.parse(text) as OpenAiCompatibleResponse);
+            return;
+          }
+          text += decoder.decode(chunk.value, { stream: true });
+          if (signal.aborted) {
+            throw signal.reason;
+          }
+        }
+      } catch (error) {
+        settleReject(error);
+      }
+    };
+
     signal.addEventListener('abort', abortListener, { once: true });
-    response
-      .json()
-      .then((payload) => resolve(payload as OpenAiCompatibleResponse))
-      .catch(reject)
-      .finally(() => {
-        signal.removeEventListener('abort', abortListener);
-      });
+    void pump().finally(() => {
+      signal.removeEventListener('abort', abortListener);
+      releaseReader();
+    });
   });
 }
 
@@ -336,8 +399,7 @@ function parseAssistantMessage(
     toolCalls.push(parsed.value);
   }
 
-  const content =
-    typeof assistantMessage.content === 'string' ? assistantMessage.content : '';
+  const content = typeof assistantMessage.content === 'string' ? assistantMessage.content : '';
   if (content.length === 0 && toolCalls.length === 0) {
     return createFailure(
       'LLM_PROVIDER_INVALID_RESPONSE',

@@ -115,28 +115,29 @@ describe('createOpenAiCompatibleLlmProvider', () => {
     if (!agent) {
       return;
     }
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          choices: [
-            {
-              message: {
-                role: 'assistant',
-                content: 'Plan accepted.',
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: 'Plan accepted.',
+                },
               },
+            ],
+            usage: {
+              prompt_tokens: 11,
+              completion_tokens: 7,
+              total_tokens: 18,
             },
-          ],
-          usage: {
-            prompt_tokens: 11,
-            completion_tokens: 7,
-            total_tokens: 18,
-          },
-        }),
-        {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }
-      )
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }
+        )
     );
 
     const provider = agent.createOpenAiCompatibleLlmProvider({
@@ -176,41 +177,42 @@ describe('createOpenAiCompatibleLlmProvider', () => {
     if (!agent) {
       return;
     }
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          choices: [
-            {
-              message: {
-                role: 'assistant',
-                content: '',
-                tool_calls: [
-                  {
-                    id: 'call-1',
-                    type: 'function',
-                    function: {
-                      name: 'repo.diff',
-                      arguments: '{"taskId":"task-1"}',
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: '',
+                  tool_calls: [
+                    {
+                      id: 'call-1',
+                      type: 'function',
+                      function: {
+                        name: 'repo.diff',
+                        arguments: '{"taskId":"task-1"}',
+                      },
                     },
-                  },
-                  {
-                    id: 'call-2',
-                    type: 'function',
-                    function: {
-                      name: 'repo.files',
-                      arguments: '{"glob":"packages/**"}',
+                    {
+                      id: 'call-2',
+                      type: 'function',
+                      function: {
+                        name: 'repo.files',
+                        arguments: '{"glob":"packages/**"}',
+                      },
                     },
-                  },
-                ],
+                  ],
+                },
               },
-            },
-          ],
-        }),
-        {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }
-      )
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }
+        )
     );
 
     const provider = agent.createOpenAiCompatibleLlmProvider({
@@ -336,33 +338,34 @@ describe('createOpenAiCompatibleLlmProvider', () => {
     const provider = agent.createOpenAiCompatibleLlmProvider({
       endpoint: 'http://127.0.0.1:11434/v1/chat/completions',
       model: 'qwen2.5',
-      fetch: vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            choices: [
-              {
-                message: {
-                  role: 'assistant',
-                  content: '',
-                  tool_calls: [
-                    {
-                      id: 'call-1',
-                      type: 'function',
-                      function: {
-                        name: 'repo.diff',
-                        arguments: '{"taskId":',
+      fetch: vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    role: 'assistant',
+                    content: '',
+                    tool_calls: [
+                      {
+                        id: 'call-1',
+                        type: 'function',
+                        function: {
+                          name: 'repo.diff',
+                          arguments: '{"taskId":',
+                        },
                       },
-                    },
-                  ],
+                    ],
+                  },
                 },
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          }
-        )
+              ],
+            }),
+            {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            }
+          )
       ) as typeof fetch,
     });
 
@@ -392,33 +395,34 @@ describe('createOpenAiCompatibleLlmProvider', () => {
     const provider = agent.createOpenAiCompatibleLlmProvider({
       endpoint: 'http://127.0.0.1:11434/v1/chat/completions',
       model: 'qwen2.5',
-      fetch: vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            choices: [
-              {
-                message: {
-                  role: 'assistant',
-                  content: '',
-                  tool_calls: [
-                    {
-                      id: 'call-1',
-                      type: 'custom',
-                      function: {
-                        name: 'repo.secret',
-                        arguments: '{}',
+      fetch: vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    role: 'assistant',
+                    content: '',
+                    tool_calls: [
+                      {
+                        id: 'call-1',
+                        type: 'custom',
+                        function: {
+                          name: 'repo.secret',
+                          arguments: '{}',
+                        },
                       },
-                    },
-                  ],
+                    ],
+                  },
                 },
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          }
-        )
+              ],
+            }),
+            {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            }
+          )
       ) as typeof fetch,
     });
 
@@ -448,7 +452,9 @@ describe('createOpenAiCompatibleLlmProvider', () => {
     const nonOkProvider = agent.createOpenAiCompatibleLlmProvider({
       endpoint: 'http://127.0.0.1:11434/v1/chat/completions',
       model: 'qwen2.5',
-      fetch: vi.fn(async () => new Response('upstream unavailable', { status: 503 })) as typeof fetch,
+      fetch: vi.fn(
+        async () => new Response('upstream unavailable', { status: 503 })
+      ) as typeof fetch,
     });
     const networkProvider = agent.createOpenAiCompatibleLlmProvider({
       endpoint: 'http://127.0.0.1:11434/v1/chat/completions',
@@ -615,16 +621,21 @@ describe('createOpenAiCompatibleLlmProvider', () => {
     }
     vi.useFakeTimers();
     const encoder = new TextEncoder();
+    let cancelReason: unknown;
     const stalledBody = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(encoder.encode('{"choices":['));
       },
+      cancel(reason) {
+        cancelReason = reason;
+      },
     });
-    const fetchMock = vi.fn(async () =>
-      new Response(stalledBody, {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(stalledBody, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
     );
     const provider = agent.createOpenAiCompatibleLlmProvider({
       endpoint: 'http://127.0.0.1:11434/v1/chat/completions',
@@ -650,6 +661,7 @@ describe('createOpenAiCompatibleLlmProvider', () => {
         message: 'OpenAI-compatible provider timed out after 25ms.',
       },
     });
+    expect(cancelReason).toBeInstanceOf(ActorToolTimeoutError);
     vi.useRealTimers();
   });
 
@@ -660,16 +672,21 @@ describe('createOpenAiCompatibleLlmProvider', () => {
       return;
     }
     const encoder = new TextEncoder();
+    let cancelReason: unknown;
     const stalledBody = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(encoder.encode('{"choices":['));
       },
+      cancel(reason) {
+        cancelReason = reason;
+      },
     });
-    const fetchMock = vi.fn(async () =>
-      new Response(stalledBody, {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(stalledBody, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
     );
     const provider = agent.createOpenAiCompatibleLlmProvider({
       endpoint: 'http://127.0.0.1:11434/v1/chat/completions',
@@ -686,6 +703,7 @@ describe('createOpenAiCompatibleLlmProvider', () => {
       createContext(controller.signal)
     );
 
+    await Promise.resolve();
     controller.abort(new DOMException('Cancelled by caller', 'AbortError'));
 
     await expect(pending).resolves.toMatchObject({
@@ -694,6 +712,8 @@ describe('createOpenAiCompatibleLlmProvider', () => {
         code: 'LLM_PROVIDER_CANCELLED',
       },
     });
+    expect(cancelReason).toBeInstanceOf(DOMException);
+    expect((cancelReason as DOMException).name).toBe('AbortError');
   });
 
   it('returns invalid-response data when the assistant message has neither content nor tool calls', async () => {
@@ -705,23 +725,24 @@ describe('createOpenAiCompatibleLlmProvider', () => {
     const provider = agent.createOpenAiCompatibleLlmProvider({
       endpoint: 'http://127.0.0.1:11434/v1/chat/completions',
       model: 'qwen2.5',
-      fetch: vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            choices: [
-              {
-                message: {
-                  role: 'assistant',
-                  content: null,
+      fetch: vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    role: 'assistant',
+                    content: null,
+                  },
                 },
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          }
-        )
+              ],
+            }),
+            {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            }
+          )
       ) as typeof fetch,
     });
 
@@ -747,33 +768,34 @@ describe('createOpenAiCompatibleLlmProvider', () => {
     if (!agent) {
       return;
     }
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          choices: [
-            {
-              message: {
-                role: 'assistant',
-                content: '',
-                tool_calls: [
-                  {
-                    id: 'call-1',
-                    type: 'function',
-                    function: {
-                      name: 'repo.secret',
-                      arguments: '{}',
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: '',
+                  tool_calls: [
+                    {
+                      id: 'call-1',
+                      type: 'function',
+                      function: {
+                        name: 'repo.secret',
+                        arguments: '{}',
+                      },
                     },
-                  },
-                ],
+                  ],
+                },
               },
-            },
-          ],
-        }),
-        {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }
-      )
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }
+        )
     );
     const provider = agent.createOpenAiCompatibleLlmProvider({
       endpoint: 'http://127.0.0.1:11434/v1/chat/completions',
