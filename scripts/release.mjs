@@ -31,6 +31,7 @@ const getOption = (name) => {
 const dryRun = hasFlag('--dry-run');
 const prepareOnly = hasFlag('--prepare-only');
 const allowBranchPublish = hasFlag('--allow-branch-publish');
+const checkPublishConfig = hasFlag('--check-publish-config');
 const skipOtp = hasFlag('--skip-otp');
 const otp = getOption('--otp');
 const channel = getOption('--channel') ?? 'stable';
@@ -305,6 +306,21 @@ const readPublishablePackages = (cwd = process.cwd()) => {
   return ordered;
 };
 
+const ensureManualPublishCompatibility = (cwd = process.cwd()) => {
+  const incompatible = readPublishablePackages(cwd).filter(
+    (pkg) => pkg.packageJson.publishConfig?.provenance === true
+  );
+
+  if (incompatible.length > 0) {
+    const packages = incompatible.map((pkg) => pkg.packageJson.name).join(', ');
+    throw new Error(
+      `${packages} forces publishConfig.provenance=true, but this release workflow publishes from a local operator shell. Remove the forced setting or move publishing to a supported trusted-publishing CI provider.`
+    );
+  }
+
+  console.log('[release] Publish configuration is compatible with manual publishing.');
+};
+
 const packageIsPublished = (name, version, publishEnv) => {
   try {
     const publishedVersion = output(`npm view ${shellQuote(`${name}@${version}`)} version --json`, {
@@ -438,6 +454,11 @@ const publish = async () => {
 
 const main = async () => {
   env.HUSKY = '0';
+
+  ensureManualPublishCompatibility();
+  if (checkPublishConfig) {
+    return;
+  }
 
   ensureChannelState();
   ensureCleanWorkingTree();
