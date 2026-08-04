@@ -233,3 +233,5 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 ## PR #63 — resumable partial release tag validation babysit (2026-08-04, single-agent)
 
 - **Diagnostic release options must distinguish absence from an explicitly empty value.** A value parser that returns `undefined` for both cases can turn a malformed safety-check command into the normal publish path. Track option presence separately, reject missing or empty values before any release workflow begins, and cover both `--option` and `--option=` forms with a no-side-effect regression test.
+
+- **Git tag preservation tests must assert both the ref object and dereferenced commit.** A commit-only assertion cannot detect an annotated tag rewritten at the same target. Preserve annotated-tag object identity, and separately cover lightweight-to-annotated conversion while proving the historical commit target does not move.
