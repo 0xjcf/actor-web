@@ -2584,8 +2584,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Allow partial Actor-Web releases to resume without rewriting historical package tags
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/allow-partial-actor-web-releases-to-resume-without-rewriting.md
 - Verification lane: fast
 - Policy sensitivity: standard
