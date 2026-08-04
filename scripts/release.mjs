@@ -32,6 +32,7 @@ const dryRun = hasFlag('--dry-run');
 const prepareOnly = hasFlag('--prepare-only');
 const allowBranchPublish = hasFlag('--allow-branch-publish');
 const checkPublishConfig = hasFlag('--check-publish-config');
+const checkPackageTag = getOption('--check-package-tag');
 const skipOtp = hasFlag('--skip-otp');
 const otp = getOption('--otp');
 const channel = getOption('--channel') ?? 'stable';
@@ -337,13 +338,31 @@ const packageIsPublished = (name, version, publishEnv) => {
   }
 };
 
-const ensurePackageTag = (name, version) => {
+const ensurePackageTag = (name, version, options = {}) => {
+  const { allowHistoricalTarget = false } = options;
   const tagName = `${name}@${version}`;
   try {
     const tagType = output(`git cat-file -t refs/tags/${shellQuote(tagName)}`);
     const tagTarget = output(`git rev-list -n 1 refs/tags/${shellQuote(tagName)}`);
     const head = output('git rev-parse HEAD');
     if (tagTarget !== head) {
+      if (allowHistoricalTarget) {
+        if (tagType === 'tag') {
+          console.log(
+            `[release] Preserving existing package tag ${tagName} at ${tagTarget}; current HEAD is ${head}.`
+          );
+          return;
+        }
+
+        console.log(
+          `[release] Replacing historical lightweight tag with an annotated tag: ${tagName}`
+        );
+        run(
+          `git tag -a -f ${shellQuote(tagName)} -m ${shellQuote(tagName)} ${shellQuote(tagTarget)}`
+        );
+        return;
+      }
+
       console.error(
         `[release] Existing package tag ${tagName} points to ${tagTarget}, not HEAD ${head}.`
       );
@@ -436,7 +455,7 @@ const publish = async () => {
 
     if (packageIsPublished(name, version, publishEnv)) {
       console.log(`[release] ${name}@${version} is already published; skipping.`);
-      ensurePackageTag(name, version);
+      ensurePackageTag(name, version, { allowHistoricalTarget: true });
       continue;
     }
 
@@ -457,6 +476,18 @@ const main = async () => {
 
   ensureManualPublishCompatibility();
   if (checkPublishConfig) {
+    return;
+  }
+  if (checkPackageTag) {
+    const separator = checkPackageTag.lastIndexOf('@');
+    if (separator <= 0 || separator === checkPackageTag.length - 1) {
+      throw new Error(
+        `[release] Invalid package tag "${checkPackageTag}". Expected <package-name>@<version>.`
+      );
+    }
+    ensurePackageTag(checkPackageTag.slice(0, separator), checkPackageTag.slice(separator + 1), {
+      allowHistoricalTarget: true,
+    });
     return;
   }
 
