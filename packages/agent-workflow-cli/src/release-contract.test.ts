@@ -254,6 +254,49 @@ describe('@actor-web/cli release contract', () => {
     );
   });
 
+  it('preserves an existing package tag when resuming from a newer commit', async () => {
+    const releaseScript = resolve(repoRoot, 'scripts/release.mjs');
+    const fixtureRoot = await makeTempDir('actor-web-release-resume-');
+    const packageTag = '@actor-web/example@1.0.0';
+    await writePublishFixture(fixtureRoot, { access: 'public' });
+    await runCommand('git', ['init', '--initial-branch=resume'], { cwd: fixtureRoot });
+    await runCommand('git', ['config', 'user.name', 'Actor-Web Release Test'], {
+      cwd: fixtureRoot,
+    });
+    await runCommand('git', ['config', 'user.email', 'release-test@actor-web.dev'], {
+      cwd: fixtureRoot,
+    });
+    await runCommand('git', ['add', '.'], { cwd: fixtureRoot });
+    await runCommand('git', ['commit', '-m', 'release source'], { cwd: fixtureRoot });
+    await runCommand('git', ['tag', '-a', packageTag, '-m', packageTag], { cwd: fixtureRoot });
+    const taggedCommit = (
+      await runCommand('git', ['rev-list', '-n', '1', packageTag], { cwd: fixtureRoot })
+    ).stdout.trim();
+
+    await writeFile(join(fixtureRoot, 'hotfix.txt'), 'release hotfix\n');
+    await runCommand('git', ['add', 'hotfix.txt'], { cwd: fixtureRoot });
+    await runCommand('git', ['commit', '-m', 'release hotfix'], { cwd: fixtureRoot });
+    const currentHead = (
+      await runCommand('git', ['rev-parse', 'HEAD'], { cwd: fixtureRoot })
+    ).stdout.trim();
+
+    const result = await runCommand(
+      process.execPath,
+      [releaseScript, '--channel', 'stable', '--check-package-tag', packageTag],
+      { cwd: fixtureRoot }
+    );
+
+    expect(currentHead).not.toBe(taggedCommit);
+    expect(result.stdout).toContain(
+      `[release] Preserving existing package tag ${packageTag} at ${taggedCommit}; current HEAD is ${currentHead}.`
+    );
+    expect(
+      (
+        await runCommand('git', ['rev-list', '-n', '1', packageTag], { cwd: fixtureRoot })
+      ).stdout.trim()
+    ).toBe(taggedCommit);
+  });
+
   it('packs a clean consumer-ready artifact with rewritten workspace dependencies', async () => {
     const packDir = await makeTempDir('actor-web-cli-pack-');
     const cliManifest = await readJson<CliPackageManifest>(resolve(packageRoot, 'package.json'));
