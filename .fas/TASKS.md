@@ -1195,18 +1195,24 @@
 
 - Title: actor-web CLI v3: FAS control-plane integration
 - Mode: 6-agent
-- Status: queued
-- Owner: planner
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/actor-web-cli-v3-fas-control-plane-integration.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Publish @actor-web/cli after evidence-governed runtime-host conformance
 
 - Title: Publish @actor-web/cli after evidence-governed runtime-host conformance
 - Mode: 4-agent
-- Status: queued
-- Owner: planner
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/publish-actor-web-cli-after-evidence-governed-runtime-host-c.md
 - Automation mode: advisory
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ### Task: Extend markdown lint coverage to docs/ and packages/ in the verify path
 
@@ -2551,6 +2557,17 @@ operator explicitly asks for queue mutations.
 - Owner: runtime
 - Brief: .fas/tasks/week-10-learning-product-conformance-capstone-and-failure-pr.md
 - Automation mode: manual
+
+### Task: Add production Ollama and MLX tool-call adapter for @actor-web/agent
+
+- Title: Add production Ollama and MLX tool-call adapter for @actor-web/agent
+- Mode: 6-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/add-production-ollama-and-mlx-tool-call-adapter-for-actor-we.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
 
 ## Template
 

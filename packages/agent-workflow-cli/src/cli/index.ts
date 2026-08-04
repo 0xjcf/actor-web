@@ -13,8 +13,9 @@
  * diagnostics and failures go through the runtime `Logger`.
  */
 
+import { realpathSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { Logger } from '@actor-web/runtime';
 import { createNodeFileSystemAgentSessionCheckpointStore } from '@actor-web/runtime/node';
 import chalk from 'chalk';
@@ -472,8 +473,20 @@ async function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((error) => {
+function resolveExecutablePath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+const currentModulePath = resolveExecutablePath(
+  typeof __filename === 'string' ? __filename : fileURLToPath(import.meta.url)
+);
+
+if (process.argv[1] && currentModulePath === resolveExecutablePath(process.argv[1])) {
+  void main().catch((error) => {
     log.error('CLI failed', error);
     process.exit(1);
   });

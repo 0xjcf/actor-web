@@ -113,6 +113,71 @@ The boundary between the planes is a small, explicit handoff:
 The CLI consumes exactly these three and nothing else from FAS. FAS never
 imports actor-web (preserving the decoupling already completed).
 
+### Neutral conformance surface for CLI v3 dogfooding
+
+The CLI v3 dogfood path now has a consumer-facing conformance target in
+`@actor-web/testing`: `getControlPlaneConformanceFixture()`,
+`listControlPlaneConformanceScenarios()`, and
+`assertControlPlaneConformanceFixture()`.
+
+That fixture is intentionally provider-neutral and consumer-owned:
+
+- Actor-Web supplies the execution-trace, checkpoint-recovery, reconciliation,
+  and audit proof surfaces.
+- FAS or another control plane maps its own policy and operator vocabulary onto
+  that neutral fixture instead of becoming a runtime dependency.
+- The required scenarios are fixed at: `success`, `rejection`,
+  `interruption_resume`, `duplicate_suppression`, `stale_projection`, and
+  `operator_reconciliation`.
+
+This is the contract the CLI/example should dogfood while the higher-level FAS
+consumer wiring is being completed.
+
+Versioning and fail-closed rules for this surface are explicit:
+
+- `packageVersion` is the published npm/package release for `@actor-web/cli`,
+  `@actor-web/testing`, and the consumer adapter. Bump it for any shipped code
+  or docs change, even when the conformance contract is unchanged.
+- `schemaVersion` is the serialized runtime-gateway trace shape. Bump it when
+  trace receipts, projection envelopes, or watch-trace payload fields change in
+  a way a saved trace consumer must parse differently.
+- `contractVersion` is the neutral control-plane conformance contract exposed to
+  FAS and other consumers. Bump it when required scenarios, required receipt
+  evidence, or the meaning of a scenario outcome changes.
+
+Consumers must fail closed when:
+
+- a received `schemaVersion` is unsupported;
+- a required `contractVersion` is unsupported;
+- a required scenario name is unknown;
+- a required receipt expectation is unknown; or
+- a gateway projection downgrades canonical provenance, for example by
+  flattening runtime `receiptKind: 'projection'` plus `status: 'stale_projection'`
+  into an invented receipt kind.
+
+The executable dogfood path must preserve gateway provenance:
+
+- authenticated remote `watchTrace` projections are the primary receipt surface;
+- `command_admission`, `authorization`, `rejection`, and gateway `result`
+  receipts come from the gateway projection itself;
+- resume/stale/reconcile semantic confirmation may be carried in reply payloads
+  only when those payloads are observed through an actual remote gateway `result`
+  receipt and correlated by command id / revision / command type;
+- local actor events or direct host state reads are supplementary correlation
+  only and must never substitute for missing gateway receipt evidence.
+
+Local dogfood commands for this contract are:
+
+```bash
+pnpm --filter @actor-web/testing build
+pnpm --filter @actor-web/cli exec vitest run src/host/runtime-host-control-plane-conformance.test.ts
+```
+
+The conformance test itself must serve an authenticated gateway, connect a
+remote runtime host with token auth, subscribe through `watchTrace`, and
+re-establish both the served host and remote trace watch before checkpoint
+import and resume after a restart.
+
 ## Actors vs agents
 
 The runtime gives us **actors**. An **agent** is an actor whose behavior loop

@@ -37,12 +37,37 @@ Promote the existing v3 design into consumer-owned conformance between a FAS con
 - packages/testing/src
 - docs
 - examples
+- packages/agent-workflow-cli/src
+- packages/agent-workflow-cli/README.md
+- packages/actor-core-runtime/src
+- packages/actor-agent/src
+- packages/actor-core-testing/src
+- docs/actor-web-cli-runtime-host-design.md
+- examples/fas-agent-loop
 
 ## Scope Amendments
 
 - Type: scope-refresh
 - Added at: 2026-07-28
 - Added paths: packages/cli/src, packages/runtime/src, packages/agent/src, packages/testing/src, docs, examples
+
+- Type: scope-correction
+- Added at: 2026-08-03
+- Trigger: FAS planning resolved stale package aliases to the current Actor-Web workspace layout
+- Reason: The queued brief named non-existent packages/cli, packages/runtime, packages/agent, and packages/testing paths; use the current package directories and retain the required docs/example surfaces.
+- Added paths: packages/agent-workflow-cli/src, packages/agent-workflow-cli/README.md, packages/actor-core-runtime/src, packages/actor-agent/src, packages/actor-core-testing/src, docs/actor-web-cli-runtime-host-design.md, examples/fas-agent-loop
+- Evidence source: live repository layout
+- Evidence: live repository layout | packages
+- Accuracy signal: find packages confirms current package directory names
+
+- Type: scope-closeout
+- Added at: 2026-08-03
+- Trigger: Executable gateway-trace conformance and downstream review established the final implementation surface
+- Reason: Four queued package aliases do not exist in this workspace, while actor-core-runtime and actor-agent were reference-only inspection surfaces whose existing contracts were sufficient without source changes.
+- Removed paths: packages/cli/src, packages/runtime/src, packages/agent/src, packages/testing/src, packages/actor-core-runtime/src, packages/actor-agent/src
+- Evidence source: committed ChangeSet and downstream QA/SRE/reviewer findings
+- Evidence: commits bf218419..deeaf633 | authenticated remote watchTrace conformance | no unexpected source files
+- Accuracy signal: current ChangeSet contains the testing, CLI host, docs, and example surfaces required by acceptance
 
 ## Implementation plan
 

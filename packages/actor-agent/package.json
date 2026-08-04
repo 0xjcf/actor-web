@@ -1,6 +1,6 @@
 {
   "name": "@actor-web/agent",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "LLM tool and agent-loop utilities for actor-web runtime hosts",
   "type": "module",
   "main": "dist/index.cjs",
@@ -17,6 +17,7 @@
     "build:watch": "pnpm build --watch",
     "dev": "vitest --watch",
     "test": "vitest run",
+    "test:live:openai-compatible": "ACTOR_AGENT_RUN_LIVE_OPENAI_COMPAT=1 vitest run tests/openai-compatible-live.test.ts",
     "lint": "biome check .",
     "format": "biome format . --write",
     "typecheck": "tsc --noEmit",

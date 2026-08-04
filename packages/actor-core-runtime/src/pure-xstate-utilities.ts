@@ -335,6 +335,7 @@ export class PureXStateCorrelationManager {
       reject: (error: Error) => void;
       createdAt: number;
       timeoutMs: number;
+      timeoutId: string;
     }
   >();
 
@@ -353,18 +354,18 @@ export class PureXStateCorrelationManager {
     }
 
     return new Promise<T>((resolve, reject) => {
+      const timeoutId = this.timeoutManager.setTimeout(() => {
+        this.handleTimeout(correlationId);
+      }, timeout);
+
       // Store the pending request
       this.pendingRequests.set(correlationId, {
         resolve: resolve as (value: unknown) => void,
         reject,
         createdAt: Date.now(),
         timeoutMs: timeout,
+        timeoutId,
       });
-
-      // ✅ PURE XSTATE: Use XState timeout manager instead of setTimeout
-      this.timeoutManager.setTimeout(() => {
-        this.handleTimeout(correlationId);
-      }, timeout);
 
       log.debug('Request registered with pure XState timeout', {
         correlationId,
@@ -387,6 +388,8 @@ export class PureXStateCorrelationManager {
       return;
     }
 
+    this.timeoutManager.clearTimeout(pendingRequest.timeoutId);
+
     // Remove from pending requests
     this.pendingRequests.delete(correlationId);
 
@@ -401,6 +404,8 @@ export class PureXStateCorrelationManager {
   handleError(correlationId: string, error: Error): void {
     const pendingRequest = this.pendingRequests.get(correlationId);
     if (!pendingRequest) return;
+
+    this.timeoutManager.clearTimeout(pendingRequest.timeoutId);
 
     // Remove from pending requests
     this.pendingRequests.delete(correlationId);

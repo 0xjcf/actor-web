@@ -40,15 +40,55 @@ The CLI now has v0/v1 implementation, so the remaining publication gate is no lo
 
 ## Affected files
 
-- packages/cli
 - .changeset
 - docs
-- package.json
-- pnpm-lock.yaml
+- packages/agent-workflow-cli
+- packages/actor-core-runtime/src/pure-xstate-utilities.ts
+- packages/actor-core-runtime/src/unit/correlation-manager.test.ts
+- packages/actor-core-runtime/src/actor-system-impl.ts
+- packages/actor-core-runtime/src/unit/actor-system-lifecycle.test.ts
 
 ## Scope Amendments
 
-- None.
+- Type: path-correction
+- Added at: 2026-08-03T20:58:38.511Z
+- Trigger: Release-readiness audit found the real @actor-web/cli package path differs from the stale brief path.
+- Reason: Authorize package metadata, README, build hygiene, and packed-consumer tests in the actual CLI package.
+- Added paths: packages/agent-workflow-cli
+- Evidence source: live repository inspection
+- Evidence: live repository inspection | packages/agent-workflow-cli/package.json | packages/cli does not exist; packages/agent-workflow-cli declares name @actor-web/cli.
+- Accuracy signal: high
+- Follow-up needed: Regenerate planning and delegated write envelopes before implementation.
+
+- Type: release-blocking runtime cleanup correction
+- Added at: 2026-08-03T21:56:00Z
+- Trigger: Privileged packed-consumer smoke completed authenticated remote commands but the process stayed alive after remote.stop and server.stop.
+- Reason: Resolved correlation requests delete pending entries without cancelling their PureXStateTimeoutManager actors, leaving one live timeout per completed ask and preventing clean consumer process exit.
+- Added paths: packages/actor-core-runtime/src/pure-xstate-utilities.ts, packages/actor-core-runtime/src/unit/correlation-manager.test.ts
+- Evidence source: root privileged packed-consumer active-resource diagnostic
+- Evidence: root privileged packed-consumer active-resource diagnostic | packages/actor-core-runtime/src/pure-xstate-utilities.ts | async_hooks showed six persistent XState scheduler Timeout resources for six completed asks after both hosts stopped; isolated PureXStateTimeoutManager cancellation succeeds, localizing the gap to PureXStateCorrelationManager response/error settlement.
+- Accuracy signal: high: repeated privileged reproduction plus timer creation stacks
+- Follow-up needed: Add active regression for timeout cancellation on response/error, track timeout ids per correlation request, rerun packed consumer without forced process exit, and include runtime patch release note.
+
+- Type: release-blocking dead-letter lifecycle correction
+- Added at: 2026-08-03T22:10:50Z
+- Trigger: Privileged packed-consumer async_hooks diagnostic isolated the final 60-second XState timer after both runtime hosts stopped.
+- Reason: ActorSystemImpl constructs a DeadLetterQueue with a cleanup interval but stopSystem never stops that queue, preventing natural process exit.
+- Added paths: packages/actor-core-runtime/src/actor-system-impl.ts, packages/actor-core-runtime/src/unit/actor-system-lifecycle.test.ts
+- Evidence source: root privileged packed-consumer async_hooks diagnostic
+- Evidence: root privileged packed-consumer async_hooks diagnostic | packages/actor-core-runtime/src/actor-system-impl.ts | The only surviving timer had delay 60000 and an XState scheduler stack; DistributedActorDirectory cleanup stopped its intervals, while DeadLetterQueue.stop was never invoked from ActorSystemImpl.stopSystem.
+- Accuracy signal: high: repeated privileged reproduction, exact delay match, and lifecycle call-site inspection
+- Follow-up needed: Add a failing lifecycle regression, stop DeadLetterQueue during system shutdown, rerun focused runtime verification, and prove the packed CLI smoke exits naturally.
+
+- Type: closeout scope reconciliation
+- Added at: 2026-08-03T22:50:00Z
+- Trigger: Current closeout readiness reported three missing planned paths after implementation and full verification completed.
+- Reason: Remove obsolete discovery placeholders that were not required by the release implementation: packages/cli does not exist, and the root package.json and pnpm-lock.yaml required no changes.
+- Removed paths: packages/cli, package.json, pnpm-lock.yaml
+- Evidence source: current ChangeSet, package manifests, and stable release dry-run
+- Evidence: packages/agent-workflow-cli/package.json is the actual @actor-web/cli manifest; Changesets rewrote workspace dependencies in the temporary versioned worktree without root manifest or lockfile edits.
+- Accuracy signal: high
+- Follow-up needed: Replan and refresh closeout readiness so the execution envelope reflects the implemented release surface.
 
 ## Implementation plan
 

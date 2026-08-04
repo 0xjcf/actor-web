@@ -17,6 +17,9 @@ import type {
 } from '@actor-web/runtime/browser';
 import { defineBehavior } from '@actor-web/runtime/browser';
 
+export type { OpenAiCompatibleLlmProviderOptions } from './openai-compatible-llm-provider.js';
+export { createOpenAiCompatibleLlmProvider } from './openai-compatible-llm-provider.js';
+
 export const ACTOR_WEB_LLM_TOOL_NAME = 'llm' as const;
 
 export type ActorAgentMessageRole = 'system' | 'user' | 'assistant' | 'tool';
@@ -25,6 +28,12 @@ export interface ActorAgentToolCall {
   readonly id: string;
   readonly name: string;
   readonly input: unknown;
+}
+
+export interface ActorAgentToolDefinition {
+  readonly name: string;
+  readonly description?: string;
+  readonly inputSchema?: JsonValue;
 }
 
 export interface ActorAgentLlmMessage {
@@ -39,6 +48,7 @@ export interface ActorAgentLlmRequest {
   readonly system?: string;
   readonly messages: readonly ActorAgentLlmMessage[];
   readonly tools: readonly string[];
+  readonly toolDefinitions?: readonly ActorAgentToolDefinition[];
 }
 
 export interface ActorAgentTokenUsage {
@@ -162,6 +172,7 @@ export type ActorAgentLoopEvent =
 
 export interface ActorAgentLoopOptions {
   readonly system?: string;
+  readonly toolDefinitions?: readonly ActorAgentToolDefinition[];
   readonly initialHistory?: readonly ActorAgentLlmMessage[];
   readonly initialCheckpointState?: ActorAgentLoopCheckpointState;
   readonly llmTimeoutMs?: number;
@@ -250,6 +261,20 @@ function serializeToolOutput(output: unknown): string {
 
 function toolNamesForModel(tools: { list(): string[] }): readonly string[] {
   return tools.list().filter((name) => name !== ACTOR_WEB_LLM_TOOL_NAME);
+}
+
+function toolDefinitionsForModel(
+  requested: readonly ActorAgentToolDefinition[] | undefined,
+  allowedTools: readonly string[]
+): readonly ActorAgentToolDefinition[] | undefined {
+  if (!requested || requested.length === 0) {
+    return undefined;
+  }
+  const allowedToolNames = new Set(allowedTools);
+  const authorizedDefinitions = requested.filter((definition) =>
+    allowedToolNames.has(definition.name)
+  );
+  return authorizedDefinitions.length > 0 ? authorizedDefinitions : undefined;
 }
 
 function createFailureResult(input: {
@@ -918,6 +943,10 @@ export function createAgentLoopBehavior(
             system,
             messages,
             tools: toolNamesForModel(tools),
+            toolDefinitions: toolDefinitionsForModel(
+              options.toolDefinitions,
+              toolNamesForModel(tools)
+            ),
           },
           options.llmTimeoutMs ? { timeoutMs: options.llmTimeoutMs } : undefined
         );

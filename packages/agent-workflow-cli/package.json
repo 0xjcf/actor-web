@@ -1,19 +1,30 @@
 {
   "name": "@actor-web/cli",
-  "version": "0.1.0-alpha",
-  "private": true,
-  "description": "actor-web runtime host CLI (work in progress)",
-  "main": "dist/index.js",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Distributed Actor-Web runtime host CLI with authenticated remote operator shells",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
   "type": "module",
   "bin": {
     "actor-web": "dist/cli/index.js"
   },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
   "scripts": {
-    "build": "tsc",
+    "build": "tsup src/index.ts src/cli/index.ts --format cjs,esm --clean && rm -f tsconfig.tsbuildinfo && tsc -p tsconfig.json --emitDeclarationOnly --declaration --declarationMap false --outDir dist && node ../../scripts/verify-exports.mjs .",
     "dev": "tsx src/cli/index.ts",
     "start": "node dist/cli/index.js",
     "test": "vitest run",
-    "clean": "rm -rf dist *.tsbuildinfo"
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "prepack": "pnpm build",
+    "prepublishOnly": "pnpm build"
   },
   "keywords": [
     "actor",
@@ -49,11 +60,13 @@
     "url": "https://github.com/0xjcf/actor-web/issues"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ]
 }
