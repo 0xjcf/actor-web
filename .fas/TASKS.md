@@ -2573,8 +2573,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Align @actor-web/cli provenance with manual stable publishing and fail early on unsupported local provenance
 - Mode: single-agent
-- Status: implementing
-- Owner: implementer
+- Status: review
+- Owner: reviewer
 - Brief: .fas/tasks/align-actor-web-cli-provenance-with-manual-stable-publishing.md
 - Verification lane: fast
 - Policy sensitivity: standard
