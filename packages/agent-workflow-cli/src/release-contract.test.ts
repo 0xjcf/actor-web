@@ -164,6 +164,26 @@ async function unpackTarball(tarball: string, targetDir: string): Promise<void> 
   });
 }
 
+async function writePublishFixture(
+  root: string,
+  publishConfig: Record<string, unknown>
+): Promise<void> {
+  const packageDir = join(root, 'packages', 'example');
+  await mkdir(packageDir, { recursive: true });
+  await writeFile(
+    join(packageDir, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: '@actor-web/example',
+        version: '1.0.0',
+        publishConfig,
+      },
+      null,
+      2
+    )}\n`
+  );
+}
+
 describe('@actor-web/cli release contract', () => {
   afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
@@ -195,9 +215,8 @@ describe('@actor-web/cli release contract', () => {
     expect(manifest.files).toEqual(
       expect.arrayContaining(['dist', 'README.md', 'LICENSE', 'CHANGELOG.md'])
     );
-    expect(manifest.publishConfig).toMatchObject({
+    expect(manifest.publishConfig).toEqual({
       access: 'public',
-      provenance: true,
     });
     expect(manifest.scripts?.build).toContain('--clean');
     expect(manifest.scripts?.prepack).toBe('pnpm build');
@@ -205,6 +224,34 @@ describe('@actor-web/cli release contract', () => {
 
     expect(changesetConfig.ignore ?? []).not.toContain('@actor-web/cli');
     assertReleaseStateForCli(changesetStatus, manifest.version);
+  });
+
+  it('rejects forced provenance before the manual release workflow starts', async () => {
+    const releaseScript = resolve(repoRoot, 'scripts/release.mjs');
+    const compatibleRoot = await makeTempDir('actor-web-release-compatible-');
+    await writePublishFixture(compatibleRoot, { access: 'public' });
+
+    const compatible = await runCommand(
+      process.execPath,
+      [releaseScript, '--channel', 'stable', '--check-publish-config'],
+      { cwd: compatibleRoot }
+    );
+    expect(compatible.stdout).toContain(
+      '[release] Publish configuration is compatible with manual publishing.'
+    );
+
+    const incompatibleRoot = await makeTempDir('actor-web-release-incompatible-');
+    await writePublishFixture(incompatibleRoot, { access: 'public', provenance: true });
+
+    await expect(
+      runCommand(
+        process.execPath,
+        [releaseScript, '--channel', 'stable', '--check-publish-config'],
+        { cwd: incompatibleRoot }
+      )
+    ).rejects.toThrow(
+      /@actor-web\/example forces publishConfig\.provenance=true, but this release workflow publishes from a local operator shell/
+    );
   });
 
   it('packs a clean consumer-ready artifact with rewritten workspace dependencies', async () => {
