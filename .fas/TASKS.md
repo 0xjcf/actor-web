@@ -2595,8 +2595,8 @@ operator explicitly asks for queue mutations.
 
 - Title: Prevent unhandled Actor-Web gateway rejection during example teardown
 - Mode: single-agent
-- Status: review
-- Owner: reviewer
+- Status: done
+- Owner: implementer
 - Brief: .fas/tasks/prevent-unhandled-actor-web-gateway-rejection-during-example.md
 - Verification lane: fast
 - Policy sensitivity: standard
