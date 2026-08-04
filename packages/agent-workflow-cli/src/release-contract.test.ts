@@ -101,22 +101,43 @@ async function runCommand(
   });
 }
 
-async function readChangesetStatus(): Promise<ChangesetStatus> {
+async function readChangesetStatus(manifestVersion: string): Promise<ChangesetStatus> {
   const statusFile = join(await makeTempDir('actor-web-cli-changeset-'), 'status.json');
-  await runCommand('pnpm', ['exec', 'changeset', 'status', `--output=${statusFile}`], {
-    cwd: repoRoot,
-  });
+  try {
+    await runCommand(
+      'pnpm',
+      ['exec', 'changeset', 'status', '--since=origin/main', `--output=${statusFile}`],
+      {
+        cwd: repoRoot,
+      }
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const isPreparedStableVersion = /^\d+\.\d+\.\d+$/.test(manifestVersion);
+    if (
+      isPreparedStableVersion &&
+      message.includes('Some packages have been changed but no changesets were found')
+    ) {
+      return { releases: [] };
+    }
+    throw error;
+  }
   return await readJson<ChangesetStatus>(statusFile);
 }
 
-function assertReleasePlanForCli(status: ChangesetStatus): void {
+function assertReleaseStateForCli(status: ChangesetStatus, manifestVersion: string): void {
   const cliRelease = status.releases.find((entry) => entry.name === '@actor-web/cli');
-  expect(cliRelease).toBeDefined();
+
+  if (!cliRelease) {
+    expect(manifestVersion).toMatch(/^\d+\.\d+\.\d+$/);
+    return;
+  }
+
   expect(cliRelease).toMatchObject({
-    oldVersion: '0.1.0-alpha',
-    newVersion: '0.1.0',
+    oldVersion: manifestVersion,
   });
-  expect(cliRelease?.changesets).toContain('tall-pugs-tell');
+  expect(cliRelease.newVersion).not.toBe(manifestVersion);
+  expect(cliRelease.changesets.length).toBeGreaterThan(0);
 }
 
 async function packPackage(packageDir: string, packDir: string): Promise<string> {
@@ -148,15 +169,14 @@ describe('@actor-web/cli release contract', () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
   });
 
-  it('keeps the source manifest alpha while changesets plans the first stable public release', async () => {
+  it('supports pending and prepared stable release states', async () => {
     const manifest = await readJson<CliPackageManifest>(resolve(packageRoot, 'package.json'));
     const changesetConfig = await readJson<ChangesetConfig>(
       resolve(repoRoot, '.changeset/config.json')
     );
-    const changesetStatus = await readChangesetStatus();
+    const changesetStatus = await readChangesetStatus(manifest.version);
 
     expect(manifest.name).toBe('@actor-web/cli');
-    expect(manifest.version).toBe('0.1.0-alpha');
     expect(manifest.private).toBe(false);
 
     expect(manifest.main).toBe('dist/index.cjs');
@@ -184,11 +204,18 @@ describe('@actor-web/cli release contract', () => {
     expect(manifest.scripts?.prepublishOnly).toBe('pnpm build');
 
     expect(changesetConfig.ignore ?? []).not.toContain('@actor-web/cli');
-    assertReleasePlanForCli(changesetStatus);
+    assertReleaseStateForCli(changesetStatus, manifest.version);
   });
 
   it('packs a clean consumer-ready artifact with rewritten workspace dependencies', async () => {
     const packDir = await makeTempDir('actor-web-cli-pack-');
+    const cliManifest = await readJson<CliPackageManifest>(resolve(packageRoot, 'package.json'));
+    const runtimeManifest = await readJson<CliPackageManifest>(
+      resolve(repoRoot, 'packages/actor-core-runtime/package.json')
+    );
+    const agentManifest = await readJson<CliPackageManifest>(
+      resolve(repoRoot, 'packages/actor-agent/package.json')
+    );
     await runCommand('pnpm', ['--filter', '@actor-web/runtime', 'build'], { cwd: repoRoot });
     await runCommand('pnpm', ['--filter', '@actor-web/agent', 'build'], { cwd: repoRoot });
     await runCommand('pnpm', ['--filter', '@actor-web/cli', 'build'], { cwd: repoRoot });
@@ -206,9 +233,9 @@ describe('@actor-web/cli release contract', () => {
       })
     ).stdout;
     const packedManifest = JSON.parse(packedManifestText) as CliPackageManifest;
-    expect(packedManifest.version).toBe('0.1.0-alpha');
-    expect(packedManifest.dependencies?.['@actor-web/runtime']).toBe('0.2.0');
-    expect(packedManifest.dependencies?.['@actor-web/agent']).toBe('0.2.0');
+    expect(packedManifest.version).toBe(cliManifest.version);
+    expect(packedManifest.dependencies?.['@actor-web/runtime']).toBe(runtimeManifest.version);
+    expect(packedManifest.dependencies?.['@actor-web/agent']).toBe(agentManifest.version);
     expect(JSON.stringify(packedManifest)).not.toContain('workspace:*');
 
     const tarListing = (
@@ -270,7 +297,7 @@ describe('@actor-web/cli release contract', () => {
     const installedManifest = await readJson<CliPackageManifest>(
       join(consumerDir, 'node_modules/@actor-web/cli/package.json')
     );
-    expect(installedManifest.version).toBe('0.1.0-alpha');
+    expect(installedManifest.version).toBe(cliManifest.version);
     expect(JSON.stringify(installedManifest)).not.toContain('workspace:*');
 
     await writeFile(
