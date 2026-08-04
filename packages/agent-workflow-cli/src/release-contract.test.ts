@@ -104,9 +104,13 @@ async function runCommand(
 async function readChangesetStatus(manifestVersion: string): Promise<ChangesetStatus> {
   const statusFile = join(await makeTempDir('actor-web-cli-changeset-'), 'status.json');
   try {
-    await runCommand('pnpm', ['exec', 'changeset', 'status', `--output=${statusFile}`], {
-      cwd: repoRoot,
-    });
+    await runCommand(
+      'pnpm',
+      ['exec', 'changeset', 'status', '--since=origin/main', `--output=${statusFile}`],
+      {
+        cwd: repoRoot,
+      }
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const isPreparedStableVersion = /^\d+\.\d+\.\d+$/.test(manifestVersion);
