@@ -2569,6 +2569,17 @@ operator explicitly asks for queue mutations.
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Align @actor-web/cli provenance with manual stable publishing and fail early on unsupported local provenance
+
+- Title: Align @actor-web/cli provenance with manual stable publishing and fail early on unsupported local provenance
+- Mode: single-agent
+- Status: review
+- Owner: reviewer
+- Brief: .fas/tasks/align-actor-web-cli-provenance-with-manual-stable-publishing.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
 ## Template
 
 ### Task: `<short task title>`
