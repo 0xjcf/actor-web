@@ -229,3 +229,7 @@ Reusable lessons from PR review. Each entry is a pattern the pipeline should cat
 - **Parallel offload diagrams should show partial order, not invented completion order.** When actor, timer, and worker progress are independently host-scheduled, present an unordered set plus only proven edges such as worker result before the awaiting actor completes.
 
 - **Focus indicators need non-text contrast against every component surface.** Use a fully opaque accessible token and calculate at least 3:1 against page, panel, and panel-soft backgrounds in both themes.
+
+## PR #63 — resumable partial release tag validation babysit (2026-08-04, single-agent)
+
+- **Diagnostic release options must distinguish absence from an explicitly empty value.** A value parser that returns `undefined` for both cases can turn a malformed safety-check command into the normal publish path. Track option presence separately, reject missing or empty values before any release workflow begins, and cover both `--option` and `--option=` forms with a no-side-effect regression test.
