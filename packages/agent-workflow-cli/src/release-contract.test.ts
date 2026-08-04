@@ -297,6 +297,21 @@ describe('@actor-web/cli release contract', () => {
     ).toBe(taggedCommit);
   });
 
+  it('rejects a missing package tag check value before entering the release workflow', async () => {
+    const releaseScript = resolve(repoRoot, 'scripts/release.mjs');
+    const fixtureRoot = await makeTempDir('actor-web-release-missing-tag-');
+    await writePublishFixture(fixtureRoot, { access: 'public' });
+
+    for (const args of [
+      ['--channel', 'stable', '--check-package-tag'],
+      ['--channel', 'stable', '--check-package-tag='],
+    ]) {
+      await expect(
+        runCommand(process.execPath, [releaseScript, ...args], { cwd: fixtureRoot })
+      ).rejects.toThrow(/--check-package-tag requires a non-empty <package-name>@<version> value/);
+    }
+  });
+
   it('packs a clean consumer-ready artifact with rewritten workspace dependencies', async () => {
     const packDir = await makeTempDir('actor-web-cli-pack-');
     const cliManifest = await readJson<CliPackageManifest>(resolve(packageRoot, 'package.json'));

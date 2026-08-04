@@ -9,6 +9,7 @@ import { createInterface } from 'node:readline/promises';
 
 const args = process.argv.slice(2);
 const hasFlag = (flag) => args.includes(flag);
+const hasOption = (name) => args.some((arg) => arg === name || arg.startsWith(`${name}=`));
 const getOption = (name) => {
   const equalsValue = args.find((arg) => arg.startsWith(`${name}=`));
   if (equalsValue) {
@@ -32,6 +33,7 @@ const dryRun = hasFlag('--dry-run');
 const prepareOnly = hasFlag('--prepare-only');
 const allowBranchPublish = hasFlag('--allow-branch-publish');
 const checkPublishConfig = hasFlag('--check-publish-config');
+const checkPackageTagRequested = hasOption('--check-package-tag');
 const checkPackageTag = getOption('--check-package-tag');
 const skipOtp = hasFlag('--skip-otp');
 const otp = getOption('--otp');
@@ -473,6 +475,12 @@ const publish = async () => {
 
 const main = async () => {
   env.HUSKY = '0';
+
+  if (checkPackageTagRequested && !checkPackageTag) {
+    throw new Error(
+      '[release] --check-package-tag requires a non-empty <package-name>@<version> value.'
+    );
+  }
 
   ensureManualPublishCompatibility();
   if (checkPublishConfig) {
