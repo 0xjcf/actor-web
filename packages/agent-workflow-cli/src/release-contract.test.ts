@@ -254,6 +254,138 @@ describe('@actor-web/cli release contract', () => {
     );
   });
 
+  it('preserves an existing package tag when resuming from a newer commit', async () => {
+    const releaseScript = resolve(repoRoot, 'scripts/release.mjs');
+    const fixtureRoot = await makeTempDir('actor-web-release-resume-');
+    const packageTag = '@actor-web/example@1.0.0';
+    await writePublishFixture(fixtureRoot, { access: 'public' });
+    await runCommand('git', ['init', '--initial-branch=resume'], { cwd: fixtureRoot });
+    await runCommand('git', ['config', 'user.name', 'Actor-Web Release Test'], {
+      cwd: fixtureRoot,
+    });
+    await runCommand('git', ['config', 'user.email', 'release-test@actor-web.dev'], {
+      cwd: fixtureRoot,
+    });
+    await runCommand('git', ['add', '.'], { cwd: fixtureRoot });
+    await runCommand('git', ['commit', '-m', 'release source'], { cwd: fixtureRoot });
+    await runCommand('git', ['tag', '-a', packageTag, '-m', packageTag], { cwd: fixtureRoot });
+    const originalTagObject = (
+      await runCommand('git', ['rev-parse', `refs/tags/${packageTag}`], { cwd: fixtureRoot })
+    ).stdout.trim();
+    const taggedCommit = (
+      await runCommand('git', ['rev-list', '-n', '1', packageTag], { cwd: fixtureRoot })
+    ).stdout.trim();
+
+    await writeFile(join(fixtureRoot, 'hotfix.txt'), 'release hotfix\n');
+    await runCommand('git', ['add', 'hotfix.txt'], { cwd: fixtureRoot });
+    await runCommand('git', ['commit', '-m', 'release hotfix'], { cwd: fixtureRoot });
+    const currentHead = (
+      await runCommand('git', ['rev-parse', 'HEAD'], { cwd: fixtureRoot })
+    ).stdout.trim();
+
+    const result = await runCommand(
+      process.execPath,
+      [releaseScript, '--channel', 'stable', '--check-package-tag', packageTag],
+      { cwd: fixtureRoot }
+    );
+
+    expect(currentHead).not.toBe(taggedCommit);
+    expect(result.stdout).toContain(
+      `[release] Preserving existing package tag ${packageTag} at ${taggedCommit}; current HEAD is ${currentHead}.`
+    );
+    expect(
+      (
+        await runCommand('git', ['rev-list', '-n', '1', packageTag], { cwd: fixtureRoot })
+      ).stdout.trim()
+    ).toBe(taggedCommit);
+    expect(
+      (
+        await runCommand('git', ['rev-parse', `refs/tags/${packageTag}`], { cwd: fixtureRoot })
+      ).stdout.trim()
+    ).toBe(originalTagObject);
+  });
+
+  it('converts a historical lightweight package tag without moving its commit target', async () => {
+    const releaseScript = resolve(repoRoot, 'scripts/release.mjs');
+    const fixtureRoot = await makeTempDir('actor-web-release-lightweight-tag-');
+    const packageTag = '@actor-web/example@1.0.0';
+    await writePublishFixture(fixtureRoot, { access: 'public' });
+    await runCommand('git', ['init', '--initial-branch=resume'], { cwd: fixtureRoot });
+    await runCommand('git', ['config', 'user.name', 'Actor-Web Release Test'], {
+      cwd: fixtureRoot,
+    });
+    await runCommand('git', ['config', 'user.email', 'release-test@actor-web.dev'], {
+      cwd: fixtureRoot,
+    });
+    await runCommand('git', ['add', '.'], { cwd: fixtureRoot });
+    await runCommand('git', ['commit', '-m', 'release source'], { cwd: fixtureRoot });
+    await runCommand('git', ['tag', packageTag], { cwd: fixtureRoot });
+    const taggedCommit = (
+      await runCommand('git', ['rev-list', '-n', '1', packageTag], { cwd: fixtureRoot })
+    ).stdout.trim();
+
+    await writeFile(join(fixtureRoot, 'hotfix.txt'), 'release hotfix\n');
+    await runCommand('git', ['add', 'hotfix.txt'], { cwd: fixtureRoot });
+    await runCommand('git', ['commit', '-m', 'release hotfix'], { cwd: fixtureRoot });
+
+    const result = await runCommand(
+      process.execPath,
+      [releaseScript, '--channel', 'stable', '--check-package-tag', packageTag],
+      { cwd: fixtureRoot }
+    );
+
+    expect(result.stdout).toContain(
+      `[release] Replacing historical lightweight tag with an annotated tag: ${packageTag}`
+    );
+    expect(
+      (
+        await runCommand('git', ['cat-file', '-t', `refs/tags/${packageTag}`], {
+          cwd: fixtureRoot,
+        })
+      ).stdout.trim()
+    ).toBe('tag');
+    expect(
+      (
+        await runCommand('git', ['rev-list', '-n', '1', packageTag], { cwd: fixtureRoot })
+      ).stdout.trim()
+    ).toBe(taggedCommit);
+  });
+
+  it('rejects a missing package tag check value before entering the release workflow', async () => {
+    const releaseScript = resolve(repoRoot, 'scripts/release.mjs');
+    const invalidArguments = [
+      ['--channel', 'stable', '--check-package-tag'],
+      ['--channel', 'stable', '--check-package-tag='],
+    ];
+
+    for (const [index, args] of invalidArguments.entries()) {
+      const fixtureRoot = await makeTempDir(`actor-web-release-missing-tag-${index}-`);
+      await writePublishFixture(fixtureRoot, { access: 'public' });
+      await runCommand('git', ['init', '--initial-branch=resume'], { cwd: fixtureRoot });
+      await runCommand('git', ['config', 'user.name', 'Actor-Web Release Test'], {
+        cwd: fixtureRoot,
+      });
+      await runCommand('git', ['config', 'user.email', 'release-test@actor-web.dev'], {
+        cwd: fixtureRoot,
+      });
+      await runCommand('git', ['add', '.'], { cwd: fixtureRoot });
+      await runCommand('git', ['commit', '-m', 'release source'], { cwd: fixtureRoot });
+      const filesBefore = (await readdir(fixtureRoot, { recursive: true })).sort();
+      const tagsBefore = (await runCommand('git', ['tag', '--list'], { cwd: fixtureRoot })).stdout;
+
+      await expect(
+        runCommand(process.execPath, [releaseScript, ...args], { cwd: fixtureRoot })
+      ).rejects.toThrow(/--check-package-tag requires a non-empty <package-name>@<version> value/);
+      expect((await readdir(fixtureRoot, { recursive: true })).sort()).toEqual(filesBefore);
+      expect((await runCommand('git', ['tag', '--list'], { cwd: fixtureRoot })).stdout).toBe(
+        tagsBefore
+      );
+      expect(
+        (await runCommand('git', ['status', '--porcelain'], { cwd: fixtureRoot })).stdout
+      ).toBe('');
+    }
+  });
+
   it('packs a clean consumer-ready artifact with rewritten workspace dependencies', async () => {
     const packDir = await makeTempDir('actor-web-cli-pack-');
     const cliManifest = await readJson<CliPackageManifest>(resolve(packageRoot, 'package.json'));
