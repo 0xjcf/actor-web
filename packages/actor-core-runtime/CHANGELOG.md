@@ -1,5 +1,14 @@
 # @actor-web/runtime
 
+## 0.2.1
+
+### Patch Changes
+
+- 1a38459: Expose per-peer directory readiness through `ClusterState`, including syncing,
+  ready, and degraded states that remain separate from transport membership.
+- c1e98a8: Harden fallback async context reentry, remote directory readiness, local startup ordering, and BroadcastChannel transport activation.
+- c79f2dc: Clear pure XState correlation request timeout actors when a request resolves or errors so completed asks do not keep scheduler timers alive.
+
 ## 0.2.0
 
 ### Minor Changes

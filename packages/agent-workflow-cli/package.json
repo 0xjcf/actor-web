@@ -1,6 +1,6 @@
 {
   "name": "@actor-web/cli",
-  "version": "0.1.0-alpha",
+  "version": "0.1.0",
   "private": false,
   "description": "Distributed Actor-Web runtime host CLI with authenticated remote operator shells",
   "main": "dist/index.cjs",

@@ -1,6 +1,6 @@
 {
   "name": "@actor-web/labs-mesh",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Experimental mesh membership, directory propagation, and routing overlay for Actor-Web",
   "type": "module",
   "main": "dist/index.cjs",

@@ -1,5 +1,15 @@
 # @actor-web/testing
 
+## 0.2.1
+
+### Patch Changes
+
+- c1e98a8: Harden fallback async context reentry, remote directory readiness, local startup ordering, and BroadcastChannel transport activation.
+- Updated dependencies [1a38459]
+- Updated dependencies [c1e98a8]
+- Updated dependencies [c79f2dc]
+  - @actor-web/runtime@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes
