@@ -50,6 +50,11 @@ type ImplementerAgentRef = ActorRef<unknown, ImplementerAgentCommand>;
 type VerifierAgentRef = ActorRef<unknown, VerifierAgentCommand>;
 type ReviewerAgentRef = ActorRef<unknown, ReviewerAgentCommand>;
 type GatewaySocketFactory = (url: string) => ActorWebGatewaySocket;
+type FasTaskBoardSource = ClosableActorWebSource<
+  FasTaskBoardContext,
+  FasTaskBoardCommand,
+  FasTaskEvent
+>;
 
 interface PatchAgentReply {
   readonly patch: FasPatch;
@@ -93,7 +98,7 @@ export interface FasAgentLoopRuntimeTopology {
 function createFasTaskBoardSource(
   gatewayUrl: string,
   createSocket: GatewaySocketFactory
-): ClosableActorWebSource<FasTaskBoardContext, FasTaskBoardCommand, FasTaskEvent> {
+): FasTaskBoardSource {
   return fasAgentLoop.actors.taskBoard.source({
     gateway: {
       url: gatewayUrl,
@@ -239,14 +244,23 @@ export async function startFasAgentLoopExample(
   const createSocket = await resolveGatewaySocketFactory();
   const taskBoard = coordinator.requireActor('taskBoard');
   const taskRuns = new Map<string, TaskRunRef>();
-  const gatewaySockets = new Set<ActorWebGatewaySocket>();
-  const createTrackedSocket: GatewaySocketFactory = (url) => {
-    const socket = createSocket(url);
-    gatewaySockets.add(socket);
-    socket.addEventListener('close', () => {
-      gatewaySockets.delete(socket);
-    });
-    return socket;
+  const taskBoardSources = new Set<FasTaskBoardSource>();
+  const createTrackedTaskBoardSource = (): FasTaskBoardSource => {
+    const source = createFasTaskBoardSource(gatewayUrl, createSocket);
+    let closed = false;
+    const trackedSource: FasTaskBoardSource = {
+      ...source,
+      close() {
+        if (closed) {
+          return;
+        }
+        closed = true;
+        taskBoardSources.delete(trackedSource);
+        source.close();
+      },
+    };
+    taskBoardSources.add(trackedSource);
+    return trackedSource;
   };
 
   const submitTask = async (input: SubmitFasTaskInput): Promise<TaskRunRef> => {
@@ -394,19 +408,19 @@ export async function startFasAgentLoopExample(
     submitTask,
     runTaskToCompletion,
     getTask: async (taskId) => taskRuns.get(taskId),
-    createTaskBoardSource: () => createFasTaskBoardSource(gatewayUrl, createTrackedSocket),
+    createTaskBoardSource: createTrackedTaskBoardSource,
     createDashboard: () => {
-      const source = createFasTaskBoardSource(gatewayUrl, createTrackedSocket);
+      const source = createTrackedTaskBoardSource();
       return createFasTaskDashboard(source, {
         runTask: runTaskToCompletion,
       });
     },
     stop: async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
-      for (const socket of Array.from(gatewaySockets)) {
-        socket.close();
+      for (const source of Array.from(taskBoardSources)) {
+        source.close();
       }
-      gatewaySockets.clear();
+      taskBoardSources.clear();
       await coordinator.stop();
       await worker.stop();
     },

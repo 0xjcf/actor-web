@@ -3,7 +3,7 @@ import type { ActorToolExecutor } from '@actor-web/runtime';
 import { defineBehavior } from '@actor-web/runtime';
 import { startActorWebNode } from '@actor-web/runtime/browser';
 import { actor, defineActorWebTopology, node, tool } from '@actor-web/runtime/topology';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertControlPlaneConformanceFixture,
   getControlPlaneConformanceFixture,
@@ -414,6 +414,28 @@ describe('fas-agent-loop example', () => {
     }
   });
 
+  it('closes owned gateway sources once during runtime teardown', async () => {
+    runtime = await startFasAgentLoopExample();
+    const manuallyClosedSource = runtime.createTaskBoardSource();
+    const activeSource = runtime.createTaskBoardSource();
+    const manuallyClosedSourceClose = vi.spyOn(manuallyClosedSource, 'close');
+    const activeSourceClose = vi.spyOn(activeSource, 'close');
+
+    await waitFor(
+      () =>
+        manuallyClosedSource.transportStatus().state === 'connected' &&
+        activeSource.transportStatus().state === 'connected',
+      'Expected owned task board sources to connect through the coordinator gateway'
+    );
+
+    manuallyClosedSource.close();
+    await runtime.stop();
+    runtime = undefined;
+
+    expect(manuallyClosedSourceClose).toHaveBeenCalledTimes(1);
+    expect(activeSourceClose).toHaveBeenCalledTimes(1);
+  });
+
   it('routes validation failures back through implementation before completing', async () => {
     runtime = await startFasAgentLoopExample({
       tools: {
@@ -540,15 +562,19 @@ describe('fas-agent-loop example', () => {
       expect(phases).toContain('completed');
 
       const story = dashboard.record('fas dashboard evidence');
-      story.execute('submitTask', {
-        taskId: 'task-story',
-        title: 'Record deterministic story',
-        prompt: 'Capture command, state, and view evidence.',
-      });
+      try {
+        await story.execute('submitTask', {
+          taskId: 'task-story',
+          title: 'Record deterministic story',
+          prompt: 'Capture command, state, and view evidence.',
+        });
 
-      expect(story.trace().some((entry) => entry.kind === 'command')).toBe(true);
-      expect(story.trace().some((entry) => entry.kind === 'state')).toBe(true);
-      expect(story.trace().some((entry) => entry.kind === 'view')).toBe(true);
+        expect(story.trace().some((entry) => entry.kind === 'command')).toBe(true);
+        expect(story.trace().some((entry) => entry.kind === 'state')).toBe(true);
+        expect(story.trace().some((entry) => entry.kind === 'view')).toBe(true);
+      } finally {
+        story.stop();
+      }
     } finally {
       unsubscribe.unsubscribe();
     }

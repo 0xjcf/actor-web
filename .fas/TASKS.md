@@ -2591,6 +2591,17 @@ operator explicitly asks for queue mutations.
 - Policy sensitivity: standard
 - Blast radius: cross-cutting
 
+### Task: Prevent unhandled Actor-Web gateway rejection during example teardown
+
+- Title: Prevent unhandled Actor-Web gateway rejection during example teardown
+- Mode: single-agent
+- Status: done
+- Owner: implementer
+- Brief: .fas/tasks/prevent-unhandled-actor-web-gateway-rejection-during-example.md
+- Verification lane: fast
+- Policy sensitivity: standard
+- Blast radius: cross-cutting
+
 ## Template
 
 ### Task: `<short task title>`
