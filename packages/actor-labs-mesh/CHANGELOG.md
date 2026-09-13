@@ -1,5 +1,12 @@
 # @actor-web/labs-mesh
 
+## 0.1.1
+
+### Patch Changes
+
+- Updated dependencies [f91b528]
+  - @actor-web/runtime@0.3.0
+
 ## 0.1.0
 
 ### Minor Changes

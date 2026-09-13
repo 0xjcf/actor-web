@@ -1,5 +1,16 @@
 # @actor-web/runtime
 
+## 0.3.0
+
+### Minor Changes
+
+- f91b528: # Neutral source entrypoint
+
+  Expose existing source contracts and factories through `@actor-web/runtime/source`
+  without importing the browser or Node host entrypoints. Source observation cleanup
+  does not transfer caller-owned actor or backing-runtime shutdown authority.
+  Existing root, browser, topology, Node and event-sourcing imports are unchanged.
+
 ## 0.2.1
 
 ### Patch Changes
