@@ -1,5 +1,12 @@
 # @actor-web/testing
 
+## 0.3.0
+
+### Patch Changes
+
+- Updated dependencies [f91b528]
+  - @actor-web/runtime@0.3.0
+
 ## 0.2.1
 
 ### Patch Changes

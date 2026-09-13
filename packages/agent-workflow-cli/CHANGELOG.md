@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1
+
+### Patch Changes
+
+- Updated dependencies [f91b528]
+  - @actor-web/runtime@0.3.0
+  - @actor-web/agent@0.2.2
+
 ## 0.1.0
 
 ### Patch Changes

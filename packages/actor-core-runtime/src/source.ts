@@ -1,0 +1,20 @@
+/** Platform-neutral source contracts and factories; source lifetime stays caller-owned. */
+export {
+  type ActorCommandSource,
+  type ActorReadModelSource,
+  type ActorSource,
+  type ActorSourceEvent,
+  type ActorSourceSnapshot,
+  actorEventToSourceEvent,
+  actorSnapshotToSourceSnapshot,
+  type CreateActorSourceOptions,
+  createActorCommandSource,
+  createActorReadModelSource,
+  createActorSource,
+  type EventSubscribableActorRef,
+  isEventSubscribableActorRef,
+  isSnapshotSubscribableActorRef,
+  isTransportStatusSubscribableActorRef,
+  type SnapshotSubscribableActorRef,
+  type TransportStatusSubscribableActorRef,
+} from './integration/actor-source.js';

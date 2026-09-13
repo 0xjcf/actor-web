@@ -9,6 +9,7 @@ import {
 } from '@actor-web/agent';
 import { type ActorMessage, type ActorRef, createActorSource } from '@actor-web/runtime';
 import type { ActorToolExecutionContext, BroadcastChannelLike } from '@actor-web/runtime/browser';
+import { createActorToolbox } from '@actor-web/runtime/browser';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createBrowserMlxLlmProvider,
@@ -2851,21 +2852,168 @@ describe('Mesh Pong transport parity', () => {
     });
     startedRuntimes.push(runtime);
     const controllers = await resolveControllerRefs(runtime);
-    const result = controllers.right.ask<PongControllerResult>({
-      type: 'RUN_CONTROLLER',
-      snapshot: await currentSnapshot(runtime),
-    });
+    const snapshot = await currentSnapshot(runtime);
+    vi.useFakeTimers();
+    try {
+      const result = controllers.right.ask<PongControllerResult>({
+        type: 'RUN_CONTROLLER',
+        snapshot,
+      });
+      let replies = 0;
+      void result.then(() => replies++);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(observedSignal).toBeDefined();
+      expect(observedSignal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(CONTROLLER_LLM_TIMEOUT_MS - 1);
+      expect(replies).toBe(0);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(result).resolves.toEqual({
+        ok: false,
+        side: 'right',
+        reason: 'timeout',
+        error: {
+          code: 'LLM_TIMEOUT',
+          message: `Actor tool "llm" timed out after ${CONTROLLER_LLM_TIMEOUT_MS}ms.`,
+        },
+      });
+      expect(observedSignal?.aborted).toBe(true);
+      expect(replies).toBe(1);
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(CONTROLLER_LLM_TIMEOUT_MS);
+      expect(replies).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
-    await expect(result).resolves.toEqual({
-      ok: false,
-      side: 'right',
-      reason: 'timeout',
-      error: {
-        code: 'LLM_TIMEOUT',
-        message: `Actor tool "llm" timed out after ${CONTROLLER_LLM_TIMEOUT_MS}ms.`,
-      },
-    });
-    expect(observedSignal?.aborted).toBe(true);
+  it.each(['resolve', 'reject'] as const)(
+    'records the independent tool deadline after controller fallback and late %s',
+    async (settlement) => {
+      vi.useFakeTimers();
+      try {
+        const snapshot = createStepperSnapshot(
+          { left: createInitialPaddle('left'), right: createInitialPaddle('right') },
+          0
+        );
+        const pending = createDeferred<ActorAgentLlmResult>();
+        let toolSignal: AbortSignal | undefined;
+        let controllerSignal: AbortSignal | undefined;
+        let aborts = 0;
+        const registrations: number[] = [];
+        const started = Date.now();
+        const tools = createActorToolbox(
+          createActorAgentTools({
+            llm: (_request, context) => {
+              toolSignal = context.signal;
+              context.signal.addEventListener('abort', () => aborts++);
+              return pending.promise;
+            },
+          }),
+          { actorId: 'controller-test', nodeAddress: 'local' },
+          undefined,
+          {
+            timers: {
+              setTimeout(callback, delay) {
+                // Model work between registration of the outer deadline and the
+                // tool deadline; this is not a claim to replay the CI scheduler.
+                vi.advanceTimersByTime(2);
+                registrations.push(Date.now() - started);
+                return setTimeout(callback, delay);
+              },
+              clearTimeout(handle) {
+                clearTimeout(handle);
+              },
+            },
+          }
+        );
+        const result = runPongControllerWithLlmProvider(
+          'right',
+          snapshot,
+          (request, context) => {
+            controllerSignal = context.signal;
+            return tools.execute('llm', request, { timeoutMs: CONTROLLER_LLM_TIMEOUT_MS });
+          },
+          CONTROLLER_LLM_TIMEOUT_MS + 1
+        );
+        let replies = 0;
+        void result.then(() => replies++);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(registrations).toEqual([2]);
+        expect(toolSignal).toBeDefined();
+        await vi.advanceTimersByTimeAsync(CONTROLLER_LLM_TIMEOUT_MS - 1);
+        await expect(result).resolves.toEqual({
+          ok: false,
+          side: 'right',
+          reason: 'timeout',
+          error: {
+            code: 'LLM_TIMEOUT',
+            message: `Pong controller timed out after ${CONTROLLER_LLM_TIMEOUT_MS + 1}ms.`,
+          },
+        });
+        expect(controllerSignal?.aborted).toBe(true);
+        // The existing toolbox API owns its signal; outer cancellation does
+        // not reach the tool through this example's provider bridge.
+        expect(toolSignal?.aborted).toBe(false);
+        expect(replies).toBe(1);
+        expect(vi.getTimerCount()).toBe(1);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(toolSignal?.aborted).toBe(true);
+        expect(aborts).toBe(1);
+        expect(vi.getTimerCount()).toBe(0);
+        if (settlement === 'reject') pending.reject(new Error('late provider failure'));
+        else
+          pending.resolve({
+            ok: true,
+            value: { message: { role: 'assistant', content: '{"targetY":10}' } },
+          });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(replies).toBe(1);
+        expect(aborts).toBe(1);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  );
+
+  it('clears both deadlines when the actor tool succeeds before the deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = createDeferred<ActorAgentLlmResult>();
+      let signal: AbortSignal | undefined;
+      const tools = createActorToolbox(
+        createActorAgentTools({
+          llm: (_request, context) => {
+            signal = context.signal;
+            return pending.promise;
+          },
+        }),
+        { actorId: 'controller-success', nodeAddress: 'local' }
+      );
+      const result = runPongControllerWithLlmProvider(
+        'left',
+        createStepperSnapshot(
+          { left: createInitialPaddle('left'), right: createInitialPaddle('right') },
+          0
+        ),
+        (request) => tools.execute('llm', request, { timeoutMs: CONTROLLER_LLM_TIMEOUT_MS }),
+        CONTROLLER_LLM_TIMEOUT_MS + 1
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(signal).toBeDefined();
+      expect(vi.getTimerCount()).toBe(2);
+      pending.resolve({
+        ok: true,
+        value: { message: { role: 'assistant', content: '{"targetY":10}' } },
+      });
+      await expect(result).resolves.toMatchObject({ ok: true, side: 'left', provider: 'llm' });
+      expect(signal?.aborted).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(CONTROLLER_LLM_TIMEOUT_MS + 1);
+      expect(signal?.aborted).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('starts LLM-vs-LLM mode through controller actors with a deterministic fake provider', async () => {

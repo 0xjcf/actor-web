@@ -49,9 +49,16 @@ placement, lifecycle, supervision, and event wiring — see
 | Import | Use for |
 | --- | --- |
 | `@actor-web/runtime` | `defineBehavior`, `createActorSystem`, message-plan types, testing hooks |
+| `@actor-web/runtime/source` | Platform-neutral source contracts and `createActorSource`, `createActorCommandSource`, `createActorReadModelSource` for caller-owned actor refs |
 | `@actor-web/runtime/topology` | `defineActorWebTopology`, `actor`, `node`, `supervisor`, `tool` — declarative, import-safe topology definitions |
 | `@actor-web/runtime/node` | `serveNode`, `serveActorWebHttp` — host a topology node in Node.js with WebSocket transport and gateway |
 | `@actor-web/runtime/browser` | `startActorWebNode`, `createActorWebClient`, `createActorWebReadModelClient` — browser/worker nodes and gateway clients |
+
+The source-only entrypoint observes an existing actor; it does not create a host,
+start a transport, or take over actor shutdown. A source subscription's release
+ends that observation only. The application still owns the actor and runtime.
+Use the platform entrypoints for host construction. This source-only boundary
+does not make the root/browser/Node declaration graphs interchangeable.
 
 ## What you get
 
