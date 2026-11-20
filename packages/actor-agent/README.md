@@ -63,6 +63,68 @@ Tests may drive the returned behavior directly, but application code should host
 it through an actor or topology so mailbox, tool access, cancellation, and
 supervision stay under the runtime.
 
+## Portable phase definitions
+
+`@actor-web/agent/portable` exports `createAgent(runtime, definition)`. Unlike
+`createAgentLoopBehavior`, it does not start an actor or drive a tool loop. Each
+call to `run` sends one turn to the supplied executor, forwarding its signal
+separately from the flat task data, and returns the decoded result. Supply a
+plain data object for the task; `signal` is reserved. The host still owns tool
+grants, cancellation, independent sessions, and acceptance of the candidate.
+
+For JSON responses, install `zod@^4` and import `structured` from
+`@actor-web/agent/zod`. Neither the package root nor `portable` imports Zod.
+Use a synchronous, JSON-representable schema. Its input schema supplies response
+instructions once at construction; after JSON and schema validation, an optional
+`check` receives the typed content and the assignment. Return a reason to reject.
+
+```ts
+import { createAgent, type AgentRuntime } from '@actor-web/agent/portable';
+import { structured } from '@actor-web/agent/zod';
+import { z } from 'zod';
+
+type Assignment = {
+  files: readonly { path: string; source: string }[];
+  expertise: { id: string; revision: number; rules: readonly string[] };
+};
+const finding = z.strictObject({ path: z.string(), excerpt: z.string().trim().min(1) });
+const reviewOutput = structured(z.strictObject({ findings: z.array(finding) }), {
+  check({ findings }, task: Assignment) {
+    for (const { path, excerpt } of findings) {
+      if (!task.files.some((f) => f.path === path && f.source.includes(excerpt))) {
+        return `Finding does not cite supplied source: ${path}`;
+      }
+    }
+  },
+});
+
+function createReviewer(runtime: AgentRuntime<Assignment, 'review'>) {
+  return createAgent(runtime, {
+    purpose: 'review',
+    systemPrompt: 'Review the assigned sources and cite each finding.',
+    tools: [],
+    output: reviewOutput,
+  });
+}
+
+const igniteExpertise = {
+  id: 'ignite-element', revision: 1,
+  rules: ['Sending a command expresses intent, not confirmed success.'],
+} as const;
+// Host selects this same expertise for distinct Build and Review assignments.
+// A builder can have scoped write grants; this reviewer requests none.
+```
+
+`reviewer.run({ files, expertise: igniteExpertise, signal })` invokes the
+executor. `reviewOutput.parse(raw, { files, expertise: igniteExpertise })` instead
+checks already-produced text without invoking it. An `AgentOutputError` carries
+`invalidJson`, `schemaMismatch`, or `taskMismatch`; executor errors propagate
+unchanged. No implicit retry, repair, or phase transition occurs.
+
+For a non-JSON protocol use `parse(raw, task)` **instead of** `output`, or pass
+`output: { parse: existingParser }` to reuse the decoder separately. No schema
+instructions are appended in either case unless an output supplies `instructions`.
+
 ## OpenAI-compatible local provider
 
 Use `createOpenAiCompatibleLlmProvider()` when the caller already owns endpoint,
