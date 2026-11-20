@@ -2,17 +2,19 @@
 
 Paste the **Prompt** section below into a fresh session in the actor-web repo root. Everything the new session needs is here; it does **not** have access to the prior conversation.
 
+FAS is retired in this repo. Ignore any older copy of this handoff that says to run `fas` commands or read `.fas/`. Track work on the operator console in the sibling agent-starter repo at `apps/board`. Verify with `pnpm typecheck`, `pnpm --filter @actor-web/runtime test`, `pnpm run test:docs`, and `pnpm architecture:check`.
+
 ---
 
 ## Prompt
 
-You are continuing work on **actor-web** (a pure actor-model runtime for TS, OTP/XState/Akka-inspired). A long prior session implemented the "minimal-boilerplate actor DX" design and a docs site. This task is a **DX naming + ergonomics polish pass** on the public API, plus finishing gaps. Work through the FAS pipeline.
+You are continuing work on **actor-web** (a pure actor-model runtime for TS, OTP/XState/Akka-inspired). A long prior session implemented the "minimal-boilerplate actor DX" design and a docs site. This task is a **DX naming + ergonomics polish pass** on the public API, plus finishing gaps. Track the work on the operator console in the sibling agent-starter repo at `apps/board`. Do not use FAS.
 
 ### Read first (orientation)
 
 1. `docs/actor-web-actor-dx-design.md` — the locked design (machine-as-behavior, `emit`→`subscribe`, declarative `subscriptions`, command `send` helper, hybrid event bridge, agent runtime). This is the source of truth for the DX.
 2. `docs/actor-web-declarative-subscriptions-design.md` and `docs/actor-web-documentation-plan.md` — adjacent design docs.
-3. `.fas/memory/architecture.md`, `.fas/memory/incidents.md` — esp. the **closeout-classification churn** incident (relevant below).
+3. `architecture.boundaries.json` and `AGENTS.md` — boundary map and current working rules.
 4. `git log --oneline -30` on `main` — recent landed work.
 
 ### What's already DONE and on `main`
@@ -49,17 +51,16 @@ All are **breaking renames/ergonomics on a pre-1.0, unpublished API → do clean
 - **Two follow-ups already filed** (chips): FAS closeout 80-file cap fix (FAS repo), and `@actor-web/cli` 41 pre-existing failing tests (not in test lane). Don't duplicate.
 - **Remaining actor-web queue** (after this): "Stabilize Ignite source contract" (high — should publish `@actor-web/runtime`), "Docs D6 deploy", "Docs agent-runtime page" (waits on ignite-element `send`/event-bridge work), "T1 batch subscribers[] overload" (marginal — candidate to dismiss).
 
-### How to work (FAS conventions + hard-won lessons)
+### How to work
 
-- Branch off `main` with a **`fas/`** prefix (not `codex/fas/`). `main` is the up-to-date trunk; consolidate finished work back with `git merge --ff-only` and delete the branch.
-- Use `fas implement "<exact queued title>"` so it consumes the queued task (a divergent title forks a duplicate). Then: edit code → `fas validate-task` (fast inner loop) → `fas batch snapshot` to accumulate → after all tasks, **one** `verify.sh --full` + `fas batch close`. Single tasks: `verify.sh --full` then `.fas/scripts/reviewer.sh` then `fas done`.
+- Branch off `main`. `main` is the up-to-date trunk; consolidate finished work back with `git merge --ff-only` and delete the branch.
+- Put each rename on the operator console in agent-starter `apps/board` and keep one purpose per change.
 - **Lessons that will bite you otherwise:**
   - The shell is **zsh** — `for f in $files` does NOT word-split; use `while IFS= read -r f` loops for multi-file seds.
-  - `fas scope refresh "<title>"` and `validate-task` rewrite `.fas/TASKS.md`/briefs with markdown that trips markdownlint (MD022/MD032). Run **`pnpm format:md`** then commit before re-validating. MD024 dup-heading needs manual dedupe.
-  - When the planner mis-guesses affected files, fix the brief's `## Affected files` to the real set, then `fas scope refresh`, before validate — avoids the closeout scope HOLD.
-  - **Closeout 80-file cap**: changeset plan-alignment truncates planned/implemented files at 80; a change touching >80 files can't pass `fas done` (the prior scope rename hit this — it's the filed FAS follow-up). Keep each task under ~80 changed files if you want a clean close; these naming renames are large, so **consider splitting** (e.g. `defineBehavior` rename as one task, the runtime-entry renames as another, the context-return cleanup as a third). This also keeps reviews focused.
+  - Run **`pnpm format:md`** before commit when markdownlint reports MD022/MD032. MD024 dup-heading needs manual dedupe.
+  - These naming renames are large, so **consider splitting** (e.g. `defineBehavior` rename as one task, the runtime-entry renames as another, the context-return cleanup as a third). This also keeps reviews focused.
   - Biome lints scripts too (`noParameterAssign` etc.) — run `pnpm exec biome check .` locally.
-- Verification commands: `pnpm typecheck`, `pnpm --filter @actor-web/runtime test`, `pnpm run test:docs` (docs twoslash), `.fas/scripts/verify.sh --full`.
+- Verification commands: `pnpm typecheck`, `pnpm --filter @actor-web/runtime test`, `pnpm run test:docs` (docs twoslash), `pnpm architecture:check`.
 
 ### Suggested sequencing (each its own task/commit-set, all batched, one final full verify + batch close)
 
@@ -67,4 +68,4 @@ All are **breaking renames/ergonomics on a pre-1.0, unpublished API → do clean
 2. `startActorWebLocalRuntime → startRuntime`, `serveActorWebNode → serveNode`.
 3. Remove redundant `context` returns + docs API/package-name audit.
 
-Each: keep changed files under ~80 where possible; update docs in the same task; `validate-task` → `batch snapshot`. Then `verify.sh --full` + `fas batch close`. Then `git checkout main && git merge --ff-only <branch>`. File cross-repo follow-ups for fas-studio + ignite-element. Update `docs/actor-web-actor-dx-design.md` to reflect the new names (`defineBehavior`, no-`.build()`, `startRuntime`, `serveNode`).
+Each: update docs in the same task. Then run the verification commands above. Then `git checkout main && git merge --ff-only <branch>`. File cross-repo follow-ups for fas-studio + ignite-element. Update `docs/actor-web-actor-dx-design.md` to reflect the new names (`defineBehavior`, no-`.build()`, `startRuntime`, `serveNode`).

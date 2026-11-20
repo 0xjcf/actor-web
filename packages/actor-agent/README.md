@@ -20,7 +20,7 @@ npm install @actor-web/runtime @actor-web/agent
 | `createAgentLoopBehavior(options?)` | Standard agent loop behavior that accepts `START_AGENT`, observes tool results, and emits agent step/tool events |
 | `createActorAgentToolRegistry({ llm })` | Typed `llm` tool registration for runtime toolboxes |
 | `createActorAgentTools({ llm })` | Runtime-ready tool registry for `startRuntime(..., { tools })` |
-| `createOpenAiCompatibleLlmProvider({ endpoint, model, timeoutMs?, ... })` | Adapter for Ollama and OpenAI-compatible local endpoints without importing provider SDKs |
+| `createLlmProvider({ endpoint, model, timeoutMs?, ... })` | Chat Completions adapter. An endpoint path that ends in `/responses` uses the Responses wire. The host supplies the endpoint, model, and headers |
 | `ACTOR_WEB_LLM_TOOL_NAME` | Stable tool name for the injected LLM provider |
 | `ActorAgent*` types | Message, event, provider, tool-call, tool-definition, and error contracts |
 
@@ -125,19 +125,18 @@ For a non-JSON protocol use `parse(raw, task)` **instead of** `output`, or pass
 `output: { parse: existingParser }` to reuse the decoder separately. No schema
 instructions are appended in either case unless an output supplies `instructions`.
 
-## OpenAI-compatible local provider
+## LLM provider
 
-Use `createOpenAiCompatibleLlmProvider()` when the caller already owns endpoint,
-model, headers, and credential policy for an Ollama or OpenAI-compatible MLX
-server.
+Use `createLlmProvider()` when the caller already owns the endpoint, model,
+headers, and credential policy. The adapter speaks Chat Completions, so the
+same call reaches Ollama, MLX, OpenAI, or Grok. An endpoint whose path ends in
+`/responses` speaks the OpenAI Responses API, which is what Codex models
+require. It does not import a provider SDK.
 
 ```ts
-import {
-  createActorAgentTools,
-  createOpenAiCompatibleLlmProvider,
-} from '@actor-web/agent';
+import { createActorAgentTools, createLlmProvider } from '@actor-web/agent';
 
-const llm = createOpenAiCompatibleLlmProvider({
+const llm = createLlmProvider({
   endpoint: 'http://127.0.0.1:11434/v1/chat/completions',
   model: 'qwen2.5',
   timeoutMs: 15_000,
@@ -197,7 +196,7 @@ tool-call payload, but it does not execute any capability.
 
 The standard loop accepts:
 
-- `START_AGENT` with a user prompt and optional per-message system override.
+- `START_AGENT` with a user prompt, an optional per-message system override, and optional `reset`. `reset: true` replaces the session history so a reused actor can start a new task.
 - `OBSERVE_TOOL_RESULT` to feed a prior tool result back into the loop.
 - `GET_AGENT_CONTEXT` to inspect the loop context.
 

@@ -159,6 +159,10 @@ export {
   toAgentExecutionReceiptFromEventEnvelope,
   validateAgentExecutionTrace,
 } from './agent-execution-contract.js';
+export {
+  createAgentSessionCheckpointEnvelope,
+  deriveAgentSessionCheckpointRehydration,
+} from './agent-session-checkpoint-store.js';
 export type {
   BroadcastChannelLike,
   BroadcastChannelMessageTransportOptions,

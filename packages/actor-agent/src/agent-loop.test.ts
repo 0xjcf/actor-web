@@ -275,6 +275,62 @@ describe('@actor-web/agent loop behavior', () => {
     });
   });
 
+  it('replaces session history when START_AGENT sets reset', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+    const provider = vi.fn<ActorAgentLlmProvider>(() => ({
+      ok: true,
+      value: {
+        message: {
+          role: 'assistant',
+          content: 'ready',
+        },
+      },
+    }));
+    const behavior = agent.createAgentLoopBehavior({ system: 'You are a planner.' });
+    const tools = createActorToolbox(
+      agent.createActorAgentToolRegistry({ llm: provider }),
+      actorToolContext,
+      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+    );
+    const started = await behavior.onMessage?.(
+      createAgentParams({
+        behavior,
+        tools,
+        message: { type: 'START_AGENT', prompt: 'plan task-1' },
+      })
+    );
+    const startedContext = readAgentLoopContext(started);
+    const continued = await behavior.onMessage?.({
+      message: { type: 'START_AGENT', prompt: 'plan task-2' },
+      context: startedContext,
+      actor: { getSnapshot: () => ({ context: startedContext }) },
+      tools,
+    });
+    const continuedContext = readAgentLoopContext(continued);
+    await behavior.onMessage?.({
+      message: { type: 'START_AGENT', prompt: 'plan task-3', reset: true },
+      context: continuedContext,
+      actor: { getSnapshot: () => ({ context: continuedContext }) },
+      tools,
+    });
+
+    expect(provider).toHaveBeenCalledTimes(3);
+    expect(provider.mock.calls[1]?.[0]).toMatchObject({
+      messages: [
+        { role: 'user', content: 'plan task-1' },
+        { role: 'assistant', content: 'ready' },
+        { role: 'user', content: 'plan task-2' },
+      ],
+    });
+    expect(provider.mock.calls[2]?.[0]).toMatchObject({
+      messages: [{ role: 'user', content: 'plan task-3' }],
+    });
+  });
+
   it('passes authorized tool definitions through to the llm request while preserving tool names', async () => {
     const agent = await loadAgentModule();
     expect(agent).not.toBeNull();

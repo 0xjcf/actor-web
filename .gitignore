@@ -21,6 +21,9 @@ out/
 # Environment variables
 .env
 .env.local
+
+# Queue board session logs
+.queue-board/
 .env.development.local
 .env.test.local
 .env.production.local
@@ -133,23 +136,8 @@ ACTOR-WEB-FRAMEWORK-*.md
 migrate-*.sh
 mark-*.js
 
-# >>> FAS managed ignore block >>>
-# FAS runtime data and local workspace state (generated, do not commit)
-.fas/*
-# Reviewable memory candidates are promoted separately with `fas promote-memory`
-!.fas/memory/
-!.fas/memory/*.md
-.fas/memory/candidates/
-.fas/memory/entries/
-.fas/memory/*.db
-.fas/memory/*.db-shm
-.fas/memory/*.db-wal
-!.fas/TASKS.md
-!.fas/architecture-rules.json
-!.fas/workspace-dependencies.json
-!.fas/tasks/
-.fas/tasks/*
-!.fas/tasks/*.md
+# Retired FAS control plane. Do not commit a replacement tracker here.
+.fas/
+.fas-config.json
 .codex/
 fas
-# <<< FAS managed ignore block <<<

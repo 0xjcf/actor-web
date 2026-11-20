@@ -1,0 +1,31 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "lsp": true,
+
+  "model": "ollama/qwen3.6:27b-coding-nvfp4",
+
+  "enabled_providers": ["ollama"],
+
+  "provider": {
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama Local",
+
+      "options": {
+        "baseURL": "http://127.0.0.1:11434/v1"
+      },
+
+      "models": {
+        "qwen3.6:27b-coding-nvfp4": {
+          "name": "Qwen 3.6 27B Coding NVFP4",
+
+          "limit": {
+            "context": 65536,
+            "output": 8192
+          }
+        }
+      }
+    }
+  }
+}

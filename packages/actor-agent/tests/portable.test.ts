@@ -95,6 +95,25 @@ describe('portable phase definitions', () => {
     expect(parse).not.toHaveBeenCalled();
   });
 
+  it('uses the original decoder as the receiver when parsing a runtime result', async () => {
+    const raw = 'Ready';
+    const run = vi.fn(async (_turn: AgentTurn<Task, 'review'>) => raw);
+    const output = {
+      prefix: 'Review result',
+      parse(text: string, assignment: Task) {
+        expect(this).toBe(output);
+        return `${this.prefix}: ${text} (${assignment.expertise.id})`;
+      },
+    };
+    const agent = createAgent(
+      { run },
+      { purpose: 'review', tools: [], systemPrompt: 'Review.', output }
+    );
+    const direct = output.parse(raw, task);
+    await expect(agent.run({ ...task, signal })).resolves.toBe(direct);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
   it('preserves custom text protocols and parser errors', async () => {
     const reason = new Error('missing board observation');
     const run = vi.fn(async (_turn: AgentTurn<Task, 'review'>) => 'Fail plan');

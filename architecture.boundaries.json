@@ -20,7 +20,9 @@
         "packages/actor-core-runtime/src/message-plan.ts",
         "packages/actor-core-runtime/src/runtime-fanout.ts",
         "packages/actor-core-runtime/src/type-helpers.ts",
-        "packages/actor-core-runtime/src/utils/validation.ts"
+        "packages/actor-core-runtime/src/utils/validation.ts",
+        "packages/actor-core-runtime/src/transport/transport-channel.ts",
+        "packages/actor-core-runtime/src/transport/transport-reliability.ts"
       ],
       "rules": {
         "forbiddenImports": [
@@ -130,7 +132,10 @@
         "packages/actor-core-runtime/src/pure-xstate-utilities.ts",
         "packages/actor-core-runtime/src/utils/factories.ts",
         "packages/actor-agent/src",
-        "packages/agent-workflow-cli/src"
+        "packages/agent-workflow-cli/src",
+        "packages/actor-core-runtime/src/node-websocket-message-transport.ts",
+        "packages/actor-core-runtime/src/browser-websocket-message-transport.ts",
+        "packages/actor-core-runtime/src/message-port-transport.ts"
       ]
     },
     "contractIntegration": {

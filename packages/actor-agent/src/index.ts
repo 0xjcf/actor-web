@@ -6,19 +6,19 @@ import type {
   AgentSessionCheckpointWriteResult,
   JsonValue,
 } from '@actor-web/runtime';
-import {
-  createAgentSessionCheckpointEnvelope,
-  deriveAgentSessionCheckpointRehydration,
-} from '@actor-web/runtime';
 import type {
   ActorToolExecutionContext,
   ActorToolExecutor,
   ActorToolRegistry,
 } from '@actor-web/runtime/browser';
-import { defineBehavior } from '@actor-web/runtime/browser';
+import {
+  createAgentSessionCheckpointEnvelope,
+  defineBehavior,
+  deriveAgentSessionCheckpointRehydration,
+} from '@actor-web/runtime/browser';
 
-export type { OpenAiCompatibleLlmProviderOptions } from './openai-compatible-llm-provider.js';
-export { createOpenAiCompatibleLlmProvider } from './openai-compatible-llm-provider.js';
+export type { LlmProviderOptions } from './llm-provider.js';
+export { createLlmProvider } from './llm-provider.js';
 
 export const ACTOR_WEB_LLM_TOOL_NAME = 'llm' as const;
 
@@ -88,7 +88,12 @@ export type ActorAgentToolRegistry = {
 };
 
 export type ActorAgentLoopMessage =
-  | { readonly type: 'START_AGENT'; readonly prompt: string; readonly system?: string }
+  | {
+      readonly type: 'START_AGENT';
+      readonly prompt: string;
+      readonly system?: string;
+      readonly reset?: boolean;
+    }
   | {
       readonly type: 'OBSERVE_TOOL_RESULT';
       readonly toolCallId: string;
@@ -841,10 +846,20 @@ export function createAgentLoopBehavior(
           error: checkpointState.error,
         });
       }
-      const activeContext = checkpointState.kind === 'ready' ? checkpointState.context : context;
+      let activeContext = checkpointState.kind === 'ready' ? checkpointState.context : context;
 
       if (message.type === 'GET_AGENT_CONTEXT') {
         return { reply: activeContext, context: activeContext };
+      }
+
+      if (message.type === 'START_AGENT' && message.reset === true) {
+        activeContext = {
+          system: message.system ?? activeContext.system ?? options.system,
+          history: [],
+          steps: 0,
+          pendingToolCalls: [],
+          lastError: null,
+        };
       }
 
       const nextMessages =

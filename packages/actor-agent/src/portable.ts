@@ -47,7 +47,7 @@ export function createAgent<Content, Task extends object, Purpose extends string
 ): FocusedAgent<Content, Task, Purpose> {
   const { purpose, tools, systemPrompt } = definition;
   const output = definition.output;
-  const parse = output ? output.parse : definition.parse;
+  const parse = output ? output.parse.bind(output) : definition.parse;
   const method = {
     purpose,
     tools,
