@@ -1,4 +1,4 @@
-import { Address } from '@actor-web/runtime';
+import { Address } from '@actor-web/runtime/browser';
 
 export type ShipmentStatus =
   | 'idle'

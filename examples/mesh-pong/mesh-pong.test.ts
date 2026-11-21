@@ -21,8 +21,8 @@ import {
   createMeshPongWebSocketDevHelperClient,
   describeMeshPongWebSocketStatus,
   startMeshPongBrowserWebSocketClient,
-  startMeshPongWebSocketLoopback,
 } from './modes/websocket';
+import { startMeshPongWebSocketLoopback } from './modes/websocket-host';
 import {
   MESH_PONG_MODE_PARITY_PROOF,
   MESH_PONG_SHARED_PARITY_PROOF,
@@ -4286,12 +4286,14 @@ describe('Mesh Pong transport parity', () => {
   });
 
   it('starts one websocket host and gives browser sessions unique client nodes without a provisioning route', async () => {
-    const [websocketMode, viteConfig] = await Promise.all([
+    const [websocketMode, websocketHost, viteConfig] = await Promise.all([
       readFile(path.resolve(meshPongExamplesDir, 'mesh-pong/modes/websocket.ts'), 'utf8'),
+      readFile(path.resolve(meshPongExamplesDir, 'mesh-pong/modes/websocket-host.ts'), 'utf8'),
       readFile(path.resolve(meshPongExamplesDir, 'vite.config.ts'), 'utf8'),
     ]);
 
-    expect(websocketMode).toContain('startMeshPongWebSocketHost');
+    expect(websocketHost).toContain('startMeshPongWebSocketHost');
+    expect(viteConfig).toContain("ssrLoadModule('/mesh-pong/modes/websocket-host.ts')");
     expect(websocketMode).toContain('startMeshPongBrowserWebSocketClient');
     expect(websocketMode).toContain('clientNodeAddress');
     expect(websocketMode).not.toContain('ensurePlayerSession');
@@ -4755,8 +4757,8 @@ describe('Mesh Pong transport parity', () => {
 
     expect(agentEntrypoint).toContain("from '@actor-web/runtime/browser'");
     expect(agentEntrypoint).not.toContain("import { defineBehavior } from '@actor-web/runtime';");
-    expect(websocketMode).not.toContain("import { serveNode } from '@actor-web/runtime/node'");
-    expect(websocketMode).toContain("await import('@actor-web/runtime/node')");
+    expect(websocketMode).not.toContain('@actor-web/runtime/node');
+    expect(websocketMode).not.toContain('websocket-host');
   });
 
   it('bounds browser startup waits so the UI can leave the starting state on hangs', async () => {
@@ -5019,11 +5021,11 @@ describe('Mesh Pong transport parity', () => {
   it('retries websocket helper startup after a transient status failure', async () => {
     const viteConfig = await readFile(path.resolve(meshPongExamplesDir, 'vite.config.ts'), 'utf8');
     const statusSection = viteConfig.slice(
-      viteConfig.indexOf('async function meshPongWebSocketStatus()'),
+      viteConfig.indexOf('async function meshPongWebSocketStatus('),
       viteConfig.indexOf("name: 'mesh-pong-websocket-helper'")
     );
 
-    expect(statusSection).toContain('await ensureMeshPongWebSocketServer()');
+    expect(statusSection).toContain('await ensureMeshPongWebSocketServer(server)');
     expect(statusSection).not.toContain(
       'if (meshPongWebSocketServerFailure && !meshPongWebSocketServer)'
     );

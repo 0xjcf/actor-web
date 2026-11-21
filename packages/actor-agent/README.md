@@ -86,6 +86,20 @@ the actor-backed executor planned in the [M1 backlog](../../docs/todos.md).
 The [specialist execution contract](../../docs/specialist-execution-contract.md)
 specifies what that host must enforce from assignment through settlement.
 
+The [portable specialist example](../../examples/portable-specialist/demo.ts)
+runs a typed source reviewer through a fresh local actor, a scripted provider,
+and one granted in-memory read. From the workspace root, build the runtime and
+agent packages, then run the demo against those built entries:
+
+```sh
+pnpm --filter @actor-web/runtime build
+pnpm --filter @actor-web/agent build
+pnpm --filter @actor-web/example-portable-specialist demo
+```
+
+This is an offline example with two provider turns and one tool call, not a
+reusable executor or a demonstration of production limits and cancellation.
+
 For JSON responses, install `zod@^4` and import `structured` from
 `@actor-web/agent/zod`. Neither the package root nor `portable` imports Zod.
 Use a synchronous, JSON-representable schema. Its input schema supplies response

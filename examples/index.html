@@ -9,26 +9,62 @@
   <body>
     <main class="example-shell">
       <header class="example-header">
-        <p class="example-kicker">Actor-Web Examples</p>
-        <h1>Runnable Bridge Examples</h1>
+        <p class="example-kicker">Actor-Web</p>
+        <h1>Actor-Web Examples</h1>
         <p class="example-copy">
-          Narrow, executable examples for the public Actor-Web runtime surface.
+          Start with actor messages, then explore workflow ownership or transport and UI integration.
         </p>
       </header>
 
-      <section class="example-band">
-        <div class="example-link">
-          <span class="example-link-title">Queue Board</span>
+      <section class="example-band" aria-labelledby="actor-basics">
+        <h2 id="actor-basics">Actor Basics</h2>
+        <a
+          class="example-link"
+          href="https://github.com/0xjcf/actor-web/blob/HEAD/docs/examples/agent-app-north-star.md#pingpong-behaviors-only"
+        >
+          <span class="example-link-title">Ping/Pong</span>
           <span class="example-link-copy">
-            The operator console runs from the sibling agent-starter repo with
-            <code>pnpm board:dev</code>.
+            Start here: two behaviors, one request and reply, no topology or model.
           </span>
-        </div>
+        </a>
+      </section>
 
-        <a class="example-link" href="./fas-agent-loop/">
-          <span class="example-link-title">FAS Agent Loop</span>
+      <section class="example-band" aria-labelledby="sdlc">
+        <h2 id="sdlc">SDLC</h2>
+        <a class="example-link" href="./parallel-sdlc-teams/">
+          <span class="example-link-title">Parallel SDLC Teams</span>
           <span class="example-link-copy">
-            Headless-first Actor-Web agent workflow with an Ignite Element dashboard.
+            Publish definitions, allocate two idle teams with pinned revisions, then run them together.
+          </span>
+        </a>
+
+        <a
+          class="example-link"
+          href="https://github.com/0xjcf/actor-web/tree/HEAD/examples/portable-specialist"
+        >
+          <span class="example-link-title">Portable Specialist · CLI</span>
+          <span class="example-link-copy">
+            Follow one bounded review session and its granted evidence read. Run
+            <code>pnpm --filter @actor-web/example-portable-specialist demo</code> after building the
+            workspace packages.
+          </span>
+        </a>
+
+        <a class="example-link" href="http://127.0.0.1:4173/queue-board/">
+          <span class="example-link-title">agent-starter Queue Board · separate app</span>
+          <span class="example-link-copy">
+            See operator policy in a real app. Stop this examples server before running
+            <code>pnpm board:dev</code> from the sibling agent-starter repo.
+          </span>
+        </a>
+      </section>
+
+      <section class="example-band" aria-labelledby="transport-ui">
+        <h2 id="transport-ui">Transport/UI</h2>
+        <a class="example-link" href="./fas-agent-loop/">
+          <span class="example-link-title">Actor Workflow Dashboard</span>
+          <span class="example-link-copy">
+            Integration example for headless workflow projection and coordination.
           </span>
         </a>
 

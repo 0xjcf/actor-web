@@ -38,6 +38,7 @@
     "examples:dev:local": "vite examples --config examples/vite.config.ts --host 127.0.0.1 --port 4173",
     "examples:queue-board": "node scripts/dev-queue-board.mjs",
     "examples:logistics": "vite-node --config examples/vite.config.ts scripts/dev-logistics-demo.ts",
+    "examples:parallel-teams": "vite-node --config examples/vitest.config.ts examples/parallel-sdlc-teams/demo.ts",
     "examples:logistics:server": "vite-node --config examples/vite.config.ts examples/ignite-headless-host/logistics-server-process.ts",
     "examples:logistics:worker": "vite-node --config examples/vite.config.ts examples/ignite-headless-host/logistics-worker-process.ts",
     "examples:logistics:provider": "vite-node --config examples/vite.config.ts examples/ignite-headless-host/logistics-provider-process.ts",
@@ -92,6 +93,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.1.2",
     "@changesets/cli": "^2.29.8",
+    "@ignite-element/renderer": "3.0.0-beta.8",
     "@types/node": "^20.0.0",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^2.1.4",

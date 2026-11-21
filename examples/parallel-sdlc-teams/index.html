@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Parallel SDLC Teams · Actor-Web</title>
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="./dashboard.css" />
+  </head>
+  <body>
+    <main class="example-shell">
+      <a class="back-link" href="../">← All examples</a>
+      <header class="example-header">
+        <p class="example-kicker">Actor-Web · In-browser demo</p>
+        <h1>Parallel SDLC Teams</h1>
+        <p class="example-copy">
+          Publish definitions, allocate two idle teams, then run them together. Inspect what each
+          task pinned before a fresh specialist session opens for each stage.
+        </p>
+      </header>
+
+      <section class="panel demo-controls" aria-label="Workflow controls">
+        <div class="toolbar">
+          <button id="publish-definitions" type="button">1. Publish definitions</button>
+          <button id="allocate-teams" type="button" disabled>2. Allocate teams</button>
+          <button id="run-demo" type="button" disabled>3. Run both teams</button>
+          <button id="reset-demo" type="button" disabled>Reset</button>
+          <label class="failure-option">
+            <input id="fail-checkout" type="checkbox" disabled />
+            Fail the checkout check
+          </label>
+        </div>
+        <p id="demo-status" role="status">
+          Start by publishing definitions. No provider, credentials, or workspace needed.
+        </p>
+      </section>
+
+      <section class="panel registry-note" aria-labelledby="registry-heading">
+        <h2 id="registry-heading">Published definitions</h2>
+        <p id="registry-status">No definitions published.</p>
+        <ul id="definition-list" aria-label="Definition revisions"></ul>
+      </section>
+
+      <section class="teams-grid" id="team-grid" aria-label="Task assignments and sessions"></section>
+    </main>
+
+    <template id="team-lane">
+      <article class="panel team-lane">
+        <div class="lane-heading">
+          <div>
+            <p class="task-version"></p>
+            <h2></h2>
+          </div>
+          <span class="badge team-state"></span>
+        </div>
+        <p class="task-request"></p>
+        <p class="team-address" hidden></p>
+        <ol class="stage-list" aria-label="Stages"></ol>
+      </article>
+    </template>
+    <template id="stage-row">
+      <li class="stage-row">
+        <div class="stage-heading">
+          <strong></strong>
+          <span class="badge stage-state"></span>
+        </div>
+        <code class="stage-definition"></code>
+        <p class="stage-grants" hidden></p>
+        <p class="stage-session" hidden></p>
+        <p class="stage-output" hidden></p>
+      </li>
+    </template>
+    <script type="module" src="./dashboard.ts"></script>
+  </body>
+</html>

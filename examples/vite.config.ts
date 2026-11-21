@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, type Plugin, type ViteDevServer } from 'vite';
 import { clientTracePlugin } from './client-trace-plugin';
-import { startMeshPongWebSocketHost } from './mesh-pong/modes/websocket';
+import type { startMeshPongWebSocketHost } from './mesh-pong/modes/websocket-host';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const actorWebRoot = path.resolve(currentDir, '..');
@@ -32,9 +32,9 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
     Awaited<ReturnType<typeof startMeshPongWebSocketHost>>
   > | null = null;
 
-  async function ensureMeshPongWebSocketServer(): Promise<
-    Awaited<ReturnType<typeof startMeshPongWebSocketHost>>
-  > {
+  async function ensureMeshPongWebSocketServer(
+    server: ViteDevServer
+  ): Promise<Awaited<ReturnType<typeof startMeshPongWebSocketHost>>> {
     if (meshPongWebSocketServer) {
       return meshPongWebSocketServer;
     }
@@ -42,7 +42,12 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
       return meshPongWebSocketServerPromise;
     }
 
-    meshPongWebSocketServerPromise = startMeshPongWebSocketHost()
+    // Resolve runtime workspace imports with Vite's aliases, not the config loader.
+    meshPongWebSocketServerPromise = server
+      .ssrLoadModule('/mesh-pong/modes/websocket-host.ts')
+      .then((module) =>
+        (module as typeof import('./mesh-pong/modes/websocket-host')).startMeshPongWebSocketHost()
+      )
       .then((server) => {
         meshPongWebSocketServer = server;
         return server;
@@ -54,15 +59,15 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
     return meshPongWebSocketServerPromise;
   }
 
-  async function meshPongWebSocketStatus() {
+  async function meshPongWebSocketStatus(server: ViteDevServer) {
     try {
-      const server = await ensureMeshPongWebSocketServer();
+      const started = await ensureMeshPongWebSocketServer(server);
       return {
         statusCode: 200,
         body: {
           state: 'ready',
-          transportUrl: server.transportUrl,
-          matchAddress: server.matchAddress,
+          transportUrl: started.transportUrl,
+          matchAddress: started.matchAddress,
         },
       };
     } catch (error) {
@@ -91,14 +96,14 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
         }
 
         if (pathname === MESH_PONG_WEBSOCKET_HELPER_PATH && request.method === 'GET') {
-          const result = await meshPongWebSocketStatus();
+          const result = await meshPongWebSocketStatus(server);
           sendJson(response, result.statusCode, result.body);
           return;
         }
 
         if (pathname === `${MESH_PONG_WEBSOCKET_HELPER_PATH}/flush` && request.method === 'POST') {
           try {
-            const served = await ensureMeshPongWebSocketServer();
+            const served = await ensureMeshPongWebSocketServer(server);
             await served.flush();
             sendJson(response, 200, { ok: true });
           } catch (error) {
@@ -176,12 +181,16 @@ export default defineConfig(() => {
         allow: [actorWebRoot],
       },
     },
+    worker: {
+      format: 'es',
+    },
     build: {
       outDir: path.resolve(currentDir, '../dist/examples'),
       emptyOutDir: false,
       rollupOptions: {
         input: {
           index: path.resolve(currentDir, 'index.html'),
+          parallelTeams: path.resolve(currentDir, 'parallel-sdlc-teams/index.html'),
           fasAgentLoop: path.resolve(currentDir, 'fas-agent-loop/index.html'),
           igniteHeadlessHost: path.resolve(currentDir, 'ignite-headless-host/index.html'),
           igniteHeadlessProvider: path.resolve(currentDir, 'ignite-headless-host/provider.html'),
