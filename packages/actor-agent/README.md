@@ -83,6 +83,8 @@ test uses an executor that honors the signal. `createAgent` forwards the
 signal, but does not enforce pre-dispatch abort, reject late output from an
 executor that ignores abort, or wait for cleanup. These tests do not qualify
 the actor-backed executor planned in the [M1 backlog](../../docs/todos.md).
+The [specialist execution contract](../../docs/specialist-execution-contract.md)
+specifies what that host must enforce from assignment through settlement.
 
 For JSON responses, install `zod@^4` and import `structured` from
 `@actor-web/agent/zod`. Neither the package root nor `portable` imports Zod.

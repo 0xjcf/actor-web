@@ -4,7 +4,7 @@ Goal: let an application run one typed specialist through real local Actor-Web a
 
 ## Using the backlog
 
-This file owns task intent and dependencies and records work completed directly in Actor-Web. The [queue-board](../../agent-starter/apps/board/README.md) owns board ticket status. Next up: **AW-00-02**. For each board handoff:
+This file owns task intent and dependencies and records work completed directly in Actor-Web. The [queue-board](../../agent-starter/apps/board/README.md) owns board ticket status. Next up: **AW-01-01**. For each board handoff:
 
 1. Find the task on the board by its `AW-` ID before creating a ticket. Use the ID and task name as the title. Copy its request, acceptance criteria, and checks into the brief.
 2. `AW-` IDs are roadmap IDs, not board ticket IDs. Use the corresponding board ticket IDs for `dependsOn`. If manual entry cannot bind a dependency, wait until the board accepts the predecessor as shipped before queuing its successor. A dependency mentioned only in prose is not enforced.
@@ -15,7 +15,7 @@ This file owns task intent and dependencies and records work completed directly 
 | Task | Depends on | Deliverable and acceptance |
 | --- | --- | --- |
 | AW-00-01 · Reconcile capability status | None | **Complete (local).** Reconciled current capabilities, verification limits, and ownership across the execution contract, transport roadmap, and agent guide. Historical evidence was preserved. |
-| AW-00-02 · Define the specialist execution contract | AW-00-01 | Specify one assignment from admission to validated output and cleanup, including what a caller observes on failure. |
+| AW-00-02 · Define the specialist execution contract | AW-00-01 | **Complete (local).** The [contract](specialist-execution-contract.md) covers one assignment from admission through validation and cleanup. The documented reviewer compiles and runs against the public agent entries with a scripted executor. |
 | AW-01-01 · Run a specialist end to end | AW-00-02 | An executable example uses a real local actor, a scripted provider, and a granted in-memory read tool. Accept a supported citation; reject an invented one and deny an ungranted tool without calling it. |
 | AW-01-02 · Extract the Actor-Web executor | AW-01-01 | Make the example consume a public adapter over the existing agent loop. Two assignments get fresh sessions; their tools, results, and histories do not leak between them. |
 | AW-02-01 · Exercise the executor contract | AW-01-02 | Provide reusable behavioral fixtures. The real adapter passes; intentionally faulty drivers fail for leaking history, widening grants, or retrying without permission. |
