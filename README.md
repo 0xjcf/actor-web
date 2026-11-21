@@ -455,6 +455,8 @@ describe('Counter Actor', () => {
 
 ## 🤝 Contributing
 
+Start with the [current Actor-Web milestone and task briefs](./docs/todos.md).
+
 The work queue is the operator console in the sibling agent-starter repo (`apps/board`): Idle, Plan, Build, Test, Review, Shipped, and Errored. FAS is not used in this repo.
 
 We welcome contributions! Please ensure:

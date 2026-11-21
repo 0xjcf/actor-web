@@ -1,0 +1,45 @@
+# M1: One bounded, observable specialist execution
+
+Goal: let an application run one typed specialist through real local Actor-Web actors, grant it a tool, validate its answer against the assignment, and tell whether its work has stopped. Prove this with a scripted provider and one agent-starter consumer. Durable recovery, distributed deployment, and unattended delivery are outside M1.
+
+## Using the backlog
+
+This file owns task intent and dependencies and records work completed directly in Actor-Web. The [queue-board](../../agent-starter/apps/board/README.md) owns board ticket status. Next up: **AW-00-02**. For each board handoff:
+
+1. Find the task on the board by its `AW-` ID before creating a ticket. Use the ID and task name as the title. Copy its request, acceptance criteria, and checks into the brief.
+2. `AW-` IDs are roadmap IDs, not board ticket IDs. Use the corresponding board ticket IDs for `dependsOn`. If manual entry cannot bind a dependency, wait until the board accepts the predecessor as shipped before queuing its successor. A dependency mentioned only in prose is not enforced.
+3. Review the target workspace and required checks before starting. A roadmap entry is not a workspace grant or check confirmation. If the spec changes, review it against the existing ticket; do not silently replace the brief or start a duplicate.
+
+## Milestone tasks
+
+| Task | Depends on | Deliverable and acceptance |
+| --- | --- | --- |
+| AW-00-01 · Reconcile capability status | None | **Complete (local).** Reconciled current capabilities, verification limits, and ownership across the execution contract, transport roadmap, and agent guide. Historical evidence was preserved. |
+| AW-00-02 · Define the specialist execution contract | AW-00-01 | Specify one assignment from admission to validated output and cleanup, including what a caller observes on failure. |
+| AW-01-01 · Run a specialist end to end | AW-00-02 | An executable example uses a real local actor, a scripted provider, and a granted in-memory read tool. Accept a supported citation; reject an invented one and deny an ungranted tool without calling it. |
+| AW-01-02 · Extract the Actor-Web executor | AW-01-01 | Make the example consume a public adapter over the existing agent loop. Two assignments get fresh sessions; their tools, results, and histories do not leak between them. |
+| AW-02-01 · Exercise the executor contract | AW-01-02 | Provide reusable behavioral fixtures. The real adapter passes; intentionally faulty drivers fail for leaking history, widening grants, or retrying without permission. |
+| AW-03-01 · Enforce execution limits | AW-02-01 | Enforce host-supplied turn, tool, time, and byte budgets. Test at and over each limit; count failed attempts and admit no new work after exhaustion. |
+| AW-03-02 · Distinguish stop from settlement | AW-03-01 | Test abort before dispatch and during provider/tool work. Reject late results; a tool that ignores abort must not be reported as stopped or allow unsafe reuse. |
+| AW-04-01 · Record correlated execution evidence | AW-03-02 | Join attempts, tool outcomes, validation, and cleanup to the correct session. Exclude prompts and secrets; report unavailable usage as unknown, not zero. |
+| AW-02-02 · Verify public package compatibility | AW-02-01, AW-03-02, AW-04-01 | Run the final contract through packed ESM, CJS, and browser consumers. Root and portable entries work without Zod; the Zod entry works with its declared peer. |
+| AW-04-02 · Prove one agent-starter consumer | AW-02-02 | Run one specialist through the public adapter with a scripted provider. Invalid or late output cannot advance the workflow. No board redesign or new worker policy. |
+| AW-04-03 · Qualify the M1 candidate | AW-04-02 | Run the producer and consumer checks on identified revisions. Record independent Test and separate Review, migration notes, and limitations. Qualification does not publish a release. |
+
+## First two ticket briefs
+
+### AW-00-01 · Reconcile capability status
+
+**Request:** Compare the [execution contract](provider-neutral-agent-execution-contract.md), [transport roadmap](spikes/actor-web-external-transport-design.md), and [agent guide](../packages/actor-agent/README.md) with current public exports and tests. Correct current ownership and maturity statements, not historical records.
+
+**Done when:** A reader can distinguish available primitives from verified end-to-end guarantees. In particular, checkpoint storage is not proof of restart-safe effects, and forwarding an abort signal is not proof that a tool stopped. Actor-Web owns runtime behavior; agent-starter owns workflow decisions. No runtime change is needed for this task.
+
+**Checks:** For each corrected claim, cite an export, test, or recorded result and its limits. Lint changed Markdown with the repo configuration and verify changed links.
+
+### AW-00-02 · Define the specialist execution contract
+
+**Request:** Starting from `createAgent`, `AgentRuntime.run`, and `createAgentLoopBehavior`, document how one host binds the task, fresh session, and allowed tools, then receives validated content. Preserve the portable return types; keep execution observations separate from the business result.
+
+**Done when:** The contract specifies who can grant a tool, who accepts the answer, and what the caller sees for a denied tool, invalid output, provider failure, and a stop request with outstanding work. Describe the provider rename migration. Do not implement a scheduler, storage backend, or executor in this ticket.
+
+**Checks:** Check example signatures against the exported types, exercise the documented cases with contract examples, and run the agent package's public-entry build checks. These checks cover the contract, not implementation of the later executor.

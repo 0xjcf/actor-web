@@ -13,6 +13,11 @@ custom agent behavior and this package when you want the standard LLM tool loop.
 npm install @actor-web/runtime @actor-web/agent
 ```
 
+The examples below use APIs added after `@actor-web/agent@0.2.1`. If you are
+pinned to `0.2.1`, use `createOpenAiCompatibleLlmProvider` and the Chat
+Completions API. That version does not include Responses support, `START_AGENT`
+with `reset`, or the `./portable` and `./zod` entry points.
+
 ## Public API
 
 | Export | Use for |
@@ -71,6 +76,13 @@ call to `run` sends one turn to the supplied executor, forwarding its signal
 separately from the flat task data, and returns the decoded result. Supply a
 plain data object for the task; `signal` is reserved. The host still owns tool
 grants, cancellation, independent sessions, and acceptance of the candidate.
+
+The [portable tests](tests/portable.test.ts) use supplied functions to exercise
+turn binding, task-aware output checks, and error propagation. A cancellation
+test uses an executor that honors the signal. `createAgent` forwards the
+signal, but does not enforce pre-dispatch abort, reject late output from an
+executor that ignores abort, or wait for cleanup. These tests do not qualify
+the actor-backed executor planned in the [M1 backlog](../../docs/todos.md).
 
 For JSON responses, install `zod@^4` and import `structured` from
 `@actor-web/agent/zod`. Neither the package root nor `portable` imports Zod.
@@ -196,8 +208,12 @@ tool-call payload, but it does not execute any capability.
 
 The standard loop accepts:
 
-- `START_AGENT` with a user prompt, an optional per-message system override, and optional `reset`. `reset: true` replaces the session history so a reused actor can start a new task.
+- `START_AGENT` with a user prompt, an optional per-message system override, and
+  optional `reset`. `reset: true` replaces history on a reused actor; it does not
+  create a fresh session or establish that earlier work settled.
 - `OBSERVE_TOOL_RESULT` to feed a prior tool result back into the loop.
+- `RECONCILE_AGENT_SESSION` to submit a reconciliation receipt when a checkpoint
+  store is configured.
 - `GET_AGENT_CONTEXT` to inspect the loop context.
 
 The loop emits:
@@ -206,10 +222,21 @@ The loop emits:
 - `AGENT_TOOL_CALL_REQUESTED`
 - `AGENT_TOOL_RESULT_OBSERVED`
 - `AGENT_STEP_FAILED`
+- `AGENT_SESSION_RECONCILED`
 
 Expected failures are returned as data with `{ ok: false, error }`; providers
 should do the same so runtime hosts can project failures without throwing across
 actor boundaries.
+
+## Checkpoints and cancellation
+
+The loop accepts an optional `checkpoint` configuration with a host-supplied
+store. The [loop tests](src/agent-loop.test.ts) cover checkpoint restore and
+deferral when an effect needs reconciliation. Restoring saved loop state is not
+proof of crash-safe effects or cross-process ownership. An abort or a timeout
+can return control before underlying work has stopped. See the
+[runtime contract](../../docs/provider-neutral-agent-execution-contract.md#semantics)
+for the distinction between dispatch, effect outcome, and reconciliation.
 
 ## Non-goals
 
