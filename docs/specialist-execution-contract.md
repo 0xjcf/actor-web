@@ -155,6 +155,13 @@ the whole host flow.
 | Provider failure | The actor replies with an error fact, such as `LLM_PROVIDER_UNAVAILABLE`. The portable run rejects with a distinguishable execution failure, not a parse error. | [Loop tests](../packages/actor-agent/src/agent-loop.test.ts) and provider tests cover error replies; portable tests cover executor error propagation. |
 | Stop before dispatch or during work | A pre-dispatch stop causes no effects. A stop during a live tool call prevents late acceptance; the caller can observe unresolved cleanup if the tool does not settle. | Portable tests show signal forwarding to a cooperative executor; toolbox tests show timeout and abort notification. Neither proves host settlement. |
 
+The [reusable executor conformance cases](../packages/actor-agent/tests/executor-conformance.ts)
+take a factory returning a portable `AgentRuntime` and observe scripted provider
+requests and in-memory tool effects. The [agent test suite](../packages/actor-agent/tests/executor-conformance.test.ts)
+runs them against the real local adapter and test-only history, grant, and
+retry faults. These source-level cases do not qualify packed consumers,
+cumulative budgets, or post-dispatch settlement.
+
 ## Provider migration
 
 On `@actor-web/agent@0.2.1`, use `createOpenAiCompatibleLlmProvider` and
