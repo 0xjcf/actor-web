@@ -6,7 +6,7 @@ The [agent application north-star draft](examples/agent-app-north-star.md) explo
 
 ## Using the backlog
 
-This file owns task intent and dependencies and records work completed directly in Actor-Web. The [queue-board](../../agent-starter/apps/board/README.md) owns board ticket status. Next up: **AW-01-01**. For each board handoff:
+This file owns task intent and dependencies and records work completed directly in Actor-Web. The [queue-board](../../agent-starter/apps/board/README.md) owns board ticket status. Next in Actor-Web: **AW-02-01**. Local completion does not change a board ticket's stage. For each board handoff:
 
 1. Find the task on the board by its `AW-` ID before creating a ticket. Use the ID and task name as the title. Copy its request, acceptance criteria, and checks into the brief.
 2. `AW-` IDs are roadmap IDs, not board ticket IDs. Use the corresponding board ticket IDs for `dependsOn`. If manual entry cannot bind a dependency, wait until the board accepts the predecessor as shipped before queuing its successor. A dependency mentioned only in prose is not enforced.
@@ -18,8 +18,8 @@ This file owns task intent and dependencies and records work completed directly 
 | --- | --- | --- |
 | AW-00-01 · Reconcile capability status | None | **Complete (local).** Reconciled current capabilities, verification limits, and ownership across the execution contract, transport roadmap, and agent guide. Historical evidence was preserved. |
 | AW-00-02 · Define the specialist execution contract | AW-00-01 | **Complete (local).** The [contract](specialist-execution-contract.md) covers one assignment from admission through validation and cleanup. The documented reviewer compiles and runs against the public agent entries with a scripted executor. |
-| AW-01-01 · Run a specialist end to end | AW-00-02 | **In progress (local).** The [reviewer example](../examples/portable-specialist/demo.ts) uses a real local actor, a scripted provider, and a granted in-memory read tool. Accept a supported citation; reject an invented one and deny an ungranted tool without calling it. |
-| AW-01-02 · Extract the Actor-Web executor | AW-01-01 | Make the example consume a public adapter over the existing agent loop. Two assignments get fresh sessions; their tools, results, and histories do not leak between them. |
+| AW-01-01 · Run a specialist end to end | AW-00-02 | **Complete (local).** Independent Test and Review passed at `1c9c6c34`. The built [reviewer example](../examples/portable-specialist/demo.ts) used a real local actor, a scripted provider, and a granted in-memory read tool. It accepted a supported citation, rejected unsupported output, and denied ungranted effects. |
+| AW-01-02 · Extract the Actor-Web executor | AW-01-01 | **Complete (local).** Independent Test and Review passed on the source committed in `54e673fe`. The reviewer consumes `@actor-web/agent/actor-runtime`; fresh assignments isolate history, tool calls, and results. This qualifies the offline local adapter, not the final packed-consumer matrix or the full settlement contract. |
 | AW-02-01 · Exercise the executor contract | AW-01-02 | Provide reusable behavioral fixtures. The real adapter passes; intentionally faulty drivers fail for leaking history, widening grants, or retrying without permission. |
 | AW-03-01 · Enforce execution limits | AW-02-01 | Enforce host-supplied turn, tool, time, and byte budgets. Test at and over each limit; count failed attempts and admit no new work after exhaustion. |
 | AW-03-02 · Distinguish stop from settlement | AW-03-01 | Test abort before dispatch and during provider/tool work. Reject late results; a tool that ignores abort must not be reported as stopped or allow unsafe reuse. |
