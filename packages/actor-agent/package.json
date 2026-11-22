@@ -13,8 +13,8 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsc --emitDeclarationOnly && tsup && node ../../scripts/verify-exports.mjs . && pnpm test:public-entries",
-    "test:public-entries": "tsc --noEmit --strict --module node16 --target es2022 tests/consume-portable.mts tests/consume-portable.cts && node tests/verify-portable.mjs",
+    "build": "tsc --emitDeclarationOnly && tsup && node scripts/write-actor-runtime-cjs-types.mjs && node ../../scripts/verify-exports.mjs . && pnpm test:public-entries",
+    "test:public-entries": "tsc --noEmit --strict --module node16 --target es2022 tests/consume-portable.mts tests/consume-portable.cts && node tests/verify-portable.mjs && node tests/verify-actor-runtime.mjs",
     "build:watch": "pnpm build --watch",
     "dev": "vitest --watch",
     "test": "vitest run",
@@ -81,6 +81,16 @@
       "require": {
         "types": "./dist/portable.d.cts",
         "default": "./dist/portable.cjs"
+      }
+    },
+    "./actor-runtime": {
+      "import": {
+        "types": "./dist/actor-runtime.d.ts",
+        "default": "./dist/actor-runtime.js"
+      },
+      "require": {
+        "types": "./dist/actor-runtime.d.cts",
+        "default": "./dist/actor-runtime.cjs"
       }
     },
     "./zod": {

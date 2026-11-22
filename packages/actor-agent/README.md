@@ -16,7 +16,7 @@ npm install @actor-web/runtime @actor-web/agent
 The examples below use APIs added after `@actor-web/agent@0.2.1`. If you are
 pinned to `0.2.1`, use `createOpenAiCompatibleLlmProvider` and the Chat
 Completions API. That version does not include Responses support, `START_AGENT`
-with `reset`, or the `./portable` and `./zod` entry points.
+with `reset`, or the `./portable`, `./actor-runtime` and `./zod` entry points.
 
 ## Public API
 
@@ -28,6 +28,7 @@ with `reset`, or the `./portable` and `./zod` entry points.
 | `createLlmProvider({ endpoint, model, timeoutMs?, ... })` | Chat Completions adapter. An endpoint path that ends in `/responses` uses the Responses wire. The host supplies the endpoint, model, and headers |
 | `ACTOR_WEB_LLM_TOOL_NAME` | Stable tool name for the injected LLM provider |
 | `ActorAgent*` types | Message, event, provider, tool-call, tool-definition, and error contracts |
+| `createActorRuntime(options)` from `@actor-web/agent/actor-runtime` | Local executor implementing the portable `AgentRuntime` contract |
 
 ## Usage
 
@@ -81,15 +82,58 @@ The [portable tests](tests/portable.test.ts) use supplied functions to exercise
 turn binding, task-aware output checks, and error propagation. A cancellation
 test uses an executor that honors the signal. `createAgent` forwards the
 signal, but does not enforce pre-dispatch abort, reject late output from an
-executor that ignores abort, or wait for cleanup. These tests do not qualify
-the actor-backed executor planned in the [M1 backlog](../../docs/todos.md).
+executor that ignores abort, or wait for cleanup. Those are executor concerns.
 The [specialist execution contract](../../docs/specialist-execution-contract.md)
 specifies what that host must enforce from assignment through settlement.
 
+### Local actor executor
+
+Import `createActorRuntime` and `ActorRuntimeError` from
+`@actor-web/agent/actor-runtime`. Pass the same trusted `definition` you give
+`createAgent`, including any output instructions. Also supply `provider`,
+`encodeTask`, application tool `grants` and implementations, and `limits`:
+`runTimeoutMs`, `askTimeoutMs`, `providerTimeoutMs`, `toolTimeoutMs`, and
+`maxToolCallsPerBatch`. There are no defaults. `askTimeoutMs` is a positive
+integer capped at 214748364 ms so the 10× local correlation fallback fits in
+the platform timer range. The executor checks its active run, ask, provider,
+and tool deadlines against a monotonic clock. If several have elapsed, the
+earliest absolute deadline wins, with the outer operation winning exact ties.
+An expired ask fails with `ACTOR_ASK_FAILED` when it is the winning deadline,
+even if its timer callback has not fired. Caller abort is handled immediately
+when signaled, and a recorded interruption is not replaced.
+
+The encoder and tool validators are synchronous and side-effect-free. Each
+tool's `validateInput(input, task)` checks schema and assignment scope and
+returns `{ value }` or throws. The returned value must be plain JSON data:
+null, booleans, strings, finite numbers, dense arrays, or objects with enumerable
+string-keyed data properties. Containers use the current realm's standard
+prototype, or a null prototype for objects. Cycles and unsupported
+values (for example, `undefined`, accessors, or class instances) fail with
+`INVALID_TOOL_INPUT`. `execute(value, task, context)` receives a detached copy
+for that call and performs the effect. The handler and provider must return the
+promise representing their local work. The host owns the pinned assignment
+snapshot, stable callback bindings, and the acceptance decision.
+
+Each admitted run owns a new actor and local runtime. Only requested, granted,
+implemented application tools are advertised; `llm` is reserved. The executor
+checks and snapshots an entire model tool batch before dispatching effects,
+then runs tools in order. Later failures do not undo earlier effects. It
+rejects duplicate IDs within a session and returns only nonblank final assistant
+text. Execution failures reject with a `code`, retaining provider and coded tool
+failures; no retry or repair is attempted. The optional output parser remains
+separate.
+
+Abort or timeout rejects the caller and signals the admitted ports. A rejected
+caller promise is not a cleanup receipt: the adapter rejects additional runs
+with `RUNTIME_BUSY` until tracked local work and runtime stop complete. A failed
+start without a runtime handle or a failed stop leaves the instance fenced.
+Neither this fence nor an abort signal establishes remote termination,
+rollback, or settlement of work a port detached from its returned promise.
+
 The [portable specialist example](../../examples/portable-specialist/demo.ts)
-runs a typed source reviewer through a fresh local actor, a scripted provider,
-and one granted in-memory read. From the workspace root, build the runtime and
-agent packages, then run the demo against those built entries:
+uses this adapter with a scripted provider and one granted in-memory read. From
+the workspace root, build the runtime and agent packages, then run the demo
+against those built entries:
 
 ```sh
 pnpm --filter @actor-web/runtime build
@@ -97,11 +141,17 @@ pnpm --filter @actor-web/agent build
 pnpm --filter @actor-web/example-portable-specialist demo
 ```
 
-This is an offline example with two provider turns and one tool call, not a
-reusable executor or a demonstration of production limits and cancellation.
+This initial local profile does not qualify cumulative or byte budgets, the
+full cancellation/settlement contract, recovery, correlated evidence, or a
+live provider. The public-entry build smoke uses workspace ESM and CJS
+consumers and a browser-target bundle; it is not the packed-consumer matrix.
+For a browser bundle, statically replace the runtime dependency's
+`process.env.NODE_ENV` references as Vite application builds do. The smoke
+does not provide a Node `process` shim.
 
 For JSON responses, install `zod@^4` and import `structured` from
-`@actor-web/agent/zod`. Neither the package root nor `portable` imports Zod.
+`@actor-web/agent/zod`. Neither the package root, `portable`, nor `actor-runtime`
+imports Zod.
 Use a synchronous, JSON-representable schema. Its input schema supplies response
 instructions once at construction; after JSON and schema validation, an optional
 `check` receives the typed content and the assignment. Return a reason to reject.

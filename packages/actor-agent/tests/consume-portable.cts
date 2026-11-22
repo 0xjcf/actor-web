@@ -1,3 +1,4 @@
+import actors = require('@actor-web/agent/actor-runtime');
 import portable = require('@actor-web/agent/portable');
 import codec = require('@actor-web/agent/zod');
 
@@ -15,3 +16,15 @@ const result: Promise<{ summary: string }> = builder.run({
   signal: new AbortController().signal,
 });
 void result;
+
+declare const actorOptions: actors.ActorRuntimeOptions<{ request: string }, 'build'>;
+const actorRuntime: portable.AgentRuntime<{ request: string }, 'build'> =
+  actors.createActorRuntime(actorOptions);
+const raw: Promise<string> = actorRuntime.run({
+  purpose: 'build',
+  systemPrompt: actorOptions.definition.systemPrompt,
+  tools: [],
+  task: { request: 'Update the component.' },
+  signal: new AbortController().signal,
+});
+void raw;

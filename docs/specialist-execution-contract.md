@@ -1,9 +1,9 @@
 # M1 specialist execution contract
 
 AW-00-02 contract for the [Actor-Web milestone](todos.md). This specifies the
-host obligations for one local specialist assignment. It does not implement the
-actor-backed executor or change the public API. The first implementation consumer
-is the scripted, in-memory source reviewer in AW-01-01.
+host obligations for one local specialist assignment without changing the portable
+API. The scripted, in-memory source reviewer is the first consumer of the initial
+[`@actor-web/agent/actor-runtime` executor](../packages/actor-agent/README.md#local-actor-executor).
 
 ## Boundaries
 
@@ -82,7 +82,12 @@ separately from any timed or cancelled caller reply:
 None of these observations proves that a remote action did not run, was rolled
 back, or stopped incurring provider charges. A timeout is not permission to
 repeat an uncertain effect. Settlement and late-result enforcement are
-specified here; AW-03-02 implements and verifies them.
+specified here; AW-03-02 qualifies the full contract. The AW-01-02 local adapter
+only fences reuse until returned provider/tool and actor request promises have
+settled and its owned runtime stop has completed. It does not expose a
+settlement receipt or detect work detached by a port. The caller supplies run,
+ask, provider and tool deadlines plus a per-batch call limit; cumulative byte
+and execution budgets remain with AW-03-01.
 
 Keep observations separate from `Content`. The later evidence slice can
 correlate assignment, revision, session and attempts, record validation and

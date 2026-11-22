@@ -490,19 +490,6 @@ describe.skip('MockCorrelationManager', () => {
 describe('PureXStateCorrelationManager timeout cleanup', () => {
   let manager: PureXStateCorrelationManager;
 
-  const getTimeoutManager = (
-    candidate: PureXStateCorrelationManager
-  ): {
-    timeoutManager: {
-      getActiveTimeoutCount(): number;
-    };
-  } =>
-    candidate as unknown as {
-      timeoutManager: {
-        getActiveTimeoutCount(): number;
-      };
-    };
-
   beforeEach(() => {
     vi.useFakeTimers();
     manager = new PureXStateCorrelationManager();
@@ -516,25 +503,55 @@ describe('PureXStateCorrelationManager timeout cleanup', () => {
   it('cancels the timeout when a request resolves', async () => {
     const promise = manager.registerRequest('corr-resolve', 1_000);
 
-    expect(getTimeoutManager(manager).timeoutManager.getActiveTimeoutCount()).toBe(1);
+    expect(vi.getTimerCount()).toBe(1);
 
     manager.handleResponse('corr-resolve', mockResponse);
 
     await expect(promise).resolves.toBe(mockResponse);
     expect(manager.getPendingRequestCount()).toBe(0);
-    expect(getTimeoutManager(manager).timeoutManager.getActiveTimeoutCount()).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('cancels the timeout when a request errors', async () => {
     const promise = manager.registerRequest('corr-error', 1_000);
+    const error = new Error('boom');
 
-    expect(getTimeoutManager(manager).timeoutManager.getActiveTimeoutCount()).toBe(1);
+    expect(vi.getTimerCount()).toBe(1);
 
-    manager.handleError('corr-error', new Error('boom'));
+    manager.handleError('corr-error', error);
 
-    await expect(promise).rejects.toThrow('boom');
+    await expect(promise).rejects.toBe(error);
     expect(manager.getPendingRequestCount()).toBe(0);
-    expect(getTimeoutManager(manager).timeoutManager.getActiveTimeoutCount()).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('cancels the scheduled fallback when the request is timed out explicitly', async () => {
+    const promise = manager.registerRequest('corr-manual-timeout', 1_000);
+
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(250);
+    manager.handleTimeout('corr-manual-timeout');
+
+    await expect(promise).rejects.toThrow(
+      'Request corr-manual-timeout timed out after 250ms (configured: 1000ms)'
+    );
+    expect(manager.getPendingRequestCount()).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('rejects at the scheduled fallback deadline when not otherwise settled', async () => {
+    const promise = manager.registerRequest('corr-automatic-timeout', 1_000);
+
+    vi.advanceTimersByTime(999);
+    expect(manager.getPendingRequestCount()).toBe(1);
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(1);
+
+    await expect(promise).rejects.toThrow(
+      'Request corr-automatic-timeout timed out after 1000ms (configured: 1000ms)'
+    );
+    expect(manager.getPendingRequestCount()).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 

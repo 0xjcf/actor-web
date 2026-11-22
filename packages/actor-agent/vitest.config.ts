@@ -5,6 +5,10 @@ export default defineConfig({
     alias: {
       '@actor-web/runtime/browser': new URL('../actor-core-runtime/src/browser.ts', import.meta.url)
         .pathname,
+      '@actor-web/runtime/topology': new URL(
+        '../actor-core-runtime/src/topology-entry.ts',
+        import.meta.url
+      ).pathname,
       '@actor-web/runtime': new URL('../actor-core-runtime/src/index.ts', import.meta.url).pathname,
     },
   },

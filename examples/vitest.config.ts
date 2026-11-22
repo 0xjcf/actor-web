@@ -39,6 +39,10 @@ export default defineConfig({
         replacement: path.resolve(actorWebRoot, 'packages/actor-agent/src/portable.ts'),
       },
       {
+        find: '@actor-web/agent/actor-runtime',
+        replacement: path.resolve(actorWebRoot, 'packages/actor-agent/src/actor-runtime.ts'),
+      },
+      {
         find: '@actor-web/agent/zod',
         replacement: path.resolve(actorWebRoot, 'packages/actor-agent/src/zod.ts'),
       },

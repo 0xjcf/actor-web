@@ -8,4 +8,9 @@ export default defineConfig([
     external: ['zod'],
     dts: { compilerOptions: { composite: false } },
   },
+  {
+    entry: ['src/actor-runtime.ts'],
+    format: ['cjs', 'esm'],
+    platform: 'browser',
+  },
 ]);
