@@ -149,9 +149,13 @@ export class FallbackContextStorage<T> implements ContextStorage<T> {
 
   /**
    * Serialize top-level async work without changing run()'s synchronous contract.
-   * Callers must not use this method for reentry from an active async callback.
+   * A call made while a frame is already open is nested reentry, so an actor can
+   * ask another actor without waiting for its own turn to finish.
    */
   runAsync<TResult>(context: T, fn: () => Promise<TResult>): Promise<TResult> {
+    if (this.frames.length > 0) {
+      return this.runReentrant(context, fn);
+    }
     const pending = this.topLevelAsyncTail.then(() => this.run(context, fn));
     this.topLevelAsyncTail = pending.then(
       () => undefined,
@@ -500,9 +504,10 @@ export function safeRun<T>(context: ActorContext, fn: () => T, fallbackActorId?:
 /**
  * Run one top-level async operation with context isolation.
  *
- * Browser fallbacks serialize these operations because they cannot isolate
- * concurrent top-level async contexts. AsyncLocalStorage environments retain
- * their normal concurrent behavior.
+ * Browser fallbacks serialize concurrent top-level runs because they cannot
+ * isolate those contexts. A run started while a frame is already open reenters
+ * that frame, so one actor can ask another before its own turn finishes.
+ * AsyncLocalStorage environments retain their normal concurrent behavior.
  */
 export function safeRunAsync<T>(
   context: ActorContext,

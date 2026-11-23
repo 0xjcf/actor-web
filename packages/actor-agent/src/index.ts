@@ -6,19 +6,19 @@ import type {
   AgentSessionCheckpointWriteResult,
   JsonValue,
 } from '@actor-web/runtime';
-import {
-  createAgentSessionCheckpointEnvelope,
-  deriveAgentSessionCheckpointRehydration,
-} from '@actor-web/runtime';
 import type {
   ActorToolExecutionContext,
   ActorToolExecutor,
   ActorToolRegistry,
 } from '@actor-web/runtime/browser';
-import { defineBehavior } from '@actor-web/runtime/browser';
+import {
+  createAgentSessionCheckpointEnvelope,
+  defineBehavior,
+  deriveAgentSessionCheckpointRehydration,
+} from '@actor-web/runtime/browser';
 
-export type { OpenAiCompatibleLlmProviderOptions } from './openai-compatible-llm-provider.js';
-export { createOpenAiCompatibleLlmProvider } from './openai-compatible-llm-provider.js';
+export type { LlmProviderOptions } from './llm-provider.js';
+export { createLlmProvider } from './llm-provider.js';
 
 export const ACTOR_WEB_LLM_TOOL_NAME = 'llm' as const;
 
@@ -88,13 +88,21 @@ export type ActorAgentToolRegistry = {
 };
 
 export type ActorAgentLoopMessage =
-  | { readonly type: 'START_AGENT'; readonly prompt: string; readonly system?: string }
+  | {
+      readonly type: 'START_AGENT';
+      readonly prompt: string;
+      readonly system?: string;
+      readonly reset?: boolean;
+    }
+  | { readonly type: 'CONTINUE_AGENT' }
   | {
       readonly type: 'OBSERVE_TOOL_RESULT';
       readonly toolCallId: string;
       readonly name: string;
       readonly ok: boolean;
       readonly output: unknown;
+      /** Record this receipt without starting another model turn if it completes the batch. */
+      readonly deferContinuation?: boolean;
     }
   | {
       readonly type: 'RECONCILE_AGENT_SESSION';
@@ -109,6 +117,8 @@ export interface ActorAgentReconciliationReceipt {
 }
 
 export interface ActorAgentLoopContext {
+  /** Present only after a final receipt whose continuation was deferred. */
+  readonly paused?: true;
   readonly system?: string;
   readonly history: readonly ActorAgentLlmMessage[];
   readonly steps: number;
@@ -117,6 +127,7 @@ export interface ActorAgentLoopContext {
 }
 
 export interface ActorAgentLoopCheckpointState {
+  readonly paused?: true;
   readonly system?: string;
   readonly history: readonly ActorAgentLlmMessage[];
   readonly steps: number;
@@ -124,7 +135,7 @@ export interface ActorAgentLoopCheckpointState {
   readonly lastError: ActorAgentError | null;
 }
 
-export type ActorAgentLoopStatus = 'responded' | 'waiting-for-tool';
+export type ActorAgentLoopStatus = 'responded' | 'waiting-for-tool' | 'paused';
 
 export type ActorAgentLoopReply =
   | {
@@ -224,6 +235,7 @@ export function createActorAgentLoopCheckpointState(
 ): ActorAgentLoopCheckpointState {
   return {
     ...(context.system === undefined ? {} : { system: context.system }),
+    ...(context.paused ? { paused: true } : {}),
     history: [...context.history],
     steps: context.steps,
     pendingToolCalls: [...context.pendingToolCalls],
@@ -241,6 +253,7 @@ export function rehydrateActorAgentLoopContext(
 ): ActorAgentLoopContext {
   return {
     system: state.system,
+    ...(state.paused ? { paused: true } : {}),
     history: [...state.history],
     steps: state.steps,
     pendingToolCalls: [...state.pendingToolCalls],
@@ -353,6 +366,10 @@ function isCheckpointStateCandidate(value: unknown): value is ActorAgentLoopChec
     candidate.steps >= 0 &&
     Array.isArray(pendingToolCalls) &&
     pendingToolCalls.every(isActorAgentToolCall) &&
+    (candidate.paused === undefined ||
+      (candidate.paused === true &&
+        pendingToolCalls.length === 0 &&
+        history.at(-1)?.role === 'tool')) &&
     (lastError === null || isActorAgentError(lastError))
   );
 }
@@ -841,82 +858,106 @@ export function createAgentLoopBehavior(
           error: checkpointState.error,
         });
       }
-      const activeContext = checkpointState.kind === 'ready' ? checkpointState.context : context;
+      let activeContext = checkpointState.kind === 'ready' ? checkpointState.context : context;
 
       if (message.type === 'GET_AGENT_CONTEXT') {
         return { reply: activeContext, context: activeContext };
       }
 
-      const nextMessages =
-        message.type === 'START_AGENT'
-          ? [{ role: 'user' as const, content: message.prompt }]
-          : [createObservedToolMessage(message)];
-      const pendingToolCalls =
-        message.type === 'OBSERVE_TOOL_RESULT'
-          ? activeContext.pendingToolCalls.filter((toolCall) => toolCall.id !== message.toolCallId)
-          : activeContext.pendingToolCalls;
+      if (message.type === 'START_AGENT' && message.reset === true) {
+        activeContext = {
+          system: message.system ?? activeContext.system ?? options.system,
+          history: [],
+          steps: 0,
+          pendingToolCalls: [],
+          lastError: null,
+        };
+      }
+
       const system =
         message.type === 'START_AGENT'
           ? (message.system ?? activeContext.system ?? options.system)
           : (activeContext.system ?? options.system);
-      const messages = [...activeContext.history, ...nextMessages];
-      const observedToolEvents: ActorAgentLoopEvent[] =
-        message.type === 'OBSERVE_TOOL_RESULT'
-          ? [
-              {
-                type: 'AGENT_TOOL_RESULT_OBSERVED',
-                toolCallId: message.toolCallId,
-                name: message.name,
-                ok: message.ok,
-              },
-            ]
-          : [];
-
-      if (message.type === 'OBSERVE_TOOL_RESULT' && pendingToolCalls.length > 0) {
-        const waitingContext = {
-          system,
-          history: messages,
-          steps: activeContext.steps,
-          pendingToolCalls,
-          lastError: null,
-        } satisfies ActorAgentLoopContext;
-        if (options.checkpoint) {
-          try {
-            await requireCheckpointWriteStored(options.checkpoint, waitingContext, {
-              step: activeContext.steps,
-              phase: 'receipt_recorded',
-              irreversible: true,
-              checkpointKey: `tool_result:${message.toolCallId}`,
-              effectKey: `tool_result:${message.toolCallId}`,
-              intent: {
-                tool: message.name,
-                toolCallId: message.toolCallId,
-              },
-              receipt: { recorded: true },
-            });
-          } catch (error) {
-            return createFailureResult({
-              context: activeContext,
-              error: normalizeThrownError(error),
-              emitPrefix: observedToolEvents,
-            });
-          }
+      let messages = activeContext.history;
+      let pendingToolCalls = activeContext.pendingToolCalls;
+      const observedToolEvents: ActorAgentLoopEvent[] = [];
+      if (message.type === 'START_AGENT') {
+        messages = [...messages, { role: 'user', content: message.prompt }];
+      } else if (message.type === 'CONTINUE_AGENT') {
+        if (!activeContext.paused || pendingToolCalls.length !== 0) {
+          return createFailureResult({
+            context: activeContext,
+            error: { code: 'AGENT_NOT_PAUSED', message: 'There is no deferred model turn.' },
+          });
         }
-        return {
-          context: waitingContext,
-          reply: {
-            ok: true,
-            status: 'waiting-for-tool',
-            message: nextMessages[0],
-            toolCalls: [],
-          },
-          emit: observedToolEvents,
-        };
+      } else {
+        const matches = pendingToolCalls.filter((call) => call.id === message.toolCallId);
+        if (
+          matches.length !== 1 ||
+          matches[0].name !== message.name ||
+          messages.some((entry) => entry.role === 'tool' && entry.toolCallId === message.toolCallId)
+        ) {
+          return createFailureResult({
+            context: activeContext,
+            error: {
+              code: 'INVALID_TOOL_RESULT',
+              message: 'Expected a receipt for one outstanding call with the same ID and name.',
+            },
+          });
+        }
+        const observed = createObservedToolMessage(message);
+        messages = [...messages, observed];
+        pendingToolCalls = pendingToolCalls.filter((call) => call.id !== message.toolCallId);
+        observedToolEvents.push({
+          type: 'AGENT_TOOL_RESULT_OBSERVED',
+          toolCallId: message.toolCallId,
+          name: message.name,
+          ok: message.ok,
+        });
+        if (pendingToolCalls.length > 0 || message.deferContinuation === true) {
+          const paused = pendingToolCalls.length === 0;
+          const waitingContext: ActorAgentLoopContext = {
+            ...(paused ? { paused: true } : {}),
+            system,
+            history: messages,
+            steps: activeContext.steps,
+            pendingToolCalls,
+            lastError: null,
+          };
+          if (options.checkpoint) {
+            try {
+              await requireCheckpointWriteStored(options.checkpoint, waitingContext, {
+                step: activeContext.steps,
+                phase: 'receipt_recorded',
+                irreversible: true,
+                checkpointKey: `tool_result:${message.toolCallId}`,
+                effectKey: `tool_result:${message.toolCallId}`,
+                intent: { tool: message.name, toolCallId: message.toolCallId },
+                receipt: { recorded: true },
+              });
+            } catch (error) {
+              return createFailureResult({
+                context: activeContext,
+                error: normalizeThrownError(error),
+              });
+            }
+          }
+          return {
+            context: waitingContext,
+            reply: {
+              ok: true,
+              status: paused ? 'paused' : 'waiting-for-tool',
+              message: observed,
+              toolCalls: [],
+            },
+            emit: observedToolEvents,
+          };
+        }
       }
 
       const step = activeContext.steps + 1;
       const executionContext: ActorAgentLoopContext = {
-        ...activeContext,
+        steps: activeContext.steps,
         system,
         history: messages,
         pendingToolCalls,
@@ -924,9 +965,11 @@ export function createAgentLoopBehavior(
       };
 
       let dispatched = false;
+      // A reconciled non-applied continuation may be explicitly retried from the paused state.
+      const intentContext = message.type === 'CONTINUE_AGENT' ? activeContext : executionContext;
       try {
         if (options.checkpoint) {
-          await requireCheckpointWriteStored(options.checkpoint, executionContext, {
+          await requireCheckpointWriteStored(options.checkpoint, intentContext, {
             step,
             phase: 'intent_recorded',
             irreversible: true,
@@ -1040,23 +1083,27 @@ export function createAgentLoopBehavior(
         };
       } catch (error) {
         const failure = createFailureResult({
-          context: executionContext,
+          context: dispatched ? executionContext : intentContext,
           error: normalizeThrownError(error),
           emitPrefix: observedToolEvents,
         });
         const failureError = failure.reply.ok ? null : failure.reply.error;
         if (options.checkpoint && dispatched) {
           try {
-            await requireCheckpointWriteStored(options.checkpoint, failure.context, {
-              step,
-              phase: 'reconciliation_required',
-              irreversible: true,
-              intent: {
-                tool: ACTOR_WEB_LLM_TOOL_NAME,
-                messageType: message.type,
-              },
-              reconciliationReason: failureError?.message,
-            });
+            await requireCheckpointWriteStored(
+              options.checkpoint,
+              { ...intentContext, lastError: failureError },
+              {
+                step,
+                phase: 'reconciliation_required',
+                irreversible: true,
+                intent: {
+                  tool: ACTOR_WEB_LLM_TOOL_NAME,
+                  messageType: message.type,
+                },
+                reconciliationReason: failureError?.message,
+              }
+            );
           } catch (durabilityError) {
             if (!failureError) {
               return failure;

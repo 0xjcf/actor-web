@@ -1,4 +1,4 @@
-// Imperative shell / adapter (behaviorBoundaries.shell). TransportCore IS the
+// Imperative shell / adapter (execution boundary). TransportCore IS the
 // MessageTransport and owns ALL reliability machinery: subscribe + guarded dispatch,
 // send -> frame -> enqueue, outbound queue + backpressure, ack tracking + timeout retry,
 // sendAck, heartbeat engine, inbound pipeline, idempotency, stats/telemetry, peer

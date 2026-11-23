@@ -581,9 +581,12 @@ describe('fas-agent-loop example', () => {
   });
 
   it('renders a thin Ignite Element dashboard over the headless FAS runtime', async () => {
-    const { FAS_AGENT_LOOP_ELEMENT_NAME, stopFasAgentLoopElementRuntime } = await import(
-      './fas-agent-loop-element'
-    );
+    const {
+      FAS_AGENT_LOOP_ELEMENT_NAME,
+      fasAgentLoopElementReady,
+      stopFasAgentLoopElementRuntime,
+    } = await import('./fas-agent-loop-element');
+    await fasAgentLoopElementReady;
     const element = document.createElement(FAS_AGENT_LOOP_ELEMENT_NAME);
     document.body.appendChild(element);
 

@@ -6,11 +6,12 @@ Active roadmap/status doc. Tracks the Actor-Web runtime transport and gateway
 state, the remaining work for true multi-machine deployment, and the recommended
 external transport direction.
 
-Current closeout status: the runtime gateway and Ignite bridge are a documented
-projection/gateway slice. They prove the host-facing API shape, service-worker
-topology, shared-contract projection mapping, and a multi-process localhost
-rehearsal. They do not complete physical multi-host deployment or production
-distributed transport.
+The [Ignite gateway example](../examples/ignite-element-host.md) demonstrates the
+host-facing API and service-worker topology. The
+[logistics integration test](../../examples/ignite-headless-host/logistics-multiprocess.test.ts)
+exercises routing, disconnect, and reconnect across processes on one host.
+Neither establishes production distributed transport or physical multi-host
+deployment. That qualification is outside [Actor-Web M1](../todos.md).
 
 ## Why This Doc Exists
 
@@ -22,8 +23,8 @@ Actor-Web now has:
   `packages/actor-core-runtime/src/runtime-transport-protocol.ts`
 - transport-backed remote projection support in
   `packages/actor-core-runtime/src/actor-system-impl.ts`
-- shared-contract mapping in
-  `packages/actor-core-runtime/src/integration/fas-shared-contracts.ts`
+- runtime-owned [projection types and mappers](../../packages/actor-core-runtime/src/runtime-projection.ts)
+  and [gateway frames](../../packages/actor-core-runtime/src/runtime-gateway-shared.ts)
 - a browser-local prove-out where the runtime is owned by a service worker and
   the page is the thin host
 - a gateway projection API at
@@ -118,13 +119,12 @@ hexagonal boundary or the actor model.
     transports
   - `getStats()` and `getPeerStats(nodeAddress)` snapshots
   - runtime-native telemetry exporters and sinks
-  - Node JSONL file sink for durable local telemetry evidence
+  - Node JSONL file sink for local telemetry records
   - connection, handshake, frame send/receive/drop, heartbeat timeout, and
     sequence-gap counters
-- Actor-Web already maps its data plane toward FAS shared contracts:
-  - `EventEnvelope`
-  - `WorkflowSnapshot`
-  - `WorkflowTransitionRecord`
+- the gateway already carries runtime-owned `ActorSnapshotProjection`,
+  `ActorEventProjection`, and `ActorTransitionRecord` payloads. FAS is not an
+  active transport dependency or contract owner.
 - the Ignite/browser example demonstrates a service-worker-owned runtime with a
   page-owned thin host consuming snapshots and emitted events
 
@@ -133,18 +133,20 @@ hexagonal boundary or the actor model.
 - the distributed actor directory is still an in-memory replicated cache
 - stable node identity and incarnation are enforced at the WebSocket transport
   edge; topology runners now accept a discovery provider, but there is not yet a
-  durable membership store
-- auth is static token/provider hooks; TLS, certificate management, OAuth/OIDC,
-  and per-frame signing remain deployment/application concerns
+  durable membership store. The [discovery tests](../../packages/actor-core-runtime/src/unit/runtime-peer-discovery.test.ts)
+  cover normalization and in-memory peer updates, not deployment discovery.
+- static token and provider hooks are available. Deployment-grade peer
+  authentication, TLS, and certificate management still need qualification.
 - production discovery adapters should translate deployment-managed endpoint
   data into `RuntimePeerDiscoveryRecord` values without copying secrets into
   discovery metadata, runtime status, or transport telemetry
 - actor `send` remains at-most-once by default; internal runtime control traffic
   has bounded ack/retry support
-- gateway projection replay now supports an optional durable replay-storage
-  provider on the gateway hub, but the contract is still a bounded projection
-  recovery tail rather than a transport log or event-sourcing system; durable
-  provider keys are scoped by the visible stream id plus subscription scope
+- the gateway hub accepts an optional replay-storage provider.
+  [Gateway tests](../../packages/actor-core-runtime/src/unit/runtime-gateway.test.ts)
+  use a map-backed fixture to cover bounded replay, scope and owner isolation,
+  and snapshot fallback. Storage durability is host-supplied; that replay tail
+  is not a transport log, an event store, or actor-owner recovery.
 - `NodeWebSocketMessageTransport` has basic lifecycle and stale-peer handling,
   but is not a fully hardened production transport
 - `BrowserWebSocketMessageTransport` is outbound-only; browser-safe topology
@@ -191,15 +193,14 @@ That means:
 - behavior handlers and machine logic remain transport-agnostic
 - transport serialization, retries, auth, heartbeats, and reconnection stay in
   runtime adapters
-- shared-contract mapping remains a deterministic mapper, even when the wire
-  payloads are promoted to canonical shared-contract shapes
+- keep projection mapping deterministic when the wire contract changes
 
 ## Remaining Actor-Web Work
 
 1. Production discovery adapters backed by deployment infrastructure
 2. Production delivery semantics beyond at-most-once actor `send`
 3. Durable replay providers for projections and events
-4. Shared-contract promotion from mapper to real data-plane wire shape
+4. Versioning and consumer compatibility for runtime-owned projection frames
 5. Durable telemetry export, tracing, lag, replay, and backpressure
    observability
 6. True multi-host prove-out beyond the completed multi-process localhost
@@ -415,35 +416,31 @@ Do not imply stronger guarantees than the runtime can enforce.
 
 ### 5. Projection replay
 
-Near-term:
+Available:
 
 - gateway-owned bounded replay buffer for ordered snapshots, events, and
   transitions
 - source-side sequence gap detection and resync request from the first missing
   sequence
 - latest-snapshot fallback when the requested replay range is unavailable
-- optional durable replay provider for the gateway-owned bounded tail so replay
-  can survive gateway restart without changing the transport contract
+- optional replay-storage port for the gateway-owned bounded tail; replay can
+  survive gateway restart if the host supplies a store that preserves it
 
 Later:
 
 - durable latest snapshot per actor owner that survives owner restart
 - optional durable historical event replay where product/runtime needs justify it
 
-### 6. Shared-contract promotion
+### 6. Projection wire compatibility
 
 Control plane should remain internal Actor-Web protocol:
 
 - `__runtime.*`
 
-Data plane should move to canonical shared-contract wire payloads:
-
-- `EventEnvelope`
-- `WorkflowSnapshot`
-- `WorkflowTransitionRecord`
-
-The current mapper in `fas-shared-contracts.ts` should become the canonical
-normalization path for wire payload creation, not just a local bridge helper.
+The current gateway data plane uses the runtime-owned projection frames
+described above. Any new wire shape is future work: define its compatibility
+and versioning rules, and verify actual consumers before changing it. Workflow
+or review policy stays with agent-starter, not the transport protocol.
 
 ### 7. Auth and security
 
@@ -518,7 +515,7 @@ and true multi-host rehearsal.
 - keep observability dependency-free; expose durable JSONL export before adding
   OpenTelemetry or metrics backend adapters
 
-Status: complete for runtime-native telemetry/stats snapshots, auth/security,
+Status: complete for runtime-native telemetry/stats snapshots, basic auth hooks,
 message ID based duplicate suppression, and bounded retry/ack handling for
 internal runtime control traffic. Bounded per-peer outbound queues now apply
 backpressure by rejecting sends when the queue is full. WebSocket transports now
@@ -545,14 +542,16 @@ rehearsal.
   replay load/store failures
 
 Status: complete for bounded gateway replay, latest-snapshot fallback, and the
-optional gateway replay-storage provider. Remaining production work is broader
-projection recovery hardening, such as durable latest snapshots/event replay
-where deployment needs justify it.
+optional gateway replay-storage port. Durable storage qualification and broader
+projection recovery, such as retaining the latest snapshot across actor-owner
+restart, remain separate work.
 
-### Phase 5: Shared-contract wire promotion
+### Phase 5: Projection wire compatibility
 
-- use shared-contract payloads as the remote projection wire shape
-- prove FAS and Ignite consume the resulting projections unchanged
+- define compatibility with existing gateway frames before changing the
+  wire contract
+- verify affected consumers, including the Ignite projection path; do not make
+  legacy FAS reconfirmation a gate
 
 ### Phase 6: Broker adapter
 
@@ -570,8 +569,8 @@ Current decisions tracked in this doc:
 4. Treat the service-worker runtime example as a topology prove-out, not the
    production deployment model.
 5. Build a direct WebSocket inter-node transport first.
-6. Promote shared-contract shapes on the data plane after the external transport
-   semantics are stable.
+6. Keep projection frames runtime-owned and verify consumers before changing
+   the wire contract.
 7. Add broker-backed transport only after the direct transport path is hardened.
 
 ## Open Questions
@@ -580,8 +579,7 @@ Current decisions tracked in this doc:
    IDs and idempotency early?
 2. Where should durable latest snapshots live for owner restart and replay:
    owner-local persistence, replicated runtime state, or external store?
-3. Should membership remain runtime-owned, or should it plug into external
-   infrastructure discovery from the start?
-4. Do we want a separate gateway transport contract for browser hosts, or should
-   browser hosts consume the same remote projection framing over a narrower edge
-   protocol?
+3. Which deployment-backed discovery adapter and durable membership store should
+   be qualified through the existing provider port?
+4. Which projection frame versions should the existing browser gateway support
+   during a wire migration?

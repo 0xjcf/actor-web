@@ -1,15 +1,17 @@
 /** @jsxImportSource ignite-element/jsx */
 
+import '@ignite-element/renderer/jsx';
 import styles from './fas-agent-loop.css?raw';
-import { startFasAgentLoopExample } from './fas-example-runtime';
+import { startFasBrowserRuntime } from './fas-browser-runtime';
+import type { FasTaskDashboardView } from './fas-contract';
+import type { FasDashboardCommands } from './fas-dashboard';
 
 export const FAS_AGENT_LOOP_ELEMENT_NAME = 'aw-fas-agent-loop';
 
-const runtime = await startFasAgentLoopExample();
-const registerFasAgentLoop = runtime.createDashboard();
+const runtime = startFasBrowserRuntime();
 
 export async function stopFasAgentLoopElementRuntime(): Promise<void> {
-  await runtime.stop();
+  await (await runtime).stop();
 }
 
 function taskInputFromForm(event: Event) {
@@ -34,7 +36,7 @@ function taskInputFromForm(event: Event) {
   };
 }
 
-registerFasAgentLoop(FAS_AGENT_LOOP_ELEMENT_NAME, (view) => {
+function renderDashboard(view: FasTaskDashboardView & Pick<FasDashboardCommands, 'runTask'>) {
   const timeline = view.timeline.slice(0, 8);
 
   return (
@@ -42,11 +44,12 @@ registerFasAgentLoop(FAS_AGENT_LOOP_ELEMENT_NAME, (view) => {
       <style>{styles}</style>
       <main>
         <header>
-          <p class="eyebrow">Actor-Web FAS Agent Loop</p>
-          <h1>Headless-first agent workflow dashboard</h1>
+          <p class="eyebrow">Actor-Web · Integration example</p>
+          <h1>Actor Workflow Dashboard</h1>
           <p class="copy">
-            Submit a deterministic task intent, then watch Actor-Web agents plan, implement, verify,
-            review, and write memory while Ignite Element projects the dashboard view.
+            Headless-first agent workflow dashboard for inspecting coordination. Submit a
+            deterministic task and watch Ignite Element project the coordinator's progress. Tool and
+            timeline results are simulated. This dashboard does not run shell commands.
           </p>
         </header>
 
@@ -77,12 +80,12 @@ registerFasAgentLoop(FAS_AGENT_LOOP_ELEMENT_NAME, (view) => {
                     Add bounded retry support for eligible Actor-Web runtime control messages.
                   </textarea>
                 </label>
-                <button type="submit">Run Agent Loop</button>
+                <button type="submit">Run Workflow</button>
               </form>
             </section>
 
             <section class="panel">
-              <h2>Latest Tool Call</h2>
+              <h2>Latest Simulated Tool Call</h2>
               {view.latestToolCall ? (
                 <article class="item">
                   <strong>{view.latestToolCall.tool}</strong>
@@ -92,7 +95,7 @@ registerFasAgentLoop(FAS_AGENT_LOOP_ELEMENT_NAME, (view) => {
                   </p>
                 </article>
               ) : (
-                <p class="copy">No tool calls yet.</p>
+                <p class="copy">No simulated tool calls yet.</p>
               )}
             </section>
           </div>
@@ -129,7 +132,7 @@ registerFasAgentLoop(FAS_AGENT_LOOP_ELEMENT_NAME, (view) => {
             </section>
 
             <section class="panel">
-              <h2>Timeline</h2>
+              <h2>Simulated Workflow Timeline</h2>
               {timeline.length > 0 ? (
                 <ol class="list">
                   {timeline.map((entry) => (
@@ -151,4 +154,14 @@ registerFasAgentLoop(FAS_AGENT_LOOP_ELEMENT_NAME, (view) => {
       </main>
     </>
   );
+}
+
+export const fasAgentLoopElementReady = runtime.then((started) =>
+  started.createDashboard()(FAS_AGENT_LOOP_ELEMENT_NAME, renderDashboard)
+);
+
+void fasAgentLoopElementReady.catch((error: unknown) => {
+  const element = document.querySelector(FAS_AGENT_LOOP_ELEMENT_NAME);
+  if (element) element.textContent = 'Could not start the agent workflow example.';
+  console.error(error);
 });

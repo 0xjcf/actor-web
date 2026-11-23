@@ -1,0 +1,13 @@
+{
+  "name": "@actor-web/example-portable-specialist",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "demo": "tsc --module node16 --target es2022 --strict --skipLibCheck --outDir dist demo.ts && node dist/demo.js"
+  },
+  "dependencies": {
+    "@actor-web/agent": "workspace:*",
+    "@actor-web/runtime": "workspace:*",
+    "zod": "4.6.7"
+  }
+}

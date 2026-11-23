@@ -13,6 +13,11 @@ custom agent behavior and this package when you want the standard LLM tool loop.
 npm install @actor-web/runtime @actor-web/agent
 ```
 
+The examples below use APIs added after `@actor-web/agent@0.2.1`. If you are
+pinned to `0.2.1`, use `createOpenAiCompatibleLlmProvider` and the Chat
+Completions API. That version does not include Responses support, `START_AGENT`
+with `reset`, or the `./portable`, `./actor-runtime` and `./zod` entry points.
+
 ## Public API
 
 | Export | Use for |
@@ -20,9 +25,10 @@ npm install @actor-web/runtime @actor-web/agent
 | `createAgentLoopBehavior(options?)` | Standard agent loop behavior that accepts `START_AGENT`, observes tool results, and emits agent step/tool events |
 | `createActorAgentToolRegistry({ llm })` | Typed `llm` tool registration for runtime toolboxes |
 | `createActorAgentTools({ llm })` | Runtime-ready tool registry for `startRuntime(..., { tools })` |
-| `createOpenAiCompatibleLlmProvider({ endpoint, model, timeoutMs?, ... })` | Adapter for Ollama and OpenAI-compatible local endpoints without importing provider SDKs |
+| `createLlmProvider({ endpoint, model, timeoutMs?, ... })` | Chat Completions adapter. An endpoint path that ends in `/responses` uses the Responses wire. The host supplies the endpoint, model, and headers |
 | `ACTOR_WEB_LLM_TOOL_NAME` | Stable tool name for the injected LLM provider |
 | `ActorAgent*` types | Message, event, provider, tool-call, tool-definition, and error contracts |
+| `createActorRuntime(options)` from `@actor-web/agent/actor-runtime` | Local executor implementing the portable `AgentRuntime` contract |
 
 ## Usage
 
@@ -63,19 +69,183 @@ Tests may drive the returned behavior directly, but application code should host
 it through an actor or topology so mailbox, tool access, cancellation, and
 supervision stay under the runtime.
 
-## OpenAI-compatible local provider
+## Portable phase definitions
 
-Use `createOpenAiCompatibleLlmProvider()` when the caller already owns endpoint,
-model, headers, and credential policy for an Ollama or OpenAI-compatible MLX
-server.
+`@actor-web/agent/portable` exports `createAgent(runtime, definition)`. Unlike
+`createAgentLoopBehavior`, it does not start an actor or drive a tool loop. Each
+call to `run` sends one turn to the supplied executor, forwarding its signal
+separately from the flat task data, and returns the decoded result. Supply a
+plain data object for the task; `signal` is reserved. The host still owns tool
+grants, cancellation, independent sessions, and acceptance of the candidate.
+
+The [portable tests](tests/portable.test.ts) use supplied functions to exercise
+turn binding, task-aware output checks, and error propagation. A cancellation
+test uses an executor that honors the signal. `createAgent` forwards the
+signal, but does not enforce pre-dispatch abort, reject late output from an
+executor that ignores abort, or wait for cleanup. Those are executor concerns.
+The [specialist execution contract](../../docs/specialist-execution-contract.md)
+specifies what that host must enforce from assignment through settlement.
+
+### Local actor executor
+
+Import `createActorRuntime` and `ActorRuntimeError` from
+`@actor-web/agent/actor-runtime`. Pass the same trusted `definition` you give
+`createAgent`, including any output instructions. Also supply `provider`,
+`encodeTask`, application tool `grants` and implementations, and `limits`:
+`runTimeoutMs`, `askTimeoutMs`, `providerTimeoutMs`, `toolTimeoutMs`, and
+`maxToolCallsPerBatch`. Existing callers of the unreleased executor must also
+supply `maxModelTurns` and `maxPayloadBytes` (positive safe integers) and
+`maxToolAttempts` (a nonnegative safe integer). There are no defaults.
+`askTimeoutMs` is a positive integer capped at 214748364 ms so the 10× local
+correlation fallback fits in the platform timer range. The executor checks its
+active run, ask, provider, and tool deadlines against a monotonic clock.
+If several have elapsed, the
+earliest absolute deadline wins, with the outer operation winning exact ties.
+An expired ask fails with `ACTOR_ASK_FAILED` when it is the winning deadline,
+even if its timer callback has not fired. Caller abort is handled immediately
+when signaled, and a recorded interruption is not replaced.
+
+The encoder and tool validators are synchronous and side-effect-free. Each
+tool's `validateInput(input, task)` checks schema and assignment scope and
+returns `{ value }` or throws. The returned value must be plain JSON data:
+null, booleans, strings, finite numbers, dense arrays, or objects with enumerable
+string-keyed data properties. Containers use the current realm's standard
+prototype, or a null prototype for objects. Cycles and unsupported
+values (for example, `undefined`, accessors, or class instances) fail with
+`INVALID_TOOL_INPUT`. `execute(value, task, context)` receives a detached copy
+for that call and performs the effect. A successful tool result must also be
+plain JSON data that can be serialized into the tool receipt; invalid results
+fail with `INVALID_TOOL_OUTPUT`. Provider tool arguments must be plain JSON
+before the adapter accepts an assistant message. For asynchronous work, the
+handler and provider must return the promise representing that work. The host
+owns the pinned assignment snapshot, stable callback bindings, and the
+acceptance decision.
+
+Each admitted run owns a new actor and local runtime. Only requested, granted,
+implemented application tools are advertised; `llm` is reserved. The executor
+checks and snapshots an entire model tool batch before dispatching effects,
+then runs tools in order. Later failures do not undo earlier effects. It
+rejects duplicate IDs within a session and returns only nonblank final assistant
+text. Execution failures reject with a `code`, retaining provider and coded tool
+failures; no retry or repair is attempted. The optional output parser remains
+separate.
+
+Budgets reset for each admitted run and are cumulative within it:
+
+- `maxModelTurns` counts actual provider calls. Before a tool batch can run,
+  there must still be a model turn available to process its results.
+  A final answer may finish on the last turn. Refusal: `MODEL_TURN_LIMIT`.
+- `maxToolAttempts` counts actual application-tool handler calls; zero
+  permits model-only runs. A validated batch must fit as a whole before any
+  handler runs. Refusal: `TOOL_ATTEMPT_LIMIT`. The per-batch call limit still
+  applies separately. Failed dispatches count; refused dispatches do not.
+- `maxPayloadBytes` counts compact JSON UTF-8 bytes of the normalized provider
+  request (system text, messages, tool names and declarations), each normalized
+  successful assistant message (including tool calls and arguments), and each
+  detached tool input and successful output. Omitted optional fields are
+  omitted from the count. History counts again when resent. SDK/wire framing,
+  diagnostics, credentials, and token usage are excluded.
+  Refusal: `PAYLOAD_BYTE_LIMIT`.
+
+All known tool input bytes must fit before the first effect, and each input is
+checked again immediately before dispatch. A previous tool's output can leave
+too little allowance for the next input. An unknown-size response is checked
+after it returns and before it is forwarded or accepted. These are local
+dispatch and acceptance limits, not heap, network, or remote effect limits.
+
+Abort or timeout rejects the caller and signals the admitted ports. A rejected
+caller promise is not a cleanup receipt: the adapter rejects additional runs
+with `RUNTIME_BUSY` until tracked local work and runtime stop complete. A failed
+start without a runtime handle or a failed stop leaves the instance fenced.
+Neither this fence nor an abort signal establishes remote termination,
+rollback, or settlement of work a port detached from its returned promise.
+
+The [portable specialist example](../../examples/portable-specialist/demo.ts)
+uses this adapter with a scripted provider, two model turns, one in-memory
+read attempt, and a 64 KiB cumulative payload budget. From
+the workspace root, build the runtime and agent packages, then run the demo
+against those built entries:
+
+```sh
+pnpm --filter @actor-web/runtime build
+pnpm --filter @actor-web/agent build
+pnpm --filter @actor-web/example-portable-specialist demo
+```
+
+This local profile does not qualify the full cancellation/settlement contract,
+recovery, correlated evidence, or a live provider. The public-entry build smoke
+uses workspace ESM and CJS consumers and a browser-target bundle; it is not the
+packed-consumer matrix.
+For a browser bundle, statically replace the runtime dependency's
+`process.env.NODE_ENV` references as Vite application builds do. The smoke
+does not provide a Node `process` shim.
+
+For JSON responses, install `zod@^4` and import `structured` from
+`@actor-web/agent/zod`. Neither the package root, `portable`, nor `actor-runtime`
+imports Zod.
+Use a synchronous, JSON-representable schema. Its input schema supplies response
+instructions once at construction; after JSON and schema validation, an optional
+`check` receives the typed content and the assignment. Return a reason to reject.
 
 ```ts
-import {
-  createActorAgentTools,
-  createOpenAiCompatibleLlmProvider,
-} from '@actor-web/agent';
+import { createAgent, type AgentRuntime } from '@actor-web/agent/portable';
+import { structured } from '@actor-web/agent/zod';
+import { z } from 'zod';
 
-const llm = createOpenAiCompatibleLlmProvider({
+type Assignment = {
+  files: readonly { path: string; source: string }[];
+  expertise: { id: string; revision: number; rules: readonly string[] };
+};
+const finding = z.strictObject({ path: z.string(), excerpt: z.string().trim().min(1) });
+const reviewOutput = structured(z.strictObject({ findings: z.array(finding) }), {
+  check({ findings }, task: Assignment) {
+    for (const { path, excerpt } of findings) {
+      if (!task.files.some((f) => f.path === path && f.source.includes(excerpt))) {
+        return `Finding does not cite supplied source: ${path}`;
+      }
+    }
+  },
+});
+
+function createReviewer(runtime: AgentRuntime<Assignment, 'review'>) {
+  return createAgent(runtime, {
+    purpose: 'review',
+    systemPrompt: 'Review the assigned sources and cite each finding.',
+    tools: [],
+    output: reviewOutput,
+  });
+}
+
+const igniteExpertise = {
+  id: 'ignite-element', revision: 1,
+  rules: ['Sending a command expresses intent, not confirmed success.'],
+} as const;
+// Host selects this same expertise for distinct Build and Review assignments.
+// A builder can have scoped write grants; this reviewer requests none.
+```
+
+`reviewer.run({ files, expertise: igniteExpertise, signal })` invokes the
+executor. `reviewOutput.parse(raw, { files, expertise: igniteExpertise })` instead
+checks already-produced text without invoking it. An `AgentOutputError` carries
+`invalidJson`, `schemaMismatch`, or `taskMismatch`; executor errors propagate
+unchanged. No implicit retry, repair, or phase transition occurs.
+
+For a non-JSON protocol use `parse(raw, task)` **instead of** `output`, or pass
+`output: { parse: existingParser }` to reuse the decoder separately. No schema
+instructions are appended in either case unless an output supplies `instructions`.
+
+## LLM provider
+
+Use `createLlmProvider()` when the caller already owns the endpoint, model,
+headers, and credential policy. The adapter speaks Chat Completions, so the
+same call reaches Ollama, MLX, OpenAI, or Grok. An endpoint whose path ends in
+`/responses` speaks the OpenAI Responses API, which is what Codex models
+require. It does not import a provider SDK.
+
+```ts
+import { createActorAgentTools, createLlmProvider } from '@actor-web/agent';
+
+const llm = createLlmProvider({
   endpoint: 'http://127.0.0.1:11434/v1/chat/completions',
   model: 'qwen2.5',
   timeoutMs: 15_000,
@@ -135,9 +305,41 @@ tool-call payload, but it does not execute any capability.
 
 The standard loop accepts:
 
-- `START_AGENT` with a user prompt and optional per-message system override.
-- `OBSERVE_TOOL_RESULT` to feed a prior tool result back into the loop.
+- `START_AGENT` with a user prompt, an optional per-message system override, and
+  optional `reset`. `reset: true` replaces history on a reused actor; it does not
+  create a fresh session or establish that earlier work settled.
+- `OBSERVE_TOOL_RESULT` to record one outstanding call's result. Supply its
+  exact `toolCallId` and `name`; an unknown, ambiguous, misnamed, or already
+  observed call returns `INVALID_TOOL_RESULT` without appending to history.
+  Partial receipts return `waiting-for-tool`. By default the final receipt
+  immediately starts the next model turn.
+- `CONTINUE_AGENT` to run one model turn from paused history, without adding a
+  user message or replaying a tool. It returns `AGENT_NOT_PAUSED` if no
+  continuation is available.
+- `RECONCILE_AGENT_SESSION` to submit a reconciliation receipt when a checkpoint
+  store is configured.
 - `GET_AGENT_CONTEXT` to inspect the loop context.
+
+To let the host decide whether to spend another model turn, send
+`deferContinuation: true` on the **final receipt**:
+
+```ts
+const ack = await agent.ask<ActorAgentLoopReply>({
+  type: 'OBSERVE_TOOL_RESULT', toolCallId: call.id, name: call.name,
+  ok: true, output, deferContinuation: true,
+});
+if (ack.ok && ack.status === 'paused') {
+  // Later, after the host authorizes the next model turn:
+  await agent.ask({ type: 'CONTINUE_AGENT' });
+}
+```
+
+The `paused` acknowledgement contains the recorded tool message and no tool
+calls. Deferral applies only to that receipt, not to later receipts or batches.
+The host may instead send `START_AGENT` with a new instruction (retains history
+unless `reset: true`) or stop the actor. Neither pausing nor restoring a paused
+checkpoint calls the model. This is a boundary between turns, not cancellation
+of in-flight work. Checkpoints written before this feature are not paused.
 
 The loop emits:
 
@@ -145,10 +347,21 @@ The loop emits:
 - `AGENT_TOOL_CALL_REQUESTED`
 - `AGENT_TOOL_RESULT_OBSERVED`
 - `AGENT_STEP_FAILED`
+- `AGENT_SESSION_RECONCILED`
 
 Expected failures are returned as data with `{ ok: false, error }`; providers
 should do the same so runtime hosts can project failures without throwing across
 actor boundaries.
+
+## Checkpoints and cancellation
+
+The loop accepts an optional `checkpoint` configuration with a host-supplied
+store. The [loop tests](src/agent-loop.test.ts) cover checkpoint restore and
+deferral when an effect needs reconciliation. Restoring saved loop state is not
+proof of crash-safe effects or cross-process ownership. An abort or a timeout
+can return control before underlying work has stopped. See the
+[runtime contract](../../docs/provider-neutral-agent-execution-contract.md#semantics)
+for the distinction between dispatch, effect outcome, and reconciliation.
 
 ## Non-goals
 

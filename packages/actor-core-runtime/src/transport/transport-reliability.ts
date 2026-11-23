@@ -1,5 +1,5 @@
-// Functional core (no I/O, no clock, no timers — machine-enforced via .fas-config.json
-// behaviorBoundaries.functionalCore). Pure reliability DECIDERS for the transport core.
+// Functional core (no I/O, no clock, no timers — checked via architecture.boundaries.json
+// deterministicDecision). Pure reliability DECIDERS for the transport core.
 //
 // Each decider is a pure (state, now, cfg) -> verdict function that returns a
 // discriminated-union verdict, mirroring resolveSupervisionDecision

@@ -1,7 +1,8 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defineConfig, type Plugin } from 'vite';
-import { startMeshPongWebSocketHost } from './mesh-pong/modes/websocket';
+import { defineConfig, type Plugin, type ViteDevServer } from 'vite';
+import { clientTracePlugin } from './client-trace-plugin';
+import type { startMeshPongWebSocketHost } from './mesh-pong/modes/websocket-host';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const actorWebRoot = path.resolve(currentDir, '..');
@@ -31,9 +32,9 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
     Awaited<ReturnType<typeof startMeshPongWebSocketHost>>
   > | null = null;
 
-  async function ensureMeshPongWebSocketServer(): Promise<
-    Awaited<ReturnType<typeof startMeshPongWebSocketHost>>
-  > {
+  async function ensureMeshPongWebSocketServer(
+    server: ViteDevServer
+  ): Promise<Awaited<ReturnType<typeof startMeshPongWebSocketHost>>> {
     if (meshPongWebSocketServer) {
       return meshPongWebSocketServer;
     }
@@ -41,7 +42,12 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
       return meshPongWebSocketServerPromise;
     }
 
-    meshPongWebSocketServerPromise = startMeshPongWebSocketHost()
+    // Resolve runtime workspace imports with Vite's aliases, not the config loader.
+    meshPongWebSocketServerPromise = server
+      .ssrLoadModule('/mesh-pong/modes/websocket-host.ts')
+      .then((module) =>
+        (module as typeof import('./mesh-pong/modes/websocket-host')).startMeshPongWebSocketHost()
+      )
       .then((server) => {
         meshPongWebSocketServer = server;
         return server;
@@ -53,15 +59,15 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
     return meshPongWebSocketServerPromise;
   }
 
-  async function meshPongWebSocketStatus() {
+  async function meshPongWebSocketStatus(server: ViteDevServer) {
     try {
-      const server = await ensureMeshPongWebSocketServer();
+      const started = await ensureMeshPongWebSocketServer(server);
       return {
         statusCode: 200,
         body: {
           state: 'ready',
-          transportUrl: server.transportUrl,
-          matchAddress: server.matchAddress,
+          transportUrl: started.transportUrl,
+          matchAddress: started.matchAddress,
         },
       };
     } catch (error) {
@@ -90,14 +96,14 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
         }
 
         if (pathname === MESH_PONG_WEBSOCKET_HELPER_PATH && request.method === 'GET') {
-          const result = await meshPongWebSocketStatus();
+          const result = await meshPongWebSocketStatus(server);
           sendJson(response, result.statusCode, result.body);
           return;
         }
 
         if (pathname === `${MESH_PONG_WEBSOCKET_HELPER_PATH}/flush` && request.method === 'POST') {
           try {
-            const served = await ensureMeshPongWebSocketServer();
+            const served = await ensureMeshPongWebSocketServer(server);
             await served.flush();
             sendJson(response, 200, { ok: true });
           } catch (error) {
@@ -123,87 +129,94 @@ function createMeshPongWebSocketHelperPlugin(): Plugin {
   };
 }
 
-export default defineConfig({
-  root: currentDir,
-  plugins: [createMeshPongWebSocketHelperPlugin()],
-  resolve: {
-    alias: [
-      {
-        find: '@actor-web/runtime/browser',
-        replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/browser.ts'),
-      },
-      {
-        find: '@actor-web/runtime/node',
-        replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/node.ts'),
-      },
-      {
-        find: '@actor-web/runtime/topology',
-        replacement: path.resolve(
-          actorWebRoot,
-          'packages/actor-core-runtime/src/topology-entry.ts'
-        ),
-      },
-      {
-        find: '@actor-web/runtime/event-sourcing',
-        replacement: path.resolve(
-          actorWebRoot,
-          'packages/actor-core-runtime/src/event-sourcing-entry.ts'
-        ),
-      },
-      {
-        find: '@actor-web/runtime',
-        replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/index.ts'),
-      },
-      {
-        find: '@actor-web/agent',
-        replacement: path.resolve(actorWebRoot, 'packages/actor-agent/src/index.ts'),
-      },
-      {
-        find: '@actor-web/lattice',
-        replacement: path.resolve(actorWebRoot, 'packages/actor-lattice/src/index.ts'),
-      },
-      {
-        find: '@actor-web/labs-mesh',
-        replacement: path.resolve(actorWebRoot, 'packages/actor-labs-mesh/src/index.ts'),
-      },
-    ],
-  },
-  server: {
-    fs: {
-      allow: [actorWebRoot],
+export default defineConfig(() => {
+  return {
+    root: currentDir,
+    envDir: actorWebRoot,
+    plugins: [clientTracePlugin(), createMeshPongWebSocketHelperPlugin()],
+    resolve: {
+      alias: [
+        {
+          find: '@actor-web/runtime/browser',
+          replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/browser.ts'),
+        },
+        {
+          find: '@actor-web/runtime/node',
+          replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/node.ts'),
+        },
+        {
+          find: '@actor-web/runtime/topology',
+          replacement: path.resolve(
+            actorWebRoot,
+            'packages/actor-core-runtime/src/topology-entry.ts'
+          ),
+        },
+        {
+          find: '@actor-web/runtime/event-sourcing',
+          replacement: path.resolve(
+            actorWebRoot,
+            'packages/actor-core-runtime/src/event-sourcing-entry.ts'
+          ),
+        },
+        {
+          find: '@actor-web/runtime',
+          replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/index.ts'),
+        },
+        {
+          find: '@actor-web/agent',
+          replacement: path.resolve(actorWebRoot, 'packages/actor-agent/src/index.ts'),
+        },
+        {
+          find: '@actor-web/lattice',
+          replacement: path.resolve(actorWebRoot, 'packages/actor-lattice/src/index.ts'),
+        },
+        {
+          find: '@actor-web/labs-mesh',
+          replacement: path.resolve(actorWebRoot, 'packages/actor-labs-mesh/src/index.ts'),
+        },
+      ],
     },
-  },
-  build: {
-    outDir: path.resolve(currentDir, '../dist/examples'),
-    emptyOutDir: false,
-    rollupOptions: {
-      input: {
-        index: path.resolve(currentDir, 'index.html'),
-        fasAgentLoop: path.resolve(currentDir, 'fas-agent-loop/index.html'),
-        igniteHeadlessHost: path.resolve(currentDir, 'ignite-headless-host/index.html'),
-        igniteHeadlessProvider: path.resolve(currentDir, 'ignite-headless-host/provider.html'),
-        meshPong: path.resolve(currentDir, 'mesh-pong/ui/index.html'),
-        'ignite-headless-host/ignite-headless-host.sw': path.resolve(
-          currentDir,
-          'ignite-headless-host/ignite-headless-host.sw.ts'
-        ),
-        'ignite-headless-host/worker-websocket-runtime': path.resolve(
-          currentDir,
-          'ignite-headless-host/worker-websocket-runtime.ts'
-        ),
+    server: {
+      fs: {
+        allow: [actorWebRoot],
       },
-      output: {
-        entryFileNames: (chunkInfo) => {
-          if (
-            chunkInfo.name === 'ignite-headless-host/ignite-headless-host.sw' ||
-            chunkInfo.name === 'ignite-headless-host/worker-websocket-runtime'
-          ) {
-            return '[name].js';
-          }
+    },
+    worker: {
+      format: 'es',
+    },
+    build: {
+      outDir: path.resolve(currentDir, '../dist/examples'),
+      emptyOutDir: false,
+      rollupOptions: {
+        input: {
+          index: path.resolve(currentDir, 'index.html'),
+          parallelTeams: path.resolve(currentDir, 'parallel-sdlc-teams/index.html'),
+          fasAgentLoop: path.resolve(currentDir, 'fas-agent-loop/index.html'),
+          igniteHeadlessHost: path.resolve(currentDir, 'ignite-headless-host/index.html'),
+          igniteHeadlessProvider: path.resolve(currentDir, 'ignite-headless-host/provider.html'),
+          meshPong: path.resolve(currentDir, 'mesh-pong/ui/index.html'),
+          'ignite-headless-host/ignite-headless-host.sw': path.resolve(
+            currentDir,
+            'ignite-headless-host/ignite-headless-host.sw.ts'
+          ),
+          'ignite-headless-host/worker-websocket-runtime': path.resolve(
+            currentDir,
+            'ignite-headless-host/worker-websocket-runtime.ts'
+          ),
+        },
+        output: {
+          entryFileNames: (chunkInfo) => {
+            if (
+              chunkInfo.name === 'ignite-headless-host/ignite-headless-host.sw' ||
+              chunkInfo.name === 'ignite-headless-host/worker-websocket-runtime'
+            ) {
+              return '[name].js';
+            }
 
-          return 'assets/[name]-[hash].js';
+            return 'assets/[name]-[hash].js';
+          },
         },
       },
     },
-  },
+  };
 });

@@ -1,5 +1,5 @@
 import type { LatticeEvent } from '@actor-web/lattice';
-import { defineBehavior, defineFSM } from '@actor-web/runtime';
+import { defineBehavior, defineFSM } from '@actor-web/runtime/browser';
 import type {
   ActorWebAllowedToolRegistry,
   ActorWebTypedDefineActor,
@@ -508,7 +508,7 @@ export function createPlannerAgentBehavior(defineBehavior: PlannerDefineActor) {
   return defineBehavior<PlannerAgentCommand, FasTaskEvent>()
     .onMessage(({ message }) => {
       const plan: FasPlan = {
-        summary: `Plan ${message.taskId} with deterministic FAS stages`,
+        summary: `Plan ${message.taskId} with scripted workflow stages`,
         steps: ['inspect task brief', 'prepare patch', 'run verification', 'review diff'],
       };
       return {

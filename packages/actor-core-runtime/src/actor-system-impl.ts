@@ -67,6 +67,7 @@ import { isLocalAddress, parseActorPath } from './actor-system.js';
 import { createGuardianActor, GUARDIAN_ADDRESS } from './actor-system-guardian.js';
 import { type ActorToolRegistry, createActorToolbox } from './actor-tools.js';
 import { createSystemEventActor, type SystemEventPayload } from './actors/system-event-actor.js';
+import { createAskTimeout } from './ask-pattern-safeguards.js';
 // ✅ UNIFIED API DESIGN Phase 2.1: Auto-publishing system for event subscriptions
 import { AutoPublishingRegistry } from './auto-publishing.js';
 import { ContextActor } from './context-actor.js';
@@ -2170,9 +2171,6 @@ export class ActorSystemImpl implements ActorSystem {
     message: ActorMessage,
     timeout: number
   ): Promise<T> {
-    // Import ask pattern safeguards
-    const { createAskTimeout } = await import('./ask-pattern-safeguards.js');
-
     // Generate correlation ID
     const correlationId = this.correlationManager.generateId();
     log.debug('🔍 ASK: Generated correlationId:', correlationId);
@@ -5000,8 +4998,29 @@ export class ActorSystemImpl implements ActorSystem {
           }
         }
       },
-      ask: async <T>(_to: unknown, _message: ActorMessage, _timeout?: number) => {
-        return Promise.resolve({} as T);
+      ask: async <T>(to: unknown, message: ActorMessage, timeout?: number) => {
+        const askTimeout = timeout ?? this.config.defaultAskTimeout ?? 5000;
+        const askMessage = message as Message;
+        if (to instanceof ActorPIDImpl) {
+          return to.ask<T>(askMessage, askTimeout);
+        }
+        if (typeof to === 'object' && to !== null && 'ask' in to && typeof to.ask === 'function') {
+          return (to as { ask: (msg: Message, timeout?: number) => Promise<T> }).ask(
+            askMessage,
+            askTimeout
+          );
+        }
+        if (typeof to === 'string') {
+          const actorRef = await this.lookup(to);
+          if (!actorRef) {
+            throw new Error(`Unable to resolve actor "${to}" for dependency ask.`);
+          }
+          if (actorRef instanceof ActorPIDImpl) {
+            return actorRef.ask<T>(askMessage, askTimeout);
+          }
+          return actorRef.ask<T>(askMessage, askTimeout);
+        }
+        throw new Error('Unable to resolve actor for dependency ask.');
       },
       tools: createActorToolbox(
         this.config.tools,

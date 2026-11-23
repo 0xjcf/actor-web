@@ -23,7 +23,8 @@
     "paths": {
       "@actor-web/agent": ["packages/actor-agent/src/index.ts"],
       "@actor-web/runtime": ["packages/actor-core-runtime/src/index.ts"],
-      "@actor-web/runtime/browser": ["packages/actor-core-runtime/src/browser.ts"]
+      "@actor-web/runtime/browser": ["packages/actor-core-runtime/src/browser.ts"],
+      "@actor-web/runtime/topology": ["packages/actor-core-runtime/src/topology-entry.ts"]
     }
   },
   "include": ["src/**/*"],

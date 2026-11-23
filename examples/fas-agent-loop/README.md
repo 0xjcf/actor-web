@@ -1,10 +1,15 @@
-# FAS Agent Loop Coordination Modes
+# Actor Workflow Dashboard
 
-This example keeps the existing runtime demo as the orchestration baseline and
-adds lattice declarations beside it so the same Research -> Planning -> Coding
--> Review workflow can be inspected in three coordination styles.
+This integration example pairs headless Actor-Web state with an Ignite Element
+dashboard. The browser page projects the orchestration baseline; the accompanying
+topology also demonstrates lattice and hybrid coordination. For the SDLC learning
+path, start with [Parallel SDLC Teams](../parallel-sdlc-teams/index.html) instead.
 
 ## Orchestration baseline
+
+The browser dashboard starts both nodes in-process with `startRuntime`. The
+Node integration fixture still uses real WebSocket transports and a gateway.
+Both hosts run the same task loop.
 
 `startFasAgentLoopExample()` drives the workflow directly:
 
@@ -14,8 +19,8 @@ adds lattice declarations beside it so the same Research -> Planning -> Coding
 - Validation failures and review rejection loop back to `implementerAgent`.
 - The deterministic tool registry keeps the example reproducible.
 
-This is the near-term FAS control-plane shape: one coordinator owns ordering,
-timeouts, retries, and user-facing progress.
+One coordinator owns ordering, timeouts, retries, and the progress projected to
+the dashboard.
 
 The example now points at the neutral CLI v3 conformance surface in
 `@actor-web/testing` rather than treating this topology as the runtime contract
@@ -53,5 +58,5 @@ only to describe the artifact contract rather than one task instance.
 - Budget, timeout, cancellation, and human gates stay with the coordinator.
 
 No runtime mode switch is required. The hybrid coordinator is just another actor
-declaring an artifact dependency while retaining direct ask/send where FAS needs
-transactional control.
+declaring an artifact dependency while retaining direct ask/send for transactional
+control.

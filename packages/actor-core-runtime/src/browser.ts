@@ -3,6 +3,7 @@ export type {
   ActorRef,
 } from './actor-ref.js';
 export type {
+  ActorAddress,
   ActorMessage,
   ActorSystem,
   ClusterState,
@@ -159,6 +160,10 @@ export {
   toAgentExecutionReceiptFromEventEnvelope,
   validateAgentExecutionTrace,
 } from './agent-execution-contract.js';
+export {
+  createAgentSessionCheckpointEnvelope,
+  deriveAgentSessionCheckpointRehydration,
+} from './agent-session-checkpoint-store.js';
 export type {
   BroadcastChannelLike,
   BroadcastChannelMessageTransportOptions,
@@ -399,6 +404,7 @@ export {
   type UnifiedTransitionHandler,
   type UnifiedTransitionHandlers,
 } from './unified-actor-builder.js';
+export { Address, parse } from './utils/factories.js';
 export type {
   WebRtcDataChannelBootstrap,
   WebRtcDataChannelLike,

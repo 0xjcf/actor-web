@@ -44,7 +44,9 @@ assert.equal(
 
 // Smoke-load the main entry both ways so a broken/empty bundle fails loudly.
 const requireFn = createRequire(pkgPath);
-const cjsTarget = pkg.exports?.['.']?.require ?? pkg.main;
+const runtimeTarget = (condition) =>
+  typeof condition === 'string' ? condition : condition?.default;
+const cjsTarget = runtimeTarget(pkg.exports?.['.']?.require) ?? pkg.main;
 if (cjsTarget) {
   const mod = requireFn(resolve(packageDir, cjsTarget));
   assert.ok(
@@ -53,7 +55,7 @@ if (cjsTarget) {
   );
 }
 
-const esmTarget = pkg.exports?.['.']?.import ?? pkg.module;
+const esmTarget = runtimeTarget(pkg.exports?.['.']?.import) ?? pkg.module;
 if (esmTarget) {
   const mod = await import(pathToFileURL(resolve(packageDir, esmTarget)).href);
   assert.ok(

@@ -1,0 +1,192 @@
+.back-link {
+  color: #bfdbfe;
+  font-size: 0.875rem;
+  text-underline-offset: 0.2em;
+}
+
+.demo-controls,
+.registry-note {
+  margin-bottom: 16px;
+}
+
+.demo-controls p,
+.registry-note p {
+  margin: 8px 0 0;
+  color: #cbd5e1;
+}
+
+.registry-note h2 {
+  margin: 0;
+}
+
+#definition-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  padding: 0;
+  gap: 8px;
+  list-style: none;
+}
+
+#definition-list:empty {
+  display: none;
+}
+
+#definition-list details {
+  border: 1px solid #334155;
+  border-radius: 7px;
+  padding: 8px 12px;
+}
+
+#definition-list summary {
+  cursor: pointer;
+}
+
+.failure-option {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 4px;
+}
+
+.toolbar .failure-option input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #60a5fa;
+}
+
+.teams-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+  align-items: start;
+}
+
+.team-lane {
+  min-width: 0;
+}
+
+.lane-heading,
+.stage-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.lane-heading h2 {
+  margin: 2px 0 0;
+  font-size: 1.375rem;
+}
+
+.task-version,
+.team-address,
+.stage-definition,
+.stage-session {
+  color: #a9c5df;
+  font:
+    0.78rem ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  overflow-wrap: anywhere;
+}
+
+.task-version,
+.task-request {
+  margin: 0;
+}
+
+.task-request {
+  margin-top: 8px;
+  color: #cbd5e1;
+}
+
+.team-address {
+  margin: 6px 0 0;
+}
+
+.stage-session,
+.stage-grants {
+  margin: 4px 0 0;
+}
+
+.stage-grants {
+  color: #cbd5e1;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.stage-list {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stage-row {
+  min-height: 73px;
+  padding: 8px 12px;
+  border: 1px solid #334155;
+  border-left: 3px solid #475569;
+  border-radius: 7px;
+  background: #101b2d;
+}
+
+.badge {
+  border-radius: 20px;
+  padding: 3px 9px;
+  background: #28374d;
+  color: #dbe5f3;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+[data-state="running"] .badge,
+.badge[data-state="running"] {
+  background: #19394a;
+  color: #a5f3fc;
+}
+
+.stage-row[data-state="running"] {
+  border-color: #38bdf8;
+  background: #152c3e;
+}
+
+.stage-row[data-state="completed"] {
+  border-left-color: #34d399;
+}
+
+[data-state="completed"] .badge,
+.badge[data-state="completed"] {
+  background: #163b32;
+  color: #a7f3d0;
+}
+
+.stage-row[data-state="refused"] {
+  border-left-color: #fb7185;
+}
+
+[data-state="refused"] .badge,
+.badge[data-state="refused"] {
+  background: #4a2338;
+  color: #fecdd3;
+}
+
+.stage-output {
+  margin: 4px 0 0;
+  color: #e2e8f0;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 680px) {
+  .teams-grid {
+    grid-template-columns: 1fr;
+  }
+}

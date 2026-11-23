@@ -13,7 +13,8 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm && tsc --emitDeclarationOnly && node ../../scripts/verify-exports.mjs .",
+    "build": "tsc --emitDeclarationOnly && tsup && node scripts/write-cjs-types.mjs && node ../../scripts/verify-exports.mjs . && pnpm test:public-entries",
+    "test:public-entries": "tsc --noEmit --strict --module node16 --target es2022 tests/consume-portable.mts tests/consume-portable.cts && node tests/verify-portable.mjs && node tests/verify-actor-runtime.mjs",
     "build:watch": "pnpm build --watch",
     "dev": "vitest --watch",
     "test": "vitest run",
@@ -35,12 +36,21 @@
   "dependencies": {
     "@actor-web/runtime": "workspace:*"
   },
+  "peerDependencies": {
+    "zod": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "zod": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@biomejs/biome": "^1.8.0",
     "@types/node": "^20.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.3.0",
-    "vitest": "^2.1.4"
+    "vitest": "^2.1.4",
+    "zod": "4.6.7"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -59,9 +69,44 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./portable": {
+      "import": {
+        "types": "./dist/portable.d.ts",
+        "default": "./dist/portable.js"
+      },
+      "require": {
+        "types": "./dist/portable.d.cts",
+        "default": "./dist/portable.cjs"
+      }
+    },
+    "./actor-runtime": {
+      "import": {
+        "types": "./dist/actor-runtime.d.ts",
+        "default": "./dist/actor-runtime.js"
+      },
+      "require": {
+        "types": "./dist/actor-runtime.d.cts",
+        "default": "./dist/actor-runtime.cjs"
+      }
+    },
+    "./zod": {
+      "import": {
+        "types": "./dist/zod.d.ts",
+        "default": "./dist/zod.js"
+      },
+      "require": {
+        "types": "./dist/zod.d.cts",
+        "default": "./dist/zod.cjs"
+      }
     }
   }
 }

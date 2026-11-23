@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createOpenAiCompatibleLlmProvider } from '../src/index.js';
+import { createLlmProvider } from '../src/index.js';
 
 const LIVE_PROVIDER_TIMEOUT_MS = 15_000;
 const LIVE_TEST_TIMEOUT_MS = 20_000;
@@ -33,7 +33,7 @@ liveDescribe('openai-compatible live conformance', () => {
       expect(endpoint).toBeTruthy();
       expect(model).toBeTruthy();
 
-      const provider = createOpenAiCompatibleLlmProvider({
+      const provider = createLlmProvider({
         endpoint: endpoint as string,
         model: model as string,
         timeoutMs: LIVE_PROVIDER_TIMEOUT_MS,

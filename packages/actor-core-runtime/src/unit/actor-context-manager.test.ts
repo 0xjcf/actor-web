@@ -188,4 +188,34 @@ describe('FallbackContextStorage', () => {
     ]);
     expect(storage.getStore()).toBeUndefined();
   });
+
+  it('runs a nested ask while the caller is still awaiting the reply', async () => {
+    const storage = new FallbackContextStorage<ActorContext>();
+    const outer = createContext('outer-actor');
+    const inner = createContext('inner-actor');
+    const askInner = () =>
+      storage.runAsync(inner, async () => {
+        expect(storage.getStore()).toEqual(inner);
+        await Promise.resolve();
+        expect(storage.getStore()).toEqual(inner);
+        return 'inner-done';
+      });
+
+    const pending = storage.runAsync(outer, async () => {
+      expect(storage.getStore()).toEqual(outer);
+      const reply = await askInner();
+      expect(storage.getStore()).toEqual(outer);
+      return reply;
+    });
+
+    await expect(
+      Promise.race([
+        pending,
+        new Promise<string>((_resolve, reject) => {
+          setTimeout(() => reject(new Error('nested ask did not return')), 1000);
+        }),
+      ])
+    ).resolves.toBe('inner-done');
+    expect(storage.getStore()).toBeUndefined();
+  });
 });
