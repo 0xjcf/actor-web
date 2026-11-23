@@ -308,10 +308,38 @@ The standard loop accepts:
 - `START_AGENT` with a user prompt, an optional per-message system override, and
   optional `reset`. `reset: true` replaces history on a reused actor; it does not
   create a fresh session or establish that earlier work settled.
-- `OBSERVE_TOOL_RESULT` to feed a prior tool result back into the loop.
+- `OBSERVE_TOOL_RESULT` to record one outstanding call's result. Supply its
+  exact `toolCallId` and `name`; an unknown, ambiguous, misnamed, or already
+  observed call returns `INVALID_TOOL_RESULT` without appending to history.
+  Partial receipts return `waiting-for-tool`. By default the final receipt
+  immediately starts the next model turn.
+- `CONTINUE_AGENT` to run one model turn from paused history, without adding a
+  user message or replaying a tool. It returns `AGENT_NOT_PAUSED` if no
+  continuation is available.
 - `RECONCILE_AGENT_SESSION` to submit a reconciliation receipt when a checkpoint
   store is configured.
 - `GET_AGENT_CONTEXT` to inspect the loop context.
+
+To let the host decide whether to spend another model turn, send
+`deferContinuation: true` on the **final receipt**:
+
+```ts
+const ack = await agent.ask<ActorAgentLoopReply>({
+  type: 'OBSERVE_TOOL_RESULT', toolCallId: call.id, name: call.name,
+  ok: true, output, deferContinuation: true,
+});
+if (ack.ok && ack.status === 'paused') {
+  // Later, after the host authorizes the next model turn:
+  await agent.ask({ type: 'CONTINUE_AGENT' });
+}
+```
+
+The `paused` acknowledgement contains the recorded tool message and no tool
+calls. Deferral applies only to that receipt, not to later receipts or batches.
+The host may instead send `START_AGENT` with a new instruction (retains history
+unless `reset: true`) or stop the actor. Neither pausing nor restoring a paused
+checkpoint calls the model. This is a boundary between turns, not cancellation
+of in-flight work. Checkpoints written before this feature are not paused.
 
 The loop emits:
 
