@@ -1,5 +1,14 @@
-import { type ActorRuntimeOptions, createActorRuntime } from '@actor-web/agent/actor-runtime';
-import { type AgentRuntime, createAgent, type FocusedAgent } from '@actor-web/agent/portable';
+import {
+  type ActorRuntimeOptions,
+  type ActorRuntimeSettlement,
+  createActorRuntime,
+} from '@actor-web/agent/actor-runtime';
+import {
+  type AgentRuntime,
+  type AgentTurn,
+  createAgent,
+  type FocusedAgent,
+} from '@actor-web/agent/portable';
 import { structured } from '@actor-web/agent/zod';
 import { z } from 'zod';
 
@@ -33,12 +42,16 @@ const modelTurns: number = maxModelTurns;
 void modelTurns;
 // @ts-expect-error The model-turn limit is required.
 createActorRuntime({ ...actorOptions, limits: missingModelTurns });
-const actorRuntime: AgentRuntime<Task, 'review'> = createActorRuntime(actorOptions);
-const raw: Promise<string> = actorRuntime.run({
+const local = createActorRuntime(actorOptions);
+const actorRuntime: AgentRuntime<Task, 'review'> = local;
+const turn: AgentTurn<Task, 'review'> = {
   purpose: 'review',
   systemPrompt: actorOptions.definition.systemPrompt,
   tools: [],
   task: { allowedPaths: [] },
   signal: new AbortController().signal,
-});
+};
+const raw: Promise<string> = actorRuntime.run(turn);
+const cleanup: Promise<ActorRuntimeSettlement> = local.start(turn).waitForSettlement(0);
 void raw;
+void cleanup;

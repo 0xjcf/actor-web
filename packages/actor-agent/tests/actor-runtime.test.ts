@@ -1142,8 +1142,62 @@ describe('local actor runtime executor', () => {
     await expect(first).resolves.toBe('first');
   });
 
+  it('reports pre-abort and invalid bindings without starting a local session', async () => {
+    const provider = vi.fn<ActorAgentLlmProvider>();
+    const { make, execute } = fixture(provider);
+    const runtime = make();
+    const control = new AbortController();
+    control.abort();
+    const stopped = runtime.start(turn('first', control.signal));
+    await expect(stopped.waitForSettlement(0)).resolves.toEqual({ status: 'not-admitted' });
+    await expect(stopped.result).rejects.toMatchObject({ code: 'RUN_ABORTED' });
+    const wrongDefinition = runtime.start({ ...turn(), systemPrompt: 'wrong definition' });
+    await expect(wrongDefinition.result).rejects.toMatchObject({ code: 'DEFINITION_MISMATCH' });
+    await expect(wrongDefinition.waitForSettlement(0)).resolves.toEqual({ status: 'not-admitted' });
+    expect(runtimeStart).not.toHaveBeenCalled();
+    expect(provider).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('does not confuse an unconfirmed start with local settlement', async () => {
+    runtimeStart.mockRejectedValueOnce(new Error('No runtime handle was returned.'));
+    const provider = vi.fn<ActorAgentLlmProvider>();
+    const runtime = fixture(provider).make();
+    const first = runtime.start(turn());
+    await expect(first.result).rejects.toMatchObject({ code: 'RUNTIME_START_FAILED' });
+    await expect(first.waitForSettlement(0)).resolves.toEqual({
+      status: 'unresolved',
+      reason: 'runtime-start-failed',
+    });
+    await expect(runtime.run(turn())).rejects.toMatchObject({ code: 'RUNTIME_BUSY' });
+    expect(provider).not.toHaveBeenCalled();
+    expect(runtimeStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('expires an observation without stopping healthy work', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const entered = deferred<AbortSignal>();
+    const reply = deferred<ActorAgentLlmResult>();
+    const provider = vi.fn<ActorAgentLlmProvider>((_request, { signal }) => {
+      entered.resolve(signal);
+      return reply.promise;
+    });
+    const runtime = fixture(provider).make();
+    const first = runtime.start(turn());
+    const signal = await entered.promise;
+    const waiting = first.waitForSettlement(5);
+    await vi.advanceTimersByTimeAsync(5);
+    await expect(waiting).resolves.toEqual({ status: 'unresolved', reason: 'wait-timeout' });
+    expect(signal.aborted).toBe(false);
+    reply.resolve(assistant('on time'));
+    await expect(first.result).resolves.toBe('on time');
+    await expect(first.waitForSettlement(0)).resolves.toEqual({ status: 'settled' });
+    expect(provider).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ['caller abort', 'RUN_ABORTED', 'provider', 'reject'],
+    ['caller abort', 'RUN_ABORTED', 'tool', 'resolve'],
     ['provider timeout', 'PROVIDER_TIMEOUT', 'provider', 'resolve'],
     ['actor ask timeout', 'ACTOR_ASK_FAILED', 'provider', 'resolve'],
     ['assignment timeout', 'RUN_TIMEOUT', 'tool', 'resolve'],
@@ -1179,9 +1233,8 @@ describe('local actor runtime executor', () => {
     });
     const control = new AbortController();
     const runtime = make();
-    const rejected = expect(runtime.run(turn('first', control.signal))).rejects.toMatchObject({
-      code,
-    });
+    const first = runtime.start(turn('first', control.signal));
+    const rejected = expect(first.result).rejects.toMatchObject({ code });
     const admittedSignal = await started.promise;
     if (kind === 'caller abort') control.abort();
     else await vi.advanceTimersByTimeAsync(10);
@@ -1193,11 +1246,21 @@ describe('local actor runtime executor', () => {
     const host = await runtimeStart.mock.results[0]?.value;
     expect(host.getActor('specialist')).toBeUndefined();
     // Teardown returned; this still must not admit while the actual port promise is pending.
-    await expect(runtime.run(turn('busy'))).rejects.toMatchObject({ code: 'RUNTIME_BUSY' });
+    const shortWait = first.waitForSettlement(10);
+    const longWait = first.waitForSettlement(30);
+    await expect(first.waitForSettlement(-1)).rejects.toMatchObject({
+      code: 'INVALID_SETTLEMENT_WAIT',
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(shortWait).resolves.toEqual({ status: 'unresolved', reason: 'wait-timeout' });
+    const overlap = runtime.start(turn('busy'));
+    await expect(overlap.result).rejects.toMatchObject({ code: 'RUNTIME_BUSY' });
+    await expect(overlap.waitForSettlement(0)).resolves.toEqual({ status: 'not-admitted' });
     expect(provider).toHaveBeenCalledTimes(1);
     if (settle === 'resolve') raw.resolve(assistant('late must not be accepted', [call()]));
     else raw.reject(new Error('late rejection'));
     await vi.advanceTimersByTimeAsync(0);
+    await expect(longWait).resolves.toEqual({ status: 'settled' });
     expect(provider).toHaveBeenCalledTimes(1);
     expect(execute).toHaveBeenCalledTimes(port === 'tool' ? 1 : 0);
     await expect(runtime.run(turn('replacement'))).resolves.toBe('fresh');
@@ -1227,17 +1290,19 @@ describe('local actor runtime executor', () => {
     const provider = vi.fn<ActorAgentLlmProvider>(() => assistant('reply'));
     const control = new AbortController();
     const runtime = fixture(provider).make();
-    const rejected = expect(runtime.run(turn('first', control.signal))).rejects.toMatchObject({
-      code: 'RUN_ABORTED',
-    });
+    const first = runtime.start(turn('first', control.signal));
+    const rejected = expect(first.result).rejects.toMatchObject({ code: 'RUN_ABORTED' });
     await stopRequested.promise;
     control.abort();
     await rejected;
+    await expect(first.waitForSettlement(0)).resolves.toEqual({
+      status: 'unresolved',
+      reason: 'wait-timeout',
+    });
     await expect(runtime.run(turn('busy'))).rejects.toMatchObject({ code: 'RUNTIME_BUSY' });
     stopGate.resolve();
     await stopped.promise;
-    // Let the owned run observe resolution of stop and release admission.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await expect(first.waitForSettlement(500)).resolves.toEqual({ status: 'settled' });
     await expect(runtime.run(turn('replacement'))).resolves.toBe('reply');
     expect(provider).toHaveBeenCalledTimes(2);
   });
@@ -1262,15 +1327,19 @@ describe('local actor runtime executor', () => {
     const control = new AbortController();
     const provider = vi.fn<ActorAgentLlmProvider>(() => assistant('fresh'));
     const runtime = fixture(provider).make();
-    const rejected = expect(runtime.run(turn('first', control.signal))).rejects.toMatchObject({
-      code: 'RUN_ABORTED',
-    });
+    const first = runtime.start(turn('first', control.signal));
+    const rejected = expect(first.result).rejects.toMatchObject({ code: 'RUN_ABORTED' });
     expect(runtimeStart).toHaveBeenCalledTimes(1);
     control.abort();
     await rejected;
+    await expect(first.waitForSettlement(0)).resolves.toEqual({
+      status: 'unresolved',
+      reason: 'wait-timeout',
+    });
     await expect(runtime.run(turn('busy'))).rejects.toMatchObject({ code: 'RUNTIME_BUSY' });
     startup.resolve();
     await stopped.promise;
+    await expect(first.waitForSettlement(500)).resolves.toEqual({ status: 'settled' });
     expect(provider).not.toHaveBeenCalled();
   });
 
@@ -1290,7 +1359,12 @@ describe('local actor runtime executor', () => {
     });
     const provider = vi.fn<ActorAgentLlmProvider>(() => assistant('not accepted'));
     const runtime = fixture(provider).make();
-    await expect(runtime.run(turn())).rejects.toMatchObject({ code: 'RUNTIME_STOP_FAILED' });
+    const first = runtime.start(turn());
+    await expect(first.result).rejects.toMatchObject({ code: 'RUNTIME_STOP_FAILED' });
+    await expect(first.waitForSettlement(0)).resolves.toEqual({
+      status: 'unresolved',
+      reason: 'runtime-stop-failed',
+    });
     await expect(runtime.run(turn())).rejects.toMatchObject({ code: 'RUNTIME_BUSY' });
     expect(runtimeStart).toHaveBeenCalledTimes(1);
     expect(provider).toHaveBeenCalledTimes(1);

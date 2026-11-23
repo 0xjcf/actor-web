@@ -117,6 +117,26 @@ export interface ActorRuntimeOptions<Task, Purpose extends string> {
   readonly limits: ActorRuntimeLimits;
 }
 
+/** Local cleanup facts for this invocation, not proof of a remote effect outcome. */
+export type ActorRuntimeSettlement =
+  | { readonly status: 'not-admitted' }
+  | { readonly status: 'settled' }
+  | {
+      readonly status: 'unresolved';
+      readonly reason: 'wait-timeout' | 'runtime-start-failed' | 'runtime-stop-failed';
+    };
+
+export interface ActorRuntimeExecution {
+  readonly result: Promise<string>;
+  /** Wait for local cleanup independently of the result. Zero makes an immediate observation. */
+  readonly waitForSettlement: (timeoutMs: number) => Promise<ActorRuntimeSettlement>;
+}
+
+export interface LocalActorRuntime<Task, Purpose extends string = string>
+  extends AgentRuntime<Task, Purpose> {
+  readonly start: (turn: AgentTurn<Task, Purpose>) => ActorRuntimeExecution;
+}
+
 export class ActorRuntimeError extends Error {
   constructor(
     readonly code: string,
@@ -132,6 +152,49 @@ const localNode = 'portable-agent';
 const maxTimerMs = 2_147_483_647;
 // The local actor ask schedules a correlation fallback at ten times the requested delay.
 const maxAskTimeoutMs = Math.floor(maxTimerMs / 10);
+
+const settlementWaitExpired = Object.freeze({
+  status: 'unresolved',
+  reason: 'wait-timeout',
+} as const);
+
+function createSettlementObserver() {
+  let final: ActorRuntimeSettlement | undefined;
+  const listeners = new Set<(value: ActorRuntimeSettlement) => void>();
+  return {
+    finish(value: ActorRuntimeSettlement): void {
+      final = Object.freeze(value);
+      for (const notify of listeners) notify(final);
+    },
+    async waitForSettlement(timeoutMs: number): Promise<ActorRuntimeSettlement> {
+      if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > maxTimerMs) {
+        throw new ActorRuntimeError(
+          'INVALID_SETTLEMENT_WAIT',
+          `Settlement wait must be an integer from 0 to ${maxTimerMs} ms.`
+        );
+      }
+      if (final || timeoutMs === 0) return final ?? settlementWaitExpired;
+      const until = performance.now() + timeoutMs;
+      return new Promise((resolve) => {
+        const finish = (value: ActorRuntimeSettlement) => {
+          listeners.delete(notify);
+          clearTimeout(timer);
+          resolve(value);
+        };
+        const notify = (value: ActorRuntimeSettlement) => {
+          finish(performance.now() < until ? value : settlementWaitExpired);
+        };
+        const expire = () => {
+          const remaining = until - performance.now();
+          if (remaining > 0) timer = setTimeout(expire, Math.ceil(remaining));
+          else finish(settlementWaitExpired);
+        };
+        let timer = setTimeout(expire, timeoutMs);
+        listeners.add(notify);
+      });
+    },
+  };
+}
 
 function invalidConfig(message: string): never {
   throw new ActorRuntimeError('INVALID_RUNTIME_CONFIG', message);
@@ -768,7 +831,7 @@ async function driveLoop<Task>(
 /** One fresh, owned local actor session per admitted portable invocation. */
 export function createActorRuntime<Task, Purpose extends string>(
   options: ActorRuntimeOptions<Task, Purpose>
-): AgentRuntime<Task, Purpose> {
+): LocalActorRuntime<Task, Purpose> {
   const config = bindConfig(options);
   const implementations = new Map(
     config.effective.map(({ implementation }) => [implementation.name, implementation])
@@ -776,24 +839,35 @@ export function createActorRuntime<Task, Purpose extends string>(
   const names = [ACTOR_WEB_LLM_TOOL_NAME, ...implementations.keys()];
   let active = false;
 
-  return {
-    async run(turn): Promise<string> {
-      if (active) throw new ActorRuntimeError('RUNTIME_BUSY', 'The runtime is active or fenced.');
-      if (!(turn?.signal instanceof AbortSignal)) {
-        throw new ActorRuntimeError('INVALID_TURN', 'An explicit AbortSignal is required.');
-      }
-      if (turn.signal.aborted) {
-        throw new ActorRuntimeError(
-          'RUN_ABORTED',
-          'The assignment was aborted.',
-          turn.signal.reason
-        );
+  const executor = {
+    async run(
+      turn: AgentTurn<Task, Purpose>,
+      publish?: (value: ActorRuntimeSettlement) => void
+    ): Promise<string> {
+      let callerSignal: AbortSignal;
+      try {
+        if (active) throw new ActorRuntimeError('RUNTIME_BUSY', 'The runtime is active or fenced.');
+        callerSignal = turn?.signal;
+        if (!(callerSignal instanceof AbortSignal)) {
+          throw new ActorRuntimeError('INVALID_TURN', 'An explicit AbortSignal is required.');
+        }
+        if (callerSignal.aborted) {
+          throw new ActorRuntimeError(
+            'RUN_ABORTED',
+            'The assignment was aborted.',
+            callerSignal.reason
+          );
+        }
+      } catch (cause) {
+        publish?.({ status: 'not-admitted' });
+        throw cause;
       }
 
       active = true;
-      const scope = createRunScope(turn.signal, config.limits.runTimeoutMs);
+      const scope = createRunScope(callerSignal, config.limits.runTimeoutMs);
       const budget = createBudget(config.limits);
-      let canRelease = true;
+      let startAttempted = false;
+      let unconfirmed: 'runtime-start-failed' | 'runtime-stop-failed' | undefined;
       const runOwned = async () => {
         verifyTurn(config, turn);
         scope.check();
@@ -893,17 +967,20 @@ export function createActorRuntime<Task, Purpose extends string>(
           );
         };
         scope.check();
-        const host = await startRuntime(topology, { tools: { ...applicationTools, llm } }).catch(
-          (cause: unknown) => {
-            // A failed start does not give us a runtime handle to verify closure.
-            canRelease = false;
-            throw new ActorRuntimeError(
-              'RUNTIME_START_FAILED',
-              'Could not start the local runtime.',
-              cause
-            );
-          }
-        );
+        startAttempted = true;
+        const startOwned = () => startRuntime(topology, { tools: { ...applicationTools, llm } });
+        let host: Awaited<ReturnType<typeof startOwned>>;
+        try {
+          host = await startOwned();
+        } catch (cause) {
+          // A failed start does not give us a runtime handle to verify closure.
+          unconfirmed = 'runtime-start-failed';
+          throw new ActorRuntimeError(
+            'RUNTIME_START_FAILED',
+            'Could not start the local runtime.',
+            cause
+          );
+        }
         let outcome: { ok: true; text: string } | { ok: false; error: unknown };
         try {
           scope.check();
@@ -936,7 +1013,7 @@ export function createActorRuntime<Task, Purpose extends string>(
         try {
           await host.stop();
         } catch (cause) {
-          canRelease = false;
+          unconfirmed = 'runtime-stop-failed';
           // Retain a primary rejection, but do not admit another run.
           if (outcome.ok) {
             outcome = {
@@ -955,7 +1032,12 @@ export function createActorRuntime<Task, Purpose extends string>(
         return outcome.text;
       };
       const managed = runOwned().finally(() => {
-        if (canRelease) active = false;
+        if (unconfirmed) {
+          publish?.({ status: 'unresolved', reason: unconfirmed });
+        } else {
+          active = false;
+          publish?.({ status: startAttempted ? 'settled' : 'not-admitted' });
+        }
       });
       try {
         return await scope.wait(managed);
@@ -966,6 +1048,16 @@ export function createActorRuntime<Task, Purpose extends string>(
           scope.dispose();
         }
       }
+    },
+  };
+  return {
+    run: (turn) => executor.run(turn),
+    start(turn) {
+      const { finish, waitForSettlement } = createSettlementObserver();
+      const result = executor.run(turn, finish);
+      // A host may observe cleanup before awaiting the already-rejected caller result.
+      void result.catch(() => {});
+      return { result, waitForSettlement };
     },
   };
 }

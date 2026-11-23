@@ -4,7 +4,8 @@ import { createAgent } from '@actor-web/agent/portable';
 export async function smoke(
   createRuntime = createActorRuntime,
   bindAgent = createAgent,
-  budgetOverrides = {}
+  budgetOverrides = {},
+  observeSettlement = false
 ) {
   const definition = {
     purpose: 'review',
@@ -60,6 +61,16 @@ export async function smoke(
       ...budgetOverrides,
     },
   });
+  const signal = new AbortController().signal;
+  if (observeSettlement) {
+    const { result, waitForSettlement } = runtime.start({
+      ...definition,
+      task: { id: 'fixture' },
+      signal,
+    });
+    const [text, settlement] = await Promise.all([result, waitForSettlement(2_000)]);
+    return { text, status: settlement.status };
+  }
   const agent = bindAgent(runtime, definition);
-  return agent.run({ id: 'fixture', signal: new AbortController().signal });
+  return agent.run({ id: 'fixture', signal });
 }

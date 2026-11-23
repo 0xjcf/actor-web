@@ -7,6 +7,10 @@ import { build } from 'vite';
 import { smoke } from './actor-runtime-smoke.mjs';
 
 assert.deepEqual(await smoke(), { text: 'verified' });
+assert.deepEqual(await smoke(undefined, undefined, {}, true), {
+  text: 'verified',
+  status: 'settled',
+});
 await assert.rejects(smoke(undefined, undefined, { maxModelTurns: 1 }), {
   name: 'ActorRuntimeError',
   code: 'MODEL_TURN_LIMIT',
@@ -22,6 +26,10 @@ try {
   const { createActorRuntime } = require('@actor-web/agent/actor-runtime');
   const { createAgent } = require('@actor-web/agent/portable');
   assert.deepEqual(await smoke(createActorRuntime, createAgent), { text: 'verified' });
+  assert.deepEqual(await smoke(createActorRuntime, createAgent, {}, true), {
+    text: 'verified',
+    status: 'settled',
+  });
   await assert.rejects(smoke(createActorRuntime, createAgent, { maxToolAttempts: 0 }), {
     name: 'ActorRuntimeError',
     code: 'TOOL_ATTEMPT_LIMIT',
@@ -77,10 +85,11 @@ const context = {
   TextEncoder,
 };
 const browserResult = await runInNewContext(
-  `${chunks[0].code}\nActorRuntimeSmoke.smoke();`,
+  `${chunks[0].code}\nActorRuntimeSmoke.smoke(undefined, undefined, {}, true);`,
   context
 );
 assert.equal(browserResult.text, 'verified');
+assert.equal(browserResult.status, 'settled');
 await assert.rejects(
   runInNewContext(
     `${chunks[0].code}\nActorRuntimeSmoke.smoke(undefined, undefined, { maxPayloadBytes: 1 });`,

@@ -102,6 +102,24 @@ absent fields, and exclude diagnostics, usage, credentials, and wire framing.
 This limits what the local adapter dispatches and accepts, not allocation,
 network traffic, or remote effects.
 
+The AW-03-02 local adapter adds an opt-in observation via
+`createActorRuntime(...).start(turn)`. Abort still uses `turn.signal`. The
+handle separates `result` (the same text or error as `run(turn)`) from
+`waitForSettlement(timeoutMs)`. Waiting does not stop work or change the
+execution deadlines. Use a bounded wait or pass zero to inspect without waiting:
+
+- `not-admitted`: this invocation did not attempt to open a session. A busy
+  refusal says nothing about the older invocation.
+- `settled`: the owned runtime has closed and tracked local operations have
+  settled, including ones that rejected. Reuse is permitted.
+- `unresolved`: this wait elapsed, or runtime startup or shutdown could not
+  establish closure. A later wait may confirm settlement after `wait-timeout`;
+  failed start or stop leaves the instance fenced.
+
+This observation does not detect work detached by a provider or tool. It is
+not a correlated evidence receipt or a second route for accepting late results.
+The generic portable `run` return type is unchanged.
+
 Keep observations separate from `Content`. The later evidence slice can
 correlate assignment, revision, session and attempts, record validation and
 cleanup outcomes, and report missing token usage as unknown. Use existing

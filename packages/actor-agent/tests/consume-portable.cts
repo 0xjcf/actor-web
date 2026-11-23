@@ -29,13 +29,17 @@ actors.createActorRuntime({
   // @ts-expect-error The tool-attempt limit is required.
   limits: { ...missingToolAndPayloadLimits, maxPayloadBytes },
 });
-const actorRuntime: portable.AgentRuntime<{ request: string }, 'build'> =
-  actors.createActorRuntime(actorOptions);
-const raw: Promise<string> = actorRuntime.run({
+const local = actors.createActorRuntime(actorOptions);
+const actorRuntime: portable.AgentRuntime<{ request: string }, 'build'> = local;
+const turn: portable.AgentTurn<{ request: string }, 'build'> = {
   purpose: 'build',
   systemPrompt: actorOptions.definition.systemPrompt,
   tools: [],
   task: { request: 'Update the component.' },
   signal: new AbortController().signal,
-});
+};
+const raw: Promise<string> = actorRuntime.run(turn);
+const handle: actors.ActorRuntimeExecution = local.start(turn);
+const cleanup: Promise<actors.ActorRuntimeSettlement> = handle.waitForSettlement(100);
 void raw;
+void cleanup;
