@@ -6,6 +6,7 @@ import {
 } from '@actor-web/agent/actor-runtime';
 import {
   type AgentRuntime,
+  type AgentToolExample,
   type AgentTurn,
   createAgent,
   type FocusedAgent,
@@ -21,10 +22,11 @@ void provider;
 
 type Task = { allowedPaths: string[] };
 declare const runtime: AgentRuntime<Task, 'review'>;
+const sample = { input: { path: 'example' }, result: ['line'] } as const satisfies AgentToolExample;
 const reviewer = createAgent(runtime, {
   purpose: 'review',
   systemPrompt: 'Review the supplied files.',
-  tools: [],
+  tools: [{ name: 'read', description: 'Read lines.', parameters: {}, examples: [sample] }],
   output: structured(z.strictObject({ path: z.string() }), {
     check: (finding, task: Task) =>
       task.allowedPaths.includes(finding.path) ? undefined : 'ungranted',
@@ -49,7 +51,7 @@ const modelTurns: number = maxModelTurns;
 void modelTurns;
 // @ts-expect-error The model-turn limit is required.
 createActorRuntime({ ...actorOptions, limits: missingModelTurns });
-const local = createActorRuntime(actorOptions);
+const local = createActorRuntime({ ...actorOptions, toolExampleMode: 'description' });
 const actorRuntime: AgentRuntime<Task, 'review'> = local;
 const turn: AgentTurn<Task, 'review'> = {
   purpose: 'review',

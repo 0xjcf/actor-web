@@ -130,6 +130,40 @@ text. Execution failures reject with a `code`, retaining provider and coded tool
 failures; no retry or repair is attempted. The optional output parser remains
 separate.
 
+### Few-shot tool examples
+
+Import `AgentTool` and `AgentToolExample` from `@actor-web/agent/portable`.
+Declare synthetic input/result pairs beside the tool, not in the task prompt:
+
+```ts
+const alerts = {
+  name: 'check_facility_alerts',
+  description: 'Look up active operational alerts for a facility.',
+  parameters: {
+    type: 'object',
+    properties: { facility_name: { type: 'string' } },
+    required: ['facility_name'],
+    additionalProperties: false,
+  },
+  examples: [{ input: { facility_name: 'Example Yard' }, result: { alerts: [] } }],
+} satisfies AgentTool;
+```
+
+The local executor's `toolExampleMode` defaults to `'off'`. Set it to
+`'description'` in `createActorRuntime` to append labeled examples **only** to
+requested, granted, implemented tool descriptions. Examples never become tool
+calls, receipts or conversation history. Their rendered bytes count toward
+`maxPayloadBytes` on each model request. Tools without examples are unchanged.
+
+Per tool, the local executor accepts up to four pairs and 4 KiB of compact
+UTF-8 JSON for the whole example array. It checks and snapshots them when
+binding the definition, even when injection is off. `input` must be a plain
+JSON object; `result` can be any plain JSON value. Examples do not invoke
+handlers or validate outputs: check fixtures against your tool's contract in
+tests. Use synthetic data suitable for sending to the provider.
+
+### Execution budgets
+
 Budgets reset for each admitted run and are cumulative within it:
 
 - `maxModelTurns` counts actual provider calls. Before a tool batch can run,

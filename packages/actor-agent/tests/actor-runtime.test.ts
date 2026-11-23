@@ -20,7 +20,7 @@ import type {
   ActorAgentLlmResult,
   ActorAgentToolCall,
 } from '../src/index.js';
-import type { AgentTurn } from '../src/portable.js';
+import type { AgentToolExample, AgentTurn } from '../src/portable.js';
 
 vi.mock('@actor-web/runtime/browser', async (importOriginal) => {
   const runtime = await importOriginal<typeof import('@actor-web/runtime/browser')>();
@@ -227,6 +227,101 @@ afterEach(() => {
 });
 
 const evidenceBinding = { assignmentId: 'assignment.local', revision: 1 } as const;
+
+describe('portable tool examples', () => {
+  const example = { input: { path: 'example.txt' }, result: { lines: [] } };
+  const tools = definition.tools.map((tool) => ({
+    ...tool,
+    examples: [example, { input: { path: 'other.txt' }, result: `sample-${tool.name}` }],
+  }));
+
+  it('renders only effective tools and keeps synthetic examples out of history', async () => {
+    const first = assistant('', [call()]);
+    const provider = vi
+      .fn<ActorAgentLlmProvider>()
+      .mockReturnValueOnce(first)
+      .mockReturnValueOnce(assistant('done'));
+    const { make, execute, unauthorized } = fixture(provider, {
+      definition: { ...definition, tools },
+      toolExampleMode: 'description',
+    });
+    await expect(make().run({ ...turn('actual output'), tools })).resolves.toBe('done');
+    const description = [
+      'Read read.',
+      'Illustrative calls and results; not observations from this task:',
+      '{"input":{"path":"example.txt"},"result":{"lines":[]}}',
+      '{"input":{"path":"other.txt"},"result":"sample-read"}',
+    ].join('\n');
+    for (const [i, [request]] of provider.mock.calls.entries()) {
+      const messages = i
+        ? [initialMessage, first.value.message, toolReceipt('call-1', 'actual output')]
+        : [initialMessage];
+      expect(request).toEqual({
+        ...requestOf(messages),
+        toolDefinitions: [{ name: 'read', description, inputSchema: { type: 'object' } }],
+      });
+    }
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(unauthorized).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, 'off', 'description'] as const)(
+    'keeps the original request when examples are disabled or empty (mode %s)',
+    async (toolExampleMode) => {
+      const declared =
+        toolExampleMode === 'description' ? [{ ...requested('read'), examples: [] }] : tools;
+      const provider = vi.fn<ActorAgentLlmProvider>(() => assistant('ok'));
+      const { make } = fixture(provider, {
+        definition: { ...definition, tools: declared },
+        toolExampleMode,
+        limits: {
+          ...limits,
+          maxPayloadBytes: jsonBytes(requestOf(), assistant('ok').value.message),
+        },
+      });
+      await expect(make().run({ ...turn(), tools: declared })).resolves.toBe('ok');
+      expect(provider.mock.calls[0][0]).toEqual(requestOf());
+    }
+  );
+
+  it('charges rendered descriptions against the provider request budget before dispatch', async () => {
+    const provider = vi.fn<ActorAgentLlmProvider>();
+    const { make } = fixture(provider, {
+      definition: { ...definition, tools },
+      toolExampleMode: 'description',
+      limits: { ...limits, maxPayloadBytes: jsonBytes(requestOf(), assistant('ok').value.message) },
+    });
+    await expect(make().run({ ...turn(), tools })).rejects.toMatchObject({
+      code: 'PAYLOAD_BYTE_LIMIT',
+    });
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it('pins the example values independently of later changes to the declaration', async () => {
+    const declared = [{ ...requested('read'), examples: [{ input: {}, result: 'original' }] }];
+    const provider = vi.fn<ActorAgentLlmProvider>();
+    const runtime = fixture(provider, { definition: { ...definition, tools: declared } }).make();
+    declared[0].examples[0].result = 'changed';
+    await expect(runtime.run({ ...turn(), tools: declared })).rejects.toMatchObject({
+      code: 'DEFINITION_MISMATCH',
+    });
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { label: 'not an array', examples: {} },
+    { label: 'missing result', examples: [{ input: {} }] },
+    { label: 'non-object arguments', examples: [{ input: [], result: null }] },
+    { label: 'non-JSON result', examples: [{ input: {}, result: undefined }] },
+    { label: 'too many pairs', examples: Array(5).fill(example) },
+    { label: 'over 4 KiB of JSON', examples: [{ input: {}, result: '界'.repeat(1400) }] },
+  ])('rejects $label at registration even when injection is disabled', ({ examples }) => {
+    const declared = [{ ...requested('read'), examples: examples as AgentToolExample[] }];
+    expect(fixture(vi.fn(), { definition: { ...definition, tools: declared } }).make).toThrow(
+      expect.objectContaining({ code: 'INVALID_RUNTIME_CONFIG' })
+    );
+  });
+});
 
 function facts(run: ObservedActorRuntimeExecution, prefix = 'LOCAL_') {
   return run

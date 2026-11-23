@@ -1,8 +1,23 @@
+type ExampleJson =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly ExampleJson[]
+  | { readonly [key: string]: ExampleJson };
+
+/** A synthetic argument/result pair, not an observation from a running session. */
+export interface AgentToolExample {
+  readonly input: Readonly<Record<string, ExampleJson>>;
+  readonly result: ExampleJson;
+}
+
 /** Describes a requested tool; only the host can grant and execute it. */
 export interface AgentTool {
   readonly name: string;
   readonly description: string;
   readonly parameters: Record<string, unknown>;
+  readonly examples?: readonly AgentToolExample[];
 }
 
 interface AgentMethod<Purpose extends string> {

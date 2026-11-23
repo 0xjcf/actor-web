@@ -27,7 +27,7 @@ import {
   type ActorAgentToolDefinition,
   createAgentLoopBehavior,
 } from './index.js';
-import type { AgentRuntime, AgentTurn } from './portable.js';
+import type { AgentRuntime, AgentToolExample, AgentTurn } from './portable.js';
 
 export interface ActorRuntimeTool<Task> {
   readonly name: string;
@@ -107,6 +107,8 @@ export interface ActorRuntimeLimits {
   readonly maxPayloadBytes: number;
 }
 
+type ToolExampleMode = 'off' | 'description';
+
 export interface ActorRuntimeOptions<Task, Purpose extends string> {
   /** The trusted portable definition, including any output instructions appended by createAgent. */
   readonly definition: Pick<AgentTurn<Task, Purpose>, 'purpose' | 'systemPrompt' | 'tools'> & {
@@ -115,6 +117,8 @@ export interface ActorRuntimeOptions<Task, Purpose extends string> {
   readonly provider: ActorAgentLlmProvider;
   readonly grants: readonly string[];
   readonly tools: readonly ActorRuntimeTool<Task>[];
+  /** Append illustrative examples to effective tool descriptions. Default: 'off'. */
+  readonly toolExampleMode?: ToolExampleMode;
   readonly encodeTask: (task: Task) => string;
   readonly limits: ActorRuntimeLimits;
 }
@@ -239,11 +243,53 @@ function checkToolName(name: unknown): asserts name is string {
   }
 }
 
-function snapshotRequested(tools: unknown): ActorAgentToolDefinition[] {
+type RequestedTool = ActorAgentToolDefinition & { readonly examples?: readonly AgentToolExample[] };
+
+function snapshotExamples(entry: object): readonly AgentToolExample[] | undefined {
+  if (!Object.hasOwn(entry, 'examples')) return undefined;
+  const raw = ownData(entry, 'examples');
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw) || raw.length > 4) invalidConfig('Expected at most 4 examples per tool.');
+  // Detach and validate all nested data before inspecting or rendering any pair.
+  const { value: examples } = snapshotJson(raw, 4096, true);
+  for (const example of examples) {
+    if (
+      !example ||
+      typeof example !== 'object' ||
+      Array.isArray(example) ||
+      Object.keys(example).length !== 2 ||
+      !Object.hasOwn(example, 'input') ||
+      !Object.hasOwn(example, 'result') ||
+      example.input === null ||
+      typeof example.input !== 'object' ||
+      Array.isArray(example.input)
+    ) {
+      invalidConfig('Each tool example must have an input object and a JSON result.');
+    }
+  }
+  return examples.length ? examples : undefined;
+}
+
+function modelTool(
+  { examples, ...definition }: RequestedTool,
+  mode: ToolExampleMode
+): ActorAgentToolDefinition {
+  if (mode !== 'description' || !examples) return definition;
+  return {
+    ...definition,
+    description: [
+      definition.description,
+      'Illustrative calls and results; not observations from this task:',
+      ...examples.map((example) => JSON.stringify(example)),
+    ].join('\n'),
+  };
+}
+
+function snapshotRequested(tools: unknown): RequestedTool[] {
   if (!Array.isArray(tools)) invalidConfig('An explicit requested tool list is required.');
   const seen = new Set<string>();
   try {
-    const requested: ActorAgentToolDefinition[] = [];
+    const requested: RequestedTool[] = [];
     for (let index = 0; index < tools.length; index++) {
       const entry = ownData(tools, String(index));
       if (typeof entry !== 'object' || entry === null) throw new InvalidJsonPayload();
@@ -262,6 +308,7 @@ function snapshotRequested(tools: unknown): ActorAgentToolDefinition[] {
         return invalidConfig('Invalid or duplicate requested tool definition.');
       }
       seen.add(name);
+      const examples = snapshotExamples(entry);
       requested.push(
         Object.freeze({
           name,
@@ -271,19 +318,25 @@ function snapshotRequested(tools: unknown): ActorAgentToolDefinition[] {
             Number.MAX_SAFE_INTEGER,
             true
           ).value,
+          ...(examples && { examples }),
         })
       );
     }
     return requested;
   } catch (cause) {
     if (cause instanceof ActorRuntimeError) throw cause;
-    return invalidConfig('Tool definitions must contain plain JSON parameters.');
+    if (cause instanceof JsonPayloadTooLarge)
+      return invalidConfig('Tool definition exceeds the JSON size limit (4 KiB for examples).');
+    return invalidConfig('Tool parameters and examples must contain plain JSON data.');
   }
 }
 
 function bindConfig<Task, Purpose extends string>(options: ActorRuntimeOptions<Task, Purpose>) {
   if (!options) invalidConfig('Actor runtime options are required.');
-  const { definition, grants, tools, provider, encodeTask } = options;
+  const { definition, grants, tools, provider, encodeTask, toolExampleMode = 'off' } = options;
+  if (toolExampleMode !== 'off' && toolExampleMode !== 'description') {
+    invalidConfig('Expected toolExampleMode to be off or description.');
+  }
   if (
     !definition ||
     typeof definition.purpose !== 'string' ||
@@ -350,7 +403,9 @@ function bindConfig<Task, Purpose extends string>(options: ActorRuntimeOptions<T
   }
   const effective = requested.flatMap((definition) => {
     const implementation = implementations.get(definition.name);
-    return granted.has(definition.name) && implementation ? [{ definition, implementation }] : [];
+    return granted.has(definition.name) && implementation
+      ? [{ definition: modelTool(definition, toolExampleMode), implementation }]
+      : [];
   });
   return {
     purpose: definition.purpose,
@@ -369,7 +424,7 @@ function verifyTurn<Task, Purpose extends string>(
   config: ReturnType<typeof bindConfig<Task, Purpose>>,
   turn: AgentTurn<Task, Purpose>
 ): void {
-  let requested: ActorAgentToolDefinition[];
+  let requested: RequestedTool[];
   try {
     requested = snapshotRequested(turn.tools);
   } catch (cause) {

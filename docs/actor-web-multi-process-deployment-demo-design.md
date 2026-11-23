@@ -57,6 +57,12 @@ developer path. It starts the server runtime and browser host together, while
 the browser WebWorker connects as the worker runtime. The split process scripts
 are lower-level deployment proof entrypoints.
 
+To inspect the read-only shipment inquiry separately, run `pnpm examples:logistics:prompt`.
+It prints the generated Chat Completions request for a fixture shipment without
+starting the gateway or contacting a model. The shipment ID is task data;
+the synthetic status and facility-alert pairs appear only in the two tool
+descriptions. The companion does not dispatch shipment lifecycle commands.
+
 Expected behavior:
 
 - Server runtime owns `logistics-shipment`.

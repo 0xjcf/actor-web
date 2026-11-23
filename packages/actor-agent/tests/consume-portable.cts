@@ -14,10 +14,11 @@ const provider: agent.ActorAgentLlmProvider = agent.createLlmProvider(providerOp
 void [llm, provider, agent.createAgentLoopBehavior()];
 
 declare const runtime: portable.AgentRuntime<{ request: string }, 'build'>;
+const sample: portable.AgentToolExample = { input: {}, result: null };
 const builder = portable.createAgent(runtime, {
   purpose: 'build',
   systemPrompt: 'Implement the assignment.',
-  tools: [],
+  tools: [{ name: 'inspect', description: 'Inspect state.', parameters: {}, examples: [sample] }],
   output: codec.structured(z.strictObject({ summary: z.string() })),
 });
 const result: Promise<{ summary: string }> = builder.run({
@@ -38,7 +39,7 @@ actors.createActorRuntime({
   // @ts-expect-error The tool-attempt limit is required.
   limits: { ...missingToolAndPayloadLimits, maxPayloadBytes },
 });
-const local = actors.createActorRuntime(actorOptions);
+const local = actors.createActorRuntime({ ...actorOptions, toolExampleMode: 'off' });
 const actorRuntime: portable.AgentRuntime<{ request: string }, 'build'> = local;
 const turn: portable.AgentTurn<{ request: string }, 'build'> = {
   purpose: 'build',
