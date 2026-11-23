@@ -1,10 +1,12 @@
 import {
   type ActorToolExecutionContext,
   type ActorToolExecutor,
+  type AgentExecutionTrace,
   createActorToolbox,
   startRuntime,
 } from '@actor-web/runtime/browser';
 import { actor, defineActorWebTopology, node, tool } from '@actor-web/runtime/topology';
+import { createExecutionEvidence } from './actor-runtime-evidence.js';
 import {
   equalJson,
   InvalidJsonPayload,
@@ -132,9 +134,36 @@ export interface ActorRuntimeExecution {
   readonly waitForSettlement: (timeoutMs: number) => Promise<ActorRuntimeSettlement>;
 }
 
+export interface ActorRuntimeEvidenceBinding {
+  /** Host-owned opaque identifier, never task text or a secret. */
+  readonly assignmentId: string;
+  readonly revision: number;
+}
+
+export interface ActorRuntimeEvidenceSnapshot {
+  readonly trace: AgentExecutionTrace;
+  /** True if a receipt could not be recorded; the trace contains only the retained prefix. */
+  readonly truncated: boolean;
+}
+
+export interface ObservedActorRuntimeExecution extends ActorRuntimeExecution {
+  /** A detached snapshot, or undefined if this invocation has no recorded local session attempt. */
+  readonly readEvidence: () => ActorRuntimeEvidenceSnapshot | undefined;
+  /** Runs one host parser on this invocation's result. Validation is not workflow acceptance. */
+  readonly validateOutput: <Content>(
+    parse: (raw: string) => Content | Promise<Content>
+  ) => Promise<Content>;
+}
+
 export interface LocalActorRuntime<Task, Purpose extends string = string>
   extends AgentRuntime<Task, Purpose> {
-  readonly start: (turn: AgentTurn<Task, Purpose>) => ActorRuntimeExecution;
+  readonly start: {
+    (turn: AgentTurn<Task, Purpose>): ActorRuntimeExecution;
+    (
+      turn: AgentTurn<Task, Purpose>,
+      evidence: ActorRuntimeEvidenceBinding
+    ): ObservedActorRuntimeExecution;
+  };
 }
 
 export class ActorRuntimeError extends Error {
@@ -505,6 +534,25 @@ function dataField(value: unknown, key: string): unknown {
   return field?.value;
 }
 
+function bindEvidence(
+  binding: ActorRuntimeEvidenceBinding
+): ReturnType<typeof createExecutionEvidence> {
+  const assignmentId = binding?.assignmentId;
+  const revision = binding?.revision;
+  if (
+    typeof assignmentId !== 'string' ||
+    !/^[A-Za-z0-9_.:-]{1,128}$/.test(assignmentId) ||
+    !Number.isSafeInteger(revision) ||
+    revision < 0
+  ) {
+    throw new ActorRuntimeError(
+      'INVALID_EVIDENCE_BINDING',
+      'Evidence requires a bounded opaque assignment ID and a nonnegative integer revision.'
+    );
+  }
+  return createExecutionEvidence(assignmentId, revision);
+}
+
 function descriptorInChain(value: object, key: string): PropertyDescriptor | undefined {
   for (let current: object | null = value; current; current = Object.getPrototypeOf(current)) {
     const descriptor = Object.getOwnPropertyDescriptor(current, key);
@@ -842,8 +890,13 @@ export function createActorRuntime<Task, Purpose extends string>(
   const executor = {
     async run(
       turn: AgentTurn<Task, Purpose>,
-      publish?: (value: ActorRuntimeSettlement) => void
+      observation?: {
+        publish(value: ActorRuntimeSettlement): void;
+        evidence: ReturnType<typeof createExecutionEvidence> | undefined;
+        signal?: AbortSignal;
+      }
     ): Promise<string> {
+      const evidence = observation?.evidence;
       let callerSignal: AbortSignal;
       try {
         if (active) throw new ActorRuntimeError('RUNTIME_BUSY', 'The runtime is active or fenced.');
@@ -859,11 +912,12 @@ export function createActorRuntime<Task, Purpose extends string>(
           );
         }
       } catch (cause) {
-        publish?.({ status: 'not-admitted' });
+        observation?.publish({ status: 'not-admitted' });
         throw cause;
       }
 
       active = true;
+      if (observation) observation.signal = callerSignal;
       const scope = createRunScope(callerSignal, config.limits.runTimeoutMs);
       const budget = createBudget(config.limits);
       let startAttempted = false;
@@ -902,31 +956,46 @@ export function createActorRuntime<Task, Purpose extends string>(
           },
         });
         const applicationTools = Object.fromEntries(
-          Array.from(implementations, ([name, { execute }]): [string, ActorToolExecutor] => [
+          Array.from(implementations, ([name, { execute }], index): [string, ActorToolExecutor] => [
             name,
             async (input, context) => {
               const portContext = { ...context, signal: scope.signal };
               const bytes = scope.checked(() =>
                 checkPayload('INVALID_TOOL_INPUT', () => measureJson(input, budget.payloadBytes))
               );
-              const { value } = await scope.dispatch(
-                'TOOL_TIMEOUT',
-                config.limits.toolTimeoutMs,
-                () => {
-                  budget.dispatchTool(bytes);
-                  return holdPortResult(execute(input, task, portContext));
+              const toolOrdinal = index + 1;
+              let attempt: number | undefined;
+              try {
+                const { value } = await scope.dispatch(
+                  'TOOL_TIMEOUT',
+                  config.limits.toolTimeoutMs,
+                  () => {
+                    budget.dispatchTool(bytes);
+                    attempt = evidence?.toolDispatch(toolOrdinal);
+                    return holdPortResult(execute(input, task, portContext));
+                  }
+                );
+                const output = scope.checked(() =>
+                  checkPayload('INVALID_TOOL_OUTPUT', () => {
+                    const detached = snapshotJson(value, budget.payloadBytes);
+                    // Verify the shared loop can serialize this envelope without lossy text.
+                    JSON.stringify({ ok: true, output: detached.value });
+                    budget.chargePayload(detached.bytes);
+                    return detached.value;
+                  })
+                );
+                if (attempt !== undefined) evidence?.toolOutcome(attempt, toolOrdinal, 'returned');
+                return output;
+              } catch (cause) {
+                if (attempt !== undefined) {
+                  evidence?.toolOutcome(
+                    attempt,
+                    toolOrdinal,
+                    scope.signal.aborted ? 'interrupted' : 'failed'
+                  );
                 }
-              );
-              return scope.checked(() =>
-                checkPayload('INVALID_TOOL_OUTPUT', () => {
-                  const output = snapshotJson(value, budget.payloadBytes);
-                  // The shared loop serializes this envelope. Verify it can do so without
-                  // falling back to lossy text (e.g. an engine's JSON nesting limit).
-                  JSON.stringify({ ok: true, output: output.value });
-                  budget.chargePayload(output.bytes);
-                  return output.value;
-                })
-              );
+                throw cause;
+              }
             },
           ])
         );
@@ -942,32 +1011,50 @@ export function createActorRuntime<Task, Purpose extends string>(
               snapshotJson(normalizeRequest(request), budget.payloadBytes)
             );
           });
-          const result = await scope.dispatch(
-            'PROVIDER_TIMEOUT',
-            config.limits.providerTimeoutMs,
-            async () => {
-              budget.dispatchModel(normalized.bytes);
-              try {
-                return await holdPortResult(config.provider(normalized.value, portContext));
-              } catch (cause) {
-                // Match the shared registry's thrown-provider error without wrapping budget errors.
-                return holdValue({
-                  ok: false,
-                  error: {
-                    code: 'LLM_PROVIDER_FAILED',
-                    message: cause instanceof Error ? cause.message : String(cause),
-                    cause,
-                  },
-                } satisfies ActorAgentLlmResult);
+          let attempt: number | undefined;
+          try {
+            const result = await scope.dispatch(
+              'PROVIDER_TIMEOUT',
+              config.limits.providerTimeoutMs,
+              async () => {
+                budget.dispatchModel(normalized.bytes);
+                attempt = evidence?.modelDispatch();
+                try {
+                  return await holdPortResult(config.provider(normalized.value, portContext));
+                } catch (cause) {
+                  // Preserve the shared registry's thrown-provider error, not budget errors.
+                  return holdValue({
+                    ok: false,
+                    error: {
+                      code: 'LLM_PROVIDER_FAILED',
+                      message: cause instanceof Error ? cause.message : String(cause),
+                      cause,
+                    },
+                  } satisfies ActorAgentLlmResult);
+                }
               }
+            );
+            const step = scope.checked(() =>
+              normalizeProviderStep(result.value, config.limits.maxToolCallsPerBatch, budget)
+            );
+            if (attempt !== undefined) {
+              evidence?.modelOutcome(
+                attempt,
+                step.ok ? 'returned' : 'failed',
+                step.ok ? step.value.usage : undefined
+              );
             }
-          );
-          return scope.checked(() =>
-            normalizeProviderStep(result.value, config.limits.maxToolCallsPerBatch, budget)
-          );
+            return step;
+          } catch (cause) {
+            if (attempt !== undefined) {
+              evidence?.modelOutcome(attempt, scope.signal.aborted ? 'interrupted' : 'failed');
+            }
+            throw cause;
+          }
         };
         scope.check();
         startAttempted = true;
+        evidence?.beginSession(topology.actors.specialist.address);
         const startOwned = () => startRuntime(topology, { tools: { ...applicationTools, llm } });
         let host: Awaited<ReturnType<typeof startOwned>>;
         try {
@@ -1011,6 +1098,7 @@ export function createActorRuntime<Task, Purpose extends string>(
           outcome = { ok: false, error };
         }
         try {
+          evidence?.cleanupStarted();
           await host.stop();
         } catch (cause) {
           unconfirmed = 'runtime-stop-failed';
@@ -1032,11 +1120,12 @@ export function createActorRuntime<Task, Purpose extends string>(
         return outcome.text;
       };
       const managed = runOwned().finally(() => {
+        if (startAttempted) evidence?.cleanupOutcome(unconfirmed);
         if (unconfirmed) {
-          publish?.({ status: 'unresolved', reason: unconfirmed });
+          observation?.publish({ status: 'unresolved', reason: unconfirmed });
         } else {
           active = false;
-          publish?.({ status: startAttempted ? 'settled' : 'not-admitted' });
+          observation?.publish({ status: startAttempted ? 'settled' : 'not-admitted' });
         }
       });
       try {
@@ -1050,14 +1139,50 @@ export function createActorRuntime<Task, Purpose extends string>(
       }
     },
   };
-  return {
-    run: (turn) => executor.run(turn),
-    start(turn) {
-      const { finish, waitForSettlement } = createSettlementObserver();
-      const result = executor.run(turn, finish);
-      // A host may observe cleanup before awaiting the already-rejected caller result.
-      void result.catch(() => {});
-      return { result, waitForSettlement };
-    },
-  };
+  function start(turn: AgentTurn<Task, Purpose>): ActorRuntimeExecution;
+  function start(
+    turn: AgentTurn<Task, Purpose>,
+    binding: ActorRuntimeEvidenceBinding
+  ): ObservedActorRuntimeExecution;
+  function start(
+    turn: AgentTurn<Task, Purpose>,
+    binding?: ActorRuntimeEvidenceBinding
+  ): ActorRuntimeExecution {
+    const { finish, waitForSettlement } = createSettlementObserver();
+    const evidence = binding === undefined ? undefined : bindEvidence(binding);
+    const observation = { publish: finish, evidence, signal: undefined as AbortSignal | undefined };
+    const result = executor.run(turn, observation);
+    // A host may observe cleanup before awaiting the already-rejected caller result.
+    void result.catch(() => {});
+    if (!evidence) return { result, waitForSettlement };
+    let requested = false;
+    const handle: ObservedActorRuntimeExecution = {
+      result,
+      waitForSettlement,
+      readEvidence: () => evidence.read(),
+      async validateOutput(parse) {
+        if (requested) {
+          throw new ActorRuntimeError(
+            'VALIDATION_ALREADY_REQUESTED',
+            'Output validation was already requested for this invocation.'
+          );
+        }
+        requested = true;
+        const raw = await result;
+        const signal = observation.signal;
+        signal?.throwIfAborted();
+        try {
+          const content = await parse(raw);
+          signal?.throwIfAborted();
+          evidence.validation('passed');
+          return content;
+        } catch (cause) {
+          evidence.validation(signal?.aborted ? 'interrupted' : 'failed');
+          throw cause;
+        }
+      },
+    };
+    return handle;
+  }
+  return { run: (turn) => executor.run(turn), start };
 }

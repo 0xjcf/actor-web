@@ -120,13 +120,40 @@ This observation does not detect work detached by a provider or tool. It is
 not a correlated evidence receipt or a second route for accepting late results.
 The generic portable `run` return type is unchanged.
 
-Keep observations separate from `Content`. The later evidence slice can
-correlate assignment, revision, session and attempts, record validation and
-cleanup outcomes, and report missing token usage as unknown. Use existing
-[runtime receipt semantics](provider-neutral-agent-execution-contract.md) where
-they apply. Logs and model text do not establish authorization or durable
-effect outcomes. Omit raw task, prompt and tool payloads, and credentials from
-default observations.
+AW-04-01 adds opt-in local evidence: `start(turn, { assignmentId, revision })`
+adds `readEvidence()` and `validateOutput(parse)` to the handle. The assignment
+ID is an opaque host reference, not task text or a secret. The snapshot is
+absent before an owned startup attempt; its session ID identifies that attempt,
+not proof that the actor opened. The trace uses
+[runtime receipt semantics](provider-neutral-agent-execution-contract.md):
+
+- `LOCAL_MODEL_DISPATCHED` / `LOCAL_MODEL_OUTCOME` pair actual provider calls
+  and their `returned`, `failed`, or `interrupted` outcomes. Each of
+  `usage.input`, `usage.output`, and `usage.total` is a reported count or `unknown`.
+- `LOCAL_TOOL_DISPATCHED` / `LOCAL_TOOL_OUTCOME` pair actual application handler
+  calls and their `returned`, `failed`, or `interrupted` outcomes. Each includes
+  a one-based `toolOrdinal` in effective tool definition order. A refused call
+  does not get a dispatch receipt. Join a pair by session, port kind, and
+  `attempt`; model and tool attempts count separately.
+- `LOCAL_CLEANUP_STARTED` records the owned stop call. `LOCAL_CLEANUP_OUTCOME`
+  records `settled` only after stop and tracked local work have completed, or
+  `unresolved` with `runtime-start-failed` or `runtime-stop-failed`. Failed
+  startup has no stop receipt. A wait timeout does not add an event or release
+  the fence.
+- `LOCAL_OUTPUT_VALIDATION` records `passed`, `failed`, or `interrupted` after
+  the supplied parser runs on that handle's successful raw result. The parser
+  can be asynchronous, is invoked at most once, and is skipped if the raw result
+  fails or the signal is already aborted. Validation is outside managed
+  cleanup and does not establish assignment freshness or workflow acceptance.
+
+This is a bounded, detached trace, separate from business content. `truncated`
+marks an incomplete retained prefix. Receipts omit task, prompt, tool and
+output payloads, provider call IDs, diagnostics, and credentials. These are
+observations, not terminal workflow receipts: the generic trace status stays
+`pending` even when cleanup has settled. The receipts do not establish
+authorization, durable effect outcomes, or remote settlement.
+The [scripted reviewer](../examples/portable-specialist/review.ts) shows both
+the plain portable result and the observed local handle.
 
 ## Consumer example
 

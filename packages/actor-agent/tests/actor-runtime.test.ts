@@ -1,12 +1,18 @@
 import { runInNewContext } from 'node:vm';
-import { startRuntime } from '@actor-web/runtime/browser';
+import {
+  type AgentExecutionEventReceipt,
+  parseAgentExecutionTrace,
+  startRuntime,
+} from '@actor-web/runtime/browser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ActorRuntimeError,
   type ActorRuntimeOptions,
   type ActorRuntimeTool,
   createActorRuntime,
+  type ObservedActorRuntimeExecution,
 } from '../src/actor-runtime.js';
+import { createExecutionEvidence } from '../src/actor-runtime-evidence.js';
 import type {
   ActorAgentLlmMessage,
   ActorAgentLlmProvider,
@@ -220,6 +226,341 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+const evidenceBinding = { assignmentId: 'assignment.local', revision: 1 } as const;
+
+function facts(run: ObservedActorRuntimeExecution, prefix = 'LOCAL_') {
+  return run
+    .readEvidence()
+    ?.trace.receipts.filter(
+      (receipt): receipt is AgentExecutionEventReceipt =>
+        receipt.receiptKind === 'event' && receipt.event.type.startsWith(prefix)
+    )
+    .map(({ event, attempt }) => [event.type, attempt, event.payload]);
+}
+
+describe('local execution evidence', () => {
+  it('joins model attempts by session and ordinal with allowlisted usage only', async () => {
+    const usageGetter = vi.fn(() => 99);
+    const provider = vi.fn<ActorAgentLlmProvider>(({ messages }) => {
+      if (messages.length > 1) return assistant('private final response');
+      const batch = assistant('private assistant prose', [
+        call('private-provider-call-id', 'read', { path: 'public', content: 'private argument' }),
+      ]);
+      return {
+        ...batch,
+        value: {
+          ...batch.value,
+          usage: {
+            inputTokens: 0,
+            outputTokens: -1,
+            get totalTokens() {
+              return usageGetter();
+            },
+            credential: 'private credential',
+          },
+        },
+      };
+    });
+    const { make, execute } = fixture(provider);
+    execute.mockReturnValue('private tool result');
+    const runtime = make();
+    const binding = { assignmentId: 'assignment.1', revision: 7 };
+    const first = runtime.start(turn('private task 1'), binding);
+    await expect(first.result).resolves.toBe('private final response');
+    const beforeValidation = first.readEvidence();
+    const second = runtime.start(turn('private task 2'), binding);
+    binding.revision = 8;
+    await expect(first.validateOutput((raw) => `${raw} private parsed`)).resolves.toBe(
+      'private final response private parsed'
+    );
+    await expect(second.result).resolves.toBe('private final response');
+
+    const earlier = first.readEvidence();
+    const later = second.readEvidence();
+    if (!earlier || !later) throw new Error('Expected evidence for both sessions.');
+    expect(beforeValidation?.trace.receipts).toHaveLength(8);
+    expect(facts(first, 'LOCAL_OUTPUT_')).toEqual([
+      ['LOCAL_OUTPUT_VALIDATION', undefined, { outcome: 'passed' }],
+    ]);
+    expect(facts(second, 'LOCAL_OUTPUT_')).toEqual([]);
+    expect(later.trace.sessionId).not.toBe(earlier.trace.sessionId);
+    expect(later.trace.commandId).not.toBe(earlier.trace.commandId);
+    expect(later.trace.traceId).not.toBe(earlier.trace.traceId);
+    for (const { trace, truncated } of [earlier, later]) {
+      expect(truncated).toBe(false);
+      expect(parseAgentExecutionTrace(JSON.parse(JSON.stringify(trace))).ok).toBe(true);
+      expect(trace).toMatchObject({ correlationId: 'assignment.1', revision: 7 });
+      expect(trace.receipts.map(({ sequence }) => sequence)).toEqual(
+        trace.receipts.map((_, index) => index + 1)
+      );
+      expect(
+        trace.receipts.slice(0, 8).map((receipt) => {
+          if (receipt.receiptKind !== 'event') throw new Error('Expected an event receipt.');
+          return [receipt.event.type, receipt.attempt];
+        })
+      ).toEqual([
+        ['LOCAL_MODEL_DISPATCHED', 1],
+        ['LOCAL_MODEL_OUTCOME', 1],
+        ['LOCAL_TOOL_DISPATCHED', 1],
+        ['LOCAL_TOOL_OUTCOME', 1],
+        ['LOCAL_MODEL_DISPATCHED', 2],
+        ['LOCAL_MODEL_OUTCOME', 2],
+        ['LOCAL_CLEANUP_STARTED', undefined],
+        ['LOCAL_CLEANUP_OUTCOME', undefined],
+      ]);
+      for (const receipt of trace.receipts) {
+        expect(receipt).toMatchObject({
+          status: 'observed',
+          receiptKind: 'event',
+          sessionId: trace.sessionId,
+          traceId: trace.traceId,
+          commandId: trace.commandId,
+          revision: trace.revision,
+          correlationId: trace.correlationId,
+        });
+        expect(Object.isFrozen(receipt)).toBe(true);
+      }
+      expect(trace.receipts[1]).toMatchObject({
+        event: {
+          type: 'LOCAL_MODEL_OUTCOME',
+          payload: {
+            outcome: 'returned',
+            usage: { input: 0, output: 'unknown', total: 'unknown' },
+          },
+        },
+      });
+      expect(trace.receipts[5]).toMatchObject({
+        event: { payload: { usage: { input: 'unknown', output: 'unknown', total: 'unknown' } } },
+      });
+      expect(JSON.stringify(trace)).not.toMatch(/private[ -]|Review the assigned/);
+    }
+    expect(usageGetter).not.toHaveBeenCalled();
+  });
+
+  it('does not record pre-aborted or over-budget model dispatch', async () => {
+    const provider = vi.fn<ActorAgentLlmProvider>();
+    const { make } = fixture(provider, { limits: { ...limits, maxPayloadBytes: 1 } });
+    const runtime = make();
+    const binding = { assignmentId: 'assignment.1', revision: 0 };
+    expect(() => runtime.start(turn(), { ...binding, assignmentId: 'not an opaque ID' })).toThrow(
+      expect.objectContaining({ code: 'INVALID_EVIDENCE_BINDING' })
+    );
+    const control = new AbortController();
+    control.abort();
+    const refused = runtime.start(turn('stopped', control.signal), binding);
+    await expect(refused.result).rejects.toMatchObject({ code: 'RUN_ABORTED' });
+    expect(refused.readEvidence()).toBeUndefined();
+    expect(runtimeStart).not.toHaveBeenCalled();
+    const limited = runtime.start(turn(), binding);
+    await expect(limited.result).rejects.toMatchObject({ code: 'PAYLOAD_BYTE_LIMIT' });
+    expect(facts(limited, 'LOCAL_MODEL_')).toEqual([]);
+    expect(facts(limited, 'LOCAL_CLEANUP_')).toEqual([
+      ['LOCAL_CLEANUP_STARTED', undefined, {}],
+      ['LOCAL_CLEANUP_OUTCOME', undefined, { outcome: 'settled' }],
+    ]);
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it('keeps diagnostic details out of failed model receipts', async () => {
+    const provider = vi.fn<ActorAgentLlmProvider>(() => {
+      throw new Error('private provider error');
+    });
+    const run = fixture(provider).make().start(turn(), { assignmentId: 'failure', revision: 0 });
+    await expect(run.result).rejects.toMatchObject({
+      code: 'LLM_PROVIDER_FAILED',
+      message: 'private provider error',
+    });
+    const receipts = facts(run, 'LOCAL_MODEL_');
+    expect(receipts).toHaveLength(2);
+    expect(receipts?.[1]).toMatchObject(['LOCAL_MODEL_OUTCOME', 1, { outcome: 'failed' }]);
+    expect(JSON.stringify(receipts)).not.toContain('private provider error');
+  });
+
+  it('does not append a returned result when an aborted provider finishes late', async () => {
+    const started = deferred();
+    const raw = deferred<ActorAgentLlmResult>();
+    const control = new AbortController();
+    const provider = vi.fn<ActorAgentLlmProvider>(() => {
+      started.resolve();
+      return raw.promise;
+    });
+    const run = fixture(provider)
+      .make()
+      .start(turn('first', control.signal), { assignmentId: 'stopped', revision: 1 });
+    await started.promise;
+    expect(run.readEvidence()?.trace.receipts).toHaveLength(1);
+    control.abort('private abort reason');
+    await expect(run.result).rejects.toMatchObject({ code: 'RUN_ABORTED' });
+    const late = assistant('private late content');
+    raw.resolve({ ...late, value: { ...late.value, usage: { totalTokens: 42 } } });
+    await expect(run.waitForSettlement(500)).resolves.toEqual({ status: 'settled' });
+    const receipts = facts(run, 'LOCAL_MODEL_');
+    expect(receipts).toHaveLength(2);
+    expect(receipts?.[1]).toMatchObject([
+      'LOCAL_MODEL_OUTCOME',
+      1,
+      { outcome: 'interrupted', usage: { total: 'unknown' } },
+    ]);
+    expect(JSON.stringify(receipts)).not.toContain('private');
+  });
+
+  it('bounds retained receipts and identifies an incomplete prefix', () => {
+    const evidence = createExecutionEvidence('assignment.1', 1);
+    evidence.beginSession('actor://fixture/specialist');
+    for (let i = 0; i < 128; i++) evidence.modelOutcome(evidence.modelDispatch(), 'returned');
+    const complete = evidence.read();
+    expect(complete?.truncated).toBe(false);
+    evidence.cleanupStarted();
+    const truncated = evidence.read();
+    expect(truncated?.truncated).toBe(true);
+    expect(truncated?.trace.receipts).toEqual(complete?.trace.receipts);
+    expect(truncated?.trace.receipts).toHaveLength(256);
+  });
+
+  it('pairs each actual application attempt with its effective tool ordinal', async () => {
+    const secondTool = 'private_tool_name';
+    const tools = [...definition.tools, requested(secondTool)];
+    const provider = vi
+      .fn<ActorAgentLlmProvider>()
+      .mockReturnValueOnce(assistant('', [call('private-a', secondTool), call('private-b')]))
+      .mockReturnValueOnce(assistant('private response'));
+    const probe = fixture(provider);
+    const run = fixture(provider, {
+      definition: { ...definition, tools },
+      grants: [...probe.options.grants, secondTool],
+      // Implementation order differs from the effective definition order.
+      tools: [
+        { name: secondTool, validateInput: () => ({ value: 'private input' }), execute: String },
+        ...probe.options.tools,
+      ],
+    })
+      .make()
+      .start({ ...turn(), tools }, evidenceBinding);
+    await expect(run.result).resolves.toBe('private response');
+    expect(facts(run, 'LOCAL_TOOL_')).toEqual([
+      ['LOCAL_TOOL_DISPATCHED', 1, { toolOrdinal: 2 }],
+      ['LOCAL_TOOL_OUTCOME', 1, { toolOrdinal: 2, outcome: 'returned' }],
+      ['LOCAL_TOOL_DISPATCHED', 2, { toolOrdinal: 1 }],
+      ['LOCAL_TOOL_OUTCOME', 2, { toolOrdinal: 1, outcome: 'returned' }],
+    ]);
+    expect(JSON.stringify(run.readEvidence())).not.toContain('private');
+  });
+
+  it.each([
+    ['denied tool', call('2', 'ungranted'), {}, 'TOOL_DENIED'],
+    ['refused input', call('2', 'read', { path: 'private' }), {}, 'PATH_DENIED'],
+    ['attempt limit', call('2'), { maxToolAttempts: 1 }, 'TOOL_ATTEMPT_LIMIT'],
+    ['model limit', call('2'), { maxModelTurns: 1 }, 'MODEL_TURN_LIMIT'],
+  ] as const)(
+    'records no application attempts for %s in a refused batch',
+    async (_, planned, bound, code) => {
+      const provider = vi.fn<ActorAgentLlmProvider>(() => assistant('', [call(), planned]));
+      const { make, execute } = fixture(provider, { limits: { ...limits, ...bound } });
+      const run = make().start(turn(), evidenceBinding);
+      await expect(run.result).rejects.toMatchObject({ code });
+      expect(facts(run, 'LOCAL_TOOL_')).toEqual([]);
+      expect(execute).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    [
+      'throws',
+      () => {
+        throw new Error('private tool diagnostic');
+      },
+      'TOOL_FAILED',
+    ],
+    ['returns unusable data', () => ({ private: undefined }), 'INVALID_TOOL_OUTPUT'],
+    [
+      'returns over-budget data',
+      () => 'private'.repeat(limits.maxPayloadBytes),
+      'PAYLOAD_BYTE_LIMIT',
+    ],
+  ] as const)('records a failed dispatch when the handler %s', async (_, handler, code) => {
+    const provider = vi.fn<ActorAgentLlmProvider>(() => assistant('', [call(), call('2')]));
+    const { make, execute } = fixture(provider);
+    execute.mockImplementation(handler);
+    const run = make().start(turn(), evidenceBinding);
+    await expect(run.result).rejects.toMatchObject({ code });
+    expect(facts(run, 'LOCAL_TOOL_')).toEqual([
+      ['LOCAL_TOOL_DISPATCHED', 1, { toolOrdinal: 1 }],
+      ['LOCAL_TOOL_OUTCOME', 1, { toolOrdinal: 1, outcome: 'failed' }],
+    ]);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(run.readEvidence())).not.toContain('private');
+  });
+
+  it('preserves the actual parser rejection and rejects a concurrent validation request', async () => {
+    const error = new Error('private parser diagnostic');
+    const parser = vi.fn(async () => {
+      throw error;
+    });
+    const duplicate = vi.fn();
+    const run = fixture(() => assistant('private raw'))
+      .make()
+      .start(turn(), evidenceBinding);
+    const validation = run.validateOutput(parser);
+    const failed = expect(validation).rejects.toBe(error);
+    await expect(run.validateOutput(duplicate)).rejects.toMatchObject({
+      code: 'VALIDATION_ALREADY_REQUESTED',
+    });
+    await failed;
+    await expect(run.result).resolves.toBe('private raw');
+    expect(parser).toHaveBeenCalledTimes(1);
+    expect(parser).toHaveBeenCalledWith('private raw');
+    expect(duplicate).not.toHaveBeenCalled();
+    expect(facts(run, 'LOCAL_OUTPUT_')).toEqual([
+      ['LOCAL_OUTPUT_VALIDATION', undefined, { outcome: 'failed' }],
+    ]);
+    expect(JSON.stringify(run.readEvidence())).not.toContain('private');
+  });
+
+  it('skips the parser after a raw failure or a pre-parser abort', async () => {
+    const parser = vi.fn();
+    const runtime = fixture(() => assistant('text')).make();
+    const failed = runtime.start({ ...turn(), systemPrompt: 'wrong' }, evidenceBinding);
+    await expect(failed.validateOutput(parser)).rejects.toMatchObject({
+      code: 'DEFINITION_MISMATCH',
+    });
+    expect(failed.readEvidence()).toBeUndefined();
+    const control = new AbortController();
+    const finished = runtime.start(turn('one', control.signal), evidenceBinding);
+    await finished.result;
+    const reason = new Error('private reason');
+    control.abort(reason);
+    await expect(finished.validateOutput(parser)).rejects.toBe(reason);
+    expect(parser).not.toHaveBeenCalled();
+    expect(facts(finished, 'LOCAL_OUTPUT_')).toEqual([]);
+  });
+
+  it('does not report a pass from an asynchronous parser that returns after abort', async () => {
+    const control = new AbortController();
+    const entered = deferred();
+    const answer = deferred<string>();
+    const run = fixture(() => assistant('text'))
+      .make()
+      .start(turn('one', control.signal), evidenceBinding);
+    const validated = run.validateOutput(() => {
+      entered.resolve();
+      return answer.promise;
+    });
+    await entered.promise;
+    expect(facts(run, 'LOCAL_OUTPUT_')).toEqual([]);
+    await expect(run.waitForSettlement(0)).resolves.toEqual({ status: 'settled' });
+    const reason = new Error('private reason');
+    const rejected = expect(validated).rejects.toBe(reason);
+    control.abort(reason);
+    answer.resolve('private late parse');
+    await rejected;
+    expect(facts(run, 'LOCAL_OUTPUT_')).toEqual([
+      ['LOCAL_OUTPUT_VALIDATION', undefined, { outcome: 'interrupted' }],
+    ]);
+    expect(JSON.stringify(run.readEvidence())).not.toContain('private');
+  });
+});
+
 describe('assignment execution budgets', () => {
   it.each(['maxModelTurns', 'maxToolAttempts', 'maxPayloadBytes'] as const)(
     'requires a valid safe integer for %s before starting the host',
@@ -422,12 +763,16 @@ describe('assignment execution budgets', () => {
   });
 
   it.each([
-    ['assistant message', -1, 0],
-    ['known inputs in combination', 2 * jsonBytes('public') - 1, 0],
-    ['tool result', 2 * jsonBytes('public'), 1],
-    ['new allowance after result', jsonBytes('public', '012345678') + 1, 1],
-    ['resending the resulting history', 2 * jsonBytes('public', '012345678'), 2],
-  ] as const)('short-circuits byte exhaustion at %s', async (_boundary, extra, effects) => {
+    ['assistant message', -1, []],
+    ['known inputs in combination', 2 * jsonBytes('public') - 1, []],
+    ['tool result', 2 * jsonBytes('public'), ['failed']],
+    ['new allowance after result', jsonBytes('public', '012345678') + 1, ['returned']],
+    [
+      'resending the resulting history',
+      2 * jsonBytes('public', '012345678'),
+      ['returned', 'returned'],
+    ],
+  ] as const)('short-circuits byte exhaustion at %s', async (_boundary, extra, outcomes) => {
     const first = assistant('', [call(), call('second')]);
     const provider = vi.fn<ActorAgentLlmProvider>(() => first);
     const { make, execute } = fixture(provider, {
@@ -441,9 +786,16 @@ describe('assignment execution budgets', () => {
     // Size 11. With 16 spare bytes, the first result itself is too big; with
     // 20 spare bytes, it fits but leaves only one byte for the second input.
     execute.mockReturnValue('012345678');
-    await expect(make().run(turn())).rejects.toMatchObject({ code: 'PAYLOAD_BYTE_LIMIT' });
+    const run = make().start(turn(), evidenceBinding);
+    await expect(run.result).rejects.toMatchObject({ code: 'PAYLOAD_BYTE_LIMIT' });
     expect(provider).toHaveBeenCalledTimes(1);
-    expect(execute).toHaveBeenCalledTimes(effects);
+    expect(execute).toHaveBeenCalledTimes(outcomes.length);
+    expect(facts(run, 'LOCAL_TOOL_')).toEqual(
+      outcomes.flatMap((outcome, index) => [
+        ['LOCAL_TOOL_DISPATCHED', index + 1, { toolOrdinal: 1 }],
+        ['LOCAL_TOOL_OUTCOME', index + 1, { toolOrdinal: 1, outcome }],
+      ])
+    );
   });
 
   it('rejects invalid proposed arguments and outputs without invoking getters or toJSON', async () => {
@@ -1149,6 +1501,7 @@ describe('local actor runtime executor', () => {
     const control = new AbortController();
     control.abort();
     const stopped = runtime.start(turn('first', control.signal));
+    expect(Object.keys(stopped).sort()).toEqual(['result', 'waitForSettlement']);
     await expect(stopped.waitForSettlement(0)).resolves.toEqual({ status: 'not-admitted' });
     await expect(stopped.result).rejects.toMatchObject({ code: 'RUN_ABORTED' });
     const wrongDefinition = runtime.start({ ...turn(), systemPrompt: 'wrong definition' });
@@ -1163,12 +1516,20 @@ describe('local actor runtime executor', () => {
     runtimeStart.mockRejectedValueOnce(new Error('No runtime handle was returned.'));
     const provider = vi.fn<ActorAgentLlmProvider>();
     const runtime = fixture(provider).make();
-    const first = runtime.start(turn());
+    const first = runtime.start(turn(), evidenceBinding);
     await expect(first.result).rejects.toMatchObject({ code: 'RUNTIME_START_FAILED' });
     await expect(first.waitForSettlement(0)).resolves.toEqual({
       status: 'unresolved',
       reason: 'runtime-start-failed',
     });
+    expect(facts(first)).toEqual([
+      [
+        'LOCAL_CLEANUP_OUTCOME',
+        undefined,
+        { outcome: 'unresolved', reason: 'runtime-start-failed' },
+      ],
+    ]);
+    expect(JSON.stringify(first.readEvidence())).not.toContain('No runtime handle');
     await expect(runtime.run(turn())).rejects.toMatchObject({ code: 'RUNTIME_BUSY' });
     expect(provider).not.toHaveBeenCalled();
     expect(runtimeStart).toHaveBeenCalledTimes(1);
@@ -1233,7 +1594,7 @@ describe('local actor runtime executor', () => {
     });
     const control = new AbortController();
     const runtime = make();
-    const first = runtime.start(turn('first', control.signal));
+    const first = runtime.start(turn('first', control.signal), evidenceBinding);
     const rejected = expect(first.result).rejects.toMatchObject({ code });
     const admittedSignal = await started.promise;
     if (kind === 'caller abort') control.abort();
@@ -1253,14 +1614,32 @@ describe('local actor runtime executor', () => {
     });
     await vi.advanceTimersByTimeAsync(10);
     await expect(shortWait).resolves.toEqual({ status: 'unresolved', reason: 'wait-timeout' });
-    const overlap = runtime.start(turn('busy'));
+    expect(facts(first, 'LOCAL_CLEANUP_')).toEqual([['LOCAL_CLEANUP_STARTED', undefined, {}]]);
+    const toolFacts =
+      port === 'tool'
+        ? [
+            ['LOCAL_TOOL_DISPATCHED', 1, { toolOrdinal: 1 }],
+            ['LOCAL_TOOL_OUTCOME', 1, { toolOrdinal: 1, outcome: 'interrupted' }],
+          ]
+        : [];
+    expect(facts(first, 'LOCAL_TOOL_')).toEqual(toolFacts);
+    const overlap = runtime.start(turn('busy'), evidenceBinding);
     await expect(overlap.result).rejects.toMatchObject({ code: 'RUNTIME_BUSY' });
     await expect(overlap.waitForSettlement(0)).resolves.toEqual({ status: 'not-admitted' });
+    expect(overlap.readEvidence()).toBeUndefined();
     expect(provider).toHaveBeenCalledTimes(1);
     if (settle === 'resolve') raw.resolve(assistant('late must not be accepted', [call()]));
     else raw.reject(new Error('late rejection'));
     await vi.advanceTimersByTimeAsync(0);
     await expect(longWait).resolves.toEqual({ status: 'settled' });
+    expect(facts(first, 'LOCAL_CLEANUP_')).toEqual([
+      ['LOCAL_CLEANUP_STARTED', undefined, {}],
+      ['LOCAL_CLEANUP_OUTCOME', undefined, { outcome: 'settled' }],
+    ]);
+    expect(facts(first, 'LOCAL_TOOL_')).toEqual(toolFacts);
+    expect(JSON.stringify(first.readEvidence())).not.toMatch(
+      /wait-timeout|late must|late rejection/
+    );
     expect(provider).toHaveBeenCalledTimes(1);
     expect(execute).toHaveBeenCalledTimes(port === 'tool' ? 1 : 0);
     await expect(runtime.run(turn('replacement'))).resolves.toBe('fresh');
@@ -1290,7 +1669,7 @@ describe('local actor runtime executor', () => {
     const provider = vi.fn<ActorAgentLlmProvider>(() => assistant('reply'));
     const control = new AbortController();
     const runtime = fixture(provider).make();
-    const first = runtime.start(turn('first', control.signal));
+    const first = runtime.start(turn('first', control.signal), evidenceBinding);
     const rejected = expect(first.result).rejects.toMatchObject({ code: 'RUN_ABORTED' });
     await stopRequested.promise;
     control.abort();
@@ -1299,10 +1678,15 @@ describe('local actor runtime executor', () => {
       status: 'unresolved',
       reason: 'wait-timeout',
     });
+    expect(facts(first, 'LOCAL_CLEANUP_')).toEqual([['LOCAL_CLEANUP_STARTED', undefined, {}]]);
     await expect(runtime.run(turn('busy'))).rejects.toMatchObject({ code: 'RUNTIME_BUSY' });
     stopGate.resolve();
     await stopped.promise;
     await expect(first.waitForSettlement(500)).resolves.toEqual({ status: 'settled' });
+    expect(facts(first, 'LOCAL_CLEANUP_')).toEqual([
+      ['LOCAL_CLEANUP_STARTED', undefined, {}],
+      ['LOCAL_CLEANUP_OUTCOME', undefined, { outcome: 'settled' }],
+    ]);
     await expect(runtime.run(turn('replacement'))).resolves.toBe('reply');
     expect(provider).toHaveBeenCalledTimes(2);
   });
@@ -1327,7 +1711,7 @@ describe('local actor runtime executor', () => {
     const control = new AbortController();
     const provider = vi.fn<ActorAgentLlmProvider>(() => assistant('fresh'));
     const runtime = fixture(provider).make();
-    const first = runtime.start(turn('first', control.signal));
+    const first = runtime.start(turn('first', control.signal), evidenceBinding);
     const rejected = expect(first.result).rejects.toMatchObject({ code: 'RUN_ABORTED' });
     expect(runtimeStart).toHaveBeenCalledTimes(1);
     control.abort();
@@ -1336,10 +1720,15 @@ describe('local actor runtime executor', () => {
       status: 'unresolved',
       reason: 'wait-timeout',
     });
+    expect(facts(first)).toEqual([]);
     await expect(runtime.run(turn('busy'))).rejects.toMatchObject({ code: 'RUNTIME_BUSY' });
     startup.resolve();
     await stopped.promise;
     await expect(first.waitForSettlement(500)).resolves.toEqual({ status: 'settled' });
+    expect(facts(first)).toEqual([
+      ['LOCAL_CLEANUP_STARTED', undefined, {}],
+      ['LOCAL_CLEANUP_OUTCOME', undefined, { outcome: 'settled' }],
+    ]);
     expect(provider).not.toHaveBeenCalled();
   });
 
@@ -1359,12 +1748,27 @@ describe('local actor runtime executor', () => {
     });
     const provider = vi.fn<ActorAgentLlmProvider>(() => assistant('not accepted'));
     const runtime = fixture(provider).make();
-    const first = runtime.start(turn());
+    const first = runtime.start(turn(), evidenceBinding);
     await expect(first.result).rejects.toMatchObject({ code: 'RUNTIME_STOP_FAILED' });
+    const parser = vi.fn();
+    await expect(first.validateOutput(parser)).rejects.toMatchObject({
+      code: 'RUNTIME_STOP_FAILED',
+    });
+    expect(parser).not.toHaveBeenCalled();
+    expect(facts(first, 'LOCAL_OUTPUT_')).toEqual([]);
     await expect(first.waitForSettlement(0)).resolves.toEqual({
       status: 'unresolved',
       reason: 'runtime-stop-failed',
     });
+    expect(facts(first, 'LOCAL_CLEANUP_')).toEqual([
+      ['LOCAL_CLEANUP_STARTED', undefined, {}],
+      [
+        'LOCAL_CLEANUP_OUTCOME',
+        undefined,
+        { outcome: 'unresolved', reason: 'runtime-stop-failed' },
+      ],
+    ]);
+    expect(JSON.stringify(first.readEvidence())).not.toMatch(/Stop result|not accepted/);
     await expect(runtime.run(turn())).rejects.toMatchObject({ code: 'RUNTIME_BUSY' });
     expect(runtimeStart).toHaveBeenCalledTimes(1);
     expect(provider).toHaveBeenCalledTimes(1);

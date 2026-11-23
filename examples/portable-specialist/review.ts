@@ -1,5 +1,9 @@
 import type { ActorAgentLlmProvider } from '@actor-web/agent';
-import { ActorRuntimeError, createActorRuntime } from '@actor-web/agent/actor-runtime';
+import {
+  ActorRuntimeError,
+  type ActorRuntimeEvidenceBinding,
+  createActorRuntime,
+} from '@actor-web/agent/actor-runtime';
 import { createAgent } from '@actor-web/agent/portable';
 import { structured } from '@actor-web/agent/zod';
 import { z } from 'zod';
@@ -41,10 +45,10 @@ const definition = {
   }),
 };
 
-export async function runSourceReview(
+function prepareReview(
   assignment: Assignment,
   { provider, signal = new AbortController().signal, onTool }: ReviewOptions
-): Promise<{ path: string; excerpt: string }> {
+) {
   signal.throwIfAborted();
   const snapshot = {
     request: assignment.request,
@@ -104,7 +108,39 @@ export async function runSourceReview(
       maxPayloadBytes: 64 * 1024,
     },
   });
-  const finding = await createAgent(runtime, definition).run({ ...snapshot, signal });
+  return { runtime, agent: createAgent(runtime, definition), snapshot, signal };
+}
+
+export async function runSourceReview(
+  assignment: Assignment,
+  options: ReviewOptions
+): Promise<{ path: string; excerpt: string }> {
+  const { agent, snapshot, signal } = prepareReview(assignment, options);
+  const finding = await agent.run({ ...snapshot, signal });
   signal.throwIfAborted();
   return finding;
+}
+
+/** Starts the scripted specialist with host-side citation validation and local evidence. */
+export function startSourceReview(
+  assignment: Assignment,
+  options: ReviewOptions,
+  binding: ActorRuntimeEvidenceBinding
+) {
+  const {
+    runtime,
+    agent: { purpose, systemPrompt, tools },
+    snapshot,
+    signal,
+  } = prepareReview(assignment, options);
+  const handle = runtime.start({ purpose, systemPrompt, tools, task: snapshot, signal }, binding);
+  const result = handle
+    .validateOutput((raw) => definition.output.parse(raw, snapshot))
+    .then((finding) => {
+      signal.throwIfAborted();
+      return finding;
+    });
+  // A host may collect evidence before consuming a rejected citation.
+  void result.catch(() => {});
+  return { result, readEvidence: handle.readEvidence, waitForSettlement: handle.waitForSettlement };
 }

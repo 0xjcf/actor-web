@@ -41,5 +41,16 @@ const turn: portable.AgentTurn<{ request: string }, 'build'> = {
 const raw: Promise<string> = actorRuntime.run(turn);
 const handle: actors.ActorRuntimeExecution = local.start(turn);
 const cleanup: Promise<actors.ActorRuntimeSettlement> = handle.waitForSettlement(100);
+const observed: actors.ObservedActorRuntimeExecution = local.start(turn, {
+  assignmentId: 'fixture.1',
+  revision: 0,
+});
+const validated: Promise<{ length: number }> = observed.validateOutput((raw) => ({
+  length: raw.length,
+}));
+// @ts-expect-error Unbound execution handles do not expose validation evidence.
+void handle.validateOutput(String);
 void raw;
 void cleanup;
+void validated;
+void observed.readEvidence();

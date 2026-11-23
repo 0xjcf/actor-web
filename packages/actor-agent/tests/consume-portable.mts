@@ -53,5 +53,9 @@ const turn: AgentTurn<Task, 'review'> = {
 };
 const raw: Promise<string> = actorRuntime.run(turn);
 const cleanup: Promise<ActorRuntimeSettlement> = local.start(turn).waitForSettlement(0);
+const observed = local.start(turn, { assignmentId: 'fixture.1', revision: 0 });
+const validated: Promise<number> = observed.validateOutput(async (raw) => raw.length);
 void raw;
 void cleanup;
+void observed.readEvidence();
+void validated;

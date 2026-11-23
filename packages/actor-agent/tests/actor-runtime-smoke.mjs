@@ -63,13 +63,19 @@ export async function smoke(
   });
   const signal = new AbortController().signal;
   if (observeSettlement) {
-    const { result, waitForSettlement } = runtime.start({
-      ...definition,
-      task: { id: 'fixture' },
-      signal,
-    });
-    const [text, settlement] = await Promise.all([result, waitForSettlement(2_000)]);
-    return { text, status: settlement.status };
+    const { validateOutput, waitForSettlement, readEvidence } = runtime.start(
+      { ...definition, task: { id: 'fixture' }, signal },
+      { assignmentId: 'smoke-assignment', revision: 0 }
+    );
+    const [{ text }, settlement] = await Promise.all([
+      validateOutput(definition.parse),
+      waitForSettlement(2_000),
+    ]);
+    return {
+      text,
+      status: settlement.status,
+      evidence: readEvidence()?.trace.receipts.map(({ event }) => event.type),
+    };
   }
   const agent = bindAgent(runtime, definition);
   return agent.run({ id: 'fixture', signal });

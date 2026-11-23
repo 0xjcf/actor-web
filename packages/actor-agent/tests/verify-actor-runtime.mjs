@@ -6,10 +6,22 @@ import { runInNewContext } from 'node:vm';
 import { build } from 'vite';
 import { smoke } from './actor-runtime-smoke.mjs';
 
+const events = [
+  'LOCAL_MODEL_DISPATCHED',
+  'LOCAL_MODEL_OUTCOME',
+  'LOCAL_TOOL_DISPATCHED',
+  'LOCAL_TOOL_OUTCOME',
+  'LOCAL_MODEL_DISPATCHED',
+  'LOCAL_MODEL_OUTCOME',
+  'LOCAL_CLEANUP_STARTED',
+  'LOCAL_CLEANUP_OUTCOME',
+  'LOCAL_OUTPUT_VALIDATION',
+];
 assert.deepEqual(await smoke(), { text: 'verified' });
 assert.deepEqual(await smoke(undefined, undefined, {}, true), {
   text: 'verified',
   status: 'settled',
+  evidence: events,
 });
 await assert.rejects(smoke(undefined, undefined, { maxModelTurns: 1 }), {
   name: 'ActorRuntimeError',
@@ -29,6 +41,7 @@ try {
   assert.deepEqual(await smoke(createActorRuntime, createAgent, {}, true), {
     text: 'verified',
     status: 'settled',
+    evidence: events,
   });
   await assert.rejects(smoke(createActorRuntime, createAgent, { maxToolAttempts: 0 }), {
     name: 'ActorRuntimeError',
@@ -81,6 +94,7 @@ const context = {
   queueMicrotask,
   setInterval,
   setTimeout,
+  structuredClone,
   TextDecoder,
   TextEncoder,
 };
@@ -90,6 +104,7 @@ const browserResult = await runInNewContext(
 );
 assert.equal(browserResult.text, 'verified');
 assert.equal(browserResult.status, 'settled');
+assert.deepEqual(Array.from(browserResult.evidence), events);
 await assert.rejects(
   runInNewContext(
     `${chunks[0].code}\nActorRuntimeSmoke.smoke(undefined, undefined, { maxPayloadBytes: 1 });`,

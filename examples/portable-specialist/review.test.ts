@@ -1,7 +1,7 @@
 // @vitest-environment node
 import type { ActorAgentLlmProvider } from '@actor-web/agent';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runSourceReview } from './review.js';
+import { runSourceReview, startSourceReview } from './review.js';
 
 const path = 'src/totals.ts';
 const source = 'export const total = 23;';
@@ -82,6 +82,50 @@ describe('portable specialist example', () => {
       code,
     });
     expect(provider).toHaveBeenCalledTimes(2);
+  });
+
+  it('records actual citation verdicts without exposing source, findings, or diagnostics', async () => {
+    const script = (excerpt: string) =>
+      vi
+        .fn<ActorAgentLlmProvider>()
+        .mockReturnValueOnce(requestTool())
+        .mockReturnValueOnce(reply(JSON.stringify({ path, excerpt })));
+    const binding = { assignmentId: 'scripted-review', revision: 2 };
+    const accepted = startSourceReview(assignment, { provider: script(source) }, binding);
+    const rejected = startSourceReview(assignment, { provider: script('invented') }, binding);
+    await expect(accepted.result).resolves.toEqual({ path, excerpt: source });
+    await expect(rejected.result).rejects.toMatchObject({
+      name: 'AgentOutputError',
+      code: 'taskMismatch',
+    });
+    const successEvidence = accepted.readEvidence();
+    const failureEvidence = rejected.readEvidence();
+    if (!successEvidence || !failureEvidence)
+      throw new Error('Expected evidence for both reviews.');
+    expect(successEvidence.trace.sessionId).not.toBe(failureEvidence.trace.sessionId);
+    for (const [snapshot, outcome] of [
+      [successEvidence, 'passed'],
+      [failureEvidence, 'failed'],
+    ] as const) {
+      expect(snapshot).toMatchObject({
+        truncated: false,
+        trace: { correlationId: binding.assignmentId, revision: binding.revision },
+      });
+      expect(snapshot.trace.receipts.at(-1)).toMatchObject({
+        event: { type: 'LOCAL_OUTPUT_VALIDATION', payload: { outcome } },
+      });
+      const json = JSON.stringify(snapshot);
+      for (const value of [
+        path,
+        source,
+        assignment.request,
+        'invented',
+        'taskMismatch',
+        'call-1',
+      ]) {
+        expect(json).not.toContain(value);
+      }
+    }
   });
 
   it.each([

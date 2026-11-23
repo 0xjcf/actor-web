@@ -6,7 +6,7 @@ The [agent application north-star draft](examples/agent-app-north-star.md) explo
 
 ## Using the backlog
 
-This file owns task intent and dependencies and records work completed directly in Actor-Web. The [queue-board](../../agent-starter/apps/board/README.md) owns board ticket status. No local task is active. Local completion does not change a board ticket's stage. For each board handoff:
+This file owns task intent and dependencies and records work completed directly in Actor-Web. The [queue-board](../../agent-starter/apps/board/README.md) owns board ticket status. Active in Actor-Web: **AW-04-01**. Local completion does not change a board ticket's stage. For each board handoff:
 
 1. Find the task on the board by its `AW-` ID before creating a ticket. Use the ID and task name as the title. Copy its request, acceptance criteria, and checks into the brief.
 2. `AW-` IDs are roadmap IDs, not board ticket IDs. Use the corresponding board ticket IDs for `dependsOn`. If manual entry cannot bind a dependency, wait until the board accepts the predecessor as shipped before queuing its successor. A dependency mentioned only in prose is not enforced.
@@ -23,7 +23,7 @@ This file owns task intent and dependencies and records work completed directly 
 | AW-02-01 · Exercise the executor contract | AW-01-02 | **Complete (local).** Independent Test and Review passed on the source committed in `1ca7ccff`. The [reusable conformance cases](../packages/actor-agent/tests/executor-conformance.ts) passed against the real adapter and caught history carryover, grant widening, and unauthorized retry. |
 | AW-03-01 · Enforce execution limits | AW-02-01 | **Complete (local).** Independent Test and Review passed on the source committed in `8a201ae8`. The local adapter enforces host-supplied turn, tool, time, and byte budgets, counts failed dispatches, and refuses over-budget work. |
 | AW-03-02 · Distinguish stop from settlement | AW-03-01 | **Complete (local).** Independent Test and Review passed on the source committed in `40d9ad38`. A cancelled result or expired cleanup wait does not release the executor while tracked work is pending. Verified local settlement does not establish the outcome of detached or remote work. |
-| AW-04-01 · Record correlated execution evidence | AW-03-02 | Join attempts, tool outcomes, validation, and cleanup to the correct session. Exclude prompts and secrets; report unavailable usage as unknown, not zero. |
+| AW-04-01 · Record correlated execution evidence | AW-03-02 | **In progress (local).** Join attempts, tool outcomes, validation, and cleanup to the correct session. Exclude prompts and secrets; report unavailable usage as unknown, not zero. |
 | AW-02-02 · Verify public package compatibility | AW-02-01, AW-03-02, AW-04-01 | Run the final contract through packed ESM, CJS, and browser consumers. Root and portable entries work without Zod; the Zod entry works with its declared peer. |
 | AW-04-02 · Prove one agent-starter consumer | AW-02-02 | Run one specialist through the public adapter with a scripted provider. Invalid or late output cannot advance the workflow. No board redesign or new worker policy. |
 | AW-04-03 · Qualify the M1 candidate | AW-04-02 | Run the producer and consumer checks on identified revisions. Record independent Test and separate Review, migration notes, and limitations. Qualification does not publish a release. |

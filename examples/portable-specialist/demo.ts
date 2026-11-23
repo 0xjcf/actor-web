@@ -1,5 +1,5 @@
 import type { ActorAgentLlmProvider } from '@actor-web/agent';
-import { runSourceReview } from './review.js';
+import { startSourceReview } from './review.js';
 
 const path = 'src/example.ts';
 const provider: ActorAgentLlmProvider = (request) => {
@@ -36,11 +36,13 @@ const provider: ActorAgentLlmProvider = (request) => {
   };
 };
 
-const finding = await runSourceReview(
+const review = startSourceReview(
   {
     request: 'Cite the exported greeting.',
     files: [{ path, source: 'export const greeting = "hello";' }],
   },
-  { provider }
+  { provider },
+  { assignmentId: 'demo-review', revision: 1 }
 );
-console.log(JSON.stringify(finding));
+console.log(JSON.stringify(await review.result));
+console.log(JSON.stringify(review.readEvidence()));
