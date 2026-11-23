@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { createRequire, isBuiltin, Module } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { build } from 'vite';
 import { smoke } from './actor-runtime-smoke.mjs';
@@ -35,6 +38,9 @@ Module.prototype.require = function (id) {
   return originalRequire.call(this, id);
 };
 try {
+  const agent = require('@actor-web/agent');
+  assert.equal(agent.ACTOR_WEB_LLM_TOOL_NAME, 'llm');
+  assert.equal(typeof agent.createLlmProvider, 'function');
   const { createActorRuntime } = require('@actor-web/agent/actor-runtime');
   const { createAgent } = require('@actor-web/agent/portable');
   assert.deepEqual(await smoke(createActorRuntime, createAgent), { text: 'verified' });
@@ -51,7 +57,7 @@ try {
   Module.prototype.require = originalRequire;
 }
 
-const browser = await build({
+const browserOptions = {
   configFile: false,
   logLevel: 'warn',
   // Vite library mode leaves the replacement that application builds do automatically.
@@ -67,6 +73,9 @@ const browser = await build({
       },
     },
   ],
+};
+const browser = await build({
+  ...browserOptions,
   build: {
     lib: {
       entry: fileURLToPath(new URL('./actor-runtime-smoke.mjs', import.meta.url)),
@@ -112,3 +121,32 @@ await assert.rejects(
   ),
   { name: 'ActorRuntimeError', code: 'PAYLOAD_BYTE_LIMIT' }
 );
+
+// The IIFE smoke runs after module initialization and cannot catch a split ES
+// bundle's inlined dynamic imports reading bindings during top-level await.
+const esmOutput = await mkdtemp(join(tmpdir(), 'actor-runtime-browser-entry-'));
+try {
+  await build({
+    ...browserOptions,
+    build: {
+      target: 'es2022',
+      outDir: esmOutput,
+      emptyOutDir: false,
+      modulePreload: false,
+      rollupOptions: {
+        input: fileURLToPath(new URL('./actor-runtime-browser-entry.mjs', import.meta.url)),
+        preserveEntrySignatures: 'strict',
+        output: { entryFileNames: 'entry.mjs', chunkFileNames: '[name]-[hash].mjs' },
+      },
+    },
+  });
+  // Vite dispatches failed preload imports on window; allow the original error
+  // to reach the assertion when evaluating a browser bundle in Node.
+  globalThis.window = new EventTarget();
+  const { toolName, execution } = await import(pathToFileURL(join(esmOutput, 'entry.mjs')).href);
+  assert.equal(toolName, 'llm');
+  assert.deepEqual(execution, { text: 'verified', status: 'settled', evidence: events });
+} finally {
+  delete globalThis.window;
+  await rm(esmOutput, { recursive: true, force: true });
+}

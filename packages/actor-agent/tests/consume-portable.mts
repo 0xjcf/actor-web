@@ -1,3 +1,4 @@
+import { type ActorAgentLlmProvider, createLlmProvider } from '@actor-web/agent';
 import {
   type ActorRuntimeOptions,
   type ActorRuntimeSettlement,
@@ -11,6 +12,12 @@ import {
 } from '@actor-web/agent/portable';
 import { structured } from '@actor-web/agent/zod';
 import { z } from 'zod';
+
+const provider: ActorAgentLlmProvider = createLlmProvider({
+  endpoint: 'https://example.invalid',
+  model: 'test',
+});
+void provider;
 
 type Task = { allowedPaths: string[] };
 declare const runtime: AgentRuntime<Task, 'review'>;

@@ -13,7 +13,7 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsc --emitDeclarationOnly && tsup && node scripts/write-actor-runtime-cjs-types.mjs && node ../../scripts/verify-exports.mjs . && pnpm test:public-entries",
+    "build": "tsc --emitDeclarationOnly && tsup && node scripts/write-cjs-types.mjs && node ../../scripts/verify-exports.mjs . && pnpm test:public-entries",
     "test:public-entries": "tsc --noEmit --strict --module node16 --target es2022 tests/consume-portable.mts tests/consume-portable.cts && node tests/verify-portable.mjs && node tests/verify-actor-runtime.mjs",
     "build:watch": "pnpm build --watch",
     "dev": "vitest --watch",
@@ -69,9 +69,14 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./portable": {
       "import": {

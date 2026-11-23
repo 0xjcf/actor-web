@@ -67,6 +67,7 @@ import { isLocalAddress, parseActorPath } from './actor-system.js';
 import { createGuardianActor, GUARDIAN_ADDRESS } from './actor-system-guardian.js';
 import { type ActorToolRegistry, createActorToolbox } from './actor-tools.js';
 import { createSystemEventActor, type SystemEventPayload } from './actors/system-event-actor.js';
+import { createAskTimeout } from './ask-pattern-safeguards.js';
 // ✅ UNIFIED API DESIGN Phase 2.1: Auto-publishing system for event subscriptions
 import { AutoPublishingRegistry } from './auto-publishing.js';
 import { ContextActor } from './context-actor.js';
@@ -2170,9 +2171,6 @@ export class ActorSystemImpl implements ActorSystem {
     message: ActorMessage,
     timeout: number
   ): Promise<T> {
-    // Import ask pattern safeguards
-    const { createAskTimeout } = await import('./ask-pattern-safeguards.js');
-
     // Generate correlation ID
     const correlationId = this.correlationManager.generateId();
     log.debug('🔍 ASK: Generated correlationId:', correlationId);

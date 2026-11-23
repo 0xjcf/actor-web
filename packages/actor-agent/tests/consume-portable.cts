@@ -1,8 +1,17 @@
+import agent = require('@actor-web/agent');
 import actors = require('@actor-web/agent/actor-runtime');
 import portable = require('@actor-web/agent/portable');
 import codec = require('@actor-web/agent/zod');
 
 import { z } from 'zod';
+
+const llm: 'llm' = agent.ACTOR_WEB_LLM_TOOL_NAME;
+const providerOptions: agent.LlmProviderOptions = {
+  endpoint: 'https://example.invalid',
+  model: 'test',
+};
+const provider: agent.ActorAgentLlmProvider = agent.createLlmProvider(providerOptions);
+void [llm, provider, agent.createAgentLoopBehavior()];
 
 declare const runtime: portable.AgentRuntime<{ request: string }, 'build'>;
 const builder = portable.createAgent(runtime, {
