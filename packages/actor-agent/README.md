@@ -93,10 +93,13 @@ Import `createActorRuntime` and `ActorRuntimeError` from
 `createAgent`, including any output instructions. Also supply `provider`,
 `encodeTask`, application tool `grants` and implementations, and `limits`:
 `runTimeoutMs`, `askTimeoutMs`, `providerTimeoutMs`, `toolTimeoutMs`, and
-`maxToolCallsPerBatch`. There are no defaults. `askTimeoutMs` is a positive
-integer capped at 214748364 ms so the 10× local correlation fallback fits in
-the platform timer range. The executor checks its active run, ask, provider,
-and tool deadlines against a monotonic clock. If several have elapsed, the
+`maxToolCallsPerBatch`. Existing callers of the unreleased executor must also
+supply `maxModelTurns` and `maxPayloadBytes` (positive safe integers) and
+`maxToolAttempts` (a nonnegative safe integer). There are no defaults.
+`askTimeoutMs` is a positive integer capped at 214748364 ms so the 10× local
+correlation fallback fits in the platform timer range. The executor checks its
+active run, ask, provider, and tool deadlines against a monotonic clock.
+If several have elapsed, the
 earliest absolute deadline wins, with the outer operation winning exact ties.
 An expired ask fails with `ACTOR_ASK_FAILED` when it is the winning deadline,
 even if its timer callback has not fired. Caller abort is handled immediately
@@ -110,9 +113,13 @@ string-keyed data properties. Containers use the current realm's standard
 prototype, or a null prototype for objects. Cycles and unsupported
 values (for example, `undefined`, accessors, or class instances) fail with
 `INVALID_TOOL_INPUT`. `execute(value, task, context)` receives a detached copy
-for that call and performs the effect. The handler and provider must return the
-promise representing their local work. The host owns the pinned assignment
-snapshot, stable callback bindings, and the acceptance decision.
+for that call and performs the effect. A successful tool result must also be
+plain JSON data that can be serialized into the tool receipt; invalid results
+fail with `INVALID_TOOL_OUTPUT`. Provider tool arguments must be plain JSON
+before the adapter accepts an assistant message. For asynchronous work, the
+handler and provider must return the promise representing that work. The host
+owns the pinned assignment snapshot, stable callback bindings, and the
+acceptance decision.
 
 Each admitted run owns a new actor and local runtime. Only requested, granted,
 implemented application tools are advertised; `llm` is reserved. The executor
@@ -123,6 +130,29 @@ text. Execution failures reject with a `code`, retaining provider and coded tool
 failures; no retry or repair is attempted. The optional output parser remains
 separate.
 
+Budgets reset for each admitted run and are cumulative within it:
+
+- `maxModelTurns` counts actual provider calls. Before a tool batch can run,
+  there must still be a model turn available to process its results.
+  A final answer may finish on the last turn. Refusal: `MODEL_TURN_LIMIT`.
+- `maxToolAttempts` counts actual application-tool handler calls; zero
+  permits model-only runs. A validated batch must fit as a whole before any
+  handler runs. Refusal: `TOOL_ATTEMPT_LIMIT`. The per-batch call limit still
+  applies separately. Failed dispatches count; refused dispatches do not.
+- `maxPayloadBytes` counts compact JSON UTF-8 bytes of the normalized provider
+  request (system text, messages, tool names and declarations), each normalized
+  successful assistant message (including tool calls and arguments), and each
+  detached tool input and successful output. Omitted optional fields are
+  omitted from the count. History counts again when resent. SDK/wire framing,
+  diagnostics, credentials, and token usage are excluded.
+  Refusal: `PAYLOAD_BYTE_LIMIT`.
+
+All known tool input bytes must fit before the first effect, and each input is
+checked again immediately before dispatch. A previous tool's output can leave
+too little allowance for the next input. An unknown-size response is checked
+after it returns and before it is forwarded or accepted. These are local
+dispatch and acceptance limits, not heap, network, or remote effect limits.
+
 Abort or timeout rejects the caller and signals the admitted ports. A rejected
 caller promise is not a cleanup receipt: the adapter rejects additional runs
 with `RUNTIME_BUSY` until tracked local work and runtime stop complete. A failed
@@ -131,7 +161,8 @@ Neither this fence nor an abort signal establishes remote termination,
 rollback, or settlement of work a port detached from its returned promise.
 
 The [portable specialist example](../../examples/portable-specialist/demo.ts)
-uses this adapter with a scripted provider and one granted in-memory read. From
+uses this adapter with a scripted provider, two model turns, one in-memory
+read attempt, and a 64 KiB cumulative payload budget. From
 the workspace root, build the runtime and agent packages, then run the demo
 against those built entries:
 
@@ -141,10 +172,10 @@ pnpm --filter @actor-web/agent build
 pnpm --filter @actor-web/example-portable-specialist demo
 ```
 
-This initial local profile does not qualify cumulative or byte budgets, the
-full cancellation/settlement contract, recovery, correlated evidence, or a
-live provider. The public-entry build smoke uses workspace ESM and CJS
-consumers and a browser-target bundle; it is not the packed-consumer matrix.
+This local profile does not qualify the full cancellation/settlement contract,
+recovery, correlated evidence, or a live provider. The public-entry build smoke
+uses workspace ESM and CJS consumers and a browser-target bundle; it is not the
+packed-consumer matrix.
 For a browser bundle, statically replace the runtime dependency's
 `process.env.NODE_ENV` references as Vite application builds do. The smoke
 does not provide a Node `process` shim.

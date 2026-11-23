@@ -107,4 +107,42 @@ describe('portable specialist example', () => {
     });
     expect(provider).toHaveBeenCalledTimes(1);
   });
+
+  it('allows one read and refuses another batch after both attempt and turn exhaustion', async () => {
+    const first = requestTool();
+    const second = {
+      ...first,
+      value: {
+        message: {
+          ...first.value.message,
+          toolCalls: [{ id: 'call-2', name: 'read_source', input: { path } }],
+        },
+      },
+    };
+    const provider = vi
+      .fn<ActorAgentLlmProvider>()
+      .mockReturnValueOnce(first)
+      .mockReturnValueOnce(second);
+    const onTool = vi.fn();
+    await expect(runSourceReview(assignment, { provider, onTool })).rejects.toMatchObject({
+      name: 'ActorRuntimeError',
+      code: 'TOOL_ATTEMPT_LIMIT',
+    });
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(onTool.mock.calls).toEqual([['read_source']]);
+  });
+
+  it('rejects a large source result before sending it to the provider', async () => {
+    const provider = vi.fn<ActorAgentLlmProvider>().mockReturnValueOnce(requestTool());
+    const onTool = vi.fn();
+    const files = [{ path, source: 'é'.repeat(32 * 1024) }];
+    await expect(
+      runSourceReview({ ...assignment, files }, { provider, onTool })
+    ).rejects.toMatchObject({
+      name: 'ActorRuntimeError',
+      code: 'PAYLOAD_BYTE_LIMIT',
+    });
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(onTool.mock.calls).toEqual([['read_source']]);
+  });
 });

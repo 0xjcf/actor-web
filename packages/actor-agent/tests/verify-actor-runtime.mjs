@@ -7,6 +7,10 @@ import { build } from 'vite';
 import { smoke } from './actor-runtime-smoke.mjs';
 
 assert.deepEqual(await smoke(), { text: 'verified' });
+await assert.rejects(smoke(undefined, undefined, { maxModelTurns: 1 }), {
+  name: 'ActorRuntimeError',
+  code: 'MODEL_TURN_LIMIT',
+});
 
 const require = createRequire(import.meta.url);
 const originalRequire = Module.prototype.require;
@@ -18,6 +22,10 @@ try {
   const { createActorRuntime } = require('@actor-web/agent/actor-runtime');
   const { createAgent } = require('@actor-web/agent/portable');
   assert.deepEqual(await smoke(createActorRuntime, createAgent), { text: 'verified' });
+  await assert.rejects(smoke(createActorRuntime, createAgent, { maxToolAttempts: 0 }), {
+    name: 'ActorRuntimeError',
+    code: 'TOOL_ATTEMPT_LIMIT',
+  });
 } finally {
   Module.prototype.require = originalRequire;
 }
@@ -73,3 +81,10 @@ const browserResult = await runInNewContext(
   context
 );
 assert.equal(browserResult.text, 'verified');
+await assert.rejects(
+  runInNewContext(
+    `${chunks[0].code}\nActorRuntimeSmoke.smoke(undefined, undefined, { maxPayloadBytes: 1 });`,
+    context
+  ),
+  { name: 'ActorRuntimeError', code: 'PAYLOAD_BYTE_LIMIT' }
+);

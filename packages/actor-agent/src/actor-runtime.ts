@@ -1,4 +1,3 @@
-import type { JsonValue } from '@actor-web/runtime';
 import {
   type ActorToolExecutionContext,
   type ActorToolExecutor,
@@ -7,13 +6,23 @@ import {
 } from '@actor-web/runtime/browser';
 import { actor, defineActorWebTopology, node, tool } from '@actor-web/runtime/topology';
 import {
+  equalJson,
+  InvalidJsonPayload,
+  JsonPayloadTooLarge,
+  measureJson,
+  ownData,
+  snapshotJson,
+} from './actor-runtime-json.js';
+import {
   ACTOR_WEB_LLM_TOOL_NAME,
   type ActorAgentLlmProvider,
+  type ActorAgentLlmRequest,
   type ActorAgentLlmResult,
   type ActorAgentLoopMessage,
   type ActorAgentLoopReply,
+  type ActorAgentTokenUsage,
+  type ActorAgentToolCall,
   type ActorAgentToolDefinition,
-  createActorAgentToolRegistry,
   createAgentLoopBehavior,
 } from './index.js';
 import type { AgentRuntime, AgentTurn } from './portable.js';
@@ -22,8 +31,63 @@ export interface ActorRuntimeTool<Task> {
   readonly name: string;
   /** Synchronously validate and scope the input without effects. Return plain JSON data or throw. */
   readonly validateInput: (input: unknown, task: Task) => { readonly value: unknown };
-  /** Only called with a detached copy of the validated payload. */
+  /** Receives a detached validated payload and returns plain JSON or a promise for it. */
   readonly execute: (input: unknown, task: Task, context: ActorToolExecutionContext) => unknown;
+}
+
+type BudgetCode = 'MODEL_TURN_LIMIT' | 'TOOL_ATTEMPT_LIMIT' | 'PAYLOAD_BYTE_LIMIT';
+const budgetMessages: Record<BudgetCode, string> = {
+  MODEL_TURN_LIMIT: 'The assignment has no remaining model turn.',
+  TOOL_ATTEMPT_LIMIT: 'The application tool attempts would exceed the assignment limit.',
+  PAYLOAD_BYTE_LIMIT: 'The payload would exceed the assignment byte limit.',
+};
+
+function budgetFailure(code: BudgetCode): never {
+  throw new ActorRuntimeError(code, budgetMessages[code]);
+}
+
+function createBudget(limits: ActorRuntimeLimits) {
+  let modelTurns = limits.maxModelTurns;
+  let toolAttempts = limits.maxToolAttempts;
+  let payloadBytes = limits.maxPayloadBytes;
+  const requireModelTurn = () => {
+    if (modelTurns === 0) budgetFailure('MODEL_TURN_LIMIT');
+  };
+  const requireToolAttempts = (attempts: number) => {
+    if (attempts > toolAttempts) budgetFailure('TOOL_ATTEMPT_LIMIT');
+  };
+  const chargePayload = (bytes: number) => {
+    if (bytes > payloadBytes) budgetFailure('PAYLOAD_BYTE_LIMIT');
+    payloadBytes -= bytes;
+  };
+  return {
+    requireModelTurn,
+    requireToolAttempts,
+    chargePayload,
+    get payloadBytes() {
+      return payloadBytes;
+    },
+    dispatchModel(bytes: number) {
+      requireModelTurn();
+      chargePayload(bytes);
+      modelTurns--;
+    },
+    dispatchTool(bytes: number) {
+      requireToolAttempts(1);
+      chargePayload(bytes);
+      toolAttempts--;
+    },
+  };
+}
+
+function checkPayload<T>(code: string, read: () => T): T {
+  try {
+    return read();
+  } catch (cause) {
+    if (cause instanceof JsonPayloadTooLarge) budgetFailure('PAYLOAD_BYTE_LIMIT');
+    if (cause instanceof ActorRuntimeError) throw cause;
+    throw new ActorRuntimeError(code, 'Expected a plain JSON payload.');
+  }
 }
 
 export interface ActorRuntimeLimits {
@@ -33,6 +97,12 @@ export interface ActorRuntimeLimits {
   readonly providerTimeoutMs: number;
   readonly toolTimeoutMs: number;
   readonly maxToolCallsPerBatch: number;
+  /** Positive safe integer; counts actual provider calls, including failed calls. */
+  readonly maxModelTurns: number;
+  /** Nonnegative safe integer; zero permits no application-tool handler calls. */
+  readonly maxToolAttempts: number;
+  /** Positive safe integer; cumulative compact JSON UTF-8 bytes at the local port boundaries. */
+  readonly maxPayloadBytes: number;
 }
 
 export interface ActorRuntimeOptions<Task, Purpose extends string> {
@@ -77,116 +147,46 @@ function checkToolName(name: unknown): asserts name is string {
   }
 }
 
-// Take a plain, immutable JSON snapshot and canonicalize object key order for turn comparison.
-function copyJson(value: unknown, ancestors = new Set<object>()): JsonValue {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'object' && value !== null && !ancestors.has(value)) {
-    ancestors.add(value);
-    try {
-      if (Array.isArray(value)) {
-        const items = Array.from(value, (item: unknown) => copyJson(item, ancestors));
-        Object.freeze(items);
-        return items;
-      }
-      const prototype = Object.getPrototypeOf(value);
-      if (prototype === Object.prototype || prototype === null) {
-        const entries = Reflect.ownKeys(value).map((key) => {
-          const descriptor = Object.getOwnPropertyDescriptor(value, key);
-          if (typeof key !== 'string' || !descriptor?.enumerable || !('value' in descriptor)) {
-            return invalidConfig('Tool parameters must be plain JSON data.');
-          }
-          return [key, copyJson(descriptor.value, ancestors)] as const;
-        });
-        entries.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
-        return Object.freeze(Object.fromEntries(entries));
-      }
-    } finally {
-      ancestors.delete(value);
-    }
-  }
-  return invalidConfig('Tool parameters must be plain JSON data.');
-}
-
-function invalidToolPayload(): Error {
-  return new Error('Validated tool payloads must be plain JSON data.');
-}
-
-function ownJsonField(value: object, key: PropertyKey): unknown {
-  const field = Object.getOwnPropertyDescriptor(value, key);
-  if (typeof key !== 'string' || !field?.enumerable || !('value' in field)) {
-    throw invalidToolPayload();
-  }
-  return field.value;
-}
-
-// Copy each call independently. Keep aliases within a copy, but reject cycles.
-function snapshotToolPayload(
-  value: unknown,
-  copies = new Map<object, JsonValue | undefined>()
-): JsonValue {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value !== 'object' || value === null) throw invalidToolPayload();
-  const existing = copies.get(value);
-  if (existing !== undefined) return existing;
-  if (copies.has(value)) throw invalidToolPayload();
-  copies.set(value, undefined);
-
-  const prototype = Object.getPrototypeOf(value);
-  let copy: JsonValue;
-  if (Array.isArray(value)) {
-    const length = value.length;
-    if (prototype !== Array.prototype || Reflect.ownKeys(value).length !== length + 1) {
-      throw invalidToolPayload();
-    }
-    const items: JsonValue[] = [];
-    for (let index = 0; index < length; index++) {
-      items.push(snapshotToolPayload(ownJsonField(value, String(index)), copies));
-    }
-    copy = items;
-  } else {
-    if (prototype !== Object.prototype && prototype !== null) throw invalidToolPayload();
-    const record = Object.fromEntries(
-      Reflect.ownKeys(value).map((key) => [
-        key,
-        snapshotToolPayload(ownJsonField(value, key), copies),
-      ])
-    );
-    copy = prototype === null ? Object.setPrototypeOf(record, null) : record;
-  }
-  copies.set(value, copy);
-  return copy;
-}
-
 function snapshotRequested(tools: unknown): ActorAgentToolDefinition[] {
   if (!Array.isArray(tools)) invalidConfig('An explicit requested tool list is required.');
   const seen = new Set<string>();
-  return Array.from(tools, (entry: unknown) => {
-    if (typeof entry !== 'object' || entry === null || !('name' in entry)) {
-      return invalidConfig('Invalid requested tool definition.');
+  try {
+    const requested: ActorAgentToolDefinition[] = [];
+    for (let index = 0; index < tools.length; index++) {
+      const entry = ownData(tools, String(index));
+      if (typeof entry !== 'object' || entry === null) throw new InvalidJsonPayload();
+      const name = ownData(entry, 'name');
+      const description = ownData(entry, 'description');
+      const parameters = ownData(entry, 'parameters');
+      checkToolName(name);
+      if (
+        seen.has(name) ||
+        typeof description !== 'string' ||
+        !description.trim() ||
+        typeof parameters !== 'object' ||
+        parameters === null ||
+        Array.isArray(parameters)
+      ) {
+        return invalidConfig('Invalid or duplicate requested tool definition.');
+      }
+      seen.add(name);
+      requested.push(
+        Object.freeze({
+          name,
+          description,
+          inputSchema: snapshotJson(
+            parameters as ActorAgentToolDefinition['inputSchema'],
+            Number.MAX_SAFE_INTEGER,
+            true
+          ).value,
+        })
+      );
     }
-    const { name } = entry;
-    checkToolName(name);
-    if (
-      seen.has(name) ||
-      !('description' in entry) ||
-      typeof entry.description !== 'string' ||
-      !entry.description.trim() ||
-      !('parameters' in entry) ||
-      typeof entry.parameters !== 'object' ||
-      entry.parameters === null ||
-      Array.isArray(entry.parameters)
-    ) {
-      return invalidConfig('Invalid or duplicate requested tool definition.');
-    }
-    seen.add(name);
-    return Object.freeze({
-      name,
-      description: entry.description,
-      inputSchema: copyJson(entry.parameters),
-    });
-  });
+    return requested;
+  } catch (cause) {
+    if (cause instanceof ActorRuntimeError) throw cause;
+    return invalidConfig('Tool definitions must contain plain JSON parameters.');
+  }
 }
 
 function bindConfig<Task, Purpose extends string>(options: ActorRuntimeOptions<Task, Purpose>) {
@@ -209,18 +209,30 @@ function bindConfig<Task, Purpose extends string>(options: ActorRuntimeOptions<T
   ) {
     invalidConfig('A trusted definition, provider, task encoder, grants and tools are required.');
   }
-  const limits = {
-    runTimeoutMs: options.limits?.runTimeoutMs,
-    askTimeoutMs: options.limits?.askTimeoutMs,
-    providerTimeoutMs: options.limits?.providerTimeoutMs,
-    toolTimeoutMs: options.limits?.toolTimeoutMs,
-    maxToolCallsPerBatch: options.limits?.maxToolCallsPerBatch,
+  const { limits: suppliedLimits } = options;
+  const timedLimits = {
+    runTimeoutMs: suppliedLimits?.runTimeoutMs,
+    askTimeoutMs: suppliedLimits?.askTimeoutMs,
+    providerTimeoutMs: suppliedLimits?.providerTimeoutMs,
+    toolTimeoutMs: suppliedLimits?.toolTimeoutMs,
+    maxToolCallsPerBatch: suppliedLimits?.maxToolCallsPerBatch,
   };
-  for (const [name, limit] of Object.entries(limits)) {
+  for (const [name, limit] of Object.entries(timedLimits)) {
     // Browser and Node timers cannot represent delays above the signed 32-bit maximum.
     const max = name === 'askTimeoutMs' ? maxAskTimeoutMs : maxTimerMs;
     if (!Number.isInteger(limit) || limit < 1 || limit > max) {
       invalidConfig(`${name} must be a positive integer no greater than ${max}.`);
+    }
+  }
+  const budgets = {
+    maxModelTurns: suppliedLimits?.maxModelTurns,
+    maxToolAttempts: suppliedLimits?.maxToolAttempts,
+    maxPayloadBytes: suppliedLimits?.maxPayloadBytes,
+  };
+  for (const [name, limit] of Object.entries(budgets)) {
+    const allowZero = name === 'maxToolAttempts';
+    if (!Number.isSafeInteger(limit) || limit < (allowZero ? 0 : 1)) {
+      invalidConfig(`${name} must be a ${allowZero ? 'nonnegative' : 'positive'} safe integer.`);
     }
   }
   const requested = snapshotRequested(definition.tools);
@@ -253,11 +265,11 @@ function bindConfig<Task, Purpose extends string>(options: ActorRuntimeOptions<T
     systemPrompt: definition.output?.instructions
       ? `${definition.systemPrompt}\n${definition.output.instructions}`
       : definition.systemPrompt,
-    requested: JSON.stringify(requested),
+    requested,
     effective,
-    limits,
+    limits: Object.freeze({ ...timedLimits, ...budgets }),
     encodeTask,
-    provider: createActorAgentToolRegistry({ llm: provider })[ACTOR_WEB_LLM_TOOL_NAME],
+    provider,
   };
 }
 
@@ -265,16 +277,16 @@ function verifyTurn<Task, Purpose extends string>(
   config: ReturnType<typeof bindConfig<Task, Purpose>>,
   turn: AgentTurn<Task, Purpose>
 ): void {
-  let requested: string;
+  let requested: ActorAgentToolDefinition[];
   try {
-    requested = JSON.stringify(snapshotRequested(turn.tools));
+    requested = snapshotRequested(turn.tools);
   } catch (cause) {
     throw new ActorRuntimeError('DEFINITION_MISMATCH', 'Invalid turn tool definitions.', cause);
   }
   if (
     turn.purpose !== config.purpose ||
     turn.systemPrompt !== config.systemPrompt ||
-    requested !== config.requested
+    !equalJson(requested, config.requested)
   ) {
     throw new ActorRuntimeError(
       'DEFINITION_MISMATCH',
@@ -371,6 +383,14 @@ function createRunScope(callerSignal: AbortSignal, runTimeoutMs: number) {
   };
   return {
     check,
+    checked<T>(checkPayload: () => T): T {
+      check();
+      try {
+        return checkPayload();
+      } finally {
+        check();
+      }
+    },
     signal,
     wait,
     async dispatch<T>(
@@ -415,55 +435,233 @@ function createRunScope(callerSignal: AbortSignal, runTimeoutMs: number) {
   };
 }
 
-function validateProviderStep(result: ActorAgentLlmResult, maxCalls: number): ActorAgentLlmResult {
+function dataField(value: unknown, key: string): unknown {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const field = Object.getOwnPropertyDescriptor(value, key);
+  if (field && !('value' in field)) throw new InvalidJsonPayload();
+  return field?.value;
+}
+
+function descriptorInChain(value: object, key: string): PropertyDescriptor | undefined {
+  for (let current: object | null = value; current; current = Object.getPrototypeOf(current)) {
+    const descriptor = Object.getOwnPropertyDescriptor(current, key);
+    if (descriptor) return descriptor;
+  }
+  return undefined;
+}
+
+type Held<T> = { value: T };
+
+function holdValue<T>(value: T): Held<T> {
+  // Do not inherit a `then` hook while the native Promise assimilates the box itself.
+  const box = { __proto__: null, value };
+  return box;
+}
+
+function isClassPrototype(prototype: object): boolean {
+  const constructorField = Object.getOwnPropertyDescriptor(prototype, 'constructor');
+  if (!constructorField || !Object.hasOwn(constructorField, 'value')) return false;
+  const cls: unknown = constructorField.value;
+  if (typeof cls !== 'function') return false;
+  const link = Object.getOwnPropertyDescriptor(cls, 'prototype');
+  // A class's immutable prototype link must point back to this exact object. The
+  // intrinsic source check distinguishes it from every realm's Object constructor.
   if (
-    result?.ok === false &&
-    typeof result.error?.code === 'string' &&
-    typeof result.error.message === 'string'
+    !link ||
+    !Object.hasOwn(link, 'value') ||
+    link.value !== prototype ||
+    link.writable !== false
   ) {
-    return result;
+    return false;
   }
-  if (result?.ok !== true) {
-    return {
-      ok: false,
-      error: { code: 'INVALID_PROVIDER_REPLY', message: 'Expected a provider result.' },
-    };
-  }
-  const message = result.value?.message;
-  if (
-    !message ||
-    message.role !== 'assistant' ||
-    typeof message.content !== 'string' ||
-    (message.toolCalls !== undefined && !Array.isArray(message.toolCalls))
-  ) {
-    return {
-      ok: false,
-      error: { code: 'INVALID_ASSISTANT_REPLY', message: 'Expected an assistant message.' },
-    };
-  }
-  if ((message.toolCalls?.length ?? 0) > maxCalls) {
-    return {
-      ok: false,
-      error: { code: 'TOOL_BATCH_LIMIT', message: 'The tool batch exceeds the configured limit.' },
-    };
-  }
-  const toolCalls = [];
-  for (const call of message.toolCalls ?? []) {
-    if (!call || !isToken(call.id)) {
-      return {
-        ok: false,
-        error: { code: 'INVALID_TOOL_CALL_ID', message: 'Expected a nonempty tool call ID.' },
-      };
+  const source = Function.prototype.toString.call(cls);
+  if (!/^class(?=\s|\/[*/]|\{)/.test(source)) return false;
+  const afterKeyword = source
+    .slice(5)
+    .replace(/^(?:\s|\/\*[\s\S]*?\*\/|\/\/[^\r\n\u2028\u2029]*)*/, '');
+  return !afterKeyword.startsWith('(');
+}
+
+function portThen(value: object): unknown {
+  const prototype: object | null = Object.getPrototypeOf(value);
+  for (let owner: object | null = value; owner; ) {
+    const parent: object | null = owner === value ? prototype : Object.getPrototypeOf(owner);
+    const descriptor = Object.getOwnPropertyDescriptor(owner, 'then');
+    if (descriptor) {
+      // Data methods do not require running a getter, regardless of their owner.
+      if (Object.hasOwn(descriptor, 'value')) return descriptor.value;
+      if (
+        !descriptor.get ||
+        Array.isArray(value) ||
+        prototype === null ||
+        (Object.getPrototypeOf(prototype) === null && !isClassPrototype(prototype)) ||
+        (parent === null && owner !== prototype && !isClassPrototype(owner))
+      ) {
+        return undefined;
+      }
+      // An ambiguous root (including every realm's Object.prototype) never
+      // contributes an accessor. For a wrapper, use the port result as the receiver.
+      return Reflect.apply(descriptor.get, value, []);
     }
-    if (!isToken(call.name) || !Object.hasOwn(call, 'input')) {
-      return {
-        ok: false,
-        error: { code: 'INVALID_TOOL_CALL', message: 'Expected a tool name and input.' },
-      };
-    }
-    toolCalls.push({ id: call.id, name: call.name, input: call.input });
+    owner = parent;
   }
-  return { ok: true, value: { ...result.value, message: { ...message, toolCalls } } };
+  return undefined;
+}
+
+// Box synchronous data and wrapper fulfillments before resolving a native Promise.
+// Plain records and arrays never run a `then` accessor during port adoption.
+function holdPortResult<T>(value: T | Promise<T>, chain?: Set<object>): Held<T> | Promise<Held<T>> {
+  if (value === null || (typeof value !== 'object' && typeof value !== 'function')) {
+    return holdValue(value as T);
+  }
+  try {
+    // Native promises (including from another realm) do not need property-based detection.
+    return Promise.prototype.then.call(value, (result: T) => holdValue(result)) as Promise<Held<T>>;
+  } catch (cause) {
+    if (!(cause instanceof TypeError)) throw cause;
+  }
+
+  if (chain?.has(value)) throw new TypeError('A returned Promise wrapper resolved cyclically.');
+  const then = portThen(value);
+  if (typeof then !== 'function') return holdValue(value as T);
+  const pending = chain ?? new Set<object>();
+  pending.add(value);
+
+  return new Promise<Held<T>>((resolve, reject) => {
+    // Like native thenable assimilation, invoke the method asynchronously and let only
+    // its first settlement win, even if that fulfillment adopts another pending wrapper.
+    queueMicrotask(() => {
+      let settled = false;
+      const refuse = (reason: unknown) => {
+        if (settled) return;
+        settled = true;
+        reject(reason);
+      };
+      const fulfill = (result: T | Promise<T>) => {
+        if (settled) return;
+        settled = true;
+        try {
+          resolve(holdPortResult(result, pending));
+        } catch (cause) {
+          reject(cause);
+        }
+      };
+      try {
+        Reflect.apply(then, value, [fulfill, refuse]);
+      } catch (cause) {
+        refuse(cause);
+      }
+    });
+  });
+}
+
+function normalizeRequest(request: ActorAgentLlmRequest): ActorAgentLlmRequest {
+  return {
+    ...(request.system === undefined ? {} : { system: request.system }),
+    messages: request.messages,
+    tools: request.tools,
+    ...(request.toolDefinitions === undefined ? {} : { toolDefinitions: request.toolDefinitions }),
+  };
+}
+
+function diagnosticCause(diagnostic: object): unknown {
+  try {
+    return descriptorInChain(diagnostic, 'cause')?.value;
+  } catch {
+    // Optional metadata must not replace the provider's valid code and message.
+    return undefined;
+  }
+}
+
+function normalizeProviderStep(
+  result: unknown,
+  maxCalls: number,
+  budget: ReturnType<typeof createBudget>
+): ActorAgentLlmResult {
+  const ok = checkPayload('INVALID_PROVIDER_REPLY', () => dataField(result, 'ok'));
+  if (ok === false) {
+    try {
+      const diagnostic = dataField(result, 'error');
+      if (typeof diagnostic === 'object' && diagnostic !== null) {
+        // Diagnostics aren't metered JSON. Read the required public fields, including on
+        // Error subclasses, but do not force an optional lazy cause.
+        const { code, message } = diagnostic as { code?: unknown; message?: unknown };
+        if (typeof code === 'string' && typeof message === 'string') {
+          const cause = diagnosticCause(diagnostic);
+          return { ok: false, error: { code, message, ...(cause === undefined ? {} : { cause }) } };
+        }
+      }
+    } catch {
+      // A diagnostic whose required fields cannot be read is a malformed provider reply.
+    }
+    throw new ActorRuntimeError('INVALID_PROVIDER_REPLY', 'Expected a plain JSON payload.');
+  }
+  if (ok !== true) {
+    throw new ActorRuntimeError('INVALID_PROVIDER_REPLY', 'Expected a provider result.');
+  }
+  return checkPayload('INVALID_ASSISTANT_REPLY', () => {
+    const value = dataField(result, 'value');
+    const message = dataField(value, 'message');
+    const content = dataField(message, 'content');
+    const calls = dataField(message, 'toolCalls');
+    if (
+      dataField(message, 'role') !== 'assistant' ||
+      typeof content !== 'string' ||
+      (calls !== undefined && !Array.isArray(calls))
+    ) {
+      throw new ActorRuntimeError('INVALID_ASSISTANT_REPLY', 'Expected an assistant message.');
+    }
+    const callCount =
+      calls === undefined ? 0 : Object.getOwnPropertyDescriptor(calls, 'length')?.value;
+    if (typeof callCount !== 'number') throw new InvalidJsonPayload();
+    if (callCount > maxCalls) {
+      throw new ActorRuntimeError(
+        'TOOL_BATCH_LIMIT',
+        'The tool batch exceeds the configured limit.'
+      );
+    }
+    const toolCalls: ActorAgentToolCall[] = [];
+    const normalized = {
+      role: 'assistant' as const,
+      content,
+      ...(calls === undefined ? {} : { toolCalls }),
+    };
+    // Measure with the empty calls array first, then add each normalized element and comma.
+    let bytes = measureJson(normalized, budget.payloadBytes);
+    for (let index = 0; index < callCount; index++) {
+      const separator = index === 0 ? 0 : 1;
+      const remaining = budget.payloadBytes - bytes - separator;
+      if (remaining < 0) budgetFailure('PAYLOAD_BYTE_LIMIT');
+      const call = checkPayload('INVALID_TOOL_CALL', () => {
+        if (!Array.isArray(calls)) throw new InvalidJsonPayload();
+        const raw = ownData(calls, String(index));
+        const id = dataField(raw, 'id');
+        const name = dataField(raw, 'name');
+        if (typeof id !== 'string' || !id) {
+          throw new ActorRuntimeError('INVALID_TOOL_CALL_ID', 'Expected a nonempty tool call ID.');
+        }
+        if (typeof name !== 'string' || !name) {
+          throw new ActorRuntimeError('INVALID_TOOL_CALL', 'Expected a tool name and input.');
+        }
+        const detached = snapshotJson({ id, name, input: dataField(raw, 'input') }, remaining);
+        if (!isToken(id)) {
+          throw new ActorRuntimeError('INVALID_TOOL_CALL_ID', 'Expected a nonempty tool call ID.');
+        }
+        if (!isToken(name)) {
+          throw new ActorRuntimeError('INVALID_TOOL_CALL', 'Expected a tool name and input.');
+        }
+        return detached;
+      });
+      bytes += separator + call.bytes;
+      toolCalls.push(call.value);
+    }
+    const usage = dataField(value, 'usage') as ActorAgentTokenUsage | undefined;
+    budget.chargePayload(bytes);
+    return {
+      ok: true,
+      value: { message: normalized, ...(usage === undefined ? {} : { usage }) },
+    };
+  });
 }
 
 async function driveLoop<Task>(
@@ -471,6 +669,7 @@ async function driveLoop<Task>(
   toolbox: ReturnType<typeof createActorToolbox>,
   implementations: ReadonlyMap<string, ActorRuntimeTool<Task>>,
   scope: ReturnType<typeof createRunScope>,
+  budget: ReturnType<typeof createBudget>,
   task: Task,
   prompt: string,
   system: string
@@ -501,37 +700,42 @@ async function driveLoop<Task>(
     }
 
     // Validate and detach the whole batch before any handler runs. IDs stay reserved for the session.
-    const batch = reply.toolCalls.map((call) => {
-      scope.check();
-      const { id, name } = call;
-      if (seen.has(id)) {
-        throw new ActorRuntimeError('DUPLICATE_TOOL_CALL_ID', 'A tool call ID cannot be reused.');
-      }
-      seen.add(id);
-      const implementation = implementations.get(name);
-      if (!implementation || !toolbox.has(name)) {
-        throw new ActorRuntimeError('TOOL_DENIED', 'The tool is not granted for this assignment.');
-      }
-      let payload: unknown;
-      try {
-        const validated = implementation.validateInput(call.input, task);
-        if (validated instanceof Promise) {
-          void validated.catch(() => {});
-          throw new Error('Tool validators must be synchronous.');
+    let batchBytes = budget.payloadBytes;
+    const batch = reply.toolCalls.map((call) =>
+      scope.checked(() => {
+        const { id, name } = call;
+        if (seen.has(id)) {
+          throw new ActorRuntimeError('DUPLICATE_TOOL_CALL_ID', 'A tool call ID cannot be reused.');
         }
-        if (!validated || !Object.hasOwn(validated, 'value')) {
-          throw new Error('Expected a synchronous validated tool payload.');
+        seen.add(id);
+        const implementation = implementations.get(name);
+        if (!implementation || !toolbox.has(name)) {
+          throw new ActorRuntimeError(
+            'TOOL_DENIED',
+            'The tool is not granted for this assignment.'
+          );
         }
-        payload = validated.value;
-      } catch (cause) {
-        throw executionFailure('INVALID_TOOL_INPUT', 'The tool input was refused.', cause);
-      }
-      try {
-        return { id, name, input: snapshotToolPayload(payload) };
-      } catch (cause) {
-        throw new ActorRuntimeError('INVALID_TOOL_INPUT', 'The tool input was refused.', cause);
-      }
-    });
+        let payload: unknown;
+        try {
+          const validated = implementation.validateInput(call.input, task);
+          if (validated instanceof Promise) {
+            void validated.catch(() => {});
+            throw new Error('Tool validators must be synchronous.');
+          }
+          payload = dataField(validated, 'value');
+        } catch (cause) {
+          throw executionFailure('INVALID_TOOL_INPUT', 'The tool input was refused.', cause);
+        }
+        const { value: input, bytes } = checkPayload('INVALID_TOOL_INPUT', () =>
+          snapshotJson(payload, batchBytes)
+        );
+        batchBytes -= bytes;
+        return { id, name, input };
+      })
+    );
+    budget.requireToolAttempts(batch.length);
+    // The loop always asks the model again immediately after the last tool receipt.
+    budget.requireModelTurn();
 
     for (const [index, { id, name, input }] of batch.entries()) {
       scope.check();
@@ -541,7 +745,6 @@ async function driveLoop<Task>(
       } catch (cause) {
         throw executionFailure('TOOL_FAILED', 'The application tool failed.', cause);
       }
-      scope.check();
       reply = await ask({ type: 'OBSERVE_TOOL_RESULT', toolCallId: id, name, ok: true, output });
       if (!reply.ok)
         throw new ActorRuntimeError(reply.error.code, reply.error.message, reply.error.cause);
@@ -589,6 +792,7 @@ export function createActorRuntime<Task, Purpose extends string>(
 
       active = true;
       const scope = createRunScope(turn.signal, config.limits.runTimeoutMs);
+      const budget = createBudget(config.limits);
       let canRelease = true;
       const runOwned = async () => {
         verifyTurn(config, turn);
@@ -626,18 +830,68 @@ export function createActorRuntime<Task, Purpose extends string>(
         const applicationTools = Object.fromEntries(
           Array.from(implementations, ([name, { execute }]): [string, ActorToolExecutor] => [
             name,
-            (input, context) =>
-              scope.dispatch('TOOL_TIMEOUT', config.limits.toolTimeoutMs, () =>
-                execute(input, task, { ...context, signal: scope.signal })
-              ),
+            async (input, context) => {
+              const portContext = { ...context, signal: scope.signal };
+              const bytes = scope.checked(() =>
+                checkPayload('INVALID_TOOL_INPUT', () => measureJson(input, budget.payloadBytes))
+              );
+              const { value } = await scope.dispatch(
+                'TOOL_TIMEOUT',
+                config.limits.toolTimeoutMs,
+                () => {
+                  budget.dispatchTool(bytes);
+                  return holdPortResult(execute(input, task, portContext));
+                }
+              );
+              return scope.checked(() =>
+                checkPayload('INVALID_TOOL_OUTPUT', () => {
+                  const output = snapshotJson(value, budget.payloadBytes);
+                  // The shared loop serializes this envelope. Verify it can do so without
+                  // falling back to lossy text (e.g. an engine's JSON nesting limit).
+                  JSON.stringify({ ok: true, output: output.value });
+                  budget.chargePayload(output.bytes);
+                  return output.value;
+                })
+              );
+            },
           ])
         );
-        const llm: typeof config.provider = (request, context) =>
-          scope
-            .dispatch('PROVIDER_TIMEOUT', config.limits.providerTimeoutMs, () =>
-              config.provider(request, { ...context, signal: scope.signal })
-            )
-            .then((result) => validateProviderStep(result, config.limits.maxToolCallsPerBatch));
+        const llm: ActorAgentLlmProvider = async (request, context) => {
+          const portContext = {
+            actorId: context.actorId,
+            nodeAddress: context.nodeAddress,
+            signal: scope.signal,
+          };
+          const normalized = scope.checked(() => {
+            budget.requireModelTurn();
+            return checkPayload('INVALID_MODEL_REQUEST', () =>
+              snapshotJson(normalizeRequest(request), budget.payloadBytes)
+            );
+          });
+          const result = await scope.dispatch(
+            'PROVIDER_TIMEOUT',
+            config.limits.providerTimeoutMs,
+            async () => {
+              budget.dispatchModel(normalized.bytes);
+              try {
+                return await holdPortResult(config.provider(normalized.value, portContext));
+              } catch (cause) {
+                // Match the shared registry's thrown-provider error without wrapping budget errors.
+                return holdValue({
+                  ok: false,
+                  error: {
+                    code: 'LLM_PROVIDER_FAILED',
+                    message: cause instanceof Error ? cause.message : String(cause),
+                    cause,
+                  },
+                } satisfies ActorAgentLlmResult);
+              }
+            }
+          );
+          return scope.checked(() =>
+            normalizeProviderStep(result.value, config.limits.maxToolCallsPerBatch, budget)
+          );
+        };
         scope.check();
         const host = await startRuntime(topology, { tools: { ...applicationTools, llm } }).catch(
           (cause: unknown) => {
@@ -664,7 +918,16 @@ export function createActorRuntime<Task, Purpose extends string>(
               specialist.ask<ActorAgentLoopReply>(message, config.limits.askTimeoutMs)
             );
           const text = await scope.wait(
-            driveLoop(ask, toolbox, implementations, scope, task, prompt, config.systemPrompt)
+            driveLoop(
+              ask,
+              toolbox,
+              implementations,
+              scope,
+              budget,
+              task,
+              prompt,
+              config.systemPrompt
+            )
           );
           outcome = { ok: true, text };
         } catch (error) {

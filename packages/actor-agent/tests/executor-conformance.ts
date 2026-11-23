@@ -91,6 +91,9 @@ async function fixture(make: ExecutorFactory, script: (attempt: number) => Actor
       providerTimeoutMs: 5_000,
       toolTimeoutMs: 5_000,
       maxToolCallsPerBatch: 2,
+      maxModelTurns: 2,
+      maxToolAttempts: 2,
+      maxPayloadBytes: 32 * 1024,
     },
     provider(request) {
       const attempt = requests.length;

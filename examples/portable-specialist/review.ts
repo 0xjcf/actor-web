@@ -99,6 +99,9 @@ export async function runSourceReview(
       toolTimeoutMs: 250,
       runTimeoutMs: 3000,
       maxToolCallsPerBatch: 1,
+      maxModelTurns: 2,
+      maxToolAttempts: 1,
+      maxPayloadBytes: 64 * 1024,
     },
   });
   const finding = await createAgent(runtime, definition).run({ ...snapshot, signal });

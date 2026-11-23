@@ -28,6 +28,11 @@ const wrong: Promise<string> = reviewer.run({
 void wrong;
 
 declare const actorOptions: ActorRuntimeOptions<Task, 'review'>;
+const { maxModelTurns, ...missingModelTurns } = actorOptions.limits;
+const modelTurns: number = maxModelTurns;
+void modelTurns;
+// @ts-expect-error The model-turn limit is required.
+createActorRuntime({ ...actorOptions, limits: missingModelTurns });
 const actorRuntime: AgentRuntime<Task, 'review'> = createActorRuntime(actorOptions);
 const raw: Promise<string> = actorRuntime.run({
   purpose: 'review',

@@ -47,7 +47,8 @@ API. The scripted, in-memory source reviewer is the first consumer of the initia
    the provider. Treat returned tool names, arguments, and call IDs as data:
    recheck the grant, validate arguments, and bind each call ID to the active
    session before any application effect. For the reviewer, even a granted read
-   tool must refuse a path outside the pinned inventory.
+   tool must refuse a path outside the pinned inventory. The example permits
+   two provider turns, one read attempt, and 64 KiB of cumulative payload.
 4. **Drive the existing loop.** Use `createAgentLoopBehavior` and send
    `START_AGENT` with the encoded user payload and trusted system instructions.
    A `waiting-for-tool` reply is not final content, even if it lists no new
@@ -56,6 +57,10 @@ API. The scripted, in-memory source reviewer is the first consumer of the initia
    Only an assistant `responded` reply with no outstanding tool work can
    supply raw final text. Reject and stop on a denied tool or provider failure;
    the first profile does not retry, repair output, or switch providers.
+   Refuse a validated batch before effects if its tool attempts or known
+   input bytes do not fit, or if there is no model turn left for its follow-up.
+   Recheck the remaining input allowance at each dispatch, and check successful
+   results before forwarding them. A refusal does not undo prior effects.
 5. **Validate and accept separately.** The portable agent parses final text
    and, when using `structured`, checks JSON, the output schema, and the
    original assignment in that order. The owning caller still checks that the
@@ -86,8 +91,16 @@ specified here; AW-03-02 qualifies the full contract. The AW-01-02 local adapter
 only fences reuse until returned provider/tool and actor request promises have
 settled and its owned runtime stop has completed. It does not expose a
 settlement receipt or detect work detached by a port. The caller supplies run,
-ask, provider and tool deadlines plus a per-batch call limit; cumulative byte
-and execution budgets remain with AW-03-01.
+ask, provider and tool deadlines plus a per-batch call limit. AW-03-01 also
+requires explicit per-assignment `maxModelTurns`, `maxToolAttempts`, and
+`maxPayloadBytes`; the caller sees `MODEL_TURN_LIMIT`, `TOOL_ATTEMPT_LIMIT`,
+or `PAYLOAD_BYTE_LIMIT` on exhaustion. Count actual model or tool dispatches
+even on failure. Count the compact JSON UTF-8 bytes of each normalized model
+request and successful assistant message, and of each detached tool input
+and successful output. Include repeated history and declarations, omit
+absent fields, and exclude diagnostics, usage, credentials, and wire framing.
+This limits what the local adapter dispatches and accepts, not allocation,
+network traffic, or remote effects.
 
 Keep observations separate from `Content`. The later evidence slice can
 correlate assignment, revision, session and attempts, record validation and
@@ -153,14 +166,15 @@ the whole host flow.
 | Denied tool or path | Caller sees an execution failure; the denied tool or out-of-scope read performs no effect. No success output is accepted. | [Provider tests](../packages/actor-agent/src/llm-provider.test.ts) check tool-name filtering and [toolbox tests](../packages/actor-core-runtime/src/unit/actor-tools.test.ts) check allowlist enforcement. The assignment's path check belongs to the host tool. |
 | Bad output | The caller sees `AgentOutputError` with `invalidJson`, `schemaMismatch`, or `taskMismatch`. No repair or accepted result. | Portable tests cover all three parser outcomes. |
 | Provider failure | The actor replies with an error fact, such as `LLM_PROVIDER_UNAVAILABLE`. The portable run rejects with a distinguishable execution failure, not a parse error. | [Loop tests](../packages/actor-agent/src/agent-loop.test.ts) and provider tests cover error replies; portable tests cover executor error propagation. |
+| Assignment budget exhausted | A dimension-specific error rejects the run; no over-budget port is called or result forwarded. | [Local executor tests](../packages/actor-agent/tests/actor-runtime.test.ts) exercise scripted dispatch and acceptance at the budget boundaries. |
 | Stop before dispatch or during work | A pre-dispatch stop causes no effects. A stop during a live tool call prevents late acceptance; the caller can observe unresolved cleanup if the tool does not settle. | Portable tests show signal forwarding to a cooperative executor; toolbox tests show timeout and abort notification. Neither proves host settlement. |
 
 The [reusable executor conformance cases](../packages/actor-agent/tests/executor-conformance.ts)
 take a factory returning a portable `AgentRuntime` and observe scripted provider
 requests and in-memory tool effects. The [agent test suite](../packages/actor-agent/tests/executor-conformance.test.ts)
 runs them against the real local adapter and test-only history, grant, and
-retry faults. These source-level cases do not qualify packed consumers,
-cumulative budgets, or post-dispatch settlement.
+retry faults. These source-level conformance cases do not qualify packed
+consumers or post-dispatch settlement.
 
 ## Provider migration
 

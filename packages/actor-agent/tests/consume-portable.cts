@@ -18,6 +18,17 @@ const result: Promise<{ summary: string }> = builder.run({
 void result;
 
 declare const actorOptions: actors.ActorRuntimeOptions<{ request: string }, 'build'>;
+const { maxToolAttempts, maxPayloadBytes, ...missingToolAndPayloadLimits } = actorOptions.limits;
+actors.createActorRuntime({
+  ...actorOptions,
+  // @ts-expect-error The byte limit is required.
+  limits: { ...missingToolAndPayloadLimits, maxToolAttempts },
+});
+actors.createActorRuntime({
+  ...actorOptions,
+  // @ts-expect-error The tool-attempt limit is required.
+  limits: { ...missingToolAndPayloadLimits, maxPayloadBytes },
+});
 const actorRuntime: portable.AgentRuntime<{ request: string }, 'build'> =
   actors.createActorRuntime(actorOptions);
 const raw: Promise<string> = actorRuntime.run({

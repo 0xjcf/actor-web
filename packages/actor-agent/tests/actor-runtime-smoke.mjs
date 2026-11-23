@@ -1,7 +1,11 @@
 import { createActorRuntime } from '@actor-web/agent/actor-runtime';
 import { createAgent } from '@actor-web/agent/portable';
 
-export async function smoke(createRuntime = createActorRuntime, bindAgent = createAgent) {
+export async function smoke(
+  createRuntime = createActorRuntime,
+  bindAgent = createAgent,
+  budgetOverrides = {}
+) {
   const definition = {
     purpose: 'review',
     systemPrompt: 'Judge one item.',
@@ -50,6 +54,10 @@ export async function smoke(createRuntime = createActorRuntime, bindAgent = crea
       providerTimeoutMs: 500,
       toolTimeoutMs: 500,
       maxToolCallsPerBatch: 1,
+      maxModelTurns: 2,
+      maxToolAttempts: 1,
+      maxPayloadBytes: 4096,
+      ...budgetOverrides,
     },
   });
   const agent = bindAgent(runtime, definition);
