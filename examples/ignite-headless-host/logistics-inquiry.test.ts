@@ -25,6 +25,8 @@ function call(id: string, name: string, input: Record<string, string>) {
 }
 
 it('puts examples in native tool descriptions and keeps only observed shipment facts in history', async () => {
+  const summary =
+    'SHIP-42: route assigned. Last known facility: East Depot. No active alerts reported.';
   const fetch = vi
     .fn<typeof globalThis.fetch>()
     .mockResolvedValueOnce(
@@ -36,20 +38,19 @@ it('puts examples in native tool descriptions and keeps only observed shipment f
       return call('alerts', 'check_facility_alerts', { facility_name: facility });
     })
     .mockResolvedValueOnce(
-      Response.json({ choices: [{ message: { role: 'assistant', content: 'No active alerts.' } }] })
+      Response.json({ choices: [{ message: { role: 'assistant', content: summary } }] })
     );
-  await expect(runShipmentInquiry(shipment, [], providerFor(fetch))).resolves.toBe(
-    'No active alerts.'
-  );
+  await expect(runShipmentInquiry(shipment, [], providerFor(fetch))).resolves.toBe(summary);
 
   const [first, second, third] = fetch.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
   expect(first.messages).toEqual([
     {
       role: 'system',
-      content: expect.stringContaining('check alerts for the facility returned by the lookup'),
+      content: expect.stringMatching(/get_shipment_status[\s\S]+check_facility_alerts/),
     },
     { role: 'user', content: '{"tracking_id":"SHIP-42"}' },
   ]);
+  expect(first.messages[0].content).toContain('Examples in tool descriptions are not observations');
   expect(first.tools).toMatchObject([
     {
       type: 'function',
@@ -88,6 +89,28 @@ it('puts examples in native tool descriptions and keeps only observed shipment f
   expect(JSON.stringify(third.messages)).not.toMatch(
     /EXAMPLE-1|Example Yard|Example Dock|Loading suspended/
   );
+});
+
+it('can finish from a status observation without claiming an alert lookup when the facility is unknown', async () => {
+  const summary = 'Route assigned. Facility unknown; alerts were not checked.';
+  const fetch = vi
+    .fn<typeof globalThis.fetch>()
+    .mockResolvedValueOnce(
+      call('lookup', 'get_shipment_status', { tracking_id: shipment.shipmentId })
+    )
+    .mockImplementationOnce(async (_url, init) => {
+      const { messages } = JSON.parse(String(init?.body));
+      expect(messages[0].content).toContain('skip the alert lookup');
+      expect(JSON.parse(messages.at(-1).content).output).toEqual({
+        status: shipment.status,
+        facility: null,
+      });
+      return Response.json({ choices: [{ message: { role: 'assistant', content: summary } }] });
+    });
+  await expect(
+    runShipmentInquiry({ ...shipment, providerFacility: null }, [], providerFor(fetch))
+  ).resolves.toBe(summary);
+  expect(fetch).toHaveBeenCalledTimes(2);
 });
 
 it('refuses a lookup using the illustrative facility instead of the assigned one', async () => {

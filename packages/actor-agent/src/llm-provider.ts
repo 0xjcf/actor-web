@@ -7,7 +7,7 @@ import type {
   ActorAgentLlmResult,
   ActorAgentTokenUsage,
   ActorAgentToolCall,
-  ActorAgentToolDefinition,
+  ModelToolDefinition,
 } from './index.js';
 
 export interface LlmProviderOptions {
@@ -161,7 +161,7 @@ function toWireMessages(request: ActorAgentLlmRequest): readonly OpenAiCompatibl
   return wireMessages;
 }
 
-function toWireTools(toolDefinitions: readonly ActorAgentToolDefinition[] | undefined):
+function toWireTools(toolDefinitions: readonly ModelToolDefinition[] | undefined):
   | readonly {
       readonly type: 'function';
       readonly function: {
@@ -185,9 +185,9 @@ function toWireTools(toolDefinitions: readonly ActorAgentToolDefinition[] | unde
 }
 
 function filterAuthorizedToolDefinitions(
-  toolDefinitions: readonly ActorAgentToolDefinition[] | undefined,
+  toolDefinitions: readonly ModelToolDefinition[] | undefined,
   allowedTools: ReadonlySet<string>
-): readonly ActorAgentToolDefinition[] | undefined {
+): readonly ModelToolDefinition[] | undefined {
   if (!toolDefinitions || toolDefinitions.length === 0) {
     return undefined;
   }
@@ -467,7 +467,7 @@ function toResponsesInput(request: ActorAgentLlmRequest): readonly ResponsesInpu
   return input;
 }
 
-function toResponsesTools(toolDefinitions: readonly ActorAgentToolDefinition[] | undefined):
+function toResponsesTools(toolDefinitions: readonly ModelToolDefinition[] | undefined):
   | readonly {
       readonly type: 'function';
       readonly name: string;

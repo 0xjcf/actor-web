@@ -6,15 +6,6 @@ import {
   startRuntime,
 } from '@actor-web/runtime/browser';
 import { actor, defineActorWebTopology, node, tool } from '@actor-web/runtime/topology';
-import { createExecutionEvidence } from './actor-runtime-evidence.js';
-import {
-  equalJson,
-  InvalidJsonPayload,
-  JsonPayloadTooLarge,
-  measureJson,
-  ownData,
-  snapshotJson,
-} from './actor-runtime-json.js';
 import {
   ACTOR_WEB_LLM_TOOL_NAME,
   type ActorAgentLlmProvider,
@@ -24,12 +15,21 @@ import {
   type ActorAgentLoopReply,
   type ActorAgentTokenUsage,
   type ActorAgentToolCall,
-  type ActorAgentToolDefinition,
   createAgentLoopBehavior,
+  type ModelToolDefinition,
 } from './index.js';
-import type { AgentRuntime, AgentToolExample, AgentTurn } from './portable.js';
+import type { AgentRunner, AgentRunRequest, AgentToolExample } from './portable.js';
+import { createExecutionEvidence } from './runner-evidence.js';
+import {
+  equalJson,
+  InvalidJsonPayload,
+  JsonPayloadTooLarge,
+  measureJson,
+  ownData,
+  snapshotJson,
+} from './runner-json.js';
 
-export interface ActorRuntimeTool<Task> {
+export interface AgentToolHandler<Task> {
   readonly name: string;
   /** Synchronously validate and scope the input without effects. Return plain JSON data or throw. */
   readonly validateInput: (input: unknown, task: Task) => { readonly value: unknown };
@@ -45,10 +45,10 @@ const budgetMessages: Record<BudgetCode, string> = {
 };
 
 function budgetFailure(code: BudgetCode): never {
-  throw new ActorRuntimeError(code, budgetMessages[code]);
+  throw new AgentRunnerError(code, budgetMessages[code]);
 }
 
-function createBudget(limits: ActorRuntimeLimits) {
+function createBudget(limits: AgentRunnerLimits) {
   let modelTurns = limits.maxModelTurns;
   let toolAttempts = limits.maxToolAttempts;
   let payloadBytes = limits.maxPayloadBytes;
@@ -87,12 +87,12 @@ function checkPayload<T>(code: string, read: () => T): T {
     return read();
   } catch (cause) {
     if (cause instanceof JsonPayloadTooLarge) budgetFailure('PAYLOAD_BYTE_LIMIT');
-    if (cause instanceof ActorRuntimeError) throw cause;
-    throw new ActorRuntimeError(code, 'Expected a plain JSON payload.');
+    if (cause instanceof AgentRunnerError) throw cause;
+    throw new AgentRunnerError(code, 'Expected a plain JSON payload.');
   }
 }
 
-export interface ActorRuntimeLimits {
+export interface AgentRunnerLimits {
   readonly runTimeoutMs: number;
   /** Positive integer up to 214748364 ms, allowing for the local ask's 10× fallback timer. */
   readonly askTimeoutMs: number;
@@ -109,22 +109,25 @@ export interface ActorRuntimeLimits {
 
 type ToolExampleMode = 'off' | 'description';
 
-export interface ActorRuntimeOptions<Task, Purpose extends string> {
+export interface AgentRunnerOptions<Task, Purpose extends string> {
   /** The trusted portable definition, including any output instructions appended by createAgent. */
-  readonly definition: Pick<AgentTurn<Task, Purpose>, 'purpose' | 'systemPrompt' | 'tools'> & {
+  readonly definition: Pick<
+    AgentRunRequest<Task, Purpose>,
+    'purpose' | 'systemPrompt' | 'tools'
+  > & {
     readonly output?: { readonly instructions?: string };
   };
   readonly provider: ActorAgentLlmProvider;
   readonly grants: readonly string[];
-  readonly tools: readonly ActorRuntimeTool<Task>[];
+  readonly tools: readonly AgentToolHandler<Task>[];
   /** Append illustrative examples to effective tool descriptions. Default: 'off'. */
   readonly toolExampleMode?: ToolExampleMode;
   readonly encodeTask: (task: Task) => string;
-  readonly limits: ActorRuntimeLimits;
+  readonly limits: AgentRunnerLimits;
 }
 
 /** Local cleanup facts for this invocation, not proof of a remote effect outcome. */
-export type ActorRuntimeSettlement =
+export type AgentRunSettlement =
   | { readonly status: 'not-admitted' }
   | { readonly status: 'settled' }
   | {
@@ -132,52 +135,52 @@ export type ActorRuntimeSettlement =
       readonly reason: 'wait-timeout' | 'runtime-start-failed' | 'runtime-stop-failed';
     };
 
-export interface ActorRuntimeExecution {
+export interface AgentRunHandle {
   readonly result: Promise<string>;
   /** Wait for local cleanup independently of the result. Zero makes an immediate observation. */
-  readonly waitForSettlement: (timeoutMs: number) => Promise<ActorRuntimeSettlement>;
+  readonly waitForSettlement: (timeoutMs: number) => Promise<AgentRunSettlement>;
 }
 
-export interface ActorRuntimeEvidenceBinding {
+export interface AgentRunEvidenceBinding {
   /** Host-owned opaque identifier, never task text or a secret. */
   readonly assignmentId: string;
   readonly revision: number;
 }
 
-export interface ActorRuntimeEvidenceSnapshot {
+export interface AgentRunEvidenceSnapshot {
   readonly trace: AgentExecutionTrace;
   /** True if a receipt could not be recorded; the trace contains only the retained prefix. */
   readonly truncated: boolean;
 }
 
-export interface ObservedActorRuntimeExecution extends ActorRuntimeExecution {
+export interface ObservedAgentRunHandle extends AgentRunHandle {
   /** A detached snapshot, or undefined if this invocation has no recorded local session attempt. */
-  readonly readEvidence: () => ActorRuntimeEvidenceSnapshot | undefined;
+  readonly readEvidence: () => AgentRunEvidenceSnapshot | undefined;
   /** Runs one host parser on this invocation's result. Validation is not workflow acceptance. */
   readonly validateOutput: <Content>(
     parse: (raw: string) => Content | Promise<Content>
   ) => Promise<Content>;
 }
 
-export interface LocalActorRuntime<Task, Purpose extends string = string>
-  extends AgentRuntime<Task, Purpose> {
+export interface InProcessAgentRunner<Task, Purpose extends string = string>
+  extends AgentRunner<Task, Purpose> {
   readonly start: {
-    (turn: AgentTurn<Task, Purpose>): ActorRuntimeExecution;
+    (request: AgentRunRequest<Task, Purpose>): AgentRunHandle;
     (
-      turn: AgentTurn<Task, Purpose>,
-      evidence: ActorRuntimeEvidenceBinding
-    ): ObservedActorRuntimeExecution;
+      request: AgentRunRequest<Task, Purpose>,
+      evidence: AgentRunEvidenceBinding
+    ): ObservedAgentRunHandle;
   };
 }
 
-export class ActorRuntimeError extends Error {
+export class AgentRunnerError extends Error {
   constructor(
     readonly code: string,
     message: string,
     cause?: unknown
   ) {
     super(message, { cause });
-    this.name = 'ActorRuntimeError';
+    this.name = 'AgentRunnerError';
   }
 }
 
@@ -192,16 +195,16 @@ const settlementWaitExpired = Object.freeze({
 } as const);
 
 function createSettlementObserver() {
-  let final: ActorRuntimeSettlement | undefined;
-  const listeners = new Set<(value: ActorRuntimeSettlement) => void>();
+  let final: AgentRunSettlement | undefined;
+  const listeners = new Set<(value: AgentRunSettlement) => void>();
   return {
-    finish(value: ActorRuntimeSettlement): void {
+    finish(value: AgentRunSettlement): void {
       final = Object.freeze(value);
       for (const notify of listeners) notify(final);
     },
-    async waitForSettlement(timeoutMs: number): Promise<ActorRuntimeSettlement> {
+    async waitForSettlement(timeoutMs: number): Promise<AgentRunSettlement> {
       if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > maxTimerMs) {
-        throw new ActorRuntimeError(
+        throw new AgentRunnerError(
           'INVALID_SETTLEMENT_WAIT',
           `Settlement wait must be an integer from 0 to ${maxTimerMs} ms.`
         );
@@ -209,12 +212,12 @@ function createSettlementObserver() {
       if (final || timeoutMs === 0) return final ?? settlementWaitExpired;
       const until = performance.now() + timeoutMs;
       return new Promise((resolve) => {
-        const finish = (value: ActorRuntimeSettlement) => {
+        const finish = (value: AgentRunSettlement) => {
           listeners.delete(notify);
           clearTimeout(timer);
           resolve(value);
         };
-        const notify = (value: ActorRuntimeSettlement) => {
+        const notify = (value: AgentRunSettlement) => {
           finish(performance.now() < until ? value : settlementWaitExpired);
         };
         const expire = () => {
@@ -230,7 +233,7 @@ function createSettlementObserver() {
 }
 
 function invalidConfig(message: string): never {
-  throw new ActorRuntimeError('INVALID_RUNTIME_CONFIG', message);
+  throw new AgentRunnerError('INVALID_RUNTIME_CONFIG', message);
 }
 
 function isToken(value: unknown): value is string {
@@ -243,7 +246,7 @@ function checkToolName(name: unknown): asserts name is string {
   }
 }
 
-type RequestedTool = ActorAgentToolDefinition & { readonly examples?: readonly AgentToolExample[] };
+type RequestedTool = ModelToolDefinition & { readonly examples?: readonly AgentToolExample[] };
 
 function snapshotExamples(entry: object): readonly AgentToolExample[] | undefined {
   if (!Object.hasOwn(entry, 'examples')) return undefined;
@@ -273,7 +276,7 @@ function snapshotExamples(entry: object): readonly AgentToolExample[] | undefine
 function modelTool(
   { examples, ...definition }: RequestedTool,
   mode: ToolExampleMode
-): ActorAgentToolDefinition {
+): ModelToolDefinition {
   if (mode !== 'description' || !examples) return definition;
   return {
     ...definition,
@@ -314,7 +317,7 @@ function snapshotRequested(tools: unknown): RequestedTool[] {
           name,
           description,
           inputSchema: snapshotJson(
-            parameters as ActorAgentToolDefinition['inputSchema'],
+            parameters as ModelToolDefinition['inputSchema'],
             Number.MAX_SAFE_INTEGER,
             true
           ).value,
@@ -324,15 +327,15 @@ function snapshotRequested(tools: unknown): RequestedTool[] {
     }
     return requested;
   } catch (cause) {
-    if (cause instanceof ActorRuntimeError) throw cause;
+    if (cause instanceof AgentRunnerError) throw cause;
     if (cause instanceof JsonPayloadTooLarge)
       return invalidConfig('Tool definition exceeds the JSON size limit (4 KiB for examples).');
     return invalidConfig('Tool parameters and examples must contain plain JSON data.');
   }
 }
 
-function bindConfig<Task, Purpose extends string>(options: ActorRuntimeOptions<Task, Purpose>) {
-  if (!options) invalidConfig('Actor runtime options are required.');
+function bindConfig<Task, Purpose extends string>(options: AgentRunnerOptions<Task, Purpose>) {
+  if (!options) invalidConfig('Agent runner options are required.');
   const { definition, grants, tools, provider, encodeTask, toolExampleMode = 'off' } = options;
   if (toolExampleMode !== 'off' && toolExampleMode !== 'description') {
     invalidConfig('Expected toolExampleMode to be off or description.');
@@ -387,8 +390,8 @@ function bindConfig<Task, Purpose extends string>(options: ActorRuntimeOptions<T
     if (granted.has(name)) invalidConfig('Duplicate tool grant.');
     granted.add(name);
   }
-  const implementations = new Map<string, ActorRuntimeTool<Task>>();
-  for (const implementation of tools as readonly ActorRuntimeTool<Task>[]) {
+  const implementations = new Map<string, AgentToolHandler<Task>>();
+  for (const implementation of tools as readonly AgentToolHandler<Task>[]) {
     if (!implementation) invalidConfig('Invalid tool implementation.');
     const { name, validateInput, execute } = implementation;
     checkToolName(name);
@@ -420,29 +423,33 @@ function bindConfig<Task, Purpose extends string>(options: ActorRuntimeOptions<T
   };
 }
 
-function verifyTurn<Task, Purpose extends string>(
+function verifyRunRequest<Task, Purpose extends string>(
   config: ReturnType<typeof bindConfig<Task, Purpose>>,
-  turn: AgentTurn<Task, Purpose>
+  request: AgentRunRequest<Task, Purpose>
 ): void {
   let requested: RequestedTool[];
   try {
-    requested = snapshotRequested(turn.tools);
+    requested = snapshotRequested(request.tools);
   } catch (cause) {
-    throw new ActorRuntimeError('DEFINITION_MISMATCH', 'Invalid turn tool definitions.', cause);
+    throw new AgentRunnerError(
+      'DEFINITION_MISMATCH',
+      'Invalid run request tool definitions.',
+      cause
+    );
   }
   if (
-    turn.purpose !== config.purpose ||
-    turn.systemPrompt !== config.systemPrompt ||
+    request.purpose !== config.purpose ||
+    request.systemPrompt !== config.systemPrompt ||
     !equalJson(requested, config.requested)
   ) {
-    throw new ActorRuntimeError(
+    throw new AgentRunnerError(
       'DEFINITION_MISMATCH',
-      'Turn does not match the trusted definition.'
+      'Run request does not match the trusted definition.'
     );
   }
 }
 
-function executionFailure(code: string, message: string, cause: unknown): ActorRuntimeError {
+function executionFailure(code: string, message: string, cause: unknown): AgentRunnerError {
   if (
     typeof cause === 'object' &&
     cause !== null &&
@@ -451,13 +458,13 @@ function executionFailure(code: string, message: string, cause: unknown): ActorR
     'message' in cause &&
     typeof cause.message === 'string'
   ) {
-    return new ActorRuntimeError(cause.code, cause.message, cause);
+    return new AgentRunnerError(cause.code, cause.message, cause);
   }
-  return new ActorRuntimeError(code, message, cause);
+  return new AgentRunnerError(code, message, cause);
 }
 
 type DispatchDeadlineCode = 'ACTOR_ASK_FAILED' | 'PROVIDER_TIMEOUT' | 'TOOL_TIMEOUT';
-type Deadline = { readonly at: number; readonly failure: ActorRuntimeError };
+type Deadline = { readonly at: number; readonly failure: AgentRunnerError };
 
 function createRunScope(callerSignal: AbortSignal, runTimeoutMs: number) {
   const controller = new AbortController();
@@ -468,7 +475,7 @@ function createRunScope(callerSignal: AbortSignal, runTimeoutMs: number) {
   const interrupted = new Promise<never>((_resolve, reject) => {
     rejectInterrupted = reject;
   });
-  const interrupt = (reason: ActorRuntimeError) => {
+  const interrupt = (reason: AgentRunnerError) => {
     if (signal.aborted) return;
     // Reject the caller independently of any cooperative abort handlers.
     rejectInterrupted(reason);
@@ -476,7 +483,7 @@ function createRunScope(callerSignal: AbortSignal, runTimeoutMs: number) {
   };
   const abort = () =>
     interrupt(
-      new ActorRuntimeError('RUN_ABORTED', 'The assignment was aborted.', callerSignal.reason)
+      new AgentRunnerError('RUN_ABORTED', 'The assignment was aborted.', callerSignal.reason)
     );
   const observeDeadlines = () => {
     if (signal.aborted) return;
@@ -492,7 +499,7 @@ function createRunScope(callerSignal: AbortSignal, runTimeoutMs: number) {
     }
     if (earliest) interrupt(earliest.failure);
   };
-  const startDeadline = (failure: ActorRuntimeError, timeoutMs: number) => {
+  const startDeadline = (failure: AgentRunnerError, timeoutMs: number) => {
     const deadline = { at: performance.now() + timeoutMs, failure };
     deadlines.add(deadline);
     const onTimer = () => {
@@ -509,7 +516,7 @@ function createRunScope(callerSignal: AbortSignal, runTimeoutMs: number) {
     };
   };
   const finishRunDeadline = startDeadline(
-    new ActorRuntimeError('RUN_TIMEOUT', 'The assignment deadline expired.'),
+    new AgentRunnerError('RUN_TIMEOUT', 'The assignment deadline expired.'),
     runTimeoutMs
   );
   callerSignal.addEventListener('abort', abort, { once: true });
@@ -547,7 +554,7 @@ function createRunScope(callerSignal: AbortSignal, runTimeoutMs: number) {
     ): Promise<T> {
       check();
       const finish = startDeadline(
-        new ActorRuntimeError(
+        new AgentRunnerError(
           code,
           code === 'ACTOR_ASK_FAILED'
             ? 'The actor reply deadline expired.'
@@ -590,7 +597,7 @@ function dataField(value: unknown, key: string): unknown {
 }
 
 function bindEvidence(
-  binding: ActorRuntimeEvidenceBinding
+  binding: AgentRunEvidenceBinding
 ): ReturnType<typeof createExecutionEvidence> {
   const assignmentId = binding?.assignmentId;
   const revision = binding?.revision;
@@ -600,7 +607,7 @@ function bindEvidence(
     !Number.isSafeInteger(revision) ||
     revision < 0
   ) {
-    throw new ActorRuntimeError(
+    throw new AgentRunnerError(
       'INVALID_EVIDENCE_BINDING',
       'Evidence requires a bounded opaque assignment ID and a nonnegative integer revision.'
     );
@@ -760,10 +767,10 @@ function normalizeProviderStep(
     } catch {
       // A diagnostic whose required fields cannot be read is a malformed provider reply.
     }
-    throw new ActorRuntimeError('INVALID_PROVIDER_REPLY', 'Expected a plain JSON payload.');
+    throw new AgentRunnerError('INVALID_PROVIDER_REPLY', 'Expected a plain JSON payload.');
   }
   if (ok !== true) {
-    throw new ActorRuntimeError('INVALID_PROVIDER_REPLY', 'Expected a provider result.');
+    throw new AgentRunnerError('INVALID_PROVIDER_REPLY', 'Expected a provider result.');
   }
   return checkPayload('INVALID_ASSISTANT_REPLY', () => {
     const value = dataField(result, 'value');
@@ -775,13 +782,13 @@ function normalizeProviderStep(
       typeof content !== 'string' ||
       (calls !== undefined && !Array.isArray(calls))
     ) {
-      throw new ActorRuntimeError('INVALID_ASSISTANT_REPLY', 'Expected an assistant message.');
+      throw new AgentRunnerError('INVALID_ASSISTANT_REPLY', 'Expected an assistant message.');
     }
     const callCount =
       calls === undefined ? 0 : Object.getOwnPropertyDescriptor(calls, 'length')?.value;
     if (typeof callCount !== 'number') throw new InvalidJsonPayload();
     if (callCount > maxCalls) {
-      throw new ActorRuntimeError(
+      throw new AgentRunnerError(
         'TOOL_BATCH_LIMIT',
         'The tool batch exceeds the configured limit.'
       );
@@ -804,17 +811,17 @@ function normalizeProviderStep(
         const id = dataField(raw, 'id');
         const name = dataField(raw, 'name');
         if (typeof id !== 'string' || !id) {
-          throw new ActorRuntimeError('INVALID_TOOL_CALL_ID', 'Expected a nonempty tool call ID.');
+          throw new AgentRunnerError('INVALID_TOOL_CALL_ID', 'Expected a nonempty tool call ID.');
         }
         if (typeof name !== 'string' || !name) {
-          throw new ActorRuntimeError('INVALID_TOOL_CALL', 'Expected a tool name and input.');
+          throw new AgentRunnerError('INVALID_TOOL_CALL', 'Expected a tool name and input.');
         }
         const detached = snapshotJson({ id, name, input: dataField(raw, 'input') }, remaining);
         if (!isToken(id)) {
-          throw new ActorRuntimeError('INVALID_TOOL_CALL_ID', 'Expected a nonempty tool call ID.');
+          throw new AgentRunnerError('INVALID_TOOL_CALL_ID', 'Expected a nonempty tool call ID.');
         }
         if (!isToken(name)) {
-          throw new ActorRuntimeError('INVALID_TOOL_CALL', 'Expected a tool name and input.');
+          throw new AgentRunnerError('INVALID_TOOL_CALL', 'Expected a tool name and input.');
         }
         return detached;
       });
@@ -833,7 +840,7 @@ function normalizeProviderStep(
 async function driveLoop<Task>(
   ask: (message: ActorAgentLoopMessage) => Promise<ActorAgentLoopReply>,
   toolbox: ReturnType<typeof createActorToolbox>,
-  implementations: ReadonlyMap<string, ActorRuntimeTool<Task>>,
+  implementations: ReadonlyMap<string, AgentToolHandler<Task>>,
   scope: ReturnType<typeof createRunScope>,
   budget: ReturnType<typeof createBudget>,
   task: Task,
@@ -845,21 +852,21 @@ async function driveLoop<Task>(
   for (;;) {
     scope.check();
     if (!reply.ok)
-      throw new ActorRuntimeError(reply.error.code, reply.error.message, reply.error.cause);
+      throw new AgentRunnerError(reply.error.code, reply.error.message, reply.error.cause);
     if (
       reply.status === 'responded' &&
       reply.message.role === 'assistant' &&
       !reply.toolCalls.length
     ) {
       if (reply.message.content.trim()) return reply.message.content;
-      throw new ActorRuntimeError('INVALID_ASSISTANT_REPLY', 'Expected final assistant text.');
+      throw new AgentRunnerError('INVALID_ASSISTANT_REPLY', 'Expected final assistant text.');
     }
     if (
       reply.status !== 'waiting-for-tool' ||
       reply.message.role !== 'assistant' ||
       reply.toolCalls.length === 0
     ) {
-      throw new ActorRuntimeError(
+      throw new AgentRunnerError(
         'UNEXPECTED_REPLY',
         'Expected an assistant tool batch or final reply.'
       );
@@ -871,15 +878,12 @@ async function driveLoop<Task>(
       scope.checked(() => {
         const { id, name } = call;
         if (seen.has(id)) {
-          throw new ActorRuntimeError('DUPLICATE_TOOL_CALL_ID', 'A tool call ID cannot be reused.');
+          throw new AgentRunnerError('DUPLICATE_TOOL_CALL_ID', 'A tool call ID cannot be reused.');
         }
         seen.add(id);
         const implementation = implementations.get(name);
         if (!implementation || !toolbox.has(name)) {
-          throw new ActorRuntimeError(
-            'TOOL_DENIED',
-            'The tool is not granted for this assignment.'
-          );
+          throw new AgentRunnerError('TOOL_DENIED', 'The tool is not granted for this assignment.');
         }
         let payload: unknown;
         try {
@@ -913,7 +917,7 @@ async function driveLoop<Task>(
       }
       reply = await ask({ type: 'OBSERVE_TOOL_RESULT', toolCallId: id, name, ok: true, output });
       if (!reply.ok)
-        throw new ActorRuntimeError(reply.error.code, reply.error.message, reply.error.cause);
+        throw new AgentRunnerError(reply.error.code, reply.error.message, reply.error.cause);
       if (
         index < batch.length - 1 &&
         (reply.status !== 'waiting-for-tool' ||
@@ -922,7 +926,7 @@ async function driveLoop<Task>(
           reply.message.toolName !== name ||
           reply.toolCalls.length !== 0)
       ) {
-        throw new ActorRuntimeError(
+        throw new AgentRunnerError(
           'UNEXPECTED_REPLY',
           'Expected acknowledgement of the tool result.'
         );
@@ -931,10 +935,10 @@ async function driveLoop<Task>(
   }
 }
 
-/** One fresh, owned local actor session per admitted portable invocation. */
-export function createActorRuntime<Task, Purpose extends string>(
-  options: ActorRuntimeOptions<Task, Purpose>
-): LocalActorRuntime<Task, Purpose> {
+/** Create a reusable runner. Each admitted assignment gets its own in-process actor session. */
+export function createAgentRunner<Task, Purpose extends string>(
+  options: AgentRunnerOptions<Task, Purpose>
+): InProcessAgentRunner<Task, Purpose> {
   const config = bindConfig(options);
   const implementations = new Map(
     config.effective.map(({ implementation }) => [implementation.name, implementation])
@@ -942,11 +946,11 @@ export function createActorRuntime<Task, Purpose extends string>(
   const names = [ACTOR_WEB_LLM_TOOL_NAME, ...implementations.keys()];
   let active = false;
 
-  const executor = {
+  const runner = {
     async run(
-      turn: AgentTurn<Task, Purpose>,
+      request: AgentRunRequest<Task, Purpose>,
       observation?: {
-        publish(value: ActorRuntimeSettlement): void;
+        publish(value: AgentRunSettlement): void;
         evidence: ReturnType<typeof createExecutionEvidence> | undefined;
         signal?: AbortSignal;
       }
@@ -954,13 +958,13 @@ export function createActorRuntime<Task, Purpose extends string>(
       const evidence = observation?.evidence;
       let callerSignal: AbortSignal;
       try {
-        if (active) throw new ActorRuntimeError('RUNTIME_BUSY', 'The runtime is active or fenced.');
-        callerSignal = turn?.signal;
+        if (active) throw new AgentRunnerError('RUNTIME_BUSY', 'The runner is active or fenced.');
+        callerSignal = request?.signal;
         if (!(callerSignal instanceof AbortSignal)) {
-          throw new ActorRuntimeError('INVALID_TURN', 'An explicit AbortSignal is required.');
+          throw new AgentRunnerError('INVALID_TURN', 'An explicit AbortSignal is required.');
         }
         if (callerSignal.aborted) {
-          throw new ActorRuntimeError(
+          throw new AgentRunnerError(
             'RUN_ABORTED',
             'The assignment was aborted.',
             callerSignal.reason
@@ -978,9 +982,9 @@ export function createActorRuntime<Task, Purpose extends string>(
       let startAttempted = false;
       let unconfirmed: 'runtime-start-failed' | 'runtime-stop-failed' | undefined;
       const runOwned = async () => {
-        verifyTurn(config, turn);
+        verifyRunRequest(config, request);
         scope.check();
-        const task = turn.task;
+        const task = request.task;
         let prompt: string;
         try {
           prompt = config.encodeTask(task);
@@ -988,7 +992,7 @@ export function createActorRuntime<Task, Purpose extends string>(
           throw executionFailure('INVALID_TASK', 'The task could not be encoded.', cause);
         }
         if (typeof prompt !== 'string' || !prompt.trim()) {
-          throw new ActorRuntimeError(
+          throw new AgentRunnerError(
             'INVALID_TASK',
             'The task encoder must return a nonempty string.'
           );
@@ -1117,7 +1121,7 @@ export function createActorRuntime<Task, Purpose extends string>(
         } catch (cause) {
           // A failed start does not give us a runtime handle to verify closure.
           unconfirmed = 'runtime-start-failed';
-          throw new ActorRuntimeError(
+          throw new AgentRunnerError(
             'RUNTIME_START_FAILED',
             'Could not start the local runtime.',
             cause
@@ -1161,7 +1165,7 @@ export function createActorRuntime<Task, Purpose extends string>(
           if (outcome.ok) {
             outcome = {
               ok: false,
-              error: new ActorRuntimeError(
+              error: new AgentRunnerError(
                 'RUNTIME_STOP_FAILED',
                 'Could not close the local runtime.',
                 cause
@@ -1194,30 +1198,30 @@ export function createActorRuntime<Task, Purpose extends string>(
       }
     },
   };
-  function start(turn: AgentTurn<Task, Purpose>): ActorRuntimeExecution;
+  function start(request: AgentRunRequest<Task, Purpose>): AgentRunHandle;
   function start(
-    turn: AgentTurn<Task, Purpose>,
-    binding: ActorRuntimeEvidenceBinding
-  ): ObservedActorRuntimeExecution;
+    request: AgentRunRequest<Task, Purpose>,
+    binding: AgentRunEvidenceBinding
+  ): ObservedAgentRunHandle;
   function start(
-    turn: AgentTurn<Task, Purpose>,
-    binding?: ActorRuntimeEvidenceBinding
-  ): ActorRuntimeExecution {
+    request: AgentRunRequest<Task, Purpose>,
+    binding?: AgentRunEvidenceBinding
+  ): AgentRunHandle {
     const { finish, waitForSettlement } = createSettlementObserver();
     const evidence = binding === undefined ? undefined : bindEvidence(binding);
     const observation = { publish: finish, evidence, signal: undefined as AbortSignal | undefined };
-    const result = executor.run(turn, observation);
+    const result = runner.run(request, observation);
     // A host may observe cleanup before awaiting the already-rejected caller result.
     void result.catch(() => {});
     if (!evidence) return { result, waitForSettlement };
     let requested = false;
-    const handle: ObservedActorRuntimeExecution = {
+    const handle: ObservedAgentRunHandle = {
       result,
       waitForSettlement,
       readEvidence: () => evidence.read(),
       async validateOutput(parse) {
         if (requested) {
-          throw new ActorRuntimeError(
+          throw new AgentRunnerError(
             'VALIDATION_ALREADY_REQUESTED',
             'Output validation was already requested for this invocation.'
           );
@@ -1239,5 +1243,5 @@ export function createActorRuntime<Task, Purpose extends string>(
     };
     return handle;
   }
-  return { run: (turn) => executor.run(turn), start };
+  return { run: (request) => runner.run(request), start };
 }

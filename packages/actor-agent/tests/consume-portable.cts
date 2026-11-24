@@ -1,5 +1,5 @@
 import agent = require('@actor-web/agent');
-import actors = require('@actor-web/agent/actor-runtime');
+import runners = require('@actor-web/agent/runner');
 import portable = require('@actor-web/agent/portable');
 import codec = require('@actor-web/agent/zod');
 
@@ -12,10 +12,14 @@ const providerOptions: agent.LlmProviderOptions = {
 };
 const provider: agent.ActorAgentLlmProvider = agent.createLlmProvider(providerOptions);
 void [llm, provider, agent.createAgentLoopBehavior()];
+const publishedTool: agent.ActorAgentToolDefinition = { name: 'inspect', inputSchema: {} };
+const modelTool: agent.ModelToolDefinition = publishedTool;
+const registry: typeof agent.createActorAgentToolRegistry = agent.createLlmToolRegistry;
+void [modelTool, registry({ llm: provider }).llm];
 
-declare const runtime: portable.AgentRuntime<{ request: string }, 'build'>;
+declare const runner: portable.AgentRunner<{ request: string }, 'build'>;
 const sample: portable.AgentToolExample = { input: {}, result: null };
-const builder = portable.createAgent(runtime, {
+const builder = portable.createAgent(runner, {
   purpose: 'build',
   systemPrompt: 'Implement the assignment.',
   tools: [{ name: 'inspect', description: 'Inspect state.', parameters: {}, examples: [sample] }],
@@ -27,31 +31,31 @@ const result: Promise<{ summary: string }> = builder.run({
 });
 void result;
 
-declare const actorOptions: actors.ActorRuntimeOptions<{ request: string }, 'build'>;
-const { maxToolAttempts, maxPayloadBytes, ...missingToolAndPayloadLimits } = actorOptions.limits;
-actors.createActorRuntime({
-  ...actorOptions,
+declare const runnerOptions: runners.AgentRunnerOptions<{ request: string }, 'build'>;
+const { maxToolAttempts, maxPayloadBytes, ...missingToolAndPayloadLimits } = runnerOptions.limits;
+runners.createAgentRunner({
+  ...runnerOptions,
   // @ts-expect-error The byte limit is required.
   limits: { ...missingToolAndPayloadLimits, maxToolAttempts },
 });
-actors.createActorRuntime({
-  ...actorOptions,
+runners.createAgentRunner({
+  ...runnerOptions,
   // @ts-expect-error The tool-attempt limit is required.
   limits: { ...missingToolAndPayloadLimits, maxPayloadBytes },
 });
-const local = actors.createActorRuntime({ ...actorOptions, toolExampleMode: 'off' });
-const actorRuntime: portable.AgentRuntime<{ request: string }, 'build'> = local;
-const turn: portable.AgentTurn<{ request: string }, 'build'> = {
+const local = runners.createAgentRunner({ ...runnerOptions, toolExampleMode: 'off' });
+const portableRunner: portable.AgentRunner<{ request: string }, 'build'> = local;
+const request: portable.AgentRunRequest<{ request: string }, 'build'> = {
   purpose: 'build',
-  systemPrompt: actorOptions.definition.systemPrompt,
+  systemPrompt: runnerOptions.definition.systemPrompt,
   tools: [],
   task: { request: 'Update the component.' },
   signal: new AbortController().signal,
 };
-const raw: Promise<string> = actorRuntime.run(turn);
-const handle: actors.ActorRuntimeExecution = local.start(turn);
-const cleanup: Promise<actors.ActorRuntimeSettlement> = handle.waitForSettlement(100);
-const observed: actors.ObservedActorRuntimeExecution = local.start(turn, {
+const raw: Promise<string> = portableRunner.run(request);
+const handle: runners.AgentRunHandle = local.start(request);
+const cleanup: Promise<runners.AgentRunSettlement> = handle.waitForSettlement(100);
+const observed: runners.ObservedAgentRunHandle = local.start(request, {
   assignmentId: 'fixture.1',
   revision: 0,
 });

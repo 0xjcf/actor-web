@@ -169,7 +169,7 @@ describe('portable specialist example', () => {
       .mockReturnValueOnce(second);
     const onTool = vi.fn();
     await expect(runSourceReview(assignment, { provider, onTool })).rejects.toMatchObject({
-      name: 'ActorRuntimeError',
+      name: 'AgentRunnerError',
       code: 'TOOL_ATTEMPT_LIMIT',
     });
     expect(provider).toHaveBeenCalledTimes(2);
@@ -183,7 +183,7 @@ describe('portable specialist example', () => {
     await expect(
       runSourceReview({ ...assignment, files }, { provider, onTool })
     ).rejects.toMatchObject({
-      name: 'ActorRuntimeError',
+      name: 'AgentRunnerError',
       code: 'PAYLOAD_BYTE_LIMIT',
     });
     expect(provider).toHaveBeenCalledTimes(1);

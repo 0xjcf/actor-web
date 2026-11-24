@@ -16,19 +16,20 @@ npm install @actor-web/runtime @actor-web/agent
 The examples below use APIs added after `@actor-web/agent@0.2.1`. If you are
 pinned to `0.2.1`, use `createOpenAiCompatibleLlmProvider` and the Chat
 Completions API. That version does not include Responses support, `START_AGENT`
-with `reset`, or the `./portable`, `./actor-runtime` and `./zod` entry points.
+with `reset`, or the `./portable`, `./runner` and `./zod` entry points.
 
 ## Public API
 
 | Export | Use for |
 | --- | --- |
 | `createAgentLoopBehavior(options?)` | Standard agent loop behavior that accepts `START_AGENT`, observes tool results, and emits agent step/tool events |
-| `createActorAgentToolRegistry({ llm })` | Typed `llm` tool registration for runtime toolboxes |
+| `createLlmToolRegistry({ llm })` | Typed `llm` registration; the published `createActorAgentToolRegistry` name remains a deprecated alias |
 | `createActorAgentTools({ llm })` | Runtime-ready tool registry for `startRuntime(..., { tools })` |
 | `createLlmProvider({ endpoint, model, timeoutMs?, ... })` | Chat Completions adapter. An endpoint path that ends in `/responses` uses the Responses wire. The host supplies the endpoint, model, and headers |
 | `ACTOR_WEB_LLM_TOOL_NAME` | Stable tool name for the injected LLM provider |
-| `ActorAgent*` types | Message, event, provider, tool-call, tool-definition, and error contracts |
-| `createActorRuntime(options)` from `@actor-web/agent/actor-runtime` | Local executor implementing the portable `AgentRuntime` contract |
+| `ModelToolDefinition` | Provider-facing tool metadata (`inputSchema`); `ActorAgentToolDefinition` is the deprecated name |
+| `ActorAgent*` types | Message, event, provider, tool-call, and error contracts |
+| `createAgentRunner(options)` from `@actor-web/agent/runner` | Local runner implementing the portable `AgentRunner` contract |
 
 ## Usage
 
@@ -71,33 +72,59 @@ supervision stay under the runtime.
 
 ## Portable phase definitions
 
-`@actor-web/agent/portable` exports `createAgent(runtime, definition)`. Unlike
+`@actor-web/agent/portable` exports `createAgent(runner, definition)`. Unlike
 `createAgentLoopBehavior`, it does not start an actor or drive a tool loop. Each
-call to `run` sends one turn to the supplied executor, forwarding its signal
+call to `run` sends one assignment to the supplied runner, forwarding its signal
 separately from the flat task data, and returns the decoded result. Supply a
 plain data object for the task; `signal` is reserved. The host still owns tool
 grants, cancellation, independent sessions, and acceptance of the candidate.
 
 The [portable tests](tests/portable.test.ts) use supplied functions to exercise
-turn binding, task-aware output checks, and error propagation. A cancellation
-test uses an executor that honors the signal. `createAgent` forwards the
-signal, but does not enforce pre-dispatch abort, reject late output from an
-executor that ignores abort, or wait for cleanup. Those are executor concerns.
+assignment binding, task-aware output checks, and error propagation. A cancellation
+test uses a runner that honors the signal. `createAgent` forwards the
+signal, but does not enforce pre-dispatch abort, reject late output from a
+runner that ignores abort, or wait for cleanup. Those are runner concerns.
 The [specialist execution contract](../../docs/specialist-execution-contract.md)
 specifies what that host must enforce from assignment through settlement.
 
-### Local actor executor
+### In-process agent runner
 
-Import `createActorRuntime` and `ActorRuntimeError` from
-`@actor-web/agent/actor-runtime`. Pass the same trusted `definition` you give
+Use `startRuntime(shipmentTopology)` to host the shipment lifecycle actors.
+Use a runner for a separate task such as a [shipment inquiry](../../examples/ignite-headless-host/logistics-inquiry.ts):
+
+```ts
+import { createAgent } from '@actor-web/agent/portable';
+import { createAgentRunner } from '@actor-web/agent/runner';
+
+const runner = createAgentRunner({ ...options, definition });
+const inquiry = createAgent(runner, definition);
+const answer = await inquiry.run({ tracking_id: shipmentId, signal });
+```
+
+Creating the runner does not start an actor. Each admitted assignment starts
+a fresh in-process specialist; the model provider can be remote. The portable
+`AgentRunner` only requires `run(request)`. The built-in `InProcessAgentRunner`
+also offers `start(request)` for an `AgentRunHandle` with a `result` promise and
+`waitForSettlement(timeoutMs)` for observing local cleanup.
+
+**Migrating a checkout that used the preview API:** replace
+`createActorRuntime` from `@actor-web/agent/actor-runtime` with `createAgentRunner`
+from `@actor-web/agent/runner`. In portable definitions use `AgentRunner`,
+`AgentRunRequest`, and `AgentToolDeclaration` in place of `AgentRuntime`,
+`AgentTurn`, and `AgentTool`. In the runner options, an `AgentToolHandler` is
+the trusted implementation, not a declaration or a grant. Error codes and
+actor messages are unchanged; the error class is now `AgentRunnerError`.
+
+Import `createAgentRunner` and `AgentRunnerError` from
+`@actor-web/agent/runner`. Pass the same trusted `definition` you give
 `createAgent`, including any output instructions. Also supply `provider`,
 `encodeTask`, application tool `grants` and implementations, and `limits`:
 `runTimeoutMs`, `askTimeoutMs`, `providerTimeoutMs`, `toolTimeoutMs`, and
-`maxToolCallsPerBatch`. Existing callers of the unreleased executor must also
+`maxToolCallsPerBatch`. Existing callers of the unreleased runner must also
 supply `maxModelTurns` and `maxPayloadBytes` (positive safe integers) and
 `maxToolAttempts` (a nonnegative safe integer). There are no defaults.
 `askTimeoutMs` is a positive integer capped at 214748364 ms so the 10× local
-correlation fallback fits in the platform timer range. The executor checks its
+correlation fallback fits in the platform timer range. The runner checks its
 active run, ask, provider, and tool deadlines against a monotonic clock.
 If several have elapsed, the
 earliest absolute deadline wins, with the outer operation winning exact ties.
@@ -122,7 +149,7 @@ owns the pinned assignment snapshot, stable callback bindings, and the
 acceptance decision.
 
 Each admitted run owns a new actor and local runtime. Only requested, granted,
-implemented application tools are advertised; `llm` is reserved. The executor
+implemented application tools are advertised; `llm` is reserved. The runner
 checks and snapshots an entire model tool batch before dispatching effects,
 then runs tools in order. Later failures do not undo earlier effects. It
 rejects duplicate IDs within a session and returns only nonblank final assistant
@@ -132,7 +159,7 @@ separate.
 
 ### Few-shot tool examples
 
-Import `AgentTool` and `AgentToolExample` from `@actor-web/agent/portable`.
+Import `AgentToolDeclaration` and `AgentToolExample` from `@actor-web/agent/portable`.
 Declare synthetic input/result pairs beside the tool, not in the task prompt:
 
 ```ts
@@ -146,16 +173,16 @@ const alerts = {
     additionalProperties: false,
   },
   examples: [{ input: { facility_name: 'Example Yard' }, result: { alerts: [] } }],
-} satisfies AgentTool;
+} satisfies AgentToolDeclaration;
 ```
 
-The local executor's `toolExampleMode` defaults to `'off'`. Set it to
-`'description'` in `createActorRuntime` to append labeled examples **only** to
+The local runner's `toolExampleMode` defaults to `'off'`. Set it to
+`'description'` in `createAgentRunner` to append labeled examples **only** to
 requested, granted, implemented tool descriptions. Examples never become tool
 calls, receipts or conversation history. Their rendered bytes count toward
 `maxPayloadBytes` on each model request. Tools without examples are unchanged.
 
-Per tool, the local executor accepts up to four pairs and 4 KiB of compact
+Per tool, the local runner accepts up to four pairs and 4 KiB of compact
 UTF-8 JSON for the whole example array. It checks and snapshots them when
 binding the definition, even when injection is off. `input` must be a plain
 JSON object; `result` can be any plain JSON value. Examples do not invoke
@@ -215,14 +242,14 @@ For a browser bundle, statically replace the runtime dependency's
 does not provide a Node `process` shim.
 
 For JSON responses, install `zod@^4` and import `structured` from
-`@actor-web/agent/zod`. Neither the package root, `portable`, nor `actor-runtime`
+`@actor-web/agent/zod`. Neither the package root, `portable`, nor `runner`
 imports Zod.
 Use a synchronous, JSON-representable schema. Its input schema supplies response
 instructions once at construction; after JSON and schema validation, an optional
 `check` receives the typed content and the assignment. Return a reason to reject.
 
 ```ts
-import { createAgent, type AgentRuntime } from '@actor-web/agent/portable';
+import { createAgent, type AgentRunner } from '@actor-web/agent/portable';
 import { structured } from '@actor-web/agent/zod';
 import { z } from 'zod';
 
@@ -241,8 +268,8 @@ const reviewOutput = structured(z.strictObject({ findings: z.array(finding) }), 
   },
 });
 
-function createReviewer(runtime: AgentRuntime<Assignment, 'review'>) {
-  return createAgent(runtime, {
+function createReviewer(runner: AgentRunner<Assignment, 'review'>) {
+  return createAgent(runner, {
     purpose: 'review',
     systemPrompt: 'Review the assigned sources and cite each finding.',
     tools: [],
@@ -259,9 +286,9 @@ const igniteExpertise = {
 ```
 
 `reviewer.run({ files, expertise: igniteExpertise, signal })` invokes the
-executor. `reviewOutput.parse(raw, { files, expertise: igniteExpertise })` instead
+runner. `reviewOutput.parse(raw, { files, expertise: igniteExpertise })` instead
 checks already-produced text without invoking it. An `AgentOutputError` carries
-`invalidJson`, `schemaMismatch`, or `taskMismatch`; executor errors propagate
+`invalidJson`, `schemaMismatch`, or `taskMismatch`; runner errors propagate
 unchanged. No implicit retry, repair, or phase transition occurs.
 
 For a non-JSON protocol use `parse(raw, task)` **instead of** `output`, or pass

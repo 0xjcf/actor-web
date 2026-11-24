@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { createActorRuntime } from '../src/actor-runtime.js';
 import type { ActorAgentLlmRequest } from '../src/index.js';
+import { createAgentRunner } from '../src/runner.js';
 import {
-  ExecutorConformanceViolation,
-  type ExecutorFactory,
-  executorConformanceCases,
-} from './executor-conformance.js';
+  RunnerConformanceViolation,
+  type RunnerFactory,
+  runnerConformanceCases,
+} from './runner-conformance.js';
 
-const carryHistory: ExecutorFactory = (options) => {
+const carryHistory: RunnerFactory = (options) => {
   let previous: ActorAgentLlmRequest['messages'] = [];
   let latest: ActorAgentLlmRequest['messages'] = [];
-  const runtime = createActorRuntime({
+  const runner = createAgentRunner({
     ...options,
     provider(request, context) {
       latest = structuredClone(request.messages);
@@ -23,19 +23,19 @@ const carryHistory: ExecutorFactory = (options) => {
   return {
     run(turn) {
       previous = latest;
-      return runtime.run(turn);
+      return runner.run(turn);
     },
   };
 };
 
-const widenGrants: ExecutorFactory = (options) =>
-  createActorRuntime({
+const widenGrants: RunnerFactory = (options) =>
+  createAgentRunner({
     ...options,
     grants: [...new Set([...options.grants, ...options.tools.map(({ name }) => name)])],
   });
 
-const retryAfterFailure: ExecutorFactory = (options) =>
-  createActorRuntime({
+const retryAfterFailure: RunnerFactory = (options) =>
+  createAgentRunner({
     ...options,
     async provider(request, context) {
       const result = await options.provider(request, context);
@@ -43,9 +43,9 @@ const retryAfterFailure: ExecutorFactory = (options) =>
     },
   });
 
-describe('local actor executor conformance', () => {
-  for (const scenario of executorConformanceCases) {
-    it(`${scenario.id}: ${scenario.name}`, () => scenario.run(createActorRuntime));
+describe('local actor runner conformance', () => {
+  for (const scenario of runnerConformanceCases) {
+    it(`${scenario.id}: ${scenario.name}`, () => scenario.run(createAgentRunner));
   }
 });
 
@@ -54,11 +54,11 @@ describe.each([
   ['grant widening', widenGrants, 'grant-intersection', 'ungranted-tool-not-dispatched'],
   ['provider retry', retryAfterFailure, 'provider-failure', 'exactly-one-provider-attempt'],
 ] as const)('%s mutant', (_label, make, target, checkId) => {
-  for (const scenario of executorConformanceCases) {
+  for (const scenario of runnerConformanceCases) {
     if (scenario.id === target) {
       it(`violates ${target}: ${checkId}`, async () => {
         const outcome = scenario.run(make);
-        await expect(outcome).rejects.toBeInstanceOf(ExecutorConformanceViolation);
+        await expect(outcome).rejects.toBeInstanceOf(RunnerConformanceViolation);
         await expect(outcome).rejects.toMatchObject({ caseId: target, checkId });
       });
     } else {

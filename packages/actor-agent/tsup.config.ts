@@ -9,7 +9,7 @@ export default defineConfig([
     dts: { compilerOptions: { composite: false } },
   },
   {
-    entry: ['src/actor-runtime.ts'],
+    entry: ['src/runner.ts'],
     format: ['cjs', 'esm'],
     platform: 'browser',
   },

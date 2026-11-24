@@ -4,7 +4,7 @@ import {
   JsonPayloadTooLarge,
   measureJson,
   snapshotJson,
-} from '../src/actor-runtime-json.js';
+} from '../src/runner-json.js';
 
 const reference = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
 

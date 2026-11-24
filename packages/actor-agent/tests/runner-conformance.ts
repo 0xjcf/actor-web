@@ -1,27 +1,27 @@
-import type { ActorRuntimeOptions } from '../src/actor-runtime.js';
 import type {
   ActorAgentLlmRequest,
   ActorAgentLlmResult,
   ActorAgentToolCall,
 } from '../src/index.js';
-import type { AgentRuntime } from '../src/portable.js';
+import type { AgentRunner } from '../src/portable.js';
+import type { AgentRunnerOptions } from '../src/runner.js';
 
 type Assignment = {
   readonly prompt: string;
   readonly sources: Readonly<Record<string, string>>;
 };
 
-export type ExecutorFactory = (
-  options: ActorRuntimeOptions<Assignment, 'review'>
-) => AgentRuntime<Assignment, 'review'> | Promise<AgentRuntime<Assignment, 'review'>>;
+export type RunnerFactory = (
+  options: AgentRunnerOptions<Assignment, 'review'>
+) => AgentRunner<Assignment, 'review'> | Promise<AgentRunner<Assignment, 'review'>>;
 
-export class ExecutorConformanceViolation extends Error {
+export class RunnerConformanceViolation extends Error {
   constructor(
     readonly caseId: string,
     readonly checkId: string
   ) {
     super(`${caseId}: ${checkId}`);
-    this.name = 'ExecutorConformanceViolation';
+    this.name = 'RunnerConformanceViolation';
   }
 }
 
@@ -30,14 +30,14 @@ type Check = (checkId: string, passes: boolean) => void;
 function conformanceCase<Id extends string>(
   id: Id,
   name: string,
-  exercise: (make: ExecutorFactory, check: Check) => Promise<void>
+  exercise: (make: RunnerFactory, check: Check) => Promise<void>
 ) {
   return {
     id,
     name,
-    run: (make: ExecutorFactory): Promise<void> =>
+    run: (make: RunnerFactory): Promise<void> =>
       exercise(make, (checkId, passes) => {
-        if (!passes) throw new ExecutorConformanceViolation(id, checkId);
+        if (!passes) throw new RunnerConformanceViolation(id, checkId);
       }),
   };
 }
@@ -68,7 +68,7 @@ function pathFrom(input: unknown): string | undefined {
     : undefined;
 }
 
-async function fixture(make: ExecutorFactory, script: (attempt: number) => ActorAgentLlmResult) {
+async function fixture(make: RunnerFactory, script: (attempt: number) => ActorAgentLlmResult) {
   // Cases get independent inputs. Port callbacks record observations but never run assertions.
   const requests: ActorAgentLlmRequest[] = [];
   const effects: { name: string; input: unknown; prompt: string }[] = [];
@@ -81,7 +81,7 @@ async function fixture(make: ExecutorFactory, script: (attempt: number) => Actor
       parameters: { type: 'object' },
     })),
   };
-  const runtime = await make({
+  const runner = await make({
     definition,
     encodeTask: (task) => task.prompt,
     grants: [read, missing, unrequested],
@@ -120,7 +120,7 @@ async function fixture(make: ExecutorFactory, script: (attempt: number) => Actor
     requests,
     effects,
     run: (task: Assignment, signal = new AbortController().signal) =>
-      runtime.run({ ...definition, task, signal }),
+      runner.run({ ...definition, task, signal }),
   };
 }
 
@@ -162,8 +162,8 @@ function hasCode(error: unknown, code: string): error is { code: string; message
   return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
 }
 
-/** Offline cases for public executor behavior. No runtime start, actor identity, or timing probes. */
-export const executorConformanceCases = [
+/** Offline cases for public runner behavior. No runtime start, actor identity, or timing probes. */
+export const runnerConformanceCases = [
   conformanceCase(
     'fresh-history',
     'round-trips authorized results and starts each sequential assignment without history',
@@ -181,7 +181,7 @@ export const executorConformanceCases = [
         )
       );
 
-      // Use the same runtime and call IDs, but distinct assignment text and source contents.
+      // Use the same runner and call IDs, but distinct assignment text and source contents.
       for (const [index, label] of ['one', 'two'].entries()) {
         const task = assignment(label);
         const requestStart = probe.requests.length;

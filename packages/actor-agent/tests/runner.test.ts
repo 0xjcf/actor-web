@@ -5,14 +5,6 @@ import {
   startRuntime,
 } from '@actor-web/runtime/browser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  ActorRuntimeError,
-  type ActorRuntimeOptions,
-  type ActorRuntimeTool,
-  createActorRuntime,
-  type ObservedActorRuntimeExecution,
-} from '../src/actor-runtime.js';
-import { createExecutionEvidence } from '../src/actor-runtime-evidence.js';
 import type {
   ActorAgentLlmMessage,
   ActorAgentLlmProvider,
@@ -20,7 +12,15 @@ import type {
   ActorAgentLlmResult,
   ActorAgentToolCall,
 } from '../src/index.js';
-import type { AgentToolExample, AgentTurn } from '../src/portable.js';
+import type { AgentRunRequest, AgentToolExample } from '../src/portable.js';
+import {
+  AgentRunnerError,
+  type AgentRunnerOptions,
+  type AgentToolHandler,
+  createAgentRunner,
+  type ObservedAgentRunHandle,
+} from '../src/runner.js';
+import { createExecutionEvidence } from '../src/runner-evidence.js';
 
 vi.mock('@actor-web/runtime/browser', async (importOriginal) => {
   const runtime = await importOriginal<typeof import('@actor-web/runtime/browser')>();
@@ -115,7 +115,7 @@ const definition = {
   output: { instructions: 'Return text.' },
 };
 type Task = { readonly name: string; readonly text: string };
-type Options = ActorRuntimeOptions<Task, 'review'>;
+type Options = AgentRunnerOptions<Task, 'review'>;
 const limits = {
   runTimeoutMs: 5_000,
   askTimeoutMs: 1_000,
@@ -142,7 +142,10 @@ const assistant = (content: string, toolCalls?: readonly ActorAgentToolCall[]) =
       },
     },
   }) as const;
-const turn = (text = 'one', signal = new AbortController().signal): AgentTurn<Task, 'review'> => ({
+const turn = (
+  text = 'one',
+  signal = new AbortController().signal
+): AgentRunRequest<Task, 'review'> => ({
   ...definition,
   systemPrompt: `${definition.systemPrompt}\n${definition.output.instructions}`,
   task: { name: 'public', text },
@@ -177,7 +180,7 @@ function toolReceipt(id: string, output: unknown): ActorAgentLlmMessage {
 }
 
 function fixture(provider: ActorAgentLlmProvider, overrides: Partial<Options> = {}) {
-  const execute = vi.fn<ActorRuntimeTool<Task>['execute']>((_input, task) => task.text);
+  const execute = vi.fn<AgentToolHandler<Task>['execute']>((_input, task) => task.text);
   const unauthorized = vi.fn();
   const options: Options = {
     definition,
@@ -196,7 +199,7 @@ function fixture(provider: ActorAgentLlmProvider, overrides: Partial<Options> = 
           ) {
             throw new Error('Expected a path.');
           }
-          if (input.path !== task.name) throw new ActorRuntimeError('PATH_DENIED', 'Not assigned.');
+          if (input.path !== task.name) throw new AgentRunnerError('PATH_DENIED', 'Not assigned.');
           return { value: input.path };
         },
         execute,
@@ -214,7 +217,7 @@ function fixture(provider: ActorAgentLlmProvider, overrides: Partial<Options> = 
     options,
     execute,
     unauthorized,
-    make: () => createActorRuntime(options),
+    make: () => createAgentRunner(options),
   };
 }
 
@@ -323,7 +326,7 @@ describe('portable tool examples', () => {
   });
 });
 
-function facts(run: ObservedActorRuntimeExecution, prefix = 'LOCAL_') {
+function facts(run: ObservedAgentRunHandle, prefix = 'LOCAL_') {
   return run
     .readEvidence()
     ?.trace.receipts.filter(
@@ -694,7 +697,7 @@ describe('assignment execution budgets', () => {
     const { make, execute } = fixture(provider, { limits: mutableLimits });
     const runtime = make();
     Object.assign(mutableLimits, limits);
-    await expect(runtime.run(turn())).rejects.toMatchObject({ name: 'ActorRuntimeError', code });
+    await expect(runtime.run(turn())).rejects.toMatchObject({ name: 'AgentRunnerError', code });
     expect(provider).toHaveBeenCalledTimes(1);
     expect(execute).not.toHaveBeenCalled();
   });
@@ -738,7 +741,7 @@ describe('assignment execution budgets', () => {
       limits: { ...limits, maxModelTurns: 2, maxToolAttempts: 1 },
     });
     execute.mockImplementationOnce(() => {
-      throw new ActorRuntimeError('READ_REFUSED', 'Could not read.');
+      throw new AgentRunnerError('READ_REFUSED', 'Could not read.');
     });
     const runtime = make();
     await expect(runtime.run(turn())).rejects.toMatchObject({ code: 'LLM_PROVIDER_FAILED' });
@@ -1140,7 +1143,7 @@ describe('trusted port compatibility', () => {
       .mockReturnValueOnce({
         // biome-ignore lint/suspicious/noThenProperty: Intentionally throws during Promise subscription.
         then() {
-          throw new ActorRuntimeError('READ_FAILED', 'Could not read.');
+          throw new AgentRunnerError('READ_FAILED', 'Could not read.');
         },
       })
       .mockReturnValueOnce({
@@ -1189,7 +1192,7 @@ describe('trusted port compatibility', () => {
         ok: false,
         error: {
           get code(): string {
-            throw new ActorRuntimeError('NOT_THE_DIAGNOSTIC', 'Could not read the code.');
+            throw new AgentRunnerError('NOT_THE_DIAGNOSTIC', 'Could not read the code.');
           },
           message: 'Malformed diagnostic.',
         },
@@ -1213,7 +1216,7 @@ describe('trusted port compatibility', () => {
   });
 });
 
-describe('local actor runtime executor', () => {
+describe('local actor runtime runner', () => {
   it('seals the definition, exposes the intersection, and closes distinct fresh sessions', async () => {
     const provider = vi.fn<ActorAgentLlmProvider>((request) => {
       expect(request.system).toBe(turn().systemPrompt);
@@ -1310,7 +1313,7 @@ describe('local actor runtime executor', () => {
         execute.mockImplementationOnce((_input, _task, { signal }) => {
           clock.mockReturnValue(50);
           expect(signal.aborted).toBe(false);
-          throw new ActorRuntimeError('READ_FAILED', 'The read failed after the deadline.');
+          throw new AgentRunnerError('READ_FAILED', 'The read failed after the deadline.');
         });
         await expect(make().run(turn())).rejects.toMatchObject({ code });
         expect(provider).toHaveBeenCalledTimes(1);
@@ -1336,7 +1339,7 @@ describe('local actor runtime executor', () => {
       { limits: { ...limits, askTimeoutMs: Number.POSITIVE_INFINITY } },
       { limits: { ...limits, runTimeoutMs: 2_147_483_648 } },
     ]) {
-      expect(() => createActorRuntime({ ...options, ...changes } as Options)).toThrow(
+      expect(() => createAgentRunner({ ...options, ...changes } as Options)).toThrow(
         expect.objectContaining({ code: 'INVALID_RUNTIME_CONFIG' })
       );
     }
@@ -1470,7 +1473,7 @@ describe('local actor runtime executor', () => {
             ])
           : assistant('complete')
       );
-      const execute = vi.fn<ActorRuntimeTool<Task>['execute']>((input) => {
+      const execute = vi.fn<AgentToolHandler<Task>['execute']>((input) => {
         const payload = input as typeof shared;
         trace.push(`execute:${payload.scope.path}`);
         expect(payload).not.toBe(shared);
@@ -1566,7 +1569,7 @@ describe('local actor runtime executor', () => {
   it('preserves a tool failure and does not run the rest of an admitted batch', async () => {
     const provider = vi.fn<ActorAgentLlmProvider>(() => assistant('', [call(), call('2')]));
     const { make, execute } = fixture(provider);
-    execute.mockRejectedValueOnce(new ActorRuntimeError('READ_FAILED', 'The read failed.'));
+    execute.mockRejectedValueOnce(new AgentRunnerError('READ_FAILED', 'The read failed.'));
     await expect(make().run(turn())).rejects.toMatchObject({ code: 'READ_FAILED' });
     expect(provider).toHaveBeenCalledTimes(1);
     expect(execute).toHaveBeenCalledTimes(1);

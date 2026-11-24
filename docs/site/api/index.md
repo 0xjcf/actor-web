@@ -1,6 +1,6 @@
 ---
 title: API Reference
-description: The public entry points of @actor-web/runtime and @actor-web/testing.
+description: The primary actor runtime, agent runner, and testing entry points.
 ---
 
 # API Reference
@@ -16,7 +16,31 @@ the narrowest one that fits — browser code should not pull in Node entry point
 | `@actor-web/runtime/topology` | [`defineActorWebTopology`](/api/topology) and the `actor`/`node`/`supervisor`/`tool` DSL. |
 | `@actor-web/runtime/browser` | Browser-safe sources & clients (no Node built-ins). |
 | `@actor-web/runtime/node` | [`serveNode`](/api/runtimes), HTTP ingress — server only. |
+| `@actor-web/agent` | `createAgentLoopBehavior` and provider-facing tools (`ModelToolDefinition`, `createLlmToolRegistry`). |
+| `@actor-web/agent/portable` | Bind a definition to any `AgentRunner` with `createAgent`; no actor is started here. |
+| `@actor-web/agent/runner` | `createAgentRunner` runs assignments in fresh in-process actor sessions. |
+| `@actor-web/agent/zod` | Optional structured output parsing and assignment-aware validation. |
 | `@actor-web/testing` | [State-machine analysis](/api/testing) test helpers. |
+
+The agent subpaths above are present in this checkout, not in `@actor-web/agent@0.2.2`.
+
+## Actor runtime or agent runner?
+
+```ts
+// Host the actors that own shipment state and process lifecycle messages.
+const runtime = await startRuntime(shipmentTopology);
+
+// Ask a specialist to investigate one shipment; it does not own that lifecycle.
+const runner = createAgentRunner({ ...options, definition: inquiryDefinition });
+const inquiry = createAgent(runner, inquiryDefinition);
+const answer = await inquiry.run({ tracking_id: shipmentId, signal });
+```
+
+`actor(...)` declares a topology entry; `system.spawn(behavior)` starts a live
+actor. The deprecated `createActor(behavior)` only returns its argument. Pass
+an existing behavior object directly (use `satisfies ActorBehavior<MyMessage>`
+for contextual typing), or author a new one with the [`defineBehavior()`
+builder](/api/define-behavior). Neither form spawns it.
 
 ## Map
 

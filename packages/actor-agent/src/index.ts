@@ -30,11 +30,15 @@ export interface ActorAgentToolCall {
   readonly input: unknown;
 }
 
+/** @deprecated Use ModelToolDefinition for provider-facing tool metadata. */
 export interface ActorAgentToolDefinition {
   readonly name: string;
   readonly description?: string;
   readonly inputSchema?: JsonValue;
 }
+
+// Preserve declaration merging for consumers of the published interface.
+export type ModelToolDefinition = ActorAgentToolDefinition;
 
 export interface ActorAgentLlmMessage {
   readonly role: ActorAgentMessageRole;
@@ -48,7 +52,7 @@ export interface ActorAgentLlmRequest {
   readonly system?: string;
   readonly messages: readonly ActorAgentLlmMessage[];
   readonly tools: readonly string[];
-  readonly toolDefinitions?: readonly ActorAgentToolDefinition[];
+  readonly toolDefinitions?: readonly ModelToolDefinition[];
 }
 
 export interface ActorAgentTokenUsage {
@@ -183,7 +187,7 @@ export type ActorAgentLoopEvent =
 
 export interface ActorAgentLoopOptions {
   readonly system?: string;
-  readonly toolDefinitions?: readonly ActorAgentToolDefinition[];
+  readonly toolDefinitions?: readonly ModelToolDefinition[];
   readonly initialHistory?: readonly ActorAgentLlmMessage[];
   readonly initialCheckpointState?: ActorAgentLoopCheckpointState;
   readonly llmTimeoutMs?: number;
@@ -277,9 +281,9 @@ function toolNamesForModel(tools: { list(): string[] }): readonly string[] {
 }
 
 function toolDefinitionsForModel(
-  requested: readonly ActorAgentToolDefinition[] | undefined,
+  requested: readonly ModelToolDefinition[] | undefined,
   allowedTools: readonly string[]
-): readonly ActorAgentToolDefinition[] | undefined {
+): readonly ModelToolDefinition[] | undefined {
   if (!requested || requested.length === 0) {
     return undefined;
   }
@@ -715,7 +719,7 @@ async function reconcileAgentSessionCheckpoint(input: {
   return { ok: true, context: nextContext };
 }
 
-export function createActorAgentToolRegistry(input: {
+export function createLlmToolRegistry(input: {
   readonly llm: ActorAgentLlmProvider;
 }): ActorAgentToolRegistry {
   return {
@@ -739,6 +743,9 @@ export function createActorAgentToolRegistry(input: {
     },
   };
 }
+
+/** @deprecated Use createLlmToolRegistry for typed `llm` registration. */
+export const createActorAgentToolRegistry = createLlmToolRegistry;
 
 export function createAgentLoopBehavior(
   options: ActorAgentLoopOptions = {}
@@ -1124,5 +1131,5 @@ export function createAgentLoopBehavior(
 export function createActorAgentTools(input: {
   readonly llm: ActorAgentLlmProvider;
 }): ActorToolRegistry {
-  return createActorAgentToolRegistry(input) as unknown as ActorToolRegistry;
+  return createLlmToolRegistry(input) as unknown as ActorToolRegistry;
 }

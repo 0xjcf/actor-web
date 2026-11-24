@@ -42,7 +42,7 @@
       "@actor-web/runtime/topology": ["./packages/actor-core-runtime/src/topology-entry.ts"],
       "@actor-web/agent": ["./packages/actor-agent/src/index.ts"],
       "@actor-web/agent/portable": ["./packages/actor-agent/src/portable.ts"],
-      "@actor-web/agent/actor-runtime": ["./packages/actor-agent/src/actor-runtime.ts"],
+      "@actor-web/agent/runner": ["./packages/actor-agent/src/runner.ts"],
       "@actor-web/lattice": ["./packages/actor-lattice/src/index.ts"],
       "@actor-web/labs-mesh": ["./packages/actor-labs-mesh/src/index.ts"],
       "@actor-web/testing": ["./packages/actor-core-testing/src/index.ts"],

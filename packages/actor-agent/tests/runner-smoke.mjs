@@ -1,8 +1,8 @@
-import { createActorRuntime } from '@actor-web/agent/actor-runtime';
 import { createAgent } from '@actor-web/agent/portable';
+import { createAgentRunner } from '@actor-web/agent/runner';
 
 export async function smoke(
-  createRuntime = createActorRuntime,
+  createRunner = createAgentRunner,
   bindAgent = createAgent,
   budgetOverrides = {},
   observeSettlement = false
@@ -13,7 +13,7 @@ export async function smoke(
     tools: [{ name: 'read', description: 'Read the fixture.', parameters: { type: 'object' } }],
     parse: (text) => ({ text }),
   };
-  const runtime = createRuntime({
+  const runner = createRunner({
     definition,
     grants: ['read'],
     tools: [
@@ -63,7 +63,7 @@ export async function smoke(
   });
   const signal = new AbortController().signal;
   if (observeSettlement) {
-    const { validateOutput, waitForSettlement, readEvidence } = runtime.start(
+    const { validateOutput, waitForSettlement, readEvidence } = runner.start(
       { ...definition, task: { id: 'fixture' }, signal },
       { assignmentId: 'smoke-assignment', revision: 0 }
     );
@@ -77,6 +77,6 @@ export async function smoke(
       evidence: readEvidence()?.trace.receipts.map(({ event }) => event.type),
     };
   }
-  const agent = bindAgent(runtime, definition);
+  const agent = bindAgent(runner, definition);
   return agent.run({ id: 'fixture', signal });
 }

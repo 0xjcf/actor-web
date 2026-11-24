@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { type AgentTurn, createAgent } from '../src/portable.js';
+import { type AgentRunRequest, createAgent } from '../src/portable.js';
 import { AgentOutputError, structured } from '../src/zod.js';
 
 const expertise = {
@@ -20,10 +20,10 @@ const check = (content: z.output<typeof finding>, assignment: Task) =>
     : 'Citation is not present in the assignment';
 
 describe('portable phase definitions', () => {
-  it('uses the same expertise as data for distinct phase methods, tools and executors', async () => {
+  it('uses the same expertise as data for distinct phase methods, tools and runners', async () => {
     const writeTool = { name: 'write', description: 'Write a granted file', parameters: {} };
-    const buildRun = vi.fn(async (_turn: AgentTurn<Task, 'build'>) => 'readyForVerification');
-    const reviewRun = vi.fn(async (_turn: AgentTurn<Task, 'review'>) =>
+    const buildRun = vi.fn(async (_turn: AgentRunRequest<Task, 'build'>) => 'readyForVerification');
+    const reviewRun = vi.fn(async (_turn: AgentRunRequest<Task, 'review'>) =>
       JSON.stringify({ path: 'card.tsx', excerpt: 'actor.send()' })
     );
     const build = createAgent(
@@ -80,7 +80,7 @@ describe('portable phase definitions', () => {
     const controller = new AbortController();
     controller.abort(new Error('cancelled'));
     const parse = vi.fn((raw: string) => raw);
-    const run = vi.fn(async (turn: AgentTurn<Task, 'build'>) => {
+    const run = vi.fn(async (turn: AgentRunRequest<Task, 'build'>) => {
       turn.signal.throwIfAborted();
       return 'unused';
     });
@@ -97,7 +97,7 @@ describe('portable phase definitions', () => {
 
   it('uses the original decoder as the receiver when parsing a runtime result', async () => {
     const raw = 'Ready';
-    const run = vi.fn(async (_turn: AgentTurn<Task, 'review'>) => raw);
+    const run = vi.fn(async (_turn: AgentRunRequest<Task, 'review'>) => raw);
     const output = {
       prefix: 'Review result',
       parse(text: string, assignment: Task) {
@@ -116,7 +116,7 @@ describe('portable phase definitions', () => {
 
   it('preserves custom text protocols and parser errors', async () => {
     const reason = new Error('missing board observation');
-    const run = vi.fn(async (_turn: AgentTurn<Task, 'review'>) => 'Fail plan');
+    const run = vi.fn(async (_turn: AgentRunRequest<Task, 'review'>) => 'Fail plan');
     const review = createAgent(
       { run },
       {

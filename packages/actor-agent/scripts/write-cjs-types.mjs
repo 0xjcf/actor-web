@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 
 // CJS and ESM have identical exports. Type references still point at the ESM
 // declarations, except for the root's re-export of the bundled provider.
-for (const name of ['index', 'llm-provider', 'actor-runtime']) {
+for (const name of ['index', 'llm-provider', 'runner']) {
   const declaration = await readFile(new URL(`../dist/${name}.d.ts`, import.meta.url), 'utf8');
   const cjsDeclaration = declaration
     .replace(

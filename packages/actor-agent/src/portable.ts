@@ -13,7 +13,7 @@ export interface AgentToolExample {
 }
 
 /** Describes a requested tool; only the host can grant and execute it. */
-export interface AgentTool {
+export interface AgentToolDeclaration {
   readonly name: string;
   readonly description: string;
   readonly parameters: Record<string, unknown>;
@@ -23,16 +23,18 @@ export interface AgentTool {
 interface AgentMethod<Purpose extends string> {
   readonly purpose: Purpose;
   readonly systemPrompt: string;
-  readonly tools: readonly AgentTool[];
+  readonly tools: readonly AgentToolDeclaration[];
 }
 
-export interface AgentTurn<Task, Purpose extends string = string> extends AgentMethod<Purpose> {
+export interface AgentRunRequest<Task, Purpose extends string = string>
+  extends AgentMethod<Purpose> {
   readonly task: Task;
   readonly signal: AbortSignal;
 }
 
-export interface AgentRuntime<Task, Purpose extends string = string> {
-  readonly run: (turn: AgentTurn<Task, Purpose>) => Promise<string>;
+/** Run one complete assignment and return raw output, independently of how it is hosted. */
+export interface AgentRunner<Task, Purpose extends string = string> {
+  readonly run: (request: AgentRunRequest<Task, Purpose>) => Promise<string>;
 }
 
 /** Flat assignment data; `signal` is reserved for cancellation, not task content. */
@@ -43,7 +45,7 @@ export interface FocusedAgent<Content, Task, Purpose extends string = string>
   run(context: AgentContext<Task>): Promise<Content>;
 }
 
-/** Can also validate text already produced by a session, without starting another turn. */
+/** Can also validate text already produced by a session, without starting another run. */
 export interface AgentOutput<Content, Task> {
   readonly instructions?: string;
   readonly parse: (raw: string, task: Task) => Content;
@@ -55,9 +57,9 @@ export type AgentDefinition<Content, Task, Purpose extends string = string> = Ag
     | { readonly parse: (raw: string, task: Task) => Content; readonly output?: never }
   );
 
-/** Bind a method to a host executor. No actor, session, retry or tool grant is created here. */
+/** Bind a method to a host runner. No actor, session, retry or tool grant is created here. */
 export function createAgent<Content, Task extends object, Purpose extends string>(
-  runtime: AgentRuntime<Task, NoInfer<Purpose>>,
+  runner: AgentRunner<Task, NoInfer<Purpose>>,
   definition: AgentDefinition<Content, Task, Purpose>
 ): FocusedAgent<Content, Task, Purpose> {
   const { purpose, tools, systemPrompt } = definition;
@@ -73,7 +75,7 @@ export function createAgent<Content, Task extends object, Purpose extends string
     async run({ signal, ...assignment }) {
       // TypeScript can't reconstruct generic Task after removing the reserved context field.
       const task = assignment as Task;
-      const raw = await runtime.run({ ...method, task, signal });
+      const raw = await runner.run({ ...method, task, signal });
       return parse(raw, task);
     },
   };
