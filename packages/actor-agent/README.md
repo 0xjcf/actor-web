@@ -189,6 +189,26 @@ JSON object; `result` can be any plain JSON value. Examples do not invoke
 handlers or validate outputs: check fixtures against your tool's contract in
 tests. Use synthetic data suitable for sending to the provider.
 
+The [Planner read sample](../../examples/portable-specialist/planner-read.ts)
+enables `toolExampleMode: 'description'` for one runner. Its offline demo loads
+the actual `read_plan_file` declaration from `@agent-starter/workflows/planner`
+and supplies an in-memory handler granted one file and line. It checks that the
+provider sees the illustrative `Status: draft.` only in the tool description,
+while reading the assigned file returns `Status: ready.`. It also checks that
+reading the example path or answering from the example fails.
+
+With the two workspaces installed side by side, run from the actor-web root:
+
+```sh
+pnpm --filter @actor-web/runtime build
+pnpm --filter @actor-web/agent build
+pnpm --dir ../agent-starter --filter @agent-starter/workflows... run build
+pnpm --filter @actor-web/example-portable-specialist demo:planner
+```
+
+This uses the local package builds and a scripted provider; it neither starts
+the board/Pi executor nor changes their tool descriptions or grants.
+
 ### Execution budgets
 
 Budgets reset for each admitted run and are cumulative within it:
