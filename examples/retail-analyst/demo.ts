@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
-import { type ActorAgentLlmProvider, createLlmProvider } from '@actor-web/agent';
+import {
+  type ActorAgentLlmProvider,
+  type AgentTraceProfile,
+  createLlmProvider,
+  serializeAgentTraceJsonl,
+} from '@actor-web/agent';
 import { createAnalyst } from './analyst.js';
 import { scriptedProvider } from './scripted-provider.js';
 import { formatTrace } from './trace.js';
@@ -11,10 +16,23 @@ const json = args.includes('--json');
 const summary = args.includes('--reasoning-summary');
 const responses = summary || args.includes('--responses');
 const exampleMode = args.includes('--no-tool-examples') ? 'off' : 'description';
+const profileIndex = args.indexOf('--trace-profile');
+const requestedProfile = profileIndex < 0 ? 'evaluation' : args[profileIndex + 1];
+if (
+  requestedProfile !== 'off' &&
+  requestedProfile !== 'metadata' &&
+  requestedProfile !== 'evaluation'
+) {
+  throw new Error('--trace-profile requires off, metadata, or evaluation.');
+}
+const traceProfile: AgentTraceProfile = requestedProfile;
 const traceFileIndex = args.indexOf('--trace-file');
 const traceFile = traceFileIndex < 0 ? undefined : args[traceFileIndex + 1];
 if (traceFileIndex >= 0 && (!traceFile || traceFile.startsWith('--')))
   throw new Error('--trace-file requires a path.');
+if (traceFile && traceProfile === 'off') {
+  throw new Error('--trace-file requires an enabled trace profile.');
+}
 const color =
   !json &&
   !args.includes('--no-color') &&
@@ -42,6 +60,7 @@ const runId = randomUUID();
 const analyst = createAnalyst({
   provider,
   toolExampleMode: exampleMode,
+  traceProfile,
   model: {
     provider: live ? 'openai' : 'scripted',
     model: live ? model : 'retail-fixture',
@@ -56,24 +75,44 @@ const analyst = createAnalyst({
         : {},
     },
   },
-  onTrace(event) {
-    const record = { ...event, model: live ? model : null, mode: live ? 'live' : 'scripted' };
-    if (traceFile) appendFileSync(traceFile, `${JSON.stringify(record)}\n`, { mode: 0o600 });
-    console.log(json ? JSON.stringify(record) : formatTrace(event, { color }));
-  },
+  onTrace: json ? undefined : (event) => console.log(formatTrace(event, { color })),
 });
 const started = performance.now();
+let durationMs: number | undefined;
 try {
-  const result = await analyst.analyze({ productId: 'P005' }, { runId });
+  const run = analyst.startAnalysis({ productId: 'P005' }, { runId });
+  const result = await run.result.finally(() => {
+    durationMs = Math.round(performance.now() - started);
+    if (!json && !traceFile) return;
+    const snapshot = run.readTrace();
+    if (!snapshot) return;
+    const trace = serializeAgentTraceJsonl(snapshot);
+    if (traceFile) {
+      try {
+        appendFileSync(traceFile, trace, { mode: 0o600 });
+      } catch {
+        // File delivery is separate from runner capture and analysis acceptance.
+        console.error(
+          JSON.stringify({
+            type: 'analyst.trace_export_failed',
+            runId,
+            code: 'TRACE_FILE_WRITE_FAILED',
+          })
+        );
+      }
+    }
+    if (json) process.stdout.write(trace);
+  });
   const report = {
     type: 'analyst.result',
     runId,
     mode: live ? 'live' : 'scripted',
     model: live ? model : null,
     toolExampleMode: exampleMode,
+    traceProfile,
     analysis: result.analysis,
     ...result.metrics,
-    durationMs: Math.round(performance.now() - started),
+    durationMs,
     traceTruncated: result.traceTruncated,
     traceDeliveryFailures: result.traceDeliveryFailures,
     traceCompleteness: result.traceCompleteness,
@@ -90,7 +129,7 @@ try {
       type: 'analyst.failed',
       runId,
       code: error && typeof error === 'object' && 'code' in error ? error.code : 'ANALYST_FAILED',
-      durationMs: Math.round(performance.now() - started),
+      durationMs: durationMs ?? Math.round(performance.now() - started),
     })
   );
   process.exitCode = 1;

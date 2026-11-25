@@ -1,4 +1,9 @@
-import type { ActorAgentLlmProvider, AgentTraceEvent, AgentTraceModel } from '@actor-web/agent';
+import type {
+  ActorAgentLlmProvider,
+  AgentTraceEvent,
+  AgentTraceModel,
+  AgentTraceProfile,
+} from '@actor-web/agent';
 import { createAgent } from '@actor-web/agent/portable';
 import { createAgentRunner } from '@actor-web/agent/runner';
 import { defineTool, structured } from '@actor-web/agent/zod';
@@ -16,6 +21,7 @@ const DecisionSummary = z
     'One brief sentence explaining why this tool is the next action, using the task and observed facts. This is a concise decision justification.'
   );
 type Task = z.infer<typeof TaskInput>;
+type AnalysisRunOptions = { signal?: AbortSignal; runId?: string };
 const Sale = z.strictObject({
   date: z.iso.date(),
   product_id: z.string(),
@@ -65,6 +71,7 @@ export function expectedSpike() {
 export function createAnalyst({
   provider,
   toolExampleMode = 'description',
+  traceProfile = 'evaluation',
   onTrace,
   model = {
     provider: 'custom',
@@ -74,14 +81,18 @@ export function createAnalyst({
 }: {
   provider: ActorAgentLlmProvider;
   toolExampleMode?: 'off' | 'description';
+  traceProfile?: AgentTraceProfile;
   onTrace?: (event: AgentTraceEvent) => void | Promise<void>;
   model?: AgentTraceModel;
 }) {
   let runSerial = 0;
-  return {
-    async analyze(
+  const analyst = {
+    startAnalysis(
       task: Task,
-      { signal = new AbortController().signal, runId = `analyst-${++runSerial}` } = {}
+      {
+        signal = new AbortController().signal,
+        runId = `analyst-${++runSerial}`,
+      }: AnalysisRunOptions = {}
     ) {
       const assignment = TaskInput.parse(task);
       const observations: Observation[] = [];
@@ -249,18 +260,21 @@ export function createAnalyst({
         definition,
         provider,
         toolExampleMode,
-        trace: {
-          methodRevision: 'retail-analyst-v4',
-          model,
-          capture: 'content',
-          createRunId: () => runId,
-          case: {
-            datasetId: 'retail-fixtures',
-            datasetRevision: '1',
-            caseId: assignment.productId,
-          },
-          onEvent: onTrace,
-        },
+        trace:
+          traceProfile === 'off'
+            ? { profile: traceProfile }
+            : {
+                profile: traceProfile,
+                methodRevision: 'retail-analyst-v4',
+                model,
+                createRunId: () => runId,
+                case: {
+                  datasetId: 'retail-fixtures',
+                  datasetRevision: '1',
+                  caseId: assignment.productId,
+                },
+                onEvent: onTrace,
+              },
         grants: tools.map((tool) => tool.declaration.name),
         tools: tools.map(({ handler }) => ({
           ...handler,
@@ -298,20 +312,31 @@ export function createAnalyst({
         },
         { assignmentId: runId, revision: 4 }
       );
-      const analysis = await handle.validateOutput(
-        (raw) => definition.output.parse(raw, assignment),
-        { id: 'retail-analysis', revision: '4' }
-      );
-      const snapshot = handle.readTrace();
+      const result = handle
+        .validateOutput((raw) => definition.output.parse(raw, assignment), {
+          id: 'retail-analysis',
+          revision: '4',
+        })
+        .then((analysis) => {
+          const snapshot = handle.readTrace();
+          return {
+            analysis,
+            observations,
+            trace: snapshot?.events ?? [],
+            traceCompleteness: snapshot?.completeness,
+            traceTruncated: snapshot?.completeness.status === 'incomplete',
+            traceDeliveryFailures: snapshot?.deliveryFailures ?? 0,
+            metrics: snapshot?.metrics,
+          };
+        });
       return {
-        analysis,
-        observations,
-        trace: snapshot?.events ?? [],
-        traceCompleteness: snapshot?.completeness,
-        traceTruncated: snapshot?.completeness.status === 'incomplete',
-        traceDeliveryFailures: snapshot?.deliveryFailures ?? 0,
-        metrics: snapshot?.metrics,
+        result,
+        readTrace: handle.readTrace,
       };
     },
+    async analyze(task: Task, options?: AnalysisRunOptions) {
+      return analyst.startAnalysis(task, options).result;
+    },
   };
+  return analyst;
 }

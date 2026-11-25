@@ -86,6 +86,7 @@ The default console output uses dividers and, on a TTY, different colors: cyan f
 pnpm --filter @actor-web/example-retail-analyst build
 node examples/retail-analyst/dist/demo.js --color
 node examples/retail-analyst/dist/demo.js --json
+node examples/retail-analyst/dist/demo.js --trace-profile metadata --trace-file /tmp/retail-metadata.jsonl
 node --env-file=.env.local examples/retail-analyst/dist/demo.js --live --trace-file /tmp/retail-trace.jsonl
 ```
 
@@ -95,7 +96,9 @@ Every analyst tool requires a `decision_summary` string: one concise model-autho
 
 `run.completed` means raw execution finished; it does not mean the analysis passed validation. The host calls `validateOutput` with the retail validator revision, emitting `output.validated`. Only its passed verdict renders an accepted result. A schema or business-rule failure emits failed validation after successful raw execution. The separate domain observation list remains independent of trace capture, so omitted events cannot change business validation.
 
-Content capture is explicitly enabled for these synthetic fixtures. The shared collector defaults to 256 events, 1 MiB total event JSON, and 64 KiB per content field. It reports `traceCompleteness` and delivery failures, labels omitted/redacted content, and isolates sink exceptions and mutations from execution. Metrics count dispatches even if events are dropped. The Node host owns console/file effects; `--trace-file` appends structured JSONL independently of terminal formatting. These logs contain application content and should be treated accordingly. Historical JSONL and verification artifacts below retain their original analyst-specific format.
+The example defaults to the canonical `evaluation` profile for these synthetic fixtures. Select `--trace-profile metadata` to omit trace content, or `--trace-profile off` to disable tracing without changing execution. The separate console `analyst.result` report still contains the accepted answer. `startAnalysis()` exposes `readTrace()` whether its validation promise resolves or rejects; `analyze()` retains its success-result API.
+
+The shared collector defaults to 256 events, 1 MiB total event JSON, and 64 KiB per content field. After a run settles, `--trace-file` appends the package's canonical JSONL: retained event envelopes followed by one `agent.trace.summary` line with completeness, delivery failures, and metrics, including on rejection. New files are created with mode `0600`; file-write failures are reported separately. `--json` emits the same records to stdout and then the separate application result on success. Treat evaluation logs as application data. Historical JSONL and verification artifacts retain their original format.
 
 The notebook's THINK text and this example's explanations are model-authored output, not access to hidden internal computation. GPT-4.1 mini does not return native reasoning summaries. With a compatible reasoning model selected using `OPENAI_ANALYST_MODEL`, `--responses --reasoning-summary` requests Responses summaries explicitly. The adapter keeps returned summaries separate from assistant text and preserves opaque reasoning items for continuation; opaque items are excluded from these evaluation logs. This capability is covered with scripted API responses; a live reasoning-model run is separate from the GPT-4.1 comparison.
 

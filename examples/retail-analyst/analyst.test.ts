@@ -1,4 +1,9 @@
-import type { ActorAgentLlmProvider, ActorAgentLlmResult } from '@actor-web/agent';
+import {
+  type ActorAgentLlmProvider,
+  type ActorAgentLlmResult,
+  type AgentTraceRecord,
+  serializeAgentTraceJsonl,
+} from '@actor-web/agent';
 import { describe, expect, it } from 'vitest';
 import { createAnalyst, expectedSpike } from './analyst.js';
 import { scriptedProvider } from './scripted-provider.js';
@@ -114,6 +119,37 @@ describe('retail analyst', () => {
 });
 
 describe('analyst evaluation tracing and examples', () => {
+  it('does not change model inputs or accepted results when switching capture profiles', async () => {
+    const run = async (traceProfile: 'evaluation' | 'metadata' | 'off') => {
+      const requests: unknown[] = [];
+      const provider: ActorAgentLlmProvider = (request, context) => {
+        requests.push(structuredClone(request));
+        return scriptedProvider(request, context);
+      };
+      const execution = createAnalyst({ provider, traceProfile }).startAnalysis(task);
+      const { analysis, observations } = await execution.result;
+      return { analysis, observations, requests, snapshot: execution.readTrace() };
+    };
+    const { snapshot: detailed, ...expected } = await run('evaluation');
+    expect(detailed?.events.at(-1)).toMatchObject({
+      type: 'output.validated',
+      payload: { outcome: 'passed', output: { status: 'captured', value: expected.analysis } },
+    });
+    const { snapshot: metadata, ...metadataExecution } = await run('metadata');
+    expect(metadataExecution).toEqual(expected);
+    expect(metadata?.metrics).toEqual(detailed?.metrics);
+    expect(metadata?.events.map((event) => event.type)).toEqual(
+      detailed?.events.map((event) => event.type)
+    );
+    expect(metadata?.events.at(-1)).toMatchObject({
+      type: 'output.validated',
+      payload: { outcome: 'passed', output: { status: 'omitted', reason: 'disabled' } },
+    });
+    const { snapshot: disabled, ...untracedExecution } = await run('off');
+    expect(untracedExecution).toEqual(expected);
+    expect(disabled).toBeUndefined();
+  });
+
   it('advertises only the maximum tool and does not accept model-supplied calculation data', async () => {
     const provider: ActorAgentLlmProvider = (request, context) => {
       expect(request.tools).toEqual([
@@ -339,25 +375,30 @@ describe('analyst evaluation tracing and examples', () => {
     expect(result.traceDeliveryFailures).toBeGreaterThan(0);
     expect(JSON.stringify(result.trace)).not.toContain('tampered');
   });
-  it('records failed validation without publishing an accepted result', async () => {
-    const events: { type: string }[] = [];
+  it('exports failed validation and a summary without publishing an accepted result', async () => {
     const provider: ActorAgentLlmProvider = () => ({
       ok: true,
       value: { message: { role: 'assistant', content: '{}' } },
     });
-    await expect(
-      createAnalyst({
-        provider,
-        onTrace: (event) => {
-          events.push(event);
-        },
-      }).analyze(task)
-    ).rejects.toMatchObject({ code: 'schemaMismatch' });
-    expect(events.slice(-2).map((event) => event.type)).toEqual([
-      'run.completed',
-      'output.validated',
+    const run = createAnalyst({ provider }).startAnalysis(task, { runId: 'invalid-answer' });
+    await expect(run.result).rejects.toMatchObject({ code: 'schemaMismatch' });
+    const snapshot = run.readTrace();
+    if (!snapshot) throw new Error('Expected a rejected run trace.');
+    const records: AgentTraceRecord[] = serializeAgentTraceJsonl(snapshot)
+      .trimEnd()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(records.slice(-3)).toMatchObject([
+      { type: 'run.completed' },
+      { type: 'output.validated', payload: { outcome: 'failed' } },
+      {
+        type: 'agent.trace.summary',
+        runId: 'invalid-answer',
+        completeness: { status: 'complete' },
+        metrics: { modelCalls: 1, toolCalls: 0, usage: null },
+      },
     ]);
-    expect(events.some((event) => event.type === 'run.failed')).toBe(false);
+    expect(records.some((record) => record.type === 'run.failed')).toBe(false);
   });
 });
 
