@@ -2,6 +2,7 @@ packages:
   - 'packages/*'
   - 'docs/site'
   - 'examples/portable-specialist'
+  - 'examples/retail-analyst'
 
 onlyBuiltDependencies:
   - '@biomejs/biome'

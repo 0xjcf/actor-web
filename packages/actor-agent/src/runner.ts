@@ -1,3 +1,4 @@
+import type { JsonValue } from '@actor-web/runtime';
 import {
   type ActorToolExecutionContext,
   type ActorToolExecutor,
@@ -8,6 +9,7 @@ import {
 import { actor, defineActorWebTopology, node, tool } from '@actor-web/runtime/topology';
 import {
   ACTOR_WEB_LLM_TOOL_NAME,
+  type ActorAgentLlmMessage,
   type ActorAgentLlmProvider,
   type ActorAgentLlmRequest,
   type ActorAgentLlmResult,
@@ -28,6 +30,14 @@ import {
   ownData,
   snapshotJson,
 } from './runner-json.js';
+import {
+  bindTraceOptions,
+  createRunTrace,
+  traceFailureCode,
+  traceMessage,
+  traceUsage,
+} from './runner-trace.js';
+import type { AgentRunTraceSnapshot, AgentTraceOptions } from './trace.js';
 
 export interface AgentToolHandler<Task> {
   readonly name: string;
@@ -122,8 +132,11 @@ export interface AgentRunnerOptions<Task, Purpose extends string> {
   readonly tools: readonly AgentToolHandler<Task>[];
   /** Append illustrative examples to effective tool descriptions. Default: 'off'. */
   readonly toolExampleMode?: ToolExampleMode;
-  readonly encodeTask: (task: Task) => string;
+  /** Defaults to strict plain-JSON encoding. Override to select model-visible task fields. */
+  readonly encodeTask?: (task: Task) => string;
   readonly limits: AgentRunnerLimits;
+  /** Optional evaluation diagnostics. Content capture is explicitly opt-in. */
+  readonly trace?: AgentTraceOptions;
 }
 
 /** Local cleanup facts for this invocation, not proof of a remote effect outcome. */
@@ -137,6 +150,8 @@ export type AgentRunSettlement =
 
 export interface AgentRunHandle {
   readonly result: Promise<string>;
+  /** Detached diagnostics for this invocation, or undefined when tracing is disabled. */
+  readonly readTrace: () => AgentRunTraceSnapshot | undefined;
   /** Wait for local cleanup independently of the result. Zero makes an immediate observation. */
   readonly waitForSettlement: (timeoutMs: number) => Promise<AgentRunSettlement>;
 }
@@ -158,7 +173,8 @@ export interface ObservedAgentRunHandle extends AgentRunHandle {
   readonly readEvidence: () => AgentRunEvidenceSnapshot | undefined;
   /** Runs one host parser on this invocation's result. Validation is not workflow acceptance. */
   readonly validateOutput: <Content>(
-    parse: (raw: string) => Content | Promise<Content>
+    parse: (raw: string) => Content | Promise<Content>,
+    validator?: { readonly id: string; readonly revision: string }
   ) => Promise<Content>;
 }
 
@@ -336,7 +352,11 @@ function snapshotRequested(tools: unknown): RequestedTool[] {
 
 function bindConfig<Task, Purpose extends string>(options: AgentRunnerOptions<Task, Purpose>) {
   if (!options) invalidConfig('Agent runner options are required.');
-  const { definition, grants, tools, provider, encodeTask, toolExampleMode = 'off' } = options;
+  const { definition, grants, tools, provider, toolExampleMode = 'off' } = options;
+  const encodeTask =
+    options.encodeTask === undefined
+      ? (task: Task) => JSON.stringify(snapshotJson(task, Number.MAX_SAFE_INTEGER).value)
+      : options.encodeTask;
   if (toolExampleMode !== 'off' && toolExampleMode !== 'description') {
     invalidConfig('Expected toolExampleMode to be off or description.');
   }
@@ -410,6 +430,12 @@ function bindConfig<Task, Purpose extends string>(options: AgentRunnerOptions<Ta
       ? [{ definition: modelTool(definition, toolExampleMode), implementation }]
       : [];
   });
+  let trace: ReturnType<typeof bindTraceOptions> | undefined;
+  try {
+    trace = options.trace === undefined ? undefined : bindTraceOptions(options.trace);
+  } catch {
+    invalidConfig('Invalid trace configuration.');
+  }
   return {
     purpose: definition.purpose,
     systemPrompt: definition.output?.instructions
@@ -420,6 +446,8 @@ function bindConfig<Task, Purpose extends string>(options: AgentRunnerOptions<Ta
     limits: Object.freeze({ ...timedLimits, ...budgets }),
     encodeTask,
     provider,
+    trace,
+    toolExampleMode,
   };
 }
 
@@ -793,10 +821,52 @@ function normalizeProviderStep(
         'The tool batch exceeds the configured limit.'
       );
     }
+    const metadata = snapshotJson(
+      {
+        ...(dataField(message, 'reasoningSummaries') === undefined
+          ? {}
+          : { reasoningSummaries: dataField(message, 'reasoningSummaries') }),
+        ...(dataField(message, 'providerState') === undefined
+          ? {}
+          : { providerState: dataField(message, 'providerState') }),
+      },
+      budget.payloadBytes
+    ).value;
+    if (
+      metadata.reasoningSummaries !== undefined &&
+      (!Array.isArray(metadata.reasoningSummaries) ||
+        !metadata.reasoningSummaries.every((text) => typeof text === 'string'))
+    ) {
+      throw new AgentRunnerError('INVALID_ASSISTANT_REPLY', 'Expected reasoning summary strings.');
+    }
+    const state = metadata.providerState as ActorAgentLlmMessage['providerState'];
+    if (
+      state !== undefined &&
+      (!state ||
+        state.format !== 'openai-responses' ||
+        !Array.isArray(state.reasoningItems) ||
+        !state.reasoningItems.every(
+          (item) =>
+            item !== null &&
+            typeof item === 'object' &&
+            !Array.isArray(item) &&
+            item.type === 'reasoning' &&
+            typeof item.id === 'string'
+        ))
+    ) {
+      throw new AgentRunnerError(
+        'INVALID_ASSISTANT_REPLY',
+        'Expected opaque Responses reasoning items.'
+      );
+    }
     const toolCalls: ActorAgentToolCall[] = [];
     const normalized = {
       role: 'assistant' as const,
       content,
+      ...(metadata.reasoningSummaries === undefined
+        ? {}
+        : { reasoningSummaries: metadata.reasoningSummaries as string[] }),
+      ...(state === undefined ? {} : { providerState: state }),
       ...(calls === undefined ? {} : { toolCalls }),
     };
     // Measure with the empty calls array first, then add each normalized element and comma.
@@ -845,7 +915,8 @@ async function driveLoop<Task>(
   budget: ReturnType<typeof createBudget>,
   task: Task,
   prompt: string,
-  system: string
+  system: string,
+  trace?: ReturnType<typeof createRunTrace>
 ): Promise<string> {
   const seen = new Set<string>();
   let reply = await ask({ type: 'START_AGENT', prompt, system });
@@ -873,46 +944,118 @@ async function driveLoop<Task>(
     }
 
     // Validate and detach the whole batch before any handler runs. IDs stay reserved for the session.
+    const modelCall = trace?.modelCall;
+    const reference = (id: string, name: string) => ({
+      turn: modelCall?.turn ?? 0,
+      modelCallId: modelCall?.modelCallId ?? '',
+      toolCallId: id,
+      name,
+    });
+    for (const call of reply.toolCalls) {
+      trace?.emit({
+        type: 'tool.requested',
+        ...reference(call.id, call.name),
+        input: trace.capture('tool.input', call.input as JsonValue),
+      });
+    }
     let batchBytes = budget.payloadBytes;
-    const batch = reply.toolCalls.map((call) =>
-      scope.checked(() => {
-        const { id, name } = call;
-        if (seen.has(id)) {
-          throw new AgentRunnerError('DUPLICATE_TOOL_CALL_ID', 'A tool call ID cannot be reused.');
-        }
-        seen.add(id);
-        const implementation = implementations.get(name);
-        if (!implementation || !toolbox.has(name)) {
-          throw new AgentRunnerError('TOOL_DENIED', 'The tool is not granted for this assignment.');
-        }
-        let payload: unknown;
-        try {
-          const validated = implementation.validateInput(call.input, task);
-          if (validated instanceof Promise) {
-            void validated.catch(() => {});
-            throw new Error('Tool validators must be synchronous.');
+    let rejectedId: string | undefined;
+    let batch: { id: string; name: string; input: unknown }[];
+    try {
+      batch = reply.toolCalls.map((call) =>
+        scope.checked(() => {
+          const { id, name } = call;
+          rejectedId = id;
+          if (seen.has(id)) {
+            throw new AgentRunnerError(
+              'DUPLICATE_TOOL_CALL_ID',
+              'A tool call ID cannot be reused.'
+            );
           }
-          payload = dataField(validated, 'value');
-        } catch (cause) {
-          throw executionFailure('INVALID_TOOL_INPUT', 'The tool input was refused.', cause);
-        }
-        const { value: input, bytes } = checkPayload('INVALID_TOOL_INPUT', () =>
-          snapshotJson(payload, batchBytes)
-        );
-        batchBytes -= bytes;
-        return { id, name, input };
-      })
-    );
-    budget.requireToolAttempts(batch.length);
-    // The loop always asks the model again immediately after the last tool receipt.
-    budget.requireModelTurn();
+          seen.add(id);
+          const implementation = implementations.get(name);
+          if (!implementation || !toolbox.has(name)) {
+            throw new AgentRunnerError(
+              'TOOL_DENIED',
+              'The tool is not granted for this assignment.'
+            );
+          }
+          let payload: unknown;
+          try {
+            const validated = implementation.validateInput(call.input, task);
+            if (validated instanceof Promise) {
+              void validated.catch(() => {});
+              throw new Error('Tool validators must be synchronous.');
+            }
+            payload = dataField(validated, 'value');
+          } catch (cause) {
+            throw executionFailure('INVALID_TOOL_INPUT', 'The tool input was refused.', cause);
+          }
+          const { value: input, bytes } = checkPayload('INVALID_TOOL_INPUT', () =>
+            snapshotJson(payload, batchBytes)
+          );
+          batchBytes -= bytes;
+          return { id, name, input };
+        })
+      );
+      rejectedId = undefined;
+      budget.requireToolAttempts(batch.length);
+      // The loop always asks the model again immediately after the last tool receipt.
+      budget.requireModelTurn();
+    } catch (cause) {
+      for (const call of reply.toolCalls) {
+        trace?.emit({
+          type: 'tool.rejected',
+          ...reference(call.id, call.name),
+          failure: {
+            code:
+              rejectedId === undefined || call.id === rejectedId
+                ? traceFailureCode(cause, 'INVALID_TOOL_INPUT')
+                : 'BATCH_REJECTED',
+          },
+        });
+      }
+      throw cause;
+    }
 
     for (const [index, { id, name, input }] of batch.entries()) {
       scope.check();
       let output: unknown;
+      const started = performance.now();
+      const attemptsBefore = trace?.toolAttempts;
+      const tracedInput = trace?.capture('tool.input', input as JsonValue);
       try {
         output = await toolbox.execute(name, input);
+        trace?.emit({
+          type: 'tool.observed',
+          ...reference(id, name),
+          attempt: 1,
+          input: tracedInput ?? { status: 'omitted', reason: 'disabled' },
+          output: trace.capture('tool.output', output as JsonValue),
+          durationMs: Math.max(0, performance.now() - started),
+        });
       } catch (cause) {
+        if (trace) {
+          const failure = { code: traceFailureCode(cause, 'TOOL_FAILED') };
+          trace.emit(
+            trace.toolAttempts === attemptsBefore
+              ? { type: 'tool.rejected', ...reference(id, name), failure }
+              : {
+                  type: 'tool.failed',
+                  ...reference(id, name),
+                  failure,
+                  attempt: 1,
+                  durationMs: Math.max(0, performance.now() - started),
+                }
+          );
+          for (const remaining of batch.slice(index + 1)) {
+            trace.emit({
+              type: 'tool.rejected',
+              ...reference(remaining.id, remaining.name),
+              failure: { code: 'BATCH_INTERRUPTED' },
+            });
+          }
+        }
         throw executionFailure('TOOL_FAILED', 'The application tool failed.', cause);
       }
       reply = await ask({ type: 'OBSERVE_TOOL_RESULT', toolCallId: id, name, ok: true, output });
@@ -952,10 +1095,12 @@ export function createAgentRunner<Task, Purpose extends string>(
       observation?: {
         publish(value: AgentRunSettlement): void;
         evidence: ReturnType<typeof createExecutionEvidence> | undefined;
+        trace: ReturnType<typeof createRunTrace> | undefined;
         signal?: AbortSignal;
       }
     ): Promise<string> {
       const evidence = observation?.evidence;
+      const trace = observation?.trace;
       let callerSignal: AbortSignal;
       try {
         if (active) throw new AgentRunnerError('RUNTIME_BUSY', 'The runner is active or fenced.');
@@ -985,6 +1130,20 @@ export function createAgentRunner<Task, Purpose extends string>(
         verifyRunRequest(config, request);
         scope.check();
         const task = request.task;
+        if (trace && config.trace) {
+          trace.emit({
+            type: 'run.started',
+            purpose: config.purpose,
+            methodRevision: config.trace.methodRevision,
+            ...(config.trace.case ? { case: config.trace.case } : {}),
+            ...(config.trace.codeRevision ? { codeRevision: config.trace.codeRevision } : {}),
+            task: trace.capture('task', task as JsonValue),
+            configuration: trace.capture('configuration', {
+              toolExampleMode: config.toolExampleMode,
+              limits: { ...config.limits },
+            }),
+          });
+        }
         let prompt: string;
         try {
           prompt = config.encodeTask(task);
@@ -1030,6 +1189,7 @@ export function createAgentRunner<Task, Purpose extends string>(
                   config.limits.toolTimeoutMs,
                   () => {
                     budget.dispatchTool(bytes);
+                    trace?.toolDispatch();
                     attempt = evidence?.toolDispatch(toolOrdinal);
                     return holdPortResult(execute(input, task, portContext));
                   }
@@ -1071,6 +1231,8 @@ export function createAgentRunner<Task, Purpose extends string>(
             );
           });
           let attempt: number | undefined;
+          const started = performance.now();
+          let dispatched = false;
           try {
             const result = await scope.dispatch(
               'PROVIDER_TIMEOUT',
@@ -1078,6 +1240,8 @@ export function createAgentRunner<Task, Purpose extends string>(
               async () => {
                 budget.dispatchModel(normalized.bytes);
                 attempt = evidence?.modelDispatch();
+                dispatched = true;
+                trace?.modelDispatch(normalized.value);
                 try {
                   return await holdPortResult(config.provider(normalized.value, portContext));
                 } catch (cause) {
@@ -1103,10 +1267,43 @@ export function createAgentRunner<Task, Purpose extends string>(
                 step.ok ? step.value.usage : undefined
               );
             }
+            if (trace) {
+              const usage = step.ok ? traceUsage(step.value.usage) : null;
+              trace.modelUsage(usage);
+              const durationMs = Math.max(0, performance.now() - started);
+              trace.emit(
+                step.ok
+                  ? {
+                      type: 'model.returned',
+                      ...trace.modelCall,
+                      durationMs,
+                      usage,
+                      message: trace.capture('model.message', {
+                        ...traceMessage(step.value.message),
+                        role: 'assistant' as const,
+                      }),
+                    }
+                  : {
+                      type: 'model.failed',
+                      ...trace.modelCall,
+                      durationMs,
+                      failure: { code: traceFailureCode(step.error, 'LLM_PROVIDER_FAILED') },
+                    }
+              );
+            }
             return step;
           } catch (cause) {
             if (attempt !== undefined) {
               evidence?.modelOutcome(attempt, scope.signal.aborted ? 'interrupted' : 'failed');
+            }
+            if (trace && dispatched) {
+              trace.modelUsage(null);
+              trace.emit({
+                type: 'model.failed',
+                ...trace.modelCall,
+                failure: { code: traceFailureCode(cause, 'LLM_PROVIDER_FAILED') },
+                durationMs: Math.max(0, performance.now() - started),
+              });
             }
             throw cause;
           }
@@ -1114,6 +1311,23 @@ export function createAgentRunner<Task, Purpose extends string>(
         scope.check();
         startAttempted = true;
         evidence?.beginSession(topology.actors.specialist.address);
+        if (trace) {
+          try {
+            const identity = evidence?.read()?.trace;
+            trace.bindActor(
+              topology.actors.specialist.address,
+              identity
+                ? {
+                    traceId: identity.traceId,
+                    sessionId: identity.sessionId,
+                    commandId: identity.commandId,
+                  }
+                : undefined
+            );
+          } catch {
+            trace.captureFailed();
+          }
+        }
         const startOwned = () => startRuntime(topology, { tools: { ...applicationTools, llm } });
         let host: Awaited<ReturnType<typeof startOwned>>;
         try {
@@ -1149,7 +1363,8 @@ export function createAgentRunner<Task, Purpose extends string>(
               budget,
               task,
               prompt,
-              config.systemPrompt
+              config.systemPrompt,
+              trace
             )
           );
           outcome = { ok: true, text };
@@ -1209,17 +1424,39 @@ export function createAgentRunner<Task, Purpose extends string>(
   ): AgentRunHandle {
     const { finish, waitForSettlement } = createSettlementObserver();
     const evidence = binding === undefined ? undefined : bindEvidence(binding);
-    const observation = { publish: finish, evidence, signal: undefined as AbortSignal | undefined };
-    const result = runner.run(request, observation);
+    const trace = config.trace ? createRunTrace(config.trace) : undefined;
+    const observation = {
+      publish: finish,
+      evidence,
+      trace,
+      signal: undefined as AbortSignal | undefined,
+    };
+    const result = runner.run(request, observation).then(
+      (raw) => {
+        trace?.emit({ type: 'run.completed', output: trace.capture('output', raw) });
+        return raw;
+      },
+      (cause: unknown) => {
+        const code = traceFailureCode(cause, 'RUN_FAILED');
+        trace?.emit(
+          code === 'RUN_ABORTED'
+            ? { type: 'run.cancelled', code }
+            : { type: 'run.failed', failure: { code } }
+        );
+        throw cause;
+      }
+    );
     // A host may observe cleanup before awaiting the already-rejected caller result.
     void result.catch(() => {});
-    if (!evidence) return { result, waitForSettlement };
+    const readTrace = () => trace?.read();
+    if (!evidence) return { result, waitForSettlement, readTrace };
     let requested = false;
     const handle: ObservedAgentRunHandle = {
       result,
       waitForSettlement,
+      readTrace,
       readEvidence: () => evidence.read(),
-      async validateOutput(parse) {
+      async validateOutput(parse, validator = { id: 'host-output', revision: 'unversioned' }) {
         if (requested) {
           throw new AgentRunnerError(
             'VALIDATION_ALREADY_REQUESTED',
@@ -1234,14 +1471,30 @@ export function createAgentRunner<Task, Purpose extends string>(
           const content = await parse(raw);
           signal?.throwIfAborted();
           evidence.validation('passed');
+          trace?.emit({
+            type: 'output.validated',
+            modelCallId: trace.modelCall.modelCallId,
+            validator,
+            outcome: 'passed',
+            output: trace.capture('output', content as JsonValue),
+          });
           return content;
         } catch (cause) {
           evidence.validation(signal?.aborted ? 'interrupted' : 'failed');
+          trace?.emit({
+            type: 'output.validated',
+            modelCallId: trace.modelCall.modelCallId,
+            validator,
+            outcome: 'failed',
+            failure: {
+              code: traceFailureCode(cause, signal?.aborted ? 'RUN_ABORTED' : 'OUTPUT_INVALID'),
+            },
+          });
           throw cause;
         }
       },
     };
     return handle;
   }
-  return { run: (request) => runner.run(request), start };
+  return { run: (request) => start(request).result, start };
 }

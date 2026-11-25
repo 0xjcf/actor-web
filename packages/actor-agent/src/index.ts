@@ -19,6 +19,25 @@ import {
 
 export type { LlmProviderOptions } from './llm-provider.js';
 export { createLlmProvider } from './llm-provider.js';
+export type {
+  AgentRunTraceSnapshot,
+  AgentTraceCapture,
+  AgentTraceCompleteness,
+  AgentTraceContentField,
+  AgentTraceEvent,
+  AgentTraceEventMap,
+  AgentTraceEventType,
+  AgentTraceFailure,
+  AgentTraceMessage,
+  AgentTraceModel,
+  AgentTraceModelCall,
+  AgentTraceModelRequest,
+  AgentTraceOptions,
+  AgentTracePayload,
+  AgentTraceRunInput,
+  AgentTraceToolCall,
+  AgentTraceToolReference,
+} from './trace.js';
 
 export const ACTOR_WEB_LLM_TOOL_NAME = 'llm' as const;
 
@@ -46,6 +65,13 @@ export interface ActorAgentLlmMessage {
   readonly toolCallId?: string;
   readonly toolName?: string;
   readonly toolCalls?: readonly ActorAgentToolCall[];
+  /** Provider-returned summaries; not raw internal reasoning. */
+  readonly reasoningSummaries?: readonly string[];
+  /** Opaque continuation data. Replay to the same provider; exclude from evaluation logs. */
+  readonly providerState?: {
+    readonly format: 'openai-responses';
+    readonly reasoningItems: readonly JsonValue[];
+  };
 }
 
 export interface ActorAgentLlmRequest {
@@ -423,6 +449,14 @@ function isActorAgentLlmMessage(value: unknown): value is ActorAgentLlmMessage {
       candidate.role === 'assistant' ||
       candidate.role === 'tool') &&
     typeof candidate.content === 'string' &&
+    (candidate.reasoningSummaries === undefined ||
+      (Array.isArray(candidate.reasoningSummaries) &&
+        candidate.reasoningSummaries.every((text) => typeof text === 'string'))) &&
+    (candidate.providerState === undefined ||
+      (candidate.providerState !== null &&
+        typeof candidate.providerState === 'object' &&
+        (candidate.providerState as { format?: unknown }).format === 'openai-responses' &&
+        Array.isArray((candidate.providerState as { reasoningItems?: unknown }).reasoningItems))) &&
     (candidate.toolCallId === undefined || typeof candidate.toolCallId === 'string') &&
     (candidate.toolName === undefined || typeof candidate.toolName === 'string') &&
     (candidate.toolCalls === undefined ||

@@ -91,6 +91,18 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
 
+  examples/retail-analyst:
+    dependencies:
+      '@actor-web/agent':
+        specifier: workspace:*
+        version: link:../../packages/actor-agent
+      '@actor-web/runtime':
+        specifier: workspace:*
+        version: link:../../packages/actor-core-runtime
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+
   packages/actor-agent:
     dependencies:
       '@actor-web/runtime':

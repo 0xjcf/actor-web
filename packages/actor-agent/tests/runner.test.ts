@@ -1334,7 +1334,7 @@ describe('local actor runtime runner', () => {
       { grants: undefined },
       { grants: ['llm'] },
       { tools: [{ name: 'read', execute }] },
-      { encodeTask: undefined },
+      { encodeTask: null },
       { definition: { ...definition, purpose: '' } },
       { limits: { ...limits, askTimeoutMs: Number.POSITIVE_INFINITY } },
       { limits: { ...limits, runTimeoutMs: 2_147_483_648 } },
@@ -1599,7 +1599,8 @@ describe('local actor runtime runner', () => {
     const control = new AbortController();
     control.abort();
     const stopped = runtime.start(turn('first', control.signal));
-    expect(Object.keys(stopped).sort()).toEqual(['result', 'waitForSettlement']);
+    expect(Object.keys(stopped).sort()).toEqual(['readTrace', 'result', 'waitForSettlement']);
+    expect(stopped.readTrace()).toBeUndefined();
     await expect(stopped.waitForSettlement(0)).resolves.toEqual({ status: 'not-admitted' });
     await expect(stopped.result).rejects.toMatchObject({ code: 'RUN_ABORTED' });
     const wrongDefinition = runtime.start({ ...turn(), systemPrompt: 'wrong definition' });

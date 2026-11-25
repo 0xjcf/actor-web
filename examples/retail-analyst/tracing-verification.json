@@ -1,0 +1,79 @@
+{
+  "recordedAt": "2026-11-24T22:25:41.407218+00:00",
+  "methodRevision": "retail-analyst-v2",
+  "modelAlias": "gpt-4.1-mini",
+  "trials": {
+    "on": {
+      "analysis": {
+        "date": "2024-01-12",
+        "amount_before_increase": 114,
+        "amount_after_increase": 342,
+        "percentage_increase": 200,
+        "causes": [
+          "Heavy Rain with 2.7 inches precipitation",
+          "Flood Warning event",
+          "Cold temperature around 5.1 Celsius"
+        ]
+      },
+      "modelCalls": 9,
+      "toolCalls": 8,
+      "usage": {
+        "inputTokens": 11802,
+        "outputTokens": 289
+      },
+      "durationMs": 8822,
+      "explainedToolTurns": 1,
+      "toolRequestTurns": 8,
+      "nativeReasoningSummaries": 0,
+      "explanations": [
+        "I will calculate the day-over-day percentage increases for the observed sales quantities from 2024-01-10 to 2024-01-16 to find the largest increase. The quantities are [96, 114, 342, 103, 104, 100, 125]. The highest potential increase seems between 114 and 342 but I will confirm with the tool."
+      ],
+      "traceRecords": 20,
+      "traceDeliveryFailures": 0
+    },
+    "off": {
+      "analysis": {
+        "date": "2024-01-12",
+        "amount_before_increase": 114,
+        "amount_after_increase": 342,
+        "percentage_increase": 200,
+        "causes": [
+          "Heavy Rain on the day of the increase could have influenced a surge in sales due to weather-driven demand.",
+          "Flood Warning on that day might have caused customers to stock up on the product urgently.",
+          "The drastic weather conditions may have disrupted regular supply or consumption patterns leading to a sudden spike."
+        ]
+      },
+      "modelCalls": 9,
+      "toolCalls": 8,
+      "usage": {
+        "inputTokens": 10010,
+        "outputTokens": 292
+      },
+      "durationMs": 7446,
+      "explainedToolTurns": 1,
+      "toolRequestTurns": 8,
+      "nativeReasoningSummaries": 0,
+      "explanations": [
+        "I will calculate the day-over-day percentage increases for each consecutive pair of daily sales quantities to find the largest increase. The observed quantities are 96, 114, 342, 103, 104, 100, 125."
+      ],
+      "traceRecords": 20,
+      "traceDeliveryFailures": 0
+    }
+  },
+  "checks": {
+    "agentTestsPassed": 207,
+    "exampleTestsPassed": 216,
+    "publicBuild": "passed",
+    "typecheck": "passed",
+    "architecture": "passed",
+    "colorAndJsonSmoke": "passed"
+  },
+  "findings": [
+    "Both trials passed the numeric and required-observation validators; both used 9 model turns and 8 tools.",
+    "Only one of eight tool-request turns in each trial returned assistant explanation text. Missing explanations remain explicitly missing.",
+    "GPT-4.1 mini returned no native reasoning summaries. Summary extraction/replay is verified with scripted Responses payloads, not a live reasoning-model call.",
+    "Examples increased input tokens in this pair; no accuracy or call-count improvement was established.",
+    "The examples-on narrative introduced inches for precipitation_amount=2.7; the fixture specifies no unit. This is an unsupported claim not checked by the current numeric validator (AW-05-08).",
+    "These are single stochastic trials per mode using an unpinned model alias, not a statistical quality benchmark."
+  ]
+}

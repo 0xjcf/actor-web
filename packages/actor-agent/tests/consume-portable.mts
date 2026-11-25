@@ -17,8 +17,9 @@ import {
   type AgentRunSettlement,
   createAgentRunner,
 } from '@actor-web/agent/runner';
-import { structured } from '@actor-web/agent/zod';
+import { defineTool, structured } from '@actor-web/agent/zod';
 import { z } from 'zod';
+import './trace-contract.js';
 
 const provider: ActorAgentLlmProvider = createLlmProvider({
   endpoint: 'https://example.invalid',
@@ -75,4 +76,40 @@ const validated: Promise<number> = observed.validateOutput(async (raw) => raw.le
 void raw;
 void cleanup;
 void observed.readEvidence();
+void observed.readTrace();
 void validated;
+
+const tracedRunner = createAgentRunner({
+  ...runnerOptions,
+  trace: {
+    methodRevision: 'test-v1',
+    capture: 'content',
+    model: {
+      provider: 'fixture',
+      model: 'scripted',
+      settings: { status: 'omitted', reason: 'unavailable' },
+    },
+    onEvent(event) {
+      if (event.type === 'model.requested') {
+        const turn: number = event.payload.turn;
+        void turn;
+      }
+    },
+  },
+});
+void tracedRunner.start(request).readTrace()?.completeness;
+
+const typedTool = defineTool({
+  name: 'double',
+  description: 'Double a count.',
+  input: z.strictObject({ count: z.number() }),
+  output: z.strictObject({ doubled: z.number() }),
+  execute({ count }) {
+    const inferred: number = count;
+    // @ts-expect-error Handler inputs are inferred from the input schema.
+    const wrong: string = count;
+    void wrong;
+    return { doubled: inferred * 2 };
+  },
+});
+void typedTool;

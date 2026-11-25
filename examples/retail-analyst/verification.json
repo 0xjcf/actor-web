@@ -1,0 +1,201 @@
+{
+  "requestedModel": "gpt-4.1-mini",
+  "actorWeb": {
+    "mode": "live",
+    "model": "gpt-4.1-mini",
+    "analysis": {
+      "date": "2024-01-12",
+      "amount_before_increase": 114,
+      "amount_after_increase": 342,
+      "percentage_increase": 200,
+      "causes": [
+        "Heavy rain on that day possibly increased the demand for the product, potentially related to weather-sensitive needs.",
+        "Flood warning might have caused people to stock up, leading to a surge in sales.",
+        "Such precipitation could disrupt normal shopping patterns, concentrating purchases in advance or on the rain-heavy day itself."
+      ]
+    },
+    "observations": [
+      {
+        "name": "get_sales_data",
+        "input": {},
+        "output": [
+          {
+            "date": "2024-01-10",
+            "product_id": "P005",
+            "product_name": "Product 5",
+            "quantity": 96,
+            "revenue": 2587.2
+          },
+          {
+            "date": "2024-01-11",
+            "product_id": "P005",
+            "product_name": "Product 5",
+            "quantity": 114,
+            "revenue": 3072.3
+          },
+          {
+            "date": "2024-01-12",
+            "product_id": "P005",
+            "product_name": "Product 5",
+            "quantity": 342,
+            "revenue": 9216.9
+          },
+          {
+            "date": "2024-01-13",
+            "product_id": "P005",
+            "product_name": "Product 5",
+            "quantity": 103,
+            "revenue": 2775.85
+          },
+          {
+            "date": "2024-01-14",
+            "product_id": "P005",
+            "product_name": "Product 5",
+            "quantity": 104,
+            "revenue": 2802.8
+          },
+          {
+            "date": "2024-01-15",
+            "product_id": "P005",
+            "product_name": "Product 5",
+            "quantity": 100,
+            "revenue": 2695
+          },
+          {
+            "date": "2024-01-16",
+            "product_id": "P005",
+            "product_name": "Product 5",
+            "quantity": 125,
+            "revenue": 3368.75
+          }
+        ]
+      },
+      {
+        "name": "percentage_increase",
+        "input": {
+          "before": 96,
+          "after": 114
+        },
+        "output": {
+          "percentage": 18.75
+        }
+      },
+      {
+        "name": "percentage_increase",
+        "input": {
+          "before": 114,
+          "after": 342
+        },
+        "output": {
+          "percentage": 200
+        }
+      },
+      {
+        "name": "percentage_increase",
+        "input": {
+          "before": 342,
+          "after": 103
+        },
+        "output": {
+          "percentage": -69.88
+        }
+      },
+      {
+        "name": "percentage_increase",
+        "input": {
+          "before": 103,
+          "after": 104
+        },
+        "output": {
+          "percentage": 0.97
+        }
+      },
+      {
+        "name": "percentage_increase",
+        "input": {
+          "before": 104,
+          "after": 100
+        },
+        "output": {
+          "percentage": -3.85
+        }
+      },
+      {
+        "name": "percentage_increase",
+        "input": {
+          "before": 100,
+          "after": 125
+        },
+        "output": {
+          "percentage": 25
+        }
+      },
+      {
+        "name": "call_weather_api",
+        "input": {
+          "date": "2024-01-12"
+        },
+        "output": {
+          "date": "2024-01-12",
+          "temperature": {
+            "fahrenheit": 41.1,
+            "celsius": 5.1
+          },
+          "conditions": {
+            "main": "Heavy Rain",
+            "precipitation": "Heavy Rain",
+            "precipitation_amount": 2.7,
+            "special_event": "Flood Warning"
+          }
+        }
+      }
+    ],
+    "modelCalls": 9,
+    "toolCalls": 8,
+    "usage": {
+      "inputTokens": 9205,
+      "outputTokens": 244
+    },
+    "durationMs": 9982
+  },
+  "pythonNotebook": {
+    "mode": "live-notebook-regex",
+    "model": "gpt-4.1-mini",
+    "analysis": {
+      "date": "2024-01-12",
+      "amount_before_increase": 114,
+      "amount_after_increase": 342.0,
+      "percentage_increase": 200.0,
+      "causes": [
+        "Heavy rain and flood warning may have influenced demand; causation is unconfirmed."
+      ]
+    },
+    "modelCalls": 4,
+    "usage": {
+      "inputTokens": 3653,
+      "outputTokens": 261
+    },
+    "durationMs": 6509,
+    "actions": [
+      "get_sales_data()",
+      "calculator(expression=\"(342 - 114) / 114 * 100\")",
+      "call_weather_api(date=\"2024-01-12\")",
+      "final_answer(amount_after_spike=\"342\", causes=[\"Heavy rain and flood warning may have influenced demand; causation is unconfirmed.\"], date=\"2024-01-12\", percentage_spike=\"200.00%\")"
+    ],
+    "note": "amount_before_increase is derived from the shared fixture; the notebook final_answer schema does not report it."
+  },
+  "initialActorWebTrial": {
+    "status": "rejected",
+    "code": "TOOL_BATCH_LIMIT",
+    "modelCalls": 2,
+    "requestedCalculationBatchSize": 6
+  },
+  "fixtureParity": "7 sales and 7 weather records exactly equal",
+  "limitations": [
+    "One successful run per implementation; not a performance benchmark.",
+    "Requested model alias, not a pinned model snapshot.",
+    "Prompts, tool contracts and generation defaults differ.",
+    "Weather is simulated local data.",
+    "Numeric facts and required observations are checked; causal prose is not independently validated."
+  ]
+}

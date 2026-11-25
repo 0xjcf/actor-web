@@ -20,6 +20,8 @@ with `reset`, or the `./portable`, `./runner` and `./zod` entry points.
 
 ## Public API
 
+<!-- Public exports from src/index.ts and the runner entry in src/runner.ts. -->
+
 | Export | Use for |
 | --- | --- |
 | `createAgentLoopBehavior(options?)` | Standard agent loop behavior that accepts `START_AGENT`, observes tool results, and emits agent step/tool events |
@@ -29,7 +31,115 @@ with `reset`, or the `./portable`, `./runner` and `./zod` entry points.
 | `ACTOR_WEB_LLM_TOOL_NAME` | Stable tool name for the injected LLM provider |
 | `ModelToolDefinition` | Provider-facing tool metadata (`inputSchema`); `ActorAgentToolDefinition` is the deprecated name |
 | `ActorAgent*` types | Message, event, provider, tool-call, and error contracts |
+| `AgentTracePayload`, `AgentTraceEvent`, `AgentTraceEventMap` | Typed evaluation observations and their correlated runtime event envelope |
+| `AgentTraceCapture<T>`, `AgentTraceCompleteness` | Explicit content availability and event-stream loss |
+| `AgentTraceOptions`, `AgentRunTraceSnapshot` | Runner capture policy, isolated sink, and per-invocation diagnostic snapshots |
 | `createAgentRunner(options)` from `@actor-web/agent/runner` | Local runner implementing the portable `AgentRunner` contract |
+
+## Evaluation trace schema
+
+<!-- Evaluation trace types from src/trace.ts and runner instrumentation in src/runner.ts and src/runner-trace.ts. -->
+
+`AgentTracePayload` is a discriminated TypeScript union for evaluation capture.
+The local runner emits this vocabulary in `AgentTraceEvent` envelopes when its
+`trace` option is supplied. Tracing is off by default; configured tracing defaults
+to metadata-only capture. These APIs are available in this checkout, not the
+published 0.2.1 package. There is no general parser for untrusted trace JSON or
+built-in durable storage.
+
+- `run.started` records the task, method revision, safe experiment configuration,
+  and optional versioned dataset/case and code revision.
+- `model.requested` records the provider/model, known effective settings, and the
+  normalized request after prompt composition, tool grant filtering, and example
+  injection. Its captured request includes system text, message history, tool
+  names, and effective tool definitions/schemas.
+- `model.returned` records the assistant message, proposed tool calls, optional
+  provider-returned reasoning summaries, reported token usage, and elapsed time.
+  `model.failed` records a sanitized failure code, including provider replies
+  rejected by runner normalization. Invalid replies are not logged verbatim.
+- `tool.requested` records proposed arguments. `tool.rejected` means no handler
+  was dispatched. `tool.observed` records validated handler input and its returned
+  output; `tool.failed` records an execution failure. Correlate calls using
+  `modelCallId` and `toolCallId`, never by tool name. Execution attempts carry an
+  `attempt` number.
+- `output.validated` identifies the validator and revision, with either a passed
+  parsed output or a failed code. Raw final candidate text remains in the model
+  response. Validation is not a quality score or workflow acceptance.
+- `run.completed`, `run.failed`, and `run.cancelled` describe raw runner execution,
+  not whether an evaluator considers the answer correct. `run.completed` carries
+  raw text and precedes host validation; an invalid final answer can have
+  successful raw execution followed by failed `output.validated`.
+
+Configure `trace` in `createAgentRunner` with `methodRevision`, a `model` descriptor
+(`provider`, `model`, and explicitly captured/omitted `settings`), and optionally
+`capture: 'content'` for eval inputs/outputs. `onEvent` receives each detached
+envelope; console, JSONL, or storage effects belong in that host callback.
+An optional `createRunId()` supplies a unique opaque ID per invocation; otherwise
+the runner generates one. Optional `case` and `codeRevision` identify the
+versioned experiment. Never put credentials in model metadata or case IDs.
+
+Every `start(request)` handle exposes `readTrace()`: a detached snapshot containing
+events, completeness, delivery failures, and model/tool/token metrics. It returns
+`undefined` when tracing is off. `run(request)` also emits to the configured sink,
+but does not expose a handle. Metrics count actual dispatches independently of
+retained events, and missing token usage remains unknown.
+
+To trace host validation, use `start(request, evidenceBinding)` and call
+`handle.validateOutput(parse, { id, revision })`. The parser runs once against the
+raw result. Existing callers may omit the validator identity, recorded as
+`host-output` / `unversioned`. `createAgent(...).run()` still owns its separate
+portable parser; it does not automatically emit `output.validated`. See the
+[retail analyst](../../examples/retail-analyst/analyst.ts) for the explicit host
+validation path. Parsing and business validation must not depend on retained
+diagnostic events.
+
+Limits default to 256 events, 1 MiB total compact event JSON, and 64 KiB per
+content field (`maxEvents`, `maxBytes`, `maxContentBytes`). A full event buffer
+stops retaining/delivering events and keeps a truthful prefix with a loss reason;
+oversized individual content is explicitly omitted instead. Completeness and
+metrics remain readable outside the bounded buffer.
+
+Optional `redaction: { policyId, redact(value, field) }` applies a synchronous,
+shape-preserving projection to detached content before retention or delivery.
+It must cover every sensitive occurrence, including repeated conversation
+history, not just the task. Redactor exceptions omit content and report capture
+failure. The collector snapshots only plain JSON and does not invoke content
+accessors. Opaque provider continuation state, raw errors, and provider headers
+are excluded; application text is not automatically scrubbed.
+
+Sink mutations and exceptions cannot replace port inputs/results. Sink promises
+are observed for rejection but never awaited; delivery counts can change after
+execution, so snapshots are point-in-time observations, not delivery receipts.
+Keep synchronous sink/redaction work fast: it still consumes wall-clock time.
+No asynchronous flushing, backpressure, or durable-delivery guarantee is implied.
+
+Content fields use `AgentTraceCapture<T>`: `captured` carries a value, `redacted`
+carries a policy-tagged replacement, and `omitted` carries a reason but no value.
+Captured `null`, empty text, or an empty array are actual data, not missing data.
+Use `usage: null` when usage was not reported; absent individual token counts are
+unknown, not zero. A captured request is the normalized agent request, not an
+exact provider-wire recording: opaque `providerState` is deliberately excluded.
+Provider defaults that are unknown must not be invented.
+
+`AgentTraceEvent` specializes `ActorEventEnvelope` as a discriminated union: the
+event `type` determines its nested `payload`. Unlike the flat producer union,
+the nested payload does not repeat `type`. It retains runtime IDs, timestamps,
+correlation and causation, fixes `kind` to `fact` and `schemaVersion` to `1`, and
+adds a host-owned `runId` and one-based, run-local monotonic `sequence`.
+Optional `evidence` links refer to existing execution trace/session/command
+identities and receipts. The trace does not replace `AgentExecutionTrace` or the
+runner's metadata-only execution evidence. A local tool return does not prove
+durable remote execution.
+
+Producers must snapshot plain JSON, exclude credentials and raw SDK errors,
+apply capture/redaction policy before storage, and enforce event/byte limits.
+The type system alone cannot enforce finite numbers, safe integers, valid
+timestamps, identifier uniqueness, deep immutability, or secret removal.
+Preserve an `AgentTraceCompleteness` summary outside the bounded event buffer;
+event loss is distinct from omitted content. Neither missing content nor an
+incomplete stream should silently pass an evaluator that needs that evidence.
+Versioned evaluation scores/findings remain separate records referencing the
+run/events, so saved runs can be re-scored without changing the original facts.
 
 ## Usage
 
@@ -118,7 +228,7 @@ actor messages are unchanged; the error class is now `AgentRunnerError`.
 Import `createAgentRunner` and `AgentRunnerError` from
 `@actor-web/agent/runner`. Pass the same trusted `definition` you give
 `createAgent`, including any output instructions. Also supply `provider`,
-`encodeTask`, application tool `grants` and implementations, and `limits`:
+`encodeTask` when a custom model-context projection is needed, application tool `grants` and implementations, and `limits`:
 `runTimeoutMs`, `askTimeoutMs`, `providerTimeoutMs`, `toolTimeoutMs`, and
 `maxToolCallsPerBatch`. Existing callers of the unreleased runner must also
 supply `maxModelTurns` and `maxPayloadBytes` (positive safe integers) and
@@ -359,6 +469,16 @@ Expected failures are returned as data with reason codes such as:
 Unavailable failures are intentionally sanitized. The adapter does not expose
 raw thrown network error text in expected failure facts.
 
+## Typed tools and default task encoding
+
+Import `defineTool` from `@actor-web/agent/zod` to bind a JSON-representable Zod input/output contract to a typed handler. It returns `{ declaration, handler }`: put declarations in the agent definition, handlers in the runner, and grant their names explicitly. The helper normalizes generated schema metadata; the core runner continues to reject unsupported payload values. Input schema validation precedes the optional assignment-specific `check`; output schema validation follows execution. The core and runner entries do not import Zod.
+
+`encodeTask` is optional. Its default accepts plain JSON assignment data and refuses unsupported values, including functions and class instances. Supply an encoder to select the fields the model should see or produce task-specific text. Default encoding sends every enumerable task field, so choose a projection deliberately for assignments with host-only fields. Task encoding does not move credentials or environment access into the runner.
+
+See the [retail analyst example](../../examples/retail-analyst/README.md) for `createAnalyst({ provider })`, scoped tools, a required-observation output check, and opt-in live comparison with a Python regex agent.
+
+For providers that support it, set `parallelToolCalls: false` in `createLlmProvider` to request at most one function call per turn. Omission preserves provider defaults. This maps to `parallel_tool_calls` on Chat Completions and Responses; the runner still independently enforces its batch limit.
+
 ## Live conformance
 
 The package includes an opt-in live lane for an already-running compatible
@@ -456,3 +576,11 @@ for the distinction between dispatch, effect outcome, and reconciliation.
 ## License
 
 MIT
+
+## Decision explanations and reasoning summaries
+
+`ActorAgentLlmMessage.content` may accompany native tool calls. Hosts should preserve returned assistant text instead of hiding it when `toolCalls` is nonempty. This text is an explanation, not raw internal reasoning.
+
+For compatible reasoning models on a Responses endpoint, `createLlmProvider({ ..., reasoningSummary: 'auto' })` requests a summary. The adapter returns `message.reasoningSummaries` separately from `content`, and retains `message.providerState` for replay of opaque reasoning items on later Responses turns. The runner validates/detaches and meters this JSON metadata with the message. Evaluation loggers should select summaries and exclude opaque state. Chat Completions rejects this summary configuration rather than silently ignoring it. No model migration or reasoning effort is chosen automatically.
+
+`defineTool` also accepts typed `examples: [{ input, result }]`. It validates examples against the schemas without invoking assignment checks or handlers, then hands declarations to the runner's existing example snapshot/injection path. Enable `toolExampleMode: 'description'` to advertise them. They are illustrative data, not successful observations or grants; task-level validators remain authoritative.

@@ -68,3 +68,10 @@ void raw;
 void cleanup;
 void validated;
 void observed.readEvidence();
+
+const tracePayload: agent.AgentTracePayload = {
+  type: 'run.completed',
+  output: { status: 'captured', value: { answer: 200 } },
+};
+const traceCompleteness: agent.AgentTraceCompleteness = { status: 'complete' };
+void [tracePayload, traceCompleteness];

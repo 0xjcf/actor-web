@@ -1,0 +1,15 @@
+{
+  "name": "@actor-web/example-retail-analyst",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --module node16 --target es2022 --strict --skipLibCheck --outDir dist demo.ts",
+    "demo": "pnpm build && node dist/demo.js",
+    "live": "pnpm build && node --env-file=../../.env.local dist/demo.js --live"
+  },
+  "dependencies": {
+    "@actor-web/agent": "workspace:*",
+    "@actor-web/runtime": "workspace:*",
+    "zod": "4.6.7"
+  }
+}

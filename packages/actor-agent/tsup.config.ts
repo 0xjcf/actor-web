@@ -6,7 +6,7 @@ export default defineConfig([
     entry: ['src/portable.ts', 'src/zod.ts'],
     format: ['cjs', 'esm'],
     external: ['zod'],
-    dts: { compilerOptions: { composite: false } },
+    dts: { compilerOptions: { composite: false, paths: {} } },
   },
   {
     entry: ['src/runner.ts'],
