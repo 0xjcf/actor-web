@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import type {
-  ActorAgentLlmProvider,
-  ActorAgentLlmResult,
-  AgentTraceOptions,
+import {
+  type ActorAgentLlmProvider,
+  type ActorAgentLlmResult,
+  AGENT_TRACE_SCHEMA_VERSION,
+  type AgentTraceConfiguration,
+  type AgentTraceOptions,
+  serializeAgentTraceJsonl,
 } from '../src/index.js';
 import type { AgentRunRequest } from '../src/portable.js';
 import { type AgentToolHandler, createAgentRunner } from '../src/runner.js';
@@ -13,6 +16,7 @@ const traceOptions: AgentTraceOptions = {
   model: { provider: 'fixture', model: 'scripted', settings: { status: 'captured', value: {} } },
   capture: 'content',
 };
+const { capture: _capture, ...traceMetadata } = traceOptions;
 const definition = {
   purpose: 'test',
   systemPrompt: 'Trusted prompt',
@@ -44,7 +48,7 @@ const reply = (
 });
 function setup(
   provider: ActorAgentLlmProvider,
-  trace: AgentTraceOptions = traceOptions,
+  trace: AgentTraceConfiguration = traceOptions,
   tool?: AgentToolHandler<{ secret: string }>
 ) {
   return createAgentRunner({
@@ -250,10 +254,148 @@ describe('runner evaluation instrumentation', () => {
     expect(JSON.stringify(run.readTrace())).not.toContain('tampered');
   });
 
+  describe('trace profiles and canonical export', () => {
+    it('disables trace allocation and leaves execution unchanged when explicitly off', async () => {
+      const onEvent = vi.fn();
+      const createRunId = vi.fn(() => 'unused');
+      const config = { profile: 'off', ...traceMetadata, onEvent, createRunId } as const;
+      const run = setup(() => reply('answer'), config).start(request());
+      await expect(run.result).resolves.toBe('answer');
+      expect(run.readTrace()).toBeUndefined();
+      expect(createRunId).not.toHaveBeenCalled();
+      expect(onEvent).not.toHaveBeenCalled();
+    });
+
+    it('uses the same events for metadata and evaluation with different content capture', async () => {
+      const snapshots = [];
+      for (const profile of ['metadata', 'evaluation'] as const) {
+        const run = setup(() => reply('private-answer\nsecond line'), {
+          ...traceMetadata,
+          profile,
+          model: {
+            ...traceMetadata.model,
+            settings: { status: 'captured', value: { name: 'private-settings' } },
+          },
+        }).start(request());
+        await run.result;
+        const snapshot = run.readTrace();
+        if (!snapshot) throw new Error('Expected a trace snapshot.');
+        snapshots.push(snapshot);
+        const jsonl = serializeAgentTraceJsonl(snapshot);
+        expect(jsonl.endsWith('\n')).toBe(true);
+        const lines = jsonl
+          .trimEnd()
+          .split('\n')
+          .map((line) => JSON.parse(line));
+        expect(lines.slice(0, -1)).toEqual(snapshot.events);
+        expect(lines.at(-1)).toEqual({
+          type: 'agent.trace.summary',
+          schemaVersion: AGENT_TRACE_SCHEMA_VERSION,
+          runId: snapshot.runId,
+          completeness: { status: 'complete' },
+          deliveryFailures: 0,
+          metrics: snapshot.metrics,
+        });
+        const expectedCapture =
+          profile === 'metadata'
+            ? { status: 'omitted', reason: 'disabled' }
+            : { status: 'captured', value: 'private-answer\nsecond line' };
+        expect(snapshot.events.at(-1)).toMatchObject({
+          type: 'run.completed',
+          payload: { output: expectedCapture },
+        });
+        if (profile === 'metadata') expect(jsonl).not.toContain('private-');
+        else expect(jsonl).toContain('private-task');
+      }
+      expect(
+        snapshots[0].events.map(({ type, schemaVersion, sequence }) => [
+          type,
+          schemaVersion,
+          sequence,
+        ])
+      ).toEqual(
+        snapshots[1].events.map(({ type, schemaVersion, sequence }) => [
+          type,
+          schemaVersion,
+          sequence,
+        ])
+      );
+      expect(snapshots[0].metrics).toEqual(snapshots[1].metrics);
+    });
+
+    it.each([
+      { ...traceMetadata, profile: 'unknown' },
+      { ...traceMetadata, profile: 'metadata', capture: 'content' },
+      { ...traceMetadata, profile: 'evaluation', maxEvents: 0 },
+      { profile: 'evaluation' },
+    ])('rejects invalid named configurations before a run', (configuration) => {
+      expect(() => setup(() => reply('answer'), configuration as AgentTraceConfiguration)).toThrow(
+        'Invalid trace configuration.'
+      );
+    });
+
+    it('exports failure and sink loss without serializing raw errors', async () => {
+      const run = setup(
+        () => ({
+          ok: false,
+          error: { code: 'PROVIDER_TEST_FAILURE', message: 'private provider error' },
+        }),
+        {
+          ...traceMetadata,
+          profile: 'evaluation',
+          onEvent() {
+            throw new Error('private sink error');
+          },
+        }
+      ).start(request());
+      await expect(run.result).rejects.toMatchObject({ code: 'PROVIDER_TEST_FAILURE' });
+      const snapshot = run.readTrace();
+      if (!snapshot) throw new Error('Expected a trace snapshot.');
+      const jsonl = serializeAgentTraceJsonl(snapshot);
+      expect(jsonl).not.toContain('private provider error');
+      expect(jsonl).not.toContain('private sink error');
+      expect(
+        jsonl
+          .trimEnd()
+          .split('\n')
+          .map((line) => JSON.parse(line))
+          .slice(-2)
+      ).toMatchObject([
+        { type: 'run.failed', payload: { failure: { code: 'PROVIDER_TEST_FAILURE' } } },
+        {
+          type: 'agent.trace.summary',
+          completeness: { status: 'incomplete', reasons: ['delivery-failed'] },
+          deliveryFailures: snapshot.events.length,
+          metrics: { modelCalls: 1, toolCalls: 0, usage: null },
+        },
+      ]);
+    });
+
+    it('exports a summary even when the byte limit prevents retaining any events', async () => {
+      const run = setup(() => reply('answer'), {
+        ...traceMetadata,
+        profile: 'evaluation',
+        maxBytes: 1,
+      }).start(request());
+      await run.result;
+      const snapshot = run.readTrace();
+      if (!snapshot) throw new Error('Expected a trace snapshot.');
+      expect(JSON.parse(serializeAgentTraceJsonl(snapshot))).toEqual({
+        type: 'agent.trace.summary',
+        schemaVersion: AGENT_TRACE_SCHEMA_VERSION,
+        runId: snapshot.runId,
+        completeness: { status: 'incomplete', reasons: ['byte-limit'] },
+        deliveryFailures: 0,
+        metrics: { modelCalls: 1, toolCalls: 0, usage: { inputTokens: 10, outputTokens: 5 } },
+      });
+    });
+  });
+
   it('applies redaction to detached values without changing execution', async () => {
     const provider = vi.fn<ActorAgentLlmProvider>(() => reply('answer'));
     const run = setup(provider, {
-      ...traceOptions,
+      ...traceMetadata,
+      profile: 'evaluation',
       redaction: {
         policyId: 'task-policy',
         redact(value, field) {

@@ -75,3 +75,11 @@ const tracePayload: agent.AgentTracePayload = {
 };
 const traceCompleteness: agent.AgentTraceCompleteness = { status: 'complete' };
 void [tracePayload, traceCompleteness];
+const disabledTrace: agent.AgentTraceConfiguration = { profile: 'off' };
+const profiled = runners.createAgentRunner({ ...runnerOptions, trace: disabledTrace });
+const snapshot = profiled.start(request).readTrace();
+if (snapshot) {
+  const version: 1 = agent.AGENT_TRACE_SCHEMA_VERSION;
+  const jsonl: string = agent.serializeAgentTraceJsonl(snapshot);
+  void [version, jsonl];
+}

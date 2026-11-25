@@ -6,6 +6,18 @@ const require = createRequire(import.meta.url);
 for (const entry of [await import('@actor-web/agent'), require('@actor-web/agent')]) {
   assert.equal(typeof entry.createLlmToolRegistry, 'function');
   assert.equal(entry.createLlmToolRegistry, entry.createActorAgentToolRegistry);
+  assert.equal(entry.AGENT_TRACE_SCHEMA_VERSION, 1);
+  const summary = {
+    runId: 'fixture',
+    completeness: { status: 'incomplete', reasons: ['byte-limit'] },
+    deliveryFailures: 0,
+    metrics: { modelCalls: 1, toolCalls: 0, usage: null },
+  };
+  assert.deepEqual(JSON.parse(entry.serializeAgentTraceJsonl({ ...summary, events: [] })), {
+    type: 'agent.trace.summary',
+    schemaVersion: 1,
+    ...summary,
+  });
 }
 for (const [portable, codec] of [
   [await import('@actor-web/agent/portable'), await import('@actor-web/agent/zod')],

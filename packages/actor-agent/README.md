@@ -33,7 +33,8 @@ with `reset`, or the `./portable`, `./runner` and `./zod` entry points.
 | `ActorAgent*` types | Message, event, provider, tool-call, and error contracts |
 | `AgentTracePayload`, `AgentTraceEvent`, `AgentTraceEventMap` | Typed evaluation observations and their correlated runtime event envelope |
 | `AgentTraceCapture<T>`, `AgentTraceCompleteness` | Explicit content availability and event-stream loss |
-| `AgentTraceOptions`, `AgentRunTraceSnapshot` | Runner capture policy, isolated sink, and per-invocation diagnostic snapshots |
+| `AgentTraceProfile`, `AgentTraceConfiguration`, `AgentTraceOptions` | Named runner capture profiles or low-level options, with limits, redaction, and an isolated sink |
+| `AGENT_TRACE_SCHEMA_VERSION`, `AgentRunTraceSnapshot`, `AgentTraceRecord`, `AgentTraceRunSummary`, `serializeAgentTraceJsonl` | Canonical version, snapshot and JSONL records, and portable serialization |
 | `createAgentRunner(options)` from `@actor-web/agent/runner` | Local runner implementing the portable `AgentRunner` contract |
 
 ## Evaluation trace schema
@@ -70,19 +71,67 @@ built-in durable storage.
   raw text and precedes host validation; an invalid final answer can have
   successful raw execution followed by failed `output.validated`.
 
-Configure `trace` in `createAgentRunner` with `methodRevision`, a `model` descriptor
-(`provider`, `model`, and explicitly captured/omitted `settings`), and optionally
-`capture: 'content'` for eval inputs/outputs. `onEvent` receives each detached
-envelope; console, JSONL, or storage effects belong in that host callback.
-An optional `createRunId()` supplies a unique opaque ID per invocation; otherwise
-the runner generates one. Optional `case` and `codeRevision` identify the
-versioned experiment. Never put credentials in model metadata or case IDs.
+### Capture profiles
+
+Set `trace.profile` in `createAgentRunner` from your application's settings.
+All enabled profiles emit the same versioned `AgentTraceEvent` envelope.
+
+| Profile | Behavior |
+| --- | --- |
+| `off` | Like omitting `trace`: no events, sink calls, or trace snapshot |
+| `metadata` | Events, identifiers, timings, usage, and failure codes; content fields are omitted |
+| `evaluation` | Same events with bounded content capture and optional host redaction |
+
+An enabled profile requires `methodRevision` and a `model` descriptor
+(`provider`, `model`, and explicitly captured/omitted `settings`). For example:
+
+```ts
+import { createAgentRunner } from '@actor-web/agent/runner';
+
+const runner = createAgentRunner({
+  ...runnerOptions,
+  trace: {
+    profile: 'metadata',
+    methodRevision: 'source-review-v1',
+    model: {
+      provider: 'openai',
+      model: 'gpt-4.1-mini',
+      settings: { status: 'omitted', reason: 'unavailable' },
+    },
+  },
+});
+```
+
+Profile-free `AgentTraceOptions` still default to metadata-only and support
+`capture: 'content'`; do not combine `capture` with a named profile.
+`onEvent` receives each detached envelope. An optional `createRunId()` supplies
+a unique opaque ID per invocation; otherwise the runner generates one.
+Optional `case` and `codeRevision` identify the versioned experiment. Keep
+identifiers and other metadata non-sensitive even in the `metadata` profile.
+Profiles do not select a renderer, destination, or storage policy.
 
 Every `start(request)` handle exposes `readTrace()`: a detached snapshot containing
 events, completeness, delivery failures, and model/tool/token metrics. It returns
 `undefined` when tracing is off. `run(request)` also emits to the configured sink,
 but does not expose a handle. Metrics count actual dispatches independently of
 retained events, and missing token usage remains unknown.
+
+### JSONL export
+
+After awaiting the run or host validation (including on failure), take the
+snapshot with `handle.readTrace()`. `serializeAgentTraceJsonl(snapshot)` from
+`@actor-web/agent` emits each retained event followed by one versioned
+`agent.trace.summary` record with the run ID, metrics, completeness, and delivery
+failure count. The summary is present even if limits prevented retaining any
+events. It describes that snapshot, not a business verdict or a durable-delivery
+receipt. Consumers can discriminate event and summary lines by `type`.
+
+The serializer is browser-safe and does not write files, validate untrusted JSON,
+or apply additional redaction. The host chooses where to send or store the
+serialized data. Use either snapshot export or `onEvent` for a given event
+destination to avoid writing duplicate events.
+
+### Validation and capture guarantees
 
 To trace host validation, use `start(request, evidenceBinding)` and call
 `handle.validateOutput(parse, { id, revision })`. The parser runs once against the

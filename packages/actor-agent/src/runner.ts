@@ -31,13 +31,13 @@ import {
   snapshotJson,
 } from './runner-json.js';
 import {
-  bindTraceOptions,
+  bindTraceConfiguration,
   createRunTrace,
   traceFailureCode,
   traceMessage,
   traceUsage,
 } from './runner-trace.js';
-import type { AgentRunTraceSnapshot, AgentTraceOptions } from './trace.js';
+import type { AgentRunTraceSnapshot, AgentTraceConfiguration } from './trace.js';
 
 export interface AgentToolHandler<Task> {
   readonly name: string;
@@ -135,8 +135,8 @@ export interface AgentRunnerOptions<Task, Purpose extends string> {
   /** Defaults to strict plain-JSON encoding. Override to select model-visible task fields. */
   readonly encodeTask?: (task: Task) => string;
   readonly limits: AgentRunnerLimits;
-  /** Optional evaluation diagnostics. Content capture is explicitly opt-in. */
-  readonly trace?: AgentTraceOptions;
+  /** Optional diagnostics. Choose a profile or provide low-level capture options. */
+  readonly trace?: AgentTraceConfiguration;
 }
 
 /** Local cleanup facts for this invocation, not proof of a remote effect outcome. */
@@ -430,9 +430,9 @@ function bindConfig<Task, Purpose extends string>(options: AgentRunnerOptions<Ta
       ? [{ definition: modelTool(definition, toolExampleMode), implementation }]
       : [];
   });
-  let trace: ReturnType<typeof bindTraceOptions> | undefined;
+  let trace: ReturnType<typeof bindTraceConfiguration>;
   try {
-    trace = options.trace === undefined ? undefined : bindTraceOptions(options.trace);
+    trace = bindTraceConfiguration(options.trace);
   } catch {
     invalidConfig('Invalid trace configuration.');
   }

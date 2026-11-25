@@ -1,20 +1,44 @@
 import type { JsonValue } from '@actor-web/runtime';
 import type { ActorAgentLlmMessage, ActorAgentLlmRequest, ActorAgentTokenUsage } from './index.js';
 import { JsonPayloadTooLarge, snapshotJson } from './runner-json.js';
-import type {
-  AgentRunTraceSnapshot,
-  AgentTraceCapture,
-  AgentTraceCompleteness,
-  AgentTraceContentField,
-  AgentTraceEvent,
-  AgentTraceMessage,
-  AgentTraceModelRequest,
-  AgentTraceOptions,
-  AgentTracePayload,
+import {
+  AGENT_TRACE_SCHEMA_VERSION,
+  type AgentRunTraceSnapshot,
+  type AgentTraceCapture,
+  type AgentTraceCompleteness,
+  type AgentTraceConfiguration,
+  type AgentTraceContentField,
+  type AgentTraceEvent,
+  type AgentTraceMessage,
+  type AgentTraceModelRequest,
+  type AgentTraceOptions,
+  type AgentTracePayload,
 } from './trace.js';
 
 type Loss = Extract<AgentTraceCompleteness, { status: 'incomplete' }>['reasons'][number];
 let serial = 0;
+
+export function bindTraceConfiguration(options: AgentTraceConfiguration | undefined) {
+  if (options === undefined) return undefined;
+  const { profile, capture } = options;
+  if (profile !== undefined && capture !== undefined) {
+    throw new Error('A trace profile cannot override capture.');
+  }
+  switch (profile) {
+    case undefined:
+      return bindTraceOptions(options);
+    case 'off':
+      return undefined;
+    case 'metadata':
+    case 'evaluation':
+      return bindTraceOptions({
+        ...options,
+        capture: profile === 'metadata' ? 'metadata' : 'content',
+      });
+    default:
+      throw new Error('Unknown trace profile.');
+  }
+}
 
 export function bindTraceOptions(options: AgentTraceOptions) {
   const limits = {
@@ -186,7 +210,7 @@ export function createRunTrace(options: ReturnType<typeof bindTraceOptions>) {
       const event = {
         id: `${runId}:event:${++sequence}`,
         kind: 'fact',
-        schemaVersion: 1,
+        schemaVersion: AGENT_TRACE_SCHEMA_VERSION,
         occurredAt: new Date().toISOString(),
         sourceActor,
         correlationId: runId,

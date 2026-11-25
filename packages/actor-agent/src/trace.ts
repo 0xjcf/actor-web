@@ -6,6 +6,9 @@ import type {
   ModelToolDefinition,
 } from './index.js';
 
+/** Version of the canonical agent trace event and JSONL summary records. */
+export const AGENT_TRACE_SCHEMA_VERSION = 1;
+
 /**
  * Content availability is independent of execution success. A captured null is
  * data, not missing content. Redacted values are not exact replay inputs.
@@ -50,6 +53,18 @@ export interface AgentTraceOptions {
     readonly redact: <T>(value: T, field: AgentTraceContentField) => T;
   };
 }
+
+/** Capture presets only. They do not select a renderer or destination. */
+export type AgentTraceProfile = 'off' | 'metadata' | 'evaluation';
+
+/** Named profiles and low-level capture options are mutually exclusive. */
+export type AgentTraceConfiguration =
+  | (AgentTraceOptions & { readonly profile?: never })
+  | { readonly profile: 'off'; readonly capture?: never }
+  | (Omit<AgentTraceOptions, 'capture'> & {
+      readonly profile: Exclude<AgentTraceProfile, 'off'>;
+      readonly capture?: never;
+    });
 
 export interface AgentRunTraceSnapshot {
   readonly runId: string;
@@ -209,8 +224,11 @@ export type AgentTracePayload = {
  * fabricated receipts. A model/tool fact still has envelope kind "fact".
  */
 export type AgentTraceEvent = {
-  [T in AgentTraceEventType]: Readonly<Omit<ActorEventEnvelope, 'type' | 'payload' | 'kind'>> & {
+  [T in AgentTraceEventType]: Readonly<
+    Omit<ActorEventEnvelope, 'type' | 'payload' | 'kind' | 'schemaVersion'>
+  > & {
     readonly kind: 'fact';
+    readonly schemaVersion: typeof AGENT_TRACE_SCHEMA_VERSION;
     readonly type: T;
     readonly runId: string;
     readonly sequence: number;
@@ -238,3 +256,30 @@ export type AgentTraceCompleteness =
         ...('event-limit' | 'byte-limit' | 'capture-failed' | 'delivery-failed')[],
       ];
     };
+
+/** Point-in-time snapshot metadata, not an agent event or a delivery receipt. */
+export type AgentTraceRunSummary = Omit<AgentRunTraceSnapshot, 'events'> & {
+  readonly type: 'agent.trace.summary';
+  readonly schemaVersion: typeof AGENT_TRACE_SCHEMA_VERSION;
+};
+
+export type AgentTraceRecord = AgentTraceEvent | AgentTraceRunSummary;
+
+/**
+ * Serialize a trusted runner snapshot as JSONL with one trailing summary line.
+ * No content is added or removed. The caller owns storage and access control.
+ */
+export function serializeAgentTraceJsonl(snapshot: AgentRunTraceSnapshot): string {
+  const { runId, completeness, deliveryFailures, metrics } = snapshot;
+  const summary: AgentTraceRunSummary = {
+    type: 'agent.trace.summary',
+    schemaVersion: AGENT_TRACE_SCHEMA_VERSION,
+    runId,
+    completeness,
+    deliveryFailures,
+    metrics,
+  };
+  const lines = snapshot.events.map((event) => JSON.stringify(event));
+  lines.push(JSON.stringify(summary));
+  return `${lines.join('\n')}\n`;
+}

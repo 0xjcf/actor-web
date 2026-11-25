@@ -19,24 +19,30 @@ import {
 
 export type { LlmProviderOptions } from './llm-provider.js';
 export { createLlmProvider } from './llm-provider.js';
-export type {
-  AgentRunTraceSnapshot,
-  AgentTraceCapture,
-  AgentTraceCompleteness,
-  AgentTraceContentField,
-  AgentTraceEvent,
-  AgentTraceEventMap,
-  AgentTraceEventType,
-  AgentTraceFailure,
-  AgentTraceMessage,
-  AgentTraceModel,
-  AgentTraceModelCall,
-  AgentTraceModelRequest,
-  AgentTraceOptions,
-  AgentTracePayload,
-  AgentTraceRunInput,
-  AgentTraceToolCall,
-  AgentTraceToolReference,
+export {
+  AGENT_TRACE_SCHEMA_VERSION,
+  type AgentRunTraceSnapshot,
+  type AgentTraceCapture,
+  type AgentTraceCompleteness,
+  type AgentTraceConfiguration,
+  type AgentTraceContentField,
+  type AgentTraceEvent,
+  type AgentTraceEventMap,
+  type AgentTraceEventType,
+  type AgentTraceFailure,
+  type AgentTraceMessage,
+  type AgentTraceModel,
+  type AgentTraceModelCall,
+  type AgentTraceModelRequest,
+  type AgentTraceOptions,
+  type AgentTracePayload,
+  type AgentTraceProfile,
+  type AgentTraceRecord,
+  type AgentTraceRunInput,
+  type AgentTraceRunSummary,
+  type AgentTraceToolCall,
+  type AgentTraceToolReference,
+  serializeAgentTraceJsonl,
 } from './trace.js';
 
 export const ACTOR_WEB_LLM_TOOL_NAME = 'llm' as const;

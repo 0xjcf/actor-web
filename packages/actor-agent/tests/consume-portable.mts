@@ -1,9 +1,14 @@
 import {
   type ActorAgentLlmProvider,
   type ActorAgentToolDefinition,
+  AGENT_TRACE_SCHEMA_VERSION,
+  type AgentTraceConfiguration,
+  type AgentTraceProfile,
+  type AgentTraceRecord,
   createLlmProvider,
   createLlmToolRegistry,
   type ModelToolDefinition,
+  serializeAgentTraceJsonl,
 } from '@actor-web/agent';
 import {
   type AgentRunner,
@@ -98,6 +103,32 @@ const tracedRunner = createAgentRunner({
   },
 });
 void tracedRunner.start(request).readTrace()?.completeness;
+
+function traceFor(profile: AgentTraceProfile): AgentTraceConfiguration {
+  return profile === 'off'
+    ? { profile }
+    : {
+        profile,
+        methodRevision: 'test-v1',
+        model: {
+          provider: 'fixture',
+          model: 'scripted',
+          settings: { status: 'omitted', reason: 'unavailable' },
+        },
+      };
+}
+const profiled = createAgentRunner({ ...runnerOptions, trace: traceFor('evaluation') });
+const snapshot = profiled.start(request).readTrace();
+if (snapshot) {
+  const version: 1 = AGENT_TRACE_SCHEMA_VERSION;
+  const jsonl: string = serializeAgentTraceJsonl(snapshot);
+  const record: AgentTraceRecord = JSON.parse(jsonl.trimEnd().split('\n').at(-1) ?? '');
+  if (record.type === 'agent.trace.summary') void record.metrics;
+  void version;
+}
+// @ts-expect-error A named profile cannot override capture.
+const contradictoryTrace: AgentTraceConfiguration = { profile: 'off', capture: 'content' };
+void contradictoryTrace;
 
 const typedTool = defineTool({
   name: 'double',
