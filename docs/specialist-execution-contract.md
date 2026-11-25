@@ -7,13 +7,13 @@ API. The scripted, in-memory source reviewer is the first consumer of the initia
 
 ## Boundaries
 
-- A specialist definition fixes one purpose, a system prompt, requested tool
+- A specialist spec fixes one purpose, a system prompt, requested tool
   descriptions, and an output parser. [`createAgent`](../packages/actor-agent/src/portable.ts)
   creates a `FocusedAgent`. Its `run(context): Promise<Content>` calls
   `AgentRunner.run(request): Promise<string>` and parses the returned text
   with the original assignment. Expected host execution failures reject the
   portable promise; neither return type gets a status or evidence envelope.
-- The trusted host selects the definition, runner, provider, grants, and
+- The trusted host selects the spec, runner, provider, grants, and
   assignment revision. Actor-Web runs the actor and enforces configured toolbox
   grants. The product or workflow owner decides whether validated content is
   usable for the current assignment; parsing does not advance a workflow.
@@ -25,7 +25,7 @@ API. The scripted, in-memory source reviewer is the first consumer of the initia
 ## From assignment to result
 
 1. **Bind the assignment.** The host pins the assignment ID and revision,
-   purpose, accepted definition, and tool grant before dispatch. Call the
+   purpose, accepted spec, and tool grant before dispatch. Call the
    specialist's `run` with a flat, plain-data assignment and a reserved `signal`
    field, which is forwarded separately from the task. For the first reviewer,
    the host takes a snapshot of the permitted source files. It encodes an
@@ -70,7 +70,7 @@ API. The scripted, in-memory source reviewer is the first consumer of the initia
 
 ## Stop, settlement, and evidence
 
-`createAgent` forwards an `AbortSignal`; it does not prevent dispatch or wait
+The portable `createAgent` forwards an `AbortSignal`; it does not prevent dispatch or wait
 for cleanup by itself. In the bounded profile, a stop request closes admission
 to new turns and tool calls and invalidates unaccepted results. It signals
 admitted work to stop where supported. Track underlying provider/tool work
@@ -157,7 +157,11 @@ the plain portable result and the observed local handle.
 
 ## Consumer example
 
-This factory binds a typed reviewer to a supplied runner. It neither starts
+For the built-in local executor, `createAgent({ spec, ...options })` from
+`@actor-web/agent/runner` combines runner construction and portable binding.
+Use the lower-level runner when you need its settlement or evidence handles.
+
+This portable factory binds a typed reviewer to a supplied runner. It neither starts
 an actor nor grants the requested read tool.
 
 ```ts

@@ -17,8 +17,8 @@ the narrowest one that fits — browser code should not pull in Node entry point
 | `@actor-web/runtime/browser` | Browser-safe sources & clients (no Node built-ins). |
 | `@actor-web/runtime/node` | [`serveNode`](/api/runtimes), HTTP ingress — server only. |
 | `@actor-web/agent` | `createAgentLoopBehavior` and provider-facing tools (`ModelToolDefinition`, `createLlmToolRegistry`). |
-| `@actor-web/agent/portable` | Bind a definition to any `AgentRunner` with `createAgent`; no actor is started here. |
-| `@actor-web/agent/runner` | `createAgentRunner` runs assignments in fresh in-process actor sessions. |
+| `@actor-web/agent/portable` | `AgentSpec` and `createAgent(runner, spec)` for binding to a custom `AgentRunner`. |
+| `@actor-web/agent/runner` | `createAgent({ spec, ...options })` for typed assignments in fresh in-process actor sessions; `createAgentRunner` for direct execution handles. |
 | `@actor-web/agent/zod` | Optional structured output parsing and assignment-aware validation. |
 | `@actor-web/testing` | [State-machine analysis](/api/testing) test helpers. |
 
@@ -27,14 +27,26 @@ The agent subpaths above are present in this checkout, not in `@actor-web/agent@
 ## Actor runtime or agent runner?
 
 ```ts
+import { createAgent } from '@actor-web/agent/runner';
+
 // Host the actors that own shipment state and process lifecycle messages.
 const runtime = await startRuntime(shipmentTopology);
 
 // Ask a specialist to investigate one shipment; it does not own that lifecycle.
-const runner = createAgentRunner({ ...options, definition: inquiryDefinition });
-const inquiry = createAgent(runner, inquiryDefinition);
+const inquiry = createAgent({ ...options, spec: inquirySpec });
 const answer = await inquiry.run({ tracking_id: shipmentId, signal });
 ```
+
+An `AgentSpec` describes the purpose, system prompt, requested tools, and output
+parser. The host supplies the provider, tool grants and implementations, and
+execution limits. The runner factory binds the spec once for both trusted
+execution and typed output parsing. Construction starts no actor; each admitted
+`run` starts a fresh session.
+
+For a custom execution backend, use `createAgent(runner, spec)` from
+`@actor-web/agent/portable`. For settlement, trace snapshots, or execution evidence,
+use `createAgentRunner({ spec, ...options })` and its `start(request)` handles.
+The higher-level factory returns a `FocusedAgent`, not those handles.
 
 `actor(...)` declares a topology entry; `system.spawn(behavior)` starts a live
 actor. The deprecated `createActor(behavior)` only returns its argument. Pass

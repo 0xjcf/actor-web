@@ -17,7 +17,7 @@ const traceOptions: AgentTraceOptions = {
   capture: 'content',
 };
 const { capture: _capture, ...traceMetadata } = traceOptions;
-const definition = {
+const spec = {
   purpose: 'test',
   systemPrompt: 'Trusted prompt',
   tools: [
@@ -31,7 +31,7 @@ const definition = {
   ],
 };
 const request = (signal = new AbortController().signal): AgentRunRequest<{ secret: string }> => ({
-  ...definition,
+  ...spec,
   systemPrompt: 'Trusted prompt\nReturn JSON.',
   task: { secret: 'private-task' },
   signal,
@@ -52,7 +52,7 @@ function setup(
   tool?: AgentToolHandler<{ secret: string }>
 ) {
   return createAgentRunner({
-    definition: { ...definition, output: { instructions: 'Return JSON.' } },
+    spec: { ...spec, output: { instructions: 'Return JSON.' } },
     provider,
     grants: ['read'],
     tools: [

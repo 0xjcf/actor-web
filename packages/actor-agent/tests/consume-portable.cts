@@ -32,6 +32,21 @@ const result: Promise<{ summary: string }> = builder.run({
 void result;
 
 declare const runnerOptions: runners.AgentRunnerOptions<{ request: string }, 'build'>;
+const spec = {
+  purpose: 'build' as const,
+  systemPrompt: 'Implement the assignment.',
+  tools: [],
+  parse: (raw: string, task: { request: string }) => ({ summary: raw, request: task.request }),
+} satisfies portable.AgentSpec<{ summary: string; request: string }, { request: string }, 'build'>;
+const localAgent = runners.createAgent({ ...runnerOptions, spec });
+const typedLocal: portable.FocusedAgent<
+  { summary: string; request: string },
+  { request: string },
+  'build'
+> = localAgent;
+void typedLocal;
+// @ts-expect-error The factory preserves the required task shape.
+void localAgent.run({ signal: new AbortController().signal });
 const { maxToolAttempts, maxPayloadBytes, ...missingToolAndPayloadLimits } = runnerOptions.limits;
 runners.createAgentRunner({
   ...runnerOptions,
@@ -47,7 +62,7 @@ const local = runners.createAgentRunner({ ...runnerOptions, toolExampleMode: 'of
 const portableRunner: portable.AgentRunner<{ request: string }, 'build'> = local;
 const request: portable.AgentRunRequest<{ request: string }, 'build'> = {
   purpose: 'build',
-  systemPrompt: runnerOptions.definition.systemPrompt,
+  systemPrompt: runnerOptions.spec.systemPrompt,
   tools: [],
   task: { request: 'Update the component.' },
   signal: new AbortController().signal,

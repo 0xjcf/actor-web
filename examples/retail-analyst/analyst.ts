@@ -215,7 +215,7 @@ export function createAnalyst({
         },
       });
       const tools = [readSales, calculate, readWeather];
-      const definition = {
+      const spec = {
         purpose: 'retail-spike-analysis' as const,
         systemPrompt: [
           'Find the single largest day-over-day percentage increase in quantity sold for the assigned product.',
@@ -257,7 +257,7 @@ export function createAnalyst({
         }),
       };
       const runner = createAgentRunner<Task, 'retail-spike-analysis'>({
-        definition,
+        spec,
         provider,
         toolExampleMode,
         trace:
@@ -301,7 +301,7 @@ export function createAnalyst({
           maxPayloadBytes: 512 * 1024,
         },
       });
-      const agent = createAgent(runner, definition);
+      const agent = createAgent(runner, spec);
       const handle = runner.start(
         {
           purpose: agent.purpose,
@@ -313,7 +313,7 @@ export function createAnalyst({
         { assignmentId: runId, revision: 4 }
       );
       const result = handle
-        .validateOutput((raw) => definition.output.parse(raw, assignment), {
+        .validateOutput((raw) => spec.output.parse(raw, assignment), {
           id: 'retail-analysis',
           revision: '4',
         })

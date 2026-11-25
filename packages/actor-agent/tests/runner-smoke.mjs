@@ -1,20 +1,19 @@
-import { createAgent } from '@actor-web/agent/portable';
-import { createAgentRunner } from '@actor-web/agent/runner';
+import { createAgent, createAgentRunner } from '@actor-web/agent/runner';
 
 export async function smoke(
   createRunner = createAgentRunner,
-  bindAgent = createAgent,
+  makeAgent = createAgent,
   budgetOverrides = {},
   observeSettlement = false
 ) {
-  const definition = {
+  const spec = {
     purpose: 'review',
     systemPrompt: 'Judge one item.',
     tools: [{ name: 'read', description: 'Read the fixture.', parameters: { type: 'object' } }],
     parse: (text) => ({ text }),
   };
-  const runner = createRunner({
-    definition,
+  const options = {
+    spec,
     grants: ['read'],
     tools: [
       {
@@ -60,15 +59,16 @@ export async function smoke(
       maxPayloadBytes: 4096,
       ...budgetOverrides,
     },
-  });
+  };
   const signal = new AbortController().signal;
   if (observeSettlement) {
+    const runner = createRunner(options);
     const { validateOutput, waitForSettlement, readEvidence } = runner.start(
-      { ...definition, task: { id: 'fixture' }, signal },
+      { ...spec, task: { id: 'fixture' }, signal },
       { assignmentId: 'smoke-assignment', revision: 0 }
     );
     const [{ text }, settlement] = await Promise.all([
-      validateOutput(definition.parse),
+      validateOutput(spec.parse),
       waitForSettlement(2_000),
     ]);
     return {
@@ -77,6 +77,6 @@ export async function smoke(
       evidence: readEvidence()?.trace.receipts.map(({ event }) => event.type),
     };
   }
-  const agent = bindAgent(runner, definition);
+  const agent = makeAgent(options);
   return agent.run({ id: 'fixture', signal });
 }

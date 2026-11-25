@@ -1,10 +1,6 @@
 import type { ActorAgentLlmProvider } from '@actor-web/agent';
-import {
-  type AgentToolDeclaration,
-  type AgentToolExample,
-  createAgent,
-} from '@actor-web/agent/portable';
-import { AgentRunnerError, createAgentRunner } from '@actor-web/agent/runner';
+import type { AgentToolDeclaration, AgentToolExample } from '@actor-web/agent/portable';
+import { AgentRunnerError, createAgent } from '@actor-web/agent/runner';
 import type { ShipmentContext } from './logistics-contract';
 
 function lookup(
@@ -50,7 +46,7 @@ const alerts = lookup(
   ]
 );
 
-const definition = {
+const spec = {
   purpose: 'shipment-inquiry' as const,
   systemPrompt: [
     'Report the status of the assigned shipment. Use native tool calls one at a time.',
@@ -89,11 +85,11 @@ export function runShipmentInquiry(
   const { shipmentId, status: shipmentStatus, providerFacility } = shipment;
   if (!shipmentId) throw new Error('Select a shipment before starting an inquiry.');
   const currentAlerts = [...facilityAlerts];
-  const runner = createAgentRunner<{ tracking_id: string }, 'shipment-inquiry'>({
-    definition,
+  const inquiry = createAgent({
+    spec,
     provider,
     toolExampleMode: 'description',
-    encodeTask: ({ tracking_id }) => JSON.stringify({ tracking_id }),
+    encodeTask: ({ tracking_id }: { tracking_id: string }) => JSON.stringify({ tracking_id }),
     grants: [status.name, alerts.name],
     tools: [
       {
@@ -118,5 +114,5 @@ export function runShipmentInquiry(
       maxPayloadBytes: 32 * 1024,
     },
   });
-  return createAgent(runner, definition).run({ tracking_id: shipmentId, signal });
+  return inquiry.run({ tracking_id: shipmentId, signal });
 }

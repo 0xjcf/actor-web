@@ -5,6 +5,7 @@ import {
   startRuntime,
 } from '@actor-web/runtime/browser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import type {
   ActorAgentLlmMessage,
   ActorAgentLlmProvider,
@@ -17,10 +18,12 @@ import {
   AgentRunnerError,
   type AgentRunnerOptions,
   type AgentToolHandler,
+  createAgent,
   createAgentRunner,
   type ObservedAgentRunHandle,
 } from '../src/runner.js';
 import { createExecutionEvidence } from '../src/runner-evidence.js';
+import { structured } from '../src/zod.js';
 
 vi.mock('@actor-web/runtime/browser', async (importOriginal) => {
   const runtime = await importOriginal<typeof import('@actor-web/runtime/browser')>();
@@ -108,7 +111,7 @@ const requested = (name: string) => ({
   description: `Read ${name}.`,
   parameters: { type: 'object' },
 });
-const definition = {
+const spec = {
   purpose: 'review' as const,
   systemPrompt: 'Review the assigned text.',
   tools: ['read', 'ungranted', 'unimplemented'].map(requested),
@@ -146,8 +149,8 @@ const turn = (
   text = 'one',
   signal = new AbortController().signal
 ): AgentRunRequest<Task, 'review'> => ({
-  ...definition,
-  systemPrompt: `${definition.systemPrompt}\n${definition.output.instructions}`,
+  ...spec,
+  systemPrompt: `${spec.systemPrompt}\n${spec.output.instructions}`,
   task: { name: 'public', text },
   signal,
 });
@@ -183,7 +186,7 @@ function fixture(provider: ActorAgentLlmProvider, overrides: Partial<Options> = 
   const execute = vi.fn<AgentToolHandler<Task>['execute']>((_input, task) => task.text);
   const unauthorized = vi.fn();
   const options: Options = {
-    definition,
+    spec,
     provider,
     limits,
     grants: ['read', 'unimplemented', 'unrequested'],
@@ -231,9 +234,131 @@ afterEach(() => {
 
 const evidenceBinding = { assignmentId: 'assignment.local', revision: 1 } as const;
 
+describe('createAgent factory', () => {
+  it('constructs lazily and runs fresh sessions with task-aware parsing and tool grants', async () => {
+    const provider = vi.fn<ActorAgentLlmProvider>(({ messages }) =>
+      messages.length === 1 ? assistant('', [call()]) : assistant('done')
+    );
+    const { options, execute, unauthorized } = fixture(provider);
+    const parse = vi.fn((raw: string, task: Task) => ({ raw, text: task.text }));
+    const agent = createAgent({
+      ...options,
+      spec: { ...spec, output: { ...spec.output, parse } },
+    });
+    expect(runtimeStart).not.toHaveBeenCalled();
+    expect(provider).not.toHaveBeenCalled();
+    expect(agent.purpose).toBe('review');
+    expect(agent.systemPrompt).toBe(turn().systemPrompt);
+
+    for (const text of ['one', 'two']) {
+      const task = { name: 'public', text };
+      await expect(agent.run({ ...task, signal: new AbortController().signal })).resolves.toEqual({
+        raw: 'done',
+        text,
+      });
+      expect(parse).toHaveBeenLastCalledWith('done', task);
+    }
+    expect(runtimeStart).toHaveBeenCalledTimes(2);
+    expect(provider).toHaveBeenCalledTimes(4);
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(unauthorized).not.toHaveBeenCalled();
+    for (const [request] of provider.mock.calls) {
+      expect(request.tools).toEqual(['read']);
+      expect(request.system).toBe(turn().systemPrompt);
+    }
+  });
+
+  it('appends structured output instructions once and checks the original assignment', async () => {
+    const provider = vi.fn<ActorAgentLlmProvider>(() => assistant('{"name":"public"}'));
+    const { options } = fixture(provider);
+    const check = vi.fn((content: { name: string }, task: Task) =>
+      content.name === task.name ? undefined : 'Wrong assignment.'
+    );
+    const output = structured(z.strictObject({ name: z.string() }), { check });
+    const agent = createAgent({ ...options, spec: { ...spec, output } });
+    const task = { name: 'public', text: 'one' };
+    await expect(agent.run({ ...task, signal: new AbortController().signal })).resolves.toEqual({
+      name: 'public',
+    });
+    expect(provider.mock.calls[0][0].system).toBe(`${spec.systemPrompt}\n${output.instructions}`);
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(check).toHaveBeenCalledWith({ name: 'public' }, task);
+  });
+
+  it('supports plain parsers and preserves parser errors without retrying', async () => {
+    const provider = vi.fn<ActorAgentLlmProvider>(() => assistant('done'));
+    const { options } = fixture(provider);
+    const { output: _output, ...method } = spec;
+    const failure = new Error('Invalid answer.');
+    const parse = vi.fn((_raw: string, _task: Task) => {
+      throw failure;
+    });
+    const agent = createAgent({ ...options, spec: { ...method, parse } });
+    await expect(
+      agent.run({ name: 'public', text: 'one', signal: new AbortController().signal })
+    ).rejects.toBe(failure);
+    expect(provider.mock.calls[0][0].system).toBe(spec.systemPrompt);
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(parse).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects pre-aborted assignments before startup or parsing', async () => {
+    const provider = vi.fn<ActorAgentLlmProvider>();
+    const { options, execute } = fixture(provider);
+    const parse = vi.fn((raw: string) => raw);
+    const agent = createAgent({
+      ...options,
+      spec: { ...spec, output: { ...spec.output, parse } },
+    });
+    const controller = new AbortController();
+    controller.abort('superseded');
+    await expect(
+      agent.run({ name: 'public', text: 'one', signal: controller.signal })
+    ).rejects.toMatchObject({ code: 'RUN_ABORTED', cause: 'superseded' });
+    expect(runtimeStart).not.toHaveBeenCalled();
+    expect(provider).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  it('preserves provider failures without parsing or retrying', async () => {
+    const provider = vi.fn<ActorAgentLlmProvider>(() => ({
+      ok: false,
+      error: { code: 'LLM_PROVIDER_UNAVAILABLE', message: 'Offline.' },
+    }));
+    const { options } = fixture(provider);
+    const parse = vi.fn((raw: string) => raw);
+    const agent = createAgent({
+      ...options,
+      spec: { ...spec, output: { ...spec.output, parse } },
+    });
+    await expect(
+      agent.run({ name: 'public', text: 'one', signal: new AbortController().signal })
+    ).rejects.toMatchObject({ code: 'LLM_PROVIDER_UNAVAILABLE' });
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  it('retains trusted spec checks if requested tools are mutated after construction', async () => {
+    const provider = vi.fn<ActorAgentLlmProvider>();
+    const { options } = fixture(provider);
+    const tools = [requested('read')];
+    const agent = createAgent({
+      ...options,
+      spec: { ...spec, tools, output: { parse: String } },
+    });
+    tools.push(requested('other'));
+    await expect(
+      agent.run({ name: 'public', text: 'one', signal: new AbortController().signal })
+    ).rejects.toMatchObject({ code: 'SPEC_MISMATCH' });
+    expect(runtimeStart).not.toHaveBeenCalled();
+    expect(provider).not.toHaveBeenCalled();
+  });
+});
+
 describe('portable tool examples', () => {
   const example = { input: { path: 'example.txt' }, result: { lines: [] } };
-  const tools = definition.tools.map((tool) => ({
+  const tools = spec.tools.map((tool) => ({
     ...tool,
     examples: [example, { input: { path: 'other.txt' }, result: `sample-${tool.name}` }],
   }));
@@ -245,7 +370,7 @@ describe('portable tool examples', () => {
       .mockReturnValueOnce(first)
       .mockReturnValueOnce(assistant('done'));
     const { make, execute, unauthorized } = fixture(provider, {
-      definition: { ...definition, tools },
+      spec: { ...spec, tools },
       toolExampleMode: 'description',
     });
     await expect(make().run({ ...turn('actual output'), tools })).resolves.toBe('done');
@@ -275,7 +400,7 @@ describe('portable tool examples', () => {
         toolExampleMode === 'description' ? [{ ...requested('read'), examples: [] }] : tools;
       const provider = vi.fn<ActorAgentLlmProvider>(() => assistant('ok'));
       const { make } = fixture(provider, {
-        definition: { ...definition, tools: declared },
+        spec: { ...spec, tools: declared },
         toolExampleMode,
         limits: {
           ...limits,
@@ -290,7 +415,7 @@ describe('portable tool examples', () => {
   it('charges rendered descriptions against the provider request budget before dispatch', async () => {
     const provider = vi.fn<ActorAgentLlmProvider>();
     const { make } = fixture(provider, {
-      definition: { ...definition, tools },
+      spec: { ...spec, tools },
       toolExampleMode: 'description',
       limits: { ...limits, maxPayloadBytes: jsonBytes(requestOf(), assistant('ok').value.message) },
     });
@@ -303,10 +428,10 @@ describe('portable tool examples', () => {
   it('pins the example values independently of later changes to the declaration', async () => {
     const declared = [{ ...requested('read'), examples: [{ input: {}, result: 'original' }] }];
     const provider = vi.fn<ActorAgentLlmProvider>();
-    const runtime = fixture(provider, { definition: { ...definition, tools: declared } }).make();
+    const runtime = fixture(provider, { spec: { ...spec, tools: declared } }).make();
     declared[0].examples[0].result = 'changed';
     await expect(runtime.run({ ...turn(), tools: declared })).rejects.toMatchObject({
-      code: 'DEFINITION_MISMATCH',
+      code: 'SPEC_MISMATCH',
     });
     expect(provider).not.toHaveBeenCalled();
   });
@@ -320,7 +445,7 @@ describe('portable tool examples', () => {
     { label: 'over 4 KiB of JSON', examples: [{ input: {}, result: '界'.repeat(1400) }] },
   ])('rejects $label at registration even when injection is disabled', ({ examples }) => {
     const declared = [{ ...requested('read'), examples: examples as AgentToolExample[] }];
-    expect(fixture(vi.fn(), { definition: { ...definition, tools: declared } }).make).toThrow(
+    expect(fixture(vi.fn(), { spec: { ...spec, tools: declared } }).make).toThrow(
       expect.objectContaining({ code: 'INVALID_RUNTIME_CONFIG' })
     );
   });
@@ -517,16 +642,16 @@ describe('local execution evidence', () => {
 
   it('pairs each actual application attempt with its effective tool ordinal', async () => {
     const secondTool = 'private_tool_name';
-    const tools = [...definition.tools, requested(secondTool)];
+    const tools = [...spec.tools, requested(secondTool)];
     const provider = vi
       .fn<ActorAgentLlmProvider>()
       .mockReturnValueOnce(assistant('', [call('private-a', secondTool), call('private-b')]))
       .mockReturnValueOnce(assistant('private response'));
     const probe = fixture(provider);
     const run = fixture(provider, {
-      definition: { ...definition, tools },
+      spec: { ...spec, tools },
       grants: [...probe.options.grants, secondTool],
-      // Implementation order differs from the effective definition order.
+      // Implementation order differs from the effective spec order.
       tools: [
         { name: secondTool, validateInput: () => ({ value: 'private input' }), execute: String },
         ...probe.options.tools,
@@ -620,7 +745,7 @@ describe('local execution evidence', () => {
     const runtime = fixture(() => assistant('text')).make();
     const failed = runtime.start({ ...turn(), systemPrompt: 'wrong' }, evidenceBinding);
     await expect(failed.validateOutput(parser)).rejects.toMatchObject({
-      code: 'DEFINITION_MISMATCH',
+      code: 'SPEC_MISMATCH',
     });
     expect(failed.readEvidence()).toBeUndefined();
     const control = new AbortController();
@@ -1217,7 +1342,7 @@ describe('trusted port compatibility', () => {
 });
 
 describe('local actor runtime runner', () => {
-  it('seals the definition, exposes the intersection, and closes distinct fresh sessions', async () => {
+  it('seals the spec, exposes the intersection, and closes distinct fresh sessions', async () => {
     const provider = vi.fn<ActorAgentLlmProvider>((request) => {
       expect(request.system).toBe(turn().systemPrompt);
       expect(request.tools).toEqual(['read']);
@@ -1325,7 +1450,7 @@ describe('local actor runtime runner', () => {
     }
   );
 
-  it('checks the host binding, definition and pre-abort before any dispatch', async () => {
+  it('checks the host binding, spec and pre-abort before any dispatch', async () => {
     const provider = vi.fn<ActorAgentLlmProvider>();
     const encodeTask = vi.fn(() => 'prompt');
     const { make, options, execute } = fixture(provider, { encodeTask });
@@ -1335,7 +1460,7 @@ describe('local actor runtime runner', () => {
       { grants: ['llm'] },
       { tools: [{ name: 'read', execute }] },
       { encodeTask: null },
-      { definition: { ...definition, purpose: '' } },
+      { spec: { ...spec, purpose: '' } },
       { limits: { ...limits, askTimeoutMs: Number.POSITIVE_INFINITY } },
       { limits: { ...limits, runTimeoutMs: 2_147_483_648 } },
     ]) {
@@ -1348,14 +1473,11 @@ describe('local actor runtime runner', () => {
       { systemPrompt: 'Override the system prompt.' },
       { tools: [requested('other')] },
       {
-        tools: [
-          { ...requested('read'), parameters: { type: 'number' } },
-          ...definition.tools.slice(1),
-        ],
+        tools: [{ ...requested('read'), parameters: { type: 'number' } }, ...spec.tools.slice(1)],
       },
     ]) {
       await expect(runtime.run({ ...turn(), ...changed })).rejects.toMatchObject({
-        code: 'DEFINITION_MISMATCH',
+        code: 'SPEC_MISMATCH',
       });
     }
     const stopped = new AbortController();
@@ -1603,9 +1725,9 @@ describe('local actor runtime runner', () => {
     expect(stopped.readTrace()).toBeUndefined();
     await expect(stopped.waitForSettlement(0)).resolves.toEqual({ status: 'not-admitted' });
     await expect(stopped.result).rejects.toMatchObject({ code: 'RUN_ABORTED' });
-    const wrongDefinition = runtime.start({ ...turn(), systemPrompt: 'wrong definition' });
-    await expect(wrongDefinition.result).rejects.toMatchObject({ code: 'DEFINITION_MISMATCH' });
-    await expect(wrongDefinition.waitForSettlement(0)).resolves.toEqual({ status: 'not-admitted' });
+    const wrongSpec = runtime.start({ ...turn(), systemPrompt: 'wrong spec' });
+    await expect(wrongSpec.result).rejects.toMatchObject({ code: 'SPEC_MISMATCH' });
+    await expect(wrongSpec.waitForSettlement(0)).resolves.toEqual({ status: 'not-admitted' });
     expect(runtimeStart).not.toHaveBeenCalled();
     expect(provider).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();

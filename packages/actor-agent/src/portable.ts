@@ -51,7 +51,7 @@ export interface AgentOutput<Content, Task> {
   readonly parse: (raw: string, task: Task) => Content;
 }
 
-export type AgentDefinition<Content, Task, Purpose extends string = string> = AgentMethod<Purpose> &
+export type AgentSpec<Content, Task, Purpose extends string = string> = AgentMethod<Purpose> &
   (
     | { readonly output: AgentOutput<Content, Task>; readonly parse?: never }
     | { readonly parse: (raw: string, task: Task) => Content; readonly output?: never }
@@ -60,11 +60,11 @@ export type AgentDefinition<Content, Task, Purpose extends string = string> = Ag
 /** Bind a method to a host runner. No actor, session, retry or tool grant is created here. */
 export function createAgent<Content, Task extends object, Purpose extends string>(
   runner: AgentRunner<Task, NoInfer<Purpose>>,
-  definition: AgentDefinition<Content, Task, Purpose>
+  spec: AgentSpec<Content, Task, Purpose>
 ): FocusedAgent<Content, Task, Purpose> {
-  const { purpose, tools, systemPrompt } = definition;
-  const output = definition.output;
-  const parse = output ? output.parse.bind(output) : definition.parse;
+  const { purpose, tools, systemPrompt } = spec;
+  const output = spec.output;
+  const parse = output ? output.parse.bind(output) : spec.parse;
   const method = {
     purpose,
     tools,

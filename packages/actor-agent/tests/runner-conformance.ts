@@ -72,7 +72,7 @@ async function fixture(make: RunnerFactory, script: (attempt: number) => ActorAg
   // Cases get independent inputs. Port callbacks record observations but never run assertions.
   const requests: ActorAgentLlmRequest[] = [];
   const effects: { name: string; input: unknown; prompt: string }[] = [];
-  const definition = {
+  const spec = {
     purpose: 'review' as const,
     systemPrompt: 'Review only the assigned sources.',
     tools: [read, ungranted, missing].map((name) => ({
@@ -82,7 +82,7 @@ async function fixture(make: RunnerFactory, script: (attempt: number) => ActorAg
     })),
   };
   const runner = await make({
-    definition,
+    spec,
     encodeTask: (task) => task.prompt,
     grants: [read, missing, unrequested],
     limits: {
@@ -120,7 +120,7 @@ async function fixture(make: RunnerFactory, script: (attempt: number) => ActorAg
     requests,
     effects,
     run: (task: Assignment, signal = new AbortController().signal) =>
-      runner.run({ ...definition, task, signal }),
+      runner.run({ ...spec, task, signal }),
   };
 }
 

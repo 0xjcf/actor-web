@@ -19,7 +19,7 @@ const check = (content: z.output<typeof finding>, assignment: Task) =>
     ? undefined
     : 'Citation is not present in the assignment';
 
-describe('portable phase definitions', () => {
+describe('portable agent specs', () => {
   it('uses the same expertise as data for distinct phase methods, tools and runners', async () => {
     const writeTool = { name: 'write', description: 'Write a granted file', parameters: {} };
     const buildRun = vi.fn(async (_turn: AgentRunRequest<Task, 'build'>) => 'readyForVerification');

@@ -31,7 +31,7 @@ const readSource = {
   },
 };
 
-const definition = {
+const spec = {
   purpose: 'review' as const,
   systemPrompt: 'Review the supplied sources and cite the relevant excerpt.',
   tools: [readSource],
@@ -60,7 +60,7 @@ function prepareReview(
   }
 
   const runner = createAgentRunner<Assignment, 'review'>({
-    definition,
+    spec,
     provider,
     grants: [readSource.name],
     tools: [
@@ -105,7 +105,7 @@ function prepareReview(
       maxPayloadBytes: 64 * 1024,
     },
   });
-  return { runner, agent: createAgent(runner, definition), snapshot, signal };
+  return { runner, agent: createAgent(runner, spec), snapshot, signal };
 }
 
 export async function runSourceReview(
@@ -132,7 +132,7 @@ export function startSourceReview(
   } = prepareReview(assignment, options);
   const handle = runner.start({ purpose, systemPrompt, tools, task: snapshot, signal }, binding);
   const result = handle
-    .validateOutput((raw) => definition.output.parse(raw, snapshot))
+    .validateOutput((raw) => spec.output.parse(raw, snapshot))
     .then((finding) => {
       signal.throwIfAborted();
       return finding;

@@ -61,7 +61,10 @@ console.log(count); // 1
 
 ## ReAct system prompts for agent runners
 
-With [`createAgentRunner`](./packages/actor-agent/README.md#in-process-agent-runner),
+<!-- Agent construction from packages/actor-agent/src/runner.ts and prompt/tool policy from examples/ignite-headless-host/logistics-inquiry.ts. -->
+
+With [`createAgent({ spec, ...options })`](./packages/actor-agent/README.md#in-process-agent-runner)
+from `@actor-web/agent/runner`,
 ReAct means choosing the next action from the last **observed tool result**.
 Use native tool calls rather than asking the model to print a `Thought / Action / Observation`
 transcript. The runner executes granted tools and returns their results; text

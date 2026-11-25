@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ActorAgentLlmProvider } from '../src/index.js';
 import { createAgentRunner } from '../src/runner.js';
 
-const definition = { purpose: 'encode' as const, systemPrompt: 'Return done.', tools: [] };
+const spec = { purpose: 'encode' as const, systemPrompt: 'Return done.', tools: [] };
 const limits = {
   runTimeoutMs: 3000,
   askTimeoutMs: 2000,
@@ -23,7 +23,7 @@ function setup(encodeTask?: (assignment: typeof task) => string) {
     },
   }));
   const runner = createAgentRunner<typeof task, 'encode'>({
-    definition,
+    spec,
     provider,
     grants: [],
     tools: [],
@@ -35,19 +35,19 @@ function setup(encodeTask?: (assignment: typeof task) => string) {
 describe('default task encoding', () => {
   it('encodes a plain assignment when encodeTask is omitted', async () => {
     const { runner, provider } = setup();
-    await runner.run({ ...definition, task, signal });
+    await runner.run({ ...spec, task, signal });
     expect(provider.mock.calls[0][0].messages[0].content).toBe(JSON.stringify(task));
   });
   it('preserves an explicit model-context projection', async () => {
     const { runner, provider } = setup((t) => t.productId);
-    await runner.run({ ...definition, task, signal });
+    await runner.run({ ...spec, task, signal });
     expect(provider.mock.calls[0][0].messages[0].content).toBe('P005');
   });
   it('refuses unsupported values instead of silently dropping them', async () => {
     const { runner, provider } = setup();
     await expect(
       runner.run({
-        ...definition,
+        ...spec,
         task: { ...task, hidden: () => 'secret' } as typeof task,
         signal,
       })

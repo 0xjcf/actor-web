@@ -13,6 +13,7 @@ import {
 import {
   type AgentRunner,
   type AgentRunRequest,
+  type AgentSpec,
   type AgentToolExample,
   createAgent,
   type FocusedAgent,
@@ -20,7 +21,9 @@ import {
 import {
   type AgentRunnerOptions,
   type AgentRunSettlement,
+  type CreateAgentOptions,
   createAgentRunner,
+  createAgent as createLocalAgent,
 } from '@actor-web/agent/runner';
 import { defineTool, structured } from '@actor-web/agent/zod';
 import { z } from 'zod';
@@ -60,6 +63,37 @@ const wrong: Promise<string> = reviewer.run({
 void wrong;
 
 declare const runnerOptions: AgentRunnerOptions<Task, 'review'>;
+const spec: AgentSpec<{ path: string }, Task, 'review'> = {
+  purpose: 'review',
+  systemPrompt: 'Review the supplied files.',
+  tools: [],
+  output: structured(z.strictObject({ path: z.string() }), {
+    check: (finding, task: Task) =>
+      task.allowedPaths.includes(finding.path) ? undefined : 'ungranted',
+  }),
+};
+const agentOptions: CreateAgentOptions<{ path: string }, Task, 'review'> = {
+  ...runnerOptions,
+  spec,
+};
+const localAgent = createLocalAgent({ ...runnerOptions, spec });
+const typedLocal: FocusedAgent<{ path: string }, Task, 'review'> = localAgent;
+void [agentOptions, typedLocal];
+// @ts-expect-error Factory-inferred assignments require allowed paths.
+void localAgent.run({ signal: new AbortController().signal });
+// @ts-expect-error The factory returns structured content, not raw text.
+const wrongLocal: Promise<string> = localAgent.run({
+  allowedPaths: [],
+  signal: new AbortController().signal,
+});
+void wrongLocal;
+// @ts-expect-error A runner-only spec has no required output parser.
+createLocalAgent(runnerOptions);
+createLocalAgent({
+  ...runnerOptions,
+  // @ts-expect-error A spec must choose output or parse, not both.
+  spec: { ...spec, parse: (_raw: string, _task: Task) => ({ path: '' }) },
+});
 const { maxModelTurns, ...missingModelTurns } = runnerOptions.limits;
 const modelTurns: number = maxModelTurns;
 void modelTurns;
@@ -69,7 +103,7 @@ const local = createAgentRunner({ ...runnerOptions, toolExampleMode: 'descriptio
 const portableRunner: AgentRunner<Task, 'review'> = local;
 const request: AgentRunRequest<Task, 'review'> = {
   purpose: 'review',
-  systemPrompt: runnerOptions.definition.systemPrompt,
+  systemPrompt: runnerOptions.spec.systemPrompt,
   tools: [],
   task: { allowedPaths: [] },
   signal: new AbortController().signal,

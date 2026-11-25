@@ -41,8 +41,7 @@ try {
   const agent = require('@actor-web/agent');
   assert.equal(agent.ACTOR_WEB_LLM_TOOL_NAME, 'llm');
   assert.equal(typeof agent.createLlmProvider, 'function');
-  const { createAgentRunner } = require('@actor-web/agent/runner');
-  const { createAgent } = require('@actor-web/agent/portable');
+  const { createAgentRunner, createAgent } = require('@actor-web/agent/runner');
   assert.deepEqual(await smoke(createAgentRunner, createAgent), { text: 'verified' });
   assert.deepEqual(await smoke(createAgentRunner, createAgent, {}, true), {
     text: 'verified',
@@ -114,6 +113,11 @@ const browserResult = await runInNewContext(
 assert.equal(browserResult.text, 'verified');
 assert.equal(browserResult.status, 'settled');
 assert.deepEqual(Array.from(browserResult.evidence), events);
+const browserAgentResult = await runInNewContext(
+  `${chunks[0].code}\nAgentRunnerSmoke.smoke();`,
+  context
+);
+assert.equal(browserAgentResult.text, 'verified');
 await assert.rejects(
   runInNewContext(
     `${chunks[0].code}\nAgentRunnerSmoke.smoke(undefined, undefined, { maxPayloadBytes: 1 });`,

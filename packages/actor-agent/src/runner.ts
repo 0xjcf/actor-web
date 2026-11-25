@@ -20,7 +20,14 @@ import {
   createAgentLoopBehavior,
   type ModelToolDefinition,
 } from './index.js';
-import type { AgentRunner, AgentRunRequest, AgentToolExample } from './portable.js';
+import {
+  type AgentRunner,
+  type AgentRunRequest,
+  type AgentSpec,
+  type AgentToolExample,
+  createAgent as bindAgent,
+  type FocusedAgent,
+} from './portable.js';
 import { createExecutionEvidence } from './runner-evidence.js';
 import {
   equalJson,
@@ -120,11 +127,8 @@ export interface AgentRunnerLimits {
 type ToolExampleMode = 'off' | 'description';
 
 export interface AgentRunnerOptions<Task, Purpose extends string> {
-  /** The trusted portable definition, including any output instructions appended by createAgent. */
-  readonly definition: Pick<
-    AgentRunRequest<Task, Purpose>,
-    'purpose' | 'systemPrompt' | 'tools'
-  > & {
+  /** The trusted portable spec, including any output instructions appended by createAgent. */
+  readonly spec: Pick<AgentRunRequest<Task, Purpose>, 'purpose' | 'systemPrompt' | 'tools'> & {
     readonly output?: { readonly instructions?: string };
   };
   readonly provider: ActorAgentLlmProvider;
@@ -137,6 +141,20 @@ export interface AgentRunnerOptions<Task, Purpose extends string> {
   readonly limits: AgentRunnerLimits;
   /** Optional diagnostics. Choose a profile or provide low-level capture options. */
   readonly trace?: AgentTraceConfiguration;
+}
+
+export type CreateAgentOptions<Content, Task extends object, Purpose extends string> = Omit<
+  AgentRunnerOptions<Task, Purpose>,
+  'spec'
+> & {
+  readonly spec: AgentSpec<Content, Task, Purpose>;
+};
+
+/** Bind a spec to a fresh-session runner. No actor starts until run is called. */
+export function createAgent<Content, Task extends object, Purpose extends string>(
+  options: CreateAgentOptions<Content, Task, Purpose>
+): FocusedAgent<Content, Task, Purpose> {
+  return bindAgent(createAgentRunner(options), options.spec);
 }
 
 /** Local cleanup facts for this invocation, not proof of a remote effect outcome. */
@@ -352,7 +370,7 @@ function snapshotRequested(tools: unknown): RequestedTool[] {
 
 function bindConfig<Task, Purpose extends string>(options: AgentRunnerOptions<Task, Purpose>) {
   if (!options) invalidConfig('Agent runner options are required.');
-  const { definition, grants, tools, provider, toolExampleMode = 'off' } = options;
+  const { spec, grants, tools, provider, toolExampleMode = 'off' } = options;
   const encodeTask =
     options.encodeTask === undefined
       ? (task: Task) => JSON.stringify(snapshotJson(task, Number.MAX_SAFE_INTEGER).value)
@@ -361,21 +379,19 @@ function bindConfig<Task, Purpose extends string>(options: AgentRunnerOptions<Ta
     invalidConfig('Expected toolExampleMode to be off or description.');
   }
   if (
-    !definition ||
-    typeof definition.purpose !== 'string' ||
-    !definition.purpose.trim() ||
-    typeof definition.systemPrompt !== 'string' ||
-    !definition.systemPrompt.trim() ||
-    (definition.output !== undefined &&
-      (!definition.output || typeof definition.output !== 'object')) ||
-    (definition.output?.instructions !== undefined &&
-      typeof definition.output.instructions !== 'string') ||
+    !spec ||
+    typeof spec.purpose !== 'string' ||
+    !spec.purpose.trim() ||
+    typeof spec.systemPrompt !== 'string' ||
+    !spec.systemPrompt.trim() ||
+    (spec.output !== undefined && (!spec.output || typeof spec.output !== 'object')) ||
+    (spec.output?.instructions !== undefined && typeof spec.output.instructions !== 'string') ||
     typeof provider !== 'function' ||
     typeof encodeTask !== 'function' ||
     !Array.isArray(grants) ||
     !Array.isArray(tools)
   ) {
-    invalidConfig('A trusted definition, provider, task encoder, grants and tools are required.');
+    invalidConfig('A trusted spec, provider, task encoder, grants and tools are required.');
   }
   const { limits: suppliedLimits } = options;
   const timedLimits = {
@@ -403,7 +419,7 @@ function bindConfig<Task, Purpose extends string>(options: AgentRunnerOptions<Ta
       invalidConfig(`${name} must be a ${allowZero ? 'nonnegative' : 'positive'} safe integer.`);
     }
   }
-  const requested = snapshotRequested(definition.tools);
+  const requested = snapshotRequested(spec.tools);
   const granted = new Set<string>();
   for (const name of grants) {
     checkToolName(name);
@@ -437,10 +453,10 @@ function bindConfig<Task, Purpose extends string>(options: AgentRunnerOptions<Ta
     invalidConfig('Invalid trace configuration.');
   }
   return {
-    purpose: definition.purpose,
-    systemPrompt: definition.output?.instructions
-      ? `${definition.systemPrompt}\n${definition.output.instructions}`
-      : definition.systemPrompt,
+    purpose: spec.purpose,
+    systemPrompt: spec.output?.instructions
+      ? `${spec.systemPrompt}\n${spec.output.instructions}`
+      : spec.systemPrompt,
     requested,
     effective,
     limits: Object.freeze({ ...timedLimits, ...budgets }),
@@ -459,21 +475,14 @@ function verifyRunRequest<Task, Purpose extends string>(
   try {
     requested = snapshotRequested(request.tools);
   } catch (cause) {
-    throw new AgentRunnerError(
-      'DEFINITION_MISMATCH',
-      'Invalid run request tool definitions.',
-      cause
-    );
+    throw new AgentRunnerError('SPEC_MISMATCH', 'Invalid run request tool definitions.', cause);
   }
   if (
     request.purpose !== config.purpose ||
     request.systemPrompt !== config.systemPrompt ||
     !equalJson(requested, config.requested)
   ) {
-    throw new AgentRunnerError(
-      'DEFINITION_MISMATCH',
-      'Run request does not match the trusted definition.'
-    );
+    throw new AgentRunnerError('SPEC_MISMATCH', 'Run request does not match the trusted spec.');
   }
 }
 

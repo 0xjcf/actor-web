@@ -20,7 +20,7 @@ with `reset`, or the `./portable`, `./runner` and `./zod` entry points.
 
 ## Public API
 
-<!-- Public exports from src/index.ts and the runner entry in src/runner.ts. -->
+<!-- Public exports from src/index.ts, src/portable.ts, and src/runner.ts. -->
 
 | Export | Use for |
 | --- | --- |
@@ -35,6 +35,9 @@ with `reset`, or the `./portable`, `./runner` and `./zod` entry points.
 | `AgentTraceCapture<T>`, `AgentTraceCompleteness` | Explicit content availability and event-stream loss |
 | `AgentTraceProfile`, `AgentTraceConfiguration`, `AgentTraceOptions` | Named runner capture profiles or low-level options, with limits, redaction, and an isolated sink |
 | `AGENT_TRACE_SCHEMA_VERSION`, `AgentRunTraceSnapshot`, `AgentTraceRecord`, `AgentTraceRunSummary`, `serializeAgentTraceJsonl` | Canonical version, snapshot and JSONL records, and portable serialization |
+| `AgentSpec<Content, Task, Purpose>` from `@actor-web/agent/portable` | Purpose, instructions, requested tools, and output contract |
+| `createAgent({ spec, ...options })`, `CreateAgentOptions` from `@actor-web/agent/runner` | Typed agent with a built-in fresh-session runner |
+| `createAgent(runner, spec)` from `@actor-web/agent/portable` | Portable binding for a custom runner |
 | `createAgentRunner(options)` from `@actor-web/agent/runner` | Local runner implementing the portable `AgentRunner` contract |
 
 ## Evaluation trace schema
@@ -229,9 +232,15 @@ Tests may drive the returned behavior directly, but application code should host
 it through an actor or topology so mailbox, tool access, cancellation, and
 supervision stay under the runtime.
 
-## Portable phase definitions
+## Portable agent specs
 
-`@actor-web/agent/portable` exports `createAgent(runner, definition)`. Unlike
+<!-- AgentSpec and portable createAgent behavior from src/portable.ts. -->
+
+`AgentSpec<Content, Task, Purpose>` describes a purpose, system prompt, requested
+tools, and output contract (`output` or `parse`). It requests capabilities; the
+host supplies grants and implementations.
+
+`@actor-web/agent/portable` exports `createAgent(runner, spec)`. Unlike
 `createAgentLoopBehavior`, it does not start an actor or drive a tool loop. Each
 call to `run` sends one assignment to the supplied runner, forwarding its signal
 separately from the flat task data, and returns the decoded result. Supply a
@@ -248,35 +257,54 @@ specifies what that host must enforce from assignment through settlement.
 
 ### In-process agent runner
 
+<!-- createAgent, CreateAgentOptions, and createAgentRunner from src/runner.ts; shipment inquiry in ../../examples/ignite-headless-host/logistics-inquiry.ts. -->
+
 Use `startRuntime(shipmentTopology)` to host the shipment lifecycle actors.
-Use a runner for a separate task such as a [shipment inquiry](../../examples/ignite-headless-host/logistics-inquiry.ts):
+Use the `createAgent` factory for a separate task such as a [shipment inquiry](../../examples/ignite-headless-host/logistics-inquiry.ts):
 
 ```ts
-import { createAgent } from '@actor-web/agent/portable';
-import { createAgentRunner } from '@actor-web/agent/runner';
+import { createAgent } from '@actor-web/agent/runner';
 
-const runner = createAgentRunner({ ...options, definition });
-const inquiry = createAgent(runner, definition);
+const inquiry = createAgent({ ...options, spec: inquirySpec });
 const answer = await inquiry.run({ tracking_id: shipmentId, signal });
 ```
 
-Creating the runner does not start an actor. Each admitted assignment starts
+The factory passes one spec to the trusted runner and portable binding, returning
+a `FocusedAgent` with typed `run(context)` results. `CreateAgentOptions` combines
+the spec with host-owned provider, grants, handlers, limits, and optional runner
+settings. It does not expose execution handles or add retries.
+
+Creating the agent or runner does not start an actor. Each admitted assignment starts
 a fresh in-process specialist; the model provider can be remote. The portable
 `AgentRunner` only requires `run(request)`. The built-in `InProcessAgentRunner`
 also offers `start(request)` for an `AgentRunHandle` with a `result` promise and
 `waitForSettlement(timeoutMs)` for observing local cleanup.
 
+Keep the lower-level construction when you need settlement or evidence handles,
+or use the portable binding with a custom runner:
+
+```ts
+import { createAgent as bindAgent } from '@actor-web/agent/portable';
+import { createAgentRunner } from '@actor-web/agent/runner';
+
+const runner = createAgentRunner({ ...options, spec: inquirySpec });
+const inquiry = bindAgent(runner, inquirySpec);
+```
+
 **Migrating a checkout that used the preview API:** replace
 `createActorRuntime` from `@actor-web/agent/actor-runtime` with `createAgentRunner`
-from `@actor-web/agent/runner`. In portable definitions use `AgentRunner`,
+from `@actor-web/agent/runner`. Rename `AgentDefinition` to `AgentSpec` and the
+runner option `definition` to `spec`. The mismatch error is now `SPEC_MISMATCH`
+instead of `DEFINITION_MISMATCH`. In portable specs use `AgentRunner`,
 `AgentRunRequest`, and `AgentToolDeclaration` in place of `AgentRuntime`,
 `AgentTurn`, and `AgentTool`. In the runner options, an `AgentToolHandler` is
-the trusted implementation, not a declaration or a grant. Error codes and
+the trusted implementation, not a declaration or a grant. Other error codes and
 actor messages are unchanged; the error class is now `AgentRunnerError`.
 
 Import `createAgentRunner` and `AgentRunnerError` from
-`@actor-web/agent/runner`. Pass the same trusted `definition` you give
-`createAgent`, including any output instructions. Also supply `provider`,
+`@actor-web/agent/runner`. For lower-level construction, pass the same trusted
+`spec` you give the portable `createAgent`, including any output instructions.
+The higher-level factory does this pairing for you. Also supply `provider`,
 `encodeTask` when a custom model-context projection is needed, application tool `grants` and implementations, and `limits`:
 `runTimeoutMs`, `askTimeoutMs`, `providerTimeoutMs`, `toolTimeoutMs`, and
 `maxToolCallsPerBatch`. Existing callers of the unreleased runner must also
@@ -343,7 +371,7 @@ calls, receipts or conversation history. Their rendered bytes count toward
 
 Per tool, the local runner accepts up to four pairs and 4 KiB of compact
 UTF-8 JSON for the whole example array. It checks and snapshots them when
-binding the definition, even when injection is off. `input` must be a plain
+binding the spec, even when injection is off. `input` must be a plain
 JSON object; `result` can be any plain JSON value. Examples do not invoke
 handlers or validate outputs: check fixtures against your tool's contract in
 tests. Use synthetic data suitable for sending to the provider.

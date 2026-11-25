@@ -1,6 +1,6 @@
 import type { ActorAgentLlmProvider } from '@actor-web/agent';
-import { type AgentToolDeclaration, createAgent } from '@actor-web/agent/portable';
-import { AgentRunnerError, createAgentRunner } from '@actor-web/agent/runner';
+import type { AgentToolDeclaration } from '@actor-web/agent/portable';
+import { AgentRunnerError, createAgent } from '@actor-web/agent/runner';
 import { z } from 'zod';
 
 type Assignment = { path: string; source: string };
@@ -25,7 +25,7 @@ export function createPlannerReadSample(
     examples: [{ input: { ...file, lineCount: 1 }, result: { ...file, text: 'Status: draft.' } }],
   } satisfies AgentToolDeclaration;
 
-  const definition = {
+  const spec = {
     purpose: 'read-plan-line' as const,
     systemPrompt: 'Read and return the first line of the assigned workspace file verbatim.',
     tools: [read],
@@ -35,8 +35,8 @@ export function createPlannerReadSample(
       return text;
     },
   };
-  const runner = createAgentRunner<Assignment, 'read-plan-line'>({
-    definition,
+  return createAgent({
+    spec,
     provider,
     toolExampleMode: 'description',
     grants: [read.name],
@@ -67,5 +67,4 @@ export function createPlannerReadSample(
       maxPayloadBytes: 16 * 1024,
     },
   });
-  return createAgent(runner, definition);
 }
