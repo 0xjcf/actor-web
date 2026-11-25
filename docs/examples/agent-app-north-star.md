@@ -75,6 +75,53 @@ credentials, provider calls, network transport, or workspace writes. The
 example stops its local session actors and team actors; this does not establish
 settlement of external work.
 
+#### Test to Review: what if the receipt arrives late?
+
+The browser and terminal demos let the **team** accept an in-process check.
+A separate [offline FSM](../../examples/parallel-sdlc-teams/task-check.ts)
+models how a **task owner** would decide whether one already-admitted Test
+attempt can advance to Review when the check runs on a local or cloud VM.
+`taskCheckBehavior(admitted)` pins the attempt in actor context and attaches
+a `defineFSM()` map with `withFSM()`. The map needs only a synchronous
+comparison against that context; it does not perform I/O.
+
+![Test settlement sequence: the host loses its connection after the guest finishes; the task owner holds the attempt until it receives the matching host receipt.](../../examples/parallel-sdlc-teams/task-check-sequence.svg)
+
+Read the diagram from top to bottom. The owner authorizes the team, the team
+opens a Test session, and the specialist requests the check from the executor
+host. The guest reports to the host, not to the task owner. If the host records
+the result but disconnects before delivery, reconnecting means **look up the
+existing receipt**, not **run the check again**. Peer health, session completion
+and dashboard observations cannot advance the task.
+
+| Current state | Event and condition | Next state |
+| --- | --- | --- |
+| `ready` | Owner sends `DISPATCH_CHECK` | `awaitingReceipt` |
+| `awaitingReceipt` | `RECEIPT_TIMEOUT` names this `attemptId` | `unknown` (hold; no retry) |
+| `awaitingReceipt` or `unknown` | `HOST_RECEIPT` matches; `passed` is `true` | `reviewReady` |
+| `awaitingReceipt` or `unknown` | `HOST_RECEIPT` matches; `passed` is `false` | `checkFailed` |
+
+The same receipt guard applies before and after timeout. It requires a boolean
+`passed` and an exact match on `workspaceId`, `taskId`, `taskRevision`,
+`attemptId`, `checkId`, `executorId`, `executorGeneration` and `candidateDigest`.
+A receipt from a replaced executor therefore cannot settle the new attempt,
+even if both ran the same candidate. A failed guard or an event not listed for
+the current state returns `INVALID_TRANSITION` on `ask()` and leaves the state
+unchanged. Both outcomes are terminal for this attempt, so a duplicate receipt
+cannot settle it twice.
+
+Only the owner's decision runs in this fixture. Matching fields is not sender
+authentication: a future adapter must authenticate the executor, store and
+retrieve its receipt, and deliver it to the owner. `reviewReady` means Review
+is permitted; the FSM neither starts a reviewer nor launches a VM.
+
+Run the [transition tests](../../examples/parallel-sdlc-teams/task-check.test.ts)
+from the repository root, without a VM or credentials:
+
+```sh
+pnpm exec vitest run --config examples/vitest.config.ts examples/parallel-sdlc-teams/task-check.test.ts
+```
+
 ### 2. Portable Specialist: one bounded session
 
 After building the workspace packages with `pnpm build`, run

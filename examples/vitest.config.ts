@@ -43,6 +43,10 @@ export default defineConfig({
         replacement: path.resolve(actorWebRoot, 'packages/actor-agent/src/runner.ts'),
       },
       {
+        find: '@actor-web/agent/terminal',
+        replacement: path.resolve(actorWebRoot, 'packages/actor-agent/src/terminal.ts'),
+      },
+      {
         find: '@actor-web/agent/zod',
         replacement: path.resolve(actorWebRoot, 'packages/actor-agent/src/zod.ts'),
       },

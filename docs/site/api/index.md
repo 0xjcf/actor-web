@@ -20,6 +20,7 @@ the narrowest one that fits — browser code should not pull in Node entry point
 | `@actor-web/agent/portable` | `AgentSpec` and `createAgent(runner, spec)` for binding to a custom `AgentRunner`. |
 | `@actor-web/agent/runner` | `createAgent({ spec, ...options })` for typed assignments in fresh in-process actor sessions; `createAgentRunner` for direct execution handles. |
 | `@actor-web/agent/zod` | Optional structured output parsing and assignment-aware validation. |
+| `@actor-web/agent/terminal` | `createTerminalTraceReporter` for opt-in human-readable `trace.onEvent` output; `formatTerminalTraceEvent` to format a single event without writing. |
 | `@actor-web/testing` | [State-machine analysis](/api/testing) test helpers. |
 
 The agent subpaths above are present in this checkout, not in `@actor-web/agent@0.2.2`.

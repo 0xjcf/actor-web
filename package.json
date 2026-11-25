@@ -69,7 +69,9 @@
     "release:stable": "node scripts/release.mjs --channel stable",
     "release:beta": "node scripts/release.mjs --channel beta",
     "examples:analyst": "pnpm --filter @actor-web/example-retail-analyst demo",
-    "examples:analyst:live": "pnpm --filter @actor-web/example-retail-analyst live"
+    "examples:analyst:live": "pnpm --filter @actor-web/example-retail-analyst live",
+    "examples:investigation": "pnpm --filter @actor-web/example-retail-investigation demo",
+    "examples:investigation:evaluate": "pnpm --filter @actor-web/example-retail-investigation evaluate"
   },
   "keywords": [
     "actor-model",

@@ -34,6 +34,7 @@ with `reset`, or the `./portable`, `./runner` and `./zod` entry points.
 | `AgentTracePayload`, `AgentTraceEvent`, `AgentTraceEventMap` | Typed evaluation observations and their correlated runtime event envelope |
 | `AgentTraceCapture<T>`, `AgentTraceCompleteness` | Explicit content availability and event-stream loss |
 | `AgentTraceProfile`, `AgentTraceConfiguration`, `AgentTraceOptions` | Named runner capture profiles or low-level options, with limits, redaction, and an isolated sink |
+| `createTerminalTraceReporter`, `formatTerminalTraceEvent` from `@actor-web/agent/terminal` | Stream human-readable events to a host-selected writer, or format one event without writing |
 | `AGENT_TRACE_SCHEMA_VERSION`, `AgentRunTraceSnapshot`, `AgentTraceRecord`, `AgentTraceRunSummary`, `serializeAgentTraceJsonl` | Canonical version, snapshot and JSONL records, and portable serialization |
 | `AgentSpec<Content, Task, Purpose>` from `@actor-web/agent/portable` | Purpose, instructions, requested tools, and output contract |
 | `createAgent({ spec, ...options })`, `CreateAgentOptions` from `@actor-web/agent/runner` | Typed agent with a built-in fresh-session runner |
@@ -90,12 +91,14 @@ An enabled profile requires `methodRevision` and a `model` descriptor
 
 ```ts
 import { createAgentRunner } from '@actor-web/agent/runner';
+import { createTerminalTraceReporter } from '@actor-web/agent/terminal';
 
 const runner = createAgentRunner({
   ...runnerOptions,
   trace: {
     profile: 'metadata',
     methodRevision: 'source-review-v1',
+    onEvent: createTerminalTraceReporter({ writeLine: (text) => console.error(text) }),
     model: {
       provider: 'openai',
       model: 'gpt-4.1-mini',
@@ -112,6 +115,16 @@ a unique opaque ID per invocation; otherwise the runner generates one.
 Optional `case` and `codeRevision` identify the versioned experiment. Keep
 identifiers and other metadata non-sensitive even in the `metadata` profile.
 Profiles do not select a renderer, destination, or storage policy.
+
+The terminal reporter is opt-in: the example above writes to stderr so stdout
+can remain machine-readable. With no options it uses `console.log` without
+color; pass `color: true` for ANSI dividers and labels. Product and development
+agents can use the same reporter without changing their tool schemas. Captured
+`decision_summary` and `reason` arguments are display hints, not required fields
+or proof of execution. Only actual rejection and failure events are labeled as
+such. For a custom UI, `formatTerminalTraceEvent(event, { color: false })`
+returns the same text without writing. Start with `metadata` for real assignments;
+the reporter does not redact content on the host's behalf.
 
 Every `start(request)` handle exposes `readTrace()`: a detached snapshot containing
 events, completeness, delivery failures, and model/tool/token metrics. It returns

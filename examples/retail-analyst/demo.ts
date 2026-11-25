@@ -6,12 +6,15 @@ import {
   createLlmProvider,
   serializeAgentTraceJsonl,
 } from '@actor-web/agent';
-import { createAnalyst } from './analyst.js';
+import { createTerminalTraceReporter } from '@actor-web/agent/terminal';
+import { type AnalystOptions, createAnalyst } from './analyst.js';
+import { createAnalyst as createBaseline } from './baseline-analyst.js';
+import { scriptedProvider as baselineProvider } from './baseline-scripted-provider.js';
 import { scriptedProvider } from './scripted-provider.js';
-import { formatTrace } from './trace.js';
 
 const args = process.argv.slice(2);
 const live = args.includes('--live');
+const baseline = args.includes('--baseline');
 const json = args.includes('--json');
 const summary = args.includes('--reasoning-summary');
 const responses = summary || args.includes('--responses');
@@ -55,11 +58,12 @@ const provider: ActorAgentLlmProvider = live
       parallelToolCalls: false,
       ...(summary ? { reasoningSummary: 'auto' as const } : {}),
     })
-  : scriptedProvider;
+  : baseline
+    ? baselineProvider
+    : scriptedProvider;
 const runId = randomUUID();
-const analyst = createAnalyst({
+const options: AnalystOptions = {
   provider,
-  toolExampleMode: exampleMode,
   traceProfile,
   model: {
     provider: live ? 'openai' : 'scripted',
@@ -75,8 +79,11 @@ const analyst = createAnalyst({
         : {},
     },
   },
-  onTrace: json ? undefined : (event) => console.log(formatTrace(event, { color })),
-});
+  onTrace: json ? undefined : createTerminalTraceReporter({ color }),
+};
+const analyst = baseline
+  ? createBaseline({ ...options, toolExampleMode: exampleMode })
+  : createAnalyst(options);
 const started = performance.now();
 let durationMs: number | undefined;
 try {
@@ -108,7 +115,11 @@ try {
     runId,
     mode: live ? 'live' : 'scripted',
     model: live ? model : null,
-    toolExampleMode: exampleMode,
+    methodRevision: baseline ? 'retail-analyst-v4' : 'retail-analyst-v5-edge',
+    toolExampleMode: baseline ? exampleMode : 'not-applicable',
+    hostReads: result.observations.filter((o) => o.name !== 'find_largest_sales_increase').length,
+    calculations: result.observations.filter((o) => o.name === 'find_largest_sales_increase')
+      .length,
     traceProfile,
     analysis: result.analysis,
     ...result.metrics,

@@ -1,492 +1,371 @@
-import {
-  type ActorAgentLlmProvider,
-  type ActorAgentLlmResult,
-  type AgentTraceRecord,
-  serializeAgentTraceJsonl,
-} from '@actor-web/agent';
-import { describe, expect, it } from 'vitest';
-import { createAnalyst, expectedSpike } from './analyst.js';
+import type { ActorAgentLlmProvider } from '@actor-web/agent';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createAnalyst, fixtureDataPorts } from './analyst.js';
+import { sales, weather } from './fixtures.js';
 import { scriptedProvider } from './scripted-provider.js';
 
 const task = { productId: 'P005' as const };
-function call(name: string, input: unknown, id = 'call-1'): ActorAgentLlmResult {
-  return {
+const answer =
+  (value: unknown): ActorAgentLlmProvider =>
+  () => ({
     ok: true,
-    value: {
-      message: {
-        role: 'assistant',
-        content: '',
-        toolCalls: [
-          {
-            id,
-            name,
-            input: {
-              decision_summary: 'Check the assigned data for the next step.',
-              ...(input as Record<string, unknown>),
-            },
-          },
-        ],
-      },
+    value: { message: { role: 'assistant', content: JSON.stringify(value) } },
+  });
+const advisory = {
+  hypotheses: [
+    {
+      explanation: 'Weather may be associated with the increase; causation is not established.',
+      evidence: ['sales.maximum', 'weather.conditions'],
     },
-  };
-}
-describe('retail analyst', () => {
-  it('uses a fresh actor session and required observations for repeated assignments', async () => {
-    const analyst = createAnalyst({ provider: scriptedProvider });
-    const first = await analyst.analyze(task);
-    const second = await analyst.analyze(task);
-    expect(first.analysis).toMatchObject({
-      date: '2024-01-12',
-      amount_before_increase: 114,
-      amount_after_increase: 342,
+  ],
+  causation: 'not-established',
+};
+afterEach(() => vi.useRealTimers());
+
+describe('application-owned analyst', () => {
+  it('reads evidence before one model call and returns facts separately from hypotheses', async () => {
+    const order: string[] = [];
+    const provider = vi.fn<ActorAgentLlmProvider>((request, context) => {
+      order.push('model');
+      expect(request.tools).toEqual([]);
+      expect(request.toolDefinitions ?? []).toEqual([]);
+      const input = JSON.parse(request.messages[0].content);
+      expect(input.facts.increase).toEqual({
+        date: '2024-01-12',
+        amount_before_increase: 114,
+        amount_after_increase: 342,
+        percentage_increase: 200,
+      });
+      expect(input.facts.precipitationUnit).toBe('unspecified');
+      expect(input.availableReferences).toContain('weather.special_event');
+      return scriptedProvider(request, context);
+    });
+    const analyst = createAnalyst({
+      provider,
+      data: {
+        async readSales(id, signal) {
+          order.push('sales');
+          return fixtureDataPorts.readSales(id, signal);
+        },
+        async readWeather(date, signal) {
+          order.push('weather');
+          expect(date).toBe('2024-01-12');
+          return fixtureDataPorts.readWeather(date, signal);
+        },
+      },
+    });
+    const result = await analyst.analyze(task);
+    expect(order).toEqual(['sales', 'weather', 'model']);
+    expect(result.analysis.facts.increase.percentage_increase).toBe(200);
+    expect(result.analysis.advisory.causation).toBe('not-established');
+    expect(result).toMatchObject({
+      hostReads: 2,
+      calculations: 1,
+      metrics: { modelCalls: 1, toolCalls: 0 },
+    });
+    expect(provider).toHaveBeenCalledTimes(1);
+  });
+
+  it('calculates changed input rather than comparing against the original fixture oracle', async () => {
+    const changed = [
+      { product_id: 'P005', date: '2025-02-01', quantity: 10 },
+      { product_id: 'P005', date: '2025-02-02', quantity: 30 },
+    ];
+    const result = await createAnalyst({
+      provider: answer(advisory),
+      data: {
+        readSales: async () => ({ ok: true, value: changed }),
+        readWeather: async (date) => ({ ok: true, value: { ...weather[2], date } }),
+      },
+    }).analyze(task);
+    expect(result.analysis.facts.increase).toEqual({
+      date: '2025-02-02',
+      amount_before_increase: 10,
+      amount_after_increase: 30,
       percentage_increase: 200,
     });
-    expect(first.observations.map((o) => o.name)).toEqual([
+  });
+
+  it('supports explicit abstention rather than requiring invented causes', async () => {
+    const result = await createAnalyst({
+      provider: answer({ hypotheses: [], causation: 'not-established' }),
+    }).analyze(task);
+    expect(result.analysis.advisory.hypotheses).toEqual([]);
+    expect(result.analysis.facts.increase.percentage_increase).toBe(200);
+  });
+
+  it.each([
+    ['numeric override', { ...advisory, percentage_increase: 999 }, 'schemaMismatch'],
+    [
+      'invented reference',
+      { ...advisory, hypotheses: [{ explanation: 'A claim.', evidence: ['product.category'] }] },
+      'schemaMismatch',
+    ],
+    [
+      'duplicate reference',
+      {
+        ...advisory,
+        hypotheses: [{ explanation: 'A claim.', evidence: ['sales.maximum', 'sales.maximum'] }],
+      },
+      'taskMismatch',
+    ],
+    ['causal certainty field', { ...advisory, causation: 'established' }, 'schemaMismatch'],
+  ])('rejects %s without retry', async (_name, content, code) => {
+    const provider = vi.fn(answer(content));
+    const run = createAnalyst({ provider }).startAnalysis(task);
+    await expect(run.result).rejects.toMatchObject({ code });
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(run.readTrace()?.events.at(-1)).toMatchObject({
+      type: 'output.validated',
+      payload: { outcome: 'failed' },
+    });
+  });
+
+  it('rejects references to an absent weather event', async () => {
+    const provider = answer({
+      ...advisory,
+      hypotheses: [{ explanation: 'An event may matter.', evidence: ['weather.special_event'] }],
+    });
+    await expect(
+      createAnalyst({
+        provider,
+        data: {
+          ...fixtureDataPorts,
+          readWeather: async () => ({
+            ok: true,
+            value: {
+              ...weather[2],
+              conditions: { ...weather[2].conditions, special_event: null },
+            },
+          }),
+        },
+      }).analyze(task)
+    ).rejects.toMatchObject({ code: 'taskMismatch' });
+  });
+
+  it('does not pretend schema and citation checks prove narrative truth', async () => {
+    const unsupported = {
+      ...advisory,
+      hypotheses: [
+        {
+          explanation: 'Customers bought umbrellas because of 2.7 inches of rain.',
+          evidence: ['weather.conditions'],
+        },
+      ],
+    };
+    const result = await createAnalyst({ provider: answer(unsupported) }).analyze(task);
+    expect(result.analysis.advisory.hypotheses[0].explanation).toContain('inches');
+    // Semantic evaluation must flag this; structural acceptance is not a quality score.
+  });
+
+  it.each([
+    ['wrong product', [{ ...sales[0], product_id: 'OTHER' }], 'WRONG_PRODUCT'],
+    ['empty sales', [], 'INSUFFICIENT_SALES_DATA'],
+    [
+      'invalid sales',
+      [{ product_id: 'P005', date: 'bad', quantity: -1 }, sales[0]],
+      'INVALID_SALES_DATA',
+    ],
+  ])('stops on %s before weather or the LLM', async (_name, rows, code) => {
+    const provider = vi.fn<ActorAgentLlmProvider>();
+    const readWeather = vi.fn(fixtureDataPorts.readWeather);
+    await expect(
+      createAnalyst({
+        provider,
+        data: { readSales: async () => ({ ok: true, value: rows }), readWeather },
+      }).analyze(task)
+    ).rejects.toMatchObject({ code });
+    expect(readWeather).not.toHaveBeenCalled();
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it('refuses weather for the wrong date before the LLM', async () => {
+    const provider = vi.fn<ActorAgentLlmProvider>();
+    await expect(
+      createAnalyst({
+        provider,
+        data: { ...fixtureDataPorts, readWeather: async () => ({ ok: true, value: weather[0] }) },
+      }).analyze(task)
+    ).rejects.toMatchObject({ code: 'WRONG_WEATHER_DATE' });
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it('preserves expected data-port failures without invoking the model', async () => {
+    const provider = vi.fn<ActorAgentLlmProvider>();
+    await expect(
+      createAnalyst({
+        provider,
+        data: {
+          ...fixtureDataPorts,
+          readSales: async () => ({ ok: false, code: 'SALES_UNAVAILABLE' }),
+        },
+      }).analyze(task)
+    ).rejects.toMatchObject({ code: 'SALES_UNAVAILABLE' });
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it('pre-abort performs no reads or model calls', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const readSales = vi.fn(fixtureDataPorts.readSales);
+    const provider = vi.fn<ActorAgentLlmProvider>();
+    await expect(
+      createAnalyst({
+        provider,
+        data: { ...fixtureDataPorts, readSales },
+      }).analyze(task, { signal: controller.signal })
+    ).rejects.toBeDefined();
+    expect(readSales).not.toHaveBeenCalled();
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it('rejects promptly on cancellation and refuses a late read result', async () => {
+    const controller = new AbortController();
+    let settle: (value: { ok: true; value: typeof sales }) => void = () => {};
+    let observedSignal: AbortSignal | undefined;
+    const pending = new Promise<{ ok: true; value: typeof sales }>((resolve) => {
+      settle = resolve;
+    });
+    let notifyEntered = () => {};
+    const entered = new Promise<void>((resolve) => {
+      notifyEntered = resolve;
+    });
+    const readWeather = vi.fn(fixtureDataPorts.readWeather);
+    const provider = vi.fn<ActorAgentLlmProvider>();
+    const run = createAnalyst({
+      provider,
+      data: {
+        readSales: async (_id, signal) => {
+          observedSignal = signal;
+          notifyEntered();
+          return pending;
+        },
+        readWeather,
+      },
+    }).startAnalysis(task, { signal: controller.signal });
+    await entered;
+    const rejected = expect(run.result).rejects.toMatchObject({ code: 'RUN_ABORTED' });
+    controller.abort();
+    await rejected;
+    expect(observedSignal?.aborted).toBe(true);
+    settle({ ok: true, value: sales });
+    await Promise.resolve();
+    expect(readWeather).not.toHaveBeenCalled();
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it('bounds stalled reads even if the data adapter ignores cancellation', async () => {
+    vi.useFakeTimers();
+    const provider = vi.fn<ActorAgentLlmProvider>();
+    const run = createAnalyst({
+      provider,
+      data: { ...fixtureDataPorts, readSales: () => new Promise(() => {}) },
+    }).startAnalysis(task);
+    const rejected = expect(run.result).rejects.toMatchObject({ code: 'DATA_TIMEOUT' });
+    await vi.advanceTimersByTimeAsync(1000);
+    await rejected;
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it('does not start the model when cancellation occurs as weather returns', async () => {
+    const controller = new AbortController();
+    const provider = vi.fn<ActorAgentLlmProvider>();
+    const run = createAnalyst({
+      provider,
+      data: {
+        ...fixtureDataPorts,
+        readWeather: async () => {
+          controller.abort();
+          return { ok: true, value: weather[2] };
+        },
+      },
+    }).startAnalysis(task, { signal: controller.signal });
+    await expect(run.result).rejects.toMatchObject({ code: 'RUN_ABORTED' });
+    expect(provider).not.toHaveBeenCalled();
+    expect(run.readTrace()).toBeUndefined();
+    expect(run.readObservations().map((o) => o.name)).toEqual([
       'get_sales_data',
       'find_largest_sales_increase',
-      'call_weather_api',
     ]);
-    expect(first.observations[1].output).toEqual({
-      date: '2024-01-12',
-      amount_before_increase: 114,
-      amount_after_increase: 342,
-      percentage_increase: 200,
-    });
-    expect(first.metrics).toMatchObject({ modelCalls: 4, toolCalls: 3 });
-    expect(first.trace[0]).toMatchObject({ payload: { methodRevision: 'retail-analyst-v4' } });
-    expect(second.analysis).toEqual(first.analysis);
-    expect(second.observations).toHaveLength(3);
-    expect(second.observations).not.toBe(first.observations);
   });
-  it('rejects an ungranted tool before any effect', async () => {
-    const provider: ActorAgentLlmProvider = () => call('delete_file', { path: '/' });
-    await expect(createAnalyst({ provider }).analyze(task)).rejects.toMatchObject({
-      code: 'TOOL_DENIED',
+
+  it('rejects a model answer returned after assignment cancellation', async () => {
+    const controller = new AbortController();
+    const provider = vi.fn<ActorAgentLlmProvider>((request, context) => {
+      controller.abort();
+      return scriptedProvider(request, context);
     });
+    const run = createAnalyst({ provider }).startAnalysis(task, { signal: controller.signal });
+    await expect(run.result).rejects.toMatchObject({ code: 'RUN_ABORTED' });
+    expect(provider).toHaveBeenCalledTimes(1);
   });
-  it('rejects invented quantities after retrieving sales', async () => {
-    const provider: ActorAgentLlmProvider = (request, context) =>
-      request.messages.some((m) => m.role === 'tool')
-        ? call('find_largest_sales_increase', { before: 1, after: 999 }, 'call-2')
-        : scriptedProvider(request, context);
-    await expect(createAnalyst({ provider }).analyze(task)).rejects.toMatchObject({
-      code: 'INVALID_TOOL_INPUT',
-    });
+
+  it('rejects malformed weather before the model starts', async () => {
+    const provider = vi.fn<ActorAgentLlmProvider>();
+    await expect(
+      createAnalyst({
+        provider,
+        data: {
+          ...fixtureDataPorts,
+          readWeather: async () => ({ ok: true, value: { date: '2024-01-12' } }),
+        },
+      }).analyze(task)
+    ).rejects.toMatchObject({ code: 'INVALID_WEATHER_DATA' });
+    expect(provider).not.toHaveBeenCalled();
   });
-  it('rejects a correct-looking answer without required tool observations', async () => {
+
+  it('gives the model no tool authority', async () => {
     const provider: ActorAgentLlmProvider = () => ({
       ok: true,
       value: {
         message: {
           role: 'assistant',
-          content: JSON.stringify({ ...expectedSpike(), causes: ['Rain may have contributed.'] }),
+          content: '',
+          toolCalls: [{ id: 'bad', name: 'get_sales_data', input: {} }],
         },
       },
     });
-    await expect(createAnalyst({ provider }).analyze(task)).rejects.toMatchObject({
-      code: 'taskMismatch',
-    });
-  });
-  it('rejects a wrong percentage even after valid tools', async () => {
-    const provider: ActorAgentLlmProvider = async (request, context) => {
-      const result = await scriptedProvider(request, context);
-      if (result.ok && !result.value.message.toolCalls?.length) {
-        return {
-          ok: true,
-          value: {
-            message: {
-              role: 'assistant',
-              content: JSON.stringify({
-                ...expectedSpike(),
-                percentage_increase: 100,
-                causes: ['Rain may have contributed.'],
-              }),
-            },
-          },
-        };
-      }
-      return result;
-    };
-    await expect(createAnalyst({ provider }).analyze(task)).rejects.toMatchObject({
-      code: 'taskMismatch',
-    });
-  });
-  it('keeps concurrent calls independent', async () => {
-    const analyst = createAnalyst({ provider: scriptedProvider });
-    const results = await Promise.all([analyst.analyze(task), analyst.analyze(task)]);
-    expect(results.map((r) => r.observations.length)).toEqual([3, 3]);
-  });
-});
-
-describe('analyst evaluation tracing and examples', () => {
-  it('does not change model inputs or accepted results when switching capture profiles', async () => {
-    const run = async (traceProfile: 'evaluation' | 'metadata' | 'off') => {
-      const requests: unknown[] = [];
-      const provider: ActorAgentLlmProvider = (request, context) => {
-        requests.push(structuredClone(request));
-        return scriptedProvider(request, context);
-      };
-      const execution = createAnalyst({ provider, traceProfile }).startAnalysis(task);
-      const { analysis, observations } = await execution.result;
-      return { analysis, observations, requests, snapshot: execution.readTrace() };
-    };
-    const { snapshot: detailed, ...expected } = await run('evaluation');
-    expect(detailed?.events.at(-1)).toMatchObject({
-      type: 'output.validated',
-      payload: { outcome: 'passed', output: { status: 'captured', value: expected.analysis } },
-    });
-    const { snapshot: metadata, ...metadataExecution } = await run('metadata');
-    expect(metadataExecution).toEqual(expected);
-    expect(metadata?.metrics).toEqual(detailed?.metrics);
-    expect(metadata?.events.map((event) => event.type)).toEqual(
-      detailed?.events.map((event) => event.type)
-    );
-    expect(metadata?.events.at(-1)).toMatchObject({
-      type: 'output.validated',
-      payload: { outcome: 'passed', output: { status: 'omitted', reason: 'disabled' } },
-    });
-    const { snapshot: disabled, ...untracedExecution } = await run('off');
-    expect(untracedExecution).toEqual(expected);
-    expect(disabled).toBeUndefined();
-  });
-
-  it('advertises only the maximum tool and does not accept model-supplied calculation data', async () => {
-    const provider: ActorAgentLlmProvider = (request, context) => {
-      expect(request.tools).toEqual([
-        'get_sales_data',
-        'find_largest_sales_increase',
-        'call_weather_api',
-      ]);
-      const maximum = request.toolDefinitions?.find(
-        (tool) => tool.name === 'find_largest_sales_increase'
-      );
-      expect(maximum?.inputSchema).toMatchObject({
-        additionalProperties: false,
-        required: ['decision_summary'],
-      });
-      if (
-        !maximum?.inputSchema ||
-        typeof maximum.inputSchema !== 'object' ||
-        Array.isArray(maximum.inputSchema)
-      ) {
-        throw new Error('Expected maximum tool schema.');
-      }
-      expect(Object.keys(maximum.inputSchema.properties as object)).toEqual(['decision_summary']);
-      return scriptedProvider(request, context);
-    };
-    await expect(createAnalyst({ provider }).analyze(task)).resolves.toMatchObject({
-      metrics: { modelCalls: 4, toolCalls: 3 },
-    });
-  });
-  it('refuses the removed pairwise calculator', async () => {
-    const provider: ActorAgentLlmProvider = () =>
-      call('percentage_increase', { before: 114, after: 342 });
     await expect(createAnalyst({ provider }).analyze(task)).rejects.toMatchObject({
       code: 'TOOL_DENIED',
     });
   });
-  it('requires observed sales before finding the maximum', async () => {
-    const provider: ActorAgentLlmProvider = () => call('find_largest_sales_increase', {});
-    await expect(createAnalyst({ provider }).analyze(task)).rejects.toMatchObject({
-      code: 'INVALID_TOOL_INPUT',
-    });
-  });
-  it('requires the maximum observation before weather', async () => {
-    const provider: ActorAgentLlmProvider = (request, context) =>
-      request.messages.some((message) => message.role === 'tool')
-        ? call('call_weather_api', { date: '2024-01-12' }, 'early-weather')
-        : scriptedProvider(request, context);
-    await expect(createAnalyst({ provider }).analyze(task)).rejects.toMatchObject({
-      code: 'INVALID_TOOL_INPUT',
-    });
-  });
-  it('rejects weather for an observed date that is not the maximum date', async () => {
-    const provider: ActorAgentLlmProvider = (request, context) =>
-      request.messages.some((message) => message.toolName === 'find_largest_sales_increase')
-        ? call('call_weather_api', { date: '2024-01-11' }, 'wrong-weather')
-        : scriptedProvider(request, context);
-    await expect(createAnalyst({ provider }).analyze(task)).rejects.toMatchObject({
-      code: 'INVALID_TOOL_INPUT',
-    });
-  });
-  it.each(['get_sales_data', 'find_largest_sales_increase', 'call_weather_api'])(
-    'rejects a repeated %s execution',
-    async (name) => {
-      const observed: string[] = [];
-      const provider: ActorAgentLlmProvider = (request, context) =>
-        request.messages.some((message) => message.role === 'tool' && message.toolName === name)
-          ? call(name, name === 'call_weather_api' ? { date: '2024-01-12' } : {}, 'repeat')
-          : scriptedProvider(request, context);
-      await expect(
-        createAnalyst({
-          provider,
-          onTrace(event) {
-            if (event.type === 'tool.observed') observed.push(event.payload.name);
-          },
-        }).analyze(task)
-      ).rejects.toMatchObject({ code: 'INVALID_TOOL_INPUT' });
-      expect(observed.filter((tool) => tool === name)).toHaveLength(1);
-    }
-  );
-  it('rejects an answer after sales alone even when its numeric facts are correct', async () => {
-    const provider: ActorAgentLlmProvider = (request, context) =>
-      request.messages.some((message) => message.role === 'tool')
-        ? {
-            ok: true,
-            value: {
-              message: {
-                role: 'assistant',
-                content: JSON.stringify({
-                  ...expectedSpike(),
-                  causes: ['Rain may have contributed.'],
-                }),
-              },
-            },
-          }
-        : scriptedProvider(request, context);
-    await expect(createAnalyst({ provider }).analyze(task)).rejects.toMatchObject({
-      code: 'taskMismatch',
-    });
-  });
-  it('uses the maximum observation rather than a fixture oracle in the scripted provider', async () => {
-    const maximum = {
-      date: '2020-02-02',
-      amount_before_increase: 10,
-      amount_after_increase: 20,
-      percentage_increase: 100,
-    };
-    const result = await scriptedProvider(
-      {
-        messages: [
-          { role: 'tool', toolName: 'get_sales_data', content: '{"ok":true,"output":[]}' },
-          {
-            role: 'tool',
-            toolName: 'find_largest_sales_increase',
-            content: JSON.stringify({ ok: true, output: maximum }),
-          },
-        ],
-        tools: [],
-      },
-      { actorId: 'fixture', nodeAddress: 'local', signal: new AbortController().signal }
-    );
-    expect(result).toMatchObject({
-      ok: true,
-      value: {
-        message: {
-          toolCalls: [
-            {
-              name: 'call_weather_api',
-              input: { date: maximum.date },
-            },
-          ],
-        },
-      },
-    });
-  });
-  it('correlates explanations, requests, observations, and acceptance without logging opaque state', async () => {
-    const received: unknown[] = [];
-    let replayed = false;
-    const provider: ActorAgentLlmProvider = async (request, context) => {
-      if (request.messages.some((m) => m.providerState?.reasoningItems.length)) replayed = true;
-      const result = await scriptedProvider(request, context);
-      if (!result.ok) return result;
-      return {
-        ok: true,
-        value: {
-          ...result.value,
-          message: {
-            ...result.value.message,
-            reasoningSummaries: ['A provider-supplied test summary.'],
-            providerState: {
-              format: 'openai-responses',
-              reasoningItems: [
-                { type: 'reasoning', id: 'rs-test', encrypted_content: 'opaque-not-for-logs' },
-              ],
-            },
-          },
-        },
-      };
-    };
-    const result = await createAnalyst({
-      provider,
-      onTrace: (event) => {
-        received.push(event);
-      },
-    }).analyze(task, { runId: 'eval-1' });
-    expect(replayed).toBe(true);
-    expect(result.trace.map((event) => event.sequence)).toEqual(
-      result.trace.map((_, index) => index + 1)
-    );
-    expect(result.trace.every((event) => event.runId === 'eval-1')).toBe(true);
-    expect(result.trace.filter((event) => event.type === 'model.returned')).toHaveLength(4);
-    const requestIds = result.trace.flatMap((event) =>
-      event.type === 'tool.requested' ? [event.payload.toolCallId] : []
-    );
-    expect(
-      result.trace.flatMap((event) =>
-        event.type === 'tool.observed' ? [event.payload.toolCallId] : []
-      )
-    ).toEqual(requestIds);
-    expect(result.trace.slice(-2).map((event) => event.type)).toEqual([
-      'run.completed',
-      'output.validated',
-    ]);
-    expect(JSON.stringify(received)).not.toContain('opaque-not-for-logs');
-    expect(JSON.stringify(received)).toContain('provider-supplied test summary');
-    expect(result.metrics).toMatchObject({ modelCalls: 4, toolCalls: 3, usage: null });
-  });
-  it('shows examples only as descriptions and supports disabling them', async () => {
-    for (const toolExampleMode of ['description', 'off'] as const) {
-      const descriptions: string[] = [];
-      const provider: ActorAgentLlmProvider = (request, context) => {
-        descriptions.push(...(request.toolDefinitions ?? []).map((tool) => tool.description ?? ''));
-        return scriptedProvider(request, context);
-      };
-      const result = await createAnalyst({ provider, toolExampleMode }).analyze(task);
-      expect(descriptions.some((text) => text.includes('Illustrative calls and results'))).toBe(
-        toolExampleMode === 'description'
-      );
-      expect(result.observations).toHaveLength(3);
-      expect(result.observations[0].output).not.toEqual([{ date: '2020-02-01' }]);
-      expect(JSON.stringify(result.observations)).not.toContain('2020-02-02');
-    }
-  });
-  it('does not accept synthetic example quantities as assignment evidence', async () => {
-    const provider: ActorAgentLlmProvider = (request, context) =>
-      request.messages.some((m) => m.role === 'tool')
-        ? call('find_largest_sales_increase', { before: 100, after: 150 }, 'example-call')
-        : scriptedProvider(request, context);
-    await expect(createAnalyst({ provider }).analyze(task)).rejects.toMatchObject({
-      code: 'INVALID_TOOL_INPUT',
-    });
-  });
-  it('keeps observer failures from changing execution', async () => {
-    const result = await createAnalyst({
-      provider: scriptedProvider,
-      onTrace(event) {
-        if (event.type === 'run.started' && event.payload.task.status === 'captured') {
-          const task = event.payload.task.value;
-          if (task && typeof task === 'object' && !Array.isArray(task)) task.productId = 'tampered';
-        }
-        throw new Error('sink unavailable');
-      },
-    }).analyze(task);
-    expect(result.analysis.percentage_increase).toBe(200);
-    expect(result.traceDeliveryFailures).toBeGreaterThan(0);
-    expect(JSON.stringify(result.trace)).not.toContain('tampered');
-  });
-  it('exports failed validation and a summary without publishing an accepted result', async () => {
-    const provider: ActorAgentLlmProvider = () => ({
-      ok: true,
-      value: { message: { role: 'assistant', content: '{}' } },
-    });
-    const run = createAnalyst({ provider }).startAnalysis(task, { runId: 'invalid-answer' });
-    await expect(run.result).rejects.toMatchObject({ code: 'schemaMismatch' });
-    const snapshot = run.readTrace();
-    if (!snapshot) throw new Error('Expected a rejected run trace.');
-    const records: AgentTraceRecord[] = serializeAgentTraceJsonl(snapshot)
-      .trimEnd()
-      .split('\n')
-      .map((line) => JSON.parse(line));
-    expect(records.slice(-3)).toMatchObject([
-      { type: 'run.completed' },
-      { type: 'output.validated', payload: { outcome: 'failed' } },
-      {
-        type: 'agent.trace.summary',
-        runId: 'invalid-answer',
-        completeness: { status: 'complete' },
-        metrics: { modelCalls: 1, toolCalls: 0, usage: null },
-      },
-    ]);
-    expect(records.some((record) => record.type === 'run.failed')).toBe(false);
-  });
-});
 
-describe('provider failure tracing', () => {
-  it('records thrown provider failures without exposing exception details', async () => {
-    const events: unknown[] = [];
-    const provider: ActorAgentLlmProvider = () => {
-      throw new Error('private diagnostic');
-    };
-    await expect(
-      createAnalyst({
-        provider,
-        onTrace: (event) => {
-          events.push(event);
-        },
-      }).analyze(task)
-    ).rejects.toMatchObject({ code: 'LLM_PROVIDER_FAILED' });
-    expect(JSON.stringify(events)).toContain('model.failed');
-    expect(JSON.stringify(events)).toContain('run.failed');
-    expect(JSON.stringify(events)).not.toContain('private diagnostic');
-  });
-});
-
-describe('required decision summaries', () => {
-  it('advertises and executes a structured summary for every tool even with no assistant prose', async () => {
-    const provider: ActorAgentLlmProvider = (request, context) => {
-      for (const tool of request.toolDefinitions ?? []) {
-        expect(tool.inputSchema).toMatchObject({
-          required: expect.arrayContaining(['decision_summary']),
-          properties: expect.objectContaining({
-            decision_summary: expect.objectContaining({
-              type: 'string',
-              minLength: 1,
-              maxLength: 320,
-            }),
-          }),
-        });
-      }
-      return scriptedProvider(request, context);
-    };
-    const result = await createAnalyst({ provider }).analyze(task);
-    const decisions = result.trace.filter(
-      (event) =>
-        event.type === 'model.returned' &&
-        event.payload.message.status === 'captured' &&
-        event.payload.message.value.toolCalls?.length
-    );
-    expect(decisions).toHaveLength(3);
-    expect(
-      decisions.every(
-        (event) =>
-          event.type === 'model.returned' &&
-          event.payload.message.status === 'captured' &&
-          event.payload.message.value.content === ''
-      )
-    ).toBe(true);
-    for (const observed of result.observations)
-      expect(observed.input).toMatchObject({ decision_summary: expect.stringMatching(/\S/) });
-  });
-  for (const summary of [undefined, '', '   ', 'x'.repeat(321)]) {
-    it(`refuses ${summary === undefined ? 'missing' : `${summary.length}-character`} summaries before any observation`, async () => {
-      const events: { type: string }[] = [];
-      const provider: ActorAgentLlmProvider = () => ({
-        ok: true,
-        value: {
-          message: {
-            role: 'assistant',
-            content: 'Optional commentary cannot replace a required argument.',
-            toolCalls: [
-              {
-                id: 'missing-summary',
-                name: 'get_sales_data',
-                input: summary === undefined ? {} : { decision_summary: summary },
-              },
-            ],
-          },
-        },
-      });
-      await expect(
-        createAnalyst({
-          provider,
-          onTrace: (event) => {
-            events.push(event);
-          },
-        }).analyze(task)
-      ).rejects.toMatchObject({ code: 'INVALID_TOOL_INPUT' });
-      expect(events.some((event) => event.type === 'tool.observed')).toBe(false);
-      expect(events.at(-1)?.type).toBe('run.failed');
+  it('preserves provider failure without retry or acceptance', async () => {
+    const provider = vi.fn<ActorAgentLlmProvider>(() => ({
+      ok: false,
+      error: { code: 'LLM_PROVIDER_UNAVAILABLE', message: 'Offline.' },
+    }));
+    await expect(createAnalyst({ provider }).analyze(task)).rejects.toMatchObject({
+      code: 'LLM_PROVIDER_UNAVAILABLE',
     });
-  }
+    expect(provider).toHaveBeenCalledTimes(1);
+  });
+
+  it('isolates repeated and concurrent assignments', async () => {
+    const analyst = createAnalyst({ provider: scriptedProvider });
+    const results = await Promise.all([analyst.analyze(task), analyst.analyze(task)]);
+    const third = await analyst.analyze(task);
+    expect(results[0].analysis).toEqual(third.analysis);
+    expect(results[0].observations).not.toBe(results[1].observations);
+    expect(new Set([...results, third].map((r) => r.trace[0].runId)).size).toBe(3);
+  });
+
+  it('keeps business results independent of diagnostic profiles and sink failures', async () => {
+    const results = [];
+    for (const traceProfile of ['evaluation', 'metadata', 'off'] as const) {
+      const run = createAnalyst({
+        provider: scriptedProvider,
+        traceProfile,
+        onTrace: () => {
+          throw new Error('Diagnostic sink unavailable.');
+        },
+      }).startAnalysis(task);
+      const result = await run.result;
+      results.push(result.analysis);
+      if (traceProfile === 'off') expect(run.readTrace()).toBeUndefined();
+      else expect(result.traceDeliveryFailures).toBeGreaterThan(0);
+    }
+    expect(results[0]).toEqual(results[1]);
+    expect(results[1]).toEqual(results[2]);
+  });
 });

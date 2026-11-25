@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 
 // CJS and ESM expose the same contracts. Type-only references resolve against
 // ESM declarations; the root's bundled provider re-export uses its CJS entry.
-for (const name of ['index', 'llm-provider', 'runner', 'trace', 'zod']) {
+for (const name of ['index', 'llm-provider', 'runner', 'terminal', 'trace', 'zod']) {
   let declaration = await readFile(new URL(`../dist/${name}.d.ts`, import.meta.url), 'utf8');
   if (name === 'zod') {
     // The declaration bundler emits plain imports for symbols used only as types.

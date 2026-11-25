@@ -1,76 +1,125 @@
 import type {
   ActorAgentLlmProvider,
+  AgentRunTraceSnapshot,
   AgentTraceEvent,
   AgentTraceModel,
   AgentTraceProfile,
 } from '@actor-web/agent';
-import { createAgent } from '@actor-web/agent/portable';
-import { createAgentRunner } from '@actor-web/agent/runner';
-import { defineTool, structured } from '@actor-web/agent/zod';
-import { z } from 'zod';
+import { createAgent as bindAgent } from '@actor-web/agent/portable';
+import { AgentRunnerError, createAgentRunner } from '@actor-web/agent/runner';
+import { structured } from '@actor-web/agent/zod';
+import {
+  Advisory,
+  checkAdvisory,
+  type Evidence,
+  evidenceReferences,
+  type FactResult,
+  prepareEvidence,
+  prepareSales,
+  type Task,
+  TaskInput,
+} from './evidence.js';
 import { sales, weather } from './fixtures.js';
-import { findLargestSalesIncrease } from './sales-analysis.js';
 
-const TaskInput = z.strictObject({ productId: z.literal('P005') });
-const DecisionSummary = z
-  .string()
-  .trim()
-  .min(1)
-  .max(320)
-  .describe(
-    'One brief sentence explaining why this tool is the next action, using the task and observed facts. This is a concise decision justification.'
-  );
-type Task = z.infer<typeof TaskInput>;
-type AnalysisRunOptions = { signal?: AbortSignal; runId?: string };
-const Sale = z.strictObject({
-  date: z.iso.date(),
-  product_id: z.string(),
-  product_name: z.string(),
-  quantity: z.number().int().nonnegative(),
-  revenue: z.number().nonnegative(),
-});
-const Weather = z.strictObject({
-  date: z.iso.date(),
-  temperature: z.strictObject({ fahrenheit: z.number(), celsius: z.number() }),
-  conditions: z.strictObject({
-    main: z.string(),
-    precipitation: z.string(),
-    precipitation_amount: z.number(),
-    special_event: z.string().nullable(),
-  }),
-});
-const Analysis = z.strictObject({
-  date: z.iso.date(),
-  amount_before_increase: z.number().positive(),
-  amount_after_increase: z.number().nonnegative(),
-  percentage_increase: z.number(),
-  causes: z.array(z.string().trim().min(1)).min(1).max(3),
-});
-export const SalesIncrease = Analysis.omit({ causes: true });
-export type AnalystResult = z.infer<typeof Analysis>;
-export type Observation = {
-  name: string;
-  input: unknown;
-  output: unknown;
-};
-export const percentageIncrease = (before: number, after: number) =>
-  Math.round(((after - before) / before) * 10_000) / 100;
-export function expectedSpike() {
-  return sales
-    .slice(1)
-    .map((after, index) => ({
-      date: after.date,
-      amount_before_increase: sales[index].quantity,
-      amount_after_increase: after.quantity,
-      percentage_increase: percentageIncrease(sales[index].quantity, after.quantity),
-    }))
-    .sort((a, b) => b.percentage_increase - a.percentage_increase)[0];
+export const methodRevision = 'retail-analyst-v5-edge';
+export type AnalystResult = { facts: Evidence; advisory: Advisory };
+export type Observation = { name: string; input: unknown; output: unknown };
+
+/** Explicit data ports. Expected adapter failures are facts; the core validates raw data. */
+export interface AnalystDataPorts {
+  readSales: (productId: string, signal: AbortSignal) => Promise<FactResult<unknown>>;
+  readWeather: (date: string, signal: AbortSignal) => Promise<FactResult<unknown>>;
 }
 
-/** Host configuration is bound once. Each analysis owns a fresh runner and local observations. */
+function checkAbort(signal: AbortSignal): void {
+  if (signal.aborted) throw new AgentRunnerError('RUN_ABORTED', 'The assignment was aborted.');
+}
+
+export const fixtureDataPorts: AnalystDataPorts = {
+  async readSales(productId) {
+    return {
+      ok: true,
+      value: structuredClone(sales.filter((row) => row.product_id === productId)),
+    };
+  },
+  async readWeather(date) {
+    const record = weather.find((row) => row.date === date);
+    return record
+      ? { ok: true, value: structuredClone(record) }
+      : { ok: false, code: 'WEATHER_UNAVAILABLE' };
+  },
+};
+
+const output = structured(Advisory, { check: checkAdvisory });
+const spec = {
+  purpose: 'retail-evidence-explanation' as const,
+  systemPrompt: [
+    'Suggest up to three concise, nonredundant hypotheses about the observed sales increase.',
+    'The application already calculated the increase and retrieved weather. Do not choose actions, call tools, or recalculate facts.',
+    'Use only the supplied evidence. Cite the supplied reference IDs for every hypothesis.',
+    'Describe possible relationships, never established causes. Correlation does not establish causation.',
+    'The product category, customer behavior, store availability, promotions, and supply conditions are unknown. Do not invent them.',
+    'The precipitation amount has no supplied unit. Do not assign inches, millimeters, or another unit.',
+    'Do not imply weather conditions are unusual without a comparison. Weather and sales alone cannot explain why demand changed.',
+    'Return an empty hypotheses array if no useful hypothesis is supported. Output only the requested JSON.',
+  ].join('\n'),
+  tools: [],
+  output,
+};
+
+export type AnalystOptions = {
+  provider: ActorAgentLlmProvider;
+  data?: AnalystDataPorts;
+  traceProfile?: AgentTraceProfile;
+  onTrace?: (event: AgentTraceEvent) => void | Promise<void>;
+  model?: AgentTraceModel;
+};
+
+function requireFact<T>(result: FactResult<T>): T {
+  if (!result.ok) throw new AgentRunnerError(result.code, 'The analyst data step failed.');
+  return result.value;
+}
+
+/** A timed or cancelled read may still settle later; it cannot advance this workflow. */
+async function readPort(
+  read: (signal: AbortSignal) => Promise<FactResult<unknown>>,
+  signal: AbortSignal
+): Promise<unknown> {
+  checkAbort(signal);
+  const control = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort = () => {};
+  const interrupted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => {
+      control.abort(signal.reason);
+      reject(new AgentRunnerError('RUN_ABORTED', 'The assignment was aborted.'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    timer = setTimeout(() => {
+      control.abort();
+      reject(new AgentRunnerError('DATA_TIMEOUT', 'The data read timed out.'));
+    }, 1000);
+  });
+  try {
+    const result = await Promise.race([
+      Promise.resolve().then(() => {
+        checkAbort(control.signal);
+        return read(control.signal);
+      }),
+      interrupted,
+    ]);
+    checkAbort(signal);
+    return requireFact(result);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    signal.removeEventListener('abort', onAbort);
+  }
+}
+
+/** Application-owned ordering; the LLM is a one-shot advisory I/O adapter. */
 export function createAnalyst({
   provider,
-  toolExampleMode = 'description',
+  data = fixtureDataPorts,
   traceProfile = 'evaluation',
   onTrace,
   model = {
@@ -78,13 +127,7 @@ export function createAnalyst({
     model: 'unspecified',
     settings: { status: 'omitted', reason: 'unavailable' },
   },
-}: {
-  provider: ActorAgentLlmProvider;
-  toolExampleMode?: 'off' | 'description';
-  traceProfile?: AgentTraceProfile;
-  onTrace?: (event: AgentTraceEvent) => void | Promise<void>;
-  model?: AgentTraceModel;
-}) {
+}: AnalystOptions) {
   let runSerial = 0;
   const analyst = {
     startAnalysis(
@@ -92,249 +135,104 @@ export function createAnalyst({
       {
         signal = new AbortController().signal,
         runId = `analyst-${++runSerial}`,
-      }: AnalysisRunOptions = {}
+      }: { signal?: AbortSignal; runId?: string } = {}
     ) {
-      const assignment = TaskInput.parse(task);
       const observations: Observation[] = [];
-      const readSales = defineTool({
-        name: 'get_sales_data',
-        description: 'Read all daily sales records for the assigned Product 5, sorted by date.',
-        input: z.strictObject({ decision_summary: DecisionSummary }),
-        output: z.array(Sale),
-        examples: [
+      let readTrace: () => AgentRunTraceSnapshot | undefined = () => undefined;
+      const result = (async () => {
+        checkAbort(signal);
+        const assignment = TaskInput.parse(task);
+        const rows = await readPort(
+          (signal) => data.readSales(assignment.productId, signal),
+          signal
+        );
+        const increase = requireFact(prepareSales(assignment.productId, rows));
+        observations.push(
           {
-            input: {
-              decision_summary:
-                'Retrieve the assigned sales records before comparing daily quantities.',
-            },
-            result: [
-              {
-                date: '2020-02-01',
-                product_id: 'P005',
-                product_name: 'Illustrative Product',
-                quantity: 10,
-                revenue: 100,
-              },
-            ],
+            name: 'get_sales_data',
+            input: { productId: assignment.productId },
+            output: structuredClone(rows),
           },
-        ],
-        check() {
-          if (observations.some((o) => o.name === 'get_sales_data')) {
-            throw new Error('Sales have already been read for this run.');
-          }
-        },
-        execute(_input, task: Task) {
-          const rows = sales.filter((row) => row.product_id === task.productId);
-          return structuredClone(rows);
-        },
-      });
-      const calculate = defineTool({
-        name: 'find_largest_sales_increase',
-        description:
-          'Find the largest positive day-over-day percentage increase across all observed assigned sales. Call once after get_sales_data. Returns the winning date, quantities, and percentage rounded to two decimals; exact ties use the earliest date. No quantities or dates are accepted as input.',
-        input: z.strictObject({
-          decision_summary: DecisionSummary,
-        }),
-        output: SalesIncrease,
-        examples: [
-          {
-            input: {
-              decision_summary: 'Find the maximum increase across the observed sales records.',
-            },
-            result: {
-              date: '2020-02-02',
-              amount_before_increase: 100,
-              amount_after_increase: 150,
-              percentage_increase: 50,
-            },
-          },
-        ],
-        check(_input, _task: Task) {
-          if (!observations.some((o) => o.name === 'get_sales_data')) {
-            throw new Error('Read the assigned sales before calculating the maximum increase.');
-          }
-          if (observations.some((o) => o.name === 'find_largest_sales_increase')) {
-            throw new Error('The maximum increase has already been calculated.');
-          }
-        },
-        execute(_input, task: Task) {
-          const observed = observations.find((o) => o.name === 'get_sales_data');
-          const rows = z.array(Sale).parse(observed?.output);
-          if (rows.some((row) => row.product_id !== task.productId)) {
-            throw new Error('Sales observations must belong to the assigned product.');
-          }
-          const result = findLargestSalesIncrease(rows);
-          if (result.status === 'unavailable') {
-            throw Object.assign(new Error('Cannot determine a positive daily sales increase.'), {
-              code: result.code,
-            });
-          }
-          return result.increase;
-        },
-      });
-      const readWeather = defineTool({
-        name: 'call_weather_api',
-        description:
-          'Read simulated weather for the date returned by find_largest_sales_increase. Call once after that calculation. This tool makes no network request.',
-        input: z.strictObject({ date: z.iso.date(), decision_summary: DecisionSummary }),
-        output: Weather,
-        examples: [
-          {
-            input: {
-              date: '2020-02-02',
-              decision_summary:
-                'Check weather on the identified spike date for possible contributing factors.',
-            },
-            result: {
-              date: '2020-02-02',
-              temperature: { fahrenheit: 68, celsius: 20 },
-              conditions: {
-                main: 'Clear',
-                precipitation: 'None',
-                precipitation_amount: 0,
-                special_event: null,
-              },
-            },
-          },
-        ],
-        check(input, _task: Task) {
-          const maximum = observations.find((o) => o.name === 'find_largest_sales_increase');
-          const increase = SalesIncrease.safeParse(maximum?.output);
-          if (
-            !increase.success ||
-            increase.data.date !== input.date ||
-            observations.some((o) => o.name === 'call_weather_api')
-          ) {
-            throw new Error('Read weather once, using the observed maximum-increase date.');
-          }
-        },
-        execute(input) {
-          const record = weather.find((row) => row.date === input.date);
-          if (!record) throw new Error('No weather fixture for this date.');
-          return structuredClone(record);
-        },
-      });
-      const tools = [readSales, calculate, readWeather];
-      const spec = {
-        purpose: 'retail-spike-analysis' as const,
-        systemPrompt: [
-          'Find the single largest day-over-day percentage increase in quantity sold for the assigned product.',
-          'Use native tools one at a time, exactly once each: get_sales_data, then find_largest_sales_increase, then call_weather_api for the date returned by the maximum tool.',
-          'The maximum tool compares every daily pair deterministically using the observed sales. Do not calculate individual pairs or supply quantities to it. After weather returns, produce the final answer without more tool calls.',
-          'Every tool call must include decision_summary: one brief sentence explaining why the action is needed, using the task and observed facts. It is a required tool argument; separate assistant commentary is optional.',
-          'Tool examples are synthetic format illustrations, not observations or assigned quantities. Never use example values as evidence.',
-          'Explain possible weather-related causes as hypotheses, explicitly stating that correlation does not establish causation.',
-          'Return only the final JSON required by the output schema. Do not output THINK/ACT markers or call a final_answer tool.',
-        ].join('\n'),
-        tools: tools.map((tool) => tool.declaration),
-        output: structured(Analysis, {
-          check(result, _task: Task) {
-            const expected = expectedSpike();
-            if (
-              result.date !== expected.date ||
-              result.amount_before_increase !== expected.amount_before_increase ||
-              result.amount_after_increase !== expected.amount_after_increase ||
-              result.percentage_increase !== expected.percentage_increase
-            ) {
-              return 'The answer does not match the largest spike in the assigned records.';
-            }
-            const maximum = observations.find((o) => o.name === 'find_largest_sales_increase');
-            const observedIncrease = SalesIncrease.safeParse(maximum?.output);
-            const calculation =
-              observedIncrease.success &&
-              observedIncrease.data.date === expected.date &&
-              observedIncrease.data.amount_before_increase === expected.amount_before_increase &&
-              observedIncrease.data.amount_after_increase === expected.amount_after_increase &&
-              observedIncrease.data.percentage_increase === expected.percentage_increase;
-            const weatherRead = observations.some(
-              (o) =>
-                o.name === 'call_weather_api' &&
-                (o.input as { date: string }).date === expected.date
-            );
-            if (!calculation || !weatherRead)
-              return 'Required calculation and weather observations are missing.';
-          },
-        }),
-      };
-      const runner = createAgentRunner<Task, 'retail-spike-analysis'>({
-        spec,
-        provider,
-        toolExampleMode,
-        trace:
-          traceProfile === 'off'
-            ? { profile: traceProfile }
-            : {
-                profile: traceProfile,
-                methodRevision: 'retail-analyst-v4',
-                model,
-                createRunId: () => runId,
-                case: {
-                  datasetId: 'retail-fixtures',
-                  datasetRevision: '1',
-                  caseId: assignment.productId,
-                },
-                onEvent: onTrace,
-              },
-        grants: tools.map((tool) => tool.declaration.name),
-        tools: tools.map(({ handler }) => ({
-          ...handler,
-          async execute(input, task, context) {
-            const output = await handler.execute(input, task, context);
-            const observation = {
-              name: handler.name,
-              input: structuredClone(input),
-              output: structuredClone(output),
-            };
-            observations.push(observation);
-            return output;
-          },
-        })),
-        // Plain JSON assignments use the runner's default encoding.
-        limits: {
-          runTimeoutMs: 120_000,
-          askTimeoutMs: 110_000,
-          providerTimeoutMs: 30_000,
-          toolTimeoutMs: 1000,
-          maxModelTurns: 12,
-          maxToolAttempts: 10,
-          maxToolCallsPerBatch: 1,
-          maxPayloadBytes: 512 * 1024,
-        },
-      });
-      const agent = createAgent(runner, spec);
-      const handle = runner.start(
-        {
-          purpose: agent.purpose,
-          systemPrompt: agent.systemPrompt,
-          tools: agent.tools,
-          task: assignment,
-          signal,
-        },
-        { assignmentId: runId, revision: 4 }
-      );
-      const result = handle
-        .validateOutput((raw) => spec.output.parse(raw, assignment), {
-          id: 'retail-analysis',
-          revision: '4',
-        })
-        .then((analysis) => {
-          const snapshot = handle.readTrace();
-          return {
-            analysis,
-            observations,
-            trace: snapshot?.events ?? [],
-            traceCompleteness: snapshot?.completeness,
-            traceTruncated: snapshot?.completeness.status === 'incomplete',
-            traceDeliveryFailures: snapshot?.deliveryFailures ?? 0,
-            metrics: snapshot?.metrics,
-          };
+          { name: 'find_largest_sales_increase', input: {}, output: { ...increase } }
+        );
+        const record = await readPort((signal) => data.readWeather(increase.date, signal), signal);
+        const facts = requireFact(prepareEvidence(assignment, increase, record));
+        observations.push({
+          name: 'call_weather_api',
+          input: { date: increase.date },
+          output: structuredClone(record),
         });
+        signal.throwIfAborted();
+        const runner = createAgentRunner<Evidence, typeof spec.purpose>({
+          spec,
+          provider,
+          grants: [],
+          tools: [],
+          encodeTask: (facts) =>
+            JSON.stringify({ facts, availableReferences: evidenceReferences(facts) }),
+          limits: {
+            runTimeoutMs: 35_000,
+            askTimeoutMs: 32_000,
+            providerTimeoutMs: 30_000,
+            toolTimeoutMs: 1000,
+            maxModelTurns: 1,
+            maxToolAttempts: 0,
+            maxToolCallsPerBatch: 1,
+            maxPayloadBytes: 64 * 1024,
+          },
+          trace:
+            traceProfile === 'off'
+              ? { profile: 'off' }
+              : {
+                  profile: traceProfile,
+                  methodRevision,
+                  model,
+                  createRunId: () => runId,
+                  case: {
+                    datasetId: 'retail-fixtures',
+                    datasetRevision: '1',
+                    caseId: assignment.productId,
+                  },
+                  onEvent: onTrace,
+                },
+        });
+        const agent = bindAgent(runner, spec);
+        const handle = runner.start(
+          {
+            purpose: agent.purpose,
+            systemPrompt: agent.systemPrompt,
+            tools: agent.tools,
+            task: facts,
+            signal,
+          },
+          { assignmentId: runId, revision: 5 }
+        );
+        readTrace = handle.readTrace;
+        const advisory = await handle.validateOutput((raw) => output.parse(raw, facts), {
+          id: 'retail-advisory',
+          revision: '5',
+        });
+        signal.throwIfAborted();
+        const snapshot = readTrace();
+        return {
+          analysis: { facts, advisory } satisfies AnalystResult,
+          observations,
+          hostReads: 2,
+          calculations: 1,
+          trace: snapshot?.events ?? [],
+          traceCompleteness: snapshot?.completeness,
+          traceTruncated: snapshot?.completeness.status === 'incomplete',
+          traceDeliveryFailures: snapshot?.deliveryFailures ?? 0,
+          metrics: snapshot?.metrics,
+        };
+      })();
       return {
         result,
-        readTrace: handle.readTrace,
+        readTrace: () => readTrace(),
+        readObservations: () => structuredClone(observations),
       };
     },
-    async analyze(task: Task, options?: AnalysisRunOptions) {
+    async analyze(task: Task, options?: { signal?: AbortSignal; runId?: string }) {
       return analyst.startAnalysis(task, options).result;
     },
   };

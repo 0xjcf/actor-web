@@ -1,6 +1,7 @@
 import agent = require('@actor-web/agent');
 import runners = require('@actor-web/agent/runner');
 import portable = require('@actor-web/agent/portable');
+import terminal = require('@actor-web/agent/terminal');
 import codec = require('@actor-web/agent/zod');
 
 import { z } from 'zod';
@@ -89,7 +90,8 @@ const tracePayload: agent.AgentTracePayload = {
   output: { status: 'captured', value: { answer: 200 } },
 };
 const traceCompleteness: agent.AgentTraceCompleteness = { status: 'complete' };
-void [tracePayload, traceCompleteness];
+const sink: agent.AgentTraceOptions['onEvent'] = terminal.createTerminalTraceReporter();
+void [tracePayload, traceCompleteness, sink];
 const disabledTrace: agent.AgentTraceConfiguration = { profile: 'off' };
 const profiled = runners.createAgentRunner({ ...runnerOptions, trace: disabledTrace });
 const snapshot = profiled.start(request).readTrace();

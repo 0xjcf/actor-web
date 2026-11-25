@@ -25,6 +25,7 @@ import {
   createAgentRunner,
   createAgent as createLocalAgent,
 } from '@actor-web/agent/runner';
+import { createTerminalTraceReporter } from '@actor-web/agent/terminal';
 import { defineTool, structured } from '@actor-web/agent/zod';
 import { z } from 'zod';
 import './trace-contract.js';
@@ -143,6 +144,7 @@ function traceFor(profile: AgentTraceProfile): AgentTraceConfiguration {
     ? { profile }
     : {
         profile,
+        onEvent: createTerminalTraceReporter(),
         methodRevision: 'test-v1',
         model: {
           provider: 'fixture',

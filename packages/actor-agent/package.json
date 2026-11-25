@@ -98,6 +98,16 @@
         "default": "./dist/runner.cjs"
       }
     },
+    "./terminal": {
+      "import": {
+        "types": "./dist/terminal.d.ts",
+        "default": "./dist/terminal.js"
+      },
+      "require": {
+        "types": "./dist/terminal.d.cts",
+        "default": "./dist/terminal.cjs"
+      }
+    },
     "./zod": {
       "import": {
         "types": "./dist/zod.d.ts",

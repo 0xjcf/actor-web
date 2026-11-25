@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "sourceReport": "edge-evaluation-live.json",
+  "sourceRecordedAt": "2026-11-25T15:45:51.559Z",
+  "reviewer": "Implementation agent; author review, not independent or blinded",
+  "procedure": "Read all six accepted final outputs. Apply the source report's declared 0–2 rubric separately per axis. No rejected outputs occurred. No aggregate quality score or statistical inference.",
+  "rubric": {
+    "grounding": "0: unsupported asserted facts; 1: speculative mechanisms beyond evidence; 2: observations and limits accurately separated, no invented facts or units.",
+    "uncertainty": "0: causal certainty; 1: hedging without clear limitation; 2: explicitly states causation is unestablished.",
+    "usefulness": "0: misleading or irrelevant; 1: accurate association/abstention but no discriminating explanation; 2: specific evidence-linked insight or testable next question without fabrication."
+  },
+  "interpretation": "Grounding and usefulness are assessed for the complete narrative, not the validated numeric fields. Unsupported unqualified generalizations or comparative descriptions receive grounding 0, even if causal links are hedged. Usefulness 0 reflects potentially misleading interpretation, not incorrect arithmetic. The candidate's uncertainty score credits its explicit metadata, not a demonstrated improvement in prose.",
+  "reviews": [
+    {
+      "pair": 1,
+      "variant": "baseline",
+      "scores": { "grounding": 0, "uncertainty": 1, "usefulness": 0 },
+      "quotes": [
+        "Heavy rain on the day of the sales spike may have driven more customers indoors, increasing sales.",
+        "The flood warning could have prompted bulk buying or stockpiling behavior.",
+        "Inclement weather often correlates with changes in consumer purchasing patterns, potentially boosting sales."
+      ],
+      "reason": "Customer location and stockpiling are speculative; the general consumer-pattern assertion is not supplied evidence. May/could/potentially hedge the mechanism but do not explicitly disclaim causation. No discriminating evidence or next test is supplied.",
+      "inventedPrecipitationUnits": false
+    },
+    {
+      "pair": 1,
+      "variant": "candidate",
+      "scores": { "grounding": 0, "uncertainty": 2, "usefulness": 0 },
+      "quotes": [
+        "The substantial precipitation amount recorded on the date of the sales increase might correlate with the sales increase, suggesting a possible relationship between precipitation levels and sales volume.",
+        "The relatively low temperature on the date of the sales increase could be related to the sales increase, indicating a potential link between cooler weather and increased sales."
+      ],
+      "reason": "Substantial characterizes a unitless amount; relatively low lacks a reference temperature. Three co-occurrence hypotheses do not discriminate among explanations. References exist and causation is explicitly not-established, but these structural properties do not support the comparative descriptions.",
+      "uncertaintyEvidence": { "causation": "not-established" },
+      "inventedPrecipitationUnits": false
+    },
+    {
+      "pair": 2,
+      "variant": "baseline",
+      "scores": { "grounding": 0, "uncertainty": 2, "usefulness": 0 },
+      "quotes": [
+        "Heavy rain on the day of the increase may have driven more customers indoors, boosting sales.",
+        "The flood warning could have prompted bulk buying or stockpiling behavior.",
+        "Inclement weather often correlates with increased demand for certain products, though correlation does not establish causation."
+      ],
+      "reason": "Explicit causation disclaimer improves uncertainty communication, but the same customer mechanisms and unsourced product-demand generalization remain. The product category and actual customer behavior are unknown.",
+      "inventedPrecipitationUnits": false
+    },
+    {
+      "pair": 2,
+      "variant": "candidate",
+      "scores": { "grounding": 0, "uncertainty": 2, "usefulness": 0 },
+      "quotes": [
+        "The substantial precipitation amount recorded on the date of the sales increase might correlate with the increased sales, suggesting a possible relationship between rainfall intensity and purchasing activity.",
+        "The relatively low temperature on the date of the sales increase could be related to the sales change, indicating that cooler weather conditions might coincide with higher sales for this product."
+      ],
+      "reason": "Substantial and relatively low are unsupported comparative claims. An amount is not a measured intensity without a time basis. The metadata explicitly limits causation but does not validate these claims or supply a useful discriminating explanation.",
+      "uncertaintyEvidence": { "causation": "not-established" },
+      "inventedPrecipitationUnits": false
+    },
+    {
+      "pair": 3,
+      "variant": "baseline",
+      "scores": { "grounding": 0, "uncertainty": 1, "usefulness": 0 },
+      "quotes": [
+        "Heavy rain likely increased demand for the product as customers prepared for adverse weather.",
+        "Flood warning may have prompted bulk buying or stockpiling behavior.",
+        "Inclement weather often drives higher sales of certain products due to changed consumer needs."
+      ],
+      "reason": "As customers prepared implies unobserved behavior, and often drives is an unsupported general causal assertion. Likely/may provide some hedging but no explicit causal limitation. These claims could mislead rather than explain the observed change.",
+      "inventedPrecipitationUnits": false
+    },
+    {
+      "pair": 3,
+      "variant": "candidate",
+      "scores": { "grounding": 0, "uncertainty": 2, "usefulness": 0 },
+      "quotes": [
+        "The substantial precipitation amount recorded on the date of the sales increase might correlate with the increased sales, suggesting a possible relationship between rainfall intensity and sales volume.",
+        "The relatively low temperature on the date of the sales increase could be related to the sales change, indicating that cooler weather conditions might coincide with higher sales for this product."
+      ],
+      "reason": "Repeats the unsupported precipitation magnitude/intensity and temperature comparisons. Customer-behavior speculation also remains in the first hypothesis. Causation metadata is explicit, but no additional evidence distinguishes these possibilities.",
+      "uncertaintyEvidence": { "causation": "not-established" },
+      "inventedPrecipitationUnits": false
+    }
+  ],
+  "meansPerAssignment": {
+    "baseline": {
+      "sampleSize": 3,
+      "accepted": 3,
+      "numericCorrect": 3,
+      "requiredStagesInOrder": 3,
+      "durationMs": 4715.333333333333,
+      "modelCalls": 4,
+      "modelToolCalls": 3,
+      "hostReads": 2,
+      "calculations": 1,
+      "inputTokens": 5545.333333333333,
+      "outputTokens": 184
+    },
+    "candidate": {
+      "sampleSize": 3,
+      "accepted": 3,
+      "numericCorrect": 3,
+      "requiredStagesInOrder": 3,
+      "durationMs": 1759,
+      "modelCalls": 1,
+      "modelToolCalls": 0,
+      "hostReads": 2,
+      "calculations": 1,
+      "inputTokens": 452,
+      "outputTokens": 144
+    }
+  },
+  "conclusions": [
+    "Workflow authority and numeric fact assembly now belong to the application. The model cannot select tools or override fact fields.",
+    "The small pilot shows lower model-call, token, and latency costs, with tied numerical correctness and stage completion.",
+    "No clear explanatory-quality improvement: both variants still include unsupported narrative claims.",
+    "Neither fresh variant invented precipitation units. The older v2 unit error is historical context, not evidence of a controlled improvement.",
+    "Three pairs on one synthetic case cannot establish general reliability, causal validity, or statistical significance.",
+    "Prompts, context, workflow, and output contracts changed together. Do not attribute the result to architecture alone.",
+    "No prompt tuning or additional live calls were performed after reviewing these results."
+  ]
+}

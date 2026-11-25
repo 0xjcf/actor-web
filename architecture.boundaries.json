@@ -17,6 +17,7 @@
       "description": "Pure actor decision surfaces: message validation, behavior contracts, fan-out detection, and type helpers. These files must not read runtime effects directly.",
       "paths": [
         "packages/actor-core-runtime/src/component-behavior.ts",
+        "packages/actor-core-runtime/src/definition.ts",
         "packages/actor-core-runtime/src/message-plan.ts",
         "packages/actor-core-runtime/src/runtime-fanout.ts",
         "packages/actor-core-runtime/src/type-helpers.ts",

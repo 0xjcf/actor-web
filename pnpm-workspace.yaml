@@ -3,6 +3,7 @@ packages:
   - 'docs/site'
   - 'examples/portable-specialist'
   - 'examples/retail-analyst'
+  - 'examples/retail-investigation'
 
 onlyBuiltDependencies:
   - '@biomejs/biome'
