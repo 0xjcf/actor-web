@@ -57,6 +57,9 @@ importers:
       ws:
         specifier: ^8.18.3
         version: 8.18.3
+      xstate:
+        specifier: 5.30.0
+        version: 5.30.0
 
   docs/site:
     devDependencies:

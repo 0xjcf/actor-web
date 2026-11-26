@@ -1,6 +1,6 @@
 // @vitest-environment node
-import { createActorSystem } from '@actor-web/runtime/browser';
-import { afterEach, beforeEach, expect, test } from 'vitest';
+import { createActorReadModelSource, createActorSystem } from '@actor-web/runtime/browser';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { checkout, profile } from './scenario.js';
 import { type CheckBinding, taskCheckBehavior } from './task-check.js';
 
@@ -38,6 +38,40 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await system.stop();
+});
+
+test('a late read-only subscriber immediately sees the held attempt without commands or sessions', async () => {
+  const task = await system.spawn(taskCheckBehavior(local));
+  await task.ask(dispatch);
+  expect(await task.ask(timeout(local.attemptId))).toMatchObject({ value: 'unknown' });
+
+  const send = vi.spyOn(task, 'send');
+  const ask = vi.spyOn(task, 'ask');
+  const spawn = vi.spyOn(system, 'spawn');
+  const open = () => createActorReadModelSource(task);
+  const first = open();
+  expect(first.snapshot()).toMatchObject({ phase: 'unknown', context: local });
+  const phases: string[] = [];
+  const unsubscribe = first.subscribe(({ phase }) => phases.push(phase));
+  expect(phases).toEqual(['unknown']);
+  unsubscribe();
+
+  const reopened = open();
+  expect('ask' in reopened || 'send' in reopened).toBe(false);
+  const live: string[] = [];
+  const detach = reopened.subscribe(({ phase }) => live.push(phase));
+  try {
+    expect(live).toEqual(['unknown']);
+    expect(ask).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+    expect(await task.ask(receipt(local, true))).toMatchObject({ value: 'reviewReady' });
+    expect(reopened.snapshot()).toMatchObject({ phase: 'reviewReady', context: local });
+    expect(live.at(-1)).toBe('reviewReady');
+    expect(phases).toEqual(['unknown']);
+  } finally {
+    detach();
+  }
 });
 
 test.each([

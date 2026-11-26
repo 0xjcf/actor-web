@@ -1,9 +1,5 @@
-import {
-  type ActorFSMTransition,
-  type ActorTransitionErrorValue,
-  defineBehavior,
-  defineFSM,
-} from '@actor-web/runtime/browser';
+import { type ActorTransitionErrorValue, defineBehavior } from '@actor-web/runtime/browser';
+import { setup } from 'xstate';
 import type { TaskRevision } from './stages.js';
 
 // North-star fixture: one owner for one already-admitted Test attempt (task-check-sequence.svg).
@@ -42,34 +38,38 @@ function matchesBinding(expected: CheckBinding, offered: CheckBinding): boolean 
 }
 
 // Use the identical evidence rule for timely delivery and for reconciliation after a timeout.
-const settle: ActorFSMTransition<ReceiptEvent, CheckBinding, State> = {
-  guard: ({ context, message: { receipt } }) =>
-    typeof receipt?.passed === 'boolean' && matchesBinding(context, receipt),
-  target: ({ message: { receipt } }) => (receipt.passed ? 'reviewReady' : 'checkFailed'),
-};
+const matchesOutcome =
+  (passed: boolean) =>
+  ({ context, event: { receipt } }: { context: CheckBinding; event: ReceiptEvent }) =>
+    receipt?.passed === passed && matchesBinding(context, receipt);
 
-const taskCheckFSM = defineFSM<Event, CheckBinding, State>({
-  initial: 'ready',
-  states: {
-    ready: { on: { DISPATCH_CHECK: 'awaitingReceipt' } },
-    awaitingReceipt: {
-      on: {
-        HOST_RECEIPT: settle,
-        RECEIPT_TIMEOUT: {
-          guard: ({ context, message }) => message.attemptId === context.attemptId,
-          target: 'unknown',
-        },
-      },
-    },
-    unknown: { on: { HOST_RECEIPT: settle } },
-    reviewReady: {},
-    checkFailed: {},
-  },
-});
+const settle = [
+  { guard: matchesOutcome(true), target: 'reviewReady' },
+  { guard: matchesOutcome(false), target: 'checkFailed' },
+] as const;
 
 export function taskCheckBehavior(admitted: CheckBinding) {
-  return defineBehavior<Event>()
-    .withContext(Object.freeze({ ...admitted }))
-    .withFSM(taskCheckFSM)
-    .build();
+  const machine = setup({
+    types: { context: {} as CheckBinding, events: {} as Event },
+  }).createMachine({
+    id: 'taskCheck',
+    initial: 'ready',
+    context: Object.freeze({ ...admitted }),
+    states: {
+      ready: { on: { DISPATCH_CHECK: 'awaitingReceipt' } },
+      awaitingReceipt: {
+        on: {
+          HOST_RECEIPT: settle,
+          RECEIPT_TIMEOUT: {
+            guard: ({ context, event }) => event.attemptId === context.attemptId,
+            target: 'unknown',
+          },
+        },
+      },
+      unknown: { on: { HOST_RECEIPT: settle } },
+      reviewReady: {},
+      checkFailed: {},
+    },
+  });
+  return defineBehavior<Event>().withMachine(machine).build();
 }

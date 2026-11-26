@@ -82,8 +82,18 @@ A separate [offline FSM](../../examples/parallel-sdlc-teams/task-check.ts)
 models how a **task owner** would decide whether one already-admitted Test
 attempt can advance to Review when the check runs on a local or cloud VM.
 `taskCheckBehavior(admitted)` pins the attempt in actor context and attaches
-a `defineFSM()` map with `withFSM()`. The map needs only a synchronous
-comparison against that context; it does not perform I/O.
+an XState machine with `withMachine()`. Its synchronous guards compare receipts
+against that context; they do not perform I/O.
+
+**Reading a held attempt (NS-03).** The original `withFSM()` constraint map
+returned `unknown` to the timeout caller, but the public snapshot still showed
+`active`. The machine-backed owner exposes the actual decision state in its
+snapshot. Open `createActorReadModelSource(task)` *after* the timeout:
+`snapshot().phase` and the first `subscribe()` callback both report `unknown`
+with the pinned binding. Opening or reopening the source sends no task command
+and starts no session. A later matching receipt updates the live source without
+the reader replaying events. This proves late subscription to a running local
+actor, not recovery after a process restart.
 
 ![Test settlement sequence: the host loses its connection after the guest finishes; the task owner holds the attempt until it receives the matching host receipt.](../../examples/parallel-sdlc-teams/task-check-sequence.svg)
 
