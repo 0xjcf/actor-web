@@ -26,12 +26,14 @@ export function peerAuth(
 
 export type CheckPacket = ExecuteCheck & { label: string };
 export type ControlConfig = {
+  directory: string;
   role: 'control';
   token: string;
   peers: Record<Lane, string>;
   viewers: Record<Lane, string>;
 };
 export type WorkerConfig = {
+  directory: string;
   role: Lane;
   token: string;
   controlToken: string;

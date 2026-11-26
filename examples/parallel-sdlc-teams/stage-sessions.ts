@@ -25,11 +25,12 @@ export function stageSessions(
   { team, task }: Assignment,
   runId: string,
   observe: (event: StageProgress) => void,
-  pace?: (role: Role, task: TaskRevision) => Promise<void>
+  pace?: (role: Role, task: TaskRevision) => Promise<void>,
+  recovery?: { records: StageRecord[]; reviewSessions: number; onReviewSpawn(): void }
 ) {
   const identity = { taskId: task.id, taskRevision: task.revision };
-  const records: StageRecord[] = [];
-  let reviewSessions = 0;
+  const records: StageRecord[] = structuredClone(recovery?.records ?? []);
+  let reviewSessions = recovery?.reviewSessions ?? 0;
 
   async function run<T>(role: Role, work: (sessionId: string) => T | Promise<T>) {
     const behavior = defineBehavior<{ type: 'RUN_STAGE' }>()
@@ -49,7 +50,10 @@ export function stageSessions(
       id: `${runId}-${role}`,
       supervision: { strategy: 'stop' },
     });
-    if (role === 'review') reviewSessions++;
+    if (role === 'review') {
+      reviewSessions++;
+      recovery?.onReviewSpawn();
+    }
     const { id, revision } = team[role];
     const stage = { role, definition: { id, revision }, sessionAddress: session.address };
     observe({ ...identity, ...stage, status: 'running' });

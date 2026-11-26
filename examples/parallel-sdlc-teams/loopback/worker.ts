@@ -1,8 +1,13 @@
 import type { ActorMessage } from '@actor-web/runtime';
 import { serveNode } from '@actor-web/runtime/node';
-import type { LookupReceipt, ReceiptLookupReply } from '../check-protocol.js';
+import {
+  type LookupReceipt,
+  matchesCandidateBytes,
+  type ReceiptLookupReply,
+} from '../check-protocol.js';
 import { startMemoryExecutor } from '../memory-executor.js';
 import { checkout, profile } from '../scenario.js';
+import { hostJournal } from './journal.js';
 import { address, type CheckPacket, loopbackUrl, peerAuth, type WorkerConfig } from './peer.js';
 import { targets, topology } from './topology.js';
 
@@ -17,7 +22,7 @@ export async function startWorker(config: WorkerConfig) {
   });
   const target = targets[role];
   const task = { checkout, profile }[role];
-  let slot: Awaited<ReturnType<typeof startMemoryExecutor>> | undefined;
+  const journal = hostJournal(config.directory);
   async function receive(message: ActorMessage) {
     if (message.type !== 'EXECUTE_CHECK' && message.type !== 'LOOKUP_RECEIPT') return;
     const request = message as CheckPacket | LookupReceipt;
@@ -33,19 +38,20 @@ export async function startWorker(config: WorkerConfig) {
       return;
     let reply: ReceiptLookupReply;
     if (request.type === 'LOOKUP_RECEIPT') {
-      reply = slot ? await slot.lookup(request) : { type: 'RECEIPT_UNAVAILABLE', binding: b };
+      reply = journal.lookup(b);
     } else {
       if (request.expectedLabel !== task.expectedLabel || typeof request.label !== 'string') return;
-      slot ??= await startMemoryExecutor(
-        node.system,
-        b,
-        task.expectedLabel,
-        new TextEncoder().encode(request.label)
-      );
-      const result = await slot.execute(request);
-      // Hold delivery, not execution. A later lookup can read the original receipt.
-      if (!result.ok || role === 'checkout') return;
-      reply = result.value;
+      const bytes = new TextEncoder().encode(request.label);
+      if (!(await matchesCandidateBytes(b, bytes))) return;
+      if (journal.claim(b)) {
+        const slot = await startMemoryExecutor(node.system, b, task.expectedLabel, bytes);
+        const result = await slot.execute(request);
+        if (!result.ok) return;
+        journal.executed(slot.executions());
+        journal.store(result.value.receipt);
+      }
+      if (role === 'checkout') return;
+      reply = journal.lookup(b);
     }
     await node.transport.send(control, reply);
   }
@@ -57,7 +63,7 @@ export async function startWorker(config: WorkerConfig) {
       .catch(() => console.error('Host could not deliver check response'));
   });
   return {
-    stats: () => ({ executions: slot?.executions() ?? 0 }),
+    stats: () => ({ executions: journal.executions() }),
     async stop() {
       unsubscribe();
       await mailbox;

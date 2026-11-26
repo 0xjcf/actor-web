@@ -8,16 +8,25 @@ import type { ReceiptLookupReply } from '../check-protocol.js';
 import { expectOk } from '../definitions.js';
 import { allocateDemoTeams, publishDemoDefinitions } from '../scenario.js';
 import { matchesBinding, type ReceiptSignal } from '../task-check.js';
+import type { TeamRecovery } from '../team-recovery.js';
 import { type AllocatedTeam, startTeams } from '../teams.js';
+import { teamJournal } from './journal.js';
 import { address, type CheckPacket, type ControlConfig, peerAuth } from './peer.js';
 import { type Lane, lanes, targets, topology } from './topology.js';
 
 async function openLane(
   app: Awaited<ReturnType<typeof startTeams>>,
-  team: AllocatedTeam,
-  lane: Lane
+  team: AllocatedTeam | undefined,
+  lane: Lane,
+  journal: TeamRecovery
 ) {
-  const attempt = expectOk(await app.beginAttempt(team.address, targets[lane]));
+  async function open() {
+    const saved = journal.load();
+    if (saved) return app.restoreAttempt(saved, journal);
+    if (!team) throw new Error('Incomplete control checkpoint');
+    return expectOk(await app.beginAttempt(team.address, targets[lane]));
+  }
+  const attempt = await open();
   const owner = await app.system.lookup(attempt.ownerAddress);
   if (!owner) throw new Error('Missing task owner');
   const progress = () => ({
@@ -34,13 +43,22 @@ async function openLane(
       })),
     { id: `${lane}-view` }
   );
+  async function flush() {
+    const saved = journal.load();
+    if (saved?.handoff && !saved.claimed) {
+      expectOk(await attempt.handoff(saved.handoff));
+      await view.ask({ type: 'REFRESH' });
+    }
+  }
   return {
     attempt,
     progress,
+    flush,
     source: createRuntimeGatewayReadModelSource(view),
     async deliver(signal: ReceiptSignal) {
       await attempt.deliver(signal);
       await view.ask({ type: 'REFRESH' });
+      await flush();
     },
   };
 }
@@ -48,7 +66,19 @@ async function openLane(
 export async function startControl(config: ControlConfig) {
   // Transport is a trust boundary: generic remote actor routing must not also
   // address the allocator, task owners, teams, or the writers of projections.
-  const app = await startTeams();
+  const journals = {
+    checkout: teamJournal(config.directory, 'checkout'),
+    profile: teamJournal(config.directory, 'profile'),
+  };
+  const restoring = lanes.some((lane) => journals[lane].load() !== null);
+  if (restoring && !lanes.every((lane) => journals[lane].load()))
+    throw new Error('Incomplete control checkpoint');
+  const app = await startTeams({
+    recovery: (id) => {
+      if (id !== 'checkout' && id !== 'profile') throw new Error('Task not admitted');
+      return journals[id];
+    },
+  });
   const sources = new Map<Lane, RuntimeGatewayReadModelSource>();
   const node = await serveNode<typeof topology, Lane>(topology, {
     node: 'control',
@@ -78,10 +108,12 @@ export async function startControl(config: ControlConfig) {
     },
   });
   try {
-    const teams = await allocateDemoTeams(app, publishDemoDefinitions(app.registry));
+    const teams = restoring
+      ? undefined
+      : await allocateDemoTeams(app, publishDemoDefinitions(app.registry));
     const [checkout, profile] = await Promise.all([
-      openLane(app, teams[0], 'checkout'),
-      openLane(app, teams[1], 'profile'),
+      openLane(app, teams?.[0], 'checkout', journals.checkout),
+      openLane(app, teams?.[1], 'profile', journals.profile),
     ]);
     const runs = { checkout, profile };
     for (const lane of lanes) sources.set(lane, runs[lane].source);
@@ -104,7 +136,12 @@ export async function startControl(config: ControlConfig) {
         )
         .catch(() => console.error('Control could not settle check response'));
     });
-    let started = false;
+    let started = restoring;
+    async function lookup(lane: Lane) {
+      const { trace, binding } = runs[lane].attempt.execute;
+      const request = { type: 'LOOKUP_RECEIPT', trace, binding } as const;
+      await node.transport.send(address(lane), request);
+    }
     return {
       gatewayUrl: node.getGatewayUrl(),
       transportUrl: node.getTransportUrl(),
@@ -124,10 +161,19 @@ export async function startControl(config: ControlConfig) {
           type: 'RECEIPT_TIMEOUT',
           attemptId: runs[lane].attempt.execute.binding.attemptId,
         }),
-      async lookup(lane: Lane) {
-        const { trace, binding } = runs[lane].attempt.execute;
-        const request = { type: 'LOOKUP_RECEIPT', trace, binding } as const;
-        await node.transport.send(address(lane), request);
+      lookup,
+      async recover() {
+        if (!restoring) return;
+        await Promise.all(
+          lanes.map(async (lane) => {
+            await runs[lane].flush();
+            if (
+              runs[lane].progress().ownerPhase === 'unknown' &&
+              node.transport.isConnected(address(lane))
+            )
+              await lookup(lane);
+          })
+        );
       },
       stats: () => ({ checkout: checkout.progress(), profile: profile.progress() }),
       async stop() {

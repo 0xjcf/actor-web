@@ -3,7 +3,7 @@ import type { ControlConfig, WorkerConfig } from './peer.js';
 import type { Lane } from './topology.js';
 import { startWorker } from './worker.js';
 
-export type Operation = 'begin' | 'timeout' | 'lookup' | 'stats' | 'stop';
+export type Operation = 'begin' | 'recover' | 'timeout' | 'lookup' | 'stats' | 'stop';
 type Command = { id: number; op: Operation; lane?: Lane };
 
 // Private launcher IPC: configuration, fixture controls and evidence queries only.
@@ -27,6 +27,7 @@ process.once('message', async (config: ControlConfig | WorkerConfig) => {
         if (op === 'stats') value = service.stats();
         else if ('begin' in service) {
           if (op === 'begin') await service.begin();
+          else if (op === 'recover') await service.recover();
           else if ((op === 'lookup' || op === 'timeout') && lane) await service[op](lane);
           else throw new Error('Invalid control operation');
         } else throw new Error('Invalid worker operation');

@@ -1,7 +1,7 @@
 import type { ActorAddress } from '@actor-web/runtime';
 import { type ActorSystem, defineBehavior, startRuntime } from '@actor-web/runtime/browser';
 import { actor, defineActorWebTopology, node } from '@actor-web/runtime/topology';
-import { reviewHandoff } from './check-protocol.js';
+import { type ReviewHandoff, reviewHandoff } from './check-protocol.js';
 import {
   type Assignment,
   DefinitionRegistry,
@@ -26,7 +26,7 @@ import {
   scriptedReview,
   type TaskRevision,
 } from './stages.js';
-import type { ReceiptSignal, TaskCheckReply } from './task-check.js';
+import { type ReceiptSignal, type TaskCheckReply, taskCheckBehavior } from './task-check.js';
 import {
   type CheckTarget,
   type OpenAttempt,
@@ -34,6 +34,7 @@ import {
   type PendingAttempt,
   validTarget,
 } from './team-attempt.js';
+import type { TeamCheckpoint, TeamRecovery } from './team-recovery.js';
 
 export type { StageProgress } from './stage-sessions.js';
 
@@ -43,11 +44,13 @@ type RunTeam = { type: 'RUN_TEAM'; injectWrongCandidate: boolean };
 type BeginAttempt = { type: 'BEGIN_ATTEMPT'; target: CheckTarget; injectWrongCandidate: boolean };
 type Delivery =
   | { phase: 'unknown' }
+  | { phase: 'reviewPending'; handoffId: string }
   | { phase: 'documented'; handoffId: string; report: TeamReport };
 type AllocateTeam = { type: 'ALLOCATE_TEAM'; task: Task; roster: Roster };
 export type AllocatedTeam = { address: ActorAddress; assignment: Assignment };
 
 type TeamOptions = {
+  recovery?: (taskId: string) => TeamRecovery;
   registry?: DefinitionRegistry;
   review?: ReviewAdvisor;
   observeStage?: StageObserver;
@@ -60,7 +63,9 @@ function teamBehavior(
   assignment: Assignment,
   runId: string,
   review: ReviewAdvisor,
-  sessions: ReturnType<typeof stageSessions>
+  sessions: ReturnType<typeof stageSessions>,
+  recovery?: TeamRecovery,
+  restored?: PendingAttempt
 ) {
   const { task, team } = assignment;
   const identity: TaskRevision = { taskId: task.id, taskRevision: task.revision };
@@ -92,9 +97,39 @@ function teamBehavior(
     return documented.ok ? ok({ ...identity, stages }) : documented;
   }
 
-  return defineBehavior<RunTeam | BeginAttempt | ReceiptSignal>()
-    .withContext<{ used: boolean; pending: PendingAttempt | null }>({ used: false, pending: null })
+  async function resume(pending: PendingAttempt, handoff: ReviewHandoff) {
+    const { candidate } = pending;
+    const check: Check = {
+      ...identity,
+      candidateId: candidate.candidateId,
+      kind: 'test',
+      passed: true,
+    };
+    sessions.settle(pending.test, ok(check));
+    const report = await reviewAndDocument(candidate, check);
+    recovery?.finish(stages);
+    return finish(
+      report.ok
+        ? ok({
+            phase: 'documented',
+            handoffId: handoff.handoffId,
+            report: report.value,
+          } satisfies Delivery)
+        : report
+    );
+  }
+
+  return defineBehavior<RunTeam | BeginAttempt | ReceiptSignal | ReviewHandoff>()
+    .withContext<{ used: boolean; pending: PendingAttempt | null }>({
+      used: !!restored,
+      pending: restored ?? null,
+    })
     .onMessage(async ({ message, context }) => {
+      if (message?.type === 'START_REVIEW' && recovery) {
+        if (!context.pending || !recovery.claim(message))
+          return { reply: refuse('NO_PENDING_HANDOFF') };
+        return resume(context.pending, message);
+      }
       if (message?.type === 'HOST_RECEIPT' || message?.type === 'RECEIPT_TIMEOUT') {
         const pending = context.pending;
         if (!pending) return { reply: refuse('NO_PENDING_CHECK') };
@@ -102,34 +137,29 @@ function teamBehavior(
         if (!owner) return { reply: refuse('OWNER_UNAVAILABLE') };
         const decision = await owner.ask<TaskCheckReply>(message);
         if (!('value' in decision)) return { reply: refuse(decision.error.code) };
-        if (decision.value === 'unknown')
+        if (decision.value === 'unknown') {
+          recovery?.decide('unknown', null);
           return { reply: ok({ phase: 'unknown' } satisfies Delivery) };
+        }
         if (decision.value === 'checkFailed') {
           const failure = refuse('CHECK_FAILED');
+          recovery?.decide('checkFailed', null);
           sessions.settle(pending.test, failure);
           return finish(failure);
         }
         // Never accept a caller-supplied START_REVIEW. Derive it from this owner's reply.
         const handoff = reviewHandoff(decision, pending.execute.trace);
         if (!handoff.ok) return { reply: handoff };
-        const { candidate } = pending;
-        const check: Check = {
-          ...identity,
-          candidateId: candidate.candidateId,
-          kind: 'test',
-          passed: true,
-        };
-        sessions.settle(pending.test, ok(check));
-        const report = await reviewAndDocument(candidate, check);
-        return finish(
-          report.ok
-            ? ok({
-                phase: 'documented',
-                handoffId: handoff.value.handoffId,
-                report: report.value,
-              } satisfies Delivery)
-            : report
-        );
+        if (recovery) {
+          recovery.decide('reviewReady', handoff.value);
+          return {
+            reply: ok({
+              phase: 'reviewPending',
+              handoffId: handoff.value.handoffId,
+            } satisfies Delivery),
+          };
+        }
+        return resume(pending, handoff.value);
       }
       if (
         (message?.type !== 'RUN_TEAM' && message?.type !== 'BEGIN_ATTEMPT') ||
@@ -155,6 +185,7 @@ function teamBehavior(
         const opened = await openAttempt(system, sessions, runId, task, candidate, message.target);
         if (!opened.ok) return finish(opened);
         const { ownerAddress, execute } = opened.value;
+        recovery?.open(assignment, opened.value, stages);
         return {
           context: { used: true, pending: opened.value },
           reply: ok(structuredClone({ ownerAddress, execute, candidate } satisfies OpenAttempt)),
@@ -174,6 +205,7 @@ export async function startTeams({
   review = scriptedReview,
   observeStage,
   paceStage,
+  recovery,
 }: TeamOptions = {}) {
   const admittedTasks = new Set<string>();
   const readyTeams = new Map<ActorAddress, ReturnType<typeof stageSessions>['snapshot']>();
@@ -191,9 +223,17 @@ export async function startTeams({
     const { task } = assignment.value;
     if (admittedTasks.has(task.id)) return { reply: refuse('TASK_ALREADY_ASSIGNED') };
     const runId = crypto.randomUUID();
-    const sessions = stageSessions(system, assignment.value, runId, reportStage, paceStage);
+    const port = recovery?.(task.id);
+    const sessions = stageSessions(
+      system,
+      assignment.value,
+      runId,
+      reportStage,
+      paceStage,
+      port && { records: [], reviewSessions: 0, onReviewSpawn: () => port.spawned() }
+    );
     const ref = await system.spawn(
-      teamBehavior(system, assignment.value, runId, review, sessions),
+      teamBehavior(system, assignment.value, runId, review, sessions, port),
       { id: runId, supervision: { strategy: 'stop' } }
     );
     admittedTasks.add(task.id);
@@ -218,11 +258,47 @@ export async function startTeams({
   const system: ActorSystem = local.system;
   const allocator = runtime.requireActor('orchestrator');
 
+  function connect(
+    address: ActorAddress,
+    attempt: OpenAttempt,
+    readStages: ReturnType<typeof stageSessions>['snapshot']
+  ) {
+    async function send(event: ReceiptSignal | ReviewHandoff) {
+      const ref = await system.lookup(address);
+      return ref ? ref.ask<Result<Delivery>>(event, 15_000) : refuse('TEAM_NOT_FOUND');
+    }
+    return {
+      ...attempt,
+      readStages,
+      deliver: (event: ReceiptSignal) => send(event),
+      handoff: (event: ReviewHandoff) => send(event),
+    };
+  }
   return {
     registry,
     system, // Trusted host access for this local demo and for directory inspection in tests.
     allocateTeam: (task: Task, roster: Roster) =>
       allocator.ask<Result<AllocatedTeam>>({ type: 'ALLOCATE_TEAM', task, roster }),
+    async restoreAttempt(saved: TeamCheckpoint, port: TeamRecovery) {
+      const { assignment, pending, records, reviewSessions, decision } = saved;
+      const id = pending.execute.trace.teamId;
+      const phase = decision === 'awaitingReceipt' ? 'unknown' : decision;
+      const owner = await system.spawn(taskCheckBehavior(pending.execute.binding, phase), {
+        id: `${id}-task-check`,
+      });
+      const restored = { ...pending, ownerAddress: owner.address };
+      const sessions = stageSessions(system, assignment, id, reportStage, paceStage, {
+        records,
+        reviewSessions,
+        onReviewSpawn: () => port.spawned(),
+      });
+      const team = await system.spawn(
+        teamBehavior(system, assignment, id, review, sessions, port, restored),
+        { id, supervision: { strategy: 'stop' } }
+      );
+      admittedTasks.add(assignment.task.id);
+      return connect(team.address, restored, sessions.snapshot);
+    },
     async beginAttempt(address: ActorAddress, target: CheckTarget, injectWrongCandidate = false) {
       if (!validTarget(target)) return refuse('INVALID_CHECK_TARGET');
       const readStages = readyTeams.get(address);
@@ -236,11 +312,7 @@ export async function startTeams({
       );
       if (!opened.ok) return opened;
       // Local host capability, not part of the serializable executor request.
-      return ok({
-        ...opened.value,
-        readStages,
-        deliver: (event: ReceiptSignal) => team.ask<Result<Delivery>>(event, 15_000),
-      });
+      return ok(connect(address, opened.value, readStages));
     },
     async runTeam(
       address: ActorAddress,

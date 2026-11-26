@@ -1,6 +1,9 @@
 import { fork } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { ControlConfig, WorkerConfig } from './peer.js';
 import type { Operation } from './process.js';
 import type { Lane } from './topology.js';
@@ -86,27 +89,40 @@ export async function launch(config: ControlConfig | WorkerConfig) {
   }
 }
 
-export async function startCluster(viewers = credentials()) {
+export async function startCluster(viewers = credentials(), retainedDirectory?: string) {
   if (!viewers.checkout || !viewers.profile || viewers.checkout === viewers.profile)
     throw new Error('Provide distinct workspace viewer credentials');
   const token = credential();
   const peers = credentials();
-  const control = await launch({ role: 'control', token, peers, viewers });
-  const children = [control];
-  const stop = () => Promise.all(children.map((child) => child.stop()));
-  async function worker(role: Lane) {
+  const root = retainedDirectory ?? (await mkdtemp(join(tmpdir(), 'sdlc-run-')));
+  const children: Awaited<ReturnType<typeof launch>>[] = [];
+  const stop = async () => {
+    await Promise.all(children.map((child) => child.stop()));
+    if (!retainedDirectory) await rm(root, { recursive: true, force: true });
+  };
+  async function worker(role: Lane, controlUrl: string) {
     const host = await launch({
+      directory: join(root, role),
       role,
       controlToken: token,
       token: peers[role],
-      controlUrl: control.ready.transportUrl,
+      controlUrl,
     });
     children.push(host);
     return host;
   }
   try {
-    const checkout = await worker('checkout');
-    const profile = await worker('profile');
+    const control = await launch({
+      role: 'control',
+      token,
+      peers,
+      viewers,
+      directory: join(root, 'control'),
+    });
+    children.push(control);
+    const checkout = await worker('checkout', control.ready.transportUrl);
+    const profile = await worker('profile', control.ready.transportUrl);
+    await control.call('recover');
     return { control, checkout, profile, viewers, stop };
   } catch (error) {
     await stop();

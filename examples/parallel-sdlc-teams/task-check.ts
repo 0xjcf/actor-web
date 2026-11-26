@@ -46,12 +46,12 @@ const settle = [
   { guard: matchesOutcome(false), target: 'checkFailed' },
 ] as const;
 
-export function taskCheckBehavior(admitted: CheckBinding) {
+export function taskCheckBehavior(admitted: CheckBinding, initial: State = 'ready') {
   const machine = setup({
     types: { context: {} as CheckBinding, events: {} as Event },
   }).createMachine({
     id: 'taskCheck',
-    initial: 'ready',
+    initial,
     context: Object.freeze({ ...admitted }),
     states: {
       ready: { on: { DISPATCH_CHECK: 'awaitingReceipt' } },
