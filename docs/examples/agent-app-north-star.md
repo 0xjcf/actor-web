@@ -156,6 +156,34 @@ zero Review sessions and no Document. Profile must still reach Document. Keep
 the [existing team test](../../examples/parallel-sdlc-teams/teams.test.ts)
 green: in the default demo the same wrong label returns `CHECK_FAILED`.
 
+#### Messages between the task owner, team and executor
+
+The [NS-02 contract](../../examples/parallel-sdlc-teams/check-protocol.ts)
+defines these JSON messages for the opt-in workflow. It defines no transport,
+artifact store, or VM operations. The original browser and terminal demos do
+not send them.
+
+| Message | Route | Meaning |
+| --- | --- | --- |
+| `EXECUTE_CHECK` | Test session → assigned executor | Run the check identified by the pinned `CheckBinding`, using the admitted task's `expectedLabel`. This is distinct from the owner's local `DISPATCH_CHECK` transition. |
+| `LOOKUP_RECEIPT` | Task owner → assigned executor | Read the existing result for the same binding. Do not run the check, including on a miss. |
+| `HOST_RECEIPT` / `RECEIPT_UNAVAILABLE` | Executor → task owner | Return the existing FSM receipt unchanged, or identify the requested binding with no result. Unavailable does not mean `passed: false` and cannot advance the task. |
+| `START_REVIEW` | Task owner → pinned team | Hand off an accepted check to the team. `reviewHandoff()` takes the owner's `reviewReady` decision, not an executor's claim that the check passed. |
+
+The artifact reference is the pair `(workspaceId, candidateDigest)` already in
+`CheckBinding`. For this label fixture the bytes are the UTF-8 candidate label,
+without an added newline. `pinCandidate()` hashes those bytes with SHA-256; the
+executor resolves the reference in the admitted workspace and verifies the bytes
+with `matchesCandidateBytes()` before checking. No host path or executable
+callback crosses the boundary.
+
+Dispatch, lookup and handoff carry `teamId` and the originating `testSessionId`
+for tracing. The handoff ID is stable for the destination team and complete
+check binding, including the executor generation. Redelivery must reuse this
+ID; a new Test trace alone must not authorize another Review. The ID is not a
+credential: authenticating the host and remembering which handoffs were
+processed are separate integration tasks.
+
 ### 2. Portable Specialist: one bounded session
 
 After building the workspace packages with `pnpm build`, run

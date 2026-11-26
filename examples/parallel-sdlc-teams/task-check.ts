@@ -1,4 +1,9 @@
-import { type ActorFSMTransition, defineBehavior, defineFSM } from '@actor-web/runtime/browser';
+import {
+  type ActorFSMTransition,
+  type ActorTransitionErrorValue,
+  defineBehavior,
+  defineFSM,
+} from '@actor-web/runtime/browser';
 import type { TaskRevision } from './stages.js';
 
 // North-star fixture: one owner for one already-admitted Test attempt (task-check-sequence.svg).
@@ -14,13 +19,14 @@ export type CheckBinding = Readonly<
   }
 >;
 
-type HostReceipt = CheckBinding & { passed: boolean };
-type ReceiptEvent = { type: 'HOST_RECEIPT'; receipt: HostReceipt };
+export type HostReceipt = CheckBinding & { passed: boolean };
+export type ReceiptEvent = { type: 'HOST_RECEIPT'; receipt: HostReceipt };
 type Event =
   | { type: 'DISPATCH_CHECK' } // owner-local, directed to this single-use actor
   | { type: 'RECEIPT_TIMEOUT'; attemptId: string }
   | ReceiptEvent;
 type State = 'ready' | 'awaitingReceipt' | 'unknown' | 'reviewReady' | 'checkFailed';
+export type TaskCheckReply = { value: State; context: CheckBinding } | ActorTransitionErrorValue;
 
 function matchesBinding(expected: CheckBinding, offered: CheckBinding): boolean {
   return (
